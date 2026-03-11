@@ -1,0 +1,95 @@
+# Runtime Config & Diagnostics API
+
+更新时间：2026-03-11
+
+## 目标
+
+为运行时提供统一配置入口（YAML + Env + Default）、热更新能力，以及仅库接口的诊断查询能力。
+
+## 配置优先级
+
+固定优先级：`env > file > default`
+
+- `default`：由 `mcp/runtime.DefaultConfig()` 提供。
+- `file`：YAML 文件（通过 `viper` 加载）。
+- `env`：环境变量覆盖（前缀 + key 映射）。
+
+## 环境变量映射
+
+- 默认前缀：`BAYMAX`
+- key 规则：`.` 替换为 `_`
+- 示例：
+  - `mcp.active_profile` -> `BAYMAX_MCP_ACTIVE_PROFILE`
+  - `mcp.profiles.default.retry` -> `BAYMAX_MCP_PROFILES_DEFAULT_RETRY`
+  - `reload.debounce` -> `BAYMAX_RELOAD_DEBOUNCE`
+
+## YAML Schema（核心字段）
+
+```yaml
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 10s
+      retry: 1
+      backoff: 50ms
+      queue_size: 32
+      backpressure: block # block|reject
+      read_pool_size: 4
+      write_pool_size: 1
+
+concurrency:
+  local_max_workers: 8
+  local_queue_size: 32
+  backpressure: block # block|reject
+
+diagnostics:
+  max_call_records: 200
+  max_run_records: 200
+  max_reload_errors: 100
+
+reload:
+  enabled: true
+  debounce: 200ms
+```
+
+## 使用示例（最小）
+
+```go
+mgr, err := runtime.NewManager(runtime.ManagerOptions{
+    FilePath:        "runtime.yaml",
+    EnvPrefix:       "BAYMAX",
+    EnableHotReload: true,
+})
+if err != nil {
+    // fail-fast: 配置无效直接报错
+    panic(err)
+}
+defer mgr.Close()
+
+client := httpmcp.NewClient(httpmcp.Config{
+    RuntimeManager: mgr,
+    Profile:        runtime.ProfileDefault,
+    Connect:        connector,
+})
+```
+
+## 诊断 API（Library Only）
+
+- `Manager.RecentCalls(n)`：最近 N 次 MCP 调用摘要。
+- `Manager.RecentRuns(n)`：最近 N 次 run 摘要。
+- `Manager.RecentReloads(n)`：最近 N 次热更新结果。
+- `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
+
+当前不提供 CLI 诊断命令。
+
+## 热更新语义
+
+- 触发机制：监听配置文件变更。
+- 执行路径：`parse -> validate -> build snapshot -> atomic swap`。
+- 失败策略：任一步失败则拒绝本次更新，保留旧快照，并写入 reload 诊断记录。
+
+## 限制
+
+- `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
+- 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。

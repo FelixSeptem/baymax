@@ -28,10 +28,10 @@
   - 消费 `runtime/config.Manager` 配置与诊断 API
 - `core/runner` / `tool/local` / `skill/loader`
   - 消费全局 runtime 配置快照
-  - 写入全局 runtime 诊断记录
+  - 产出标准运行时事件（不直接写诊断存储）
 - `observability/event`
   - 事件日志与分发
-  - 可选 `RuntimeRecorder` 将事件映射为统一诊断记录
+  - `RuntimeRecorder` 作为诊断唯一写入入口，将事件映射为统一诊断记录
 
 ## 依赖方向
 

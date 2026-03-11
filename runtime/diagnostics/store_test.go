@@ -61,3 +61,83 @@ func TestSanitizeMap(t *testing.T) {
 		t.Fatalf("non-sensitive field should keep value")
 	}
 }
+
+func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
+	d := NewStore(8, 8, 4, 8)
+	rec := RunRecord{
+		Time:       time.Now(),
+		RunID:      "run-1",
+		Status:     "success",
+		Iterations: 2,
+		ToolCalls:  1,
+		LatencyMs:  12,
+	}
+	d.AddRun(rec)
+	rec.LatencyMs = 99
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if runs[0].LatencyMs != 99 {
+		t.Fatalf("run record should be replaced on duplicate key, got %#v", runs[0])
+	}
+}
+
+func TestStoreSkillDedupConcurrent(t *testing.T) {
+	d := NewStore(8, 8, 4, 16)
+	rec := SkillRecord{
+		Time:       time.Now(),
+		RunID:      "run-1",
+		SkillName:  "skill-a",
+		Action:     "compile",
+		Status:     "warning",
+		ErrorClass: "ErrSkill",
+		Payload: map[string]any{
+			"reason": "compile read failed",
+			"path":   "/tmp/skill",
+		},
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.AddSkill(rec)
+		}()
+	}
+	wg.Wait()
+
+	items := d.RecentSkills(20)
+	if len(items) != 1 {
+		t.Fatalf("skill records = %d, want 1", len(items))
+	}
+}
+
+func TestIdempotencyKeyDeterministic(t *testing.T) {
+	runA := RunRecord{RunID: "run-1", Status: "success", Iterations: 1}
+	runB := RunRecord{RunID: "run-1", Status: "success", Iterations: 99}
+	if RunIdempotencyKey(runA) != RunIdempotencyKey(runB) {
+		t.Fatalf("run key should be stable for same run/status")
+	}
+
+	skillA := SkillRecord{
+		RunID:     "run-1",
+		SkillName: "a",
+		Action:    "compile",
+		Status:    "warning",
+		Payload:   map[string]any{"reason": "x", "path": "p"},
+	}
+	skillB := SkillRecord{
+		RunID:     "run-1",
+		SkillName: "a",
+		Action:    "compile",
+		Status:    "warning",
+		Payload:   map[string]any{"path": "p", "reason": "x"},
+	}
+	if SkillIdempotencyKey(skillA) != SkillIdempotencyKey(skillB) {
+		t.Fatalf("skill key should be deterministic for semantically equal payload")
+	}
+}

@@ -26,11 +26,11 @@ The runtime MUST validate required fields, numeric ranges, and enum values befor
 - **THEN** runtime returns validation error and does not start
 
 ### Requirement: Runtime SHALL expose diagnostics through library API only
-The runtime MUST provide diagnostics query APIs for recent run summaries, recent MCP call summaries, and sanitized effective configuration, and MUST NOT require CLI support.
+The runtime MUST provide diagnostics query APIs for recent run summaries, recent MCP call summaries, and sanitized effective configuration, and MUST NOT require CLI support. Diagnostics returned by these APIs MUST follow single-writer and idempotent persistence semantics so repeated event submission does not alter logical aggregate counts.
 
 #### Scenario: Consumer requests recent run diagnostics
 - **WHEN** application calls diagnostics API for recent runs
-- **THEN** runtime returns bounded summary records with normalized fields
+- **THEN** runtime returns bounded summary records with normalized fields and without duplicated logical run entries caused by retries or replay
 
 #### Scenario: Consumer requests effective configuration
 - **WHEN** application calls API to fetch effective configuration
@@ -48,7 +48,7 @@ The runtime MUST watch config file changes, rebuild and validate a new snapshot,
 - **THEN** runtime rejects the update, keeps current active snapshot unchanged, and emits reload error diagnostics
 
 ### Requirement: Runtime SHALL be concurrency-safe for config and diagnostics access
-Configuration reads, diagnostics writes, and hot-reload swaps MUST be safe under concurrent goroutines.
+Configuration reads, diagnostics writes, diagnostics deduplication, and hot-reload swaps MUST be safe under concurrent goroutines.
 
 #### Scenario: Concurrent reads during hot reload
 - **WHEN** multiple goroutines read configuration while a reload is in progress
@@ -56,7 +56,7 @@ Configuration reads, diagnostics writes, and hot-reload swaps MUST be safe under
 
 #### Scenario: Concurrent diagnostics recording and querying
 - **WHEN** goroutines concurrently record call summaries and query diagnostics
-- **THEN** runtime preserves data integrity and bounded-memory behavior
+- **THEN** runtime preserves data integrity, idempotent write behavior, and bounded-memory behavior
 
 ### Requirement: Runtime config API migration SHALL preserve behavior compatibility
 When runtime config implementation paths are refactored, the system MUST preserve existing precedence, validation, and hot-reload semantics for callers migrating from previous package locations.
@@ -85,4 +85,18 @@ The repository MUST publish a configuration field index and package migration ma
 #### Scenario: Maintainer updates runtime config docs
 - **WHEN** config fields or package paths change
 - **THEN** docs include synchronized schema reference and migration table for affected APIs
+
+### Requirement: Runtime diagnostics contract SHALL define normalized status and error semantics
+The runtime MUST define shared diagnostics status enums and error classification semantics for run and skill records, while allowing domain-specific extension fields.
+
+#### Scenario: Run and skill producers emit diagnostics
+- **WHEN** runner and skill loader publish diagnostics records
+- **THEN** persisted diagnostics use shared normalized status and error fields with consistent meanings
+
+### Requirement: Runtime diagnostics contract SHALL be protected by contract tests
+The repository MUST include contract tests that validate schema and semantic consistency across success, failure, warning, and retry/replay paths for run and skill diagnostics.
+
+#### Scenario: Contract test suite is executed
+- **WHEN** diagnostics contract tests run in CI or local validation
+- **THEN** inconsistent field mapping or semantic mismatch fails the test suite
 

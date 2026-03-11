@@ -9,7 +9,6 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
-	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -227,8 +226,14 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				LatencyMs:   e.now().Sub(start).Milliseconds(),
 				Warnings:    warnings,
 			}
-			e.recordRun(result, "")
-			e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
+			e.emit(ctx, h, types.Event{
+				Version:   "v1",
+				Type:      "run.finished",
+				RunID:     runID,
+				Iteration: iteration,
+				Time:      e.now(),
+				Payload:   runFinishedPayload(result, "success", ""),
+			})
 			return result, nil
 		case StateAbort:
 			result := types.RunResult{
@@ -243,8 +248,14 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if terminal != nil {
 				errClass = string(terminal.Class)
 			}
-			e.recordRun(result, errClass)
-			e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
+			e.emit(ctx, h, types.Event{
+				Version:   "v1",
+				Type:      "run.finished",
+				RunID:     runID,
+				Iteration: iteration,
+				Time:      e.now(),
+				Payload:   runFinishedPayload(result, "failed", errClass),
+			})
 			return result, runErr
 		}
 	}
@@ -310,8 +321,14 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		if terminal != nil {
 			errClass = string(terminal.Class)
 		}
-		e.recordRun(result, errClass)
-		e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
+		e.emit(ctx, h, types.Event{
+			Version:   "v1",
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload:   runFinishedPayload(result, "failed", errClass),
+		})
 		return result, err
 	}
 
@@ -323,8 +340,14 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		TokenUsage:  usage,
 		LatencyMs:   e.now().Sub(start).Milliseconds(),
 	}
-	e.recordRun(result, "")
-	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "run.finished",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload:   runFinishedPayload(result, "success", ""),
+	})
 	return result, nil
 }
 
@@ -371,20 +394,6 @@ func (e *Engine) emit(ctx context.Context, h types.EventHandler, ev types.Event)
 	h.OnEvent(ctx, ev)
 }
 
-func (e *Engine) recordRun(result types.RunResult, errClass string) {
-	if e.runtimeMgr == nil {
-		return
-	}
-	e.runtimeMgr.RecordRun(runtimediag.RunRecord{
-		Time:       e.now(),
-		RunID:      result.RunID,
-		Iterations: result.Iterations,
-		ToolCalls:  len(result.ToolCalls),
-		LatencyMs:  result.LatencyMs,
-		ErrorClass: errClass,
-	})
-}
-
 func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.LoopPolicy) types.LoopPolicy {
 	if e.runtimeMgr == nil || input != nil {
 		return policy
@@ -400,6 +409,20 @@ func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.Loop
 		policy.LocalDispatch.Backpressure = cfg.Concurrency.Backpressure
 	}
 	return policy
+}
+
+func runFinishedPayload(result types.RunResult, status string, errClass string) map[string]any {
+	payload := map[string]any{
+		"status":      status,
+		"latency_ms":  result.LatencyMs,
+		"tool_calls":  len(result.ToolCalls),
+		"iterations":  result.Iterations,
+		"warning_cnt": len(result.Warnings),
+	}
+	if errClass != "" {
+		payload["error_class"] = errClass
+	}
+	return payload
 }
 
 var _ types.Runner = (*Engine)(nil)

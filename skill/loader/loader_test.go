@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
@@ -152,7 +153,8 @@ diagnostics:
 	}
 	specs := []types.SkillSpec{{Name: "db-skill", Path: skillPath, Description: "database migration"}}
 
-	l := NewWithRuntimeManager(nil, mgr)
+	rec := obsevent.NewRuntimeRecorder(mgr)
+	l := NewWithRuntimeManager(rec, mgr)
 	_, err = l.Compile(context.Background(), specs, types.SkillInput{UserInput: "db-skill", Context: map[string]string{"run_id": "run-1"}})
 	if err != nil {
 		t.Fatalf("Compile failed: %v", err)
@@ -162,7 +164,73 @@ diagnostics:
 	if len(items) != 1 {
 		t.Fatalf("skill diagnostics len = %d, want 1", len(items))
 	}
-	if items[0].SkillName != "db-skill" || items[0].Status != "success" {
+	if items[0].SkillName != "db-skill" || items[0].Status != "success" || items[0].Action != "compile" {
 		t.Fatalf("unexpected skill diag: %#v", items[0])
+	}
+}
+
+func TestSkillDiagnosticsWarningAndReplayDedup(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+diagnostics:
+  max_skill_records: 10
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := obsevent.NewRuntimeRecorder(mgr)
+	l := New(rec)
+
+	specs := []types.SkillSpec{
+		{Name: "missing", Path: filepath.Join(dir, "missing", "SKILL.md"), Description: "bad"},
+	}
+	_, err = l.Compile(context.Background(), specs, types.SkillInput{UserInput: "missing", Context: map[string]string{"run_id": "run-1"}})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	items := mgr.RecentSkills(10)
+	if len(items) != 1 {
+		t.Fatalf("skill diagnostics len = %d, want 1", len(items))
+	}
+	if items[0].Status != "warning" || items[0].Action != "compile" {
+		t.Fatalf("unexpected warning diag: %#v", items[0])
+	}
+
+	replay := types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "skill.warning",
+		RunID:   "run-1",
+		Payload: map[string]any{
+			"name":        "missing",
+			"action":      "compile",
+			"status":      "warning",
+			"error_class": string(types.ErrSkill),
+			"reason":      "compile read failed",
+			"path":        filepath.Join(dir, "missing", "SKILL.md"),
+		},
+	}
+	rec.OnEvent(context.Background(), replay)
+
+	items = mgr.RecentSkills(10)
+	if len(items) != 1 {
+		t.Fatalf("replayed warning should be deduped, got %d records", len(items))
 	}
 }

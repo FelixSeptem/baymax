@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"go.opentelemetry.io/otel"
@@ -423,7 +424,8 @@ mcp:
 		},
 	}
 	r := New(model, WithRuntimeManager(mgr))
-	_, err = r.Run(context.Background(), types.RunRequest{Input: "hi"}, nil)
+	rec := obsevent.NewRuntimeRecorder(mgr)
+	_, err = r.Run(context.Background(), types.RunRequest{Input: "hi"}, rec)
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -431,7 +433,52 @@ mcp:
 	if len(runs) != 1 {
 		t.Fatalf("run diagnostics len = %d, want 1", len(runs))
 	}
-	if runs[0].RunID == "" || runs[0].ErrorClass != "" {
+	if runs[0].RunID == "" || runs[0].ErrorClass != "" || runs[0].Status != "success" {
 		t.Fatalf("unexpected run diagnostics: %#v", runs[0])
+	}
+}
+
+func TestRunRecordsFailedDiagnosticsWithRuntimeRecorder(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{}, errors.New("model failed")
+		},
+	}
+	r := New(model, WithRuntimeManager(mgr))
+	rec := obsevent.NewRuntimeRecorder(mgr)
+	_, err = r.Run(context.Background(), types.RunRequest{Input: "hi"}, rec)
+	if err == nil {
+		t.Fatal("expected model error")
+	}
+
+	runs := mgr.RecentRuns(1)
+	if len(runs) != 1 {
+		t.Fatalf("run diagnostics len = %d, want 1", len(runs))
+	}
+	if runs[0].Status != "failed" || runs[0].ErrorClass != string(types.ErrModel) {
+		t.Fatalf("unexpected failed run diagnostics: %#v", runs[0])
 	}
 }

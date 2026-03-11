@@ -19,11 +19,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Go test
-        run: go test ./...
-
-      - name: Go test (race)
-        run: go test -race ./...
+      - name: Quality gate tests
+        run: bash scripts/check-quality-gate.sh
 
       - name: Runtime Boundary Check
         run: bash scripts/check-runtime-boundaries.sh

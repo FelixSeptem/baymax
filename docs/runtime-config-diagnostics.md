@@ -85,6 +85,24 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 当前不提供 CLI 诊断命令。
 
+## 诊断写入口径（Single Writer + Idempotency）
+
+- 统一写入入口：`observability/event.RuntimeRecorder`。
+- `core/runner`、`skill/loader` 负责产生标准事件，不直接落库诊断。
+- `runtime/diagnostics.Store` 对 run/skill 记录执行幂等去重，避免重试/重放导致重复样本。
+
+### 幂等键语义
+
+- run 记录：按 `run_id + status`（无 `run_id` 时退化到稳定字段组合）去重。
+- skill 记录：按 `run_id + skill_name + action + status + error_class + payload-hash` 去重。
+- 动态字段（如 `latency_ms/time`）不参与 payload hash，保证重复重放可合并。
+
+### 统一状态语义
+
+- run 状态：`success | failed`
+- skill 状态：`success | warning | failed`
+- 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`）
+
 ## 热更新语义
 
 - 触发机制：监听配置文件变更。

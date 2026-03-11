@@ -82,7 +82,7 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 	}
 
 	resp, err := c.newResponse(ctx, responses.ResponseNewParams{
-		Model: responses.ResponsesModel(c.model),
+		Model: c.model,
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
 	})
 	if err != nil {
@@ -109,7 +109,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	}
 
 	stream := c.newStream(ctx, responses.ResponseNewParams{
-		Model: responses.ResponsesModel(c.model),
+		Model: c.model,
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
 	})
 	if stream == nil {

@@ -1,6 +1,10 @@
 package diagnostics
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +28,7 @@ type CallRecord struct {
 type RunRecord struct {
 	Time       time.Time `json:"time"`
 	RunID      string    `json:"run_id"`
+	Status     string    `json:"status,omitempty"`
 	Iterations int       `json:"iterations"`
 	ToolCalls  int       `json:"tool_calls"`
 	LatencyMs  int64     `json:"latency_ms"`
@@ -59,6 +64,8 @@ type Store struct {
 	runs    []RunRecord
 	reloads []ReloadRecord
 	skills  []SkillRecord
+	runKeys map[string]int
+	sklKeys map[string]int
 }
 
 func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
@@ -83,6 +90,8 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
 		runs:            make([]RunRecord, 0, maxRuns),
 		reloads:         make([]ReloadRecord, 0, maxReloads),
 		skills:          make([]SkillRecord, 0, maxSkills),
+		runKeys:         make(map[string]int, maxRuns),
+		sklKeys:         make(map[string]int, maxSkills),
 	}
 }
 
@@ -96,6 +105,7 @@ func (d *Store) Resize(maxCalls, maxRuns, maxReloads, maxSkills int) {
 	if maxRuns > 0 {
 		d.maxRunRecords = maxRuns
 		d.runs = trimTail(d.runs, d.maxRunRecords)
+		d.rebuildRunKeys()
 	}
 	if maxReloads > 0 {
 		d.maxReloadErrors = maxReloads
@@ -104,6 +114,7 @@ func (d *Store) Resize(maxCalls, maxRuns, maxReloads, maxSkills int) {
 	if maxSkills > 0 {
 		d.maxSkillRecords = maxSkills
 		d.skills = trimTail(d.skills, d.maxSkillRecords)
+		d.rebuildSkillKeys()
 	}
 }
 
@@ -117,8 +128,15 @@ func (d *Store) AddCall(rec CallRecord) {
 func (d *Store) AddRun(rec RunRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
+	key := RunIdempotencyKey(rec)
+	if idx, ok := d.runKeys[key]; ok && idx >= 0 && idx < len(d.runs) {
+		d.runs[idx] = rec
+		return
+	}
 	d.runs = append(d.runs, rec)
 	d.runs = trimTail(d.runs, d.maxRunRecords)
+	d.rebuildRunKeys()
 }
 
 func (d *Store) AddReload(rec ReloadRecord) {
@@ -131,8 +149,15 @@ func (d *Store) AddReload(rec ReloadRecord) {
 func (d *Store) AddSkill(rec SkillRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	rec.Status = normalizeSkillStatus(rec.Status)
+	key := SkillIdempotencyKey(rec)
+	if idx, ok := d.sklKeys[key]; ok && idx >= 0 && idx < len(d.skills) {
+		d.skills[idx] = rec
+		return
+	}
 	d.skills = append(d.skills, rec)
 	d.skills = trimTail(d.skills, d.maxSkillRecords)
+	d.rebuildSkillKeys()
 }
 
 func (d *Store) RecentCalls(n int) []CallRecord {
@@ -200,6 +225,115 @@ func isSensitiveKey(key string) bool {
 		strings.Contains(k, "password") ||
 		strings.Contains(k, "api_key") ||
 		strings.Contains(k, "apikey")
+}
+
+func RunIdempotencyKey(rec RunRecord) string {
+	status := normalizeRunStatus(rec.Status, rec.ErrorClass)
+	if strings.TrimSpace(rec.RunID) != "" {
+		return fmt.Sprintf("run:%s:%s", strings.TrimSpace(rec.RunID), status)
+	}
+	return fmt.Sprintf(
+		"run:anon:%d:%d:%d:%s:%s",
+		rec.Iterations,
+		rec.ToolCalls,
+		rec.LatencyMs,
+		status,
+		strings.TrimSpace(rec.ErrorClass),
+	)
+}
+
+func SkillIdempotencyKey(rec SkillRecord) string {
+	return fmt.Sprintf(
+		"skill:%s:%s:%s:%s:%s:%s",
+		strings.TrimSpace(rec.RunID),
+		strings.TrimSpace(rec.SkillName),
+		strings.TrimSpace(rec.Action),
+		normalizeSkillStatus(rec.Status),
+		strings.TrimSpace(rec.ErrorClass),
+		payloadDigest(rec.Payload),
+	)
+}
+
+func normalizeRunStatus(status, errorClass string) string {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch s {
+	case "success", "failed":
+		return s
+	}
+	if strings.TrimSpace(errorClass) != "" {
+		return "failed"
+	}
+	return "success"
+}
+
+func normalizeSkillStatus(status string) string {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch s {
+	case "success", "failed", "warning":
+		return s
+	default:
+		return "warning"
+	}
+}
+
+func payloadDigest(payload map[string]any) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(normalizePayloadForKey(payload))
+	if err != nil {
+		return "marshal_error"
+	}
+	sum := sha1.Sum(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func normalizePayloadForKey(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		lk := strings.ToLower(strings.TrimSpace(k))
+		if lk == "latency_ms" || lk == "time" || lk == "timestamp" {
+			continue
+		}
+		switch tv := v.(type) {
+		case map[string]any:
+			out[k] = normalizePayloadForKey(tv)
+		case []any:
+			out[k] = normalizeSliceForKey(tv)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func normalizeSliceForKey(in []any) []any {
+	out := make([]any, 0, len(in))
+	for _, v := range in {
+		switch tv := v.(type) {
+		case map[string]any:
+			out = append(out, normalizePayloadForKey(tv))
+		case []any:
+			out = append(out, normalizeSliceForKey(tv))
+		default:
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func (d *Store) rebuildRunKeys() {
+	d.runKeys = make(map[string]int, len(d.runs))
+	for i := range d.runs {
+		d.runKeys[RunIdempotencyKey(d.runs[i])] = i
+	}
+}
+
+func (d *Store) rebuildSkillKeys() {
+	d.sklKeys = make(map[string]int, len(d.skills))
+	for i := range d.skills {
+		d.sklKeys[SkillIdempotencyKey(d.skills[i])] = i
+	}
 }
 
 func trimTail[T any](src []T, n int) []T {

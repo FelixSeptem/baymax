@@ -41,6 +41,7 @@
 - 事件 schema v1，关联字段：`run_id / iteration / call_id / trace_id / span_id`
 - OTel spans：`agent.run` 根 span + model/tool/mcp/skill 子 span
 - JSON stdout logger（支持 trace/span/run 关联）
+- 诊断写入采用 single-writer（`observability/event.RuntimeRecorder`）+ 幂等去重（`runtime/diagnostics`）
 
 ### 6. Integration + Benchmark
 - fake model/tool/mcp 组件
@@ -119,6 +120,15 @@ defer mgr.Close()
 go test ./...
 ```
 
+并发安全基线（race）建议使用：
+```bash
+bash scripts/check-quality-gate.sh
+```
+Windows PowerShell：
+```powershell
+pwsh -File scripts/check-quality-gate.ps1
+```
+
 ### 运行 Lint
 ```bash
 golangci-lint run --config .golangci.yml
@@ -138,7 +148,7 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 
 ### CI
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
-- 默认执行：`go test ./...` + `golangci-lint`
+- 默认执行：`scripts/check-quality-gate.sh` + `golangci-lint`
 
 ## 目录结构
 

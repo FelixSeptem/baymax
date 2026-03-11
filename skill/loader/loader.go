@@ -15,7 +15,6 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
-	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
 )
 
@@ -72,8 +71,14 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 			skillFile = filepath.Join(root, skillFile)
 		}
 		if _, err := os.Stat(skillFile); err != nil {
-			l.emit(ctx, "", "skill.warning", map[string]any{"name": name, "reason": "missing skill file", "path": skillFile})
-			l.recordSkill(ctx, "", name, "discover", "failed", discoverStart, types.ErrSkill, map[string]any{"reason": "missing skill file", "path": skillFile})
+			l.emit(ctx, "", "skill.warning", map[string]any{
+				"name":        name,
+				"action":      "discover",
+				"status":      "warning",
+				"error_class": string(types.ErrSkill),
+				"reason":      "missing skill file",
+				"path":        skillFile,
+			})
 			continue
 		}
 		desc, triggers := parseSkillMeta(skillFile)
@@ -91,7 +96,12 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 		return nil, err
 	}
 	sort.SliceStable(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
-	l.recordSkill(ctx, "", "", "discover", "success", discoverStart, "", map[string]any{"count": len(specs)})
+	l.emit(ctx, "", "skill.discovered", map[string]any{
+		"action":     "discover",
+		"status":     "success",
+		"count":      len(specs),
+		"latency_ms": l.now().Sub(discoverStart).Milliseconds(),
+	})
 	return specs, nil
 }
 
@@ -123,18 +133,29 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 		stepStart := l.now()
 		content, err := os.ReadFile(spec.Path)
 		if err != nil {
-			l.emit(ctx, runID, "skill.warning", map[string]any{"name": spec.Name, "reason": "compile read failed", "path": spec.Path})
-			l.recordSkill(ctx, runID, spec.Name, "compile", "failed", stepStart, types.ErrSkill, map[string]any{"reason": "compile read failed", "path": spec.Path})
+			l.emit(ctx, runID, "skill.warning", map[string]any{
+				"name":        spec.Name,
+				"action":      "compile",
+				"status":      "warning",
+				"error_class": string(types.ErrSkill),
+				"reason":      "compile read failed",
+				"path":        spec.Path,
+				"latency_ms":  l.now().Sub(stepStart).Milliseconds(),
+			})
 			continue
 		}
 		fragments = append(fragments, string(content))
 		workflowHints = append(workflowHints, spec.Description)
 		enabled := parseEnabledTools(string(content))
-		for _, t := range enabled {
-			enabledTools = append(enabledTools, t)
-		}
-		l.emit(ctx, runID, "skill.loaded", map[string]any{"name": spec.Name, "path": spec.Path})
-		l.recordSkill(ctx, runID, spec.Name, "compile", "success", stepStart, "", map[string]any{"enabled_tools": len(enabled)})
+		enabledTools = append(enabledTools, enabled...)
+		l.emit(ctx, runID, "skill.loaded", map[string]any{
+			"name":          spec.Name,
+			"path":          spec.Path,
+			"action":        "compile",
+			"status":        "success",
+			"enabled_tools": len(enabled),
+			"latency_ms":    l.now().Sub(stepStart).Milliseconds(),
+		})
 	}
 
 	workflowHints = resolveDirectiveConflicts(workflowHints)
@@ -186,7 +207,7 @@ func semanticScore(input string, s types.SkillSpec) float64 {
 
 func tokenize(in string) []string {
 	f := func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_')
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_'
 	}
 	parts := strings.FieldsFunc(in, f)
 	out := make([]string, 0, len(parts))
@@ -295,26 +316,6 @@ func (l *Loader) emit(ctx context.Context, runID string, typ string, payload map
 		SpanID:  obsTrace.SpanIDFromContext(ctx),
 		Time:    l.now(),
 		Payload: payload,
-	})
-}
-
-func (l *Loader) recordSkill(ctx context.Context, runID string, skillName string, action string, status string, start time.Time, errClass types.ErrorClass, payload map[string]any) {
-	if l.runtimeMgr == nil {
-		return
-	}
-	errorClass := ""
-	if errClass != "" {
-		errorClass = string(errClass)
-	}
-	l.runtimeMgr.RecordSkill(runtimediag.SkillRecord{
-		Time:       l.now(),
-		RunID:      runID,
-		SkillName:  skillName,
-		Action:     action,
-		Status:     status,
-		LatencyMs:  l.now().Sub(start).Milliseconds(),
-		ErrorClass: errorClass,
-		Payload:    payload,
 	})
 }
 

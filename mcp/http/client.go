@@ -203,7 +203,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
-			Profile:        string(c.cfg.Profile),
+			Profile:        c.cfg.Profile,
 			CallID:         callID,
 			Tool:           name,
 			LatencyMs:      time.Since(start).Milliseconds(),
@@ -218,7 +218,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
-			Profile:        string(c.cfg.Profile),
+			Profile:        c.cfg.Profile,
 			CallID:         callID,
 			Tool:           name,
 			LatencyMs:      time.Since(start).Milliseconds(),
@@ -232,7 +232,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
 		Transport:      "http",
-		Profile:        string(c.cfg.Profile),
+		Profile:        c.cfg.Profile,
 		CallID:         callID,
 		Tool:           name,
 		LatencyMs:      time.Since(start).Milliseconds(),

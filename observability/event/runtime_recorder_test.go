@@ -52,3 +52,53 @@ mcp:
 		t.Fatalf("unexpected skill record: %#v", items[0])
 	}
 }
+
+func TestRuntimeRecorderRecordsRunFinishedAndDedup(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	ev := types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      "run.finished",
+		Time:      time.Now(),
+		RunID:     "run-1",
+		Iteration: 2,
+		Payload: map[string]any{
+			"status":      "failed",
+			"latency_ms":  int64(120),
+			"tool_calls":  3,
+			"error_class": "ErrTool",
+		},
+	}
+	rec.OnEvent(context.Background(), ev)
+	rec.OnEvent(context.Background(), ev)
+
+	items := mgr.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	if items[0].Status != "failed" || items[0].ErrorClass != "ErrTool" || items[0].ToolCalls != 3 {
+		t.Fatalf("unexpected run record: %#v", items[0])
+	}
+}

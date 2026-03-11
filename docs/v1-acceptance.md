@@ -11,6 +11,7 @@
 - OpenAI streaming path uses official SDK native events with fail-fast termination and complete-tool-call-only emission.
 - Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
+- Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
 
 ## Known Limitations (V1 Non-goals)
 

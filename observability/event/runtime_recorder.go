@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -24,30 +25,63 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 	switch ev.Type {
 	case "run.finished":
 		errorClass := payloadString(ev.Payload, "error_class")
+		status := payloadString(ev.Payload, "status")
+		if status == "" {
+			if errorClass != "" {
+				status = "failed"
+			} else {
+				status = "success"
+			}
+		}
 		r.manager.RecordRun(runtimediag.RunRecord{
 			Time:       ev.Time,
 			RunID:      ev.RunID,
+			Status:     status,
 			Iterations: ev.Iteration,
+			ToolCalls:  payloadInt(ev.Payload, "tool_calls"),
 			LatencyMs:  payloadInt64(ev.Payload, "latency_ms"),
 			ErrorClass: errorClass,
 		})
-	case "skill.warning":
+	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{
-			Time:       ev.Time,
+			Time:      eventTime(ev.Time),
+			RunID:     ev.RunID,
+			Action:    "discover",
+			Status:    "success",
+			LatencyMs: payloadInt64(ev.Payload, "latency_ms"),
+			Payload:   ev.Payload,
+		})
+	case "skill.warning":
+		action := payloadString(ev.Payload, "action")
+		if action == "" {
+			action = "compile"
+		}
+		errorClass := payloadString(ev.Payload, "error_class")
+		if errorClass == "" {
+			errorClass = string(types.ErrSkill)
+		}
+		r.manager.RecordSkill(runtimediag.SkillRecord{
+			Time:       eventTime(ev.Time),
 			RunID:      ev.RunID,
 			SkillName:  payloadString(ev.Payload, "name"),
-			Action:     "compile",
-			Status:     "failed",
-			ErrorClass: string(types.ErrSkill),
+			Action:     action,
+			Status:     payloadOrDefault(ev.Payload, "status", "warning"),
+			LatencyMs:  payloadInt64(ev.Payload, "latency_ms"),
+			ErrorClass: errorClass,
 			Payload:    ev.Payload,
 		})
 	case "skill.loaded":
+		action := payloadString(ev.Payload, "action")
+		if action == "" {
+			action = "compile"
+		}
 		r.manager.RecordSkill(runtimediag.SkillRecord{
-			Time:      ev.Time,
+			Time:      eventTime(ev.Time),
 			RunID:     ev.RunID,
 			SkillName: payloadString(ev.Payload, "name"),
-			Action:    "compile",
-			Status:    "success",
+			Action:    action,
+			Status:    payloadOrDefault(ev.Payload, "status", "success"),
+			LatencyMs: payloadInt64(ev.Payload, "latency_ms"),
 			Payload:   ev.Payload,
 		})
 	}
@@ -83,6 +117,25 @@ func payloadInt64(m map[string]any, key string) int64 {
 	default:
 		return 0
 	}
+}
+
+func payloadInt(m map[string]any, key string) int {
+	return int(payloadInt64(m, key))
+}
+
+func payloadOrDefault(m map[string]any, key, fallback string) string {
+	v := payloadString(m, key)
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func eventTime(ts time.Time) time.Time {
+	if ts.IsZero() {
+		return time.Now()
+	}
+	return ts
 }
 
 var _ types.EventHandler = (*RuntimeRecorder)(nil)

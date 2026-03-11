@@ -38,7 +38,8 @@
 
 ### 进展（2026-03-11）
 - [x] `add-runtime-config-and-diagnostics-api-with-hot-reload`：完成 Viper 配置加载（YAML + Env + Default）、原子热更新、回滚语义与库级诊断 API。
-- [ ] `refactor-runtime-responsibility-boundaries-and-enrich-docs`：进行中（配置/诊断 API 从 MCP 单体 runtime 包拆分到全局 runtime 模块，补齐迁移文档）。
+- [x] `refactor-runtime-responsibility-boundaries-and-enrich-docs`：完成（配置/诊断 API 从 MCP 单体 runtime 包拆分到全局 runtime 模块，补齐迁移文档）。
+- [x] `unify-diagnostics-contract-and-concurrency-baseline`：完成诊断 single-writer + idempotency、run/skill 契约加固、并发安全质量门禁收敛。
 
 ### 目标
 - 支持线上部署场景下的调优与排障。
@@ -82,7 +83,7 @@
 
 ## 技术债清单（当前建议优先）
 
-- 清理仓库中的临时/备份产物与目录规范化。
+- 清理仓库中的临时/备份产物与目录规范化（持续项）。
 - 收敛 `mcp/http` 与 `mcp/stdio` 中重复的重试/事件逻辑到共享组件。
 - 为 `skill/loader` 的语义匹配引入可测试的评分接口。
 - 为 runner 添加更多压力测试（高并发工具调用 + 取消风暴场景）。

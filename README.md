@@ -7,7 +7,8 @@
 - OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
 - OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
 - OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已完成并归档。
-- OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 进行中。
+- OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 已完成并归档。
+- OpenSpec change `unify-diagnostics-contract-and-concurrency-baseline` 已完成并归档。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -90,7 +91,7 @@ func main() {
 运行：
 ```bash
 export OPENAI_API_KEY="<your-api-key>"
-go run ./examples/quickstart
+go run ./examples/01-chat-minimal
 ```
 
 ### 安装依赖
@@ -148,7 +149,20 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 
 ### CI
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
-- 默认执行：`scripts/check-quality-gate.sh` + `golangci-lint`
+- 默认执行：
+  - `scripts/check-quality-gate.sh`
+  - `scripts/check-runtime-boundaries.sh`
+  - `scripts/check-docs-consistency.ps1`
+  - benchmark smoke（`go test ./integration -run ^$ -bench Benchmark -benchtime=50ms`）
+  - `golangci-lint`
+
+## 脚本清单（当前保留）
+
+- `scripts/check-quality-gate.sh`：Linux CI 质量门禁（`go test` + `go test -race`）。
+- `scripts/check-quality-gate.ps1`：Windows 本地质量门禁等价脚本。
+- `scripts/check-runtime-boundaries.sh`：runtime 模块边界静态检查。
+- `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
+- `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。
 
 ## 目录结构
 

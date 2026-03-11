@@ -1,0 +1,109 @@
+package types
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+)
+
+func TestDefaultLoopPolicy(t *testing.T) {
+	p := DefaultLoopPolicy()
+	if p.MaxIterations != 12 {
+		t.Fatalf("MaxIterations = %d, want 12", p.MaxIterations)
+	}
+	if p.MaxToolCallsPerIteration != 8 {
+		t.Fatalf("MaxToolCallsPerIteration = %d, want 8", p.MaxToolCallsPerIteration)
+	}
+	if p.StepTimeout != 60*time.Second {
+		t.Fatalf("StepTimeout = %s, want 60s", p.StepTimeout)
+	}
+	if p.ModelRetry != 2 {
+		t.Fatalf("ModelRetry = %d, want 2", p.ModelRetry)
+	}
+	if p.ToolRetry != 1 {
+		t.Fatalf("ToolRetry = %d, want 1", p.ToolRetry)
+	}
+	if p.ContinueOnToolError {
+		t.Fatal("ContinueOnToolError = true, want false")
+	}
+}
+
+func TestRunResultJSONRoundTrip(t *testing.T) {
+	want := RunResult{
+		RunID:       "run-1",
+		FinalAnswer: "done",
+		Iterations:  2,
+		TokenUsage: TokenUsage{
+			InputTokens:  10,
+			OutputTokens: 20,
+			TotalTokens:  30,
+		},
+		LatencyMs: 1234,
+		Warnings:  []string{"warn"},
+		Error: &ClassifiedError{
+			Class:   ErrTool,
+			Message: "tool failed",
+		},
+	}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var got RunResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if got.RunID != want.RunID || got.FinalAnswer != want.FinalAnswer || got.Iterations != want.Iterations {
+		t.Fatalf("unexpected round-trip result: %#v", got)
+	}
+	if got.Error == nil || got.Error.Class != ErrTool {
+		t.Fatalf("unexpected error round-trip: %#v", got.Error)
+	}
+}
+
+func TestModelResponseJSONRoundTrip(t *testing.T) {
+	want := ModelResponse{
+		FinalAnswer: "next",
+		ToolCalls: []ToolCall{
+			{CallID: "c1", Name: "local.search", Args: map[string]any{"q": "golang"}},
+		},
+		Usage: TokenUsage{InputTokens: 3, OutputTokens: 7, TotalTokens: 10},
+	}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var got ModelResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].Name != "local.search" {
+		t.Fatalf("unexpected tool calls: %#v", got.ToolCalls)
+	}
+	if got.Usage.TotalTokens != 10 {
+		t.Fatalf("unexpected usage: %#v", got.Usage)
+	}
+}
+
+func TestToolResultJSONRoundTrip(t *testing.T) {
+	want := ToolResult{
+		Content:    "ok",
+		Structured: map[string]any{"count": float64(1)},
+		Error: &ClassifiedError{
+			Class:     ErrPolicyTimeout,
+			Message:   "timeout",
+			Retryable: true,
+		},
+	}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var got ToolResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if got.Error == nil || got.Error.Class != ErrPolicyTimeout {
+		t.Fatalf("unexpected error: %#v", got.Error)
+	}
+}

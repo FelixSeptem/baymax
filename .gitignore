@@ -1,0 +1,3 @@
+.gocache
+*.go.[0-9]*
+scripts/*

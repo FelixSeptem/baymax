@@ -1,0 +1,63 @@
+# Examples Expansion Plan
+
+更新时间：2026-03-11
+
+## 参考基线
+
+- PocketFlow Design Pattern: `https://the-pocket.github.io/PocketFlow/design_pattern/`
+- 对齐范围：Sequential / Routing / Parallel / Map Reduce / Tool Call / Structure / Multi-Agent
+
+## Pattern 对齐矩阵
+
+| Example | 主要 Pattern | 对齐目标 |
+| --- | --- | --- |
+| `01-chat-minimal` | Sequential | 单轮最小链路，建立基础调用认知 |
+| `02-tool-loop-basic` | Tool Call + Sequential | 展示工具调用闭环与反馈迭代 |
+| `03-mcp-mixed-call` | Tool Call + Routing | 展示 local/MCP 混合路由与分发策略 |
+| `04-streaming-interrupt` | Structure（中断/恢复语义） | 展示流式链路中的取消与收敛 |
+| `05-parallel-tools-fanout` | Parallel | 展示 goroutine fanout 与背压行为 |
+| `06-async-job-progress` | Map Reduce（近似） + Parallel | 展示异步任务拆分、聚合与进度回传 |
+| `07-multi-agent-async-channel` | Multi-Agent + Structure | 展示多代理协作、职责边界与异步通信 |
+
+## Phase R2 Batch (Foundational + Core Patterns)
+
+- `examples/01-chat-minimal`
+- `examples/02-tool-loop-basic`
+- `examples/03-mcp-mixed-call`
+- `examples/04-streaming-interrupt`
+
+R2 重点覆盖 Pattern：
+- Sequential
+- Tool Call
+- Routing（通过 MCP/local 混合调用体现）
+- Structure（最小中断/恢复语义）
+
+每个示例目录包含：
+- `main.go`: 可运行最小实现
+- `TODO.md`: 优化机会、已知限制、后续增强点
+
+## Phase R3 Batch (Advanced + Concurrency Patterns)
+
+- `examples/05-parallel-tools-fanout`
+- `examples/06-async-job-progress`
+- `examples/07-multi-agent-async-channel`
+
+R3 重点覆盖 Pattern：
+- Parallel
+- Map Reduce（以异步任务拆分/聚合形式体现）
+- Multi-Agent
+- Structure（跨组件协作编排）
+
+## Backlog（Pattern 补齐建议）
+
+为更完整对齐 PocketFlow pattern，建议后续新增：
+- `examples/08-routing-strategy-switch`: 显式多路由策略选择（按输入/置信度/成本）
+- `examples/09-hierarchical-structure`: 分层编排（planner/worker/validator）
+- `examples/10-map-reduce-large-batch`: 大批量任务切分与聚合优化
+
+## Style Guide (PocketFlow-inspired)
+
+- 按难度渐进，确保每个示例都可独立运行。
+- 文档强调行为预期（并发、队列、取消、重试）。
+- 高阶示例必须包含诊断输出，便于性能与稳定性排障。
+- 每个示例需在 README 或注释中标注“对应 Pattern”和“本示例不覆盖的边界”。

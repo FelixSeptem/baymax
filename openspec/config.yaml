@@ -1,0 +1,11 @@
+schema: spec-driven
+
+context: |
+  技术栈: Go
+  代码风格: gofmt/goimports
+  测试邀请: go test -race ./... 
+  代码质量工具: golangci-lint
+
+rules:
+
+

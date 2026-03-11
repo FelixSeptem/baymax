@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  issues-exit-code: 1
+
+output:
+  format: colored-line-number
+
+linters:
+  enable:
+    - bodyclose
+    - errcheck
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/FelixSeptem/baymax
+  revive:
+    severity: warning
+    rules:
+      - name: error-return
+      - name: error-strings
+      - name: if-return
+      - name: indent-error-flow
+      - name: var-naming
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

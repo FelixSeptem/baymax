@@ -1,0 +1,29 @@
+[
+  {
+    "type": "run.started"
+  },
+  {
+    "type": "model.requested"
+  },
+  {
+    "type": "model.delta",
+    "event_type": "response.output_text.delta",
+    "delta": "hello "
+  },
+  {
+    "type": "model.delta",
+    "event_type": "tool_call",
+    "has_tool_call": true
+  },
+  {
+    "type": "model.delta",
+    "event_type": "response.output_text.delta",
+    "delta": "world"
+  },
+  {
+    "type": "model.completed"
+  },
+  {
+    "type": "run.finished"
+  }
+]

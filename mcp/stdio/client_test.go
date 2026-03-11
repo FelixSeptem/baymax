@@ -3,6 +3,9 @@ package stdio
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -211,5 +214,41 @@ func TestStdioRecentCallSummary(t *testing.T) {
 	}
 	if summary[0].Transport != "stdio" {
 		t.Fatalf("transport = %q, want stdio", summary[0].Transport)
+	}
+}
+
+func TestStdioRuntimeManagerConfigAndDiagnostics(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 0
+      call_timeout: 2s
+      backoff: 5ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := mcpruntime.NewManager(mcpruntime.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	ft := &fakeTransport{}
+	client := NewClient(ft, Config{RuntimeManager: mgr})
+	_, err = client.CallTool(context.Background(), "x", nil)
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	summary := mgr.RecentCalls(1)
+	if len(summary) != 1 || summary[0].Transport != "stdio" {
+		t.Fatalf("unexpected manager summary: %#v", summary)
 	}
 }

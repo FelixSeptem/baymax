@@ -30,22 +30,24 @@ type Response struct {
 }
 
 type Config struct {
-	ReadPoolSize  int
-	WritePoolSize int
-	CallTimeout   time.Duration
-	Retry         int
-	Backoff       time.Duration
-	QueueSize     int
-	Backpressure  types.BackpressureMode
-	Profile       mcpruntime.ProfileName
-	RuntimePolicy *types.MCPRuntimePolicy
-	EventHandler  types.EventHandler
-	RunID         string
+	ReadPoolSize   int
+	WritePoolSize  int
+	CallTimeout    time.Duration
+	Retry          int
+	Backoff        time.Duration
+	QueueSize      int
+	Backpressure   types.BackpressureMode
+	Profile        mcpruntime.ProfileName
+	RuntimePolicy  *types.MCPRuntimePolicy
+	RuntimeManager *mcpruntime.Manager
+	EventHandler   types.EventHandler
+	RunID          string
 }
 
 type Client struct {
 	transport Transport
 	cfg       Config
+	explicit  Config
 
 	initialized atomic.Bool
 	initMu      sync.Mutex
@@ -62,7 +64,7 @@ func NewClient(transport Transport, cfg Config) *Client {
 	if profile == "" {
 		profile = mcpruntime.ProfileDefault
 	}
-	policy := mcpruntime.ResolvePolicy(profile, cfg.RuntimePolicy)
+	policy, policyErr := resolveStartupPolicy(cfg, profile)
 	cfg = applyRuntimePolicy(cfg, policy)
 	cfg = applyExplicitConfig(cfg, userCfg)
 	if cfg.Profile == "" {
@@ -72,6 +74,8 @@ func NewClient(transport Transport, cfg Config) *Client {
 	return &Client{
 		transport: transport,
 		cfg:       cfg,
+		explicit:  userCfg,
+		initErr:   policyErr,
 		readPool:  make(chan struct{}, cfg.ReadPoolSize),
 		writePool: make(chan struct{}, cfg.WritePoolSize),
 		diag:      mcpruntime.NewDiagnostics(200),
@@ -83,6 +87,9 @@ func (c *Client) Warmup(ctx context.Context) error {
 }
 
 func (c *Client) ensureInitialized(ctx context.Context) error {
+	if c.initErr != nil {
+		return c.initErr
+	}
 	if c.initialized.Load() {
 		return c.initErr
 	}
@@ -122,6 +129,10 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	if err := c.ensureInitialized(ctx); err != nil {
 		return types.ToolResult{}, err
 	}
+	runCfg, err := c.runtimeConfig()
+	if err != nil {
+		return types.ToolResult{}, err
+	}
 	callID := fmt.Sprintf("mcp-stdio-%d", time.Now().UnixNano())
 	start := time.Now()
 	retryCount := 0
@@ -143,10 +154,10 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 			Payload: map[string]any{
 				"error_class":   string(res.Error.Class),
 				"queue_wait_ms": time.Since(queueStart).Milliseconds(),
-				"backpressure":  c.cfg.Backpressure,
+				"backpressure":  runCfg.Backpressure,
 			},
 		})
-		c.diag.Add(mcpruntime.CallRecord{
+		c.recordCall(mcpruntime.CallRecord{
 			Time:           time.Now(),
 			Transport:      "stdio",
 			Profile:        string(c.cfg.Profile),
@@ -161,11 +172,11 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	}
 	defer release()
 
-	attempts := c.cfg.Retry + 1
+	attempts := runCfg.Retry + 1
 	var lastErr error
 	for i := 0; i < attempts; i++ {
 		retryCount = i
-		stepCtx, cancel := context.WithTimeout(ctx, c.cfg.CallTimeout)
+		stepCtx, cancel := context.WithTimeout(ctx, runCfg.CallTimeout)
 		resp, err := c.invokeAsync(stepCtx, name, args)
 		cancel()
 		if err == nil {
@@ -180,7 +191,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 					"tool": name, "retry_count": i, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
 				},
 			})
-			c.diag.Add(mcpruntime.CallRecord{
+			c.recordCall(mcpruntime.CallRecord{
 				Time:           time.Now(),
 				Transport:      "stdio",
 				Profile:        string(c.cfg.Profile),
@@ -207,13 +218,13 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 				result := failedTimeout(ctx.Err())
 				c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
 				return result, ctx.Err()
-			case <-time.After(mcpruntime.BackoffAt(c.cfg.Backoff, i)):
+			case <-time.After(mcpruntime.BackoffAt(runCfg.Backoff, i)):
 			}
 		}
 	}
 	result := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: lastErr.Error(), Retryable: false}}
 	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-	c.diag.Add(mcpruntime.CallRecord{
+	c.recordCall(mcpruntime.CallRecord{
 		Time:           time.Now(),
 		Transport:      "stdio",
 		Profile:        string(c.cfg.Profile),
@@ -232,14 +243,18 @@ func (c *Client) acquirePool(ctx context.Context, isWrite bool, callID string) f
 	if isWrite {
 		pool = c.writePool
 	}
-	if c.cfg.Backpressure == types.BackpressureReject {
+	runCfg, err := c.runtimeConfig()
+	if err != nil {
+		return nil
+	}
+	if runCfg.Backpressure == types.BackpressureReject {
 		select {
 		case pool <- struct{}{}:
 			return func() { <-pool }
 		default:
 			c.emit(ctx, types.Event{
 				Version: "v1", Type: "mcp.queue_rejected", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-				Payload: map[string]any{"backpressure": c.cfg.Backpressure},
+				Payload: map[string]any{"backpressure": runCfg.Backpressure},
 			})
 			return nil
 		}
@@ -351,6 +366,9 @@ func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 }
 
 func (c *Client) RecentCallSummary(n int) []mcpruntime.CallRecord {
+	if c.cfg.RuntimeManager != nil {
+		return c.cfg.RuntimeManager.RecentCalls(n)
+	}
 	return c.diag.Recent(n)
 }
 
@@ -377,6 +395,41 @@ func applyExplicitConfig(cfg Config, user Config) Config {
 		cfg.Backpressure = user.Backpressure
 	}
 	return cfg
+}
+
+func (c *Client) runtimeConfig() (Config, error) {
+	policy, err := resolveRuntimePolicy(c.cfg, c.explicit)
+	if err != nil {
+		return Config{}, err
+	}
+	out := applyRuntimePolicy(c.cfg, policy)
+	out = applyExplicitConfig(out, c.explicit)
+	return out, nil
+}
+
+func resolveStartupPolicy(cfg Config, profile mcpruntime.ProfileName) (types.MCPRuntimePolicy, error) {
+	if cfg.RuntimeManager == nil {
+		return mcpruntime.ResolvePolicy(profile, cfg.RuntimePolicy), nil
+	}
+	return cfg.RuntimeManager.ResolvePolicy(profile, cfg.RuntimePolicy)
+}
+
+func resolveRuntimePolicy(cfg Config, explicit Config) (types.MCPRuntimePolicy, error) {
+	profile := cfg.Profile
+	if profile == "" {
+		profile = mcpruntime.ProfileDefault
+	}
+	if cfg.RuntimeManager == nil {
+		return mcpruntime.ResolvePolicy(profile, explicit.RuntimePolicy), nil
+	}
+	return cfg.RuntimeManager.ResolvePolicy(profile, explicit.RuntimePolicy)
+}
+
+func (c *Client) recordCall(rec mcpruntime.CallRecord) {
+	c.diag.Add(rec)
+	if c.cfg.RuntimeManager != nil {
+		c.cfg.RuntimeManager.RecordCall(rec)
+	}
 }
 
 var _ types.MCPClient = (*Client)(nil)

@@ -5,7 +5,8 @@
 ## 当前状态（2026-03-11）
 
 - OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
-- OpenSpec change `harden-mcp-runtime-reliability-profiles` 进行中。
+- OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
+- OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已实现（待归档）。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -25,6 +26,9 @@
 ### 3. MCP Runtime
 - `mcp/stdio`：warmup、池化、超时、重试、事件归一化
 - `mcp/http`：官方 go-sdk 适配、心跳、重连、稳定 call-id、事件顺序保证
+- 统一运行时配置：`viper` 加载 YAML + Env 覆盖（`env > file > default`）
+- 热更新：原子配置切换，非法更新自动回滚
+- 诊断 API（库接口）：最近 MCP 调用/Run 摘要、脱敏生效配置查询（无 CLI）
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -92,6 +96,23 @@ go run ./examples/quickstart
 go mod tidy
 ```
 
+### Runtime Config（可选）
+可通过 `mcp/runtime.Manager` 启用统一配置与热更新：
+
+```go
+mgr, err := runtime.NewManager(runtime.ManagerOptions{
+    FilePath:        "runtime.yaml",
+    EnvPrefix:       "BAYMAX",
+    EnableHotReload: true,
+})
+if err != nil {
+    panic(err) // fail-fast
+}
+defer mgr.Close()
+```
+
+更多字段与环境变量映射见：`docs/runtime-config-diagnostics.md`
+
 ### 运行测试
 ```bash
 go test ./...
@@ -137,3 +158,4 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - 示例扩容计划：`docs/examples-expansion-plan.md`
 - 性能回归策略：`docs/performance-policy.md`
 - MCP 可靠性 profile：`docs/mcp-runtime-profiles.md`
+- 运行时配置与诊断 API：`docs/runtime-config-diagnostics.md`

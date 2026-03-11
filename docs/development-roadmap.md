@@ -36,6 +36,9 @@
 
 ## Phase R2（4-6 周）生产可运维能力
 
+### 进展（2026-03-11）
+- [x] `add-runtime-config-and-diagnostics-api-with-hot-reload`：完成 Viper 配置加载（YAML + Env + Default）、原子热更新、回滚语义与库级诊断 API。
+
 ### 目标
 - 支持线上部署场景下的调优与排障。
 - 建立并发与异步执行机制的可调优与可观测闭环。
@@ -44,7 +47,7 @@
 - 配置层（环境变量 + 文件）和热更新策略。
 - 观测增强：采样率、日志级别、慢调用阈值告警字段。
 - MCP 健康检查与自愈策略（指数退避、熔断窗口、重连上限）。
-- 运行诊断命令（导出最近 N 次 run 的摘要）。
+- 运行诊断 API（导出最近 N 次 run/MCP 调用摘要，库接口）。
 - 并发调度策略（队列/背压/取消传播）与异步通讯机制收敛。
 - 交付 R2 批次示例：`01-chat-minimal`、`02-tool-loop-basic`、`03-mcp-mixed-call`、`04-streaming-interrupt`（附 TODO 演进位）。
 

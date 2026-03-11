@@ -31,6 +31,7 @@
 - `write_pool_size`
 
 注：profile 默认值可被显式配置覆盖。
+配置来源优先级：`env > file > default`。
 
 ## 统一语义
 
@@ -39,6 +40,7 @@
 - backoff 计算
 - 错误分类与事件字段
 - 最近 N 次 MCP 调用诊断摘要字段
+- profile 参数读取来源统一为运行时配置快照（`mcp/runtime.Manager`）
 
 ## 调优建议
 

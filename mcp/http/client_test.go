@@ -3,6 +3,9 @@ package http
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -203,5 +206,45 @@ func TestHTTPRecentCallSummary(t *testing.T) {
 	}
 	if summary[0].Transport != "http" || summary[0].Tool != "tool" {
 		t.Fatalf("unexpected summary: %#v", summary[0])
+	}
+}
+
+func TestHTTPRuntimeManagerConfigAndDiagnostics(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 0
+      call_timeout: 2s
+      backoff: 5ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+diagnostics:
+  max_call_records: 10
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := mcpruntime.NewManager(mcpruntime.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	connector := func(ctx context.Context) (Session, error) {
+		return &fakeSession{}, nil
+	}
+	c := NewClient(Config{Connect: connector, RuntimeManager: mgr})
+	_, err = c.CallTool(context.Background(), "tool", nil)
+	if err != nil {
+		t.Fatalf("CallTool failed: %v", err)
+	}
+	summary := mgr.RecentCalls(1)
+	if len(summary) != 1 || summary[0].Transport != "http" {
+		t.Fatalf("unexpected manager summary: %#v", summary)
 	}
 }

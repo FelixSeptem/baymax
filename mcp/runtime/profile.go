@@ -17,31 +17,7 @@ const (
 
 func ResolvePolicy(profile ProfileName, override *types.MCPRuntimePolicy) types.MCPRuntimePolicy {
 	base := defaultPolicyFor(profile)
-	if override == nil {
-		return base
-	}
-	if override.CallTimeout > 0 {
-		base.CallTimeout = override.CallTimeout
-	}
-	if override.Retry >= 0 {
-		base.Retry = override.Retry
-	}
-	if override.Backoff > 0 {
-		base.Backoff = override.Backoff
-	}
-	if override.QueueSize > 0 {
-		base.QueueSize = override.QueueSize
-	}
-	if override.Backpressure != "" {
-		base.Backpressure = override.Backpressure
-	}
-	if override.ReadPoolSize > 0 {
-		base.ReadPoolSize = override.ReadPoolSize
-	}
-	if override.WritePoolSize > 0 {
-		base.WritePoolSize = override.WritePoolSize
-	}
-	return base
+	return applyPolicyOverride(base, override)
 }
 
 func defaultPolicyFor(profile ProfileName) types.MCPRuntimePolicy {

@@ -9,6 +9,8 @@
 - OTel spans are emitted for run/model/tool/mcp/skill paths and can be joined with event/log correlation IDs.
 - Streaming path preserves causal event ordering and does not drop model deltas in integration tests.
 - OpenAI streaming path uses official SDK native events with fail-fast termination and complete-tool-call-only emission.
+- Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
+- Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
 
 ## Known Limitations (V1 Non-goals)
 
@@ -17,5 +19,7 @@
 - No built-in multi-tenant control-plane, RBAC, or audit pipeline.
 - Skill semantic triggering uses lightweight lexical scoring, not embedding-based retrieval.
 - MCP HTTP/stdio reliability profile is available, but tuning thresholds may still require environment-specific adjustment.
+- Hot reload updates runtime config atomically; invalid updates are rejected and rolled back to previous snapshot.
+- `mcp/stdio` pool sizes are fixed at initialization; hot reload does not dynamically resize existing pools in-place.
 - `golangci-lint` policy is baseline-first and may be tightened in later iterations.
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.

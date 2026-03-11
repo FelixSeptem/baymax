@@ -6,7 +6,8 @@
 
 - OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
 - OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
-- OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已实现（待归档）。
+- OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已完成并归档。
+- OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 进行中。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -97,10 +98,10 @@ go mod tidy
 ```
 
 ### Runtime Config（可选）
-可通过 `mcp/runtime.Manager` 启用统一配置与热更新：
+建议通过 `runtime/config.Manager` 启用统一配置与热更新：
 
 ```go
-mgr, err := runtime.NewManager(runtime.ManagerOptions{
+mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
     FilePath:        "runtime.yaml",
     EnvPrefix:       "BAYMAX",
     EnableHotReload: true,
@@ -159,3 +160,4 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - 性能回归策略：`docs/performance-policy.md`
 - MCP 可靠性 profile：`docs/mcp-runtime-profiles.md`
 - 运行时配置与诊断 API：`docs/runtime-config-diagnostics.md`
+- Runtime 模块边界：`docs/runtime-module-boundaries.md`

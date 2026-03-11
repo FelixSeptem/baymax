@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 type JSONLogger struct {
-	mu  sync.Mutex
-	out io.Writer
+	mu         sync.Mutex
+	out        io.Writer
+	runtimeMgr *runtimeconfig.Manager
 }
 
 func NewJSONLogger(out io.Writer) *JSONLogger {
@@ -21,6 +23,12 @@ func NewJSONLogger(out io.Writer) *JSONLogger {
 		out = os.Stdout
 	}
 	return &JSONLogger{out: out}
+}
+
+func NewJSONLoggerWithRuntimeManager(out io.Writer, mgr *runtimeconfig.Manager) *JSONLogger {
+	l := NewJSONLogger(out)
+	l.runtimeMgr = mgr
+	return l
 }
 
 func (l *JSONLogger) OnEvent(ctx context.Context, ev types.Event) {
@@ -34,6 +42,11 @@ func (l *JSONLogger) OnEvent(ctx context.Context, ev types.Event) {
 		"trace_id":  ev.TraceID,
 		"span_id":   ev.SpanID,
 		"payload":   ev.Payload,
+	}
+	if l.runtimeMgr != nil {
+		s := l.runtimeMgr.CurrentSnapshot()
+		entry["runtime_loaded_at"] = s.LoadedAt.Format(time.RFC3339Nano)
+		entry["runtime_active_profile"] = s.Config.MCP.ActiveProfile
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {

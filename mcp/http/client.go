@@ -10,8 +10,12 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
-	mcpruntime "github.com/FelixSeptem/baymax/mcp/runtime"
+	mcpdiag "github.com/FelixSeptem/baymax/mcp/diag"
+	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,9 +42,9 @@ type Config struct {
 	HeartbeatInterval    time.Duration
 	HeartbeatTimeout     time.Duration
 	DisableStandaloneSSE bool
-	Profile              mcpruntime.ProfileName
+	Profile              mcpprofile.Name
 	RuntimePolicy        *types.MCPRuntimePolicy
-	RuntimeManager       *mcpruntime.Manager
+	RuntimeManager       *runtimeconfig.Manager
 	EventHandler         types.EventHandler
 	RunID                string
 	Connect              ConnectFunc
@@ -58,14 +62,14 @@ type Client struct {
 
 	seq          atomic.Uint64
 	lastActivity atomic.Int64
-	diag         *mcpruntime.Diagnostics
+	diag         *mcpdiag.Store
 }
 
 func NewClient(cfg Config) *Client {
 	userCfg := cfg
 	profile := cfg.Profile
 	if profile == "" {
-		profile = mcpruntime.ProfileDefault
+		profile = mcpprofile.Default
 	}
 	policy, policyErr := resolveStartupPolicy(cfg, profile)
 	cfg = applyRuntimePolicy(cfg, policy)
@@ -76,7 +80,7 @@ func NewClient(cfg Config) *Client {
 	if cfg.HeartbeatTimeout <= 0 {
 		cfg.HeartbeatTimeout = cfg.CallTimeout
 	}
-	c := &Client{cfg: cfg, explicit: userCfg, cfgErr: policyErr, diag: mcpruntime.NewDiagnostics(200)}
+	c := &Client{cfg: cfg, explicit: userCfg, cfgErr: policyErr, diag: mcpdiag.NewStore(200)}
 	if cfg.Connect != nil {
 		c.connect = cfg.Connect
 	} else {
@@ -196,7 +200,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		}
 		res := types.ToolResult{Error: &types.ClassifiedError{Class: class, Message: err.Error(), Retryable: class == types.ErrPolicyTimeout}}
 		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(res.Error.Class)}})
-		c.recordCall(mcpruntime.CallRecord{
+		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
 			Profile:        string(c.cfg.Profile),
@@ -211,7 +215,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	}
 	if result.Error != nil {
 		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-		c.recordCall(mcpruntime.CallRecord{
+		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
 			Profile:        string(c.cfg.Profile),
@@ -225,7 +229,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		return result, nil
 	}
 	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"tool": name}})
-	c.recordCall(mcpruntime.CallRecord{
+	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
 		Transport:      "http",
 		Profile:        string(c.cfg.Profile),
@@ -262,7 +266,7 @@ func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, in
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
 			return types.ToolResult{}, context.DeadlineExceeded
 		}
-		if !mcpruntime.ShouldRetry(err) {
+		if !mcpretry.ShouldRetry(err) {
 			return types.ToolResult{}, err
 		}
 		if i < attempts-1 {
@@ -276,7 +280,7 @@ func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, in
 			select {
 			case <-ctx.Done():
 				return types.ToolResult{}, ctx.Err()
-			case <-time.After(mcpruntime.BackoffAt(runCfg.Backoff, i)):
+			case <-time.After(mcpretry.BackoffAt(runCfg.Backoff, i)):
 			}
 		}
 	}
@@ -371,7 +375,7 @@ func (c *Client) reconnect(ctx context.Context, reason error, backoff time.Durat
 			select {
 			case <-ctx.Done():
 				return attempted, ctx.Err()
-			case <-time.After(mcpruntime.BackoffAt(backoff, i)):
+			case <-time.After(mcpretry.BackoffAt(backoff, i)):
 			}
 		}
 	}
@@ -412,7 +416,7 @@ func oteltraceAttrs(tool string) []attribute.KeyValue {
 
 func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 	if cfg.Profile == "" {
-		cfg.Profile = mcpruntime.ProfileDefault
+		cfg.Profile = mcpprofile.Default
 	}
 	if p.CallTimeout > 0 {
 		cfg.CallTimeout = p.CallTimeout
@@ -426,9 +430,14 @@ func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 	return cfg
 }
 
-func (c *Client) RecentCallSummary(n int) []mcpruntime.CallRecord {
+func (c *Client) RecentCallSummary(n int) []mcpdiag.CallRecord {
 	if c.cfg.RuntimeManager != nil {
-		return c.cfg.RuntimeManager.RecentCalls(n)
+		items := c.cfg.RuntimeManager.RecentCalls(n)
+		out := make([]mcpdiag.CallRecord, 0, len(items))
+		for _, rec := range items {
+			out = append(out, toMCPCallRecord(rec))
+		}
+		return out
 	}
 	return c.diag.Recent(n)
 }
@@ -471,9 +480,9 @@ func (c *Client) runtimeConfig() (Config, error) {
 	return out, nil
 }
 
-func resolveStartupPolicy(cfg Config, profile mcpruntime.ProfileName) (types.MCPRuntimePolicy, error) {
+func resolveStartupPolicy(cfg Config, profile mcpprofile.Name) (types.MCPRuntimePolicy, error) {
 	if cfg.RuntimeManager == nil {
-		return mcpruntime.ResolvePolicy(profile, cfg.RuntimePolicy), nil
+		return mcpprofile.Resolve(profile, cfg.RuntimePolicy), nil
 	}
 	return cfg.RuntimeManager.ResolvePolicy(profile, cfg.RuntimePolicy)
 }
@@ -481,18 +490,47 @@ func resolveStartupPolicy(cfg Config, profile mcpruntime.ProfileName) (types.MCP
 func resolveRuntimePolicy(cfg Config, explicit Config) (types.MCPRuntimePolicy, error) {
 	profile := cfg.Profile
 	if profile == "" {
-		profile = mcpruntime.ProfileDefault
+		profile = mcpprofile.Default
 	}
 	if cfg.RuntimeManager == nil {
-		return mcpruntime.ResolvePolicy(profile, explicit.RuntimePolicy), nil
+		return mcpprofile.Resolve(profile, explicit.RuntimePolicy), nil
 	}
 	return cfg.RuntimeManager.ResolvePolicy(profile, explicit.RuntimePolicy)
 }
 
-func (c *Client) recordCall(rec mcpruntime.CallRecord) {
+func (c *Client) recordCall(rec mcpdiag.CallRecord) {
 	c.diag.Add(rec)
 	if c.cfg.RuntimeManager != nil {
-		c.cfg.RuntimeManager.RecordCall(rec)
+		c.cfg.RuntimeManager.RecordCall(runtimediag.CallRecord{
+			Time:           rec.Time,
+			Component:      "mcp",
+			Transport:      rec.Transport,
+			Profile:        rec.Profile,
+			RunID:          c.cfg.RunID,
+			CallID:         rec.CallID,
+			Name:           rec.Tool,
+			Action:         rec.Action,
+			LatencyMs:      rec.LatencyMs,
+			RetryCount:     rec.RetryCount,
+			ReconnectCount: rec.ReconnectCount,
+			ErrorClass:     rec.ErrorClass,
+		})
+	}
+}
+
+func toMCPCallRecord(rec runtimediag.CallRecord) mcpdiag.CallRecord {
+	return mcpdiag.CallRecord{
+		Time:           rec.Time,
+		Transport:      rec.Transport,
+		Profile:        rec.Profile,
+		RunID:          rec.RunID,
+		CallID:         rec.CallID,
+		Tool:           rec.Name,
+		Action:         rec.Action,
+		LatencyMs:      rec.LatencyMs,
+		RetryCount:     rec.RetryCount,
+		ReconnectCount: rec.ReconnectCount,
+		ErrorClass:     rec.ErrorClass,
 	}
 }
 

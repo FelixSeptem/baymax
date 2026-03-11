@@ -40,7 +40,7 @@
 - backoff 计算
 - 错误分类与事件字段
 - 最近 N 次 MCP 调用诊断摘要字段
-- profile 参数读取来源统一为运行时配置快照（`mcp/runtime.Manager`）
+- profile 参数读取来源统一为运行时配置快照（`runtime/config.Manager`）
 
 ## 调优建议
 

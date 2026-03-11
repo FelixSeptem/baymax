@@ -10,7 +10,7 @@
 
 固定优先级：`env > file > default`
 
-- `default`：由 `mcp/runtime.DefaultConfig()` 提供。
+- `default`：由 `runtime/config.DefaultConfig()` 提供。
 - `file`：YAML 文件（通过 `viper` 加载）。
 - `env`：环境变量覆盖（前缀 + key 映射）。
 
@@ -47,6 +47,7 @@ diagnostics:
   max_call_records: 200
   max_run_records: 200
   max_reload_errors: 100
+  max_skill_records: 200
 
 reload:
   enabled: true
@@ -56,7 +57,7 @@ reload:
 ## 使用示例（最小）
 
 ```go
-mgr, err := runtime.NewManager(runtime.ManagerOptions{
+mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
     FilePath:        "runtime.yaml",
     EnvPrefix:       "BAYMAX",
     EnableHotReload: true,
@@ -69,7 +70,7 @@ defer mgr.Close()
 
 client := httpmcp.NewClient(httpmcp.Config{
     RuntimeManager: mgr,
-    Profile:        runtime.ProfileDefault,
+    Profile:        mcpprofile.Default,
     Connect:        connector,
 })
 ```
@@ -79,6 +80,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentCalls(n)`：最近 N 次 MCP 调用摘要。
 - `Manager.RecentRuns(n)`：最近 N 次 run 摘要。
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
+- `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 
 当前不提供 CLI 诊断命令。
@@ -93,3 +95,19 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
 - 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
+
+## 迁移映射（功能命名）
+
+- 全局运行时配置：`runtime/config`
+- 全局运行时诊断：`runtime/diagnostics`
+- MCP profile 语义：`mcp/profile`
+- MCP retry 语义：`mcp/retry`
+- MCP 调用摘要模型：`mcp/diag`
+
+### 迁移示例
+
+推荐写法：
+
+```go
+mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: "runtime.yaml"})
+```

@@ -3,11 +3,15 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -386,5 +390,48 @@ func TestRunEventCorrelationFieldsComplete(t *testing.T) {
 		if c.evs[i].Type != order[i] {
 			t.Fatalf("event order mismatch at %d: got %q want %q", i, c.evs[i].Type, order[i])
 		}
+	}
+}
+
+func TestRunRecordsDiagnosticsWithRuntimeManager(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	r := New(model, WithRuntimeManager(mgr))
+	_, err = r.Run(context.Background(), types.RunRequest{Input: "hi"}, nil)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	runs := mgr.RecentRuns(1)
+	if len(runs) != 1 {
+		t.Fatalf("run diagnostics len = %d, want 1", len(runs))
+	}
+	if runs[0].RunID == "" || runs[0].ErrorClass != "" {
+		t.Fatalf("unexpected run diagnostics: %#v", runs[0])
 	}
 }

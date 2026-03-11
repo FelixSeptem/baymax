@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
-	mcpruntime "github.com/FelixSeptem/baymax/mcp/runtime"
+	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 type fakeTransport struct {
@@ -174,7 +176,7 @@ func TestEmitRequestedCompletedFailedEvents(t *testing.T) {
 }
 
 func TestStdioProfileDefaultsApplied(t *testing.T) {
-	client := NewClient(&fakeTransport{}, Config{Profile: mcpruntime.ProfileHighThroughput})
+	client := NewClient(&fakeTransport{}, Config{Profile: mcpprofile.HighThroughput})
 	if client.cfg.ReadPoolSize < 8 {
 		t.Fatalf("read pool = %d, want >= 8 for high-throughput", client.cfg.ReadPoolSize)
 	}
@@ -188,7 +190,7 @@ func TestStdioNonRetryableFailFast(t *testing.T) {
 	ft := &fakeTransport{
 		callFn: func(ctx context.Context, name string, args map[string]any) (Response, error) {
 			atomic.AddInt32(&attempts, 1)
-			return Response{}, mcpruntime.NonRetryable(errors.New("hard fail"))
+			return Response{}, mcpretry.NonRetryable(errors.New("hard fail"))
 		},
 	}
 	client := NewClient(ft, Config{Retry: 3, Backoff: time.Millisecond})
@@ -235,7 +237,7 @@ mcp:
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := mcpruntime.NewManager(mcpruntime.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

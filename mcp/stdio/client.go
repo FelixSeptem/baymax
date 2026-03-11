@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
-	mcpruntime "github.com/FelixSeptem/baymax/mcp/runtime"
+	mcpdiag "github.com/FelixSeptem/baymax/mcp/diag"
+	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -37,9 +41,9 @@ type Config struct {
 	Backoff        time.Duration
 	QueueSize      int
 	Backpressure   types.BackpressureMode
-	Profile        mcpruntime.ProfileName
+	Profile        mcpprofile.Name
 	RuntimePolicy  *types.MCPRuntimePolicy
-	RuntimeManager *mcpruntime.Manager
+	RuntimeManager *runtimeconfig.Manager
 	EventHandler   types.EventHandler
 	RunID          string
 }
@@ -55,14 +59,14 @@ type Client struct {
 
 	readPool  chan struct{}
 	writePool chan struct{}
-	diag      *mcpruntime.Diagnostics
+	diag      *mcpdiag.Store
 }
 
 func NewClient(transport Transport, cfg Config) *Client {
 	userCfg := cfg
 	profile := cfg.Profile
 	if profile == "" {
-		profile = mcpruntime.ProfileDefault
+		profile = mcpprofile.Default
 	}
 	policy, policyErr := resolveStartupPolicy(cfg, profile)
 	cfg = applyRuntimePolicy(cfg, policy)
@@ -78,7 +82,7 @@ func NewClient(transport Transport, cfg Config) *Client {
 		initErr:   policyErr,
 		readPool:  make(chan struct{}, cfg.ReadPoolSize),
 		writePool: make(chan struct{}, cfg.WritePoolSize),
-		diag:      mcpruntime.NewDiagnostics(200),
+		diag:      mcpdiag.NewStore(200),
 	}
 }
 
@@ -157,7 +161,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 				"backpressure":  runCfg.Backpressure,
 			},
 		})
-		c.recordCall(mcpruntime.CallRecord{
+		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "stdio",
 			Profile:        string(c.cfg.Profile),
@@ -191,7 +195,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 					"tool": name, "retry_count": i, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
 				},
 			})
-			c.recordCall(mcpruntime.CallRecord{
+			c.recordCall(mcpdiag.CallRecord{
 				Time:           time.Now(),
 				Transport:      "stdio",
 				Profile:        string(c.cfg.Profile),
@@ -209,7 +213,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 			c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
 			return result, err
 		}
-		if !mcpruntime.ShouldRetry(err) {
+		if !mcpretry.ShouldRetry(err) {
 			break
 		}
 		if i < attempts-1 {
@@ -218,13 +222,13 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 				result := failedTimeout(ctx.Err())
 				c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
 				return result, ctx.Err()
-			case <-time.After(mcpruntime.BackoffAt(runCfg.Backoff, i)):
+			case <-time.After(mcpretry.BackoffAt(runCfg.Backoff, i)):
 			}
 		}
 	}
 	result := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: lastErr.Error(), Retryable: false}}
 	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-	c.recordCall(mcpruntime.CallRecord{
+	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
 		Transport:      "stdio",
 		Profile:        string(c.cfg.Profile),
@@ -339,7 +343,7 @@ func (c *Client) Close() error {
 
 func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 	if cfg.Profile == "" {
-		cfg.Profile = mcpruntime.ProfileDefault
+		cfg.Profile = mcpprofile.Default
 	}
 	if p.ReadPoolSize > 0 {
 		cfg.ReadPoolSize = p.ReadPoolSize
@@ -365,9 +369,14 @@ func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 	return cfg
 }
 
-func (c *Client) RecentCallSummary(n int) []mcpruntime.CallRecord {
+func (c *Client) RecentCallSummary(n int) []mcpdiag.CallRecord {
 	if c.cfg.RuntimeManager != nil {
-		return c.cfg.RuntimeManager.RecentCalls(n)
+		items := c.cfg.RuntimeManager.RecentCalls(n)
+		out := make([]mcpdiag.CallRecord, 0, len(items))
+		for _, rec := range items {
+			out = append(out, toMCPCallRecord(rec))
+		}
+		return out
 	}
 	return c.diag.Recent(n)
 }
@@ -407,9 +416,9 @@ func (c *Client) runtimeConfig() (Config, error) {
 	return out, nil
 }
 
-func resolveStartupPolicy(cfg Config, profile mcpruntime.ProfileName) (types.MCPRuntimePolicy, error) {
+func resolveStartupPolicy(cfg Config, profile mcpprofile.Name) (types.MCPRuntimePolicy, error) {
 	if cfg.RuntimeManager == nil {
-		return mcpruntime.ResolvePolicy(profile, cfg.RuntimePolicy), nil
+		return mcpprofile.Resolve(profile, cfg.RuntimePolicy), nil
 	}
 	return cfg.RuntimeManager.ResolvePolicy(profile, cfg.RuntimePolicy)
 }
@@ -417,18 +426,47 @@ func resolveStartupPolicy(cfg Config, profile mcpruntime.ProfileName) (types.MCP
 func resolveRuntimePolicy(cfg Config, explicit Config) (types.MCPRuntimePolicy, error) {
 	profile := cfg.Profile
 	if profile == "" {
-		profile = mcpruntime.ProfileDefault
+		profile = mcpprofile.Default
 	}
 	if cfg.RuntimeManager == nil {
-		return mcpruntime.ResolvePolicy(profile, explicit.RuntimePolicy), nil
+		return mcpprofile.Resolve(profile, explicit.RuntimePolicy), nil
 	}
 	return cfg.RuntimeManager.ResolvePolicy(profile, explicit.RuntimePolicy)
 }
 
-func (c *Client) recordCall(rec mcpruntime.CallRecord) {
+func (c *Client) recordCall(rec mcpdiag.CallRecord) {
 	c.diag.Add(rec)
 	if c.cfg.RuntimeManager != nil {
-		c.cfg.RuntimeManager.RecordCall(rec)
+		c.cfg.RuntimeManager.RecordCall(runtimediag.CallRecord{
+			Time:           rec.Time,
+			Component:      "mcp",
+			Transport:      rec.Transport,
+			Profile:        rec.Profile,
+			RunID:          c.cfg.RunID,
+			CallID:         rec.CallID,
+			Name:           rec.Tool,
+			Action:         rec.Action,
+			LatencyMs:      rec.LatencyMs,
+			RetryCount:     rec.RetryCount,
+			ReconnectCount: rec.ReconnectCount,
+			ErrorClass:     rec.ErrorClass,
+		})
+	}
+}
+
+func toMCPCallRecord(rec runtimediag.CallRecord) mcpdiag.CallRecord {
+	return mcpdiag.CallRecord{
+		Time:           rec.Time,
+		Transport:      rec.Transport,
+		Profile:        rec.Profile,
+		RunID:          rec.RunID,
+		CallID:         rec.CallID,
+		Tool:           rec.Name,
+		Action:         rec.Action,
+		LatencyMs:      rec.LatencyMs,
+		RetryCount:     rec.RetryCount,
+		ReconnectCount: rec.ReconnectCount,
+		ErrorClass:     rec.ErrorClass,
 	}
 }
 

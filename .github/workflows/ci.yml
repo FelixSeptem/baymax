@@ -25,6 +25,12 @@ jobs:
       - name: Go test (race)
         run: go test -race ./...
 
+      - name: Runtime Boundary Check
+        run: bash scripts/check-runtime-boundaries.sh
+
+      - name: Docs Consistency Check
+        run: pwsh -File scripts/check-docs-consistency.ps1
+
       - name: Benchmark smoke
         run: go test ./integration -run ^$ -bench Benchmark -benchtime=50ms
 

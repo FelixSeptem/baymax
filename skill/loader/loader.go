@@ -14,6 +14,8 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
 )
 
@@ -21,11 +23,20 @@ var skillPathPattern = regexp.MustCompile(`\(file:\s*([^\)]+)\)`)
 
 type Loader struct {
 	eventHandler types.EventHandler
+	runtimeMgr   *runtimeconfig.Manager
 	now          func() time.Time
 }
 
 func New(eventHandler types.EventHandler) *Loader {
 	return &Loader{eventHandler: eventHandler, now: time.Now}
+}
+
+func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.Manager) *Loader {
+	return &Loader{eventHandler: eventHandler, runtimeMgr: mgr, now: time.Now}
+}
+
+func (l *Loader) SetRuntimeManager(mgr *runtimeconfig.Manager) {
+	l.runtimeMgr = mgr
 }
 
 func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, error) {
@@ -41,6 +52,7 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 	}
 
 	specs := make([]types.SkillSpec, 0)
+	discoverStart := l.now()
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -61,6 +73,7 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 		}
 		if _, err := os.Stat(skillFile); err != nil {
 			l.emit(ctx, "", "skill.warning", map[string]any{"name": name, "reason": "missing skill file", "path": skillFile})
+			l.recordSkill(ctx, "", name, "discover", "failed", discoverStart, types.ErrSkill, map[string]any{"reason": "missing skill file", "path": skillFile})
 			continue
 		}
 		desc, triggers := parseSkillMeta(skillFile)
@@ -78,6 +91,7 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 		return nil, err
 	}
 	sort.SliceStable(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
+	l.recordSkill(ctx, "", "", "discover", "success", discoverStart, "", map[string]any{"count": len(specs)})
 	return specs, nil
 }
 
@@ -106,17 +120,21 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 	workflowHints := []string{"Follow built-in safety constraints first."}
 
 	for _, spec := range selected {
+		stepStart := l.now()
 		content, err := os.ReadFile(spec.Path)
 		if err != nil {
 			l.emit(ctx, runID, "skill.warning", map[string]any{"name": spec.Name, "reason": "compile read failed", "path": spec.Path})
+			l.recordSkill(ctx, runID, spec.Name, "compile", "failed", stepStart, types.ErrSkill, map[string]any{"reason": "compile read failed", "path": spec.Path})
 			continue
 		}
 		fragments = append(fragments, string(content))
 		workflowHints = append(workflowHints, spec.Description)
-		for _, t := range parseEnabledTools(string(content)) {
+		enabled := parseEnabledTools(string(content))
+		for _, t := range enabled {
 			enabledTools = append(enabledTools, t)
 		}
 		l.emit(ctx, runID, "skill.loaded", map[string]any{"name": spec.Name, "path": spec.Path})
+		l.recordSkill(ctx, runID, spec.Name, "compile", "success", stepStart, "", map[string]any{"enabled_tools": len(enabled)})
 	}
 
 	workflowHints = resolveDirectiveConflicts(workflowHints)
@@ -277,6 +295,26 @@ func (l *Loader) emit(ctx context.Context, runID string, typ string, payload map
 		SpanID:  obsTrace.SpanIDFromContext(ctx),
 		Time:    l.now(),
 		Payload: payload,
+	})
+}
+
+func (l *Loader) recordSkill(ctx context.Context, runID string, skillName string, action string, status string, start time.Time, errClass types.ErrorClass, payload map[string]any) {
+	if l.runtimeMgr == nil {
+		return
+	}
+	errorClass := ""
+	if errClass != "" {
+		errorClass = string(errClass)
+	}
+	l.runtimeMgr.RecordSkill(runtimediag.SkillRecord{
+		Time:       l.now(),
+		RunID:      runID,
+		SkillName:  skillName,
+		Action:     action,
+		Status:     status,
+		LatencyMs:  l.now().Sub(start).Milliseconds(),
+		ErrorClass: errorClass,
+		Payload:    payload,
 	})
 }
 

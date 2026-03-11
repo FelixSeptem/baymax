@@ -10,7 +10,7 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	httpmcp "github.com/FelixSeptem/baymax/mcp/http"
-	mcpruntime "github.com/FelixSeptem/baymax/mcp/runtime"
+	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -126,7 +126,7 @@ func BenchmarkMCPProfileDefaultUnderFailure(b *testing.B) {
 	}
 	client := httpmcp.NewClient(httpmcp.Config{
 		Connect: connector,
-		Profile: mcpruntime.ProfileDefault,
+		Profile: mcpprofile.Default,
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -145,7 +145,7 @@ func BenchmarkMCPProfileHighReliabilityUnderFailure(b *testing.B) {
 	}
 	client := httpmcp.NewClient(httpmcp.Config{
 		Connect: connector,
-		Profile: mcpruntime.ProfileHighReliab,
+		Profile: mcpprofile.HighReliab,
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 type collector struct {
@@ -111,5 +113,56 @@ func TestConflictResolutionPrecedence(t *testing.T) {
 	}
 	if out[0] != "Follow built-in safety constraints first." {
 		t.Fatalf("built-in hint should be kept first: %#v", out)
+	}
+}
+
+func TestSkillDiagnosticsWithRuntimeManager(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+diagnostics:
+  max_skill_records: 10
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	skillPath := filepath.Join(dir, "one", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: db task\n- tool: local.sql"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{{Name: "db-skill", Path: skillPath, Description: "database migration"}}
+
+	l := NewWithRuntimeManager(nil, mgr)
+	_, err = l.Compile(context.Background(), specs, types.SkillInput{UserInput: "db-skill", Context: map[string]string{"run_id": "run-1"}})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+
+	items := mgr.RecentSkills(1)
+	if len(items) != 1 {
+		t.Fatalf("skill diagnostics len = %d, want 1", len(items))
+	}
+	if items[0].SkillName != "db-skill" || items[0].Status != "success" {
+		t.Fatalf("unexpected skill diag: %#v", items[0])
 	}
 }

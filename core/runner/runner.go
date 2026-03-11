@@ -8,6 +8,8 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -28,6 +30,7 @@ type Engine struct {
 	model      types.ModelClient
 	dispatcher *local.Dispatcher
 	tracer     *obsTrace.Manager
+	runtimeMgr *runtimeconfig.Manager
 	now        func() time.Time
 	newRunID   func() string
 }
@@ -50,6 +53,9 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 func WithLocalRegistry(registry *local.Registry) Option {
 	return func(e *Engine) {
 		e.dispatcher = local.NewDispatcher(registry)
+		if e.runtimeMgr != nil {
+			e.dispatcher.SetRuntimeManager(e.runtimeMgr)
+		}
 	}
 }
 
@@ -61,8 +67,18 @@ func WithTraceManager(tracer *obsTrace.Manager) Option {
 	}
 }
 
+func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
+	return func(e *Engine) {
+		e.runtimeMgr = mgr
+		if e.dispatcher != nil {
+			e.dispatcher.SetRuntimeManager(mgr)
+		}
+	}
+}
+
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
+	policy = e.applyRuntimeDefaults(policy, req.Policy)
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
@@ -211,6 +227,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				LatencyMs:   e.now().Sub(start).Milliseconds(),
 				Warnings:    warnings,
 			}
+			e.recordRun(result, "")
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
 			return result, nil
 		case StateAbort:
@@ -222,6 +239,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Warnings:   warnings,
 				Error:      terminal,
 			}
+			errClass := ""
+			if terminal != nil {
+				errClass = string(terminal.Class)
+			}
+			e.recordRun(result, errClass)
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
 			return result, runErr
 		}
@@ -230,6 +252,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 
 func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
+	policy = e.applyRuntimeDefaults(policy, req.Policy)
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
@@ -283,6 +306,11 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			LatencyMs:  e.now().Sub(start).Milliseconds(),
 			Error:      terminal,
 		}
+		errClass := ""
+		if terminal != nil {
+			errClass = string(terminal.Class)
+		}
+		e.recordRun(result, errClass)
 		e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
 		return result, err
 	}
@@ -295,6 +323,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		TokenUsage:  usage,
 		LatencyMs:   e.now().Sub(start).Milliseconds(),
 	}
+	e.recordRun(result, "")
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.finished", RunID: runID, Iteration: iteration, Time: e.now()})
 	return result, nil
 }
@@ -340,6 +369,37 @@ func (e *Engine) emit(ctx context.Context, h types.EventHandler, ev types.Event)
 	ev.TraceID = obsTrace.TraceIDFromContext(ctx)
 	ev.SpanID = obsTrace.SpanIDFromContext(ctx)
 	h.OnEvent(ctx, ev)
+}
+
+func (e *Engine) recordRun(result types.RunResult, errClass string) {
+	if e.runtimeMgr == nil {
+		return
+	}
+	e.runtimeMgr.RecordRun(runtimediag.RunRecord{
+		Time:       e.now(),
+		RunID:      result.RunID,
+		Iterations: result.Iterations,
+		ToolCalls:  len(result.ToolCalls),
+		LatencyMs:  result.LatencyMs,
+		ErrorClass: errClass,
+	})
+}
+
+func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.LoopPolicy) types.LoopPolicy {
+	if e.runtimeMgr == nil || input != nil {
+		return policy
+	}
+	cfg := e.runtimeMgr.EffectiveConfig()
+	if cfg.Concurrency.LocalMaxWorkers > 0 {
+		policy.LocalDispatch.MaxWorkers = cfg.Concurrency.LocalMaxWorkers
+	}
+	if cfg.Concurrency.LocalQueueSize > 0 {
+		policy.LocalDispatch.QueueSize = cfg.Concurrency.LocalQueueSize
+	}
+	if cfg.Concurrency.Backpressure != "" {
+		policy.LocalDispatch.Backpressure = cfg.Concurrency.Backpressure
+	}
+	return policy
 }
 
 var _ types.Runner = (*Engine)(nil)

@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
-	mcpruntime "github.com/FelixSeptem/baymax/mcp/runtime"
+	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -162,7 +164,7 @@ func TestHTTPEventOrderingOnFailure(t *testing.T) {
 }
 
 func TestHTTPProfileDefaultsApplied(t *testing.T) {
-	c := NewClient(Config{Profile: mcpruntime.ProfileHighReliab, Connect: func(ctx context.Context) (Session, error) {
+	c := NewClient(Config{Profile: mcpprofile.HighReliab, Connect: func(ctx context.Context) (Session, error) {
 		return &fakeSession{}, nil
 	}})
 	if c.cfg.Retry != 3 {
@@ -178,7 +180,7 @@ func TestHTTPNonRetryableFailFast(t *testing.T) {
 	connector := func(ctx context.Context) (Session, error) {
 		return &fakeSession{callFn: func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 			calls++
-			return nil, mcpruntime.NonRetryable(errors.New("non-retryable"))
+			return nil, mcpretry.NonRetryable(errors.New("non-retryable"))
 		}}, nil
 	}
 	c := NewClient(Config{Connect: connector, Retry: 3, Backoff: time.Millisecond})
@@ -195,7 +197,7 @@ func TestHTTPRecentCallSummary(t *testing.T) {
 	connector := func(ctx context.Context) (Session, error) {
 		return &fakeSession{}, nil
 	}
-	c := NewClient(Config{Connect: connector, Profile: mcpruntime.ProfileDefault})
+	c := NewClient(Config{Connect: connector, Profile: mcpprofile.Default})
 	_, err := c.CallTool(context.Background(), "tool", nil)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
@@ -229,7 +231,7 @@ diagnostics:
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := mcpruntime.NewManager(mcpruntime.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

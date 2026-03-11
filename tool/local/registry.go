@@ -7,8 +7,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -96,7 +99,8 @@ type DispatchConfig struct {
 }
 
 type Dispatcher struct {
-	registry *Registry
+	registry   *Registry
+	runtimeMgr *runtimeconfig.Manager
 }
 
 func NewDispatcher(registry *Registry) *Dispatcher {
@@ -106,7 +110,18 @@ func NewDispatcher(registry *Registry) *Dispatcher {
 	return &Dispatcher{registry: registry}
 }
 
+func NewDispatcherWithRuntimeManager(registry *Registry, mgr *runtimeconfig.Manager) *Dispatcher {
+	d := NewDispatcher(registry)
+	d.runtimeMgr = mgr
+	return d
+}
+
+func (d *Dispatcher) SetRuntimeManager(mgr *runtimeconfig.Manager) {
+	d.runtimeMgr = mgr
+}
+
 func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg DispatchConfig) ([]types.ToolCallOutcome, error) {
+	cfg = d.applyRuntimeDefaults(cfg)
 	if cfg.MaxCalls <= 0 {
 		cfg.MaxCalls = len(calls)
 	}
@@ -154,6 +169,23 @@ func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg D
 		}
 	}
 	return outcomes, nil
+}
+
+func (d *Dispatcher) applyRuntimeDefaults(cfg DispatchConfig) DispatchConfig {
+	if d.runtimeMgr == nil {
+		return cfg
+	}
+	rc := d.runtimeMgr.EffectiveConfig().Concurrency
+	if cfg.Concurrency <= 0 && rc.LocalMaxWorkers > 0 {
+		cfg.Concurrency = rc.LocalMaxWorkers
+	}
+	if cfg.QueueSize <= 0 && rc.LocalQueueSize > 0 {
+		cfg.QueueSize = rc.LocalQueueSize
+	}
+	if cfg.Backpressure == "" && rc.Backpressure != "" {
+		cfg.Backpressure = rc.Backpressure
+	}
+	return cfg
 }
 
 func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCall, outcomes []types.ToolCallOutcome, idx []int, cfg DispatchConfig) error {
@@ -233,13 +265,16 @@ func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCal
 func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcomes []types.ToolCallOutcome, i int, retry int) error {
 	ctx, span := otel.Tracer("baymax/tool/local").Start(ctx, "tool.invoke", oteltrace.WithAttributes(oteltraceAttrs(call.Name)...))
 	defer span.End()
+	start := time.Now()
 	tool, ok := d.registry.Get(call.Name)
 	if !ok {
 		outcomes[i] = failedOutcome(call, types.ErrTool, fmt.Sprintf("tool %q not found", call.Name), false, map[string]any{"name": call.Name})
+		d.recordToolDiag(call, start, outcomes[i].Result.Error)
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
 	if err := ValidateArgs(tool.JSONSchema(), call.Args); err != nil {
 		outcomes[i] = failedOutcome(call, types.ErrTool, "input validation failed", false, map[string]any{"validation": err.Error()})
+		d.recordToolDiag(call, start, outcomes[i].Result.Error)
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
 	attempts := retry + 1
@@ -254,6 +289,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 			if outcomes[i].Result.Error != nil {
 				outcomes[i].Result.Error.Details = mergeDetails(outcomes[i].Result.Error.Details, map[string]any{"retry_count": attempt})
 			}
+			d.recordToolDiag(call, start, outcomes[i].Result.Error)
 			return nil
 		}
 		lastErr = err
@@ -262,6 +298,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		}
 	}
 	outcomes[i] = failedOutcome(call, types.ErrTool, lastErr.Error(), false, map[string]any{"retry_count": attempts - 1})
+	d.recordToolDiag(call, start, outcomes[i].Result.Error)
 	return lastErr
 }
 
@@ -300,4 +337,24 @@ func failedOutcome(call types.ToolCall, class types.ErrorClass, message string, 
 			Error: &types.ClassifiedError{Class: class, Message: message, Retryable: retryable, Details: details},
 		},
 	}
+}
+
+func (d *Dispatcher) recordToolDiag(call types.ToolCall, start time.Time, classifiedErr *types.ClassifiedError) {
+	if d.runtimeMgr == nil {
+		return
+	}
+	errorClass := ""
+	if classifiedErr != nil {
+		errorClass = string(classifiedErr.Class)
+	}
+	d.runtimeMgr.RecordCall(runtimediag.CallRecord{
+		Time:       time.Now(),
+		Component:  "tool",
+		Transport:  "local",
+		CallID:     call.CallID,
+		Name:       call.Name,
+		Action:     "invoke",
+		LatencyMs:  time.Since(start).Milliseconds(),
+		ErrorClass: errorClass,
+	})
 }

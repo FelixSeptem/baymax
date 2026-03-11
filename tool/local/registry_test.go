@@ -3,11 +3,15 @@ package local
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 type fakeTool struct {
@@ -123,5 +127,47 @@ func TestDispatcherFailFastBehavior(t *testing.T) {
 	_, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{{CallID: "c1", Name: "local.boom"}}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
 	if err == nil {
 		t.Fatal("expected fail-fast error, got nil")
+	}
+}
+
+func TestDispatcherRecordsDiagnosticsWithRuntimeManager(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search", invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "ok"}, nil
+	}})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+	_, err = dispatcher.Dispatch(context.Background(), []types.ToolCall{{CallID: "c1", Name: "local.search"}}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	items := mgr.RecentCalls(1)
+	if len(items) != 1 {
+		t.Fatalf("diagnostic calls len = %d, want 1", len(items))
+	}
+	if items[0].Component != "tool" || items[0].Name != "local.search" {
+		t.Fatalf("unexpected diagnostics call: %#v", items[0])
 	}
 }

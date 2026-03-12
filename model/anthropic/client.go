@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/tidwall/gjson"
 )
 
@@ -19,13 +21,34 @@ type Config struct {
 	Model      string
 	MaxTokens  int64
 	GenerateFn func(ctx context.Context, input string) (types.ModelResponse, error)
+	StreamFn   func(ctx context.Context, input string) Stream
 }
 
 type Client struct {
-	model    string
-	maxToken int64
-	sdk      anthropic.Client
-	generate func(ctx context.Context, input string) (types.ModelResponse, error)
+	model     string
+	maxToken  int64
+	sdk       anthropic.Client
+	generate  func(ctx context.Context, input string) (types.ModelResponse, error)
+	newStream func(ctx context.Context, input string) Stream
+}
+
+type Stream interface {
+	Next() bool
+	Current() anthropic.MessageStreamEventUnion
+	Err() error
+	Close() error
+}
+
+type toolCallState struct {
+	id       string
+	name     string
+	inputRaw string
+	emitted  bool
+}
+
+type streamState struct {
+	toolByIndex map[int64]*toolCallState
+	toolSeq     int
 }
 
 func NewClient(cfg Config) *Client {
@@ -54,6 +77,18 @@ func NewClient(cfg Config) *Client {
 	if cfg.GenerateFn != nil {
 		client.generate = cfg.GenerateFn
 	}
+	client.newStream = func(ctx context.Context, input string) Stream {
+		return client.sdk.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(client.model),
+			MaxTokens: client.maxToken,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(input)),
+			},
+		})
+	}
+	if cfg.StreamFn != nil {
+		client.newStream = cfg.StreamFn
+	}
 	return client
 }
 
@@ -69,9 +104,148 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	_ = req
-	_ = onEvent
-	return errors.New("anthropic stream is not implemented in M1; TODO(r3-m2): add streaming alignment")
+	input := strings.TrimSpace(req.Input)
+	if input == "" && len(req.Messages) > 0 {
+		input = req.Messages[len(req.Messages)-1].Content
+	}
+	if input == "" {
+		return errors.New("model input is empty")
+	}
+	stream := c.newStream(ctx, input)
+	if stream == nil {
+		return errors.New("anthropic stream is nil")
+	}
+	defer func() { _ = stream.Close() }()
+
+	state := streamState{toolByIndex: map[int64]*toolCallState{}}
+	completed := false
+	for stream.Next() {
+		events, err := mapStreamEvent(stream.Current(), &state)
+		if err != nil {
+			classified := providererror.FromError(err)
+			if onEvent != nil {
+				_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: map[string]any{"provider": "anthropic", "error": err.Error()}})
+			}
+			return classified
+		}
+		if onEvent == nil {
+			continue
+		}
+		for _, ev := range events {
+			if ev.Type == types.ModelEventTypeResponseCompleted {
+				completed = true
+			}
+			if err := onEvent(ev); err != nil {
+				return err
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		if onEvent != nil {
+			_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: map[string]any{"provider": "anthropic", "error": err.Error()}})
+		}
+		return providererror.FromError(err)
+	}
+	if onEvent != nil && !completed {
+		if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted, Meta: map[string]any{"provider": "anthropic"}}); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+func mapStreamEvent(ev anthropic.MessageStreamEventUnion, state *streamState) ([]types.ModelEvent, error) {
+	events := make([]types.ModelEvent, 0, 2)
+	meta := map[string]any{"provider": "anthropic", "event_type": ev.Type, "index": ev.Index}
+	switch ev.Type {
+	case "content_block_delta":
+		delta := ev.Delta
+		switch delta.Type {
+		case "text_delta":
+			if strings.TrimSpace(delta.Text) != "" {
+				events = append(events, types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: delta.Text, Meta: meta})
+			}
+		case "input_json_delta":
+			call := ensureToolState(state, ev.Index)
+			call.inputRaw += delta.PartialJSON
+		}
+	case "content_block_start":
+		block := ev.ContentBlock
+		if block.Type != "tool_use" {
+			break
+		}
+		call := ensureToolState(state, ev.Index)
+		if block.ID != "" {
+			call.id = block.ID
+		}
+		if block.Name != "" {
+			call.name = block.Name
+		}
+		if block.Input != nil {
+			raw, err := json.Marshal(block.Input)
+			if err != nil {
+				return nil, fmt.Errorf("marshal anthropic tool input: %w", err)
+			}
+			call.inputRaw = string(raw)
+			if toolEvent, err := maybeEmitToolCall(call, ev.Index, state); err != nil {
+				return nil, err
+			} else if toolEvent != nil {
+				events = append(events, *toolEvent)
+			}
+		}
+	case "content_block_stop":
+		call := state.toolByIndex[ev.Index]
+		if call == nil {
+			break
+		}
+		if toolEvent, err := maybeEmitToolCall(call, ev.Index, state); err != nil {
+			return nil, err
+		} else if toolEvent != nil {
+			events = append(events, *toolEvent)
+		}
+	case "message_stop":
+		events = append(events, types.ModelEvent{Type: types.ModelEventTypeResponseCompleted, Meta: meta})
+	}
+	return events, nil
+}
+
+func ensureToolState(state *streamState, index int64) *toolCallState {
+	if call := state.toolByIndex[index]; call != nil {
+		return call
+	}
+	state.toolSeq++
+	call := &toolCallState{id: fmt.Sprintf("anthropic-tool-%d", state.toolSeq)}
+	state.toolByIndex[index] = call
+	return call
+}
+
+func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*types.ModelEvent, error) {
+	_ = index
+	_ = state
+	if call == nil || call.emitted {
+		return nil, nil
+	}
+	if call.name == "" {
+		return nil, nil
+	}
+	raw := strings.TrimSpace(call.inputRaw)
+	if raw == "" {
+		raw = "{}"
+	}
+	args := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		return nil, fmt.Errorf("invalid anthropic tool arguments for %s: %w", call.id, err)
+	}
+	call.emitted = true
+	return &types.ModelEvent{
+		Type: types.ModelEventTypeToolCall,
+		ToolCall: &types.ToolCall{
+			CallID: call.id,
+			Name:   call.name,
+			Args:   args,
+		},
+		Meta: map[string]any{"provider": "anthropic"},
+	}, nil
 }
 
 func (c *Client) generateWithSDK(ctx context.Context, input string) (types.ModelResponse, error) {
@@ -128,3 +302,5 @@ func decodeFirstText(raw []byte) string {
 }
 
 var _ types.ModelClient = (*Client)(nil)
+
+var _ Stream = (*ssestream.Stream[anthropic.MessageStreamEventUnion])(nil)

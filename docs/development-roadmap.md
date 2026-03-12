@@ -62,7 +62,8 @@
 ### 进展（2026-03-12）
 - [x] `bootstrap-multi-llm-providers-m1`：完成 `model/anthropic`、`model/gemini` 官方 SDK 最小非流式适配。
 - [x] 新增跨 provider 契约测试（OpenAI/Anthropic/Gemini）最小成功路径与基础错误分类一致性。
-- [ ] M2 待办：多 provider streaming 事件语义对齐与细粒度错误映射。
+- [x] `align-multi-provider-streaming-and-error-taxonomy-m2`：完成 Anthropic/Gemini streaming 接入、跨 provider 事件语义对齐与错误分类细化。
+- [ ] M3 待办：能力探测与 provider 级降级策略（特性缺失时自动回退）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -104,7 +105,7 @@
 - M2（R3 后半）：完成流式事件映射与工具调用语义对齐，补齐回归测试。
 - M3（R4 可选）：能力探测与 provider 级降级策略（例如特性缺失时自动回退）。
 
-说明：截至 2026-03-11，仓库已实现 `model/openai`。Anthropic/Gemini 当前属于 roadmap 规划项。
+说明：截至 2026-03-12，仓库已实现 OpenAI/Anthropic/Gemini 的非流式 + 流式基础语义对齐；M3 仍为规划项。
 
 ## Phase R4（长期）平台化能力（非 v1）
 

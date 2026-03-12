@@ -315,8 +315,12 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	modelSpan.End()
 	cancel()
 	if err != nil {
+		var classifiedErr classifiedModelError
 		terminal := classified(types.ErrModel, err.Error(), false)
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		switch {
+		case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
+			terminal = classifiedErr.ClassifiedError()
+		case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 			terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
 		}
 		result := types.RunResult{

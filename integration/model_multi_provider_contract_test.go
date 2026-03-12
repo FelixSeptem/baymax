@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/runner"
@@ -11,6 +12,8 @@ import (
 	geminimodel "github.com/FelixSeptem/baymax/model/gemini"
 	openaimodel "github.com/FelixSeptem/baymax/model/openai"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	anthropic "github.com/anthropics/anthropic-sdk-go"
+	"google.golang.org/genai"
 )
 
 func TestModelProviderContractRunSuccess(t *testing.T) {
@@ -91,6 +94,109 @@ func TestModelProviderContractErrorClassification(t *testing.T) {
 	}
 }
 
+func TestModelProviderStreamingContract(t *testing.T) {
+	cases := map[string]types.ModelClient{
+		"openai": openaimodel.NewClient(openaimodel.Config{
+			StreamFn: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "he"}); err != nil {
+					return err
+				}
+				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{
+					CallID: "call-openai", Name: "local.weather", Args: map[string]any{"city": "shanghai"},
+				}}); err != nil {
+					return err
+				}
+				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "llo"}); err != nil {
+					return err
+				}
+				return onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted})
+			},
+		}),
+		"anthropic": anthropicmodel.NewClient(anthropicmodel.Config{
+			StreamFn: func(ctx context.Context, input string) anthropicmodel.Stream {
+				return &fakeAnthropicContractStream{events: []anthropic.MessageStreamEventUnion{
+					{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "he"}},
+					{Type: "content_block_start", Index: 1, ContentBlock: anthropic.ContentBlockStartEventContentBlockUnion{Type: "tool_use", ID: "call-anthropic", Name: "local.weather"}},
+					{Type: "content_block_delta", Index: 1, Delta: anthropic.MessageStreamEventUnionDelta{Type: "input_json_delta", PartialJSON: `{"city":"shanghai"}`}},
+					{Type: "content_block_stop", Index: 1},
+					{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "llo"}},
+					{Type: "message_stop"},
+				}}
+			},
+		}),
+		"gemini": mustGeminiClient(t, geminimodel.Config{
+			StreamFn: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
+				return seqGeminiChunks([]*genai.GenerateContentResponse{
+					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "he"}}}}}},
+					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{
+						FunctionCall: &genai.FunctionCall{ID: "call-gemini", Name: "local.weather", Args: map[string]any{"city": "shanghai"}},
+					}}}}}},
+					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "llo"}}}}}},
+				}, nil)
+			},
+		}),
+	}
+
+	for name, model := range cases {
+		t.Run(name, func(t *testing.T) {
+			collector := &eventCollector{}
+			eng := runner.New(model)
+			res, err := eng.Stream(context.Background(), types.RunRequest{Input: "hello"}, collector)
+			if err != nil {
+				t.Fatalf("Stream error: %v", err)
+			}
+			if res.FinalAnswer != "hello" {
+				t.Fatalf("final answer=%q, want hello", res.FinalAnswer)
+			}
+			toolEvents := 0
+			for _, ev := range collector.events {
+				if ev.Type != "model.delta" {
+					continue
+				}
+				if eventType, _ := ev.Payload["event_type"].(string); eventType == types.ModelEventTypeToolCall {
+					toolEvents++
+				}
+			}
+			if toolEvents != 1 {
+				t.Fatalf("tool events=%d, want 1", toolEvents)
+			}
+		})
+	}
+}
+
+func TestModelProviderStreamingFailFastClassification(t *testing.T) {
+	cases := map[string]types.ModelClient{
+		"openai-timeout": openaimodel.NewClient(openaimodel.Config{
+			StreamFn: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+				return providererror.FromError(errors.New("request timeout"))
+			},
+		}),
+		"anthropic-timeout": anthropicmodel.NewClient(anthropicmodel.Config{
+			StreamFn: func(ctx context.Context, input string) anthropicmodel.Stream {
+				return &fakeAnthropicContractStream{err: errors.New("request timeout")}
+			},
+		}),
+		"gemini-timeout": mustGeminiClient(t, geminimodel.Config{
+			StreamFn: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
+				return seqGeminiChunks(nil, errors.New("request timeout"))
+			},
+		}),
+	}
+
+	for name, model := range cases {
+		t.Run(name, func(t *testing.T) {
+			eng := runner.New(model)
+			res, err := eng.Stream(context.Background(), types.RunRequest{Input: "hello"}, nil)
+			if err == nil {
+				t.Fatal("expected stream error")
+			}
+			if res.Error == nil || res.Error.Class != types.ErrPolicyTimeout {
+				t.Fatalf("error=%+v, want %q", res.Error, types.ErrPolicyTimeout)
+			}
+		})
+	}
+}
+
 func mustGeminiClient(t *testing.T, cfg geminimodel.Config) types.ModelClient {
 	t.Helper()
 	c, err := geminimodel.NewClient(context.Background(), cfg)
@@ -98,4 +204,38 @@ func mustGeminiClient(t *testing.T, cfg geminimodel.Config) types.ModelClient {
 		t.Fatalf("new gemini client: %v", err)
 	}
 	return c
+}
+
+type fakeAnthropicContractStream struct {
+	events []anthropic.MessageStreamEventUnion
+	err    error
+	index  int
+}
+
+func (s *fakeAnthropicContractStream) Next() bool {
+	if s.index >= len(s.events) {
+		return false
+	}
+	s.index++
+	return true
+}
+
+func (s *fakeAnthropicContractStream) Current() anthropic.MessageStreamEventUnion {
+	return s.events[s.index-1]
+}
+
+func (s *fakeAnthropicContractStream) Err() error   { return s.err }
+func (s *fakeAnthropicContractStream) Close() error { return nil }
+
+func seqGeminiChunks(chunks []*genai.GenerateContentResponse, tailErr error) iter.Seq2[*genai.GenerateContentResponse, error] {
+	return func(yield func(*genai.GenerateContentResponse, error) bool) {
+		for _, chunk := range chunks {
+			if !yield(chunk, nil) {
+				return
+			}
+		}
+		if tailErr != nil {
+			_ = yield(nil, tailErr)
+		}
+	}
 }

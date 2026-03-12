@@ -180,6 +180,7 @@ type ModelEvent struct {
 const (
 	ModelEventTypeFinalAnswer            = "final_answer"
 	ModelEventTypeToolCall               = "tool_call"
+	ModelEventTypeResponseError          = "response.error"
 	ModelEventTypeOutputTextDelta        = "response.output_text.delta"
 	ModelEventTypeOutputTextDone         = "response.output_text.done"
 	ModelEventTypeFunctionArgsDelta      = "response.function_call_arguments.delta"

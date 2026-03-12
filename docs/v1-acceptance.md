@@ -10,6 +10,7 @@
 - Streaming path preserves causal event ordering and does not drop model deltas in integration tests.
 - OpenAI streaming path uses official SDK native events with fail-fast termination and complete-tool-call-only emission.
 - Model layer supports minimal multi-provider non-streaming adapters (OpenAI/Anthropic/Gemini) through the same runner contract.
+- Model streaming path supports OpenAI/Anthropic/Gemini with aligned external event semantics and fail-fast behavior.
 - Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
@@ -25,5 +26,5 @@
 - `mcp/stdio` pool sizes are fixed at initialization; hot reload does not dynamically resize existing pools in-place.
 - `golangci-lint` policy is baseline-first and may be tightened in later iterations.
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.
-- Anthropic/Gemini streaming is not part of M1 and will be aligned in R3 M2.
-- Provider-specific fine-grained error mapping is intentionally coarse in M1 and tracked as M2 TODO.
+- Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
+- Provider-specific capability detection and auto-fallback strategy are deferred to R3 M3.

@@ -2,14 +2,15 @@
 
 一个 `library-first` 的 Go Agent Loop 运行时，支持模型循环、工具调度、MCP 双传输、技能加载与可观测性。
 
-## 当前状态（2026-03-11）
+## 当前状态（2026-03-12）
 
 - OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
 - OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
 - OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已完成并归档。
 - OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 已完成并归档。
 - OpenSpec change `unify-diagnostics-contract-and-concurrency-baseline` 已完成并归档。
-- OpenSpec change `bootstrap-multi-llm-providers-m1` 进行中（Anthropic/Gemini 非流式最小适配）。
+- OpenSpec change `bootstrap-multi-llm-providers-m1` 已完成并归档。
+- OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成实现，待归档。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -36,9 +37,10 @@
 
 ### 3.5 Model Providers
 - `model/openai`：官方 SDK，支持 `Generate` + 原生 `Stream`
-- `model/anthropic`：官方 SDK，M1 支持最小 `Generate`（非流式）
-- `model/gemini`：官方 SDK，M1 支持最小 `Generate`（非流式）
-- TODO（R3 M2）：补齐 Anthropic/Gemini streaming 语义对齐与细粒度错误映射
+- `model/anthropic`：官方 SDK，支持 `Generate` + `Stream`（tool-call complete-only）
+- `model/gemini`：官方 SDK，支持 `Generate` + `Stream`（tool-call complete-only）
+- 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
+- TODO（R3 M3）：补齐 provider 能力探测与自动降级策略
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -179,6 +181,8 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - `tool/local`: 本地工具注册与调度
 - `mcp/stdio`, `mcp/http`: MCP 适配层
 - `model/openai`: OpenAI 官方 SDK 适配
+- `model/anthropic`: Anthropic 官方 SDK 适配
+- `model/gemini`: Gemini 官方 SDK 适配
 - `skill/loader`: AGENTS/SKILL 发现与编译
 - `observability/event`, `observability/trace`: 事件与 trace
 - `integration/`: E2E 与 benchmark

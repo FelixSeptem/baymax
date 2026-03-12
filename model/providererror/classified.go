@@ -86,6 +86,8 @@ func FromError(err error) error {
 	switch {
 	case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"), strings.Contains(msg, "timed out"):
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
+	case strings.Contains(msg, "500"), strings.Contains(msg, "502"), strings.Contains(msg, "503"), strings.Contains(msg, "504"), strings.Contains(msg, "internal server"), strings.Contains(msg, "service unavailable"):
+		return &Classified{Class: types.ErrModel, Reason: "server", Retryable: true, Cause: err}
 	case strings.Contains(msg, "401"), strings.Contains(msg, "403"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"), strings.Contains(msg, "authentication"):
 		return &Classified{Class: types.ErrModel, Reason: "auth", Retryable: false, Cause: err}
 	case strings.Contains(msg, "429"), strings.Contains(msg, "rate limit"), strings.Contains(msg, "quota"):

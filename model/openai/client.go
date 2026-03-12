@@ -18,12 +18,14 @@ type Config struct {
 	BaseURL    string
 	Model      string
 	GenerateFn func(context.Context, types.ModelRequest) (types.ModelResponse, error)
+	StreamFn   func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
 }
 
 type Client struct {
 	sdk         openai.Client
 	model       string
 	generateFn  func(context.Context, types.ModelRequest) (types.ModelResponse, error)
+	streamFn    func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
 	newResponse func(context.Context, responses.ResponseNewParams) (*responses.Response, error)
 	newStream   func(context.Context, responses.ResponseNewParams) responseStream
 }
@@ -65,6 +67,7 @@ func NewClient(cfg Config) *Client {
 		sdk:        sdkClient,
 		model:      model,
 		generateFn: cfg.GenerateFn,
+		streamFn:   cfg.StreamFn,
 	}
 	client.newResponse = func(ctx context.Context, params responses.ResponseNewParams) (*responses.Response, error) {
 		return client.sdk.Responses.New(ctx, params)
@@ -106,6 +109,9 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	if c.streamFn != nil {
+		return c.streamFn(ctx, req, onEvent)
+	}
 	input := strings.TrimSpace(req.Input)
 	if input == "" && len(req.Messages) > 0 {
 		input = req.Messages[len(req.Messages)-1].Content
@@ -129,6 +135,12 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	for stream.Next() {
 		mapped, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
+			if onEvent != nil {
+				_ = onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeResponseError,
+					Meta: map[string]any{"provider": "openai", "error": err.Error()},
+				})
+			}
 			return err
 		}
 		if onEvent == nil {
@@ -141,6 +153,12 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	if err := stream.Err(); err != nil {
+		if onEvent != nil {
+			_ = onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeResponseError,
+				Meta: map[string]any{"provider": "openai", "error": err.Error()},
+			})
+		}
 		return err
 	}
 	return ctx.Err()

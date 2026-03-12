@@ -3,10 +3,12 @@ package gemini
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	"google.golang.org/genai"
 )
 
 func TestGenerateUsesConfiguredGenerateFn(t *testing.T) {
@@ -51,10 +53,87 @@ func TestGenerateClassifiesTimeoutErrors(t *testing.T) {
 	}
 }
 
-func TestStreamReturnsNotImplementedInM1(t *testing.T) {
-	c := &Client{model: "gemini-2.5-flash"}
-	err := c.Stream(context.Background(), types.ModelRequest{Input: "x"}, nil)
+func TestStreamEmitsTextAndToolCall(t *testing.T) {
+	c := &Client{
+		model: "gemini-2.5-flash",
+		stream: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
+			return seqFromChunks([]*genai.GenerateContentResponse{
+				{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "he"}}}}}},
+				{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{
+					FunctionCall: &genai.FunctionCall{ID: "call-1", Name: "local.weather", Args: map[string]any{"city": "shanghai"}},
+				}}}}}},
+				{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "llo"}}}}}},
+			}, nil)
+		},
+	}
+	var events []types.ModelEvent
+	err := c.Stream(context.Background(), types.ModelRequest{Input: "x"}, func(ev types.ModelEvent) error {
+		events = append(events, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	text := ""
+	toolCount := 0
+	for _, ev := range events {
+		if ev.Type == types.ModelEventTypeOutputTextDelta {
+			text += ev.TextDelta
+		}
+		if ev.Type == types.ModelEventTypeToolCall {
+			toolCount++
+			if ev.ToolCall == nil || ev.ToolCall.CallID != "call-1" {
+				t.Fatalf("unexpected tool call: %#v", ev.ToolCall)
+			}
+		}
+	}
+	if text != "hello" {
+		t.Fatalf("text = %q, want hello", text)
+	}
+	if toolCount != 1 {
+		t.Fatalf("tool count = %d, want 1", toolCount)
+	}
+	if events[len(events)-1].Type != types.ModelEventTypeResponseCompleted {
+		t.Fatalf("last event = %q, want %q", events[len(events)-1].Type, types.ModelEventTypeResponseCompleted)
+	}
+}
+
+func TestStreamFailFastAndClassified(t *testing.T) {
+	c := &Client{
+		model: "gemini-2.5-flash",
+		stream: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
+			return seqFromChunks(nil, errors.New("500 internal server error"))
+		},
+	}
+	var events []types.ModelEvent
+	err := c.Stream(context.Background(), types.ModelRequest{Input: "x"}, func(ev types.ModelEvent) error {
+		events = append(events, ev)
+		return nil
+	})
 	if err == nil {
 		t.Fatal("expected stream error")
+	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) {
+		t.Fatalf("expected classified provider error, got %T", err)
+	}
+	if classified.Reason != "server" {
+		t.Fatalf("reason = %q, want server", classified.Reason)
+	}
+	if len(events) == 0 || events[0].Type != types.ModelEventTypeResponseError {
+		t.Fatalf("expected response.error event, got %#v", events)
+	}
+}
+
+func seqFromChunks(chunks []*genai.GenerateContentResponse, tailErr error) iter.Seq2[*genai.GenerateContentResponse, error] {
+	return func(yield func(*genai.GenerateContentResponse, error) bool) {
+		for _, chunk := range chunks {
+			if !yield(chunk, nil) {
+				return
+			}
+		}
+		if tailErr != nil {
+			_ = yield(nil, tailErr)
+		}
 	}
 }

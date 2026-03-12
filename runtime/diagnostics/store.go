@@ -43,6 +43,12 @@ type RunRecord struct {
 	AssembleLatencyMs    int64     `json:"assemble_latency_ms,omitempty"`
 	AssembleStatus       string    `json:"assemble_status,omitempty"`
 	GuardViolation       string    `json:"guard_violation,omitempty"`
+	AssembleStageStatus  string    `json:"assemble_stage_status,omitempty"`
+	Stage2SkipReason     string    `json:"stage2_skip_reason,omitempty"`
+	Stage1LatencyMs      int64     `json:"stage1_latency_ms,omitempty"`
+	Stage2LatencyMs      int64     `json:"stage2_latency_ms,omitempty"`
+	Stage2Provider       string    `json:"stage2_provider,omitempty"`
+	RecapStatus          string    `json:"recap_status,omitempty"`
 }
 
 type SkillRecord struct {

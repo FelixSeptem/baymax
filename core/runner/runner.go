@@ -883,6 +883,24 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.GuardFailure != "" {
 		payload["guard_violation"] = meta.Assemble.GuardFailure
 	}
+	if meta.Assemble.Stage.Status != "" {
+		payload["assemble_stage_status"] = string(meta.Assemble.Stage.Status)
+	}
+	if meta.Assemble.Stage.Stage2SkipReason != "" {
+		payload["stage2_skip_reason"] = meta.Assemble.Stage.Stage2SkipReason
+	}
+	if meta.Assemble.Stage.Stage1LatencyMs > 0 {
+		payload["stage1_latency_ms"] = meta.Assemble.Stage.Stage1LatencyMs
+	}
+	if meta.Assemble.Stage.Stage2LatencyMs > 0 {
+		payload["stage2_latency_ms"] = meta.Assemble.Stage.Stage2LatencyMs
+	}
+	if meta.Assemble.Stage.Stage2Provider != "" {
+		payload["stage2_provider"] = meta.Assemble.Stage.Stage2Provider
+	}
+	if meta.Assemble.Recap.Status != "" {
+		payload["recap_status"] = string(meta.Assemble.Recap.Status)
+	}
 	return payload
 }
 

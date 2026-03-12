@@ -115,3 +115,43 @@ func TestContextAssemblerValidateRejectsInvalidBackend(t *testing.T) {
 		t.Fatal("expected validation error for invalid backend")
 	}
 }
+
+func TestContextAssemblerCA2Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.ContextAssembler.CA2.Enabled {
+		t.Fatal("context_assembler.ca2.enabled = true, want false by default")
+	}
+	if cfg.ContextAssembler.CA2.RoutingMode != "rules" {
+		t.Fatalf("routing_mode = %q, want rules", cfg.ContextAssembler.CA2.RoutingMode)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.Provider != "file" {
+		t.Fatalf("stage2.provider = %q, want file", cfg.ContextAssembler.CA2.Stage2.Provider)
+	}
+}
+
+func TestContextAssemblerCA2ValidationRejectsInvalidMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.RoutingMode = "invalid"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid ca2 routing mode")
+	}
+}
+
+func TestContextAssemblerCA2EnvOverride(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ENABLED", "true")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ROUTING_MODE", "rules")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE_POLICY_STAGE2", "fail_fast")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_PROVIDER", "file")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_FILE_PATH", filepath.Join(t.TempDir(), "stage2.jsonl"))
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.ContextAssembler.CA2.Enabled {
+		t.Fatal("ca2.enabled not loaded from env")
+	}
+	if cfg.ContextAssembler.CA2.StagePolicy.Stage2 != "fail_fast" {
+		t.Fatalf("stage2 policy = %q, want fail_fast", cfg.ContextAssembler.CA2.StagePolicy.Stage2)
+	}
+}

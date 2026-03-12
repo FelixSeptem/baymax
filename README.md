@@ -13,6 +13,7 @@
 - OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成并归档。
 - OpenSpec change `add-provider-capability-detection-and-fallback-m3` 已完成实现。
 - OpenSpec change `build-context-assembler-ca1-prefix-append-only-baseline` 已完成实现。
+- OpenSpec change `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -45,13 +46,18 @@
 - provider 级降级：model-step 前 capability preflight，按 `provider_fallback.providers` 有序尝试，候选耗尽即 fail-fast
 - 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
 
-### 3.6 Context Assembler（CA1）
+### 3.6 Context Assembler（CA1 + CA2）
 - `context/assembler` 已接入 `core/runner` pre-model hook（Run/Stream 双路径）
 - immutable prefix + `prefix_hash` 校验（同 session/version 漂移即 fail-fast）
 - `context/journal` 本地 JSONL append-only（intent/commit）
 - `context/guard` 基础规则（hash/schema/sanitize），默认 fail-fast
 - storage backend：`file` 生效，`db` 在 CA1 显式返回 unsupported
 - 诊断字段已写入 run 摘要：`prefix_hash`、`assemble_latency_ms`、`assemble_status`、`guard_violation`
+- CA2 staged assembly：Stage1 -> Stage2 规则路由（满足条件才触发 Stage2）
+- Stage2 provider：本期 `file` 可用，`rag/db` 预留接口并返回 not-ready
+- 支持 stage 失败策略配置（`fail_fast` / `best_effort`）
+- 支持 tail recap（最小字段 `status/decisions/todo/risks`）并追加在上下文末尾
+- 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`recap_status`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -137,7 +143,7 @@ defer mgr.Close()
 
 更多字段与环境变量映射见：`docs/runtime-config-diagnostics.md`
 
-Context Assembler CA1 最小配置示例：
+Context Assembler（CA1 + CA2）最小配置示例：
 ```yaml
 context_assembler:
   enabled: true
@@ -147,6 +153,26 @@ context_assembler:
     backend: file # CA1: file|db，其中 db 会 fail-fast 返回 unsupported
   guard:
     fail_fast: true
+  ca2:
+    enabled: true
+    routing_mode: rules # rules|agentic(agentic 预留，当前返回 not-ready)
+    stage_policy:
+      stage1: fail_fast    # fail_fast|best_effort
+      stage2: best_effort  # fail_fast|best_effort
+    timeout:
+      stage1: 80ms
+      stage2: 120ms
+    stage2:
+      provider: file       # file|rag|db (rag/db 当前返回 not-ready)
+      file_path: /tmp/baymax/context-stage2.jsonl
+    routing:
+      min_input_chars: 120
+      trigger_keywords: [search, retrieve, reference, lookup]
+      require_system_guard: true
+    tail_recap:
+      enabled: true
+      max_items: 4
+      max_field_chars: 256
 ```
 
 ### 运行测试
@@ -207,6 +233,7 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - `model/anthropic`: Anthropic 官方 SDK 适配
 - `model/gemini`: Gemini 官方 SDK 适配
 - `skill/loader`: AGENTS/SKILL 发现与编译
+- `context/provider`: CA2 stage2 retrieval provider 抽象与 file 实现
 - `observability/event`, `observability/trace`: 事件与 trace
 - `integration/`: E2E 与 benchmark
 - `docs/`: 验收文档与 roadmap

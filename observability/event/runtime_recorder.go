@@ -51,6 +51,12 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			AssembleLatencyMs:    payloadInt64(ev.Payload, "assemble_latency_ms"),
 			AssembleStatus:       payloadString(ev.Payload, "assemble_status"),
 			GuardViolation:       payloadString(ev.Payload, "guard_violation"),
+			AssembleStageStatus:  payloadString(ev.Payload, "assemble_stage_status"),
+			Stage2SkipReason:     payloadString(ev.Payload, "stage2_skip_reason"),
+			Stage1LatencyMs:      payloadInt64(ev.Payload, "stage1_latency_ms"),
+			Stage2LatencyMs:      payloadInt64(ev.Payload, "stage2_latency_ms"),
+			Stage2Provider:       payloadString(ev.Payload, "stage2_provider"),
+			RecapStatus:          payloadString(ev.Payload, "recap_status"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{

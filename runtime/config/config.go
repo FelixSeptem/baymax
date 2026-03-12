@@ -69,6 +69,7 @@ type ContextAssemblerConfig struct {
 	PrefixVersion string                        `json:"prefix_version"`
 	Storage       ContextAssemblerStorageConfig `json:"storage"`
 	Guard         ContextAssemblerGuardConfig   `json:"guard"`
+	CA2           ContextAssemblerCA2Config     `json:"ca2"`
 }
 
 type ContextAssemblerStorageConfig struct {
@@ -77,6 +78,43 @@ type ContextAssemblerStorageConfig struct {
 
 type ContextAssemblerGuardConfig struct {
 	FailFast bool `json:"fail_fast"`
+}
+
+type ContextAssemblerCA2Config struct {
+	Enabled     bool                               `json:"enabled"`
+	RoutingMode string                             `json:"routing_mode"`
+	StagePolicy ContextAssemblerCA2StagePolicy     `json:"stage_policy"`
+	Timeout     ContextAssemblerCA2TimeoutConfig   `json:"timeout"`
+	Stage2      ContextAssemblerCA2Stage2Config    `json:"stage2"`
+	Routing     ContextAssemblerCA2RoutingConfig   `json:"routing"`
+	TailRecap   ContextAssemblerCA2TailRecapConfig `json:"tail_recap"`
+}
+
+type ContextAssemblerCA2StagePolicy struct {
+	Stage1 string `json:"stage1"`
+	Stage2 string `json:"stage2"`
+}
+
+type ContextAssemblerCA2TimeoutConfig struct {
+	Stage1 time.Duration `json:"stage1"`
+	Stage2 time.Duration `json:"stage2"`
+}
+
+type ContextAssemblerCA2Stage2Config struct {
+	Provider string `json:"provider"`
+	FilePath string `json:"file_path"`
+}
+
+type ContextAssemblerCA2RoutingConfig struct {
+	MinInputChars      int      `json:"min_input_chars"`
+	TriggerKeywords    []string `json:"trigger_keywords"`
+	RequireSystemGuard bool     `json:"require_system_guard"`
+}
+
+type ContextAssemblerCA2TailRecapConfig struct {
+	Enabled       bool `json:"enabled"`
+	MaxItems      int  `json:"max_items"`
+	MaxFieldChars int  `json:"max_field_chars"`
 }
 
 type LoadOptions struct {
@@ -125,6 +163,32 @@ func DefaultConfig() Config {
 			},
 			Guard: ContextAssemblerGuardConfig{
 				FailFast: true,
+			},
+			CA2: ContextAssemblerCA2Config{
+				Enabled:     false,
+				RoutingMode: "rules",
+				StagePolicy: ContextAssemblerCA2StagePolicy{
+					Stage1: "fail_fast",
+					Stage2: "best_effort",
+				},
+				Timeout: ContextAssemblerCA2TimeoutConfig{
+					Stage1: 80 * time.Millisecond,
+					Stage2: 120 * time.Millisecond,
+				},
+				Stage2: ContextAssemblerCA2Stage2Config{
+					Provider: "file",
+					FilePath: filepath.Join(os.TempDir(), "baymax", "context-stage2.jsonl"),
+				},
+				Routing: ContextAssemblerCA2RoutingConfig{
+					MinInputChars:      120,
+					TriggerKeywords:    []string{"search", "retrieve", "reference", "lookup", "资料", "检索"},
+					RequireSystemGuard: true,
+				},
+				TailRecap: ContextAssemblerCA2TailRecapConfig{
+					Enabled:       true,
+					MaxItems:      4,
+					MaxFieldChars: 256,
+				},
 			},
 		},
 	}
@@ -265,8 +329,62 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("context_assembler.storage.backend must be one of [file,db], got %q", cfg.ContextAssembler.Storage.Backend)
 		}
 		cfg.ContextAssembler.Storage.Backend = backend
+		if cfg.ContextAssembler.CA2.Enabled {
+			mode := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.RoutingMode))
+			switch mode {
+			case "rules", "agentic":
+			default:
+				return fmt.Errorf("context_assembler.ca2.routing_mode must be one of [rules,agentic], got %q", cfg.ContextAssembler.CA2.RoutingMode)
+			}
+			cfg.ContextAssembler.CA2.RoutingMode = mode
+
+			stage1Policy := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.StagePolicy.Stage1))
+			if err := validateStagePolicy(stage1Policy, "context_assembler.ca2.stage_policy.stage1"); err != nil {
+				return err
+			}
+			cfg.ContextAssembler.CA2.StagePolicy.Stage1 = stage1Policy
+			stage2Policy := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.StagePolicy.Stage2))
+			if err := validateStagePolicy(stage2Policy, "context_assembler.ca2.stage_policy.stage2"); err != nil {
+				return err
+			}
+			cfg.ContextAssembler.CA2.StagePolicy.Stage2 = stage2Policy
+			if cfg.ContextAssembler.CA2.Timeout.Stage1 <= 0 {
+				return errors.New("context_assembler.ca2.timeout.stage1 must be > 0")
+			}
+			if cfg.ContextAssembler.CA2.Timeout.Stage2 <= 0 {
+				return errors.New("context_assembler.ca2.timeout.stage2 must be > 0")
+			}
+			provider := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.Provider))
+			switch provider {
+			case "file", "rag", "db":
+			default:
+				return fmt.Errorf("context_assembler.ca2.stage2.provider must be one of [file,rag,db], got %q", cfg.ContextAssembler.CA2.Stage2.Provider)
+			}
+			cfg.ContextAssembler.CA2.Stage2.Provider = provider
+			if provider == "file" && strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.FilePath) == "" {
+				return errors.New("context_assembler.ca2.stage2.file_path is required when provider=file")
+			}
+			if cfg.ContextAssembler.CA2.Routing.MinInputChars < 0 {
+				return errors.New("context_assembler.ca2.routing.min_input_chars must be >= 0")
+			}
+			if cfg.ContextAssembler.CA2.TailRecap.MaxItems <= 0 {
+				return errors.New("context_assembler.ca2.tail_recap.max_items must be > 0")
+			}
+			if cfg.ContextAssembler.CA2.TailRecap.MaxFieldChars <= 0 {
+				return errors.New("context_assembler.ca2.tail_recap.max_field_chars must be > 0")
+			}
+		}
 	}
 	return nil
+}
+
+func validateStagePolicy(v, field string) error {
+	switch v {
+	case "fail_fast", "best_effort":
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [fail_fast,best_effort]", field)
+	}
 }
 
 func validateBackpressure(v types.BackpressureMode, field string) error {
@@ -309,6 +427,20 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.prefix_version", base.ContextAssembler.PrefixVersion)
 	v.SetDefault("context_assembler.storage.backend", base.ContextAssembler.Storage.Backend)
 	v.SetDefault("context_assembler.guard.fail_fast", base.ContextAssembler.Guard.FailFast)
+	v.SetDefault("context_assembler.ca2.enabled", base.ContextAssembler.CA2.Enabled)
+	v.SetDefault("context_assembler.ca2.routing_mode", base.ContextAssembler.CA2.RoutingMode)
+	v.SetDefault("context_assembler.ca2.stage_policy.stage1", base.ContextAssembler.CA2.StagePolicy.Stage1)
+	v.SetDefault("context_assembler.ca2.stage_policy.stage2", base.ContextAssembler.CA2.StagePolicy.Stage2)
+	v.SetDefault("context_assembler.ca2.timeout.stage1", base.ContextAssembler.CA2.Timeout.Stage1)
+	v.SetDefault("context_assembler.ca2.timeout.stage2", base.ContextAssembler.CA2.Timeout.Stage2)
+	v.SetDefault("context_assembler.ca2.stage2.provider", base.ContextAssembler.CA2.Stage2.Provider)
+	v.SetDefault("context_assembler.ca2.stage2.file_path", base.ContextAssembler.CA2.Stage2.FilePath)
+	v.SetDefault("context_assembler.ca2.routing.min_input_chars", base.ContextAssembler.CA2.Routing.MinInputChars)
+	v.SetDefault("context_assembler.ca2.routing.trigger_keywords", base.ContextAssembler.CA2.Routing.TriggerKeywords)
+	v.SetDefault("context_assembler.ca2.routing.require_system_guard", base.ContextAssembler.CA2.Routing.RequireSystemGuard)
+	v.SetDefault("context_assembler.ca2.tail_recap.enabled", base.ContextAssembler.CA2.TailRecap.Enabled)
+	v.SetDefault("context_assembler.ca2.tail_recap.max_items", base.ContextAssembler.CA2.TailRecap.MaxItems)
+	v.SetDefault("context_assembler.ca2.tail_recap.max_field_chars", base.ContextAssembler.CA2.TailRecap.MaxFieldChars)
 }
 
 func buildConfig(v *viper.Viper) Config {
@@ -332,6 +464,20 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.PrefixVersion = strings.TrimSpace(v.GetString("context_assembler.prefix_version"))
 	cfg.ContextAssembler.Storage.Backend = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.storage.backend")))
 	cfg.ContextAssembler.Guard.FailFast = v.GetBool("context_assembler.guard.fail_fast")
+	cfg.ContextAssembler.CA2.Enabled = v.GetBool("context_assembler.ca2.enabled")
+	cfg.ContextAssembler.CA2.RoutingMode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.routing_mode")))
+	cfg.ContextAssembler.CA2.StagePolicy.Stage1 = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage_policy.stage1")))
+	cfg.ContextAssembler.CA2.StagePolicy.Stage2 = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage_policy.stage2")))
+	cfg.ContextAssembler.CA2.Timeout.Stage1 = v.GetDuration("context_assembler.ca2.timeout.stage1")
+	cfg.ContextAssembler.CA2.Timeout.Stage2 = v.GetDuration("context_assembler.ca2.timeout.stage2")
+	cfg.ContextAssembler.CA2.Stage2.Provider = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.provider")))
+	cfg.ContextAssembler.CA2.Stage2.FilePath = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.file_path"))
+	cfg.ContextAssembler.CA2.Routing.MinInputChars = v.GetInt("context_assembler.ca2.routing.min_input_chars")
+	cfg.ContextAssembler.CA2.Routing.TriggerKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca2.routing.trigger_keywords"))
+	cfg.ContextAssembler.CA2.Routing.RequireSystemGuard = v.GetBool("context_assembler.ca2.routing.require_system_guard")
+	cfg.ContextAssembler.CA2.TailRecap.Enabled = v.GetBool("context_assembler.ca2.tail_recap.enabled")
+	cfg.ContextAssembler.CA2.TailRecap.MaxItems = v.GetInt("context_assembler.ca2.tail_recap.max_items")
+	cfg.ContextAssembler.CA2.TailRecap.MaxFieldChars = v.GetInt("context_assembler.ca2.tail_recap.max_field_chars")
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {
@@ -387,6 +533,29 @@ func normalizeProviders(in []string) []string {
 			}
 			seen[name] = struct{}{}
 			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func normalizeKeywords(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, v := range in {
+		chunks := strings.Split(v, ",")
+		for _, chunk := range chunks {
+			item := strings.ToLower(strings.TrimSpace(chunk))
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			out = append(out, item)
 		}
 	}
 	return out

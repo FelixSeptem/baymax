@@ -85,14 +85,20 @@ mcp:
 		RunID:     "run-1",
 		Iteration: 2,
 		Payload: map[string]any{
-			"status":              "failed",
-			"latency_ms":          int64(120),
-			"tool_calls":          3,
-			"error_class":         "ErrTool",
-			"prefix_hash":         "abc123",
-			"assemble_latency_ms": int64(8),
-			"assemble_status":     "success",
-			"guard_violation":     "",
+			"status":                "failed",
+			"latency_ms":            int64(120),
+			"tool_calls":            3,
+			"error_class":           "ErrTool",
+			"prefix_hash":           "abc123",
+			"assemble_latency_ms":   int64(8),
+			"assemble_status":       "success",
+			"guard_violation":       "",
+			"assemble_stage_status": "stage1_only",
+			"stage2_skip_reason":    "routing.threshold.not_met",
+			"stage1_latency_ms":     int64(3),
+			"stage2_latency_ms":     int64(0),
+			"stage2_provider":       "file",
+			"recap_status":          "appended",
 		},
 	}
 	rec.OnEvent(context.Background(), ev)
@@ -107,5 +113,8 @@ mcp:
 	}
 	if items[0].PrefixHash != "abc123" || items[0].AssembleLatencyMs != 8 || items[0].AssembleStatus != "success" {
 		t.Fatalf("assembler fields mismatch: %#v", items[0])
+	}
+	if items[0].AssembleStageStatus != "stage1_only" || items[0].Stage2SkipReason == "" || items[0].RecapStatus != "appended" {
+		t.Fatalf("ca2 fields mismatch: %#v", items[0])
 	}
 }

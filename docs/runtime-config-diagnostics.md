@@ -67,6 +67,26 @@ context_assembler:
     backend: file # CA1 支持 file；db 会 fail-fast 返回 unsupported
   guard:
     fail_fast: true # 默认 true
+  ca2:
+    enabled: false
+    routing_mode: rules # rules|agentic（agentic 当前为预留占位）
+    stage_policy:
+      stage1: fail_fast    # fail_fast|best_effort
+      stage2: best_effort  # fail_fast|best_effort
+    timeout:
+      stage1: 80ms
+      stage2: 120ms
+    stage2:
+      provider: file       # file|rag|db（rag/db 当前返回 not-ready）
+      file_path: /tmp/baymax/context-stage2.jsonl
+    routing:
+      min_input_chars: 120
+      trigger_keywords: [search, retrieve, reference, lookup]
+      require_system_guard: true
+    tail_recap:
+      enabled: true
+      max_items: 4
+      max_field_chars: 256
 ```
 
 ## 使用示例（最小）
@@ -116,6 +136,15 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `assemble_status`：assemble 状态（`success|failed|bypass`）。
 - `guard_violation`：guard 命中摘要（失败时用于 fail-fast 诊断）。
 
+### Run 诊断新增字段（Context Assembler CA2）
+
+- `assemble_stage_status`：CA2 阶段结果（`stage1_only|stage2_used|degraded|bypass|failed`）。
+- `stage2_skip_reason`：Stage2 跳过或降级原因（规则未命中/provider 不可用等）。
+- `stage1_latency_ms`：Stage1 耗时（毫秒）。
+- `stage2_latency_ms`：Stage2 耗时（毫秒）。
+- `stage2_provider`：Stage2 使用的 provider（file/rag/db）。
+- `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
+
 ## 诊断写入口径（Single Writer + Idempotency）
 
 - 统一写入入口：`observability/event.RuntimeRecorder`。
@@ -146,6 +175,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 - context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。
+- context assembler CA2 的 `agentic` routing mode 与 `rag/db` provider 当前仅接口占位；配置后会返回明确 not-ready 错误。
 
 ## 迁移映射（功能命名）
 

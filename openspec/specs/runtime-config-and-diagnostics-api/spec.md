@@ -10,6 +10,8 @@ For provider capability fallback, runtime configuration MUST additionally suppor
 
 Runtime configuration MUST additionally support context assembler CA1 baseline fields with deterministic precedence, including `context_assembler.enabled` (default true), file journal path, prefix version, guard fail-fast toggle, and storage backend selector (file active, db placeholder).
 
+Runtime configuration MUST additionally support context assembler CA2 fields with deterministic precedence, including staged assembly enablement, stage routing mode, stage-level failure policy, stage timeouts, stage2 provider selector (file active; rag/db placeholders), routing threshold controls, and tail recap options.
+
 #### Scenario: Startup with file and environment overrides
 - **WHEN** runtime starts with a YAML config file and overlapping environment variables
 - **THEN** effective configuration uses environment values first, then file values, then defaults for unset keys
@@ -25,6 +27,10 @@ Runtime configuration MUST additionally support context assembler CA1 baseline f
 #### Scenario: Startup with context assembler defaults
 - **WHEN** runtime starts without explicit context assembler overrides
 - **THEN** context assembler baseline config resolves with default enabled state and valid file-backed journal settings
+
+#### Scenario: Startup with CA2 stage policy overrides
+- **WHEN** runtime starts with CA2 stage policy fields defined in both YAML and environment variables
+- **THEN** effective CA2 stage policy resolves using `env > file > default` and is available to assembler routing and stage execution
 
 ### Requirement: Runtime SHALL validate configuration and fail fast on invalid startup input
 The runtime MUST validate required fields, numeric ranges, and enum values before activation; invalid startup configuration MUST return an error and abort initialization.
@@ -44,6 +50,8 @@ Diagnostics MUST include capability-preflight and provider-fallback summary fiel
 
 Diagnostics MUST additionally include context assembler CA1 baseline fields for each assemble cycle and related run summary context, including `prefix_hash`, `assemble_latency_ms`, `assemble_status`, and `guard_violation`.
 
+Diagnostics MUST additionally include context assembler CA2 stage and recap fields, including normalized stage statuses, stage2 skip reason, stage latencies, and recap status.
+
 #### Scenario: Consumer requests recent run diagnostics
 - **WHEN** application calls diagnostics API for recent runs
 - **THEN** runtime returns bounded summary records with normalized fields and without duplicated logical run entries caused by retries or replay
@@ -59,6 +67,10 @@ Diagnostics MUST additionally include context assembler CA1 baseline fields for 
 #### Scenario: Consumer inspects context assembler diagnostics
 - **WHEN** application queries diagnostics for runs with context assembler enabled
 - **THEN** runtime returns assembler baseline fields that allow verification of prefix consistency and guard outcomes
+
+#### Scenario: Consumer inspects CA2 stage diagnostics
+- **WHEN** application queries diagnostics for runs with CA2 staged assembly enabled
+- **THEN** runtime returns normalized stage and recap fields sufficient to reconstruct Stage1/Stage2 routing outcome
 
 ### Requirement: Runtime SHALL support hot reload with atomic swap and rollback safety
 The runtime MUST watch config file changes, rebuild and validate a new snapshot, and atomically replace active configuration only on successful validation.
@@ -141,4 +153,15 @@ Runtime MUST treat file backend as active default for context assembler CA1 and 
 #### Scenario: DB backend requested in CA1
 - **WHEN** runtime configuration sets context assembler storage backend to db during CA1
 - **THEN** initialization fails fast with backend-not-ready error and no partial activation occurs
+
+### Requirement: Runtime SHALL validate CA2 stage provider and routing mode constraints
+The runtime MUST validate CA2 stage provider and routing mode enums at startup and hot reload. Unsupported modes or provider selections in current milestone MUST fail fast with explicit classification.
+
+#### Scenario: Unsupported CA2 routing mode
+- **WHEN** runtime configuration sets unknown CA2 routing mode
+- **THEN** initialization fails fast with validation error
+
+#### Scenario: CA2 rag/db provider requested before implementation
+- **WHEN** runtime configuration selects Stage2 provider as rag or db in CA2 milestone
+- **THEN** runtime returns explicit provider-not-ready classification and does not partially activate staged assembly
 

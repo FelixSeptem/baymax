@@ -215,6 +215,47 @@ type ContextAssembleResult struct {
 	LatencyMs    int64          `json:"latency_ms"`
 	Status       string         `json:"status"`
 	GuardFailure string         `json:"guard_failure,omitempty"`
+	Stage        AssembleStage  `json:"stage,omitempty"`
+	Recap        RecapMetadata  `json:"recap,omitempty"`
+}
+
+type AssembleStageStatus string
+
+const (
+	AssembleStageStatusStage1Only AssembleStageStatus = "stage1_only"
+	AssembleStageStatusStage2Used AssembleStageStatus = "stage2_used"
+	AssembleStageStatusDegraded   AssembleStageStatus = "degraded"
+	AssembleStageStatusBypass     AssembleStageStatus = "bypass"
+	AssembleStageStatusFailed     AssembleStageStatus = "failed"
+)
+
+type RecapStatus string
+
+const (
+	RecapStatusDisabled  RecapStatus = "disabled"
+	RecapStatusAppended  RecapStatus = "appended"
+	RecapStatusTruncated RecapStatus = "truncated"
+	RecapStatusFailed    RecapStatus = "failed"
+)
+
+type AssembleStage struct {
+	Status           AssembleStageStatus `json:"status,omitempty"`
+	Stage2SkipReason string              `json:"stage2_skip_reason,omitempty"`
+	Stage1LatencyMs  int64               `json:"stage1_latency_ms,omitempty"`
+	Stage2LatencyMs  int64               `json:"stage2_latency_ms,omitempty"`
+	Stage2Provider   string              `json:"stage2_provider,omitempty"`
+}
+
+type TailRecap struct {
+	Status    string   `json:"status,omitempty"`
+	Decisions []string `json:"decisions,omitempty"`
+	Todo      []string `json:"todo,omitempty"`
+	Risks     []string `json:"risks,omitempty"`
+}
+
+type RecapMetadata struct {
+	Status RecapStatus `json:"status,omitempty"`
+	Tail   TailRecap   `json:"tail,omitempty"`
 }
 
 type PrefixMetadata struct {

@@ -65,6 +65,7 @@
 - [x] `align-multi-provider-streaming-and-error-taxonomy-m2`：完成 Anthropic/Gemini streaming 接入、跨 provider 事件语义对齐与错误分类细化。
 - [x] `add-provider-capability-detection-and-fallback-m3`：完成基于官方 SDK 的动态能力探测、model-step preflight、provider 级有序降级与 fail-fast 终止。
 - [x] `build-context-assembler-ca1-prefix-append-only-baseline`：完成 pre-model hook、immutable prefix hash、一致性 fail-fast、append-only JSONL journal 与 CA1 最小诊断字段。
+- [x] `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap`：完成 CA2 双阶段路由、file provider、tail recap 与 CA2 诊断字段。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -82,7 +83,7 @@
 - Tool SDK 指南（schema、错误语义、幂等建议）。
 - Context Assembler（RAG + Memory）分期实施：
   - CA1（基础骨架，已完成）：新增 `context/assembler` pre-model hook，建立 immutable prefix 与 append-only journal 基线。
-  - CA2（按需加载）：接入 Stage1/Stage2（session-memory -> long-term/rag），按需触发与渐进降级。
+  - CA2（按需加载，已完成基础版）：接入 Stage1/Stage2 路由、可配置 stage 策略、tail recap；rag/db provider 保持接口占位。
   - CA3（压力控制）：落地 Goldilocks Zone（40%-70%）与 batch squash/prune，支持 spill/swap 回填。
   - CA4（生产收敛）：补齐规则防护、可中断恢复、观测面板与契约测试闭环。
   - 详细分期见 `docs/context-assembler-phased-plan.md`。
@@ -93,6 +94,7 @@
   - 增加 step/phase 关联字段规范，支持前端稳定渲染执行路径。
 - 提供最小 CLI 示例（本地调试和回放）。
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`。
+  - TODO：结合 CA2 增加 staged context 路由示例（本提案不新增 example 代码）。
 
 ### 验收标准
 - 新工具接入时间显著缩短（按团队 KPI 评估）。
@@ -130,7 +132,7 @@
 
 - CA1（R3 前半，已完成）：Prefix + Append-only 基线
   - 对齐 P1/P2/P6/P9/P10（前缀一致性、只追加、不信任 LLM、可观测、文件即记忆）。
-- CA2（R3 后半）：Lazy + Stage 化加载
+- CA2（R3 后半，已完成基础版）：Lazy + Stage 化加载
   - 对齐 P3/P4/P5（按需加载、渐进降级、末尾复述）。
 - CA3（R4 前半）：内存压力与可恢复性
   - 对齐 P7/P8 + Arena 机制（可中断、不丢信息、batch reset、spill/swap）。

@@ -722,3 +722,106 @@ context_assembler:
 		t.Fatal("model should not be called when context assembler fails")
 	}
 }
+
+func TestRunCA2BestEffortKeepsModelPath(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+  ca2:
+    enabled: true
+    routing_mode: rules
+    stage_policy:
+      stage1: fail_fast
+      stage2: best_effort
+    stage2:
+      provider: rag
+    routing:
+      min_input_chars: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	rec := obsevent.NewRuntimeRecorder(mgr)
+	eng := New(model, WithRuntimeManager(mgr))
+	res, runErr := eng.Run(context.Background(), types.RunRequest{Input: "need retrieval", SessionID: "s-1"}, rec)
+	if runErr != nil {
+		t.Fatalf("Run failed: %v", runErr)
+	}
+	if res.FinalAnswer != "ok" {
+		t.Fatalf("final answer = %q, want ok", res.FinalAnswer)
+	}
+	runs := mgr.RecentRuns(1)
+	if len(runs) != 1 {
+		t.Fatalf("run diagnostics len = %d, want 1", len(runs))
+	}
+	if runs[0].AssembleStageStatus == "" {
+		t.Fatalf("assemble stage status should be populated: %#v", runs[0])
+	}
+}
+
+func TestStreamCA2FailFastStopsBeforeModel(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+  ca2:
+    enabled: true
+    routing_mode: rules
+    stage_policy:
+      stage1: fail_fast
+      stage2: fail_fast
+    stage2:
+      provider: db
+    routing:
+      min_input_chars: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	called := false
+	model := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			called = true
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "x"})
+		},
+	}
+	collector := &eventCollector{}
+	eng := New(model, WithRuntimeManager(mgr))
+	res, runErr := eng.Stream(context.Background(), types.RunRequest{Input: "need retrieval", SessionID: "s-1"}, collector)
+	if runErr == nil {
+		t.Fatal("expected fail-fast error from CA2 stage2 provider")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrContext {
+		t.Fatalf("error class = %#v, want ErrContext", res.Error)
+	}
+	if called {
+		t.Fatal("model stream should not be called when CA2 fail-fast triggers")
+	}
+	want := []string{"run.started", "run.finished"}
+	if len(collector.types) != len(want) {
+		t.Fatalf("event count = %d, want %d", len(collector.types), len(want))
+	}
+	for i := range want {
+		if collector.types[i] != want[i] {
+			t.Fatalf("event[%d]=%s, want %s", i, collector.types[i], want[i])
+		}
+	}
+}

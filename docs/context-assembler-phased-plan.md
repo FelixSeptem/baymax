@@ -53,19 +53,28 @@
 
 ## CA2：Lazy Allocation + Stage Routing
 
+状态：已完成（基础版，2026-03-12）
+
 ### 范围
 
 - 引入两阶段装配：
   - Stage1：session-memory / hot state
-  - Stage2：long-term-memory / rag-retrieval（按需触发）
+  - Stage2：retrieval provider（本期 file provider 可用，rag/db 为接口占位）
 - 支持 `best-effort/fail-fast` 两种模式与超时策略。
 - 增加 tail recap（规则模板）将 `todo/decisions/status` 推送末尾。
+- 路由模式默认 rules；agentic hook 仅预留 TODO 扩展点。
 
 ### 验收
 
 - Stage1 可满足时不触发 Stage2。
 - Stage2 触发链路可观测（触发原因、耗时、命中率）。
 - tail recap 在输出中位置稳定且可追溯来源。
+
+### CA2 边界（未包含）
+
+- 未实现 agentic routing 决策执行，仅保留接口占位与显式 not-ready 错误。
+- 未实现 rag/db provider 的生产接入，仅保留 provider 接口与占位错误。
+- examples 目录本期不新增 CA2 示例，后续在 roadmap TODO 批次补齐。
 
 ## CA3：Memory Pressure + Recovery
 

@@ -18,6 +18,8 @@
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
 - Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
+- Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
+- Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
 
 ## Known Limitations (V1 Non-goals)
 
@@ -32,5 +34,6 @@
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.
 - Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
-- Context Assembler currently ships CA1 baseline only; retrieval/memory pressure/recovery stages are deferred to CA2+.
-- Context Assembler storage backend `db` is a placeholder in CA1 and intentionally fails fast when configured.
+- Context Assembler CA2 currently ships file-first stage2 provider; `rag/db` providers remain not-ready placeholders.
+- Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
+- Context Assembler memory pressure/recovery stages (CA3/CA4) remain deferred.

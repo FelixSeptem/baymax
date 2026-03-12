@@ -41,6 +41,15 @@
 - 错误分类与事件字段
 - 最近 N 次 MCP 调用诊断摘要字段
 - profile 参数读取来源统一为运行时配置快照（`runtime/config.Manager`）
+- 共享执行骨架统一为 `mcp/internal/*`（internal-only），transport 仅保留协议差异逻辑
+
+## 分层边界
+
+- `mcp/internal/reliability`：重试/超时/backoff/fail-fast 执行骨架
+- `mcp/internal/observability`：事件发射与诊断映射桥接
+- `mcp/http`、`mcp/stdio`：连接管理、池化/心跳、协议专属请求处理
+
+说明：`mcp/internal/*` 仅供 `mcp` 子包复用，不对外暴露。
 
 ## 调优建议
 

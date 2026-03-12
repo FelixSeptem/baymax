@@ -11,11 +11,11 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	mcpdiag "github.com/FelixSeptem/baymax/mcp/diag"
+	mcpobs "github.com/FelixSeptem/baymax/mcp/internal/observability"
+	mcpreliability "github.com/FelixSeptem/baymax/mcp/internal/reliability"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
 	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
-	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
-	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -243,48 +243,36 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 }
 
 func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, invoke func(stepCtx context.Context) (types.ToolResult, error), retryCount *int, reconnectCount *int) (types.ToolResult, error) {
-	attempts := runCfg.Retry + 1
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		if retryCount != nil {
-			*retryCount = i
-		}
-		stepCtx, cancel := context.WithTimeout(ctx, runCfg.CallTimeout)
-		res, err := c.invokeAsync(stepCtx, invoke)
-		cancel()
-		if err == nil {
-			c.lastActivity.Store(time.Now().UnixNano())
-			if c.cfg.EventHandler != nil && i > 0 {
-				c.emit(ctx, types.Event{
-					Version: "v1", Type: "mcp.retry", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-					Payload: map[string]any{"retry_count": i},
-				})
-			}
-			return res, nil
-		}
-		lastErr = err
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
-			return types.ToolResult{}, context.DeadlineExceeded
-		}
-		if !mcpretry.ShouldRetry(err) {
-			return types.ToolResult{}, err
-		}
-		if i < attempts-1 {
-			rc, recErr := c.reconnect(ctx, err, runCfg.Backoff, runCfg.MaxReconnects)
+	result, finalAttempt, err := mcpreliability.Execute(ctx, mcpreliability.RetryConfig{
+		Attempts: runCfg.Retry + 1,
+		Timeout:  runCfg.CallTimeout,
+		Backoff:  runCfg.Backoff,
+	}, mcpreliability.RetryHooks[types.ToolResult]{
+		Invoke: func(stepCtx context.Context, attempt int) (types.ToolResult, error) {
+			return c.invokeAsync(stepCtx, invoke)
+		},
+		ShouldRetry: mcpretry.ShouldRetry,
+		OnRetry: func(retryCtx context.Context, attempt int, err error) error {
+			rc, recErr := c.reconnect(retryCtx, err, runCfg.Backoff, runCfg.MaxReconnects)
 			if reconnectCount != nil {
 				*reconnectCount += rc
 			}
-			if recErr != nil {
-				lastErr = recErr
-			}
-			select {
-			case <-ctx.Done():
-				return types.ToolResult{}, ctx.Err()
-			case <-time.After(mcpretry.BackoffAt(runCfg.Backoff, i)):
-			}
+			return recErr
+		},
+	})
+	if retryCount != nil {
+		*retryCount = finalAttempt
+	}
+	if err == nil {
+		c.lastActivity.Store(time.Now().UnixNano())
+		if finalAttempt > 0 {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.retry", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{"retry_count": finalAttempt},
+			})
 		}
 	}
-	return types.ToolResult{}, lastErr
+	return result, err
 }
 
 func (c *Client) invokeAsync(ctx context.Context, invoke func(stepCtx context.Context) (types.ToolResult, error)) (types.ToolResult, error) {
@@ -399,15 +387,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) emit(ctx context.Context, ev types.Event) {
-	if c.cfg.EventHandler == nil {
-		return
-	}
-	if ev.Version == "" {
-		ev.Version = types.EventSchemaVersionV1
-	}
-	ev.TraceID = obsTrace.TraceIDFromContext(ctx)
-	ev.SpanID = obsTrace.SpanIDFromContext(ctx)
-	c.cfg.EventHandler.OnEvent(ctx, ev)
+	mcpobs.EmitEvent(ctx, c.cfg.EventHandler, ev)
 }
 
 func oteltraceAttrs(tool string) []attribute.KeyValue {
@@ -431,15 +411,7 @@ func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 }
 
 func (c *Client) RecentCallSummary(n int) []mcpdiag.CallRecord {
-	if c.cfg.RuntimeManager != nil {
-		items := c.cfg.RuntimeManager.RecentCalls(n)
-		out := make([]mcpdiag.CallRecord, 0, len(items))
-		for _, rec := range items {
-			out = append(out, toMCPCallRecord(rec))
-		}
-		return out
-	}
-	return c.diag.Recent(n)
+	return mcpobs.RecentCalls(c.diag, c.cfg.RuntimeManager, n)
 }
 
 func applyExplicitConfig(cfg Config, user Config) Config {
@@ -481,57 +453,15 @@ func (c *Client) runtimeConfig() (Config, error) {
 }
 
 func resolveStartupPolicy(cfg Config, profile mcpprofile.Name) (types.MCPRuntimePolicy, error) {
-	if cfg.RuntimeManager == nil {
-		return mcpprofile.Resolve(profile, cfg.RuntimePolicy), nil
-	}
-	return cfg.RuntimeManager.ResolvePolicy(profile, cfg.RuntimePolicy)
+	return mcpreliability.ResolveStartupPolicy(profile, cfg.RuntimeManager, cfg.RuntimePolicy)
 }
 
 func resolveRuntimePolicy(cfg Config, explicit Config) (types.MCPRuntimePolicy, error) {
-	profile := cfg.Profile
-	if profile == "" {
-		profile = mcpprofile.Default
-	}
-	if cfg.RuntimeManager == nil {
-		return mcpprofile.Resolve(profile, explicit.RuntimePolicy), nil
-	}
-	return cfg.RuntimeManager.ResolvePolicy(profile, explicit.RuntimePolicy)
+	return mcpreliability.ResolveRuntimePolicy(cfg.Profile, cfg.RuntimeManager, explicit.RuntimePolicy)
 }
 
 func (c *Client) recordCall(rec mcpdiag.CallRecord) {
-	c.diag.Add(rec)
-	if c.cfg.RuntimeManager != nil {
-		c.cfg.RuntimeManager.RecordCall(runtimediag.CallRecord{
-			Time:           rec.Time,
-			Component:      "mcp",
-			Transport:      rec.Transport,
-			Profile:        rec.Profile,
-			RunID:          c.cfg.RunID,
-			CallID:         rec.CallID,
-			Name:           rec.Tool,
-			Action:         rec.Action,
-			LatencyMs:      rec.LatencyMs,
-			RetryCount:     rec.RetryCount,
-			ReconnectCount: rec.ReconnectCount,
-			ErrorClass:     rec.ErrorClass,
-		})
-	}
-}
-
-func toMCPCallRecord(rec runtimediag.CallRecord) mcpdiag.CallRecord {
-	return mcpdiag.CallRecord{
-		Time:           rec.Time,
-		Transport:      rec.Transport,
-		Profile:        rec.Profile,
-		RunID:          rec.RunID,
-		CallID:         rec.CallID,
-		Tool:           rec.Name,
-		Action:         rec.Action,
-		LatencyMs:      rec.LatencyMs,
-		RetryCount:     rec.RetryCount,
-		ReconnectCount: rec.ReconnectCount,
-		ErrorClass:     rec.ErrorClass,
-	}
+	mcpobs.RecordCall(c.diag, c.cfg.RuntimeManager, c.cfg.RunID, rec)
 }
 
 func normalizeCallResult(res *mcp.CallToolResult) types.ToolResult {

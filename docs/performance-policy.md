@@ -37,3 +37,24 @@
 - 基线与候选对比表（相对百分比）
 - 指标异常解释
 - 后续优化 TODO（若未达目标）
+
+## MCP 重构重复逻辑度量（结构性指标）
+
+对于 `mcp/http` 与 `mcp/stdio` 的共享核心重构，使用脚本输出重复逻辑占比与下降比例：
+
+```powershell
+pwsh -File scripts/report-mcp-duplication.ps1
+```
+
+验收建议（当前仓库基线）：`-MinReductionPct 5`。
+
+```powershell
+pwsh -File scripts/report-mcp-duplication.ps1 -MinReductionPct 5
+```
+
+- 生成字段：`duplicated_lines`、`duplicate_pct`、`baseline_duplicate_pct`、`reduction_pct`
+- 如需更新基线：
+
+```powershell
+pwsh -File scripts/report-mcp-duplication.ps1 -WriteBaseline
+```

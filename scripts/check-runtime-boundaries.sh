@@ -12,5 +12,12 @@ if [[ -n "${violations}" ]]; then
   exit 1
 fi
 
-echo "Runtime boundary check passed."
+internal_imports="$(rg -n "\"github.com/FelixSeptem/baymax/mcp/internal/\"|\"github.com/FelixSeptem/baymax/mcp/internal" core docs examples integration model observability runtime skill tool || true)"
 
+if [[ -n "${internal_imports}" ]]; then
+  echo "MCP internal boundary violation detected:"
+  echo "${internal_imports}"
+  exit 1
+fi
+
+echo "Runtime boundary check passed."

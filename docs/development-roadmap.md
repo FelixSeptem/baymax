@@ -61,17 +61,45 @@
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
+- 将模型层从“OpenAI 单 provider”演进为“多 provider 可插拔”能力。
 
 ### 交付项
 - 模型适配接口文档与示例（多 provider）。
+- 新增官方协议适配：
+  - `model/anthropic`（Anthropic Messages API 语义映射）
+  - `model/gemini`（Google Gemini API 语义映射）
+- 对齐跨 provider 的统一语义：
+  - 非流式 `Generate` 输出结构一致
+  - 流式 `Stream` 事件语义一致（delta/tool_call/error/completed）
+  - 错误分类对齐到 `types.ErrorClass`
 - Tool SDK 指南（schema、错误语义、幂等建议）。
+- Context Assembler（RAG + Memory）能力规划：
+  - 新增 `context/assembler` 作为模型调用前的上下文组装阶段。
+  - Provider 化接入 `session-memory`、`long-term-memory`、`rag-retrieval`（分阶段启用）。
+  - 与 `runtime/config` 对齐可配置策略（enable、top_k、timeout、budget、fail-fast/best-effort）。
+  - 与 `runtime/diagnostics` 对齐可观测字段（provider latency/hit/miss/truncate reason）。
 - Skill 语义触发升级（可插拔检索/打分器）。
+- Agent Action 输出体验（规划）：
+  - 基于现有事件流构建用户侧 Action Timeline（run/model/tool/mcp 阶段）。
+  - 增加统一动作状态语义（pending/running/succeeded/failed/skipped）。
+  - 增加 step/phase 关联字段规范，支持前端稳定渲染执行路径。
 - 提供最小 CLI 示例（本地调试和回放）。
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`。
 
 ### 验收标准
 - 新工具接入时间显著缩短（按团队 KPI 评估）。
 - 外部团队可根据文档独立完成接入。
+- 至少 3 个 provider（OpenAI/Anthropic/Gemini）通过同一 runner 契约测试集。
+- Context Assembler 在 `best-effort` 与 `fail-fast` 两种模式下通过契约测试，且不会破坏现有 runner/tool/skill 语义。
+- Action Timeline 在 streaming 与 non-streaming 路径均可输出一致阶段视图。
+
+## Multi-Provider 里程碑（规划，当前不实现）
+
+- M1（R3 前半）：完成 `model/anthropic`、`model/gemini` 最小非流式适配与契约测试。
+- M2（R3 后半）：完成流式事件映射与工具调用语义对齐，补齐回归测试。
+- M3（R4 可选）：能力探测与 provider 级降级策略（例如特性缺失时自动回退）。
+
+说明：截至 2026-03-11，仓库已实现 `model/openai`。Anthropic/Gemini 当前属于 roadmap 规划项。
 
 ## Phase R4（长期）平台化能力（非 v1）
 
@@ -80,6 +108,30 @@
 - 多租户与权限治理
 - 审计与合规流水线
 - 分布式执行与弹性调度
+- Memory/RAG 平台化（向量索引生命周期管理、分层缓存、跨会话长期记忆治理）
+- Human-in-the-loop 原生编排：
+  - 在 agent loop 中支持 `await_user` / `resume` / `cancel_by_user` 生命周期。
+  - 增加可配置的 Action Gate（高风险动作执行前确认）。
+  - 保持 fail-fast 语义与审计可追溯性（确认人、确认时间、确认结果）。
+- A2A 协议支持（Agent-to-Agent 协作互联）：
+  - 引入 `a2a` 适配层用于跨 Agent 对等协作（任务生命周期、状态查询、异步回调/推送）。
+  - 明确与 MCP 的互补边界：A2A 负责 Agent 间协作，MCP 负责工具集成。
+  - 支持 Agent Card 能力发现与路由策略，纳入统一观测与错误分类体系。
+
+## HITL 与 Action Timeline 里程碑（规划，当前不实现）
+
+- H1（R3 前半）：先交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
+- H2（R3 后半或 R4 前半）：引入 Action Gate（执行前确认钩子），支持外部编排式 HITL。
+- H3（R4）：引入原生 pause/resume 语义（`run.awaiting_user` / `run.resumed`），完善契约测试与诊断记录。
+
+## A2A 里程碑（规划，当前不实现）
+
+- A1（R3 预研）：完成 A2A 协议语义映射设计（任务状态机、SSE/推送、能力发现），输出设计文档与边界说明。
+- A2（R4 前半）：实现最小 A2A Client/Server 互联能力，支持基础任务提交、状态查询与结果回传。
+- A3（R4 后半）：与现有 observability/diagnostics 集成，补齐跨协议契约测试（A2A + MCP 组合场景）。
+
+参考资料：
+- https://a2aprotocol.ai/blog/2025-full-guide-a2a-protocol-zh
 
 ## 技术债清单（当前建议优先）
 

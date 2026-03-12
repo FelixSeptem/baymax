@@ -15,18 +15,18 @@ The system MUST provide named MCP reliability profiles with documented defaults,
 - **THEN** resolved profile values apply first and explicit values override selected fields
 
 ### Requirement: MCP transports SHALL share common retry and reconnect semantics
-`mcp/http` and `mcp/stdio` MUST use shared retry, backoff, reconnect, and fail-fast stop conditions for retryability-aware behavior.
+`mcp/http` and `mcp/stdio` MUST execute retry, backoff, reconnect, timeout handling, and fail-fast stop conditions through a shared internal core, so semantic outcomes remain aligned across transports.
 
 #### Scenario: Retryable transient failure occurs
 - **WHEN** MCP call fails with retryable transient error
-- **THEN** both transports follow shared retry policy and emit consistent retry diagnostics
+- **THEN** both transports follow the same shared retry policy and emit consistent retry diagnostics
 
 #### Scenario: Non-retryable failure occurs
 - **WHEN** MCP call fails with non-retryable condition
 - **THEN** both transports stop retry immediately and return aligned error classification
 
 ### Requirement: MCP runtime SHALL expose normalized diagnostic summary
-The runtime MUST expose a diagnostic summary for recent MCP calls, including latency, retry count, reconnect count, error class, and active profile, through library API endpoints that are consistent with runtime diagnostics APIs.
+The runtime MUST expose a diagnostic summary for recent MCP calls, including latency, retry count, reconnect count, error class, and active profile, through library API endpoints that are consistent with runtime diagnostics APIs. Summary records MUST be produced via shared internal mapping to avoid transport-specific drift.
 
 #### Scenario: Operator requests recent summary
 - **WHEN** diagnostic summary for latest N MCP calls is requested through library API
@@ -49,4 +49,11 @@ MCP runtime initialization MUST terminate with an error when reliability profile
 #### Scenario: Hot reload profile config is invalid
 - **WHEN** watched configuration updates profile values to an invalid state
 - **THEN** runtime rejects that update, keeps the previously active profile configuration, and emits diagnostics for reload failure
+
+### Requirement: MCP runtime refactor SHALL satisfy duplicate-logic reduction threshold
+The MCP reliability refactor MUST document baseline duplicate-logic metrics for `mcp/http` and `mcp/stdio`, and MUST achieve an agreed relative reduction threshold during acceptance.
+
+#### Scenario: Duplicate-logic threshold check
+- **WHEN** refactor acceptance checks run
+- **THEN** reported duplicate-logic reduction percentage meets or exceeds the documented threshold
 

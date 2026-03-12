@@ -23,6 +23,10 @@
   - MCP 重试控制（retryable 分类 + backoff）
 - `mcp/diag`
   - MCP 调用摘要字段模型与本地有界缓存
+- `mcp/internal/reliability`
+  - MCP 内部共享重试/超时/backoff 执行骨架（internal-only）
+- `mcp/internal/observability`
+  - MCP 内部共享事件发射与诊断映射桥接（internal-only）
 - `mcp/http` / `mcp/stdio`
   - 传输实现
   - 消费 `runtime/config.Manager` 配置与诊断 API
@@ -44,6 +48,7 @@
 禁止方向：
 
 - `runtime/config` 或 `runtime/diagnostics` 反向依赖 `mcp/http` / `mcp/stdio`
+- 非 `mcp/*` 包依赖 `mcp/internal/*`
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 

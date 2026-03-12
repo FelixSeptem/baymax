@@ -28,6 +28,7 @@
 ### 3. MCP Runtime
 - `mcp/stdio`：warmup、池化、超时、重试、事件归一化
 - `mcp/http`：官方 go-sdk 适配、心跳、重连、稳定 call-id、事件顺序保证
+- `mcp/internal/*`：共享可靠性与可观测性核心（internal-only，供 http/stdio 复用）
 - 统一运行时配置：`viper` 加载 YAML + Env 覆盖（`env > file > default`）
 - 热更新：原子配置切换，非法更新自动回滚
 - 诊断 API（库接口）：最近 MCP 调用/Run 摘要、脱敏生效配置查询（无 CLI）

@@ -10,11 +10,11 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	mcpdiag "github.com/FelixSeptem/baymax/mcp/diag"
+	mcpobs "github.com/FelixSeptem/baymax/mcp/internal/observability"
+	mcpreliability "github.com/FelixSeptem/baymax/mcp/internal/reliability"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
 	mcpretry "github.com/FelixSeptem/baymax/mcp/retry"
-	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
-	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -176,57 +176,47 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	}
 	defer release()
 
-	attempts := runCfg.Retry + 1
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		retryCount = i
-		stepCtx, cancel := context.WithTimeout(ctx, runCfg.CallTimeout)
-		resp, err := c.invokeAsync(stepCtx, name, args)
-		cancel()
-		if err == nil {
-			result := normalizeResponse(resp)
-			if result.Error != nil {
-				c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-				return result, nil
-			}
-			c.emit(ctx, types.Event{
-				Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-				Payload: map[string]any{
-					"tool": name, "retry_count": i, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
-				},
-			})
-			c.recordCall(mcpdiag.CallRecord{
-				Time:           time.Now(),
-				Transport:      "stdio",
-				Profile:        c.cfg.Profile,
-				CallID:         callID,
-				Tool:           name,
-				LatencyMs:      time.Since(start).Milliseconds(),
-				RetryCount:     i,
-				ReconnectCount: 0,
-			})
+	resp, finalAttempt, err := mcpreliability.Execute(ctx, mcpreliability.RetryConfig{
+		Attempts: runCfg.Retry + 1,
+		Timeout:  runCfg.CallTimeout,
+		Backoff:  runCfg.Backoff,
+	}, mcpreliability.RetryHooks[Response]{
+		Invoke: func(stepCtx context.Context, attempt int) (Response, error) {
+			return c.invokeAsync(stepCtx, name, args)
+		},
+		ShouldRetry: mcpretry.ShouldRetry,
+	})
+	retryCount = finalAttempt
+	if err == nil {
+		result := normalizeResponse(resp)
+		if result.Error != nil {
+			c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
 			return result, nil
 		}
-		lastErr = err
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
-			result := failedTimeout(err)
-			c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-			return result, err
-		}
-		if !mcpretry.ShouldRetry(err) {
-			break
-		}
-		if i < attempts-1 {
-			select {
-			case <-ctx.Done():
-				result := failedTimeout(ctx.Err())
-				c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
-				return result, ctx.Err()
-			case <-time.After(mcpretry.BackoffAt(runCfg.Backoff, i)):
-			}
-		}
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+			Payload: map[string]any{
+				"tool": name, "retry_count": finalAttempt, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
+			},
+		})
+		c.recordCall(mcpdiag.CallRecord{
+			Time:           time.Now(),
+			Transport:      "stdio",
+			Profile:        c.cfg.Profile,
+			CallID:         callID,
+			Tool:           name,
+			LatencyMs:      time.Since(start).Milliseconds(),
+			RetryCount:     finalAttempt,
+			ReconnectCount: 0,
+		})
+		return result, nil
 	}
-	result := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: lastErr.Error(), Retryable: false}}
+	if errors.Is(err, context.DeadlineExceeded) {
+		result := failedTimeout(err)
+		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
+		return result, err
+	}
+	result := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: err.Error(), Retryable: false}}
 	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
 	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
@@ -239,7 +229,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		ReconnectCount: 0,
 		ErrorClass:     string(result.Error.Class),
 	})
-	return result, lastErr
+	return result, err
 }
 
 func (c *Client) acquirePool(ctx context.Context, isWrite bool, callID string) func() {
@@ -319,15 +309,7 @@ func isWriteCall(args map[string]any) bool {
 }
 
 func (c *Client) emit(ctx context.Context, ev types.Event) {
-	if c.cfg.EventHandler == nil {
-		return
-	}
-	if ev.Version == "" {
-		ev.Version = types.EventSchemaVersionV1
-	}
-	ev.TraceID = obsTrace.TraceIDFromContext(ctx)
-	ev.SpanID = obsTrace.SpanIDFromContext(ctx)
-	c.cfg.EventHandler.OnEvent(ctx, ev)
+	mcpobs.EmitEvent(ctx, c.cfg.EventHandler, ev)
 }
 
 func traceAttrs(tool string) []attribute.KeyValue {
@@ -370,15 +352,7 @@ func applyRuntimePolicy(cfg Config, p types.MCPRuntimePolicy) Config {
 }
 
 func (c *Client) RecentCallSummary(n int) []mcpdiag.CallRecord {
-	if c.cfg.RuntimeManager != nil {
-		items := c.cfg.RuntimeManager.RecentCalls(n)
-		out := make([]mcpdiag.CallRecord, 0, len(items))
-		for _, rec := range items {
-			out = append(out, toMCPCallRecord(rec))
-		}
-		return out
-	}
-	return c.diag.Recent(n)
+	return mcpobs.RecentCalls(c.diag, c.cfg.RuntimeManager, n)
 }
 
 func applyExplicitConfig(cfg Config, user Config) Config {
@@ -417,57 +391,15 @@ func (c *Client) runtimeConfig() (Config, error) {
 }
 
 func resolveStartupPolicy(cfg Config, profile mcpprofile.Name) (types.MCPRuntimePolicy, error) {
-	if cfg.RuntimeManager == nil {
-		return mcpprofile.Resolve(profile, cfg.RuntimePolicy), nil
-	}
-	return cfg.RuntimeManager.ResolvePolicy(profile, cfg.RuntimePolicy)
+	return mcpreliability.ResolveStartupPolicy(profile, cfg.RuntimeManager, cfg.RuntimePolicy)
 }
 
 func resolveRuntimePolicy(cfg Config, explicit Config) (types.MCPRuntimePolicy, error) {
-	profile := cfg.Profile
-	if profile == "" {
-		profile = mcpprofile.Default
-	}
-	if cfg.RuntimeManager == nil {
-		return mcpprofile.Resolve(profile, explicit.RuntimePolicy), nil
-	}
-	return cfg.RuntimeManager.ResolvePolicy(profile, explicit.RuntimePolicy)
+	return mcpreliability.ResolveRuntimePolicy(cfg.Profile, cfg.RuntimeManager, explicit.RuntimePolicy)
 }
 
 func (c *Client) recordCall(rec mcpdiag.CallRecord) {
-	c.diag.Add(rec)
-	if c.cfg.RuntimeManager != nil {
-		c.cfg.RuntimeManager.RecordCall(runtimediag.CallRecord{
-			Time:           rec.Time,
-			Component:      "mcp",
-			Transport:      rec.Transport,
-			Profile:        rec.Profile,
-			RunID:          c.cfg.RunID,
-			CallID:         rec.CallID,
-			Name:           rec.Tool,
-			Action:         rec.Action,
-			LatencyMs:      rec.LatencyMs,
-			RetryCount:     rec.RetryCount,
-			ReconnectCount: rec.ReconnectCount,
-			ErrorClass:     rec.ErrorClass,
-		})
-	}
-}
-
-func toMCPCallRecord(rec runtimediag.CallRecord) mcpdiag.CallRecord {
-	return mcpdiag.CallRecord{
-		Time:           rec.Time,
-		Transport:      rec.Transport,
-		Profile:        rec.Profile,
-		RunID:          rec.RunID,
-		CallID:         rec.CallID,
-		Tool:           rec.Name,
-		Action:         rec.Action,
-		LatencyMs:      rec.LatencyMs,
-		RetryCount:     rec.RetryCount,
-		ReconnectCount: rec.ReconnectCount,
-		ErrorClass:     rec.ErrorClass,
-	}
+	mcpobs.RecordCall(c.diag, c.cfg.RuntimeManager, c.cfg.RunID, rec)
 }
 
 var _ types.MCPClient = (*Client)(nil)

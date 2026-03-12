@@ -9,6 +9,7 @@
 - OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已完成并归档。
 - OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 已完成并归档。
 - OpenSpec change `unify-diagnostics-contract-and-concurrency-baseline` 已完成并归档。
+- OpenSpec change `bootstrap-multi-llm-providers-m1` 进行中（Anthropic/Gemini 非流式最小适配）。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -32,6 +33,12 @@
 - 统一运行时配置：`viper` 加载 YAML + Env 覆盖（`env > file > default`）
 - 热更新：原子配置切换，非法更新自动回滚
 - 诊断 API（库接口）：最近 MCP 调用/Run 摘要、脱敏生效配置查询（无 CLI）
+
+### 3.5 Model Providers
+- `model/openai`：官方 SDK，支持 `Generate` + 原生 `Stream`
+- `model/anthropic`：官方 SDK，M1 支持最小 `Generate`（非流式）
+- `model/gemini`：官方 SDK，M1 支持最小 `Generate`（非流式）
+- TODO（R3 M2）：补齐 Anthropic/Gemini streaming 语义对齐与细粒度错误映射
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL

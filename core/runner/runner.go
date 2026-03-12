@@ -34,6 +34,10 @@ type Engine struct {
 	newRunID   func() string
 }
 
+type classifiedModelError interface {
+	ClassifiedError() *types.ClassifiedError
+}
+
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
 		model:  model,
@@ -117,9 +121,13 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			cancel()
 			pendingOutcomes = nil
 			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+				var classifiedErr classifiedModelError
+				switch {
+				case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
+					terminal = classifiedErr.ClassifiedError()
+				case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 					terminal = classified(types.ErrPolicyTimeout, "model step timed out", true)
-				} else {
+				default:
 					terminal = classified(types.ErrModel, err.Error(), false)
 				}
 				runErr = err

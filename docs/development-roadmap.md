@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-11
+更新时间：2026-03-12
 
 ## 目标
 
@@ -58,6 +58,11 @@
 - 关键指标可通过单一 dashboard 观测（延迟、错误率、重试率）。
 
 ## Phase R3（6-8 周）生态扩展与开发者体验
+
+### 进展（2026-03-12）
+- [x] `bootstrap-multi-llm-providers-m1`：完成 `model/anthropic`、`model/gemini` 官方 SDK 最小非流式适配。
+- [x] 新增跨 provider 契约测试（OpenAI/Anthropic/Gemini）最小成功路径与基础错误分类一致性。
+- [ ] M2 待办：多 provider streaming 事件语义对齐与细粒度错误映射。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。

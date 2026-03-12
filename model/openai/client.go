@@ -14,14 +14,16 @@ import (
 )
 
 type Config struct {
-	APIKey  string
-	BaseURL string
-	Model   string
+	APIKey     string
+	BaseURL    string
+	Model      string
+	GenerateFn func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 }
 
 type Client struct {
 	sdk         openai.Client
 	model       string
+	generateFn  func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 	newResponse func(context.Context, responses.ResponseNewParams) (*responses.Response, error)
 	newStream   func(context.Context, responses.ResponseNewParams) responseStream
 }
@@ -60,8 +62,9 @@ func NewClient(cfg Config) *Client {
 	}
 	sdkClient := openai.NewClient(opts...)
 	client := &Client{
-		sdk:   sdkClient,
-		model: model,
+		sdk:        sdkClient,
+		model:      model,
+		generateFn: cfg.GenerateFn,
 	}
 	client.newResponse = func(ctx context.Context, params responses.ResponseNewParams) (*responses.Response, error) {
 		return client.sdk.Responses.New(ctx, params)
@@ -73,6 +76,9 @@ func NewClient(cfg Config) *Client {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	if c.generateFn != nil {
+		return c.generateFn(ctx, req)
+	}
 	input := strings.TrimSpace(req.Input)
 	if input == "" && len(req.Messages) > 0 {
 		input = req.Messages[len(req.Messages)-1].Content

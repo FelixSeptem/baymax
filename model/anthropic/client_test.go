@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
@@ -140,5 +141,30 @@ func TestStreamFailFastAndClassified(t *testing.T) {
 	}
 	if len(got) == 0 || got[0].Type != types.ModelEventTypeResponseError {
 		t.Fatalf("expected first event response.error, got %#v", got)
+	}
+}
+
+func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
+	c := NewClient(Config{
+		Model: "claude-3-5-sonnet-latest",
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{
+				Provider:  "anthropic",
+				Model:     model,
+				Source:    "test",
+				CheckedAt: time.Now(),
+				Support: map[types.ModelCapability]types.CapabilitySupport{
+					types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+					types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+				},
+			}, nil
+		},
+	})
+	got, err := c.DiscoverCapabilities(context.Background(), types.ModelRequest{})
+	if err != nil {
+		t.Fatalf("DiscoverCapabilities failed: %v", err)
+	}
+	if got.Provider != "anthropic" || got.Model != "claude-3-5-sonnet-latest" {
+		t.Fatalf("unexpected capabilities: %#v", got)
 	}
 }

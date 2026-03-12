@@ -75,7 +75,7 @@ func NewClient(transport Transport, cfg Config) *Client {
 		cfg.Profile = profile
 	}
 
-	return &Client{
+	client := &Client{
 		transport: transport,
 		cfg:       cfg,
 		explicit:  userCfg,
@@ -84,6 +84,10 @@ func NewClient(transport Transport, cfg Config) *Client {
 		writePool: make(chan struct{}, cfg.WritePoolSize),
 		diag:      mcpdiag.NewStore(200),
 	}
+	if policyErr != nil {
+		client.initialized.Store(true)
+	}
+	return client
 }
 
 func (c *Client) Warmup(ctx context.Context) error {
@@ -91,11 +95,8 @@ func (c *Client) Warmup(ctx context.Context) error {
 }
 
 func (c *Client) ensureInitialized(ctx context.Context) error {
-	if c.initErr != nil {
-		return c.initErr
-	}
 	if c.initialized.Load() {
-		return c.initErr
+		return c.getInitErr()
 	}
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
@@ -116,6 +117,12 @@ func (c *Client) ensureInitialized(ctx context.Context) error {
 	c.initErr = err
 	c.initialized.Store(true)
 	return err
+}
+
+func (c *Client) getInitErr() error {
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	return c.initErr
 }
 
 func (c *Client) ListTools(ctx context.Context) ([]types.MCPToolMeta, error) {

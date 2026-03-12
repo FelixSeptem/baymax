@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
@@ -20,6 +22,7 @@ type Config struct {
 	Model      string
 	GenerateFn func(ctx context.Context, input string) (types.ModelResponse, error)
 	StreamFn   func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error]
+	DiscoverFn func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 type Client struct {
@@ -27,6 +30,7 @@ type Client struct {
 	sdk      *genai.Client
 	generate func(ctx context.Context, input string) (types.ModelResponse, error)
 	stream   func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error]
+	discover func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
@@ -56,6 +60,24 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 				}
 			}
 		}
+		if cfg.DiscoverFn != nil {
+			client.discover = cfg.DiscoverFn
+		} else {
+			client.discover = func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				_ = ctx
+				_ = model
+				return types.ProviderCapabilities{
+					Provider:  "gemini",
+					Model:     client.model,
+					Source:    "sdk.unavailable",
+					CheckedAt: time.Now(),
+					Support: map[types.ModelCapability]types.CapabilitySupport{
+						types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+						types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+					},
+				}, nil
+			}
+		}
 		return client, nil
 	}
 
@@ -67,8 +89,9 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, providererror.FromError(err)
 	}
 	client := &Client{
-		model: model,
-		sdk:   sdk,
+		model:    model,
+		sdk:      sdk,
+		discover: cfg.DiscoverFn,
 	}
 	client.generate = client.generateWithSDK
 	if cfg.GenerateFn != nil {
@@ -78,7 +101,14 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.StreamFn != nil {
 		client.stream = cfg.StreamFn
 	}
+	if client.discover == nil {
+		client.discover = client.discoverWithSDK
+	}
 	return client, nil
+}
+
+func (c *Client) ProviderName() string {
+	return "gemini"
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -128,6 +158,44 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	return ctx.Err()
+}
+
+func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	return c.discover(ctx, model)
+}
+
+func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+	m, err := c.sdk.Models.Get(ctx, model, nil)
+	if err != nil {
+		return types.ProviderCapabilities{}, providererror.FromError(err)
+	}
+	out := types.ProviderCapabilities{
+		Provider:  c.ProviderName(),
+		Model:     model,
+		Source:    "sdk.models.get",
+		CheckedAt: time.Now(),
+		Support: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+		},
+	}
+	for _, action := range m.SupportedActions {
+		act := strings.ToLower(strings.TrimSpace(action))
+		if strings.Contains(act, "stream") {
+			out.Support[types.ModelCapabilityStreaming] = types.CapabilitySupportSupported
+		}
+		if strings.Contains(act, "tool") || strings.Contains(act, "function") {
+			out.Support[types.ModelCapabilityToolCall] = types.CapabilitySupportSupported
+		}
+	}
+	if slices.Contains(m.SupportedActions, "generateContent") && out.Support[types.ModelCapabilityStreaming] == types.CapabilitySupportUnknown {
+		out.Support[types.ModelCapabilityStreaming] = types.CapabilitySupportSupported
+	}
+	return out, nil
 }
 
 func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.ModelEvent {
@@ -230,3 +298,4 @@ func decodeCandidateText(raw []byte) string {
 }
 
 var _ types.ModelClient = (*Client)(nil)
+var _ types.ModelCapabilityDiscovery = (*Client)(nil)

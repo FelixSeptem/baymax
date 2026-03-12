@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -27,11 +29,30 @@ type Option func(*Engine)
 
 type Engine struct {
 	model      types.ModelClient
+	models     map[string]types.ModelClient
+	modelOrder []string
 	dispatcher *local.Dispatcher
 	tracer     *obsTrace.Manager
 	runtimeMgr *runtimeconfig.Manager
 	now        func() time.Time
 	newRunID   func() string
+	capCacheMu sync.RWMutex
+	capCache   map[string]cachedCapabilities
+}
+
+type cachedCapabilities struct {
+	report    types.ProviderCapabilities
+	expiresAt time.Time
+}
+
+type stepModelSelection struct {
+	Provider     string
+	Initial      string
+	Attempted    []string
+	Missing      map[string][]types.ModelCapability
+	Required     []types.ModelCapability
+	UsedFallback bool
+	Reason       string
 }
 
 type classifiedModelError interface {
@@ -40,13 +61,16 @@ type classifiedModelError interface {
 
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
-		model:  model,
-		tracer: obsTrace.NewManager("baymax/core/runner"),
-		now:    time.Now,
+		model:    model,
+		models:   map[string]types.ModelClient{},
+		tracer:   obsTrace.NewManager("baymax/core/runner"),
+		now:      time.Now,
+		capCache: map[string]cachedCapabilities{},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
 	}
+	e.registerModel(model)
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -79,6 +103,17 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	}
 }
 
+func WithProviderModels(primary string, providers map[string]types.ModelClient) Option {
+	return func(e *Engine) {
+		for name, client := range providers {
+			e.registerNamedModel(name, client)
+		}
+		if strings.TrimSpace(primary) != "" {
+			e.model = e.models[strings.ToLower(strings.TrimSpace(primary))]
+		}
+	}
+}
+
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
@@ -96,6 +131,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	warnings := make([]string, 0)
 	mergedCalls := make([]types.ToolCallSummary, 0)
 	pendingOutcomes := make([]types.ToolCallOutcome, 0)
+	lastSelection := stepModelSelection{}
+	selectionPath := make([]string, 0, 4)
+	fallbackUsed := false
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -113,10 +151,34 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			state = StateModelStep
 		case StateModelStep:
 			iteration++
-			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.requested", RunID: runID, Iteration: iteration, Time: e.now()})
+			required := req.Capabilities.Normalized()
+			modelReq := toModelRequest(runID, req, pendingOutcomes, required)
+			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
+			if selErr != nil {
+				terminal = selErr
+				runErr = errors.New(selErr.Message)
+				state = StateAbort
+				continue
+			}
+			lastSelection = selection
+			if selection.Provider != "" {
+				selectionPath = append(selectionPath, selection.Provider)
+			}
+			fallbackUsed = fallbackUsed || selection.UsedFallback
+			e.emit(ctx, h, types.Event{
+				Version:   "v1",
+				Type:      "model.requested",
+				RunID:     runID,
+				Iteration: iteration,
+				Time:      e.now(),
+				Payload: map[string]any{
+					"model_provider": selection.Provider,
+					"fallback_used":  selection.UsedFallback,
+				},
+			})
 			stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
 			modelCtx, modelSpan := e.tracer.StartStep(stepCtx, "model.generate", attribute.Int("iteration.index", iteration))
-			resp, err := e.model.Generate(modelCtx, toModelRequest(runID, req, pendingOutcomes))
+			resp, err := selectedModel.Generate(modelCtx, modelReq)
 			modelSpan.End()
 			cancel()
 			pendingOutcomes = nil
@@ -240,7 +302,13 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				RunID:     runID,
 				Iteration: iteration,
 				Time:      e.now(),
-				Payload:   runFinishedPayload(result, "success", ""),
+				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
+					Provider:     lastSelection.Provider,
+					Initial:      lastSelection.Initial,
+					Path:         selectionPath,
+					Required:     lastSelection.Required,
+					UsedFallback: fallbackUsed,
+				}),
 			})
 			return result, nil
 		case StateAbort:
@@ -262,7 +330,14 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				RunID:     runID,
 				Iteration: iteration,
 				Time:      e.now(),
-				Payload:   runFinishedPayload(result, "failed", errClass),
+				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
+					Provider:     lastSelection.Provider,
+					Initial:      lastSelection.Initial,
+					Path:         selectionPath,
+					Required:     lastSelection.Required,
+					Reason:       lastSelection.Reason,
+					UsedFallback: fallbackUsed,
+				}),
 			})
 			return result, runErr
 		}
@@ -282,13 +357,54 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	iteration := 1
 	final := ""
 	usage := types.TokenUsage{}
+	selectionPath := make([]string, 0, 2)
+	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
+	modelReq := toModelRequest(runID, req, nil, required)
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
-	e.emit(ctx, h, types.Event{Version: "v1", Type: "model.requested", RunID: runID, Iteration: iteration, Time: e.now()})
+	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
+	if selErr != nil {
+		result := types.RunResult{
+			RunID:      runID,
+			Iterations: iteration,
+			LatencyMs:  e.now().Sub(start).Milliseconds(),
+			Error:      selErr,
+		}
+		e.emit(ctx, h, types.Event{
+			Version:   "v1",
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: runFinishedPayload(result, "failed", string(selErr.Class), runFinishMeta{
+				Provider:     selection.Provider,
+				Initial:      selection.Initial,
+				Path:         selectionPath,
+				Required:     required,
+				UsedFallback: selection.UsedFallback,
+				Reason:       selErr.Message,
+			}),
+		})
+		return result, errors.New(selErr.Message)
+	}
+	if selection.Provider != "" {
+		selectionPath = append(selectionPath, selection.Provider)
+	}
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "model.requested",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"model_provider": selection.Provider,
+			"fallback_used":  selection.UsedFallback,
+		},
+	})
 
 	stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
 	modelCtx, modelSpan := e.tracer.StartStep(stepCtx, "model.stream", attribute.Int("iteration.index", iteration))
-	err := e.model.Stream(modelCtx, toModelRequest(runID, req, nil), func(ev types.ModelEvent) error {
+	err := selectedModel.Stream(modelCtx, modelReq, func(ev types.ModelEvent) error {
 		payload := map[string]any{
 			"event_type": ev.Type,
 			"delta":      ev.TextDelta,
@@ -339,7 +455,13 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			RunID:     runID,
 			Iteration: iteration,
 			Time:      e.now(),
-			Payload:   runFinishedPayload(result, "failed", errClass),
+			Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
+				Provider:     selection.Provider,
+				Initial:      selection.Initial,
+				Path:         selectionPath,
+				Required:     required,
+				UsedFallback: selection.UsedFallback,
+			}),
 		})
 		return result, err
 	}
@@ -358,7 +480,13 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		RunID:     runID,
 		Iteration: iteration,
 		Time:      e.now(),
-		Payload:   runFinishedPayload(result, "success", ""),
+		Payload: runFinishedPayload(result, "success", "", runFinishMeta{
+			Provider:     selection.Provider,
+			Initial:      selection.Initial,
+			Path:         selectionPath,
+			Required:     required,
+			UsedFallback: selection.UsedFallback,
+		}),
 	})
 	return result, nil
 }
@@ -381,12 +509,15 @@ func resolvePolicy(p *types.LoopPolicy) types.LoopPolicy {
 	return policy
 }
 
-func toModelRequest(runID string, req types.RunRequest, outcomes []types.ToolCallOutcome) types.ModelRequest {
+func toModelRequest(runID string, req types.RunRequest, outcomes []types.ToolCallOutcome, required []types.ModelCapability) types.ModelRequest {
 	return types.ModelRequest{
 		RunID:      runID,
 		Input:      req.Input,
 		Messages:   req.Messages,
 		ToolResult: outcomes,
+		Capabilities: types.CapabilityRequirements{
+			Required: required,
+		},
 	}
 }
 
@@ -423,7 +554,225 @@ func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.Loop
 	return policy
 }
 
-func runFinishedPayload(result types.RunResult, status string, errClass string) map[string]any {
+func (e *Engine) registerModel(model types.ModelClient) {
+	if model == nil {
+		return
+	}
+	name := "default"
+	if d, ok := model.(types.ModelCapabilityDiscovery); ok {
+		if provider := strings.ToLower(strings.TrimSpace(d.ProviderName())); provider != "" {
+			name = provider
+		}
+	}
+	e.registerNamedModel(name, model)
+}
+
+func (e *Engine) registerNamedModel(name string, model types.ModelClient) {
+	if model == nil {
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(name))
+	if key == "" {
+		key = "default"
+	}
+	if e.models == nil {
+		e.models = map[string]types.ModelClient{}
+	}
+	if _, exists := e.models[key]; !exists {
+		e.modelOrder = append(e.modelOrder, key)
+	}
+	e.models[key] = model
+}
+
+func (e *Engine) selectModelForStep(ctx context.Context, req types.ModelRequest, stream bool, strict bool) (types.ModelClient, stepModelSelection, *types.ClassifiedError) {
+	selection := stepModelSelection{
+		Missing:  map[string][]types.ModelCapability{},
+		Required: req.Capabilities.Normalized(),
+	}
+	if stream {
+		hasStreaming := false
+		for _, cap := range selection.Required {
+			if cap == types.ModelCapabilityStreaming {
+				hasStreaming = true
+				break
+			}
+		}
+		if !hasStreaming {
+			selection.Required = append(selection.Required, types.ModelCapabilityStreaming)
+		}
+	}
+	primaryName, primaryClient := e.primaryModel()
+	if primaryClient == nil {
+		return nil, selection, classified(types.ErrModel, "no model client configured", false)
+	}
+	selection.Initial = primaryName
+
+	order := e.resolveProviderOrder(primaryName)
+	if len(order) == 0 {
+		order = []string{primaryName}
+	}
+
+	timeout := 1500 * time.Millisecond
+	cacheTTL := 5 * time.Minute
+	if e.runtimeMgr != nil {
+		cfg := e.runtimeMgr.EffectiveConfig()
+		if cfg.ProviderFallback.DiscoveryTimeout > 0 {
+			timeout = cfg.ProviderFallback.DiscoveryTimeout
+		}
+		if cfg.ProviderFallback.DiscoveryCacheTTL > 0 {
+			cacheTTL = cfg.ProviderFallback.DiscoveryCacheTTL
+		}
+	}
+
+	for _, name := range order {
+		client, ok := e.models[name]
+		if !ok || client == nil {
+			continue
+		}
+		selection.Attempted = append(selection.Attempted, name)
+		if len(selection.Required) == 0 || !strict {
+			selection.Provider = name
+			selection.UsedFallback = name != selection.Initial
+			return client, selection, nil
+		}
+		discovery, ok := client.(types.ModelCapabilityDiscovery)
+		if !ok {
+			selection.Missing[name] = append([]types.ModelCapability(nil), selection.Required...)
+			continue
+		}
+		report, err := e.discoverCapabilities(ctx, name, discovery, req, timeout, cacheTTL)
+		if err != nil {
+			selection.Missing[name] = append([]types.ModelCapability(nil), selection.Required...)
+			continue
+		}
+		missing := report.Missing(selection.Required)
+		if len(missing) == 0 {
+			selection.Provider = name
+			selection.UsedFallback = name != selection.Initial
+			return client, selection, nil
+		}
+		selection.Missing[name] = missing
+	}
+
+	required := make([]string, 0, len(selection.Required))
+	for _, cap := range selection.Required {
+		required = append(required, string(cap))
+	}
+	selection.Reason = "capability_preflight_failed"
+	err := classified(types.ErrModel, "no provider satisfies required capabilities", false)
+	err.Details = map[string]any{
+		"provider_reason":       "capability_unsupported",
+		"required_capabilities": strings.Join(required, ","),
+		"attempted_providers":   strings.Join(selection.Attempted, ","),
+	}
+	return nil, selection, err
+}
+
+func (e *Engine) primaryModel() (string, types.ModelClient) {
+	if d, ok := e.model.(types.ModelCapabilityDiscovery); ok {
+		name := strings.ToLower(strings.TrimSpace(d.ProviderName()))
+		if name != "" {
+			if client, exists := e.models[name]; exists && client != nil {
+				return name, client
+			}
+		}
+	}
+	if len(e.modelOrder) > 0 {
+		name := e.modelOrder[0]
+		return name, e.models[name]
+	}
+	return "default", e.model
+}
+
+func (e *Engine) resolveProviderOrder(primary string) []string {
+	ordered := make([]string, 0, len(e.modelOrder))
+	seen := map[string]struct{}{}
+	appendName := func(name string) {
+		n := strings.ToLower(strings.TrimSpace(name))
+		if n == "" {
+			return
+		}
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		ordered = append(ordered, n)
+	}
+	appendName(primary)
+
+	enabled := false
+	if e.runtimeMgr != nil {
+		cfg := e.runtimeMgr.EffectiveConfig()
+		enabled = cfg.ProviderFallback.Enabled
+		if enabled && len(cfg.ProviderFallback.Providers) > 0 {
+			for _, provider := range cfg.ProviderFallback.Providers {
+				appendName(provider)
+			}
+		}
+	}
+	if !enabled {
+		return ordered
+	}
+	for _, name := range e.modelOrder {
+		appendName(name)
+	}
+	return ordered
+}
+
+func (e *Engine) fallbackEnabled() bool {
+	if e.runtimeMgr == nil {
+		return false
+	}
+	return e.runtimeMgr.EffectiveConfig().ProviderFallback.Enabled
+}
+
+func (e *Engine) discoverCapabilities(
+	ctx context.Context,
+	provider string,
+	discovery types.ModelCapabilityDiscovery,
+	req types.ModelRequest,
+	timeout time.Duration,
+	cacheTTL time.Duration,
+) (types.ProviderCapabilities, error) {
+	cacheKey := provider + "|" + req.Model
+	e.capCacheMu.RLock()
+	cached, ok := e.capCache[cacheKey]
+	e.capCacheMu.RUnlock()
+	if ok && e.now().Before(cached.expiresAt) {
+		return cached.report, nil
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	report, err := discovery.DiscoverCapabilities(probeCtx, req)
+	if err != nil {
+		return types.ProviderCapabilities{}, err
+	}
+	if report.Provider == "" {
+		report.Provider = provider
+	}
+	if report.CheckedAt.IsZero() {
+		report.CheckedAt = e.now()
+	}
+	e.capCacheMu.Lock()
+	e.capCache[cacheKey] = cachedCapabilities{
+		report:    report,
+		expiresAt: e.now().Add(cacheTTL),
+	}
+	e.capCacheMu.Unlock()
+	return report, nil
+}
+
+type runFinishMeta struct {
+	Provider     string
+	Initial      string
+	Path         []string
+	Required     []types.ModelCapability
+	UsedFallback bool
+	Reason       string
+}
+
+func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
 	payload := map[string]any{
 		"status":      status,
 		"latency_ms":  result.LatencyMs,
@@ -433,6 +782,26 @@ func runFinishedPayload(result types.RunResult, status string, errClass string) 
 	}
 	if errClass != "" {
 		payload["error_class"] = errClass
+	}
+	if meta.Provider != "" {
+		payload["model_provider"] = meta.Provider
+	}
+	if meta.Initial != "" {
+		payload["fallback_initial"] = meta.Initial
+	}
+	payload["fallback_used"] = meta.UsedFallback
+	if len(meta.Path) > 0 {
+		payload["fallback_path"] = strings.Join(meta.Path, "->")
+	}
+	if len(meta.Required) > 0 {
+		required := make([]string, 0, len(meta.Required))
+		for _, cap := range meta.Required {
+			required = append(required, string(cap))
+		}
+		payload["required_capabilities"] = strings.Join(required, ",")
+	}
+	if meta.Reason != "" {
+		payload["fallback_reason"] = meta.Reason
 	}
 	return payload
 }

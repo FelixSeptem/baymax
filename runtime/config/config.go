@@ -23,10 +23,11 @@ const (
 )
 
 type Config struct {
-	MCP         MCPConfig         `json:"mcp"`
-	Concurrency ConcurrencyConfig `json:"concurrency"`
-	Diagnostics DiagnosticsConfig `json:"diagnostics"`
-	Reload      ReloadConfig      `json:"reload"`
+	MCP              MCPConfig              `json:"mcp"`
+	Concurrency      ConcurrencyConfig      `json:"concurrency"`
+	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
+	Reload           ReloadConfig           `json:"reload"`
+	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 }
 
 type MCPConfig struct {
@@ -50,6 +51,13 @@ type DiagnosticsConfig struct {
 type ReloadConfig struct {
 	Enabled  bool          `json:"enabled"`
 	Debounce time.Duration `json:"debounce"`
+}
+
+type ProviderFallbackConfig struct {
+	Enabled           bool          `json:"enabled"`
+	Providers         []string      `json:"providers"`
+	DiscoveryTimeout  time.Duration `json:"discovery_timeout"`
+	DiscoveryCacheTTL time.Duration `json:"discovery_cache_ttl"`
 }
 
 type LoadOptions struct {
@@ -82,6 +90,12 @@ func DefaultConfig() Config {
 		Reload: ReloadConfig{
 			Enabled:  false,
 			Debounce: 200 * time.Millisecond,
+		},
+		ProviderFallback: ProviderFallbackConfig{
+			Enabled:           false,
+			Providers:         nil,
+			DiscoveryTimeout:  1500 * time.Millisecond,
+			DiscoveryCacheTTL: 5 * time.Minute,
 		},
 	}
 }
@@ -181,6 +195,29 @@ func Validate(cfg Config) error {
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
 	}
+	if cfg.ProviderFallback.DiscoveryTimeout <= 0 {
+		return errors.New("provider_fallback.discovery_timeout must be > 0")
+	}
+	if cfg.ProviderFallback.DiscoveryCacheTTL <= 0 {
+		return errors.New("provider_fallback.discovery_cache_ttl must be > 0")
+	}
+	if cfg.ProviderFallback.Enabled {
+		if len(cfg.ProviderFallback.Providers) == 0 {
+			return errors.New("provider_fallback.providers must not be empty when enabled")
+		}
+		seen := map[string]struct{}{}
+		for i, provider := range cfg.ProviderFallback.Providers {
+			name := strings.ToLower(strings.TrimSpace(provider))
+			if name == "" {
+				return fmt.Errorf("provider_fallback.providers[%d] must not be empty", i)
+			}
+			if _, ok := seen[name]; ok {
+				return fmt.Errorf("provider_fallback.providers[%d]=%q is duplicated", i, name)
+			}
+			seen[name] = struct{}{}
+			cfg.ProviderFallback.Providers[i] = name
+		}
+	}
 	return nil
 }
 
@@ -215,6 +252,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.max_skill_records", base.Diagnostics.MaxSkillRecords)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
+	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
+	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
+	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
+	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
 }
 
 func buildConfig(v *viper.Viper) Config {
@@ -229,6 +270,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Diagnostics.MaxSkillRecords = v.GetInt("diagnostics.max_skill_records")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
+	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")
+	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
+	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
+	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {
@@ -264,6 +309,29 @@ func buildConfig(v *viper.Viper) Config {
 		cfg.MCP.Profiles[name] = p
 	}
 	return cfg
+}
+
+func normalizeProviders(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, provider := range in {
+		chunks := strings.Split(provider, ",")
+		for _, chunk := range chunks {
+			name := strings.ToLower(strings.TrimSpace(chunk))
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func toMap(cfg Config) (map[string]any, error) {

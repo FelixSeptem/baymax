@@ -107,3 +107,34 @@ func TestToolResultJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected error: %#v", got.Error)
 	}
 }
+
+func TestCapabilityRequirementsNormalized(t *testing.T) {
+	req := CapabilityRequirements{
+		Required: []ModelCapability{
+			ModelCapabilityStreaming,
+			"",
+			ModelCapabilityToolCall,
+			ModelCapabilityStreaming,
+		},
+	}
+	got := req.Normalized()
+	if len(got) != 2 {
+		t.Fatalf("normalized len = %d, want 2", len(got))
+	}
+	if got[0] != ModelCapabilityStreaming || got[1] != ModelCapabilityToolCall {
+		t.Fatalf("normalized = %#v", got)
+	}
+}
+
+func TestProviderCapabilitiesMissing(t *testing.T) {
+	caps := ProviderCapabilities{
+		Support: map[ModelCapability]CapabilitySupport{
+			ModelCapabilityStreaming: CapabilitySupportSupported,
+			ModelCapabilityToolCall:  CapabilitySupportUnknown,
+		},
+	}
+	missing := caps.Missing([]ModelCapability{ModelCapabilityStreaming, ModelCapabilityToolCall})
+	if len(missing) != 1 || missing[0] != ModelCapabilityToolCall {
+		t.Fatalf("missing = %#v, want [tool_call]", missing)
+	}
+}

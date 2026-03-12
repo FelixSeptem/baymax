@@ -58,3 +58,39 @@ func TestResolveMCPPolicyWithConfig(t *testing.T) {
 		t.Fatalf("retry = %d, want 9", p.Retry)
 	}
 }
+
+func TestProviderFallbackLoadAndValidation(t *testing.T) {
+	t.Setenv("BAYMAX_PROVIDER_FALLBACK_ENABLED", "true")
+	t.Setenv("BAYMAX_PROVIDER_FALLBACK_PROVIDERS", "openai,anthropic")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+provider_fallback:
+  enabled: false
+  providers: [gemini]
+  discovery_timeout: 2s
+  discovery_cache_ttl: 3m
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.ProviderFallback.Enabled {
+		t.Fatalf("provider_fallback.enabled = false, want true from env")
+	}
+	if len(cfg.ProviderFallback.Providers) != 2 || cfg.ProviderFallback.Providers[0] != "openai" || cfg.ProviderFallback.Providers[1] != "anthropic" {
+		t.Fatalf("provider_fallback.providers = %#v", cfg.ProviderFallback.Providers)
+	}
+}
+
+func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ProviderFallback.Enabled = true
+	cfg.ProviderFallback.Providers = nil
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error, got nil")
+	}
+}

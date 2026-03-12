@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-11
+更新时间：2026-03-12
 
 ## 目标
 
@@ -52,6 +52,12 @@ diagnostics:
 reload:
   enabled: true
   debounce: 200ms
+
+provider_fallback:
+  enabled: false
+  providers: [openai, anthropic, gemini] # 有序候选链；enabled=true 时必须非空
+  discovery_timeout: 1500ms
+  discovery_cache_ttl: 5m
 ```
 
 ## 使用示例（最小）
@@ -85,6 +91,15 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 当前不提供 CLI 诊断命令。
 
+### Run 诊断新增字段（能力探测/降级）
+
+- `model_provider`：最终执行 model step 的 provider。
+- `fallback_used`：本次 run 是否发生 provider 降级。
+- `fallback_initial`：候选链中的首选 provider。
+- `fallback_path`：最终命中的 provider 路径（`a->b->...`）。
+- `required_capabilities`：本次 preflight 的能力需求（逗号分隔）。
+- `fallback_reason`：降级/终止原因摘要（例如 `capability_preflight_failed`）。
+
 ## 诊断写入口径（Single Writer + Idempotency）
 
 - 统一写入入口：`observability/event.RuntimeRecorder`。
@@ -113,6 +128,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
 - 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
+- provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 
 ## 迁移映射（功能命名）
 

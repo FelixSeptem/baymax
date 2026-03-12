@@ -34,13 +34,19 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			}
 		}
 		r.manager.RecordRun(runtimediag.RunRecord{
-			Time:       ev.Time,
-			RunID:      ev.RunID,
-			Status:     status,
-			Iterations: ev.Iteration,
-			ToolCalls:  payloadInt(ev.Payload, "tool_calls"),
-			LatencyMs:  payloadInt64(ev.Payload, "latency_ms"),
-			ErrorClass: errorClass,
+			Time:                 ev.Time,
+			RunID:                ev.RunID,
+			Status:               status,
+			Iterations:           ev.Iteration,
+			ToolCalls:            payloadInt(ev.Payload, "tool_calls"),
+			LatencyMs:            payloadInt64(ev.Payload, "latency_ms"),
+			ErrorClass:           errorClass,
+			ModelProvider:        payloadString(ev.Payload, "model_provider"),
+			FallbackUsed:         payloadBool(ev.Payload, "fallback_used"),
+			FallbackInitial:      payloadString(ev.Payload, "fallback_initial"),
+			FallbackPath:         payloadString(ev.Payload, "fallback_path"),
+			RequiredCapabilities: payloadString(ev.Payload, "required_capabilities"),
+			FallbackReason:       payloadString(ev.Payload, "fallback_reason"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{
@@ -128,6 +134,18 @@ func payloadOrDefault(m map[string]any, key, fallback string) string {
 	if v == "" {
 		return fallback
 	}
+	return v
+}
+
+func payloadBool(m map[string]any, key string) bool {
+	if len(m) == 0 {
+		return false
+	}
+	raw, ok := m[key]
+	if !ok {
+		return false
+	}
+	v, _ := raw.(bool)
 	return v
 }
 

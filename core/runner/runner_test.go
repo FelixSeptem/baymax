@@ -21,6 +21,9 @@ import (
 type fakeModel struct {
 	generate func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error)
 	stream   func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error
+	provider string
+	caps     map[types.ModelCapability]types.CapabilitySupport
+	discover error
 }
 
 func (f *fakeModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -35,6 +38,34 @@ func (f *fakeModel) Stream(ctx context.Context, req types.ModelRequest, onEvent 
 		return nil
 	}
 	return f.stream(ctx, req, onEvent)
+}
+
+func (f *fakeModel) ProviderName() string {
+	if strings.TrimSpace(f.provider) == "" {
+		return "fake"
+	}
+	return f.provider
+}
+
+func (f *fakeModel) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	_ = ctx
+	if f.discover != nil {
+		return types.ProviderCapabilities{}, f.discover
+	}
+	support := f.caps
+	if support == nil {
+		support = map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+		}
+	}
+	return types.ProviderCapabilities{
+		Provider:  f.ProviderName(),
+		Model:     req.Model,
+		Support:   support,
+		Source:    "test",
+		CheckedAt: time.Now(),
+	}, nil
 }
 
 type fakeTool struct {
@@ -480,5 +511,177 @@ mcp:
 	}
 	if runs[0].Status != "failed" || runs[0].ErrorClass != string(types.ErrModel) {
 		t.Fatalf("unexpected failed run diagnostics: %#v", runs[0])
+	}
+}
+
+func TestRunProviderFallbackByCapability(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	primary := &fakeModel{
+		provider: "openai",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityToolCall:  types.CapabilitySupportUnsupported,
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			t.Fatalf("primary provider should not be invoked")
+			return types.ModelResponse{}, nil
+		},
+	}
+	secondary := &fakeModel{
+		provider: "anthropic",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "fallback-ok"}, nil
+		},
+	}
+
+	collector := &eventCollector{}
+	r := New(primary,
+		WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    primary,
+			"anthropic": secondary,
+		}),
+		WithRuntimeManager(mgr),
+	)
+	res, err := r.Run(context.Background(), types.RunRequest{
+		Input: "hello",
+		Capabilities: types.CapabilityRequirements{
+			Required: []types.ModelCapability{types.ModelCapabilityToolCall},
+		},
+	}, collector)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if res.FinalAnswer != "fallback-ok" {
+		t.Fatalf("FinalAnswer = %q, want fallback-ok", res.FinalAnswer)
+	}
+	finished := collector.evs[len(collector.evs)-1]
+	if finished.Type != "run.finished" {
+		t.Fatalf("last event = %q, want run.finished", finished.Type)
+	}
+	if finished.Payload["model_provider"] != "anthropic" {
+		t.Fatalf("model_provider = %#v, want anthropic", finished.Payload["model_provider"])
+	}
+	if finished.Payload["fallback_used"] != true {
+		t.Fatalf("fallback_used = %#v, want true", finished.Payload["fallback_used"])
+	}
+}
+
+func TestRunProviderFallbackFailFastWhenExhausted(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	unsupported := map[types.ModelCapability]types.CapabilitySupport{
+		types.ModelCapabilityToolCall:  types.CapabilitySupportUnsupported,
+		types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+	}
+	primary := &fakeModel{provider: "openai", caps: unsupported}
+	secondary := &fakeModel{provider: "anthropic", caps: unsupported}
+	r := New(primary,
+		WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    primary,
+			"anthropic": secondary,
+		}),
+		WithRuntimeManager(mgr),
+	)
+	res, err := r.Run(context.Background(), types.RunRequest{
+		Input: "hello",
+		Capabilities: types.CapabilityRequirements{
+			Required: []types.ModelCapability{types.ModelCapabilityToolCall},
+		},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected fail-fast error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrModel {
+		t.Fatalf("error class = %#v, want ErrModel", res.Error)
+	}
+	if res.Error.Details["provider_reason"] != "capability_unsupported" {
+		t.Fatalf("provider_reason = %#v, want capability_unsupported", res.Error.Details["provider_reason"])
+	}
+}
+
+func TestStreamProviderFallbackKeepsStreamSemantics(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	primary := &fakeModel{
+		provider: "openai",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportUnsupported,
+		},
+	}
+	secondary := &fakeModel{
+		provider: "anthropic",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "he"}); err != nil {
+				return err
+			}
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "llo"})
+		},
+	}
+
+	collector := &eventCollector{}
+	r := New(primary,
+		WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    primary,
+			"anthropic": secondary,
+		}),
+		WithRuntimeManager(mgr),
+	)
+	res, err := r.Stream(context.Background(), types.RunRequest{Input: "hello"}, collector)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+	if res.FinalAnswer != "hello" {
+		t.Fatalf("FinalAnswer = %q, want hello", res.FinalAnswer)
+	}
+	finished := collector.evs[len(collector.evs)-1]
+	if finished.Payload["model_provider"] != "anthropic" {
+		t.Fatalf("model_provider = %#v, want anthropic", finished.Payload["model_provider"])
 	}
 }

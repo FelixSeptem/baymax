@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	openai "github.com/openai/openai-go"
@@ -19,6 +20,7 @@ type Config struct {
 	Model      string
 	GenerateFn func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 	StreamFn   func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
+	DiscoverFn func(context.Context, string) (types.ProviderCapabilities, error)
 }
 
 type Client struct {
@@ -26,6 +28,7 @@ type Client struct {
 	model       string
 	generateFn  func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 	streamFn    func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
+	discoverFn  func(context.Context, string) (types.ProviderCapabilities, error)
 	newResponse func(context.Context, responses.ResponseNewParams) (*responses.Response, error)
 	newStream   func(context.Context, responses.ResponseNewParams) responseStream
 }
@@ -68,6 +71,7 @@ func NewClient(cfg Config) *Client {
 		model:      model,
 		generateFn: cfg.GenerateFn,
 		streamFn:   cfg.StreamFn,
+		discoverFn: cfg.DiscoverFn,
 	}
 	client.newResponse = func(ctx context.Context, params responses.ResponseNewParams) (*responses.Response, error) {
 		return client.sdk.Responses.New(ctx, params)
@@ -75,7 +79,14 @@ func NewClient(cfg Config) *Client {
 	client.newStream = func(ctx context.Context, params responses.ResponseNewParams) responseStream {
 		return client.sdk.Responses.NewStreaming(ctx, params)
 	}
+	if client.discoverFn == nil {
+		client.discoverFn = client.discoverWithSDK
+	}
 	return client
+}
+
+func (c *Client) ProviderName() string {
+	return "openai"
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -162,6 +173,39 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		return err
 	}
 	return ctx.Err()
+}
+
+func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	return c.discoverFn(ctx, model)
+}
+
+func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+	info, err := c.sdk.Models.Get(ctx, model)
+	if err != nil {
+		return types.ProviderCapabilities{}, err
+	}
+	out := types.ProviderCapabilities{
+		Provider:  c.ProviderName(),
+		Model:     model,
+		Source:    "sdk.models.get",
+		CheckedAt: time.Now(),
+		Support: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+		},
+	}
+	raw := info.RawJSON()
+	switch {
+	case strings.Contains(raw, `"supports_tool_calls":true`), strings.Contains(raw, `"tool_calls":true`), strings.Contains(raw, `"function_calling":true`):
+		out.Support[types.ModelCapabilityToolCall] = types.CapabilitySupportSupported
+	case strings.Contains(raw, `"supports_tool_calls":false`), strings.Contains(raw, `"tool_calls":false`), strings.Contains(raw, `"function_calling":false`):
+		out.Support[types.ModelCapabilityToolCall] = types.CapabilitySupportUnsupported
+	}
+	return out, nil
 }
 
 func mapStreamEvent(ev responses.ResponseStreamEventUnion, state *streamState) ([]types.ModelEvent, error) {
@@ -284,3 +328,4 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 }
 
 var _ types.ModelClient = (*Client)(nil)
+var _ types.ModelCapabilityDiscovery = (*Client)(nil)

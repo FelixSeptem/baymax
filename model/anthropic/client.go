@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
@@ -22,6 +23,7 @@ type Config struct {
 	MaxTokens  int64
 	GenerateFn func(ctx context.Context, input string) (types.ModelResponse, error)
 	StreamFn   func(ctx context.Context, input string) Stream
+	DiscoverFn func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 type Client struct {
@@ -30,6 +32,7 @@ type Client struct {
 	sdk       anthropic.Client
 	generate  func(ctx context.Context, input string) (types.ModelResponse, error)
 	newStream func(ctx context.Context, input string) Stream
+	discover  func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 type Stream interface {
@@ -72,6 +75,7 @@ func NewClient(cfg Config) *Client {
 		model:    model,
 		maxToken: maxToken,
 		sdk:      anthropic.NewClient(opts...),
+		discover: cfg.DiscoverFn,
 	}
 	client.generate = client.generateWithSDK
 	if cfg.GenerateFn != nil {
@@ -89,7 +93,14 @@ func NewClient(cfg Config) *Client {
 	if cfg.StreamFn != nil {
 		client.newStream = cfg.StreamFn
 	}
+	if client.discover == nil {
+		client.discover = client.discoverWithSDK
+	}
 	return client
+}
+
+func (c *Client) ProviderName() string {
+	return "anthropic"
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -152,6 +163,39 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	return ctx.Err()
+}
+
+func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	return c.discover(ctx, model)
+}
+
+func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+	info, err := c.sdk.Models.Get(ctx, model, anthropic.ModelGetParams{})
+	if err != nil {
+		return types.ProviderCapabilities{}, providererror.FromError(err)
+	}
+	out := types.ProviderCapabilities{
+		Provider:  c.ProviderName(),
+		Model:     model,
+		Source:    "sdk.models.get",
+		CheckedAt: time.Now(),
+		Support: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+		},
+	}
+	raw := info.RawJSON()
+	switch {
+	case strings.Contains(raw, `"tool_use":true`), strings.Contains(raw, `"supports_tool_use":true`), strings.Contains(raw, `"function_calling":true`):
+		out.Support[types.ModelCapabilityToolCall] = types.CapabilitySupportSupported
+	case strings.Contains(raw, `"tool_use":false`), strings.Contains(raw, `"supports_tool_use":false`), strings.Contains(raw, `"function_calling":false`):
+		out.Support[types.ModelCapabilityToolCall] = types.CapabilitySupportUnsupported
+	}
+	return out, nil
 }
 
 func mapStreamEvent(ev anthropic.MessageStreamEventUnion, state *streamState) ([]types.ModelEvent, error) {
@@ -302,5 +346,6 @@ func decodeFirstText(raw []byte) string {
 }
 
 var _ types.ModelClient = (*Client)(nil)
+var _ types.ModelCapabilityDiscovery = (*Client)(nil)
 
 var _ Stream = (*ssestream.Stream[anthropic.MessageStreamEventUnion])(nil)

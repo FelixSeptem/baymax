@@ -10,7 +10,8 @@
 - OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 已完成并归档。
 - OpenSpec change `unify-diagnostics-contract-and-concurrency-baseline` 已完成并归档。
 - OpenSpec change `bootstrap-multi-llm-providers-m1` 已完成并归档。
-- OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成实现，待归档。
+- OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成并归档。
+- OpenSpec change `add-provider-capability-detection-and-fallback-m3` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -39,8 +40,9 @@
 - `model/openai`：官方 SDK，支持 `Generate` + 原生 `Stream`
 - `model/anthropic`：官方 SDK，支持 `Generate` + `Stream`（tool-call complete-only）
 - `model/gemini`：官方 SDK，支持 `Generate` + `Stream`（tool-call complete-only）
+- 能力探测：通过各 provider 官方 SDK 的 `Models.Get`/元数据接口动态发现；无法判定时返回受控 `unknown`
+- provider 级降级：model-step 前 capability preflight，按 `provider_fallback.providers` 有序尝试，候选耗尽即 fail-fast
 - 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
-- TODO（R3 M3）：补齐 provider 能力探测与自动降级策略
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL

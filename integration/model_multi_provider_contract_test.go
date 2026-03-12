@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/runner"
@@ -12,6 +15,7 @@ import (
 	geminimodel "github.com/FelixSeptem/baymax/model/gemini"
 	openaimodel "github.com/FelixSeptem/baymax/model/openai"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"google.golang.org/genai"
 )
@@ -194,6 +198,123 @@ func TestModelProviderStreamingFailFastClassification(t *testing.T) {
 				t.Fatalf("error=%+v, want %q", res.Error, types.ErrPolicyTimeout)
 			}
 		})
+	}
+}
+
+func TestModelProviderCapabilityFallbackContract(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	openaiClient := openaimodel.NewClient(openaimodel.Config{
+		GenerateFn: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "should-not-reach"}, nil
+		},
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{
+				Provider: "openai",
+				Support: map[types.ModelCapability]types.CapabilitySupport{
+					types.ModelCapabilityToolCall:  types.CapabilitySupportUnsupported,
+					types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+				},
+			}, nil
+		},
+	})
+	anthropicClient := anthropicmodel.NewClient(anthropicmodel.Config{
+		GenerateFn: func(ctx context.Context, input string) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok-fallback"}, nil
+		},
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{
+				Provider: "anthropic",
+				Support: map[types.ModelCapability]types.CapabilitySupport{
+					types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+					types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+				},
+			}, nil
+		},
+	})
+
+	eng := runner.New(openaiClient,
+		runner.WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    openaiClient,
+			"anthropic": anthropicClient,
+		}),
+		runner.WithRuntimeManager(mgr),
+	)
+	res, runErr := eng.Run(context.Background(), types.RunRequest{
+		Input: "hello",
+		Capabilities: types.CapabilityRequirements{
+			Required: []types.ModelCapability{types.ModelCapabilityToolCall},
+		},
+	}, nil)
+	if runErr != nil {
+		t.Fatalf("Run error: %v", runErr)
+	}
+	if res.FinalAnswer != "ok-fallback" {
+		t.Fatalf("final answer=%q, want ok-fallback", res.FinalAnswer)
+	}
+}
+
+func TestModelProviderCapabilityFallbackFailFastContract(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	unsupportedCaps := map[types.ModelCapability]types.CapabilitySupport{
+		types.ModelCapabilityToolCall:  types.CapabilitySupportUnsupported,
+		types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+	}
+	openaiClient := openaimodel.NewClient(openaimodel.Config{
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{Provider: "openai", Support: unsupportedCaps}, nil
+		},
+	})
+	anthropicClient := anthropicmodel.NewClient(anthropicmodel.Config{
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{Provider: "anthropic", Support: unsupportedCaps}, nil
+		},
+	})
+	eng := runner.New(openaiClient,
+		runner.WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    openaiClient,
+			"anthropic": anthropicClient,
+		}),
+		runner.WithRuntimeManager(mgr),
+	)
+	res, runErr := eng.Run(context.Background(), types.RunRequest{
+		Input: "hello",
+		Capabilities: types.CapabilityRequirements{
+			Required: []types.ModelCapability{types.ModelCapabilityToolCall},
+		},
+	}, nil)
+	if runErr == nil {
+		t.Fatal("expected fail-fast error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrModel {
+		t.Fatalf("error=%+v, want %q", res.Error, types.ErrModel)
 	}
 }
 

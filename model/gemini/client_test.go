@@ -5,6 +5,7 @@ import (
 	"errors"
 	"iter"
 	"testing"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
@@ -135,5 +136,30 @@ func seqFromChunks(chunks []*genai.GenerateContentResponse, tailErr error) iter.
 		if tailErr != nil {
 			_ = yield(nil, tailErr)
 		}
+	}
+}
+
+func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
+	c := &Client{
+		model: "gemini-2.5-flash",
+		discover: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{
+				Provider:  "gemini",
+				Model:     model,
+				Source:    "test",
+				CheckedAt: time.Now(),
+				Support: map[types.ModelCapability]types.CapabilitySupport{
+					types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+					types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+				},
+			}, nil
+		},
+	}
+	got, err := c.DiscoverCapabilities(context.Background(), types.ModelRequest{})
+	if err != nil {
+		t.Fatalf("DiscoverCapabilities failed: %v", err)
+	}
+	if got.Provider != "gemini" || got.Model != "gemini-2.5-flash" {
+		t.Fatalf("unexpected capabilities: %#v", got)
 	}
 }

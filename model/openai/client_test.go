@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/openai/openai-go/responses"
@@ -166,5 +167,30 @@ func TestStreamFailsOnInvalidToolArguments(t *testing.T) {
 	err := client.Stream(context.Background(), types.ModelRequest{Input: "x"}, nil)
 	if err == nil {
 		t.Fatal("expected parsing error, got nil")
+	}
+}
+
+func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
+	client := NewClient(Config{
+		Model: "gpt-4.1-mini",
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return types.ProviderCapabilities{
+				Provider:  "openai",
+				Model:     model,
+				Source:    "test",
+				CheckedAt: time.Now(),
+				Support: map[types.ModelCapability]types.CapabilitySupport{
+					types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+					types.ModelCapabilityToolCall:  types.CapabilitySupportUnknown,
+				},
+			}, nil
+		},
+	})
+	got, err := client.DiscoverCapabilities(context.Background(), types.ModelRequest{})
+	if err != nil {
+		t.Fatalf("DiscoverCapabilities failed: %v", err)
+	}
+	if got.Provider != "openai" || got.Model != "gpt-4.1-mini" {
+		t.Fatalf("unexpected capability report: %#v", got)
 	}
 }

@@ -15,6 +15,75 @@ type ModelClient interface {
 	Stream(ctx context.Context, req ModelRequest, onEvent func(ModelEvent) error) error
 }
 
+type ModelCapability string
+
+const (
+	ModelCapabilityStreaming ModelCapability = "streaming"
+	ModelCapabilityToolCall  ModelCapability = "tool_call"
+)
+
+type CapabilitySupport string
+
+const (
+	CapabilitySupportSupported   CapabilitySupport = "supported"
+	CapabilitySupportUnsupported CapabilitySupport = "unsupported"
+	CapabilitySupportUnknown     CapabilitySupport = "unknown"
+)
+
+type CapabilityRequirements struct {
+	Required []ModelCapability `json:"required,omitempty"`
+}
+
+func (r CapabilityRequirements) IsEmpty() bool {
+	return len(r.Required) == 0
+}
+
+func (r CapabilityRequirements) Normalized() []ModelCapability {
+	if len(r.Required) == 0 {
+		return nil
+	}
+	out := make([]ModelCapability, 0, len(r.Required))
+	seen := make(map[ModelCapability]struct{}, len(r.Required))
+	for _, cap := range r.Required {
+		if cap == "" {
+			continue
+		}
+		if _, ok := seen[cap]; ok {
+			continue
+		}
+		seen[cap] = struct{}{}
+		out = append(out, cap)
+	}
+	return out
+}
+
+type ProviderCapabilities struct {
+	Provider  string                                `json:"provider"`
+	Model     string                                `json:"model,omitempty"`
+	Support   map[ModelCapability]CapabilitySupport `json:"support,omitempty"`
+	Source    string                                `json:"source,omitempty"`
+	CheckedAt time.Time                             `json:"checked_at,omitempty"`
+}
+
+func (c ProviderCapabilities) Missing(required []ModelCapability) []ModelCapability {
+	if len(required) == 0 {
+		return nil
+	}
+	out := make([]ModelCapability, 0, len(required))
+	for _, cap := range required {
+		status := c.Support[cap]
+		if status != CapabilitySupportSupported {
+			out = append(out, cap)
+		}
+	}
+	return out
+}
+
+type ModelCapabilityDiscovery interface {
+	ProviderName() string
+	DiscoverCapabilities(ctx context.Context, req ModelRequest) (ProviderCapabilities, error)
+}
+
 type Tool interface {
 	Name() string
 	Description() string
@@ -103,11 +172,12 @@ func DefaultMCPRuntimePolicy() MCPRuntimePolicy {
 }
 
 type RunRequest struct {
-	RunID     string      `json:"run_id,omitempty"`
-	SessionID string      `json:"session_id,omitempty"`
-	Input     string      `json:"input"`
-	Messages  []Message   `json:"messages,omitempty"`
-	Policy    *LoopPolicy `json:"policy,omitempty"`
+	RunID        string                 `json:"run_id,omitempty"`
+	SessionID    string                 `json:"session_id,omitempty"`
+	Input        string                 `json:"input"`
+	Messages     []Message              `json:"messages,omitempty"`
+	Policy       *LoopPolicy            `json:"policy,omitempty"`
+	Capabilities CapabilityRequirements `json:"capabilities,omitempty"`
 }
 
 type RunResult struct {
@@ -122,11 +192,12 @@ type RunResult struct {
 }
 
 type ModelRequest struct {
-	RunID      string            `json:"run_id,omitempty"`
-	Model      string            `json:"model,omitempty"`
-	Input      string            `json:"input,omitempty"`
-	Messages   []Message         `json:"messages,omitempty"`
-	ToolResult []ToolCallOutcome `json:"tool_results,omitempty"`
+	RunID        string                 `json:"run_id,omitempty"`
+	Model        string                 `json:"model,omitempty"`
+	Input        string                 `json:"input,omitempty"`
+	Messages     []Message              `json:"messages,omitempty"`
+	ToolResult   []ToolCallOutcome      `json:"tool_results,omitempty"`
+	Capabilities CapabilityRequirements `json:"capabilities,omitempty"`
 }
 
 type ModelResponse struct {

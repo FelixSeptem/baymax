@@ -26,13 +26,19 @@ type CallRecord struct {
 }
 
 type RunRecord struct {
-	Time       time.Time `json:"time"`
-	RunID      string    `json:"run_id"`
-	Status     string    `json:"status,omitempty"`
-	Iterations int       `json:"iterations"`
-	ToolCalls  int       `json:"tool_calls"`
-	LatencyMs  int64     `json:"latency_ms"`
-	ErrorClass string    `json:"error_class,omitempty"`
+	Time                 time.Time `json:"time"`
+	RunID                string    `json:"run_id"`
+	Status               string    `json:"status,omitempty"`
+	Iterations           int       `json:"iterations"`
+	ToolCalls            int       `json:"tool_calls"`
+	LatencyMs            int64     `json:"latency_ms"`
+	ErrorClass           string    `json:"error_class,omitempty"`
+	ModelProvider        string    `json:"model_provider,omitempty"`
+	FallbackUsed         bool      `json:"fallback_used,omitempty"`
+	FallbackInitial      string    `json:"fallback_initial,omitempty"`
+	FallbackPath         string    `json:"fallback_path,omitempty"`
+	RequiredCapabilities string    `json:"required_capabilities,omitempty"`
+	FallbackReason       string    `json:"fallback_reason,omitempty"`
 }
 
 type SkillRecord struct {

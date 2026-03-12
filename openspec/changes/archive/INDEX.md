@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-12 14:17:37
+Updated: 2026-03-12 15:35:42
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -12,3 +12,4 @@ Updated: 2026-03-12 14:17:37
 - 008 -> refactor-mcp-shared-reliability-and-observability-core
 - 009 -> bootstrap-multi-llm-providers-m1
 - 010 -> align-multi-provider-streaming-and-error-taxonomy-m2
+- 011 -> add-provider-capability-detection-and-fallback-m3

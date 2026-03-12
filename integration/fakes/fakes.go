@@ -3,6 +3,7 @@ package fakes
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -19,10 +20,20 @@ type Model struct {
 	streamErr   error
 	calls       int
 	lastRequest types.ModelRequest
+	provider    string
+	caps        map[types.ModelCapability]types.CapabilitySupport
+	discoverErr error
 }
 
 func NewModel(steps []ModelStep) *Model {
-	return &Model{steps: steps}
+	return &Model{
+		steps:    steps,
+		provider: "fake",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+		},
+	}
 }
 
 func (m *Model) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -70,6 +81,53 @@ func (m *Model) LastRequest() types.ModelRequest {
 	return m.lastRequest
 }
 
+func (m *Model) ProviderName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.provider
+}
+
+func (m *Model) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	_ = ctx
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.discoverErr != nil {
+		return types.ProviderCapabilities{}, m.discoverErr
+	}
+	out := map[types.ModelCapability]types.CapabilitySupport{}
+	for k, v := range m.caps {
+		out[k] = v
+	}
+	return types.ProviderCapabilities{
+		Provider:  m.provider,
+		Model:     req.Model,
+		Support:   out,
+		Source:    "fake",
+		CheckedAt: time.Now(),
+	}, nil
+}
+
+func (m *Model) SetProvider(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.provider = name
+}
+
+func (m *Model) SetCapabilities(caps map[types.ModelCapability]types.CapabilitySupport) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.caps = map[types.ModelCapability]types.CapabilitySupport{}
+	for k, v := range caps {
+		m.caps[k] = v
+	}
+}
+
+func (m *Model) SetDiscoverError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.discoverErr = err
+}
+
 type Tool struct {
 	NameValue   string
 	SchemaValue map[string]any
@@ -106,3 +164,5 @@ func (m *MCP) CallTool(ctx context.Context, name string, args map[string]any) (t
 }
 
 func (m *MCP) Close() error { return nil }
+
+var _ types.ModelCapabilityDiscovery = (*Model)(nil)

@@ -63,7 +63,7 @@
 - [x] `bootstrap-multi-llm-providers-m1`：完成 `model/anthropic`、`model/gemini` 官方 SDK 最小非流式适配。
 - [x] 新增跨 provider 契约测试（OpenAI/Anthropic/Gemini）最小成功路径与基础错误分类一致性。
 - [x] `align-multi-provider-streaming-and-error-taxonomy-m2`：完成 Anthropic/Gemini streaming 接入、跨 provider 事件语义对齐与错误分类细化。
-- [ ] M3 待办：能力探测与 provider 级降级策略（特性缺失时自动回退）。
+- [x] `add-provider-capability-detection-and-fallback-m3`：完成基于官方 SDK 的动态能力探测、model-step preflight、provider 级有序降级与 fail-fast 终止。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -103,9 +103,9 @@
 
 - M1（R3 前半）：完成 `model/anthropic`、`model/gemini` 最小非流式适配与契约测试。
 - M2（R3 后半）：完成流式事件映射与工具调用语义对齐，补齐回归测试。
-- M3（R4 可选）：能力探测与 provider 级降级策略（例如特性缺失时自动回退）。
+- M3（R3 已完成）：能力探测与 provider 级降级策略（特性缺失时自动回退）。
 
-说明：截至 2026-03-12，仓库已实现 OpenAI/Anthropic/Gemini 的非流式 + 流式基础语义对齐；M3 仍为规划项。
+说明：截至 2026-03-12，仓库已实现 OpenAI/Anthropic/Gemini 的非流式 + 流式语义对齐，以及官方 SDK 动态能力探测与 provider 级降级策略。
 
 ## Phase R4（长期）平台化能力（非 v1）
 
@@ -150,9 +150,3 @@
 
 - 性能回归采用相对提升百分比规则，详见 `docs/performance-policy.md`。
 - 并发安全为强制门禁：`go test -race ./...` + goroutine 泄漏检查。
-
-## 发布节奏建议
-
-- 每周：1 次内部预发布（含 benchmark 回归对比）
-- 每双周：1 次稳定 tag（附变更日志与风险说明）
-- 每月：1 次架构评审（评估是否进入下一 phase）

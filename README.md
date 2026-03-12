@@ -12,6 +12,7 @@
 - OpenSpec change `bootstrap-multi-llm-providers-m1` 已完成并归档。
 - OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成并归档。
 - OpenSpec change `add-provider-capability-detection-and-fallback-m3` 已完成实现。
+- OpenSpec change `build-context-assembler-ca1-prefix-append-only-baseline` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -43,6 +44,14 @@
 - 能力探测：通过各 provider 官方 SDK 的 `Models.Get`/元数据接口动态发现；无法判定时返回受控 `unknown`
 - provider 级降级：model-step 前 capability preflight，按 `provider_fallback.providers` 有序尝试，候选耗尽即 fail-fast
 - 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
+
+### 3.6 Context Assembler（CA1）
+- `context/assembler` 已接入 `core/runner` pre-model hook（Run/Stream 双路径）
+- immutable prefix + `prefix_hash` 校验（同 session/version 漂移即 fail-fast）
+- `context/journal` 本地 JSONL append-only（intent/commit）
+- `context/guard` 基础规则（hash/schema/sanitize），默认 fail-fast
+- storage backend：`file` 生效，`db` 在 CA1 显式返回 unsupported
+- 诊断字段已写入 run 摘要：`prefix_hash`、`assemble_latency_ms`、`assemble_status`、`guard_violation`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -128,6 +137,18 @@ defer mgr.Close()
 
 更多字段与环境变量映射见：`docs/runtime-config-diagnostics.md`
 
+Context Assembler CA1 最小配置示例：
+```yaml
+context_assembler:
+  enabled: true
+  journal_path: /tmp/baymax/context-journal.jsonl # 默认值在运行时按 os.TempDir() 计算
+  prefix_version: ca1
+  storage:
+    backend: file # CA1: file|db，其中 db 会 fail-fast 返回 unsupported
+  guard:
+    fail_fast: true
+```
+
 ### 运行测试
 ```bash
 go test ./...
@@ -199,3 +220,4 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - MCP 可靠性 profile：`docs/mcp-runtime-profiles.md`
 - 运行时配置与诊断 API：`docs/runtime-config-diagnostics.md`
 - Runtime 模块边界：`docs/runtime-module-boundaries.md`
+- Context Assembler 分期计划：`docs/context-assembler-phased-plan.md`

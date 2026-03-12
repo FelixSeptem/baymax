@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -34,6 +35,7 @@ type Engine struct {
 	dispatcher *local.Dispatcher
 	tracer     *obsTrace.Manager
 	runtimeMgr *runtimeconfig.Manager
+	assembler  *assembler.Assembler
 	now        func() time.Time
 	newRunID   func() string
 	capCacheMu sync.RWMutex
@@ -70,6 +72,15 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
 	}
+	e.assembler = assembler.New(func() runtimeconfig.ContextAssemblerConfig {
+		if e.runtimeMgr != nil {
+			return e.runtimeMgr.EffectiveConfig().ContextAssembler
+		}
+		// Keep legacy runner behavior when runtime manager is not provided.
+		cfg := runtimeconfig.DefaultConfig().ContextAssembler
+		cfg.Enabled = false
+		return cfg
+	})
 	e.registerModel(model)
 	for _, opt := range opts {
 		opt(e)
@@ -134,6 +145,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	lastSelection := stepModelSelection{}
 	selectionPath := make([]string, 0, 4)
 	fallbackUsed := false
+	lastAssemble := types.ContextAssembleResult{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -153,6 +165,23 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			iteration++
 			required := req.Capabilities.Normalized()
 			modelReq := toModelRequest(runID, req, pendingOutcomes, required)
+			assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
+				RunID:         runID,
+				SessionID:     req.SessionID,
+				PrefixVersion: e.resolvePrefixVersion(),
+				Input:         modelReq.Input,
+				Messages:      modelReq.Messages,
+				ToolResult:    modelReq.ToolResult,
+				Capabilities:  modelReq.Capabilities,
+			}, modelReq)
+			lastAssemble = assembleResult
+			if assembleErr != nil {
+				terminal = classified(types.ErrContext, assembleErr.Error(), false)
+				runErr = assembleErr
+				state = StateAbort
+				continue
+			}
+			modelReq = assembledReq
 			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
 			if selErr != nil {
 				terminal = selErr
@@ -308,6 +337,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Path:         selectionPath,
 					Required:     lastSelection.Required,
 					UsedFallback: fallbackUsed,
+					Assemble:     lastAssemble,
 				}),
 			})
 			return result, nil
@@ -337,6 +367,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Required:     lastSelection.Required,
 					Reason:       lastSelection.Reason,
 					UsedFallback: fallbackUsed,
+					Assemble:     lastAssemble,
 				}),
 			})
 			return result, runErr
@@ -360,8 +391,43 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	selectionPath := make([]string, 0, 2)
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
+	assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
+		RunID:         runID,
+		SessionID:     req.SessionID,
+		PrefixVersion: e.resolvePrefixVersion(),
+		Input:         modelReq.Input,
+		Messages:      modelReq.Messages,
+		ToolResult:    modelReq.ToolResult,
+		Capabilities:  modelReq.Capabilities,
+	}, modelReq)
+	lastAssemble := assembleResult
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
+	if assembleErr != nil {
+		result := types.RunResult{
+			RunID:      runID,
+			Iterations: iteration,
+			LatencyMs:  e.now().Sub(start).Milliseconds(),
+			Error:      classified(types.ErrContext, assembleErr.Error(), false),
+		}
+		e.emit(ctx, h, types.Event{
+			Version:   "v1",
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: runFinishedPayload(result, "failed", string(types.ErrContext), runFinishMeta{
+				Provider:     "",
+				Initial:      "",
+				Path:         selectionPath,
+				Required:     required,
+				UsedFallback: false,
+				Assemble:     lastAssemble,
+			}),
+		})
+		return result, assembleErr
+	}
+	modelReq = assembledReq
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
 	if selErr != nil {
 		result := types.RunResult{
@@ -383,6 +449,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Required:     required,
 				UsedFallback: selection.UsedFallback,
 				Reason:       selErr.Message,
+				Assemble:     lastAssemble,
 			}),
 		})
 		return result, errors.New(selErr.Message)
@@ -461,6 +528,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Path:         selectionPath,
 				Required:     required,
 				UsedFallback: selection.UsedFallback,
+				Assemble:     lastAssemble,
 			}),
 		})
 		return result, err
@@ -486,6 +554,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Path:         selectionPath,
 			Required:     required,
 			UsedFallback: selection.UsedFallback,
+			Assemble:     lastAssemble,
 		}),
 	})
 	return result, nil
@@ -770,6 +839,7 @@ type runFinishMeta struct {
 	Required     []types.ModelCapability
 	UsedFallback bool
 	Reason       string
+	Assemble     types.ContextAssembleResult
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -803,7 +873,24 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Reason != "" {
 		payload["fallback_reason"] = meta.Reason
 	}
+	if meta.Assemble.Prefix.PrefixHash != "" {
+		payload["prefix_hash"] = meta.Assemble.Prefix.PrefixHash
+	}
+	payload["assemble_latency_ms"] = meta.Assemble.LatencyMs
+	if meta.Assemble.Status != "" {
+		payload["assemble_status"] = meta.Assemble.Status
+	}
+	if meta.Assemble.GuardFailure != "" {
+		payload["guard_violation"] = meta.Assemble.GuardFailure
+	}
 	return payload
+}
+
+func (e *Engine) resolvePrefixVersion() string {
+	if e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig().ContextAssembler.PrefixVersion
+	}
+	return e.runtimeMgr.EffectiveConfig().ContextAssembler.PrefixVersion
 }
 
 var _ types.Runner = (*Engine)(nil)

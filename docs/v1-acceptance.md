@@ -16,6 +16,8 @@
 - Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
+- Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
+- Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 
 ## Known Limitations (V1 Non-goals)
 
@@ -30,3 +32,5 @@
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.
 - Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
+- Context Assembler currently ships CA1 baseline only; retrieval/memory pressure/recovery stages are deferred to CA2+.
+- Context Assembler storage backend `db` is a placeholder in CA1 and intentionally fails fast when configured.

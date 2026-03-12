@@ -64,6 +64,7 @@
 - [x] 新增跨 provider 契约测试（OpenAI/Anthropic/Gemini）最小成功路径与基础错误分类一致性。
 - [x] `align-multi-provider-streaming-and-error-taxonomy-m2`：完成 Anthropic/Gemini streaming 接入、跨 provider 事件语义对齐与错误分类细化。
 - [x] `add-provider-capability-detection-and-fallback-m3`：完成基于官方 SDK 的动态能力探测、model-step preflight、provider 级有序降级与 fail-fast 终止。
+- [x] `build-context-assembler-ca1-prefix-append-only-baseline`：完成 pre-model hook、immutable prefix hash、一致性 fail-fast、append-only JSONL journal 与 CA1 最小诊断字段。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -79,11 +80,12 @@
   - 流式 `Stream` 事件语义一致（delta/tool_call/error/completed）
   - 错误分类对齐到 `types.ErrorClass`
 - Tool SDK 指南（schema、错误语义、幂等建议）。
-- Context Assembler（RAG + Memory）能力规划：
-  - 新增 `context/assembler` 作为模型调用前的上下文组装阶段。
-  - Provider 化接入 `session-memory`、`long-term-memory`、`rag-retrieval`（分阶段启用）。
-  - 与 `runtime/config` 对齐可配置策略（enable、top_k、timeout、budget、fail-fast/best-effort）。
-  - 与 `runtime/diagnostics` 对齐可观测字段（provider latency/hit/miss/truncate reason）。
+- Context Assembler（RAG + Memory）分期实施：
+  - CA1（基础骨架，已完成）：新增 `context/assembler` pre-model hook，建立 immutable prefix 与 append-only journal 基线。
+  - CA2（按需加载）：接入 Stage1/Stage2（session-memory -> long-term/rag），按需触发与渐进降级。
+  - CA3（压力控制）：落地 Goldilocks Zone（40%-70%）与 batch squash/prune，支持 spill/swap 回填。
+  - CA4（生产收敛）：补齐规则防护、可中断恢复、观测面板与契约测试闭环。
+  - 详细分期见 `docs/context-assembler-phased-plan.md`。
 - Skill 语义触发升级（可插拔检索/打分器）。
 - Agent Action 输出体验（规划）：
   - 基于现有事件流构建用户侧 Action Timeline（run/model/tool/mcp 阶段）。
@@ -123,6 +125,19 @@
   - 引入 `a2a` 适配层用于跨 Agent 对等协作（任务生命周期、状态查询、异步回调/推送）。
   - 明确与 MCP 的互补边界：A2A 负责 Agent 间协作，MCP 负责工具集成。
   - 支持 Agent Card 能力发现与路由策略，纳入统一观测与错误分类体系。
+
+## Context Assembler 里程碑（规划，按 P1-P10 原则分期）
+
+- CA1（R3 前半，已完成）：Prefix + Append-only 基线
+  - 对齐 P1/P2/P6/P9/P10（前缀一致性、只追加、不信任 LLM、可观测、文件即记忆）。
+- CA2（R3 后半）：Lazy + Stage 化加载
+  - 对齐 P3/P4/P5（按需加载、渐进降级、末尾复述）。
+- CA3（R4 前半）：内存压力与可恢复性
+  - 对齐 P7/P8 + Arena 机制（可中断、不丢信息、batch reset、spill/swap）。
+- CA4（R4 后半）：生产级策略收敛
+  - 完成策略参数化、契约测试、压测阈值与文档统一。
+
+说明：Context Assembler 不建议单次大改完成，需按分期逐步启用，保证 runner 语义稳定与并发安全基线不回退。
 
 ## HITL 与 Action Timeline 里程碑（规划，当前不实现）
 

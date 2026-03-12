@@ -200,6 +200,29 @@ type ModelRequest struct {
 	Capabilities CapabilityRequirements `json:"capabilities,omitempty"`
 }
 
+type ContextAssembleRequest struct {
+	RunID         string                 `json:"run_id,omitempty"`
+	SessionID     string                 `json:"session_id,omitempty"`
+	PrefixVersion string                 `json:"prefix_version,omitempty"`
+	Input         string                 `json:"input,omitempty"`
+	Messages      []Message              `json:"messages,omitempty"`
+	ToolResult    []ToolCallOutcome      `json:"tool_results,omitempty"`
+	Capabilities  CapabilityRequirements `json:"capabilities,omitempty"`
+}
+
+type ContextAssembleResult struct {
+	Prefix       PrefixMetadata `json:"prefix"`
+	LatencyMs    int64          `json:"latency_ms"`
+	Status       string         `json:"status"`
+	GuardFailure string         `json:"guard_failure,omitempty"`
+}
+
+type PrefixMetadata struct {
+	SessionID     string `json:"session_id,omitempty"`
+	PrefixVersion string `json:"prefix_version,omitempty"`
+	PrefixHash    string `json:"prefix_hash,omitempty"`
+}
+
 type ModelResponse struct {
 	FinalAnswer string     `json:"final_answer,omitempty"`
 	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
@@ -310,6 +333,7 @@ const (
 	ErrTool           ErrorClass = "ErrTool"
 	ErrMCP            ErrorClass = "ErrMCP"
 	ErrSkill          ErrorClass = "ErrSkill"
+	ErrContext        ErrorClass = "ErrContext"
 	ErrPolicyTimeout  ErrorClass = "ErrPolicyTimeout"
 	ErrIterationLimit ErrorClass = "ErrIterationLimit"
 )

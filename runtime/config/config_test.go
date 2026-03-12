@@ -94,3 +94,24 @@ func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
 		t.Fatalf("expected validation error, got nil")
 	}
 }
+
+func TestContextAssemblerDefaultsEnabledAndFailFast(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.ContextAssembler.Enabled {
+		t.Fatal("context_assembler.enabled = false, want true")
+	}
+	if !cfg.ContextAssembler.Guard.FailFast {
+		t.Fatal("context_assembler.guard.fail_fast = false, want true")
+	}
+	if cfg.ContextAssembler.Storage.Backend != "file" {
+		t.Fatalf("context_assembler.storage.backend = %q, want file", cfg.ContextAssembler.Storage.Backend)
+	}
+}
+
+func TestContextAssemblerValidateRejectsInvalidBackend(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.Storage.Backend = "invalid"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid backend")
+	}
+}

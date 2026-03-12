@@ -685,3 +685,40 @@ provider_fallback:
 		t.Fatalf("model_provider = %#v, want anthropic", finished.Payload["model_provider"])
 	}
 }
+
+func TestRunFailsFastWhenContextAssemblerDBBackendConfigured(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+  storage:
+    backend: db
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	called := false
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			called = true
+			return types.ModelResponse{FinalAnswer: "should-not-happen"}, nil
+		},
+	}
+	eng := New(model, WithRuntimeManager(mgr))
+	res, runErr := eng.Run(context.Background(), types.RunRequest{Input: "x", SessionID: "s-1"}, nil)
+	if runErr == nil {
+		t.Fatal("expected context assembler backend error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrContext {
+		t.Fatalf("error class = %#v, want ErrContext", res.Error)
+	}
+	if called {
+		t.Fatal("model should not be called when context assembler fails")
+	}
+}

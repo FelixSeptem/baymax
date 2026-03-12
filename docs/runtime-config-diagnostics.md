@@ -58,6 +58,15 @@ provider_fallback:
   providers: [openai, anthropic, gemini] # 有序候选链；enabled=true 时必须非空
   discovery_timeout: 1500ms
   discovery_cache_ttl: 5m
+
+context_assembler:
+  enabled: true # 默认 true
+  journal_path: /tmp/baymax/context-journal.jsonl # 默认值由 os.TempDir() + /baymax/context-journal.jsonl 计算
+  prefix_version: ca1
+  storage:
+    backend: file # CA1 支持 file；db 会 fail-fast 返回 unsupported
+  guard:
+    fail_fast: true # 默认 true
 ```
 
 ## 使用示例（最小）
@@ -100,6 +109,13 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `required_capabilities`：本次 preflight 的能力需求（逗号分隔）。
 - `fallback_reason`：降级/终止原因摘要（例如 `capability_preflight_failed`）。
 
+### Run 诊断新增字段（Context Assembler CA1）
+
+- `prefix_hash`：本次 run 最近一次 assemble 的 immutable prefix 哈希。
+- `assemble_latency_ms`：assemble 阶段耗时（毫秒）。
+- `assemble_status`：assemble 状态（`success|failed|bypass`）。
+- `guard_violation`：guard 命中摘要（失败时用于 fail-fast 诊断）。
+
 ## 诊断写入口径（Single Writer + Idempotency）
 
 - 统一写入入口：`observability/event.RuntimeRecorder`。
@@ -129,6 +145,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
 - 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
+- context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。
 
 ## 迁移映射（功能命名）
 

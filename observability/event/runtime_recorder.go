@@ -47,6 +47,10 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			FallbackPath:         payloadString(ev.Payload, "fallback_path"),
 			RequiredCapabilities: payloadString(ev.Payload, "required_capabilities"),
 			FallbackReason:       payloadString(ev.Payload, "fallback_reason"),
+			PrefixHash:           payloadString(ev.Payload, "prefix_hash"),
+			AssembleLatencyMs:    payloadInt64(ev.Payload, "assemble_latency_ms"),
+			AssembleStatus:       payloadString(ev.Payload, "assemble_status"),
+			GuardViolation:       payloadString(ev.Payload, "guard_violation"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{

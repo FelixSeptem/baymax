@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,6 +30,7 @@ type Config struct {
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
+	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
 }
 
 type MCPConfig struct {
@@ -58,6 +61,22 @@ type ProviderFallbackConfig struct {
 	Providers         []string      `json:"providers"`
 	DiscoveryTimeout  time.Duration `json:"discovery_timeout"`
 	DiscoveryCacheTTL time.Duration `json:"discovery_cache_ttl"`
+}
+
+type ContextAssemblerConfig struct {
+	Enabled       bool                          `json:"enabled"`
+	JournalPath   string                        `json:"journal_path"`
+	PrefixVersion string                        `json:"prefix_version"`
+	Storage       ContextAssemblerStorageConfig `json:"storage"`
+	Guard         ContextAssemblerGuardConfig   `json:"guard"`
+}
+
+type ContextAssemblerStorageConfig struct {
+	Backend string `json:"backend"`
+}
+
+type ContextAssemblerGuardConfig struct {
+	FailFast bool `json:"fail_fast"`
 }
 
 type LoadOptions struct {
@@ -96,6 +115,17 @@ func DefaultConfig() Config {
 			Providers:         nil,
 			DiscoveryTimeout:  1500 * time.Millisecond,
 			DiscoveryCacheTTL: 5 * time.Minute,
+		},
+		ContextAssembler: ContextAssemblerConfig{
+			Enabled:       true,
+			JournalPath:   filepath.Join(os.TempDir(), "baymax", "context-journal.jsonl"),
+			PrefixVersion: "ca1",
+			Storage: ContextAssemblerStorageConfig{
+				Backend: "file",
+			},
+			Guard: ContextAssemblerGuardConfig{
+				FailFast: true,
+			},
 		},
 	}
 }
@@ -218,6 +248,24 @@ func Validate(cfg Config) error {
 			cfg.ProviderFallback.Providers[i] = name
 		}
 	}
+	if cfg.ContextAssembler.Enabled {
+		if strings.TrimSpace(cfg.ContextAssembler.JournalPath) == "" {
+			return errors.New("context_assembler.journal_path is required when enabled")
+		}
+		if strings.TrimSpace(cfg.ContextAssembler.PrefixVersion) == "" {
+			return errors.New("context_assembler.prefix_version is required when enabled")
+		}
+		backend := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.Storage.Backend))
+		if backend == "" {
+			backend = "file"
+		}
+		switch backend {
+		case "file", "db":
+		default:
+			return fmt.Errorf("context_assembler.storage.backend must be one of [file,db], got %q", cfg.ContextAssembler.Storage.Backend)
+		}
+		cfg.ContextAssembler.Storage.Backend = backend
+	}
 	return nil
 }
 
@@ -256,6 +304,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
 	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
 	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
+	v.SetDefault("context_assembler.enabled", base.ContextAssembler.Enabled)
+	v.SetDefault("context_assembler.journal_path", base.ContextAssembler.JournalPath)
+	v.SetDefault("context_assembler.prefix_version", base.ContextAssembler.PrefixVersion)
+	v.SetDefault("context_assembler.storage.backend", base.ContextAssembler.Storage.Backend)
+	v.SetDefault("context_assembler.guard.fail_fast", base.ContextAssembler.Guard.FailFast)
 }
 
 func buildConfig(v *viper.Viper) Config {
@@ -274,6 +327,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
 	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
 	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
+	cfg.ContextAssembler.Enabled = v.GetBool("context_assembler.enabled")
+	cfg.ContextAssembler.JournalPath = strings.TrimSpace(v.GetString("context_assembler.journal_path"))
+	cfg.ContextAssembler.PrefixVersion = strings.TrimSpace(v.GetString("context_assembler.prefix_version"))
+	cfg.ContextAssembler.Storage.Backend = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.storage.backend")))
+	cfg.ContextAssembler.Guard.FailFast = v.GetBool("context_assembler.guard.fail_fast")
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {

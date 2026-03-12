@@ -39,6 +39,10 @@ type RunRecord struct {
 	FallbackPath         string    `json:"fallback_path,omitempty"`
 	RequiredCapabilities string    `json:"required_capabilities,omitempty"`
 	FallbackReason       string    `json:"fallback_reason,omitempty"`
+	PrefixHash           string    `json:"prefix_hash,omitempty"`
+	AssembleLatencyMs    int64     `json:"assemble_latency_ms,omitempty"`
+	AssembleStatus       string    `json:"assemble_status,omitempty"`
+	GuardViolation       string    `json:"guard_violation,omitempty"`
 }
 
 type SkillRecord struct {

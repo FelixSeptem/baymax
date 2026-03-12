@@ -87,6 +87,15 @@ context_assembler:
       enabled: true
       max_items: 4
       max_field_chars: 256
+
+security:
+  scan:
+    mode: strict # strict|warn
+    govulncheck_enabled: true
+  redaction:
+    enabled: true
+    strategy: keyword # 当前仅支持 keyword，后续可扩展
+    keywords: [token, password, secret, api_key, apikey]
 ```
 
 ## 使用示例（最小）
@@ -161,7 +170,18 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - run 状态：`success | failed`
 - skill 状态：`success | warning | failed`
-- 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`）
+- 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`、`ErrSecurity`）
+
+## 安全基线（S1）
+
+- 质量门禁脚本（Linux/PowerShell）与 CI 默认执行 `govulncheck` 且使用 strict 语义。
+- 可通过环境变量降级为 warn：`BAYMAX_SECURITY_SCAN_MODE=warn`。
+- 可通过 `BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED=false` 临时关闭扫描（不建议在 CI 中关闭）。
+- 统一脱敏管线覆盖：
+  - `runtime/diagnostics`（配置快照与诊断 payload）
+  - `observability/event`（JSON logger 与 runtime recorder）
+  - `context/assembler`（stage2 payload 与 tail recap）
+- 脱敏策略默认按 key 关键词匹配，支持扩展 matcher 接口（后续阶段可接入更复杂策略）。
 
 ## 热更新语义
 
@@ -173,6 +193,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
 - 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
+- `security.redaction.strategy` 当前仅支持 `keyword`，配置其他值会 fail-fast。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 - context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。
 - context assembler CA2 的 `agentic` routing mode 与 `rag/db` provider 当前仅接口占位；配置后会返回明确 not-ready 错误。

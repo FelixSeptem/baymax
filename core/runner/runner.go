@@ -72,15 +72,23 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
 	}
-	e.assembler = assembler.New(func() runtimeconfig.ContextAssemblerConfig {
-		if e.runtimeMgr != nil {
-			return e.runtimeMgr.EffectiveConfig().ContextAssembler
-		}
-		// Keep legacy runner behavior when runtime manager is not provided.
-		cfg := runtimeconfig.DefaultConfig().ContextAssembler
-		cfg.Enabled = false
-		return cfg
-	})
+	e.assembler = assembler.New(
+		func() runtimeconfig.ContextAssemblerConfig {
+			if e.runtimeMgr != nil {
+				return e.runtimeMgr.EffectiveConfig().ContextAssembler
+			}
+			// Keep legacy runner behavior when runtime manager is not provided.
+			cfg := runtimeconfig.DefaultConfig().ContextAssembler
+			cfg.Enabled = false
+			return cfg
+		},
+		assembler.WithRedactionConfigProvider(func() runtimeconfig.SecurityRedactionConfig {
+			if e.runtimeMgr != nil {
+				return e.runtimeMgr.EffectiveConfig().Security.Redaction
+			}
+			return runtimeconfig.DefaultConfig().Security.Redaction
+		}),
+	)
 	e.registerModel(model)
 	for _, opt := range opts {
 		opt(e)

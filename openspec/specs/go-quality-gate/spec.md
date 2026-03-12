@@ -11,11 +11,17 @@ The repository MUST include a version-controlled `golangci-lint` configuration f
 - **THEN** lint behavior follows the shared repository configuration without requiring ad hoc local flags
 
 ### Requirement: Quality gate SHALL include golangci-lint in standard verification flow
-The standard validation flow MUST include `golangci-lint`, `go test ./...`, and `go test -race ./...` so style, correctness, and concurrency regressions are detected before merge.
+The standard validation flow MUST include `golangci-lint`, `go test ./...`, `go test -race ./...`, and `govulncheck` so style, correctness, concurrency regressions, and dependency vulnerability risks are detected before merge.
+
+`govulncheck` MUST run in strict mode by default, and vulnerability findings MUST fail validation unless explicitly downgraded by controlled configuration.
 
 #### Scenario: Validation in CI or local pre-merge checks
 - **WHEN** a change is validated before merge
-- **THEN** linter execution, unit tests, and race tests are all required checks and failures block completion
+- **THEN** linter execution, unit tests, race tests, and `govulncheck` are all required checks and failures block completion
+
+#### Scenario: govulncheck finds vulnerabilities in strict mode
+- **WHEN** validation runs with default strict scan mode and vulnerabilities are reported
+- **THEN** quality gate exits non-zero and blocks merge
 
 ### Requirement: Lint profile SHALL align with Go style and safety priorities
 The configured quality profile MUST enforce formatting/import conventions, detect common correctness risks, and include concurrency safety auditing practices.
@@ -51,4 +57,11 @@ The repository MUST maintain explicit tests for concurrent diagnostics writes, d
 #### Scenario: Diagnostics concurrency suite is executed
 - **WHEN** diagnostics-focused concurrent tests run
 - **THEN** write deduplication and data integrity guarantees are verified under parallel workloads
+
+### Requirement: Quality-gate scripts SHALL provide cross-platform security scan parity
+Repository-provided quality-gate scripts for Linux and PowerShell MUST both execute the same vulnerability scan semantics as CI.
+
+#### Scenario: Linux and PowerShell scripts are executed
+- **WHEN** contributors run quality-gate scripts on different platforms
+- **THEN** both flows execute equivalent test/lint/race/vuln checks and produce consistent pass/fail semantics
 

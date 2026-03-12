@@ -16,6 +16,7 @@ import (
 	"github.com/FelixSeptem/baymax/context/provider"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	"github.com/FelixSeptem/baymax/runtime/security/redaction"
 )
 
 const (
@@ -27,8 +28,9 @@ const (
 var ErrAgenticRoutingNotReady = errors.New("context stage routing agentic mode not ready")
 
 type Assembler struct {
-	cfgProvider func() runtimeconfig.ContextAssemblerConfig
-	now         func() time.Time
+	cfgProvider          func() runtimeconfig.ContextAssemblerConfig
+	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
+	now                  func() time.Time
 
 	mu             sync.Mutex
 	storageKey     string
@@ -38,12 +40,32 @@ type Assembler struct {
 	prefixCache    map[string]string
 }
 
-func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig) *Assembler {
-	return &Assembler{
+type Option func(*Assembler)
+
+func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedactionConfig) Option {
+	return func(a *Assembler) {
+		if provider != nil {
+			a.redactionCfgProvider = provider
+		}
+	}
+}
+
+func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option) *Assembler {
+	baseSecurity := runtimeconfig.DefaultConfig().Security.Redaction
+	a := &Assembler{
 		cfgProvider: cfgProvider,
+		redactionCfgProvider: func() runtimeconfig.SecurityRedactionConfig {
+			return baseSecurity
+		},
 		now:         time.Now,
 		prefixCache: map[string]string{},
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(a)
+		}
+	}
+	return a
 }
 
 func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleRequest, modelReq types.ModelRequest) (types.ModelRequest, types.ContextAssembleResult, error) {
@@ -275,7 +297,7 @@ func (a *Assembler) applyCA2(
 	if !shouldStage2 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = skipReason
-		modelReq, recap := appendTailRecap(modelReq, cfg.CA2, outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
@@ -286,7 +308,7 @@ func (a *Assembler) applyCA2(
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.provider.not_ready"
-			modelReq, recap := appendTailRecap(modelReq, cfg.CA2, outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -306,7 +328,7 @@ func (a *Assembler) applyCA2(
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.fetch.failed"
-			modelReq, recap := appendTailRecap(modelReq, cfg.CA2, outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -315,17 +337,18 @@ func (a *Assembler) applyCA2(
 	if len(resp.Chunks) == 0 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = "stage2.empty"
-		modelReq, recap := appendTailRecap(modelReq, cfg.CA2, outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
+	resp.Chunks = a.sanitizeStage2Chunks(resp.Chunks)
 	modelReq.Messages = append(modelReq.Messages, types.Message{
 		Role:    "system",
 		Content: "stage2_context:\n" + strings.Join(resp.Chunks, "\n"),
 	})
 	outcome.Stage.Status = types.AssembleStageStatusStage2Used
 	outcome.Stage.Stage2SkipReason = ""
-	modelReq, recap := appendTailRecap(modelReq, cfg.CA2, outcome)
+	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
 }
@@ -354,7 +377,7 @@ func shouldRunStage2(req types.ModelRequest, cfg runtimeconfig.ContextAssemblerC
 	return false, "routing.threshold.not_met"
 }
 
-func appendTailRecap(modelReq types.ModelRequest, cfg runtimeconfig.ContextAssemblerCA2Config, outcome types.ContextAssembleResult) (types.ModelRequest, types.RecapMetadata) {
+func (a *Assembler) appendTailRecap(modelReq types.ModelRequest, cfg runtimeconfig.ContextAssemblerCA2Config, outcome types.ContextAssembleResult) (types.ModelRequest, types.RecapMetadata) {
 	if !cfg.TailRecap.Enabled {
 		return modelReq, types.RecapMetadata{Status: types.RecapStatusDisabled}
 	}
@@ -376,6 +399,7 @@ func appendTailRecap(modelReq types.ModelRequest, cfg runtimeconfig.ContextAssem
 	recap.Decisions = truncateSlice(recap.Decisions, maxChars)
 	recap.Todo = truncateSlice(recap.Todo, maxChars)
 	recap.Risks = truncateSlice(recap.Risks, maxChars)
+	recap = a.sanitizeRecap(recap)
 
 	raw, _ := json.Marshal(recap)
 	modelReq.Messages = append(modelReq.Messages, types.Message{
@@ -390,6 +414,44 @@ func appendTailRecap(modelReq types.ModelRequest, cfg runtimeconfig.ContextAssem
 		meta.Status = types.RecapStatusTruncated
 	}
 	return modelReq, meta
+}
+
+func (a *Assembler) sanitizeStage2Chunks(chunks []string) []string {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	out := make([]string, 0, len(chunks))
+	rd := a.newRedactor()
+	for _, chunk := range chunks {
+		out = append(out, rd.SanitizeJSONText(chunk))
+	}
+	return out
+}
+
+func (a *Assembler) sanitizeRecap(recap types.TailRecap) types.TailRecap {
+	raw, err := json.Marshal(recap)
+	if err != nil {
+		return recap
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return recap
+	}
+	sanitized := a.newRedactor().SanitizeMap(payload)
+	nextRaw, err := json.Marshal(sanitized)
+	if err != nil {
+		return recap
+	}
+	var out types.TailRecap
+	if err := json.Unmarshal(nextRaw, &out); err != nil {
+		return recap
+	}
+	return out
+}
+
+func (a *Assembler) newRedactor() *redaction.Redactor {
+	cfg := a.redactionCfgProvider()
+	return redaction.New(cfg.Enabled, cfg.Keywords)
 }
 
 func cropItems(in []string, max int) []string {

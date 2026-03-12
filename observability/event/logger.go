@@ -32,6 +32,10 @@ func NewJSONLoggerWithRuntimeManager(out io.Writer, mgr *runtimeconfig.Manager) 
 }
 
 func (l *JSONLogger) OnEvent(ctx context.Context, ev types.Event) {
+	payload := ev.Payload
+	if l.runtimeMgr != nil && len(payload) > 0 {
+		payload = l.runtimeMgr.RedactPayload(payload)
+	}
 	entry := map[string]any{
 		"time":      ev.Time.Format(time.RFC3339Nano),
 		"version":   ev.Version,
@@ -41,7 +45,7 @@ func (l *JSONLogger) OnEvent(ctx context.Context, ev types.Event) {
 		"call_id":   ev.CallID,
 		"trace_id":  ev.TraceID,
 		"span_id":   ev.SpanID,
-		"payload":   ev.Payload,
+		"payload":   payload,
 	}
 	if l.runtimeMgr != nil {
 		s := l.runtimeMgr.CurrentSnapshot()

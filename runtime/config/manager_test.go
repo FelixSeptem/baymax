@@ -144,6 +144,42 @@ reload:
 	wg.Wait()
 }
 
+func TestManagerEffectiveConfigSanitizedUsesSecurityKeywords(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+security:
+  redaction:
+    enabled: true
+    strategy: keyword
+    keywords: [secret]
+`)
+
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	out := mgr.RedactPayload(map[string]any{"client_secret": "abc", "name": "ok"})
+	if out["client_secret"] != "***" {
+		t.Fatalf("client_secret = %#v, want ***", out["client_secret"])
+	}
+	if out["name"] != "ok" {
+		t.Fatalf("name = %#v, want ok", out["name"])
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

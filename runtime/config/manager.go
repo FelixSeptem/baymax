@@ -10,6 +10,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
+	"github.com/FelixSeptem/baymax/runtime/security/redaction"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
@@ -183,13 +184,13 @@ func (m *Manager) EffectiveConfigSanitized() map[string]any {
 	s := m.snapshot()
 	if s == nil {
 		raw, _ := toMap(DefaultConfig())
-		return runtimediag.SanitizeMap(raw)
+		return m.redactor().SanitizeMap(raw)
 	}
 	raw, err := toMap(s.Config)
 	if err != nil {
 		return map[string]any{"error": err.Error()}
 	}
-	return runtimediag.SanitizeMap(raw)
+	return m.redactor().SanitizeMap(raw)
 }
 
 func (m *Manager) ResolvePolicy(profile string, override *types.MCPRuntimePolicy) (types.MCPRuntimePolicy, error) {
@@ -209,6 +210,9 @@ func (m *Manager) RecordReload(rec runtimediag.ReloadRecord) {
 }
 
 func (m *Manager) RecordSkill(rec runtimediag.SkillRecord) {
+	if len(rec.Payload) > 0 {
+		rec.Payload = m.redactor().SanitizeMap(rec.Payload)
+	}
 	m.diag.AddSkill(rec)
 }
 
@@ -235,4 +239,24 @@ func (m *Manager) snapshot() *Snapshot {
 	}
 	s, _ := v.(*Snapshot)
 	return s
+}
+
+func (m *Manager) RedactPayload(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	return m.redactor().SanitizeMap(in)
+}
+
+func (m *Manager) RedactJSONText(in string) string {
+	return m.redactor().SanitizeJSONText(in)
+}
+
+func (m *Manager) redactor() *redaction.Redactor {
+	s := m.snapshot()
+	if s == nil {
+		base := DefaultConfig()
+		return redaction.New(base.Security.Redaction.Enabled, base.Security.Redaction.Keywords)
+	}
+	return redaction.New(s.Config.Security.Redaction.Enabled, s.Config.Security.Redaction.Keywords)
 }

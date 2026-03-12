@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/FelixSeptem/baymax/runtime/security/redaction"
 )
 
 type CallRecord struct {
@@ -201,46 +203,7 @@ func (d *Store) RecentSkills(n int) []SkillRecord {
 }
 
 func SanitizeMap(in map[string]any) map[string]any {
-	out := map[string]any{}
-	for k, v := range in {
-		if isSensitiveKey(k) {
-			out[k] = "***"
-			continue
-		}
-		switch tv := v.(type) {
-		case map[string]any:
-			out[k] = SanitizeMap(tv)
-		case []any:
-			out[k] = sanitizeSlice(tv)
-		default:
-			out[k] = v
-		}
-	}
-	return out
-}
-
-func sanitizeSlice(in []any) []any {
-	out := make([]any, 0, len(in))
-	for _, v := range in {
-		switch tv := v.(type) {
-		case map[string]any:
-			out = append(out, SanitizeMap(tv))
-		case []any:
-			out = append(out, sanitizeSlice(tv))
-		default:
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-func isSensitiveKey(key string) bool {
-	k := strings.ToLower(strings.TrimSpace(key))
-	return strings.Contains(k, "secret") ||
-		strings.Contains(k, "token") ||
-		strings.Contains(k, "password") ||
-		strings.Contains(k, "api_key") ||
-		strings.Contains(k, "apikey")
+	return redaction.New(true, redaction.DefaultKeywords()).SanitizeMap(in)
 }
 
 func RunIdempotencyKey(rec RunRecord) string {

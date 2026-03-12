@@ -12,6 +12,8 @@ Runtime configuration MUST additionally support context assembler CA1 baseline f
 
 Runtime configuration MUST additionally support context assembler CA2 fields with deterministic precedence, including staged assembly enablement, stage routing mode, stage-level failure policy, stage timeouts, stage2 provider selector (file active; rag/db placeholders), routing threshold controls, and tail recap options.
 
+Runtime configuration MUST additionally support security S1 baseline fields with deterministic precedence, including security scan mode (`strict|warn`), scan tool toggles, redaction enablement, and extensible sensitive-key keyword lists.
+
 #### Scenario: Startup with file and environment overrides
 - **WHEN** runtime starts with a YAML config file and overlapping environment variables
 - **THEN** effective configuration uses environment values first, then file values, then defaults for unset keys
@@ -31,6 +33,10 @@ Runtime configuration MUST additionally support context assembler CA2 fields wit
 #### Scenario: Startup with CA2 stage policy overrides
 - **WHEN** runtime starts with CA2 stage policy fields defined in both YAML and environment variables
 - **THEN** effective CA2 stage policy resolves using `env > file > default` and is available to assembler routing and stage execution
+
+#### Scenario: Startup with security baseline overrides
+- **WHEN** runtime starts with security scan and redaction fields defined in both YAML and environment variables
+- **THEN** effective security baseline configuration resolves using `env > file > default` and is available to quality-gate and runtime redaction flow
 
 ### Requirement: Runtime SHALL validate configuration and fail fast on invalid startup input
 The runtime MUST validate required fields, numeric ranges, and enum values before activation; invalid startup configuration MUST return an error and abort initialization.
@@ -52,6 +58,8 @@ Diagnostics MUST additionally include context assembler CA1 baseline fields for 
 
 Diagnostics MUST additionally include context assembler CA2 stage and recap fields, including normalized stage statuses, stage2 skip reason, stage latencies, and recap status.
 
+Diagnostics and event payloads MUST additionally apply unified S1 redaction policy before persistence and emission.
+
 #### Scenario: Consumer requests recent run diagnostics
 - **WHEN** application calls diagnostics API for recent runs
 - **THEN** runtime returns bounded summary records with normalized fields and without duplicated logical run entries caused by retries or replay
@@ -71,6 +79,10 @@ Diagnostics MUST additionally include context assembler CA2 stage and recap fiel
 #### Scenario: Consumer inspects CA2 stage diagnostics
 - **WHEN** application queries diagnostics for runs with CA2 staged assembly enabled
 - **THEN** runtime returns normalized stage and recap fields sufficient to reconstruct Stage1/Stage2 routing outcome
+
+#### Scenario: Consumer inspects redaction behavior
+- **WHEN** application queries diagnostics containing sensitive-key fields
+- **THEN** returned payload contains masked values according to active redaction policy
 
 ### Requirement: Runtime SHALL support hot reload with atomic swap and rollback safety
 The runtime MUST watch config file changes, rebuild and validate a new snapshot, and atomically replace active configuration only on successful validation.
@@ -164,4 +176,15 @@ The runtime MUST validate CA2 stage provider and routing mode enums at startup a
 #### Scenario: CA2 rag/db provider requested before implementation
 - **WHEN** runtime configuration selects Stage2 provider as rag or db in CA2 milestone
 - **THEN** runtime returns explicit provider-not-ready classification and does not partially activate staged assembly
+
+### Requirement: Runtime SHALL validate security baseline scan and redaction config at startup and hot reload
+The runtime MUST validate security scan mode enums, redaction strategy configuration, and keyword list constraints during startup and hot reload; invalid values MUST fail fast.
+
+#### Scenario: Invalid scan mode
+- **WHEN** runtime configuration sets unsupported scan mode
+- **THEN** initialization fails fast with validation error
+
+#### Scenario: Invalid redaction keyword config
+- **WHEN** runtime configuration sets malformed redaction keyword list
+- **THEN** initialization fails fast with validation error and no partial activation
 

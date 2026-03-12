@@ -155,3 +155,54 @@ func TestContextAssemblerCA2EnvOverride(t *testing.T) {
 		t.Fatalf("stage2 policy = %q, want fail_fast", cfg.ContextAssembler.CA2.StagePolicy.Stage2)
 	}
 }
+
+func TestSecurityDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Security.Scan.Mode != SecurityScanModeStrict {
+		t.Fatalf("security.scan.mode = %q, want %q", cfg.Security.Scan.Mode, SecurityScanModeStrict)
+	}
+	if !cfg.Security.Scan.GovulncheckEnable {
+		t.Fatalf("security.scan.govulncheck_enabled = false, want true")
+	}
+	if !cfg.Security.Redaction.Enabled {
+		t.Fatalf("security.redaction.enabled = false, want true")
+	}
+	if cfg.Security.Redaction.Strategy != SecurityRedactionKeyword {
+		t.Fatalf("security.redaction.strategy = %q, want %q", cfg.Security.Redaction.Strategy, SecurityRedactionKeyword)
+	}
+	if len(cfg.Security.Redaction.Keywords) == 0 {
+		t.Fatal("security.redaction.keywords should not be empty")
+	}
+}
+
+func TestSecurityConfigEnvOverride(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_SCAN_MODE", "warn")
+	t.Setenv("BAYMAX_SECURITY_REDACTION_KEYWORDS", "token,credential")
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.Scan.Mode != SecurityScanModeWarn {
+		t.Fatalf("security.scan.mode = %q, want warn", cfg.Security.Scan.Mode)
+	}
+	if len(cfg.Security.Redaction.Keywords) != 2 || cfg.Security.Redaction.Keywords[1] != "credential" {
+		t.Fatalf("security.redaction.keywords = %#v", cfg.Security.Redaction.Keywords)
+	}
+}
+
+func TestValidateRejectsInvalidSecurityScanMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Scan.Mode = "deny"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for security.scan.mode")
+	}
+}
+
+func TestValidateRejectsEmptyRedactionKeywordsWhenEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Redaction.Enabled = true
+	cfg.Security.Redaction.Keywords = []string{"   "}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for security.redaction.keywords")
+	}
+}

@@ -22,10 +22,14 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 	if r == nil || r.manager == nil {
 		return
 	}
+	payload := ev.Payload
+	if len(payload) > 0 {
+		payload = r.manager.RedactPayload(payload)
+	}
 	switch ev.Type {
 	case "run.finished":
-		errorClass := payloadString(ev.Payload, "error_class")
-		status := payloadString(ev.Payload, "status")
+		errorClass := payloadString(payload, "error_class")
+		status := payloadString(payload, "status")
 		if status == "" {
 			if errorClass != "" {
 				status = "failed"
@@ -38,25 +42,25 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			RunID:                ev.RunID,
 			Status:               status,
 			Iterations:           ev.Iteration,
-			ToolCalls:            payloadInt(ev.Payload, "tool_calls"),
-			LatencyMs:            payloadInt64(ev.Payload, "latency_ms"),
+			ToolCalls:            payloadInt(payload, "tool_calls"),
+			LatencyMs:            payloadInt64(payload, "latency_ms"),
 			ErrorClass:           errorClass,
-			ModelProvider:        payloadString(ev.Payload, "model_provider"),
-			FallbackUsed:         payloadBool(ev.Payload, "fallback_used"),
-			FallbackInitial:      payloadString(ev.Payload, "fallback_initial"),
-			FallbackPath:         payloadString(ev.Payload, "fallback_path"),
-			RequiredCapabilities: payloadString(ev.Payload, "required_capabilities"),
-			FallbackReason:       payloadString(ev.Payload, "fallback_reason"),
-			PrefixHash:           payloadString(ev.Payload, "prefix_hash"),
-			AssembleLatencyMs:    payloadInt64(ev.Payload, "assemble_latency_ms"),
-			AssembleStatus:       payloadString(ev.Payload, "assemble_status"),
-			GuardViolation:       payloadString(ev.Payload, "guard_violation"),
-			AssembleStageStatus:  payloadString(ev.Payload, "assemble_stage_status"),
-			Stage2SkipReason:     payloadString(ev.Payload, "stage2_skip_reason"),
-			Stage1LatencyMs:      payloadInt64(ev.Payload, "stage1_latency_ms"),
-			Stage2LatencyMs:      payloadInt64(ev.Payload, "stage2_latency_ms"),
-			Stage2Provider:       payloadString(ev.Payload, "stage2_provider"),
-			RecapStatus:          payloadString(ev.Payload, "recap_status"),
+			ModelProvider:        payloadString(payload, "model_provider"),
+			FallbackUsed:         payloadBool(payload, "fallback_used"),
+			FallbackInitial:      payloadString(payload, "fallback_initial"),
+			FallbackPath:         payloadString(payload, "fallback_path"),
+			RequiredCapabilities: payloadString(payload, "required_capabilities"),
+			FallbackReason:       payloadString(payload, "fallback_reason"),
+			PrefixHash:           payloadString(payload, "prefix_hash"),
+			AssembleLatencyMs:    payloadInt64(payload, "assemble_latency_ms"),
+			AssembleStatus:       payloadString(payload, "assemble_status"),
+			GuardViolation:       payloadString(payload, "guard_violation"),
+			AssembleStageStatus:  payloadString(payload, "assemble_stage_status"),
+			Stage2SkipReason:     payloadString(payload, "stage2_skip_reason"),
+			Stage1LatencyMs:      payloadInt64(payload, "stage1_latency_ms"),
+			Stage2LatencyMs:      payloadInt64(payload, "stage2_latency_ms"),
+			Stage2Provider:       payloadString(payload, "stage2_provider"),
+			RecapStatus:          payloadString(payload, "recap_status"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{
@@ -64,41 +68,41 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			RunID:     ev.RunID,
 			Action:    "discover",
 			Status:    "success",
-			LatencyMs: payloadInt64(ev.Payload, "latency_ms"),
-			Payload:   ev.Payload,
+			LatencyMs: payloadInt64(payload, "latency_ms"),
+			Payload:   payload,
 		})
 	case "skill.warning":
-		action := payloadString(ev.Payload, "action")
+		action := payloadString(payload, "action")
 		if action == "" {
 			action = "compile"
 		}
-		errorClass := payloadString(ev.Payload, "error_class")
+		errorClass := payloadString(payload, "error_class")
 		if errorClass == "" {
 			errorClass = string(types.ErrSkill)
 		}
 		r.manager.RecordSkill(runtimediag.SkillRecord{
 			Time:       eventTime(ev.Time),
 			RunID:      ev.RunID,
-			SkillName:  payloadString(ev.Payload, "name"),
+			SkillName:  payloadString(payload, "name"),
 			Action:     action,
-			Status:     payloadOrDefault(ev.Payload, "status", "warning"),
-			LatencyMs:  payloadInt64(ev.Payload, "latency_ms"),
+			Status:     payloadOrDefault(payload, "status", "warning"),
+			LatencyMs:  payloadInt64(payload, "latency_ms"),
 			ErrorClass: errorClass,
-			Payload:    ev.Payload,
+			Payload:    payload,
 		})
 	case "skill.loaded":
-		action := payloadString(ev.Payload, "action")
+		action := payloadString(payload, "action")
 		if action == "" {
 			action = "compile"
 		}
 		r.manager.RecordSkill(runtimediag.SkillRecord{
 			Time:      eventTime(ev.Time),
 			RunID:     ev.RunID,
-			SkillName: payloadString(ev.Payload, "name"),
+			SkillName: payloadString(payload, "name"),
 			Action:    action,
-			Status:    payloadOrDefault(ev.Payload, "status", "success"),
-			LatencyMs: payloadInt64(ev.Payload, "latency_ms"),
-			Payload:   ev.Payload,
+			Status:    payloadOrDefault(payload, "status", "success"),
+			LatencyMs: payloadInt64(payload, "latency_ms"),
+			Payload:   payload,
 		})
 	}
 }

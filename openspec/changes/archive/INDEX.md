@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-12 17:45:58
+Updated: 2026-03-12 18:46:36
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -15,3 +15,4 @@ Updated: 2026-03-12 17:45:58
 - 011 -> add-provider-capability-detection-and-fallback-m3
 - 012 -> build-context-assembler-ca1-prefix-append-only-baseline
 - 013 -> implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap
+- 014 -> harden-security-baseline-s1-govulncheck-and-redaction

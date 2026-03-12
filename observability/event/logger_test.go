@@ -80,3 +80,51 @@ mcp:
 		t.Fatalf("runtime_active_profile = %#v, want default", got["runtime_active_profile"])
 	}
 }
+
+func TestJSONLoggerRedactsPayloadWhenRuntimeManagerPresent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+security:
+  redaction:
+    enabled: true
+    strategy: keyword
+    keywords: [token]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	var b strings.Builder
+	l := NewJSONLoggerWithRuntimeManager(&b, mgr)
+	l.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "skill.loaded",
+		RunID:   "run-1",
+		Time:    time.Now(),
+		Payload: map[string]any{"access_token": "abc"},
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(b.String())), &got); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	payload, _ := got["payload"].(map[string]any)
+	if payload["access_token"] != "***" {
+		t.Fatalf("payload.access_token = %#v, want ***", payload["access_token"])
+	}
+}

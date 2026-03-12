@@ -14,6 +14,7 @@
 - OpenSpec change `add-provider-capability-detection-and-fallback-m3` 已完成实现。
 - OpenSpec change `build-context-assembler-ca1-prefix-append-only-baseline` 已完成实现。
 - OpenSpec change `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap` 已完成实现。
+- OpenSpec change `harden-security-baseline-s1-govulncheck-and-redaction` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -70,6 +71,12 @@
 - OTel spans：`agent.run` 根 span + model/tool/mcp/skill 子 span
 - JSON stdout logger（支持 trace/span/run 关联）
 - 诊断写入采用 single-writer（`observability/event.RuntimeRecorder`）+ 幂等去重（`runtime/diagnostics`）
+
+### 6. Security Baseline (S1)
+- 统一脱敏管线：关键词基线（`token/password/secret/api_key/apikey`）+ 扩展 matcher 口
+- 脱敏覆盖路径：`runtime/diagnostics`、`observability/event`、`context/assembler`
+- 质量门禁新增 `govulncheck`，默认 `strict`（发现漏洞即失败）
+- 安全扫描模式支持 `strict|warn`，通过环境变量控制
 
 ### 6. Integration + Benchmark
 - fake model/tool/mcp 组件
@@ -189,6 +196,17 @@ Windows PowerShell：
 pwsh -File scripts/check-quality-gate.ps1
 ```
 
+安全扫描会调用 `govulncheck`。如未安装，可先执行：
+```bash
+go install golang.org/x/vuln/cmd/govulncheck@latest
+```
+
+可选扫描策略（默认 strict）：
+```bash
+export BAYMAX_SECURITY_SCAN_MODE=warn
+export BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED=true
+```
+
 ### 运行 Lint
 ```bash
 golangci-lint run --config .golangci.yml
@@ -213,12 +231,11 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
   - `scripts/check-runtime-boundaries.sh`
   - `scripts/check-docs-consistency.ps1`
   - benchmark smoke（`go test ./integration -run ^$ -bench Benchmark -benchtime=50ms`）
-  - `golangci-lint`
 
 ## 脚本清单（当前保留）
 
-- `scripts/check-quality-gate.sh`：Linux CI 质量门禁（`go test` + `go test -race`）。
-- `scripts/check-quality-gate.ps1`：Windows 本地质量门禁等价脚本。
+- `scripts/check-quality-gate.sh`：Linux 质量门禁（`go test` + `go test -race` + `golangci-lint` + `govulncheck`）。
+- `scripts/check-quality-gate.ps1`：Windows 质量门禁等价脚本（同上语义）。
 - `scripts/check-runtime-boundaries.sh`：runtime 模块边界静态检查。
 - `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
 - `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。

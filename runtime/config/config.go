@@ -24,6 +24,13 @@ const (
 	ProfileHighReliab     = "high-reliability"
 )
 
+const (
+	SecurityScanModeStrict      = "strict"
+	SecurityScanModeWarn        = "warn"
+	SecurityRedactionKeyword    = "keyword"
+	SecurityGovulncheckToolName = "govulncheck"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -31,6 +38,7 @@ type Config struct {
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
+	Security         SecurityConfig         `json:"security"`
 }
 
 type MCPConfig struct {
@@ -117,6 +125,22 @@ type ContextAssemblerCA2TailRecapConfig struct {
 	MaxFieldChars int  `json:"max_field_chars"`
 }
 
+type SecurityConfig struct {
+	Scan      SecurityScanConfig      `json:"scan"`
+	Redaction SecurityRedactionConfig `json:"redaction"`
+}
+
+type SecurityScanConfig struct {
+	Mode              string `json:"mode"`
+	GovulncheckEnable bool   `json:"govulncheck_enabled"`
+}
+
+type SecurityRedactionConfig struct {
+	Enabled  bool     `json:"enabled"`
+	Strategy string   `json:"strategy"`
+	Keywords []string `json:"keywords"`
+}
+
 type LoadOptions struct {
 	FilePath  string
 	EnvPrefix string
@@ -189,6 +213,17 @@ func DefaultConfig() Config {
 					MaxItems:      4,
 					MaxFieldChars: 256,
 				},
+			},
+		},
+		Security: SecurityConfig{
+			Scan: SecurityScanConfig{
+				Mode:              SecurityScanModeStrict,
+				GovulncheckEnable: true,
+			},
+			Redaction: SecurityRedactionConfig{
+				Enabled:  true,
+				Strategy: SecurityRedactionKeyword,
+				Keywords: []string{"token", "password", "secret", "api_key", "apikey"},
 			},
 		},
 	}
@@ -375,6 +410,21 @@ func Validate(cfg Config) error {
 			}
 		}
 	}
+	scanMode := strings.ToLower(strings.TrimSpace(cfg.Security.Scan.Mode))
+	switch scanMode {
+	case SecurityScanModeStrict, SecurityScanModeWarn:
+	default:
+		return fmt.Errorf("security.scan.mode must be one of [strict,warn], got %q", cfg.Security.Scan.Mode)
+	}
+	redactionStrategy := strings.ToLower(strings.TrimSpace(cfg.Security.Redaction.Strategy))
+	switch redactionStrategy {
+	case SecurityRedactionKeyword:
+	default:
+		return fmt.Errorf("security.redaction.strategy must be one of [keyword], got %q", cfg.Security.Redaction.Strategy)
+	}
+	if cfg.Security.Redaction.Enabled && len(normalizeKeywords(cfg.Security.Redaction.Keywords)) == 0 {
+		return errors.New("security.redaction.keywords must not be empty when security.redaction.enabled=true")
+	}
 	return nil
 }
 
@@ -441,6 +491,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca2.tail_recap.enabled", base.ContextAssembler.CA2.TailRecap.Enabled)
 	v.SetDefault("context_assembler.ca2.tail_recap.max_items", base.ContextAssembler.CA2.TailRecap.MaxItems)
 	v.SetDefault("context_assembler.ca2.tail_recap.max_field_chars", base.ContextAssembler.CA2.TailRecap.MaxFieldChars)
+	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
+	v.SetDefault("security.scan.govulncheck_enabled", base.Security.Scan.GovulncheckEnable)
+	v.SetDefault("security.redaction.enabled", base.Security.Redaction.Enabled)
+	v.SetDefault("security.redaction.strategy", base.Security.Redaction.Strategy)
+	v.SetDefault("security.redaction.keywords", base.Security.Redaction.Keywords)
 }
 
 func buildConfig(v *viper.Viper) Config {
@@ -478,6 +533,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA2.TailRecap.Enabled = v.GetBool("context_assembler.ca2.tail_recap.enabled")
 	cfg.ContextAssembler.CA2.TailRecap.MaxItems = v.GetInt("context_assembler.ca2.tail_recap.max_items")
 	cfg.ContextAssembler.CA2.TailRecap.MaxFieldChars = v.GetInt("context_assembler.ca2.tail_recap.max_field_chars")
+	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))
+	cfg.Security.Scan.GovulncheckEnable = v.GetBool("security.scan.govulncheck_enabled")
+	cfg.Security.Redaction.Enabled = v.GetBool("security.redaction.enabled")
+	cfg.Security.Redaction.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("security.redaction.strategy")))
+	cfg.Security.Redaction.Keywords = normalizeKeywords(v.GetStringSlice("security.redaction.keywords"))
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {

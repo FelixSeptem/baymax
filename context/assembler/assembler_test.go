@@ -203,3 +203,53 @@ func TestAssemblerCA2RecapAppended(t *testing.T) {
 		t.Fatalf("tail recap message missing: %q", last)
 	}
 }
+
+func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = "file"
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"{\"access_token\":\"secret-token\"}"}`), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfg.CA2.Stage2.FilePath = stage2File
+	cfg.CA2.Routing.MinInputChars = 1
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithRedactionConfigProvider(func() runtimeconfig.SecurityRedactionConfig {
+			return runtimeconfig.SecurityRedactionConfig{
+				Enabled:  true,
+				Strategy: runtimeconfig.SecurityRedactionKeyword,
+				Keywords: []string{"token"},
+			}
+		}),
+	)
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-1",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         "lookup",
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-1",
+		Input:    "lookup",
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Status != types.AssembleStageStatusStage2Used {
+		t.Fatalf("stage status = %q, want stage2_used", result.Stage.Status)
+	}
+	foundMasked := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, `"access_token":"***"`) {
+			foundMasked = true
+			break
+		}
+	}
+	if !foundMasked {
+		t.Fatalf("expected redacted stage2 content, got %#v", outReq.Messages)
+	}
+}

@@ -375,6 +375,7 @@ const (
 	ErrMCP            ErrorClass = "ErrMCP"
 	ErrSkill          ErrorClass = "ErrSkill"
 	ErrContext        ErrorClass = "ErrContext"
+	ErrSecurity       ErrorClass = "ErrSecurity"
 	ErrPolicyTimeout  ErrorClass = "ErrPolicyTimeout"
 	ErrIterationLimit ErrorClass = "ErrIterationLimit"
 )

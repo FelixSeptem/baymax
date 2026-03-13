@@ -19,6 +19,17 @@ func (c *eventCollector) OnEvent(ctx context.Context, ev types.Event) {
 	c.events = append(c.events, ev)
 }
 
+func nonTimelineEvents(events []types.Event) []types.Event {
+	out := make([]types.Event, 0, len(events))
+	for _, ev := range events {
+		if ev.Type == types.EventTypeActionTimeline {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
 func TestE2EMultiTurnToolCall(t *testing.T) {
 	model := fakes.NewModel([]fakes.ModelStep{
 		{Response: types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo", Args: map[string]any{"q": "hello"}}}}},
@@ -95,14 +106,15 @@ func TestStreamingNoEventLossAndOrdering(t *testing.T) {
 	if res.FinalAnswer != "hello" {
 		t.Fatalf("final answer = %q, want hello", res.FinalAnswer)
 	}
-	if len(collector.events) < 6 {
-		t.Fatalf("event count=%d, want>=6", len(collector.events))
+	events := nonTimelineEvents(collector.events)
+	if len(events) < 6 {
+		t.Fatalf("event count=%d, want>=6", len(events))
 	}
-	if collector.events[0].Type != "run.started" || collector.events[1].Type != "model.requested" {
-		t.Fatalf("unexpected prefix order: %#v", collector.events[:2])
+	if events[0].Type != "run.started" || events[1].Type != "model.requested" {
+		t.Fatalf("unexpected prefix order: %#v", events[:2])
 	}
-	if collector.events[len(collector.events)-1].Type != "run.finished" {
-		t.Fatalf("last event=%s, want run.finished", collector.events[len(collector.events)-1].Type)
+	if events[len(events)-1].Type != "run.finished" {
+		t.Fatalf("last event=%s, want run.finished", events[len(events)-1].Type)
 	}
 }
 

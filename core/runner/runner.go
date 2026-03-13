@@ -154,10 +154,13 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	selectionPath := make([]string, 0, 4)
 	fallbackUsed := false
 	lastAssemble := types.ContextAssembleResult{}
+	timelineSeq := int64(0)
 	var terminal *types.ClassifiedError
 	var runErr error
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
 
 	for {
 		switch state {
@@ -173,6 +176,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			iteration++
 			required := req.Capabilities.Normalized()
 			modelReq := toModelRequest(runID, req, pendingOutcomes, required)
+			contextPhaseEnabled := e.contextAssemblerEnabled()
+			if contextPhaseEnabled {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusRunning, "")
+			}
 			assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
 				RunID:         runID,
 				SessionID:     req.SessionID,
@@ -184,10 +192,17 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			}, modelReq)
 			lastAssemble = assembleResult
 			if assembleErr != nil {
+				if contextPhaseEnabled {
+					status, reason := classifyTimelineError(assembleErr)
+					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, status, reason)
+				}
 				terminal = classified(types.ErrContext, assembleErr.Error(), false)
 				runErr = assembleErr
 				state = StateAbort
 				continue
+			}
+			if contextPhaseEnabled {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 			}
 			modelReq = assembledReq
 			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
@@ -197,6 +212,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateAbort
 				continue
 			}
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 			lastSelection = selection
 			if selection.Provider != "" {
 				selectionPath = append(selectionPath, selection.Provider)
@@ -221,20 +238,27 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			pendingOutcomes = nil
 			if err != nil {
 				var classifiedErr classifiedModelError
+				var timelineStatus types.ActionStatus
+				var reason string
 				switch {
 				case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
 					terminal = classifiedErr.ClassifiedError()
+					timelineStatus, reason = classifyClassifiedTimelineError(terminal)
 				case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 					terminal = classified(types.ErrPolicyTimeout, "model step timed out", true)
+					timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
 				default:
 					terminal = classified(types.ErrModel, err.Error(), false)
+					timelineStatus, reason = types.ActionStatusFailed, "model_error"
 				}
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
 				runErr = err
 				state = StateAbort
 				continue
 			}
 			lastResponse = resp
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
 			if resp.FinalAnswer != "" && len(resp.ToolCalls) == 0 {
 				state = StateFinalize
 				continue
@@ -252,10 +276,13 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				continue
 			}
 			if e.dispatcher == nil {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "tool_runtime_disabled")
 				warnings = append(warnings, "tool calls requested but tool runtime is not enabled")
 				state = StateModelStep
 				continue
 			}
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusRunning, "")
 			dispatchCfg := local.DispatchConfig{
 				MaxCalls:     policy.MaxToolCallsPerIteration,
 				Concurrency:  policy.LocalDispatch.MaxWorkers,
@@ -285,6 +312,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			toolSpan.End()
 			cancel()
 			if err != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
 				terminal = classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
 				runErr = stepCtx.Err()
 				state = StateAbort
@@ -297,6 +325,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				}
 			}
 			if err != nil {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, "dispatch_error")
 				terminal = classified(types.ErrTool, err.Error(), false)
 				runErr = err
 				state = StateAbort
@@ -321,6 +350,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					"backpressure": dispatchCfg.Backpressure,
 				},
 			})
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSucceeded, "")
 			pendingOutcomes = outcomes
 			state = StateModelStep
 		case StateFinalize:
@@ -348,6 +378,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Assemble:     lastAssemble,
 				}),
 			})
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			return result, nil
 		case StateAbort:
 			result := types.RunResult{
@@ -378,6 +409,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Assemble:     lastAssemble,
 				}),
 			})
+			status, reason := classifyRunTerminal(terminal, runErr)
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, reason)
 			return result, runErr
 		}
 	}
@@ -394,6 +427,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
 	defer runSpan.End()
 	iteration := 1
+	timelineSeq := int64(0)
 	final := ""
 	usage := types.TokenUsage{}
 	selectionPath := make([]string, 0, 2)
@@ -411,7 +445,18 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	lastAssemble := assembleResult
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+	contextPhaseEnabled := e.contextAssemblerEnabled()
+	if contextPhaseEnabled {
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusRunning, "")
+	}
 	if assembleErr != nil {
+		if contextPhaseEnabled {
+			status, reason := classifyTimelineError(assembleErr)
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, status, reason)
+		}
 		result := types.RunResult{
 			RunID:      runID,
 			Iterations: iteration,
@@ -433,7 +478,12 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, assembleErr)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		return result, assembleErr
+	}
+	if contextPhaseEnabled {
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 	}
 	modelReq = assembledReq
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -460,11 +510,15 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, errors.New(selErr.Message))
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		return result, errors.New(selErr.Message)
 	}
 	if selection.Provider != "" {
 		selectionPath = append(selectionPath, selection.Provider)
 	}
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 	e.emit(ctx, h, types.Event{
 		Version:   "v1",
 		Type:      "model.requested",
@@ -508,12 +562,17 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	if err != nil {
 		var classifiedErr classifiedModelError
 		terminal := classified(types.ErrModel, err.Error(), false)
+		var timelineStatus types.ActionStatus
+		var reason string
 		switch {
 		case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
 			terminal = classifiedErr.ClassifiedError()
+			timelineStatus, reason = classifyClassifiedTimelineError(terminal)
 		case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 			terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
+			timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
 		}
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
 		result := types.RunResult{
 			RunID:      runID,
 			Iterations: iteration,
@@ -539,10 +598,13 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
+		status, runReason := classifyRunTerminal(terminal, err)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, runReason)
 		return result, err
 	}
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
 	result := types.RunResult{
 		RunID:       runID,
 		FinalAnswer: final,
@@ -565,6 +627,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Assemble:     lastAssemble,
 		}),
 	})
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 	return result, nil
 }
 
@@ -612,6 +675,38 @@ func (e *Engine) emit(ctx context.Context, h types.EventHandler, ev types.Event)
 	ev.TraceID = obsTrace.TraceIDFromContext(ctx)
 	ev.SpanID = obsTrace.SpanIDFromContext(ctx)
 	h.OnEvent(ctx, ev)
+}
+
+func (e *Engine) emitTimeline(
+	ctx context.Context,
+	h types.EventHandler,
+	runID string,
+	iteration int,
+	seq *int64,
+	phase types.ActionPhase,
+	status types.ActionStatus,
+	reason string,
+) {
+	if seq == nil {
+		return
+	}
+	*seq++
+	payload := map[string]any{
+		"phase":    string(phase),
+		"status":   string(status),
+		"sequence": *seq,
+	}
+	if strings.TrimSpace(reason) != "" {
+		payload["reason"] = strings.TrimSpace(reason)
+	}
+	e.emit(ctx, h, types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      types.EventTypeActionTimeline,
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload:   payload,
+	})
 }
 
 func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.LoopPolicy) types.LoopPolicy {
@@ -935,6 +1030,69 @@ func (e *Engine) resolvePrefixVersion() string {
 		return runtimeconfig.DefaultConfig().ContextAssembler.PrefixVersion
 	}
 	return e.runtimeMgr.EffectiveConfig().ContextAssembler.PrefixVersion
+}
+
+func (e *Engine) contextAssemblerEnabled() bool {
+	if e.runtimeMgr == nil {
+		return false
+	}
+	return e.runtimeMgr.EffectiveConfig().ContextAssembler.Enabled
+}
+
+func classifyRunTerminal(terminal *types.ClassifiedError, runErr error) (types.ActionStatus, string) {
+	if errors.Is(runErr, context.Canceled) {
+		return types.ActionStatusCanceled, "context_canceled"
+	}
+	if errors.Is(runErr, context.DeadlineExceeded) {
+		return types.ActionStatusCanceled, "deadline_exceeded"
+	}
+	if terminal == nil {
+		return types.ActionStatusFailed, "aborted"
+	}
+	switch terminal.Class {
+	case types.ErrPolicyTimeout:
+		return types.ActionStatusCanceled, "policy_timeout"
+	case types.ErrIterationLimit:
+		return types.ActionStatusFailed, "iteration_limit"
+	case types.ErrContext:
+		return types.ActionStatusFailed, "context_error"
+	case types.ErrModel:
+		return types.ActionStatusFailed, "model_error"
+	case types.ErrTool:
+		return types.ActionStatusFailed, "tool_error"
+	default:
+		return types.ActionStatusFailed, "failed"
+	}
+}
+
+func classifyTimelineError(err error) (types.ActionStatus, string) {
+	if errors.Is(err, context.Canceled) {
+		return types.ActionStatusCanceled, "context_canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return types.ActionStatusCanceled, "deadline_exceeded"
+	}
+	return types.ActionStatusFailed, "failed"
+}
+
+func classifyClassifiedTimelineError(err *types.ClassifiedError) (types.ActionStatus, string) {
+	if err == nil {
+		return types.ActionStatusFailed, "failed"
+	}
+	switch err.Class {
+	case types.ErrPolicyTimeout:
+		return types.ActionStatusCanceled, "policy_timeout"
+	case types.ErrContext:
+		return types.ActionStatusFailed, "context_error"
+	case types.ErrModel:
+		return types.ActionStatusFailed, "model_error"
+	case types.ErrTool:
+		return types.ActionStatusFailed, "tool_error"
+	case types.ErrIterationLimit:
+		return types.ActionStatusFailed, "iteration_limit"
+	default:
+		return types.ActionStatusFailed, "failed"
+	}
 }
 
 var _ types.Runner = (*Engine)(nil)

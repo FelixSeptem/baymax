@@ -97,6 +97,43 @@ func (c *eventCollector) OnEvent(ctx context.Context, ev types.Event) {
 	c.evs = append(c.evs, ev)
 }
 
+func (c *eventCollector) nonTimelineTypes() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, 0, len(c.types))
+	for _, t := range c.types {
+		if t == types.EventTypeActionTimeline {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func (c *eventCollector) timelineEvents() []types.Event {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]types.Event, 0, len(c.evs))
+	for _, ev := range c.evs {
+		if ev.Type == types.EventTypeActionTimeline {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func (c *eventCollector) lastNonTimelineEvent() (types.Event, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := len(c.evs) - 1; i >= 0; i-- {
+		if c.evs[i].Type == types.EventTypeActionTimeline {
+			continue
+		}
+		return c.evs[i], true
+	}
+	return types.Event{}, false
+}
+
 func TestRunNormalCompletionAndEvents(t *testing.T) {
 	model := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -117,13 +154,14 @@ func TestRunNormalCompletionAndEvents(t *testing.T) {
 	if res.FinalAnswer != "ok" {
 		t.Fatalf("FinalAnswer = %q, want ok", res.FinalAnswer)
 	}
-	if len(collector.types) != 4 {
-		t.Fatalf("event count = %d, want 4", len(collector.types))
+	nonTimeline := collector.nonTimelineTypes()
+	if len(nonTimeline) != 4 {
+		t.Fatalf("event count = %d, want 4", len(nonTimeline))
 	}
 	want := []string{"run.started", "model.requested", "model.completed", "run.finished"}
 	for i := range want {
-		if collector.types[i] != want[i] {
-			t.Fatalf("event[%d] = %q, want %q", i, collector.types[i], want[i])
+		if nonTimeline[i] != want[i] {
+			t.Fatalf("event[%d] = %q, want %q", i, nonTimeline[i], want[i])
 		}
 	}
 }
@@ -147,8 +185,9 @@ func TestRunTimeoutAbort(t *testing.T) {
 	if res.Error == nil || res.Error.Class != types.ErrPolicyTimeout {
 		t.Fatalf("error class = %#v, want ErrPolicyTimeout", res.Error)
 	}
-	if collector.types[len(collector.types)-1] != "run.finished" {
-		t.Fatalf("last event = %q, want run.finished", collector.types[len(collector.types)-1])
+	nonTimeline := collector.nonTimelineTypes()
+	if nonTimeline[len(nonTimeline)-1] != "run.finished" {
+		t.Fatalf("last event = %q, want run.finished", nonTimeline[len(nonTimeline)-1])
 	}
 }
 
@@ -195,8 +234,9 @@ func TestStreamForwardsDelta(t *testing.T) {
 	if res.FinalAnswer != "hello" {
 		t.Fatalf("FinalAnswer = %q, want hello", res.FinalAnswer)
 	}
-	if len(collector.types) < 5 {
-		t.Fatalf("event count = %d, want at least 5", len(collector.types))
+	nonTimeline := collector.nonTimelineTypes()
+	if len(nonTimeline) < 5 {
+		t.Fatalf("event count = %d, want at least 5", len(nonTimeline))
 	}
 }
 
@@ -238,8 +278,9 @@ func TestStreamFailFastWithErrModel(t *testing.T) {
 	if res.Error == nil || res.Error.Class != types.ErrModel {
 		t.Fatalf("error class = %#v, want ErrModel", res.Error)
 	}
-	if collector.types[len(collector.types)-1] != "run.finished" {
-		t.Fatalf("last event = %q, want run.finished", collector.types[len(collector.types)-1])
+	nonTimeline := collector.nonTimelineTypes()
+	if nonTimeline[len(nonTimeline)-1] != "run.finished" {
+		t.Fatalf("last event = %q, want run.finished", nonTimeline[len(nonTimeline)-1])
 	}
 }
 
@@ -403,10 +444,14 @@ func TestRunEventCorrelationFieldsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
-	if len(c.evs) != 4 {
-		t.Fatalf("event count = %d, want 4", len(c.evs))
+	nonTimeline := c.nonTimelineTypes()
+	if len(nonTimeline) != 4 {
+		t.Fatalf("event count = %d, want 4", len(nonTimeline))
 	}
 	for _, ev := range c.evs {
+		if ev.Type == types.EventTypeActionTimeline {
+			continue
+		}
 		if ev.Version != types.EventSchemaVersionV1 {
 			t.Fatalf("event version = %q, want %q", ev.Version, types.EventSchemaVersionV1)
 		}
@@ -419,8 +464,8 @@ func TestRunEventCorrelationFieldsComplete(t *testing.T) {
 	}
 	order := []string{"run.started", "model.requested", "model.completed", "run.finished"}
 	for i := range order {
-		if c.evs[i].Type != order[i] {
-			t.Fatalf("event order mismatch at %d: got %q want %q", i, c.evs[i].Type, order[i])
+		if nonTimeline[i] != order[i] {
+			t.Fatalf("event order mismatch at %d: got %q want %q", i, nonTimeline[i], order[i])
 		}
 	}
 }
@@ -572,7 +617,10 @@ provider_fallback:
 	if res.FinalAnswer != "fallback-ok" {
 		t.Fatalf("FinalAnswer = %q, want fallback-ok", res.FinalAnswer)
 	}
-	finished := collector.evs[len(collector.evs)-1]
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing non-timeline finished event")
+	}
 	if finished.Type != "run.finished" {
 		t.Fatalf("last event = %q, want run.finished", finished.Type)
 	}
@@ -680,7 +728,10 @@ provider_fallback:
 	if res.FinalAnswer != "hello" {
 		t.Fatalf("FinalAnswer = %q, want hello", res.FinalAnswer)
 	}
-	finished := collector.evs[len(collector.evs)-1]
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing non-timeline finished event")
+	}
 	if finished.Payload["model_provider"] != "anthropic" {
 		t.Fatalf("model_provider = %#v, want anthropic", finished.Payload["model_provider"])
 	}
@@ -820,12 +871,141 @@ context_assembler:
 		t.Fatal("model stream should not be called when CA2 fail-fast triggers")
 	}
 	want := []string{"run.started", "run.finished"}
-	if len(collector.types) != len(want) {
-		t.Fatalf("event count = %d, want %d", len(collector.types), len(want))
+	nonTimeline := collector.nonTimelineTypes()
+	if len(nonTimeline) != len(want) {
+		t.Fatalf("event count = %d, want %d", len(nonTimeline), len(want))
 	}
 	for i := range want {
-		if collector.types[i] != want[i] {
-			t.Fatalf("event[%d]=%s, want %s", i, collector.types[i], want[i])
+		if nonTimeline[i] != want[i] {
+			t.Fatalf("event[%d]=%s, want %s", i, nonTimeline[i], want[i])
 		}
 	}
+}
+
+func TestRunAndStreamTimelineSemanticEquivalence(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+
+	runEngine := New(runModel)
+	streamEngine := New(streamModel)
+	runEngine.newRunID = func() string { return "run-eq" }
+	streamEngine.newRunID = func() string { return "stream-eq" }
+
+	if _, err := runEngine.Run(context.Background(), types.RunRequest{Input: "hello"}, runCollector); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if _, err := streamEngine.Stream(context.Background(), types.RunRequest{Input: "hello"}, streamCollector); err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	runSeq := timelinePhaseStatus(runCollector.timelineEvents())
+	streamSeq := timelinePhaseStatus(streamCollector.timelineEvents())
+	if len(runSeq) == 0 || len(streamSeq) == 0 {
+		t.Fatalf("timeline events should be emitted by default: run=%d stream=%d", len(runSeq), len(streamSeq))
+	}
+	if !containsTimelineStep(runSeq, "run:succeeded") || !containsTimelineStep(streamSeq, "run:succeeded") {
+		t.Fatalf("run and stream timeline should both finish as succeeded: run=%v stream=%v", runSeq, streamSeq)
+	}
+	if !containsTimelineStep(runSeq, "model:succeeded") || !containsTimelineStep(streamSeq, "model:succeeded") {
+		t.Fatalf("run and stream timeline should both contain model:succeeded: run=%v stream=%v", runSeq, streamSeq)
+	}
+}
+
+func TestTimelineSequenceIsMonotonic(t *testing.T) {
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model)
+	if _, err := engine.Run(context.Background(), types.RunRequest{Input: "hello"}, collector); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	events := collector.timelineEvents()
+	if len(events) == 0 {
+		t.Fatal("timeline events should not be empty")
+	}
+	prev := int64(0)
+	for _, ev := range events {
+		seq, _ := ev.Payload["sequence"].(int64)
+		if seq <= prev {
+			t.Fatalf("timeline sequence should be monotonic increasing: prev=%d current=%d", prev, seq)
+		}
+		prev = seq
+	}
+}
+
+func TestTimelineContextAssemblerPhaseOnlyWhenEnabled(t *testing.T) {
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	collectorDisabled := &eventCollector{}
+	engineDisabled := New(model)
+	if _, err := engineDisabled.Run(context.Background(), types.RunRequest{Input: "hello"}, collectorDisabled); err != nil {
+		t.Fatalf("Run failed with default config: %v", err)
+	}
+	for _, step := range timelinePhaseStatus(collectorDisabled.timelineEvents()) {
+		if strings.HasPrefix(step, "context_assembler:") {
+			t.Fatalf("context_assembler phase should not be emitted when assembler disabled: %v", step)
+		}
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	collectorEnabled := &eventCollector{}
+	engineEnabled := New(model, WithRuntimeManager(mgr))
+	if _, err := engineEnabled.Run(context.Background(), types.RunRequest{Input: "hello", SessionID: "s-1"}, collectorEnabled); err != nil {
+		t.Fatalf("Run failed with assembler enabled: %v", err)
+	}
+	steps := timelinePhaseStatus(collectorEnabled.timelineEvents())
+	if !containsTimelineStep(steps, "context_assembler:succeeded") {
+		t.Fatalf("context_assembler phase should be emitted when enabled: %v", steps)
+	}
+}
+
+func timelinePhaseStatus(events []types.Event) []string {
+	out := make([]string, 0, len(events))
+	for _, ev := range events {
+		phase, _ := ev.Payload["phase"].(string)
+		status, _ := ev.Payload["status"].(string)
+		if strings.TrimSpace(phase) == "" || strings.TrimSpace(status) == "" {
+			continue
+		}
+		out = append(out, phase+":"+status)
+	}
+	return out
+}
+
+func containsTimelineStep(steps []string, want string) bool {
+	for _, step := range steps {
+		if step == want {
+			return true
+		}
+	}
+	return false
 }

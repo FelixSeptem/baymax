@@ -42,7 +42,7 @@ func TestStreamingEventSequenceGolden(t *testing.T) {
 	}
 
 	seq := make([]streamGoldenEvent, 0, len(collector.events))
-	for _, ev := range collector.events {
+	for _, ev := range nonTimelineEvents(collector.events) {
 		item := streamGoldenEvent{Type: ev.Type}
 		if ev.Type == "model.delta" && ev.Payload != nil {
 			if v, ok := ev.Payload["event_type"].(string); ok {

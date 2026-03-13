@@ -154,6 +154,20 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 当前不提供 CLI 诊断命令。
 
+## Action Timeline 事件（默认启用）
+
+- 事件类型：`action.timeline`
+- 产出路径：由 `core/runner` 发射，经 `observability/event` 统一输出（logger/handler 可直接消费）。
+- phase 枚举：`run|context_assembler|model|tool|mcp|skill`
+- status 枚举：`pending|running|succeeded|failed|skipped|canceled`
+- payload 最小字段：
+  - `phase`：动作阶段
+  - `status`：阶段状态
+  - `reason`：可选，失败/跳过/取消原因
+  - `sequence`：单 run 内递增序号（用于稳定排序）
+
+兼容性：该事件为增量新增，不替换既有 `run.* / model.* / tool.* / skill.*` 事件。
+
 ### External Retriever 预检查语义
 
 - 预检查输出包含 findings（`warning`/`error`）与归一化配置快照。
@@ -208,6 +222,11 @@ client := httpmcp.NewClient(httpmcp.Config{
 - run 状态：`success | failed`
 - skill 状态：`success | warning | failed`
 - 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`、`ErrSecurity`）
+
+### TODO（后续提案收敛）
+
+- H1 不新增 diagnostics 聚合字段（例如 timeline phase 级计数/耗时聚合）。
+- 后续将通过独立 change 收敛 timeline observability 聚合口径，并与现有 `RecentRuns` 诊断模型统一。
 
 ## 安全基线（S1）
 

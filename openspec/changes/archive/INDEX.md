@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-13 13:47:50
+Updated: 2026-03-13 14:31:56
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -19,3 +19,4 @@ Updated: 2026-03-13 13:47:50
 - 015 -> add-r3-advanced-concurrency-pattern-examples-05-07
 - 016 -> activate-ca2-external-retriever-spi-and-http-adapter
 - 017 -> harden-ca2-retriever-profiles-and-error-layering-e1
+- 018 -> standardize-action-timeline-events-h1

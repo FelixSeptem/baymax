@@ -176,3 +176,59 @@ security:
 		t.Fatalf("access_token should be masked, got %#v", items[0].Payload["access_token"])
 	}
 }
+
+func TestRuntimeRecorderIgnoresActionTimelineForRunAggregation(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   "run-1",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"phase":    "run",
+			"status":   "running",
+			"sequence": int64(1),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-1",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":     "success",
+			"latency_ms": int64(9),
+		},
+	})
+
+	items := mgr.RecentRuns(5)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	if items[0].RunID != "run-1" || items[0].Status != "success" {
+		t.Fatalf("unexpected run record: %#v", items[0])
+	}
+}

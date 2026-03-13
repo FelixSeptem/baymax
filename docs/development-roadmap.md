@@ -89,6 +89,7 @@
 - [x] `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap`：完成 CA2 双阶段路由、file provider、tail recap 与 CA2 诊断字段。
 - [x] `activate-ca2-external-retriever-spi-and-http-adapter`：完成 Stage2 External Retriever SPI、HTTP adapter、`http/rag/db/elasticsearch` 可运行路径与新增诊断字段。
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
+- [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -112,9 +113,10 @@
   - 详细分期见 `docs/context-assembler-phased-plan.md`。
 - Skill 语义触发升级（可插拔检索/打分器）。
 - Agent Action 输出体验（规划）：
-  - 基于现有事件流构建用户侧 Action Timeline（run/model/tool/mcp 阶段）。
-  - 增加统一动作状态语义（pending/running/succeeded/failed/skipped）。
+  - 基于现有事件流构建用户侧 Action Timeline（`run/context_assembler/model/tool/mcp/skill` 阶段）。
+  - 增加统一动作状态语义（`pending/running/succeeded/failed/skipped/canceled`）。
   - 增加 step/phase 关联字段规范，支持前端稳定渲染执行路径。
+  - TODO：补齐 timeline 聚合可观测字段并收敛到 diagnostics 契约。
 - 提供最小 CLI 示例（本地调试和回放）。
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`、`08-multi-agent-network-bridge`。
   - TODO：结合 CA2 增加 staged context 路由示例（本提案不新增 example 代码）。
@@ -222,9 +224,10 @@
 
 说明：Context Assembler 不建议单次大改完成，需按分期逐步启用，保证 runner 语义稳定与并发安全基线不回退。
 
-## HITL 与 Action Timeline 里程碑（规划，当前不实现）
+## HITL 与 Action Timeline 里程碑（规划）
 
-- H1（R3 前半）：先交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
+- H1（R3 前半，已完成）：交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
+- H1.5（R3-R4）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
 - H2（R3 后半或 R4 前半）：引入 Action Gate（执行前确认钩子），支持外部编排式 HITL。
 - H3（R4）：引入原生 pause/resume 语义（`run.awaiting_user` / `run.resumed`），完善契约测试与诊断记录。
 

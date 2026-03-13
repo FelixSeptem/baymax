@@ -70,9 +70,15 @@
 
 ### 5. Observability
 - 事件 schema v1，关联字段：`run_id / iteration / call_id / trace_id / span_id`
+- Action Timeline（默认启用，结构化事件类型 `action.timeline`）：
+  - phase：`run|context_assembler|model|tool|mcp|skill`
+  - status：`pending|running|succeeded|failed|skipped|canceled`
+  - 关键字段：`phase`、`status`、`reason`（可选）、`sequence`（单 run 递增）
 - OTel spans：`agent.run` 根 span + model/tool/mcp/skill 子 span
 - JSON stdout logger（支持 trace/span/run 关联）
 - 诊断写入采用 single-writer（`observability/event.RuntimeRecorder`）+ 幂等去重（`runtime/diagnostics`）
+
+说明：H1 仅新增结构化 timeline 事件，不新增 diagnostics 聚合字段；聚合口径将在后续 proposal 收敛（TODO）。
 
 ### 6. Security Baseline (S1)
 - 统一脱敏管线：关键词基线（`token/password/secret/api_key/apikey`）+ 扩展 matcher 口

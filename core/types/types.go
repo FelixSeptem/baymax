@@ -361,6 +361,40 @@ type SkillBundle struct {
 
 const EventSchemaVersionV1 = "v1"
 
+const EventTypeActionTimeline = "action.timeline"
+
+type ActionPhase string
+
+const (
+	ActionPhaseRun              ActionPhase = "run"
+	ActionPhaseContextAssembler ActionPhase = "context_assembler"
+	ActionPhaseModel            ActionPhase = "model"
+	ActionPhaseTool             ActionPhase = "tool"
+	ActionPhaseMCP              ActionPhase = "mcp"
+	ActionPhaseSkill            ActionPhase = "skill"
+)
+
+type ActionStatus string
+
+const (
+	ActionStatusPending   ActionStatus = "pending"
+	ActionStatusRunning   ActionStatus = "running"
+	ActionStatusSucceeded ActionStatus = "succeeded"
+	ActionStatusFailed    ActionStatus = "failed"
+	ActionStatusSkipped   ActionStatus = "skipped"
+	ActionStatusCanceled  ActionStatus = "canceled"
+)
+
+type ActionTimelineEvent struct {
+	RunID     string       `json:"run_id"`
+	Iteration int          `json:"iteration,omitempty"`
+	Phase     ActionPhase  `json:"phase"`
+	Status    ActionStatus `json:"status"`
+	Reason    string       `json:"reason,omitempty"`
+	Sequence  int64        `json:"sequence"`
+	Time      time.Time    `json:"time"`
+}
+
 type Event struct {
 	Version   string         `json:"version"`
 	Type      string         `json:"type"`

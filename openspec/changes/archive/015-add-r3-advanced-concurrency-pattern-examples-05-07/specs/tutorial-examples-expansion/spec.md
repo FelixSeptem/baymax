@@ -1,8 +1,5 @@
-# tutorial-examples-expansion Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change optimize-runtime-concurrency-and-async-io. Update Purpose after archive.
-## Requirements
 ### Requirement: Project SHALL provide phased tutorial examples aligned with runtime maturity
 The project MUST provide tutorial examples in phased batches aligned to roadmap milestones: foundational examples first, advanced concurrency/async examples later.
 
@@ -27,6 +24,8 @@ Tutorial documentation MUST describe expected concurrency behavior and caveats f
 #### Scenario: User runs a parallel or async tutorial
 - **WHEN** a user follows an advanced tutorial
 - **THEN** documentation explains expected fanout/queue behavior and how to interpret runtime diagnostics
+
+## ADDED Requirements
 
 ### Requirement: Advanced tutorials SHALL integrate runtime manager consistently
 All R3 advanced tutorials MUST initialize runtime configuration through `runtime/config.Manager` so examples follow the same config/diagnostics path as production library usage.
@@ -59,4 +58,3 @@ README MUST provide a navigation index that maps tutorial example directories to
 #### Scenario: User selects tutorial by pattern
 - **WHEN** user reads README tutorial section
 - **THEN** user can find example entrypoints by pattern category without scanning all directories manually
-

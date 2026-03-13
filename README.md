@@ -240,6 +240,27 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 - `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
 - `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。
 
+## Examples Pattern Index
+
+| Example | Pattern | 说明 |
+| --- | --- | --- |
+| `examples/01-chat-minimal` | Sequential | 单轮最小调用链路 |
+| `examples/02-tool-loop-basic` | Tool Call + Sequential | 工具调用闭环 |
+| `examples/03-mcp-mixed-call` | Tool Call + Routing | local/MCP 混合路径 |
+| `examples/04-streaming-interrupt` | Structure | 流式中断与收敛 |
+| `examples/05-parallel-tools-fanout` | Parallel | goroutine fanout 并发工具执行 |
+| `examples/06-async-job-progress` | Map-Reduce-like + Parallel | 异步任务进度回传与聚合 |
+| `examples/07-multi-agent-async-channel` | Multi-Agent + Structure | 单进程 channel 协作 |
+| `examples/08-multi-agent-network-bridge` | Multi-Agent + Structure (Network) | HTTP + JSON-RPC 2.0 网络桥接 |
+
+运行示例：
+```bash
+go run ./examples/05-parallel-tools-fanout
+go run ./examples/06-async-job-progress
+go run ./examples/07-multi-agent-async-channel
+go run ./examples/08-multi-agent-network-bridge
+```
+
 ## 目录结构
 
 - `core/types`: 公共接口与 DTO

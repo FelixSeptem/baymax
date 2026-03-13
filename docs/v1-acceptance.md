@@ -20,6 +20,7 @@
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
 - Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
+- R3 advanced tutorial examples (`05` to `08`) are present, runnable, and aligned with README/docs pattern navigation.
 
 ## Known Limitations (V1 Non-goals)
 

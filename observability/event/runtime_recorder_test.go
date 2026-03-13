@@ -98,9 +98,12 @@ mcp:
 			"stage1_latency_ms":     int64(3),
 			"stage2_latency_ms":     int64(0),
 			"stage2_provider":       "file",
+			"stage2_profile":        "http_generic",
 			"stage2_hit_count":      2,
 			"stage2_source":         "http",
 			"stage2_reason":         "ok",
+			"stage2_reason_code":    "ok",
+			"stage2_error_layer":    "",
 			"recap_status":          "appended",
 		},
 	}
@@ -122,6 +125,9 @@ mcp:
 	}
 	if items[0].Stage2HitCount != 2 || items[0].Stage2Source != "http" || items[0].Stage2Reason != "ok" {
 		t.Fatalf("ca2 retrieval fields mismatch: %#v", items[0])
+	}
+	if items[0].Stage2ReasonCode != "ok" || items[0].Stage2Profile != "http_generic" {
+		t.Fatalf("ca2 retrieval extended fields mismatch: %#v", items[0])
 	}
 }
 

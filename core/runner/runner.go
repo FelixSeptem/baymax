@@ -906,6 +906,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.Stage2Provider != "" {
 		payload["stage2_provider"] = meta.Assemble.Stage.Stage2Provider
 	}
+	if meta.Assemble.Stage.Stage2Profile != "" {
+		payload["stage2_profile"] = meta.Assemble.Stage.Stage2Profile
+	}
 	if meta.Assemble.Stage.Stage2HitCount > 0 {
 		payload["stage2_hit_count"] = meta.Assemble.Stage.Stage2HitCount
 	}
@@ -914,6 +917,12 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.Assemble.Stage.Stage2Reason != "" {
 		payload["stage2_reason"] = meta.Assemble.Stage.Stage2Reason
+	}
+	if meta.Assemble.Stage.Stage2ReasonCode != "" {
+		payload["stage2_reason_code"] = meta.Assemble.Stage.Stage2ReasonCode
+	}
+	if meta.Assemble.Stage.Stage2ErrorLayer != "" {
+		payload["stage2_error_layer"] = meta.Assemble.Stage.Stage2ErrorLayer
 	}
 	if meta.Assemble.Recap.Status != "" {
 		payload["recap_status"] = string(meta.Assemble.Recap.Status)

@@ -1,8 +1,5 @@
-# runtime-config-and-diagnostics-api Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-runtime-config-and-diagnostics-api-with-hot-reload. Update Purpose after archive.
-## Requirements
 ### Requirement: Runtime SHALL load configuration with deterministic precedence
 The runtime MUST load configuration from defaults, YAML file, and environment variables with precedence `env > file > default`. This configuration capability MUST be owned by a global runtime module and be consumable by MCP, runner, local tool, skill loader, and observability components through stable interfaces.
 
@@ -43,17 +40,6 @@ Runtime configuration MUST additionally support security S1 baseline fields with
 #### Scenario: Startup with external retriever profile overrides
 - **WHEN** runtime starts with CA2 external profile selected and explicit mapping/auth/header overrides configured
 - **THEN** effective Stage2 external config resolves profile defaults first and then applies explicit override values
-
-### Requirement: Runtime SHALL validate configuration and fail fast on invalid startup input
-The runtime MUST validate required fields, numeric ranges, and enum values before activation; invalid startup configuration MUST return an error and abort initialization.
-
-#### Scenario: Invalid enum value at startup
-- **WHEN** configuration provides an unsupported enum value
-- **THEN** runtime returns validation error and does not start
-
-#### Scenario: Invalid numeric range at startup
-- **WHEN** configuration contains out-of-range numeric values
-- **THEN** runtime returns validation error and does not start
 
 ### Requirement: Runtime SHALL expose diagnostics through library API only
 The runtime MUST provide diagnostics query APIs for recent run summaries, recent MCP call summaries, and sanitized effective configuration, and MUST NOT require CLI support. Diagnostics returned by these APIs MUST follow single-writer and idempotent persistence semantics so repeated event submission does not alter logical aggregate counts.
@@ -96,110 +82,6 @@ Diagnostics for CA2 retrieval MUST additionally expose normalized Stage2 retriev
 - **WHEN** application queries diagnostics for runs that executed Stage2 retrieval
 - **THEN** runtime returns normalized `stage2_hit_count`, `stage2_source`, `stage2_reason`, `stage2_reason_code`, `stage2_error_layer`, and `stage2_profile` fields
 
-### Requirement: Runtime SHALL support hot reload with atomic swap and rollback safety
-The runtime MUST watch config file changes, rebuild and validate a new snapshot, and atomically replace active configuration only on successful validation.
-
-#### Scenario: Valid configuration update arrives
-- **WHEN** watched YAML file changes to a valid configuration
-- **THEN** runtime atomically switches to the new snapshot without exposing partial state
-
-#### Scenario: Invalid configuration update arrives
-- **WHEN** watched YAML file changes to an invalid configuration
-- **THEN** runtime rejects the update, keeps current active snapshot unchanged, and emits reload error diagnostics
-
-### Requirement: Runtime SHALL be concurrency-safe for config and diagnostics access
-Configuration reads, diagnostics writes, diagnostics deduplication, and hot-reload swaps MUST be safe under concurrent goroutines.
-
-#### Scenario: Concurrent reads during hot reload
-- **WHEN** multiple goroutines read configuration while a reload is in progress
-- **THEN** each read observes either old or new complete snapshot, never mixed fields
-
-#### Scenario: Concurrent diagnostics recording and querying
-- **WHEN** goroutines concurrently record call summaries and query diagnostics
-- **THEN** runtime preserves data integrity, idempotent write behavior, and bounded-memory behavior
-
-### Requirement: Runtime config API migration SHALL preserve behavior compatibility
-When runtime config implementation paths are refactored, the system MUST preserve existing precedence, validation, and hot-reload semantics for callers migrating from previous package locations.
-
-#### Scenario: Caller migrates from legacy package path
-- **WHEN** caller switches from legacy runtime config package path to the new global runtime package path
-- **THEN** resolved effective config and diagnostics behavior remain semantically equivalent under the same inputs
-
-### Requirement: Runtime diagnostics API migration SHALL preserve behavior compatibility
-When diagnostics API implementation paths are refactored, the system MUST preserve existing normalized fields, bounded history semantics, and sanitized config output behavior for callers migrating from previous package locations.
-
-#### Scenario: Caller migrates diagnostics API package path
-- **WHEN** caller switches diagnostics API imports from legacy package path to new global runtime package path
-- **THEN** recent runs/calls/reloads outputs remain semantically equivalent for the same recorded inputs
-
-### Requirement: Runtime diagnostics API SHALL cover skill lifecycle semantics
-The runtime diagnostics API MUST support normalized skill lifecycle diagnostics, including discovery, trigger matching, compile outcomes, and failure classification, while preserving shared correlation fields.
-
-#### Scenario: Skill loader emits diagnostics
-- **WHEN** skill discovery or compile pipeline runs
-- **THEN** diagnostics API returns normalized skill records with shared correlation fields and skill-specific payload metadata
-
-### Requirement: Runtime documentation SHALL publish config field index and migration mapping
-The repository MUST publish a configuration field index and package migration mapping, including old-to-new API references and deprecation notes.
-
-#### Scenario: Maintainer updates runtime config docs
-- **WHEN** config fields or package paths change
-- **THEN** docs include synchronized schema reference and migration table for affected APIs
-
-### Requirement: Runtime diagnostics contract SHALL define normalized status and error semantics
-The runtime MUST define shared diagnostics status enums and error classification semantics for run and skill records, while allowing domain-specific extension fields.
-
-#### Scenario: Run and skill producers emit diagnostics
-- **WHEN** runner and skill loader publish diagnostics records
-- **THEN** persisted diagnostics use shared normalized status and error fields with consistent meanings
-
-### Requirement: Runtime diagnostics contract SHALL be protected by contract tests
-The repository MUST include contract tests that validate schema and semantic consistency across success, failure, warning, and retry/replay paths for run and skill diagnostics.
-
-#### Scenario: Contract test suite is executed
-- **WHEN** diagnostics contract tests run in CI or local validation
-- **THEN** inconsistent field mapping or semantic mismatch fails the test suite
-
-### Requirement: Runtime SHALL validate provider fallback policy and discovery controls
-The runtime MUST validate fallback policy configuration at startup and hot reload, including non-empty candidate constraints (when fallback is enabled), enum/range validation for discovery controls, and deterministic ordering guarantees.
-
-#### Scenario: Invalid fallback policy at startup
-- **WHEN** fallback configuration includes invalid provider identifiers or malformed ordering
-- **THEN** runtime initialization fails fast with validation error
-
-#### Scenario: Invalid fallback policy during hot reload
-- **WHEN** watched configuration updates fallback policy to an invalid value
-- **THEN** runtime rejects the update and preserves previous active snapshot
-
-### Requirement: Runtime SHALL enforce CA1 storage backend behavior for context assembler
-Runtime MUST treat file backend as active default for context assembler CA1 and MUST reject db backend activation with explicit unsupported error until later milestones enable it.
-
-#### Scenario: DB backend requested in CA1
-- **WHEN** runtime configuration sets context assembler storage backend to db during CA1
-- **THEN** initialization fails fast with backend-not-ready error and no partial activation occurs
-
-### Requirement: Runtime SHALL validate CA2 stage provider and routing mode constraints
-The runtime MUST validate CA2 stage provider and routing mode enums at startup and hot reload. Unsupported modes or provider selections in current milestone MUST fail fast with explicit classification.
-
-#### Scenario: Unsupported CA2 routing mode
-- **WHEN** runtime configuration sets unknown CA2 routing mode
-- **THEN** initialization fails fast with validation error
-
-#### Scenario: CA2 rag/db provider requested before implementation
-- **WHEN** runtime configuration selects Stage2 provider as rag or db in CA2 milestone
-- **THEN** runtime returns explicit provider-not-ready classification and does not partially activate staged assembly
-
-### Requirement: Runtime SHALL validate security baseline scan and redaction config at startup and hot reload
-The runtime MUST validate security scan mode enums, redaction strategy configuration, and keyword list constraints during startup and hot reload; invalid values MUST fail fast.
-
-#### Scenario: Invalid scan mode
-- **WHEN** runtime configuration sets unsupported scan mode
-- **THEN** initialization fails fast with validation error
-
-#### Scenario: Invalid redaction keyword config
-- **WHEN** runtime configuration sets malformed redaction keyword list
-- **THEN** initialization fails fast with validation error and no partial activation
-
 ### Requirement: Runtime SHALL validate external retriever config and fail fast on invalid mapping
 Runtime MUST validate Stage2 external retriever configuration (provider enum, endpoint/auth fields, profile values, JSON mapping schema) at startup and hot reload; invalid values MUST fail fast with explicit validation errors.
 
@@ -221,6 +103,8 @@ Runtime MUST treat warning-class findings as non-blocking and MUST treat error-c
 - **WHEN** runtime configuration sets unsupported external profile value
 - **THEN** initialization fails fast with validation error and no partial activation
 
+## ADDED Requirements
+
 ### Requirement: Runtime SHALL expose external retriever precheck API for library integrations
 The runtime MUST provide a library-level precheck API for CA2 external retriever configuration. The API MUST return normalized findings that include severity (`warning` or `error`) and machine-readable reason codes.
 
@@ -233,4 +117,3 @@ The runtime MUST provide a library-level precheck API for CA2 external retriever
 #### Scenario: Precheck returns error finding
 - **WHEN** application runs precheck and receives at least one error finding
 - **THEN** runtime blocks startup/hot reload activation with explicit fail-fast validation error
-

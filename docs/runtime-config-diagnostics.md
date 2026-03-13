@@ -80,6 +80,7 @@ context_assembler:
       provider: file       # file|http|rag|db|elasticsearch
       file_path: /tmp/baymax/context-stage2.jsonl
       external:
+        profile: http_generic # http_generic|ragflow_like|graphrag_like|elasticsearch_like
         endpoint: https://retriever.example.com/search # non-file provider 必填
         method: POST # POST|PUT
         auth:
@@ -149,8 +150,15 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
 - `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
+- `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
 当前不提供 CLI 诊断命令。
+
+### External Retriever 预检查语义
+
+- 预检查输出包含 findings（`warning`/`error`）与归一化配置快照。
+- `warning`：非阻断，可继续启动或热更新，但建议记录到观测并尽快修复。
+- `error`：阻断，启动或热更新必须 fail-fast，保留旧快照。
 
 ### Run 诊断新增字段（能力探测/降级）
 
@@ -175,9 +183,12 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `stage1_latency_ms`：Stage1 耗时（毫秒）。
 - `stage2_latency_ms`：Stage2 耗时（毫秒）。
 - `stage2_provider`：Stage2 使用的 provider（file/http/rag/db/elasticsearch）。
+- `stage2_profile`：Stage2 external profile（`http_generic|ragflow_like|graphrag_like|elasticsearch_like|file`）。
 - `stage2_hit_count`：Stage2 本次命中的 chunk 数量。
 - `stage2_source`：Stage2 数据源标识（provider 或响应映射字段）。
 - `stage2_reason`：Stage2 执行原因/结果摘要（如 `ok`/`empty`/`timeout`/`fetch_error`）。
+- `stage2_reason_code`：Stage2 机器可读原因码（如 `ok`/`timeout`/`http_status`/`upstream_error`）。
+- `stage2_error_layer`：Stage2 错误分层（`transport|protocol|semantic`，成功时为空）。
 - `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
 
 ## 诊断写入口径（Single Writer + Idempotency）

@@ -35,6 +35,6 @@
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.
 - Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
-- Context Assembler CA2 currently ships file-first stage2 provider; `rag/db` providers remain not-ready placeholders.
+- Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
 - Context Assembler memory pressure/recovery stages (CA3/CA4) remain deferred.

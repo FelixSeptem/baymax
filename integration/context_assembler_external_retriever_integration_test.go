@@ -99,4 +99,13 @@ context_assembler:
 	if runs[0].Stage2Reason != "ok" {
 		t.Fatalf("stage2_reason = %q, want ok", runs[0].Stage2Reason)
 	}
+	if runs[0].Stage2ReasonCode != "ok" {
+		t.Fatalf("stage2_reason_code = %q, want ok", runs[0].Stage2ReasonCode)
+	}
+	if runs[0].Stage2ErrorLayer != "" {
+		t.Fatalf("stage2_error_layer = %q, want empty", runs[0].Stage2ErrorLayer)
+	}
+	if runs[0].Stage2Profile != runtimeconfig.ContextStage2ExternalProfileHTTPGeneric {
+		t.Fatalf("stage2_profile = %q, want http_generic", runs[0].Stage2Profile)
+	}
 }

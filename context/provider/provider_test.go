@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
@@ -220,5 +222,90 @@ func TestHTTPProviderFetchJSONRPC2Mapping(t *testing.T) {
 	}
 	if resp.Meta["source"] != "external-rpc" {
 		t.Fatalf("unexpected source: %#v", resp.Meta)
+	}
+	if resp.Meta["profile"] != runtimeconfig.ContextStage2ExternalProfileHTTPGeneric {
+		t.Fatalf("profile = %#v, want http_generic", resp.Meta["profile"])
+	}
+}
+
+func TestHTTPProviderFetchClassifiesSemanticError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"message": "upstream denied",
+			},
+		})
+	}))
+	defer ts.Close()
+
+	p, err := NewWithConfig(Config{
+		Name: runtimeconfig.ContextStage2ProviderHTTP,
+		External: runtimeconfig.ContextAssemblerCA2ExternalConfig{
+			Endpoint: ts.URL,
+			Profile:  runtimeconfig.ContextStage2ExternalProfileRAGFlowLike,
+			Mapping: runtimeconfig.ContextAssemblerCA2ExternalMappingConfig{
+				Request: runtimeconfig.ContextAssemblerCA2RequestMappingConfig{
+					Mode:       "plain",
+					QueryField: "query",
+				},
+				Response: runtimeconfig.ContextAssemblerCA2ResponseMappingConfig{
+					ChunksField:       "chunks",
+					ErrorField:        "error",
+					ErrorMessageField: "error.message",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	_, err = p.Fetch(context.Background(), Request{Input: "q"})
+	if err == nil {
+		t.Fatal("expected semantic error, got nil")
+	}
+	var fetchErr *FetchError
+	if !errors.As(err, &fetchErr) {
+		t.Fatalf("error = %T, want *FetchError", err)
+	}
+	if fetchErr.Layer != ErrorLayerSemantic || fetchErr.Code != "upstream_error" {
+		t.Fatalf("fetchErr = %#v", fetchErr)
+	}
+}
+
+func TestHTTPProviderFetchClassifiesTransportTimeout(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(120 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{"chunks": []string{"x"}})
+	}))
+	defer ts.Close()
+
+	p, err := NewWithConfig(Config{
+		Name: runtimeconfig.ContextStage2ProviderHTTP,
+		External: runtimeconfig.ContextAssemblerCA2ExternalConfig{
+			Endpoint: ts.URL,
+			Profile:  runtimeconfig.ContextStage2ExternalProfileHTTPGeneric,
+			Mapping: runtimeconfig.ContextAssemblerCA2ExternalMappingConfig{
+				Request: runtimeconfig.ContextAssemblerCA2RequestMappingConfig{Mode: "plain", QueryField: "query"},
+				Response: runtimeconfig.ContextAssemblerCA2ResponseMappingConfig{
+					ChunksField: "chunks",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err = p.Fetch(ctx, Request{Input: "q"})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	var fetchErr *FetchError
+	if !errors.As(err, &fetchErr) {
+		t.Fatalf("error = %T, want *FetchError", err)
+	}
+	if fetchErr.Layer != ErrorLayerTransport || fetchErr.Code != "timeout" {
+		t.Fatalf("fetchErr = %#v", fetchErr)
 	}
 }

@@ -180,6 +180,37 @@ security:
 	}
 }
 
+func TestManagerPrecheckStage2External(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+`)
+
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	ext := DefaultConfig().ContextAssembler.CA2.Stage2.External
+	ext.Endpoint = "http://127.0.0.1:8080/retrieve"
+	ext.Profile = ContextStage2ExternalProfileRAGFlowLike
+	result := mgr.PrecheckStage2External(ContextStage2ProviderHTTP, ext)
+	if err := result.FirstError(); err != nil {
+		t.Fatalf("precheck FirstError() = %v, want nil", err)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

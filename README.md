@@ -57,10 +57,10 @@
 - 诊断字段已写入 run 摘要：`prefix_hash`、`assemble_latency_ms`、`assemble_status`、`guard_violation`
 - CA2 staged assembly：Stage1 -> Stage2 规则路由（满足条件才触发 Stage2）
 - Stage2 provider：支持 `file/http/rag/db/elasticsearch`
-- External Retriever：通用 SPI + HTTP 适配层，支持 JSON 字段映射、Bearer 与自定义鉴权头
+- External Retriever：通用 SPI + HTTP 适配层，支持 profile 模板、JSON 字段映射、Bearer 与自定义鉴权头
 - 支持 stage 失败策略配置（`fail_fast` / `best_effort`）
 - 支持 tail recap（最小字段 `status/decisions/todo/risks`）并追加在上下文末尾
-- 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`recap_status`
+- 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_profile`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`stage2_reason_code`、`stage2_error_layer`、`recap_status`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -175,6 +175,7 @@ context_assembler:
       provider: http       # file|http|rag|db|elasticsearch
       file_path: /tmp/baymax/context-stage2.jsonl
       external:
+        profile: http_generic # http_generic|ragflow_like|graphrag_like|elasticsearch_like
         endpoint: https://retriever.example.com/search
         method: POST       # POST|PUT
         auth:
@@ -195,6 +196,10 @@ context_assembler:
             reason_field: reason
             error_field: error
             error_message_field: error.message
+
+# 可选：启动前做 external retriever 配置预检查（warning 可继续，error 会阻断）
+# result := runtimeconfig.PrecheckStage2External("http", cfg.ContextAssembler.CA2.Stage2.External)
+# if err := result.FirstError(); err != nil { panic(err) }
     routing:
       min_input_chars: 120
       trigger_keywords: [search, retrieve, reference, lookup]

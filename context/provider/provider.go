@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -18,6 +19,42 @@ import (
 )
 
 var ErrProviderNotReady = errors.New("context stage2 provider not ready")
+
+type ErrorLayer string
+
+const (
+	ErrorLayerTransport ErrorLayer = "transport"
+	ErrorLayerProtocol  ErrorLayer = "protocol"
+	ErrorLayerSemantic  ErrorLayer = "semantic"
+)
+
+type FetchError struct {
+	Layer   ErrorLayer
+	Code    string
+	Message string
+	Cause   error
+}
+
+func (e *FetchError) Error() string {
+	if e == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(e.Message)
+	if msg == "" && e.Cause != nil {
+		msg = e.Cause.Error()
+	}
+	if msg == "" {
+		msg = "context stage2 fetch failed"
+	}
+	return msg
+}
+
+func (e *FetchError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
 
 type Request struct {
 	RunID     string
@@ -118,9 +155,12 @@ func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	return Response{
 		Chunks: items,
 		Meta: map[string]any{
-			"source":  "file",
-			"matched": len(items),
-			"reason":  "ok",
+			"source":      "file",
+			"matched":     len(items),
+			"reason":      "ok",
+			"reason_code": "ok",
+			"error_layer": "",
+			"profile":     "file",
 		},
 	}, nil
 }
@@ -137,17 +177,31 @@ func (p *httpProvider) Name() string {
 
 func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error) {
 	if strings.TrimSpace(p.cfg.Endpoint) == "" {
-		return Response{}, errors.New("context stage2 external endpoint is required")
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "missing_endpoint",
+			Message: "context stage2 external endpoint is required",
+		}
 	}
 	payload := p.buildRequestPayload(req)
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return Response{}, fmt.Errorf("marshal context stage2 external request: %w", err)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "request_encode_failed",
+			Message: "marshal context stage2 external request failed",
+			Cause:   err,
+		}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, httpMethodOrDefault(p.cfg.Method), p.cfg.Endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return Response{}, fmt.Errorf("build context stage2 external request: %w", err)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "request_build_failed",
+			Message: "build context stage2 external request failed",
+			Cause:   err,
+		}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	for k, v := range p.cfg.Headers {
@@ -166,24 +220,38 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 
 	httpResp, err := p.client.Do(httpReq)
 	if err != nil {
-		return Response{}, fmt.Errorf("call context stage2 external provider: %w", err)
+		return Response{}, classifyTransportError(err)
 	}
 	defer func() { _ = httpResp.Body.Close() }()
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return Response{}, fmt.Errorf("read context stage2 external response: %w", err)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "response_read_failed",
+			Message: "read context stage2 external response failed",
+			Cause:   err,
+		}
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return Response{}, fmt.Errorf("decode context stage2 external response: %w", err)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "response_decode_failed",
+			Message: "decode context stage2 external response failed",
+			Cause:   err,
+		}
 	}
 	if httpResp.StatusCode >= 400 {
 		msg := asString(getByPath(decoded, p.cfg.Mapping.Response.ErrorMessageField))
 		if msg == "" {
 			msg = httpResp.Status
 		}
-		return Response{}, fmt.Errorf("context stage2 external http status=%d: %s", httpResp.StatusCode, msg)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerProtocol,
+			Code:    "http_status",
+			Message: fmt.Sprintf("context stage2 external http status=%d: %s", httpResp.StatusCode, msg),
+		}
 	}
 	if errNode := getByPath(decoded, p.cfg.Mapping.Response.ErrorField); errNode != nil {
 		msg := asString(getByPath(decoded, p.cfg.Mapping.Response.ErrorMessageField))
@@ -193,7 +261,11 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 		if msg == "" {
 			msg = "unknown external error"
 		}
-		return Response{}, errors.New(msg)
+		return Response{}, &FetchError{
+			Layer:   ErrorLayerSemantic,
+			Code:    "upstream_error",
+			Message: msg,
+		}
 	}
 	chunks := asStringSlice(getByPath(decoded, p.cfg.Mapping.Response.ChunksField))
 	source := asString(getByPath(decoded, p.cfg.Mapping.Response.SourceField))
@@ -204,7 +276,18 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	if reason == "" {
 		reason = "ok"
 	}
-	return Response{Chunks: chunks, Meta: map[string]any{"source": source, "matched": len(chunks), "reason": reason}}, nil
+	profile := strings.TrimSpace(p.cfg.Profile)
+	if profile == "" {
+		profile = runtimeconfig.ContextStage2ExternalProfileHTTPGeneric
+	}
+	return Response{Chunks: chunks, Meta: map[string]any{
+		"source":      source,
+		"matched":     len(chunks),
+		"reason":      reason,
+		"reason_code": "ok",
+		"error_layer": "",
+		"profile":     profile,
+	}}, nil
 }
 
 func (p *httpProvider) buildRequestPayload(req Request) map[string]any {
@@ -309,4 +392,24 @@ func nonEmpty(v, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(v)
+}
+
+func classifyTransportError(err error) error {
+	code := "request_failed"
+	msg := "call context stage2 external provider failed"
+	if errors.Is(err, context.DeadlineExceeded) {
+		code = "timeout"
+		msg = "context stage2 external provider timeout"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		code = "timeout"
+		msg = "context stage2 external provider timeout"
+	}
+	return &FetchError{
+		Layer:   ErrorLayerTransport,
+		Code:    code,
+		Message: msg,
+		Cause:   err,
+	}
 }

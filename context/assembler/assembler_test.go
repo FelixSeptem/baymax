@@ -146,6 +146,9 @@ func TestAssemblerCA2Stage2BestEffort(t *testing.T) {
 	if result.Stage.Status != types.AssembleStageStatusDegraded {
 		t.Fatalf("stage status = %q, want degraded", result.Stage.Status)
 	}
+	if result.Stage.Stage2ReasonCode == "" || result.Stage.Stage2ErrorLayer == "" {
+		t.Fatalf("expected stage2 layered error fields, got %#v", result.Stage)
+	}
 }
 
 func TestAssemblerCA2Stage2FailFast(t *testing.T) {
@@ -295,5 +298,14 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 	}
 	if result.Stage.Stage2Reason != "ok" {
 		t.Fatalf("stage2_reason = %q, want ok", result.Stage.Stage2Reason)
+	}
+	if result.Stage.Stage2ReasonCode != "ok" {
+		t.Fatalf("stage2_reason_code = %q, want ok", result.Stage.Stage2ReasonCode)
+	}
+	if result.Stage.Stage2ErrorLayer != "" {
+		t.Fatalf("stage2_error_layer = %q, want empty", result.Stage.Stage2ErrorLayer)
+	}
+	if result.Stage.Stage2Profile != "file" {
+		t.Fatalf("stage2_profile = %q, want file", result.Stage.Stage2Profile)
 	}
 }

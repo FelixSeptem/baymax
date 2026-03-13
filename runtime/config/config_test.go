@@ -247,18 +247,20 @@ func TestContextAssemblerCA2ExternalValidationRejectsMissingQueryOrChunksMapping
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
 	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
-	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField = ""
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.Mode = "jsonrpc2"
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.MethodName = ""
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for missing query_field")
+		t.Fatal("expected validation error for missing method_name in jsonrpc2 mode")
 	}
 
 	cfg = DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
 	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
-	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField = ""
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField = "payload.same"
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField = "payload.same"
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for missing chunks_field")
+		t.Fatal("expected validation error for mapping field conflict")
 	}
 }
 
@@ -312,5 +314,61 @@ context_assembler:
 	}
 	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField != "result.chunks" {
 		t.Fatalf("chunks field = %q", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField)
+	}
+}
+
+func TestContextAssemblerCA2ExternalProfileDefaultsAndExplicitOverrides(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+context_assembler:
+  ca2:
+    enabled: true
+    stage2:
+      provider: http
+      external:
+        profile: ragflow_like
+        endpoint: http://file.example/retrieve
+        mapping:
+          request:
+            query_field: payload.query
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Profile != ContextStage2ExternalProfileRAGFlowLike {
+		t.Fatalf("profile = %q, want ragflow_like", cfg.ContextAssembler.CA2.Stage2.External.Profile)
+	}
+	// Explicit override should win over profile default.
+	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField != "payload.query" {
+		t.Fatalf("query_field = %q, want payload.query", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField)
+	}
+	// Non-overridden fields should come from profile defaults.
+	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField != "data.chunks" {
+		t.Fatalf("chunks_field = %q, want data.chunks", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField)
+	}
+}
+
+func TestPrecheckStage2ExternalWarningAndError(t *testing.T) {
+	okCfg := DefaultConfig().ContextAssembler.CA2.Stage2.External
+	okCfg.Profile = ContextStage2ExternalProfileHTTPGeneric
+	okCfg.Endpoint = "http://127.0.0.1:8080/retrieve"
+	okCfg.Auth.BearerToken = ""
+	res := PrecheckStage2External(ContextStage2ProviderHTTP, okCfg)
+	if err := res.FirstError(); err != nil {
+		t.Fatalf("FirstError() = %v, want nil", err)
+	}
+	if !res.HasWarnings() {
+		t.Fatalf("expected warning findings, got %#v", res.Findings)
+	}
+
+	badCfg := okCfg
+	badCfg.Profile = "unknown_profile"
+	res = PrecheckStage2External(ContextStage2ProviderHTTP, badCfg)
+	if err := res.FirstError(); err == nil {
+		t.Fatal("expected blocking error for invalid profile")
 	}
 }

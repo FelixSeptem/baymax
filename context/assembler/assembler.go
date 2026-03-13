@@ -320,6 +320,7 @@ func (a *Assembler) applyCA2(
 		return modelReq, outcome, err
 	}
 	outcome.Stage.Stage2Provider = p.Name()
+	outcome.Stage.Stage2Profile = stage2ProfileFromConfig(cfg.CA2.Stage2.External.Profile, p.Name())
 	stage2Ctx, cancel := context.WithTimeout(ctx, cfg.CA2.Timeout.Stage2)
 	defer cancel()
 	resp, err := p.Fetch(stage2Ctx, provider.Request{
@@ -330,7 +331,10 @@ func (a *Assembler) applyCA2(
 	})
 	outcome.Stage.Stage2LatencyMs = a.now().Sub(stage2Start).Milliseconds()
 	if err != nil {
-		outcome.Stage.Stage2Reason = stage2ReasonFromError(err)
+		reason, reasonCode, errorLayer := stage2ReasonFromError(err)
+		outcome.Stage.Stage2Reason = reason
+		outcome.Stage.Stage2ReasonCode = reasonCode
+		outcome.Stage.Stage2ErrorLayer = errorLayer
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.fetch.failed"
@@ -344,7 +348,10 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = "stage2.empty"
 		outcome.Stage.Stage2Reason = stage2ReasonFromMeta(resp.Meta, "empty")
+		outcome.Stage.Stage2ReasonCode = stage2ReasonCodeFromMeta(resp.Meta, "empty")
+		outcome.Stage.Stage2ErrorLayer = stage2ErrorLayerFromMeta(resp.Meta, "")
 		outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
+		outcome.Stage.Stage2Profile = stage2ProfileFromMeta(resp.Meta, outcome.Stage.Stage2Profile)
 		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
@@ -359,6 +366,9 @@ func (a *Assembler) applyCA2(
 	outcome.Stage.Stage2HitCount = len(resp.Chunks)
 	outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
 	outcome.Stage.Stage2Reason = stage2ReasonFromMeta(resp.Meta, "ok")
+	outcome.Stage.Stage2ReasonCode = stage2ReasonCodeFromMeta(resp.Meta, "ok")
+	outcome.Stage.Stage2ErrorLayer = stage2ErrorLayerFromMeta(resp.Meta, "")
+	outcome.Stage.Stage2Profile = stage2ProfileFromMeta(resp.Meta, outcome.Stage.Stage2Profile)
 	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
@@ -384,14 +394,81 @@ func stage2ReasonFromMeta(meta map[string]any, fallback string) string {
 	return fallback
 }
 
-func stage2ReasonFromError(err error) string {
+func stage2ReasonCodeFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if reasonCode, ok := meta["reason_code"].(string); ok && strings.TrimSpace(reasonCode) != "" {
+		return strings.TrimSpace(reasonCode)
+	}
+	return fallback
+}
+
+func stage2ErrorLayerFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if layer, ok := meta["error_layer"].(string); ok && strings.TrimSpace(layer) != "" {
+		return strings.TrimSpace(layer)
+	}
+	return fallback
+}
+
+func stage2ProfileFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if profile, ok := meta["profile"].(string); ok && strings.TrimSpace(profile) != "" {
+		return strings.TrimSpace(profile)
+	}
+	return fallback
+}
+
+func stage2ProfileFromConfig(profile, providerName string) string {
+	out := strings.TrimSpace(profile)
+	if out != "" {
+		return out
+	}
+	if strings.EqualFold(strings.TrimSpace(providerName), runtimeconfig.ContextStage2ProviderFile) {
+		return "file"
+	}
+	return runtimeconfig.ContextStage2ExternalProfileHTTPGeneric
+}
+
+func stage2ReasonFromError(err error) (reason string, reasonCode string, errorLayer string) {
+	var fetchErr *provider.FetchError
+	if errors.As(err, &fetchErr) {
+		code := strings.TrimSpace(fetchErr.Code)
+		layer := strings.TrimSpace(string(fetchErr.Layer))
+		if code == "" {
+			code = "fetch_error"
+		}
+		if layer == "" {
+			layer = "protocol"
+		}
+		return reasonFromCode(code), code, layer
+	}
+
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))
 	switch {
 	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline"):
-		return "timeout"
+		return "timeout", "timeout", "transport"
 	case strings.Contains(msg, "auth"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"):
-		return "auth"
+		return "auth", "auth_failed", "semantic"
 	case strings.Contains(msg, "mapping"), strings.Contains(msg, "decode"), strings.Contains(msg, "marshal"):
+		return "mapping", "mapping_invalid", "protocol"
+	default:
+		return "fetch_error", "fetch_error", "protocol"
+	}
+}
+
+func reasonFromCode(code string) string {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "timeout":
+		return "timeout"
+	case "auth_failed":
+		return "auth"
+	case "request_encode_failed", "request_build_failed", "response_decode_failed":
 		return "mapping"
 	default:
 		return "fetch_error"

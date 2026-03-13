@@ -60,9 +60,12 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			Stage1LatencyMs:      payloadInt64(payload, "stage1_latency_ms"),
 			Stage2LatencyMs:      payloadInt64(payload, "stage2_latency_ms"),
 			Stage2Provider:       payloadString(payload, "stage2_provider"),
+			Stage2Profile:        payloadString(payload, "stage2_profile"),
 			Stage2HitCount:       payloadInt(payload, "stage2_hit_count"),
 			Stage2Source:         payloadString(payload, "stage2_source"),
 			Stage2Reason:         payloadString(payload, "stage2_reason"),
+			Stage2ReasonCode:     payloadString(payload, "stage2_reason_code"),
+			Stage2ErrorLayer:     payloadString(payload, "stage2_error_layer"),
 			RecapStatus:          payloadString(payload, "recap_status"),
 		})
 	case "skill.discovered":

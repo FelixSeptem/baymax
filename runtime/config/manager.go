@@ -252,6 +252,10 @@ func (m *Manager) RedactJSONText(in string) string {
 	return m.redactor().SanitizeJSONText(in)
 }
 
+func (m *Manager) PrecheckStage2External(provider string, external ContextAssemblerCA2ExternalConfig) ExternalPrecheckResult {
+	return PrecheckStage2External(provider, external)
+}
+
 func (m *Manager) redactor() *redaction.Redactor {
 	s := m.snapshot()
 	if s == nil {

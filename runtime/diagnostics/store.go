@@ -58,6 +58,13 @@ type RunRecord struct {
 	Stage2Reason         string                            `json:"stage2_reason,omitempty"`
 	Stage2ReasonCode     string                            `json:"stage2_reason_code,omitempty"`
 	Stage2ErrorLayer     string                            `json:"stage2_error_layer,omitempty"`
+	CA3PressureZone      string                            `json:"ca3_pressure_zone,omitempty"`
+	CA3PressureReason    string                            `json:"ca3_pressure_reason,omitempty"`
+	CA3ZoneResidencyMs   map[string]int64                  `json:"ca3_zone_residency_ms,omitempty"`
+	CA3TriggerCounts     map[string]int                    `json:"ca3_trigger_counts,omitempty"`
+	CA3CompressionRatio  float64                           `json:"ca3_compression_ratio,omitempty"`
+	CA3SpillCount        int                               `json:"ca3_spill_count,omitempty"`
+	CA3SwapBackCount     int                               `json:"ca3_swap_back_count,omitempty"`
 	RecapStatus          string                            `json:"recap_status,omitempty"`
 	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }

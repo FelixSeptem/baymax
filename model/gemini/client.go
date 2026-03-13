@@ -15,6 +15,7 @@ import (
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	"github.com/tidwall/gjson"
 	"google.golang.org/genai"
+	genaitokenizer "google.golang.org/genai/tokenizer"
 )
 
 type Config struct {
@@ -166,6 +167,56 @@ func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelReques
 		model = c.model
 	}
 	return c.discover(ctx, model)
+}
+
+func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	contents := buildTokenContents(req)
+	if len(contents) == 0 {
+		return 0, errors.New("model input is empty")
+	}
+	// Prefer official local tokenizer first to avoid remote call overhead.
+	if tok, err := genaitokenizer.NewLocalTokenizer(model); err == nil {
+		if out, err := tok.CountTokens(contents, nil); err == nil && out != nil {
+			return int(out.TotalTokens), nil
+		}
+	}
+	if c.sdk == nil {
+		return 0, errors.New("gemini sdk is not configured")
+	}
+	resp, err := c.sdk.Models.CountTokens(ctx, model, contents, nil)
+	if err != nil {
+		return 0, providererror.FromError(err)
+	}
+	return int(resp.TotalTokens), nil
+}
+
+func buildTokenContents(req types.ModelRequest) []*genai.Content {
+	out := make([]*genai.Content, 0, len(req.Messages)+1)
+	for _, m := range req.Messages {
+		content := strings.TrimSpace(m.Content)
+		if content == "" {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		if role == "" {
+			role = "user"
+		}
+		out = append(out, &genai.Content{
+			Role:  role,
+			Parts: []*genai.Part{{Text: content}},
+		})
+	}
+	if len(out) == 0 {
+		input := strings.TrimSpace(req.Input)
+		if input != "" {
+			out = append(out, genai.Text(input)...)
+		}
+	}
+	return out
 }
 
 func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {

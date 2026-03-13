@@ -309,3 +309,140 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 		t.Fatalf("stage2_profile = %q, want file", result.Stage.Stage2Profile)
 	}
 }
+
+func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = "file"
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"ctx"}`), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfg.CA2.Stage2.FilePath = stage2File
+	cfg.CA2.Routing.MinInputChars = 1
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 100
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.Emergency.RejectLowPriority = true
+	cfg.CA3.Emergency.HighPriorityTokens = []string{"urgent"}
+
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-1",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("x", 500),
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-1",
+		Input:    strings.Repeat("x", 500),
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Stage2SkipReason != "ca3.emergency.low_priority_rejected" {
+		t.Fatalf("stage2 skip reason = %q", result.Stage.Stage2SkipReason)
+	}
+	if result.Stage.PressureZone == "" {
+		t.Fatalf("pressure zone should be populated: %#v", result.Stage)
+	}
+}
+
+func TestAssemblerCA3ProtectedMessagesNotPruned(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 40
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 4, Comfort: 8, Warning: 12, Danger: 16, Emergency: 20,
+	}
+	cfg.CA3.Prune.TargetPercent = 30
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: "critical: keep this message no matter what"},
+		{Role: "user", Content: strings.Repeat("filler ", 80)},
+	}
+	outReq, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-2",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need trim", 10),
+		Messages:      msgs,
+	}, types.ModelRequest{
+		RunID:    "run-2",
+		Input:    strings.Repeat("need trim", 10),
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	foundCritical := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "critical: keep this message") {
+			foundCritical = true
+		}
+	}
+	if !foundCritical {
+		t.Fatalf("critical message should not be pruned: %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA3SpillIdempotentAcrossRetry(t *testing.T) {
+	dir := t.TempDir()
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(dir, "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 80
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 8, Comfort: 16, Warning: 24, Danger: 32, Emergency: 40,
+	}
+	cfg.CA3.Spill.Path = filepath.Join(dir, "spill.jsonl")
+	cfg.CA3.Spill.Backend = "file"
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "run-3",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("large ", 100),
+		Messages: []types.Message{
+			{Role: "system", Content: "base"},
+			{Role: "user", Content: strings.Repeat("payload ", 120)},
+		},
+	}
+	modelReq := types.ModelRequest{RunID: req.RunID, Input: req.Input, Messages: req.Messages}
+	if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+		t.Fatalf("first assemble failed: %v", err)
+	}
+	if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+		t.Fatalf("second assemble failed: %v", err)
+	}
+	raw, err := os.ReadFile(cfg.CA3.Spill.Path)
+	if err != nil {
+		t.Fatalf("read spill file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	seen := map[string]struct{}{}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if _, ok := seen[line]; ok {
+			t.Fatalf("duplicate spill line found, expected idempotent spill writes: %s", line)
+		}
+		seen[line] = struct{}{}
+	}
+}

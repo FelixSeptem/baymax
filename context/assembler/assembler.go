@@ -32,12 +32,17 @@ type Assembler struct {
 	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
 	now                  func() time.Time
 
-	mu             sync.Mutex
-	storageKey     string
-	storage        journal.Storage
-	stage2Key      string
-	stage2Provider provider.Provider
-	prefixCache    map[string]string
+	mu              sync.Mutex
+	storageKey      string
+	storage         journal.Storage
+	stage2Key       string
+	stage2Provider  provider.Provider
+	prefixCache     map[string]string
+	ca3State        map[string]*ca3RunState
+	spillBackend    SpillBackend
+	spillBackendKey string
+	tokenCounter    ca3TokenCounter
+	tokenCounterKey string
 }
 
 type Option func(*Assembler)
@@ -59,6 +64,7 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		},
 		now:         time.Now,
 		prefixCache: map[string]string{},
+		ca3State:    map[string]*ca3RunState{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -156,8 +162,47 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 	modelReq.Input = guardResult.Input
 	modelReq.Messages = guardResult.Messages
 
+	var ca3Decision ca3Decision
+	if cfg.CA3.Enabled {
+		updatedReq, updatedOutcome, decision, err := a.applyCA3(ctx, req, modelReq, outcome, cfg, "stage1")
+		if err != nil {
+			commit := journal.Entry{
+				Time:          a.now(),
+				RunID:         req.RunID,
+				SessionID:     req.SessionID,
+				Phase:         "commit",
+				PrefixVersion: req.PrefixVersion,
+				PrefixHash:    prefixHash,
+				Status:        StatusFailed,
+				Violation:     err.Error(),
+			}
+			_ = storage.Append(ctx, commit)
+			return modelReq, failedResult(req, start, err.Error()), err
+		}
+		modelReq = updatedReq
+		outcome = updatedOutcome
+		ca3Decision = decision
+	}
+
 	if cfg.CA2.Enabled {
-		modelReq, outcome, err = a.applyCA2(ctx, modelReq, req, cfg, outcome)
+		modelReq, outcome, err = a.applyCA2(ctx, modelReq, req, cfg, outcome, ca3Decision)
+		if err != nil {
+			commit := journal.Entry{
+				Time:          a.now(),
+				RunID:         req.RunID,
+				SessionID:     req.SessionID,
+				Phase:         "commit",
+				PrefixVersion: req.PrefixVersion,
+				PrefixHash:    prefixHash,
+				Status:        StatusFailed,
+				Violation:     err.Error(),
+			}
+			_ = storage.Append(ctx, commit)
+			return modelReq, failedResult(req, start, err.Error()), err
+		}
+	}
+	if cfg.CA3.Enabled {
+		modelReq, outcome, _, err = a.applyCA3(ctx, req, modelReq, outcome, cfg, "stage2")
 		if err != nil {
 			commit := journal.Entry{
 				Time:          a.now(),
@@ -292,6 +337,7 @@ func (a *Assembler) applyCA2(
 	req types.ContextAssembleRequest,
 	cfg runtimeconfig.ContextAssemblerConfig,
 	outcome types.ContextAssembleResult,
+	ca3 ca3Decision,
 ) (types.ModelRequest, types.ContextAssembleResult, error) {
 	if strings.EqualFold(strings.TrimSpace(cfg.CA2.RoutingMode), "agentic") {
 		// TODO(ca2): plug in agentic decision provider once the dedicated milestone lands.
@@ -302,6 +348,13 @@ func (a *Assembler) applyCA2(
 	if !shouldStage2 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = skipReason
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+		outcome.Recap = recap
+		return modelReq, outcome, nil
+	}
+	if ca3.BlockLowPriorityLoads && !isHighPriorityRequest(modelReq.Input, cfg.CA3.Emergency.HighPriorityTokens) {
+		outcome.Stage.Status = types.AssembleStageStatusDegraded
+		outcome.Stage.Stage2SkipReason = "ca3.emergency.low_priority_rejected"
 		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil

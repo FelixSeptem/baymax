@@ -93,6 +93,7 @@ type ContextAssemblerConfig struct {
 	Storage       ContextAssemblerStorageConfig `json:"storage"`
 	Guard         ContextAssemblerGuardConfig   `json:"guard"`
 	CA2           ContextAssemblerCA2Config     `json:"ca2"`
+	CA3           ContextAssemblerCA3Config     `json:"ca3"`
 }
 
 type ContextAssemblerStorageConfig struct {
@@ -176,6 +177,72 @@ type ContextAssemblerCA2TailRecapConfig struct {
 	Enabled       bool `json:"enabled"`
 	MaxItems      int  `json:"max_items"`
 	MaxFieldChars int  `json:"max_field_chars"`
+}
+
+type ContextAssemblerCA3Config struct {
+	Enabled              bool                                       `json:"enabled"`
+	MaxContextTokens     int                                        `json:"max_context_tokens"`
+	GoldilocksMinPercent int                                        `json:"goldilocks_min_percent"`
+	GoldilocksMaxPercent int                                        `json:"goldilocks_max_percent"`
+	PercentThresholds    ContextAssemblerCA3Thresholds              `json:"percent_thresholds"`
+	AbsoluteThresholds   ContextAssemblerCA3Thresholds              `json:"absolute_thresholds"`
+	Stage1               ContextAssemblerCA3StageThresholdOverrides `json:"stage1"`
+	Stage2               ContextAssemblerCA3StageThresholdOverrides `json:"stage2"`
+	Protection           ContextAssemblerCA3ProtectionConfig        `json:"protection"`
+	Squash               ContextAssemblerCA3SquashConfig            `json:"squash"`
+	Prune                ContextAssemblerCA3PruneConfig             `json:"prune"`
+	Emergency            ContextAssemblerCA3EmergencyConfig         `json:"emergency"`
+	Spill                ContextAssemblerCA3SpillConfig             `json:"spill"`
+	Tokenizer            ContextAssemblerCA3TokenizerConfig         `json:"tokenizer"`
+}
+
+type ContextAssemblerCA3Thresholds struct {
+	Safe      int `json:"safe"`
+	Comfort   int `json:"comfort"`
+	Warning   int `json:"warning"`
+	Danger    int `json:"danger"`
+	Emergency int `json:"emergency"`
+}
+
+type ContextAssemblerCA3StageThresholdOverrides struct {
+	PercentThresholds  ContextAssemblerCA3Thresholds `json:"percent_thresholds"`
+	AbsoluteThresholds ContextAssemblerCA3Thresholds `json:"absolute_thresholds"`
+}
+
+type ContextAssemblerCA3ProtectionConfig struct {
+	CriticalKeywords  []string `json:"critical_keywords"`
+	ImmutableKeywords []string `json:"immutable_keywords"`
+}
+
+type ContextAssemblerCA3SquashConfig struct {
+	Enabled         bool `json:"enabled"`
+	MaxContentRunes int  `json:"max_content_runes"`
+}
+
+type ContextAssemblerCA3PruneConfig struct {
+	Enabled         bool     `json:"enabled"`
+	TargetPercent   int      `json:"target_percent"`
+	KeywordPriority []string `json:"keyword_priority"`
+}
+
+type ContextAssemblerCA3EmergencyConfig struct {
+	RejectLowPriority  bool     `json:"reject_low_priority"`
+	HighPriorityTokens []string `json:"high_priority_tokens"`
+}
+
+type ContextAssemblerCA3SpillConfig struct {
+	Enabled       bool   `json:"enabled"`
+	Backend       string `json:"backend"`
+	Path          string `json:"path"`
+	SwapBackLimit int    `json:"swap_back_limit"`
+}
+
+type ContextAssemblerCA3TokenizerConfig struct {
+	Mode               string        `json:"mode"`
+	Provider           string        `json:"provider"`
+	Model              string        `json:"model"`
+	SmallDeltaTokens   int           `json:"small_delta_tokens"`
+	SDKRefreshInterval time.Duration `json:"sdk_refresh_interval"`
 }
 
 type SecurityConfig struct {
@@ -293,6 +360,58 @@ func DefaultConfig() Config {
 					Enabled:       true,
 					MaxItems:      4,
 					MaxFieldChars: 256,
+				},
+			},
+			CA3: ContextAssemblerCA3Config{
+				Enabled:              true,
+				MaxContextTokens:     128000,
+				GoldilocksMinPercent: 35,
+				GoldilocksMaxPercent: 60,
+				PercentThresholds: ContextAssemblerCA3Thresholds{
+					Safe:      20,
+					Comfort:   40,
+					Warning:   60,
+					Danger:    75,
+					Emergency: 90,
+				},
+				AbsoluteThresholds: ContextAssemblerCA3Thresholds{
+					Safe:      24000,
+					Comfort:   48000,
+					Warning:   72000,
+					Danger:    96000,
+					Emergency: 115200,
+				},
+				Stage1: ContextAssemblerCA3StageThresholdOverrides{},
+				Stage2: ContextAssemblerCA3StageThresholdOverrides{},
+				Protection: ContextAssemblerCA3ProtectionConfig{
+					CriticalKeywords:  []string{"critical"},
+					ImmutableKeywords: []string{"immutable"},
+				},
+				Squash: ContextAssemblerCA3SquashConfig{
+					Enabled:         true,
+					MaxContentRunes: 320,
+				},
+				Prune: ContextAssemblerCA3PruneConfig{
+					Enabled:         true,
+					TargetPercent:   55,
+					KeywordPriority: []string{"error", "decision", "constraint", "risk", "todo"},
+				},
+				Emergency: ContextAssemblerCA3EmergencyConfig{
+					RejectLowPriority:  true,
+					HighPriorityTokens: []string{"urgent", "critical", "incident"},
+				},
+				Spill: ContextAssemblerCA3SpillConfig{
+					Enabled:       true,
+					Backend:       "file",
+					Path:          filepath.Join(os.TempDir(), "baymax", "context-spill.jsonl"),
+					SwapBackLimit: 4,
+				},
+				Tokenizer: ContextAssemblerCA3TokenizerConfig{
+					Mode:               "sdk_preferred",
+					Provider:           "openai",
+					Model:              "gpt-5.4",
+					SmallDeltaTokens:   1024 * 8,
+					SDKRefreshInterval: 5 * time.Second,
 				},
 			},
 		},
@@ -496,6 +615,11 @@ func Validate(cfg Config) error {
 				return errors.New("context_assembler.ca2.tail_recap.max_field_chars must be > 0")
 			}
 		}
+		if cfg.ContextAssembler.CA3.Enabled {
+			if err := validateCA3Config(cfg.ContextAssembler.CA3); err != nil {
+				return err
+			}
+		}
 	}
 	scanMode := strings.ToLower(strings.TrimSpace(cfg.Security.Scan.Mode))
 	switch scanMode {
@@ -531,6 +655,106 @@ func validateBackpressure(v types.BackpressureMode, field string) error {
 	default:
 		return fmt.Errorf("%s must be one of [block,reject]", field)
 	}
+}
+
+func validateCA3Config(cfg ContextAssemblerCA3Config) error {
+	if cfg.MaxContextTokens <= 0 {
+		return errors.New("context_assembler.ca3.max_context_tokens must be > 0")
+	}
+	if cfg.GoldilocksMinPercent < 0 || cfg.GoldilocksMinPercent > 100 {
+		return errors.New("context_assembler.ca3.goldilocks_min_percent must be in [0,100]")
+	}
+	if cfg.GoldilocksMaxPercent < 0 || cfg.GoldilocksMaxPercent > 100 {
+		return errors.New("context_assembler.ca3.goldilocks_max_percent must be in [0,100]")
+	}
+	if cfg.GoldilocksMinPercent >= cfg.GoldilocksMaxPercent {
+		return errors.New("context_assembler.ca3.goldilocks_min_percent must be < goldilocks_max_percent")
+	}
+	if err := validateCA3Thresholds("context_assembler.ca3.percent_thresholds", cfg.PercentThresholds, 0, 100); err != nil {
+		return err
+	}
+	if err := validateCA3Thresholds("context_assembler.ca3.absolute_thresholds", cfg.AbsoluteThresholds, 0, cfg.MaxContextTokens); err != nil {
+		return err
+	}
+	if cfg.Squash.Enabled && cfg.Squash.MaxContentRunes <= 0 {
+		return errors.New("context_assembler.ca3.squash.max_content_runes must be > 0")
+	}
+	if cfg.Prune.Enabled {
+		if cfg.Prune.TargetPercent < 0 || cfg.Prune.TargetPercent > 100 {
+			return errors.New("context_assembler.ca3.prune.target_percent must be in [0,100]")
+		}
+		if cfg.Prune.TargetPercent > cfg.GoldilocksMaxPercent {
+			return errors.New("context_assembler.ca3.prune.target_percent must be <= goldilocks_max_percent")
+		}
+	}
+	if cfg.Spill.Enabled {
+		backend := strings.ToLower(strings.TrimSpace(cfg.Spill.Backend))
+		if backend == "" {
+			backend = "file"
+		}
+		switch backend {
+		case "file":
+		case "db", "object":
+			// Placeholder only. Keep accepted for forward-compatible configs.
+		default:
+			return fmt.Errorf("context_assembler.ca3.spill.backend must be one of [file,db,object], got %q", cfg.Spill.Backend)
+		}
+		if backend == "file" && strings.TrimSpace(cfg.Spill.Path) == "" {
+			return errors.New("context_assembler.ca3.spill.path is required when spill.backend=file")
+		}
+		if cfg.Spill.SwapBackLimit <= 0 {
+			return errors.New("context_assembler.ca3.spill.swap_back_limit must be > 0")
+		}
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Tokenizer.Mode))
+	if mode == "" {
+		mode = "sdk_preferred"
+	}
+	switch mode {
+	case "estimate_only", "sdk_preferred":
+	default:
+		return fmt.Errorf("context_assembler.ca3.tokenizer.mode must be one of [estimate_only,sdk_preferred], got %q", cfg.Tokenizer.Mode)
+	}
+	provider := strings.ToLower(strings.TrimSpace(cfg.Tokenizer.Provider))
+	if provider == "" {
+		provider = "anthropic"
+	}
+	switch provider {
+	case "anthropic", "gemini", "openai":
+	default:
+		return fmt.Errorf("context_assembler.ca3.tokenizer.provider must be one of [anthropic,gemini,openai], got %q", cfg.Tokenizer.Provider)
+	}
+	if cfg.Tokenizer.SmallDeltaTokens < 0 {
+		return errors.New("context_assembler.ca3.tokenizer.small_delta_tokens must be >= 0")
+	}
+	if cfg.Tokenizer.SDKRefreshInterval <= 0 {
+		return errors.New("context_assembler.ca3.tokenizer.sdk_refresh_interval must be > 0")
+	}
+	return nil
+}
+
+func validateCA3Thresholds(field string, thresholds ContextAssemblerCA3Thresholds, min, max int) error {
+	values := []struct {
+		name  string
+		value int
+	}{
+		{name: "safe", value: thresholds.Safe},
+		{name: "comfort", value: thresholds.Comfort},
+		{name: "warning", value: thresholds.Warning},
+		{name: "danger", value: thresholds.Danger},
+		{name: "emergency", value: thresholds.Emergency},
+	}
+	prev := min - 1
+	for _, item := range values {
+		if item.value < min || item.value > max {
+			return fmt.Errorf("%s.%s must be in [%d,%d]", field, item.name, min, max)
+		}
+		if item.value <= prev {
+			return fmt.Errorf("%s must be strictly increasing", field)
+		}
+		prev = item.value
+	}
+	return nil
 }
 
 func applyDefaults(v *viper.Viper) {
@@ -579,6 +803,38 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca2.tail_recap.enabled", base.ContextAssembler.CA2.TailRecap.Enabled)
 	v.SetDefault("context_assembler.ca2.tail_recap.max_items", base.ContextAssembler.CA2.TailRecap.MaxItems)
 	v.SetDefault("context_assembler.ca2.tail_recap.max_field_chars", base.ContextAssembler.CA2.TailRecap.MaxFieldChars)
+	v.SetDefault("context_assembler.ca3.enabled", base.ContextAssembler.CA3.Enabled)
+	v.SetDefault("context_assembler.ca3.max_context_tokens", base.ContextAssembler.CA3.MaxContextTokens)
+	v.SetDefault("context_assembler.ca3.goldilocks_min_percent", base.ContextAssembler.CA3.GoldilocksMinPercent)
+	v.SetDefault("context_assembler.ca3.goldilocks_max_percent", base.ContextAssembler.CA3.GoldilocksMaxPercent)
+	v.SetDefault("context_assembler.ca3.percent_thresholds.safe", base.ContextAssembler.CA3.PercentThresholds.Safe)
+	v.SetDefault("context_assembler.ca3.percent_thresholds.comfort", base.ContextAssembler.CA3.PercentThresholds.Comfort)
+	v.SetDefault("context_assembler.ca3.percent_thresholds.warning", base.ContextAssembler.CA3.PercentThresholds.Warning)
+	v.SetDefault("context_assembler.ca3.percent_thresholds.danger", base.ContextAssembler.CA3.PercentThresholds.Danger)
+	v.SetDefault("context_assembler.ca3.percent_thresholds.emergency", base.ContextAssembler.CA3.PercentThresholds.Emergency)
+	v.SetDefault("context_assembler.ca3.absolute_thresholds.safe", base.ContextAssembler.CA3.AbsoluteThresholds.Safe)
+	v.SetDefault("context_assembler.ca3.absolute_thresholds.comfort", base.ContextAssembler.CA3.AbsoluteThresholds.Comfort)
+	v.SetDefault("context_assembler.ca3.absolute_thresholds.warning", base.ContextAssembler.CA3.AbsoluteThresholds.Warning)
+	v.SetDefault("context_assembler.ca3.absolute_thresholds.danger", base.ContextAssembler.CA3.AbsoluteThresholds.Danger)
+	v.SetDefault("context_assembler.ca3.absolute_thresholds.emergency", base.ContextAssembler.CA3.AbsoluteThresholds.Emergency)
+	v.SetDefault("context_assembler.ca3.protection.critical_keywords", base.ContextAssembler.CA3.Protection.CriticalKeywords)
+	v.SetDefault("context_assembler.ca3.protection.immutable_keywords", base.ContextAssembler.CA3.Protection.ImmutableKeywords)
+	v.SetDefault("context_assembler.ca3.squash.enabled", base.ContextAssembler.CA3.Squash.Enabled)
+	v.SetDefault("context_assembler.ca3.squash.max_content_runes", base.ContextAssembler.CA3.Squash.MaxContentRunes)
+	v.SetDefault("context_assembler.ca3.prune.enabled", base.ContextAssembler.CA3.Prune.Enabled)
+	v.SetDefault("context_assembler.ca3.prune.target_percent", base.ContextAssembler.CA3.Prune.TargetPercent)
+	v.SetDefault("context_assembler.ca3.prune.keyword_priority", base.ContextAssembler.CA3.Prune.KeywordPriority)
+	v.SetDefault("context_assembler.ca3.emergency.reject_low_priority", base.ContextAssembler.CA3.Emergency.RejectLowPriority)
+	v.SetDefault("context_assembler.ca3.emergency.high_priority_tokens", base.ContextAssembler.CA3.Emergency.HighPriorityTokens)
+	v.SetDefault("context_assembler.ca3.spill.enabled", base.ContextAssembler.CA3.Spill.Enabled)
+	v.SetDefault("context_assembler.ca3.spill.backend", base.ContextAssembler.CA3.Spill.Backend)
+	v.SetDefault("context_assembler.ca3.spill.path", base.ContextAssembler.CA3.Spill.Path)
+	v.SetDefault("context_assembler.ca3.spill.swap_back_limit", base.ContextAssembler.CA3.Spill.SwapBackLimit)
+	v.SetDefault("context_assembler.ca3.tokenizer.mode", base.ContextAssembler.CA3.Tokenizer.Mode)
+	v.SetDefault("context_assembler.ca3.tokenizer.provider", base.ContextAssembler.CA3.Tokenizer.Provider)
+	v.SetDefault("context_assembler.ca3.tokenizer.model", base.ContextAssembler.CA3.Tokenizer.Model)
+	v.SetDefault("context_assembler.ca3.tokenizer.small_delta_tokens", base.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
+	v.SetDefault("context_assembler.ca3.tokenizer.sdk_refresh_interval", base.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
 	v.SetDefault("security.scan.govulncheck_enabled", base.Security.Scan.GovulncheckEnable)
 	v.SetDefault("security.redaction.enabled", base.Security.Redaction.Enabled)
@@ -622,6 +878,34 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA2.TailRecap.Enabled = v.GetBool("context_assembler.ca2.tail_recap.enabled")
 	cfg.ContextAssembler.CA2.TailRecap.MaxItems = v.GetInt("context_assembler.ca2.tail_recap.max_items")
 	cfg.ContextAssembler.CA2.TailRecap.MaxFieldChars = v.GetInt("context_assembler.ca2.tail_recap.max_field_chars")
+	cfg.ContextAssembler.CA3.Enabled = v.GetBool("context_assembler.ca3.enabled")
+	cfg.ContextAssembler.CA3.MaxContextTokens = v.GetInt("context_assembler.ca3.max_context_tokens")
+	cfg.ContextAssembler.CA3.GoldilocksMinPercent = v.GetInt("context_assembler.ca3.goldilocks_min_percent")
+	cfg.ContextAssembler.CA3.GoldilocksMaxPercent = v.GetInt("context_assembler.ca3.goldilocks_max_percent")
+	cfg.ContextAssembler.CA3.PercentThresholds = buildCA3Thresholds(v, "context_assembler.ca3.percent_thresholds")
+	cfg.ContextAssembler.CA3.AbsoluteThresholds = buildCA3Thresholds(v, "context_assembler.ca3.absolute_thresholds")
+	cfg.ContextAssembler.CA3.Stage1.PercentThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage1.percent_thresholds")
+	cfg.ContextAssembler.CA3.Stage1.AbsoluteThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage1.absolute_thresholds")
+	cfg.ContextAssembler.CA3.Stage2.PercentThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage2.percent_thresholds")
+	cfg.ContextAssembler.CA3.Stage2.AbsoluteThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage2.absolute_thresholds")
+	cfg.ContextAssembler.CA3.Protection.CriticalKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.protection.critical_keywords"))
+	cfg.ContextAssembler.CA3.Protection.ImmutableKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.protection.immutable_keywords"))
+	cfg.ContextAssembler.CA3.Squash.Enabled = v.GetBool("context_assembler.ca3.squash.enabled")
+	cfg.ContextAssembler.CA3.Squash.MaxContentRunes = v.GetInt("context_assembler.ca3.squash.max_content_runes")
+	cfg.ContextAssembler.CA3.Prune.Enabled = v.GetBool("context_assembler.ca3.prune.enabled")
+	cfg.ContextAssembler.CA3.Prune.TargetPercent = v.GetInt("context_assembler.ca3.prune.target_percent")
+	cfg.ContextAssembler.CA3.Prune.KeywordPriority = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.prune.keyword_priority"))
+	cfg.ContextAssembler.CA3.Emergency.RejectLowPriority = v.GetBool("context_assembler.ca3.emergency.reject_low_priority")
+	cfg.ContextAssembler.CA3.Emergency.HighPriorityTokens = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.emergency.high_priority_tokens"))
+	cfg.ContextAssembler.CA3.Spill.Enabled = v.GetBool("context_assembler.ca3.spill.enabled")
+	cfg.ContextAssembler.CA3.Spill.Backend = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.spill.backend")))
+	cfg.ContextAssembler.CA3.Spill.Path = strings.TrimSpace(v.GetString("context_assembler.ca3.spill.path"))
+	cfg.ContextAssembler.CA3.Spill.SwapBackLimit = v.GetInt("context_assembler.ca3.spill.swap_back_limit")
+	cfg.ContextAssembler.CA3.Tokenizer.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.mode")))
+	cfg.ContextAssembler.CA3.Tokenizer.Provider = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.provider")))
+	cfg.ContextAssembler.CA3.Tokenizer.Model = strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.model"))
+	cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens = v.GetInt("context_assembler.ca3.tokenizer.small_delta_tokens")
+	cfg.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval = v.GetDuration("context_assembler.ca3.tokenizer.sdk_refresh_interval")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))
 	cfg.Security.Scan.GovulncheckEnable = v.GetBool("security.scan.govulncheck_enabled")
 	cfg.Security.Redaction.Enabled = v.GetBool("security.redaction.enabled")
@@ -722,6 +1006,16 @@ func buildStage2ExternalConfig(v *viper.Viper, base ContextAssemblerCA2ExternalC
 		out.Mapping.Response.ErrorMessageField = messageField
 	}
 	return out
+}
+
+func buildCA3Thresholds(v *viper.Viper, prefix string) ContextAssemblerCA3Thresholds {
+	return ContextAssemblerCA3Thresholds{
+		Safe:      v.GetInt(prefix + ".safe"),
+		Comfort:   v.GetInt(prefix + ".comfort"),
+		Warning:   v.GetInt(prefix + ".warning"),
+		Danger:    v.GetInt(prefix + ".danger"),
+		Emergency: v.GetInt(prefix + ".emergency"),
+	}
 }
 
 func normalizeProviders(in []string) []string {

@@ -372,3 +372,37 @@ func TestPrecheckStage2ExternalWarningAndError(t *testing.T) {
 		t.Fatal("expected blocking error for invalid profile")
 	}
 }
+
+func TestContextAssemblerCA3Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.ContextAssembler.CA3.Enabled {
+		t.Fatal("context_assembler.ca3.enabled = false, want true")
+	}
+	if cfg.ContextAssembler.CA3.Tokenizer.Mode != "sdk_preferred" {
+		t.Fatalf("ca3.tokenizer.mode = %q, want sdk_preferred", cfg.ContextAssembler.CA3.Tokenizer.Mode)
+	}
+}
+
+func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.PercentThresholds.Warning = 10
+	cfg.ContextAssembler.CA3.PercentThresholds.Comfort = 20
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for non-increasing ca3 percent thresholds")
+	}
+}
+
+func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_PROVIDER", "gemini")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_SMALL_DELTA_TOKENS", "64")
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.CA3.Tokenizer.Provider != "gemini" {
+		t.Fatalf("tokenizer.provider = %q, want gemini", cfg.ContextAssembler.CA3.Tokenizer.Provider)
+	}
+	if cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens != 64 {
+		t.Fatalf("tokenizer.small_delta_tokens = %d, want 64", cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
+	}
+}

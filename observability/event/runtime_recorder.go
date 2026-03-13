@@ -83,6 +83,13 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			Stage2Reason:         payloadString(payload, "stage2_reason"),
 			Stage2ReasonCode:     payloadString(payload, "stage2_reason_code"),
 			Stage2ErrorLayer:     payloadString(payload, "stage2_error_layer"),
+			CA3PressureZone:      payloadString(payload, "ca3_pressure_zone"),
+			CA3PressureReason:    payloadString(payload, "ca3_pressure_reason"),
+			CA3ZoneResidencyMs:   payloadInt64Map(payload, "ca3_zone_residency_ms"),
+			CA3TriggerCounts:     payloadIntMap(payload, "ca3_trigger_counts"),
+			CA3CompressionRatio:  payloadFloat64(payload, "ca3_compression_ratio"),
+			CA3SpillCount:        payloadInt(payload, "ca3_spill_count"),
+			CA3SwapBackCount:     payloadInt(payload, "ca3_swap_back_count"),
 			RecapStatus:          payloadString(payload, "recap_status"),
 		})
 	case "skill.discovered":
@@ -164,6 +171,78 @@ func payloadInt64(m map[string]any, key string) int64 {
 
 func payloadInt(m map[string]any, key string) int {
 	return int(payloadInt64(m, key))
+}
+
+func payloadFloat64(m map[string]any, key string) float64 {
+	if len(m) == 0 {
+		return 0
+	}
+	raw, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch tv := raw.(type) {
+	case float64:
+		return tv
+	case float32:
+		return float64(tv)
+	case int:
+		return float64(tv)
+	case int64:
+		return float64(tv)
+	default:
+		return 0
+	}
+}
+
+func payloadInt64Map(m map[string]any, key string) map[string]int64 {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, ok := m[key]
+	if !ok {
+		return nil
+	}
+	out := map[string]int64{}
+	switch src := raw.(type) {
+	case map[string]any:
+		for k, v := range src {
+			switch tv := v.(type) {
+			case int64:
+				out[k] = tv
+			case int:
+				out[k] = int64(tv)
+			case float64:
+				out[k] = int64(tv)
+			}
+		}
+	case map[string]int64:
+		for k, v := range src {
+			out[k] = v
+		}
+	case map[string]int:
+		for k, v := range src {
+			out[k] = int64(v)
+		}
+	default:
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func payloadIntMap(m map[string]any, key string) map[string]int {
+	in := payloadInt64Map(m, key)
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for k, v := range in {
+		out[k] = int(v)
+	}
+	return out
 }
 
 func payloadOrDefault(m map[string]any, key, fallback string) string {

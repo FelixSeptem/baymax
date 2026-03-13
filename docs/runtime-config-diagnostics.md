@@ -111,6 +111,53 @@ context_assembler:
       enabled: true
       max_items: 4
       max_field_chars: 256
+  ca3:
+    enabled: true
+    max_context_tokens: 128000
+    goldilocks_min_percent: 35
+    goldilocks_max_percent: 60
+    percent_thresholds:
+      safe: 20
+      comfort: 40
+      warning: 60
+      danger: 75
+      emergency: 90
+    absolute_thresholds:
+      safe: 24000
+      comfort: 48000
+      warning: 72000
+      danger: 96000
+      emergency: 115200
+    stage1:
+      percent_thresholds: {}  # 可选，空表示沿用全局阈值
+      absolute_thresholds: {}
+    stage2:
+      percent_thresholds: {}
+      absolute_thresholds: {}
+    protection:
+      critical_keywords: [critical]
+      immutable_keywords: [immutable]
+    squash:
+      enabled: true
+      max_content_runes: 320
+    prune:
+      enabled: true
+      target_percent: 55
+      keyword_priority: [error, decision, constraint, risk, todo]
+    emergency:
+      reject_low_priority: true
+      high_priority_tokens: [urgent, critical, incident]
+    spill:
+      enabled: true
+      backend: file # file|db|object（db/object 当前仅占位）
+      path: /tmp/baymax/context-spill.jsonl
+      swap_back_limit: 4
+    tokenizer:
+      mode: sdk_preferred # sdk_preferred|estimate_only
+      provider: anthropic # anthropic|gemini|openai
+      model: claude-3-5-sonnet-latest
+      small_delta_tokens: 256
+      sdk_refresh_interval: 1200ms
 
 security:
   scan:
@@ -153,6 +200,17 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
 当前不提供 CLI 诊断命令。
+
+## CA3 Token Count 职责分工
+
+- `context/assembler`：只负责“何时计数”的策略决策（`sdk_preferred`、`small_delta_tokens`、`sdk_refresh_interval`），不直接依赖 provider SDK 细节。
+- `model/*`：负责“如何计数”的 provider 实现与官方 SDK 调用：
+  - `model/anthropic`：`Messages.CountTokens`。
+  - `model/gemini`：优先 `genai/tokenizer` 本地计数，失败时回退 `Models.CountTokens`。
+  - `model/openai`：当前适配层未提供官方可复用 token-count API，返回 unsupported 并由上层回退预估。
+- 语义要求：
+  - 小增量优先预估，降低高频计数调用成本。
+  - SDK 计数失败不阻断主流程，回退预估值继续执行。
 
 ## Action Timeline 事件（默认启用）
 
@@ -204,6 +262,16 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `stage2_reason_code`：Stage2 机器可读原因码（如 `ok`/`timeout`/`http_status`/`upstream_error`）。
 - `stage2_error_layer`：Stage2 错误分层（`transport|protocol|semantic`，成功时为空）。
 - `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
+
+### Run 诊断新增字段（Context Assembler CA3）
+
+- `ca3_pressure_zone`：CA3 当前压力分区（`safe|comfort|warning|danger|emergency`）。
+- `ca3_pressure_reason`：分区触发来源（`usage_percent_trigger|absolute_token_trigger`）。
+- `ca3_zone_residency_ms`：各分区累计停留时长（毫秒）。
+- `ca3_trigger_counts`：各分区触发次数。
+- `ca3_compression_ratio`：本次装配压缩率（`0~1`）。
+- `ca3_spill_count`：本次 spill 计数。
+- `ca3_swap_back_count`：本次 swap-back 计数。
 
 ### Run 诊断新增字段（Action Timeline H1.5 聚合）
 

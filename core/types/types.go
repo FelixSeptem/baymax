@@ -250,6 +250,13 @@ type AssembleStage struct {
 	Stage2Reason     string              `json:"stage2_reason,omitempty"`
 	Stage2ReasonCode string              `json:"stage2_reason_code,omitempty"`
 	Stage2ErrorLayer string              `json:"stage2_error_layer,omitempty"`
+	PressureZone     string              `json:"pressure_zone,omitempty"`
+	PressureReason   string              `json:"pressure_reason,omitempty"`
+	ZoneResidencyMs  map[string]int64    `json:"zone_residency_ms,omitempty"`
+	TriggerCounts    map[string]int      `json:"trigger_counts,omitempty"`
+	CompressionRatio float64             `json:"compression_ratio,omitempty"`
+	SpillCount       int                 `json:"spill_count,omitempty"`
+	SwapBackCount    int                 `json:"swap_back_count,omitempty"`
 }
 
 type TailRecap struct {

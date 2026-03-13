@@ -91,6 +91,7 @@
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
+- [x] `implement-context-assembler-ca3-memory-pressure-and-recovery`：完成 CA3 内存压力控制与恢复（五级分区、双阈值触发、squash/prune、spill/swap、Run/Stream 语义一致、CA3 诊断字段）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -219,7 +220,7 @@
   - 对齐 P1/P2/P6/P9/P10（前缀一致性、只追加、不信任 LLM、可观测、文件即记忆）。
 - CA2（R3 后半，已完成基础版）：Lazy + Stage 化加载
   - 对齐 P3/P4/P5（按需加载、渐进降级、末尾复述）。
-- CA3（R4 前半）：内存压力与可恢复性
+- CA3（R4 前半，已完成）：内存压力与可恢复性
   - 对齐 P7/P8 + Arena 机制（可中断、不丢信息、batch reset、spill/swap）。
 - CA4（R4 后半）：生产级策略收敛
   - 完成策略参数化、契约测试、压测阈值与文档统一。

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-13 15:10:53
+Updated: 2026-03-13 16:21:54
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -21,3 +21,4 @@ Updated: 2026-03-13 15:10:53
 - 017 -> harden-ca2-retriever-profiles-and-error-layering-e1
 - 018 -> standardize-action-timeline-events-h1
 - 019 -> converge-action-timeline-observability-h15
+- 020 -> implement-context-assembler-ca3-memory-pressure-and-recovery

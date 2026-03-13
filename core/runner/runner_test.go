@@ -1075,6 +1075,83 @@ mcp:
 	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "model")
 }
 
+func TestRunAndStreamCA3PressureSemanticsEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+  ca3:
+    enabled: true
+    max_context_tokens: 60
+    percent_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    absolute_thresholds:
+      safe: 6
+      comfort: 12
+      warning: 18
+      danger: 24
+      emergency: 30
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	_, err = runEngine.Run(context.Background(), types.RunRequest{
+		RunID:     "run-ca3",
+		SessionID: "s-1",
+		Input:     strings.Repeat("payload ", 50),
+		Messages:  []types.Message{{Role: "system", Content: "base"}},
+	}, runCollector)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	_, err = streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID:     "stream-ca3",
+		SessionID: "s-1",
+		Input:     strings.Repeat("payload ", 50),
+		Messages:  []types.Message{{Role: "system", Content: "base"}},
+	}, streamCollector)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run finished event")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream finished event")
+	}
+	if runFinished.Payload["ca3_pressure_zone"] != streamFinished.Payload["ca3_pressure_zone"] {
+		t.Fatalf("run/stream ca3 pressure zone mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_zone"], streamFinished.Payload["ca3_pressure_zone"])
+	}
+}
+
 func assertPhaseDistEqual(
 	t *testing.T,
 	a, b map[string]runtimediag.TimelinePhaseAggregate,

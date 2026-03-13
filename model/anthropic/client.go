@@ -173,6 +173,48 @@ func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelReques
 	return c.discover(ctx, model)
 }
 
+func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	systemBlocks := make([]anthropic.TextBlockParam, 0, len(req.Messages))
+	msgs := make([]anthropic.MessageParam, 0, len(req.Messages))
+	for _, m := range req.Messages {
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		content := strings.TrimSpace(m.Content)
+		if content == "" {
+			continue
+		}
+		switch role {
+		case "system":
+			systemBlocks = append(systemBlocks, anthropic.TextBlockParam{Text: content})
+		case "assistant":
+			msgs = append(msgs, anthropic.NewAssistantMessage(anthropic.NewTextBlock(content)))
+		default:
+			msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(content)))
+		}
+	}
+	if len(msgs) == 0 {
+		input := strings.TrimSpace(req.Input)
+		if input == "" {
+			return 0, errors.New("model input is empty")
+		}
+		msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(input)))
+	}
+	resp, err := c.sdk.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{
+		Model: anthropic.Model(model),
+		System: anthropic.MessageCountTokensParamsSystemUnion{
+			OfTextBlockArray: systemBlocks,
+		},
+		Messages: msgs,
+	})
+	if err != nil {
+		return 0, providererror.FromError(err)
+	}
+	return int(resp.InputTokens), nil
+}
+
 func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {
 	info, err := c.sdk.Models.Get(ctx, model, anthropic.ModelGetParams{})
 	if err != nil {

@@ -183,6 +183,12 @@ func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelReques
 	return c.discoverFn(ctx, model)
 }
 
+func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	_ = ctx
+	_ = req
+	return 0, errors.New("openai official sdk does not provide token count api in this adapter")
+}
+
 func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {
 	info, err := c.sdk.Models.Get(ctx, model)
 	if err != nil {

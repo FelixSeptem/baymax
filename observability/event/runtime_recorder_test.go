@@ -137,6 +137,13 @@ mcp:
 			"stage2_reason":         "ok",
 			"stage2_reason_code":    "ok",
 			"stage2_error_layer":    "",
+			"ca3_pressure_zone":     "warning",
+			"ca3_pressure_reason":   "usage_percent_trigger",
+			"ca3_zone_residency_ms": map[string]any{"safe": float64(12), "warning": float64(8)},
+			"ca3_trigger_counts":    map[string]any{"warning": float64(2)},
+			"ca3_compression_ratio": 0.42,
+			"ca3_spill_count":       1,
+			"ca3_swap_back_count":   1,
 			"recap_status":          "appended",
 		},
 	}
@@ -161,6 +168,12 @@ mcp:
 	}
 	if items[0].Stage2ReasonCode != "ok" || items[0].Stage2Profile != "http_generic" {
 		t.Fatalf("ca2 retrieval extended fields mismatch: %#v", items[0])
+	}
+	if items[0].CA3PressureZone != "warning" || items[0].CA3PressureReason == "" {
+		t.Fatalf("ca3 fields mismatch: %#v", items[0])
+	}
+	if items[0].CA3CompressionRatio == 0 || items[0].CA3SpillCount != 1 || items[0].CA3SwapBackCount != 1 {
+		t.Fatalf("ca3 metrics mismatch: %#v", items[0])
 	}
 	modelAgg, ok := items[0].TimelinePhases["model"]
 	if !ok {

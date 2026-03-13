@@ -1,6 +1,6 @@
 # Runtime Module Boundaries
 
-更新时间：2026-03-11
+更新时间：2026-03-13
 
 ## 目标
 
@@ -67,3 +67,11 @@ CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 - 新增诊断记录类型时，必须同步：
   - `runtime/diagnostics` record 定义
   - 文档中的字段与语义说明
+
+## 全局限制（职责分工重点）
+
+- Context Assembler 与 Model Provider 的职责必须分离：
+  - `context/assembler` 只做策略编排与触发时机控制（例如 CA3 压力分区、阈值判定、计数调用节流）。
+  - `model/*` 负责 provider 协议细节与官方 SDK 调用（包括 token count、能力探测、流式映射）。
+- 禁止在 `context/*` 中直接引入 provider 官方 SDK（OpenAI/Anthropic/Gemini），避免跨层耦合与升级扩散。
+- 任何新增 provider 级能力（例如 token count、模型元数据查询）应先落在 `model/<provider>`，再由上层通过接口复用。

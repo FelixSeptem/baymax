@@ -1019,6 +1019,27 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.Stage2ErrorLayer != "" {
 		payload["stage2_error_layer"] = meta.Assemble.Stage.Stage2ErrorLayer
 	}
+	if meta.Assemble.Stage.PressureZone != "" {
+		payload["ca3_pressure_zone"] = meta.Assemble.Stage.PressureZone
+	}
+	if meta.Assemble.Stage.PressureReason != "" {
+		payload["ca3_pressure_reason"] = meta.Assemble.Stage.PressureReason
+	}
+	if len(meta.Assemble.Stage.ZoneResidencyMs) > 0 {
+		payload["ca3_zone_residency_ms"] = meta.Assemble.Stage.ZoneResidencyMs
+	}
+	if len(meta.Assemble.Stage.TriggerCounts) > 0 {
+		payload["ca3_trigger_counts"] = meta.Assemble.Stage.TriggerCounts
+	}
+	if meta.Assemble.Stage.CompressionRatio > 0 {
+		payload["ca3_compression_ratio"] = meta.Assemble.Stage.CompressionRatio
+	}
+	if meta.Assemble.Stage.SpillCount > 0 {
+		payload["ca3_spill_count"] = meta.Assemble.Stage.SpillCount
+	}
+	if meta.Assemble.Stage.SwapBackCount > 0 {
+		payload["ca3_swap_back_count"] = meta.Assemble.Stage.SwapBackCount
+	}
 	if meta.Assemble.Recap.Status != "" {
 		payload["recap_status"] = string(meta.Assemble.Recap.Status)
 	}

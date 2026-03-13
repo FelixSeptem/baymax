@@ -18,6 +18,7 @@
 - OpenSpec change `activate-ca2-external-retriever-spi-and-http-adapter` 已完成实现。
 - OpenSpec change `standardize-action-timeline-events-h1` 已完成并归档。
 - OpenSpec change `converge-action-timeline-observability-h15` 已完成实现。
+- OpenSpec change `implement-context-assembler-ca3-memory-pressure-and-recovery` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -50,7 +51,7 @@
 - provider 级降级：model-step 前 capability preflight，按 `provider_fallback.providers` 有序尝试，候选耗尽即 fail-fast
 - 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
 
-### 3.6 Context Assembler（CA1 + CA2）
+### 3.6 Context Assembler（CA1 + CA2 + CA3）
 - `context/assembler` 已接入 `core/runner` pre-model hook（Run/Stream 双路径）
 - immutable prefix + `prefix_hash` 校验（同 session/version 漂移即 fail-fast）
 - `context/journal` 本地 JSONL append-only（intent/commit）
@@ -63,6 +64,13 @@
 - 支持 stage 失败策略配置（`fail_fast` / `best_effort`）
 - 支持 tail recap（最小字段 `status/decisions/todo/risks`）并追加在上下文末尾
 - 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_profile`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`stage2_reason_code`、`stage2_error_layer`、`recap_status`
+- CA3 memory pressure control：
+  - 五级分区：`safe|comfort|warning|danger|emergency`
+  - 双触发阈值：百分比 + 绝对 token（任一满足即触发）
+  - 策略动作：warning/danger 触发 squash/prune；emergency 触发 spill/swap + 低优先级加载拒绝
+  - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
+  - Token 计数：默认 `sdk_preferred`，优先官方 SDK tokenizer；小增量（`small_delta_tokens`）优先走预估，降低调用频率
+  - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -217,6 +225,37 @@ context_assembler:
       enabled: true
       max_items: 4
       max_field_chars: 256
+  ca3:
+    enabled: true
+    max_context_tokens: 128000
+    goldilocks_min_percent: 35
+    goldilocks_max_percent: 60
+    percent_thresholds:
+      safe: 20
+      comfort: 40
+      warning: 60
+      danger: 75
+      emergency: 90
+    absolute_thresholds:
+      safe: 24000
+      comfort: 48000
+      warning: 72000
+      danger: 96000
+      emergency: 115200
+    emergency:
+      reject_low_priority: true
+      high_priority_tokens: [urgent, critical, incident]
+    spill:
+      enabled: true
+      backend: file # file|db|object（db/object 预留接口，当前未实现）
+      path: /tmp/baymax/context-spill.jsonl
+      swap_back_limit: 4
+    tokenizer:
+      mode: sdk_preferred # sdk_preferred|estimate_only
+      provider: anthropic # anthropic|gemini|openai
+      model: claude-3-5-sonnet-latest
+      small_delta_tokens: 256
+      sdk_refresh_interval: 1200ms
 ```
 
 ### 运行测试

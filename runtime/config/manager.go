@@ -205,6 +205,10 @@ func (m *Manager) RecordRun(rec runtimediag.RunRecord) {
 	m.diag.AddRun(rec)
 }
 
+func (m *Manager) RecordRunTimelineEvent(runID, phase, status string, sequence int64, ts time.Time) {
+	m.diag.AddTimelineEvent(runID, phase, status, sequence, ts)
+}
+
 func (m *Manager) RecordReload(rec runtimediag.ReloadRecord) {
 	m.diag.AddReload(rec)
 }

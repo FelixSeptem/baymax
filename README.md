@@ -16,6 +16,8 @@
 - OpenSpec change `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap` 已完成实现。
 - OpenSpec change `harden-security-baseline-s1-govulncheck-and-redaction` 已完成实现。
 - OpenSpec change `activate-ca2-external-retriever-spi-and-http-adapter` 已完成实现。
+- OpenSpec change `standardize-action-timeline-events-h1` 已完成并归档。
+- OpenSpec change `converge-action-timeline-observability-h15` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -74,11 +76,12 @@
   - phase：`run|context_assembler|model|tool|mcp|skill`
   - status：`pending|running|succeeded|failed|skipped|canceled`
   - 关键字段：`phase`、`status`、`reason`（可选）、`sequence`（单 run 递增）
+  - H1.5 聚合字段（`RecentRuns`）：按 phase 输出 `count_total`、`failed_total`、`canceled_total`、`skipped_total`、`latency_ms`、`latency_p95_ms`
 - OTel spans：`agent.run` 根 span + model/tool/mcp/skill 子 span
 - JSON stdout logger（支持 trace/span/run 关联）
 - 诊断写入采用 single-writer（`observability/event.RuntimeRecorder`）+ 幂等去重（`runtime/diagnostics`）
-
-说明：H1 仅新增结构化 timeline 事件，不新增 diagnostics 聚合字段；聚合口径将在后续 proposal 收敛（TODO）。
+ 
+说明：H1.5 已完成 timeline 聚合可观测收敛；同一 run 的 timeline 重放不重复计数（幂等保证）。
 
 ### 6. Security Baseline (S1)
 - 统一脱敏管线：关键词基线（`token/password/secret/api_key/apikey`）+ 扩展 matcher 口

@@ -13,6 +13,7 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -1008,4 +1009,84 @@ func containsTimelineStep(steps []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestRunAndStreamTimelineAggregatesEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	rec := obsevent.NewRuntimeRecorder(mgr)
+
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	if _, err := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-agg", Input: "hello"}, rec); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if _, err := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "stream-agg", Input: "hello"}, rec); err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	runs := mgr.RecentRuns(10)
+	var runRec, streamRec *runtimediag.RunRecord
+	for i := range runs {
+		switch runs[i].RunID {
+		case "run-agg":
+			rec := runs[i]
+			runRec = &rec
+		case "stream-agg":
+			rec := runs[i]
+			streamRec = &rec
+		}
+	}
+	if runRec == nil || streamRec == nil {
+		t.Fatalf("missing diagnostics records: %#v", runs)
+	}
+	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "run")
+	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "model")
+}
+
+func assertPhaseDistEqual(
+	t *testing.T,
+	a, b map[string]runtimediag.TimelinePhaseAggregate,
+	phase string,
+) {
+	t.Helper()
+	pa, oka := a[phase]
+	pb, okb := b[phase]
+	if !oka || !okb {
+		t.Fatalf("missing phase aggregate %q: a=%v b=%v", phase, a, b)
+	}
+	if pa.CountTotal != pb.CountTotal || pa.FailedTotal != pb.FailedTotal || pa.CanceledTotal != pb.CanceledTotal || pa.SkippedTotal != pb.SkippedTotal {
+		t.Fatalf("phase distribution mismatch for %q: a=%#v b=%#v", phase, pa, pb)
+	}
 }

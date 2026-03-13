@@ -205,6 +205,19 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `stage2_error_layer`：Stage2 错误分层（`transport|protocol|semantic`，成功时为空）。
 - `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
 
+### Run 诊断新增字段（Action Timeline H1.5 聚合）
+
+- `timeline_phases.<phase>.count_total`：phase 终态计数（`succeeded|failed|canceled|skipped`）。
+- `timeline_phases.<phase>.failed_total`：phase 失败计数。
+- `timeline_phases.<phase>.canceled_total`：phase 取消计数。
+- `timeline_phases.<phase>.skipped_total`：phase 跳过计数。
+- `timeline_phases.<phase>.latency_ms`：phase 累计耗时（毫秒）。
+- `timeline_phases.<phase>.latency_p95_ms`：phase P95 耗时（毫秒）。
+
+说明：
+- 聚合维度为“单 run 内按 phase 聚合”。
+- 同一 run 的 timeline 重放按 `sequence+phase+status` 去重，不重复累计。
+
 ## 诊断写入口径（Single Writer + Idempotency）
 
 - 统一写入入口：`observability/event.RuntimeRecorder`。
@@ -223,10 +236,9 @@ client := httpmcp.NewClient(httpmcp.Config{
 - skill 状态：`success | warning | failed`
 - 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`、`ErrSecurity`）
 
-### TODO（后续提案收敛）
+### TODO（后续演进）
 
-- H1 不新增 diagnostics 聚合字段（例如 timeline phase 级计数/耗时聚合）。
-- 后续将通过独立 change 收敛 timeline observability 聚合口径，并与现有 `RecentRuns` 诊断模型统一。
+- H1.5 已完成 phase 级聚合；后续可按需要补充跨 run 维度聚合（窗口化趋势、分位线面板等）并保持库接口优先。
 
 ## 安全基线（S1）
 

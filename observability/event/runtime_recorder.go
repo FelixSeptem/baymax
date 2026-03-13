@@ -27,6 +27,23 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 		payload = r.manager.RedactPayload(payload)
 	}
 	switch ev.Type {
+	case types.EventTypeActionTimeline:
+		if timeline, ok := ParseActionTimeline(types.Event{
+			Version:   ev.Version,
+			Type:      ev.Type,
+			RunID:     ev.RunID,
+			Iteration: ev.Iteration,
+			Time:      ev.Time,
+			Payload:   payload,
+		}); ok {
+			r.manager.RecordRunTimelineEvent(
+				timeline.RunID,
+				string(timeline.Phase),
+				string(timeline.Status),
+				timeline.Sequence,
+				timeline.Time,
+			)
+		}
 	case "run.finished":
 		errorClass := payloadString(payload, "error_class")
 		status := payloadString(payload, "status")

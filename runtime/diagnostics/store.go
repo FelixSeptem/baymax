@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,35 +30,45 @@ type CallRecord struct {
 }
 
 type RunRecord struct {
-	Time                 time.Time `json:"time"`
-	RunID                string    `json:"run_id"`
-	Status               string    `json:"status,omitempty"`
-	Iterations           int       `json:"iterations"`
-	ToolCalls            int       `json:"tool_calls"`
-	LatencyMs            int64     `json:"latency_ms"`
-	ErrorClass           string    `json:"error_class,omitempty"`
-	ModelProvider        string    `json:"model_provider,omitempty"`
-	FallbackUsed         bool      `json:"fallback_used,omitempty"`
-	FallbackInitial      string    `json:"fallback_initial,omitempty"`
-	FallbackPath         string    `json:"fallback_path,omitempty"`
-	RequiredCapabilities string    `json:"required_capabilities,omitempty"`
-	FallbackReason       string    `json:"fallback_reason,omitempty"`
-	PrefixHash           string    `json:"prefix_hash,omitempty"`
-	AssembleLatencyMs    int64     `json:"assemble_latency_ms,omitempty"`
-	AssembleStatus       string    `json:"assemble_status,omitempty"`
-	GuardViolation       string    `json:"guard_violation,omitempty"`
-	AssembleStageStatus  string    `json:"assemble_stage_status,omitempty"`
-	Stage2SkipReason     string    `json:"stage2_skip_reason,omitempty"`
-	Stage1LatencyMs      int64     `json:"stage1_latency_ms,omitempty"`
-	Stage2LatencyMs      int64     `json:"stage2_latency_ms,omitempty"`
-	Stage2Provider       string    `json:"stage2_provider,omitempty"`
-	Stage2Profile        string    `json:"stage2_profile,omitempty"`
-	Stage2HitCount       int       `json:"stage2_hit_count,omitempty"`
-	Stage2Source         string    `json:"stage2_source,omitempty"`
-	Stage2Reason         string    `json:"stage2_reason,omitempty"`
-	Stage2ReasonCode     string    `json:"stage2_reason_code,omitempty"`
-	Stage2ErrorLayer     string    `json:"stage2_error_layer,omitempty"`
-	RecapStatus          string    `json:"recap_status,omitempty"`
+	Time                 time.Time                         `json:"time"`
+	RunID                string                            `json:"run_id"`
+	Status               string                            `json:"status,omitempty"`
+	Iterations           int                               `json:"iterations"`
+	ToolCalls            int                               `json:"tool_calls"`
+	LatencyMs            int64                             `json:"latency_ms"`
+	ErrorClass           string                            `json:"error_class,omitempty"`
+	ModelProvider        string                            `json:"model_provider,omitempty"`
+	FallbackUsed         bool                              `json:"fallback_used,omitempty"`
+	FallbackInitial      string                            `json:"fallback_initial,omitempty"`
+	FallbackPath         string                            `json:"fallback_path,omitempty"`
+	RequiredCapabilities string                            `json:"required_capabilities,omitempty"`
+	FallbackReason       string                            `json:"fallback_reason,omitempty"`
+	PrefixHash           string                            `json:"prefix_hash,omitempty"`
+	AssembleLatencyMs    int64                             `json:"assemble_latency_ms,omitempty"`
+	AssembleStatus       string                            `json:"assemble_status,omitempty"`
+	GuardViolation       string                            `json:"guard_violation,omitempty"`
+	AssembleStageStatus  string                            `json:"assemble_stage_status,omitempty"`
+	Stage2SkipReason     string                            `json:"stage2_skip_reason,omitempty"`
+	Stage1LatencyMs      int64                             `json:"stage1_latency_ms,omitempty"`
+	Stage2LatencyMs      int64                             `json:"stage2_latency_ms,omitempty"`
+	Stage2Provider       string                            `json:"stage2_provider,omitempty"`
+	Stage2Profile        string                            `json:"stage2_profile,omitempty"`
+	Stage2HitCount       int                               `json:"stage2_hit_count,omitempty"`
+	Stage2Source         string                            `json:"stage2_source,omitempty"`
+	Stage2Reason         string                            `json:"stage2_reason,omitempty"`
+	Stage2ReasonCode     string                            `json:"stage2_reason_code,omitempty"`
+	Stage2ErrorLayer     string                            `json:"stage2_error_layer,omitempty"`
+	RecapStatus          string                            `json:"recap_status,omitempty"`
+	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
+}
+
+type TimelinePhaseAggregate struct {
+	CountTotal    int   `json:"count_total,omitempty"`
+	FailedTotal   int   `json:"failed_total,omitempty"`
+	CanceledTotal int   `json:"canceled_total,omitempty"`
+	SkippedTotal  int   `json:"skipped_total,omitempty"`
+	LatencyMs     int64 `json:"latency_ms,omitempty"`
+	LatencyP95Ms  int64 `json:"latency_p95_ms,omitempty"`
 }
 
 type SkillRecord struct {
@@ -90,6 +102,15 @@ type Store struct {
 	skills  []SkillRecord
 	runKeys map[string]int
 	sklKeys map[string]int
+
+	timelineStates map[string]*timelineRunState
+}
+
+type timelineRunState struct {
+	seen           map[string]struct{}
+	runningSince   map[string]time.Time
+	phaseLatencyMs map[string][]int64
+	phases         map[string]TimelinePhaseAggregate
 }
 
 func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
@@ -116,6 +137,7 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
 		skills:          make([]SkillRecord, 0, maxSkills),
 		runKeys:         make(map[string]int, maxRuns),
 		sklKeys:         make(map[string]int, maxSkills),
+		timelineStates:  make(map[string]*timelineRunState, maxRuns),
 	}
 }
 
@@ -130,6 +152,7 @@ func (d *Store) Resize(maxCalls, maxRuns, maxReloads, maxSkills int) {
 		d.maxRunRecords = maxRuns
 		d.runs = trimTail(d.runs, d.maxRunRecords)
 		d.rebuildRunKeys()
+		d.pruneTimelineStates()
 	}
 	if maxReloads > 0 {
 		d.maxReloadErrors = maxReloads
@@ -153,6 +176,9 @@ func (d *Store) AddRun(rec RunRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
+	if len(rec.TimelinePhases) == 0 {
+		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
+	}
 	key := RunIdempotencyKey(rec)
 	if idx, ok := d.runKeys[key]; ok && idx >= 0 && idx < len(d.runs) {
 		d.runs[idx] = rec
@@ -161,6 +187,64 @@ func (d *Store) AddRun(rec RunRecord) {
 	d.runs = append(d.runs, rec)
 	d.runs = trimTail(d.runs, d.maxRunRecords)
 	d.rebuildRunKeys()
+	d.pruneTimelineStates()
+}
+
+func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	runID = strings.TrimSpace(runID)
+	phase = strings.TrimSpace(phase)
+	status = strings.ToLower(strings.TrimSpace(status))
+	if runID == "" || phase == "" || sequence <= 0 {
+		return
+	}
+	state := d.timelineStates[runID]
+	if state == nil {
+		state = &timelineRunState{
+			seen:           map[string]struct{}{},
+			runningSince:   map[string]time.Time{},
+			phaseLatencyMs: map[string][]int64{},
+			phases:         map[string]TimelinePhaseAggregate{},
+		}
+		d.timelineStates[runID] = state
+	}
+	key := fmt.Sprintf("%d:%s:%s", sequence, phase, status)
+	if _, ok := state.seen[key]; ok {
+		return
+	}
+	state.seen[key] = struct{}{}
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	switch status {
+	case "running":
+		state.runningSince[phase] = ts
+	case "succeeded", "failed", "canceled", "skipped":
+		agg := state.phases[phase]
+		agg.CountTotal++
+		switch status {
+		case "failed":
+			agg.FailedTotal++
+		case "canceled":
+			agg.CanceledTotal++
+		case "skipped":
+			agg.SkippedTotal++
+		}
+		if startedAt, ok := state.runningSince[phase]; ok && !startedAt.IsZero() {
+			lat := ts.Sub(startedAt).Milliseconds()
+			if lat < 0 {
+				lat = 0
+			}
+			agg.LatencyMs += lat
+			phaseSamples := state.phaseLatencyMs[phase]
+			phaseSamples = append(phaseSamples, lat)
+			state.phaseLatencyMs[phase] = phaseSamples
+			agg.LatencyP95Ms = percentileP95(phaseSamples)
+			delete(state.runningSince, phase)
+		}
+		state.phases[phase] = agg
+	}
 }
 
 func (d *Store) AddReload(rec ReloadRecord) {
@@ -312,6 +396,62 @@ func (d *Store) rebuildRunKeys() {
 	for i := range d.runs {
 		d.runKeys[RunIdempotencyKey(d.runs[i])] = i
 	}
+}
+
+func (d *Store) timelinePhasesForRun(runID string) map[string]TimelinePhaseAggregate {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil
+	}
+	state := d.timelineStates[runID]
+	if state == nil || len(state.phases) == 0 {
+		return nil
+	}
+	out := make(map[string]TimelinePhaseAggregate, len(state.phases))
+	for phase, agg := range state.phases {
+		out[phase] = agg
+	}
+	return out
+}
+
+func (d *Store) pruneTimelineStates() {
+	if len(d.timelineStates) == 0 {
+		return
+	}
+	keep := make(map[string]struct{}, len(d.runs))
+	for i := range d.runs {
+		runID := strings.TrimSpace(d.runs[i].RunID)
+		if runID == "" {
+			continue
+		}
+		keep[runID] = struct{}{}
+	}
+	for runID := range d.timelineStates {
+		if _, ok := keep[runID]; ok {
+			continue
+		}
+		delete(d.timelineStates, runID)
+	}
+}
+
+func percentileP95(samples []int64) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	if len(samples) == 1 {
+		return samples[0]
+	}
+	cp := make([]int64, len(samples))
+	copy(cp, samples)
+	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	idx := int(math.Ceil(0.95*float64(len(cp)))) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(cp) {
+		idx = len(cp) - 1
+	}
+	return cp[idx]
 }
 
 func (d *Store) rebuildSkillKeys() {

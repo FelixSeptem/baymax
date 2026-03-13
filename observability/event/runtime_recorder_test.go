@@ -78,6 +78,39 @@ mcp:
 	t.Cleanup(func() { _ = mgr.Close() })
 
 	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		Time:    time.Now(),
+		RunID:   "run-1",
+		Payload: map[string]any{
+			"phase":    "model",
+			"status":   "running",
+			"sequence": int64(1),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		Time:    time.Now().Add(10 * time.Millisecond),
+		RunID:   "run-1",
+		Payload: map[string]any{
+			"phase":    "model",
+			"status":   "failed",
+			"sequence": int64(2),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		Time:    time.Now().Add(10 * time.Millisecond),
+		RunID:   "run-1",
+		Payload: map[string]any{
+			"phase":    "model",
+			"status":   "failed",
+			"sequence": int64(2),
+		},
+	})
 	ev := types.Event{
 		Version:   types.EventSchemaVersionV1,
 		Type:      "run.finished",
@@ -128,6 +161,13 @@ mcp:
 	}
 	if items[0].Stage2ReasonCode != "ok" || items[0].Stage2Profile != "http_generic" {
 		t.Fatalf("ca2 retrieval extended fields mismatch: %#v", items[0])
+	}
+	modelAgg, ok := items[0].TimelinePhases["model"]
+	if !ok {
+		t.Fatalf("timeline model aggregate missing: %#v", items[0].TimelinePhases)
+	}
+	if modelAgg.CountTotal != 1 || modelAgg.FailedTotal != 1 {
+		t.Fatalf("timeline model aggregate mismatch: %#v", modelAgg)
 	}
 }
 
@@ -215,6 +255,17 @@ mcp:
 	})
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   "run-1",
+		Time:    time.Now().Add(15 * time.Millisecond),
+		Payload: map[string]any{
+			"phase":    "run",
+			"status":   "success", // invalid status should be ignored
+			"sequence": int64(2),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
 		RunID:   "run-1",
 		Time:    time.Now(),
@@ -230,5 +281,9 @@ mcp:
 	}
 	if items[0].RunID != "run-1" || items[0].Status != "success" {
 		t.Fatalf("unexpected run record: %#v", items[0])
+	}
+	runAgg := items[0].TimelinePhases["run"]
+	if runAgg.CountTotal != 0 {
+		t.Fatalf("invalid timeline status should not be aggregated: %#v", runAgg)
 	}
 }

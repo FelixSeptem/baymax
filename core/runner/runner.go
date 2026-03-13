@@ -363,6 +363,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				LatencyMs:   e.now().Sub(start).Milliseconds(),
 				Warnings:    warnings,
 			}
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
 				Type:      "run.finished",
@@ -378,7 +379,6 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Assemble:     lastAssemble,
 				}),
 			})
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			return result, nil
 		case StateAbort:
 			result := types.RunResult{
@@ -393,6 +393,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if terminal != nil {
 				errClass = string(terminal.Class)
 			}
+			status, reason := classifyRunTerminal(terminal, runErr)
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, reason)
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
 				Type:      "run.finished",
@@ -409,8 +411,6 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Assemble:     lastAssemble,
 				}),
 			})
-			status, reason := classifyRunTerminal(terminal, runErr)
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, reason)
 			return result, runErr
 		}
 	}
@@ -463,6 +463,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			LatencyMs:  e.now().Sub(start).Milliseconds(),
 			Error:      classified(types.ErrContext, assembleErr.Error(), false),
 		}
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, assembleErr)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		e.emit(ctx, h, types.Event{
 			Version:   "v1",
 			Type:      "run.finished",
@@ -478,8 +480,6 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
-		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, assembleErr)
-		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		return result, assembleErr
 	}
 	if contextPhaseEnabled {
@@ -494,6 +494,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			LatencyMs:  e.now().Sub(start).Milliseconds(),
 			Error:      selErr,
 		}
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, errors.New(selErr.Message))
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		e.emit(ctx, h, types.Event{
 			Version:   "v1",
 			Type:      "run.finished",
@@ -510,8 +512,6 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
-		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, errors.New(selErr.Message))
-		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
 		return result, errors.New(selErr.Message)
 	}
 	if selection.Provider != "" {
@@ -583,6 +583,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		if terminal != nil {
 			errClass = string(terminal.Class)
 		}
+		status, runReason := classifyRunTerminal(terminal, err)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, runReason)
 		e.emit(ctx, h, types.Event{
 			Version:   "v1",
 			Type:      "run.finished",
@@ -598,8 +600,6 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Assemble:     lastAssemble,
 			}),
 		})
-		status, runReason := classifyRunTerminal(terminal, err)
-		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, runReason)
 		return result, err
 	}
 
@@ -612,6 +612,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		TokenUsage:  usage,
 		LatencyMs:   e.now().Sub(start).Milliseconds(),
 	}
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 	e.emit(ctx, h, types.Event{
 		Version:   "v1",
 		Type:      "run.finished",
@@ -627,7 +628,6 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Assemble:     lastAssemble,
 		}),
 	})
-	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 	return result, nil
 }
 

@@ -90,6 +90,7 @@
 - [x] `activate-ca2-external-retriever-spi-and-http-adapter`：完成 Stage2 External Retriever SPI、HTTP adapter、`http/rag/db/elasticsearch` 可运行路径与新增诊断字段。
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
+- [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -108,7 +109,7 @@
 - Context Assembler（RAG + Memory）分期实施：
   - CA1（基础骨架，已完成）：新增 `context/assembler` pre-model hook，建立 immutable prefix 与 append-only journal 基线。
   - CA2（按需加载，已完成）：接入 Stage1/Stage2 路由、可配置 stage 策略、tail recap；支持 `file/http/rag/db/elasticsearch` 与 external retriever SPI。
-  - CA3（压力控制）：落地 Goldilocks Zone（40%-70%）与 batch squash/prune，支持 spill/swap 回填。
+  - CA3（压力控制）：落地分级压力响应策略（安全区/舒适区/警告区/危险区/紧急区），支持绝对阈值+百分比双模式配置，batch squash/prune（带"不可压缩"标记），spill/swap 回填，补充监控指标。
   - CA4（生产收敛）：补齐规则防护、可中断恢复、观测面板与契约测试闭环。
   - 详细分期见 `docs/context-assembler-phased-plan.md`。
 - Skill 语义触发升级（可插拔检索/打分器）。
@@ -116,7 +117,8 @@
   - 基于现有事件流构建用户侧 Action Timeline（`run/context_assembler/model/tool/mcp/skill` 阶段）。
   - 增加统一动作状态语义（`pending/running/succeeded/failed/skipped/canceled`）。
   - 增加 step/phase 关联字段规范，支持前端稳定渲染执行路径。
-  - TODO：补齐 timeline 聚合可观测字段并收敛到 diagnostics 契约。
+  - 已完成 H1.5：phase 级聚合字段收敛到 diagnostics 契约。
+  - TODO：按需要补充跨 run 趋势聚合与窗口化指标。
 - 提供最小 CLI 示例（本地调试和回放）。
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`、`08-multi-agent-network-bridge`。
   - TODO：结合 CA2 增加 staged context 路由示例（本提案不新增 example 代码）。
@@ -227,7 +229,7 @@
 ## HITL 与 Action Timeline 里程碑（规划）
 
 - H1（R3 前半，已完成）：交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
-- H1.5（R3-R4）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
+- H1.5（R3-R4，已完成）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
 - H2（R3 后半或 R4 前半）：引入 Action Gate（执行前确认钩子），支持外部编排式 HITL。
 - H3（R4）：引入原生 pause/resume 语义（`run.awaiting_user` / `run.resumed`），完善契约测试与诊断记录。
 

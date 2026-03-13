@@ -50,6 +50,9 @@ type RunRecord struct {
 	Stage1LatencyMs      int64     `json:"stage1_latency_ms,omitempty"`
 	Stage2LatencyMs      int64     `json:"stage2_latency_ms,omitempty"`
 	Stage2Provider       string    `json:"stage2_provider,omitempty"`
+	Stage2HitCount       int       `json:"stage2_hit_count,omitempty"`
+	Stage2Source         string    `json:"stage2_source,omitempty"`
+	Stage2Reason         string    `json:"stage2_reason,omitempty"`
 	RecapStatus          string    `json:"recap_status,omitempty"`
 }
 

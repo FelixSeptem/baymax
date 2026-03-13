@@ -10,7 +10,7 @@ For provider capability fallback, runtime configuration MUST additionally suppor
 
 Runtime configuration MUST additionally support context assembler CA1 baseline fields with deterministic precedence, including `context_assembler.enabled` (default true), file journal path, prefix version, guard fail-fast toggle, and storage backend selector (file active, db placeholder).
 
-Runtime configuration MUST additionally support context assembler CA2 fields with deterministic precedence, including staged assembly enablement, stage routing mode, stage-level failure policy, stage timeouts, stage2 provider selector (file active; rag/db placeholders), routing threshold controls, and tail recap options.
+Runtime configuration MUST additionally support context assembler CA2 fields with deterministic precedence, including staged assembly enablement, stage routing mode, stage-level failure policy, stage timeouts, and Stage2 provider selector (`file|http|rag|db|elasticsearch`) with provider-level endpoint/auth/JSON-mapping controls.
 
 Runtime configuration MUST additionally support security S1 baseline fields with deterministic precedence, including security scan mode (`strict|warn`), scan tool toggles, redaction enablement, and extensible sensitive-key keyword lists.
 
@@ -60,6 +60,8 @@ Diagnostics MUST additionally include context assembler CA2 stage and recap fiel
 
 Diagnostics and event payloads MUST additionally apply unified S1 redaction policy before persistence and emission.
 
+Diagnostics for CA2 retrieval MUST additionally expose normalized Stage2 retrieval summary fields: `stage2_hit_count`, `stage2_source`, and `stage2_reason`.
+
 #### Scenario: Consumer requests recent run diagnostics
 - **WHEN** application calls diagnostics API for recent runs
 - **THEN** runtime returns bounded summary records with normalized fields and without duplicated logical run entries caused by retries or replay
@@ -83,6 +85,10 @@ Diagnostics and event payloads MUST additionally apply unified S1 redaction poli
 #### Scenario: Consumer inspects redaction behavior
 - **WHEN** application queries diagnostics containing sensitive-key fields
 - **THEN** returned payload contains masked values according to active redaction policy
+
+#### Scenario: Consumer inspects Stage2 retrieval summary
+- **WHEN** application queries diagnostics for runs that executed Stage2 retrieval
+- **THEN** runtime returns normalized `stage2_hit_count`, `stage2_source`, and `stage2_reason` fields
 
 ### Requirement: Runtime SHALL support hot reload with atomic swap and rollback safety
 The runtime MUST watch config file changes, rebuild and validate a new snapshot, and atomically replace active configuration only on successful validation.
@@ -187,4 +193,19 @@ The runtime MUST validate security scan mode enums, redaction strategy configura
 #### Scenario: Invalid redaction keyword config
 - **WHEN** runtime configuration sets malformed redaction keyword list
 - **THEN** initialization fails fast with validation error and no partial activation
+
+### Requirement: Runtime SHALL validate external retriever config and fail fast on invalid mapping
+Runtime MUST validate Stage2 external retriever configuration (provider enum, endpoint/auth fields, JSON mapping schema) at startup and hot reload; invalid values MUST fail fast with explicit validation errors.
+
+#### Scenario: Invalid Stage2 provider enum
+- **WHEN** runtime configuration sets unsupported Stage2 provider value
+- **THEN** initialization fails fast with validation error
+
+#### Scenario: Invalid HTTP mapping configuration
+- **WHEN** runtime configuration defines malformed request/response JSON mapping
+- **THEN** initialization fails fast with mapping validation error and no partial activation
+
+#### Scenario: Missing required endpoint for external provider
+- **WHEN** runtime configuration enables http/rag/db/elasticsearch provider without required endpoint fields
+- **THEN** initialization fails fast with validation error
 

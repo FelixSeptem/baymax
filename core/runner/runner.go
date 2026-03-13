@@ -906,6 +906,15 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.Stage2Provider != "" {
 		payload["stage2_provider"] = meta.Assemble.Stage.Stage2Provider
 	}
+	if meta.Assemble.Stage.Stage2HitCount > 0 {
+		payload["stage2_hit_count"] = meta.Assemble.Stage.Stage2HitCount
+	}
+	if meta.Assemble.Stage.Stage2Source != "" {
+		payload["stage2_source"] = meta.Assemble.Stage.Stage2Source
+	}
+	if meta.Assemble.Stage.Stage2Reason != "" {
+		payload["stage2_reason"] = meta.Assemble.Stage.Stage2Reason
+	}
 	if meta.Assemble.Recap.Status != "" {
 		payload["recap_status"] = string(meta.Assemble.Recap.Status)
 	}

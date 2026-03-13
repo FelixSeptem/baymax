@@ -15,15 +15,19 @@ Context assembler MUST execute Stage1 before Stage2. Stage2 MUST be invoked only
 - **THEN** assembler invokes Stage2 provider and merges Stage2 output into assembled context
 
 ### Requirement: Stage2 provider interface SHALL be extensible with file-first implementation
-The context retrieval layer MUST expose a stable provider interface for Stage2. CA2 MUST implement local file provider as active path and MUST expose RAG/DB providers as not-ready placeholders.
+The context retrieval layer MUST expose a stable provider interface for Stage2. CA2 MUST keep local file provider as a supported path and MUST additionally support `http`, `rag`, `db`, and `elasticsearch` providers through a unified retriever SPI with normalized request/response/error semantics.
 
 #### Scenario: File provider is selected
 - **WHEN** runtime config selects file provider for Stage2
 - **THEN** assembler loads retrieval payload from local file source through provider interface
 
-#### Scenario: RAG or DB provider is selected in CA2
-- **WHEN** runtime config selects rag or db provider in CA2
-- **THEN** assembler returns explicit provider-not-ready error without partial activation
+#### Scenario: HTTP provider is selected
+- **WHEN** runtime config selects http provider for Stage2
+- **THEN** assembler calls configured HTTP retriever endpoint and maps request/response via configured JSON field mapping
+
+#### Scenario: RAG/DB/Elasticsearch provider is selected
+- **WHEN** runtime config selects rag, db, or elasticsearch provider for Stage2
+- **THEN** assembler executes retrieval through the same SPI contract and returns normalized chunks or normalized provider error reason without partial state corruption
 
 ### Requirement: Tail recap SHALL append minimal stable fields
 Assembler MUST append a tail recap block at the end of assembled context with stable field order and minimum schema: `status`, `decisions`, `todo`, `risks`.
@@ -46,4 +50,15 @@ CA2 routing MUST provide a documented extension hook for future agentic decision
 #### Scenario: Agentic hook is configured in CA2 baseline
 - **WHEN** runtime config references agentic decision mode in CA2
 - **THEN** runtime returns explicit not-ready/TODO classification until agentic provider milestone is implemented
+
+### Requirement: Stage2 retrieval SHALL preserve stage policy semantics
+Stage2 retrieval failures MUST preserve existing CA2 stage policy behavior: `fail_fast` MUST terminate assemble flow immediately, and `best_effort` MUST continue with degraded status and recorded skip reason.
+
+#### Scenario: Stage2 retrieval fails in fail_fast mode
+- **WHEN** Stage2 provider returns timeout/auth/mapping/transport error and stage policy is fail_fast
+- **THEN** assemble flow terminates with error and commit diagnostics mark failed status
+
+#### Scenario: Stage2 retrieval fails in best_effort mode
+- **WHEN** Stage2 provider returns timeout/auth/mapping/transport error and stage policy is best_effort
+- **THEN** assemble flow continues with degraded status and records normalized `stage2_reason`
 

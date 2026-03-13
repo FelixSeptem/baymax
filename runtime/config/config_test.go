@@ -206,3 +206,111 @@ func TestValidateRejectsEmptyRedactionKeywordsWhenEnabled(t *testing.T) {
 		t.Fatal("expected validation error for security.redaction.keywords")
 	}
 }
+
+func TestContextAssemblerCA2ProviderEnumAcceptsExternalProviders(t *testing.T) {
+	for _, provider := range []string{"http", "rag", "db", "elasticsearch"} {
+		cfg := DefaultConfig()
+		cfg.ContextAssembler.CA2.Enabled = true
+		cfg.ContextAssembler.CA2.Stage2.Provider = provider
+		cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
+		cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField = "query"
+		cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField = "chunks"
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("provider=%s validate failed: %v", provider, err)
+		}
+	}
+}
+
+func TestContextAssemblerCA2ExternalValidationRejectsMissingEndpoint(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for missing external endpoint")
+	}
+}
+
+func TestContextAssemblerCA2ExternalValidationRejectsInvalidMappingMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.Mode = "custom"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid request mapping mode")
+	}
+}
+
+func TestContextAssemblerCA2ExternalValidationRejectsMissingQueryOrChunksMapping(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for missing query_field")
+	}
+
+	cfg = DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for missing chunks_field")
+	}
+}
+
+func TestContextAssemblerCA2ExternalConfigLoadPrecedenceAndHeaders(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_EXTERNAL_ENDPOINT", "http://env.example/retrieve")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+context_assembler:
+  ca2:
+    enabled: true
+    stage2:
+      provider: http
+      external:
+        endpoint: http://file.example/retrieve
+        method: PUT
+        headers:
+          X-Tenant: tenant-a
+        auth:
+          bearer_token: file-token
+          header_name: X-Auth
+        mapping:
+          request:
+            mode: plain
+            query_field: payload.query
+          response:
+            chunks_field: result.chunks
+            source_field: result.source
+            reason_field: result.reason
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Endpoint != "http://env.example/retrieve" {
+		t.Fatalf("endpoint = %q, want env override", cfg.ContextAssembler.CA2.Stage2.External.Endpoint)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Method != "PUT" {
+		t.Fatalf("method = %q, want PUT", cfg.ContextAssembler.CA2.Stage2.External.Method)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Headers["x-tenant"] != "tenant-a" {
+		t.Fatalf("headers = %#v, want X-Tenant=tenant-a", cfg.ContextAssembler.CA2.Stage2.External.Headers)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Auth.HeaderName != "X-Auth" {
+		t.Fatalf("auth.header_name = %q, want X-Auth", cfg.ContextAssembler.CA2.Stage2.External.Auth.HeaderName)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField != "payload.query" {
+		t.Fatalf("query field = %q", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField != "result.chunks" {
+		t.Fatalf("chunks field = %q", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField)
+	}
+}

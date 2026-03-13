@@ -58,7 +58,7 @@ func main() {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req rpcRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			_ = json.NewEncoder(w).Encode(rpcResponse{
@@ -94,7 +94,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	var response rpcResponse
 	if err := json.NewDecoder(httpResp.Body).Decode(&response); err != nil {

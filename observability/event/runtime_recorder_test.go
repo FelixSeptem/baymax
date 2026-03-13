@@ -98,6 +98,9 @@ mcp:
 			"stage1_latency_ms":     int64(3),
 			"stage2_latency_ms":     int64(0),
 			"stage2_provider":       "file",
+			"stage2_hit_count":      2,
+			"stage2_source":         "http",
+			"stage2_reason":         "ok",
 			"recap_status":          "appended",
 		},
 	}
@@ -116,6 +119,9 @@ mcp:
 	}
 	if items[0].AssembleStageStatus != "stage1_only" || items[0].Stage2SkipReason == "" || items[0].RecapStatus != "appended" {
 		t.Fatalf("ca2 fields mismatch: %#v", items[0])
+	}
+	if items[0].Stage2HitCount != 2 || items[0].Stage2Source != "http" || items[0].Stage2Reason != "ok" {
+		t.Fatalf("ca2 retrieval fields mismatch: %#v", items[0])
 	}
 }
 

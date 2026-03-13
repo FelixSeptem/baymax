@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/FelixSeptem/baymax/context/journal"
-	"github.com/FelixSeptem/baymax/context/provider"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
@@ -168,8 +167,11 @@ func TestAssemblerCA2Stage2FailFast(t *testing.T) {
 		Input:    "x",
 		Messages: []types.Message{{Role: "system", Content: "s"}},
 	})
-	if !errors.Is(err, provider.ErrProviderNotReady) {
-		t.Fatalf("err = %v, want ErrProviderNotReady", err)
+	if err == nil {
+		t.Fatal("expected fail_fast error, got nil")
+	}
+	if !strings.Contains(err.Error(), "endpoint is required") {
+		t.Fatalf("err = %v, want endpoint required", err)
 	}
 }
 
@@ -251,5 +253,47 @@ func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {
 	}
 	if !foundMasked {
 		t.Fatalf("expected redacted stage2 content, got %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = "file"
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	content := strings.Join([]string{
+		`{"session_id":"session-1","content":"ctx-a"}`,
+		`{"session_id":"session-1","content":"ctx-b"}`,
+	}, "\n")
+	if err := os.WriteFile(stage2File, []byte(content), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfg.CA2.Stage2.FilePath = stage2File
+	cfg.CA2.Routing.MinInputChars = 1
+
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-1",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         "lookup",
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-1",
+		Input:    "lookup",
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Stage2HitCount != 2 {
+		t.Fatalf("stage2_hit_count = %d, want 2", result.Stage.Stage2HitCount)
+	}
+	if result.Stage.Stage2Source != "file" {
+		t.Fatalf("stage2_source = %q, want file", result.Stage.Stage2Source)
+	}
+	if result.Stage.Stage2Reason != "ok" {
+		t.Fatalf("stage2_reason = %q, want ok", result.Stage.Stage2Reason)
 	}
 }

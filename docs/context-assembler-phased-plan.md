@@ -1,6 +1,6 @@
 # Context Assembler Phased Plan
 
-更新时间：2026-03-12
+更新时间：2026-03-13
 
 ## 目标
 
@@ -59,10 +59,12 @@
 
 - 引入两阶段装配：
   - Stage1：session-memory / hot state
-  - Stage2：retrieval provider（本期 file provider 可用，rag/db 为接口占位）
+  - Stage2：retrieval provider（支持 `file/http/rag/db/elasticsearch`）
 - 支持 `best-effort/fail-fast` 两种模式与超时策略。
 - 增加 tail recap（规则模板）将 `todo/decisions/status` 推送末尾。
 - 路由模式默认 rules；agentic hook 仅预留 TODO 扩展点。
+- 新增外部检索接入：统一 Retriever SPI + 通用 HTTP adapter（JSON 映射、Bearer/自定义鉴权头）。
+- 新增 Stage2 诊断字段：`stage2_hit_count`、`stage2_source`、`stage2_reason`。
 
 ### 验收
 
@@ -73,8 +75,11 @@
 ### CA2 边界（未包含）
 
 - 未实现 agentic routing 决策执行，仅保留接口占位与显式 not-ready 错误。
-- 未实现 rag/db provider 的生产接入，仅保留 provider 接口与占位错误。
 - examples 目录本期不新增 CA2 示例，后续在 roadmap TODO 批次补齐。
+
+### CA2 External Retriever 演进约束（与 roadmap 对齐）
+
+- 详细计划、触发门槛与观测治理统一维护在 `docs/ca2-external-retriever-evolution.md`（单一事实源）。
 
 ## CA3：Memory Pressure + Recovery
 
@@ -107,6 +112,7 @@
 
 ## 风险与边界
 
-- 不在 CA1-CA2 引入向量数据库生命周期管理；先保留 provider 接口。
+- 不在 CA1-CA2 引入向量数据库生命周期管理；provider 已支持外部接入但不绑定具体厂商 SDK。
+- CA2 external retriever 的性能治理依赖观测基线，指标与阈值口径以 `docs/ca2-external-retriever-evolution.md` 为准。
 - 不在该分期内引入 HITL pause/resume 主状态机改造。
 - 不改变现有 tool-call complete-only 对外语义与 streaming 事件契约。

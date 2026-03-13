@@ -208,13 +208,18 @@ func (a *Assembler) ensureStorage(cfg runtimeconfig.ContextAssemblerConfig) (jou
 }
 
 func (a *Assembler) ensureStage2Provider(cfg runtimeconfig.ContextAssemblerConfig) (provider.Provider, error) {
-	key := strings.ToLower(strings.TrimSpace(cfg.CA2.Stage2.Provider)) + "|" + strings.TrimSpace(cfg.CA2.Stage2.FilePath)
+	stage2KeyRaw, _ := json.Marshal(cfg.CA2.Stage2)
+	key := string(stage2KeyRaw)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.stage2Provider != nil && a.stage2Key == key {
 		return a.stage2Provider, nil
 	}
-	p, err := provider.New(cfg.CA2.Stage2.Provider, cfg.CA2.Stage2.FilePath)
+	p, err := provider.NewWithConfig(provider.Config{
+		Name:     cfg.CA2.Stage2.Provider,
+		FilePath: cfg.CA2.Stage2.FilePath,
+		External: cfg.CA2.Stage2.External,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +330,7 @@ func (a *Assembler) applyCA2(
 	})
 	outcome.Stage.Stage2LatencyMs = a.now().Sub(stage2Start).Milliseconds()
 	if err != nil {
+		outcome.Stage.Stage2Reason = stage2ReasonFromError(err)
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.fetch.failed"
@@ -337,6 +343,8 @@ func (a *Assembler) applyCA2(
 	if len(resp.Chunks) == 0 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = "stage2.empty"
+		outcome.Stage.Stage2Reason = stage2ReasonFromMeta(resp.Meta, "empty")
+		outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
 		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
@@ -348,9 +356,46 @@ func (a *Assembler) applyCA2(
 	})
 	outcome.Stage.Status = types.AssembleStageStatusStage2Used
 	outcome.Stage.Stage2SkipReason = ""
+	outcome.Stage.Stage2HitCount = len(resp.Chunks)
+	outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
+	outcome.Stage.Stage2Reason = stage2ReasonFromMeta(resp.Meta, "ok")
 	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
+}
+
+func sourceFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if source, ok := meta["source"].(string); ok && strings.TrimSpace(source) != "" {
+		return strings.TrimSpace(source)
+	}
+	return fallback
+}
+
+func stage2ReasonFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if reason, ok := meta["reason"].(string); ok && strings.TrimSpace(reason) != "" {
+		return strings.TrimSpace(reason)
+	}
+	return fallback
+}
+
+func stage2ReasonFromError(err error) string {
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline"):
+		return "timeout"
+	case strings.Contains(msg, "auth"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"):
+		return "auth"
+	case strings.Contains(msg, "mapping"), strings.Contains(msg, "decode"), strings.Contains(msg, "marshal"):
+		return "mapping"
+	default:
+		return "fetch_error"
+	}
 }
 
 func shouldRunStage2(req types.ModelRequest, cfg runtimeconfig.ContextAssemblerCA2RoutingConfig) (bool, string) {

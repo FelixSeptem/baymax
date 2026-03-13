@@ -736,6 +736,8 @@ context_assembler:
       stage2: best_effort
     stage2:
       provider: rag
+      external:
+        endpoint: http://127.0.0.1:1/retrieve
     routing:
       min_input_chars: 1
 `
@@ -784,6 +786,8 @@ context_assembler:
       stage2: fail_fast
     stage2:
       provider: db
+      external:
+        endpoint: http://127.0.0.1:1/retrieve
     routing:
       min_input_chars: 1
 `

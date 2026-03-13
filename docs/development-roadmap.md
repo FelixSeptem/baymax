@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-12
+更新时间：2026-03-13
 
 ## 目标
 
@@ -87,6 +87,7 @@
 - [x] `add-provider-capability-detection-and-fallback-m3`：完成基于官方 SDK 的动态能力探测、model-step preflight、provider 级有序降级与 fail-fast 终止。
 - [x] `build-context-assembler-ca1-prefix-append-only-baseline`：完成 pre-model hook、immutable prefix hash、一致性 fail-fast、append-only JSONL journal 与 CA1 最小诊断字段。
 - [x] `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap`：完成 CA2 双阶段路由、file provider、tail recap 与 CA2 诊断字段。
+- [x] `activate-ca2-external-retriever-spi-and-http-adapter`：完成 Stage2 External Retriever SPI、HTTP adapter、`http/rag/db/elasticsearch` 可运行路径与新增诊断字段。
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 
 ### 目标
@@ -105,7 +106,7 @@
 - Tool SDK 指南（schema、错误语义、幂等建议）。
 - Context Assembler（RAG + Memory）分期实施：
   - CA1（基础骨架，已完成）：新增 `context/assembler` pre-model hook，建立 immutable prefix 与 append-only journal 基线。
-  - CA2（按需加载，已完成基础版）：接入 Stage1/Stage2 路由、可配置 stage 策略、tail recap；rag/db provider 保持接口占位。
+  - CA2（按需加载，已完成）：接入 Stage1/Stage2 路由、可配置 stage 策略、tail recap；支持 `file/http/rag/db/elasticsearch` 与 external retriever SPI。
   - CA3（压力控制）：落地 Goldilocks Zone（40%-70%）与 batch squash/prune，支持 spill/swap 回填。
   - CA4（生产收敛）：补齐规则防护、可中断恢复、观测面板与契约测试闭环。
   - 详细分期见 `docs/context-assembler-phased-plan.md`。
@@ -118,9 +119,14 @@
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`、`08-multi-agent-network-bridge`。
   - TODO：结合 CA2 增加 staged context 路由示例（本提案不新增 example 代码）。
 - Knowledge 基础能力（R3，先接口后实现）：
-  - 向量检索 provider 抽象（优先定义 `rag/db` 接口与错误语义，不在 R3 绑定具体供应商）
+  - 向量检索 provider 抽象（已完成 SPI + HTTP adapter；保持不绑定具体供应商 SDK）
   - 文档解析与分片策略接口（parser/chunker contract），与 Context Assembler 对齐
   - 检索结果与 CA2 Stage2 集成约定（保持 fail-fast/best-effort 语义一致）
+  - 通过配置映射请求/响应字段与鉴权信息接入外部服务（已完成最小闭环）
+  - TODO：补充更多 provider 风格映射模板与接入示例（GraphRAG/RAGFlow/ES 等）
+
+- CA2 External Retriever 后续演进（R3-R4）：
+  - 详细计划、触发门槛、观测治理统一维护在 `docs/ca2-external-retriever-evolution.md`（单一事实源）。
 - Guardrails 基础能力（R3，扩展点优先）：
   - 输入验证扩展口（schema/regex/custom）
   - 输出过滤扩展口（PII/格式约束）
@@ -241,8 +247,10 @@
 - API 版本控制与兼容策略文档化（在对外接口扩张前完成）。
 - 多环境配置管理（开发/测试/生产）差异项收敛与模板化。
 - 完善 godoc 注释与代码示例覆盖率（与 DX Track 对齐）。
+- CA2 external retriever 观测增强：按 `docs/ca2-external-retriever-evolution.md` 收敛指标口径与触发阈值配置。
 
 ## 性能与并发安全基线
 
 - 性能回归采用相对提升百分比规则，详见 `docs/performance-policy.md`。
 - 并发安全为强制门禁：`go test -race ./...` + goroutine 泄漏检查。
+

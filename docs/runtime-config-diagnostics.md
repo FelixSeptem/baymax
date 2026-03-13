@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-12
+更新时间：2026-03-13
 
 ## 目标
 
@@ -77,8 +77,31 @@ context_assembler:
       stage1: 80ms
       stage2: 120ms
     stage2:
-      provider: file       # file|rag|db（rag/db 当前返回 not-ready）
+      provider: file       # file|http|rag|db|elasticsearch
       file_path: /tmp/baymax/context-stage2.jsonl
+      external:
+        endpoint: https://retriever.example.com/search # non-file provider 必填
+        method: POST # POST|PUT
+        auth:
+          bearer_token: ${RETRIEVER_TOKEN}
+          header_name: Authorization
+        headers:
+          X-Tenant: demo
+        mapping:
+          request:
+            mode: plain # plain|jsonrpc2
+            method_name: "" # mode=jsonrpc2 时必填
+            jsonrpc_version: "2.0"
+            query_field: query
+            session_id_field: session_id
+            run_id_field: run_id
+            max_items_field: max_items
+          response:
+            chunks_field: chunks
+            source_field: source
+            reason_field: reason
+            error_field: error
+            error_message_field: error.message
     routing:
       min_input_chars: 120
       trigger_keywords: [search, retrieve, reference, lookup]
@@ -151,7 +174,10 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `stage2_skip_reason`：Stage2 跳过或降级原因（规则未命中/provider 不可用等）。
 - `stage1_latency_ms`：Stage1 耗时（毫秒）。
 - `stage2_latency_ms`：Stage2 耗时（毫秒）。
-- `stage2_provider`：Stage2 使用的 provider（file/rag/db）。
+- `stage2_provider`：Stage2 使用的 provider（file/http/rag/db/elasticsearch）。
+- `stage2_hit_count`：Stage2 本次命中的 chunk 数量。
+- `stage2_source`：Stage2 数据源标识（provider 或响应映射字段）。
+- `stage2_reason`：Stage2 执行原因/结果摘要（如 `ok`/`empty`/`timeout`/`fetch_error`）。
 - `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
 
 ## 诊断写入口径（Single Writer + Idempotency）
@@ -196,7 +222,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `security.redaction.strategy` 当前仅支持 `keyword`，配置其他值会 fail-fast。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 - context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。
-- context assembler CA2 的 `agentic` routing mode 与 `rag/db` provider 当前仅接口占位；配置后会返回明确 not-ready 错误。
+- context assembler CA2 的 `agentic` routing mode 当前仍为占位；配置后会返回明确 not-ready 错误。
 
 ## 迁移映射（功能命名）
 

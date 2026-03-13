@@ -31,6 +31,14 @@ const (
 	SecurityGovulncheckToolName = "govulncheck"
 )
 
+const (
+	ContextStage2ProviderFile          = "file"
+	ContextStage2ProviderHTTP          = "http"
+	ContextStage2ProviderRAG           = "rag"
+	ContextStage2ProviderDB            = "db"
+	ContextStage2ProviderElasticsearch = "elasticsearch"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -109,8 +117,45 @@ type ContextAssemblerCA2TimeoutConfig struct {
 }
 
 type ContextAssemblerCA2Stage2Config struct {
-	Provider string `json:"provider"`
-	FilePath string `json:"file_path"`
+	Provider string                            `json:"provider"`
+	FilePath string                            `json:"file_path"`
+	External ContextAssemblerCA2ExternalConfig `json:"external"`
+}
+
+type ContextAssemblerCA2ExternalConfig struct {
+	Endpoint string                                   `json:"endpoint"`
+	Method   string                                   `json:"method"`
+	Auth     ContextAssemblerCA2ExternalAuthConfig    `json:"auth"`
+	Headers  map[string]string                        `json:"headers"`
+	Mapping  ContextAssemblerCA2ExternalMappingConfig `json:"mapping"`
+}
+
+type ContextAssemblerCA2ExternalAuthConfig struct {
+	BearerToken string `json:"bearer_token"`
+	HeaderName  string `json:"header_name"`
+}
+
+type ContextAssemblerCA2ExternalMappingConfig struct {
+	Request  ContextAssemblerCA2RequestMappingConfig  `json:"request"`
+	Response ContextAssemblerCA2ResponseMappingConfig `json:"response"`
+}
+
+type ContextAssemblerCA2RequestMappingConfig struct {
+	Mode           string `json:"mode"`
+	MethodName     string `json:"method_name"`
+	JSONRPCVersion string `json:"jsonrpc_version"`
+	QueryField     string `json:"query_field"`
+	SessionIDField string `json:"session_id_field"`
+	RunIDField     string `json:"run_id_field"`
+	MaxItemsField  string `json:"max_items_field"`
+}
+
+type ContextAssemblerCA2ResponseMappingConfig struct {
+	ChunksField       string `json:"chunks_field"`
+	SourceField       string `json:"source_field"`
+	ReasonField       string `json:"reason_field"`
+	ErrorField        string `json:"error_field"`
+	ErrorMessageField string `json:"error_message_field"`
 }
 
 type ContextAssemblerCA2RoutingConfig struct {
@@ -202,6 +247,33 @@ func DefaultConfig() Config {
 				Stage2: ContextAssemblerCA2Stage2Config{
 					Provider: "file",
 					FilePath: filepath.Join(os.TempDir(), "baymax", "context-stage2.jsonl"),
+					External: ContextAssemblerCA2ExternalConfig{
+						Endpoint: "",
+						Method:   "POST",
+						Auth: ContextAssemblerCA2ExternalAuthConfig{
+							BearerToken: "",
+							HeaderName:  "Authorization",
+						},
+						Headers: map[string]string{},
+						Mapping: ContextAssemblerCA2ExternalMappingConfig{
+							Request: ContextAssemblerCA2RequestMappingConfig{
+								Mode:           "plain",
+								MethodName:     "",
+								JSONRPCVersion: "2.0",
+								QueryField:     "query",
+								SessionIDField: "session_id",
+								RunIDField:     "run_id",
+								MaxItemsField:  "max_items",
+							},
+							Response: ContextAssemblerCA2ResponseMappingConfig{
+								ChunksField:       "chunks",
+								SourceField:       "source",
+								ReasonField:       "reason",
+								ErrorField:        "error",
+								ErrorMessageField: "error.message",
+							},
+						},
+					},
 				},
 				Routing: ContextAssemblerCA2RoutingConfig{
 					MinInputChars:      120,
@@ -391,13 +463,18 @@ func Validate(cfg Config) error {
 			}
 			provider := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.Provider))
 			switch provider {
-			case "file", "rag", "db":
+			case ContextStage2ProviderFile, ContextStage2ProviderHTTP, ContextStage2ProviderRAG, ContextStage2ProviderDB, ContextStage2ProviderElasticsearch:
 			default:
-				return fmt.Errorf("context_assembler.ca2.stage2.provider must be one of [file,rag,db], got %q", cfg.ContextAssembler.CA2.Stage2.Provider)
+				return fmt.Errorf("context_assembler.ca2.stage2.provider must be one of [file,http,rag,db,elasticsearch], got %q", cfg.ContextAssembler.CA2.Stage2.Provider)
 			}
 			cfg.ContextAssembler.CA2.Stage2.Provider = provider
-			if provider == "file" && strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.FilePath) == "" {
+			if provider == ContextStage2ProviderFile && strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.FilePath) == "" {
 				return errors.New("context_assembler.ca2.stage2.file_path is required when provider=file")
+			}
+			if provider != ContextStage2ProviderFile {
+				if err := validateStage2ExternalConfig(cfg.ContextAssembler.CA2.Stage2.External); err != nil {
+					return err
+				}
 			}
 			if cfg.ContextAssembler.CA2.Routing.MinInputChars < 0 {
 				return errors.New("context_assembler.ca2.routing.min_input_chars must be >= 0")
@@ -446,6 +523,34 @@ func validateBackpressure(v types.BackpressureMode, field string) error {
 	}
 }
 
+func validateStage2ExternalConfig(cfg ContextAssemblerCA2ExternalConfig) error {
+	if strings.TrimSpace(cfg.Endpoint) == "" {
+		return errors.New("context_assembler.ca2.stage2.external.endpoint is required for non-file providers")
+	}
+	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
+	switch method {
+	case "", "POST", "PUT":
+	default:
+		return fmt.Errorf("context_assembler.ca2.stage2.external.method must be one of [POST,PUT], got %q", cfg.Method)
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mapping.Request.Mode))
+	switch mode {
+	case "", "plain", "jsonrpc2":
+	default:
+		return fmt.Errorf("context_assembler.ca2.stage2.external.mapping.request.mode must be one of [plain,jsonrpc2], got %q", cfg.Mapping.Request.Mode)
+	}
+	if strings.TrimSpace(cfg.Mapping.Request.QueryField) == "" {
+		return errors.New("context_assembler.ca2.stage2.external.mapping.request.query_field is required")
+	}
+	if strings.TrimSpace(cfg.Mapping.Response.ChunksField) == "" {
+		return errors.New("context_assembler.ca2.stage2.external.mapping.response.chunks_field is required")
+	}
+	if mode == "jsonrpc2" && strings.TrimSpace(cfg.Mapping.Request.MethodName) == "" {
+		return errors.New("context_assembler.ca2.stage2.external.mapping.request.method_name is required when mode=jsonrpc2")
+	}
+	return nil
+}
+
 func applyDefaults(v *viper.Viper) {
 	base := DefaultConfig()
 	v.SetDefault("mcp.active_profile", base.MCP.ActiveProfile)
@@ -485,6 +590,23 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca2.timeout.stage2", base.ContextAssembler.CA2.Timeout.Stage2)
 	v.SetDefault("context_assembler.ca2.stage2.provider", base.ContextAssembler.CA2.Stage2.Provider)
 	v.SetDefault("context_assembler.ca2.stage2.file_path", base.ContextAssembler.CA2.Stage2.FilePath)
+	v.SetDefault("context_assembler.ca2.stage2.external.endpoint", base.ContextAssembler.CA2.Stage2.External.Endpoint)
+	v.SetDefault("context_assembler.ca2.stage2.external.method", base.ContextAssembler.CA2.Stage2.External.Method)
+	v.SetDefault("context_assembler.ca2.stage2.external.auth.bearer_token", base.ContextAssembler.CA2.Stage2.External.Auth.BearerToken)
+	v.SetDefault("context_assembler.ca2.stage2.external.auth.header_name", base.ContextAssembler.CA2.Stage2.External.Auth.HeaderName)
+	v.SetDefault("context_assembler.ca2.stage2.external.headers", base.ContextAssembler.CA2.Stage2.External.Headers)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.mode", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.Mode)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.method_name", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.MethodName)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.jsonrpc_version", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.JSONRPCVersion)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.query_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.session_id_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.SessionIDField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.run_id_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.RunIDField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.request.max_items_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Request.MaxItemsField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.response.chunks_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.response.source_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Response.SourceField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.response.reason_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Response.ReasonField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.response.error_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Response.ErrorField)
+	v.SetDefault("context_assembler.ca2.stage2.external.mapping.response.error_message_field", base.ContextAssembler.CA2.Stage2.External.Mapping.Response.ErrorMessageField)
 	v.SetDefault("context_assembler.ca2.routing.min_input_chars", base.ContextAssembler.CA2.Routing.MinInputChars)
 	v.SetDefault("context_assembler.ca2.routing.trigger_keywords", base.ContextAssembler.CA2.Routing.TriggerKeywords)
 	v.SetDefault("context_assembler.ca2.routing.require_system_guard", base.ContextAssembler.CA2.Routing.RequireSystemGuard)
@@ -527,6 +649,23 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA2.Timeout.Stage2 = v.GetDuration("context_assembler.ca2.timeout.stage2")
 	cfg.ContextAssembler.CA2.Stage2.Provider = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.provider")))
 	cfg.ContextAssembler.CA2.Stage2.FilePath = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.file_path"))
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.endpoint"))
+	cfg.ContextAssembler.CA2.Stage2.External.Method = strings.ToUpper(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.method")))
+	cfg.ContextAssembler.CA2.Stage2.External.Auth.BearerToken = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.auth.bearer_token"))
+	cfg.ContextAssembler.CA2.Stage2.External.Auth.HeaderName = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.auth.header_name"))
+	cfg.ContextAssembler.CA2.Stage2.External.Headers = normalizeStringMap(v.GetStringMapString("context_assembler.ca2.stage2.external.headers"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.mode")))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.MethodName = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.method_name"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.JSONRPCVersion = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.jsonrpc_version"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.query_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.SessionIDField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.session_id_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.RunIDField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.run_id_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.MaxItemsField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.max_items_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.chunks_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.SourceField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.source_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ReasonField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.reason_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ErrorField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.error_field"))
+	cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ErrorMessageField = strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.error_message_field"))
 	cfg.ContextAssembler.CA2.Routing.MinInputChars = v.GetInt("context_assembler.ca2.routing.min_input_chars")
 	cfg.ContextAssembler.CA2.Routing.TriggerKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca2.routing.trigger_keywords"))
 	cfg.ContextAssembler.CA2.Routing.RequireSystemGuard = v.GetBool("context_assembler.ca2.routing.require_system_guard")
@@ -617,6 +756,21 @@ func normalizeKeywords(in []string) []string {
 			seen[item] = struct{}{}
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+func normalizeStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(v)
 	}
 	return out
 }

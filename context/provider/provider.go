@@ -2,12 +2,19 @@ package provider
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 var ErrProviderNotReady = errors.New("context stage2 provider not ready")
@@ -29,14 +36,25 @@ type Provider interface {
 	Fetch(ctx context.Context, req Request) (Response, error)
 }
 
+type Config struct {
+	Name     string
+	FilePath string
+	External runtimeconfig.ContextAssemblerCA2ExternalConfig
+}
+
 func New(name, filePath string) (Provider, error) {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "", "file":
-		return &fileProvider{path: strings.TrimSpace(filePath)}, nil
-	case "rag", "db":
-		return nil, fmt.Errorf("%w: provider=%s", ErrProviderNotReady, strings.ToLower(strings.TrimSpace(name)))
+	return NewWithConfig(Config{Name: name, FilePath: filePath})
+}
+
+func NewWithConfig(cfg Config) (Provider, error) {
+	providerName := strings.ToLower(strings.TrimSpace(cfg.Name))
+	switch providerName {
+	case "", runtimeconfig.ContextStage2ProviderFile:
+		return &fileProvider{path: strings.TrimSpace(cfg.FilePath)}, nil
+	case runtimeconfig.ContextStage2ProviderHTTP, runtimeconfig.ContextStage2ProviderRAG, runtimeconfig.ContextStage2ProviderDB, runtimeconfig.ContextStage2ProviderElasticsearch:
+		return &httpProvider{name: providerName, cfg: cfg.External, client: &http.Client{}}, nil
 	default:
-		return nil, fmt.Errorf("unsupported context stage2 provider %q", name)
+		return nil, fmt.Errorf("unsupported context stage2 provider %q", cfg.Name)
 	}
 }
 
@@ -45,7 +63,7 @@ type fileProvider struct {
 }
 
 func (f *fileProvider) Name() string {
-	return "file"
+	return runtimeconfig.ContextStage2ProviderFile
 }
 
 func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error) {
@@ -55,7 +73,7 @@ func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	file, err := os.Open(f.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Response{Chunks: nil, Meta: map[string]any{"source": "file", "matched": 0}}, nil
+			return Response{Chunks: nil, Meta: map[string]any{"source": "file", "matched": 0, "reason": "not_found"}}, nil
 		}
 		return Response{}, fmt.Errorf("open context stage2 file: %w", err)
 	}
@@ -102,6 +120,193 @@ func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error)
 		Meta: map[string]any{
 			"source":  "file",
 			"matched": len(items),
+			"reason":  "ok",
 		},
 	}, nil
+}
+
+type httpProvider struct {
+	name   string
+	cfg    runtimeconfig.ContextAssemblerCA2ExternalConfig
+	client *http.Client
+}
+
+func (p *httpProvider) Name() string {
+	return p.name
+}
+
+func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error) {
+	if strings.TrimSpace(p.cfg.Endpoint) == "" {
+		return Response{}, errors.New("context stage2 external endpoint is required")
+	}
+	payload := p.buildRequestPayload(req)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return Response{}, fmt.Errorf("marshal context stage2 external request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, httpMethodOrDefault(p.cfg.Method), p.cfg.Endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return Response{}, fmt.Errorf("build context stage2 external request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	for k, v := range p.cfg.Headers {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		httpReq.Header.Set(k, v)
+	}
+	if strings.TrimSpace(p.cfg.Auth.BearerToken) != "" {
+		headerName := strings.TrimSpace(p.cfg.Auth.HeaderName)
+		if headerName == "" {
+			headerName = "Authorization"
+		}
+		httpReq.Header.Set(headerName, "Bearer "+strings.TrimSpace(p.cfg.Auth.BearerToken))
+	}
+
+	httpResp, err := p.client.Do(httpReq)
+	if err != nil {
+		return Response{}, fmt.Errorf("call context stage2 external provider: %w", err)
+	}
+	defer func() { _ = httpResp.Body.Close() }()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return Response{}, fmt.Errorf("read context stage2 external response: %w", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return Response{}, fmt.Errorf("decode context stage2 external response: %w", err)
+	}
+	if httpResp.StatusCode >= 400 {
+		msg := asString(getByPath(decoded, p.cfg.Mapping.Response.ErrorMessageField))
+		if msg == "" {
+			msg = httpResp.Status
+		}
+		return Response{}, fmt.Errorf("context stage2 external http status=%d: %s", httpResp.StatusCode, msg)
+	}
+	if errNode := getByPath(decoded, p.cfg.Mapping.Response.ErrorField); errNode != nil {
+		msg := asString(getByPath(decoded, p.cfg.Mapping.Response.ErrorMessageField))
+		if msg == "" {
+			msg = asString(errNode)
+		}
+		if msg == "" {
+			msg = "unknown external error"
+		}
+		return Response{}, errors.New(msg)
+	}
+	chunks := asStringSlice(getByPath(decoded, p.cfg.Mapping.Response.ChunksField))
+	source := asString(getByPath(decoded, p.cfg.Mapping.Response.SourceField))
+	if source == "" {
+		source = p.name
+	}
+	reason := asString(getByPath(decoded, p.cfg.Mapping.Response.ReasonField))
+	if reason == "" {
+		reason = "ok"
+	}
+	return Response{Chunks: chunks, Meta: map[string]any{"source": source, "matched": len(chunks), "reason": reason}}, nil
+}
+
+func (p *httpProvider) buildRequestPayload(req Request) map[string]any {
+	mapping := p.cfg.Mapping.Request
+	if strings.EqualFold(strings.TrimSpace(mapping.Mode), "jsonrpc2") {
+		params := map[string]any{}
+		setByPath(params, nonEmpty(mapping.QueryField, "query"), req.Input)
+		setByPath(params, nonEmpty(mapping.SessionIDField, "session_id"), req.SessionID)
+		setByPath(params, nonEmpty(mapping.RunIDField, "run_id"), req.RunID)
+		setByPath(params, nonEmpty(mapping.MaxItemsField, "max_items"), req.MaxItems)
+		return map[string]any{
+			"jsonrpc": nonEmpty(mapping.JSONRPCVersion, "2.0"),
+			"id":      nonEmpty(req.RunID, strconv.FormatInt(time.Now().UnixNano(), 10)),
+			"method":  mapping.MethodName,
+			"params":  params,
+		}
+	}
+	payload := map[string]any{}
+	setByPath(payload, nonEmpty(mapping.QueryField, "query"), req.Input)
+	setByPath(payload, nonEmpty(mapping.SessionIDField, "session_id"), req.SessionID)
+	setByPath(payload, nonEmpty(mapping.RunIDField, "run_id"), req.RunID)
+	setByPath(payload, nonEmpty(mapping.MaxItemsField, "max_items"), req.MaxItems)
+	return payload
+}
+
+func httpMethodOrDefault(v string) string {
+	m := strings.ToUpper(strings.TrimSpace(v))
+	if m == "" {
+		return "POST"
+	}
+	return m
+}
+
+func getByPath(payload map[string]any, path string) any {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	parts := strings.Split(path, ".")
+	var cur any = payload
+	for _, part := range parts {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur, ok = m[part]
+		if !ok {
+			return nil
+		}
+	}
+	return cur
+}
+
+func setByPath(payload map[string]any, path string, value any) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	parts := strings.Split(path, ".")
+	cur := payload
+	for i := 0; i < len(parts)-1; i++ {
+		part := parts[i]
+		next, ok := cur[part].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			cur[part] = next
+		}
+		cur = next
+	}
+	cur[parts[len(parts)-1]] = value
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return strings.TrimSpace(s)
+}
+
+func asStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	list, ok := v.([]any)
+	if !ok {
+		if str := asString(v); str != "" {
+			return []string{str}
+		}
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		str := asString(item)
+		if str == "" {
+			continue
+		}
+		out = append(out, str)
+	}
+	return out
+}
+
+func nonEmpty(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(v)
 }

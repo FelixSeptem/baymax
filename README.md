@@ -2,7 +2,7 @@
 
 一个 `library-first` 的 Go Agent Loop 运行时，支持模型循环、工具调度、MCP 双传输、技能加载与可观测性。
 
-## 当前状态（2026-03-12）
+## 当前状态（2026-03-13）
 
 - OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
 - OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
@@ -15,6 +15,7 @@
 - OpenSpec change `build-context-assembler-ca1-prefix-append-only-baseline` 已完成实现。
 - OpenSpec change `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap` 已完成实现。
 - OpenSpec change `harden-security-baseline-s1-govulncheck-and-redaction` 已完成实现。
+- OpenSpec change `activate-ca2-external-retriever-spi-and-http-adapter` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -55,10 +56,11 @@
 - storage backend：`file` 生效，`db` 在 CA1 显式返回 unsupported
 - 诊断字段已写入 run 摘要：`prefix_hash`、`assemble_latency_ms`、`assemble_status`、`guard_violation`
 - CA2 staged assembly：Stage1 -> Stage2 规则路由（满足条件才触发 Stage2）
-- Stage2 provider：本期 `file` 可用，`rag/db` 预留接口并返回 not-ready
+- Stage2 provider：支持 `file/http/rag/db/elasticsearch`
+- External Retriever：通用 SPI + HTTP 适配层，支持 JSON 字段映射、Bearer 与自定义鉴权头
 - 支持 stage 失败策略配置（`fail_fast` / `best_effort`）
 - 支持 tail recap（最小字段 `status/decisions/todo/risks`）并追加在上下文末尾
-- 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`recap_status`
+- 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`recap_status`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -170,8 +172,29 @@ context_assembler:
       stage1: 80ms
       stage2: 120ms
     stage2:
-      provider: file       # file|rag|db (rag/db 当前返回 not-ready)
+      provider: http       # file|http|rag|db|elasticsearch
       file_path: /tmp/baymax/context-stage2.jsonl
+      external:
+        endpoint: https://retriever.example.com/search
+        method: POST       # POST|PUT
+        auth:
+          bearer_token: "${RETRIEVER_TOKEN}"
+          header_name: Authorization # 留空时默认为 Authorization
+        headers:
+          X-Tenant: demo
+        mapping:
+          request:
+            mode: plain     # plain|jsonrpc2
+            query_field: query
+            session_id_field: session_id
+            run_id_field: run_id
+            max_items_field: max_items
+          response:
+            chunks_field: chunks
+            source_field: source
+            reason_field: reason
+            error_field: error
+            error_message_field: error.message
     routing:
       min_input_chars: 120
       trigger_keywords: [search, retrieve, reference, lookup]
@@ -271,7 +294,7 @@ go run ./examples/08-multi-agent-network-bridge
 - `model/anthropic`: Anthropic 官方 SDK 适配
 - `model/gemini`: Gemini 官方 SDK 适配
 - `skill/loader`: AGENTS/SKILL 发现与编译
-- `context/provider`: CA2 stage2 retrieval provider 抽象与 file 实现
+- `context/provider`: CA2 stage2 retrieval SPI、file provider 与 external HTTP adapter
 - `observability/event`, `observability/trace`: 事件与 trace
 - `integration/`: E2E 与 benchmark
 - `docs/`: 验收文档与 roadmap

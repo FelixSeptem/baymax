@@ -10,13 +10,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
-	anthropicclient "github.com/FelixSeptem/baymax/model/anthropic"
-	geminiclient "github.com/FelixSeptem/baymax/model/gemini"
-	openaiclient "github.com/FelixSeptem/baymax/model/openai"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	tiktoken "github.com/pkoukk/tiktoken-go"
 )
 
 type ca3Zone string
@@ -69,10 +68,6 @@ type DBSpillBackend interface {
 // ObjectSpillBackend is a placeholder SPI for future object-storage implementations.
 type ObjectSpillBackend interface {
 	SpillBackend
-}
-
-type ca3TokenCounter interface {
-	CountTokens(ctx context.Context, req types.ModelRequest) (int, error)
 }
 
 type fileSpillBackend struct {
@@ -158,7 +153,7 @@ func (a *Assembler) applyCA3(
 		return modelReq, outcome, decision, err
 	}
 
-	usageTokens := a.countContextTokens(ctx, modelReq, cfg.CA3, state)
+	usageTokens := a.countContextTokens(ctx, req, modelReq, cfg.CA3, state)
 	thresholdsPercent, thresholdsTokens := resolveCA3Thresholds(cfg.CA3, stage)
 	usagePercent := 0
 	if cfg.CA3.MaxContextTokens > 0 {
@@ -214,6 +209,7 @@ func (a *Assembler) applyCA3(
 
 	outcome.Stage.PressureZone = string(zone)
 	outcome.Stage.PressureReason = reason
+	outcome.Stage.PressureTriggerSource = triggerReason
 	outcome.Stage.ZoneResidencyMs = cloneInt64Map(state.ZoneResidencyMs)
 	outcome.Stage.TriggerCounts = cloneIntMap(state.TriggerCounts)
 	outcome.Stage.CompressionRatio = compressionRatio
@@ -389,13 +385,18 @@ func resolveCA3Thresholds(cfg runtimeconfig.ContextAssemblerCA3Config, stage str
 	} else {
 		override = cfg.Stage1
 	}
-	if override.PercentThresholds.Warning > 0 {
+	// CA4 rule: stage override fully replaces global thresholds once configured and validated.
+	if hasAnyThresholdValue(override.PercentThresholds) {
 		percent = override.PercentThresholds
 	}
-	if override.AbsoluteThresholds.Warning > 0 {
+	if hasAnyThresholdValue(override.AbsoluteThresholds) {
 		absolute = override.AbsoluteThresholds
 	}
 	return percent, absolute
+}
+
+func hasAnyThresholdValue(t runtimeconfig.ContextAssemblerCA3Thresholds) bool {
+	return t.Safe > 0 || t.Comfort > 0 || t.Warning > 0 || t.Danger > 0 || t.Emergency > 0
 }
 
 func updateZoneState(state *ca3RunState, next ca3Zone, triggerReason string, now time.Time) {
@@ -421,6 +422,7 @@ func updateZoneState(state *ca3RunState, next ca3Zone, triggerReason string, now
 
 func (a *Assembler) countContextTokens(
 	ctx context.Context,
+	assembleReq types.ContextAssembleRequest,
 	req types.ModelRequest,
 	cfg runtimeconfig.ContextAssemblerCA3Config,
 	state *ca3RunState,
@@ -447,9 +449,12 @@ func (a *Assembler) countContextTokens(
 		return estimate
 	}
 
-	counter, err := a.ensureTokenCounter(ctx, cfg.Tokenizer)
-	if err == nil && counter != nil {
-		if count, err := counter.CountTokens(ctx, req); err == nil && count > 0 {
+	if assembleReq.TokenCounter != nil {
+		tokenReq := req
+		if strings.TrimSpace(tokenReq.Model) == "" {
+			tokenReq.Model = strings.TrimSpace(assembleReq.Model)
+		}
+		if count, err := assembleReq.TokenCounter.CountTokens(ctx, tokenReq); err == nil && count > 0 {
 			state.LastTokenEstimate = count
 			state.LastTokenSignature = signature
 			state.LastSDKCountAt = a.now()
@@ -459,55 +464,6 @@ func (a *Assembler) countContextTokens(
 	state.LastTokenEstimate = estimate
 	state.LastTokenSignature = signature
 	return estimate
-}
-
-func (a *Assembler) ensureTokenCounter(ctx context.Context, cfg runtimeconfig.ContextAssemblerCA3TokenizerConfig) (ca3TokenCounter, error) {
-	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
-	model := strings.TrimSpace(cfg.Model)
-	key := provider + "|" + model
-	a.mu.Lock()
-	if a.tokenCounter != nil && a.tokenCounterKey == key {
-		counter := a.tokenCounter
-		a.mu.Unlock()
-		return counter, nil
-	}
-	a.mu.Unlock()
-
-	var counter ca3TokenCounter
-	var err error
-	switch provider {
-	case "anthropic":
-		counter = anthropicclient.NewClient(anthropicclient.Config{
-			APIKey:  strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
-			BaseURL: strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
-			Model:   model,
-		})
-	case "gemini":
-		apiKey := strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
-		if apiKey == "" {
-			apiKey = strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
-		}
-		counter, err = geminiclient.NewClient(ctx, geminiclient.Config{
-			APIKey: apiKey,
-			Model:  model,
-		})
-	case "openai":
-		counter = openaiclient.NewClient(openaiclient.Config{
-			APIKey:  strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-			BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
-			Model:   model,
-		})
-	default:
-		return nil, fmt.Errorf("unsupported tokenizer provider %q", provider)
-	}
-	if err != nil {
-		return nil, err
-	}
-	a.mu.Lock()
-	a.tokenCounter = counter
-	a.tokenCounterKey = key
-	a.mu.Unlock()
-	return counter, nil
 }
 
 func ca3TokenSignature(req types.ModelRequest) string {
@@ -523,6 +479,10 @@ func ca3TokenSignature(req types.ModelRequest) string {
 }
 
 func estimateContextTokens(req types.ModelRequest) int {
+	if tokens := estimateContextTokensByTiktoken(req); tokens > 0 {
+		return tokens
+	}
+	// Keep rune-based fallback for environments where local tokenizer cannot initialize.
 	runes := len([]rune(req.Input))
 	for _, msg := range req.Messages {
 		runes += len([]rune(msg.Content))
@@ -538,6 +498,49 @@ func estimateContextTokens(req types.ModelRequest) int {
 		return 1
 	}
 	return runes / 4
+}
+
+var (
+	tiktokenDefaultOnce sync.Once
+	tiktokenDefaultEnc  *tiktoken.Tiktoken
+	tiktokenDefaultErr  error
+	encodingForModelFn  = tiktoken.EncodingForModel
+	getEncodingFn       = tiktoken.GetEncoding
+)
+
+func estimateContextTokensByTiktoken(req types.ModelRequest) int {
+	enc, err := tokenizerForEstimate(strings.TrimSpace(req.Model))
+	if err != nil || enc == nil {
+		return 0
+	}
+	total := 0
+	total += len(enc.Encode(req.Input, nil, nil))
+	for _, msg := range req.Messages {
+		total += len(enc.Encode(msg.Content, nil, nil))
+	}
+	for _, tr := range req.ToolResult {
+		total += len(enc.Encode(tr.Name, nil, nil))
+		total += len(enc.Encode(tr.Result.Content, nil, nil))
+	}
+	if total < 0 {
+		return 0
+	}
+	return total
+}
+
+func tokenizerForEstimate(model string) (*tiktoken.Tiktoken, error) {
+	if model != "" {
+		if enc, err := encodingForModelFn(model); err == nil && enc != nil {
+			return enc, nil
+		}
+	}
+	tiktokenDefaultOnce.Do(func() {
+		tiktokenDefaultEnc, tiktokenDefaultErr = getEncodingFn("cl100k_base")
+	})
+	if tiktokenDefaultEnc != nil {
+		return tiktokenDefaultEnc, nil
+	}
+	return nil, tiktokenDefaultErr
 }
 
 func squashMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *ca3RunState) ([]types.Message, float64) {

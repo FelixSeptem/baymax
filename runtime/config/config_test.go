@@ -406,3 +406,26 @@ func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
 		t.Fatalf("tokenizer.small_delta_tokens = %d, want 64", cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
 	}
 }
+
+func TestContextAssemblerCA3ValidateRejectsPartialStageOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Stage1.PercentThresholds = ContextAssemblerCA3Thresholds{
+		Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 0,
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for partial stage1.percent_thresholds override")
+	}
+}
+
+func TestContextAssemblerCA3ValidateAcceptsCompleteStageOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Stage2.PercentThresholds = ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.ContextAssembler.CA3.Stage2.AbsoluteThresholds = ContextAssemblerCA3Thresholds{
+		Safe: 1000, Comfort: 2000, Warning: 3000, Danger: 4000, Emergency: 5000,
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate returned error for complete stage2 override: %v", err)
+	}
+}

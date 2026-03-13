@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -z "${GOCACHE:-}" ]]; then
+  export GOCACHE="$(pwd)/.gocache"
+fi
+if [[ -z "${GOLANGCI_LINT_CACHE:-}" ]]; then
+  export GOLANGCI_LINT_CACHE="$(pwd)/.gocache/golangci-lint"
+fi
+
+echo "[quality-gate] repo hygiene"
+bash scripts/check-repo-hygiene.sh
+
 echo "[quality-gate] go test ./..."
 go test ./...
 
@@ -15,11 +25,18 @@ go test -race ${packages}
 echo "[quality-gate] golangci-lint"
 golangci-lint run --config .golangci.yml
 
+echo "[quality-gate] CA4 benchmark regression"
+bash scripts/check-ca4-benchmark-regression.sh
+
 scan_mode="${BAYMAX_SECURITY_SCAN_MODE:-strict}"
 govulncheck_enabled="${BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED:-true}"
 if [[ "${govulncheck_enabled}" == "true" ]]; then
   echo "[quality-gate] govulncheck (mode=${scan_mode})"
-  if ! go run golang.org/x/vuln/cmd/govulncheck@latest ./...; then
+  govuln_cmd=(govulncheck ./...)
+  if ! command -v govulncheck >/dev/null 2>&1; then
+    govuln_cmd=(go run golang.org/x/vuln/cmd/govulncheck@latest ./...)
+  fi
+  if ! "${govuln_cmd[@]}"; then
     if [[ "${scan_mode}" == "warn" ]]; then
       echo "[quality-gate] govulncheck found issues but mode=warn; continue"
     else

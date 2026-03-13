@@ -15,6 +15,10 @@ type ModelClient interface {
 	Stream(ctx context.Context, req ModelRequest, onEvent func(ModelEvent) error) error
 }
 
+type TokenCounter interface {
+	CountTokens(ctx context.Context, req ModelRequest) (int, error)
+}
+
 type ModelCapability string
 
 const (
@@ -204,10 +208,13 @@ type ContextAssembleRequest struct {
 	RunID         string                 `json:"run_id,omitempty"`
 	SessionID     string                 `json:"session_id,omitempty"`
 	PrefixVersion string                 `json:"prefix_version,omitempty"`
+	ModelProvider string                 `json:"model_provider,omitempty"`
+	Model         string                 `json:"model,omitempty"`
 	Input         string                 `json:"input,omitempty"`
 	Messages      []Message              `json:"messages,omitempty"`
 	ToolResult    []ToolCallOutcome      `json:"tool_results,omitempty"`
 	Capabilities  CapabilityRequirements `json:"capabilities,omitempty"`
+	TokenCounter  TokenCounter           `json:"-"`
 }
 
 type ContextAssembleResult struct {
@@ -252,11 +259,13 @@ type AssembleStage struct {
 	Stage2ErrorLayer string              `json:"stage2_error_layer,omitempty"`
 	PressureZone     string              `json:"pressure_zone,omitempty"`
 	PressureReason   string              `json:"pressure_reason,omitempty"`
-	ZoneResidencyMs  map[string]int64    `json:"zone_residency_ms,omitempty"`
-	TriggerCounts    map[string]int      `json:"trigger_counts,omitempty"`
-	CompressionRatio float64             `json:"compression_ratio,omitempty"`
-	SpillCount       int                 `json:"spill_count,omitempty"`
-	SwapBackCount    int                 `json:"swap_back_count,omitempty"`
+	// PressureTriggerSource stores the concrete trigger branch selected by CA3/CA4 logic.
+	PressureTriggerSource string           `json:"pressure_trigger_source,omitempty"`
+	ZoneResidencyMs       map[string]int64 `json:"zone_residency_ms,omitempty"`
+	TriggerCounts         map[string]int   `json:"trigger_counts,omitempty"`
+	CompressionRatio      float64          `json:"compression_ratio,omitempty"`
+	SpillCount            int              `json:"spill_count,omitempty"`
+	SwapBackCount         int              `json:"swap_back_count,omitempty"`
 }
 
 type TailRecap struct {

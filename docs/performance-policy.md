@@ -1,6 +1,6 @@
 # Performance Regression Policy
 
-更新时间：2026-03-11
+更新时间：2026-03-13
 
 ## Scope
 
@@ -29,7 +29,22 @@
 - `BenchmarkToolFanOutHighConcurrency`
 - `BenchmarkToolFanOutSlowCall`
 - `BenchmarkToolFanOutCancelStorm`
+- `BenchmarkCA4PressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - 现有关键基准（iteration latency、MCP reconnect overhead）
+
+CA4 回归门禁（本地/CI 一致）：
+
+```bash
+bash scripts/check-ca4-benchmark-regression.sh
+```
+
+```powershell
+pwsh -File scripts/check-ca4-benchmark-regression.ps1
+```
+
+默认阈值（可通过环境变量覆盖）：
+- `BAYMAX_CA4_BENCH_MAX_DEGRADATION_PCT=5`
+- `BAYMAX_CA4_BENCH_MAX_P95_DEGRADATION_PCT=8`
 
 ## Reporting
 

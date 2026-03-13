@@ -11,13 +11,13 @@ The repository MUST include a version-controlled `golangci-lint` configuration f
 - **THEN** lint behavior follows the shared repository configuration without requiring ad hoc local flags
 
 ### Requirement: Quality gate SHALL include golangci-lint in standard verification flow
-The standard validation flow MUST include `golangci-lint`, `go test ./...`, `go test -race ./...`, and `govulncheck` so style, correctness, concurrency regressions, and dependency vulnerability risks are detected before merge.
+The standard validation flow MUST include `golangci-lint`, `go test ./...`, `go test -race ./...`, `govulncheck`, and mainline contract test suites so style, correctness, concurrency regressions, dependency vulnerability risks, and cross-module semantic regressions are detected before merge.
 
 `govulncheck` MUST run in strict mode by default, and vulnerability findings MUST fail validation unless explicitly downgraded by controlled configuration.
 
 #### Scenario: Validation in CI or local pre-merge checks
 - **WHEN** a change is validated before merge
-- **THEN** linter execution, unit tests, race tests, and `govulncheck` are all required checks and failures block completion
+- **THEN** linter execution, unit tests, race tests, vulnerability scan, and required mainline contract tests are all required checks and failures block completion
 
 #### Scenario: govulncheck finds vulnerabilities in strict mode
 - **WHEN** validation runs with default strict scan mode and vulnerabilities are reported
@@ -64,4 +64,32 @@ Repository-provided quality-gate scripts for Linux and PowerShell MUST both exec
 #### Scenario: Linux and PowerShell scripts are executed
 - **WHEN** contributors run quality-gate scripts on different platforms
 - **THEN** both flows execute equivalent test/lint/race/vuln checks and produce consistent pass/fail semantics
+
+### Requirement: Quality gate SHALL enforce repository hygiene checks
+The standard validation flow MUST include repository hygiene checks that reject temporary backup artifacts and stale generated-by-accident files that are outside committed source-of-truth conventions.
+
+#### Scenario: Temporary backup file is tracked
+- **WHEN** repository hygiene checks detect files matching banned temporary patterns
+- **THEN** validation fails and requires cleanup before merge
+
+### Requirement: Mainline contract coverage SHALL be explicitly traceable
+The repository MUST maintain a traceable mapping between required mainline flows and their corresponding contract test cases.
+
+#### Scenario: Contributor reviews test coverage for a critical chain
+- **WHEN** contributor inspects quality-gate documentation or test index
+- **THEN** contributor can identify which contract test covers each required mainline flow
+
+### Requirement: Quality gate SHALL include CA4 benchmark regression checks
+The standard validation flow MUST include CA4-related benchmark checks evaluated by relative percentage thresholds, including P95 latency constraints.
+
+#### Scenario: CA4 benchmark regression exceeds threshold
+- **WHEN** candidate benchmark result exceeds configured relative degradation or P95 threshold
+- **THEN** validation fails and change cannot be completed until regression is mitigated or explicitly re-baselined
+
+### Requirement: CA4 benchmark policy SHALL align with documented performance rules
+CA4 benchmark acceptance criteria MUST align with repository performance policy and remain documented for local and CI execution parity.
+
+#### Scenario: Contributor runs CA4 performance validation
+- **WHEN** contributor follows documented commands
+- **THEN** contributor can reproduce the same pass/fail semantics locally and in CI
 

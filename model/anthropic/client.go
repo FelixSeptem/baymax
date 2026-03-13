@@ -195,12 +195,11 @@ func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, 
 			msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(content)))
 		}
 	}
-	if len(msgs) == 0 {
-		input := strings.TrimSpace(req.Input)
-		if input == "" {
-			return 0, errors.New("model input is empty")
-		}
+	if input := strings.TrimSpace(req.Input); input != "" {
 		msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(input)))
+	}
+	if len(msgs) == 0 {
+		return 0, errors.New("model input is empty")
 	}
 	resp, err := c.sdk.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{
 		Model: anthropic.Model(model),

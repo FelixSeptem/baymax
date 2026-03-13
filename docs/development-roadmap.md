@@ -92,6 +92,7 @@
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
 - [x] `implement-context-assembler-ca3-memory-pressure-and-recovery`：完成 CA3 内存压力控制与恢复（五级分区、双阈值触发、squash/prune、spill/swap、Run/Stream 语义一致、CA3 诊断字段）。
+- [x] `implement-context-assembler-ca4-production-convergence`：完成 CA4 生产收敛（阈值解析顺序、token 计数固定回退、Run/Stream 契约增强、CA4 benchmark 门禁）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -222,8 +223,8 @@
   - 对齐 P3/P4/P5（按需加载、渐进降级、末尾复述）。
 - CA3（R4 前半，已完成）：内存压力与可恢复性
   - 对齐 P7/P8 + Arena 机制（可中断、不丢信息、batch reset、spill/swap）。
-- CA4（R4 后半）：生产级策略收敛
-  - 完成策略参数化、契约测试、压测阈值与文档统一。
+- CA4（R4 后半，已完成）：生产级策略收敛
+  - 已完成阈值解析顺序、token 计数 fallback、契约测试、压测阈值与文档统一。
 
 说明：Context Assembler 不建议单次大改完成，需按分期逐步启用，保证 runner 语义稳定与并发安全基线不回退。
 

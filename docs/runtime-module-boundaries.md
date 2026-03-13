@@ -51,6 +51,7 @@
 - 非 `mcp/*` 包依赖 `mcp/internal/*`
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
+治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。
 
 ## Owner 建议
 

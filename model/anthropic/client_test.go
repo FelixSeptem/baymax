@@ -168,3 +168,16 @@ func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
 		t.Fatalf("unexpected capabilities: %#v", got)
 	}
 }
+
+func TestCountTokensRejectsEmptyInputWithoutSDKCall(t *testing.T) {
+	c := &Client{model: "claude-3-5-sonnet-latest"}
+	_, err := c.CountTokens(context.Background(), types.ModelRequest{
+		Messages: []types.Message{{Role: "system", Content: "policy only"}},
+	})
+	if err == nil {
+		t.Fatal("expected empty-input error")
+	}
+	if err.Error() != "model input is empty" {
+		t.Fatalf("err = %v, want model input is empty", err)
+	}
+}

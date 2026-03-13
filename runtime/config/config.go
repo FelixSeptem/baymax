@@ -676,6 +676,18 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 	if err := validateCA3Thresholds("context_assembler.ca3.absolute_thresholds", cfg.AbsoluteThresholds, 0, cfg.MaxContextTokens); err != nil {
 		return err
 	}
+	if err := validateCA3StageOverride("context_assembler.ca3.stage1.percent_thresholds", cfg.Stage1.PercentThresholds, 0, 100); err != nil {
+		return err
+	}
+	if err := validateCA3StageOverride("context_assembler.ca3.stage1.absolute_thresholds", cfg.Stage1.AbsoluteThresholds, 0, cfg.MaxContextTokens); err != nil {
+		return err
+	}
+	if err := validateCA3StageOverride("context_assembler.ca3.stage2.percent_thresholds", cfg.Stage2.PercentThresholds, 0, 100); err != nil {
+		return err
+	}
+	if err := validateCA3StageOverride("context_assembler.ca3.stage2.absolute_thresholds", cfg.Stage2.AbsoluteThresholds, 0, cfg.MaxContextTokens); err != nil {
+		return err
+	}
 	if cfg.Squash.Enabled && cfg.Squash.MaxContentRunes <= 0 {
 		return errors.New("context_assembler.ca3.squash.max_content_runes must be > 0")
 	}
@@ -755,6 +767,13 @@ func validateCA3Thresholds(field string, thresholds ContextAssemblerCA3Threshold
 		prev = item.value
 	}
 	return nil
+}
+
+func validateCA3StageOverride(field string, thresholds ContextAssemblerCA3Thresholds, min, max int) error {
+	if thresholds.Safe == 0 && thresholds.Comfort == 0 && thresholds.Warning == 0 && thresholds.Danger == 0 && thresholds.Emergency == 0 {
+		return nil
+	}
+	return validateCA3Thresholds(field, thresholds, min, max)
 }
 
 func applyDefaults(v *viper.Viper) {

@@ -125,14 +125,16 @@
 
 ### 范围
 
-- 参数化策略收敛（budget/top_k/timeout/cache_ttl/squash 阈值）。
-- 补齐契约测试矩阵（Run/Stream 语义一致、fail-fast/best-effort、一致性与恢复）。
-- 完成诊断字段与文档统一，纳入 CI 质量门禁。
+- 固化阈值解析顺序：`stage override -> percent/absolute 双触发并行评估 -> 取更高压力分区`。
+- 固化 token 计数回退链路：`provider counter -> local tiktoken estimate -> lightweight estimate`（counting-only fail-open）。
+- 补齐契约测试矩阵（Run/Stream 的 zone/reason/trigger 语义一致、small-delta 与 refresh interval、fallback 分支）。
+- 完成诊断字段与文档统一，纳入 CA4 benchmark 相对百分比门禁（含 `p95`）。
 
 ### 验收
 
 - `go test ./...`、`go test -race ./...`、`golangci-lint` 全通过。
-- 契约测试覆盖关键降级与恢复场景。
+- 契约测试覆盖关键降级与恢复场景（含 provider unsupported 与 local tokenizer unavailable）。
+- `BenchmarkCA4PressureEvaluation` 通过相对回归门禁（`ns/op` 与 `p95-ns/op`）。
 - 文档与实现行为一致，无语义漂移。
 
 ## 风险与边界

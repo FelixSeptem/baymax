@@ -176,19 +176,33 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			iteration++
 			required := req.Capabilities.Normalized()
 			modelReq := toModelRequest(runID, req, pendingOutcomes, required)
+			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
+			if selErr != nil {
+				terminal = selErr
+				runErr = errors.New(selErr.Message)
+				state = StateAbort
+				continue
+			}
 			contextPhaseEnabled := e.contextAssemblerEnabled()
 			if contextPhaseEnabled {
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusRunning, "")
 			}
+			var tokenCounter types.TokenCounter
+			if tc, ok := selectedModel.(types.TokenCounter); ok {
+				tokenCounter = tc
+			}
 			assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
 				RunID:         runID,
 				SessionID:     req.SessionID,
 				PrefixVersion: e.resolvePrefixVersion(),
+				ModelProvider: selection.Provider,
+				Model:         modelReq.Model,
 				Input:         modelReq.Input,
 				Messages:      modelReq.Messages,
 				ToolResult:    modelReq.ToolResult,
 				Capabilities:  modelReq.Capabilities,
+				TokenCounter:  tokenCounter,
 			}, modelReq)
 			lastAssemble = assembleResult
 			if assembleErr != nil {
@@ -205,13 +219,6 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 			}
 			modelReq = assembledReq
-			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
-			if selErr != nil {
-				terminal = selErr
-				runErr = errors.New(selErr.Message)
-				state = StateAbort
-				continue
-			}
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 			lastSelection = selection
@@ -433,14 +440,55 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	selectionPath := make([]string, 0, 2)
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
+	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
+	if selErr != nil {
+		result := types.RunResult{
+			RunID:      runID,
+			Iterations: iteration,
+			LatencyMs:  e.now().Sub(start).Milliseconds(),
+			Error:      selErr,
+		}
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, errors.New(selErr.Message))
+		e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
+		e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
+		e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
+		e.emit(ctx, h, types.Event{
+			Version:   "v1",
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: runFinishedPayload(result, "failed", string(selErr.Class), runFinishMeta{
+				Provider:     selection.Provider,
+				Initial:      selection.Initial,
+				Path:         selectionPath,
+				Required:     required,
+				UsedFallback: selection.UsedFallback,
+				Reason:       selErr.Message,
+				Assemble:     types.ContextAssembleResult{},
+			}),
+		})
+		return result, errors.New(selErr.Message)
+	}
+	if selection.Provider != "" {
+		selectionPath = append(selectionPath, selection.Provider)
+	}
+	var tokenCounter types.TokenCounter
+	if tc, ok := selectedModel.(types.TokenCounter); ok {
+		tokenCounter = tc
+	}
 	assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
 		RunID:         runID,
 		SessionID:     req.SessionID,
 		PrefixVersion: e.resolvePrefixVersion(),
+		ModelProvider: selection.Provider,
+		Model:         modelReq.Model,
 		Input:         modelReq.Input,
 		Messages:      modelReq.Messages,
 		ToolResult:    modelReq.ToolResult,
 		Capabilities:  modelReq.Capabilities,
+		TokenCounter:  tokenCounter,
 	}, modelReq)
 	lastAssemble := assembleResult
 
@@ -486,37 +534,6 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 	}
 	modelReq = assembledReq
-	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
-	if selErr != nil {
-		result := types.RunResult{
-			RunID:      runID,
-			Iterations: iteration,
-			LatencyMs:  e.now().Sub(start).Milliseconds(),
-			Error:      selErr,
-		}
-		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, errors.New(selErr.Message))
-		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
-		e.emit(ctx, h, types.Event{
-			Version:   "v1",
-			Type:      "run.finished",
-			RunID:     runID,
-			Iteration: iteration,
-			Time:      e.now(),
-			Payload: runFinishedPayload(result, "failed", string(selErr.Class), runFinishMeta{
-				Provider:     selection.Provider,
-				Initial:      selection.Initial,
-				Path:         selectionPath,
-				Required:     required,
-				UsedFallback: selection.UsedFallback,
-				Reason:       selErr.Message,
-				Assemble:     lastAssemble,
-			}),
-		})
-		return result, errors.New(selErr.Message)
-	}
-	if selection.Provider != "" {
-		selectionPath = append(selectionPath, selection.Provider)
-	}
 	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 	e.emit(ctx, h, types.Event{
@@ -1024,6 +1041,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.Assemble.Stage.PressureReason != "" {
 		payload["ca3_pressure_reason"] = meta.Assemble.Stage.PressureReason
+	}
+	if meta.Assemble.Stage.PressureTriggerSource != "" {
+		payload["ca3_pressure_trigger"] = meta.Assemble.Stage.PressureTriggerSource
 	}
 	if len(meta.Assemble.Stage.ZoneResidencyMs) > 0 {
 		payload["ca3_zone_residency_ms"] = meta.Assemble.Stage.ZoneResidencyMs

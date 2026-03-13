@@ -194,3 +194,14 @@ func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
 		t.Fatalf("unexpected capability report: %#v", got)
 	}
 }
+
+func TestCountTokensReturnsUnsupportedError(t *testing.T) {
+	client := NewClient(Config{Model: "gpt-4.1-mini"})
+	_, err := client.CountTokens(context.Background(), types.ModelRequest{Input: "hello"})
+	if err == nil {
+		t.Fatal("expected unsupported token count error")
+	}
+	if err.Error() != "openai official sdk does not provide token count api in this adapter" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

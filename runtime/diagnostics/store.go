@@ -60,6 +60,7 @@ type RunRecord struct {
 	Stage2ErrorLayer     string                            `json:"stage2_error_layer,omitempty"`
 	CA3PressureZone      string                            `json:"ca3_pressure_zone,omitempty"`
 	CA3PressureReason    string                            `json:"ca3_pressure_reason,omitempty"`
+	CA3PressureTrigger   string                            `json:"ca3_pressure_trigger,omitempty"`
 	CA3ZoneResidencyMs   map[string]int64                  `json:"ca3_zone_residency_ms,omitempty"`
 	CA3TriggerCounts     map[string]int                    `json:"ca3_trigger_counts,omitempty"`
 	CA3CompressionRatio  float64                           `json:"ca3_compression_ratio,omitempty"`

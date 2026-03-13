@@ -41,8 +41,6 @@ type Assembler struct {
 	ca3State        map[string]*ca3RunState
 	spillBackend    SpillBackend
 	spillBackendKey string
-	tokenCounter    ca3TokenCounter
-	tokenCounterKey string
 }
 
 type Option func(*Assembler)

@@ -19,6 +19,7 @@
 - OpenSpec change `standardize-action-timeline-events-h1` 已完成并归档。
 - OpenSpec change `converge-action-timeline-observability-h15` 已完成实现。
 - OpenSpec change `implement-context-assembler-ca3-memory-pressure-and-recovery` 已完成实现。
+- OpenSpec change `implement-context-assembler-ca4-production-convergence` 已完成实现。
 - 核心能力已具备可运行的 v1 基线。
 - 关键测试通过：`go test ./...`。
 
@@ -51,7 +52,7 @@
 - provider 级降级：model-step 前 capability preflight，按 `provider_fallback.providers` 有序尝试，候选耗尽即 fail-fast
 - 错误映射：基础 `types.ErrorClass` + `provider_reason`（`auth/rate_limit/timeout/request/server/unknown`）
 
-### 3.6 Context Assembler（CA1 + CA2 + CA3）
+### 3.6 Context Assembler（CA1 + CA2 + CA3 + CA4）
 - `context/assembler` 已接入 `core/runner` pre-model hook（Run/Stream 双路径）
 - immutable prefix + `prefix_hash` 校验（同 session/version 漂移即 fail-fast）
 - `context/journal` 本地 JSONL append-only（intent/commit）
@@ -66,11 +67,12 @@
 - 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_profile`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`stage2_reason_code`、`stage2_error_layer`、`recap_status`
 - CA3 memory pressure control：
   - 五级分区：`safe|comfort|warning|danger|emergency`
-  - 双触发阈值：百分比 + 绝对 token（任一满足即触发）
+  - CA4 阈值策略：`stage override -> percent/absolute 并行评估 -> 取更高压力分区`
   - 策略动作：warning/danger 触发 squash/prune；emergency 触发 spill/swap + 低优先级加载拒绝
   - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
-  - Token 计数：默认 `sdk_preferred`，优先官方 SDK tokenizer；小增量（`small_delta_tokens`）优先走预估，降低调用频率
-  - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
+  - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
+  - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
+  - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -100,7 +102,7 @@
 ### 6. Integration + Benchmark
 - fake model/tool/mcp 组件
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
-- benchmark：迭代延迟、工具扇出、MCP 重连开销
+- benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
 
 ## 快速开始
 
@@ -299,10 +301,15 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 ```
 
 性能回归策略（相对提升百分比）见：`docs/performance-policy.md`
+CA4 基准回归门禁可单独执行：
+```bash
+bash scripts/check-ca4-benchmark-regression.sh
+```
 
 ### CI
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
 - 默认执行：
+  - `scripts/check-repo-hygiene.sh`
   - `scripts/check-quality-gate.sh`
   - `scripts/check-runtime-boundaries.sh`
   - `scripts/check-docs-consistency.ps1`
@@ -310,8 +317,13 @@ go test ./integration -run ^$ -bench Benchmark -benchtime=100ms
 
 ## 脚本清单（当前保留）
 
-- `scripts/check-quality-gate.sh`：Linux 质量门禁（`go test` + `go test -race` + `golangci-lint` + `govulncheck`）。
+- `scripts/check-repo-hygiene.sh`：仓库卫生检查（禁止临时/备份产物，如 `*.go.<random>`）。
+- `scripts/check-repo-hygiene.ps1`：Windows 等价仓库卫生检查脚本。
+- `scripts/check-quality-gate.sh`：Linux 质量门禁（`repo hygiene` + `go test` + `go test -race` + `golangci-lint` + `govulncheck`）。
 - `scripts/check-quality-gate.ps1`：Windows 质量门禁等价脚本（同上语义）。
+- `scripts/check-ca4-benchmark-regression.sh`：CA4 benchmark 回归检查（`ns/op` + `p95-ns/op` 相对百分比门禁）。
+- `scripts/check-ca4-benchmark-regression.ps1`：Windows 等价 CA4 benchmark 回归检查脚本。
+- `scripts/ca4-benchmark-baseline.env`：CA4 benchmark 基线与默认阈值配置。
 - `scripts/check-runtime-boundaries.sh`：runtime 模块边界静态检查。
 - `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
 - `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。
@@ -362,3 +374,5 @@ go run ./examples/08-multi-agent-network-bridge
 - 运行时配置与诊断 API：`docs/runtime-config-diagnostics.md`
 - Runtime 模块边界：`docs/runtime-module-boundaries.md`
 - Context Assembler 分期计划：`docs/context-assembler-phased-plan.md`
+- 模块化评审矩阵：`docs/modular-e2e-review-matrix.md`
+- 主干契约测试索引：`docs/mainline-contract-test-index.md`

@@ -85,6 +85,7 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			Stage2ErrorLayer:     payloadString(payload, "stage2_error_layer"),
 			CA3PressureZone:      payloadString(payload, "ca3_pressure_zone"),
 			CA3PressureReason:    payloadString(payload, "ca3_pressure_reason"),
+			CA3PressureTrigger:   payloadString(payload, "ca3_pressure_trigger"),
 			CA3ZoneResidencyMs:   payloadInt64Map(payload, "ca3_zone_residency_ms"),
 			CA3TriggerCounts:     payloadIntMap(payload, "ca3_trigger_counts"),
 			CA3CompressionRatio:  payloadFloat64(payload, "ca3_compression_ratio"),

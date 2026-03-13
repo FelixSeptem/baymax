@@ -1,3 +1,4 @@
 .gocache
+.gomodcache
 .tmp
 *.go.[0-9]*

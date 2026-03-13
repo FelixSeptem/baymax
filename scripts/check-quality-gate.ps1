@@ -3,6 +3,15 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
+if (-not $env:GOCACHE) {
+    $env:GOCACHE = Join-Path $repoRoot ".gocache"
+}
+if (-not $env:GOLANGCI_LINT_CACHE) {
+    $env:GOLANGCI_LINT_CACHE = Join-Path $repoRoot ".gocache/golangci-lint"
+}
+
+Write-Host "[quality-gate] repo hygiene"
+pwsh -File scripts/check-repo-hygiene.ps1
 
 Write-Host "[quality-gate] go test ./..."
 go test ./...
@@ -24,11 +33,19 @@ $lintConfig = ".golangci.yml"
 Write-Host "[quality-gate] golangci-lint --config $lintConfig"
 golangci-lint run --config $lintConfig
 
+Write-Host "[quality-gate] CA4 benchmark regression"
+pwsh -File scripts/check-ca4-benchmark-regression.ps1
+
 $scanMode = if ($env:BAYMAX_SECURITY_SCAN_MODE) { $env:BAYMAX_SECURITY_SCAN_MODE.Trim().ToLowerInvariant() } else { "strict" }
 $govulncheckEnabled = if ($env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED) { $env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED.Trim().ToLowerInvariant() } else { "true" }
 if ($govulncheckEnabled -eq "true") {
     Write-Host "[quality-gate] govulncheck (mode=$scanMode)"
-    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    if (Get-Command govulncheck -ErrorAction SilentlyContinue) {
+        govulncheck ./...
+    }
+    else {
+        go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    }
     if ($LASTEXITCODE -ne 0) {
         if ($scanMode -eq "warn") {
             Write-Warning "[quality-gate] govulncheck found issues but mode=warn; continue"

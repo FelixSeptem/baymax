@@ -169,6 +169,11 @@ security:
     keywords: [token, password, secret, api_key, apikey]
 ```
 
+CA4 阈值解析顺序：
+1. 若 stage1/stage2 覆盖阈值被配置（且校验通过），该 stage 使用覆盖值，不与全局阈值混用。
+2. percent 与 absolute 阈值并行计算分区。
+3. 两者冲突时选取更高压力分区，并写入 `ca3_pressure_reason` + `ca3_pressure_trigger`。
+
 ## 使用示例（最小）
 
 ```go
@@ -204,6 +209,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 ## CA3 Token Count 职责分工
 
 - `context/assembler`：只负责“何时计数”的策略决策（`sdk_preferred`、`small_delta_tokens`、`sdk_refresh_interval`），不直接依赖 provider SDK 细节。
+  - 预估路径：优先使用本地 `tiktoken` 进行估算；若本地 tokenizer 初始化失败（如离线环境未缓存词表），回退到轻量字符估算以保证主流程不中断。
 - `model/*`：负责“如何计数”的 provider 实现与官方 SDK 调用：
   - `model/anthropic`：`Messages.CountTokens`。
   - `model/gemini`：优先 `genai/tokenizer` 本地计数，失败时回退 `Models.CountTokens`。
@@ -211,6 +217,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - 语义要求：
   - 小增量优先预估，降低高频计数调用成本。
   - SDK 计数失败不阻断主流程，回退预估值继续执行。
+  - OpenAI 路径的 token 数用于 CA3/CA4 阈值策略控制，不承诺账单精度语义。
 
 ## Action Timeline 事件（默认启用）
 
@@ -267,6 +274,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - `ca3_pressure_zone`：CA3 当前压力分区（`safe|comfort|warning|danger|emergency`）。
 - `ca3_pressure_reason`：分区触发来源（`usage_percent_trigger|absolute_token_trigger`）。
+- `ca3_pressure_trigger`：本次最终触发分区（双触发冲突时记录被选中的更高压力分区）。
 - `ca3_zone_residency_ms`：各分区累计停留时长（毫秒）。
 - `ca3_trigger_counts`：各分区触发次数。
 - `ca3_compression_ratio`：本次装配压缩率（`0~1`）。

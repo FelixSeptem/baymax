@@ -6,11 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/FelixSeptem/baymax/context/journal"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	tiktoken "github.com/pkoukk/tiktoken-go"
 )
 
 func TestAssemblerStablePrefixHashWithinSessionVersion(t *testing.T) {
@@ -445,4 +448,149 @@ func TestAssemblerCA3SpillIdempotentAcrossRetry(t *testing.T) {
 		}
 		seen[line] = struct{}{}
 	}
+}
+
+func TestEstimateContextTokensReturnsPositiveEstimate(t *testing.T) {
+	req := types.ModelRequest{
+		Model: "gpt-4.1-mini",
+		Input: "你好，Baymax context assembler token test",
+		Messages: []types.Message{
+			{Role: "user", Content: "请帮我总结这段内容"},
+		},
+	}
+	got := estimateContextTokens(req)
+	if got <= 0 {
+		t.Fatalf("estimateContextTokens should return positive estimate, got=%d", got)
+	}
+}
+
+func TestEstimateContextTokensByTiktokenGracefulFallback(t *testing.T) {
+	req := types.ModelRequest{
+		Model: "unknown-model-id",
+		Input: "fallback should still work",
+	}
+	tk := estimateContextTokensByTiktoken(req)
+	if tk < 0 {
+		t.Fatalf("unexpected negative tiktoken estimate: %d", tk)
+	}
+}
+
+type failingTokenCounter struct {
+	calls int
+}
+
+func (f *failingTokenCounter) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	f.calls++
+	return 0, errors.New("counting unsupported")
+}
+
+func TestResolveCA3ThresholdsUsesStageOverride(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg.Stage2.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 25, Comfort: 45, Warning: 65, Danger: 80, Emergency: 95,
+	}
+	cfg.Stage2.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 25000, Comfort: 45000, Warning: 65000, Danger: 80000, Emergency: 95000,
+	}
+	p, a := resolveCA3Thresholds(cfg, "stage2")
+	if p.Warning != 65 || a.Warning != 65000 {
+		t.Fatalf("stage2 override not applied: percent=%+v absolute=%+v", p, a)
+	}
+}
+
+func TestEvaluateCA3ZonePrefersHigherTrigger(t *testing.T) {
+	percent := runtimeconfig.ContextAssemblerCA3Thresholds{Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 90}
+	absolute := runtimeconfig.ContextAssemblerCA3Thresholds{Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50}
+	zone, reason, trigger := evaluateCA3Zone(15, 35, percent, absolute)
+	if zone != ca3ZoneWarning {
+		t.Fatalf("zone=%s, want warning", zone)
+	}
+	if reason != "absolute_token_trigger" || trigger != string(ca3ZoneWarning) {
+		t.Fatalf("unexpected reason/trigger: reason=%s trigger=%s", reason, trigger)
+	}
+}
+
+func TestCountContextTokensSmallDeltaSkipsProviderThenRefreshes(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg.Tokenizer.Mode = "sdk_preferred"
+	cfg.Tokenizer.SmallDeltaTokens = 32
+	cfg.Tokenizer.SDKRefreshInterval = time.Second
+	req := types.ModelRequest{Input: "small delta input"}
+	estimate := estimateContextTokens(req)
+	counterCalls := 0
+	tc := tokenCounterFunc(func(ctx context.Context, m types.ModelRequest) (int, error) {
+		counterCalls++
+		return 77, nil
+	})
+	now := time.Now()
+	state := &ca3RunState{
+		LastTokenEstimate:  estimate,
+		LastTokenSignature: ca3TokenSignature(req),
+		LastSDKCountAt:     now,
+	}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	a.now = func() time.Time { return now }
+
+	first := a.countContextTokens(context.Background(), types.ContextAssembleRequest{TokenCounter: tc}, req, cfg, state)
+	if first != estimate {
+		t.Fatalf("small-delta path should use estimate, got=%d want=%d", first, estimate)
+	}
+	if counterCalls != 0 {
+		t.Fatalf("token counter should be skipped before refresh interval, calls=%d", counterCalls)
+	}
+	now = now.Add(2 * time.Second)
+	second := a.countContextTokens(context.Background(), types.ContextAssembleRequest{TokenCounter: tc}, req, cfg, state)
+	if second != 77 {
+		t.Fatalf("after refresh interval should call token counter, got=%d", second)
+	}
+	if counterCalls != 1 {
+		t.Fatalf("token counter calls=%d, want 1", counterCalls)
+	}
+}
+
+func TestCountContextTokensFallbackDoesNotBlockOnTokenizerFailure(t *testing.T) {
+	oldModelFn := encodingForModelFn
+	oldGetFn := getEncodingFn
+	oldEnc := tiktokenDefaultEnc
+	oldErr := tiktokenDefaultErr
+	t.Cleanup(func() {
+		encodingForModelFn = oldModelFn
+		getEncodingFn = oldGetFn
+		tiktokenDefaultEnc = oldEnc
+		tiktokenDefaultErr = oldErr
+		tiktokenDefaultOnce = sync.Once{}
+	})
+	encodingForModelFn = func(model string) (*tiktoken.Tiktoken, error) {
+		return nil, errors.New("no model encoding")
+	}
+	getEncodingFn = func(name string) (*tiktoken.Tiktoken, error) {
+		return nil, errors.New("no default encoding")
+	}
+	tiktokenDefaultOnce = sync.Once{}
+	tiktokenDefaultEnc = nil
+	tiktokenDefaultErr = nil
+
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg.Tokenizer.Mode = "sdk_preferred"
+	cfg.Tokenizer.SmallDeltaTokens = 0
+	cfg.Tokenizer.SDKRefreshInterval = time.Millisecond
+	req := types.ModelRequest{Input: "fallback path should still return estimate"}
+	state := &ca3RunState{}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	failing := &failingTokenCounter{}
+	got := a.countContextTokens(context.Background(), types.ContextAssembleRequest{
+		TokenCounter: failing,
+	}, req, cfg, state)
+	if got <= 0 {
+		t.Fatalf("fallback estimate should be positive, got=%d", got)
+	}
+	if failing.calls == 0 {
+		t.Fatal("provider counter should still be attempted before fallback")
+	}
+}
+
+type tokenCounterFunc func(ctx context.Context, req types.ModelRequest) (int, error)
+
+func (f tokenCounterFunc) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	return f(ctx, req)
 }

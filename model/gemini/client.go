@@ -202,7 +202,15 @@ func buildTokenContents(req types.ModelRequest) []*genai.Content {
 			continue
 		}
 		role := strings.ToLower(strings.TrimSpace(m.Role))
-		if role == "" {
+		switch role {
+		case "", "user":
+			role = "user"
+		case "assistant":
+			role = "model"
+		case "system":
+			// Gemini token counting contents do not use system role; keep user for baseline safety.
+			role = "user"
+		default:
 			role = "user"
 		}
 		out = append(out, &genai.Content{
@@ -210,11 +218,8 @@ func buildTokenContents(req types.ModelRequest) []*genai.Content {
 			Parts: []*genai.Part{{Text: content}},
 		})
 	}
-	if len(out) == 0 {
-		input := strings.TrimSpace(req.Input)
-		if input != "" {
-			out = append(out, genai.Text(input)...)
-		}
+	if input := strings.TrimSpace(req.Input); input != "" {
+		out = append(out, genai.Text(input)...)
 	}
 	return out
 }

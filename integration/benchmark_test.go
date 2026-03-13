@@ -3,14 +3,18 @@ package integration
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	httpmcp "github.com/FelixSeptem/baymax/mcp/http"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -151,6 +155,67 @@ func BenchmarkMCPProfileHighReliabilityUnderFailure(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = client.CallTool(context.Background(), "tool", nil)
 	}
+}
+
+func BenchmarkCA4PressureEvaluation(b *testing.B) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA3.Enabled = true
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	cfg.CA3.MaxContextTokens = 4096
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 90,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 512, Comfort: 1024, Warning: 2048, Danger: 3072, Emergency: 3584,
+	}
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-ca4",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("payload ", 80)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    strings.Repeat("bench input ", 160),
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func percentileNs(values []int64, percentile int) int64 {
+	if len(values) == 0 || percentile <= 0 {
+		return 0
+	}
+	copyVals := append([]int64(nil), values...)
+	sort.Slice(copyVals, func(i, j int) bool { return copyVals[i] < copyVals[j] })
+	idx := (len(copyVals)*percentile + 99) / 100
+	if idx <= 0 {
+		idx = 1
+	}
+	if idx > len(copyVals) {
+		idx = len(copyVals)
+	}
+	return copyVals[idx-1]
 }
 
 type fakeHTTPSession struct{ callErr error }

@@ -139,6 +139,7 @@ mcp:
 			"stage2_error_layer":    "",
 			"ca3_pressure_zone":     "warning",
 			"ca3_pressure_reason":   "usage_percent_trigger",
+			"ca3_pressure_trigger":  "warning",
 			"ca3_zone_residency_ms": map[string]any{"safe": float64(12), "warning": float64(8)},
 			"ca3_trigger_counts":    map[string]any{"warning": float64(2)},
 			"ca3_compression_ratio": 0.42,
@@ -171,6 +172,9 @@ mcp:
 	}
 	if items[0].CA3PressureZone != "warning" || items[0].CA3PressureReason == "" {
 		t.Fatalf("ca3 fields mismatch: %#v", items[0])
+	}
+	if items[0].CA3PressureTrigger != "warning" {
+		t.Fatalf("ca3 trigger mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompressionRatio == 0 || items[0].CA3SpillCount != 1 || items[0].CA3SwapBackCount != 1 {
 		t.Fatalf("ca3 metrics mismatch: %#v", items[0])

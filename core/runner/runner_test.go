@@ -22,6 +22,7 @@ import (
 type fakeModel struct {
 	generate func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error)
 	stream   func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error
+	count    func(ctx context.Context, req types.ModelRequest) (int, error)
 	provider string
 	caps     map[types.ModelCapability]types.CapabilitySupport
 	discover error
@@ -39,6 +40,13 @@ func (f *fakeModel) Stream(ctx context.Context, req types.ModelRequest, onEvent 
 		return nil
 	}
 	return f.stream(ctx, req, onEvent)
+}
+
+func (f *fakeModel) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	if f.count == nil {
+		return 0, errors.New("count tokens not configured")
+	}
+	return f.count(ctx, req)
 }
 
 func (f *fakeModel) ProviderName() string {
@@ -633,6 +641,96 @@ provider_fallback:
 	}
 }
 
+func TestRunProviderFallbackUsesSelectedTokenCounterForCA3(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+context_assembler:
+  enabled: true
+  ca3:
+    enabled: true
+    max_context_tokens: 200
+    absolute_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    tokenizer:
+      mode: sdk_preferred
+      small_delta_tokens: 0
+      sdk_refresh_interval: 1ns
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	primaryCountCalls := 0
+	secondaryCountCalls := 0
+	primary := &fakeModel{
+		provider: "openai",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityToolCall:  types.CapabilitySupportUnsupported,
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			t.Fatalf("primary provider should not be invoked")
+			return types.ModelResponse{}, nil
+		},
+		count: func(ctx context.Context, req types.ModelRequest) (int, error) {
+			primaryCountCalls++
+			return 10, nil
+		},
+	}
+	secondary := &fakeModel{
+		provider: "anthropic",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+		count: func(ctx context.Context, req types.ModelRequest) (int, error) {
+			secondaryCountCalls++
+			return 18, nil
+		},
+	}
+
+	eng := New(primary,
+		WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    primary,
+			"anthropic": secondary,
+		}),
+		WithRuntimeManager(mgr),
+	)
+	res, runErr := eng.Run(context.Background(), types.RunRequest{
+		Input: "need tool-call capability so fallback selects anthropic",
+		Capabilities: types.CapabilityRequirements{
+			Required: []types.ModelCapability{types.ModelCapabilityToolCall},
+		},
+	}, nil)
+	if runErr != nil {
+		t.Fatalf("Run failed: %v", runErr)
+	}
+	if res.FinalAnswer != "ok" {
+		t.Fatalf("final answer = %q, want ok", res.FinalAnswer)
+	}
+	if primaryCountCalls != 0 {
+		t.Fatalf("primary count tokens should not be used, got %d calls", primaryCountCalls)
+	}
+	if secondaryCountCalls == 0 {
+		t.Fatal("selected provider token counter should be used at least once")
+	}
+}
+
 func TestRunProviderFallbackFailFastWhenExhausted(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
@@ -735,6 +833,85 @@ provider_fallback:
 	}
 	if finished.Payload["model_provider"] != "anthropic" {
 		t.Fatalf("model_provider = %#v, want anthropic", finished.Payload["model_provider"])
+	}
+}
+
+func TestStreamProviderFallbackUsesSelectedTokenCounterForCA3(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+context_assembler:
+  enabled: true
+  ca3:
+    enabled: true
+    max_context_tokens: 200
+    absolute_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    tokenizer:
+      mode: sdk_preferred
+      small_delta_tokens: 0
+      sdk_refresh_interval: 1ns
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	primaryCountCalls := 0
+	secondaryCountCalls := 0
+	primary := &fakeModel{
+		provider: "openai",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportUnsupported,
+		},
+		count: func(ctx context.Context, req types.ModelRequest) (int, error) {
+			primaryCountCalls++
+			return 11, nil
+		},
+	}
+	secondary := &fakeModel{
+		provider: "anthropic",
+		caps: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+		},
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+		count: func(ctx context.Context, req types.ModelRequest) (int, error) {
+			secondaryCountCalls++
+			return 22, nil
+		},
+	}
+
+	eng := New(primary,
+		WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    primary,
+			"anthropic": secondary,
+		}),
+		WithRuntimeManager(mgr),
+	)
+	res, runErr := eng.Stream(context.Background(), types.RunRequest{Input: "stream path with fallback"}, nil)
+	if runErr != nil {
+		t.Fatalf("Stream failed: %v", runErr)
+	}
+	if res.FinalAnswer != "ok" {
+		t.Fatalf("final answer = %q, want ok", res.FinalAnswer)
+	}
+	if primaryCountCalls != 0 {
+		t.Fatalf("primary count tokens should not be used, got %d calls", primaryCountCalls)
+	}
+	if secondaryCountCalls == 0 {
+		t.Fatal("selected provider token counter should be used at least once")
 	}
 }
 
@@ -1149,6 +1326,12 @@ context_assembler:
 	}
 	if runFinished.Payload["ca3_pressure_zone"] != streamFinished.Payload["ca3_pressure_zone"] {
 		t.Fatalf("run/stream ca3 pressure zone mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_zone"], streamFinished.Payload["ca3_pressure_zone"])
+	}
+	if runFinished.Payload["ca3_pressure_reason"] != streamFinished.Payload["ca3_pressure_reason"] {
+		t.Fatalf("run/stream ca3 pressure reason mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_reason"], streamFinished.Payload["ca3_pressure_reason"])
+	}
+	if runFinished.Payload["ca3_pressure_trigger"] != streamFinished.Payload["ca3_pressure_trigger"] {
+		t.Fatalf("run/stream ca3 pressure trigger mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_trigger"], streamFinished.Payload["ca3_pressure_trigger"])
 	}
 }
 

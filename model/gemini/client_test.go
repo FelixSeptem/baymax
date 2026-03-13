@@ -163,3 +163,30 @@ func TestDiscoverCapabilitiesUsesConfiguredDiscoverFn(t *testing.T) {
 		t.Fatalf("unexpected capabilities: %#v", got)
 	}
 }
+
+func TestBuildTokenContentsNormalizesRolesAndKeepsInput(t *testing.T) {
+	req := types.ModelRequest{
+		Input: "latest question",
+		Messages: []types.Message{
+			{Role: "system", Content: "policy"},
+			{Role: "assistant", Content: "intermediate answer"},
+			{Role: "user", Content: "follow-up"},
+		},
+	}
+	contents := buildTokenContents(req)
+	if len(contents) != 4 {
+		t.Fatalf("contents len = %d, want 4", len(contents))
+	}
+	if contents[0].Role != "user" {
+		t.Fatalf("system role should be normalized to user, got %q", contents[0].Role)
+	}
+	if contents[1].Role != "model" {
+		t.Fatalf("assistant role should be normalized to model, got %q", contents[1].Role)
+	}
+	if contents[2].Role != "user" {
+		t.Fatalf("user role should remain user, got %q", contents[2].Role)
+	}
+	if text := contents[3].Parts[0].Text; text != "latest question" {
+		t.Fatalf("input should be appended as additional content, got %q", text)
+	}
+}

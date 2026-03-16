@@ -20,6 +20,7 @@
 | Runner Concurrency Baseline R5 | `core/runner/runner_test.go::TestRunBackpressureBlockDiagnosticsAndTimeline` | `core/runner/runner_test.go::TestRunAndStreamCancelPropagationSemanticsEquivalent` |
 | Provider Fallback + CA3 Token Counter | `core/runner/runner_test.go::TestRunProviderFallbackUsesSelectedTokenCounterForCA3` | `core/runner/runner_test.go::TestStreamProviderFallbackUsesSelectedTokenCounterForCA3` |
 | Provider Token Count Normalization | `model/gemini/client_test.go::TestBuildTokenContentsNormalizesRolesAndKeepsInput` | `model/openai/client_test.go::TestCountTokensReturnsUnsupportedError` |
+| Skill Trigger Scoring D1 | `skill/loader/loader_test.go::TestCompileSemanticTieBreakUsesHighestPriority` | `skill/loader/loader_test.go::TestCompileDefaultSuppressesLowConfidenceSemanticMatch` |
 
 ## 使用方式
 

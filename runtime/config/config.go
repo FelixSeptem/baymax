@@ -56,12 +56,19 @@ const (
 	ClarificationTimeoutPolicyCancelByUser = "cancel_by_user"
 )
 
+const (
+	SkillTriggerScoringStrategyLexicalWeightedKeywords = "lexical_weighted_keywords"
+	SkillTriggerScoringTieBreakHighestPriority         = "highest_priority"
+	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
+	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
 	Clarification    ClarificationConfig    `json:"clarification"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
@@ -97,6 +104,18 @@ type ProviderFallbackConfig struct {
 	Providers         []string      `json:"providers"`
 	DiscoveryTimeout  time.Duration `json:"discovery_timeout"`
 	DiscoveryCacheTTL time.Duration `json:"discovery_cache_ttl"`
+}
+
+type SkillConfig struct {
+	TriggerScoring SkillTriggerScoringConfig `json:"trigger_scoring"`
+}
+
+type SkillTriggerScoringConfig struct {
+	Strategy              string             `json:"strategy"`
+	ConfidenceThreshold   float64            `json:"confidence_threshold"`
+	TieBreak              string             `json:"tie_break"`
+	SuppressLowConfidence bool               `json:"suppress_low_confidence"`
+	KeywordWeights        map[string]float64 `json:"keyword_weights"`
 }
 
 type ActionGateConfig struct {
@@ -328,6 +347,23 @@ func DefaultConfig() Config {
 			Providers:         nil,
 			DiscoveryTimeout:  1500 * time.Millisecond,
 			DiscoveryCacheTTL: 5 * time.Minute,
+		},
+		Skill: SkillConfig{
+			TriggerScoring: SkillTriggerScoringConfig{
+				Strategy:              SkillTriggerScoringStrategyLexicalWeightedKeywords,
+				ConfidenceThreshold:   0.25,
+				TieBreak:              SkillTriggerScoringTieBreakHighestPriority,
+				SuppressLowConfidence: true,
+				KeywordWeights: map[string]float64{
+					"database": 1.5,
+					"db":       1.5,
+					"sql":      1.6,
+					"search":   1.2,
+					"retrieve": 1.2,
+					"lookup":   1.1,
+					"migrate":  1.3,
+				},
+			},
 		},
 		ActionGate: ActionGateConfig{
 			Enabled:        true,
@@ -578,6 +614,32 @@ func Validate(cfg Config) error {
 	}
 	if cfg.ProviderFallback.DiscoveryCacheTTL <= 0 {
 		return errors.New("provider_fallback.discovery_cache_ttl must be > 0")
+	}
+	scoring := cfg.Skill.TriggerScoring
+	switch strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy)); strategy {
+	case SkillTriggerScoringStrategyLexicalWeightedKeywords:
+	default:
+		return fmt.Errorf("skill.trigger_scoring.strategy must be one of [%s], got %q", SkillTriggerScoringStrategyLexicalWeightedKeywords, scoring.Strategy)
+	}
+	if scoring.ConfidenceThreshold < 0 || scoring.ConfidenceThreshold > 1 {
+		return errors.New("skill.trigger_scoring.confidence_threshold must be in [0,1]")
+	}
+	switch tieBreak := strings.ToLower(strings.TrimSpace(scoring.TieBreak)); tieBreak {
+	case SkillTriggerScoringTieBreakHighestPriority, SkillTriggerScoringTieBreakFirstRegistered:
+	default:
+		return fmt.Errorf("skill.trigger_scoring.tie_break must be one of [%s,%s], got %q", SkillTriggerScoringTieBreakHighestPriority, SkillTriggerScoringTieBreakFirstRegistered, scoring.TieBreak)
+	}
+	if len(scoring.KeywordWeights) == 0 {
+		return errors.New("skill.trigger_scoring.keyword_weights must not be empty")
+	}
+	for keyword, weight := range scoring.KeywordWeights {
+		k := strings.TrimSpace(strings.ToLower(keyword))
+		if k == "" {
+			return errors.New("skill.trigger_scoring.keyword_weights contains empty key")
+		}
+		if weight <= 0 {
+			return fmt.Errorf("skill.trigger_scoring.keyword_weights.%s must be > 0", k)
+		}
 	}
 	if cfg.ProviderFallback.Enabled {
 		if len(cfg.ProviderFallback.Providers) == 0 {
@@ -970,6 +1032,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
 	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
 	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
+	v.SetDefault("skill.trigger_scoring.strategy", base.Skill.TriggerScoring.Strategy)
+	v.SetDefault("skill.trigger_scoring.confidence_threshold", base.Skill.TriggerScoring.ConfidenceThreshold)
+	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
+	v.SetDefault("skill.trigger_scoring.suppress_low_confidence", base.Skill.TriggerScoring.SuppressLowConfidence)
+	v.SetDefault("skill.trigger_scoring.keyword_weights", base.Skill.TriggerScoring.KeywordWeights)
 	v.SetDefault("action_gate.enabled", base.ActionGate.Enabled)
 	v.SetDefault("action_gate.policy", base.ActionGate.Policy)
 	v.SetDefault("action_gate.timeout", base.ActionGate.Timeout)
@@ -1057,6 +1124,13 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
 	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
 	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
+	cfg.Skill.TriggerScoring.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.strategy")))
+	cfg.Skill.TriggerScoring.ConfidenceThreshold = v.GetFloat64("skill.trigger_scoring.confidence_threshold")
+	cfg.Skill.TriggerScoring.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.tie_break")))
+	cfg.Skill.TriggerScoring.SuppressLowConfidence = v.GetBool("skill.trigger_scoring.suppress_low_confidence")
+	if weights := normalizeFloatMap(v.GetStringMap("skill.trigger_scoring.keyword_weights")); len(weights) > 0 {
+		cfg.Skill.TriggerScoring.KeywordWeights = weights
+	}
 	cfg.ActionGate.Enabled = v.GetBool("action_gate.enabled")
 	cfg.ActionGate.Policy = strings.ToLower(strings.TrimSpace(v.GetString("action_gate.policy")))
 	cfg.ActionGate.Timeout = v.GetDuration("action_gate.timeout")
@@ -1304,6 +1378,43 @@ func normalizeStringToPolicyMap(in map[string]string) map[string]string {
 			continue
 		}
 		out[key] = value
+	}
+	return out
+}
+
+func normalizeFloatMap(in map[string]any) map[string]float64 {
+	if len(in) == 0 {
+		return map[string]float64{}
+	}
+	out := make(map[string]float64, len(in))
+	for rawKey, rawValue := range in {
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		if key == "" {
+			continue
+		}
+		switch tv := rawValue.(type) {
+		case float64:
+			out[key] = tv
+		case float32:
+			out[key] = float64(tv)
+		case int:
+			out[key] = float64(tv)
+		case int64:
+			out[key] = float64(tv)
+		case int32:
+			out[key] = float64(tv)
+		case uint:
+			out[key] = float64(tv)
+		case uint64:
+			out[key] = float64(tv)
+		case uint32:
+			out[key] = float64(tv)
+		case string:
+			var parsed float64
+			if _, err := fmt.Sscanf(strings.TrimSpace(tv), "%f", &parsed); err == nil {
+				out[key] = parsed
+			}
+		}
 	}
 	return out
 }

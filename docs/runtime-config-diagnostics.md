@@ -62,6 +62,18 @@ provider_fallback:
   discovery_timeout: 1500ms
   discovery_cache_ttl: 5m
 
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords # 当前仅支持该策略
+    confidence_threshold: 0.25          # [0,1]
+    tie_break: highest_priority         # highest_priority|first_registered
+    suppress_low_confidence: true
+    keyword_weights:
+      database: 1.5
+      db: 1.5
+      sql: 1.6
+      search: 1.2
+
 action_gate:
   enabled: true
   policy: require_confirm # allow|require_confirm|deny
@@ -206,6 +218,13 @@ CA4 阈值解析顺序：
 1. 若 stage1/stage2 覆盖阈值被配置（且校验通过），该 stage 使用覆盖值，不与全局阈值混用。
 2. percent 与 absolute 阈值并行计算分区。
 3. 两者冲突时选取更高压力分区，并写入 `ca3_pressure_reason` + `ca3_pressure_trigger`。
+
+Skill trigger scoring 校验语义：
+1. `strategy` 当前必须为 `lexical_weighted_keywords`。
+2. `confidence_threshold` 必须在 `[0,1]`。
+3. `tie_break` 仅支持 `highest_priority|first_registered`。
+4. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
+5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效）。
 
 ## 使用示例（最小）
 

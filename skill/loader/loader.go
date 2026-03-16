@@ -24,14 +24,24 @@ type Loader struct {
 	eventHandler types.EventHandler
 	runtimeMgr   *runtimeconfig.Manager
 	now          func() time.Time
+	scorer       skillTriggerScorer
 }
 
 func New(eventHandler types.EventHandler) *Loader {
-	return &Loader{eventHandler: eventHandler, now: time.Now}
+	return &Loader{
+		eventHandler: eventHandler,
+		now:          time.Now,
+		scorer:       lexicalWeightedKeywordScorer{},
+	}
 }
 
 func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.Manager) *Loader {
-	return &Loader{eventHandler: eventHandler, runtimeMgr: mgr, now: time.Now}
+	return &Loader{
+		eventHandler: eventHandler,
+		runtimeMgr:   mgr,
+		now:          time.Now,
+		scorer:       lexicalWeightedKeywordScorer{},
+	}
 }
 
 func (l *Loader) SetRuntimeManager(mgr *runtimeconfig.Manager) {
@@ -81,12 +91,13 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 			})
 			continue
 		}
-		desc, triggers := parseSkillMeta(skillFile)
+		desc, triggers, priority := parseSkillMeta(skillFile)
 		specs = append(specs, types.SkillSpec{
 			Name:        name,
 			Path:        skillFile,
 			Description: desc,
 			Triggers:    triggers,
+			Priority:    priority,
 			Metadata: map[string]string{
 				"source": "AGENTS",
 			},
@@ -112,7 +123,7 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 		return types.SkillBundle{}, nil
 	}
 
-	explicit, semantic := selectSkills(specs, in.UserInput)
+	explicit, semantic := l.selectSkills(specs, in.UserInput)
 	selected := make([]types.SkillSpec, 0, len(specs))
 	selected = append(selected, explicit...)
 	for _, s := range semantic {
@@ -168,41 +179,53 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 	}, nil
 }
 
-func selectSkills(specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []types.SkillSpec) {
+func (l *Loader) selectSkills(specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []types.SkillSpec) {
 	lower := strings.ToLower(input)
-	for _, s := range specs {
+	scoring := l.triggerScoringConfig()
+	scorer := l.scorer
+	if scorer == nil {
+		scorer = lexicalWeightedKeywordScorer{}
+	}
+	candidates := make([]scoredSkill, 0, len(specs))
+	for i, s := range specs {
 		nameLower := strings.ToLower(s.Name)
 		if strings.Contains(lower, "$"+nameLower) || strings.Contains(lower, nameLower) {
 			explicit = append(explicit, s)
 			continue
 		}
-		score := semanticScore(lower, s)
-		if score >= 0.25 {
-			semantic = append(semantic, s)
+		score := scorer.Score(lower, s, scoring)
+		if scoring.SuppressLowConfidence && score < scoring.ConfidenceThreshold {
+			continue
 		}
+		if !scoring.SuppressLowConfidence && score <= 0 {
+			continue
+		}
+		candidates = append(candidates, scoredSkill{spec: s, score: score, index: i})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if left.score != right.score {
+			return left.score > right.score
+		}
+		switch scoring.TieBreak {
+		case runtimeconfig.SkillTriggerScoringTieBreakFirstRegistered:
+			return left.index < right.index
+		default:
+			if left.spec.Priority != right.spec.Priority {
+				return left.spec.Priority > right.spec.Priority
+			}
+			if left.spec.Name != right.spec.Name {
+				return left.spec.Name < right.spec.Name
+			}
+			return left.index < right.index
+		}
+	})
+	semantic = make([]types.SkillSpec, 0, len(candidates))
+	for _, c := range candidates {
+		semantic = append(semantic, c.spec)
 	}
 	return explicit, semantic
-}
-
-func semanticScore(input string, s types.SkillSpec) float64 {
-	if strings.TrimSpace(input) == "" {
-		return 0
-	}
-	hay := strings.ToLower(s.Description + " " + strings.Join(s.Triggers, " "))
-	if hay == "" {
-		return 0
-	}
-	inputTokens := tokenize(input)
-	hit := 0
-	for _, t := range inputTokens {
-		if strings.Contains(hay, t) {
-			hit++
-		}
-	}
-	if len(inputTokens) == 0 {
-		return 0
-	}
-	return float64(hit) / float64(len(inputTokens))
 }
 
 func tokenize(in string) []string {
@@ -219,10 +242,10 @@ func tokenize(in string) []string {
 	return out
 }
 
-func parseSkillMeta(path string) (desc string, triggers []string) {
+func parseSkillMeta(path string) (desc string, triggers []string, priority int) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", nil
+		return "", nil, 0
 	}
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
@@ -233,8 +256,13 @@ func parseSkillMeta(path string) (desc string, triggers []string) {
 		if strings.HasPrefix(strings.ToLower(t), "- trigger:") {
 			triggers = append(triggers, strings.TrimSpace(strings.TrimPrefix(t, "- trigger:")))
 		}
+		if strings.HasPrefix(strings.ToLower(t), "priority:") {
+			if value, convErr := parsePriority(strings.TrimSpace(strings.TrimPrefix(t, "priority:"))); convErr == nil {
+				priority = value
+			}
+		}
 	}
-	return desc, triggers
+	return desc, triggers, priority
 }
 
 func parseEnabledTools(content string) []string {
@@ -303,6 +331,67 @@ func normalizeName(line string) string {
 	}
 	return strings.TrimSpace(line)
 }
+
+type skillTriggerScorer interface {
+	Score(input string, s types.SkillSpec, cfg runtimeconfig.SkillTriggerScoringConfig) float64
+}
+
+type lexicalWeightedKeywordScorer struct{}
+
+func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg runtimeconfig.SkillTriggerScoringConfig) float64 {
+	if strings.TrimSpace(input) == "" {
+		return 0
+	}
+	hay := strings.ToLower(strings.Join([]string{s.Name, s.Description, strings.Join(s.Triggers, " ")}, " "))
+	if hay == "" {
+		return 0
+	}
+	inputTokens := tokenize(input)
+	if len(inputTokens) == 0 {
+		return 0
+	}
+	weights := cfg.KeywordWeights
+	var totalWeight float64
+	var hitWeight float64
+	for _, token := range inputTokens {
+		weight := 1.0
+		if custom, ok := weights[token]; ok && custom > 0 {
+			weight = custom
+		}
+		totalWeight += weight
+		if strings.Contains(hay, token) {
+			hitWeight += weight
+		}
+	}
+	if totalWeight <= 0 {
+		return 0
+	}
+	return hitWeight / totalWeight
+}
+
+type scoredSkill struct {
+	spec  types.SkillSpec
+	score float64
+	index int
+}
+
+func parsePriority(raw string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, errors.New("empty priority")
+	}
+	var value int
+	_, err := fmt.Sscanf(raw, "%d", &value)
+	return value, err
+}
+
+func (l *Loader) triggerScoringConfig() runtimeconfig.SkillTriggerScoringConfig {
+	if l.runtimeMgr != nil {
+		return l.runtimeMgr.EffectiveConfig().Skill.TriggerScoring
+	}
+	return runtimeconfig.DefaultConfig().Skill.TriggerScoring
+}
+
+// TODO: Keep scorer internal for now; add embedding scorer implementation behind this interface in follow-up.
 
 func (l *Loader) emit(ctx context.Context, runID string, typ string, payload map[string]any) {
 	if l.eventHandler == nil {

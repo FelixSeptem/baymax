@@ -102,6 +102,159 @@ func TestCompilePartialFailureContinues(t *testing.T) {
 	}
 }
 
+func TestCompileSemanticTieBreakUsesHighestPriority(t *testing.T) {
+	dir := t.TempDir()
+	highPath := filepath.Join(dir, "high", "SKILL.md")
+	lowPath := filepath.Join(dir, "low", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(highPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(lowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(highPath, []byte("description: database migration\n- tool: local.high"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lowPath, []byte("description: database migration\n- tool: local.low"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{
+		{Name: "low", Path: lowPath, Description: "database migration", Priority: 1},
+		{Name: "high", Path: highPath, Description: "database migration", Priority: 10},
+	}
+
+	l := New(nil)
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "need database migration"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.SystemPromptFragments) != 2 {
+		t.Fatalf("fragments len = %d, want 2", len(bundle.SystemPromptFragments))
+	}
+	if !strings.Contains(bundle.SystemPromptFragments[0], "local.high") {
+		t.Fatalf("expected highest-priority skill first, got %q", bundle.SystemPromptFragments[0])
+	}
+}
+
+func TestCompileDefaultSuppressesLowConfidenceSemanticMatch(t *testing.T) {
+	dir := t.TempDir()
+	skillPath := filepath.Join(dir, "one", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: database migration\n- tool: local.sql"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{
+		{Name: "db-helper", Path: skillPath, Description: "database migration"},
+	}
+	l := New(nil)
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{
+		UserInput: "database alpha beta gamma delta epsilon zeta eta theta iota kappa lambda",
+	})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.SystemPromptFragments) != 0 {
+		t.Fatalf("expected low-confidence semantic match to be suppressed, got %#v", bundle.SystemPromptFragments)
+	}
+}
+
+func TestCompileCanDisableLowConfidenceSuppressionViaRuntimeConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.9
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    keyword_weights:
+      database: 1.0
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	skillPath := filepath.Join(dir, "one", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: database migration\n- tool: local.sql"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{{Name: "db-helper", Path: skillPath, Description: "database migration"}}
+	l := NewWithRuntimeManager(nil, mgr)
+
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{
+		UserInput: "database alpha beta gamma delta epsilon zeta eta theta iota kappa lambda",
+	})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.SystemPromptFragments) != 1 {
+		t.Fatalf("expected low-confidence candidate to pass when suppression disabled, got %#v", bundle.SystemPromptFragments)
+	}
+}
+
+func TestCompileTieBreakDeterministicAcrossRuns(t *testing.T) {
+	dir := t.TempDir()
+	aPath := filepath.Join(dir, "a", "SKILL.md")
+	bPath := filepath.Join(dir, "b", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(aPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(bPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(aPath, []byte("description: api search\n- tool: local.a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bPath, []byte("description: api search\n- tool: local.b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{
+		{Name: "b-skill", Path: bPath, Description: "api search", Priority: 5},
+		{Name: "a-skill", Path: aPath, Description: "api search", Priority: 5},
+	}
+	l := New(nil)
+	first := ""
+	for i := 0; i < 10; i++ {
+		bundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "api search task"})
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		if len(bundle.SystemPromptFragments) == 0 {
+			t.Fatal("expected semantic match")
+		}
+		current := bundle.SystemPromptFragments[0]
+		if i == 0 {
+			first = current
+			continue
+		}
+		if current != first {
+			t.Fatalf("non-deterministic tie-break: first=%q current=%q", first, current)
+		}
+	}
+}
+
 func TestConflictResolutionPrecedence(t *testing.T) {
 	in := []string{
 		"Follow built-in safety constraints first.",

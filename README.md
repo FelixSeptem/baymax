@@ -88,7 +88,11 @@
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
 - 显式触发优先 + 语义触发兜底
+- 语义触发评分：默认 `lexical_weighted_keywords`（关键词加权 + 阈值命中）
+- tie-break：默认 `highest_priority`（同分时按 `SkillSpec.Priority` 决策）
+- 低置信度抑制：默认开启（`suppress_low_confidence=true`）
 - 冲突优先级：`system built-in > AGENTS > SKILL`
+- 评分策略可通过 `runtime.yaml` 的 `skill.trigger_scoring.*` 配置；embedding scorer 仅保留 TODO 扩展口（本期不启用）
 - 编译输出：`SkillBundle{SystemPromptFragments, EnabledTools, WorkflowHints}`
 
 ### 5. Observability

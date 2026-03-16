@@ -458,6 +458,7 @@ type SkillSpec struct {
 	Path        string            `json:"path"`
 	Description string            `json:"description,omitempty"`
 	Triggers    []string          `json:"triggers,omitempty"`
+	Priority    int               `json:"priority,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 

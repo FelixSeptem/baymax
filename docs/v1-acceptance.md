@@ -16,6 +16,8 @@
 - Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
+- Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
+- Runtime config exposes `skill.trigger_scoring.*` with `env > file > default` precedence and fail-fast validation.
 - Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
@@ -36,7 +38,7 @@
 - No distributed orchestration or cross-process execution coordination.
 - No persisted checkpoint/replay for crash recovery between sessions.
 - No built-in multi-tenant control-plane, RBAC, or audit pipeline.
-- Skill semantic triggering uses lightweight lexical scoring, not embedding-based retrieval.
+- Skill semantic triggering currently uses lexical weighted scoring; embedding scorer is reserved as TODO extension and not enabled in v1.
 - MCP HTTP/stdio reliability profile is available, but tuning thresholds may still require environment-specific adjustment.
 - Hot reload updates runtime config atomically; invalid updates are rejected and rolled back to previous snapshot.
 - `mcp/stdio` pool sizes are fixed at initialization; hot reload does not dynamically resize existing pools in-place.

@@ -129,6 +129,92 @@ func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
 	}
 }
 
+func TestSkillTriggerScoringDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Skill.TriggerScoring.Strategy != SkillTriggerScoringStrategyLexicalWeightedKeywords {
+		t.Fatalf("skill.trigger_scoring.strategy = %q", cfg.Skill.TriggerScoring.Strategy)
+	}
+	if cfg.Skill.TriggerScoring.TieBreak != SkillTriggerScoringTieBreakHighestPriority {
+		t.Fatalf("skill.trigger_scoring.tie_break = %q", cfg.Skill.TriggerScoring.TieBreak)
+	}
+	if !cfg.Skill.TriggerScoring.SuppressLowConfidence {
+		t.Fatal("skill.trigger_scoring.suppress_low_confidence = false, want true")
+	}
+	if cfg.Skill.TriggerScoring.ConfidenceThreshold <= 0 || cfg.Skill.TriggerScoring.ConfidenceThreshold > 1 {
+		t.Fatalf("skill.trigger_scoring.confidence_threshold = %v, want in (0,1]", cfg.Skill.TriggerScoring.ConfidenceThreshold)
+	}
+	if len(cfg.Skill.TriggerScoring.KeywordWeights) == 0 {
+		t.Fatal("skill.trigger_scoring.keyword_weights must not be empty")
+	}
+}
+
+func TestSkillTriggerScoringLoadEnvOverFile(t *testing.T) {
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_TIE_BREAK", SkillTriggerScoringTieBreakFirstRegistered)
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_SUPPRESS_LOW_CONFIDENCE", "false")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_CONFIDENCE_THRESHOLD", "0.61")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    confidence_threshold: 0.33
+    keyword_weights:
+      db: 1.9
+      api: 1.4
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Skill.TriggerScoring.TieBreak != SkillTriggerScoringTieBreakFirstRegistered {
+		t.Fatalf("skill.trigger_scoring.tie_break = %q, want env override", cfg.Skill.TriggerScoring.TieBreak)
+	}
+	if cfg.Skill.TriggerScoring.SuppressLowConfidence {
+		t.Fatal("skill.trigger_scoring.suppress_low_confidence = true, want false from env")
+	}
+	if cfg.Skill.TriggerScoring.ConfidenceThreshold != 0.61 {
+		t.Fatalf("skill.trigger_scoring.confidence_threshold = %v, want 0.61", cfg.Skill.TriggerScoring.ConfidenceThreshold)
+	}
+	if cfg.Skill.TriggerScoring.KeywordWeights["db"] != 1.9 {
+		t.Fatalf("skill.trigger_scoring.keyword_weights.db = %v, want 1.9", cfg.Skill.TriggerScoring.KeywordWeights["db"])
+	}
+}
+
+func TestSkillTriggerScoringValidateRejectsInvalidTieBreak(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Skill.TriggerScoring.TieBreak = "priority_only"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for skill.trigger_scoring.tie_break")
+	}
+}
+
+func TestSkillTriggerScoringValidateRejectsInvalidThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Skill.TriggerScoring.ConfidenceThreshold = 1.01
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for skill.trigger_scoring.confidence_threshold")
+	}
+}
+
+func TestSkillTriggerScoringValidateRejectsEmptyOrNonPositiveWeights(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Skill.TriggerScoring.KeywordWeights = map[string]float64{}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for empty skill.trigger_scoring.keyword_weights")
+	}
+	cfg = DefaultConfig()
+	cfg.Skill.TriggerScoring.KeywordWeights = map[string]float64{"db": 0}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for non-positive skill.trigger_scoring.keyword_weights value")
+	}
+}
+
 func TestActionGateDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.ActionGate.Enabled {

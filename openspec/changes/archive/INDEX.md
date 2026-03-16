@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-16 12:34:03
+Updated: 2026-03-16 13:03:07
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -28,3 +28,4 @@ Updated: 2026-03-16 12:34:03
 - 024 -> introduce-clarification-agent-hitl-pause-resume-h3
 - 025 -> introduce-action-gate-parameter-schema-rules-h4
 - 026 -> harden-runner-cancel-storm-and-backpressure-baseline-r5
+- 027 -> introduce-skill-trigger-scoring-and-contract-tests-d1

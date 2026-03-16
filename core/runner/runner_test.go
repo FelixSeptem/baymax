@@ -93,6 +93,28 @@ func (t *fakeTool) Invoke(ctx context.Context, args map[string]any) (types.ToolR
 	return types.ToolResult{}, nil
 }
 
+type fakeGateResolver struct {
+	confirm func(ctx context.Context, req types.ActionGateConfirmRequest) (bool, error)
+}
+
+func (r *fakeGateResolver) Confirm(ctx context.Context, req types.ActionGateConfirmRequest) (bool, error) {
+	if r.confirm == nil {
+		return true, nil
+	}
+	return r.confirm(ctx, req)
+}
+
+type fakeGateMatcher struct {
+	evaluate func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error)
+}
+
+func (m *fakeGateMatcher) Evaluate(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error) {
+	if m.evaluate == nil {
+		return types.ActionGateDecisionAllow, nil
+	}
+	return m.evaluate(ctx, check)
+}
+
 type eventCollector struct {
 	mu    sync.Mutex
 	types []string
@@ -1332,6 +1354,322 @@ context_assembler:
 	}
 	if runFinished.Payload["ca3_pressure_trigger"] != streamFinished.Payload["ca3_pressure_trigger"] {
 		t.Fatalf("run/stream ca3 pressure trigger mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_trigger"], streamFinished.Payload["ca3_pressure_trigger"])
+	}
+}
+
+func TestActionGateRequireConfirmWithoutResolverFailsFast(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "shell",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.shell"}}}, nil
+		},
+	}
+	collector := &eventCollector{}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  enabled: true
+  policy: require_confirm
+  timeout: 100ms
+  tool_names: [shell]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "please run shell"}, collector)
+	if runErr == nil {
+		t.Fatal("expected action gate fail-fast error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrTool {
+		t.Fatalf("error class = %#v, want ErrTool", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["gate_checks"] != 1 || finished.Payload["gate_denied_count"] != 1 || finished.Payload["gate_timeout_count"] != 0 {
+		t.Fatalf("unexpected gate counters: %#v", finished.Payload)
+	}
+	steps := timelinePhaseStatus(collector.timelineEvents())
+	if !containsTimelineStep(steps, "tool:failed") {
+		t.Fatalf("expected tool:failed timeline, got %v", steps)
+	}
+}
+
+func TestActionGateResolverTimeoutDeny(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "shell",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.shell"}}}, nil
+		},
+	}
+	matcher := &fakeGateMatcher{
+		evaluate: func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error) {
+			return types.ActionGateDecisionRequireConfirm, nil
+		},
+	}
+	resolver := &fakeGateResolver{
+		confirm: func(ctx context.Context, req types.ActionGateConfirmRequest) (bool, error) {
+			<-ctx.Done()
+			return false, ctx.Err()
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  timeout: 1ms
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	engine := New(model,
+		WithLocalRegistry(reg),
+		WithRuntimeManager(mgr),
+		WithActionGateMatcher(matcher),
+		WithActionGateResolver(resolver),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "do shell"}, collector)
+	if !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("runErr = %v, want deadline exceeded", runErr)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("error class = %#v, want ErrPolicyTimeout", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["gate_checks"] != 1 || finished.Payload["gate_denied_count"] != 1 || finished.Payload["gate_timeout_count"] != 1 {
+		t.Fatalf("unexpected gate counters: %#v", finished.Payload)
+	}
+	steps := timelinePhaseStatus(collector.timelineEvents())
+	if !containsTimelineStep(steps, "tool:canceled") {
+		t.Fatalf("expected tool:canceled timeline for timeout, got %v", steps)
+	}
+}
+
+func TestActionGateAllowPathKeepsToolExecution(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	calls := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			calls++
+			if calls == 1 {
+				return types.ModelResponse{
+					ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo", Args: map[string]any{"cmd": "list"}}},
+				}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "done"}, nil
+		},
+	}
+	matcher := &fakeGateMatcher{
+		evaluate: func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error) {
+			return types.ActionGateDecisionAllow, nil
+		},
+	}
+	engine := New(model, WithLocalRegistry(reg), WithActionGateMatcher(matcher))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "run safely"}, nil)
+	if runErr != nil {
+		t.Fatalf("Run failed: %v", runErr)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want done", res.FinalAnswer)
+	}
+}
+
+func TestActionGateKeywordRuleHitAndMiss(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{name: "echo"})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	calls := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			calls++
+			if calls == 1 {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  enabled: true
+  policy: require_confirm
+  timeout: 100ms
+  keywords: [danger]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr), WithActionGateResolver(&fakeGateResolver{}))
+	if _, runErr := engine.Run(context.Background(), types.RunRequest{Input: "safe input"}, nil); runErr != nil {
+		t.Fatalf("safe input should pass with resolver: %v", runErr)
+	}
+
+	calls = 0
+	engineNoResolver := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	if _, runErr := engineNoResolver.Run(context.Background(), types.RunRequest{Input: "danger delete request"}, nil); runErr == nil {
+		t.Fatal("expected deny when keyword rule hits and resolver missing")
+	}
+}
+
+func TestActionGateRunAndStreamDenySemanticsEquivalent(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.shell"}}}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type:     types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{CallID: "c1", Name: "local.shell"},
+			})
+		},
+	}
+	denyMatcher := &fakeGateMatcher{
+		evaluate: func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error) {
+			return types.ActionGateDecisionDeny, nil
+		},
+	}
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "shell"})
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithLocalRegistry(reg), WithActionGateMatcher(denyMatcher))
+	streamEngine := New(streamModel, WithActionGateMatcher(denyMatcher))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "danger"}, runCollector)
+	if runErr == nil {
+		t.Fatal("run should be denied by action gate")
+	}
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "danger"}, streamCollector)
+	if streamErr == nil {
+		t.Fatal("stream should be denied by action gate")
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("expected classified errors for run/stream, got run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != streamRes.Error.Class {
+		t.Fatalf("run/stream error class mismatch: run=%s stream=%s", runRes.Error.Class, streamRes.Error.Class)
+	}
+}
+
+func TestActionGateRunAndStreamTimeoutSemanticsEquivalent(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.shell"}}}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type:     types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{CallID: "c1", Name: "local.shell"},
+			})
+		},
+	}
+	requireMatcher := &fakeGateMatcher{
+		evaluate: func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error) {
+			return types.ActionGateDecisionRequireConfirm, nil
+		},
+	}
+	timeoutResolver := &fakeGateResolver{
+		confirm: func(ctx context.Context, req types.ActionGateConfirmRequest) (bool, error) {
+			<-ctx.Done()
+			return false, ctx.Err()
+		},
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  timeout: 1ms
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "shell"})
+
+	runEngine := New(runModel,
+		WithLocalRegistry(reg),
+		WithRuntimeManager(mgr),
+		WithActionGateMatcher(requireMatcher),
+		WithActionGateResolver(timeoutResolver),
+	)
+	streamEngine := New(streamModel,
+		WithRuntimeManager(mgr),
+		WithActionGateMatcher(requireMatcher),
+		WithActionGateResolver(timeoutResolver),
+	)
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "danger"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "danger"}, nil)
+	if !errors.Is(runErr, context.DeadlineExceeded) || !errors.Is(streamErr, context.DeadlineExceeded) {
+		t.Fatalf("expected timeout for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream classified errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
 	}
 }
 

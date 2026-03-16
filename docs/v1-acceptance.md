@@ -21,6 +21,7 @@
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
 - Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
 - Context Assembler CA3 memory pressure control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.
+- Action Gate HITL H2 is enabled with default `require_confirm`, timeout-deny semantics, and Run/Stream equivalent deny/timeout behavior.
 - R3 advanced tutorial examples (`05` to `08`) are present, runnable, and aligned with README/docs pattern navigation.
 - Quality gate includes repository hygiene checks (reject temp backup artifacts), and mainline contract test coverage is indexed for traceability.
 
@@ -39,4 +40,4 @@
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
 - Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
-- Context Assembler production-level policy convergence stage (CA4) remains deferred.
+- Action Gate H2 仅覆盖执行前确认（tool name + keyword）；不包含参数 schema 风险规则与 H3 pause/resume 状态机。

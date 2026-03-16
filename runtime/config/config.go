@@ -46,12 +46,19 @@ const (
 	ContextStage2ExternalProfileElasticsearchLike = "elasticsearch_like"
 )
 
+const (
+	ActionGatePolicyAllow          = "allow"
+	ActionGatePolicyRequireConfirm = "require_confirm"
+	ActionGatePolicyDeny           = "deny"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
+	ActionGate       ActionGateConfig       `json:"action_gate"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
 	Security         SecurityConfig         `json:"security"`
 }
@@ -84,6 +91,16 @@ type ProviderFallbackConfig struct {
 	Providers         []string      `json:"providers"`
 	DiscoveryTimeout  time.Duration `json:"discovery_timeout"`
 	DiscoveryCacheTTL time.Duration `json:"discovery_cache_ttl"`
+}
+
+type ActionGateConfig struct {
+	Enabled        bool              `json:"enabled"`
+	Policy         string            `json:"policy"`
+	Timeout        time.Duration     `json:"timeout"`
+	ToolNames      []string          `json:"tool_names"`
+	Keywords       []string          `json:"keywords"`
+	DecisionByTool map[string]string `json:"decision_by_tool"`
+	DecisionByWord map[string]string `json:"decision_by_keyword"`
 }
 
 type ContextAssemblerConfig struct {
@@ -297,6 +314,15 @@ func DefaultConfig() Config {
 			Providers:         nil,
 			DiscoveryTimeout:  1500 * time.Millisecond,
 			DiscoveryCacheTTL: 5 * time.Minute,
+		},
+		ActionGate: ActionGateConfig{
+			Enabled:        true,
+			Policy:         ActionGatePolicyRequireConfirm,
+			Timeout:        15 * time.Second,
+			ToolNames:      nil,
+			Keywords:       nil,
+			DecisionByTool: map[string]string{},
+			DecisionByWord: map[string]string{},
 		},
 		ContextAssembler: ContextAssemblerConfig{
 			Enabled:       true,
@@ -547,6 +573,41 @@ func Validate(cfg Config) error {
 			cfg.ProviderFallback.Providers[i] = name
 		}
 	}
+	if cfg.ActionGate.Enabled {
+		policy := strings.ToLower(strings.TrimSpace(cfg.ActionGate.Policy))
+		if err := validateActionGatePolicy(policy, "action_gate.policy"); err != nil {
+			return err
+		}
+		if cfg.ActionGate.Timeout <= 0 {
+			return errors.New("action_gate.timeout must be > 0")
+		}
+		for i, name := range cfg.ActionGate.ToolNames {
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("action_gate.tool_names[%d] must not be empty", i)
+			}
+		}
+		for i, keyword := range cfg.ActionGate.Keywords {
+			if strings.TrimSpace(keyword) == "" {
+				return fmt.Errorf("action_gate.keywords[%d] must not be empty", i)
+			}
+		}
+		for tool, decision := range cfg.ActionGate.DecisionByTool {
+			if strings.TrimSpace(tool) == "" {
+				return errors.New("action_gate.decision_by_tool contains empty key")
+			}
+			if err := validateActionGatePolicy(decision, fmt.Sprintf("action_gate.decision_by_tool.%s", tool)); err != nil {
+				return err
+			}
+		}
+		for keyword, decision := range cfg.ActionGate.DecisionByWord {
+			if strings.TrimSpace(keyword) == "" {
+				return errors.New("action_gate.decision_by_keyword contains empty key")
+			}
+			if err := validateActionGatePolicy(decision, fmt.Sprintf("action_gate.decision_by_keyword.%s", keyword)); err != nil {
+				return err
+			}
+		}
+	}
 	if cfg.ContextAssembler.Enabled {
 		if strings.TrimSpace(cfg.ContextAssembler.JournalPath) == "" {
 			return errors.New("context_assembler.journal_path is required when enabled")
@@ -654,6 +715,15 @@ func validateBackpressure(v types.BackpressureMode, field string) error {
 		return nil
 	default:
 		return fmt.Errorf("%s must be one of [block,reject]", field)
+	}
+}
+
+func validateActionGatePolicy(v, field string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case ActionGatePolicyAllow, ActionGatePolicyRequireConfirm, ActionGatePolicyDeny:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [allow,require_confirm,deny]", field)
 	}
 }
 
@@ -802,6 +872,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
 	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
 	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
+	v.SetDefault("action_gate.enabled", base.ActionGate.Enabled)
+	v.SetDefault("action_gate.policy", base.ActionGate.Policy)
+	v.SetDefault("action_gate.timeout", base.ActionGate.Timeout)
+	v.SetDefault("action_gate.tool_names", base.ActionGate.ToolNames)
+	v.SetDefault("action_gate.keywords", base.ActionGate.Keywords)
+	v.SetDefault("action_gate.decision_by_tool", base.ActionGate.DecisionByTool)
+	v.SetDefault("action_gate.decision_by_keyword", base.ActionGate.DecisionByWord)
 	v.SetDefault("context_assembler.enabled", base.ContextAssembler.Enabled)
 	v.SetDefault("context_assembler.journal_path", base.ContextAssembler.JournalPath)
 	v.SetDefault("context_assembler.prefix_version", base.ContextAssembler.PrefixVersion)
@@ -877,6 +954,13 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
 	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
 	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
+	cfg.ActionGate.Enabled = v.GetBool("action_gate.enabled")
+	cfg.ActionGate.Policy = strings.ToLower(strings.TrimSpace(v.GetString("action_gate.policy")))
+	cfg.ActionGate.Timeout = v.GetDuration("action_gate.timeout")
+	cfg.ActionGate.ToolNames = normalizeKeywords(v.GetStringSlice("action_gate.tool_names"))
+	cfg.ActionGate.Keywords = normalizeKeywords(v.GetStringSlice("action_gate.keywords"))
+	cfg.ActionGate.DecisionByTool = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_tool"))
+	cfg.ActionGate.DecisionByWord = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_keyword"))
 	cfg.ContextAssembler.Enabled = v.GetBool("context_assembler.enabled")
 	cfg.ContextAssembler.JournalPath = strings.TrimSpace(v.GetString("context_assembler.journal_path"))
 	cfg.ContextAssembler.PrefixVersion = strings.TrimSpace(v.GetString("context_assembler.prefix_version"))
@@ -1094,6 +1178,25 @@ func normalizeStringMap(in map[string]string) map[string]string {
 			continue
 		}
 		out[key] = strings.TrimSpace(v)
+	}
+	return out
+}
+
+func normalizeStringToPolicyMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for rawKey, rawValue := range in {
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		if key == "" {
+			continue
+		}
+		value := strings.ToLower(strings.TrimSpace(rawValue))
+		if value == "" {
+			continue
+		}
+		out[key] = value
 	}
 	return out
 }

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-13
+更新时间：2026-03-16
 
 ## 目标
 
@@ -161,6 +161,15 @@
 - 文档可支持外部团队按 README/docs 独立接入核心能力。
 - 关键调试链路可通过库接口完成定位，CLI/可视化仅作为增益项。
 
+### Naming Migration（规划，当前不实现）
+
+- 目标：在不破坏现有语义与兼容性的前提下，逐步将 `CA1/CA2/CA3/CA4` 迁移为更直观的 phase 命名。
+- N1（别名期）：文档采用双命名（如 `CA4 / Production Convergence`），不改代码符号与对外字段。
+- N2（兼容期）：配置/诊断/事件层支持新旧命名并行读取与输出，补齐兼容契约测试与迁移指南。
+- N3（收敛期）：新命名成为默认口径，旧命名进入 deprecation 窗口并按版本计划移除。
+- 验收：Run/Stream 语义不变；迁移窗口内向后兼容；README/docs/runtime-config-diagnostics/roadmap 命名一致。
+- 非目标：本轨道不引入新功能，不触发 package path 重命名。
+
 ## Multi-Provider 里程碑（规划，当前不实现）
 
 - M1（R3 前半）：完成 `model/anthropic`、`model/gemini` 最小非流式适配与契约测试。
@@ -232,7 +241,7 @@
 
 - H1（R3 前半，已完成）：交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
 - H1.5（R3-R4，已完成）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
-- H2（R3 后半或 R4 前半）：引入 Action Gate（执行前确认钩子），支持外部编排式 HITL。
+- H2（R3 后半，已完成）：引入 Action Gate（执行前确认钩子），默认 `require_confirm`、timeout-deny、Run/Stream 语义一致，并收敛最小诊断字段（`gate_checks/gate_denied_count/gate_timeout_count`）。
 - H3（R4）：引入原生 pause/resume 语义（`run.awaiting_user` / `run.resumed`），完善契约测试与诊断记录。
 
 ## A2A 里程碑（规划，当前不实现）

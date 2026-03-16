@@ -15,6 +15,37 @@ type ModelClient interface {
 	Stream(ctx context.Context, req ModelRequest, onEvent func(ModelEvent) error) error
 }
 
+type ActionGateDecision string
+
+const (
+	ActionGateDecisionAllow          ActionGateDecision = "allow"
+	ActionGateDecisionRequireConfirm ActionGateDecision = "require_confirm"
+	ActionGateDecisionDeny           ActionGateDecision = "deny"
+)
+
+type ActionGateCheck struct {
+	RunID     string         `json:"run_id,omitempty"`
+	SessionID string         `json:"session_id,omitempty"`
+	Iteration int            `json:"iteration,omitempty"`
+	CallID    string         `json:"call_id,omitempty"`
+	ToolName  string         `json:"tool_name,omitempty"`
+	Input     string         `json:"input,omitempty"`
+	Args      map[string]any `json:"args,omitempty"`
+}
+
+type ActionGateMatcher interface {
+	Evaluate(ctx context.Context, check ActionGateCheck) (ActionGateDecision, error)
+}
+
+type ActionGateConfirmRequest struct {
+	Check   ActionGateCheck `json:"check"`
+	Timeout time.Duration   `json:"timeout"`
+}
+
+type ActionGateResolver interface {
+	Confirm(ctx context.Context, req ActionGateConfirmRequest) (bool, error)
+}
+
 type TokenCounter interface {
 	CountTokens(ctx context.Context, req ModelRequest) (int, error)
 }

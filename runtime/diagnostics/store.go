@@ -67,6 +67,9 @@ type RunRecord struct {
 	CA3SpillCount        int                               `json:"ca3_spill_count,omitempty"`
 	CA3SwapBackCount     int                               `json:"ca3_swap_back_count,omitempty"`
 	RecapStatus          string                            `json:"recap_status,omitempty"`
+	GateChecks           int                               `json:"gate_checks,omitempty"`
+	GateDeniedCount      int                               `json:"gate_denied_count,omitempty"`
+	GateTimeoutCount     int                               `json:"gate_timeout_count,omitempty"`
 	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 

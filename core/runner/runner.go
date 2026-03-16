@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,17 +30,19 @@ const (
 type Option func(*Engine)
 
 type Engine struct {
-	model      types.ModelClient
-	models     map[string]types.ModelClient
-	modelOrder []string
-	dispatcher *local.Dispatcher
-	tracer     *obsTrace.Manager
-	runtimeMgr *runtimeconfig.Manager
-	assembler  *assembler.Assembler
-	now        func() time.Time
-	newRunID   func() string
-	capCacheMu sync.RWMutex
-	capCache   map[string]cachedCapabilities
+	model              types.ModelClient
+	models             map[string]types.ModelClient
+	modelOrder         []string
+	dispatcher         *local.Dispatcher
+	tracer             *obsTrace.Manager
+	runtimeMgr         *runtimeconfig.Manager
+	assembler          *assembler.Assembler
+	actionGateMatcher  types.ActionGateMatcher
+	actionGateResolver types.ActionGateResolver
+	now                func() time.Time
+	newRunID           func() string
+	capCacheMu         sync.RWMutex
+	capCache           map[string]cachedCapabilities
 }
 
 type cachedCapabilities struct {
@@ -133,6 +136,18 @@ func WithProviderModels(primary string, providers map[string]types.ModelClient) 
 	}
 }
 
+func WithActionGateMatcher(matcher types.ActionGateMatcher) Option {
+	return func(e *Engine) {
+		e.actionGateMatcher = matcher
+	}
+}
+
+func WithActionGateResolver(resolver types.ActionGateResolver) Option {
+	return func(e *Engine) {
+		e.actionGateResolver = resolver
+	}
+}
+
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
@@ -155,6 +170,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	fallbackUsed := false
 	lastAssemble := types.ContextAssembleResult{}
 	timelineSeq := int64(0)
+	gateStats := actionGateStats{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -288,6 +304,20 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateModelStep
 				continue
 			}
+			terminal, runErr = e.enforceActionGateForToolCalls(
+				ctx,
+				h,
+				req,
+				runID,
+				iteration,
+				&timelineSeq,
+				lastResponse.ToolCalls,
+				&gateStats,
+			)
+			if terminal != nil {
+				state = StateAbort
+				continue
+			}
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusRunning, "")
 			dispatchCfg := local.DispatchConfig{
@@ -384,6 +414,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Required:     lastSelection.Required,
 					UsedFallback: fallbackUsed,
 					Assemble:     lastAssemble,
+					GateChecks:   gateStats.Checks,
+					GateDenied:   gateStats.DeniedCount,
+					GateTimeout:  gateStats.TimeoutCount,
 				}),
 			})
 			return result, nil
@@ -416,6 +449,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					Reason:       lastSelection.Reason,
 					UsedFallback: fallbackUsed,
 					Assemble:     lastAssemble,
+					GateChecks:   gateStats.Checks,
+					GateDenied:   gateStats.DeniedCount,
+					GateTimeout:  gateStats.TimeoutCount,
 				}),
 			})
 			return result, runErr
@@ -438,6 +474,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	final := ""
 	usage := types.TokenUsage{}
 	selectionPath := make([]string, 0, 2)
+	gateStats := actionGateStats{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -572,16 +609,41 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		if ev.Type == "final_answer" || ev.Type == "response.output_text.delta" {
 			final += ev.TextDelta
 		}
+		if ev.ToolCall != nil {
+			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
+			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusRunning, "")
+			gateTerm, gateRunErr := e.enforceActionGateForToolCalls(
+				stepCtx,
+				h,
+				req,
+				runID,
+				iteration,
+				&timelineSeq,
+				[]types.ToolCall{*ev.ToolCall},
+				&gateStats,
+			)
+			if gateTerm != nil {
+				return &actionGateViolationError{
+					classified: gateTerm,
+					err:        gateRunErr,
+				}
+			}
+			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "stream_tool_dispatch_not_supported")
+		}
 		return nil
 	})
 	modelSpan.End()
 	cancel()
 	if err != nil {
 		var classifiedErr classifiedModelError
+		var gateErr *actionGateViolationError
 		terminal := classified(types.ErrModel, err.Error(), false)
 		var timelineStatus types.ActionStatus
 		var reason string
 		switch {
+		case errors.As(err, &gateErr) && gateErr.ClassifiedError() != nil:
+			terminal = gateErr.ClassifiedError()
+			timelineStatus, reason = classifyClassifiedTimelineError(terminal)
 		case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
 			terminal = classifiedErr.ClassifiedError()
 			timelineStatus, reason = classifyClassifiedTimelineError(terminal)
@@ -615,6 +677,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				Required:     required,
 				UsedFallback: selection.UsedFallback,
 				Assemble:     lastAssemble,
+				GateChecks:   gateStats.Checks,
+				GateDenied:   gateStats.DeniedCount,
+				GateTimeout:  gateStats.TimeoutCount,
 			}),
 		})
 		return result, err
@@ -643,6 +708,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Required:     required,
 			UsedFallback: selection.UsedFallback,
 			Assemble:     lastAssemble,
+			GateChecks:   gateStats.Checks,
+			GateDenied:   gateStats.DeniedCount,
+			GateTimeout:  gateStats.TimeoutCount,
 		}),
 	})
 	return result, nil
@@ -960,6 +1028,9 @@ type runFinishMeta struct {
 	UsedFallback bool
 	Reason       string
 	Assemble     types.ContextAssembleResult
+	GateChecks   int
+	GateDenied   int
+	GateTimeout  int
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1063,6 +1134,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Recap.Status != "" {
 		payload["recap_status"] = string(meta.Assemble.Recap.Status)
 	}
+	payload["gate_checks"] = meta.GateChecks
+	payload["gate_denied_count"] = meta.GateDenied
+	payload["gate_timeout_count"] = meta.GateTimeout
 	return payload
 }
 
@@ -1134,6 +1208,249 @@ func classifyClassifiedTimelineError(err *types.ClassifiedError) (types.ActionSt
 	default:
 		return types.ActionStatusFailed, "failed"
 	}
+}
+
+type actionGateStats struct {
+	Checks       int
+	DeniedCount  int
+	TimeoutCount int
+}
+
+type actionGateViolationError struct {
+	classified *types.ClassifiedError
+	err        error
+}
+
+func (e *actionGateViolationError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.err != nil {
+		return e.err.Error()
+	}
+	if e.classified != nil {
+		return e.classified.Message
+	}
+	return "action gate violation"
+}
+
+func (e *actionGateViolationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *actionGateViolationError) ClassifiedError() *types.ClassifiedError {
+	if e == nil {
+		return nil
+	}
+	return e.classified
+}
+
+func (e *Engine) enforceActionGateForToolCalls(
+	ctx context.Context,
+	h types.EventHandler,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	seq *int64,
+	calls []types.ToolCall,
+	stats *actionGateStats,
+) (*types.ClassifiedError, error) {
+	for _, call := range calls {
+		check := types.ActionGateCheck{
+			RunID:     runID,
+			SessionID: req.SessionID,
+			Iteration: iteration,
+			CallID:    call.CallID,
+			ToolName:  call.Name,
+			Input:     req.Input,
+			Args:      call.Args,
+		}
+		decision, checked, err := e.evaluateActionGateDecision(ctx, check)
+		if err != nil {
+			ce := classified(types.ErrTool, fmt.Sprintf("action gate evaluate failed: %v", err), false)
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			if stats != nil {
+				stats.Checks++
+				stats.DeniedCount++
+			}
+			return ce, err
+		}
+		if !checked {
+			continue
+		}
+		if stats != nil {
+			stats.Checks++
+		}
+		switch decision {
+		case types.ActionGateDecisionAllow:
+			continue
+		case types.ActionGateDecisionDeny:
+			if stats != nil {
+				stats.DeniedCount++
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			msg := fmt.Sprintf("action gate denied tool call: %s", strings.TrimSpace(call.Name))
+			return classified(types.ErrTool, msg, false), errors.New(msg)
+		case types.ActionGateDecisionRequireConfirm:
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.require_confirm")
+			if e.actionGateResolver == nil {
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate requires confirmation but resolver is not configured: %s", strings.TrimSpace(call.Name))
+				return classified(types.ErrTool, msg, false), errors.New(msg)
+			}
+			timeout := e.actionGateTimeout()
+			confirmCtx, cancel := context.WithTimeout(ctx, timeout)
+			approved, confirmErr := e.actionGateResolver.Confirm(confirmCtx, types.ActionGateConfirmRequest{
+				Check:   check,
+				Timeout: timeout,
+			})
+			cancel()
+			if confirmErr != nil || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
+				if errors.Is(confirmErr, context.DeadlineExceeded) || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
+					if stats != nil {
+						stats.TimeoutCount++
+						stats.DeniedCount++
+					}
+					e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "gate.timeout")
+					msg := fmt.Sprintf("action gate confirmation timed out for tool: %s", strings.TrimSpace(call.Name))
+					return classified(types.ErrPolicyTimeout, msg, true), context.DeadlineExceeded
+				}
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate confirmation failed for tool %s: %v", strings.TrimSpace(call.Name), confirmErr)
+				return classified(types.ErrTool, msg, false), confirmErr
+			}
+			if !approved {
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate confirmation denied tool call: %s", strings.TrimSpace(call.Name))
+				return classified(types.ErrTool, msg, false), errors.New(msg)
+			}
+		default:
+			if stats != nil {
+				stats.DeniedCount++
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", decision, strings.TrimSpace(call.Name))
+			return classified(types.ErrTool, msg, false), errors.New(msg)
+		}
+	}
+	return nil, nil
+}
+
+func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, bool, error) {
+	if e.actionGateMatcher != nil {
+		decision, err := e.actionGateMatcher.Evaluate(ctx, check)
+		if err != nil {
+			return "", false, err
+		}
+		return normalizeActionGateDecision(decision), true, nil
+	}
+	cfg := e.actionGateConfig()
+	if !cfg.Enabled {
+		return types.ActionGateDecisionAllow, false, nil
+	}
+
+	toolName := normalizeToolName(check.ToolName)
+	content := strings.ToLower(strings.TrimSpace(check.Input) + " " + marshalToolArgs(check.Args))
+	defaultDecision := normalizeActionGateDecision(types.ActionGateDecision(cfg.Policy))
+
+	if policy, ok := cfg.DecisionByTool[toolName]; ok {
+		return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+	}
+	segments := strings.Split(toolName, ".")
+	if len(segments) > 1 {
+		shortName := strings.TrimSpace(segments[len(segments)-1])
+		if policy, ok := cfg.DecisionByTool[shortName]; ok {
+			return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+		}
+	}
+
+	for _, tool := range cfg.ToolNames {
+		normalized := normalizeToolName(tool)
+		if normalized == "" {
+			continue
+		}
+		if normalized == toolName {
+			return defaultDecision, true, nil
+		}
+		if len(segments) > 1 && normalized == strings.TrimSpace(segments[len(segments)-1]) {
+			return defaultDecision, true, nil
+		}
+	}
+
+	for keyword, policy := range cfg.DecisionByWord {
+		kw := strings.ToLower(strings.TrimSpace(keyword))
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(content, kw) {
+			return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+		}
+	}
+	for _, keyword := range cfg.Keywords {
+		kw := strings.ToLower(strings.TrimSpace(keyword))
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(content, kw) {
+			return defaultDecision, true, nil
+		}
+	}
+	return types.ActionGateDecisionAllow, false, nil
+}
+
+func (e *Engine) actionGateConfig() runtimeconfig.ActionGateConfig {
+	if e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig().ActionGate
+	}
+	return e.runtimeMgr.EffectiveConfig().ActionGate
+}
+
+func (e *Engine) actionGateTimeout() time.Duration {
+	cfg := e.actionGateConfig()
+	if cfg.Timeout <= 0 {
+		return 15 * time.Second
+	}
+	return cfg.Timeout
+}
+
+func normalizeToolName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func normalizeActionGateDecision(in types.ActionGateDecision) types.ActionGateDecision {
+	switch strings.ToLower(strings.TrimSpace(string(in))) {
+	case string(types.ActionGateDecisionAllow):
+		return types.ActionGateDecisionAllow
+	case string(types.ActionGateDecisionDeny):
+		return types.ActionGateDecisionDeny
+	case string(types.ActionGateDecisionRequireConfirm):
+		return types.ActionGateDecisionRequireConfirm
+	default:
+		return types.ActionGateDecisionDeny
+	}
+}
+
+func marshalToolArgs(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Sprintf("%v", args)
+	}
+	return string(raw)
 }
 
 var _ types.Runner = (*Engine)(nil)

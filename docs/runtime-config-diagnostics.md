@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-13
+更新时间：2026-03-16
 
 ## 目标
 
@@ -58,6 +58,19 @@ provider_fallback:
   providers: [openai, anthropic, gemini] # 有序候选链；enabled=true 时必须非空
   discovery_timeout: 1500ms
   discovery_cache_ttl: 5m
+
+action_gate:
+  enabled: true
+  policy: require_confirm # allow|require_confirm|deny
+  timeout: 15s            # resolver 超时统一按 deny 处理
+  tool_names: []          # 首期风险规则：tool name
+  keywords: []            # 首期风险规则：keyword（匹配 input + args 文本）
+  decision_by_tool:       # 可选：按 tool 定制决策
+    shell: require_confirm
+    delete: deny
+  decision_by_keyword:    # 可选：按 keyword 定制决策
+    "rm -rf": deny
+    "drop table": require_confirm
 
 context_assembler:
   enabled: true # 默认 true
@@ -293,6 +306,17 @@ client := httpmcp.NewClient(httpmcp.Config{
 说明：
 - 聚合维度为“单 run 内按 phase 聚合”。
 - 同一 run 的 timeline 重放按 `sequence+phase+status` 去重，不重复累计。
+
+### Run 诊断新增字段（Action Gate H2）
+
+- `gate_checks`：本次 run 触发的 gate 检查次数（高风险规则命中计数）。
+- `gate_denied_count`：本次 run 被 gate 拒绝的次数（含 deny/timeout/resolver 错误拒绝）。
+- `gate_timeout_count`：本次 run 因确认超时导致拒绝的次数。
+
+Action Timeline reason code（gate 相关）：
+- `gate.require_confirm`：命中规则且进入确认流程。
+- `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
+- `gate.timeout`：确认超时后拒绝（timeout-deny）。
 
 ## 诊断写入口径（Single Writer + Idempotency）
 

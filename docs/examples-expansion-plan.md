@@ -1,6 +1,6 @@
 # Examples Expansion Plan
 
-更新时间：2026-03-11
+更新时间：2026-03-16
 
 ## 参考基线
 
@@ -22,6 +22,8 @@
 
 ## Phase R2 Batch (Foundational + Core Patterns)
 
+状态：已完成
+
 - `examples/01-chat-minimal`
 - `examples/02-tool-loop-basic`
 - `examples/03-mcp-mixed-call`
@@ -38,6 +40,8 @@ R2 重点覆盖 Pattern：
 - `TODO.md`: 优化机会、已知限制、后续增强点
 
 ## Phase R3 Batch (Advanced + Concurrency Patterns)
+
+状态：已完成
 
 - `examples/05-parallel-tools-fanout`
 - `examples/06-async-job-progress`
@@ -57,9 +61,9 @@ R3 重点覆盖 Pattern：
 ## Backlog（Pattern 补齐建议）
 
 为更完整对齐 PocketFlow pattern，建议后续新增：
-- `examples/08-routing-strategy-switch`: 显式多路由策略选择（按输入/置信度/成本）
-- `examples/09-hierarchical-structure`: 分层编排（planner/worker/validator）
-- `examples/10-map-reduce-large-batch`: 大批量任务切分与聚合优化
+- `examples/09-routing-strategy-switch`: 显式多路由策略选择（按输入/置信度/成本）
+- `examples/10-hierarchical-structure`: 分层编排（planner/worker/validator）
+- `examples/11-map-reduce-large-batch`: 大批量任务切分与聚合优化
 
 ## Style Guide (PocketFlow-inspired)
 

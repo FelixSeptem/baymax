@@ -146,6 +146,9 @@ mcp:
 			"ca3_spill_count":       1,
 			"ca3_swap_back_count":   1,
 			"recap_status":          "appended",
+			"gate_checks":           4,
+			"gate_denied_count":     2,
+			"gate_timeout_count":    1,
 		},
 	}
 	rec.OnEvent(context.Background(), ev)
@@ -178,6 +181,9 @@ mcp:
 	}
 	if items[0].CA3CompressionRatio == 0 || items[0].CA3SpillCount != 1 || items[0].CA3SwapBackCount != 1 {
 		t.Fatalf("ca3 metrics mismatch: %#v", items[0])
+	}
+	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
+		t.Fatalf("action gate metrics mismatch: %#v", items[0])
 	}
 	modelAgg, ok := items[0].TimelinePhases["model"]
 	if !ok {

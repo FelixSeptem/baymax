@@ -95,6 +95,51 @@ func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
 	}
 }
 
+func TestActionGateDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.ActionGate.Enabled {
+		t.Fatal("action_gate.enabled = false, want true")
+	}
+	if cfg.ActionGate.Policy != ActionGatePolicyRequireConfirm {
+		t.Fatalf("action_gate.policy = %q, want %q", cfg.ActionGate.Policy, ActionGatePolicyRequireConfirm)
+	}
+	if cfg.ActionGate.Timeout <= 0 {
+		t.Fatalf("action_gate.timeout = %v, want > 0", cfg.ActionGate.Timeout)
+	}
+}
+
+func TestActionGateValidationRejectsInvalidPolicy(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ActionGate.Policy = "warn"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for action_gate.policy")
+	}
+}
+
+func TestActionGateEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_ACTION_GATE_POLICY", "deny")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+action_gate:
+  policy: require_confirm
+  timeout: 7s
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ActionGate.Policy != ActionGatePolicyDeny {
+		t.Fatalf("action_gate.policy = %q, want env override deny", cfg.ActionGate.Policy)
+	}
+	if cfg.ActionGate.Timeout != 7*time.Second {
+		t.Fatalf("action_gate.timeout = %v, want 7s from file", cfg.ActionGate.Timeout)
+	}
+}
+
 func TestContextAssemblerDefaultsEnabledAndFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.ContextAssembler.Enabled {

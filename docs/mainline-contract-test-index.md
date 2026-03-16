@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-13
+更新时间：2026-03-16
 
 ## 目标
 
@@ -15,6 +15,7 @@
 | Tool Loop | `core/runner/runner_test.go::TestRunToolLoopSuccess` | `core/runner/runner_test.go::TestRunToolFailurePolicy` |
 | CA2 Stage2 | `core/runner/runner_test.go::TestRunCA2BestEffortKeepsModelPath` | `core/runner/runner_test.go::TestStreamCA2FailFastStopsBeforeModel` |
 | CA3 Pressure | `core/runner/runner_test.go::TestRunAndStreamCA3PressureSemanticsEquivalent` | `context/assembler/assembler_test.go::TestAssemblerCA3EmergencyRejectsLowPriorityStage2` |
+| Action Gate H2 | `core/runner/runner_test.go::TestActionGateAllowPathKeepsToolExecution` | `core/runner/runner_test.go::TestActionGateRunAndStreamTimeoutSemanticsEquivalent` |
 | Provider Fallback + CA3 Token Counter | `core/runner/runner_test.go::TestRunProviderFallbackUsesSelectedTokenCounterForCA3` | `core/runner/runner_test.go::TestStreamProviderFallbackUsesSelectedTokenCounterForCA3` |
 | Provider Token Count Normalization | `model/gemini/client_test.go::TestBuildTokenContentsNormalizesRolesAndKeepsInput` | `model/openai/client_test.go::TestCountTokensReturnsUnsupportedError` |
 

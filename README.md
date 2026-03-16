@@ -2,26 +2,12 @@
 
 一个 `library-first` 的 Go Agent Loop 运行时，支持模型循环、工具调度、MCP 双传输、技能加载与可观测性。
 
-## 当前状态（2026-03-13）
+## 当前状态（2026-03-16）
 
-- OpenSpec changes `build-go-agent-loop-framework`、`upgrade-openai-native-stream-mapping`、`optimize-runtime-concurrency-and-async-io` 已完成并归档。
-- OpenSpec change `harden-mcp-runtime-reliability-profiles` 已完成并归档。
-- OpenSpec change `add-runtime-config-and-diagnostics-api-with-hot-reload` 已完成并归档。
-- OpenSpec change `refactor-runtime-responsibility-boundaries-and-enrich-docs` 已完成并归档。
-- OpenSpec change `unify-diagnostics-contract-and-concurrency-baseline` 已完成并归档。
-- OpenSpec change `bootstrap-multi-llm-providers-m1` 已完成并归档。
-- OpenSpec change `align-multi-provider-streaming-and-error-taxonomy-m2` 已完成并归档。
-- OpenSpec change `add-provider-capability-detection-and-fallback-m3` 已完成实现。
-- OpenSpec change `build-context-assembler-ca1-prefix-append-only-baseline` 已完成实现。
-- OpenSpec change `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap` 已完成实现。
-- OpenSpec change `harden-security-baseline-s1-govulncheck-and-redaction` 已完成实现。
-- OpenSpec change `activate-ca2-external-retriever-spi-and-http-adapter` 已完成实现。
-- OpenSpec change `standardize-action-timeline-events-h1` 已完成并归档。
-- OpenSpec change `converge-action-timeline-observability-h15` 已完成实现。
-- OpenSpec change `implement-context-assembler-ca3-memory-pressure-and-recovery` 已完成实现。
-- OpenSpec change `implement-context-assembler-ca4-production-convergence` 已完成实现。
-- 核心能力已具备可运行的 v1 基线。
-- 关键测试通过：`go test ./...`。
+- OpenSpec 活跃变更数：`0`（当前基线已全部归档）。
+- 最近归档：`023-introduce-action-gate-hitl-h2`。
+- 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
+- 归档清单见：`openspec/changes/archive/INDEX.md`。
 
 ## 已实现能力
 
@@ -69,10 +55,18 @@
   - 五级分区：`safe|comfort|warning|danger|emergency`
   - CA4 阈值策略：`stage override -> percent/absolute 并行评估 -> 取更高压力分区`
   - 策略动作：warning/danger 触发 squash/prune；emergency 触发 spill/swap + 低优先级加载拒绝
-  - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
-  - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
-  - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
-  - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
+- 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
+- Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
+- OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
+- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
+
+### 3.7 Action Gate HITL（H2）
+- 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
+- 默认策略：`require_confirm`（若需要确认但未配置 resolver，直接 deny + fail-fast）。
+- 超时策略：resolver 超时统一按 deny（`timeout-deny`）。
+- Run/Stream 语义：`allow/deny/timeout` 的错误分类与 timeline reason code 保持一致。
+- timeline reason code：`gate.require_confirm`、`gate.denied`、`gate.timeout`。
+- run 诊断最小字段：`gate_checks`、`gate_denied_count`、`gate_timeout_count`。
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -99,7 +93,7 @@
 - 质量门禁新增 `govulncheck`，默认 `strict`（发现漏洞即失败）
 - 安全扫描模式支持 `strict|warn`，通过环境变量控制
 
-### 6. Integration + Benchmark
+### 7. Integration + Benchmark
 - fake model/tool/mcp 组件
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
 - benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
@@ -171,94 +165,40 @@ defer mgr.Close()
 
 更多字段与环境变量映射见：`docs/runtime-config-diagnostics.md`
 
-Context Assembler（CA1 + CA2）最小配置示例：
+Action Gate（H2）最小配置示例：
+```yaml
+action_gate:
+  enabled: true
+  policy: require_confirm # allow|require_confirm|deny
+  timeout: 15s            # resolver 超时按 deny
+  tool_names: []          # tool name 风险规则
+  keywords: []            # keyword 风险规则（input + args）
+  decision_by_tool:
+    shell: require_confirm
+    delete: deny
+  decision_by_keyword:
+    "rm -rf": deny
+```
+
+Context Assembler（最小配置示例）：
 ```yaml
 context_assembler:
   enabled: true
-  journal_path: /tmp/baymax/context-journal.jsonl # 默认值在运行时按 os.TempDir() 计算
+  journal_path: /tmp/baymax/context-journal.jsonl
   prefix_version: ca1
   storage:
-    backend: file # CA1: file|db，其中 db 会 fail-fast 返回 unsupported
-  guard:
-    fail_fast: true
+    backend: file # file|db（db 当前为占位，启动 fail-fast）
   ca2:
     enabled: true
-    routing_mode: rules # rules|agentic(agentic 预留，当前返回 not-ready)
-    stage_policy:
-      stage1: fail_fast    # fail_fast|best_effort
-      stage2: best_effort  # fail_fast|best_effort
-    timeout:
-      stage1: 80ms
-      stage2: 120ms
+    routing_mode: rules
     stage2:
-      provider: http       # file|http|rag|db|elasticsearch
-      file_path: /tmp/baymax/context-stage2.jsonl
+      provider: http # file|http|rag|db|elasticsearch
       external:
-        profile: http_generic # http_generic|ragflow_like|graphrag_like|elasticsearch_like
+        profile: http_generic
         endpoint: https://retriever.example.com/search
-        method: POST       # POST|PUT
-        auth:
-          bearer_token: "${RETRIEVER_TOKEN}"
-          header_name: Authorization # 留空时默认为 Authorization
-        headers:
-          X-Tenant: demo
-        mapping:
-          request:
-            mode: plain     # plain|jsonrpc2
-            query_field: query
-            session_id_field: session_id
-            run_id_field: run_id
-            max_items_field: max_items
-          response:
-            chunks_field: chunks
-            source_field: source
-            reason_field: reason
-            error_field: error
-            error_message_field: error.message
-
-# 可选：启动前做 external retriever 配置预检查（warning 可继续，error 会阻断）
-# result := runtimeconfig.PrecheckStage2External("http", cfg.ContextAssembler.CA2.Stage2.External)
-# if err := result.FirstError(); err != nil { panic(err) }
-    routing:
-      min_input_chars: 120
-      trigger_keywords: [search, retrieve, reference, lookup]
-      require_system_guard: true
-    tail_recap:
-      enabled: true
-      max_items: 4
-      max_field_chars: 256
-  ca3:
-    enabled: true
-    max_context_tokens: 128000
-    goldilocks_min_percent: 35
-    goldilocks_max_percent: 60
-    percent_thresholds:
-      safe: 20
-      comfort: 40
-      warning: 60
-      danger: 75
-      emergency: 90
-    absolute_thresholds:
-      safe: 24000
-      comfort: 48000
-      warning: 72000
-      danger: 96000
-      emergency: 115200
-    emergency:
-      reject_low_priority: true
-      high_priority_tokens: [urgent, critical, incident]
-    spill:
-      enabled: true
-      backend: file # file|db|object（db/object 预留接口，当前未实现）
-      path: /tmp/baymax/context-spill.jsonl
-      swap_back_limit: 4
-    tokenizer:
-      mode: sdk_preferred # sdk_preferred|estimate_only
-      provider: anthropic # anthropic|gemini|openai
-      model: claude-3-5-sonnet-latest
-      small_delta_tokens: 256
-      sdk_refresh_interval: 1200ms
 ```
+
+完整字段、默认值、校验与诊断口径请以 `docs/runtime-config-diagnostics.md` 为准。
 
 ### 运行测试
 ```bash

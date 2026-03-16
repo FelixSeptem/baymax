@@ -23,7 +23,11 @@
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
 - Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
+- Runtime diagnostics expose CA2 external provider-scoped trend API with fields `provider/window_start/window_end/p95_latency_ms/error_rate/hit_rate`.
+- CA2 external trend threshold-hit signals are observational only and do not trigger automatic strategy actions in v1.
 - Context Assembler CA3 memory pressure control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.
+- Context Assembler CA3 compaction supports `truncate|semantic` with default `truncate`; semantic path uses current model client and preserves `best_effort` fallback / `fail_fast` terminate semantics.
+- Run diagnostics include CA3 compaction fields: `ca3_compaction_mode`, `ca3_compaction_fallback`, `ca3_compaction_retained_evidence_count`.
 - Action Gate HITL H2 is enabled with default `require_confirm`, timeout-deny semantics, and Run/Stream equivalent deny/timeout behavior.
 - Clarification HITL H3 is enabled with native `await_user -> resumed -> canceled_by_user` lifecycle, structured `clarification_request` payload, and Run/Stream equivalent timeout-cancel behavior.
 - Action Gate H4 parameter-schema rules are enabled with operator + composite conditions (`AND/OR`), deterministic priority over keyword/tool decisions, and Run/Stream semantic equivalence.
@@ -52,5 +56,6 @@
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
 - Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
+- CA3 semantic compaction quality scoring/template tuning is TODO; v1 only guarantees deterministic mode/fallback semantics and evidence-retention baseline.
 - Action Gate H2 当前仍仅覆盖执行前确认（tool name + keyword）；参数 schema 风险规则留作后续迭代。
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。

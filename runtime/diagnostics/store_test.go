@@ -8,7 +8,7 @@ import (
 )
 
 func TestStoreConcurrentAccess(t *testing.T) {
-	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
+	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -63,7 +63,7 @@ func TestSanitizeMap(t *testing.T) {
 }
 
 func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -86,7 +86,7 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 }
 
 func TestStoreSkillDedupConcurrent(t *testing.T) {
-	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -143,7 +143,7 @@ func TestIdempotencyKeyDeterministic(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationWithP95(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "model", "running", 1, base)
@@ -185,7 +185,7 @@ func TestStoreTimelineAggregationWithP95(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "run", "running", 1, base)
@@ -208,7 +208,7 @@ func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
 }
 
 func TestStoreTimelineTrendsLastNRunsAndTimeWindow(t *testing.T) {
-	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 2, TimeWindow: 15 * time.Minute})
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 2, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now().Add(-2 * time.Minute)
 
 	addRunTimeline := func(runID string, seq int64, started, ended time.Time, status string) {
@@ -264,7 +264,7 @@ func TestStoreTimelineTrendsLastNRunsAndTimeWindow(t *testing.T) {
 }
 
 func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
-	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute})
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
 	base := time.Now()
 	d.AddTimelineEvent("run-1", "tool", "running", 1, base)
 	d.AddTimelineEvent("run-1", "tool", "failed", 2, base.Add(10*time.Millisecond))
@@ -280,12 +280,157 @@ func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
 		t.Fatalf("duplicate replay should not increase trend counts: %#v", trends[0])
 	}
 
-	d2 := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute})
+	d2 := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
 	d2.AddTimelineEvent("run-zero", "tool", "running", 1, base)
 	d2.AddTimelineEvent("run-zero", "tool", "failed", 2, base.Add(5*time.Millisecond))
 	d2.AddRun(RunRecord{RunID: "run-zero", Status: "failed"})
 	empty := d2.TimelineTrends(TimelineTrendQuery{Mode: TimelineTrendModeTimeWindow, TimeWindow: 30 * time.Second})
 	if len(empty) != 0 {
 		t.Fatalf("empty window should return empty set, got %#v", empty)
+	}
+}
+
+func TestStoreCA2ExternalTrendsThresholdSignalsAndErrorLayerExtension(t *testing.T) {
+	d := NewStore(16, 64, 8, 8,
+		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 15 * time.Minute},
+		CA2ExternalTrendConfig{
+			Enabled: true,
+			Window:  15 * time.Minute,
+			Thresholds: CA2ExternalThresholds{
+				P95LatencyMs: 50,
+				ErrorRate:    0.25,
+				HitRate:      0.80,
+			},
+		},
+	)
+	base := time.Now().Add(-30 * time.Second)
+	d.AddRun(RunRecord{
+		Time:             base.Add(1 * time.Second),
+		RunID:            "run-1",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  80,
+		Stage2HitCount:   0,
+		Stage2ReasonCode: "timeout",
+		Stage2ErrorLayer: "transport",
+	})
+	d.AddRun(RunRecord{
+		Time:             base.Add(2 * time.Second),
+		RunID:            "run-2",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  60,
+		Stage2HitCount:   1,
+		Stage2ReasonCode: "upstream_custom",
+		Stage2ErrorLayer: "vendor_limit",
+	})
+	d.AddRun(RunRecord{
+		Time:             base.Add(3 * time.Second),
+		RunID:            "run-3",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  20,
+		Stage2HitCount:   1,
+		Stage2ReasonCode: "ok",
+	})
+
+	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{})
+	if len(items) != 1 {
+		t.Fatalf("trend len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Provider != "http" {
+		t.Fatalf("provider = %q, want http", got.Provider)
+	}
+	if got.P95LatencyMs <= 50 {
+		t.Fatalf("p95_latency_ms = %d, want > 50", got.P95LatencyMs)
+	}
+	if got.ErrorRate <= 0.25 {
+		t.Fatalf("error_rate = %v, want > 0.25", got.ErrorRate)
+	}
+	if got.HitRate >= 0.80 {
+		t.Fatalf("hit_rate = %v, want < 0.80", got.HitRate)
+	}
+	expectHits := map[string]bool{"p95_latency_ms": true, "error_rate": true, "hit_rate": true}
+	for _, key := range got.ThresholdHits {
+		delete(expectHits, key)
+	}
+	if len(expectHits) != 0 {
+		t.Fatalf("threshold_hits missing = %#v, got %#v", expectHits, got.ThresholdHits)
+	}
+	if got.ErrorLayerDistribution["transport"] != 1 || got.ErrorLayerDistribution["vendor_limit"] != 1 {
+		t.Fatalf("error layer distribution mismatch: %#v", got.ErrorLayerDistribution)
+	}
+}
+
+func TestStoreCA2ExternalTrendsEmptyWindow(t *testing.T) {
+	d := NewStore(8, 16, 8, 8,
+		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute},
+		CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Second},
+	)
+	base := time.Now()
+	d.AddRun(RunRecord{
+		Time:             base.Add(-2 * time.Minute),
+		RunID:            "run-old",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  10,
+		Stage2ReasonCode: "ok",
+	})
+	d.AddRun(RunRecord{
+		RunID:            "run-no-time",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  10,
+		Stage2ReasonCode: "ok",
+	})
+	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{Window: 30 * time.Second})
+	if len(items) != 0 {
+		t.Fatalf("expected empty CA2 trend for window, got %#v", items)
+	}
+}
+
+func TestStoreCA2ExternalTrendsRunStreamSemanticEquivalent(t *testing.T) {
+	d := NewStore(8, 32, 8, 8,
+		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 15 * time.Minute},
+		CA2ExternalTrendConfig{
+			Enabled: true,
+			Window:  15 * time.Minute,
+			Thresholds: CA2ExternalThresholds{
+				P95LatencyMs: 200,
+				ErrorRate:    0.8,
+				HitRate:      0.1,
+			},
+		},
+	)
+	base := time.Now()
+	d.AddRun(RunRecord{
+		Time:             base.Add(10 * time.Millisecond),
+		RunID:            "run-equivalent",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  90,
+		Stage2HitCount:   1,
+		Stage2ReasonCode: "ok",
+	})
+	d.AddRun(RunRecord{
+		Time:             base.Add(20 * time.Millisecond),
+		RunID:            "stream-equivalent",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  90,
+		Stage2HitCount:   1,
+		Stage2ReasonCode: "ok",
+	})
+
+	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{})
+	if len(items) != 1 {
+		t.Fatalf("trend len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Provider != "http" {
+		t.Fatalf("provider = %q, want http", got.Provider)
+	}
+	if got.ErrorRate != 0 {
+		t.Fatalf("error_rate = %v, want 0", got.ErrorRate)
+	}
+	if got.HitRate != 1 {
+		t.Fatalf("hit_rate = %v, want 1", got.HitRate)
+	}
+	if len(got.ThresholdHits) != 0 {
+		t.Fatalf("threshold hits should be empty for equivalent healthy run/stream sample, got %#v", got.ThresholdHits)
 	}
 }

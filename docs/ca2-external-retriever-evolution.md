@@ -10,8 +10,8 @@
 
 - E1（R3 收敛）：保持 `http` 作为 `rag/db/elasticsearch` 默认兜底实现，优先稳定 SPI 主路径与配置兼容性。
 - E1（R3 收敛）：补充 provider profile 模板（request/response mapping、鉴权头、错误字段）降低接入复杂度。
-- E2（R4 前半）：完善错误分层映射（transport/protocol/semantic），统一映射到 `stage2_reason` 与 diagnostics 扩展字段。
-- E2（R4 前半）：在 SPI 增加 capability/hint 扩展口，不改 assembler 主流程，为专用 adapter 预留协议位。
+- E2（R4 前半，已完成观测侧）：完善错误分层映射（transport/protocol/semantic，允许新增枚举），并统一映射到 diagnostics 扩展字段与 provider 趋势聚合。
+- E2（R4 前半，部分待续）：在 SPI 增加 capability/hint 扩展口，不改 assembler 主流程，为专用 adapter 预留协议位。
 - E3（R4 后半，按需触发）：仅在出现性能或语义瓶颈时引入 provider 专用 adapter（例如 ES DSL、向量过滤、rerank 元信息透传）。
 
 ## 触发门槛

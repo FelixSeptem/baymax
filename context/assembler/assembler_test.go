@@ -594,3 +594,225 @@ type tokenCounterFunc func(ctx context.Context, req types.ModelRequest) (int, er
 func (f tokenCounterFunc) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
 	return f(ctx, req)
 }
+
+type modelClientFunc struct {
+	generate func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error)
+}
+
+func (m modelClientFunc) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	if m.generate == nil {
+		return types.ModelResponse{}, nil
+	}
+	return m.generate(ctx, req)
+}
+
+func (m modelClientFunc) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	_ = ctx
+	_ = req
+	_ = onEvent
+	return nil
+}
+
+func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.SemanticTimeout = 500 * time.Millisecond
+	cfg.CA2.StagePolicy.Stage1 = "fail_fast"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: strings.Repeat("long semantic content ", 24)},
+	}
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-semantic-success",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 18),
+		Messages:      msgs,
+		ModelClient:   client,
+	}, types.ModelRequest{
+		RunID:    "run-semantic-success",
+		Input:    strings.Repeat("need compact ", 18),
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.CompactionMode != "semantic" {
+		t.Fatalf("compaction mode = %q, want semantic", result.Stage.CompactionMode)
+	}
+	if result.Stage.CompactionFallback {
+		t.Fatal("compaction fallback should be false")
+	}
+	foundSummary := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "semantic-summary") {
+			foundSummary = true
+			break
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("semantic summary not found in output messages: %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionBestEffortFallback(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.SemanticTimeout = 500 * time.Millisecond
+	cfg.CA2.StagePolicy.Stage1 = "best_effort"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{}, errors.New("semantic unavailable")
+		},
+	}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: strings.Repeat("long semantic content ", 24)},
+	}
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-semantic-fallback",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 18),
+		Messages:      msgs,
+		ModelClient:   client,
+	}, types.ModelRequest{
+		RunID:    "run-semantic-fallback",
+		Input:    strings.Repeat("need compact ", 18),
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Assemble should fallback in best_effort, got error: %v", err)
+	}
+	if !result.Stage.CompactionFallback {
+		t.Fatal("compaction fallback should be true")
+	}
+	foundTruncated := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "...[squashed]") {
+			foundTruncated = true
+			break
+		}
+	}
+	if !foundTruncated {
+		t.Fatalf("truncate fallback not observed: %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionFailFast(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA2.StagePolicy.Stage1 = "fail_fast"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{}, errors.New("semantic failure")
+		},
+	}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: strings.Repeat("long semantic content ", 24)},
+	}
+	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-semantic-fail-fast",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 18),
+		Messages:      msgs,
+		ModelClient:   client,
+	}, types.ModelRequest{
+		RunID:    "run-semantic-fail-fast",
+		Input:    strings.Repeat("need compact ", 18),
+		Messages: msgs,
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast semantic compaction error")
+	}
+}
+
+func TestAssemblerCA3PruneRetainsEvidenceAndReportsCount(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 80
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 8, Comfort: 16, Warning: 24, Danger: 32, Emergency: 40,
+	}
+	cfg.CA3.Prune.TargetPercent = 30
+	cfg.CA3.Compaction.Evidence.Keywords = []string{"mustkeep"}
+	cfg.CA3.Compaction.Evidence.RecentWindow = 0
+
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: "mustkeep: keep this statement"},
+		{Role: "user", Content: strings.Repeat("filler ", 80)},
+	}
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-evidence",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need trim", 12),
+		Messages:      msgs,
+	}, types.ModelRequest{
+		RunID:    "run-evidence",
+		Input:    strings.Repeat("need trim", 12),
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.RetainedEvidenceCount <= 0 {
+		t.Fatalf("retained evidence count = %d, want > 0", result.Stage.RetainedEvidenceCount)
+	}
+	foundEvidence := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "mustkeep: keep this statement") {
+			foundEvidence = true
+			break
+		}
+	}
+	if !foundEvidence {
+		t.Fatalf("evidence message should be retained: %#v", outReq.Messages)
+	}
+}

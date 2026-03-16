@@ -100,6 +100,10 @@
   - **Squash**：摘要合并、冗余消除、结构化压缩。
   - **Prune**：按重要性评分排序，优先删除低相关内容（优先规则评分，保留评分扩展口）。
   - 支持“不可压缩/不可删除”标记（critical/irreversible 类内容）。
+- Compaction 策略支持 `truncate|semantic`（默认 `truncate`）：
+  - `semantic` 通过当前 model client 执行语义压缩。
+  - `best_effort` 下语义失败回退 `truncate`；`fail_fast` 下语义失败立即终止。
+- Prune 证据保留规则：`keywords + recent_window`，并输出保留计数诊断字段。
 - 支持 spill/swap（文件落盘与按需回填），保留 provenance path：
   - 溢出内容保留 `origin_ref` 便于完整路径追溯。
   - 本期实现文件后端；DB/对象存储仅接口占位。

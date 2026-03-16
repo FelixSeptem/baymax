@@ -318,7 +318,7 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 		Enabled:    true,
 		LastNRuns:  100,
 		TimeWindow: 15 * time.Minute,
-	})
+	}, runtimediag.CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	now := time.Now()
 	for i := 0; i < 400; i++ {
 		runID := fmt.Sprintf("bench-run-%d", i)
@@ -347,6 +347,64 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 		for _, item := range items {
 			if item.LatencyP95Ms < 0 {
 				b.Fatalf("invalid latency_p95_ms: %#v", item)
+			}
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
+	store := runtimediag.NewStore(64, 1024, 16, 32,
+		runtimediag.TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute},
+		runtimediag.CA2ExternalTrendConfig{
+			Enabled: true,
+			Window:  15 * time.Minute,
+			Thresholds: runtimediag.CA2ExternalThresholds{
+				P95LatencyMs: 1000,
+				ErrorRate:    0.15,
+				HitRate:      0.30,
+			},
+		},
+	)
+	now := time.Now()
+	for i := 0; i < 600; i++ {
+		provider := "http"
+		if i%2 == 0 {
+			provider = "rag"
+		}
+		code := "ok"
+		layer := ""
+		hitCount := 1
+		if i%5 == 0 {
+			code = "timeout"
+			layer = "transport"
+			hitCount = 0
+		}
+		store.AddRun(runtimediag.RunRecord{
+			Time:             now.Add(time.Duration(i) * time.Millisecond),
+			RunID:            fmt.Sprintf("ca2-run-%d", i),
+			Stage2Provider:   provider,
+			Stage2LatencyMs:  int64((i%11)+1) * 35,
+			Stage2HitCount:   hitCount,
+			Stage2ReasonCode: code,
+			Stage2ErrorLayer: layer,
+		})
+	}
+	durations := make([]int64, 0, b.N)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		items := store.CA2ExternalTrends(runtimediag.CA2ExternalTrendQuery{})
+		if len(items) == 0 {
+			b.Fatalf("ca2 external trend result is empty")
+		}
+		for _, item := range items {
+			if item.P95LatencyMs < 0 || item.ErrorRate < 0 || item.HitRate < 0 {
+				b.Fatalf("invalid trend record: %#v", item)
 			}
 		}
 		durations = append(durations, time.Since(start).Nanoseconds())

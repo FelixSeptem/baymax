@@ -5,7 +5,7 @@
 ## 当前状态（2026-03-16）
 
 - OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
-- 最近归档：`029-establish-open-source-p0-governance-baseline`。
+- 最近归档：`032-harden-ca2-external-retriever-observability-and-thresholds-e2`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
@@ -59,14 +59,19 @@
 - 支持 stage 失败策略配置（`fail_fast` / `best_effort`）
 - 支持 tail recap（最小字段 `status/decisions/todo/risks`）并追加在上下文末尾
 - 增强诊断字段：`assemble_stage_status`、`stage2_skip_reason`、`stage1_latency_ms`、`stage2_latency_ms`、`stage2_provider`、`stage2_profile`、`stage2_hit_count`、`stage2_source`、`stage2_reason`、`stage2_reason_code`、`stage2_error_layer`、`recap_status`
+- CA2 external 观测阈值：支持 provider 维度趋势聚合（`p95_latency_ms`、`error_rate`、`hit_rate`）与静态阈值命中信号（仅观测，不自动动作）
 - CA3 memory pressure control：
   - 五级分区：`safe|comfort|warning|danger|emergency`
   - CA4 阈值策略：`stage override -> percent/absolute 并行评估 -> 取更高压力分区`
   - 策略动作：warning/danger 触发 squash/prune；emergency 触发 spill/swap + 低优先级加载拒绝
+- CA3 compaction 策略：
+  - `context_assembler.ca3.compaction.mode`：`truncate|semantic`（默认 `truncate`）
+  - `semantic` 通过当前 model client 路径执行语义压缩；`best_effort` 失败回退 `truncate`，`fail_fast` 失败即终止
+  - prune 证据保留：`context_assembler.ca3.compaction.evidence.keywords` + `recent_window`
 - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
 - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
-- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
+- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_retained_evidence_count`
 
 ### 3.7 HITL（H2 + H3 + H4）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
@@ -249,6 +254,18 @@ diagnostics:
     time_window: 15m
 ```
 
+CA2 External Retriever 趋势与阈值（E2）最小配置示例：
+```yaml
+diagnostics:
+  ca2_external_trend:
+    enabled: true
+    window: 15m
+    thresholds:
+      p95_latency_ms: 1500
+      error_rate: 0.10
+      hit_rate: 0.20
+```
+
 Context Assembler（最小配置示例）：
 ```yaml
 context_assembler:
@@ -265,6 +282,13 @@ context_assembler:
       external:
         profile: http_generic
         endpoint: https://retriever.example.com/search
+  ca3:
+    compaction:
+      mode: truncate # truncate|semantic
+      semantic_timeout: 800ms
+      evidence:
+        keywords: [decision, constraint, todo, risk]
+        recent_window: 0
 
 clarification:
   enabled: true

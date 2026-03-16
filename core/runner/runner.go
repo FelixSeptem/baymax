@@ -231,6 +231,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ToolResult:    modelReq.ToolResult,
 				Capabilities:  modelReq.Capabilities,
 				TokenCounter:  tokenCounter,
+				ModelClient:   selectedModel,
 			}, modelReq)
 			lastAssemble = assembleResult
 			if assembleErr != nil {
@@ -619,6 +620,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		ToolResult:    modelReq.ToolResult,
 		Capabilities:  modelReq.Capabilities,
 		TokenCounter:  tokenCounter,
+		ModelClient:   selectedModel,
 	}, modelReq)
 	lastAssemble := assembleResult
 
@@ -1289,6 +1291,15 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.Assemble.Stage.SwapBackCount > 0 {
 		payload["ca3_swap_back_count"] = meta.Assemble.Stage.SwapBackCount
+	}
+	if meta.Assemble.Stage.CompactionMode != "" {
+		payload["ca3_compaction_mode"] = meta.Assemble.Stage.CompactionMode
+	}
+	if meta.Assemble.Stage.CompactionFallback {
+		payload["ca3_compaction_fallback"] = meta.Assemble.Stage.CompactionFallback
+	}
+	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
+		payload["ca3_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 	}
 	if meta.Assemble.Recap.Status != "" {
 		payload["recap_status"] = string(meta.Assemble.Recap.Status)

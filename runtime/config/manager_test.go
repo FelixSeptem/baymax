@@ -272,6 +272,79 @@ reload:
 	}
 }
 
+func TestManagerCA2ExternalTrendsAPIAndReloadRollback(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+diagnostics:
+  ca2_external_trend:
+    enabled: true
+    window: 1m
+    thresholds:
+      p95_latency_ms: 50
+      error_rate: 0.1
+      hit_rate: 0.5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	base := time.Now()
+	mgr.RecordRun(runtimediag.RunRecord{
+		Time:             base.Add(10 * time.Millisecond),
+		RunID:            "run-ca2-1",
+		Stage2Provider:   "http",
+		Stage2LatencyMs:  80,
+		Stage2HitCount:   0,
+		Stage2ReasonCode: "timeout",
+		Stage2ErrorLayer: "transport",
+	})
+	items := mgr.CA2ExternalTrends(runtimediag.CA2ExternalTrendQuery{})
+	if len(items) != 1 {
+		t.Fatalf("ca2 external trends len = %d, want 1", len(items))
+	}
+	if items[0].Provider != "http" {
+		t.Fatalf("provider = %q, want http", items[0].Provider)
+	}
+	if len(items[0].ThresholdHits) == 0 {
+		t.Fatalf("threshold hits should not be empty: %#v", items[0])
+	}
+
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 1
+diagnostics:
+  ca2_external_trend:
+    enabled: true
+    window: 0s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	if mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend.Window != 1*time.Minute {
+		t.Fatalf("invalid reload should rollback CA2 trend config, got %#v", mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

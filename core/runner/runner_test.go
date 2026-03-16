@@ -1391,6 +1391,12 @@ context_assembler:
 	if runFinished.Payload["ca3_pressure_trigger"] != streamFinished.Payload["ca3_pressure_trigger"] {
 		t.Fatalf("run/stream ca3 pressure trigger mismatch: run=%v stream=%v", runFinished.Payload["ca3_pressure_trigger"], streamFinished.Payload["ca3_pressure_trigger"])
 	}
+	if runFinished.Payload["ca3_compaction_mode"] != streamFinished.Payload["ca3_compaction_mode"] {
+		t.Fatalf("run/stream ca3 compaction mode mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_mode"], streamFinished.Payload["ca3_compaction_mode"])
+	}
+	if runFinished.Payload["ca3_compaction_fallback"] != streamFinished.Payload["ca3_compaction_fallback"] {
+		t.Fatalf("run/stream ca3 compaction fallback mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_fallback"], streamFinished.Payload["ca3_compaction_fallback"])
+	}
 }
 
 func TestActionGateRequireConfirmWithoutResolverFailsFast(t *testing.T) {

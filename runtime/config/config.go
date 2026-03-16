@@ -101,17 +101,30 @@ type DropLowPriorityConfig struct {
 }
 
 type DiagnosticsConfig struct {
-	MaxCallRecords  int                            `json:"max_call_records"`
-	MaxRunRecords   int                            `json:"max_run_records"`
-	MaxReloadErrors int                            `json:"max_reload_errors"`
-	MaxSkillRecords int                            `json:"max_skill_records"`
-	TimelineTrend   DiagnosticsTimelineTrendConfig `json:"timeline_trend"`
+	MaxCallRecords   int                               `json:"max_call_records"`
+	MaxRunRecords    int                               `json:"max_run_records"`
+	MaxReloadErrors  int                               `json:"max_reload_errors"`
+	MaxSkillRecords  int                               `json:"max_skill_records"`
+	TimelineTrend    DiagnosticsTimelineTrendConfig    `json:"timeline_trend"`
+	CA2ExternalTrend DiagnosticsCA2ExternalTrendConfig `json:"ca2_external_trend"`
 }
 
 type DiagnosticsTimelineTrendConfig struct {
 	Enabled    bool          `json:"enabled"`
 	LastNRuns  int           `json:"last_n_runs"`
 	TimeWindow time.Duration `json:"time_window"`
+}
+
+type DiagnosticsCA2ExternalTrendConfig struct {
+	Enabled    bool                                  `json:"enabled"`
+	Window     time.Duration                         `json:"window"`
+	Thresholds DiagnosticsCA2ExternalTrendThresholds `json:"thresholds"`
+}
+
+type DiagnosticsCA2ExternalTrendThresholds struct {
+	P95LatencyMs int64   `json:"p95_latency_ms"`
+	ErrorRate    float64 `json:"error_rate"`
+	HitRate      float64 `json:"hit_rate"`
 }
 
 type ReloadConfig struct {
@@ -263,6 +276,7 @@ type ContextAssemblerCA3Config struct {
 	Emergency            ContextAssemblerCA3EmergencyConfig         `json:"emergency"`
 	Spill                ContextAssemblerCA3SpillConfig             `json:"spill"`
 	Tokenizer            ContextAssemblerCA3TokenizerConfig         `json:"tokenizer"`
+	Compaction           ContextAssemblerCA3CompactionConfig        `json:"compaction"`
 }
 
 type ContextAssemblerCA3Thresholds struct {
@@ -312,6 +326,17 @@ type ContextAssemblerCA3TokenizerConfig struct {
 	Model              string        `json:"model"`
 	SmallDeltaTokens   int           `json:"small_delta_tokens"`
 	SDKRefreshInterval time.Duration `json:"sdk_refresh_interval"`
+}
+
+type ContextAssemblerCA3CompactionConfig struct {
+	Mode            string                                      `json:"mode"`
+	SemanticTimeout time.Duration                               `json:"semantic_timeout"`
+	Evidence        ContextAssemblerCA3CompactionEvidenceConfig `json:"evidence"`
+}
+
+type ContextAssemblerCA3CompactionEvidenceConfig struct {
+	Keywords     []string `json:"keywords"`
+	RecentWindow int      `json:"recent_window"`
 }
 
 type SecurityConfig struct {
@@ -366,6 +391,15 @@ func DefaultConfig() Config {
 				Enabled:    true,
 				LastNRuns:  100,
 				TimeWindow: 15 * time.Minute,
+			},
+			CA2ExternalTrend: DiagnosticsCA2ExternalTrendConfig{
+				Enabled: true,
+				Window:  15 * time.Minute,
+				Thresholds: DiagnosticsCA2ExternalTrendThresholds{
+					P95LatencyMs: 1500,
+					ErrorRate:    0.10,
+					HitRate:      0.20,
+				},
 			},
 		},
 		Reload: ReloadConfig{
@@ -525,6 +559,14 @@ func DefaultConfig() Config {
 					SmallDeltaTokens:   1024 * 8,
 					SDKRefreshInterval: 5 * time.Second,
 				},
+				Compaction: ContextAssemblerCA3CompactionConfig{
+					Mode:            "truncate",
+					SemanticTimeout: 800 * time.Millisecond,
+					Evidence: ContextAssemblerCA3CompactionEvidenceConfig{
+						Keywords:     []string{"decision", "constraint", "todo", "risk"},
+						RecentWindow: 0,
+					},
+				},
 			},
 		},
 		Security: SecurityConfig{
@@ -665,6 +707,18 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Diagnostics.TimelineTrend.TimeWindow <= 0 {
 		return errors.New("diagnostics.timeline_trend.time_window must be > 0")
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Window <= 0 {
+		return errors.New("diagnostics.ca2_external_trend.window must be > 0")
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
+		return errors.New("diagnostics.ca2_external_trend.thresholds.p95_latency_ms must be > 0")
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate > 1 {
+		return errors.New("diagnostics.ca2_external_trend.thresholds.error_rate must be in [0,1]")
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate > 1 {
+		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -1049,6 +1103,21 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 	if cfg.Tokenizer.SDKRefreshInterval <= 0 {
 		return errors.New("context_assembler.ca3.tokenizer.sdk_refresh_interval must be > 0")
 	}
+	compactionMode := strings.ToLower(strings.TrimSpace(cfg.Compaction.Mode))
+	if compactionMode == "" {
+		compactionMode = "truncate"
+	}
+	switch compactionMode {
+	case "truncate", "semantic":
+	default:
+		return fmt.Errorf("context_assembler.ca3.compaction.mode must be one of [truncate,semantic], got %q", cfg.Compaction.Mode)
+	}
+	if cfg.Compaction.SemanticTimeout <= 0 {
+		return errors.New("context_assembler.ca3.compaction.semantic_timeout must be > 0")
+	}
+	if cfg.Compaction.Evidence.RecentWindow < 0 {
+		return errors.New("context_assembler.ca3.compaction.evidence.recent_window must be >= 0")
+	}
 	return nil
 }
 
@@ -1110,6 +1179,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.timeline_trend.enabled", base.Diagnostics.TimelineTrend.Enabled)
 	v.SetDefault("diagnostics.timeline_trend.last_n_runs", base.Diagnostics.TimelineTrend.LastNRuns)
 	v.SetDefault("diagnostics.timeline_trend.time_window", base.Diagnostics.TimelineTrend.TimeWindow)
+	v.SetDefault("diagnostics.ca2_external_trend.enabled", base.Diagnostics.CA2ExternalTrend.Enabled)
+	v.SetDefault("diagnostics.ca2_external_trend.window", base.Diagnostics.CA2ExternalTrend.Window)
+	v.SetDefault("diagnostics.ca2_external_trend.thresholds.p95_latency_ms", base.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
+	v.SetDefault("diagnostics.ca2_external_trend.thresholds.error_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate)
+	v.SetDefault("diagnostics.ca2_external_trend.thresholds.hit_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.HitRate)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -1184,6 +1258,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.tokenizer.model", base.ContextAssembler.CA3.Tokenizer.Model)
 	v.SetDefault("context_assembler.ca3.tokenizer.small_delta_tokens", base.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
 	v.SetDefault("context_assembler.ca3.tokenizer.sdk_refresh_interval", base.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval)
+	v.SetDefault("context_assembler.ca3.compaction.mode", base.ContextAssembler.CA3.Compaction.Mode)
+	v.SetDefault("context_assembler.ca3.compaction.semantic_timeout", base.ContextAssembler.CA3.Compaction.SemanticTimeout)
+	v.SetDefault("context_assembler.ca3.compaction.evidence.keywords", base.ContextAssembler.CA3.Compaction.Evidence.Keywords)
+	v.SetDefault("context_assembler.ca3.compaction.evidence.recent_window", base.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
 	v.SetDefault("security.scan.govulncheck_enabled", base.Security.Scan.GovulncheckEnable)
 	v.SetDefault("security.redaction.enabled", base.Security.Redaction.Enabled)
@@ -1208,6 +1286,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Diagnostics.TimelineTrend.Enabled = v.GetBool("diagnostics.timeline_trend.enabled")
 	cfg.Diagnostics.TimelineTrend.LastNRuns = v.GetInt("diagnostics.timeline_trend.last_n_runs")
 	cfg.Diagnostics.TimelineTrend.TimeWindow = v.GetDuration("diagnostics.timeline_trend.time_window")
+	cfg.Diagnostics.CA2ExternalTrend.Enabled = v.GetBool("diagnostics.ca2_external_trend.enabled")
+	cfg.Diagnostics.CA2ExternalTrend.Window = v.GetDuration("diagnostics.ca2_external_trend.window")
+	cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs = v.GetInt64("diagnostics.ca2_external_trend.thresholds.p95_latency_ms")
+	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.error_rate")
+	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.hit_rate")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")
@@ -1280,6 +1363,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA3.Tokenizer.Model = strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.model"))
 	cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens = v.GetInt("context_assembler.ca3.tokenizer.small_delta_tokens")
 	cfg.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval = v.GetDuration("context_assembler.ca3.tokenizer.sdk_refresh_interval")
+	cfg.ContextAssembler.CA3.Compaction.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.mode")))
+	cfg.ContextAssembler.CA3.Compaction.SemanticTimeout = v.GetDuration("context_assembler.ca3.compaction.semantic_timeout")
+	cfg.ContextAssembler.CA3.Compaction.Evidence.Keywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.evidence.keywords"))
+	cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow = v.GetInt("context_assembler.ca3.compaction.evidence.recent_window")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))
 	cfg.Security.Scan.GovulncheckEnable = v.GetBool("security.scan.govulncheck_enabled")
 	cfg.Security.Redaction.Enabled = v.GetBool("security.redaction.enabled")

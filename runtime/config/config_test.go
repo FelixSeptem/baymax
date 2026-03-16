@@ -188,6 +188,65 @@ func TestDiagnosticsTimelineTrendValidationRejectsInvalidValue(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsCA2ExternalTrendDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Diagnostics.CA2ExternalTrend.Enabled {
+		t.Fatal("diagnostics.ca2_external_trend.enabled = false, want true")
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Window != 15*time.Minute {
+		t.Fatalf("diagnostics.ca2_external_trend.window = %v, want 15m", cfg.Diagnostics.CA2ExternalTrend.Window)
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
+		t.Fatalf("diagnostics.ca2_external_trend.thresholds.p95_latency_ms = %d, want > 0", cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
+	}
+}
+
+func TestDiagnosticsCA2ExternalTrendEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_DIAGNOSTICS_CA2_EXTERNAL_TREND_WINDOW", "25m")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+diagnostics:
+  ca2_external_trend:
+    enabled: true
+    window: 10m
+    thresholds:
+      p95_latency_ms: 900
+      error_rate: 0.12
+      hit_rate: 0.35
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Window != 25*time.Minute {
+		t.Fatalf("diagnostics.ca2_external_trend.window = %v, want 25m", cfg.Diagnostics.CA2ExternalTrend.Window)
+	}
+	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs != 900 {
+		t.Fatalf("diagnostics.ca2_external_trend.thresholds.p95_latency_ms = %d, want 900", cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
+	}
+}
+
+func TestDiagnosticsCA2ExternalTrendValidationRejectsInvalidValue(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Diagnostics.CA2ExternalTrend.Window = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.ca2_external_trend.window")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = 1.2
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.ca2_external_trend.thresholds.error_rate")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = -0.1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.ca2_external_trend.thresholds.hit_rate")
+	}
+}
+
 func TestValidateFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	p := cfg.MCP.Profiles[ProfileDefault]
@@ -777,6 +836,12 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 	if cfg.ContextAssembler.CA3.Tokenizer.Mode != "sdk_preferred" {
 		t.Fatalf("ca3.tokenizer.mode = %q, want sdk_preferred", cfg.ContextAssembler.CA3.Tokenizer.Mode)
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Mode != "truncate" {
+		t.Fatalf("ca3.compaction.mode = %q, want truncate", cfg.ContextAssembler.CA3.Compaction.Mode)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.SemanticTimeout <= 0 {
+		t.Fatalf("ca3.compaction.semantic_timeout = %v, want > 0", cfg.ContextAssembler.CA3.Compaction.SemanticTimeout)
+	}
 }
 
 func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -800,6 +865,33 @@ func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
 	}
 	if cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens != 64 {
 		t.Fatalf("tokenizer.small_delta_tokens = %d, want 64", cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
+	}
+}
+
+func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_MODE", "semantic")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_SEMANTIC_TIMEOUT", "1200ms")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EVIDENCE_RECENT_WINDOW", "8")
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Mode != "semantic" {
+		t.Fatalf("ca3.compaction.mode = %q, want semantic", cfg.ContextAssembler.CA3.Compaction.Mode)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.SemanticTimeout != 1200*time.Millisecond {
+		t.Fatalf("ca3.compaction.semantic_timeout = %v, want 1200ms", cfg.ContextAssembler.CA3.Compaction.SemanticTimeout)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow != 8 {
+		t.Fatalf("ca3.compaction.evidence.recent_window = %d, want 8", cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
+	}
+}
+
+func TestContextAssemblerCA3CompactionValidationRejectsInvalidMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Mode = "custom"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for ca3.compaction.mode")
 	}
 }
 

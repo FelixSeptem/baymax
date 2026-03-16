@@ -310,6 +310,7 @@ type ContextAssembleRequest struct {
 	ToolResult    []ToolCallOutcome      `json:"tool_results,omitempty"`
 	Capabilities  CapabilityRequirements `json:"capabilities,omitempty"`
 	TokenCounter  TokenCounter           `json:"-"`
+	ModelClient   ModelClient            `json:"-"`
 }
 
 type ContextAssembleResult struct {
@@ -361,6 +362,9 @@ type AssembleStage struct {
 	CompressionRatio      float64          `json:"compression_ratio,omitempty"`
 	SpillCount            int              `json:"spill_count,omitempty"`
 	SwapBackCount         int              `json:"swap_back_count,omitempty"`
+	CompactionMode        string           `json:"compaction_mode,omitempty"`
+	CompactionFallback    bool             `json:"compaction_fallback,omitempty"`
+	RetainedEvidenceCount int              `json:"retained_evidence_count,omitempty"`
 }
 
 type TailRecap struct {

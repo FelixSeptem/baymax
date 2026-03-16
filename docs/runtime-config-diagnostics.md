@@ -60,6 +60,13 @@ diagnostics:
     enabled: true
     last_n_runs: 100
     time_window: 15m
+  ca2_external_trend:
+    enabled: true
+    window: 15m
+    thresholds:
+      p95_latency_ms: 1500
+      error_rate: 0.10
+      hit_rate: 0.20
 
 reload:
   enabled: true
@@ -212,6 +219,12 @@ context_assembler:
       model: claude-3-5-sonnet-latest
       small_delta_tokens: 256
       sdk_refresh_interval: 1200ms
+    compaction:
+      mode: truncate # truncate|semantic
+      semantic_timeout: 800ms
+      evidence:
+        keywords: [decision, constraint, todo, risk]
+        recent_window: 0
 
 security:
   scan:
@@ -246,6 +259,19 @@ timeline_trend 校验语义：
 2. `diagnostics.timeline_trend.time_window` 必须 `> 0`。
 3. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+ca2_external_trend 校验语义：
+1. `diagnostics.ca2_external_trend.window` 必须 `> 0`。
+2. `diagnostics.ca2_external_trend.thresholds.p95_latency_ms` 必须 `> 0`。
+3. `diagnostics.ca2_external_trend.thresholds.error_rate` 必须在 `[0,1]`。
+4. `diagnostics.ca2_external_trend.thresholds.hit_rate` 必须在 `[0,1]`。
+5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+ca3 compaction 校验语义：
+1. `context_assembler.ca3.compaction.mode` 仅允许 `truncate|semantic`。
+2. `context_assembler.ca3.compaction.semantic_timeout` 必须 `> 0`。
+3. `context_assembler.ca3.compaction.evidence.recent_window` 必须 `>= 0`。
+4. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 ## 使用示例（最小）
 
 ```go
@@ -274,6 +300,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
 - `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
 - `Manager.TimelineTrends(query)`：跨 run Action Timeline 趋势聚合（窗口模式：`last_n_runs|time_window`）。
+- `Manager.CA2ExternalTrends(query)`：CA2 external retriever provider 维度趋势聚合（窗口模式：`time_window`）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
@@ -353,6 +380,14 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `ca3_compression_ratio`：本次装配压缩率（`0~1`）。
 - `ca3_spill_count`：本次 spill 计数。
 - `ca3_swap_back_count`：本次 swap-back 计数。
+- `ca3_compaction_mode`：本次 CA3 压缩模式（`truncate|semantic`）。
+- `ca3_compaction_fallback`：语义压缩失败后是否发生 `truncate` 回退（`best_effort` 下可能为 true）。
+- `ca3_compaction_retained_evidence_count`：本次 prune 过程中被证据保留规则保护的消息数量。
+
+语义说明：
+- `semantic` 模式通过当前 model-step 选中的 model client 执行压缩。
+- 若 stage policy 为 `best_effort`，语义压缩失败会回退 `truncate` 并记录 `ca3_compaction_fallback=true`。
+- 若 stage policy 为 `fail_fast`，语义压缩失败会立即终止当前装配流程。
 
 ### Run 诊断新增字段（Action Timeline H1.5 聚合）
 
@@ -390,6 +425,26 @@ client := httpmcp.NewClient(httpmcp.Config{
 - 趋势聚合默认启用，可通过 `diagnostics.timeline_trend.enabled` 关闭。
 - 空窗口返回空集合，不伪造统计。
 - 复用 single-writer + idempotency 口径，replay/duplicate 不重复累计。
+
+### 诊断新增字段（CA2 External Retriever E2 趋势聚合）
+
+`Manager.CA2ExternalTrends(query)` 返回 provider 维度趋势记录，最小字段：
+
+- `provider`：Stage2 provider 名称（如 `http|rag|db|elasticsearch|file`）。
+- `window_start`：窗口起始时间。
+- `window_end`：窗口结束时间。
+- `p95_latency_ms`：窗口内 provider 的 Stage2 P95 延迟（毫秒）。
+- `error_rate`：窗口内错误占比（按 `stage2_reason_code/stage2_error_layer` 判定）。
+- `hit_rate`：窗口内 `stage2_hit_count > 0` 的占比。
+
+扩展字段：
+- `threshold_hits`：命中的静态阈值列表（`p95_latency_ms|error_rate|hit_rate`）。
+- `error_layer_distribution`：错误层分布（基线 `transport|protocol|semantic`，允许新增枚举扩展）。
+
+语义约束：
+- 阈值命中仅输出观测信号，不触发自动降级/切换动作。
+- 保持 `fail_fast/best_effort` 既有行为不变。
+- Run/Stream 在等价负载下保持趋势统计语义一致。
 
 ### Run 诊断新增字段（Action Gate H2）
 

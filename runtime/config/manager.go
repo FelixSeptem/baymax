@@ -64,6 +64,15 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 				LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
 				TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
 			},
+			runtimediag.CA2ExternalTrendConfig{
+				Enabled: cfg.Diagnostics.CA2ExternalTrend.Enabled,
+				Window:  cfg.Diagnostics.CA2ExternalTrend.Window,
+				Thresholds: runtimediag.CA2ExternalThresholds{
+					P95LatencyMs: cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs,
+					ErrorRate:    cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate,
+					HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
+				},
+			},
 		),
 		stopCh: make(chan struct{}),
 	}
@@ -171,6 +180,15 @@ func (m *Manager) reload() {
 		LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
 		TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
 	})
+	m.diag.SetCA2ExternalTrendConfig(runtimediag.CA2ExternalTrendConfig{
+		Enabled: cfg.Diagnostics.CA2ExternalTrend.Enabled,
+		Window:  cfg.Diagnostics.CA2ExternalTrend.Window,
+		Thresholds: runtimediag.CA2ExternalThresholds{
+			P95LatencyMs: cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs,
+			ErrorRate:    cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate,
+			HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
+		},
+	})
 	m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: true})
 }
 
@@ -240,6 +258,10 @@ func (m *Manager) RecentRuns(n int) []runtimediag.RunRecord {
 
 func (m *Manager) TimelineTrends(query runtimediag.TimelineTrendQuery) []runtimediag.TimelineTrendRecord {
 	return m.diag.TimelineTrends(query)
+}
+
+func (m *Manager) CA2ExternalTrends(query runtimediag.CA2ExternalTrendQuery) []runtimediag.CA2ExternalTrendRecord {
+	return m.diag.CA2ExternalTrends(query)
 }
 
 func (m *Manager) RecentReloads(n int) []runtimediag.ReloadRecord {

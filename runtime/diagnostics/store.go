@@ -66,6 +66,9 @@ type RunRecord struct {
 	CA3CompressionRatio     float64                           `json:"ca3_compression_ratio,omitempty"`
 	CA3SpillCount           int                               `json:"ca3_spill_count,omitempty"`
 	CA3SwapBackCount        int                               `json:"ca3_swap_back_count,omitempty"`
+	CA3CompactionMode       string                            `json:"ca3_compaction_mode,omitempty"`
+	CA3CompactionFallback   bool                              `json:"ca3_compaction_fallback,omitempty"`
+	CA3RetainedEvidence     int                               `json:"ca3_compaction_retained_evidence_count,omitempty"`
 	RecapStatus             string                            `json:"recap_status,omitempty"`
 	GateChecks              int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount         int                               `json:"gate_denied_count,omitempty"`
@@ -151,6 +154,7 @@ type Store struct {
 
 	timelineStates map[string]*timelineRunState
 	trendConfig    TimelineTrendConfig
+	ca2TrendConfig CA2ExternalTrendConfig
 }
 
 type timelineRunState struct {
@@ -176,7 +180,34 @@ type TimelineTrendConfig struct {
 	TimeWindow time.Duration
 }
 
-func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig) *Store {
+type CA2ExternalTrendConfig struct {
+	Enabled    bool
+	Window     time.Duration
+	Thresholds CA2ExternalThresholds
+}
+
+type CA2ExternalThresholds struct {
+	P95LatencyMs int64
+	ErrorRate    float64
+	HitRate      float64
+}
+
+type CA2ExternalTrendQuery struct {
+	Window time.Duration
+}
+
+type CA2ExternalTrendRecord struct {
+	Provider               string         `json:"provider"`
+	WindowStart            time.Time      `json:"window_start"`
+	WindowEnd              time.Time      `json:"window_end"`
+	P95LatencyMs           int64          `json:"p95_latency_ms"`
+	ErrorRate              float64        `json:"error_rate"`
+	HitRate                float64        `json:"hit_rate"`
+	ThresholdHits          []string       `json:"threshold_hits,omitempty"`
+	ErrorLayerDistribution map[string]int `json:"error_layer_distribution,omitempty"`
+}
+
+func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig, ca2 CA2ExternalTrendConfig) *Store {
 	if maxCalls <= 0 {
 		maxCalls = 200
 	}
@@ -195,6 +226,18 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 	if trend.TimeWindow <= 0 {
 		trend.TimeWindow = 15 * time.Minute
 	}
+	if ca2.Window <= 0 {
+		ca2.Window = 15 * time.Minute
+	}
+	if ca2.Thresholds.P95LatencyMs <= 0 {
+		ca2.Thresholds.P95LatencyMs = 1500
+	}
+	if ca2.Thresholds.ErrorRate < 0 || ca2.Thresholds.ErrorRate > 1 {
+		ca2.Thresholds.ErrorRate = 0.1
+	}
+	if ca2.Thresholds.HitRate < 0 || ca2.Thresholds.HitRate > 1 {
+		ca2.Thresholds.HitRate = 0.2
+	}
 	return &Store{
 		maxCallRecords:  maxCalls,
 		maxRunRecords:   maxRuns,
@@ -208,6 +251,7 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 		sklKeys:         make(map[string]int, maxSkills),
 		timelineStates:  make(map[string]*timelineRunState, maxRuns),
 		trendConfig:     trend,
+		ca2TrendConfig:  ca2,
 	}
 }
 
@@ -245,6 +289,24 @@ func (d *Store) SetTrendConfig(cfg TimelineTrendConfig) {
 		cfg.TimeWindow = 15 * time.Minute
 	}
 	d.trendConfig = cfg
+}
+
+func (d *Store) SetCA2ExternalTrendConfig(cfg CA2ExternalTrendConfig) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if cfg.Window <= 0 {
+		cfg.Window = 15 * time.Minute
+	}
+	if cfg.Thresholds.P95LatencyMs <= 0 {
+		cfg.Thresholds.P95LatencyMs = 1500
+	}
+	if cfg.Thresholds.ErrorRate < 0 || cfg.Thresholds.ErrorRate > 1 {
+		cfg.Thresholds.ErrorRate = 0.1
+	}
+	if cfg.Thresholds.HitRate < 0 || cfg.Thresholds.HitRate > 1 {
+		cfg.Thresholds.HitRate = 0.2
+	}
+	d.ca2TrendConfig = cfg
 }
 
 func (d *Store) AddCall(rec CallRecord) {
@@ -466,6 +528,87 @@ func (d *Store) TimelineTrends(query TimelineTrendQuery) []TimelineTrendRecord {
 	return out
 }
 
+func (d *Store) CA2ExternalTrends(query CA2ExternalTrendQuery) []CA2ExternalTrendRecord {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if !d.ca2TrendConfig.Enabled {
+		return []CA2ExternalTrendRecord{}
+	}
+	selected, start, end := d.selectCA2Runs(query)
+	if len(selected) == 0 {
+		return []CA2ExternalTrendRecord{}
+	}
+	type agg struct {
+		total      int
+		hits       int
+		errors     int
+		latencies  []int64
+		layerCount map[string]int
+	}
+	byProvider := map[string]*agg{}
+	for i := range selected {
+		provider := strings.ToLower(strings.TrimSpace(selected[i].Stage2Provider))
+		if provider == "" {
+			continue
+		}
+		item := byProvider[provider]
+		if item == nil {
+			item = &agg{layerCount: map[string]int{}}
+			byProvider[provider] = item
+		}
+		item.total++
+		if selected[i].Stage2LatencyMs > 0 {
+			item.latencies = append(item.latencies, selected[i].Stage2LatencyMs)
+		}
+		if selected[i].Stage2HitCount > 0 {
+			item.hits++
+		}
+		if isCA2ExternalError(selected[i]) {
+			item.errors++
+			layer := strings.ToLower(strings.TrimSpace(selected[i].Stage2ErrorLayer))
+			if layer == "" {
+				layer = "unknown"
+			}
+			item.layerCount[layer]++
+		}
+	}
+	if len(byProvider) == 0 {
+		return []CA2ExternalTrendRecord{}
+	}
+	out := make([]CA2ExternalTrendRecord, 0, len(byProvider))
+	for provider, item := range byProvider {
+		if item.total == 0 {
+			continue
+		}
+		errorRate := float64(item.errors) / float64(item.total)
+		hitRate := float64(item.hits) / float64(item.total)
+		p95 := percentileP95(item.latencies)
+		thresholdHits := make([]string, 0, 3)
+		if p95 > d.ca2TrendConfig.Thresholds.P95LatencyMs {
+			thresholdHits = append(thresholdHits, "p95_latency_ms")
+		}
+		if errorRate > d.ca2TrendConfig.Thresholds.ErrorRate {
+			thresholdHits = append(thresholdHits, "error_rate")
+		}
+		if hitRate < d.ca2TrendConfig.Thresholds.HitRate {
+			thresholdHits = append(thresholdHits, "hit_rate")
+		}
+		sort.Strings(thresholdHits)
+		out = append(out, CA2ExternalTrendRecord{
+			Provider:               provider,
+			WindowStart:            start,
+			WindowEnd:              end,
+			P95LatencyMs:           p95,
+			ErrorRate:              errorRate,
+			HitRate:                hitRate,
+			ThresholdHits:          thresholdHits,
+			ErrorLayerDistribution: item.layerCount,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Provider < out[j].Provider })
+	return out
+}
+
 func (d *Store) RecentReloads(n int) []ReloadRecord {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -649,6 +792,40 @@ func (d *Store) selectTrendRuns(query TimelineTrendQuery) ([]RunRecord, time.Tim
 	}
 }
 
+func (d *Store) selectCA2Runs(query CA2ExternalTrendQuery) ([]RunRecord, time.Time, time.Time) {
+	if len(d.runs) == 0 {
+		return nil, time.Time{}, time.Time{}
+	}
+	window := query.Window
+	if window <= 0 {
+		window = d.ca2TrendConfig.Window
+	}
+	if window <= 0 {
+		return nil, time.Time{}, time.Time{}
+	}
+	end := d.runs[len(d.runs)-1].Time
+	if end.IsZero() {
+		end = time.Now()
+	}
+	start := end.Add(-window)
+	selected := make([]RunRecord, 0, len(d.runs))
+	for i := range d.runs {
+		rec := d.runs[i]
+		ts := rec.Time
+		if ts.IsZero() {
+			continue
+		}
+		if ts.Before(start) || ts.After(end) {
+			continue
+		}
+		if strings.TrimSpace(rec.Stage2Provider) == "" {
+			continue
+		}
+		selected = append(selected, rec)
+	}
+	return selected, start, end
+}
+
 func trendBucketKey(phase, status string) string {
 	return strings.TrimSpace(phase) + "|" + strings.ToLower(strings.TrimSpace(status))
 }
@@ -659,6 +836,14 @@ func splitTrendBucketKey(key string) (string, string) {
 		return key, ""
 	}
 	return parts[0], parts[1]
+}
+
+func isCA2ExternalError(rec RunRecord) bool {
+	if strings.TrimSpace(rec.Stage2ErrorLayer) != "" {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(rec.Stage2ReasonCode))
+	return code != "" && code != "ok"
 }
 
 func (d *Store) pruneTimelineStates() {

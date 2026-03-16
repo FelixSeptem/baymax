@@ -147,6 +147,8 @@ func (a *Assembler) applyCA3(
 	decision := ca3Decision{Zone: ca3ZoneSafe}
 	state := a.ca3StateFor(req.RunID)
 	now := a.now()
+	compactionMode := normalizeCompactionMode(cfg.CA3.Compaction.Mode)
+	outcome.Stage.CompactionMode = compactionMode
 
 	swapBackCount, err := a.swapBackIfNeeded(ctx, req, &modelReq, cfg.CA3, state)
 	if err != nil {
@@ -168,27 +170,38 @@ func (a *Assembler) applyCA3(
 	actionsCompression := 0.0
 	spillCount := 0
 	removed := make([]spillRecord, 0)
+	fallbackUsed := false
+	retainedEvidenceCount := 0
 
 	switch zone {
 	case ca3ZoneWarning:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression = squashMessages(modelReq.Messages, cfg.CA3, state)
+			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			if err != nil {
+				return modelReq, outcome, decision, err
+			}
 		}
 	case ca3ZoneDanger:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression = squashMessages(modelReq.Messages, cfg.CA3, state)
+			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			if err != nil {
+				return modelReq, outcome, decision, err
+			}
 		}
 		if cfg.CA3.Prune.Enabled {
 			var pruned []spillRecord
-			modelReq.Messages, pruned = pruneMessages(modelReq.Messages, cfg.CA3, state)
+			modelReq.Messages, pruned, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
 			_ = pruned
 		}
 	case ca3ZoneEmergency:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression = squashMessages(modelReq.Messages, cfg.CA3, state)
+			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			if err != nil {
+				return modelReq, outcome, decision, err
+			}
 		}
 		if cfg.CA3.Prune.Enabled {
-			modelReq.Messages, removed = pruneMessages(modelReq.Messages, cfg.CA3, state)
+			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
 		}
 		if cfg.CA3.Spill.Enabled {
 			spillCount, err = a.spillRecords(ctx, req, stage, removed, cfg.CA3, state)
@@ -215,7 +228,81 @@ func (a *Assembler) applyCA3(
 	outcome.Stage.CompressionRatio = compressionRatio
 	outcome.Stage.SpillCount += spillCount
 	outcome.Stage.SwapBackCount += swapBackCount
+	outcome.Stage.CompactionFallback = outcome.Stage.CompactionFallback || fallbackUsed
+	if retainedEvidenceCount > 0 {
+		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
+	}
 	return modelReq, outcome, decision, nil
+}
+
+func (a *Assembler) applyCompaction(
+	ctx context.Context,
+	assembleReq types.ContextAssembleRequest,
+	modelReq types.ModelRequest,
+	cfg runtimeconfig.ContextAssemblerConfig,
+	state *ca3RunState,
+	stage string,
+) ([]types.Message, float64, bool, error) {
+	request := ca3CompactionRequest{
+		AssembleReq: assembleReq,
+		ModelReq:    modelReq,
+		Config:      cfg.CA3,
+	}
+	mode := normalizeCompactionMode(cfg.CA3.Compaction.Mode)
+	primary := a.compactorFor(mode, assembleReq)
+	semanticCtx := ctx
+	var cancel context.CancelFunc
+	if mode == "semantic" {
+		semanticCtx, cancel = context.WithTimeout(ctx, cfg.CA3.Compaction.SemanticTimeout)
+		defer cancel()
+	}
+	result, err := primary.compact(semanticCtx, request)
+	if err == nil {
+		recordCompactionAccess(result.Messages, state)
+		return result.Messages, result.CompressionRatio, false, nil
+	}
+	if mode != "semantic" || !isBestEffortPolicy(ca3StagePolicy(cfg, stage)) {
+		return nil, 0, false, err
+	}
+	fallback := (&truncateCompactor{})
+	fallbackRes, fallbackErr := fallback.compact(ctx, request)
+	if fallbackErr != nil {
+		return nil, 0, false, fallbackErr
+	}
+	recordCompactionAccess(fallbackRes.Messages, state)
+	return fallbackRes.Messages, fallbackRes.CompressionRatio, true, nil
+}
+
+func (a *Assembler) compactorFor(mode string, req types.ContextAssembleRequest) ca3Compactor {
+	if mode == "semantic" {
+		return &semanticCompactor{client: req.ModelClient}
+	}
+	return &truncateCompactor{}
+}
+
+func ca3StagePolicy(cfg runtimeconfig.ContextAssemblerConfig, stage string) string {
+	if strings.EqualFold(strings.TrimSpace(stage), "stage2") {
+		return cfg.CA2.StagePolicy.Stage2
+	}
+	return cfg.CA2.StagePolicy.Stage1
+}
+
+func normalizeCompactionMode(mode string) string {
+	out := strings.ToLower(strings.TrimSpace(mode))
+	if out == "" {
+		return "truncate"
+	}
+	return out
+}
+
+func recordCompactionAccess(messages []types.Message, state *ca3RunState) {
+	if state == nil {
+		return
+	}
+	for _, msg := range messages {
+		digest := contentDigest(msg.Content)
+		state.AccessFrequency[digest]++
+	}
 }
 
 func (a *Assembler) spillRecords(
@@ -543,47 +630,9 @@ func tokenizerForEstimate(model string) (*tiktoken.Tiktoken, error) {
 	return nil, tiktokenDefaultErr
 }
 
-func squashMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *ca3RunState) ([]types.Message, float64) {
+func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *ca3RunState) ([]types.Message, []spillRecord, int) {
 	if len(messages) == 0 {
-		return messages, 0
-	}
-	maxRunes := cfg.Squash.MaxContentRunes
-	if maxRunes <= 0 {
-		maxRunes = 320
-	}
-	before := 0
-	after := 0
-	out := make([]types.Message, 0, len(messages))
-	for _, msg := range messages {
-		before += len([]rune(msg.Content))
-		digest := contentDigest(msg.Content)
-		state.AccessFrequency[digest]++
-		if isProtectedMessage(msg.Content, cfg.Protection) || strings.EqualFold(strings.TrimSpace(msg.Role), "system") {
-			after += len([]rune(msg.Content))
-			out = append(out, msg)
-			continue
-		}
-		content := msg.Content
-		if len([]rune(content)) > maxRunes {
-			content = string([]rune(content)[:maxRunes]) + " ...[squashed]"
-		}
-		after += len([]rune(content))
-		msg.Content = content
-		out = append(out, msg)
-	}
-	if before == 0 {
-		return out, 0
-	}
-	ratio := float64(before-after) / float64(before)
-	if ratio < 0 {
-		ratio = 0
-	}
-	return out, ratio
-}
-
-func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *ca3RunState) ([]types.Message, []spillRecord) {
-	if len(messages) == 0 {
-		return messages, nil
+		return messages, nil, 0
 	}
 	targetPercent := cfg.Prune.TargetPercent
 	if targetPercent <= 0 {
@@ -592,8 +641,9 @@ func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerC
 	targetTokens := (cfg.MaxContextTokens * targetPercent) / 100
 	working := append([]types.Message(nil), messages...)
 	removed := make([]spillRecord, 0)
+	retained := retainedEvidenceCount(working, cfg.Compaction.Evidence)
 	for estimateContextTokens(types.ModelRequest{Messages: working}) > targetTokens {
-		idx := selectPruneCandidate(working, cfg, state)
+		idx := selectPruneCandidate(working, cfg, state, cfg.Compaction.Evidence)
 		if idx < 0 {
 			break
 		}
@@ -604,10 +654,15 @@ func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerC
 		})
 		working = append(working[:idx], working[idx+1:]...)
 	}
-	return working, removed
+	return working, removed, retained
 }
 
-func selectPruneCandidate(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *ca3RunState) int {
+func selectPruneCandidate(
+	messages []types.Message,
+	cfg runtimeconfig.ContextAssemblerCA3Config,
+	state *ca3RunState,
+	evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig,
+) int {
 	type candidate struct {
 		idx   int
 		score int
@@ -618,6 +673,9 @@ func selectPruneCandidate(messages []types.Message, cfg runtimeconfig.ContextAss
 			continue
 		}
 		if isProtectedMessage(msg.Content, cfg.Protection) {
+			continue
+		}
+		if shouldRetainEvidence(i, len(messages), msg.Content, evidence) {
 			continue
 		}
 		score := i
@@ -635,6 +693,42 @@ func selectPruneCandidate(messages []types.Message, cfg runtimeconfig.ContextAss
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score < candidates[j].score })
 	return candidates[0].idx
+}
+
+func retainedEvidenceCount(messages []types.Message, evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig) int {
+	count := 0
+	for i, msg := range messages {
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "system") {
+			continue
+		}
+		if shouldRetainEvidence(i, len(messages), msg.Content, evidence) {
+			count++
+		}
+	}
+	return count
+}
+
+func shouldRetainEvidence(idx, total int, content string, evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig) bool {
+	lower := strings.ToLower(content)
+	for _, kw := range evidence.Keywords {
+		if strings.TrimSpace(kw) == "" {
+			continue
+		}
+		if strings.Contains(lower, strings.ToLower(strings.TrimSpace(kw))) {
+			return true
+		}
+	}
+	if evidence.RecentWindow > 0 && idx >= maxInt(0, total-evidence.RecentWindow) {
+		return true
+	}
+	return false
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func isProtectedMessage(content string, cfg runtimeconfig.ContextAssemblerCA3ProtectionConfig) bool {

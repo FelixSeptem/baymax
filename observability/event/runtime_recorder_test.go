@@ -147,6 +147,9 @@ mcp:
 			"ca3_swap_back_count":                    1,
 			"ca3_compaction_mode":                    "semantic",
 			"ca3_compaction_fallback":                true,
+			"ca3_compaction_fallback_reason":         "quality_below_threshold",
+			"ca3_compaction_quality_score":           0.66,
+			"ca3_compaction_quality_reason":          "coverage_low",
 			"ca3_compaction_retained_evidence_count": 2,
 			"recap_status":                           "appended",
 			"gate_checks":                            4,
@@ -195,6 +198,12 @@ mcp:
 	}
 	if items[0].CA3CompactionMode != "semantic" || !items[0].CA3CompactionFallback || items[0].CA3RetainedEvidence != 2 {
 		t.Fatalf("ca3 compaction metrics mismatch: %#v", items[0])
+	}
+	if items[0].CA3CompactionFallbackReason != "quality_below_threshold" {
+		t.Fatalf("ca3 compaction fallback reason mismatch: %#v", items[0])
+	}
+	if items[0].CA3CompactionQualityScore != 0.66 || items[0].CA3CompactionQualityReason != "coverage_low" {
+		t.Fatalf("ca3 compaction quality metrics mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

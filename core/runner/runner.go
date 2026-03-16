@@ -1298,6 +1298,15 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.CompactionFallback {
 		payload["ca3_compaction_fallback"] = meta.Assemble.Stage.CompactionFallback
 	}
+	if meta.Assemble.Stage.CompactionFallbackReason != "" {
+		payload["ca3_compaction_fallback_reason"] = meta.Assemble.Stage.CompactionFallbackReason
+	}
+	if meta.Assemble.Stage.CompactionQualityScore > 0 {
+		payload["ca3_compaction_quality_score"] = meta.Assemble.Stage.CompactionQualityScore
+	}
+	if meta.Assemble.Stage.CompactionQualityReason != "" {
+		payload["ca3_compaction_quality_reason"] = meta.Assemble.Stage.CompactionQualityReason
+	}
 	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
 		payload["ca3_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 	}

@@ -164,6 +164,8 @@ function Archive-OneChange {
         return
     }
 
+    $activeDir = Join-Path $ChangesRoot $Change
+
     Push-Location $repoRoot
     try {
         & openspec archive $Change -y
@@ -175,8 +177,47 @@ function Archive-OneChange {
         Pop-Location
     }
 
+    $escaped = [regex]::Escape($Change)
+    $archivedDir = Get-ChildItem -Path $ArchiveRoot -Directory |
+        Where-Object { $_.Name -match ("^(\d{3}|\d{4}-\d{2}-\d{2})-" + $escaped + "$") } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $archivedDir) {
+        Write-Warning ("archive output for change '" + $Change + "' was not found; skip cleanup.")
+        return
+    }
+
+    $required = @(".openspec.yaml", "proposal.md", "tasks.md")
+    if (Test-Path (Join-Path $activeDir "design.md")) {
+        $required += "design.md"
+    }
+    foreach ($rel in $required) {
+        if (-not (Test-Path (Join-Path $archivedDir.FullName $rel))) {
+            Write-Warning ("archive incomplete for '" + $Change + "': missing " + $rel + "; skip cleanup.")
+            return
+        }
+    }
+
+    $activeSpecsDir = Join-Path $activeDir "specs"
+    if (Test-Path $activeSpecsDir) {
+        $activeSpecFiles = Get-ChildItem -Path $activeSpecsDir -Recurse -File -Filter "spec.md"
+        foreach ($spec in $activeSpecFiles) {
+            $relative = $spec.FullName.Substring($activeDir.Length).TrimStart('\', '/')
+            if (-not (Test-Path (Join-Path $archivedDir.FullName $relative))) {
+                Write-Warning ("archive incomplete for '" + $Change + "': missing " + $relative + "; skip cleanup.")
+                return
+            }
+        }
+    }
+
+    $archivedSpecCount = (Get-ChildItem -Path $archivedDir.FullName -Recurse -File -Filter "spec.md" | Measure-Object).Count
+    if ($archivedSpecCount -eq 0) {
+        Write-Warning ("archive incomplete for '" + $Change + "': no spec.md found; skip cleanup.")
+        return
+    }
+
     # Cleanup active change dir if still exists.
-    $activeDir = Join-Path $ChangesRoot $Change
     if (Test-Path $activeDir) {
         try {
             & attrib -R $activeDir /S /D | Out-Null
@@ -187,24 +228,17 @@ function Archive-OneChange {
     }
 
     # If new archive is still date-based, rename to next sequence.
-    $seqName = Get-ChildItem -Path $ArchiveRoot -Directory |
-        Where-Object { $_.Name -match "^\d{3}-$([regex]::Escape($Change))$" } |
-        Select-Object -First 1
-    if ($null -ne $seqName) {
+    if ($archivedDir.Name -match "^\d{3}-$escaped$") {
         return
     }
 
-    $dated = Get-ChildItem -Path $ArchiveRoot -Directory |
-        Where-Object { $_.Name -match ("^\d{4}-\d{2}-\d{2}-" + [regex]::Escape($Change) + "$") } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if ($null -eq $dated) {
+    if ($archivedDir.Name -notmatch "^\d{4}-\d{2}-\d{2}-$escaped$") {
         return
     }
 
     $nextSeq = Get-NextSequence -ArchiveRoot $ArchiveRoot
     $target = "{0:D3}-{1}" -f $nextSeq, $Change
-    Rename-Item -Path $dated.FullName -NewName $target
+    Rename-Item -Path $archivedDir.FullName -NewName $target
 }
 
 if (-not (Test-Path $archiveDir)) {

@@ -103,6 +103,11 @@
 - Compaction 策略支持 `truncate|semantic`（默认 `truncate`）：
   - `semantic` 通过当前 model client 执行语义压缩。
   - `best_effort` 下语义失败回退 `truncate`；`fail_fast` 下语义失败立即终止。
+- CA3 semantic F2 收敛（已完成）：
+  - 质量门控：规则评分（coverage/compression/validity）+ 阈值判定。
+  - 模板控制：runtime 模板与占位符白名单（启动/热更新 fail-fast）。
+  - embedding SPI hook：仅通用接口占位，不绑定 adapter。
+  - 诊断字段：`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_fallback_reason`。
 - Prune 证据保留规则：`keywords + recent_window`，并输出保留计数诊断字段。
 - 支持 spill/swap（文件落盘与按需回填），保留 provenance path：
   - 溢出内容保留 `origin_ref` 便于完整路径追溯。

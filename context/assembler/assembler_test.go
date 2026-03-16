@@ -659,6 +659,12 @@ func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
 	if result.Stage.CompactionFallback {
 		t.Fatal("compaction fallback should be false")
 	}
+	if result.Stage.CompactionQualityScore <= 0 {
+		t.Fatalf("compaction quality score = %v, want > 0", result.Stage.CompactionQualityScore)
+	}
+	if strings.TrimSpace(result.Stage.CompactionQualityReason) == "" {
+		t.Fatal("compaction quality reason should not be empty")
+	}
 	foundSummary := false
 	for _, msg := range outReq.Messages {
 		if strings.Contains(msg.Content, "semantic-summary") {
@@ -714,6 +720,9 @@ func TestAssemblerCA3SemanticCompactionBestEffortFallback(t *testing.T) {
 	if !result.Stage.CompactionFallback {
 		t.Fatal("compaction fallback should be true")
 	}
+	if result.Stage.CompactionFallbackReason != "semantic_compaction_error" {
+		t.Fatalf("fallback reason = %q, want semantic_compaction_error", result.Stage.CompactionFallbackReason)
+	}
 	foundTruncated := false
 	for _, msg := range outReq.Messages {
 		if strings.Contains(msg.Content, "...[squashed]") {
@@ -764,6 +773,65 @@ func TestAssemblerCA3SemanticCompactionFailFast(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected fail_fast semantic compaction error")
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.Quality.Threshold = 0.95
+	cfg.CA3.Compaction.Evidence.Keywords = []string{"mustkeep"}
+	cfg.CA2.StagePolicy.Stage1 = "best_effort"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "summary dropped keyword"}, nil
+		},
+	}
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	msgs := []types.Message{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: strings.Repeat("mustkeep long semantic content ", 24)},
+	}
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-semantic-quality-fallback",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 18),
+		Messages:      msgs,
+		ModelClient:   client,
+	}, types.ModelRequest{
+		RunID:    "run-semantic-quality-fallback",
+		Input:    strings.Repeat("need compact ", 18),
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Assemble should fallback in best_effort, got error: %v", err)
+	}
+	if !result.Stage.CompactionFallback {
+		t.Fatal("compaction fallback should be true")
+	}
+	if result.Stage.CompactionFallbackReason != "quality_below_threshold" {
+		t.Fatalf("fallback reason = %q, want quality_below_threshold", result.Stage.CompactionFallbackReason)
+	}
+	foundTruncated := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "...[squashed]") {
+			foundTruncated = true
+			break
+		}
+	}
+	if !foundTruncated {
+		t.Fatalf("truncate fallback not observed: %#v", outReq.Messages)
 	}
 }
 

@@ -125,6 +125,7 @@
 - [x] `implement-context-assembler-ca3-memory-pressure-and-recovery`：完成 CA3 内存压力控制与恢复（五级分区、双阈值触发、squash/prune、spill/swap、Run/Stream 语义一致、CA3 诊断字段）。
 - [x] `implement-context-assembler-ca4-production-convergence`：完成 CA4 生产收敛（阈值解析顺序、token 计数固定回退、Run/Stream 契约增强、CA4 benchmark 门禁）。
 - [x] `introduce-ca3-semantic-compaction-spi-f1`：完成 CA3 compaction SPI（`truncate|semantic`）、semantic 走当前 model client、`best_effort` 回退/`fail_fast` 终止语义、evidence retention 规则与新增诊断字段。
+- [x] `harden-ca3-semantic-compaction-quality-and-template-controls-f2`：完成 CA3 semantic compaction 质量门控（规则评分+阈值）、runtime 模板白名单控制、embedding SPI hook 占位、新增质量/回退诊断字段与 benchmark 基线。
 - [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
 - [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。
@@ -296,7 +297,7 @@
 - 清理仓库中的临时/备份产物与目录规范化（持续项）。
 - 收敛 `mcp/http` 与 `mcp/stdio` 中重复的重试/事件逻辑到共享组件。
 - TODO（skill scoring 演进）：当前仅实现 lexical weighted-keyword；后续在 scorer internal 接口上增量接入 embedding 检索/打分能力。
-- TODO（CA3 semantic compaction 质量增强）：补充压缩质量评分、模板参数化与 embedding/re-ranker 接口接入。
+- TODO（CA3 semantic embedding adapter）：当前仅完成通用 SPI hook，provider-specific adapter/re-ranker 接入后续再推进。
 - 为 runner 添加更多压力测试（高并发工具调用 + 取消风暴场景）。
 - 统一错误分类与错误处理策略（细化 error taxonomy 与跨模块映射）。
 - API 版本控制与兼容策略文档化（在对外接口扩张前完成）。

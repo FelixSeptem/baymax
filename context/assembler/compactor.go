@@ -3,6 +3,8 @@ package assembler
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -24,6 +26,9 @@ type ca3CompactionResult struct {
 	Messages         []types.Message
 	CompressionRatio float64
 	Fallback         bool
+	QualityScore     float64
+	QualityReason    string
+	FallbackReason   string
 }
 
 type truncateCompactor struct{}
@@ -69,7 +74,8 @@ func (c *truncateCompactor) compact(_ context.Context, req ca3CompactionRequest)
 }
 
 type semanticCompactor struct {
-	client types.ModelClient
+	client    types.ModelClient
+	embedding SemanticEmbeddingScorer
 }
 
 func (c *semanticCompactor) mode() string {
@@ -87,6 +93,9 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	if maxRunes <= 0 {
 		maxRunes = 320
 	}
+	qualityScores := make([]float64, 0, len(req.ModelReq.Messages))
+	qualityReasons := make([]string, 0, len(req.ModelReq.Messages))
+	embeddingEnabledNoAdapter := req.Config.Compaction.Embedding.Enabled && c.embedding == nil
 	for _, msg := range req.ModelReq.Messages {
 		before += len([]rune(msg.Content))
 		if strings.EqualFold(strings.TrimSpace(msg.Role), "system") || isProtectedMessage(msg.Content, req.Config.Protection) {
@@ -97,9 +106,14 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		if len([]rune(msg.Content)) <= maxRunes {
 			after += len([]rune(msg.Content))
 			out = append(out, msg)
+			qualityScores = append(qualityScores, 1.0)
+			qualityReasons = append(qualityReasons, "unchanged_under_limit")
 			continue
 		}
-		prompt := buildSemanticCompactionPrompt(msg.Content, maxRunes)
+		prompt, err := buildSemanticCompactionPrompt(req, msg.Content, maxRunes)
+		if err != nil {
+			return ca3CompactionResult{}, fmt.Errorf("semantic prompt render failed: %w", err)
+		}
 		resp, err := c.client.Generate(ctx, types.ModelRequest{
 			Model: req.ModelReq.Model,
 			Input: prompt,
@@ -114,6 +128,15 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		if len([]rune(content)) > maxRunes {
 			content = string([]rune(content)[:maxRunes]) + " ...[squashed]"
 		}
+		qualityScore, qualityReason := scoreSemanticCompaction(
+			msg.Content,
+			content,
+			maxRunes,
+			req.Config.Compaction.Quality,
+			req.Config.Compaction.Evidence,
+		)
+		qualityScores = append(qualityScores, qualityScore)
+		qualityReasons = append(qualityReasons, qualityReason)
 		msg.Content = content
 		after += len([]rune(content))
 		out = append(out, msg)
@@ -125,18 +148,168 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			compression = 0
 		}
 	}
+	score := averageFloat64(qualityScores)
+	reason := joinReasons(qualityReasons)
+	if embeddingEnabledNoAdapter {
+		reason = appendReason(reason, "embedding_hook_not_bound")
+	}
 	return ca3CompactionResult{
 		Messages:         out,
 		CompressionRatio: compression,
+		QualityScore:     score,
+		QualityReason:    reason,
 	}, nil
 }
 
-func buildSemanticCompactionPrompt(content string, maxRunes int) string {
-	return strings.TrimSpace(fmt.Sprintf(
-		"Compress the text for context-window efficiency while preserving intent, constraints, decisions, todo, and risk details. "+
-			"Return plain text only in Chinese if source is Chinese, otherwise keep source language. "+
-			"Keep output under %d characters.\n\nSource:\n%s",
-		maxRunes,
-		content,
-	))
+func buildSemanticCompactionPrompt(req ca3CompactionRequest, content string, maxRunes int) (string, error) {
+	template, err := newSemanticPromptTemplate(req.Config.Compaction.SemanticTemplate)
+	if err != nil {
+		return "", err
+	}
+	return template.Render(map[string]string{
+		"input":          strings.TrimSpace(req.AssembleReq.Input),
+		"source":         content,
+		"max_runes":      fmt.Sprintf("%d", maxRunes),
+		"model":          strings.TrimSpace(req.ModelReq.Model),
+		"messages_count": fmt.Sprintf("%d", len(req.ModelReq.Messages)),
+	})
+}
+
+func scoreSemanticCompaction(
+	original string,
+	compacted string,
+	maxRunes int,
+	quality runtimeconfig.ContextAssemblerCA3CompactionQualityConfig,
+	evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig,
+) (float64, string) {
+	weights := quality.Weights
+	totalWeight := weights.Coverage + weights.Compression + weights.Validity
+	if totalWeight <= 0 {
+		return 0, "invalid_weights"
+	}
+	coverage := scoreCoverage(original, compacted, evidence)
+	compression := scoreCompression(original, compacted, maxRunes)
+	validity := scoreValidity(compacted, maxRunes)
+	score := ((coverage * weights.Coverage) + (compression * weights.Compression) + (validity * weights.Validity)) / totalWeight
+	if score < 0 {
+		score = 0
+	}
+	if score > 1 {
+		score = 1
+	}
+	reasons := make([]string, 0, 4)
+	if coverage < 0.5 {
+		reasons = append(reasons, "coverage_low")
+	}
+	if compression < 0.5 {
+		reasons = append(reasons, "compression_sanity_low")
+	}
+	if validity < 1 {
+		reasons = append(reasons, "output_invalid")
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "quality_pass")
+	}
+	return score, strings.Join(reasons, ",")
+}
+
+func scoreCoverage(original, compacted string, evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig) float64 {
+	needles := make([]string, 0, len(evidence.Keywords))
+	for _, kw := range evidence.Keywords {
+		token := strings.ToLower(strings.TrimSpace(kw))
+		if token == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(original), token) {
+			needles = append(needles, token)
+		}
+	}
+	if len(needles) == 0 {
+		return 1
+	}
+	hit := 0
+	lowerCompacted := strings.ToLower(compacted)
+	for _, token := range needles {
+		if strings.Contains(lowerCompacted, token) {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(needles))
+}
+
+func scoreCompression(original, compacted string, maxRunes int) float64 {
+	origRunes := len([]rune(original))
+	compRunes := len([]rune(compacted))
+	if origRunes <= 0 || compRunes <= 0 {
+		return 0
+	}
+	if maxRunes > 0 && compRunes > maxRunes {
+		return 0
+	}
+	ratio := float64(compRunes) / float64(origRunes)
+	switch {
+	case ratio <= 0.15:
+		return 0.35
+	case ratio <= 0.85:
+		return 1.0
+	case ratio <= 1.0:
+		return 0.55
+	default:
+		return 0
+	}
+}
+
+func scoreValidity(compacted string, maxRunes int) float64 {
+	content := strings.TrimSpace(compacted)
+	if content == "" {
+		return 0
+	}
+	if maxRunes > 0 && len([]rune(content)) > maxRunes {
+		return 0
+	}
+	return 1
+}
+
+func averageFloat64(values []float64) float64 {
+	if len(values) == 0 {
+		return 1
+	}
+	total := 0.0
+	for _, value := range values {
+		total += value
+	}
+	out := total / float64(len(values))
+	return math.Round(out*1000) / 1000
+}
+
+func joinReasons(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	items := strings.Split(strings.Join(reasons, ","), ",")
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		token := strings.ToLower(strings.TrimSpace(item))
+		if token == "" {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		out = append(out, token)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ",")
+}
+
+func appendReason(base, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return strings.TrimSpace(base)
+	}
+	if strings.TrimSpace(base) == "" {
+		return strings.TrimSpace(extra)
+	}
+	return joinReasons([]string{base, extra})
 }

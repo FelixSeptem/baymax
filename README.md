@@ -67,11 +67,14 @@
 - CA3 compaction 策略：
   - `context_assembler.ca3.compaction.mode`：`truncate|semantic`（默认 `truncate`）
   - `semantic` 通过当前 model client 路径执行语义压缩；`best_effort` 失败回退 `truncate`，`fail_fast` 失败即终止
+  - quality gate：`context_assembler.ca3.compaction.quality.threshold + weights`（coverage/compression/validity）
+  - semantic template：`context_assembler.ca3.compaction.semantic_template.prompt + allowed_placeholders`（启动/热更新 fail-fast 校验）
+  - embedding SPI hook：`context_assembler.ca3.compaction.embedding.enabled + selector`（仅通用接口占位，本期不绑定 provider adapter）
   - prune 证据保留：`context_assembler.ca3.compaction.evidence.keywords` + `recent_window`
 - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
 - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
-- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_retained_evidence_count`
+- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_fallback_reason`、`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_retained_evidence_count`
 
 ### 3.7 HITL（H2 + H3 + H4）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
@@ -133,6 +136,7 @@
 - fake model/tool/mcp 组件
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
 - benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
+- benchmark：`BenchmarkCA3SemanticCompactionLatency`（CA3 semantic 路径，纳入相对百分比回归策略）
 - benchmark：`BenchmarkToolFanOutCancelStorm` 输出 `p95-ns/op` + `goroutine-peak`，用于取消风暴回归对比
 - benchmark：`BenchmarkDiagnosticsTimelineTrendQuery` 输出趋势查询性能指标（含 `p95-ns/op`）
 
@@ -286,6 +290,18 @@ context_assembler:
     compaction:
       mode: truncate # truncate|semantic
       semantic_timeout: 800ms
+      quality:
+        threshold: 0.60 # [0,1]
+        weights:
+          coverage: 0.50
+          compression: 0.30
+          validity: 0.20
+      semantic_template:
+        prompt: "Compress... Keep output under {{max_runes}} characters.\n\nUser input:\n{{input}}\n\nSource:\n{{source}}"
+        allowed_placeholders: [input, source, max_runes, model, messages_count]
+      embedding:
+        enabled: false
+        selector: ""
       evidence:
         keywords: [decision, constraint, todo, risk]
         recent_window: 0

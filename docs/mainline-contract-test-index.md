@@ -15,7 +15,7 @@
 | Tool Loop | `core/runner/runner_test.go::TestRunToolLoopSuccess` | `core/runner/runner_test.go::TestRunToolFailurePolicy` |
 | CA2 Stage2 | `core/runner/runner_test.go::TestRunCA2BestEffortKeepsModelPath` | `core/runner/runner_test.go::TestStreamCA2FailFastStopsBeforeModel` |
 | CA3 Pressure | `core/runner/runner_test.go::TestRunAndStreamCA3PressureSemanticsEquivalent` | `context/assembler/assembler_test.go::TestAssemblerCA3EmergencyRejectsLowPriorityStage2` |
-| CA3 Compaction Semantic | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionUsesModelClient` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionFailFast` |
+| CA3 Compaction Semantic | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionUsesModelClient` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback` |
 | Action Gate H2 | `core/runner/runner_test.go::TestActionGateAllowPathKeepsToolExecution` | `core/runner/runner_test.go::TestActionGateRunAndStreamTimeoutSemanticsEquivalent` |
 | Action Gate H4 Parameter Rules | `core/runner/runner_test.go::TestActionGateParameterRulePriorityOverKeyword` | `core/runner/runner_test.go::TestActionGateParameterRuleRunAndStreamTimeoutSemanticsEquivalent` |
 | Runner Concurrency Baseline R5 | `core/runner/runner_test.go::TestRunBackpressureBlockDiagnosticsAndTimeline` | `core/runner/runner_test.go::TestRunAndStreamCancelPropagationSemanticsEquivalent` |
@@ -32,4 +32,4 @@
 1. 变更完成前，确保以上用例在 `go test ./...` 中通过。
 2. 合并前，执行 `go test -race ./...` 验证并发安全基线。
 3. 质量门禁脚本执行时应同时包含仓库卫生检查、lint 与安全扫描。
-4. 基准回归可执行：`integration/benchmark_test.go::BenchmarkCA2ExternalRetrieverTrendAggregation`。
+4. 基准回归可执行：`integration/benchmark_test.go::BenchmarkCA2ExternalRetrieverTrendAggregation`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatency`。

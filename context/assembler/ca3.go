@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,22 +172,39 @@ func (a *Assembler) applyCA3(
 	spillCount := 0
 	removed := make([]spillRecord, 0)
 	fallbackUsed := false
+	fallbackReason := ""
+	qualityScore := 0.0
+	qualityReason := ""
 	retainedEvidenceCount := 0
 
 	switch zone {
 	case ca3ZoneWarning:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			var compaction ca3CompactionResult
+			compaction, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
 			if err != nil {
 				return modelReq, outcome, decision, err
 			}
+			modelReq.Messages = compaction.Messages
+			actionsCompression = compaction.CompressionRatio
+			fallbackUsed = compaction.Fallback
+			fallbackReason = compaction.FallbackReason
+			qualityScore = compaction.QualityScore
+			qualityReason = compaction.QualityReason
 		}
 	case ca3ZoneDanger:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			var compaction ca3CompactionResult
+			compaction, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
 			if err != nil {
 				return modelReq, outcome, decision, err
 			}
+			modelReq.Messages = compaction.Messages
+			actionsCompression = compaction.CompressionRatio
+			fallbackUsed = compaction.Fallback
+			fallbackReason = compaction.FallbackReason
+			qualityScore = compaction.QualityScore
+			qualityReason = compaction.QualityReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			var pruned []spillRecord
@@ -195,10 +213,17 @@ func (a *Assembler) applyCA3(
 		}
 	case ca3ZoneEmergency:
 		if cfg.CA3.Squash.Enabled {
-			modelReq.Messages, actionsCompression, fallbackUsed, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
+			var compaction ca3CompactionResult
+			compaction, err = a.applyCompaction(ctx, req, modelReq, cfg, state, stage)
 			if err != nil {
 				return modelReq, outcome, decision, err
 			}
+			modelReq.Messages = compaction.Messages
+			actionsCompression = compaction.CompressionRatio
+			fallbackUsed = compaction.Fallback
+			fallbackReason = compaction.FallbackReason
+			qualityScore = compaction.QualityScore
+			qualityReason = compaction.QualityReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
@@ -229,6 +254,9 @@ func (a *Assembler) applyCA3(
 	outcome.Stage.SpillCount += spillCount
 	outcome.Stage.SwapBackCount += swapBackCount
 	outcome.Stage.CompactionFallback = outcome.Stage.CompactionFallback || fallbackUsed
+	outcome.Stage.CompactionFallbackReason = fallbackReason
+	outcome.Stage.CompactionQualityScore = qualityScore
+	outcome.Stage.CompactionQualityReason = qualityReason
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
 	}
@@ -242,7 +270,7 @@ func (a *Assembler) applyCompaction(
 	cfg runtimeconfig.ContextAssemblerConfig,
 	state *ca3RunState,
 	stage string,
-) ([]types.Message, float64, bool, error) {
+) (ca3CompactionResult, error) {
 	request := ca3CompactionRequest{
 		AssembleReq: assembleReq,
 		ModelReq:    modelReq,
@@ -258,19 +286,28 @@ func (a *Assembler) applyCompaction(
 	}
 	result, err := primary.compact(semanticCtx, request)
 	if err == nil {
+		if mode == "semantic" && result.QualityScore < cfg.CA3.Compaction.Quality.Threshold {
+			err = newSemanticQualityGateError(result.QualityScore, cfg.CA3.Compaction.Quality.Threshold, result.QualityReason)
+		}
+	}
+	if err == nil {
 		recordCompactionAccess(result.Messages, state)
-		return result.Messages, result.CompressionRatio, false, nil
+		return result, nil
 	}
 	if mode != "semantic" || !isBestEffortPolicy(ca3StagePolicy(cfg, stage)) {
-		return nil, 0, false, err
+		return ca3CompactionResult{}, err
 	}
 	fallback := (&truncateCompactor{})
 	fallbackRes, fallbackErr := fallback.compact(ctx, request)
 	if fallbackErr != nil {
-		return nil, 0, false, fallbackErr
+		return ca3CompactionResult{}, fallbackErr
 	}
+	fallbackRes.Fallback = true
+	fallbackRes.QualityScore = result.QualityScore
+	fallbackRes.QualityReason = result.QualityReason
+	fallbackRes.FallbackReason = semanticFallbackReason(err)
 	recordCompactionAccess(fallbackRes.Messages, state)
-	return fallbackRes.Messages, fallbackRes.CompressionRatio, true, nil
+	return fallbackRes, nil
 }
 
 func (a *Assembler) compactorFor(mode string, req types.ContextAssembleRequest) ca3Compactor {
@@ -278,6 +315,40 @@ func (a *Assembler) compactorFor(mode string, req types.ContextAssembleRequest) 
 		return &semanticCompactor{client: req.ModelClient}
 	}
 	return &truncateCompactor{}
+}
+
+type semanticQualityGateError struct {
+	score     float64
+	threshold float64
+	reason    string
+}
+
+func newSemanticQualityGateError(score float64, threshold float64, reason string) error {
+	return semanticQualityGateError{
+		score:     score,
+		threshold: threshold,
+		reason:    strings.TrimSpace(reason),
+	}
+}
+
+func (e semanticQualityGateError) Error() string {
+	return fmt.Sprintf(
+		"semantic compaction quality score %.3f below threshold %.3f (%s)",
+		e.score,
+		e.threshold,
+		e.reason,
+	)
+}
+
+func semanticFallbackReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	var qualityErr semanticQualityGateError
+	if errors.As(err, &qualityErr) {
+		return "quality_below_threshold"
+	}
+	return "semantic_compaction_error"
 }
 
 func ca3StagePolicy(cfg runtimeconfig.ContextAssemblerConfig, stage string) string {

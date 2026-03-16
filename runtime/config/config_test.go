@@ -842,6 +842,12 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 	if cfg.ContextAssembler.CA3.Compaction.SemanticTimeout <= 0 {
 		t.Fatalf("ca3.compaction.semantic_timeout = %v, want > 0", cfg.ContextAssembler.CA3.Compaction.SemanticTimeout)
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Quality.Threshold <= 0 {
+		t.Fatalf("ca3.compaction.quality.threshold = %v, want > 0", cfg.ContextAssembler.CA3.Compaction.Quality.Threshold)
+	}
+	if strings.TrimSpace(cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt) == "" {
+		t.Fatal("ca3.compaction.semantic_template.prompt should not be empty")
+	}
 }
 
 func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -871,6 +877,9 @@ func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
 func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_MODE", "semantic")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_SEMANTIC_TIMEOUT", "1200ms")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_QUALITY_THRESHOLD", "0.75")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_ENABLED", "true")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_SELECTOR", "sdk-default")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EVIDENCE_RECENT_WINDOW", "8")
 	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
 	if err != nil {
@@ -882,6 +891,15 @@ func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
 	if cfg.ContextAssembler.CA3.Compaction.SemanticTimeout != 1200*time.Millisecond {
 		t.Fatalf("ca3.compaction.semantic_timeout = %v, want 1200ms", cfg.ContextAssembler.CA3.Compaction.SemanticTimeout)
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Quality.Threshold != 0.75 {
+		t.Fatalf("ca3.compaction.quality.threshold = %v, want 0.75", cfg.ContextAssembler.CA3.Compaction.Quality.Threshold)
+	}
+	if !cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled {
+		t.Fatal("ca3.compaction.embedding.enabled = false, want true")
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.Selector != "sdk-default" {
+		t.Fatalf("ca3.compaction.embedding.selector = %q, want sdk-default", cfg.ContextAssembler.CA3.Compaction.Embedding.Selector)
+	}
 	if cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow != 8 {
 		t.Fatalf("ca3.compaction.evidence.recent_window = %d, want 8", cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	}
@@ -892,6 +910,22 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidMode(t *testing.T)
 	cfg.ContextAssembler.CA3.Compaction.Mode = "custom"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for ca3.compaction.mode")
+	}
+}
+
+func TestContextAssemblerCA3CompactionValidationRejectsInvalidQualityThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Quality.Threshold = 1.5
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for quality threshold > 1")
+	}
+}
+
+func TestContextAssemblerCA3CompactionValidationRejectsInvalidTemplatePlaceholder(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt = "compact {{source}} and {{unknown}}"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid template placeholder")
 	}
 }
 

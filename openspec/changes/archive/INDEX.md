@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-16 17:02:45
+Updated: 2026-03-16 17:37:23
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -35,3 +35,4 @@ Updated: 2026-03-16 17:02:45
 - 031 -> add-cross-run-timeline-trend-aggregation-h16
 - 032 -> harden-ca2-external-retriever-observability-and-thresholds-e2
 - 033 -> introduce-ca3-semantic-compaction-spi-f1
+- 034 -> harden-ca3-semantic-compaction-quality-and-template-controls-f2

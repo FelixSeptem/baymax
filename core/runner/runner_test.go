@@ -1330,6 +1330,12 @@ context_assembler:
       warning: 18
       danger: 24
       emergency: 30
+    compaction:
+      mode: semantic
+      quality:
+        threshold: 0.4
+      evidence:
+        keywords: [mustkeep]
 `
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -1342,10 +1348,19 @@ context_assembler:
 
 	runModel := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			if strings.Contains(req.Input, "Source:") {
+				return types.ModelResponse{FinalAnswer: "mustkeep semantic summary"}, nil
+			}
 			return types.ModelResponse{FinalAnswer: "ok"}, nil
 		},
 	}
 	streamModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			if strings.Contains(req.Input, "Source:") {
+				return types.ModelResponse{FinalAnswer: "mustkeep semantic summary"}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
 		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
 			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
 		},
@@ -1396,6 +1411,12 @@ context_assembler:
 	}
 	if runFinished.Payload["ca3_compaction_fallback"] != streamFinished.Payload["ca3_compaction_fallback"] {
 		t.Fatalf("run/stream ca3 compaction fallback mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_fallback"], streamFinished.Payload["ca3_compaction_fallback"])
+	}
+	if runFinished.Payload["ca3_compaction_quality_reason"] != streamFinished.Payload["ca3_compaction_quality_reason"] {
+		t.Fatalf("run/stream ca3 compaction quality reason mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_quality_reason"], streamFinished.Payload["ca3_compaction_quality_reason"])
+	}
+	if runFinished.Payload["ca3_compaction_fallback_reason"] != streamFinished.Payload["ca3_compaction_fallback_reason"] {
+		t.Fatalf("run/stream ca3 compaction fallback reason mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_fallback_reason"], streamFinished.Payload["ca3_compaction_fallback_reason"])
 	}
 }
 

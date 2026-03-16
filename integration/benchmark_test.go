@@ -313,6 +313,54 @@ func BenchmarkCA4PressureEvaluation(b *testing.B) {
 	}
 }
 
+func BenchmarkCA3SemanticCompactionLatency(b *testing.B) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 4096
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.Quality.Threshold = 0.2
+	cfg.CA3.Compaction.Evidence.Keywords = []string{"decision", "risk"}
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	model := fakes.NewModel([]fakes.ModelStep{
+		{Response: types.ModelResponse{FinalAnswer: "decision preserved with compact risk summary"}},
+	})
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-ca3-semantic",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("input payload ", 80),
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("decision and risk details. ", 80)},
+		},
+		ModelClient: model,
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble semantic compaction failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
 func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 	store := runtimediag.NewStore(64, 512, 16, 32, runtimediag.TimelineTrendConfig{
 		Enabled:    true,

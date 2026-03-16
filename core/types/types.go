@@ -356,15 +356,18 @@ type AssembleStage struct {
 	PressureZone     string              `json:"pressure_zone,omitempty"`
 	PressureReason   string              `json:"pressure_reason,omitempty"`
 	// PressureTriggerSource stores the concrete trigger branch selected by CA3/CA4 logic.
-	PressureTriggerSource string           `json:"pressure_trigger_source,omitempty"`
-	ZoneResidencyMs       map[string]int64 `json:"zone_residency_ms,omitempty"`
-	TriggerCounts         map[string]int   `json:"trigger_counts,omitempty"`
-	CompressionRatio      float64          `json:"compression_ratio,omitempty"`
-	SpillCount            int              `json:"spill_count,omitempty"`
-	SwapBackCount         int              `json:"swap_back_count,omitempty"`
-	CompactionMode        string           `json:"compaction_mode,omitempty"`
-	CompactionFallback    bool             `json:"compaction_fallback,omitempty"`
-	RetainedEvidenceCount int              `json:"retained_evidence_count,omitempty"`
+	PressureTriggerSource    string           `json:"pressure_trigger_source,omitempty"`
+	ZoneResidencyMs          map[string]int64 `json:"zone_residency_ms,omitempty"`
+	TriggerCounts            map[string]int   `json:"trigger_counts,omitempty"`
+	CompressionRatio         float64          `json:"compression_ratio,omitempty"`
+	SpillCount               int              `json:"spill_count,omitempty"`
+	SwapBackCount            int              `json:"swap_back_count,omitempty"`
+	CompactionMode           string           `json:"compaction_mode,omitempty"`
+	CompactionFallback       bool             `json:"compaction_fallback,omitempty"`
+	CompactionFallbackReason string           `json:"compaction_fallback_reason,omitempty"`
+	CompactionQualityScore   float64          `json:"compaction_quality_score,omitempty"`
+	CompactionQualityReason  string           `json:"compaction_quality_reason,omitempty"`
+	RetainedEvidenceCount    int              `json:"retained_evidence_count,omitempty"`
 }
 
 type TailRecap struct {

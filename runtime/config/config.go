@@ -329,9 +329,33 @@ type ContextAssemblerCA3TokenizerConfig struct {
 }
 
 type ContextAssemblerCA3CompactionConfig struct {
-	Mode            string                                      `json:"mode"`
-	SemanticTimeout time.Duration                               `json:"semantic_timeout"`
-	Evidence        ContextAssemblerCA3CompactionEvidenceConfig `json:"evidence"`
+	Mode             string                                       `json:"mode"`
+	SemanticTimeout  time.Duration                                `json:"semantic_timeout"`
+	Quality          ContextAssemblerCA3CompactionQualityConfig   `json:"quality"`
+	SemanticTemplate ContextAssemblerCA3SemanticTemplateConfig    `json:"semantic_template"`
+	Embedding        ContextAssemblerCA3CompactionEmbeddingConfig `json:"embedding"`
+	Evidence         ContextAssemblerCA3CompactionEvidenceConfig  `json:"evidence"`
+}
+
+type ContextAssemblerCA3CompactionQualityConfig struct {
+	Threshold float64                                     `json:"threshold"`
+	Weights   ContextAssemblerCA3CompactionQualityWeights `json:"weights"`
+}
+
+type ContextAssemblerCA3CompactionQualityWeights struct {
+	Coverage    float64 `json:"coverage"`
+	Compression float64 `json:"compression"`
+	Validity    float64 `json:"validity"`
+}
+
+type ContextAssemblerCA3SemanticTemplateConfig struct {
+	Prompt              string   `json:"prompt"`
+	AllowedPlaceholders []string `json:"allowed_placeholders"`
+}
+
+type ContextAssemblerCA3CompactionEmbeddingConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Selector string `json:"selector"`
 }
 
 type ContextAssemblerCA3CompactionEvidenceConfig struct {
@@ -562,6 +586,22 @@ func DefaultConfig() Config {
 				Compaction: ContextAssemblerCA3CompactionConfig{
 					Mode:            "truncate",
 					SemanticTimeout: 800 * time.Millisecond,
+					Quality: ContextAssemblerCA3CompactionQualityConfig{
+						Threshold: 0.60,
+						Weights: ContextAssemblerCA3CompactionQualityWeights{
+							Coverage:    0.50,
+							Compression: 0.30,
+							Validity:    0.20,
+						},
+					},
+					SemanticTemplate: ContextAssemblerCA3SemanticTemplateConfig{
+						Prompt:              "Compress the text for context-window efficiency while preserving intent, constraints, decisions, todo, and risk details. Return plain text only in Chinese if source is Chinese, otherwise keep source language. Keep output under {{max_runes}} characters.\n\nUser input:\n{{input}}\n\nSource:\n{{source}}",
+						AllowedPlaceholders: []string{"input", "source", "max_runes", "model", "messages_count"},
+					},
+					Embedding: ContextAssemblerCA3CompactionEmbeddingConfig{
+						Enabled:  false,
+						Selector: "",
+					},
 					Evidence: ContextAssemblerCA3CompactionEvidenceConfig{
 						Keywords:     []string{"decision", "constraint", "todo", "risk"},
 						RecentWindow: 0,
@@ -1115,8 +1155,57 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 	if cfg.Compaction.SemanticTimeout <= 0 {
 		return errors.New("context_assembler.ca3.compaction.semantic_timeout must be > 0")
 	}
+	if cfg.Compaction.Quality.Threshold < 0 || cfg.Compaction.Quality.Threshold > 1 {
+		return errors.New("context_assembler.ca3.compaction.quality.threshold must be in [0,1]")
+	}
+	weights := cfg.Compaction.Quality.Weights
+	if weights.Coverage < 0 || weights.Compression < 0 || weights.Validity < 0 {
+		return errors.New("context_assembler.ca3.compaction.quality.weights.* must be >= 0")
+	}
+	if (weights.Coverage + weights.Compression + weights.Validity) <= 0 {
+		return errors.New("context_assembler.ca3.compaction.quality.weights total must be > 0")
+	}
+	if err := validateSemanticTemplate(cfg.Compaction.SemanticTemplate); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.Compaction.Embedding.Selector) == "" && cfg.Compaction.Embedding.Enabled {
+		return errors.New("context_assembler.ca3.compaction.embedding.selector is required when embedding.enabled=true")
+	}
 	if cfg.Compaction.Evidence.RecentWindow < 0 {
 		return errors.New("context_assembler.ca3.compaction.evidence.recent_window must be >= 0")
+	}
+	return nil
+}
+
+func validateSemanticTemplate(cfg ContextAssemblerCA3SemanticTemplateConfig) error {
+	prompt := strings.TrimSpace(cfg.Prompt)
+	if prompt == "" {
+		return errors.New("context_assembler.ca3.compaction.semantic_template.prompt must not be empty")
+	}
+	allowed := normalizeKeywords(cfg.AllowedPlaceholders)
+	if len(allowed) == 0 {
+		return errors.New("context_assembler.ca3.compaction.semantic_template.allowed_placeholders must not be empty")
+	}
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, key := range allowed {
+		allowedSet[key] = struct{}{}
+	}
+	if strings.Count(prompt, "{{") != strings.Count(prompt, "}}") {
+		return errors.New("context_assembler.ca3.compaction.semantic_template.prompt has unbalanced placeholders")
+	}
+	parts := strings.Split(prompt, "{{")
+	for i := 1; i < len(parts); i++ {
+		right := strings.SplitN(parts[i], "}}", 2)
+		if len(right) < 2 {
+			return errors.New("context_assembler.ca3.compaction.semantic_template.prompt has invalid placeholder")
+		}
+		name := strings.ToLower(strings.TrimSpace(right[0]))
+		if name == "" {
+			return errors.New("context_assembler.ca3.compaction.semantic_template.prompt has empty placeholder")
+		}
+		if _, ok := allowedSet[name]; !ok {
+			return fmt.Errorf("context_assembler.ca3.compaction.semantic_template.prompt placeholder %q is not allowed", name)
+		}
 	}
 	return nil
 }
@@ -1260,6 +1349,14 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.tokenizer.sdk_refresh_interval", base.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval)
 	v.SetDefault("context_assembler.ca3.compaction.mode", base.ContextAssembler.CA3.Compaction.Mode)
 	v.SetDefault("context_assembler.ca3.compaction.semantic_timeout", base.ContextAssembler.CA3.Compaction.SemanticTimeout)
+	v.SetDefault("context_assembler.ca3.compaction.quality.threshold", base.ContextAssembler.CA3.Compaction.Quality.Threshold)
+	v.SetDefault("context_assembler.ca3.compaction.quality.weights.coverage", base.ContextAssembler.CA3.Compaction.Quality.Weights.Coverage)
+	v.SetDefault("context_assembler.ca3.compaction.quality.weights.compression", base.ContextAssembler.CA3.Compaction.Quality.Weights.Compression)
+	v.SetDefault("context_assembler.ca3.compaction.quality.weights.validity", base.ContextAssembler.CA3.Compaction.Quality.Weights.Validity)
+	v.SetDefault("context_assembler.ca3.compaction.semantic_template.prompt", base.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt)
+	v.SetDefault("context_assembler.ca3.compaction.semantic_template.allowed_placeholders", base.ContextAssembler.CA3.Compaction.SemanticTemplate.AllowedPlaceholders)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.enabled", base.ContextAssembler.CA3.Compaction.Embedding.Enabled)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.selector", base.ContextAssembler.CA3.Compaction.Embedding.Selector)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.keywords", base.ContextAssembler.CA3.Compaction.Evidence.Keywords)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.recent_window", base.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
@@ -1365,6 +1462,14 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA3.Tokenizer.SDKRefreshInterval = v.GetDuration("context_assembler.ca3.tokenizer.sdk_refresh_interval")
 	cfg.ContextAssembler.CA3.Compaction.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.mode")))
 	cfg.ContextAssembler.CA3.Compaction.SemanticTimeout = v.GetDuration("context_assembler.ca3.compaction.semantic_timeout")
+	cfg.ContextAssembler.CA3.Compaction.Quality.Threshold = v.GetFloat64("context_assembler.ca3.compaction.quality.threshold")
+	cfg.ContextAssembler.CA3.Compaction.Quality.Weights.Coverage = v.GetFloat64("context_assembler.ca3.compaction.quality.weights.coverage")
+	cfg.ContextAssembler.CA3.Compaction.Quality.Weights.Compression = v.GetFloat64("context_assembler.ca3.compaction.quality.weights.compression")
+	cfg.ContextAssembler.CA3.Compaction.Quality.Weights.Validity = v.GetFloat64("context_assembler.ca3.compaction.quality.weights.validity")
+	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.semantic_template.prompt"))
+	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.AllowedPlaceholders = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.semantic_template.allowed_placeholders"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = v.GetBool("context_assembler.ca3.compaction.embedding.enabled")
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.selector"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.Keywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.evidence.keywords"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow = v.GetInt("context_assembler.ca3.compaction.evidence.recent_window")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))

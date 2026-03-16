@@ -3,9 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 )
 
@@ -34,11 +39,49 @@ func (t *echoTool) Invoke(ctx context.Context, args map[string]any) (types.ToolR
 	return types.ToolResult{Content: fmt.Sprintf("echo=%v", args["q"])}, nil
 }
 
+type timelinePrinter struct{}
+
+func (p timelinePrinter) OnEvent(ctx context.Context, ev types.Event) {
+	_ = ctx
+	if ev.Type != types.EventTypeActionTimeline {
+		return
+	}
+	reason, _ := ev.Payload["reason"].(string)
+	if strings.TrimSpace(reason) != "gate.rule_match" {
+		return
+	}
+	fmt.Printf("timeline reason=%s iteration=%d\n", reason, ev.Iteration)
+}
+
 func main() {
+	cfgPath := filepath.Join(os.TempDir(), fmt.Sprintf("baymax-example-02-%d.yaml", time.Now().UnixNano()))
+	cfg := `
+action_gate:
+  enabled: true
+  policy: require_confirm
+  parameter_rules:
+    - id: allow-tool-loop-q
+      tool_names: [echo]
+      action: allow
+      condition:
+        path: q
+        operator: contains
+        expected: tool-loop
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.Remove(cfgPath) }()
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = mgr.Close() }()
+
 	reg := local.NewRegistry()
 	_, _ = reg.Register(&echoTool{})
-	eng := runner.New(&toolLoopModel{}, runner.WithLocalRegistry(reg))
-	res, err := eng.Run(context.Background(), types.RunRequest{Input: "run tool"}, nil)
+	eng := runner.New(&toolLoopModel{}, runner.WithLocalRegistry(reg), runner.WithRuntimeManager(mgr))
+	res, err := eng.Run(context.Background(), types.RunRequest{Input: "run tool"}, timelinePrinter{})
 	if err != nil {
 		panic(err)
 	}

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-16 10:46:30
+Updated: 2026-03-16 11:45:02
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -26,3 +26,4 @@ Updated: 2026-03-16 10:46:30
 - 022 -> implement-context-assembler-ca4-production-convergence
 - 023 -> introduce-action-gate-hitl-h2
 - 024 -> introduce-clarification-agent-hitl-pause-resume-h3
+- 025 -> introduce-action-gate-parameter-schema-rules-h4

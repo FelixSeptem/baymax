@@ -140,6 +140,75 @@ action_gate:
 	}
 }
 
+func TestActionGateParameterRulesLoadAndPrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_ACTION_GATE_POLICY", "deny")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+action_gate:
+  enabled: true
+  policy: require_confirm
+  parameter_rules:
+    - id: allow-echo-q
+      tool_names: [echo]
+      action: allow
+      condition:
+        path: q
+        operator: contains
+        expected: tool-loop
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ActionGate.Policy != ActionGatePolicyDeny {
+		t.Fatalf("action_gate.policy = %q, want env override deny", cfg.ActionGate.Policy)
+	}
+	if len(cfg.ActionGate.ParameterRules) != 1 {
+		t.Fatalf("parameter_rules len = %d, want 1", len(cfg.ActionGate.ParameterRules))
+	}
+	rule := cfg.ActionGate.ParameterRules[0]
+	if rule.ID != "allow-echo-q" {
+		t.Fatalf("rule.id = %q", rule.ID)
+	}
+	if rule.Condition.Path != "q" || rule.Condition.Operator != types.ActionGateRuleOperatorContains {
+		t.Fatalf("unexpected rule condition: %#v", rule.Condition)
+	}
+}
+
+func TestActionGateParameterRulesValidationRejectsInvalidOperator(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ActionGate.ParameterRules = []types.ActionGateParameterRule{
+		{
+			ID: "bad-op",
+			Condition: types.ActionGateRuleCondition{
+				Path:     "q",
+				Operator: "boom",
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid action_gate.parameter_rules operator")
+	}
+}
+
+func TestActionGateParameterRulesValidationRejectsEmptyConditionTree(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ActionGate.ParameterRules = []types.ActionGateParameterRule{
+		{
+			ID: "empty",
+			Condition: types.ActionGateRuleCondition{
+				All: []types.ActionGateRuleCondition{{}},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for malformed condition tree")
+	}
+}
+
 func TestClarificationDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Clarification.Enabled {

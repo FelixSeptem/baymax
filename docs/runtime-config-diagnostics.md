@@ -71,6 +71,18 @@ action_gate:
   decision_by_keyword:    # 可选：按 keyword 定制决策
     "rm -rf": deny
     "drop table": require_confirm
+  parameter_rules:
+    - id: require-confirm-shell-danger
+      tool_names: [shell]
+      action: require_confirm # 可选，不填则继承 action_gate.policy
+      condition:
+        all:
+          - path: cmd
+            operator: contains # eq|ne|contains|regex|in|not_in|gt|gte|lt|lte|exists
+            expected: rm -rf
+          - path: force
+            operator: eq
+            expected: true
 
 clarification:
   enabled: true
@@ -319,9 +331,21 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `gate_timeout_count`：本次 run 因确认超时导致拒绝的次数。
 
 Action Timeline reason code（gate 相关）：
+- `gate.rule_match`：命中参数规则（H4）。
 - `gate.require_confirm`：命中规则且进入确认流程。
 - `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
 - `gate.timeout`：确认超时后拒绝（timeout-deny）。
+
+Action Gate 规则优先级（H4）：
+1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
+2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
+3. `action_gate.tool_names` / `action_gate.keywords` + 全局 `action_gate.policy`
+4. 默认 allow
+
+### Run 诊断新增字段（Action Gate H4）
+
+- `gate_rule_hit_count`：本次 run 命中的参数规则次数。
+- `gate_rule_last_id`：本次 run 最近一次命中的参数规则 ID（未命中为空字符串）。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

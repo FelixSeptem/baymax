@@ -70,6 +70,8 @@ type RunRecord struct {
 	GateChecks           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount     int                               `json:"gate_timeout_count,omitempty"`
+	GateRuleHitCount     int                               `json:"gate_rule_hit_count,omitempty"`
+	GateRuleLastID       string                            `json:"gate_rule_last_id,omitempty"`
 	AwaitCount           int                               `json:"await_count,omitempty"`
 	ResumeCount          int                               `json:"resume_count,omitempty"`
 	CancelByUserCount    int                               `json:"cancel_by_user_count,omitempty"`

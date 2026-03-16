@@ -46,6 +46,37 @@ type ActionGateResolver interface {
 	Confirm(ctx context.Context, req ActionGateConfirmRequest) (bool, error)
 }
 
+type ActionGateRuleOperator string
+
+const (
+	ActionGateRuleOperatorEQ       ActionGateRuleOperator = "eq"
+	ActionGateRuleOperatorNE       ActionGateRuleOperator = "ne"
+	ActionGateRuleOperatorContains ActionGateRuleOperator = "contains"
+	ActionGateRuleOperatorRegex    ActionGateRuleOperator = "regex"
+	ActionGateRuleOperatorIn       ActionGateRuleOperator = "in"
+	ActionGateRuleOperatorNotIn    ActionGateRuleOperator = "not_in"
+	ActionGateRuleOperatorGT       ActionGateRuleOperator = "gt"
+	ActionGateRuleOperatorGTE      ActionGateRuleOperator = "gte"
+	ActionGateRuleOperatorLT       ActionGateRuleOperator = "lt"
+	ActionGateRuleOperatorLTE      ActionGateRuleOperator = "lte"
+	ActionGateRuleOperatorExists   ActionGateRuleOperator = "exists"
+)
+
+type ActionGateRuleCondition struct {
+	All      []ActionGateRuleCondition `json:"all,omitempty"`
+	Any      []ActionGateRuleCondition `json:"any,omitempty"`
+	Path     string                    `json:"path,omitempty"`
+	Operator ActionGateRuleOperator    `json:"operator,omitempty"`
+	Expected any                       `json:"expected,omitempty"`
+}
+
+type ActionGateParameterRule struct {
+	ID        string                  `json:"id,omitempty"`
+	ToolNames []string                `json:"tool_names,omitempty"`
+	Condition ActionGateRuleCondition `json:"condition"`
+	Action    ActionGateDecision      `json:"action,omitempty"`
+}
+
 type ClarificationTimeoutPolicy string
 
 const (

@@ -99,13 +99,14 @@ type ProviderFallbackConfig struct {
 }
 
 type ActionGateConfig struct {
-	Enabled        bool              `json:"enabled"`
-	Policy         string            `json:"policy"`
-	Timeout        time.Duration     `json:"timeout"`
-	ToolNames      []string          `json:"tool_names"`
-	Keywords       []string          `json:"keywords"`
-	DecisionByTool map[string]string `json:"decision_by_tool"`
-	DecisionByWord map[string]string `json:"decision_by_keyword"`
+	Enabled        bool                            `json:"enabled"`
+	Policy         string                          `json:"policy"`
+	Timeout        time.Duration                   `json:"timeout"`
+	ToolNames      []string                        `json:"tool_names"`
+	Keywords       []string                        `json:"keywords"`
+	DecisionByTool map[string]string               `json:"decision_by_tool"`
+	DecisionByWord map[string]string               `json:"decision_by_keyword"`
+	ParameterRules []types.ActionGateParameterRule `json:"parameter_rules"`
 }
 
 type ClarificationConfig struct {
@@ -334,6 +335,7 @@ func DefaultConfig() Config {
 			Keywords:       nil,
 			DecisionByTool: map[string]string{},
 			DecisionByWord: map[string]string{},
+			ParameterRules: nil,
 		},
 		Clarification: ClarificationConfig{
 			Enabled:       true,
@@ -623,6 +625,30 @@ func Validate(cfg Config) error {
 				return err
 			}
 		}
+		seenRuleID := map[string]struct{}{}
+		for i, rule := range cfg.ActionGate.ParameterRules {
+			if strings.TrimSpace(rule.ID) == "" {
+				return fmt.Errorf("action_gate.parameter_rules[%d].id must not be empty", i)
+			}
+			ruleID := strings.ToLower(strings.TrimSpace(rule.ID))
+			if _, ok := seenRuleID[ruleID]; ok {
+				return fmt.Errorf("action_gate.parameter_rules[%d].id=%q is duplicated", i, rule.ID)
+			}
+			seenRuleID[ruleID] = struct{}{}
+			for j, tool := range rule.ToolNames {
+				if strings.TrimSpace(tool) == "" {
+					return fmt.Errorf("action_gate.parameter_rules[%d].tool_names[%d] must not be empty", i, j)
+				}
+			}
+			if strings.TrimSpace(string(rule.Action)) != "" {
+				if err := validateActionGatePolicy(strings.TrimSpace(string(rule.Action)), fmt.Sprintf("action_gate.parameter_rules[%d].action", i)); err != nil {
+					return err
+				}
+			}
+			if err := validateActionGateRuleCondition(rule.Condition, fmt.Sprintf("action_gate.parameter_rules[%d].condition", i)); err != nil {
+				return err
+			}
+		}
 	}
 	if cfg.Clarification.Enabled {
 		if cfg.Clarification.Timeout <= 0 {
@@ -750,6 +776,47 @@ func validateActionGatePolicy(v, field string) error {
 	default:
 		return fmt.Errorf("%s must be one of [allow,require_confirm,deny]", field)
 	}
+}
+
+func validateActionGateRuleCondition(c types.ActionGateRuleCondition, field string) error {
+	if len(c.All) > 0 && len(c.Any) > 0 {
+		return fmt.Errorf("%s must not define both all and any", field)
+	}
+	if len(c.All) > 0 {
+		for i, child := range c.All {
+			if err := validateActionGateRuleCondition(child, fmt.Sprintf("%s.all[%d]", field, i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if len(c.Any) > 0 {
+		for i, child := range c.Any {
+			if err := validateActionGateRuleCondition(child, fmt.Sprintf("%s.any[%d]", field, i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if strings.TrimSpace(c.Path) == "" {
+		return fmt.Errorf("%s.path must not be empty", field)
+	}
+	switch strings.ToLower(strings.TrimSpace(string(c.Operator))) {
+	case string(types.ActionGateRuleOperatorEQ),
+		string(types.ActionGateRuleOperatorNE),
+		string(types.ActionGateRuleOperatorContains),
+		string(types.ActionGateRuleOperatorRegex),
+		string(types.ActionGateRuleOperatorIn),
+		string(types.ActionGateRuleOperatorNotIn),
+		string(types.ActionGateRuleOperatorGT),
+		string(types.ActionGateRuleOperatorGTE),
+		string(types.ActionGateRuleOperatorLT),
+		string(types.ActionGateRuleOperatorLTE),
+		string(types.ActionGateRuleOperatorExists):
+	default:
+		return fmt.Errorf("%s.operator=%q is not supported", field, c.Operator)
+	}
+	return nil
 }
 
 func validateCA3Config(cfg ContextAssemblerCA3Config) error {
@@ -904,6 +971,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("action_gate.keywords", base.ActionGate.Keywords)
 	v.SetDefault("action_gate.decision_by_tool", base.ActionGate.DecisionByTool)
 	v.SetDefault("action_gate.decision_by_keyword", base.ActionGate.DecisionByWord)
+	v.SetDefault("action_gate.parameter_rules", base.ActionGate.ParameterRules)
 	v.SetDefault("clarification.enabled", base.Clarification.Enabled)
 	v.SetDefault("clarification.timeout", base.Clarification.Timeout)
 	v.SetDefault("clarification.timeout_policy", base.Clarification.TimeoutPolicy)
@@ -989,6 +1057,7 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ActionGate.Keywords = normalizeKeywords(v.GetStringSlice("action_gate.keywords"))
 	cfg.ActionGate.DecisionByTool = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_tool"))
 	cfg.ActionGate.DecisionByWord = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_keyword"))
+	cfg.ActionGate.ParameterRules = normalizeActionGateParameterRules(v.Get("action_gate.parameter_rules"))
 	cfg.Clarification.Enabled = v.GetBool("clarification.enabled")
 	cfg.Clarification.Timeout = v.GetDuration("clarification.timeout")
 	cfg.Clarification.TimeoutPolicy = strings.ToLower(strings.TrimSpace(v.GetString("clarification.timeout_policy")))
@@ -1230,6 +1299,57 @@ func normalizeStringToPolicyMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func normalizeActionGateParameterRules(raw any) []types.ActionGateParameterRule {
+	if raw == nil {
+		return nil
+	}
+	decode := func(src any) []types.ActionGateParameterRule {
+		b, err := json.Marshal(src)
+		if err != nil {
+			return nil
+		}
+		out := make([]types.ActionGateParameterRule, 0)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil
+		}
+		for i := range out {
+			out[i].ID = strings.TrimSpace(out[i].ID)
+			out[i].ToolNames = normalizeKeywords(out[i].ToolNames)
+			out[i].Action = types.ActionGateDecision(strings.ToLower(strings.TrimSpace(string(out[i].Action))))
+			normalizeActionGateCondition(&out[i].Condition)
+		}
+		return out
+	}
+	switch tv := raw.(type) {
+	case string:
+		trimmed := strings.TrimSpace(tv)
+		if trimmed == "" {
+			return nil
+		}
+		out := decode(json.RawMessage(trimmed))
+		if len(out) > 0 {
+			return out
+		}
+		return nil
+	default:
+		return decode(raw)
+	}
+}
+
+func normalizeActionGateCondition(c *types.ActionGateRuleCondition) {
+	if c == nil {
+		return
+	}
+	c.Path = strings.TrimSpace(c.Path)
+	c.Operator = types.ActionGateRuleOperator(strings.ToLower(strings.TrimSpace(string(c.Operator))))
+	for i := range c.All {
+		normalizeActionGateCondition(&c.All[i])
+	}
+	for i := range c.Any {
+		normalizeActionGateCondition(&c.Any[i])
+	}
 }
 
 func toMap(cfg Config) (map[string]any, error) {

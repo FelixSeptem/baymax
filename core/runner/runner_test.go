@@ -1861,6 +1861,367 @@ func containsString(items []string, want string) bool {
 	return false
 }
 
+func TestActionGateParameterRuleOperators(t *testing.T) {
+	cases := []struct {
+		name      string
+		condition types.ActionGateRuleCondition
+		args      map[string]any
+		want      bool
+	}{
+		{
+			name: "eq",
+			condition: types.ActionGateRuleCondition{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorEQ,
+				Expected: "ok",
+			},
+			args: map[string]any{"q": "ok"},
+			want: true,
+		},
+		{
+			name: "ne",
+			condition: types.ActionGateRuleCondition{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorNE,
+				Expected: "bad",
+			},
+			args: map[string]any{"q": "ok"},
+			want: true,
+		},
+		{
+			name: "contains",
+			condition: types.ActionGateRuleCondition{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorContains,
+				Expected: "loop",
+			},
+			args: map[string]any{"q": "tool-loop"},
+			want: true,
+		},
+		{
+			name: "regex",
+			condition: types.ActionGateRuleCondition{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorRegex,
+				Expected: "^tool-",
+			},
+			args: map[string]any{"q": "tool-loop"},
+			want: true,
+		},
+		{
+			name: "in",
+			condition: types.ActionGateRuleCondition{
+				Path:     "priority",
+				Operator: types.ActionGateRuleOperatorIn,
+				Expected: []any{"high", "critical"},
+			},
+			args: map[string]any{"priority": "high"},
+			want: true,
+		},
+		{
+			name: "not_in",
+			condition: types.ActionGateRuleCondition{
+				Path:     "priority",
+				Operator: types.ActionGateRuleOperatorNotIn,
+				Expected: []any{"low", "medium"},
+			},
+			args: map[string]any{"priority": "high"},
+			want: true,
+		},
+		{
+			name: "gt",
+			condition: types.ActionGateRuleCondition{
+				Path:     "size",
+				Operator: types.ActionGateRuleOperatorGT,
+				Expected: 10,
+			},
+			args: map[string]any{"size": 12},
+			want: true,
+		},
+		{
+			name: "gte",
+			condition: types.ActionGateRuleCondition{
+				Path:     "size",
+				Operator: types.ActionGateRuleOperatorGTE,
+				Expected: 12,
+			},
+			args: map[string]any{"size": 12},
+			want: true,
+		},
+		{
+			name: "lt",
+			condition: types.ActionGateRuleCondition{
+				Path:     "size",
+				Operator: types.ActionGateRuleOperatorLT,
+				Expected: 20,
+			},
+			args: map[string]any{"size": 12},
+			want: true,
+		},
+		{
+			name: "lte",
+			condition: types.ActionGateRuleCondition{
+				Path:     "size",
+				Operator: types.ActionGateRuleOperatorLTE,
+				Expected: 12,
+			},
+			args: map[string]any{"size": 12},
+			want: true,
+		},
+		{
+			name: "exists",
+			condition: types.ActionGateRuleCondition{
+				Path:     "meta.token",
+				Operator: types.ActionGateRuleOperatorExists,
+			},
+			args: map[string]any{"meta": map[string]any{"token": "x"}},
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := evaluateRuleCondition(tc.condition, tc.args)
+			if err != nil {
+				t.Fatalf("evaluateRuleCondition failed: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("evaluateRuleCondition = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestActionGateParameterRuleCompositeShortCircuit(t *testing.T) {
+	andCondition := types.ActionGateRuleCondition{
+		All: []types.ActionGateRuleCondition{
+			{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorEQ,
+				Expected: "miss",
+			},
+			{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorRegex,
+				Expected: 42, // invalid regex expected type; should not execute because first condition is false.
+			},
+		},
+	}
+	matched, err := evaluateRuleCondition(andCondition, map[string]any{"q": "tool-loop"})
+	if err != nil {
+		t.Fatalf("AND short-circuit should not error, got %v", err)
+	}
+	if matched {
+		t.Fatal("AND condition should be false")
+	}
+
+	orCondition := types.ActionGateRuleCondition{
+		Any: []types.ActionGateRuleCondition{
+			{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorContains,
+				Expected: "tool",
+			},
+			{
+				Path:     "q",
+				Operator: types.ActionGateRuleOperatorRegex,
+				Expected: 42, // invalid regex expected type; should not execute because first condition is true.
+			},
+		},
+	}
+	matched, err = evaluateRuleCondition(orCondition, map[string]any{"q": "tool-loop"})
+	if err != nil {
+		t.Fatalf("OR short-circuit should not error, got %v", err)
+	}
+	if !matched {
+		t.Fatal("OR condition should be true")
+	}
+}
+
+func TestActionGateParameterRulePriorityOverKeyword(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{name: "echo"})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	calls := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			calls++
+			if calls == 1 {
+				return types.ModelResponse{
+					ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo", Args: map[string]any{"q": "tool-loop"}}},
+				}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "done"}, nil
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  enabled: true
+  policy: require_confirm
+  decision_by_keyword:
+    "tool-loop": deny
+  parameter_rules:
+    - id: allow-echoloop
+      tool_names: [echo]
+      action: allow
+      condition:
+        path: q
+        operator: contains
+        expected: tool-loop
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "tool-loop"}, collector)
+	if runErr != nil {
+		t.Fatalf("run should allow by parameter rule priority: %v", runErr)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want done", res.FinalAnswer)
+	}
+	reasons := make([]string, 0)
+	for _, ev := range collector.timelineEvents() {
+		if reason, _ := ev.Payload["reason"].(string); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	if !containsString(reasons, "gate.rule_match") {
+		t.Fatalf("expected gate.rule_match timeline reason, got %v", reasons)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["gate_rule_hit_count"] != 1 || finished.Payload["gate_rule_last_id"] != "allow-echoloop" {
+		t.Fatalf("unexpected rule diagnostics payload: %#v", finished.Payload)
+	}
+}
+
+func TestActionGateParameterRuleActionInheritsGlobalPolicy(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{name: "echo"})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo", Args: map[string]any{"dangerous": true}}},
+			}, nil
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  enabled: true
+  policy: deny
+  parameter_rules:
+    - id: inherit-deny
+      tool_names: [echo]
+      condition:
+        path: dangerous
+        operator: eq
+        expected: true
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, nil)
+	if runErr == nil {
+		t.Fatal("expected deny from inherited global policy")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrTool {
+		t.Fatalf("error class = %#v, want ErrTool", res.Error)
+	}
+}
+
+func TestActionGateParameterRuleRunAndStreamTimeoutSemanticsEquivalent(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.shell", Args: map[string]any{"cmd": "danger"}}},
+			}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{
+					CallID: "c1",
+					Name:   "local.shell",
+					Args:   map[string]any{"cmd": "danger"},
+				},
+			})
+		},
+	}
+	timeoutResolver := &fakeGateResolver{
+		confirm: func(ctx context.Context, req types.ActionGateConfirmRequest) (bool, error) {
+			<-ctx.Done()
+			return false, ctx.Err()
+		},
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+action_gate:
+  enabled: true
+  timeout: 1ms
+  policy: allow
+  parameter_rules:
+    - id: require-confirm
+      tool_names: [shell]
+      action: require_confirm
+      condition:
+        path: cmd
+        operator: contains
+        expected: danger
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "shell"})
+	runEngine := New(runModel, WithLocalRegistry(reg), WithRuntimeManager(mgr), WithActionGateResolver(timeoutResolver))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithActionGateResolver(timeoutResolver))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "danger"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "danger"}, nil)
+	if !errors.Is(runErr, context.DeadlineExceeded) || !errors.Is(streamErr, context.DeadlineExceeded) {
+		t.Fatalf("expected timeout for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream classified errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+}
+
 func assertPhaseDistEqual(
 	t *testing.T,
 	a, b map[string]runtimediag.TimelinePhaseAggregate,

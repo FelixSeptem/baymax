@@ -5,7 +5,7 @@
 ## 当前状态（2026-03-16）
 
 - OpenSpec 活跃变更数：`0`（当前基线已全部归档）。
-- 最近归档：`023-introduce-action-gate-hitl-h2`。
+- 最近归档：`024-introduce-clarification-agent-hitl-pause-resume-h3`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
@@ -60,7 +60,7 @@
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
 - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
 
-### 3.7 HITL（H2 + H3）
+### 3.7 HITL（H2 + H3 + H4）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
 - 默认策略：`require_confirm`（若需要确认但未配置 resolver，直接 deny + fail-fast）。
 - 超时策略：resolver 超时统一按 deny（`timeout-deny`）。
@@ -72,6 +72,11 @@
 - 默认超时策略：`cancel_by_user`（fail-fast 终止当前 run）。
 - H3 timeline reason code：`hitl.await_user`、`hitl.resumed`、`hitl.canceled_by_user`。
 - H3 run 诊断最小字段：`await_count`、`resume_count`、`cancel_by_user_count`。
+- H4 参数规则：支持 `path + operator + expected` 和复合条件（AND/OR）。
+- H4 操作符：`eq`、`ne`、`contains`、`regex`、`in`、`not_in`、`gt`、`gte`、`lt`、`lte`、`exists`。
+- H4 优先级：参数规则 > `decision_by_tool/decision_by_keyword` > 既有默认规则路径。
+- H4 timeline reason code：`gate.rule_match`。
+- H4 run 诊断最小字段：`gate_rule_hit_count`、`gate_rule_last_id`。
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -183,6 +188,18 @@ action_gate:
     delete: deny
   decision_by_keyword:
     "rm -rf": deny
+  parameter_rules:
+    - id: require-confirm-shell-danger
+      tool_names: [shell]
+      action: require_confirm # 缺省继承 policy
+      condition:
+        all:
+          - path: cmd
+            operator: contains
+            expected: rm -rf
+          - path: force
+            operator: eq
+            expected: true
 ```
 
 Context Assembler（最小配置示例）：

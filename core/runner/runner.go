@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -446,6 +449,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					GateChecks:   gateStats.Checks,
 					GateDenied:   gateStats.DeniedCount,
 					GateTimeout:  gateStats.TimeoutCount,
+					GateRuleHits: gateStats.RuleHitCount,
+					GateRuleLast: gateStats.RuleLastID,
 					HitlAwait:    hitlStats.AwaitCount,
 					HitlResumed:  hitlStats.ResumeCount,
 					HitlCanceled: hitlStats.CancelByUserCount,
@@ -484,6 +489,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					GateChecks:   gateStats.Checks,
 					GateDenied:   gateStats.DeniedCount,
 					GateTimeout:  gateStats.TimeoutCount,
+					GateRuleHits: gateStats.RuleHitCount,
+					GateRuleLast: gateStats.RuleLastID,
 					HitlAwait:    hitlStats.AwaitCount,
 					HitlResumed:  hitlStats.ResumeCount,
 					HitlCanceled: hitlStats.CancelByUserCount,
@@ -750,6 +757,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				GateChecks:   gateStats.Checks,
 				GateDenied:   gateStats.DeniedCount,
 				GateTimeout:  gateStats.TimeoutCount,
+				GateRuleHits: gateStats.RuleHitCount,
+				GateRuleLast: gateStats.RuleLastID,
 				HitlAwait:    hitlStats.AwaitCount,
 				HitlResumed:  hitlStats.ResumeCount,
 				HitlCanceled: hitlStats.CancelByUserCount,
@@ -784,6 +793,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			GateChecks:   gateStats.Checks,
 			GateDenied:   gateStats.DeniedCount,
 			GateTimeout:  gateStats.TimeoutCount,
+			GateRuleHits: gateStats.RuleHitCount,
+			GateRuleLast: gateStats.RuleLastID,
 			HitlAwait:    hitlStats.AwaitCount,
 			HitlResumed:  hitlStats.ResumeCount,
 			HitlCanceled: hitlStats.CancelByUserCount,
@@ -1107,6 +1118,8 @@ type runFinishMeta struct {
 	GateChecks   int
 	GateDenied   int
 	GateTimeout  int
+	GateRuleHits int
+	GateRuleLast string
 	HitlAwait    int
 	HitlResumed  int
 	HitlCanceled int
@@ -1216,6 +1229,8 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["gate_checks"] = meta.GateChecks
 	payload["gate_denied_count"] = meta.GateDenied
 	payload["gate_timeout_count"] = meta.GateTimeout
+	payload["gate_rule_hit_count"] = meta.GateRuleHits
+	payload["gate_rule_last_id"] = meta.GateRuleLast
 	payload["await_count"] = meta.HitlAwait
 	payload["resume_count"] = meta.HitlResumed
 	payload["cancel_by_user_count"] = meta.HitlCanceled
@@ -1298,6 +1313,8 @@ type actionGateStats struct {
 	Checks       int
 	DeniedCount  int
 	TimeoutCount int
+	RuleHitCount int
+	RuleLastID   string
 }
 
 type clarificationStats struct {
@@ -1358,7 +1375,7 @@ func (e *Engine) enforceActionGateForToolCalls(
 			Input:     req.Input,
 			Args:      call.Args,
 		}
-		decision, checked, err := e.evaluateActionGateDecision(ctx, check)
+		evaluation, err := e.evaluateActionGateDecision(ctx, check)
 		if err != nil {
 			ce := classified(types.ErrTool, fmt.Sprintf("action gate evaluate failed: %v", err), false)
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
@@ -1368,13 +1385,20 @@ func (e *Engine) enforceActionGateForToolCalls(
 			}
 			return ce, err
 		}
-		if !checked {
+		if !evaluation.Checked {
 			continue
 		}
 		if stats != nil {
 			stats.Checks++
+			if evaluation.RuleHit {
+				stats.RuleHitCount++
+				stats.RuleLastID = evaluation.RuleID
+			}
 		}
-		switch decision {
+		if evaluation.RuleHit {
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.rule_match")
+		}
+		switch evaluation.Decision {
 		case types.ActionGateDecisionAllow:
 			continue
 		case types.ActionGateDecisionDeny:
@@ -1431,38 +1455,76 @@ func (e *Engine) enforceActionGateForToolCalls(
 				stats.DeniedCount++
 			}
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", decision, strings.TrimSpace(call.Name))
+			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", evaluation.Decision, strings.TrimSpace(call.Name))
 			return classified(types.ErrTool, msg, false), errors.New(msg)
 		}
 	}
 	return nil, nil
 }
 
-func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, bool, error) {
+type actionGateEvaluation struct {
+	Decision types.ActionGateDecision
+	Checked  bool
+	RuleHit  bool
+	RuleID   string
+}
+
+func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.ActionGateCheck) (actionGateEvaluation, error) {
 	if e.actionGateMatcher != nil {
 		decision, err := e.actionGateMatcher.Evaluate(ctx, check)
 		if err != nil {
-			return "", false, err
+			return actionGateEvaluation{}, err
 		}
-		return normalizeActionGateDecision(decision), true, nil
+		return actionGateEvaluation{
+			Decision: normalizeActionGateDecision(decision),
+			Checked:  true,
+		}, nil
 	}
 	cfg := e.actionGateConfig()
 	if !cfg.Enabled {
-		return types.ActionGateDecisionAllow, false, nil
+		return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
 	}
 
 	toolName := normalizeToolName(check.ToolName)
 	content := strings.ToLower(strings.TrimSpace(check.Input) + " " + marshalToolArgs(check.Args))
 	defaultDecision := normalizeActionGateDecision(types.ActionGateDecision(cfg.Policy))
+	for _, rule := range cfg.ParameterRules {
+		if !ruleAppliesToTool(rule, toolName) {
+			continue
+		}
+		matched, err := evaluateRuleCondition(rule.Condition, check.Args)
+		if err != nil {
+			return actionGateEvaluation{}, err
+		}
+		if !matched {
+			continue
+		}
+		decision := defaultDecision
+		if strings.TrimSpace(string(rule.Action)) != "" {
+			decision = normalizeActionGateDecision(rule.Action)
+		}
+		return actionGateEvaluation{
+			Decision: decision,
+			Checked:  true,
+			RuleHit:  true,
+			RuleID:   strings.TrimSpace(rule.ID),
+		}, nil
+	}
 
 	if policy, ok := cfg.DecisionByTool[toolName]; ok {
-		return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+		return actionGateEvaluation{
+			Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+			Checked:  true,
+		}, nil
 	}
 	segments := strings.Split(toolName, ".")
 	if len(segments) > 1 {
 		shortName := strings.TrimSpace(segments[len(segments)-1])
 		if policy, ok := cfg.DecisionByTool[shortName]; ok {
-			return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+			return actionGateEvaluation{
+				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+				Checked:  true,
+			}, nil
 		}
 	}
 
@@ -1472,10 +1534,10 @@ func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.Act
 			continue
 		}
 		if normalized == toolName {
-			return defaultDecision, true, nil
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
 		}
 		if len(segments) > 1 && normalized == strings.TrimSpace(segments[len(segments)-1]) {
-			return defaultDecision, true, nil
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
 		}
 	}
 
@@ -1485,7 +1547,10 @@ func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.Act
 			continue
 		}
 		if strings.Contains(content, kw) {
-			return normalizeActionGateDecision(types.ActionGateDecision(policy)), true, nil
+			return actionGateEvaluation{
+				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+				Checked:  true,
+			}, nil
 		}
 	}
 	for _, keyword := range cfg.Keywords {
@@ -1494,10 +1559,263 @@ func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.Act
 			continue
 		}
 		if strings.Contains(content, kw) {
-			return defaultDecision, true, nil
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
 		}
 	}
-	return types.ActionGateDecisionAllow, false, nil
+	return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
+}
+
+func ruleAppliesToTool(rule types.ActionGateParameterRule, toolName string) bool {
+	if len(rule.ToolNames) == 0 {
+		return true
+	}
+	segments := strings.Split(toolName, ".")
+	shortName := toolName
+	if len(segments) > 1 {
+		shortName = strings.TrimSpace(segments[len(segments)-1])
+	}
+	for _, tool := range rule.ToolNames {
+		normalized := normalizeToolName(tool)
+		if normalized == "" {
+			continue
+		}
+		if normalized == toolName || normalized == shortName {
+			return true
+		}
+	}
+	return false
+}
+
+func evaluateRuleCondition(condition types.ActionGateRuleCondition, args map[string]any) (bool, error) {
+	if len(condition.All) > 0 {
+		for _, child := range condition.All {
+			ok, err := evaluateRuleCondition(child, args)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	if len(condition.Any) > 0 {
+		for _, child := range condition.Any {
+			ok, err := evaluateRuleCondition(child, args)
+			if err != nil {
+				return false, err
+			}
+			if ok {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	value, exists := lookupPathValue(args, condition.Path)
+	return evaluateLeafCondition(condition, value, exists)
+}
+
+func lookupPathValue(args map[string]any, path string) (any, bool) {
+	if len(args) == 0 {
+		return nil, false
+	}
+	segments := strings.Split(strings.TrimSpace(path), ".")
+	if len(segments) == 0 {
+		return nil, false
+	}
+	var current any = args
+	for _, segment := range segments {
+		key := strings.TrimSpace(segment)
+		if key == "" {
+			return nil, false
+		}
+		next, ok := readMapValue(current, key)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+	return current, true
+}
+
+func readMapValue(container any, key string) (any, bool) {
+	switch tv := container.(type) {
+	case map[string]any:
+		value, ok := tv[key]
+		return value, ok
+	case map[string]string:
+		value, ok := tv[key]
+		if !ok {
+			return nil, false
+		}
+		return value, true
+	default:
+		rv := reflect.ValueOf(container)
+		if rv.Kind() != reflect.Map {
+			return nil, false
+		}
+		if rv.Type().Key().Kind() != reflect.String {
+			return nil, false
+		}
+		entry := rv.MapIndex(reflect.ValueOf(key))
+		if !entry.IsValid() {
+			return nil, false
+		}
+		return entry.Interface(), true
+	}
+}
+
+func evaluateLeafCondition(condition types.ActionGateRuleCondition, value any, exists bool) (bool, error) {
+	operator := strings.ToLower(strings.TrimSpace(string(condition.Operator)))
+	switch operator {
+	case string(types.ActionGateRuleOperatorExists):
+		return exists, nil
+	case string(types.ActionGateRuleOperatorEQ):
+		return compareEqual(value, condition.Expected), nil
+	case string(types.ActionGateRuleOperatorNE):
+		return !compareEqual(value, condition.Expected), nil
+	case string(types.ActionGateRuleOperatorContains):
+		return evaluateContains(value, condition.Expected), nil
+	case string(types.ActionGateRuleOperatorRegex):
+		if !exists {
+			return false, nil
+		}
+		pattern, ok := condition.Expected.(string)
+		if !ok {
+			return false, fmt.Errorf("regex expected must be string, got %T", condition.Expected)
+		}
+		text, ok := value.(string)
+		if !ok {
+			return false, nil
+		}
+		return regexp.MatchString(pattern, text)
+	case string(types.ActionGateRuleOperatorIn):
+		return evaluateIn(value, condition.Expected), nil
+	case string(types.ActionGateRuleOperatorNotIn):
+		return !evaluateIn(value, condition.Expected), nil
+	case string(types.ActionGateRuleOperatorGT):
+		return evaluateNumericCompare(value, condition.Expected, func(left, right float64) bool { return left > right })
+	case string(types.ActionGateRuleOperatorGTE):
+		return evaluateNumericCompare(value, condition.Expected, func(left, right float64) bool { return left >= right })
+	case string(types.ActionGateRuleOperatorLT):
+		return evaluateNumericCompare(value, condition.Expected, func(left, right float64) bool { return left < right })
+	case string(types.ActionGateRuleOperatorLTE):
+		return evaluateNumericCompare(value, condition.Expected, func(left, right float64) bool { return left <= right })
+	default:
+		return false, fmt.Errorf("unsupported action gate operator: %s", condition.Operator)
+	}
+}
+
+func evaluateContains(value any, expected any) bool {
+	switch tv := value.(type) {
+	case string:
+		needle, ok := expected.(string)
+		if !ok {
+			return false
+		}
+		return strings.Contains(tv, needle)
+	case []any:
+		for _, item := range tv {
+			if compareEqual(item, expected) {
+				return true
+			}
+		}
+	case []string:
+		expectedString, ok := expected.(string)
+		if !ok {
+			return false
+		}
+		for _, item := range tv {
+			if item == expectedString {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func evaluateIn(value any, expected any) bool {
+	switch tv := expected.(type) {
+	case []any:
+		for _, candidate := range tv {
+			if compareEqual(value, candidate) {
+				return true
+			}
+		}
+	case []string:
+		valueString, ok := value.(string)
+		if !ok {
+			return false
+		}
+		for _, candidate := range tv {
+			if valueString == candidate {
+				return true
+			}
+		}
+	default:
+		expectedValue := reflect.ValueOf(expected)
+		if expectedValue.Kind() != reflect.Slice && expectedValue.Kind() != reflect.Array {
+			return false
+		}
+		for i := 0; i < expectedValue.Len(); i++ {
+			if compareEqual(value, expectedValue.Index(i).Interface()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func evaluateNumericCompare(value any, expected any, compare func(float64, float64) bool) (bool, error) {
+	left, ok := toFloat64(value)
+	if !ok {
+		return false, nil
+	}
+	right, ok := toFloat64(expected)
+	if !ok {
+		return false, fmt.Errorf("numeric operator expected number, got %T", expected)
+	}
+	return compare(left, right), nil
+}
+
+func compareEqual(left any, right any) bool {
+	leftNum, leftNumOK := toFloat64(left)
+	rightNum, rightNumOK := toFloat64(right)
+	if leftNumOK && rightNumOK {
+		return math.Abs(leftNum-rightNum) < 1e-9
+	}
+	return reflect.DeepEqual(left, right)
+}
+
+func toFloat64(value any) (float64, bool) {
+	switch tv := value.(type) {
+	case int:
+		return float64(tv), true
+	case int8:
+		return float64(tv), true
+	case int16:
+		return float64(tv), true
+	case int32:
+		return float64(tv), true
+	case int64:
+		return float64(tv), true
+	case uint:
+		return float64(tv), true
+	case uint8:
+		return float64(tv), true
+	case uint16:
+		return float64(tv), true
+	case uint32:
+		return float64(tv), true
+	case uint64:
+		return float64(tv), true
+	case float32:
+		return float64(tv), true
+	case float64:
+		return tv, true
+	default:
+		return 0, false
+	}
 }
 
 func (e *Engine) actionGateConfig() runtimeconfig.ActionGateConfig {

@@ -95,6 +95,8 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			GateChecks:           payloadInt(payload, "gate_checks"),
 			GateDeniedCount:      payloadInt(payload, "gate_denied_count"),
 			GateTimeoutCount:     payloadInt(payload, "gate_timeout_count"),
+			GateRuleHitCount:     payloadInt(payload, "gate_rule_hit_count"),
+			GateRuleLastID:       payloadString(payload, "gate_rule_last_id"),
 			AwaitCount:           payloadInt(payload, "await_count"),
 			ResumeCount:          payloadInt(payload, "resume_count"),
 			CancelByUserCount:    payloadInt(payload, "cancel_by_user_count"),

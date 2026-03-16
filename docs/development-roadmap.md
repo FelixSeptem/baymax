@@ -243,6 +243,7 @@
 - H1.5（R3-R4，已完成）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
 - H2（R3 后半，已完成）：引入 Action Gate（执行前确认钩子），默认 `require_confirm`、timeout-deny、Run/Stream 语义一致，并收敛最小诊断字段（`gate_checks/gate_denied_count/gate_timeout_count`）。
 - H3（R4，已完成）：引入原生 clarification 生命周期（`await_user` / `resumed` / `canceled_by_user`），默认超时策略 `cancel_by_user`，并完成 Run/Stream 契约测试与诊断字段（`await_count/resume_count/cancel_by_user_count`）。
+- H4（R4，已完成）：引入 Action Gate 参数规则（`path/operator/expected` + `AND/OR` 复合条件），支持规则 action 继承与优先级收敛（参数规则优先），新增 `gate.rule_match` reason 与最小诊断字段（`gate_rule_hit_count/gate_rule_last_id`）。
 
 ## A2A 里程碑（规划，当前不实现）
 

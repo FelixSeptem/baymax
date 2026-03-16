@@ -75,6 +75,9 @@ type RunRecord struct {
 	AwaitCount           int                               `json:"await_count,omitempty"`
 	ResumeCount          int                               `json:"resume_count,omitempty"`
 	CancelByUserCount    int                               `json:"cancel_by_user_count,omitempty"`
+	CancelPropagated     int                               `json:"cancel_propagated_count,omitempty"`
+	BackpressureDrop     int                               `json:"backpressure_drop_count,omitempty"`
+	InflightPeak         int                               `json:"inflight_peak,omitempty"`
 	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 

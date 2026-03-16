@@ -182,6 +182,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	timelineSeq := int64(0)
 	gateStats := actionGateStats{}
 	hitlStats := clarificationStats{}
+	concurrencyStats := runtimeConcurrencyStats{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -278,6 +279,10 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
 					terminal = classifiedErr.ClassifiedError()
 					timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+				case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+					terminal = classified(types.ErrPolicyTimeout, "model step canceled", true)
+					timelineStatus, reason = types.ActionStatusCanceled, "cancel.propagated"
+					concurrencyStats.CancelPropagatedCount++
 				case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 					terminal = classified(types.ErrPolicyTimeout, "model step timed out", true)
 					timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
@@ -360,6 +365,10 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Backpressure: policy.LocalDispatch.Backpressure,
 				Retry:        policy.ToolRetry,
 			}
+			concurrencyStats.ObserveInflight(maxInflightEstimate(len(lastResponse.ToolCalls), dispatchCfg.Concurrency))
+			if dispatchCfg.Backpressure == types.BackpressureBlock && len(lastResponse.ToolCalls) > dispatchCfg.QueueSize {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.block")
+			}
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
 				Type:      "tool.dispatch.started",
@@ -380,6 +389,15 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			outcomes, err := e.dispatcher.Dispatch(toolCtx, lastResponse.ToolCalls, dispatchCfg)
 			toolSpan.End()
 			cancel()
+			concurrencyStats.BackpressureDropCount += countBackpressureDrops(outcomes)
+			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+				concurrencyStats.CancelPropagatedCount++
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "cancel.propagated")
+				terminal = classified(types.ErrPolicyTimeout, "tool dispatch canceled", true)
+				runErr = context.Canceled
+				state = StateAbort
+				continue
+			}
 			if err != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
 				terminal = classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
@@ -454,6 +472,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					HitlAwait:    hitlStats.AwaitCount,
 					HitlResumed:  hitlStats.ResumeCount,
 					HitlCanceled: hitlStats.CancelByUserCount,
+					CancelProp:   concurrencyStats.CancelPropagatedCount,
+					BackDrop:     concurrencyStats.BackpressureDropCount,
+					InflightPeak: concurrencyStats.InflightPeak,
 				}),
 			})
 			return result, nil
@@ -494,6 +515,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					HitlAwait:    hitlStats.AwaitCount,
 					HitlResumed:  hitlStats.ResumeCount,
 					HitlCanceled: hitlStats.CancelByUserCount,
+					CancelProp:   concurrencyStats.CancelPropagatedCount,
+					BackDrop:     concurrencyStats.BackpressureDropCount,
+					InflightPeak: concurrencyStats.InflightPeak,
 				}),
 			})
 			return result, runErr
@@ -518,6 +542,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	selectionPath := make([]string, 0, 2)
 	gateStats := actionGateStats{}
 	hitlStats := clarificationStats{}
+	concurrencyStats := runtimeConcurrencyStats{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -705,6 +730,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 					err:        gateRunErr,
 				}
 			}
+			concurrencyStats.ObserveInflight(1)
 			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "stream_tool_dispatch_not_supported")
 		}
 		return nil
@@ -724,6 +750,10 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		case errors.As(err, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
 			terminal = classifiedErr.ClassifiedError()
 			timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+		case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+			terminal = classified(types.ErrPolicyTimeout, "model stream canceled", true)
+			timelineStatus, reason = types.ActionStatusCanceled, "cancel.propagated"
+			concurrencyStats.CancelPropagatedCount++
 		case errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded):
 			terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
 			timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
@@ -762,6 +792,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				HitlAwait:    hitlStats.AwaitCount,
 				HitlResumed:  hitlStats.ResumeCount,
 				HitlCanceled: hitlStats.CancelByUserCount,
+				CancelProp:   concurrencyStats.CancelPropagatedCount,
+				BackDrop:     concurrencyStats.BackpressureDropCount,
+				InflightPeak: concurrencyStats.InflightPeak,
 			}),
 		})
 		return result, err
@@ -798,6 +831,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			HitlAwait:    hitlStats.AwaitCount,
 			HitlResumed:  hitlStats.ResumeCount,
 			HitlCanceled: hitlStats.CancelByUserCount,
+			CancelProp:   concurrencyStats.CancelPropagatedCount,
+			BackDrop:     concurrencyStats.BackpressureDropCount,
+			InflightPeak: concurrencyStats.InflightPeak,
 		}),
 	})
 	return result, nil
@@ -1123,6 +1159,9 @@ type runFinishMeta struct {
 	HitlAwait    int
 	HitlResumed  int
 	HitlCanceled int
+	CancelProp   int
+	BackDrop     int
+	InflightPeak int
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1234,6 +1273,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["await_count"] = meta.HitlAwait
 	payload["resume_count"] = meta.HitlResumed
 	payload["cancel_by_user_count"] = meta.HitlCanceled
+	payload["cancel_propagated_count"] = meta.CancelProp
+	payload["backpressure_drop_count"] = meta.BackDrop
+	payload["inflight_peak"] = meta.InflightPeak
 	return payload
 }
 
@@ -1321,6 +1363,21 @@ type clarificationStats struct {
 	AwaitCount        int
 	ResumeCount       int
 	CancelByUserCount int
+}
+
+type runtimeConcurrencyStats struct {
+	CancelPropagatedCount int
+	BackpressureDropCount int
+	InflightPeak          int
+}
+
+func (s *runtimeConcurrencyStats) ObserveInflight(candidate int) {
+	if s == nil || candidate <= 0 {
+		return
+	}
+	if candidate > s.InflightPeak {
+		s.InflightPeak = candidate
+	}
 }
 
 type actionGateViolationError struct {
@@ -1816,6 +1873,33 @@ func toFloat64(value any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func maxInflightEstimate(fanout, workers int) int {
+	if fanout <= 0 || workers <= 0 {
+		return 0
+	}
+	if fanout < workers {
+		return fanout
+	}
+	return workers
+}
+
+func countBackpressureDrops(outcomes []types.ToolCallOutcome) int {
+	if len(outcomes) == 0 {
+		return 0
+	}
+	total := 0
+	for _, outcome := range outcomes {
+		if outcome.Result.Error == nil {
+			continue
+		}
+		reason, _ := outcome.Result.Error.Details["reason"].(string)
+		if strings.EqualFold(strings.TrimSpace(reason), "queue_full") {
+			total++
+		}
+	}
+	return total
 }
 
 func (e *Engine) actionGateConfig() runtimeconfig.ActionGateConfig {

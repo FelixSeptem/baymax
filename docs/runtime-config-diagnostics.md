@@ -42,6 +42,9 @@ concurrency:
   local_max_workers: 8
   local_queue_size: 32
   backpressure: block # block|reject
+  cancel_propagation_timeout: 1500ms # 取消传播收敛超时，必须 > 0
+
+# TODO: `drop_low_priority` 策略预留为后续扩展，本期不启用。
 
 diagnostics:
   max_call_records: 200
@@ -335,6 +338,8 @@ Action Timeline reason code（gate 相关）：
 - `gate.require_confirm`：命中规则且进入确认流程。
 - `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
 - `gate.timeout`：确认超时后拒绝（timeout-deny）。
+- `backpressure.block`：命中 block 背压排队路径（用于并发基线可观测）。
+- `cancel.propagated`：父上下文取消已传播到当前执行分支（Run/Stream 对齐）。
 
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
@@ -346,6 +351,12 @@ Action Gate 规则优先级（H4）：
 
 - `gate_rule_hit_count`：本次 run 命中的参数规则次数。
 - `gate_rule_last_id`：本次 run 最近一次命中的参数规则 ID（未命中为空字符串）。
+
+### Run 诊断新增字段（并发基线 R5）
+
+- `cancel_propagated_count`：本次 run 内取消传播生效次数（非负整数）。
+- `backpressure_drop_count`：本次 run 背压丢弃次数（`block` 策略下应为 `0`）。
+- `inflight_peak`：本次 run 观测到的在途并发峰值（run 级）。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

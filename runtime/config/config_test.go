@@ -37,6 +37,40 @@ mcp:
 	}
 }
 
+func TestConcurrencyCancelPropagationDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Concurrency.CancelPropagationTimeout <= 0 {
+		t.Fatalf("concurrency.cancel_propagation_timeout = %v, want > 0", cfg.Concurrency.CancelPropagationTimeout)
+	}
+}
+
+func TestConcurrencyCancelPropagationEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_CONCURRENCY_CANCEL_PROPAGATION_TIMEOUT", "750ms")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+concurrency:
+  cancel_propagation_timeout: 2s
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Concurrency.CancelPropagationTimeout != 750*time.Millisecond {
+		t.Fatalf("concurrency.cancel_propagation_timeout = %v, want 750ms", cfg.Concurrency.CancelPropagationTimeout)
+	}
+}
+
+func TestConcurrencyCancelPropagationValidationRejectsInvalidValue(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Concurrency.CancelPropagationTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for concurrency.cancel_propagation_timeout")
+	}
+}
+
 func TestValidateFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	p := cfg.MCP.Profiles[ProfileDefault]

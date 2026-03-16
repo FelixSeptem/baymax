@@ -5,7 +5,7 @@
 ## 当前状态（2026-03-16）
 
 - OpenSpec 活跃变更数：`0`（当前基线已全部归档）。
-- 最近归档：`024-introduce-clarification-agent-hitl-pause-resume-h3`。
+- 最近归档：`025-introduce-action-gate-parameter-schema-rules-h4`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
@@ -78,6 +78,13 @@
 - H4 timeline reason code：`gate.rule_match`。
 - H4 run 诊断最小字段：`gate_rule_hit_count`、`gate_rule_last_id`。
 
+### 3.8 Runner 并发基线（R5）
+- 默认背压策略为 `block`，高 fanout 且命中排队场景会发射 `backpressure.block` timeline reason。
+- 取消传播场景新增 `cancel.propagated` timeline reason，Run/Stream 保持语义一致。
+- 新增并发诊断字段：`cancel_propagated_count`、`backpressure_drop_count`、`inflight_peak`。
+- 新增 runtime 配置字段：`concurrency.cancel_propagation_timeout`（`env > file > default`，无效值 fail-fast）。
+- `drop_low_priority` 仅保留 TODO 占位，不在本期启用。
+
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
 - 显式触发优先 + 语义触发兜底
@@ -107,6 +114,7 @@
 - fake model/tool/mcp 组件
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
 - benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
+- benchmark：`BenchmarkToolFanOutCancelStorm` 输出 `p95-ns/op` + `goroutine-peak`，用于取消风暴回归对比
 
 ## 快速开始
 
@@ -200,6 +208,15 @@ action_gate:
           - path: force
             operator: eq
             expected: true
+```
+
+并发基线（R5）最小配置示例：
+```yaml
+concurrency:
+  local_max_workers: 8
+  local_queue_size: 32
+  backpressure: block
+  cancel_propagation_timeout: 1500ms
 ```
 
 Context Assembler（最小配置示例）：

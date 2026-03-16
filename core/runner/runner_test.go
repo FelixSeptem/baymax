@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2219,6 +2220,118 @@ action_gate:
 	}
 	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
 		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+}
+
+func TestRunBackpressureBlockDiagnosticsAndTimeline(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "slow",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(2 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	turn := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			turn++
+			if turn == 1 {
+				calls := make([]types.ToolCall, 0, 6)
+				for i := 0; i < 6; i++ {
+					calls = append(calls, types.ToolCall{
+						CallID: fmt.Sprintf("c-%d", i),
+						Name:   "local.slow",
+					})
+				}
+				return types.ModelResponse{ToolCalls: calls}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "done"}, nil
+		},
+	}
+	policy := types.DefaultLoopPolicy()
+	policy.LocalDispatch.MaxWorkers = 2
+	policy.LocalDispatch.QueueSize = 1
+	policy.LocalDispatch.Backpressure = types.BackpressureBlock
+	engine := New(model, WithLocalRegistry(reg))
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x", Policy: &policy}, collector)
+	if runErr != nil {
+		t.Fatalf("run failed: %v", runErr)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want done", res.FinalAnswer)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["backpressure_drop_count"] != 0 {
+		t.Fatalf("backpressure_drop_count = %#v, want 0", finished.Payload["backpressure_drop_count"])
+	}
+	inflight, _ := finished.Payload["inflight_peak"].(int)
+	if inflight <= 0 {
+		t.Fatalf("inflight_peak = %#v, want > 0", finished.Payload["inflight_peak"])
+	}
+	reasons := make([]string, 0)
+	for _, ev := range collector.timelineEvents() {
+		if reason, _ := ev.Payload["reason"].(string); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	if !containsString(reasons, "backpressure.block") {
+		t.Fatalf("expected backpressure.block reason, got %v", reasons)
+	}
+}
+
+func TestRunAndStreamCancelPropagationSemanticsEquivalent(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			<-ctx.Done()
+			return types.ModelResponse{}, ctx.Err()
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	runEngine := New(runModel)
+	streamEngine := New(streamModel)
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+
+	runCtx, runCancel := context.WithCancel(context.Background())
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	runCancel()
+	streamCancel()
+
+	runRes, runErr := runEngine.Run(runCtx, types.RunRequest{Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(streamCtx, types.RunRequest{Input: "x"}, streamCollector)
+	if !errors.Is(runErr, context.Canceled) || !errors.Is(streamErr, context.Canceled) {
+		t.Fatalf("expected context canceled for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("run/stream class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run finished event")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream finished event")
+	}
+	if runFinished.Payload["cancel_propagated_count"] != 1 || streamFinished.Payload["cancel_propagated_count"] != 1 {
+		t.Fatalf("cancel_propagated_count mismatch run=%#v stream=%#v", runFinished.Payload["cancel_propagated_count"], streamFinished.Payload["cancel_propagated_count"])
 	}
 }
 

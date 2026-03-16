@@ -93,6 +93,7 @@
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
 - [x] `implement-context-assembler-ca3-memory-pressure-and-recovery`：完成 CA3 内存压力控制与恢复（五级分区、双阈值触发、squash/prune、spill/swap、Run/Stream 语义一致、CA3 诊断字段）。
 - [x] `implement-context-assembler-ca4-production-convergence`：完成 CA4 生产收敛（阈值解析顺序、token 计数固定回退、Run/Stream 契约增强、CA4 benchmark 门禁）。
+- [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -265,6 +266,7 @@
 - 多环境配置管理（开发/测试/生产）差异项收敛与模板化。
 - 完善 godoc 注释与代码示例覆盖率（与 DX Track 对齐）。
 - CA2 external retriever 观测增强：按 `docs/ca2-external-retriever-evolution.md` 收敛指标口径与触发阈值配置。
+- TODO（并发策略演进）：在具备稳定优先级模型后评估 `drop_low_priority` 背压策略接入（当前保持 `block|reject`）。
 
 ## 性能与并发安全基线
 

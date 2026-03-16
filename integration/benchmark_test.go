@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -95,11 +96,25 @@ func BenchmarkToolFanOutCancelStorm(b *testing.B) {
 		calls[i] = types.ToolCall{CallID: "k", Name: "local.slow"}
 	}
 	cfg := local.DispatchConfig{MaxCalls: 16, Concurrency: 8, QueueSize: 8, Backpressure: types.BackpressureBlock}
+	durations := make([]int64, 0, b.N)
+	goroutinePeak := 0
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
 		_, _ = dispatcher.Dispatch(ctx, calls, cfg)
 		cancel()
+		durations = append(durations, time.Since(start).Nanoseconds())
+		if n := runtime.NumGoroutine(); n > goroutinePeak {
+			goroutinePeak = n
+		}
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+	if goroutinePeak > 0 {
+		b.ReportMetric(float64(goroutinePeak), "goroutine-peak")
 	}
 }
 

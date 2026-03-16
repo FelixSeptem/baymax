@@ -74,9 +74,10 @@ type MCPConfig struct {
 }
 
 type ConcurrencyConfig struct {
-	LocalMaxWorkers int                    `json:"local_max_workers"`
-	LocalQueueSize  int                    `json:"local_queue_size"`
-	Backpressure    types.BackpressureMode `json:"backpressure"`
+	LocalMaxWorkers          int                    `json:"local_max_workers"`
+	LocalQueueSize           int                    `json:"local_queue_size"`
+	Backpressure             types.BackpressureMode `json:"backpressure"`
+	CancelPropagationTimeout time.Duration          `json:"cancel_propagation_timeout"`
 }
 
 type DiagnosticsConfig struct {
@@ -307,9 +308,10 @@ func DefaultConfig() Config {
 			},
 		},
 		Concurrency: ConcurrencyConfig{
-			LocalMaxWorkers: 8,
-			LocalQueueSize:  32,
-			Backpressure:    types.BackpressureBlock,
+			LocalMaxWorkers:          8,
+			LocalQueueSize:           32,
+			Backpressure:             types.BackpressureBlock,
+			CancelPropagationTimeout: 1500 * time.Millisecond,
 		},
 		Diagnostics: DiagnosticsConfig{
 			MaxCallRecords:  200,
@@ -552,6 +554,9 @@ func Validate(cfg Config) error {
 	}
 	if err := validateBackpressure(cfg.Concurrency.Backpressure, "concurrency.backpressure"); err != nil {
 		return err
+	}
+	if cfg.Concurrency.CancelPropagationTimeout <= 0 {
+		return errors.New("concurrency.cancel_propagation_timeout must be > 0")
 	}
 	if cfg.Diagnostics.MaxCallRecords <= 0 {
 		return errors.New("diagnostics.max_call_records must be > 0")
@@ -954,6 +959,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("concurrency.local_max_workers", base.Concurrency.LocalMaxWorkers)
 	v.SetDefault("concurrency.local_queue_size", base.Concurrency.LocalQueueSize)
 	v.SetDefault("concurrency.backpressure", string(base.Concurrency.Backpressure))
+	v.SetDefault("concurrency.cancel_propagation_timeout", base.Concurrency.CancelPropagationTimeout)
 	v.SetDefault("diagnostics.max_call_records", base.Diagnostics.MaxCallRecords)
 	v.SetDefault("diagnostics.max_run_records", base.Diagnostics.MaxRunRecords)
 	v.SetDefault("diagnostics.max_reload_errors", base.Diagnostics.MaxReloadErrors)
@@ -1040,6 +1046,7 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Concurrency.LocalMaxWorkers = v.GetInt("concurrency.local_max_workers")
 	cfg.Concurrency.LocalQueueSize = v.GetInt("concurrency.local_queue_size")
 	cfg.Concurrency.Backpressure = types.BackpressureMode(v.GetString("concurrency.backpressure"))
+	cfg.Concurrency.CancelPropagationTimeout = v.GetDuration("concurrency.cancel_propagation_timeout")
 	cfg.Diagnostics.MaxCallRecords = v.GetInt("diagnostics.max_call_records")
 	cfg.Diagnostics.MaxRunRecords = v.GetInt("diagnostics.max_run_records")
 	cfg.Diagnostics.MaxReloadErrors = v.GetInt("diagnostics.max_reload_errors")

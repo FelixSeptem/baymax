@@ -100,6 +100,9 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			AwaitCount:           payloadInt(payload, "await_count"),
 			ResumeCount:          payloadInt(payload, "resume_count"),
 			CancelByUserCount:    payloadInt(payload, "cancel_by_user_count"),
+			CancelPropagated:     payloadInt(payload, "cancel_propagated_count"),
+			BackpressureDrop:     payloadInt(payload, "backpressure_drop_count"),
+			InflightPeak:         payloadInt(payload, "inflight_peak"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{

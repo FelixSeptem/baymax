@@ -24,6 +24,10 @@
 - Action Gate HITL H2 is enabled with default `require_confirm`, timeout-deny semantics, and Run/Stream equivalent deny/timeout behavior.
 - Clarification HITL H3 is enabled with native `await_user -> resumed -> canceled_by_user` lifecycle, structured `clarification_request` payload, and Run/Stream equivalent timeout-cancel behavior.
 - Action Gate H4 parameter-schema rules are enabled with operator + composite conditions (`AND/OR`), deterministic priority over keyword/tool decisions, and Run/Stream semantic equivalence.
+- Runner concurrency baseline R5 uses default `block` backpressure and exposes `cancel.propagated` / `backpressure.block` timeline reason semantics.
+- Run diagnostics include concurrency baseline fields `cancel_propagated_count`, `backpressure_drop_count`, and `inflight_peak`.
+- Runtime concurrency config includes `concurrency.cancel_propagation_timeout` with fail-fast validation and `env > file > default` precedence.
+- Cancel-storm benchmark output includes both `p95-ns/op` and `goroutine-peak` signals for regression comparison.
 - R3 advanced tutorial examples (`05` to `08`) are present, runnable, and aligned with README/docs pattern navigation.
 - Quality gate includes repository hygiene checks (reject temp backup artifacts), and mainline contract test coverage is indexed for traceability.
 
@@ -44,3 +48,4 @@
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
 - Action Gate H2 当前仍仅覆盖执行前确认（tool name + keyword）；参数 schema 风险规则留作后续迭代。
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。
+- Backpressure `drop_low_priority` 为后续扩展 TODO，本期仅支持 `block|reject` 行为语义。

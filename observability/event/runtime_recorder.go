@@ -95,6 +95,9 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			GateChecks:           payloadInt(payload, "gate_checks"),
 			GateDeniedCount:      payloadInt(payload, "gate_denied_count"),
 			GateTimeoutCount:     payloadInt(payload, "gate_timeout_count"),
+			AwaitCount:           payloadInt(payload, "await_count"),
+			ResumeCount:          payloadInt(payload, "resume_count"),
+			CancelByUserCount:    payloadInt(payload, "cancel_by_user_count"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{

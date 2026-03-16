@@ -72,6 +72,11 @@ action_gate:
     "rm -rf": deny
     "drop table": require_confirm
 
+clarification:
+  enabled: true
+  timeout: 30s
+  timeout_policy: cancel_by_user # 当前仅支持 cancel_by_user
+
 context_assembler:
   enabled: true # 默认 true
   journal_path: /tmp/baymax/context-journal.jsonl # 默认值由 os.TempDir() + /baymax/context-journal.jsonl 计算
@@ -236,7 +241,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - 事件类型：`action.timeline`
 - 产出路径：由 `core/runner` 发射，经 `observability/event` 统一输出（logger/handler 可直接消费）。
-- phase 枚举：`run|context_assembler|model|tool|mcp|skill`
+- phase 枚举：`run|context_assembler|model|tool|mcp|skill|hitl`
 - status 枚举：`pending|running|succeeded|failed|skipped|canceled`
 - payload 最小字段：
   - `phase`：动作阶段
@@ -317,6 +322,17 @@ Action Timeline reason code（gate 相关）：
 - `gate.require_confirm`：命中规则且进入确认流程。
 - `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
 - `gate.timeout`：确认超时后拒绝（timeout-deny）。
+
+### Run 诊断新增字段（HITL Clarification H3）
+
+- `await_count`：本次 run 进入 `await_user` 的次数。
+- `resume_count`：本次 run 成功恢复（`resumed`）的次数。
+- `cancel_by_user_count`：本次 run 因超时策略 `cancel_by_user` 取消的次数。
+
+Action Timeline reason code（H3 相关）：
+- `hitl.await_user`：进入澄清等待态。
+- `hitl.resumed`：收到澄清输入并恢复执行。
+- `hitl.canceled_by_user`：澄清等待超时，按策略取消当前 run。
 
 ## 诊断写入口径（Single Writer + Idempotency）
 

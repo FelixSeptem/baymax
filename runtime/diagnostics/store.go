@@ -70,6 +70,9 @@ type RunRecord struct {
 	GateChecks           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount     int                               `json:"gate_timeout_count,omitempty"`
+	AwaitCount           int                               `json:"await_count,omitempty"`
+	ResumeCount          int                               `json:"resume_count,omitempty"`
+	CancelByUserCount    int                               `json:"cancel_by_user_count,omitempty"`
 	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 

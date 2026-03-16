@@ -60,13 +60,18 @@
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
 - 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`
 
-### 3.7 Action Gate HITL（H2）
+### 3.7 HITL（H2 + H3）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
 - 默认策略：`require_confirm`（若需要确认但未配置 resolver，直接 deny + fail-fast）。
 - 超时策略：resolver 超时统一按 deny（`timeout-deny`）。
 - Run/Stream 语义：`allow/deny/timeout` 的错误分类与 timeline reason code 保持一致。
 - timeline reason code：`gate.require_confirm`、`gate.denied`、`gate.timeout`。
 - run 诊断最小字段：`gate_checks`、`gate_denied_count`、`gate_timeout_count`。
+- H3 Clarification：支持运行中 `await_user -> resumed -> canceled_by_user` 生命周期（单进程）。
+- 结构化事件：`hitl.clarification.requested`，payload 内包含 `clarification_request`（`request_id/questions/context_summary/timeout_ms`）。
+- 默认超时策略：`cancel_by_user`（fail-fast 终止当前 run）。
+- H3 timeline reason code：`hitl.await_user`、`hitl.resumed`、`hitl.canceled_by_user`。
+- H3 run 诊断最小字段：`await_count`、`resume_count`、`cancel_by_user_count`。
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -77,7 +82,7 @@
 ### 5. Observability
 - 事件 schema v1，关联字段：`run_id / iteration / call_id / trace_id / span_id`
 - Action Timeline（默认启用，结构化事件类型 `action.timeline`）：
-  - phase：`run|context_assembler|model|tool|mcp|skill`
+  - phase：`run|context_assembler|model|tool|mcp|skill|hitl`
   - status：`pending|running|succeeded|failed|skipped|canceled`
   - 关键字段：`phase`、`status`、`reason`（可选）、`sequence`（单 run 递增）
   - H1.5 聚合字段（`RecentRuns`）：按 phase 输出 `count_total`、`failed_total`、`canceled_total`、`skipped_total`、`latency_ms`、`latency_p95_ms`
@@ -196,6 +201,11 @@ context_assembler:
       external:
         profile: http_generic
         endpoint: https://retriever.example.com/search
+
+clarification:
+  enabled: true
+  timeout: 30s
+  timeout_policy: cancel_by_user
 ```
 
 完整字段、默认值、校验与诊断口径请以 `docs/runtime-config-diagnostics.md` 为准。
@@ -278,7 +288,7 @@ bash scripts/check-ca4-benchmark-regression.sh
 | `examples/04-streaming-interrupt` | Structure | 流式中断与收敛 |
 | `examples/05-parallel-tools-fanout` | Parallel | goroutine fanout 并发工具执行 |
 | `examples/06-async-job-progress` | Map-Reduce-like + Parallel | 异步任务进度回传与聚合 |
-| `examples/07-multi-agent-async-channel` | Multi-Agent + Structure | 单进程 channel 协作 |
+| `examples/07-multi-agent-async-channel` | Multi-Agent + Structure + HITL Clarification | 单进程 channel 协作与 await/resume 演示 |
 | `examples/08-multi-agent-network-bridge` | Multi-Agent + Structure (Network) | HTTP + JSON-RPC 2.0 网络桥接 |
 
 运行示例：

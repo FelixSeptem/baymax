@@ -104,6 +104,17 @@ func (r *fakeGateResolver) Confirm(ctx context.Context, req types.ActionGateConf
 	return r.confirm(ctx, req)
 }
 
+type fakeClarificationResolver struct {
+	resolve func(ctx context.Context, req types.ClarificationResolveRequest) (types.ClarificationResponse, error)
+}
+
+func (r *fakeClarificationResolver) Resolve(ctx context.Context, req types.ClarificationResolveRequest) (types.ClarificationResponse, error) {
+	if r.resolve == nil {
+		return types.ClarificationResponse{}, nil
+	}
+	return r.resolve(ctx, req)
+}
+
 type fakeGateMatcher struct {
 	evaluate func(ctx context.Context, check types.ActionGateCheck) (types.ActionGateDecision, error)
 }
@@ -1671,6 +1682,183 @@ action_gate:
 	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
 		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
 	}
+}
+
+func TestClarificationRunLifecycleResume(t *testing.T) {
+	turn := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			turn++
+			if turn == 1 {
+				return types.ModelResponse{
+					ClarificationRequest: &types.ClarificationRequest{
+						RequestID:      "clarify-1",
+						Questions:      []string{"which env?"},
+						ContextSummary: "missing env",
+					},
+				}, nil
+			}
+			if len(req.Messages) == 0 || !strings.Contains(req.Messages[len(req.Messages)-1].Content, "prod") {
+				t.Fatalf("clarification answer should be injected into request messages: %#v", req.Messages)
+			}
+			return types.ModelResponse{FinalAnswer: "done"}, nil
+		},
+	}
+	resolver := &fakeClarificationResolver{
+		resolve: func(ctx context.Context, req types.ClarificationResolveRequest) (types.ClarificationResponse, error) {
+			return types.ClarificationResponse{
+				RequestID: req.Request.RequestID,
+				Answers:   []string{"prod"},
+			}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithClarificationResolver(resolver))
+	res, err := engine.Run(context.Background(), types.RunRequest{Input: "deploy?"}, collector)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want done", res.FinalAnswer)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["await_count"] != 1 || finished.Payload["resume_count"] != 1 || finished.Payload["cancel_by_user_count"] != 0 {
+		t.Fatalf("unexpected clarification counters: %#v", finished.Payload)
+	}
+	timeline := timelinePhaseStatus(collector.timelineEvents())
+	if !containsTimelineStep(timeline, "hitl:pending") || !containsTimelineStep(timeline, "hitl:succeeded") {
+		t.Fatalf("missing hitl lifecycle timeline events: %v", timeline)
+	}
+}
+
+func TestClarificationRunTimeoutCancelsByUser(t *testing.T) {
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ClarificationRequest: &types.ClarificationRequest{
+					RequestID: "clarify-timeout",
+				},
+			}, nil
+		},
+	}
+	resolver := &fakeClarificationResolver{
+		resolve: func(ctx context.Context, req types.ClarificationResolveRequest) (types.ClarificationResponse, error) {
+			<-ctx.Done()
+			return types.ClarificationResponse{}, ctx.Err()
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+clarification:
+  enabled: true
+  timeout: 1ms
+  timeout_policy: cancel_by_user
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	collector := &eventCollector{}
+	engine := New(model, WithRuntimeManager(mgr), WithClarificationResolver(resolver))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "need info"}, collector)
+	if !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("runErr = %v, want deadline exceeded", runErr)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("error class = %#v, want ErrPolicyTimeout", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["await_count"] != 1 || finished.Payload["resume_count"] != 0 || finished.Payload["cancel_by_user_count"] != 1 {
+		t.Fatalf("unexpected clarification counters: %#v", finished.Payload)
+	}
+	timeline := collector.timelineEvents()
+	reasons := make([]string, 0, len(timeline))
+	for _, ev := range timeline {
+		if reason, _ := ev.Payload["reason"].(string); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	if !containsString(reasons, "hitl.await_user") || !containsString(reasons, "hitl.canceled_by_user") {
+		t.Fatalf("missing hitl reason codes: %v", reasons)
+	}
+}
+
+func TestClarificationRunAndStreamTimeoutSemanticsEquivalent(t *testing.T) {
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ClarificationRequest: &types.ClarificationRequest{RequestID: "c-1"},
+			}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeClarificationRequest,
+				ClarificationRequest: &types.ClarificationRequest{
+					RequestID: "c-1",
+				},
+			})
+		},
+	}
+	resolver := &fakeClarificationResolver{
+		resolve: func(ctx context.Context, req types.ClarificationResolveRequest) (types.ClarificationResponse, error) {
+			<-ctx.Done()
+			return types.ClarificationResponse{}, ctx.Err()
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+clarification:
+  enabled: true
+  timeout: 1ms
+  timeout_policy: cancel_by_user
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithClarificationResolver(resolver))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithClarificationResolver(resolver))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x"}, streamCollector)
+	if !errors.Is(runErr, context.DeadlineExceeded) || !errors.Is(streamErr, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing classified errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != streamRes.Error.Class || runRes.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("run/stream class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func assertPhaseDistEqual(

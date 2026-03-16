@@ -39,6 +39,7 @@ type Engine struct {
 	assembler          *assembler.Assembler
 	actionGateMatcher  types.ActionGateMatcher
 	actionGateResolver types.ActionGateResolver
+	clarification      types.ClarificationResolver
 	now                func() time.Time
 	newRunID           func() string
 	capCacheMu         sync.RWMutex
@@ -148,6 +149,12 @@ func WithActionGateResolver(resolver types.ActionGateResolver) Option {
 	}
 }
 
+func WithClarificationResolver(resolver types.ClarificationResolver) Option {
+	return func(e *Engine) {
+		e.clarification = resolver
+	}
+}
+
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
@@ -171,6 +178,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	lastAssemble := types.ContextAssembleResult{}
 	timelineSeq := int64(0)
 	gateStats := actionGateStats{}
+	hitlStats := clarificationStats{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -282,6 +290,27 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			lastResponse = resp
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
+			if resp.ClarificationRequest != nil {
+				clarification, hitlTerminal, hitlErr := e.awaitClarification(
+					ctx,
+					h,
+					req,
+					runID,
+					iteration,
+					&timelineSeq,
+					resp.ClarificationRequest,
+					&hitlStats,
+				)
+				if hitlTerminal != nil {
+					terminal = hitlTerminal
+					runErr = hitlErr
+					state = StateAbort
+					continue
+				}
+				req = applyClarificationResponse(req, clarification)
+				state = StateModelStep
+				continue
+			}
 			if resp.FinalAnswer != "" && len(resp.ToolCalls) == 0 {
 				state = StateFinalize
 				continue
@@ -417,6 +446,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					GateChecks:   gateStats.Checks,
 					GateDenied:   gateStats.DeniedCount,
 					GateTimeout:  gateStats.TimeoutCount,
+					HitlAwait:    hitlStats.AwaitCount,
+					HitlResumed:  hitlStats.ResumeCount,
+					HitlCanceled: hitlStats.CancelByUserCount,
 				}),
 			})
 			return result, nil
@@ -452,6 +484,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					GateChecks:   gateStats.Checks,
 					GateDenied:   gateStats.DeniedCount,
 					GateTimeout:  gateStats.TimeoutCount,
+					HitlAwait:    hitlStats.AwaitCount,
+					HitlResumed:  hitlStats.ResumeCount,
+					HitlCanceled: hitlStats.CancelByUserCount,
 				}),
 			})
 			return result, runErr
@@ -475,6 +510,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	usage := types.TokenUsage{}
 	selectionPath := make([]string, 0, 2)
 	gateStats := actionGateStats{}
+	hitlStats := clarificationStats{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -595,6 +631,14 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		if ev.ToolCall != nil {
 			payload["tool_call"] = ev.ToolCall
 		}
+		if ev.ClarificationRequest != nil {
+			payload["clarification_request"] = map[string]any{
+				"request_id":      strings.TrimSpace(ev.ClarificationRequest.RequestID),
+				"questions":       ev.ClarificationRequest.Questions,
+				"context_summary": strings.TrimSpace(ev.ClarificationRequest.ContextSummary),
+				"timeout_ms":      ev.ClarificationRequest.Timeout.Milliseconds(),
+			}
+		}
 		if len(ev.Meta) > 0 {
 			payload["meta"] = ev.Meta
 		}
@@ -608,6 +652,32 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		})
 		if ev.Type == "final_answer" || ev.Type == "response.output_text.delta" {
 			final += ev.TextDelta
+		}
+		if ev.ClarificationRequest != nil || ev.Type == types.ModelEventTypeClarificationRequest {
+			request := ev.ClarificationRequest
+			if request == nil {
+				request = &types.ClarificationRequest{}
+			}
+			if request.Timeout <= 0 {
+				request.Timeout = e.clarificationTimeout()
+			}
+			clarification, hitlTerminal, hitlErr := e.awaitClarification(
+				stepCtx,
+				h,
+				req,
+				runID,
+				iteration,
+				&timelineSeq,
+				request,
+				&hitlStats,
+			)
+			if hitlTerminal != nil {
+				return &actionGateViolationError{
+					classified: hitlTerminal,
+					err:        hitlErr,
+				}
+			}
+			req = applyClarificationResponse(req, clarification)
 		}
 		if ev.ToolCall != nil {
 			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
@@ -680,6 +750,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				GateChecks:   gateStats.Checks,
 				GateDenied:   gateStats.DeniedCount,
 				GateTimeout:  gateStats.TimeoutCount,
+				HitlAwait:    hitlStats.AwaitCount,
+				HitlResumed:  hitlStats.ResumeCount,
+				HitlCanceled: hitlStats.CancelByUserCount,
 			}),
 		})
 		return result, err
@@ -711,6 +784,9 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			GateChecks:   gateStats.Checks,
 			GateDenied:   gateStats.DeniedCount,
 			GateTimeout:  gateStats.TimeoutCount,
+			HitlAwait:    hitlStats.AwaitCount,
+			HitlResumed:  hitlStats.ResumeCount,
+			HitlCanceled: hitlStats.CancelByUserCount,
 		}),
 	})
 	return result, nil
@@ -1031,6 +1107,9 @@ type runFinishMeta struct {
 	GateChecks   int
 	GateDenied   int
 	GateTimeout  int
+	HitlAwait    int
+	HitlResumed  int
+	HitlCanceled int
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1137,6 +1216,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["gate_checks"] = meta.GateChecks
 	payload["gate_denied_count"] = meta.GateDenied
 	payload["gate_timeout_count"] = meta.GateTimeout
+	payload["await_count"] = meta.HitlAwait
+	payload["resume_count"] = meta.HitlResumed
+	payload["cancel_by_user_count"] = meta.HitlCanceled
 	return payload
 }
 
@@ -1175,6 +1257,8 @@ func classifyRunTerminal(terminal *types.ClassifiedError, runErr error) (types.A
 		return types.ActionStatusFailed, "model_error"
 	case types.ErrTool:
 		return types.ActionStatusFailed, "tool_error"
+	case types.ErrHITL:
+		return types.ActionStatusFailed, "hitl_error"
 	default:
 		return types.ActionStatusFailed, "failed"
 	}
@@ -1214,6 +1298,12 @@ type actionGateStats struct {
 	Checks       int
 	DeniedCount  int
 	TimeoutCount int
+}
+
+type clarificationStats struct {
+	AwaitCount        int
+	ResumeCount       int
+	CancelByUserCount int
 }
 
 type actionGateViolationError struct {
@@ -1423,6 +1513,106 @@ func (e *Engine) actionGateTimeout() time.Duration {
 		return 15 * time.Second
 	}
 	return cfg.Timeout
+}
+
+func (e *Engine) clarificationConfig() runtimeconfig.ClarificationConfig {
+	if e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig().Clarification
+	}
+	return e.runtimeMgr.EffectiveConfig().Clarification
+}
+
+func (e *Engine) clarificationTimeout() time.Duration {
+	cfg := e.clarificationConfig()
+	if cfg.Timeout <= 0 {
+		return 30 * time.Second
+	}
+	return cfg.Timeout
+}
+
+func (e *Engine) awaitClarification(
+	ctx context.Context,
+	h types.EventHandler,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	seq *int64,
+	request *types.ClarificationRequest,
+	stats *clarificationStats,
+) (types.ClarificationResponse, *types.ClassifiedError, error) {
+	if request == nil {
+		return types.ClarificationResponse{}, nil, nil
+	}
+	cfg := e.clarificationConfig()
+	if !cfg.Enabled {
+		msg := "clarification requested but clarification.hitl is disabled"
+		return types.ClarificationResponse{}, classified(types.ErrHITL, msg, false), errors.New(msg)
+	}
+	if e.clarification == nil {
+		msg := "clarification requested but resolver is not configured"
+		return types.ClarificationResponse{}, classified(types.ErrHITL, msg, false), errors.New(msg)
+	}
+	timeout := request.Timeout
+	if timeout <= 0 {
+		timeout = e.clarificationTimeout()
+	}
+	if stats != nil {
+		stats.AwaitCount++
+	}
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseHITL, types.ActionStatusPending, "hitl.await_user")
+	e.emit(ctx, h, types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      "hitl.clarification.requested",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"clarification_request": map[string]any{
+				"request_id":      strings.TrimSpace(request.RequestID),
+				"questions":       request.Questions,
+				"context_summary": strings.TrimSpace(request.ContextSummary),
+				"timeout_ms":      timeout.Milliseconds(),
+			},
+		},
+	})
+	resolveCtx, cancel := context.WithTimeout(ctx, timeout)
+	response, err := e.clarification.Resolve(resolveCtx, types.ClarificationResolveRequest{
+		RunID:       runID,
+		SessionID:   req.SessionID,
+		Iteration:   iteration,
+		Request:     *request,
+		Timeout:     timeout,
+		TriggeredBy: "model",
+	})
+	cancel()
+	if err != nil || errors.Is(resolveCtx.Err(), context.DeadlineExceeded) {
+		if stats != nil {
+			stats.CancelByUserCount++
+		}
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseHITL, types.ActionStatusCanceled, "hitl.canceled_by_user")
+		ce := classified(types.ErrPolicyTimeout, "clarification timed out and canceled_by_user", false)
+		return types.ClarificationResponse{}, ce, context.DeadlineExceeded
+	}
+	if stats != nil {
+		stats.ResumeCount++
+	}
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseHITL, types.ActionStatusSucceeded, "hitl.resumed")
+	return response, nil, nil
+}
+
+func applyClarificationResponse(req types.RunRequest, response types.ClarificationResponse) types.RunRequest {
+	if len(response.Answers) == 0 {
+		return req
+	}
+	joined := strings.TrimSpace(strings.Join(response.Answers, "\n"))
+	if joined == "" {
+		return req
+	}
+	req.Messages = append(req.Messages, types.Message{
+		Role:    "user",
+		Content: "clarification:\n" + joined,
+	})
+	return req
 }
 
 func normalizeToolName(name string) string {

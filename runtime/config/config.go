@@ -52,6 +52,10 @@ const (
 	ActionGatePolicyDeny           = "deny"
 )
 
+const (
+	ClarificationTimeoutPolicyCancelByUser = "cancel_by_user"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -59,6 +63,7 @@ type Config struct {
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
+	Clarification    ClarificationConfig    `json:"clarification"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
 	Security         SecurityConfig         `json:"security"`
 }
@@ -101,6 +106,12 @@ type ActionGateConfig struct {
 	Keywords       []string          `json:"keywords"`
 	DecisionByTool map[string]string `json:"decision_by_tool"`
 	DecisionByWord map[string]string `json:"decision_by_keyword"`
+}
+
+type ClarificationConfig struct {
+	Enabled       bool          `json:"enabled"`
+	Timeout       time.Duration `json:"timeout"`
+	TimeoutPolicy string        `json:"timeout_policy"`
 }
 
 type ContextAssemblerConfig struct {
@@ -323,6 +334,11 @@ func DefaultConfig() Config {
 			Keywords:       nil,
 			DecisionByTool: map[string]string{},
 			DecisionByWord: map[string]string{},
+		},
+		Clarification: ClarificationConfig{
+			Enabled:       true,
+			Timeout:       30 * time.Second,
+			TimeoutPolicy: ClarificationTimeoutPolicyCancelByUser,
 		},
 		ContextAssembler: ContextAssemblerConfig{
 			Enabled:       true,
@@ -608,6 +624,15 @@ func Validate(cfg Config) error {
 			}
 		}
 	}
+	if cfg.Clarification.Enabled {
+		if cfg.Clarification.Timeout <= 0 {
+			return errors.New("clarification.timeout must be > 0")
+		}
+		policy := strings.ToLower(strings.TrimSpace(cfg.Clarification.TimeoutPolicy))
+		if policy != ClarificationTimeoutPolicyCancelByUser {
+			return fmt.Errorf("clarification.timeout_policy must be %q, got %q", ClarificationTimeoutPolicyCancelByUser, cfg.Clarification.TimeoutPolicy)
+		}
+	}
 	if cfg.ContextAssembler.Enabled {
 		if strings.TrimSpace(cfg.ContextAssembler.JournalPath) == "" {
 			return errors.New("context_assembler.journal_path is required when enabled")
@@ -879,6 +904,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("action_gate.keywords", base.ActionGate.Keywords)
 	v.SetDefault("action_gate.decision_by_tool", base.ActionGate.DecisionByTool)
 	v.SetDefault("action_gate.decision_by_keyword", base.ActionGate.DecisionByWord)
+	v.SetDefault("clarification.enabled", base.Clarification.Enabled)
+	v.SetDefault("clarification.timeout", base.Clarification.Timeout)
+	v.SetDefault("clarification.timeout_policy", base.Clarification.TimeoutPolicy)
 	v.SetDefault("context_assembler.enabled", base.ContextAssembler.Enabled)
 	v.SetDefault("context_assembler.journal_path", base.ContextAssembler.JournalPath)
 	v.SetDefault("context_assembler.prefix_version", base.ContextAssembler.PrefixVersion)
@@ -961,6 +989,9 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ActionGate.Keywords = normalizeKeywords(v.GetStringSlice("action_gate.keywords"))
 	cfg.ActionGate.DecisionByTool = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_tool"))
 	cfg.ActionGate.DecisionByWord = normalizeStringToPolicyMap(v.GetStringMapString("action_gate.decision_by_keyword"))
+	cfg.Clarification.Enabled = v.GetBool("clarification.enabled")
+	cfg.Clarification.Timeout = v.GetDuration("clarification.timeout")
+	cfg.Clarification.TimeoutPolicy = strings.ToLower(strings.TrimSpace(v.GetString("clarification.timeout_policy")))
 	cfg.ContextAssembler.Enabled = v.GetBool("context_assembler.enabled")
 	cfg.ContextAssembler.JournalPath = strings.TrimSpace(v.GetString("context_assembler.journal_path"))
 	cfg.ContextAssembler.PrefixVersion = strings.TrimSpace(v.GetString("context_assembler.prefix_version"))

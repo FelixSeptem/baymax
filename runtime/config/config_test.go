@@ -140,6 +140,51 @@ action_gate:
 	}
 }
 
+func TestClarificationDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Clarification.Enabled {
+		t.Fatal("clarification.enabled = false, want true")
+	}
+	if cfg.Clarification.Timeout <= 0 {
+		t.Fatalf("clarification.timeout = %v, want > 0", cfg.Clarification.Timeout)
+	}
+	if cfg.Clarification.TimeoutPolicy != ClarificationTimeoutPolicyCancelByUser {
+		t.Fatalf("clarification.timeout_policy = %q, want %q", cfg.Clarification.TimeoutPolicy, ClarificationTimeoutPolicyCancelByUser)
+	}
+}
+
+func TestClarificationEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_CLARIFICATION_TIMEOUT_POLICY", "cancel_by_user")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+clarification:
+  enabled: true
+  timeout: 9s
+  timeout_policy: cancel_by_user
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Clarification.Timeout != 9*time.Second {
+		t.Fatalf("clarification.timeout = %v, want 9s from file", cfg.Clarification.Timeout)
+	}
+	if cfg.Clarification.TimeoutPolicy != ClarificationTimeoutPolicyCancelByUser {
+		t.Fatalf("clarification.timeout_policy = %q", cfg.Clarification.TimeoutPolicy)
+	}
+}
+
+func TestClarificationValidationRejectsInvalidPolicy(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Clarification.TimeoutPolicy = "deny"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for clarification.timeout_policy")
+	}
+}
+
 func TestContextAssemblerDefaultsEnabledAndFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.ContextAssembler.Enabled {

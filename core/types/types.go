@@ -46,6 +46,38 @@ type ActionGateResolver interface {
 	Confirm(ctx context.Context, req ActionGateConfirmRequest) (bool, error)
 }
 
+type ClarificationTimeoutPolicy string
+
+const (
+	ClarificationTimeoutPolicyCancelByUser ClarificationTimeoutPolicy = "cancel_by_user"
+)
+
+type ClarificationRequest struct {
+	RequestID      string        `json:"request_id"`
+	Questions      []string      `json:"questions"`
+	ContextSummary string        `json:"context_summary,omitempty"`
+	Timeout        time.Duration `json:"timeout,omitempty"`
+}
+
+type ClarificationResponse struct {
+	RequestID string         `json:"request_id,omitempty"`
+	Answers   []string       `json:"answers,omitempty"`
+	Meta      map[string]any `json:"meta,omitempty"`
+}
+
+type ClarificationResolveRequest struct {
+	RunID       string               `json:"run_id,omitempty"`
+	SessionID   string               `json:"session_id,omitempty"`
+	Iteration   int                  `json:"iteration,omitempty"`
+	Request     ClarificationRequest `json:"request"`
+	Timeout     time.Duration        `json:"timeout"`
+	TriggeredBy string               `json:"triggered_by,omitempty"`
+}
+
+type ClarificationResolver interface {
+	Resolve(ctx context.Context, req ClarificationResolveRequest) (ClarificationResponse, error)
+}
+
 type TokenCounter interface {
 	CountTokens(ctx context.Context, req ModelRequest) (int, error)
 }
@@ -318,9 +350,10 @@ type PrefixMetadata struct {
 }
 
 type ModelResponse struct {
-	FinalAnswer string     `json:"final_answer,omitempty"`
-	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
-	Usage       TokenUsage `json:"usage"`
+	FinalAnswer          string                `json:"final_answer,omitempty"`
+	ToolCalls            []ToolCall            `json:"tool_calls,omitempty"`
+	ClarificationRequest *ClarificationRequest `json:"clarification_request,omitempty"`
+	Usage                TokenUsage            `json:"usage"`
 }
 
 type ToolResult struct {
@@ -359,10 +392,11 @@ type Message struct {
 }
 
 type ModelEvent struct {
-	Type      string         `json:"type"`
-	TextDelta string         `json:"text_delta,omitempty"`
-	ToolCall  *ToolCall      `json:"tool_call,omitempty"`
-	Meta      map[string]any `json:"meta,omitempty"`
+	Type                 string                `json:"type"`
+	TextDelta            string                `json:"text_delta,omitempty"`
+	ToolCall             *ToolCall             `json:"tool_call,omitempty"`
+	ClarificationRequest *ClarificationRequest `json:"clarification_request,omitempty"`
+	Meta                 map[string]any        `json:"meta,omitempty"`
 }
 
 const (
@@ -379,6 +413,7 @@ const (
 	ModelEventTypeResponseInProgress     = "response.in_progress"
 	ModelEventTypeResponseQueued         = "response.queued"
 	ModelEventTypeResponseReasoningDelta = "response.reasoning_summary.delta"
+	ModelEventTypeClarificationRequest   = "clarification_request"
 )
 
 type MCPToolMeta struct {
@@ -419,6 +454,7 @@ const (
 	ActionPhaseTool             ActionPhase = "tool"
 	ActionPhaseMCP              ActionPhase = "mcp"
 	ActionPhaseSkill            ActionPhase = "skill"
+	ActionPhaseHITL             ActionPhase = "hitl"
 )
 
 type ActionStatus string
@@ -465,6 +501,7 @@ const (
 	ErrSecurity       ErrorClass = "ErrSecurity"
 	ErrPolicyTimeout  ErrorClass = "ErrPolicyTimeout"
 	ErrIterationLimit ErrorClass = "ErrIterationLimit"
+	ErrHITL           ErrorClass = "ErrHITL"
 )
 
 type ClassifiedError struct {

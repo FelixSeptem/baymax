@@ -149,6 +149,9 @@ mcp:
 			"gate_checks":           4,
 			"gate_denied_count":     2,
 			"gate_timeout_count":    1,
+			"await_count":           2,
+			"resume_count":          1,
+			"cancel_by_user_count":  1,
 		},
 	}
 	rec.OnEvent(context.Background(), ev)
@@ -184,6 +187,9 @@ mcp:
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])
+	}
+	if items[0].AwaitCount != 2 || items[0].ResumeCount != 1 || items[0].CancelByUserCount != 1 {
+		t.Fatalf("clarification metrics mismatch: %#v", items[0])
 	}
 	modelAgg, ok := items[0].TimelinePhases["model"]
 	if !ok {

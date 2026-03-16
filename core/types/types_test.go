@@ -67,6 +67,12 @@ func TestModelResponseJSONRoundTrip(t *testing.T) {
 		ToolCalls: []ToolCall{
 			{CallID: "c1", Name: "local.search", Args: map[string]any{"q": "golang"}},
 		},
+		ClarificationRequest: &ClarificationRequest{
+			RequestID:      "clarify-1",
+			Questions:      []string{"which repo?"},
+			ContextSummary: "missing target scope",
+			Timeout:        5 * time.Second,
+		},
 		Usage: TokenUsage{InputTokens: 3, OutputTokens: 7, TotalTokens: 10},
 	}
 	data, err := json.Marshal(want)
@@ -79,6 +85,9 @@ func TestModelResponseJSONRoundTrip(t *testing.T) {
 	}
 	if len(got.ToolCalls) != 1 || got.ToolCalls[0].Name != "local.search" {
 		t.Fatalf("unexpected tool calls: %#v", got.ToolCalls)
+	}
+	if got.ClarificationRequest == nil || got.ClarificationRequest.RequestID != "clarify-1" {
+		t.Fatalf("unexpected clarification request: %#v", got.ClarificationRequest)
 	}
 	if got.Usage.TotalTokens != 10 {
 		t.Fatalf("unexpected usage: %#v", got.Usage)

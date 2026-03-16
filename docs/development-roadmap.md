@@ -242,7 +242,7 @@
 - H1（R3 前半，已完成）：交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
 - H1.5（R3-R4，已完成）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
 - H2（R3 后半，已完成）：引入 Action Gate（执行前确认钩子），默认 `require_confirm`、timeout-deny、Run/Stream 语义一致，并收敛最小诊断字段（`gate_checks/gate_denied_count/gate_timeout_count`）。
-- H3（R4）：引入原生 pause/resume 语义（`run.awaiting_user` / `run.resumed`），完善契约测试与诊断记录。
+- H3（R4，已完成）：引入原生 clarification 生命周期（`await_user` / `resumed` / `canceled_by_user`），默认超时策略 `cancel_by_user`，并完成 Run/Stream 契约测试与诊断字段（`await_count/resume_count/cancel_by_user_count`）。
 
 ## A2A 里程碑（规划，当前不实现）
 

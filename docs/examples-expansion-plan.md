@@ -17,7 +17,7 @@
 | `04-streaming-interrupt` | Structure（中断/恢复语义） | 展示流式链路中的取消与收敛 |
 | `05-parallel-tools-fanout` | Parallel | 展示 goroutine fanout 与背压行为 |
 | `06-async-job-progress` | Map Reduce（近似） + Parallel | 展示异步任务拆分、聚合与进度回传 |
-| `07-multi-agent-async-channel` | Multi-Agent + Structure | 展示单进程多代理协作、职责边界与异步通信 |
+| `07-multi-agent-async-channel` | Multi-Agent + Structure + HITL Clarification | 展示单进程多代理协作、clarification await/resume 与异步通信 |
 | `08-multi-agent-network-bridge` | Multi-Agent + Structure（Network） | 展示基于 HTTP + JSON-RPC 2.0 的网络通信桥接 |
 
 ## Phase R2 Batch (Foundational + Core Patterns)
@@ -57,6 +57,7 @@ R3 重点覆盖 Pattern：
 说明：
 - `07` 与 `08` 分别覆盖进程内 channel 通信与网络通信，避免单示例承载两类复杂度。
 - `08` 通信协议固定为 HTTP + JSON-RPC 2.0（参考 MCP 协议语义）。
+- `07` 输出结构化 `clarification_request` 事件与 timeline reason（`hitl.await_user`/`hitl.resumed`），用于前端直接消费。
 
 ## Backlog（Pattern 补齐建议）
 

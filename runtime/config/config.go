@@ -57,6 +57,12 @@ const (
 )
 
 const (
+	DropPriorityLow    = "low"
+	DropPriorityNormal = "normal"
+	DropPriorityHigh   = "high"
+)
+
+const (
 	SkillTriggerScoringStrategyLexicalWeightedKeywords = "lexical_weighted_keywords"
 	SkillTriggerScoringTieBreakHighestPriority         = "highest_priority"
 	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
@@ -85,13 +91,27 @@ type ConcurrencyConfig struct {
 	LocalQueueSize           int                    `json:"local_queue_size"`
 	Backpressure             types.BackpressureMode `json:"backpressure"`
 	CancelPropagationTimeout time.Duration          `json:"cancel_propagation_timeout"`
+	DropLowPriority          DropLowPriorityConfig  `json:"drop_low_priority"`
+}
+
+type DropLowPriorityConfig struct {
+	PriorityByTool      map[string]string `json:"priority_by_tool"`
+	PriorityByKeyword   map[string]string `json:"priority_by_keyword"`
+	DroppablePriorities []string          `json:"droppable_priorities"`
 }
 
 type DiagnosticsConfig struct {
-	MaxCallRecords  int `json:"max_call_records"`
-	MaxRunRecords   int `json:"max_run_records"`
-	MaxReloadErrors int `json:"max_reload_errors"`
-	MaxSkillRecords int `json:"max_skill_records"`
+	MaxCallRecords  int                            `json:"max_call_records"`
+	MaxRunRecords   int                            `json:"max_run_records"`
+	MaxReloadErrors int                            `json:"max_reload_errors"`
+	MaxSkillRecords int                            `json:"max_skill_records"`
+	TimelineTrend   DiagnosticsTimelineTrendConfig `json:"timeline_trend"`
+}
+
+type DiagnosticsTimelineTrendConfig struct {
+	Enabled    bool          `json:"enabled"`
+	LastNRuns  int           `json:"last_n_runs"`
+	TimeWindow time.Duration `json:"time_window"`
 }
 
 type ReloadConfig struct {
@@ -331,12 +351,22 @@ func DefaultConfig() Config {
 			LocalQueueSize:           32,
 			Backpressure:             types.BackpressureBlock,
 			CancelPropagationTimeout: 1500 * time.Millisecond,
+			DropLowPriority: DropLowPriorityConfig{
+				PriorityByTool:      map[string]string{},
+				PriorityByKeyword:   map[string]string{},
+				DroppablePriorities: []string{DropPriorityLow},
+			},
 		},
 		Diagnostics: DiagnosticsConfig{
 			MaxCallRecords:  200,
 			MaxRunRecords:   200,
 			MaxReloadErrors: 100,
 			MaxSkillRecords: 200,
+			TimelineTrend: DiagnosticsTimelineTrendConfig{
+				Enabled:    true,
+				LastNRuns:  100,
+				TimeWindow: 15 * time.Minute,
+			},
 		},
 		Reload: ReloadConfig{
 			Enabled:  false,
@@ -578,7 +608,7 @@ func Validate(cfg Config) error {
 		if p.WritePoolSize <= 0 {
 			return fmt.Errorf("mcp.profiles.%s.write_pool_size must be > 0", name)
 		}
-		if err := validateBackpressure(p.Backpressure, fmt.Sprintf("mcp.profiles.%s.backpressure", name)); err != nil {
+		if err := validateMCPBackpressure(p.Backpressure, fmt.Sprintf("mcp.profiles.%s.backpressure", name)); err != nil {
 			return err
 		}
 	}
@@ -594,6 +624,30 @@ func Validate(cfg Config) error {
 	if cfg.Concurrency.CancelPropagationTimeout <= 0 {
 		return errors.New("concurrency.cancel_propagation_timeout must be > 0")
 	}
+	if len(cfg.Concurrency.DropLowPriority.DroppablePriorities) == 0 {
+		return errors.New("concurrency.drop_low_priority.droppable_priorities must not be empty")
+	}
+	for i, priority := range cfg.Concurrency.DropLowPriority.DroppablePriorities {
+		if err := validateDropPriority(priority, fmt.Sprintf("concurrency.drop_low_priority.droppable_priorities[%d]", i)); err != nil {
+			return err
+		}
+	}
+	for tool, priority := range cfg.Concurrency.DropLowPriority.PriorityByTool {
+		if strings.TrimSpace(tool) == "" {
+			return errors.New("concurrency.drop_low_priority.priority_by_tool contains empty key")
+		}
+		if err := validateDropPriority(priority, fmt.Sprintf("concurrency.drop_low_priority.priority_by_tool.%s", tool)); err != nil {
+			return err
+		}
+	}
+	for keyword, priority := range cfg.Concurrency.DropLowPriority.PriorityByKeyword {
+		if strings.TrimSpace(keyword) == "" {
+			return errors.New("concurrency.drop_low_priority.priority_by_keyword contains empty key")
+		}
+		if err := validateDropPriority(priority, fmt.Sprintf("concurrency.drop_low_priority.priority_by_keyword.%s", keyword)); err != nil {
+			return err
+		}
+	}
 	if cfg.Diagnostics.MaxCallRecords <= 0 {
 		return errors.New("diagnostics.max_call_records must be > 0")
 	}
@@ -605,6 +659,12 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Diagnostics.MaxSkillRecords <= 0 {
 		return errors.New("diagnostics.max_skill_records must be > 0")
+	}
+	if cfg.Diagnostics.TimelineTrend.LastNRuns <= 0 {
+		return errors.New("diagnostics.timeline_trend.last_n_runs must be > 0")
+	}
+	if cfg.Diagnostics.TimelineTrend.TimeWindow <= 0 {
+		return errors.New("diagnostics.timeline_trend.time_window must be > 0")
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -829,10 +889,28 @@ func validateStagePolicy(v, field string) error {
 
 func validateBackpressure(v types.BackpressureMode, field string) error {
 	switch v {
+	case types.BackpressureBlock, types.BackpressureReject, types.BackpressureDropLowPriority:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [block,reject,drop_low_priority]", field)
+	}
+}
+
+func validateMCPBackpressure(v types.BackpressureMode, field string) error {
+	switch v {
 	case types.BackpressureBlock, types.BackpressureReject:
 		return nil
 	default:
 		return fmt.Errorf("%s must be one of [block,reject]", field)
+	}
+}
+
+func validateDropPriority(v, field string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case DropPriorityLow, DropPriorityNormal, DropPriorityHigh:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [low,normal,high], got %q", field, v)
 	}
 }
 
@@ -1022,10 +1100,16 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("concurrency.local_queue_size", base.Concurrency.LocalQueueSize)
 	v.SetDefault("concurrency.backpressure", string(base.Concurrency.Backpressure))
 	v.SetDefault("concurrency.cancel_propagation_timeout", base.Concurrency.CancelPropagationTimeout)
+	v.SetDefault("concurrency.drop_low_priority.priority_by_tool", base.Concurrency.DropLowPriority.PriorityByTool)
+	v.SetDefault("concurrency.drop_low_priority.priority_by_keyword", base.Concurrency.DropLowPriority.PriorityByKeyword)
+	v.SetDefault("concurrency.drop_low_priority.droppable_priorities", base.Concurrency.DropLowPriority.DroppablePriorities)
 	v.SetDefault("diagnostics.max_call_records", base.Diagnostics.MaxCallRecords)
 	v.SetDefault("diagnostics.max_run_records", base.Diagnostics.MaxRunRecords)
 	v.SetDefault("diagnostics.max_reload_errors", base.Diagnostics.MaxReloadErrors)
 	v.SetDefault("diagnostics.max_skill_records", base.Diagnostics.MaxSkillRecords)
+	v.SetDefault("diagnostics.timeline_trend.enabled", base.Diagnostics.TimelineTrend.Enabled)
+	v.SetDefault("diagnostics.timeline_trend.last_n_runs", base.Diagnostics.TimelineTrend.LastNRuns)
+	v.SetDefault("diagnostics.timeline_trend.time_window", base.Diagnostics.TimelineTrend.TimeWindow)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -1114,10 +1198,16 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Concurrency.LocalQueueSize = v.GetInt("concurrency.local_queue_size")
 	cfg.Concurrency.Backpressure = types.BackpressureMode(v.GetString("concurrency.backpressure"))
 	cfg.Concurrency.CancelPropagationTimeout = v.GetDuration("concurrency.cancel_propagation_timeout")
+	cfg.Concurrency.DropLowPriority.PriorityByTool = normalizePriorityMap(v.GetStringMapString("concurrency.drop_low_priority.priority_by_tool"))
+	cfg.Concurrency.DropLowPriority.PriorityByKeyword = normalizePriorityMap(v.GetStringMapString("concurrency.drop_low_priority.priority_by_keyword"))
+	cfg.Concurrency.DropLowPriority.DroppablePriorities = normalizeKeywords(v.GetStringSlice("concurrency.drop_low_priority.droppable_priorities"))
 	cfg.Diagnostics.MaxCallRecords = v.GetInt("diagnostics.max_call_records")
 	cfg.Diagnostics.MaxRunRecords = v.GetInt("diagnostics.max_run_records")
 	cfg.Diagnostics.MaxReloadErrors = v.GetInt("diagnostics.max_reload_errors")
 	cfg.Diagnostics.MaxSkillRecords = v.GetInt("diagnostics.max_skill_records")
+	cfg.Diagnostics.TimelineTrend.Enabled = v.GetBool("diagnostics.timeline_trend.enabled")
+	cfg.Diagnostics.TimelineTrend.LastNRuns = v.GetInt("diagnostics.timeline_trend.last_n_runs")
+	cfg.Diagnostics.TimelineTrend.TimeWindow = v.GetDuration("diagnostics.timeline_trend.time_window")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")
@@ -1375,6 +1465,22 @@ func normalizeStringToPolicyMap(in map[string]string) map[string]string {
 		}
 		value := strings.ToLower(strings.TrimSpace(rawValue))
 		if value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func normalizePriorityMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for rawKey, rawValue := range in {
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		value := strings.ToLower(strings.TrimSpace(rawValue))
+		if key == "" || value == "" {
 			continue
 		}
 		out[key] = value

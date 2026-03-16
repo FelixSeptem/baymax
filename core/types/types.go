@@ -229,8 +229,9 @@ func DefaultLoopPolicy() LoopPolicy {
 type BackpressureMode string
 
 const (
-	BackpressureBlock  BackpressureMode = "block"
-	BackpressureReject BackpressureMode = "reject"
+	BackpressureBlock           BackpressureMode = "block"
+	BackpressureReject          BackpressureMode = "reject"
+	BackpressureDropLowPriority BackpressureMode = "drop_low_priority"
 )
 
 type LocalDispatchPolicy struct {

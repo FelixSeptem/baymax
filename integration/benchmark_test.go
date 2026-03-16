@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	httpmcp "github.com/FelixSeptem/baymax/mcp/http"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/tool/local"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -104,6 +106,100 @@ func BenchmarkToolFanOutCancelStorm(b *testing.B) {
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
 		_, _ = dispatcher.Dispatch(ctx, calls, cfg)
 		cancel()
+		durations = append(durations, time.Since(start).Nanoseconds())
+		if n := runtime.NumGoroutine(); n > goroutinePeak {
+			goroutinePeak = n
+		}
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+	if goroutinePeak > 0 {
+		b.ReportMetric(float64(goroutinePeak), "goroutine-peak")
+	}
+}
+
+func BenchmarkToolFanOutDropLowPriority(b *testing.B) {
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakes.Tool{NameValue: "slow", InvokeFn: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		time.Sleep(250 * time.Microsecond)
+		return types.ToolResult{Content: "ok"}, nil
+	}})
+	dispatcher := local.NewDispatcher(reg)
+	calls := make([]types.ToolCall, 24)
+	for i := range calls {
+		calls[i] = types.ToolCall{
+			CallID: "d",
+			Name:   "local.slow",
+			Args:   map[string]any{"q": "cache warmup"},
+		}
+	}
+	cfg := local.DispatchConfig{
+		MaxCalls:     24,
+		Concurrency:  2,
+		QueueSize:    2,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: local.DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityLow},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	}
+	durations := make([]int64, 0, b.N)
+	goroutinePeak := 0
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		_, _ = dispatcher.Dispatch(context.Background(), calls, cfg)
+		durations = append(durations, time.Since(start).Nanoseconds())
+		if n := runtime.NumGoroutine(); n > goroutinePeak {
+			goroutinePeak = n
+		}
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+	if goroutinePeak > 0 {
+		b.ReportMetric(float64(goroutinePeak), "goroutine-peak")
+	}
+}
+
+func BenchmarkToolFanOutDropLowPriorityMCPAndSkill(b *testing.B) {
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakes.Tool{NameValue: "mcp_proxy", InvokeFn: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		time.Sleep(250 * time.Microsecond)
+		return types.ToolResult{Content: "ok"}, nil
+	}})
+	_, _ = reg.Register(&fakes.Tool{NameValue: "skill_router", InvokeFn: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		time.Sleep(250 * time.Microsecond)
+		return types.ToolResult{Content: "ok"}, nil
+	}})
+	dispatcher := local.NewDispatcher(reg)
+	calls := make([]types.ToolCall, 24)
+	for i := range calls {
+		if i%2 == 0 {
+			calls[i] = types.ToolCall{CallID: "m", Name: "local.mcp_proxy", Args: map[string]any{"q": "cache warmup"}}
+			continue
+		}
+		calls[i] = types.ToolCall{CallID: "s", Name: "local.skill_router", Args: map[string]any{"q": "cache warmup"}}
+	}
+	cfg := local.DispatchConfig{
+		MaxCalls:     24,
+		Concurrency:  2,
+		QueueSize:    2,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: local.DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityLow},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	}
+	durations := make([]int64, 0, b.N)
+	goroutinePeak := 0
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		_, _ = dispatcher.Dispatch(context.Background(), calls, cfg)
 		durations = append(durations, time.Since(start).Nanoseconds())
 		if n := runtime.NumGoroutine(); n > goroutinePeak {
 			goroutinePeak = n
@@ -208,6 +304,50 @@ func BenchmarkCA4PressureEvaluation(b *testing.B) {
 		start := time.Now()
 		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
 			b.Fatalf("assemble failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
+	store := runtimediag.NewStore(64, 512, 16, 32, runtimediag.TimelineTrendConfig{
+		Enabled:    true,
+		LastNRuns:  100,
+		TimeWindow: 15 * time.Minute,
+	})
+	now := time.Now()
+	for i := 0; i < 400; i++ {
+		runID := fmt.Sprintf("bench-run-%d", i)
+		start := now.Add(time.Duration(i) * time.Millisecond)
+		end := start.Add(time.Duration((i%9)+1) * 3 * time.Millisecond)
+		store.AddTimelineEvent(runID, "model", "running", int64(i*2+1), start)
+		store.AddTimelineEvent(runID, "model", "succeeded", int64(i*2+2), end)
+		store.AddRun(runtimediag.RunRecord{
+			Time:      end,
+			RunID:     runID,
+			Status:    "success",
+			LatencyMs: end.Sub(start).Milliseconds(),
+		})
+	}
+	durations := make([]int64, 0, b.N)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		items := store.TimelineTrends(runtimediag.TimelineTrendQuery{
+			Mode:      runtimediag.TimelineTrendModeLastNRuns,
+			LastNRuns: 100,
+		})
+		if len(items) == 0 {
+			b.Fatalf("trend query returned empty result")
+		}
+		for _, item := range items {
+			if item.LatencyP95Ms < 0 {
+				b.Fatalf("invalid latency_p95_ms: %#v", item)
+			}
 		}
 		durations = append(durations, time.Since(start).Nanoseconds())
 	}

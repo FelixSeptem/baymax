@@ -369,6 +369,15 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if dispatchCfg.Backpressure == types.BackpressureBlock && len(lastResponse.ToolCalls) > dispatchCfg.QueueSize {
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.block")
 			}
+			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && len(lastResponse.ToolCalls) > dispatchCfg.QueueSize {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.drop_low_priority")
+				for _, phase := range dropRelevantPhases(lastResponse.ToolCalls) {
+					if phase == types.ActionPhaseTool {
+						continue
+					}
+					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, phase, types.ActionStatusPending, "backpressure.drop_low_priority")
+				}
+			}
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
 				Type:      "tool.dispatch.started",
@@ -389,7 +398,21 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			outcomes, err := e.dispatcher.Dispatch(toolCtx, lastResponse.ToolCalls, dispatchCfg)
 			toolSpan.End()
 			cancel()
-			concurrencyStats.BackpressureDropCount += countBackpressureDrops(outcomes)
+			dropTotal, dropByPhase := countBackpressureDrops(outcomes)
+			concurrencyStats.BackpressureDropCount += dropTotal
+			concurrencyStats.AddBackpressureDropByPhase(dropByPhase)
+			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority {
+				for _, phase := range phasesFullyDroppedByLowPriority(lastResponse.ToolCalls, outcomes) {
+					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, phase, types.ActionStatusFailed, "backpressure.drop_low_priority")
+				}
+			}
+			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && anyPhaseFullyDroppedByLowPriority(lastResponse.ToolCalls, outcomes) {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, "backpressure.drop_low_priority")
+				terminal = classified(types.ErrTool, "all tool calls dropped by low-priority backpressure", false)
+				runErr = errors.New(terminal.Message)
+				state = StateAbort
+				continue
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 				concurrencyStats.CancelPropagatedCount++
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "cancel.propagated")
@@ -458,23 +481,24 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:     lastSelection.Provider,
-					Initial:      lastSelection.Initial,
-					Path:         selectionPath,
-					Required:     lastSelection.Required,
-					UsedFallback: fallbackUsed,
-					Assemble:     lastAssemble,
-					GateChecks:   gateStats.Checks,
-					GateDenied:   gateStats.DeniedCount,
-					GateTimeout:  gateStats.TimeoutCount,
-					GateRuleHits: gateStats.RuleHitCount,
-					GateRuleLast: gateStats.RuleLastID,
-					HitlAwait:    hitlStats.AwaitCount,
-					HitlResumed:  hitlStats.ResumeCount,
-					HitlCanceled: hitlStats.CancelByUserCount,
-					CancelProp:   concurrencyStats.CancelPropagatedCount,
-					BackDrop:     concurrencyStats.BackpressureDropCount,
-					InflightPeak: concurrencyStats.InflightPeak,
+					Provider:        lastSelection.Provider,
+					Initial:         lastSelection.Initial,
+					Path:            selectionPath,
+					Required:        lastSelection.Required,
+					UsedFallback:    fallbackUsed,
+					Assemble:        lastAssemble,
+					GateChecks:      gateStats.Checks,
+					GateDenied:      gateStats.DeniedCount,
+					GateTimeout:     gateStats.TimeoutCount,
+					GateRuleHits:    gateStats.RuleHitCount,
+					GateRuleLast:    gateStats.RuleLastID,
+					HitlAwait:       hitlStats.AwaitCount,
+					HitlResumed:     hitlStats.ResumeCount,
+					HitlCanceled:    hitlStats.CancelByUserCount,
+					CancelProp:      concurrencyStats.CancelPropagatedCount,
+					BackDrop:        concurrencyStats.BackpressureDropCount,
+					BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:    concurrencyStats.InflightPeak,
 				}),
 			})
 			return result, nil
@@ -500,24 +524,25 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-					Provider:     lastSelection.Provider,
-					Initial:      lastSelection.Initial,
-					Path:         selectionPath,
-					Required:     lastSelection.Required,
-					Reason:       lastSelection.Reason,
-					UsedFallback: fallbackUsed,
-					Assemble:     lastAssemble,
-					GateChecks:   gateStats.Checks,
-					GateDenied:   gateStats.DeniedCount,
-					GateTimeout:  gateStats.TimeoutCount,
-					GateRuleHits: gateStats.RuleHitCount,
-					GateRuleLast: gateStats.RuleLastID,
-					HitlAwait:    hitlStats.AwaitCount,
-					HitlResumed:  hitlStats.ResumeCount,
-					HitlCanceled: hitlStats.CancelByUserCount,
-					CancelProp:   concurrencyStats.CancelPropagatedCount,
-					BackDrop:     concurrencyStats.BackpressureDropCount,
-					InflightPeak: concurrencyStats.InflightPeak,
+					Provider:        lastSelection.Provider,
+					Initial:         lastSelection.Initial,
+					Path:            selectionPath,
+					Required:        lastSelection.Required,
+					Reason:          lastSelection.Reason,
+					UsedFallback:    fallbackUsed,
+					Assemble:        lastAssemble,
+					GateChecks:      gateStats.Checks,
+					GateDenied:      gateStats.DeniedCount,
+					GateTimeout:     gateStats.TimeoutCount,
+					GateRuleHits:    gateStats.RuleHitCount,
+					GateRuleLast:    gateStats.RuleLastID,
+					HitlAwait:       hitlStats.AwaitCount,
+					HitlResumed:     hitlStats.ResumeCount,
+					HitlCanceled:    hitlStats.CancelByUserCount,
+					CancelProp:      concurrencyStats.CancelPropagatedCount,
+					BackDrop:        concurrencyStats.BackpressureDropCount,
+					BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:    concurrencyStats.InflightPeak,
 				}),
 			})
 			return result, runErr
@@ -778,23 +803,24 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-				Provider:     selection.Provider,
-				Initial:      selection.Initial,
-				Path:         selectionPath,
-				Required:     required,
-				UsedFallback: selection.UsedFallback,
-				Assemble:     lastAssemble,
-				GateChecks:   gateStats.Checks,
-				GateDenied:   gateStats.DeniedCount,
-				GateTimeout:  gateStats.TimeoutCount,
-				GateRuleHits: gateStats.RuleHitCount,
-				GateRuleLast: gateStats.RuleLastID,
-				HitlAwait:    hitlStats.AwaitCount,
-				HitlResumed:  hitlStats.ResumeCount,
-				HitlCanceled: hitlStats.CancelByUserCount,
-				CancelProp:   concurrencyStats.CancelPropagatedCount,
-				BackDrop:     concurrencyStats.BackpressureDropCount,
-				InflightPeak: concurrencyStats.InflightPeak,
+				Provider:        selection.Provider,
+				Initial:         selection.Initial,
+				Path:            selectionPath,
+				Required:        required,
+				UsedFallback:    selection.UsedFallback,
+				Assemble:        lastAssemble,
+				GateChecks:      gateStats.Checks,
+				GateDenied:      gateStats.DeniedCount,
+				GateTimeout:     gateStats.TimeoutCount,
+				GateRuleHits:    gateStats.RuleHitCount,
+				GateRuleLast:    gateStats.RuleLastID,
+				HitlAwait:       hitlStats.AwaitCount,
+				HitlResumed:     hitlStats.ResumeCount,
+				HitlCanceled:    hitlStats.CancelByUserCount,
+				CancelProp:      concurrencyStats.CancelPropagatedCount,
+				BackDrop:        concurrencyStats.BackpressureDropCount,
+				BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:    concurrencyStats.InflightPeak,
 			}),
 		})
 		return result, err
@@ -817,23 +843,24 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		Iteration: iteration,
 		Time:      e.now(),
 		Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-			Provider:     selection.Provider,
-			Initial:      selection.Initial,
-			Path:         selectionPath,
-			Required:     required,
-			UsedFallback: selection.UsedFallback,
-			Assemble:     lastAssemble,
-			GateChecks:   gateStats.Checks,
-			GateDenied:   gateStats.DeniedCount,
-			GateTimeout:  gateStats.TimeoutCount,
-			GateRuleHits: gateStats.RuleHitCount,
-			GateRuleLast: gateStats.RuleLastID,
-			HitlAwait:    hitlStats.AwaitCount,
-			HitlResumed:  hitlStats.ResumeCount,
-			HitlCanceled: hitlStats.CancelByUserCount,
-			CancelProp:   concurrencyStats.CancelPropagatedCount,
-			BackDrop:     concurrencyStats.BackpressureDropCount,
-			InflightPeak: concurrencyStats.InflightPeak,
+			Provider:        selection.Provider,
+			Initial:         selection.Initial,
+			Path:            selectionPath,
+			Required:        required,
+			UsedFallback:    selection.UsedFallback,
+			Assemble:        lastAssemble,
+			GateChecks:      gateStats.Checks,
+			GateDenied:      gateStats.DeniedCount,
+			GateTimeout:     gateStats.TimeoutCount,
+			GateRuleHits:    gateStats.RuleHitCount,
+			GateRuleLast:    gateStats.RuleLastID,
+			HitlAwait:       hitlStats.AwaitCount,
+			HitlResumed:     hitlStats.ResumeCount,
+			HitlCanceled:    hitlStats.CancelByUserCount,
+			CancelProp:      concurrencyStats.CancelPropagatedCount,
+			BackDrop:        concurrencyStats.BackpressureDropCount,
+			BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
+			InflightPeak:    concurrencyStats.InflightPeak,
 		}),
 	})
 	return result, nil
@@ -1144,24 +1171,25 @@ func (e *Engine) discoverCapabilities(
 }
 
 type runFinishMeta struct {
-	Provider     string
-	Initial      string
-	Path         []string
-	Required     []types.ModelCapability
-	UsedFallback bool
-	Reason       string
-	Assemble     types.ContextAssembleResult
-	GateChecks   int
-	GateDenied   int
-	GateTimeout  int
-	GateRuleHits int
-	GateRuleLast string
-	HitlAwait    int
-	HitlResumed  int
-	HitlCanceled int
-	CancelProp   int
-	BackDrop     int
-	InflightPeak int
+	Provider        string
+	Initial         string
+	Path            []string
+	Required        []types.ModelCapability
+	UsedFallback    bool
+	Reason          string
+	Assemble        types.ContextAssembleResult
+	GateChecks      int
+	GateDenied      int
+	GateTimeout     int
+	GateRuleHits    int
+	GateRuleLast    string
+	HitlAwait       int
+	HitlResumed     int
+	HitlCanceled    int
+	CancelProp      int
+	BackDrop        int
+	BackDropByPhase map[string]int
+	InflightPeak    int
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1275,6 +1303,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["cancel_by_user_count"] = meta.HitlCanceled
 	payload["cancel_propagated_count"] = meta.CancelProp
 	payload["backpressure_drop_count"] = meta.BackDrop
+	if len(meta.BackDropByPhase) > 0 {
+		payload["backpressure_drop_count_by_phase"] = meta.BackDropByPhase
+	}
 	payload["inflight_peak"] = meta.InflightPeak
 	return payload
 }
@@ -1366,9 +1397,10 @@ type clarificationStats struct {
 }
 
 type runtimeConcurrencyStats struct {
-	CancelPropagatedCount int
-	BackpressureDropCount int
-	InflightPeak          int
+	CancelPropagatedCount   int
+	BackpressureDropCount   int
+	BackpressureDropByPhase map[string]int
+	InflightPeak            int
 }
 
 func (s *runtimeConcurrencyStats) ObserveInflight(candidate int) {
@@ -1377,6 +1409,21 @@ func (s *runtimeConcurrencyStats) ObserveInflight(candidate int) {
 	}
 	if candidate > s.InflightPeak {
 		s.InflightPeak = candidate
+	}
+}
+
+func (s *runtimeConcurrencyStats) AddBackpressureDropByPhase(in map[string]int) {
+	if s == nil || len(in) == 0 {
+		return
+	}
+	if s.BackpressureDropByPhase == nil {
+		s.BackpressureDropByPhase = map[string]int{}
+	}
+	for phase, n := range in {
+		if strings.TrimSpace(phase) == "" || n <= 0 {
+			continue
+		}
+		s.BackpressureDropByPhase[phase] += n
 	}
 }
 
@@ -1885,11 +1932,12 @@ func maxInflightEstimate(fanout, workers int) int {
 	return workers
 }
 
-func countBackpressureDrops(outcomes []types.ToolCallOutcome) int {
+func countBackpressureDrops(outcomes []types.ToolCallOutcome) (int, map[string]int) {
 	if len(outcomes) == 0 {
-		return 0
+		return 0, nil
 	}
 	total := 0
+	byPhase := map[string]int{}
 	for _, outcome := range outcomes {
 		if outcome.Result.Error == nil {
 			continue
@@ -1897,9 +1945,117 @@ func countBackpressureDrops(outcomes []types.ToolCallOutcome) int {
 		reason, _ := outcome.Result.Error.Details["reason"].(string)
 		if strings.EqualFold(strings.TrimSpace(reason), "queue_full") {
 			total++
+			phase := dispatchPhaseFromOutcome(outcome)
+			if phase == "" {
+				continue
+			}
+			byPhase[phase]++
 		}
 	}
-	return total
+	if len(byPhase) == 0 {
+		byPhase = nil
+	}
+	return total, byPhase
+}
+
+func anyPhaseFullyDroppedByLowPriority(calls []types.ToolCall, outcomes []types.ToolCallOutcome) bool {
+	return len(phasesFullyDroppedByLowPriority(calls, outcomes)) > 0
+}
+
+func phasesFullyDroppedByLowPriority(calls []types.ToolCall, outcomes []types.ToolCallOutcome) []types.ActionPhase {
+	if len(calls) == 0 {
+		return nil
+	}
+	totals := map[types.ActionPhase]int{}
+	callPhaseByID := map[string]types.ActionPhase{}
+	for _, call := range calls {
+		phase := dispatchPhaseForToolCall(call)
+		totals[phase]++
+		if strings.TrimSpace(call.CallID) != "" {
+			callPhaseByID[strings.TrimSpace(call.CallID)] = phase
+		}
+	}
+	droppedByPhase := map[types.ActionPhase]int{}
+	for _, outcome := range outcomes {
+		if outcome.Result.Error == nil || len(outcome.Result.Error.Details) == 0 {
+			continue
+		}
+		reason, _ := outcome.Result.Error.Details["reason"].(string)
+		dropReason, _ := outcome.Result.Error.Details["drop_reason"].(string)
+		if strings.EqualFold(strings.TrimSpace(reason), "queue_full") &&
+			strings.EqualFold(strings.TrimSpace(dropReason), "low_priority_dropped") {
+			phase := dispatchPhaseForToolOutcome(outcome, callPhaseByID)
+			droppedByPhase[phase]++
+		}
+	}
+	failed := make([]types.ActionPhase, 0, len(totals))
+	for phase, total := range totals {
+		if total <= 0 {
+			continue
+		}
+		if droppedByPhase[phase] == total {
+			failed = append(failed, phase)
+		}
+	}
+	return failed
+}
+
+func dispatchPhaseForToolCall(call types.ToolCall) types.ActionPhase {
+	name := strings.ToLower(strings.TrimSpace(call.Name))
+	switch {
+	case strings.HasPrefix(name, "mcp."), strings.HasPrefix(name, "local.mcp_"), strings.HasPrefix(name, "local.mcp."):
+		return types.ActionPhaseMCP
+	case strings.HasPrefix(name, "skill."), strings.HasPrefix(name, "local.skill_"), strings.HasPrefix(name, "local.skill."):
+		return types.ActionPhaseSkill
+	default:
+		return types.ActionPhaseTool
+	}
+}
+
+func dropRelevantPhases(calls []types.ToolCall) []types.ActionPhase {
+	if len(calls) == 0 {
+		return nil
+	}
+	seen := map[types.ActionPhase]struct{}{}
+	phases := make([]types.ActionPhase, 0, 3)
+	for _, call := range calls {
+		phase := dispatchPhaseForToolCall(call)
+		if _, ok := seen[phase]; ok {
+			continue
+		}
+		seen[phase] = struct{}{}
+		phases = append(phases, phase)
+	}
+	return phases
+}
+
+func dispatchPhaseForToolOutcome(outcome types.ToolCallOutcome, byCallID map[string]types.ActionPhase) types.ActionPhase {
+	if outcome.Result.Error != nil && outcome.Result.Error.Details != nil {
+		if phase, ok := outcome.Result.Error.Details["dispatch_phase"].(string); ok {
+			switch strings.ToLower(strings.TrimSpace(phase)) {
+			case string(types.ActionPhaseMCP):
+				return types.ActionPhaseMCP
+			case string(types.ActionPhaseSkill):
+				return types.ActionPhaseSkill
+			}
+		}
+	}
+	if phase, ok := byCallID[strings.TrimSpace(outcome.CallID)]; ok {
+		return phase
+	}
+	return dispatchPhaseForToolCall(types.ToolCall{Name: outcome.Name})
+}
+
+func dispatchPhaseFromOutcome(outcome types.ToolCallOutcome) string {
+	phase := dispatchPhaseForToolOutcome(outcome, nil)
+	switch phase {
+	case types.ActionPhaseMCP:
+		return "mcp"
+	case types.ActionPhaseSkill:
+		return "skill"
+	default:
+		return "local"
+	}
 }
 
 func (e *Engine) actionGateConfig() runtimeconfig.ActionGateConfig {

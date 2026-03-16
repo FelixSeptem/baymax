@@ -18,6 +18,9 @@
 | Action Gate H2 | `core/runner/runner_test.go::TestActionGateAllowPathKeepsToolExecution` | `core/runner/runner_test.go::TestActionGateRunAndStreamTimeoutSemanticsEquivalent` |
 | Action Gate H4 Parameter Rules | `core/runner/runner_test.go::TestActionGateParameterRulePriorityOverKeyword` | `core/runner/runner_test.go::TestActionGateParameterRuleRunAndStreamTimeoutSemanticsEquivalent` |
 | Runner Concurrency Baseline R5 | `core/runner/runner_test.go::TestRunBackpressureBlockDiagnosticsAndTimeline` | `core/runner/runner_test.go::TestRunAndStreamCancelPropagationSemanticsEquivalent` |
+| Backpressure Drop-Low-Priority R6 | `tool/local/registry_test.go::TestDispatcherDropLowPriorityDropsConfiguredLowCalls` | `core/runner/runner_test.go::TestRunBackpressureDropLowPriorityAllDroppedFailsFast` |
+| Backpressure Drop-Low-Priority R7 | `tool/local/registry_test.go::TestDispatcherDropLowPriorityMarksMCPAndSkillPhase` | `core/runner/runner_test.go::TestRunBackpressureDropLowPriorityMCPAndSkillAllDroppedFailsFast` |
+| Action Timeline Cross-Run Trend H16 | `runtime/diagnostics/store_test.go::TestStoreTimelineTrendsLastNRunsAndTimeWindow` | `runtime/diagnostics/store_test.go::TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow` |
 | Provider Fallback + CA3 Token Counter | `core/runner/runner_test.go::TestRunProviderFallbackUsesSelectedTokenCounterForCA3` | `core/runner/runner_test.go::TestStreamProviderFallbackUsesSelectedTokenCounterForCA3` |
 | Provider Token Count Normalization | `model/gemini/client_test.go::TestBuildTokenContentsNormalizesRolesAndKeepsInput` | `model/openai/client_test.go::TestCountTokensReturnsUnsupportedError` |
 | Skill Trigger Scoring D1 | `skill/loader/loader_test.go::TestCompileSemanticTieBreakUsesHighestPriority` | `skill/loader/loader_test.go::TestCompileDefaultSuppressesLowConfidenceSemanticMatch` |

@@ -130,3 +130,45 @@ Timeline and diagnostics outputs MUST remain semantically consistent for backpre
 - **WHEN** a run is canceled and cancellation is propagated across branches
 - **THEN** timeline terminal semantics match diagnostics counters and final run status category
 
+### Requirement: Action timeline SHALL include drop_low_priority backpressure reason
+Action timeline MUST include reason `backpressure.drop_low_priority` when low-priority dropping is applied under configured backpressure mode.
+
+#### Scenario: Timeline records drop_low_priority reason
+- **WHEN** runtime drops low-priority local tool calls under queue pressure
+- **THEN** corresponding timeline events include reason `backpressure.drop_low_priority`
+
+### Requirement: Action timeline SHALL emit unified drop_low_priority reason across dispatch phases
+When low-priority backpressure is triggered, action timeline events MUST use `backpressure.drop_low_priority` as reason consistently across `tool`, `mcp`, and `skill` phases.
+
+#### Scenario: Low-priority drop occurs in mcp phase
+- **WHEN** mcp dispatch sheds a droppable call due to backpressure
+- **THEN** timeline event uses reason `backpressure.drop_low_priority`
+
+#### Scenario: Low-priority drop occurs in skill phase
+- **WHEN** skill dispatch sheds a droppable call due to backpressure
+- **THEN** timeline event uses reason `backpressure.drop_low_priority`
+
+#### Scenario: Run and stream paths observe drop-low-priority reason
+- **WHEN** equivalent workloads are executed via Run and Stream
+- **THEN** both paths emit semantically equivalent timeline reason and phase status transitions
+
+### Requirement: Action timeline cross-run trend semantics SHALL preserve Run/Stream equivalence
+Cross-run trend aggregation derived from Action Timeline events MUST preserve semantic equivalence between Run and Stream for equivalent workloads.
+
+This requirement applies to `phase + status` aggregate distributions and latency summary semantics, including `latency_p95_ms`.
+
+#### Scenario: Equivalent workload compared between Run and Stream
+- **WHEN** equivalent requests are executed through Run and Stream within the same trend window
+- **THEN** trend aggregates for `phase + status` and latency summaries are semantically equivalent
+
+### Requirement: Action timeline trend output SHALL support phase and status dimensions simultaneously
+Trend aggregation output derived from timeline events MUST support combined `phase + status` grouping rather than phase-only output.
+
+#### Scenario: Consumer inspects failed tool-phase trends
+- **WHEN** trend output is requested for a window containing mixed outcomes
+- **THEN** consumer can distinguish `tool + failed` from other phase/status combinations
+
+#### Scenario: Consumer inspects canceled hitl-phase trends
+- **WHEN** trend output includes canceled clarification/gate paths
+- **THEN** consumer can identify `hitl + canceled` as a distinct aggregate bucket
+

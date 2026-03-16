@@ -59,6 +59,11 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 			cfg.Diagnostics.MaxRunRecords,
 			cfg.Diagnostics.MaxReloadErrors,
 			cfg.Diagnostics.MaxSkillRecords,
+			runtimediag.TimelineTrendConfig{
+				Enabled:    cfg.Diagnostics.TimelineTrend.Enabled,
+				LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
+				TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
+			},
 		),
 		stopCh: make(chan struct{}),
 	}
@@ -161,6 +166,11 @@ func (m *Manager) reload() {
 		cfg.Diagnostics.MaxReloadErrors,
 		cfg.Diagnostics.MaxSkillRecords,
 	)
+	m.diag.SetTrendConfig(runtimediag.TimelineTrendConfig{
+		Enabled:    cfg.Diagnostics.TimelineTrend.Enabled,
+		LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
+		TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
+	})
 	m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: true})
 }
 
@@ -226,6 +236,10 @@ func (m *Manager) RecentCalls(n int) []runtimediag.CallRecord {
 
 func (m *Manager) RecentRuns(n int) []runtimediag.RunRecord {
 	return m.diag.RecentRuns(n)
+}
+
+func (m *Manager) TimelineTrends(query runtimediag.TimelineTrendQuery) []runtimediag.TimelineTrendRecord {
+	return m.diag.TimelineTrends(query)
 }
 
 func (m *Manager) RecentReloads(n int) []runtimediag.ReloadRecord {

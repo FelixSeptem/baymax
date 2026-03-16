@@ -1284,6 +1284,30 @@ mcp:
 	}
 	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "run")
 	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "model")
+
+	trends := mgr.TimelineTrends(runtimediag.TimelineTrendQuery{
+		Mode:      runtimediag.TimelineTrendModeLastNRuns,
+		LastNRuns: 2,
+	})
+	if len(trends) == 0 {
+		t.Fatal("timeline trends should not be empty")
+	}
+	byKey := map[string]runtimediag.TimelineTrendRecord{}
+	for _, item := range trends {
+		byKey[item.Phase+"|"+item.Status] = item
+	}
+	for _, key := range []string{"run|succeeded", "model|succeeded"} {
+		item, ok := byKey[key]
+		if !ok {
+			t.Fatalf("missing trend bucket %q in %#v", key, trends)
+		}
+		if item.CountTotal != 2 {
+			t.Fatalf("trend %q count_total = %d, want 2", key, item.CountTotal)
+		}
+		if item.LatencyP95Ms < 0 {
+			t.Fatalf("trend %q latency_p95_ms = %d, want >= 0", key, item.LatencyP95Ms)
+		}
+	}
 }
 
 func TestRunAndStreamCA3PressureSemanticsEquivalent(t *testing.T) {
@@ -2284,6 +2308,177 @@ func TestRunBackpressureBlockDiagnosticsAndTimeline(t *testing.T) {
 	}
 	if !containsString(reasons, "backpressure.block") {
 		t.Fatalf("expected backpressure.block reason, got %v", reasons)
+	}
+}
+
+func TestRunBackpressureDropLowPriorityAllDroppedFailsFast(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "slow",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(2 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{
+					{CallID: "c-1", Name: "local.slow", Args: map[string]any{"q": "cache warmup"}},
+					{CallID: "c-2", Name: "local.slow", Args: map[string]any{"q": "cache prefetch"}},
+				},
+			}, nil
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+concurrency:
+  backpressure: drop_low_priority
+  local_max_workers: 1
+  local_queue_size: 1
+  drop_low_priority:
+    priority_by_keyword:
+      cache: low
+    droppable_priorities: [low]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr == nil {
+		t.Fatal("expected fail-fast error when all calls are dropped")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrTool {
+		t.Fatalf("unexpected run error: %#v", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["backpressure_drop_count"] != 2 {
+		t.Fatalf("backpressure_drop_count = %#v, want 2", finished.Payload["backpressure_drop_count"])
+	}
+	byPhase, ok := finished.Payload["backpressure_drop_count_by_phase"].(map[string]int)
+	if !ok {
+		t.Fatalf("backpressure_drop_count_by_phase type = %T, want map[string]int", finished.Payload["backpressure_drop_count_by_phase"])
+	}
+	if byPhase["local"] != 2 {
+		t.Fatalf("backpressure_drop_count_by_phase[local] = %d, want 2", byPhase["local"])
+	}
+	reasons := make([]string, 0)
+	for _, ev := range collector.timelineEvents() {
+		if reason, _ := ev.Payload["reason"].(string); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	if !containsString(reasons, "backpressure.drop_low_priority") {
+		t.Fatalf("expected backpressure.drop_low_priority reason, got %v", reasons)
+	}
+}
+
+func TestRunBackpressureDropLowPriorityMCPAndSkillAllDroppedFailsFast(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "mcp_proxy",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(2 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register mcp_proxy: %v", err)
+	}
+	_, err = reg.Register(&fakeTool{
+		name: "skill_router",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(2 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register skill_router: %v", err)
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{
+					{CallID: "m-1", Name: "local.mcp_proxy", Args: map[string]any{"q": "cache route"}},
+					{CallID: "s-1", Name: "local.skill_router", Args: map[string]any{"q": "cache route"}},
+				},
+			}, nil
+		},
+	}
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+concurrency:
+  backpressure: drop_low_priority
+  local_max_workers: 1
+  local_queue_size: 1
+  drop_low_priority:
+    priority_by_keyword:
+      cache: low
+    droppable_priorities: [low]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr == nil {
+		t.Fatal("expected fail-fast error when mcp/skill calls are dropped")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrTool {
+		t.Fatalf("unexpected run error: %#v", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["backpressure_drop_count"] != 2 {
+		t.Fatalf("backpressure_drop_count = %#v, want 2", finished.Payload["backpressure_drop_count"])
+	}
+	byPhase, ok := finished.Payload["backpressure_drop_count_by_phase"].(map[string]int)
+	if !ok {
+		t.Fatalf("backpressure_drop_count_by_phase type = %T, want map[string]int", finished.Payload["backpressure_drop_count_by_phase"])
+	}
+	if byPhase["mcp"] != 1 || byPhase["skill"] != 1 {
+		t.Fatalf("backpressure_drop_count_by_phase = %#v, want mcp=1 skill=1", byPhase)
+	}
+	var hasMCPReason bool
+	var hasSkillReason bool
+	for _, ev := range collector.timelineEvents() {
+		reason, _ := ev.Payload["reason"].(string)
+		phase, _ := ev.Payload["phase"].(string)
+		if reason != "backpressure.drop_low_priority" {
+			continue
+		}
+		if phase == string(types.ActionPhaseMCP) {
+			hasMCPReason = true
+		}
+		if phase == string(types.ActionPhaseSkill) {
+			hasSkillReason = true
+		}
+	}
+	if !hasMCPReason || !hasSkillReason {
+		t.Fatalf("expected mcp/skill backpressure.drop_low_priority timeline reasons, got mcp=%v skill=%v", hasMCPReason, hasSkillReason)
 	}
 }
 

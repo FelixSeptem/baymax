@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 )
 
 func TestManagerHotReloadRollbackAndSuccess(t *testing.T) {
@@ -208,6 +210,65 @@ mcp:
 	result := mgr.PrecheckStage2External(ContextStage2ProviderHTTP, ext)
 	if err := result.FirstError(); err != nil {
 		t.Fatalf("precheck FirstError() = %v, want nil", err)
+	}
+}
+
+func TestManagerTimelineTrendsAPIAndReloadRollback(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+diagnostics:
+  timeline_trend:
+    enabled: true
+    last_n_runs: 2
+    time_window: 1m
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	base := time.Now()
+	mgr.RecordRunTimelineEvent("run-1", "model", "running", 1, base)
+	mgr.RecordRunTimelineEvent("run-1", "model", "succeeded", 2, base.Add(10*time.Millisecond))
+	mgr.RecordRun(runtimediag.RunRecord{Time: base.Add(20 * time.Millisecond), RunID: "run-1", Status: "success"})
+	trends := mgr.TimelineTrends(runtimediag.TimelineTrendQuery{Mode: runtimediag.TimelineTrendModeLastNRuns})
+	if len(trends) == 0 {
+		t.Fatal("timeline trends should not be empty")
+	}
+
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 1
+diagnostics:
+  timeline_trend:
+    enabled: true
+    last_n_runs: 0
+    time_window: 1m
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	if mgr.EffectiveConfig().Diagnostics.TimelineTrend.LastNRuns != 2 {
+		t.Fatalf("invalid reload should rollback timeline trend config, got %#v", mgr.EffectiveConfig().Diagnostics.TimelineTrend)
 	}
 }
 

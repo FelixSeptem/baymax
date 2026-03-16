@@ -8,7 +8,7 @@ import (
 )
 
 func TestStoreConcurrentAccess(t *testing.T) {
-	d := NewStore(32, 16, 8, 20)
+	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -63,7 +63,7 @@ func TestSanitizeMap(t *testing.T) {
 }
 
 func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
-	d := NewStore(8, 8, 4, 8)
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
 	rec := RunRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -86,7 +86,7 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 }
 
 func TestStoreSkillDedupConcurrent(t *testing.T) {
-	d := NewStore(8, 8, 4, 16)
+	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
 	rec := SkillRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -143,7 +143,7 @@ func TestIdempotencyKeyDeterministic(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationWithP95(t *testing.T) {
-	d := NewStore(8, 8, 4, 8)
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "model", "running", 1, base)
@@ -185,7 +185,7 @@ func TestStoreTimelineAggregationWithP95(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
-	d := NewStore(8, 8, 4, 8)
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "run", "running", 1, base)
@@ -204,5 +204,88 @@ func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
 	}
 	if agg.LatencyMs != 10 {
 		t.Fatalf("latency_ms = %d, want 10", agg.LatencyMs)
+	}
+}
+
+func TestStoreTimelineTrendsLastNRunsAndTimeWindow(t *testing.T) {
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 2, TimeWindow: 15 * time.Minute})
+	base := time.Now().Add(-2 * time.Minute)
+
+	addRunTimeline := func(runID string, seq int64, started, ended time.Time, status string) {
+		d.AddTimelineEvent(runID, "model", "running", seq, started)
+		d.AddTimelineEvent(runID, "model", status, seq+1, ended)
+		d.AddRun(RunRecord{Time: ended, RunID: runID, Status: "success", LatencyMs: ended.Sub(started).Milliseconds()})
+	}
+
+	addRunTimeline("run-1", 1, base, base.Add(10*time.Millisecond), "succeeded")
+	addRunTimeline("run-2", 10, base.Add(30*time.Second), base.Add(30*time.Second+20*time.Millisecond), "failed")
+	addRunTimeline("run-3", 20, base.Add(90*time.Second), base.Add(90*time.Second+30*time.Millisecond), "canceled")
+
+	lastN := d.TimelineTrends(TimelineTrendQuery{Mode: TimelineTrendModeLastNRuns})
+	if len(lastN) == 0 {
+		t.Fatal("last_n_runs trend should not be empty")
+	}
+	contains := func(items []TimelineTrendRecord, phase, status string) bool {
+		for _, item := range items {
+			if item.Phase == phase && item.Status == status {
+				return true
+			}
+		}
+		return false
+	}
+	if contains(lastN, "model", "succeeded") {
+		t.Fatalf("last_n_runs should include only latest 2 runs, got %#v", lastN)
+	}
+	if !contains(lastN, "model", "failed") || !contains(lastN, "model", "canceled") {
+		t.Fatalf("last_n_runs missing expected buckets: %#v", lastN)
+	}
+	for _, item := range lastN {
+		if item.LatencyP95Ms <= 0 {
+			t.Fatalf("latency_p95_ms must be >0, got %#v", item)
+		}
+		if item.WindowStart.IsZero() || item.WindowEnd.IsZero() {
+			t.Fatalf("window bounds should be set, got %#v", item)
+		}
+	}
+
+	window := d.TimelineTrends(TimelineTrendQuery{
+		Mode:       TimelineTrendModeTimeWindow,
+		TimeWindow: 45 * time.Second,
+	})
+	if len(window) == 0 {
+		t.Fatal("time_window trend should not be empty")
+	}
+	if contains(window, "model", "succeeded") || contains(window, "model", "failed") {
+		t.Fatalf("time_window should include only latest canceled bucket, got %#v", window)
+	}
+	if !contains(window, "model", "canceled") {
+		t.Fatalf("time_window missing canceled bucket: %#v", window)
+	}
+}
+
+func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute})
+	base := time.Now()
+	d.AddTimelineEvent("run-1", "tool", "running", 1, base)
+	d.AddTimelineEvent("run-1", "tool", "failed", 2, base.Add(10*time.Millisecond))
+	d.AddTimelineEvent("run-1", "tool", "running", 1, base)
+	d.AddTimelineEvent("run-1", "tool", "failed", 2, base.Add(10*time.Millisecond))
+	d.AddRun(RunRecord{Time: base.Add(20 * time.Millisecond), RunID: "run-1", Status: "failed"})
+
+	trends := d.TimelineTrends(TimelineTrendQuery{Mode: TimelineTrendModeLastNRuns, LastNRuns: 1})
+	if len(trends) != 1 {
+		t.Fatalf("trend len = %d, want 1", len(trends))
+	}
+	if trends[0].CountTotal != 1 || trends[0].FailedTotal != 1 {
+		t.Fatalf("duplicate replay should not increase trend counts: %#v", trends[0])
+	}
+
+	d2 := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute})
+	d2.AddTimelineEvent("run-zero", "tool", "running", 1, base)
+	d2.AddTimelineEvent("run-zero", "tool", "failed", 2, base.Add(5*time.Millisecond))
+	d2.AddRun(RunRecord{RunID: "run-zero", Status: "failed"})
+	empty := d2.TimelineTrends(TimelineTrendQuery{Mode: TimelineTrendModeTimeWindow, TimeWindow: 30 * time.Second})
+	if len(empty) != 0 {
+		t.Fatalf("empty window should return empty set, got %#v", empty)
 	}
 }

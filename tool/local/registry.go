@@ -90,12 +90,19 @@ func (r *Registry) Names() []string {
 }
 
 type DispatchConfig struct {
-	MaxCalls     int
-	Concurrency  int
-	FailFast     bool
-	QueueSize    int
-	Backpressure types.BackpressureMode
-	Retry        int
+	MaxCalls        int
+	Concurrency     int
+	FailFast        bool
+	QueueSize       int
+	Backpressure    types.BackpressureMode
+	Retry           int
+	DropLowPriority DropLowPriorityPolicy
+}
+
+type DropLowPriorityPolicy struct {
+	PriorityByTool      map[string]string
+	PriorityByKeyword   map[string]string
+	DroppablePriorities []string
 }
 
 type Dispatcher struct {
@@ -185,11 +192,35 @@ func (d *Dispatcher) applyRuntimeDefaults(cfg DispatchConfig) DispatchConfig {
 	if cfg.Backpressure == "" && rc.Backpressure != "" {
 		cfg.Backpressure = rc.Backpressure
 	}
+	if len(cfg.DropLowPriority.PriorityByTool) == 0 && len(rc.DropLowPriority.PriorityByTool) > 0 {
+		cfg.DropLowPriority.PriorityByTool = copyStringMap(rc.DropLowPriority.PriorityByTool)
+	}
+	if len(cfg.DropLowPriority.PriorityByKeyword) == 0 && len(rc.DropLowPriority.PriorityByKeyword) > 0 {
+		cfg.DropLowPriority.PriorityByKeyword = copyStringMap(rc.DropLowPriority.PriorityByKeyword)
+	}
+	if len(cfg.DropLowPriority.DroppablePriorities) == 0 && len(rc.DropLowPriority.DroppablePriorities) > 0 {
+		cfg.DropLowPriority.DroppablePriorities = append([]string(nil), rc.DropLowPriority.DroppablePriorities...)
+	}
 	return cfg
 }
 
 func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCall, outcomes []types.ToolCallOutcome, idx []int, cfg DispatchConfig) error {
 	if len(idx) == 0 {
+		return nil
+	}
+	if cfg.Backpressure == types.BackpressureDropLowPriority &&
+		len(idx) > cfg.QueueSize &&
+		allIndicesDroppable(calls, idx, cfg.DropLowPriority) {
+		for _, i := range idx {
+			priority := classifyPriority(calls[i], cfg.DropLowPriority)
+			phase := dispatchPhaseForCall(calls[i])
+			outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool call dropped by low-priority backpressure", true, map[string]any{
+				"reason":         "queue_full",
+				"drop_reason":    "low_priority_dropped",
+				"priority":       priority,
+				"dispatch_phase": string(phase),
+			})
+		}
 		return nil
 	}
 	jobs := make(chan int, cfg.QueueSize)
@@ -230,11 +261,40 @@ func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCal
 			case jobs <- i:
 				queued++
 			default:
-				outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool queue is full", true, map[string]any{"reason": "queue_full"})
+				phase := dispatchPhaseForCall(calls[i])
+				outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool queue is full", true, map[string]any{
+					"reason":         "queue_full",
+					"dispatch_phase": string(phase),
+				})
 				if cfg.FailFast {
 					close(jobs)
 					wg.Wait()
 					return errors.New(outcomes[i].Result.Error.Message)
+				}
+			}
+		case types.BackpressureDropLowPriority:
+			select {
+			case jobs <- i:
+				queued++
+			default:
+				priority := classifyPriority(calls[i], cfg.DropLowPriority)
+				phase := dispatchPhaseForCall(calls[i])
+				if canDropPriority(priority, cfg.DropLowPriority.DroppablePriorities) {
+					outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool call dropped by low-priority backpressure", true, map[string]any{
+						"reason":         "queue_full",
+						"drop_reason":    "low_priority_dropped",
+						"priority":       priority,
+						"dispatch_phase": string(phase),
+					})
+					continue
+				}
+				select {
+				case <-ctx.Done():
+					close(jobs)
+					wg.Wait()
+					return ctx.Err()
+				case jobs <- i:
+					queued++
 				}
 			}
 		default:
@@ -260,6 +320,96 @@ func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCal
 		}
 	}
 	return nil
+}
+
+func classifyPriority(call types.ToolCall, policy DropLowPriorityPolicy) string {
+	toolName := strings.ToLower(strings.TrimSpace(call.Name))
+	if v, ok := policy.PriorityByTool[toolName]; ok && strings.TrimSpace(v) != "" {
+		return strings.ToLower(strings.TrimSpace(v))
+	}
+	payload := toolName
+	if len(call.Args) > 0 {
+		payload += " " + lowerArgsText(call.Args)
+	}
+	for _, keyword := range sortedKeywords(policy.PriorityByKeyword) {
+		if strings.Contains(payload, keyword) {
+			return strings.ToLower(strings.TrimSpace(policy.PriorityByKeyword[keyword]))
+		}
+	}
+	return runtimeconfig.DropPriorityNormal
+}
+
+func canDropPriority(priority string, droppable []string) bool {
+	p := strings.ToLower(strings.TrimSpace(priority))
+	for _, v := range droppable {
+		if strings.ToLower(strings.TrimSpace(v)) == p {
+			return true
+		}
+	}
+	return false
+}
+
+func lowerArgsText(args map[string]any) string {
+	parts := make([]string, 0, len(args))
+	for key, value := range args {
+		parts = append(parts, strings.ToLower(strings.TrimSpace(key))+"="+strings.ToLower(fmt.Sprint(value)))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, " ")
+}
+
+func sortedKeywords(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		k := strings.ToLower(strings.TrimSpace(key))
+		if k == "" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if len(keys[i]) != len(keys[j]) {
+			return len(keys[i]) > len(keys[j])
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func allIndicesDroppable(calls []types.ToolCall, idx []int, policy DropLowPriorityPolicy) bool {
+	if len(idx) == 0 {
+		return false
+	}
+	for _, i := range idx {
+		priority := classifyPriority(calls[i], policy)
+		if !canDropPriority(priority, policy.DroppablePriorities) {
+			return false
+		}
+	}
+	return true
+}
+
+func dispatchPhaseForCall(call types.ToolCall) types.ActionPhase {
+	name := strings.ToLower(strings.TrimSpace(call.Name))
+	switch {
+	case strings.HasPrefix(name, "mcp."), strings.HasPrefix(name, "local.mcp_"), strings.HasPrefix(name, "local.mcp."):
+		return types.ActionPhaseMCP
+	case strings.HasPrefix(name, "skill."), strings.HasPrefix(name, "local.skill_"), strings.HasPrefix(name, "local.skill."):
+		return types.ActionPhaseSkill
+	default:
+		return types.ActionPhaseTool
+	}
 }
 
 func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcomes []types.ToolCallOutcome, i int, retry int) error {

@@ -4,10 +4,18 @@
 
 ## 当前状态（2026-03-16）
 
-- OpenSpec 活跃变更数：`0`（当前基线已全部归档）。
-- 最近归档：`025-introduce-action-gate-parameter-schema-rules-h4`。
+- OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
+- 最近归档：`029-establish-open-source-p0-governance-baseline`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
+
+## Open Source P0
+
+- 版本与兼容承诺：`docs/versioning-and-compatibility.md`
+- 安全响应入口：`SECURITY.md`（使用 GitHub Security Advisory 私密披露）
+- 贡献与评审流程：`CONTRIBUTING.md`
+- 社区行为规范：`CODE_OF_CONDUCT.md`
+- 变更记录模板：`CHANGELOG.md`
 
 ## 已实现能力
 
@@ -81,9 +89,10 @@
 ### 3.8 Runner 并发基线（R5）
 - 默认背压策略为 `block`，高 fanout 且命中排队场景会发射 `backpressure.block` timeline reason。
 - 取消传播场景新增 `cancel.propagated` timeline reason，Run/Stream 保持语义一致。
-- 新增并发诊断字段：`cancel_propagated_count`、`backpressure_drop_count`、`inflight_peak`。
+- 新增并发诊断字段：`cancel_propagated_count`、`backpressure_drop_count`、`backpressure_drop_count_by_phase`、`inflight_peak`。
 - 新增 runtime 配置字段：`concurrency.cancel_propagation_timeout`（`env > file > default`，无效值 fail-fast）。
-- `drop_low_priority` 仅保留 TODO 占位，不在本期启用。
+- 背压模式 `drop_low_priority` 作用于 `local + mcp + skill` 调度语义，timeline reason 为 `backpressure.drop_low_priority`。
+- `drop_low_priority` 下若任一调度路径在同一轮调用中全量被丢弃，runner 立即 fail-fast 终止。
 
 ### 4. Skill Loader
 - AGENTS-first 发现 SKILL
@@ -102,11 +111,12 @@
   - status：`pending|running|succeeded|failed|skipped|canceled`
   - 关键字段：`phase`、`status`、`reason`（可选）、`sequence`（单 run 递增）
   - H1.5 聚合字段（`RecentRuns`）：按 phase 输出 `count_total`、`failed_total`、`canceled_total`、`skipped_total`、`latency_ms`、`latency_p95_ms`
+  - H16 趋势聚合字段（`TimelineTrends`）：按 `phase+status` 输出 `count_total`、`failed_total`、`canceled_total`、`skipped_total`、`latency_avg_ms`、`latency_p95_ms`、`window_start`、`window_end`
 - OTel spans：`agent.run` 根 span + model/tool/mcp/skill 子 span
 - JSON stdout logger（支持 trace/span/run 关联）
 - 诊断写入采用 single-writer（`observability/event.RuntimeRecorder`）+ 幂等去重（`runtime/diagnostics`）
  
-说明：H1.5 已完成 timeline 聚合可观测收敛；同一 run 的 timeline 重放不重复计数（幂等保证）。
+说明：H1.5/H16 已完成 timeline 单 run 聚合 + 跨 run 趋势聚合收敛；同一 run 的 timeline 重放不重复计数（幂等保证）。
 
 ### 6. Security Baseline (S1)
 - 统一脱敏管线：关键词基线（`token/password/secret/api_key/apikey`）+ 扩展 matcher 口
@@ -119,6 +129,7 @@
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
 - benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
 - benchmark：`BenchmarkToolFanOutCancelStorm` 输出 `p95-ns/op` + `goroutine-peak`，用于取消风暴回归对比
+- benchmark：`BenchmarkDiagnosticsTimelineTrendQuery` 输出趋势查询性能指标（含 `p95-ns/op`）
 
 ## 快速开始
 
@@ -219,8 +230,23 @@ action_gate:
 concurrency:
   local_max_workers: 8
   local_queue_size: 32
-  backpressure: block
+  backpressure: drop_low_priority # block|reject|drop_low_priority
   cancel_propagation_timeout: 1500ms
+  drop_low_priority:
+    priority_by_tool:
+      local.search: low
+    priority_by_keyword:
+      cache: low
+    droppable_priorities: [low]
+```
+
+Action Timeline 趋势聚合（H16）最小配置示例：
+```yaml
+diagnostics:
+  timeline_trend:
+    enabled: true
+    last_n_runs: 100
+    time_window: 15m
 ```
 
 Context Assembler（最小配置示例）：
@@ -297,11 +323,13 @@ bash scripts/check-ca4-benchmark-regression.sh
 ### CI
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
 - 默认执行：
-  - `scripts/check-repo-hygiene.sh`
   - `scripts/check-quality-gate.sh`
   - `scripts/check-runtime-boundaries.sh`
   - `scripts/check-docs-consistency.ps1`
   - benchmark smoke（`go test ./integration -run ^$ -bench Benchmark -benchtime=50ms`）
+
+### 安全报告
+- 漏洞报告请使用 GitHub Security Advisory（私密报告流程），详见：`SECURITY.md`
 
 ## 脚本清单（当前保留）
 
@@ -356,6 +384,7 @@ go run ./examples/08-multi-agent-network-bridge
 
 - V1 验收与限制：`docs/v1-acceptance.md`
 - 开发路线图：`docs/development-roadmap.md`
+- 版本与兼容策略：`docs/versioning-and-compatibility.md`
 - 示例扩容计划：`docs/examples-expansion-plan.md`
 - 性能回归策略：`docs/performance-policy.md`
 - MCP 可靠性 profile：`docs/mcp-runtime-profiles.md`

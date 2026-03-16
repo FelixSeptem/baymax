@@ -30,55 +30,56 @@ type CallRecord struct {
 }
 
 type RunRecord struct {
-	Time                 time.Time                         `json:"time"`
-	RunID                string                            `json:"run_id"`
-	Status               string                            `json:"status,omitempty"`
-	Iterations           int                               `json:"iterations"`
-	ToolCalls            int                               `json:"tool_calls"`
-	LatencyMs            int64                             `json:"latency_ms"`
-	ErrorClass           string                            `json:"error_class,omitempty"`
-	ModelProvider        string                            `json:"model_provider,omitempty"`
-	FallbackUsed         bool                              `json:"fallback_used,omitempty"`
-	FallbackInitial      string                            `json:"fallback_initial,omitempty"`
-	FallbackPath         string                            `json:"fallback_path,omitempty"`
-	RequiredCapabilities string                            `json:"required_capabilities,omitempty"`
-	FallbackReason       string                            `json:"fallback_reason,omitempty"`
-	PrefixHash           string                            `json:"prefix_hash,omitempty"`
-	AssembleLatencyMs    int64                             `json:"assemble_latency_ms,omitempty"`
-	AssembleStatus       string                            `json:"assemble_status,omitempty"`
-	GuardViolation       string                            `json:"guard_violation,omitempty"`
-	AssembleStageStatus  string                            `json:"assemble_stage_status,omitempty"`
-	Stage2SkipReason     string                            `json:"stage2_skip_reason,omitempty"`
-	Stage1LatencyMs      int64                             `json:"stage1_latency_ms,omitempty"`
-	Stage2LatencyMs      int64                             `json:"stage2_latency_ms,omitempty"`
-	Stage2Provider       string                            `json:"stage2_provider,omitempty"`
-	Stage2Profile        string                            `json:"stage2_profile,omitempty"`
-	Stage2HitCount       int                               `json:"stage2_hit_count,omitempty"`
-	Stage2Source         string                            `json:"stage2_source,omitempty"`
-	Stage2Reason         string                            `json:"stage2_reason,omitempty"`
-	Stage2ReasonCode     string                            `json:"stage2_reason_code,omitempty"`
-	Stage2ErrorLayer     string                            `json:"stage2_error_layer,omitempty"`
-	CA3PressureZone      string                            `json:"ca3_pressure_zone,omitempty"`
-	CA3PressureReason    string                            `json:"ca3_pressure_reason,omitempty"`
-	CA3PressureTrigger   string                            `json:"ca3_pressure_trigger,omitempty"`
-	CA3ZoneResidencyMs   map[string]int64                  `json:"ca3_zone_residency_ms,omitempty"`
-	CA3TriggerCounts     map[string]int                    `json:"ca3_trigger_counts,omitempty"`
-	CA3CompressionRatio  float64                           `json:"ca3_compression_ratio,omitempty"`
-	CA3SpillCount        int                               `json:"ca3_spill_count,omitempty"`
-	CA3SwapBackCount     int                               `json:"ca3_swap_back_count,omitempty"`
-	RecapStatus          string                            `json:"recap_status,omitempty"`
-	GateChecks           int                               `json:"gate_checks,omitempty"`
-	GateDeniedCount      int                               `json:"gate_denied_count,omitempty"`
-	GateTimeoutCount     int                               `json:"gate_timeout_count,omitempty"`
-	GateRuleHitCount     int                               `json:"gate_rule_hit_count,omitempty"`
-	GateRuleLastID       string                            `json:"gate_rule_last_id,omitempty"`
-	AwaitCount           int                               `json:"await_count,omitempty"`
-	ResumeCount          int                               `json:"resume_count,omitempty"`
-	CancelByUserCount    int                               `json:"cancel_by_user_count,omitempty"`
-	CancelPropagated     int                               `json:"cancel_propagated_count,omitempty"`
-	BackpressureDrop     int                               `json:"backpressure_drop_count,omitempty"`
-	InflightPeak         int                               `json:"inflight_peak,omitempty"`
-	TimelinePhases       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
+	Time                    time.Time                         `json:"time"`
+	RunID                   string                            `json:"run_id"`
+	Status                  string                            `json:"status,omitempty"`
+	Iterations              int                               `json:"iterations"`
+	ToolCalls               int                               `json:"tool_calls"`
+	LatencyMs               int64                             `json:"latency_ms"`
+	ErrorClass              string                            `json:"error_class,omitempty"`
+	ModelProvider           string                            `json:"model_provider,omitempty"`
+	FallbackUsed            bool                              `json:"fallback_used,omitempty"`
+	FallbackInitial         string                            `json:"fallback_initial,omitempty"`
+	FallbackPath            string                            `json:"fallback_path,omitempty"`
+	RequiredCapabilities    string                            `json:"required_capabilities,omitempty"`
+	FallbackReason          string                            `json:"fallback_reason,omitempty"`
+	PrefixHash              string                            `json:"prefix_hash,omitempty"`
+	AssembleLatencyMs       int64                             `json:"assemble_latency_ms,omitempty"`
+	AssembleStatus          string                            `json:"assemble_status,omitempty"`
+	GuardViolation          string                            `json:"guard_violation,omitempty"`
+	AssembleStageStatus     string                            `json:"assemble_stage_status,omitempty"`
+	Stage2SkipReason        string                            `json:"stage2_skip_reason,omitempty"`
+	Stage1LatencyMs         int64                             `json:"stage1_latency_ms,omitempty"`
+	Stage2LatencyMs         int64                             `json:"stage2_latency_ms,omitempty"`
+	Stage2Provider          string                            `json:"stage2_provider,omitempty"`
+	Stage2Profile           string                            `json:"stage2_profile,omitempty"`
+	Stage2HitCount          int                               `json:"stage2_hit_count,omitempty"`
+	Stage2Source            string                            `json:"stage2_source,omitempty"`
+	Stage2Reason            string                            `json:"stage2_reason,omitempty"`
+	Stage2ReasonCode        string                            `json:"stage2_reason_code,omitempty"`
+	Stage2ErrorLayer        string                            `json:"stage2_error_layer,omitempty"`
+	CA3PressureZone         string                            `json:"ca3_pressure_zone,omitempty"`
+	CA3PressureReason       string                            `json:"ca3_pressure_reason,omitempty"`
+	CA3PressureTrigger      string                            `json:"ca3_pressure_trigger,omitempty"`
+	CA3ZoneResidencyMs      map[string]int64                  `json:"ca3_zone_residency_ms,omitempty"`
+	CA3TriggerCounts        map[string]int                    `json:"ca3_trigger_counts,omitempty"`
+	CA3CompressionRatio     float64                           `json:"ca3_compression_ratio,omitempty"`
+	CA3SpillCount           int                               `json:"ca3_spill_count,omitempty"`
+	CA3SwapBackCount        int                               `json:"ca3_swap_back_count,omitempty"`
+	RecapStatus             string                            `json:"recap_status,omitempty"`
+	GateChecks              int                               `json:"gate_checks,omitempty"`
+	GateDeniedCount         int                               `json:"gate_denied_count,omitempty"`
+	GateTimeoutCount        int                               `json:"gate_timeout_count,omitempty"`
+	GateRuleHitCount        int                               `json:"gate_rule_hit_count,omitempty"`
+	GateRuleLastID          string                            `json:"gate_rule_last_id,omitempty"`
+	AwaitCount              int                               `json:"await_count,omitempty"`
+	ResumeCount             int                               `json:"resume_count,omitempty"`
+	CancelByUserCount       int                               `json:"cancel_by_user_count,omitempty"`
+	CancelPropagated        int                               `json:"cancel_propagated_count,omitempty"`
+	BackpressureDrop        int                               `json:"backpressure_drop_count,omitempty"`
+	BackpressureDropByPhase map[string]int                    `json:"backpressure_drop_count_by_phase,omitempty"`
+	InflightPeak            int                               `json:"inflight_peak,omitempty"`
+	TimelinePhases          map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 
 type TimelinePhaseAggregate struct {
@@ -88,6 +89,32 @@ type TimelinePhaseAggregate struct {
 	SkippedTotal  int   `json:"skipped_total,omitempty"`
 	LatencyMs     int64 `json:"latency_ms,omitempty"`
 	LatencyP95Ms  int64 `json:"latency_p95_ms,omitempty"`
+}
+
+type TimelineTrendMode string
+
+const (
+	TimelineTrendModeLastNRuns  TimelineTrendMode = "last_n_runs"
+	TimelineTrendModeTimeWindow TimelineTrendMode = "time_window"
+)
+
+type TimelineTrendQuery struct {
+	Mode       TimelineTrendMode
+	LastNRuns  int
+	TimeWindow time.Duration
+}
+
+type TimelineTrendRecord struct {
+	Phase         string    `json:"phase"`
+	Status        string    `json:"status"`
+	CountTotal    int       `json:"count_total"`
+	FailedTotal   int       `json:"failed_total"`
+	CanceledTotal int       `json:"canceled_total"`
+	SkippedTotal  int       `json:"skipped_total"`
+	LatencyAvgMs  int64     `json:"latency_avg_ms"`
+	LatencyP95Ms  int64     `json:"latency_p95_ms"`
+	WindowStart   time.Time `json:"window_start"`
+	WindowEnd     time.Time `json:"window_end"`
 }
 
 type SkillRecord struct {
@@ -123,6 +150,7 @@ type Store struct {
 	sklKeys map[string]int
 
 	timelineStates map[string]*timelineRunState
+	trendConfig    TimelineTrendConfig
 }
 
 type timelineRunState struct {
@@ -130,9 +158,25 @@ type timelineRunState struct {
 	runningSince   map[string]time.Time
 	phaseLatencyMs map[string][]int64
 	phases         map[string]TimelinePhaseAggregate
+	buckets        map[string]timelineTrendBucket
 }
 
-func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
+type timelineTrendBucket struct {
+	CountTotal    int
+	FailedTotal   int
+	CanceledTotal int
+	SkippedTotal  int
+	LatencyTotal  int64
+	Latencies     []int64
+}
+
+type TimelineTrendConfig struct {
+	Enabled    bool
+	LastNRuns  int
+	TimeWindow time.Duration
+}
+
+func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig) *Store {
 	if maxCalls <= 0 {
 		maxCalls = 200
 	}
@@ -144,6 +188,12 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
 	}
 	if maxSkills <= 0 {
 		maxSkills = 200
+	}
+	if trend.LastNRuns <= 0 {
+		trend.LastNRuns = 100
+	}
+	if trend.TimeWindow <= 0 {
+		trend.TimeWindow = 15 * time.Minute
 	}
 	return &Store{
 		maxCallRecords:  maxCalls,
@@ -157,6 +207,7 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int) *Store {
 		runKeys:         make(map[string]int, maxRuns),
 		sklKeys:         make(map[string]int, maxSkills),
 		timelineStates:  make(map[string]*timelineRunState, maxRuns),
+		trendConfig:     trend,
 	}
 }
 
@@ -182,6 +233,18 @@ func (d *Store) Resize(maxCalls, maxRuns, maxReloads, maxSkills int) {
 		d.skills = trimTail(d.skills, d.maxSkillRecords)
 		d.rebuildSkillKeys()
 	}
+}
+
+func (d *Store) SetTrendConfig(cfg TimelineTrendConfig) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if cfg.LastNRuns <= 0 {
+		cfg.LastNRuns = 100
+	}
+	if cfg.TimeWindow <= 0 {
+		cfg.TimeWindow = 15 * time.Minute
+	}
+	d.trendConfig = cfg
 }
 
 func (d *Store) AddCall(rec CallRecord) {
@@ -225,6 +288,7 @@ func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts
 			runningSince:   map[string]time.Time{},
 			phaseLatencyMs: map[string][]int64{},
 			phases:         map[string]TimelinePhaseAggregate{},
+			buckets:        map[string]timelineTrendBucket{},
 		}
 		d.timelineStates[runID] = state
 	}
@@ -263,7 +327,31 @@ func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts
 			delete(state.runningSince, phase)
 		}
 		state.phases[phase] = agg
+		state.recordBucket(phase, status, state.phaseLatencyMs[phase])
 	}
+}
+
+func (s *timelineRunState) recordBucket(phase, status string, phaseSamples []int64) {
+	if s == nil {
+		return
+	}
+	key := trendBucketKey(phase, status)
+	b := s.buckets[key]
+	b.CountTotal++
+	switch status {
+	case "failed":
+		b.FailedTotal++
+	case "canceled":
+		b.CanceledTotal++
+	case "skipped":
+		b.SkippedTotal++
+	}
+	if len(phaseSamples) > 0 {
+		lat := phaseSamples[len(phaseSamples)-1]
+		b.LatencyTotal += lat
+		b.Latencies = append(b.Latencies, lat)
+	}
+	s.buckets[key] = b
 }
 
 func (d *Store) AddReload(rec ReloadRecord) {
@@ -297,6 +385,85 @@ func (d *Store) RecentRuns(n int) []RunRecord {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return tailCopy(d.runs, n)
+}
+
+func (d *Store) TimelineTrends(query TimelineTrendQuery) []TimelineTrendRecord {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if !d.trendConfig.Enabled {
+		return []TimelineTrendRecord{}
+	}
+	selected, start, end := d.selectTrendRuns(query)
+	if len(selected) == 0 {
+		return []TimelineTrendRecord{}
+	}
+	type aggState struct {
+		countTotal    int
+		failedTotal   int
+		canceledTotal int
+		skippedTotal  int
+		latencyTotal  int64
+		latencies     []int64
+	}
+	agg := map[string]*aggState{}
+	for _, rec := range selected {
+		runID := strings.TrimSpace(rec.RunID)
+		if runID == "" {
+			continue
+		}
+		state := d.timelineStates[runID]
+		if state == nil {
+			continue
+		}
+		for bucketKey, bucket := range state.buckets {
+			if bucket.CountTotal == 0 {
+				continue
+			}
+			s := agg[bucketKey]
+			if s == nil {
+				s = &aggState{}
+				agg[bucketKey] = s
+			}
+			s.countTotal += bucket.CountTotal
+			s.failedTotal += bucket.FailedTotal
+			s.canceledTotal += bucket.CanceledTotal
+			s.skippedTotal += bucket.SkippedTotal
+			s.latencyTotal += bucket.LatencyTotal
+			if len(bucket.Latencies) > 0 {
+				s.latencies = append(s.latencies, bucket.Latencies...)
+			}
+		}
+	}
+	if len(agg) == 0 {
+		return []TimelineTrendRecord{}
+	}
+	out := make([]TimelineTrendRecord, 0, len(agg))
+	for key, s := range agg {
+		phase, status := splitTrendBucketKey(key)
+		latAvg := int64(0)
+		if s.countTotal > 0 {
+			latAvg = s.latencyTotal / int64(s.countTotal)
+		}
+		out = append(out, TimelineTrendRecord{
+			Phase:         phase,
+			Status:        status,
+			CountTotal:    s.countTotal,
+			FailedTotal:   s.failedTotal,
+			CanceledTotal: s.canceledTotal,
+			SkippedTotal:  s.skippedTotal,
+			LatencyAvgMs:  latAvg,
+			LatencyP95Ms:  percentileP95(s.latencies),
+			WindowStart:   start,
+			WindowEnd:     end,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Phase == out[j].Phase {
+			return out[i].Status < out[j].Status
+		}
+		return out[i].Phase < out[j].Phase
+	})
+	return out
 }
 
 func (d *Store) RecentReloads(n int) []ReloadRecord {
@@ -431,6 +598,67 @@ func (d *Store) timelinePhasesForRun(runID string) map[string]TimelinePhaseAggre
 		out[phase] = agg
 	}
 	return out
+}
+
+func (d *Store) selectTrendRuns(query TimelineTrendQuery) ([]RunRecord, time.Time, time.Time) {
+	if len(d.runs) == 0 {
+		return nil, time.Time{}, time.Time{}
+	}
+	mode := query.Mode
+	if mode == "" {
+		mode = TimelineTrendModeLastNRuns
+	}
+	switch mode {
+	case TimelineTrendModeTimeWindow:
+		window := query.TimeWindow
+		if window <= 0 {
+			window = d.trendConfig.TimeWindow
+		}
+		if window <= 0 {
+			return nil, time.Time{}, time.Time{}
+		}
+		end := d.runs[len(d.runs)-1].Time
+		if end.IsZero() {
+			end = time.Now()
+		}
+		start := end.Add(-window)
+		selected := make([]RunRecord, 0, len(d.runs))
+		for i := range d.runs {
+			ts := d.runs[i].Time
+			if ts.IsZero() {
+				continue
+			}
+			if ts.Before(start) || ts.After(end) {
+				continue
+			}
+			selected = append(selected, d.runs[i])
+		}
+		return selected, start, end
+	default:
+		n := query.LastNRuns
+		if n <= 0 {
+			n = d.trendConfig.LastNRuns
+		}
+		selected := tailCopy(d.runs, n)
+		if len(selected) == 0 {
+			return nil, time.Time{}, time.Time{}
+		}
+		start := selected[0].Time
+		end := selected[len(selected)-1].Time
+		return selected, start, end
+	}
+}
+
+func trendBucketKey(phase, status string) string {
+	return strings.TrimSpace(phase) + "|" + strings.ToLower(strings.TrimSpace(status))
+}
+
+func splitTrendBucketKey(key string) (string, string) {
+	parts := strings.SplitN(key, "|", 2)
+	if len(parts) != 2 {
+		return key, ""
+	}
+	return parts[0], parts[1]
 }
 
 func (d *Store) pruneTimelineStates() {

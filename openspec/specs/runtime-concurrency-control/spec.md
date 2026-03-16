@@ -83,3 +83,17 @@ For equivalent execution inputs and cancellation timing classes, Run and Stream 
 - **WHEN** Run and Stream execute equivalent high-fanout requests that hit concurrency limits
 - **THEN** both paths apply the same configured backpressure policy and preserve consistent fail-fast semantics
 
+### Requirement: Runtime concurrency config SHALL accept drop_low_priority enum
+Runtime MUST treat `drop_low_priority` as a valid enum value for concurrency backpressure configuration in addition to existing modes.
+
+#### Scenario: Config validation accepts drop_low_priority
+- **WHEN** configuration sets `concurrency.backpressure=drop_low_priority`
+- **THEN** runtime validation passes for enum check
+
+### Requirement: Default concurrency backpressure policy SHALL remain block after drop-low-priority scope expansion
+Expanding `drop_low_priority` applicability MUST NOT change the default runtime backpressure behavior. When backpressure mode is not explicitly configured, the runtime SHALL continue using `block` semantics.
+
+#### Scenario: Runtime starts without explicit backpressure config
+- **WHEN** concurrency config omits backpressure mode
+- **THEN** runtime behavior remains `block` and no low-priority dropping is applied
+

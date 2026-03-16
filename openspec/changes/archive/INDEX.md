@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-16 13:03:07
+Updated: 2026-03-16 15:35:06
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -29,3 +29,7 @@ Updated: 2026-03-16 13:03:07
 - 025 -> introduce-action-gate-parameter-schema-rules-h4
 - 026 -> harden-runner-cancel-storm-and-backpressure-baseline-r5
 - 027 -> introduce-skill-trigger-scoring-and-contract-tests-d1
+- 028 -> introduce-drop-low-priority-backpressure-r6
+- 029 -> establish-open-source-p0-governance-baseline
+- 030 -> extend-drop-low-priority-backpressure-to-mcp-and-skill-r7
+- 031 -> add-cross-run-timeline-trend-aggregation-h16

@@ -71,6 +71,123 @@ func TestConcurrencyCancelPropagationValidationRejectsInvalidValue(t *testing.T)
 	}
 }
 
+func TestConcurrencyBackpressureAllowsDropLowPriority(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Concurrency.Backpressure = types.BackpressureDropLowPriority
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate failed for drop_low_priority: %v", err)
+	}
+}
+
+func TestMCPProfileBackpressureRejectsDropLowPriority(t *testing.T) {
+	cfg := DefaultConfig()
+	p := cfg.MCP.Profiles[ProfileDefault]
+	p.Backpressure = types.BackpressureDropLowPriority
+	cfg.MCP.Profiles[ProfileDefault] = p
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mcp profile backpressure drop_low_priority")
+	}
+}
+
+func TestConcurrencyDropLowPriorityDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if len(cfg.Concurrency.DropLowPriority.DroppablePriorities) != 1 || cfg.Concurrency.DropLowPriority.DroppablePriorities[0] != DropPriorityLow {
+		t.Fatalf("droppable_priorities = %#v, want [low]", cfg.Concurrency.DropLowPriority.DroppablePriorities)
+	}
+}
+
+func TestConcurrencyDropLowPriorityEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_CONCURRENCY_DROP_LOW_PRIORITY_DROPPABLE_PRIORITIES", "low,normal")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+concurrency:
+  backpressure: drop_low_priority
+  drop_low_priority:
+    priority_by_tool:
+      local.search: low
+    priority_by_keyword:
+      cache: low
+    droppable_priorities: [low]
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Concurrency.Backpressure != types.BackpressureDropLowPriority {
+		t.Fatalf("backpressure = %q, want drop_low_priority", cfg.Concurrency.Backpressure)
+	}
+	if len(cfg.Concurrency.DropLowPriority.DroppablePriorities) != 2 {
+		t.Fatalf("droppable_priorities = %#v", cfg.Concurrency.DropLowPriority.DroppablePriorities)
+	}
+}
+
+func TestConcurrencyDropLowPriorityValidateRejectsInvalidPriority(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Concurrency.DropLowPriority.DroppablePriorities = []string{"critical"}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid droppable priority")
+	}
+	cfg = DefaultConfig()
+	cfg.Concurrency.DropLowPriority.PriorityByTool = map[string]string{"local.search": "critical"}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid priority_by_tool value")
+	}
+}
+
+func TestDiagnosticsTimelineTrendDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Diagnostics.TimelineTrend.Enabled {
+		t.Fatal("diagnostics.timeline_trend.enabled = false, want true")
+	}
+	if cfg.Diagnostics.TimelineTrend.LastNRuns != 100 {
+		t.Fatalf("diagnostics.timeline_trend.last_n_runs = %d, want 100", cfg.Diagnostics.TimelineTrend.LastNRuns)
+	}
+	if cfg.Diagnostics.TimelineTrend.TimeWindow != 15*time.Minute {
+		t.Fatalf("diagnostics.timeline_trend.time_window = %v, want 15m", cfg.Diagnostics.TimelineTrend.TimeWindow)
+	}
+}
+
+func TestDiagnosticsTimelineTrendEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_DIAGNOSTICS_TIMELINE_TREND_LAST_N_RUNS", "42")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+diagnostics:
+  timeline_trend:
+    enabled: true
+    last_n_runs: 7
+    time_window: 20m
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Diagnostics.TimelineTrend.LastNRuns != 42 {
+		t.Fatalf("diagnostics.timeline_trend.last_n_runs = %d, want 42", cfg.Diagnostics.TimelineTrend.LastNRuns)
+	}
+	if cfg.Diagnostics.TimelineTrend.TimeWindow != 20*time.Minute {
+		t.Fatalf("diagnostics.timeline_trend.time_window = %v, want 20m", cfg.Diagnostics.TimelineTrend.TimeWindow)
+	}
+}
+
+func TestDiagnosticsTimelineTrendValidationRejectsInvalidValue(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Diagnostics.TimelineTrend.LastNRuns = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.timeline_trend.last_n_runs")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.TimelineTrend.TimeWindow = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.timeline_trend.time_window")
+	}
+}
+
 func TestValidateFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	p := cfg.MCP.Profiles[ProfileDefault]

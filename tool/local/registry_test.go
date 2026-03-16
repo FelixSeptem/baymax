@@ -171,3 +171,118 @@ mcp:
 		t.Fatalf("unexpected diagnostics call: %#v", items[0])
 	}
 }
+
+func TestDispatcherDropLowPriorityDropsConfiguredLowCalls(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "slow",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(8 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	calls := []types.ToolCall{
+		{CallID: "c1", Name: "local.slow", Args: map[string]any{"q": "normal task"}},
+		{CallID: "c2", Name: "local.slow", Args: map[string]any{"q": "cache warmup low"}},
+	}
+	outcomes, err := dispatcher.Dispatch(context.Background(), calls, DispatchConfig{
+		MaxCalls:     2,
+		Concurrency:  1,
+		QueueSize:    1,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityLow},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if outcomes[1].Result.Error == nil {
+		t.Fatalf("expected second call dropped, got %#v", outcomes[1])
+	}
+	if outcomes[1].Result.Error.Details["drop_reason"] != "low_priority_dropped" {
+		t.Fatalf("unexpected drop details: %#v", outcomes[1].Result.Error.Details)
+	}
+	if outcomes[1].Result.Error.Details["dispatch_phase"] != string(types.ActionPhaseTool) {
+		t.Fatalf("dispatch_phase = %#v, want %q", outcomes[1].Result.Error.Details["dispatch_phase"], types.ActionPhaseTool)
+	}
+}
+
+func TestDispatcherDropLowPriorityKeepsNonDroppableCalls(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "slow",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(5 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	calls := []types.ToolCall{
+		{CallID: "c1", Name: "local.slow", Args: map[string]any{"q": "high"}},
+		{CallID: "c2", Name: "local.slow", Args: map[string]any{"q": "high"}},
+	}
+	outcomes, err := dispatcher.Dispatch(context.Background(), calls, DispatchConfig{
+		MaxCalls:     2,
+		Concurrency:  1,
+		QueueSize:    1,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"high": runtimeconfig.DropPriorityHigh},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if outcomes[0].Result.Error != nil || outcomes[1].Result.Error != nil {
+		t.Fatalf("expected non-droppable calls to execute, got %#v", outcomes)
+	}
+}
+
+func TestDispatcherDropLowPriorityMarksMCPAndSkillPhase(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "mcp_proxy",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(5 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	_, _ = reg.Register(&fakeTool{
+		name: "skill_router",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			time.Sleep(5 * time.Millisecond)
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	calls := []types.ToolCall{
+		{CallID: "m1", Name: "local.mcp_proxy", Args: map[string]any{"q": "cache"}},
+		{CallID: "s1", Name: "local.skill_router", Args: map[string]any{"q": "cache"}},
+	}
+	outcomes, err := dispatcher.Dispatch(context.Background(), calls, DispatchConfig{
+		MaxCalls:     2,
+		Concurrency:  1,
+		QueueSize:    1,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityLow},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if outcomes[0].Result.Error == nil || outcomes[1].Result.Error == nil {
+		t.Fatalf("expected both calls dropped, got %#v", outcomes)
+	}
+	if outcomes[0].Result.Error.Details["dispatch_phase"] != string(types.ActionPhaseMCP) {
+		t.Fatalf("first dispatch_phase = %#v, want %q", outcomes[0].Result.Error.Details["dispatch_phase"], types.ActionPhaseMCP)
+	}
+	if outcomes[1].Result.Error.Details["dispatch_phase"] != string(types.ActionPhaseSkill) {
+		t.Fatalf("second dispatch_phase = %#v, want %q", outcomes[1].Result.Error.Details["dispatch_phase"], types.ActionPhaseSkill)
+	}
+}

@@ -432,3 +432,92 @@ Runtime MUST validate skill trigger scoring configuration during startup and hot
 - **WHEN** configuration contains malformed or duplicate-conflicting keyword weights
 - **THEN** runtime returns validation error and does not activate the snapshot
 
+### Requirement: Runtime SHALL expose drop_low_priority policy rules and drop-set controls in config
+Runtime configuration MUST expose policy fields for `drop_low_priority` behavior, including rule-based low-priority matching and configurable droppable-priority set controls.
+
+#### Scenario: Startup with drop policy rules from file and env
+- **WHEN** drop policy fields are set in YAML and overridden by environment variables
+- **THEN** effective configuration resolves with precedence `env > file > default`
+
+#### Scenario: Invalid drop policy config
+- **WHEN** droppable-priority set or rule enum contains unsupported value
+- **THEN** runtime fails fast and rejects startup/hot-reload activation
+
+### Requirement: Runtime diagnostics SHALL expose drop_low_priority outcome semantics
+Runtime diagnostics MUST expose backpressure drop outcomes with semantically consistent counters and reason mapping aligned to timeline events.
+
+#### Scenario: Consumer inspects drop outcomes
+- **WHEN** a run triggers low-priority drops under queue pressure
+- **THEN** diagnostics include non-zero drop counters and timeline correlation with `backpressure.drop_low_priority`
+
+### Requirement: Diagnostics SHALL expose drop-low-priority counts by dispatch phase
+Runtime diagnostics MUST expose low-priority drop counts with source buckets for `local`, `mcp`, and `skill`, while preserving existing aggregate drop count semantics for compatibility.
+
+#### Scenario: Mixed drops across multiple dispatch paths
+- **WHEN** low-priority drops occur in local, mcp, and skill within recent runs
+- **THEN** diagnostics include per-phase bucket counts and an aggregate count consistent with bucket totals
+
+#### Scenario: Existing diagnostics consumer reads aggregate only
+- **WHEN** a consumer reads only existing aggregate drop count fields
+- **THEN** diagnostics remain backward-compatible and do not require consumer changes
+
+### Requirement: Drop-low-priority configuration semantics SHALL remain unified across dispatch paths
+The runtime configuration contract for drop-low-priority MUST use one shared rule model across local, mcp, and skill paths.
+
+#### Scenario: Rule is configured by tool and keyword
+- **WHEN** `priority_by_tool` and `priority_by_keyword` are configured
+- **THEN** the same rules are applied regardless of whether call is local, mcp, or skill
+
+### Requirement: Runtime SHALL expose cross-run timeline trend configuration with deterministic precedence
+Runtime configuration MUST expose cross-run Action Timeline trend aggregation controls with precedence `env > file > default`.
+
+The minimum configuration set MUST include:
+- enable switch (default enabled),
+- `last_n_runs` window size (default `100`),
+- `time_window` duration (default `15m`).
+
+Invalid values MUST fail fast during startup and hot reload.
+
+#### Scenario: Startup with default trend configuration
+- **WHEN** runtime starts without trend-specific overrides
+- **THEN** cross-run trend aggregation is enabled with `last_n_runs=100` and `time_window=15m`
+
+#### Scenario: Startup with file and environment trend overrides
+- **WHEN** trend fields are configured in both YAML and environment variables
+- **THEN** effective trend settings resolve with `env > file > default`
+
+#### Scenario: Invalid trend window configuration
+- **WHEN** `last_n_runs` is non-positive or `time_window` is invalid
+- **THEN** runtime rejects startup or hot reload snapshot with fail-fast validation error
+
+### Requirement: Runtime diagnostics SHALL expose cross-run timeline trend aggregates
+Runtime diagnostics API MUST expose cross-run timeline trend aggregates using both `last_n_runs` and `time_window` selection modes.
+
+Trend aggregates MUST support `phase + status` dimensions and MUST include at least:
+- `count_total`
+- `failed_total`
+- `canceled_total`
+- `skipped_total`
+- `latency_avg_ms`
+- `latency_p95_ms`
+- `window_start`
+- `window_end`
+
+The capability MUST be additive and MUST NOT break existing run-level diagnostics consumers.
+
+#### Scenario: Consumer queries trends with last_n_runs mode
+- **WHEN** application queries trend diagnostics using `last_n_runs`
+- **THEN** runtime returns bounded `phase + status` aggregates over the most recent N runs with required metric fields
+
+#### Scenario: Consumer queries trends with time_window mode
+- **WHEN** application queries trend diagnostics using `time_window`
+- **THEN** runtime returns bounded `phase + status` aggregates over runs inside the time window with required metric fields
+
+#### Scenario: Consumer reads existing run-level diagnostics only
+- **WHEN** existing integrations continue reading legacy run-level fields
+- **THEN** diagnostics remain backward-compatible without requiring consumer changes
+
+#### Scenario: Consumer queries trends for empty window
+- **WHEN** selected window has no eligible run samples
+- **THEN** runtime returns an empty aggregate set and does not fabricate metrics
+

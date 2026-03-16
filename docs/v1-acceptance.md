@@ -15,6 +15,7 @@
 - Runner performs model-step capability preflight and deterministic provider fallback by configured order; exhausted candidates fail fast with normalized model error.
 - Runtime config supports YAML + env + default precedence (`env > file > default`) with startup fail-fast validation.
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
+- Runtime diagnostics expose cross-run Action Timeline trend API with both `last_n_runs` and `time_window` modes.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Runtime config exposes `skill.trigger_scoring.*` with `env > file > default` precedence and fail-fast validation.
@@ -27,7 +28,10 @@
 - Clarification HITL H3 is enabled with native `await_user -> resumed -> canceled_by_user` lifecycle, structured `clarification_request` payload, and Run/Stream equivalent timeout-cancel behavior.
 - Action Gate H4 parameter-schema rules are enabled with operator + composite conditions (`AND/OR`), deterministic priority over keyword/tool decisions, and Run/Stream semantic equivalence.
 - Runner concurrency baseline R5 uses default `block` backpressure and exposes `cancel.propagated` / `backpressure.block` timeline reason semantics.
-- Run diagnostics include concurrency baseline fields `cancel_propagated_count`, `backpressure_drop_count`, and `inflight_peak`.
+- Runtime supports optional `drop_low_priority` backpressure for `local + mcp + skill` dispatch semantics with timeline reason `backpressure.drop_low_priority`.
+- Under `drop_low_priority`, a dispatch phase round with all calls dropped fails fast and preserves Run/Stream terminal semantic consistency.
+- Run diagnostics include concurrency baseline fields `cancel_propagated_count`, `backpressure_drop_count`, `backpressure_drop_count_by_phase`, and `inflight_peak`.
+- Timeline trend output is grouped by `phase+status` and includes `count_total`, `failed_total`, `canceled_total`, `skipped_total`, `latency_avg_ms`, and `latency_p95_ms`.
 - Runtime concurrency config includes `concurrency.cancel_propagation_timeout` with fail-fast validation and `env > file > default` precedence.
 - Cancel-storm benchmark output includes both `p95-ns/op` and `goroutine-peak` signals for regression comparison.
 - R3 advanced tutorial examples (`05` to `08`) are present, runnable, and aligned with README/docs pattern navigation.
@@ -50,4 +54,3 @@
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
 - Action Gate H2 当前仍仅覆盖执行前确认（tool name + keyword）；参数 schema 风险规则留作后续迭代。
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。
-- Backpressure `drop_low_priority` 为后续扩展 TODO，本期仅支持 `block|reject` 行为语义。

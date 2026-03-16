@@ -9,6 +9,35 @@
 - 可运维性（配置、观测、调试工具）
 - 可扩展性（模型/工具/MCP/技能生态）
 
+## Open Source P0（仅保留最重要项）
+
+目标：以最小成本满足“可被外部团队安全使用与协作”的开源基线。
+
+### P0-1 发布与兼容承诺
+- 统一版本策略（SemVer）与升级兼容承诺（含 breaking change 说明规则）。
+- 明确 Go 版本支持窗口与 provider 支持级别。
+- 在 README + docs 保持单一口径，不出现冲突描述。
+
+验收标准：
+- 可按固定模板发布一个规范版本（含 changelog/release notes）。
+- 外部用户可明确判断“能否升级、升级风险是什么”。
+
+### P0-2 安全响应入口
+- 增加 `SECURITY.md`，定义漏洞报告渠道、响应时限、修复与披露流程。
+- 保持 `govulncheck` 质量门禁为默认强制路径。
+
+验收标准：
+- 安全问题具备可执行、可追踪的响应流程。
+- 主干 CI 对安全基线失败可阻断合并。
+
+### P0-3 贡献与评审最小闭环
+- 增加 `CONTRIBUTING.md` 与 Issue/PR 模板。
+- 补齐最小评审清单（测试、文档同步、兼容性影响）。
+
+验收标准：
+- 外部贡献者可独立完成一次标准提交流程。
+- 维护者可按清单执行一致化评审。
+
 ## 阶段规划
 
 ## Phase R1（2-4 周）稳定化与发布准备
@@ -91,10 +120,13 @@
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
+- [x] `add-cross-run-timeline-trend-aggregation-h16`：完成跨 run 窗口趋势聚合（`last_n_runs` + `time_window`），支持 `phase+status` 双维度与 `latency_p95_ms` 指标。
 - [x] `implement-context-assembler-ca3-memory-pressure-and-recovery`：完成 CA3 内存压力控制与恢复（五级分区、双阈值触发、squash/prune、spill/swap、Run/Stream 语义一致、CA3 诊断字段）。
 - [x] `implement-context-assembler-ca4-production-convergence`：完成 CA4 生产收敛（阈值解析顺序、token 计数固定回退、Run/Stream 契约增强、CA4 benchmark 门禁）。
 - [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
+- [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。
+- [x] `extend-drop-low-priority-backpressure-to-mcp-and-skill-r7`：将 `drop_low_priority` 语义扩展到 `local+mcp+skill`，补齐分桶诊断、跨路径 fail-fast 与契约/benchmark 收敛。
 
 ### 目标
 - 降低新接入成本，增强外部集成能力。
@@ -122,7 +154,7 @@
   - 增加统一动作状态语义（`pending/running/succeeded/failed/skipped/canceled`）。
   - 增加 step/phase 关联字段规范，支持前端稳定渲染执行路径。
   - 已完成 H1.5：phase 级聚合字段收敛到 diagnostics 契约。
-  - TODO：按需要补充跨 run 趋势聚合与窗口化指标。
+  - 已完成 H16：跨 run 趋势聚合与窗口化指标（库接口，默认启用，兼容增量字段）。
 - 提供最小 CLI 示例（本地调试和回放）。
 - 交付 R3 高阶示例：`05-parallel-tools-fanout`、`06-async-job-progress`、`07-multi-agent-async-channel`、`08-multi-agent-network-bridge`。
   - TODO：结合 CA2 增加 staged context 路由示例（本提案不新增 example 代码）。
@@ -243,6 +275,7 @@
 
 - H1（R3 前半，已完成）：交付 Action Timeline 标准化与字段规范，不改 runner 主状态机。
 - H1.5（R3-R4，已完成）：补齐 timeline 聚合可观测字段（phase 级计数/耗时/失败率）并与 diagnostics 契约对齐。
+- H16（R4，已完成）：补齐跨 run 趋势聚合（`last_n_runs|time_window`）与 `phase+status` 双维度指标，保持 Run/Stream 语义一致与幂等统计。
 - H2（R3 后半，已完成）：引入 Action Gate（执行前确认钩子），默认 `require_confirm`、timeout-deny、Run/Stream 语义一致，并收敛最小诊断字段（`gate_checks/gate_denied_count/gate_timeout_count`）。
 - H3（R4，已完成）：引入原生 clarification 生命周期（`await_user` / `resumed` / `canceled_by_user`），默认超时策略 `cancel_by_user`，并完成 Run/Stream 契约测试与诊断字段（`await_count/resume_count/cancel_by_user_count`）。
 - H4（R4，已完成）：引入 Action Gate 参数规则（`path/operator/expected` + `AND/OR` 复合条件），支持规则 action 继承与优先级收敛（参数规则优先），新增 `gate.rule_match` reason 与最小诊断字段（`gate_rule_hit_count/gate_rule_last_id`）。
@@ -267,7 +300,6 @@
 - 多环境配置管理（开发/测试/生产）差异项收敛与模板化。
 - 完善 godoc 注释与代码示例覆盖率（与 DX Track 对齐）。
 - CA2 external retriever 观测增强：按 `docs/ca2-external-retriever-evolution.md` 收敛指标口径与触发阈值配置。
-- TODO（并发策略演进）：在具备稳定优先级模型后评估 `drop_low_priority` 背压策略接入（当前保持 `block|reject`）。
 
 ## 性能与并发安全基线
 

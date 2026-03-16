@@ -41,16 +41,25 @@ mcp:
 concurrency:
   local_max_workers: 8
   local_queue_size: 32
-  backpressure: block # block|reject
+  backpressure: block # block|reject|drop_low_priority
   cancel_propagation_timeout: 1500ms # 取消传播收敛超时，必须 > 0
-
-# TODO: `drop_low_priority` 策略预留为后续扩展，本期不启用。
+  drop_low_priority:
+    priority_by_tool:
+      local.search: low
+    priority_by_keyword:
+      cache: low
+      warmup: low
+    droppable_priorities: [low] # low|normal|high
 
 diagnostics:
   max_call_records: 200
   max_run_records: 200
   max_reload_errors: 100
   max_skill_records: 200
+  timeline_trend:
+    enabled: true
+    last_n_runs: 100
+    time_window: 15m
 
 reload:
   enabled: true
@@ -226,6 +235,17 @@ Skill trigger scoring 校验语义：
 4. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效）。
 
+drop_low_priority 校验语义：
+1. `concurrency.backpressure=drop_low_priority` 在 `local + mcp + skill` 调度语义上统一生效。
+2. `concurrency.drop_low_priority.droppable_priorities` 必须非空，且值仅允许 `low|normal|high`。
+3. `priority_by_tool` 与 `priority_by_keyword` 的 value 仅允许 `low|normal|high`。
+4. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效）。
+
+timeline_trend 校验语义：
+1. `diagnostics.timeline_trend.last_n_runs` 必须 `> 0`。
+2. `diagnostics.timeline_trend.time_window` 必须 `> 0`。
+3. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 ## 使用示例（最小）
 
 ```go
@@ -253,6 +273,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentRuns(n)`：最近 N 次 run 摘要。
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
 - `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
+- `Manager.TimelineTrends(query)`：跨 run Action Timeline 趋势聚合（窗口模式：`last_n_runs|time_window`）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
@@ -346,6 +367,30 @@ client := httpmcp.NewClient(httpmcp.Config{
 - 聚合维度为“单 run 内按 phase 聚合”。
 - 同一 run 的 timeline 重放按 `sequence+phase+status` 去重，不重复累计。
 
+### 诊断新增字段（Action Timeline H16 趋势聚合）
+
+`Manager.TimelineTrends(query)` 返回跨 run 趋势记录，最小字段：
+
+- `phase`：阶段维度（`run|context_assembler|model|tool|mcp|skill|hitl`）。
+- `status`：状态维度（`pending|running|succeeded|failed|skipped|canceled`）。
+- `count_total`：窗口内该 bucket 的终态计数。
+- `failed_total`：窗口内失败计数。
+- `canceled_total`：窗口内取消计数。
+- `skipped_total`：窗口内跳过计数。
+- `latency_avg_ms`：窗口内平均耗时（毫秒）。
+- `latency_p95_ms`：窗口内 P95 耗时（毫秒）。
+- `window_start`：查询窗口起始时间。
+- `window_end`：查询窗口结束时间。
+
+窗口模式：
+- `last_n_runs`：按最近 N 条 run 记录聚合（默认 `N=100`）。
+- `time_window`：按最近时间窗口聚合（默认 `15m`）。
+
+语义约束：
+- 趋势聚合默认启用，可通过 `diagnostics.timeline_trend.enabled` 关闭。
+- 空窗口返回空集合，不伪造统计。
+- 复用 single-writer + idempotency 口径，replay/duplicate 不重复累计。
+
 ### Run 诊断新增字段（Action Gate H2）
 
 - `gate_checks`：本次 run 触发的 gate 检查次数（高风险规则命中计数）。
@@ -358,6 +403,7 @@ Action Timeline reason code（gate 相关）：
 - `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
 - `gate.timeout`：确认超时后拒绝（timeout-deny）。
 - `backpressure.block`：命中 block 背压排队路径（用于并发基线可观测）。
+- `backpressure.drop_low_priority`：命中 drop_low_priority 背压丢弃路径（`local|mcp|skill` 统一语义）。
 - `cancel.propagated`：父上下文取消已传播到当前执行分支（Run/Stream 对齐）。
 
 Action Gate 规则优先级（H4）：
@@ -374,7 +420,8 @@ Action Gate 规则优先级（H4）：
 ### Run 诊断新增字段（并发基线 R5）
 
 - `cancel_propagated_count`：本次 run 内取消传播生效次数（非负整数）。
-- `backpressure_drop_count`：本次 run 背压丢弃次数（`block` 策略下应为 `0`）。
+- `backpressure_drop_count`：本次 run 背压丢弃次数（`block` 策略下应为 `0`，`drop_low_priority` 可大于 `0`）。
+- `backpressure_drop_count_by_phase`：本次 run 背压丢弃分桶计数（`local|mcp|skill`）。
 - `inflight_peak`：本次 run 观测到的在途并发峰值（run 级）。
 
 ### Run 诊断新增字段（HITL Clarification H3）
@@ -405,10 +452,6 @@ Action Timeline reason code（H3 相关）：
 - run 状态：`success | failed`
 - skill 状态：`success | warning | failed`
 - 错误分类：沿用 `types.ErrorClass` 语义（如 `ErrModel`、`ErrTool`、`ErrSkill`、`ErrSecurity`）
-
-### TODO（后续演进）
-
-- H1.5 已完成 phase 级聚合；后续可按需要补充跨 run 维度聚合（窗口化趋势、分位线面板等）并保持库接口优先。
 
 ## 安全基线（S1）
 

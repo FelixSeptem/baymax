@@ -1307,6 +1307,21 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.CompactionQualityReason != "" {
 		payload["ca3_compaction_quality_reason"] = meta.Assemble.Stage.CompactionQualityReason
 	}
+	if meta.Assemble.Stage.CompactionEmbeddingProvider != "" {
+		payload["ca3_compaction_embedding_provider"] = meta.Assemble.Stage.CompactionEmbeddingProvider
+	}
+	if meta.Assemble.Stage.CompactionEmbeddingSimilarity > 0 {
+		payload["ca3_compaction_embedding_similarity"] = meta.Assemble.Stage.CompactionEmbeddingSimilarity
+	}
+	if meta.Assemble.Stage.CompactionEmbeddingContribution > 0 {
+		payload["ca3_compaction_embedding_contribution"] = meta.Assemble.Stage.CompactionEmbeddingContribution
+	}
+	if meta.Assemble.Stage.CompactionEmbeddingStatus != "" {
+		payload["ca3_compaction_embedding_status"] = meta.Assemble.Stage.CompactionEmbeddingStatus
+	}
+	if meta.Assemble.Stage.CompactionEmbeddingFallbackReason != "" {
+		payload["ca3_compaction_embedding_fallback_reason"] = meta.Assemble.Stage.CompactionEmbeddingFallbackReason
+	}
 	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
 		payload["ca3_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 	}

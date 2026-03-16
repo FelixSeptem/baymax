@@ -41,6 +41,8 @@ type Assembler struct {
 	ca3State        map[string]*ca3RunState
 	spillBackend    SpillBackend
 	spillBackendKey string
+	embeddingScorer SemanticEmbeddingScorer
+	embeddingKey    string
 }
 
 type Option func(*Assembler)
@@ -50,6 +52,13 @@ func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedaction
 		if provider != nil {
 			a.redactionCfgProvider = provider
 		}
+	}
+}
+
+func WithSemanticEmbeddingScorer(key string, scorer SemanticEmbeddingScorer) Option {
+	return func(a *Assembler) {
+		a.embeddingKey = strings.TrimSpace(key)
+		a.embeddingScorer = scorer
 	}
 }
 

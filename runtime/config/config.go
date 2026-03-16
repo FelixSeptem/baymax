@@ -354,8 +354,27 @@ type ContextAssemblerCA3SemanticTemplateConfig struct {
 }
 
 type ContextAssemblerCA3CompactionEmbeddingConfig struct {
-	Enabled  bool   `json:"enabled"`
-	Selector string `json:"selector"`
+	Enabled          bool                                            `json:"enabled"`
+	Selector         string                                          `json:"selector"`
+	Provider         string                                          `json:"provider"`
+	Model            string                                          `json:"model"`
+	Timeout          time.Duration                                   `json:"timeout"`
+	SimilarityMetric string                                          `json:"similarity_metric"`
+	RuleWeight       float64                                         `json:"rule_weight"`
+	EmbeddingWeight  float64                                         `json:"embedding_weight"`
+	Auth             ContextAssemblerCA3EmbeddingAuthConfig          `json:"auth"`
+	ProviderAuth     ContextAssemblerCA3EmbeddingProviderAuthsConfig `json:"provider_auth"`
+}
+
+type ContextAssemblerCA3EmbeddingAuthConfig struct {
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url"`
+}
+
+type ContextAssemblerCA3EmbeddingProviderAuthsConfig struct {
+	OpenAI    ContextAssemblerCA3EmbeddingAuthConfig `json:"openai"`
+	Gemini    ContextAssemblerCA3EmbeddingAuthConfig `json:"gemini"`
+	Anthropic ContextAssemblerCA3EmbeddingAuthConfig `json:"anthropic"`
 }
 
 type ContextAssemblerCA3CompactionEvidenceConfig struct {
@@ -599,8 +618,16 @@ func DefaultConfig() Config {
 						AllowedPlaceholders: []string{"input", "source", "max_runes", "model", "messages_count"},
 					},
 					Embedding: ContextAssemblerCA3CompactionEmbeddingConfig{
-						Enabled:  false,
-						Selector: "",
+						Enabled:          false,
+						Selector:         "",
+						Provider:         "openai",
+						Model:            "text-embedding-3-small",
+						Timeout:          800 * time.Millisecond,
+						SimilarityMetric: "cosine",
+						RuleWeight:       0.7,
+						EmbeddingWeight:  0.3,
+						Auth:             ContextAssemblerCA3EmbeddingAuthConfig{},
+						ProviderAuth:     ContextAssemblerCA3EmbeddingProviderAuthsConfig{},
 					},
 					Evidence: ContextAssemblerCA3CompactionEvidenceConfig{
 						Keywords:     []string{"decision", "constraint", "todo", "risk"},
@@ -1168,8 +1195,38 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 	if err := validateSemanticTemplate(cfg.Compaction.SemanticTemplate); err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Compaction.Embedding.Selector) == "" && cfg.Compaction.Embedding.Enabled {
-		return errors.New("context_assembler.ca3.compaction.embedding.selector is required when embedding.enabled=true")
+	embedding := cfg.Compaction.Embedding
+	if strings.TrimSpace(embedding.SimilarityMetric) == "" {
+		embedding.SimilarityMetric = "cosine"
+	}
+	if !strings.EqualFold(strings.TrimSpace(embedding.SimilarityMetric), "cosine") {
+		return fmt.Errorf("context_assembler.ca3.compaction.embedding.similarity_metric must be cosine, got %q", cfg.Compaction.Embedding.SimilarityMetric)
+	}
+	if embedding.RuleWeight < 0 || embedding.RuleWeight > 1 {
+		return errors.New("context_assembler.ca3.compaction.embedding.rule_weight must be in [0,1]")
+	}
+	if embedding.EmbeddingWeight < 0 || embedding.EmbeddingWeight > 1 {
+		return errors.New("context_assembler.ca3.compaction.embedding.embedding_weight must be in [0,1]")
+	}
+	if (embedding.RuleWeight + embedding.EmbeddingWeight) <= 0 {
+		return errors.New("context_assembler.ca3.compaction.embedding.rule_weight + embedding.embedding_weight must be > 0")
+	}
+	if embedding.Enabled {
+		if strings.TrimSpace(embedding.Selector) == "" {
+			return errors.New("context_assembler.ca3.compaction.embedding.selector is required when embedding.enabled=true")
+		}
+		provider := strings.ToLower(strings.TrimSpace(embedding.Provider))
+		switch provider {
+		case "openai", "gemini", "anthropic":
+		default:
+			return fmt.Errorf("context_assembler.ca3.compaction.embedding.provider must be one of [openai,gemini,anthropic], got %q", cfg.Compaction.Embedding.Provider)
+		}
+		if strings.TrimSpace(embedding.Model) == "" {
+			return errors.New("context_assembler.ca3.compaction.embedding.model is required when embedding.enabled=true")
+		}
+		if embedding.Timeout <= 0 {
+			return errors.New("context_assembler.ca3.compaction.embedding.timeout must be > 0 when embedding.enabled=true")
+		}
 	}
 	if cfg.Compaction.Evidence.RecentWindow < 0 {
 		return errors.New("context_assembler.ca3.compaction.evidence.recent_window must be >= 0")
@@ -1357,6 +1414,20 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.compaction.semantic_template.allowed_placeholders", base.ContextAssembler.CA3.Compaction.SemanticTemplate.AllowedPlaceholders)
 	v.SetDefault("context_assembler.ca3.compaction.embedding.enabled", base.ContextAssembler.CA3.Compaction.Embedding.Enabled)
 	v.SetDefault("context_assembler.ca3.compaction.embedding.selector", base.ContextAssembler.CA3.Compaction.Embedding.Selector)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider", base.ContextAssembler.CA3.Compaction.Embedding.Provider)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.model", base.ContextAssembler.CA3.Compaction.Embedding.Model)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.timeout", base.ContextAssembler.CA3.Compaction.Embedding.Timeout)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.similarity_metric", base.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.rule_weight", base.ContextAssembler.CA3.Compaction.Embedding.RuleWeight)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.embedding_weight", base.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.auth.api_key", base.ContextAssembler.CA3.Compaction.Embedding.Auth.APIKey)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.auth.base_url", base.ContextAssembler.CA3.Compaction.Embedding.Auth.BaseURL)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.openai.api_key", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.OpenAI.APIKey)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.openai.base_url", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.OpenAI.BaseURL)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.gemini.api_key", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.APIKey)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.gemini.base_url", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.BaseURL)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.api_key", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.APIKey)
+	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.base_url", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.BaseURL)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.keywords", base.ContextAssembler.CA3.Compaction.Evidence.Keywords)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.recent_window", base.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
@@ -1470,6 +1541,20 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.AllowedPlaceholders = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.semantic_template.allowed_placeholders"))
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = v.GetBool("context_assembler.ca3.compaction.embedding.enabled")
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.selector"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Provider = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider")))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Model = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.model"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout = v.GetDuration("context_assembler.ca3.compaction.embedding.timeout")
+	cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.similarity_metric")))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.RuleWeight = v.GetFloat64("context_assembler.ca3.compaction.embedding.rule_weight")
+	cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight = v.GetFloat64("context_assembler.ca3.compaction.embedding.embedding_weight")
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Auth.APIKey = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.auth.api_key"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Auth.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.auth.base_url"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.OpenAI.APIKey = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.openai.api_key"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.OpenAI.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.openai.base_url"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.APIKey = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.gemini.api_key"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.gemini.base_url"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.APIKey = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.api_key"))
+	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.base_url"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.Keywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.evidence.keywords"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow = v.GetInt("context_assembler.ca3.compaction.evidence.recent_window")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))

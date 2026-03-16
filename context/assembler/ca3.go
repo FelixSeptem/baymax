@@ -175,6 +175,11 @@ func (a *Assembler) applyCA3(
 	fallbackReason := ""
 	qualityScore := 0.0
 	qualityReason := ""
+	embeddingProvider := ""
+	embeddingSimilarity := 0.0
+	embeddingContribution := 0.0
+	embeddingStatus := ""
+	embeddingFallbackReason := ""
 	retainedEvidenceCount := 0
 
 	switch zone {
@@ -191,6 +196,11 @@ func (a *Assembler) applyCA3(
 			fallbackReason = compaction.FallbackReason
 			qualityScore = compaction.QualityScore
 			qualityReason = compaction.QualityReason
+			embeddingProvider = compaction.EmbeddingProvider
+			embeddingSimilarity = compaction.EmbeddingSimilarity
+			embeddingContribution = compaction.EmbeddingContribution
+			embeddingStatus = compaction.EmbeddingStatus
+			embeddingFallbackReason = compaction.EmbeddingFallbackReason
 		}
 	case ca3ZoneDanger:
 		if cfg.CA3.Squash.Enabled {
@@ -205,6 +215,11 @@ func (a *Assembler) applyCA3(
 			fallbackReason = compaction.FallbackReason
 			qualityScore = compaction.QualityScore
 			qualityReason = compaction.QualityReason
+			embeddingProvider = compaction.EmbeddingProvider
+			embeddingSimilarity = compaction.EmbeddingSimilarity
+			embeddingContribution = compaction.EmbeddingContribution
+			embeddingStatus = compaction.EmbeddingStatus
+			embeddingFallbackReason = compaction.EmbeddingFallbackReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			var pruned []spillRecord
@@ -224,6 +239,11 @@ func (a *Assembler) applyCA3(
 			fallbackReason = compaction.FallbackReason
 			qualityScore = compaction.QualityScore
 			qualityReason = compaction.QualityReason
+			embeddingProvider = compaction.EmbeddingProvider
+			embeddingSimilarity = compaction.EmbeddingSimilarity
+			embeddingContribution = compaction.EmbeddingContribution
+			embeddingStatus = compaction.EmbeddingStatus
+			embeddingFallbackReason = compaction.EmbeddingFallbackReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
@@ -254,9 +274,30 @@ func (a *Assembler) applyCA3(
 	outcome.Stage.SpillCount += spillCount
 	outcome.Stage.SwapBackCount += swapBackCount
 	outcome.Stage.CompactionFallback = outcome.Stage.CompactionFallback || fallbackUsed
-	outcome.Stage.CompactionFallbackReason = fallbackReason
-	outcome.Stage.CompactionQualityScore = qualityScore
-	outcome.Stage.CompactionQualityReason = qualityReason
+	if strings.TrimSpace(fallbackReason) != "" {
+		outcome.Stage.CompactionFallbackReason = fallbackReason
+	}
+	if qualityScore > 0 {
+		outcome.Stage.CompactionQualityScore = qualityScore
+	}
+	if strings.TrimSpace(qualityReason) != "" {
+		outcome.Stage.CompactionQualityReason = qualityReason
+	}
+	if strings.TrimSpace(embeddingProvider) != "" {
+		outcome.Stage.CompactionEmbeddingProvider = embeddingProvider
+	}
+	if embeddingSimilarity > 0 {
+		outcome.Stage.CompactionEmbeddingSimilarity = embeddingSimilarity
+	}
+	if embeddingContribution > 0 {
+		outcome.Stage.CompactionEmbeddingContribution = embeddingContribution
+	}
+	if strings.TrimSpace(embeddingStatus) != "" {
+		outcome.Stage.CompactionEmbeddingStatus = embeddingStatus
+	}
+	if strings.TrimSpace(embeddingFallbackReason) != "" {
+		outcome.Stage.CompactionEmbeddingFallbackReason = embeddingFallbackReason
+	}
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
 	}
@@ -275,9 +316,13 @@ func (a *Assembler) applyCompaction(
 		AssembleReq: assembleReq,
 		ModelReq:    modelReq,
 		Config:      cfg.CA3,
+		StagePolicy: ca3StagePolicy(cfg, stage),
 	}
 	mode := normalizeCompactionMode(cfg.CA3.Compaction.Mode)
-	primary := a.compactorFor(mode, assembleReq)
+	primary, err := a.compactorFor(mode, assembleReq, cfg.CA3.Compaction.Embedding)
+	if err != nil {
+		return ca3CompactionResult{}, err
+	}
 	semanticCtx := ctx
 	var cancel context.CancelFunc
 	if mode == "semantic" {
@@ -305,16 +350,63 @@ func (a *Assembler) applyCompaction(
 	fallbackRes.Fallback = true
 	fallbackRes.QualityScore = result.QualityScore
 	fallbackRes.QualityReason = result.QualityReason
+	fallbackRes.EmbeddingProvider = result.EmbeddingProvider
+	fallbackRes.EmbeddingSimilarity = result.EmbeddingSimilarity
+	fallbackRes.EmbeddingContribution = result.EmbeddingContribution
+	fallbackRes.EmbeddingStatus = result.EmbeddingStatus
+	fallbackRes.EmbeddingFallbackReason = result.EmbeddingFallbackReason
 	fallbackRes.FallbackReason = semanticFallbackReason(err)
 	recordCompactionAccess(fallbackRes.Messages, state)
 	return fallbackRes, nil
 }
 
-func (a *Assembler) compactorFor(mode string, req types.ContextAssembleRequest) ca3Compactor {
+func (a *Assembler) compactorFor(
+	mode string,
+	req types.ContextAssembleRequest,
+	embeddingCfg runtimeconfig.ContextAssemblerCA3CompactionEmbeddingConfig,
+) (ca3Compactor, error) {
 	if mode == "semantic" {
-		return &semanticCompactor{client: req.ModelClient}
+		scorer, err := a.ensureEmbeddingScorer(embeddingCfg)
+		if err != nil {
+			return nil, err
+		}
+		return &semanticCompactor{client: req.ModelClient, embedding: scorer}, nil
 	}
-	return &truncateCompactor{}
+	return &truncateCompactor{}, nil
+}
+
+func (a *Assembler) ensureEmbeddingScorer(cfg runtimeconfig.ContextAssemblerCA3CompactionEmbeddingConfig) (SemanticEmbeddingScorer, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+	key := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(cfg.Provider)),
+		strings.TrimSpace(cfg.Model),
+		strings.TrimSpace(cfg.Selector),
+		strings.TrimSpace(cfg.Auth.APIKey),
+		strings.TrimSpace(cfg.Auth.BaseURL),
+		strings.TrimSpace(cfg.ProviderAuth.OpenAI.APIKey),
+		strings.TrimSpace(cfg.ProviderAuth.OpenAI.BaseURL),
+		strings.TrimSpace(cfg.ProviderAuth.Gemini.APIKey),
+		strings.TrimSpace(cfg.ProviderAuth.Gemini.BaseURL),
+		strings.TrimSpace(cfg.ProviderAuth.Anthropic.APIKey),
+		strings.TrimSpace(cfg.ProviderAuth.Anthropic.BaseURL),
+	}, "|")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.embeddingScorer != nil && strings.TrimSpace(a.embeddingKey) == "" {
+		return a.embeddingScorer, nil
+	}
+	if a.embeddingScorer != nil && a.embeddingKey == key {
+		return a.embeddingScorer, nil
+	}
+	scorer, err := buildEmbeddingScorer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	a.embeddingScorer = scorer
+	a.embeddingKey = key
+	return a.embeddingScorer, nil
 }
 
 type semanticQualityGateError struct {

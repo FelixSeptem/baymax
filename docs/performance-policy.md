@@ -31,6 +31,7 @@
 - `BenchmarkToolFanOutCancelStorm`
 - `BenchmarkCA4PressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - `BenchmarkCA3SemanticCompactionLatency`（需同时关注 `ns/op` 与 `p95-ns/op`）
+- `BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - 现有关键基准（iteration latency、MCP reconnect overhead）
 
 CA4 回归门禁（本地/CI 一致）：

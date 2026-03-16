@@ -10,6 +10,8 @@ type SemanticEmbeddingScorer interface {
 
 type SemanticEmbeddingScoreRequest struct {
 	Selector string
+	Provider string
+	Model    string
 	Source   string
 	Summary  string
 }

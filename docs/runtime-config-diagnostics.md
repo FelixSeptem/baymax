@@ -234,6 +234,25 @@ context_assembler:
       embedding:
         enabled: false
         selector: "" # enabled=true 时必填
+        provider: openai # openai|gemini|anthropic
+        model: text-embedding-3-small
+        timeout: 800ms
+        similarity_metric: cosine # E3 仅支持 cosine
+        rule_weight: 0.7
+        embedding_weight: 0.3
+        auth:
+          api_key: ""
+          base_url: ""
+        provider_auth:
+          openai:
+            api_key: ""
+            base_url: ""
+          gemini:
+            api_key: ""
+            base_url: ""
+          anthropic:
+            api_key: ""
+            base_url: ""
       evidence:
         keywords: [decision, constraint, todo, risk]
         recent_window: 0
@@ -283,9 +302,11 @@ ca3 compaction 校验语义：
 2. `context_assembler.ca3.compaction.semantic_timeout` 必须 `> 0`。
 3. `context_assembler.ca3.compaction.quality.threshold` 必须在 `[0,1]`；`weights.* >= 0` 且总和 `> 0`。
 4. `context_assembler.ca3.compaction.semantic_template.prompt` 必须非空，且占位符必须在 `allowed_placeholders` 白名单内。
-5. `context_assembler.ca3.compaction.embedding.enabled=true` 时必须提供 `embedding.selector`。
-6. `context_assembler.ca3.compaction.evidence.recent_window` 必须 `>= 0`。
-7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+5. `context_assembler.ca3.compaction.embedding.similarity_metric` 当前必须为 `cosine`。
+6. `context_assembler.ca3.compaction.embedding.rule_weight|embedding_weight` 必须在 `[0,1]`，且两者和 `> 0`。
+7. `context_assembler.ca3.compaction.embedding.enabled=true` 时必须提供 `embedding.selector`、`embedding.provider`（`openai|gemini|anthropic`）、`embedding.model`、`embedding.timeout>0`。
+8. `context_assembler.ca3.compaction.evidence.recent_window` 必须 `>= 0`。
+9. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ## 使用示例（最小）
 
@@ -400,13 +421,19 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `ca3_compaction_fallback_reason`：语义回退原因（如 `quality_below_threshold`、`semantic_compaction_error`）。
 - `ca3_compaction_quality_score`：语义压缩质量分（`0~1`）。
 - `ca3_compaction_quality_reason`：质量判定原因（可多值，如 `quality_pass`、`coverage_low`）。
+- `ca3_compaction_embedding_provider`：embedding 评分选中的 provider（`openai|gemini|anthropic`）。
+- `ca3_compaction_embedding_similarity`：embedding cosine 相似度（归一化到 `0~1`）。
+- `ca3_compaction_embedding_contribution`：embedding 分量对最终 quality 分的贡献值。
+- `ca3_compaction_embedding_status`：embedding 评分状态（如 `used|fallback_rule_only|disabled`）。
+- `ca3_compaction_embedding_fallback_reason`：embedding 回退原因（如 `embedding_score_error|embedding_hook_not_bound`）。
 - `ca3_compaction_retained_evidence_count`：本次 prune 过程中被证据保留规则保护的消息数量。
 
 语义说明：
 - `semantic` 模式通过当前 model-step 选中的 model client 执行压缩。
 - quality gate 在 semantic 路径执行（coverage/compression/validity 规则评分）。
 - semantic prompt 由 runtime 模板渲染，模板变量受白名单约束。
-- embedding 仅保留通用 SPI hook；未绑定 adapter 时仍走规则评分并保持确定性语义。
+- embedding adapter 支持 `openai|gemini|anthropic`；当前相似度指标固定为 `cosine`。
+- 允许使用独立 embedding 凭证（`embedding.auth.*`）并支持 provider 级覆盖（`embedding.provider_auth.*`）。
 - 若 stage policy 为 `best_effort`，语义压缩失败会回退 `truncate` 并记录 `ca3_compaction_fallback=true`。
 - 若 stage policy 为 `fail_fast`，语义压缩失败会立即终止当前装配流程。
 

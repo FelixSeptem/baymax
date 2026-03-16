@@ -2,6 +2,7 @@ package assembler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -20,15 +21,21 @@ type ca3CompactionRequest struct {
 	AssembleReq types.ContextAssembleRequest
 	ModelReq    types.ModelRequest
 	Config      runtimeconfig.ContextAssemblerCA3Config
+	StagePolicy string
 }
 
 type ca3CompactionResult struct {
-	Messages         []types.Message
-	CompressionRatio float64
-	Fallback         bool
-	QualityScore     float64
-	QualityReason    string
-	FallbackReason   string
+	Messages                []types.Message
+	CompressionRatio        float64
+	Fallback                bool
+	QualityScore            float64
+	QualityReason           string
+	FallbackReason          string
+	EmbeddingProvider       string
+	EmbeddingSimilarity     float64
+	EmbeddingContribution   float64
+	EmbeddingStatus         string
+	EmbeddingFallbackReason string
 }
 
 type truncateCompactor struct{}
@@ -95,7 +102,20 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	}
 	qualityScores := make([]float64, 0, len(req.ModelReq.Messages))
 	qualityReasons := make([]string, 0, len(req.ModelReq.Messages))
-	embeddingEnabledNoAdapter := req.Config.Compaction.Embedding.Enabled && c.embedding == nil
+	embeddingProvider := strings.ToLower(strings.TrimSpace(req.Config.Compaction.Embedding.Provider))
+	embeddingStatus := "disabled"
+	embeddingSimilarityScores := make([]float64, 0, len(req.ModelReq.Messages))
+	embeddingFallbackReason := ""
+	if req.Config.Compaction.Embedding.Enabled {
+		embeddingStatus = "enabled"
+		if c.embedding == nil {
+			if !isBestEffortPolicy(req.StagePolicy) {
+				return ca3CompactionResult{}, errors.New("embedding scorer is not configured")
+			}
+			embeddingStatus = "fallback_rule_only"
+			embeddingFallbackReason = "embedding_hook_not_bound"
+		}
+	}
 	for _, msg := range req.ModelReq.Messages {
 		before += len([]rune(msg.Content))
 		if strings.EqualFold(strings.TrimSpace(msg.Role), "system") || isProtectedMessage(msg.Content, req.Config.Protection) {
@@ -128,13 +148,43 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		if len([]rune(content)) > maxRunes {
 			content = string([]rune(content)[:maxRunes]) + " ...[squashed]"
 		}
-		qualityScore, qualityReason := scoreSemanticCompaction(
+		ruleScore, qualityReason := scoreSemanticCompaction(
 			msg.Content,
 			content,
 			maxRunes,
 			req.Config.Compaction.Quality,
 			req.Config.Compaction.Evidence,
 		)
+		qualityScore := ruleScore
+		if req.Config.Compaction.Embedding.Enabled && c.embedding != nil {
+			scoreCtx := ctx
+			cancel := func() {}
+			if req.Config.Compaction.Embedding.Timeout > 0 {
+				scoreCtx, cancel = context.WithTimeout(ctx, req.Config.Compaction.Embedding.Timeout)
+			}
+			similarity, scoreErr := c.embedding.Score(scoreCtx, SemanticEmbeddingScoreRequest{
+				Selector: strings.TrimSpace(req.Config.Compaction.Embedding.Selector),
+				Provider: embeddingProvider,
+				Model:    strings.TrimSpace(req.Config.Compaction.Embedding.Model),
+				Source:   msg.Content,
+				Summary:  content,
+			})
+			cancel()
+			if scoreErr != nil {
+				if !isBestEffortPolicy(req.StagePolicy) {
+					return ca3CompactionResult{}, fmt.Errorf("embedding scoring failed: %w", scoreErr)
+				}
+				embeddingStatus = "fallback_rule_only"
+				if embeddingFallbackReason == "" {
+					embeddingFallbackReason = "embedding_score_error"
+				}
+				qualityReason = appendReason(qualityReason, "embedding_score_error")
+			} else {
+				qualityScore = blendSemanticQuality(ruleScore, similarity, req.Config.Compaction.Embedding.RuleWeight, req.Config.Compaction.Embedding.EmbeddingWeight)
+				embeddingSimilarityScores = append(embeddingSimilarityScores, similarity)
+				qualityReason = appendReason(qualityReason, "embedding_cosine")
+			}
+		}
 		qualityScores = append(qualityScores, qualityScore)
 		qualityReasons = append(qualityReasons, qualityReason)
 		msg.Content = content
@@ -150,15 +200,43 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	}
 	score := averageFloat64(qualityScores)
 	reason := joinReasons(qualityReasons)
-	if embeddingEnabledNoAdapter {
-		reason = appendReason(reason, "embedding_hook_not_bound")
+	embeddingSimilarity := averageFloat64(embeddingSimilarityScores)
+	embeddingContribution := 0.0
+	if req.Config.Compaction.Embedding.Enabled {
+		embeddingContribution = embeddingSimilarity * req.Config.Compaction.Embedding.EmbeddingWeight
+		if c.embedding != nil && embeddingStatus == "enabled" {
+			embeddingStatus = "used"
+		}
+		if embeddingFallbackReason != "" {
+			reason = appendReason(reason, embeddingFallbackReason)
+		}
 	}
 	return ca3CompactionResult{
-		Messages:         out,
-		CompressionRatio: compression,
-		QualityScore:     score,
-		QualityReason:    reason,
+		Messages:                out,
+		CompressionRatio:        compression,
+		QualityScore:            score,
+		QualityReason:           reason,
+		EmbeddingProvider:       embeddingProvider,
+		EmbeddingSimilarity:     embeddingSimilarity,
+		EmbeddingContribution:   embeddingContribution,
+		EmbeddingStatus:         embeddingStatus,
+		EmbeddingFallbackReason: embeddingFallbackReason,
 	}, nil
+}
+
+func blendSemanticQuality(ruleScore, similarity, ruleWeight, embeddingWeight float64) float64 {
+	total := ruleWeight + embeddingWeight
+	if total <= 0 {
+		return ruleScore
+	}
+	score := ((ruleScore * ruleWeight) + (similarity * embeddingWeight)) / total
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
 }
 
 func buildSemanticCompactionPrompt(req ca3CompactionRequest, content string, maxRunes int) (string, error) {

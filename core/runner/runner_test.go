@@ -1418,6 +1418,12 @@ context_assembler:
 	if runFinished.Payload["ca3_compaction_fallback_reason"] != streamFinished.Payload["ca3_compaction_fallback_reason"] {
 		t.Fatalf("run/stream ca3 compaction fallback reason mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_fallback_reason"], streamFinished.Payload["ca3_compaction_fallback_reason"])
 	}
+	if runFinished.Payload["ca3_compaction_embedding_status"] != streamFinished.Payload["ca3_compaction_embedding_status"] {
+		t.Fatalf("run/stream ca3 compaction embedding status mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_embedding_status"], streamFinished.Payload["ca3_compaction_embedding_status"])
+	}
+	if runFinished.Payload["ca3_compaction_embedding_provider"] != streamFinished.Payload["ca3_compaction_embedding_provider"] {
+		t.Fatalf("run/stream ca3 compaction embedding provider mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_embedding_provider"], streamFinished.Payload["ca3_compaction_embedding_provider"])
+	}
 }
 
 func TestActionGateRequireConfirmWithoutResolverFailsFast(t *testing.T) {

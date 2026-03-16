@@ -330,7 +330,7 @@ func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
 	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
-		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+		Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
 	}
 	cfg.CA3.Emergency.RejectLowPriority = true
 	cfg.CA3.Emergency.HighPriorityTokens = []string{"urgent"}
@@ -599,6 +599,12 @@ type modelClientFunc struct {
 	generate func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error)
 }
 
+type embeddingScorerFunc func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error)
+
+func (f embeddingScorerFunc) Score(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+	return f(ctx, req)
+}
+
 func (m modelClientFunc) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
 	if m.generate == nil {
 		return types.ModelResponse{}, nil
@@ -622,7 +628,7 @@ func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
 	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
-		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+		Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
 	}
 	cfg.CA3.Compaction.Mode = "semantic"
 	cfg.CA3.Compaction.SemanticTimeout = 500 * time.Millisecond
@@ -832,6 +838,138 @@ func TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback(t *testing.
 	}
 	if !foundTruncated {
 		t.Fatalf("truncate fallback not observed: %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight(t *testing.T) {
+	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	ca3cfg.Compaction.Embedding.Enabled = true
+	ca3cfg.Compaction.Embedding.Selector = "test"
+	ca3cfg.Compaction.Embedding.Provider = "openai"
+	ca3cfg.Compaction.Embedding.Model = "text-embedding-3-small"
+	ca3cfg.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	ca3cfg.Compaction.Embedding.SimilarityMetric = "cosine"
+	ca3cfg.Compaction.Embedding.RuleWeight = 0.7
+	ca3cfg.Compaction.Embedding.EmbeddingWeight = 0.3
+	ca3cfg.Squash.MaxContentRunes = 40
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary with compacted context"}, nil
+		},
+	}
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		if req.Provider != "openai" {
+			t.Fatalf("provider = %q, want openai", req.Provider)
+		}
+		return 0.8, nil
+	})
+	compactor := &semanticCompactor{client: client, embedding: scorer}
+	result, err := compactor.compact(context.Background(), ca3CompactionRequest{
+		AssembleReq: types.ContextAssembleRequest{
+			Input: "compact please",
+		},
+		ModelReq: types.ModelRequest{
+			Model: "gpt-4.1-mini",
+			Messages: []types.Message{
+				{Role: "user", Content: strings.Repeat("alpha beta long semantic content ", 40)},
+			},
+		},
+		Config:      ca3cfg,
+		StagePolicy: "fail_fast",
+	})
+	if err != nil {
+		t.Fatalf("compact failed: %v", err)
+	}
+	if result.EmbeddingStatus != "used" {
+		t.Fatalf("embedding status = %q, want used", result.EmbeddingStatus)
+	}
+	if result.EmbeddingProvider != "openai" {
+		t.Fatalf("embedding provider = %q, want openai", result.EmbeddingProvider)
+	}
+	if result.EmbeddingSimilarity <= 0 {
+		t.Fatalf("embedding similarity = %v, want > 0", result.EmbeddingSimilarity)
+	}
+	if result.EmbeddingContribution <= 0 {
+		t.Fatalf("embedding contribution = %v, want > 0", result.EmbeddingContribution)
+	}
+	if !strings.Contains(result.QualityReason, "embedding_cosine") {
+		t.Fatalf("quality reason = %q, want embedding_cosine marker", result.QualityReason)
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionEmbeddingFailureBestEffortFallback(t *testing.T) {
+	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	ca3cfg.Compaction.Embedding.Enabled = true
+	ca3cfg.Compaction.Embedding.Selector = "test"
+	ca3cfg.Compaction.Embedding.Provider = "gemini"
+	ca3cfg.Compaction.Embedding.Model = "gemini-embedding-001"
+	ca3cfg.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	ca3cfg.Squash.MaxContentRunes = 40
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary with compacted context"}, nil
+		},
+	}
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		return 0, errors.New("embedding service down")
+	})
+	compactor := &semanticCompactor{client: client, embedding: scorer}
+	result, err := compactor.compact(context.Background(), ca3CompactionRequest{
+		AssembleReq: types.ContextAssembleRequest{
+			Input: "compact please",
+		},
+		ModelReq: types.ModelRequest{
+			Model: "gpt-4.1-mini",
+			Messages: []types.Message{
+				{Role: "user", Content: strings.Repeat("alpha beta long semantic content ", 40)},
+			},
+		},
+		Config:      ca3cfg,
+		StagePolicy: "best_effort",
+	})
+	if err != nil {
+		t.Fatalf("compact failed: %v", err)
+	}
+	if result.EmbeddingStatus != "fallback_rule_only" {
+		t.Fatalf("embedding status = %q, want fallback_rule_only", result.EmbeddingStatus)
+	}
+	if result.EmbeddingFallbackReason != "embedding_score_error" {
+		t.Fatalf("embedding fallback reason = %q, want embedding_score_error", result.EmbeddingFallbackReason)
+	}
+}
+
+func TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast(t *testing.T) {
+	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	ca3cfg.Compaction.Embedding.Enabled = true
+	ca3cfg.Compaction.Embedding.Selector = "test"
+	ca3cfg.Compaction.Embedding.Provider = "anthropic"
+	ca3cfg.Compaction.Embedding.Model = "claude-embedding-placeholder"
+	ca3cfg.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	ca3cfg.Squash.MaxContentRunes = 40
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary with compacted context"}, nil
+		},
+	}
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		return 0, errors.New("embedding service down")
+	})
+	compactor := &semanticCompactor{client: client, embedding: scorer}
+	_, err := compactor.compact(context.Background(), ca3CompactionRequest{
+		AssembleReq: types.ContextAssembleRequest{
+			Input: "compact please",
+		},
+		ModelReq: types.ModelRequest{
+			Model: "gpt-4.1-mini",
+			Messages: []types.Message{
+				{Role: "user", Content: strings.Repeat("alpha beta long semantic content ", 40)},
+			},
+		},
+		Config:      ca3cfg,
+		StagePolicy: "fail_fast",
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast embedding scoring error")
 	}
 }
 

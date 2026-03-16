@@ -108,6 +108,11 @@
   - 模板控制：runtime 模板与占位符白名单（启动/热更新 fail-fast）。
   - embedding SPI hook：仅通用接口占位，不绑定 adapter。
   - 诊断字段：`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_fallback_reason`。
+- CA3 semantic E3 收敛（已完成，2026-03-16）：
+  - embedding adapter：支持 `openai|gemini|anthropic` 三 provider 路径选择。
+  - 混合评分：规则分 + cosine 相似度分量，默认权重 `rule=0.7`、`embedding=0.3`。
+  - 独立凭证：支持 `embedding.auth.*` 与 `embedding.provider_auth.<provider>.*`。
+  - 诊断字段：新增 `ca3_compaction_embedding_*` 系列字段用于 provider/状态/贡献观测。
 - Prune 证据保留规则：`keywords + recent_window`，并输出保留计数诊断字段。
 - 支持 spill/swap（文件落盘与按需回填），保留 provenance path：
   - 溢出内容保留 `origin_ref` 便于完整路径追溯。

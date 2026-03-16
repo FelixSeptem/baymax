@@ -848,6 +848,16 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 	if strings.TrimSpace(cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt) == "" {
 		t.Fatal("ca3.compaction.semantic_template.prompt should not be empty")
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric != "cosine" {
+		t.Fatalf("ca3.compaction.embedding.similarity_metric = %q, want cosine", cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.RuleWeight != 0.7 || cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight != 0.3 {
+		t.Fatalf(
+			"ca3.compaction.embedding default weights = (%v,%v), want (0.7,0.3)",
+			cfg.ContextAssembler.CA3.Compaction.Embedding.RuleWeight,
+			cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight,
+		)
+	}
 }
 
 func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -880,6 +890,13 @@ func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_QUALITY_THRESHOLD", "0.75")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_ENABLED", "true")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_SELECTOR", "sdk-default")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_PROVIDER", "openai")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_MODEL", "text-embedding-3-small")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_TIMEOUT", "900ms")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_SIMILARITY_METRIC", "cosine")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_RULE_WEIGHT", "0.6")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_EMBEDDING_WEIGHT", "0.4")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EMBEDDING_AUTH_API_KEY", "embed-key")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_EVIDENCE_RECENT_WINDOW", "8")
 	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
 	if err != nil {
@@ -899,6 +916,26 @@ func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
 	}
 	if cfg.ContextAssembler.CA3.Compaction.Embedding.Selector != "sdk-default" {
 		t.Fatalf("ca3.compaction.embedding.selector = %q, want sdk-default", cfg.ContextAssembler.CA3.Compaction.Embedding.Selector)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.Provider != "openai" {
+		t.Fatalf("ca3.compaction.embedding.provider = %q, want openai", cfg.ContextAssembler.CA3.Compaction.Embedding.Provider)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.Model != "text-embedding-3-small" {
+		t.Fatalf("ca3.compaction.embedding.model = %q, want text-embedding-3-small", cfg.ContextAssembler.CA3.Compaction.Embedding.Model)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout != 900*time.Millisecond {
+		t.Fatalf("ca3.compaction.embedding.timeout = %v, want 900ms", cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric != "cosine" {
+		t.Fatalf("ca3.compaction.embedding.similarity_metric = %q, want cosine", cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.RuleWeight != 0.6 || cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight != 0.4 {
+		t.Fatalf("ca3.compaction.embedding weights = (%v,%v), want (0.6,0.4)",
+			cfg.ContextAssembler.CA3.Compaction.Embedding.RuleWeight,
+			cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Embedding.Auth.APIKey != "embed-key" {
+		t.Fatalf("ca3.compaction.embedding.auth.api_key = %q, want embed-key", cfg.ContextAssembler.CA3.Compaction.Embedding.Auth.APIKey)
 	}
 	if cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow != 8 {
 		t.Fatalf("ca3.compaction.evidence.recent_window = %d, want 8", cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
@@ -926,6 +963,26 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidTemplatePlaceholde
 	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt = "compact {{source}} and {{unknown}}"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for invalid template placeholder")
+	}
+}
+
+func TestContextAssemblerCA3CompactionValidationRejectsInvalidEmbeddingProvider(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Provider = "custom"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout = 500 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid embedding provider")
+	}
+}
+
+func TestContextAssemblerCA3CompactionValidationRejectsInvalidSimilarityMetric(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric = "dot"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid embedding similarity metric")
 	}
 }
 

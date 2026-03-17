@@ -64,5 +64,4 @@
 - Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
 - Anthropic embedding path uses deterministic adapter fallback implementation in v1 baseline; quality may differ from official provider embeddings and should be tuned with corpus evidence.
-- Action Gate H2 当前仍仅覆盖执行前确认（tool name + keyword）；参数 schema 风险规则留作后续迭代。
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。

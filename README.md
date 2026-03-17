@@ -5,8 +5,8 @@
 ## 当前状态（2026-03-17）
 
 - OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
-- 最近归档：`039-realign-pre1-governance-and-blocking-contribution-gates-e6`。
-- 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
+- 最近归档：`043-harden-security-s4-callback-delivery-reliability`。
+- 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5/H16、HITL H2/H3/H4、安全基线 S1-S4。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
 ## Open Source P0

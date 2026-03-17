@@ -88,24 +88,28 @@
 
 ## Security Track（R2-R3，交叉推进）
 
-### 进展（2026-03-12）
+### 进展（2026-03-17）
 - [x] `harden-security-baseline-s1-govulncheck-and-redaction`：完成 `govulncheck` strict 质量门禁接入（Linux/PowerShell/CI 一致语义）。
 - [x] 完成统一脱敏管线落地（diagnostics/event/context assembler），并补齐关键词扩展口与回归测试。
+- [x] `harden-security-s2-tool-permission-rate-limit-and-io-filter-e8`：完成 `namespace+tool` 权限策略、进程级限流、模型输入/输出过滤扩展口与 deny 默认语义收敛。
+- [x] `introduce-security-s3-event-taxonomy-and-callback-alerting-e9`：完成安全事件 taxonomy（`policy_kind|decision|reason_code|severity`）与 deny-only callback 告警契约。
+- [x] `harden-security-s4-callback-delivery-reliability`：完成 callback 投递可靠性治理（默认 `async`、有界队列 `drop_old`、最多 3 次重试、Hystrix 风格熔断）与 Run/Stream 语义等价验证。
+- [x] 补齐安全契约门禁脚本：`check-security-policy-contract.*`、`check-security-event-contract.*`、`check-security-delivery-contract.*`。
 
-### 目标
-- 建立可落地的安全基线，不破坏现有 library-first 主路径。
+### 当前状态
+- 已形成 S1-S4 安全闭环：扫描与脱敏基线、策略执行与过滤、事件归一化、告警可靠投递全部落地。
+- 安全策略与投递行为已纳入 runtime config 热更新与 fail-fast 校验路径，保持 `env > file > default` 一致语义。
 
-### 交付项
-- S1（R2）：将依赖/静态安全扫描纳入 CI（优先 `govulncheck`，再评估 `gosec` 规则集）。
-- S1（R2）：补齐敏感信息脱敏策略（日志/诊断/错误消息）并与现有 runtime diagnostics 对齐。
-- S2（R3）：工具调用安全收敛（参数校验强化、权限策略、频率限制）。
-- S2（R3）：模型输入输出安全过滤接口（PII/注入防护）先提供扩展点，再逐步默认启用。
-- S3（R3+）：安全事件分类与告警字段规范，接入统一观测。
+### 下一阶段规划（2026-03-17）
+- S4 运营化：基于 `alert_*` 诊断字段建设可观测看板与告警阈值建议，形成 callback sink SLO 基线。
+- 策略模板化：沉淀 `namespace+tool` 权限/限流与 I/O 过滤最小模板，降低外部接入初始配置成本。
+- 安全回归强化：扩展安全契约测试覆盖混合并发场景（tool/mcp/skill + 安全告警）并保持 Run/Stream 等价语义。
 
 ### 验收标准
-- CI 包含安全扫描门禁且可稳定运行。
+- CI 包含安全扫描与安全契约门禁，且可稳定运行。
 - 诊断与日志中的敏感字段可控脱敏，无明文泄漏回归。
-- 高风险工具调用具备可审计的权限与限流策略。
+- 高风险工具调用具备可审计的权限、限流与 I/O 过滤策略。
+- deny 告警投递可观测（重试、队列丢弃、熔断状态）且具备可演练基线。
 
 ## Phase R3（6-8 周）生态扩展与开发者体验
 
@@ -201,6 +205,14 @@
 ### 验收标准
 - 文档可支持外部团队按 README/docs 独立接入核心能力。
 - 关键调试链路可通过库接口完成定位，CLI/可视化仅作为增益项。
+
+## 近期执行计划（2026-03-17 起）
+
+- P0 文档一致性收敛：以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为主口径，持续消除 README 与验收文档状态漂移。
+- P1 安全运营收敛：聚焦 S4 callback 投递稳定性，建立常态化回放演练与失败原因分层分析。
+- P1 并发可靠性压测：扩展 runner 压测到混合路径（高并发 tool/mcp/skill + cancel storm + security delivery 干扰）。
+- P2 DX D2 精简模式推进：保持 library-first，不引入重 CLI 依赖，优先补齐可复现的 replay/配置校验/事件查看入口。
+- P2 CA2/CA3 调优连续性：按 profile version 治理阈值迭代，沉淀可复现调优语料与回归基线。
 
 ### Naming Migration（规划，当前不实现）
 
@@ -301,7 +313,7 @@
 - 清理仓库中的临时/备份产物与目录规范化（持续项）。
 - 收敛 `mcp/http` 与 `mcp/stdio` 中重复的重试/事件逻辑到共享组件。
 - TODO（skill scoring 演进）：当前仅实现 lexical weighted-keyword；后续在 scorer internal 接口上增量接入 embedding 检索/打分能力。
-- 为 runner 添加更多压力测试（高并发工具调用 + 取消风暴场景）。
+- 为 runner 添加更多混合压力测试（高并发 tool/mcp/skill + 取消风暴 + 安全告警投递干扰场景）。
 - 统一错误分类与错误处理策略（细化 error taxonomy 与跨模块映射）。
 - API 版本控制与兼容策略文档化（在对外接口扩张前完成）。
 - 多环境配置管理（开发/测试/生产）差异项收敛与模板化。

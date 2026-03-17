@@ -378,6 +378,9 @@ type AssembleStage struct {
 	CompactionRerankerThresholdSource string           `json:"compaction_reranker_threshold_source,omitempty"`
 	CompactionRerankerThresholdHit    bool             `json:"compaction_reranker_threshold_hit,omitempty"`
 	CompactionRerankerFallbackReason  string           `json:"compaction_reranker_fallback_reason,omitempty"`
+	CompactionRerankerProfileVersion  string           `json:"compaction_reranker_profile_version,omitempty"`
+	CompactionRerankerRolloutHit      bool             `json:"compaction_reranker_rollout_hit,omitempty"`
+	CompactionRerankerThresholdDrift  float64          `json:"compaction_reranker_threshold_drift,omitempty"`
 	RetainedEvidenceCount             int              `json:"retained_evidence_count,omitempty"`
 }
 

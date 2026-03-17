@@ -1176,3 +1176,274 @@ func TestAssemblerCA3RerankerFailFast(t *testing.T) {
 		t.Fatal("expected fail_fast reranker error")
 	}
 }
+
+func TestAssemblerCA3RerankerGovernanceEnforceVsDryRun(t *testing.T) {
+	newCfg := func(mode string) runtimeconfig.ContextAssemblerConfig {
+		cfg := runtimeconfig.DefaultConfig().ContextAssembler
+		cfg.JournalPath = filepath.Join(t.TempDir(), mode+"-journal.jsonl")
+		cfg.CA3.Enabled = true
+		cfg.CA3.MaxContextTokens = 120
+		cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+			Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+		}
+		cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+			Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
+		}
+		cfg.CA3.Compaction.Mode = "semantic"
+		cfg.CA3.Compaction.Quality.Threshold = 0.2
+		cfg.CA3.Compaction.Embedding.Enabled = true
+		cfg.CA3.Compaction.Embedding.Selector = "default"
+		cfg.CA3.Compaction.Embedding.Provider = "openai"
+		cfg.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+		cfg.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+		cfg.CA3.Compaction.Reranker.Enabled = true
+		cfg.CA3.Compaction.Reranker.Timeout = 200 * time.Millisecond
+		cfg.CA3.Compaction.Reranker.MaxRetries = 0
+		cfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+			"openai:text-embedding-3-small": 0.95,
+		}
+		cfg.CA3.Compaction.Reranker.Governance.Mode = mode
+		cfg.CA3.Compaction.Reranker.Governance.ProfileVersion = "e5-canary-v1"
+		cfg.CA3.Compaction.Reranker.Governance.RolloutProviderModels = []string{"openai:text-embedding-3-small"}
+		cfg.CA2.StagePolicy.Stage1 = "best_effort"
+		return cfg
+	}
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	reranker := rerankerFunc(func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
+		return SemanticRerankResult{Score: 0.6}, nil
+	})
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		return 0.7, nil
+	})
+	runAssemble := func(cfg runtimeconfig.ContextAssemblerConfig, runID string) (types.ContextAssembleResult, error) {
+		a := New(
+			func() runtimeconfig.ContextAssemblerConfig { return cfg },
+			WithSemanticEmbeddingScorer("test", scorer),
+			WithSemanticReranker("openai", reranker),
+		)
+		_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+			RunID:         runID,
+			SessionID:     "s-1",
+			PrefixVersion: "ca1",
+			Input:         strings.Repeat("need compact ", 20),
+			Messages: []types.Message{
+				{Role: "system", Content: "base"},
+				{Role: "user", Content: strings.Repeat("long semantic content ", 30)},
+			},
+			ModelClient: client,
+		}, types.ModelRequest{
+			RunID:    runID,
+			Input:    strings.Repeat("need compact ", 20),
+			Model:    "gpt-4.1-mini",
+			Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 30)}},
+		})
+		return result, err
+	}
+	enforceResult, enforceErr := runAssemble(newCfg(runtimeconfig.CA3RerankerGovernanceModeEnforce), "run-governance-enforce")
+	if enforceErr != nil {
+		t.Fatalf("enforce assemble failed: %v", enforceErr)
+	}
+	if !enforceResult.Stage.CompactionFallback {
+		t.Fatal("enforce mode should trigger fallback on high profile threshold")
+	}
+	if !enforceResult.Stage.CompactionRerankerRolloutHit {
+		t.Fatalf("enforce rollout hit = %v, want true", enforceResult.Stage.CompactionRerankerRolloutHit)
+	}
+	if enforceResult.Stage.CompactionRerankerProfileVersion != "e5-canary-v1" {
+		t.Fatalf("enforce profile version = %q, want e5-canary-v1", enforceResult.Stage.CompactionRerankerProfileVersion)
+	}
+	if enforceResult.Stage.CompactionRerankerThresholdDrift <= 0 {
+		t.Fatalf("enforce threshold drift = %v, want > 0", enforceResult.Stage.CompactionRerankerThresholdDrift)
+	}
+
+	dryRunResult, dryRunErr := runAssemble(newCfg(runtimeconfig.CA3RerankerGovernanceModeDryRun), "run-governance-dry-run")
+	if dryRunErr != nil {
+		t.Fatalf("dry_run assemble failed: %v", dryRunErr)
+	}
+	if dryRunResult.Stage.CompactionFallback {
+		t.Fatal("dry_run mode should not enforce profile threshold gate")
+	}
+	if !dryRunResult.Stage.CompactionRerankerRolloutHit {
+		t.Fatalf("dry_run rollout hit = %v, want true", dryRunResult.Stage.CompactionRerankerRolloutHit)
+	}
+}
+
+func TestAssemblerCA3RerankerGovernanceRolloutMatchDeterministic(t *testing.T) {
+	baseCfg := runtimeconfig.DefaultConfig().ContextAssembler
+	baseCfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	baseCfg.CA3.Enabled = true
+	baseCfg.CA3.MaxContextTokens = 120
+	baseCfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	baseCfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
+	}
+	baseCfg.CA3.Compaction.Mode = "semantic"
+	baseCfg.CA3.Compaction.Quality.Threshold = 0.2
+	baseCfg.CA3.Compaction.Embedding.Enabled = true
+	baseCfg.CA3.Compaction.Embedding.Selector = "default"
+	baseCfg.CA3.Compaction.Embedding.Provider = "openai"
+	baseCfg.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	baseCfg.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	baseCfg.CA3.Compaction.Reranker.Enabled = true
+	baseCfg.CA3.Compaction.Reranker.Timeout = 200 * time.Millisecond
+	baseCfg.CA3.Compaction.Reranker.MaxRetries = 0
+	baseCfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.95,
+	}
+	baseCfg.CA3.Compaction.Reranker.Governance.Mode = runtimeconfig.CA3RerankerGovernanceModeEnforce
+	baseCfg.CA2.StagePolicy.Stage1 = "best_effort"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		return 0.7, nil
+	})
+	reranker := rerankerFunc(func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
+		return SemanticRerankResult{Score: 0.6}, nil
+	})
+	run := func(cfg runtimeconfig.ContextAssemblerConfig, runID string) (types.ContextAssembleResult, error) {
+		a := New(
+			func() runtimeconfig.ContextAssemblerConfig { return cfg },
+			WithSemanticEmbeddingScorer("test", scorer),
+			WithSemanticReranker("openai", reranker),
+		)
+		_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+			RunID:         runID,
+			SessionID:     "s-1",
+			PrefixVersion: "ca1",
+			Input:         strings.Repeat("need compact ", 20),
+			Messages: []types.Message{
+				{Role: "system", Content: "base"},
+				{Role: "user", Content: strings.Repeat("long semantic content ", 30)},
+			},
+			ModelClient: client,
+		}, types.ModelRequest{
+			RunID:    runID,
+			Input:    strings.Repeat("need compact ", 20),
+			Model:    "gpt-4.1-mini",
+			Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 30)}},
+		})
+		return result, err
+	}
+
+	hitCfg := baseCfg
+	hitCfg.CA3.Compaction.Reranker.Governance.RolloutProviderModels = []string{"openai:text-embedding-3-small"}
+	hitResult, err := run(hitCfg, "run-rollout-hit")
+	if err != nil {
+		t.Fatalf("rollout hit assemble failed: %v", err)
+	}
+	if !hitResult.Stage.CompactionFallback || !hitResult.Stage.CompactionRerankerRolloutHit {
+		t.Fatalf("rollout hit should enforce threshold gate, stage=%#v", hitResult.Stage)
+	}
+
+	missCfg := baseCfg
+	missCfg.CA3.Compaction.Reranker.Governance.RolloutProviderModels = []string{"gemini:text-embedding-004"}
+	missResult, err := run(missCfg, "run-rollout-miss")
+	if err != nil {
+		t.Fatalf("rollout miss assemble failed: %v", err)
+	}
+	if missResult.Stage.CompactionFallback {
+		t.Fatalf("rollout miss should bypass enforcement, stage=%#v", missResult.Stage)
+	}
+	if missResult.Stage.CompactionRerankerRolloutHit {
+		t.Fatalf("rollout miss hit flag = %v, want false", missResult.Stage.CompactionRerankerRolloutHit)
+	}
+}
+
+func TestAssemblerCA3RerankerGovernanceModeFailurePolicy(t *testing.T) {
+	baseCfg := runtimeconfig.DefaultConfig().ContextAssembler
+	baseCfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	baseCfg.CA3.Enabled = true
+	baseCfg.CA3.MaxContextTokens = 120
+	baseCfg.CA3.Compaction.Mode = "semantic"
+	baseCfg.CA3.Compaction.Quality.Threshold = 0.2
+	baseCfg.CA3.Compaction.Embedding.Enabled = true
+	baseCfg.CA3.Compaction.Embedding.Selector = "default"
+	baseCfg.CA3.Compaction.Embedding.Provider = "openai"
+	baseCfg.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	baseCfg.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	baseCfg.CA3.Compaction.Reranker.Enabled = true
+	baseCfg.CA3.Compaction.Reranker.Timeout = 200 * time.Millisecond
+	baseCfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.8,
+	}
+	baseCfg.CA3.Compaction.Reranker.Governance.Mode = "invalid-mode"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	scorer := embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+		return 0.7, nil
+	})
+	reranker := rerankerFunc(func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
+		return SemanticRerankResult{Score: 0.6}, nil
+	})
+
+	bestEffortCfg := baseCfg
+	bestEffortCfg.CA2.StagePolicy.Stage1 = "best_effort"
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return bestEffortCfg },
+		WithSemanticEmbeddingScorer("test", scorer),
+		WithSemanticReranker("openai", reranker),
+	)
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-governance-best-effort",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 10),
+		Messages: []types.Message{
+			{Role: "system", Content: "base"},
+			{Role: "user", Content: strings.Repeat("long semantic content ", 20)},
+		},
+		ModelClient: client,
+	}, types.ModelRequest{
+		RunID:    "run-governance-best-effort",
+		Input:    strings.Repeat("need compact ", 10),
+		Model:    "gpt-4.1-mini",
+		Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 20)}},
+	})
+	if err != nil {
+		t.Fatalf("best_effort should continue on governance mode error: %v", err)
+	}
+	if result.Stage.CompactionRerankerFallbackReason != "governance_mode_invalid" {
+		t.Fatalf("governance fallback reason = %q, want governance_mode_invalid", result.Stage.CompactionRerankerFallbackReason)
+	}
+
+	failFastCfg := baseCfg
+	failFastCfg.CA2.StagePolicy.Stage1 = "fail_fast"
+	a = New(
+		func() runtimeconfig.ContextAssemblerConfig { return failFastCfg },
+		WithSemanticEmbeddingScorer("test", scorer),
+		WithSemanticReranker("openai", reranker),
+	)
+	_, _, err = a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-governance-fail-fast",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 10),
+		Messages: []types.Message{
+			{Role: "system", Content: "base"},
+			{Role: "user", Content: strings.Repeat("long semantic content ", 20)},
+		},
+		ModelClient: client,
+	}, types.ModelRequest{
+		RunID:    "run-governance-fail-fast",
+		Input:    strings.Repeat("need compact ", 10),
+		Model:    "gpt-4.1-mini",
+		Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 20)}},
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast governance mode error")
+	}
+}

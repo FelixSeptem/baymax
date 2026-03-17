@@ -28,6 +28,8 @@
 | Skill Trigger Scoring D1 | `skill/loader/loader_test.go::TestCompileSemanticTieBreakUsesHighestPriority` | `skill/loader/loader_test.go::TestCompileDefaultSuppressesLowConfidenceSemanticMatch` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |
+| CA3 Threshold Governance E5 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerGovernanceEnforceVsDryRun` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerGovernanceModeFailurePolicy` |
+| CA3 Governance Run/Stream Equivalence E5 | `core/runner/runner_test.go::TestRunAndStreamCA3GovernanceSemanticsEquivalent` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerGovernanceRolloutMatchDeterministic` |
 | CA3 Threshold Tuning Toolkit E4 | `context/assembler/threshold_tuning_test.go::TestRunThresholdTuningProducesDeterministicRecommendation` | `context/assembler/threshold_tuning_test.go::TestRunThresholdTuningRejectsUnsupportedSchema` |
 
 ## 使用方式
@@ -35,4 +37,4 @@
 1. 变更完成前，确保以上用例在 `go test ./...` 中通过。
 2. 合并前，执行 `go test -race ./...` 验证并发安全基线。
 3. 质量门禁脚本执行时应同时包含仓库卫生检查、lint 与安全扫描。
-4. 基准回归可执行：`integration/benchmark_test.go::BenchmarkCA2ExternalRetrieverTrendAggregation`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatency`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`。
+4. 基准回归可执行：`integration/benchmark_test.go::BenchmarkCA2ExternalRetrieverTrendAggregation`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatency`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`、`integration/benchmark_test.go::BenchmarkCA3SemanticCompactionLatencyRerankerGovernanceEnabled`。

@@ -71,6 +71,9 @@
   - reranker：`context_assembler.ca3.compaction.reranker.*`（默认关闭）
     - `enabled`、`timeout`、`max_retries`
     - `threshold_profiles`（key=`provider:model`，开启 reranker 时必须包含当前 provider/model）
+    - `governance.mode`：`enforce|dry_run`（`dry_run` 仅评估不改变最终 gate）
+    - `governance.profile_version`：阈值配置版本标签（用于观测与排障）
+    - `governance.rollout_provider_models`：按 `provider:model` 灰度匹配
     - 支持 provider-specific 扩展接口（`assembler.WithSemanticReranker`），未注册时走内置默认 reranker
   - semantic template：`context_assembler.ca3.compaction.semantic_template.prompt + allowed_placeholders`（启动/热更新 fail-fast 校验）
   - embedding adapter：支持 `openai|gemini|anthropic` provider 选择，默认 `cosine` 混合评分（`rule_weight=0.7`、`embedding_weight=0.3`）
@@ -80,7 +83,7 @@
 - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
 - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
-- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_fallback_reason`、`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_embedding_provider`、`ca3_compaction_embedding_similarity`、`ca3_compaction_embedding_contribution`、`ca3_compaction_embedding_status`、`ca3_compaction_embedding_fallback_reason`、`ca3_compaction_reranker_used`、`ca3_compaction_reranker_provider`、`ca3_compaction_reranker_model`、`ca3_compaction_reranker_threshold_source`、`ca3_compaction_reranker_threshold_hit`、`ca3_compaction_reranker_fallback_reason`、`ca3_compaction_retained_evidence_count`
+- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_fallback_reason`、`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_embedding_provider`、`ca3_compaction_embedding_similarity`、`ca3_compaction_embedding_contribution`、`ca3_compaction_embedding_status`、`ca3_compaction_embedding_fallback_reason`、`ca3_compaction_reranker_used`、`ca3_compaction_reranker_provider`、`ca3_compaction_reranker_model`、`ca3_compaction_reranker_threshold_source`、`ca3_compaction_reranker_threshold_hit`、`ca3_compaction_reranker_fallback_reason`、`ca3_compaction_reranker_profile_version`、`ca3_compaction_reranker_rollout_hit`、`ca3_compaction_reranker_threshold_drift`、`ca3_compaction_retained_evidence_count`
 
 ### 3.7 HITL（H2 + H3 + H4）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
@@ -142,7 +145,7 @@
 - fake model/tool/mcp 组件
 - E2E 测试：多轮 tool loop、mixed local/MCP、streaming 因果顺序
 - benchmark：迭代延迟、工具扇出、MCP 重连开销、`BenchmarkCA4PressureEvaluation`（含 `p95-ns/op`）
-- benchmark：`BenchmarkCA3SemanticCompactionLatency`、`BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`（CA3 semantic 路径，纳入相对百分比回归策略）
+- benchmark：`BenchmarkCA3SemanticCompactionLatency`、`BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`、`BenchmarkCA3SemanticCompactionLatencyRerankerGovernanceEnabled`（CA3 semantic 路径，纳入相对百分比回归策略）
 - benchmark：`BenchmarkToolFanOutCancelStorm` 输出 `p95-ns/op` + `goroutine-peak`，用于取消风暴回归对比
 - benchmark：`BenchmarkDiagnosticsTimelineTrendQuery` 输出趋势查询性能指标（含 `p95-ns/op`）
 
@@ -325,6 +328,10 @@ context_assembler:
         enabled: false
         timeout: 500ms
         max_retries: 1
+        governance:
+          mode: enforce
+          profile_version: ""
+          rollout_provider_models: []
         threshold_profiles:
           openai:text-embedding-3-small: 0.62
       evidence:

@@ -1336,6 +1336,13 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.CompactionRerankerFallbackReason != "" {
 		payload["ca3_compaction_reranker_fallback_reason"] = meta.Assemble.Stage.CompactionRerankerFallbackReason
 	}
+	if meta.Assemble.Stage.CompactionRerankerProfileVersion != "" {
+		payload["ca3_compaction_reranker_profile_version"] = meta.Assemble.Stage.CompactionRerankerProfileVersion
+	}
+	payload["ca3_compaction_reranker_rollout_hit"] = meta.Assemble.Stage.CompactionRerankerRolloutHit
+	if meta.Assemble.Stage.CompactionRerankerThresholdDrift > 0 {
+		payload["ca3_compaction_reranker_threshold_drift"] = meta.Assemble.Stage.CompactionRerankerThresholdDrift
+	}
 	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
 		payload["ca3_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 	}

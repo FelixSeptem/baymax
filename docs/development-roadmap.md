@@ -128,6 +128,7 @@
 - [x] `harden-ca3-semantic-compaction-quality-and-template-controls-f2`：完成 CA3 semantic compaction 质量门控（规则评分+阈值）、runtime 模板白名单控制、embedding SPI hook 占位、新增质量/回退诊断字段与 benchmark 基线。
 - [x] `implement-ca3-semantic-embedding-adapter-e3`：完成 CA3 semantic embedding adapter（OpenAI/Gemini/Anthropic 选择）、cosine 混合评分、独立 embedding 凭证配置与 `ca3_compaction_embedding_*` 诊断字段。
 - [x] `harden-ca3-semantic-reranker-and-threshold-tuning-e4`：完成 CA3 reranker 加固（provider-specific 扩展接口、mandatory provider/model 阈值 profile、Anthropic 可用路径）、新增 `ca3_compaction_reranker_*` 诊断字段与离线阈值调优工具（markdown 输出）。
+- [x] `govern-ca3-threshold-rollout-and-observability-e5`：完成 CA3 阈值治理与灰度收敛（`enforce|dry_run`、`provider:model` rollout、profile version），补齐治理诊断字段与契约/benchmark 门禁。
 - [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
 - [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。

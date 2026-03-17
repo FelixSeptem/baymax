@@ -120,6 +120,11 @@
   - 扩展接口：支持 provider-specific reranker 注册（`assembler.WithSemanticReranker`）。
   - 新增诊断字段：`ca3_compaction_reranker_*` 系列。
   - 提供离线阈值调优工具入口：`cmd/ca3-threshold-tuning`（最小 markdown 输出）。
+- CA3 semantic E5 治理收敛（已完成，2026-03-17）：
+  - 阈值治理配置：`reranker.governance.mode|profile_version|rollout_provider_models`。
+  - 灰度粒度：仅 `provider:model`；支持 `enforce|dry_run` 两种模式。
+  - 语义约束：`best_effort` 回退与 `fail_fast` 终止语义保持不变，Run/Stream 等价。
+  - 新增诊断字段：`ca3_compaction_reranker_profile_version|rollout_hit|threshold_drift`。
 - Prune 证据保留规则：`keywords + recent_window`，并输出保留计数诊断字段。
 - 支持 spill/swap（文件落盘与按需回填），保留 provenance path：
   - 溢出内容保留 `origin_ref` 便于完整路径追溯。

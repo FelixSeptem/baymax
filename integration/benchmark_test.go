@@ -367,6 +367,12 @@ func (f benchEmbeddingScorer) Score(ctx context.Context, req assembler.SemanticE
 	return f(ctx, req)
 }
 
+type benchReranker func(ctx context.Context, req assembler.SemanticRerankRequest) (assembler.SemanticRerankResult, error)
+
+func (f benchReranker) Rerank(ctx context.Context, req assembler.SemanticRerankRequest) (assembler.SemanticRerankResult, error) {
+	return f(ctx, req)
+}
+
 func BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.Enabled = true
@@ -420,6 +426,75 @@ func BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
 		start := time.Now()
 		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
 			b.Fatalf("assemble semantic compaction with embedding failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkCA3SemanticCompactionLatencyRerankerGovernanceEnabled(b *testing.B) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 4096
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.Quality.Threshold = 0.2
+	cfg.CA3.Compaction.Evidence.Keywords = []string{"decision", "risk"}
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	cfg.CA3.Compaction.Embedding.Enabled = true
+	cfg.CA3.Compaction.Embedding.Selector = "bench"
+	cfg.CA3.Compaction.Embedding.Provider = "anthropic"
+	cfg.CA3.Compaction.Embedding.Model = "claude-3-haiku"
+	cfg.CA3.Compaction.Embedding.Timeout = 200 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.Enabled = true
+	cfg.CA3.Compaction.Reranker.Timeout = 120 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.MaxRetries = 0
+	cfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"anthropic:claude-3-haiku": 0.68,
+	}
+	cfg.CA3.Compaction.Reranker.Governance.Mode = runtimeconfig.CA3RerankerGovernanceModeEnforce
+	cfg.CA3.Compaction.Reranker.Governance.ProfileVersion = "bench-v1"
+	cfg.CA3.Compaction.Reranker.Governance.RolloutProviderModels = []string{"anthropic:claude-3-haiku"}
+
+	reranker := benchReranker(func(ctx context.Context, req assembler.SemanticRerankRequest) (assembler.SemanticRerankResult, error) {
+		_ = ctx
+		return assembler.SemanticRerankResult{Score: req.CurrentScore}, nil
+	})
+	a := assembler.New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		assembler.WithSemanticReranker("anthropic", reranker),
+	)
+	model := fakes.NewModel([]fakes.ModelStep{
+		{Response: types.ModelResponse{FinalAnswer: "decision preserved with compact risk summary"}},
+	})
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-ca3-semantic-reranker-governance",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("input payload ", 80),
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("decision and risk details. ", 80)},
+		},
+		ModelClient: model,
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "claude-3-haiku",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble semantic compaction with reranker governance failed: %v", err)
 		}
 		durations = append(durations, time.Since(start).Nanoseconds())
 	}

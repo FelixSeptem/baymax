@@ -186,6 +186,9 @@ func (a *Assembler) applyCA3(
 	rerankerThresholdSource := ""
 	rerankerThresholdHit := false
 	rerankerFallbackReason := ""
+	rerankerProfileVersion := ""
+	rerankerRolloutHit := false
+	rerankerThresholdDrift := 0.0
 	retainedEvidenceCount := 0
 
 	switch zone {
@@ -213,6 +216,9 @@ func (a *Assembler) applyCA3(
 			rerankerThresholdSource = compaction.RerankerThresholdSource
 			rerankerThresholdHit = compaction.RerankerThresholdHit
 			rerankerFallbackReason = compaction.RerankerFallbackReason
+			rerankerProfileVersion = compaction.RerankerProfileVersion
+			rerankerRolloutHit = compaction.RerankerRolloutHit
+			rerankerThresholdDrift = compaction.RerankerThresholdDrift
 		}
 	case ca3ZoneDanger:
 		if cfg.CA3.Squash.Enabled {
@@ -238,6 +244,9 @@ func (a *Assembler) applyCA3(
 			rerankerThresholdSource = compaction.RerankerThresholdSource
 			rerankerThresholdHit = compaction.RerankerThresholdHit
 			rerankerFallbackReason = compaction.RerankerFallbackReason
+			rerankerProfileVersion = compaction.RerankerProfileVersion
+			rerankerRolloutHit = compaction.RerankerRolloutHit
+			rerankerThresholdDrift = compaction.RerankerThresholdDrift
 		}
 		if cfg.CA3.Prune.Enabled {
 			var pruned []spillRecord
@@ -268,6 +277,9 @@ func (a *Assembler) applyCA3(
 			rerankerThresholdSource = compaction.RerankerThresholdSource
 			rerankerThresholdHit = compaction.RerankerThresholdHit
 			rerankerFallbackReason = compaction.RerankerFallbackReason
+			rerankerProfileVersion = compaction.RerankerProfileVersion
+			rerankerRolloutHit = compaction.RerankerRolloutHit
+			rerankerThresholdDrift = compaction.RerankerThresholdDrift
 		}
 		if cfg.CA3.Prune.Enabled {
 			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
@@ -336,6 +348,13 @@ func (a *Assembler) applyCA3(
 	if strings.TrimSpace(rerankerFallbackReason) != "" {
 		outcome.Stage.CompactionRerankerFallbackReason = rerankerFallbackReason
 	}
+	if strings.TrimSpace(rerankerProfileVersion) != "" {
+		outcome.Stage.CompactionRerankerProfileVersion = rerankerProfileVersion
+	}
+	outcome.Stage.CompactionRerankerRolloutHit = rerankerRolloutHit
+	if rerankerThresholdDrift > 0 {
+		outcome.Stage.CompactionRerankerThresholdDrift = rerankerThresholdDrift
+	}
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
 	}
@@ -403,6 +422,9 @@ func (a *Assembler) applyCompaction(
 	fallbackRes.RerankerThresholdSource = result.RerankerThresholdSource
 	fallbackRes.RerankerThresholdHit = result.RerankerThresholdHit
 	fallbackRes.RerankerFallbackReason = result.RerankerFallbackReason
+	fallbackRes.RerankerProfileVersion = result.RerankerProfileVersion
+	fallbackRes.RerankerRolloutHit = result.RerankerRolloutHit
+	fallbackRes.RerankerThresholdDrift = result.RerankerThresholdDrift
 	fallbackRes.GateThreshold = result.GateThreshold
 	fallbackRes.FallbackReason = semanticFallbackReason(err)
 	recordCompactionAccess(fallbackRes.Messages, state)

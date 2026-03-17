@@ -43,6 +43,9 @@ type ca3CompactionResult struct {
 	RerankerThresholdSource string
 	RerankerThresholdHit    bool
 	RerankerFallbackReason  string
+	RerankerProfileVersion  string
+	RerankerRolloutHit      bool
+	RerankerThresholdDrift  float64
 }
 
 type truncateCompactor struct{}
@@ -117,12 +120,17 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	embeddingFallbackReason := ""
 	rerankerUsed := false
 	rerankerThreshold := req.Config.Compaction.Quality.Threshold
+	effectiveGateThreshold := req.Config.Compaction.Quality.Threshold
 	rerankerThresholdSource := "quality_threshold"
 	rerankerThresholdHit := false
 	rerankerFallbackReason := ""
+	rerankerProfileVersion := strings.TrimSpace(req.Config.Compaction.Reranker.Governance.ProfileVersion)
+	rerankerRolloutHit := false
+	rerankerThresholdDrift := 0.0
 	rerankerCfg := req.Config.Compaction.Reranker
 	rerankerProvider := embeddingProvider
 	rerankerModel := embeddingModel
+	govMode := normalizeRerankerGovernanceMode(rerankerCfg.Governance.Mode)
 	if req.Config.Compaction.Embedding.Enabled {
 		embeddingStatus = "enabled"
 		if c.embedding == nil {
@@ -134,10 +142,37 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		}
 	}
 	if rerankerCfg.Enabled {
+		if govMode == "" {
+			if !isBestEffortPolicy(req.StagePolicy) {
+				return ca3CompactionResult{}, errors.New("invalid reranker governance mode")
+			}
+			rerankerFallbackReason = "governance_mode_invalid"
+		}
+		var rolloutErr error
+		rerankerRolloutHit, rolloutErr = isRerankerRolloutMatch(embeddingProvider, embeddingModel, rerankerCfg.Governance.RolloutProviderModels)
+		if rolloutErr != nil {
+			if !isBestEffortPolicy(req.StagePolicy) {
+				return ca3CompactionResult{}, rolloutErr
+			}
+			if rerankerFallbackReason == "" {
+				rerankerFallbackReason = "governance_rollout_invalid"
+			}
+			rerankerRolloutHit = false
+		}
 		key := normalizeThresholdProfileKey(embeddingProvider, embeddingModel)
 		if value, ok := rerankerCfg.ThresholdProfiles[key]; ok {
 			rerankerThreshold = value
-			rerankerThresholdSource = "provider_model_profile"
+			if rerankerRolloutHit {
+				rerankerThresholdSource = "provider_model_profile"
+				rerankerThresholdDrift = math.Abs(rerankerThreshold - req.Config.Compaction.Quality.Threshold)
+			}
+		} else if !isBestEffortPolicy(req.StagePolicy) {
+			return ca3CompactionResult{}, fmt.Errorf("reranker threshold profile missing key %q", key)
+		} else if rerankerFallbackReason == "" {
+			rerankerFallbackReason = "governance_profile_missing"
+		}
+		if rerankerRolloutHit && govMode == runtimeconfig.CA3RerankerGovernanceModeEnforce {
+			effectiveGateThreshold = rerankerThreshold
 		}
 	}
 	for _, msg := range req.ModelReq.Messages {
@@ -234,8 +269,14 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 				qualityReason = appendReason(qualityReason, "reranker_applied")
 			}
 		}
-		if rerankerCfg.Enabled && qualityScore < rerankerThreshold {
-			rerankerThresholdHit = true
+		if rerankerCfg.Enabled {
+			observedThreshold := effectiveGateThreshold
+			if rerankerRolloutHit {
+				observedThreshold = rerankerThreshold
+			}
+			if qualityScore < observedThreshold {
+				rerankerThresholdHit = true
+			}
 		}
 		qualityScores = append(qualityScores, qualityScore)
 		qualityReasons = append(qualityReasons, qualityReason)
@@ -266,7 +307,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	return ca3CompactionResult{
 		Messages:                out,
 		CompressionRatio:        compression,
-		GateThreshold:           rerankerThreshold,
+		GateThreshold:           effectiveGateThreshold,
 		QualityScore:            score,
 		QualityReason:           reason,
 		EmbeddingProvider:       embeddingProvider,
@@ -280,7 +321,44 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		RerankerThresholdSource: rerankerThresholdSource,
 		RerankerThresholdHit:    rerankerThresholdHit,
 		RerankerFallbackReason:  rerankerFallbackReason,
+		RerankerProfileVersion:  rerankerProfileVersion,
+		RerankerRolloutHit:      rerankerRolloutHit,
+		RerankerThresholdDrift:  rerankerThresholdDrift,
 	}, nil
+}
+
+func normalizeRerankerGovernanceMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case runtimeconfig.CA3RerankerGovernanceModeEnforce:
+		return runtimeconfig.CA3RerankerGovernanceModeEnforce
+	case runtimeconfig.CA3RerankerGovernanceModeDryRun:
+		return runtimeconfig.CA3RerankerGovernanceModeDryRun
+	default:
+		return ""
+	}
+}
+
+func isRerankerRolloutMatch(provider, model string, rollout []string) (bool, error) {
+	if len(rollout) == 0 {
+		return true, nil
+	}
+	selected := normalizeThresholdProfileKey(provider, model)
+	if selected == "" {
+		return false, errors.New("reranker rollout match requires provider:model key")
+	}
+	for _, raw := range rollout {
+		key := strings.ToLower(strings.TrimSpace(raw))
+		if key == "" {
+			return false, errors.New("reranker rollout contains empty key")
+		}
+		if !strings.Contains(key, ":") {
+			return false, fmt.Errorf("reranker rollout key %q must be provider:model", raw)
+		}
+		if key == selected {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func applyRerankerWithRetry(

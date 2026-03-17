@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-17 10:03:47
+Updated: 2026-03-17 10:37:38
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -38,3 +38,4 @@ Updated: 2026-03-17 10:03:47
 - 034 -> harden-ca3-semantic-compaction-quality-and-template-controls-f2
 - 035 -> implement-ca3-semantic-embedding-adapter-e3
 - 036 -> harden-ca3-semantic-reranker-and-threshold-tuning-e4
+- 037 -> govern-ca3-threshold-rollout-and-observability-e5

@@ -864,6 +864,9 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 	if cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout <= 0 {
 		t.Fatalf("ca3.compaction.reranker.timeout = %v, want > 0", cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout)
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode != CA3RerankerGovernanceModeEnforce {
+		t.Fatalf("ca3.compaction.reranker.governance.mode = %q, want enforce", cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode)
+	}
 }
 
 func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -1025,6 +1028,11 @@ context_assembler:
         enabled: true
         timeout: 250ms
         max_retries: 2
+        governance:
+          mode: dry_run
+          profile_version: e5-canary-v1
+          rollout_provider_models:
+            - openai:text-embedding-3-small
         threshold_profiles:
           openai:text-embedding-3-small: 0.62
 `
@@ -1043,6 +1051,51 @@ context_assembler:
 	}
 	if cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles["openai:text-embedding-3-small"] != 0.62 {
 		t.Fatalf("missing reranker threshold profile, got %#v", cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode != CA3RerankerGovernanceModeDryRun {
+		t.Fatalf("governance.mode = %q, want dry_run", cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.ProfileVersion != "e5-canary-v1" {
+		t.Fatalf("governance.profile_version = %q, want e5-canary-v1", cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.ProfileVersion)
+	}
+	if len(cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels) != 1 ||
+		cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels[0] != "openai:text-embedding-3-small" {
+		t.Fatalf("governance.rollout_provider_models = %#v", cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels)
+	}
+}
+
+func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Provider = "openai"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode = "shadow"
+	cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.62,
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid reranker governance mode")
+	}
+}
+
+func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidRolloutKey(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Provider = "openai"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode = CA3RerankerGovernanceModeEnforce
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels = []string{"openai"}
+	cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.62,
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid reranker rollout_provider_models key")
 	}
 }
 

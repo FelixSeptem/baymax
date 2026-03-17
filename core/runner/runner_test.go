@@ -1426,6 +1426,120 @@ context_assembler:
 	}
 }
 
+func TestRunAndStreamCA3GovernanceSemanticsEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+context_assembler:
+  enabled: true
+  ca3:
+    enabled: true
+    max_context_tokens: 80
+    percent_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    absolute_thresholds:
+      safe: 8
+      comfort: 16
+      warning: 24
+      danger: 32
+      emergency: 40
+    compaction:
+      mode: semantic
+      quality:
+        threshold: 0.25
+      embedding:
+        enabled: true
+        selector: default
+        provider: anthropic
+        model: claude-3-haiku
+        timeout: 300ms
+      reranker:
+        enabled: true
+        timeout: 200ms
+        max_retries: 0
+        governance:
+          mode: enforce
+          profile_version: e5-canary-v1
+          rollout_provider_models:
+            - anthropic:claude-3-haiku
+        threshold_profiles:
+          anthropic:claude-3-haiku: 0.75
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			if strings.Contains(req.Input, "Source:") {
+				return types.ModelResponse{FinalAnswer: "semantic governance summary"}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			if strings.Contains(req.Input, "Source:") {
+				return types.ModelResponse{FinalAnswer: "semantic governance summary"}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	_, err = runEngine.Run(context.Background(), types.RunRequest{
+		RunID:     "run-ca3-governance",
+		SessionID: "s-1",
+		Input:     strings.Repeat("payload ", 40),
+		Messages:  []types.Message{{Role: "system", Content: "base"}},
+	}, runCollector)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	_, err = streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID:     "stream-ca3-governance",
+		SessionID: "s-1",
+		Input:     strings.Repeat("payload ", 40),
+		Messages:  []types.Message{{Role: "system", Content: "base"}},
+	}, streamCollector)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run finished event")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream finished event")
+	}
+	for _, key := range []string{
+		"ca3_compaction_reranker_threshold_source",
+		"ca3_compaction_reranker_threshold_hit",
+		"ca3_compaction_reranker_profile_version",
+		"ca3_compaction_reranker_rollout_hit",
+	} {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("run/stream governance payload mismatch for %s: run=%v stream=%v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
+}
+
 func TestActionGateRequireConfirmWithoutResolverFailsFast(t *testing.T) {
 	reg := local.NewRegistry()
 	_, err := reg.Register(&fakeTool{

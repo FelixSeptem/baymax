@@ -159,6 +159,9 @@ mcp:
 			"ca3_compaction_reranker_model":            "text-embedding-3-small",
 			"ca3_compaction_reranker_threshold_source": "provider_model_profile",
 			"ca3_compaction_reranker_threshold_hit":    true,
+			"ca3_compaction_reranker_profile_version":  "e5-canary-v1",
+			"ca3_compaction_reranker_rollout_hit":      true,
+			"ca3_compaction_reranker_threshold_drift":  0.12,
 			"ca3_compaction_retained_evidence_count":   2,
 			"recap_status":                             "appended",
 			"gate_checks":                              4,
@@ -228,6 +231,12 @@ mcp:
 	}
 	if items[0].CA3CompactionRerankerThresholdSource != "provider_model_profile" || !items[0].CA3CompactionRerankerThresholdHit {
 		t.Fatalf("ca3 compaction reranker threshold fields mismatch: %#v", items[0])
+	}
+	if items[0].CA3CompactionRerankerProfileVersion != "e5-canary-v1" || !items[0].CA3CompactionRerankerRolloutHit {
+		t.Fatalf("ca3 compaction reranker governance fields mismatch: %#v", items[0])
+	}
+	if items[0].CA3CompactionRerankerThresholdDrift <= 0 {
+		t.Fatalf("ca3 compaction reranker threshold drift mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

@@ -68,6 +68,11 @@ const (
 	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
 )
 
+const (
+	CA3RerankerGovernanceModeEnforce = "enforce"
+	CA3RerankerGovernanceModeDryRun  = "dry_run"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -384,10 +389,17 @@ type ContextAssemblerCA3CompactionEvidenceConfig struct {
 }
 
 type ContextAssemblerCA3CompactionRerankerConfig struct {
-	Enabled           bool               `json:"enabled"`
-	Timeout           time.Duration      `json:"timeout"`
-	MaxRetries        int                `json:"max_retries"`
-	ThresholdProfiles map[string]float64 `json:"threshold_profiles"`
+	Enabled           bool                                                  `json:"enabled"`
+	Timeout           time.Duration                                         `json:"timeout"`
+	MaxRetries        int                                                   `json:"max_retries"`
+	ThresholdProfiles map[string]float64                                    `json:"threshold_profiles"`
+	Governance        ContextAssemblerCA3CompactionRerankerGovernanceConfig `json:"governance"`
+}
+
+type ContextAssemblerCA3CompactionRerankerGovernanceConfig struct {
+	Mode                  string   `json:"mode"`
+	ProfileVersion        string   `json:"profile_version"`
+	RolloutProviderModels []string `json:"rollout_provider_models"`
 }
 
 type SecurityConfig struct {
@@ -642,6 +654,11 @@ func DefaultConfig() Config {
 						Timeout:           500 * time.Millisecond,
 						MaxRetries:        1,
 						ThresholdProfiles: map[string]float64{},
+						Governance: ContextAssemblerCA3CompactionRerankerGovernanceConfig{
+							Mode:                  CA3RerankerGovernanceModeEnforce,
+							ProfileVersion:        "",
+							RolloutProviderModels: []string{},
+						},
 					},
 					Evidence: ContextAssemblerCA3CompactionEvidenceConfig{
 						Keywords:     []string{"decision", "constraint", "todo", "risk"},
@@ -1246,6 +1263,29 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 	if reranker.MaxRetries < 0 {
 		return errors.New("context_assembler.ca3.compaction.reranker.max_retries must be >= 0")
 	}
+	govMode := strings.ToLower(strings.TrimSpace(reranker.Governance.Mode))
+	if govMode == "" {
+		govMode = CA3RerankerGovernanceModeEnforce
+	}
+	switch govMode {
+	case CA3RerankerGovernanceModeEnforce, CA3RerankerGovernanceModeDryRun:
+	default:
+		return fmt.Errorf(
+			"context_assembler.ca3.compaction.reranker.governance.mode must be one of [%s,%s], got %q",
+			CA3RerankerGovernanceModeEnforce,
+			CA3RerankerGovernanceModeDryRun,
+			reranker.Governance.Mode,
+		)
+	}
+	for idx, key := range reranker.Governance.RolloutProviderModels {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		if normalized == "" {
+			return fmt.Errorf("context_assembler.ca3.compaction.reranker.governance.rollout_provider_models[%d] must not be empty", idx)
+		}
+		if !isValidProviderModelKey(normalized) {
+			return fmt.Errorf("context_assembler.ca3.compaction.reranker.governance.rollout_provider_models[%d] must be in provider:model format, got %q", idx, key)
+		}
+	}
 	if reranker.Enabled {
 		if !embedding.Enabled {
 			return errors.New("context_assembler.ca3.compaction.reranker requires embedding.enabled=true")
@@ -1289,6 +1329,14 @@ func buildCA3ThresholdProfileKey(provider, model string) string {
 		return ""
 	}
 	return p + ":" + m
+}
+
+func isValidProviderModelKey(key string) bool {
+	parts := strings.SplitN(strings.TrimSpace(key), ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	return strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
 }
 
 func validateSemanticTemplate(cfg ContextAssemblerCA3SemanticTemplateConfig) error {
@@ -1489,6 +1537,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.compaction.reranker.timeout", base.ContextAssembler.CA3.Compaction.Reranker.Timeout)
 	v.SetDefault("context_assembler.ca3.compaction.reranker.max_retries", base.ContextAssembler.CA3.Compaction.Reranker.MaxRetries)
 	v.SetDefault("context_assembler.ca3.compaction.reranker.threshold_profiles", base.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.governance.mode", base.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.governance.profile_version", base.ContextAssembler.CA3.Compaction.Reranker.Governance.ProfileVersion)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.governance.rollout_provider_models", base.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.keywords", base.ContextAssembler.CA3.Compaction.Evidence.Keywords)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.recent_window", base.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
@@ -1620,6 +1671,9 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout = v.GetDuration("context_assembler.ca3.compaction.reranker.timeout")
 	cfg.ContextAssembler.CA3.Compaction.Reranker.MaxRetries = v.GetInt("context_assembler.ca3.compaction.reranker.max_retries")
 	cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles = normalizeFloatMap(v.GetStringMap("context_assembler.ca3.compaction.reranker.threshold_profiles"))
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.reranker.governance.mode")))
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.ProfileVersion = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.reranker.governance.profile_version"))
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.RolloutProviderModels = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.reranker.governance.rollout_provider_models"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.Keywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.evidence.keywords"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow = v.GetInt("context_assembler.ca3.compaction.evidence.recent_window")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))

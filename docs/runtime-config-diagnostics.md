@@ -257,6 +257,10 @@ context_assembler:
         enabled: false
         timeout: 500ms
         max_retries: 1
+        governance:
+          mode: enforce # enforce|dry_run
+          profile_version: ""
+          rollout_provider_models: [] # provider:model list; empty means match all
         threshold_profiles:
           openai:text-embedding-3-small: 0.62
       evidence:
@@ -316,8 +320,10 @@ ca3 compaction 校验语义：
    - `reranker.timeout>0`
    - `reranker.threshold_profiles` 非空
    - 且包含当前 `embedding.provider:embedding.model` 对应 key。
-9. `context_assembler.ca3.compaction.evidence.recent_window` 必须 `>= 0`。
-10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+9. `context_assembler.ca3.compaction.reranker.governance.mode` 仅允许 `enforce|dry_run`。
+10. `context_assembler.ca3.compaction.reranker.governance.rollout_provider_models[*]` 必须满足 `provider:model` 格式。
+11. `context_assembler.ca3.compaction.evidence.recent_window` 必须 `>= 0`。
+12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ## 使用示例（最小）
 
@@ -443,6 +449,9 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `ca3_compaction_reranker_threshold_source`：阈值来源（如 `provider_model_profile`）。
 - `ca3_compaction_reranker_threshold_hit`：是否命中 reranker 阈值（`score < threshold`）。
 - `ca3_compaction_reranker_fallback_reason`：reranker 回退原因（如 `reranker_error`）。
+- `ca3_compaction_reranker_profile_version`：治理阈值 profile 版本标签。
+- `ca3_compaction_reranker_rollout_hit`：是否命中 `provider:model` 灰度匹配。
+- `ca3_compaction_reranker_threshold_drift`：治理阈值与基础阈值的差值绝对值（用于漂移观测）。
 - `ca3_compaction_retained_evidence_count`：本次 prune 过程中被证据保留规则保护的消息数量。
 
 语义说明：
@@ -451,6 +460,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - semantic prompt 由 runtime 模板渲染，模板变量受白名单约束。
 - embedding adapter 支持 `openai|gemini|anthropic`；当前相似度指标固定为 `cosine`。
 - reranker 支持 provider-specific 扩展注册（`assembler.WithSemanticReranker`），未注册时走内置默认实现。
+- 阈值治理模式支持 `enforce|dry_run`：`dry_run` 只评估治理阈值，不改变最终 gate 决策。
 - 允许使用独立 embedding 凭证（`embedding.auth.*`）并支持 provider 级覆盖（`embedding.provider_auth.*`）。
 - 若 stage policy 为 `best_effort`，语义压缩失败会回退 `truncate` 并记录 `ca3_compaction_fallback=true`。
 - 若 stage policy 为 `fail_fast`，语义压缩失败会立即终止当前装配流程。

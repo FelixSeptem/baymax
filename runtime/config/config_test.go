@@ -325,8 +325,21 @@ func TestSkillTriggerScoringDefaults(t *testing.T) {
 	if cfg.Skill.TriggerScoring.Lexical.TokenizerMode != SkillTriggerScoringTokenizerMixedCJKEN {
 		t.Fatalf("skill.trigger_scoring.lexical.tokenizer_mode = %q, want %q", cfg.Skill.TriggerScoring.Lexical.TokenizerMode, SkillTriggerScoringTokenizerMixedCJKEN)
 	}
-	if cfg.Skill.TriggerScoring.MaxSemanticCandidates != 3 {
-		t.Fatalf("skill.trigger_scoring.max_semantic_candidates = %d, want 3", cfg.Skill.TriggerScoring.MaxSemanticCandidates)
+	if cfg.Skill.TriggerScoring.MaxSemanticCandidates != 5 {
+		t.Fatalf("skill.trigger_scoring.max_semantic_candidates = %d, want 5", cfg.Skill.TriggerScoring.MaxSemanticCandidates)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Mode != SkillTriggerScoringBudgetModeAdaptive {
+		t.Fatalf("skill.trigger_scoring.budget.mode = %q, want %q", cfg.Skill.TriggerScoring.Budget.Mode, SkillTriggerScoringBudgetModeAdaptive)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Adaptive.MinK != 1 || cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK != 5 {
+		t.Fatalf(
+			"skill.trigger_scoring.budget.adaptive (min_k,max_k) = (%d,%d), want (1,5)",
+			cfg.Skill.TriggerScoring.Budget.Adaptive.MinK,
+			cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK,
+		)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin != 0.08 {
+		t.Fatalf("skill.trigger_scoring.budget.adaptive.min_score_margin = %v, want 0.08", cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin)
 	}
 	if cfg.Skill.TriggerScoring.Embedding.Timeout <= 0 {
 		t.Fatalf("skill.trigger_scoring.embedding.timeout = %v, want > 0", cfg.Skill.TriggerScoring.Embedding.Timeout)
@@ -345,6 +358,10 @@ func TestSkillTriggerScoringLoadEnvOverFile(t *testing.T) {
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_CONFIDENCE_THRESHOLD", "0.61")
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_LEXICAL_TOKENIZER_MODE", SkillTriggerScoringTokenizerMixedCJKEN)
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_MAX_SEMANTIC_CANDIDATES", "5")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_BUDGET_MODE", SkillTriggerScoringBudgetModeFixed)
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_BUDGET_ADAPTIVE_MIN_K", "2")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_BUDGET_ADAPTIVE_MAX_K", "4")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_BUDGET_ADAPTIVE_MIN_SCORE_MARGIN", "0.11")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -357,6 +374,12 @@ skill:
     max_semantic_candidates: 2
     lexical:
       tokenizer_mode: mixed_cjk_en
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 3
+        min_score_margin: 0.08
     keyword_weights:
       db: 1.9
       api: 1.4
@@ -382,6 +405,19 @@ skill:
 	}
 	if cfg.Skill.TriggerScoring.Lexical.TokenizerMode != SkillTriggerScoringTokenizerMixedCJKEN {
 		t.Fatalf("skill.trigger_scoring.lexical.tokenizer_mode = %q, want %q", cfg.Skill.TriggerScoring.Lexical.TokenizerMode, SkillTriggerScoringTokenizerMixedCJKEN)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Mode != SkillTriggerScoringBudgetModeFixed {
+		t.Fatalf("skill.trigger_scoring.budget.mode = %q, want %q", cfg.Skill.TriggerScoring.Budget.Mode, SkillTriggerScoringBudgetModeFixed)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Adaptive.MinK != 2 || cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK != 4 {
+		t.Fatalf(
+			"skill.trigger_scoring.budget.adaptive (min_k,max_k) = (%d,%d), want (2,4)",
+			cfg.Skill.TriggerScoring.Budget.Adaptive.MinK,
+			cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK,
+		)
+	}
+	if cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin != 0.11 {
+		t.Fatalf("skill.trigger_scoring.budget.adaptive.min_score_margin = %v, want 0.11", cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin)
 	}
 	if cfg.Skill.TriggerScoring.KeywordWeights["db"] != 1.9 {
 		t.Fatalf("skill.trigger_scoring.keyword_weights.db = %v, want 1.9", cfg.Skill.TriggerScoring.KeywordWeights["db"])
@@ -511,6 +547,40 @@ func TestSkillTriggerScoringValidateRejectsLexicalBudgetConfig(t *testing.T) {
 		cfg.Skill.TriggerScoring.MaxSemanticCandidates = 0
 		if err := Validate(cfg); err == nil {
 			t.Fatal("expected validation error for skill.trigger_scoring.max_semantic_candidates")
+		}
+	})
+
+	t.Run("invalid_budget_mode", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Budget.Mode = "dynamic"
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.budget.mode")
+		}
+	})
+
+	t.Run("invalid_adaptive_k_range", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Budget.Adaptive.MinK = 3
+		cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK = 2
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.budget.adaptive.max_k")
+		}
+	})
+
+	t.Run("adaptive_max_k_exceeds_semantic_cap", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.MaxSemanticCandidates = 4
+		cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK = 5
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.budget.adaptive.max_k <= max_semantic_candidates")
+		}
+	})
+
+	t.Run("invalid_adaptive_margin", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin = 1.2
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.budget.adaptive.min_score_margin")
 		}
 	})
 }

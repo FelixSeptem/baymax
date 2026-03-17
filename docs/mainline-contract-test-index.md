@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-16
+更新时间：2026-03-17
 
 ## 目标
 
@@ -14,10 +14,14 @@
 | Stream | `core/runner/runner_test.go::TestStreamForwardsDelta` | `core/runner/runner_test.go::TestStreamFailFastWithErrModel` |
 | Tool Loop | `core/runner/runner_test.go::TestRunToolLoopSuccess` | `core/runner/runner_test.go::TestRunToolFailurePolicy` |
 | CA2 Stage2 | `core/runner/runner_test.go::TestRunCA2BestEffortKeepsModelPath` | `core/runner/runner_test.go::TestStreamCA2FailFastStopsBeforeModel` |
+| CA2 Agentic Routing | `core/runner/runner_test.go::TestCA2AgenticRoutingRunAndStreamSemanticEquivalent` | `core/runner/runner_test.go::TestCA2AgenticRoutingFallbackRunAndStreamSemanticEquivalent` |
 | CA3 Pressure | `core/runner/runner_test.go::TestRunAndStreamCA3PressureSemanticsEquivalent` | `context/assembler/assembler_test.go::TestAssemblerCA3EmergencyRejectsLowPriorityStage2` |
 | CA3 Compaction Semantic | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionUsesModelClient` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback` |
 | Action Gate H2 | `core/runner/runner_test.go::TestActionGateAllowPathKeepsToolExecution` | `core/runner/runner_test.go::TestActionGateRunAndStreamTimeoutSemanticsEquivalent` |
 | Action Gate H4 Parameter Rules | `core/runner/runner_test.go::TestActionGateParameterRulePriorityOverKeyword` | `core/runner/runner_test.go::TestActionGateParameterRuleRunAndStreamTimeoutSemanticsEquivalent` |
+| Security Policy S2 | `core/runner/runner_test.go::TestSecurityPolicyContractPermissionAllowAndDeny` | `core/runner/runner_test.go::TestSecurityPolicyContractRateLimitDeny` |
+| Security Event S3 | `core/runner/runner_test.go::TestSecurityEventContractPermissionDenyTriggersCallback` | `core/runner/runner_test.go::TestSecurityEventContractCallbackFailureDoesNotChangeDenyOutcome` |
+| Security Delivery S4 | `core/runner/runner_test.go::TestSecurityDeliveryContractRetryBudget` | `core/runner/runner_test.go::TestSecurityDeliveryContractCircuitTransitions` |
 | Runner Concurrency Baseline R5 | `core/runner/runner_test.go::TestRunBackpressureBlockDiagnosticsAndTimeline` | `core/runner/runner_test.go::TestRunAndStreamCancelPropagationSemanticsEquivalent` |
 | Backpressure Drop-Low-Priority R6 | `tool/local/registry_test.go::TestDispatcherDropLowPriorityDropsConfiguredLowCalls` | `core/runner/runner_test.go::TestRunBackpressureDropLowPriorityAllDroppedFailsFast` |
 | Backpressure Drop-Low-Priority R7 | `tool/local/registry_test.go::TestDispatcherDropLowPriorityMarksMCPAndSkillPhase` | `core/runner/runner_test.go::TestRunBackpressureDropLowPriorityMCPAndSkillAllDroppedFailsFast` |
@@ -26,6 +30,9 @@
 | Provider Fallback + CA3 Token Counter | `core/runner/runner_test.go::TestRunProviderFallbackUsesSelectedTokenCounterForCA3` | `core/runner/runner_test.go::TestStreamProviderFallbackUsesSelectedTokenCounterForCA3` |
 | Provider Token Count Normalization | `model/gemini/client_test.go::TestBuildTokenContentsNormalizesRolesAndKeepsInput` | `model/openai/client_test.go::TestCountTokensReturnsUnsupportedError` |
 | Skill Trigger Scoring D1 | `skill/loader/loader_test.go::TestCompileSemanticTieBreakUsesHighestPriority` | `skill/loader/loader_test.go::TestCompileDefaultSuppressesLowConfidenceSemanticMatch` |
+| Skill Trigger Scoring D2 | `skill/loader/loader_test.go::TestCompileLexicalPlusEmbeddingWeightedScore` | `skill/loader/loader_test.go::TestCompileLexicalPlusEmbeddingFallbackReasons` |
+| Skill Trigger Scoring D3 | `skill/loader/loader_test.go::TestCompileMixedCJKENLexicalTokenization` | `skill/loader/loader_test.go::TestCompileTopKBudgetAndExplicitBypass` |
+| Skill Trigger Run/Stream Equivalence D3 | `skill/loader/loader_test.go::TestCompileMultilingualBudgetRunAndStreamSemanticEquivalent` | `runtime/config/manager_test.go::TestManagerSkillTriggerLexicalBudgetInvalidReloadRollsBack` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |
 | CA3 Threshold Governance E5 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerGovernanceEnforceVsDryRun` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerGovernanceModeFailurePolicy` |

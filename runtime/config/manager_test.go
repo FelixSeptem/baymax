@@ -211,15 +211,31 @@ security:
 	defer func() { _ = mgr.Close() }()
 
 	out := mgr.RedactPayload(map[string]any{
-		"tokenizer_mode":         SkillTriggerScoringTokenizerMixedCJKEN,
-		"candidate_pruned_count": 1,
-		"bearer_token":           "secret-token",
+		"tokenizer_mode":          SkillTriggerScoringTokenizerMixedCJKEN,
+		"candidate_pruned_count":  1,
+		"budget_mode":             SkillTriggerScoringBudgetModeAdaptive,
+		"selected_semantic_count": 3,
+		"score_margin_top1_top2":  0.08,
+		"budget_decision_reason":  "adaptive.max_k_reached",
+		"bearer_token":            "secret-token",
 	})
 	if out["tokenizer_mode"] != SkillTriggerScoringTokenizerMixedCJKEN {
 		t.Fatalf("tokenizer_mode = %#v, want %q", out["tokenizer_mode"], SkillTriggerScoringTokenizerMixedCJKEN)
 	}
 	if out["candidate_pruned_count"] != 1 {
 		t.Fatalf("candidate_pruned_count = %#v, want 1", out["candidate_pruned_count"])
+	}
+	if out["budget_mode"] != SkillTriggerScoringBudgetModeAdaptive {
+		t.Fatalf("budget_mode = %#v, want %q", out["budget_mode"], SkillTriggerScoringBudgetModeAdaptive)
+	}
+	if out["selected_semantic_count"] != 3 {
+		t.Fatalf("selected_semantic_count = %#v, want 3", out["selected_semantic_count"])
+	}
+	if out["score_margin_top1_top2"] != 0.08 {
+		t.Fatalf("score_margin_top1_top2 = %#v, want 0.08", out["score_margin_top1_top2"])
+	}
+	if out["budget_decision_reason"] != "adaptive.max_k_reached" {
+		t.Fatalf("budget_decision_reason = %#v, want adaptive.max_k_reached", out["budget_decision_reason"])
 	}
 	if out["bearer_token"] != "***" {
 		t.Fatalf("bearer_token = %#v, want ***", out["bearer_token"])
@@ -524,6 +540,12 @@ skill:
     max_semantic_candidates: 3
     lexical:
       tokenizer_mode: mixed_cjk_en
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 3
+        min_score_margin: 0.08
     keyword_weights:
       db: 1.5
 reload:
@@ -551,6 +573,12 @@ skill:
     max_semantic_candidates: 0
     lexical:
       tokenizer_mode: mixed_cjk_en
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 3
+        min_score_margin: 0.08
     keyword_weights:
       db: 1.5
 reload:
@@ -561,6 +589,74 @@ reload:
 	after := mgr.EffectiveConfig().Skill.TriggerScoring.MaxSemanticCandidates
 	if after != before {
 		t.Fatalf("invalid lexical budget reload should rollback, max_semantic_candidates = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerSkillTriggerAdaptiveBudgetInvalidRangeRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    max_semantic_candidates: 5
+    lexical:
+      tokenizer_mode: mixed_cjk_en
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 5
+        min_score_margin: 0.08
+    keyword_weights:
+      db: 1.5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Skill.TriggerScoring.Budget.Adaptive.MaxK
+	if before != 5 {
+		t.Fatalf("before max_k = %d, want 5", before)
+	}
+
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    max_semantic_candidates: 5
+    lexical:
+      tokenizer_mode: mixed_cjk_en
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 2
+        max_k: 1
+        min_score_margin: 0.08
+    keyword_weights:
+      db: 1.5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Skill.TriggerScoring.Budget.Adaptive.MaxK
+	if after != before {
+		t.Fatalf("invalid adaptive budget reload should rollback, max_k = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

@@ -1,0 +1,92 @@
+package contributioncheck
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"sort"
+	"strings"
+	"testing"
+)
+
+var contractRefPattern = regexp.MustCompile("`([^`]+::Test[A-Za-z0-9_]+)`")
+
+func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
+	root := repoRoot(t)
+	indexPath := filepath.Join(root, "docs", "mainline-contract-test-index.md")
+	raw, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("read contract index: %v", err)
+	}
+	doc := string(raw)
+
+	requiredRows := []string{
+		"Skill Trigger Scoring D1",
+		"Skill Trigger Scoring D2",
+		"Skill Trigger Scoring D3",
+		"Security Policy S2",
+		"Security Event S3",
+		"Security Delivery S4",
+	}
+	for _, row := range requiredRows {
+		if !strings.Contains(doc, row) {
+			t.Fatalf("mainline contract index missing required row: %q", row)
+		}
+	}
+
+	matches := contractRefPattern.FindAllStringSubmatch(doc, -1)
+	if len(matches) == 0 {
+		t.Fatal("no contract test references found in mainline contract index")
+	}
+
+	seen := map[string]struct{}{}
+	missing := make([]string, 0)
+	for _, m := range matches {
+		ref := strings.TrimSpace(m[1])
+		if ref == "" {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+
+		parts := strings.Split(ref, "::")
+		if len(parts) != 2 {
+			missing = append(missing, ref+" (invalid reference format)")
+			continue
+		}
+		filePart := filepath.FromSlash(strings.TrimSpace(parts[0]))
+		testName := strings.TrimSpace(parts[1])
+		if testName == "" {
+			missing = append(missing, ref+" (missing test name)")
+			continue
+		}
+
+		testFile := filepath.Join(root, filePart)
+		content, readErr := os.ReadFile(testFile)
+		if readErr != nil {
+			missing = append(missing, ref+" (file not found)")
+			continue
+		}
+		pattern := regexp.MustCompile(`(?m)^func\s+` + regexp.QuoteMeta(testName) + `\s*\(`)
+		if !pattern.Match(content) {
+			missing = append(missing, ref+" (test function not found)")
+		}
+	}
+
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		t.Fatalf("mainline contract index has invalid references:\n%s", strings.Join(missing, "\n"))
+	}
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve runtime caller failed")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+}

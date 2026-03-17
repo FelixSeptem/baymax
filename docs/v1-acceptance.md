@@ -19,7 +19,7 @@
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
-- Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and semantic candidate top-k budget (`max_semantic_candidates`, default `3`).
+- Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.
 - Runtime config exposes `skill.trigger_scoring.*` with `env > file > default` precedence and fail-fast validation.
 - Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.

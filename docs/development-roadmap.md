@@ -139,6 +139,7 @@
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
 - [x] `introduce-skill-semantic-embedding-scorer-d2`：完成 skill trigger scoring embedding 增强（`lexical_plus_embedding` 线性加权、best-effort lexical 回退、`skill.trigger_scoring.embedding.*` 配置与诊断字段、等价性契约测试）。
 - [x] `harden-skill-trigger-multilingual-lexical-and-budget-d3`：完成 skill trigger scoring 多语言词法与预算收敛（`mixed_cjk_en` 分词、`max_semantic_candidates` top-k 裁剪、`tokenizer_mode/candidate_pruned_count` 诊断字段、Run/Stream 等价契约测试）。
+- [x] `introduce-skill-trigger-adaptive-budget-and-margin-d4`：完成 skill trigger scoring 自适应预算收敛（默认 `adaptive`、`fixed` 兼容、`min_k/max_k/min_score_margin` 配置校验与热更新回滚、新增 `budget_*` 诊断字段、Run/Stream 双模式等价契约测试）。
 - [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。
 - [x] `extend-drop-low-priority-backpressure-to-mcp-and-skill-r7`：将 `drop_low_priority` 语义扩展到 `local+mcp+skill`，补齐分桶诊断、跨路径 fail-fast 与契约/benchmark 收敛。
 
@@ -212,8 +213,10 @@
 ## 近期执行计划（2026-03-17 起）
 
 - P0 文档一致性收敛：以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为主口径，持续消除 README 与验收文档状态漂移。
+- P0 多 Agent 平台启动：在 2026-03-31 前完成 R4-T0 三个 OpenSpec 提案及评审闭环（Teams/Workflow/A2A）。
 - P1 安全运营收敛：聚焦 S4 callback 投递稳定性，建立常态化回放演练与失败原因分层分析。
 - P1 并发可靠性压测：扩展 runner 压测到混合路径（高并发 tool/mcp/skill + cancel storm + security delivery 干扰）。
+- P1 多 Agent 契约基线：补齐 `team/workflow/a2a` 事件与诊断字段草案，优先保证与现有 `action.timeline`、single-writer 口径兼容。
 - P2 DX D2 精简模式推进：保持 library-first，不引入重 CLI 依赖，优先补齐可复现的 replay/配置校验/事件查看入口。
 - P2 CA2/CA3 调优连续性：按 profile version 治理阈值迭代，沉淀可复现调优语料与回归基线。
 
@@ -279,6 +282,38 @@
   - 自动性能调优与智能降级建议（先建议模式，后自动执行）。
   - 运营仪表板与异常检测/自愈策略。
   - 成本优化策略（模型选择、缓存命中、资源调度）。
+
+### R4 任务拆解（Teams / Workflows / A2A，2026-03-17 版）
+
+- R4-T0（架构与契约冻结，目标窗口：2026-03-17 ~ 2026-03-31）
+  - 产出并评审 3 个 OpenSpec 提案：`teams-runtime-baseline`、`workflow-dsl-baseline`、`a2a-minimal-interoperability`。
+  - 冻结跨模块边界：`core/runner` 不直接承载跨 Agent 编排状态机；新增编排能力通过独立模块接入并复用现有事件/诊断写入口径。
+  - 定义统一标识与关联字段（规划项）：`team_id`、`agent_id`、`workflow_id`、`task_id`、`step_id`，并约束与 `run_id/session_id` 的映射关系。
+  - 验收：OpenSpec 工件完整（proposal/design/tasks/spec delta），并通过 `scripts/check-runtime-boundaries.sh` 与主干质量门禁。
+
+- R4-T1（Teams MVP，单进程，目标窗口：2026-04-01 ~ 2026-04-21）
+  - 交付最小角色模型：`leader/worker/coordinator` 与三类协作策略（串行、并行、投票）。
+  - 交付任务分发与结果聚合基线：失败收敛策略、冲突决策策略、超时与取消传播对齐 Run/Stream 语义。
+  - 交付可观测最小字段：团队级 dispatch/collect 事件与 run 级聚合计数。
+  - 验收：新增 integration 场景覆盖三类协作策略，Run/Stream 语义等价测试通过。
+
+- R4-T2（Workflow MVP，确定性执行，目标窗口：2026-04-22 ~ 2026-05-12）
+  - 交付 workflow DSL（YAML/JSON）最小语法：`step`、`depends_on`、`condition`、`retry`、`timeout`。
+  - 交付执行语义：有向无环依赖调度（DAG）、失败分支、有限重试、可恢复检查点（最小可用）。
+  - 交付与 agentic 步骤混编能力：workflow step 可调用现有 runner/tool/mcp/skill 路径。
+  - 验收：DSL schema 校验 + replay 契约测试 + benchmark smoke（50ms）可稳定运行。
+
+- R4-T3（A2A MVP，跨进程互联，目标窗口：2026-05-13 ~ 2026-06-09）
+  - 交付最小 A2A Client/Server：任务提交、状态查询、结果回传、错误归一化。
+  - 交付 Agent Card 能力发现与最小路由策略（静态优先级 + 能力匹配）。
+  - 交付与 MCP 互补边界测试：A2A 仅处理 Agent 协作，MCP 仅处理工具调用，避免语义重叠。
+  - 验收：跨协议契约测试（A2A + MCP 组合）通过，关键链路接入 timeline/diagnostics。
+
+- R4-T4（平台化与治理增强，目标窗口：2026-06-10 之后）
+  - 多租户、RBAC、审计流水线与 control plane 进入增量交付。
+  - Session 生命周期管理（创建、恢复、终止）与跨会话恢复策略落地。
+  - 运营侧补齐：容量治理、SLO、告警分层、故障演练机制。
+  - 验收：以服务化部署场景的稳定性与治理指标达标为准，不绑定单次迭代闭环。
 
 ## Context Assembler 里程碑（规划，按 P1-P10 原则分期）
 

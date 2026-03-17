@@ -74,6 +74,8 @@ const (
 	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
 	SkillTriggerScoringSimilarityCosine                = "cosine"
 	SkillTriggerScoringTokenizerMixedCJKEN             = "mixed_cjk_en"
+	SkillTriggerScoringBudgetModeFixed                 = "fixed"
+	SkillTriggerScoringBudgetModeAdaptive              = "adaptive"
 )
 
 const (
@@ -185,11 +187,23 @@ type SkillTriggerScoringConfig struct {
 	KeywordWeights        map[string]float64                 `json:"keyword_weights"`
 	Lexical               SkillTriggerScoringLexicalConfig   `json:"lexical"`
 	MaxSemanticCandidates int                                `json:"max_semantic_candidates"`
+	Budget                SkillTriggerScoringBudgetConfig    `json:"budget"`
 	Embedding             SkillTriggerScoringEmbeddingConfig `json:"embedding"`
 }
 
 type SkillTriggerScoringLexicalConfig struct {
 	TokenizerMode string `json:"tokenizer_mode"`
+}
+
+type SkillTriggerScoringBudgetConfig struct {
+	Mode     string                                  `json:"mode"`
+	Adaptive SkillTriggerScoringAdaptiveBudgetConfig `json:"adaptive"`
+}
+
+type SkillTriggerScoringAdaptiveBudgetConfig struct {
+	MinK           int     `json:"min_k"`
+	MaxK           int     `json:"max_k"`
+	MinScoreMargin float64 `json:"min_score_margin"`
 }
 
 type SkillTriggerScoringEmbeddingConfig struct {
@@ -637,7 +651,15 @@ func DefaultConfig() Config {
 				Lexical: SkillTriggerScoringLexicalConfig{
 					TokenizerMode: SkillTriggerScoringTokenizerMixedCJKEN,
 				},
-				MaxSemanticCandidates: 3,
+				MaxSemanticCandidates: 5,
+				Budget: SkillTriggerScoringBudgetConfig{
+					Mode: SkillTriggerScoringBudgetModeAdaptive,
+					Adaptive: SkillTriggerScoringAdaptiveBudgetConfig{
+						MinK:           1,
+						MaxK:           5,
+						MinScoreMargin: 0.08,
+					},
+				},
 				Embedding: SkillTriggerScoringEmbeddingConfig{
 					Enabled:          false,
 					Provider:         "openai",
@@ -1095,6 +1117,28 @@ func Validate(cfg Config) error {
 	}
 	if scoring.MaxSemanticCandidates <= 0 {
 		return errors.New("skill.trigger_scoring.max_semantic_candidates must be > 0")
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(scoring.Budget.Mode)); mode {
+	case SkillTriggerScoringBudgetModeFixed, SkillTriggerScoringBudgetModeAdaptive:
+	default:
+		return fmt.Errorf(
+			"skill.trigger_scoring.budget.mode must be one of [%s,%s], got %q",
+			SkillTriggerScoringBudgetModeFixed,
+			SkillTriggerScoringBudgetModeAdaptive,
+			scoring.Budget.Mode,
+		)
+	}
+	if scoring.Budget.Adaptive.MinK <= 0 {
+		return errors.New("skill.trigger_scoring.budget.adaptive.min_k must be > 0")
+	}
+	if scoring.Budget.Adaptive.MaxK < scoring.Budget.Adaptive.MinK {
+		return errors.New("skill.trigger_scoring.budget.adaptive.max_k must be >= min_k")
+	}
+	if scoring.Budget.Adaptive.MaxK > scoring.MaxSemanticCandidates {
+		return errors.New("skill.trigger_scoring.budget.adaptive.max_k must be <= max_semantic_candidates")
+	}
+	if scoring.Budget.Adaptive.MinScoreMargin < 0 || scoring.Budget.Adaptive.MinScoreMargin > 1 {
+		return errors.New("skill.trigger_scoring.budget.adaptive.min_score_margin must be in [0,1]")
 	}
 	for keyword, weight := range scoring.KeywordWeights {
 		k := strings.TrimSpace(strings.ToLower(keyword))
@@ -1973,6 +2017,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("skill.trigger_scoring.keyword_weights", base.Skill.TriggerScoring.KeywordWeights)
 	v.SetDefault("skill.trigger_scoring.lexical.tokenizer_mode", base.Skill.TriggerScoring.Lexical.TokenizerMode)
 	v.SetDefault("skill.trigger_scoring.max_semantic_candidates", base.Skill.TriggerScoring.MaxSemanticCandidates)
+	v.SetDefault("skill.trigger_scoring.budget.mode", base.Skill.TriggerScoring.Budget.Mode)
+	v.SetDefault("skill.trigger_scoring.budget.adaptive.min_k", base.Skill.TriggerScoring.Budget.Adaptive.MinK)
+	v.SetDefault("skill.trigger_scoring.budget.adaptive.max_k", base.Skill.TriggerScoring.Budget.Adaptive.MaxK)
+	v.SetDefault("skill.trigger_scoring.budget.adaptive.min_score_margin", base.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin)
 	v.SetDefault("skill.trigger_scoring.embedding.enabled", base.Skill.TriggerScoring.Embedding.Enabled)
 	v.SetDefault("skill.trigger_scoring.embedding.provider", base.Skill.TriggerScoring.Embedding.Provider)
 	v.SetDefault("skill.trigger_scoring.embedding.model", base.Skill.TriggerScoring.Embedding.Model)
@@ -2158,6 +2206,10 @@ func buildConfig(v *viper.Viper) Config {
 	}
 	cfg.Skill.TriggerScoring.Lexical.TokenizerMode = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.lexical.tokenizer_mode")))
 	cfg.Skill.TriggerScoring.MaxSemanticCandidates = v.GetInt("skill.trigger_scoring.max_semantic_candidates")
+	cfg.Skill.TriggerScoring.Budget.Mode = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.budget.mode")))
+	cfg.Skill.TriggerScoring.Budget.Adaptive.MinK = v.GetInt("skill.trigger_scoring.budget.adaptive.min_k")
+	cfg.Skill.TriggerScoring.Budget.Adaptive.MaxK = v.GetInt("skill.trigger_scoring.budget.adaptive.max_k")
+	cfg.Skill.TriggerScoring.Budget.Adaptive.MinScoreMargin = v.GetFloat64("skill.trigger_scoring.budget.adaptive.min_score_margin")
 	cfg.Skill.TriggerScoring.Embedding.Enabled = v.GetBool("skill.trigger_scoring.embedding.enabled")
 	cfg.Skill.TriggerScoring.Embedding.Provider = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.provider")))
 	cfg.Skill.TriggerScoring.Embedding.Model = strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.model"))

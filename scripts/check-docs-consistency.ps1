@@ -29,5 +29,6 @@ if ($boundaryDoc -notmatch "依赖方向") {
     Write-Error "docs/runtime-module-boundaries.md must include dependency direction section."
 }
 
-Write-Host "Docs consistency check passed."
+go test ./tool/contributioncheck -run '^TestMainlineContractIndexReferencesExistingTests$' -count=1
 
+Write-Host "Docs consistency check passed."

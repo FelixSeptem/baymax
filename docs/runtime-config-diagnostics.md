@@ -84,9 +84,15 @@ skill:
     confidence_threshold: 0.25          # [0,1]
     tie_break: highest_priority         # highest_priority|first_registered
     suppress_low_confidence: true
-    max_semantic_candidates: 3          # semantic 候选 top-k 预算，必须 > 0
+    max_semantic_candidates: 5          # semantic 候选预算上限，必须 > 0
     lexical:
       tokenizer_mode: mixed_cjk_en      # D3: 当前仅支持 mixed_cjk_en
+    budget:
+      mode: adaptive                    # D4: fixed|adaptive，默认 adaptive
+      adaptive:
+        min_k: 1
+        max_k: 5                        # 必须 <= max_semantic_candidates
+        min_score_margin: 0.08          # [0,1]
     keyword_weights:
       database: 1.5
       db: 1.5
@@ -305,13 +311,17 @@ Skill trigger scoring 校验语义：
 3. `tie_break` 仅支持 `highest_priority|first_registered`。
 4. `lexical.tokenizer_mode` 当前仅支持 `mixed_cjk_en`。
 5. `max_semantic_candidates` 必须 `> 0`。
-6. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
-7. `embedding.timeout` 必须 `> 0`。
-8. `embedding.similarity_metric` 当前必须为 `cosine`。
-9. `embedding.lexical_weight|embedding_weight` 必须在 `[0,1]` 且和 `> 0`。
-10. `strategy=lexical_plus_embedding` 时，`embedding.enabled` 必须为 `true`。
-11. `embedding.enabled=true` 时，`embedding.provider` 必须是 `openai|gemini|anthropic` 且 `embedding.model` 非空。
-12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+6. `budget.mode` 仅支持 `fixed|adaptive`。
+7. `budget.adaptive.min_k` 必须 `> 0`。
+8. `budget.adaptive.max_k` 必须 `>= min_k` 且 `<= max_semantic_candidates`。
+9. `budget.adaptive.min_score_margin` 必须在 `[0,1]`。
+10. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
+11. `embedding.timeout` 必须 `> 0`。
+12. `embedding.similarity_metric` 当前必须为 `cosine`。
+13. `embedding.lexical_weight|embedding_weight` 必须在 `[0,1]` 且和 `> 0`。
+14. `strategy=lexical_plus_embedding` 时，`embedding.enabled` 必须为 `true`。
+15. `embedding.enabled=true` 时，`embedding.provider` 必须是 `openai|gemini|anthropic` 且 `embedding.model` 非空。
+16. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 drop_low_priority 校验语义：
 1. `concurrency.backpressure=drop_low_priority` 在 `local + mcp + skill` 调度语义上统一生效。
@@ -392,11 +402,15 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
-Skill trigger scoring（D2/D3）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
+Skill trigger scoring（D2/D3/D4）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
 - `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。
 - `final_score`：最终触发分数。
 - `tokenizer_mode`：lexical 分词模式（当前 `mixed_cjk_en`；默认 redaction 不会将该观测字段误判为敏感信息）。
-- `candidate_pruned_count`：按 `max_semantic_candidates` 裁剪的 semantic 候选数量。
+- `candidate_pruned_count`：按预算模式裁剪的 semantic 候选数量（`fixed|adaptive`）。
+- `budget_mode`：预算模式（`fixed|adaptive`）。
+- `selected_semantic_count`：本次预算决策保留的 semantic 候选数。
+- `score_margin_top1_top2`：top1/top2 分差（候选不足 2 时为 `0`）。
+- `budget_decision_reason`：预算决策原因（如 `fixed.top_k|adaptive.clear_winner|adaptive.max_k_reached`）。
 - `embedding_score`：embedding 分数（仅 `lexical_plus_embedding` 路径）。
 - `fallback_reason`：embedding 回退原因（如 `embedding.scorer_missing|embedding.timeout|embedding.error|embedding.invalid_score`）。
 

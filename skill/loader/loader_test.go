@@ -21,6 +21,17 @@ func (c *collector) OnEvent(ctx context.Context, ev types.Event) {
 	c.events = append(c.events, ev)
 }
 
+type staticSkillScorer struct {
+	byName map[string]float64
+}
+
+func (s staticSkillScorer) Score(_ string, spec types.SkillSpec, _ runtimeconfig.SkillTriggerScoringConfig) float64 {
+	if s.byName == nil {
+		return 0
+	}
+	return s.byName[spec.Name]
+}
+
 func TestDiscoverSkipsMissingSkillAndEmitsWarning(t *testing.T) {
 	dir := t.TempDir()
 	agents := `
@@ -265,6 +276,12 @@ skill:
     tie_break: highest_priority
     suppress_low_confidence: false
     max_semantic_candidates: 1
+    budget:
+      mode: fixed
+      adaptive:
+        min_k: 1
+        max_k: 1
+        min_score_margin: 0.08
     keyword_weights:
       search: 1.0
       alpha: 1.0
@@ -323,9 +340,168 @@ skill:
 		if got, _ := ev.Payload["candidate_pruned_count"].(int); got != 2 {
 			t.Fatalf("candidate_pruned_count = %#v, want 2", ev.Payload["candidate_pruned_count"])
 		}
+		if ev.Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeFixed {
+			t.Fatalf("budget_mode = %#v, want %q", ev.Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeFixed)
+		}
+		if ev.Payload["selected_semantic_count"] != 1 {
+			t.Fatalf("selected_semantic_count = %#v, want 1", ev.Payload["selected_semantic_count"])
+		}
+		if ev.Payload["budget_decision_reason"] != "fixed.top_k" {
+			t.Fatalf("budget_decision_reason = %#v, want fixed.top_k", ev.Payload["budget_decision_reason"])
+		}
 	}
 	if loaded != 2 {
 		t.Fatalf("loaded event count = %d, want 2", loaded)
+	}
+}
+
+func TestCompileAdaptiveBudgetClearWinnerUsesMinK(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    max_semantic_candidates: 5
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 5
+        min_score_margin: 0.08
+    keyword_weights:
+      search: 1.0
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	makeSkill := func(name, tool string) types.SkillSpec {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("description: search\n- tool: "+tool), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return types.SkillSpec{Name: name, Path: path, Description: "search"}
+	}
+	specs := []types.SkillSpec{
+		makeSkill("s1", "local.s1"),
+		makeSkill("s2", "local.s2"),
+		makeSkill("s3", "local.s3"),
+	}
+	col := &collector{}
+	l := NewWithRuntimeManager(col, mgr)
+	l.scorer = staticSkillScorer{byName: map[string]float64{
+		"s1": 0.95,
+		"s2": 0.70,
+		"s3": 0.69,
+	}}
+
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "search"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.EnabledTools) != 1 || bundle.EnabledTools[0] != "local.s1" {
+		t.Fatalf("adaptive clear winner should keep min_k=1, got %#v", bundle.EnabledTools)
+	}
+	last := col.events[len(col.events)-1]
+	if last.Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeAdaptive {
+		t.Fatalf("budget_mode = %#v, want %q", last.Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeAdaptive)
+	}
+	if last.Payload["selected_semantic_count"] != 1 {
+		t.Fatalf("selected_semantic_count = %#v, want 1", last.Payload["selected_semantic_count"])
+	}
+	if last.Payload["candidate_pruned_count"] != 2 {
+		t.Fatalf("candidate_pruned_count = %#v, want 2", last.Payload["candidate_pruned_count"])
+	}
+	if last.Payload["budget_decision_reason"] != "adaptive.clear_winner" {
+		t.Fatalf("budget_decision_reason = %#v, want adaptive.clear_winner", last.Payload["budget_decision_reason"])
+	}
+}
+
+func TestCompileAdaptiveBudgetCloseScoresExpandWithinMaxK(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    max_semantic_candidates: 5
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 3
+        min_score_margin: 0.08
+    keyword_weights:
+      search: 1.0
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	makeSkill := func(name, tool string) types.SkillSpec {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("description: search\n- tool: "+tool), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return types.SkillSpec{Name: name, Path: path, Description: "search"}
+	}
+	specs := []types.SkillSpec{
+		makeSkill("s1", "local.s1"),
+		makeSkill("s2", "local.s2"),
+		makeSkill("s3", "local.s3"),
+		makeSkill("s4", "local.s4"),
+	}
+	col := &collector{}
+	l := NewWithRuntimeManager(col, mgr)
+	l.scorer = staticSkillScorer{byName: map[string]float64{
+		"s1": 0.91,
+		"s2": 0.88,
+		"s3": 0.86,
+		"s4": 0.60,
+	}}
+
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "search"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.EnabledTools) != 3 {
+		t.Fatalf("adaptive close scores should expand within max_k=3, got %#v", bundle.EnabledTools)
+	}
+	last := col.events[len(col.events)-1]
+	if last.Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeAdaptive {
+		t.Fatalf("budget_mode = %#v, want %q", last.Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeAdaptive)
+	}
+	if last.Payload["selected_semantic_count"] != 3 {
+		t.Fatalf("selected_semantic_count = %#v, want 3", last.Payload["selected_semantic_count"])
+	}
+	if last.Payload["candidate_pruned_count"] != 1 {
+		t.Fatalf("candidate_pruned_count = %#v, want 1", last.Payload["candidate_pruned_count"])
+	}
+	if last.Payload["budget_decision_reason"] != "adaptive.max_k_reached" {
+		t.Fatalf("budget_decision_reason = %#v, want adaptive.max_k_reached", last.Payload["budget_decision_reason"])
 	}
 }
 
@@ -569,6 +745,12 @@ skill:
     tie_break: highest_priority
     suppress_low_confidence: false
     max_semantic_candidates: 2
+    budget:
+      mode: fixed
+      adaptive:
+        min_k: 1
+        max_k: 2
+        min_score_margin: 0.08
     keyword_weights:
       数据库: 1.5
       migrate: 1.4
@@ -629,6 +811,111 @@ skill:
 			}
 			if ev.Payload["candidate_pruned_count"] != 1 {
 				t.Fatalf("candidate_pruned_count = %#v, want 1", ev.Payload["candidate_pruned_count"])
+			}
+			if ev.Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeFixed {
+				t.Fatalf("budget_mode = %#v, want %q", ev.Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeFixed)
+			}
+		}
+	}
+	assertLoadedPayload(t, runCollector.events)
+	assertLoadedPayload(t, streamCollector.events)
+}
+
+func TestCompileAdaptiveBudgetRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    max_semantic_candidates: 5
+    budget:
+      mode: adaptive
+      adaptive:
+        min_k: 1
+        max_k: 3
+        min_score_margin: 0.08
+    keyword_weights:
+      search: 1.0
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	makeSkill := func(name, tool string, p int) types.SkillSpec {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("description: search\n- tool: "+tool), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return types.SkillSpec{Name: name, Path: path, Description: "search", Priority: p}
+	}
+	specs := []types.SkillSpec{
+		makeSkill("s1", "local.s1", 9),
+		makeSkill("s2", "local.s2", 8),
+		makeSkill("s3", "local.s3", 7),
+		makeSkill("s4", "local.s4", 6),
+	}
+	input := "search"
+	newLoader := func(c *collector) *Loader {
+		l := NewWithRuntimeManager(c, mgr)
+		l.scorer = staticSkillScorer{byName: map[string]float64{
+			"s1": 0.91,
+			"s2": 0.88,
+			"s3": 0.86,
+			"s4": 0.60,
+		}}
+		return l
+	}
+	runCollector := &collector{}
+	streamCollector := &collector{}
+
+	runBundle, err := newLoader(runCollector).Compile(context.Background(), specs, types.SkillInput{UserInput: input})
+	if err != nil {
+		t.Fatalf("run compile failed: %v", err)
+	}
+	streamBundle, err := newLoader(streamCollector).Compile(context.Background(), specs, types.SkillInput{UserInput: input})
+	if err != nil {
+		t.Fatalf("stream compile failed: %v", err)
+	}
+	if len(runBundle.EnabledTools) != len(streamBundle.EnabledTools) {
+		t.Fatalf("run/stream tool count mismatch: run=%#v stream=%#v", runBundle.EnabledTools, streamBundle.EnabledTools)
+	}
+	for i := range runBundle.EnabledTools {
+		if runBundle.EnabledTools[i] != streamBundle.EnabledTools[i] {
+			t.Fatalf("run/stream tool order mismatch: run=%#v stream=%#v", runBundle.EnabledTools, streamBundle.EnabledTools)
+		}
+	}
+	if len(runBundle.EnabledTools) != 3 {
+		t.Fatalf("adaptive run/stream should keep 3 tools, got %#v", runBundle.EnabledTools)
+	}
+	assertLoadedPayload := func(t *testing.T, items []types.Event) {
+		t.Helper()
+		for _, ev := range items {
+			if ev.Type != "skill.loaded" {
+				continue
+			}
+			if ev.Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeAdaptive {
+				t.Fatalf("budget_mode = %#v, want %q", ev.Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeAdaptive)
+			}
+			if ev.Payload["selected_semantic_count"] != 3 {
+				t.Fatalf("selected_semantic_count = %#v, want 3", ev.Payload["selected_semantic_count"])
+			}
+			if ev.Payload["candidate_pruned_count"] != 1 {
+				t.Fatalf("candidate_pruned_count = %#v, want 1", ev.Payload["candidate_pruned_count"])
+			}
+			if ev.Payload["budget_decision_reason"] != "adaptive.max_k_reached" {
+				t.Fatalf("budget_decision_reason = %#v, want adaptive.max_k_reached", ev.Payload["budget_decision_reason"])
 			}
 		}
 	}
@@ -754,6 +1041,18 @@ diagnostics:
 	if items[0].Payload["candidate_pruned_count"] != 0 {
 		t.Fatalf("skill candidate_pruned_count payload = %#v, want 0", items[0].Payload["candidate_pruned_count"])
 	}
+	if items[0].Payload["budget_mode"] != runtimeconfig.SkillTriggerScoringBudgetModeAdaptive {
+		t.Fatalf("skill budget_mode payload = %#v, want %q", items[0].Payload["budget_mode"], runtimeconfig.SkillTriggerScoringBudgetModeAdaptive)
+	}
+	if items[0].Payload["selected_semantic_count"] != 0 {
+		t.Fatalf("skill selected_semantic_count payload = %#v, want 0", items[0].Payload["selected_semantic_count"])
+	}
+	if items[0].Payload["score_margin_top1_top2"] != 0.0 {
+		t.Fatalf("skill score_margin_top1_top2 payload = %#v, want 0", items[0].Payload["score_margin_top1_top2"])
+	}
+	if items[0].Payload["budget_decision_reason"] != "none.no_candidates" {
+		t.Fatalf("skill budget_decision_reason payload = %#v, want none.no_candidates", items[0].Payload["budget_decision_reason"])
+	}
 }
 
 func TestSkillDiagnosticsWarningAndReplayDedup(t *testing.T) {
@@ -806,16 +1105,20 @@ diagnostics:
 		Type:    "skill.warning",
 		RunID:   "run-1",
 		Payload: map[string]any{
-			"name":                   "missing",
-			"action":                 "compile",
-			"status":                 "warning",
-			"error_class":            string(types.ErrSkill),
-			"reason":                 "compile read failed",
-			"path":                   filepath.Join(dir, "missing", "SKILL.md"),
-			"strategy":               skillTriggerStrategyExplicit,
-			"final_score":            float64(1),
-			"tokenizer_mode":         runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN,
-			"candidate_pruned_count": 0,
+			"name":                    "missing",
+			"action":                  "compile",
+			"status":                  "warning",
+			"error_class":             string(types.ErrSkill),
+			"reason":                  "compile read failed",
+			"path":                    filepath.Join(dir, "missing", "SKILL.md"),
+			"strategy":                skillTriggerStrategyExplicit,
+			"final_score":             float64(1),
+			"tokenizer_mode":          runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN,
+			"candidate_pruned_count":  0,
+			"budget_mode":             runtimeconfig.SkillTriggerScoringBudgetModeAdaptive,
+			"selected_semantic_count": 0,
+			"score_margin_top1_top2":  float64(0),
+			"budget_decision_reason":  "none.no_candidates",
 		},
 	}
 	rec.OnEvent(context.Background(), replay)

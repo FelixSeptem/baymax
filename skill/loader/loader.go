@@ -197,6 +197,10 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 			scorePayload["final_score"] = 1.0
 			scorePayload["tokenizer_mode"] = selectionMeta.tokenizerMode
 			scorePayload["candidate_pruned_count"] = selectionMeta.candidatePrunedCount
+			scorePayload["budget_mode"] = selectionMeta.budgetMode
+			scorePayload["selected_semantic_count"] = selectionMeta.selectedSemanticCount
+			scorePayload["score_margin_top1_top2"] = selectionMeta.scoreMarginTop1Top2
+			scorePayload["budget_decision_reason"] = selectionMeta.budgetDecisionReason
 		}
 		content, err := os.ReadFile(spec.Path)
 		if err != nil {
@@ -302,22 +306,119 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 			return left.index < right.index
 		}
 	})
+	selectedCount, prunedCount, budgetMeta := decideSemanticBudget(candidates, scoring)
+	if selectedCount < len(candidates) {
+		candidates = candidates[:selectedCount]
+	}
+	for i := range candidates {
+		candidates[i].candidatePrunedCount = prunedCount
+		candidates[i].budgetMode = budgetMeta.mode
+		candidates[i].selectedSemanticCount = selectedCount
+		candidates[i].scoreMarginTop1Top2 = budgetMeta.scoreMarginTop1Top2
+		candidates[i].budgetDecisionReason = budgetMeta.decisionReason
+	}
+	return explicit, candidates, skillSelectionMeta{
+		tokenizerMode:         tokenizerMode,
+		candidatePrunedCount:  prunedCount,
+		budgetMode:            budgetMeta.mode,
+		selectedSemanticCount: selectedCount,
+		scoreMarginTop1Top2:   budgetMeta.scoreMarginTop1Top2,
+		budgetDecisionReason:  budgetMeta.decisionReason,
+	}
+}
+
+type semanticBudgetMeta struct {
+	mode                string
+	scoreMarginTop1Top2 float64
+	decisionReason      string
+}
+
+func decideSemanticBudget(candidates []scoredSkill, scoring runtimeconfig.SkillTriggerScoringConfig) (selectedCount int, prunedCount int, meta semanticBudgetMeta) {
+	total := len(candidates)
+	if total == 0 {
+		return 0, 0, semanticBudgetMeta{
+			mode:                normalizedSkillTriggerBudgetMode(scoring.Budget.Mode),
+			scoreMarginTop1Top2: 0,
+			decisionReason:      "none.no_candidates",
+		}
+	}
 	maxSemanticCandidates := scoring.MaxSemanticCandidates
 	if maxSemanticCandidates <= 0 {
 		maxSemanticCandidates = runtimeconfig.DefaultConfig().Skill.TriggerScoring.MaxSemanticCandidates
 	}
-	prunedCount := 0
-	if maxSemanticCandidates > 0 && len(candidates) > maxSemanticCandidates {
-		prunedCount = len(candidates) - maxSemanticCandidates
-		candidates = candidates[:maxSemanticCandidates]
+	mode := normalizedSkillTriggerBudgetMode(scoring.Budget.Mode)
+	if mode == runtimeconfig.SkillTriggerScoringBudgetModeFixed {
+		selectedCount = min(total, maxSemanticCandidates)
+		return selectedCount, total - selectedCount, semanticBudgetMeta{
+			mode:                mode,
+			scoreMarginTop1Top2: top1Top2Margin(candidates),
+			decisionReason:      "fixed.top_k",
+		}
 	}
-	for i := range candidates {
-		candidates[i].candidatePrunedCount = prunedCount
+	minK := scoring.Budget.Adaptive.MinK
+	maxK := scoring.Budget.Adaptive.MaxK
+	minScoreMargin := scoring.Budget.Adaptive.MinScoreMargin
+	def := runtimeconfig.DefaultConfig().Skill.TriggerScoring.Budget.Adaptive
+	if minK <= 0 {
+		minK = def.MinK
 	}
-	return explicit, candidates, skillSelectionMeta{
-		tokenizerMode:        tokenizerMode,
-		candidatePrunedCount: prunedCount,
+	if maxK < minK {
+		maxK = minK
 	}
+	if maxK > maxSemanticCandidates {
+		maxK = maxSemanticCandidates
+	}
+	if minScoreMargin < 0 || minScoreMargin > 1 {
+		minScoreMargin = def.MinScoreMargin
+	}
+	upper := min(total, maxK)
+	lower := min(minK, upper)
+	selectedCount = lower
+	marginTop1Top2 := top1Top2Margin(candidates)
+	if total <= lower {
+		return selectedCount, total - selectedCount, semanticBudgetMeta{
+			mode:                mode,
+			scoreMarginTop1Top2: marginTop1Top2,
+			decisionReason:      "adaptive.insufficient_candidates",
+		}
+	}
+	if marginTop1Top2 >= minScoreMargin {
+		return selectedCount, total - selectedCount, semanticBudgetMeta{
+			mode:                mode,
+			scoreMarginTop1Top2: marginTop1Top2,
+			decisionReason:      "adaptive.clear_winner",
+		}
+	}
+	decisionReason := "adaptive.max_k_reached"
+	for selectedCount < upper {
+		nextIdx := selectedCount
+		prevIdx := selectedCount - 1
+		edgeMargin := candidates[prevIdx].score - candidates[nextIdx].score
+		if edgeMargin >= minScoreMargin {
+			decisionReason = "adaptive.margin_recovered"
+			break
+		}
+		selectedCount++
+	}
+	return selectedCount, total - selectedCount, semanticBudgetMeta{
+		mode:                mode,
+		scoreMarginTop1Top2: marginTop1Top2,
+		decisionReason:      decisionReason,
+	}
+}
+
+func top1Top2Margin(candidates []scoredSkill) float64 {
+	if len(candidates) < 2 {
+		return 0
+	}
+	return candidates[0].score - candidates[1].score
+}
+
+func min(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
 }
 
 func tokenize(in string, mode string) []string {
@@ -516,20 +617,28 @@ func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg r
 }
 
 type scoredSkill struct {
-	spec                 types.SkillSpec
-	score                float64
-	index                int
-	strategy             string
-	lexicalScore         float64
-	embeddingScore       float64
-	fallbackReason       string
-	tokenizerMode        string
-	candidatePrunedCount int
+	spec                  types.SkillSpec
+	score                 float64
+	index                 int
+	strategy              string
+	lexicalScore          float64
+	embeddingScore        float64
+	fallbackReason        string
+	tokenizerMode         string
+	candidatePrunedCount  int
+	budgetMode            string
+	selectedSemanticCount int
+	scoreMarginTop1Top2   float64
+	budgetDecisionReason  string
 }
 
 type skillSelectionMeta struct {
-	tokenizerMode        string
-	candidatePrunedCount int
+	tokenizerMode         string
+	candidatePrunedCount  int
+	budgetMode            string
+	selectedSemanticCount int
+	scoreMarginTop1Top2   float64
+	budgetDecisionReason  string
 }
 
 func normalizedSkillTriggerStrategy(raw string) string {
@@ -547,6 +656,17 @@ func normalizedSkillTriggerTokenizerMode(raw string) string {
 		return runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN
 	default:
 		return runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN
+	}
+}
+
+func normalizedSkillTriggerBudgetMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.SkillTriggerScoringBudgetModeFixed:
+		return runtimeconfig.SkillTriggerScoringBudgetModeFixed
+	case runtimeconfig.SkillTriggerScoringBudgetModeAdaptive:
+		return runtimeconfig.SkillTriggerScoringBudgetModeAdaptive
+	default:
+		return runtimeconfig.SkillTriggerScoringBudgetModeAdaptive
 	}
 }
 
@@ -594,10 +714,14 @@ func (l *Loader) scoreWithEmbedding(
 
 func scorePayloadFromMeta(meta scoredSkill) map[string]any {
 	payload := map[string]any{
-		"strategy":               meta.strategy,
-		"final_score":            meta.score,
-		"tokenizer_mode":         meta.tokenizerMode,
-		"candidate_pruned_count": meta.candidatePrunedCount,
+		"strategy":                meta.strategy,
+		"final_score":             meta.score,
+		"tokenizer_mode":          meta.tokenizerMode,
+		"candidate_pruned_count":  meta.candidatePrunedCount,
+		"budget_mode":             meta.budgetMode,
+		"selected_semantic_count": meta.selectedSemanticCount,
+		"score_margin_top1_top2":  meta.scoreMarginTop1Top2,
+		"budget_decision_reason":  meta.budgetDecisionReason,
 	}
 	if meta.strategy == runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding {
 		payload["embedding_score"] = meta.embeddingScore

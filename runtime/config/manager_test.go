@@ -403,6 +403,72 @@ reload:
 	}
 }
 
+func TestManagerSkillTriggerEmbeddingInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_plus_embedding
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      db: 1.5
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 300ms
+      similarity_metric: cosine
+      lexical_weight: 0.7
+      embedding_weight: 0.3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Skill.TriggerScoring.Embedding.LexicalWeight
+	if before != 0.7 {
+		t.Fatalf("before lexical_weight = %v, want 0.7", before)
+	}
+
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_plus_embedding
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      db: 1.5
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 300ms
+      similarity_metric: cosine
+      lexical_weight: -0.1
+      embedding_weight: 0.3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Skill.TriggerScoring.Embedding.LexicalWeight
+	if after != before {
+		t.Fatalf("invalid skill embedding reload should rollback, lexical_weight = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestSecurityPolicyContractInvalidSecurityReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

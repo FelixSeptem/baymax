@@ -137,6 +137,7 @@
 - [x] `govern-ca3-threshold-rollout-and-observability-e5`：完成 CA3 阈值治理与灰度收敛（`enforce|dry_run`、`provider:model` rollout、profile version），补齐治理诊断字段与契约/benchmark 门禁。
 - [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
+- [x] `introduce-skill-semantic-embedding-scorer-d2`：完成 skill trigger scoring embedding 增强（`lexical_plus_embedding` 线性加权、best-effort lexical 回退、`skill.trigger_scoring.embedding.*` 配置与诊断字段、等价性契约测试）。
 - [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。
 - [x] `extend-drop-low-priority-backpressure-to-mcp-and-skill-r7`：将 `drop_low_priority` 语义扩展到 `local+mcp+skill`，补齐分桶诊断、跨路径 fail-fast 与契约/benchmark 收敛。
 

@@ -4,15 +4,26 @@
 TBD - created by archiving change implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap. Update Purpose after archive.
 ## Requirements
 ### Requirement: Context assembler SHALL support CA2 two-stage assembly routing
-Context assembler MUST execute Stage1 before Stage2. Stage2 MUST be invoked only when routing rules determine Stage1 output is insufficient. Routing decisions MUST be deterministic and traceable.
+Context assembler MUST execute Stage1 before Stage2. Stage2 invocation MUST be decided by configured CA2 routing mode and MUST remain deterministic and traceable.
 
-#### Scenario: Stage1 satisfies request and Stage2 is skipped
-- **WHEN** Stage1 output satisfies configured routing conditions
+When `routing_mode=rules`, Stage2 decision MUST follow existing rule-based routing conditions.
+When `routing_mode=agentic`, Stage2 decision MUST follow agentic router callback output, subject to callback failure fallback policy.
+
+#### Scenario: Rules mode skips Stage2 when routing threshold is not met
+- **WHEN** `routing_mode=rules` and Stage1 output does not satisfy Stage2 trigger conditions
 - **THEN** assembler skips Stage2 and records a normalized skip reason
 
-#### Scenario: Stage1 is insufficient and Stage2 is triggered
-- **WHEN** routing rules detect required context gaps after Stage1
+#### Scenario: Rules mode triggers Stage2 when routing threshold is met
+- **WHEN** `routing_mode=rules` and Stage1 output satisfies Stage2 trigger conditions
 - **THEN** assembler invokes Stage2 provider and merges Stage2 output into assembled context
+
+#### Scenario: Agentic mode triggers Stage2 from callback decision
+- **WHEN** `routing_mode=agentic` and callback returns `run_stage2=true` with valid reason
+- **THEN** assembler invokes Stage2 and records router decision metadata
+
+#### Scenario: Agentic mode skips Stage2 from callback decision
+- **WHEN** `routing_mode=agentic` and callback returns `run_stage2=false` with valid reason
+- **THEN** assembler skips Stage2 and records router decision metadata
 
 ### Requirement: Stage2 provider interface SHALL be extensible with file-first implementation
 The context retrieval layer MUST expose a stable provider interface for Stage2. CA2 MUST keep local file provider as a supported path and MUST additionally support `http`, `rag`, `db`, and `elasticsearch` providers through a unified retriever SPI with normalized request/response/error semantics.
@@ -47,15 +58,25 @@ Assembler MUST append a tail recap block at the end of assembled context with st
 - **THEN** assembler applies deterministic truncation/sanitization and records recap status
 
 ### Requirement: Routing engine SHALL provide agentic extension hook placeholder
-CA2 routing MUST provide a documented extension hook for future agentic decision providers, while current production decision path remains rule-based.
+CA2 routing MUST provide a host callback extension for agentic decisioning. In `routing_mode=agentic`, assembler MUST call the registered callback with bounded timeout.
 
-#### Scenario: Default routing mode
-- **WHEN** runtime runs CA2 without extension provider
-- **THEN** assembler uses deterministic rule-based routing only
+If callback is missing, times out, returns an error, or returns an invalid decision payload, assembler MUST fallback to `rules` routing under `best_effort` policy and MUST NOT terminate assemble flow solely due to agentic callback failure.
 
-#### Scenario: Agentic hook is configured in CA2 baseline
-- **WHEN** runtime config references agentic decision mode in CA2
-- **THEN** runtime returns explicit not-ready/TODO classification until agentic provider milestone is implemented
+#### Scenario: Agentic callback is available and returns valid decision
+- **WHEN** runtime runs CA2 with `routing_mode=agentic` and registered callback returns valid decision
+- **THEN** assembler applies callback decision and continues assemble flow
+
+#### Scenario: Agentic callback is not registered
+- **WHEN** runtime runs CA2 with `routing_mode=agentic` and no callback is registered
+- **THEN** assembler falls back to `rules` routing and records fallback reason
+
+#### Scenario: Agentic callback times out
+- **WHEN** runtime runs CA2 with `routing_mode=agentic` and callback exceeds configured timeout
+- **THEN** assembler falls back to `rules` routing, records timeout reason, and continues assemble flow
+
+#### Scenario: Agentic callback returns error or invalid payload
+- **WHEN** runtime runs CA2 with `routing_mode=agentic` and callback returns error or invalid decision payload
+- **THEN** assembler falls back to `rules` routing, records normalized router error, and continues assemble flow
 
 ### Requirement: Stage2 retrieval SHALL preserve stage policy semantics
 Stage2 retrieval failures MUST preserve existing CA2 stage policy behavior: `fail_fast` MUST terminate assemble flow immediately, and `best_effort` MUST continue with degraded status and recorded skip reason.
@@ -159,4 +180,15 @@ For equivalent inputs and configuration, Run and Stream MUST produce semanticall
 #### Scenario: Equivalent hint mismatch path in Run and Stream
 - **WHEN** Run and Stream execute equivalent Stage2 requests that produce the same hint mismatch condition
 - **THEN** both paths expose semantically equivalent mismatch reason and Stage2 classification outcomes
+
+### Requirement: CA2 routing decisions SHALL remain semantically equivalent between Run and Stream
+For equivalent inputs and effective configuration, Run and Stream MUST produce semantically equivalent CA2 routing outcomes in both `rules` and `agentic` modes, allowing implementation-level event ordering differences.
+
+#### Scenario: Equivalent callback-driven decision in Run and Stream
+- **WHEN** equivalent requests execute in `routing_mode=agentic` with the same callback behavior
+- **THEN** Run and Stream expose semantically equivalent Stage2 invoke/skip outcomes and router reason classes
+
+#### Scenario: Equivalent callback failure fallback in Run and Stream
+- **WHEN** equivalent requests execute in `routing_mode=agentic` and callback path fails with the same failure class
+- **THEN** Run and Stream both fallback to `rules` and expose semantically equivalent fallback reason classes
 

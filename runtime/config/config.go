@@ -69,8 +69,10 @@ const (
 
 const (
 	SkillTriggerScoringStrategyLexicalWeightedKeywords = "lexical_weighted_keywords"
+	SkillTriggerScoringStrategyLexicalPlusEmbedding    = "lexical_plus_embedding"
 	SkillTriggerScoringTieBreakHighestPriority         = "highest_priority"
 	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
+	SkillTriggerScoringSimilarityCosine                = "cosine"
 )
 
 const (
@@ -175,11 +177,22 @@ type SkillConfig struct {
 }
 
 type SkillTriggerScoringConfig struct {
-	Strategy              string             `json:"strategy"`
-	ConfidenceThreshold   float64            `json:"confidence_threshold"`
-	TieBreak              string             `json:"tie_break"`
-	SuppressLowConfidence bool               `json:"suppress_low_confidence"`
-	KeywordWeights        map[string]float64 `json:"keyword_weights"`
+	Strategy              string                             `json:"strategy"`
+	ConfidenceThreshold   float64                            `json:"confidence_threshold"`
+	TieBreak              string                             `json:"tie_break"`
+	SuppressLowConfidence bool                               `json:"suppress_low_confidence"`
+	KeywordWeights        map[string]float64                 `json:"keyword_weights"`
+	Embedding             SkillTriggerScoringEmbeddingConfig `json:"embedding"`
+}
+
+type SkillTriggerScoringEmbeddingConfig struct {
+	Enabled          bool          `json:"enabled"`
+	Provider         string        `json:"provider"`
+	Model            string        `json:"model"`
+	Timeout          time.Duration `json:"timeout"`
+	SimilarityMetric string        `json:"similarity_metric"`
+	LexicalWeight    float64       `json:"lexical_weight"`
+	EmbeddingWeight  float64       `json:"embedding_weight"`
 }
 
 type ActionGateConfig struct {
@@ -614,6 +627,15 @@ func DefaultConfig() Config {
 					"lookup":   1.1,
 					"migrate":  1.3,
 				},
+				Embedding: SkillTriggerScoringEmbeddingConfig{
+					Enabled:          false,
+					Provider:         "openai",
+					Model:            "text-embedding-3-small",
+					Timeout:          300 * time.Millisecond,
+					SimilarityMetric: SkillTriggerScoringSimilarityCosine,
+					LexicalWeight:    0.7,
+					EmbeddingWeight:  0.3,
+				},
 			},
 		},
 		ActionGate: ActionGateConfig{
@@ -1035,9 +1057,14 @@ func Validate(cfg Config) error {
 	}
 	scoring := cfg.Skill.TriggerScoring
 	switch strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy)); strategy {
-	case SkillTriggerScoringStrategyLexicalWeightedKeywords:
+	case SkillTriggerScoringStrategyLexicalWeightedKeywords, SkillTriggerScoringStrategyLexicalPlusEmbedding:
 	default:
-		return fmt.Errorf("skill.trigger_scoring.strategy must be one of [%s], got %q", SkillTriggerScoringStrategyLexicalWeightedKeywords, scoring.Strategy)
+		return fmt.Errorf(
+			"skill.trigger_scoring.strategy must be one of [%s,%s], got %q",
+			SkillTriggerScoringStrategyLexicalWeightedKeywords,
+			SkillTriggerScoringStrategyLexicalPlusEmbedding,
+			scoring.Strategy,
+		)
 	}
 	if scoring.ConfidenceThreshold < 0 || scoring.ConfidenceThreshold > 1 {
 		return errors.New("skill.trigger_scoring.confidence_threshold must be in [0,1]")
@@ -1058,6 +1085,9 @@ func Validate(cfg Config) error {
 		if weight <= 0 {
 			return fmt.Errorf("skill.trigger_scoring.keyword_weights.%s must be > 0", k)
 		}
+	}
+	if err := validateSkillTriggerEmbeddingConfig(scoring, "skill.trigger_scoring.embedding"); err != nil {
+		return err
 	}
 	if cfg.ProviderFallback.Enabled {
 		if len(cfg.ProviderFallback.Providers) == 0 {
@@ -1269,6 +1299,46 @@ func validateCA2AgenticFailurePolicy(v, field string) error {
 	default:
 		return fmt.Errorf("%s must be one of [%s]", field, ContextCA2AgenticFailurePolicyBestEffortRules)
 	}
+}
+
+func validateSkillTriggerEmbeddingConfig(scoring SkillTriggerScoringConfig, field string) error {
+	embedding := scoring.Embedding
+	if embedding.Timeout <= 0 {
+		return fmt.Errorf("%s.timeout must be > 0", field)
+	}
+	metric := strings.ToLower(strings.TrimSpace(embedding.SimilarityMetric))
+	if metric == "" {
+		metric = SkillTriggerScoringSimilarityCosine
+	}
+	if metric != SkillTriggerScoringSimilarityCosine {
+		return fmt.Errorf("%s.similarity_metric must be %s, got %q", field, SkillTriggerScoringSimilarityCosine, embedding.SimilarityMetric)
+	}
+	if embedding.LexicalWeight < 0 || embedding.LexicalWeight > 1 {
+		return fmt.Errorf("%s.lexical_weight must be in [0,1]", field)
+	}
+	if embedding.EmbeddingWeight < 0 || embedding.EmbeddingWeight > 1 {
+		return fmt.Errorf("%s.embedding_weight must be in [0,1]", field)
+	}
+	if (embedding.LexicalWeight + embedding.EmbeddingWeight) <= 0 {
+		return fmt.Errorf("%s.lexical_weight + %s.embedding_weight must be > 0", field, field)
+	}
+	strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy))
+	if strategy == SkillTriggerScoringStrategyLexicalPlusEmbedding && !embedding.Enabled {
+		return fmt.Errorf("%s.enabled must be true when skill.trigger_scoring.strategy=%s", field, SkillTriggerScoringStrategyLexicalPlusEmbedding)
+	}
+	if !embedding.Enabled {
+		return nil
+	}
+	provider := strings.ToLower(strings.TrimSpace(embedding.Provider))
+	switch provider {
+	case "openai", "gemini", "anthropic":
+	default:
+		return fmt.Errorf("%s.provider must be one of [openai,gemini,anthropic], got %q", field, embedding.Provider)
+	}
+	if strings.TrimSpace(embedding.Model) == "" {
+		return fmt.Errorf("%s.model must not be empty when %s.enabled=true", field, field)
+	}
+	return nil
 }
 
 func validateBackpressure(v types.BackpressureMode, field string) error {
@@ -1882,6 +1952,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
 	v.SetDefault("skill.trigger_scoring.suppress_low_confidence", base.Skill.TriggerScoring.SuppressLowConfidence)
 	v.SetDefault("skill.trigger_scoring.keyword_weights", base.Skill.TriggerScoring.KeywordWeights)
+	v.SetDefault("skill.trigger_scoring.embedding.enabled", base.Skill.TriggerScoring.Embedding.Enabled)
+	v.SetDefault("skill.trigger_scoring.embedding.provider", base.Skill.TriggerScoring.Embedding.Provider)
+	v.SetDefault("skill.trigger_scoring.embedding.model", base.Skill.TriggerScoring.Embedding.Model)
+	v.SetDefault("skill.trigger_scoring.embedding.timeout", base.Skill.TriggerScoring.Embedding.Timeout)
+	v.SetDefault("skill.trigger_scoring.embedding.similarity_metric", base.Skill.TriggerScoring.Embedding.SimilarityMetric)
+	v.SetDefault("skill.trigger_scoring.embedding.lexical_weight", base.Skill.TriggerScoring.Embedding.LexicalWeight)
+	v.SetDefault("skill.trigger_scoring.embedding.embedding_weight", base.Skill.TriggerScoring.Embedding.EmbeddingWeight)
 	v.SetDefault("action_gate.enabled", base.ActionGate.Enabled)
 	v.SetDefault("action_gate.policy", base.ActionGate.Policy)
 	v.SetDefault("action_gate.timeout", base.ActionGate.Timeout)
@@ -2058,6 +2135,13 @@ func buildConfig(v *viper.Viper) Config {
 	if weights := normalizeFloatMap(v.GetStringMap("skill.trigger_scoring.keyword_weights")); len(weights) > 0 {
 		cfg.Skill.TriggerScoring.KeywordWeights = weights
 	}
+	cfg.Skill.TriggerScoring.Embedding.Enabled = v.GetBool("skill.trigger_scoring.embedding.enabled")
+	cfg.Skill.TriggerScoring.Embedding.Provider = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.provider")))
+	cfg.Skill.TriggerScoring.Embedding.Model = strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.model"))
+	cfg.Skill.TriggerScoring.Embedding.Timeout = v.GetDuration("skill.trigger_scoring.embedding.timeout")
+	cfg.Skill.TriggerScoring.Embedding.SimilarityMetric = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.similarity_metric")))
+	cfg.Skill.TriggerScoring.Embedding.LexicalWeight = v.GetFloat64("skill.trigger_scoring.embedding.lexical_weight")
+	cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight = v.GetFloat64("skill.trigger_scoring.embedding.embedding_weight")
 	cfg.ActionGate.Enabled = v.GetBool("action_gate.enabled")
 	cfg.ActionGate.Policy = strings.ToLower(strings.TrimSpace(v.GetString("action_gate.policy")))
 	cfg.ActionGate.Timeout = v.GetDuration("action_gate.timeout")

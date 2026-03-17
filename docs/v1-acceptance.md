@@ -18,6 +18,7 @@
 - Runtime diagnostics expose cross-run Action Timeline trend API with both `last_n_runs` and `time_window` modes.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
+- Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Runtime config exposes `skill.trigger_scoring.*` with `env > file > default` precedence and fail-fast validation.
 - Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
@@ -55,7 +56,7 @@
 - No distributed orchestration or cross-process execution coordination.
 - No persisted checkpoint/replay for crash recovery between sessions.
 - No built-in multi-tenant control-plane, RBAC, or audit pipeline.
-- Skill semantic triggering currently uses lexical weighted scoring; skill-level embedding scorer remains TODO extension and not enabled in v1.
+- Skill semantic embedding scorer requires host-side registration; if missing or failing, runtime falls back to lexical scoring under best-effort policy.
 - MCP HTTP/stdio reliability profile is available, but tuning thresholds may still require environment-specific adjustment.
 - Hot reload updates runtime config atomically; invalid updates are rejected and rolled back to previous snapshot.
 - `mcp/stdio` pool sizes are fixed at initialization; hot reload does not dynamically resize existing pools in-place.

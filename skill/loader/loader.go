@@ -20,12 +20,45 @@ import (
 
 var skillPathPattern = regexp.MustCompile(`\(file:\s*([^\)]+)\)`)
 
+const (
+	skillTriggerStrategyExplicit = "explicit"
+
+	skillEmbeddingFallbackScorerMissing = "embedding.scorer_missing"
+	skillEmbeddingFallbackTimeout       = "embedding.timeout"
+	skillEmbeddingFallbackError         = "embedding.error"
+	skillEmbeddingFallbackInvalidScore  = "embedding.invalid_score"
+)
+
+// SkillTriggerEmbeddingScoreRequest is normalized input for skill embedding scorer extension.
+type SkillTriggerEmbeddingScoreRequest struct {
+	Provider  string
+	Model     string
+	Input     string
+	SkillName string
+	SkillDesc string
+	Triggers  []string
+}
+
+// SkillTriggerEmbeddingScorer scores semantic similarity for a skill candidate.
+type SkillTriggerEmbeddingScorer interface {
+	Score(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error)
+}
+
+// SkillTriggerEmbeddingScorerFunc adapts a function to SkillTriggerEmbeddingScorer.
+type SkillTriggerEmbeddingScorerFunc func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error)
+
+// Score calls wrapped function.
+func (f SkillTriggerEmbeddingScorerFunc) Score(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+	return f(ctx, req)
+}
+
 // Loader discovers and compiles skills from repository metadata.
 type Loader struct {
-	eventHandler types.EventHandler
-	runtimeMgr   *runtimeconfig.Manager
-	now          func() time.Time
-	scorer       skillTriggerScorer
+	eventHandler    types.EventHandler
+	runtimeMgr      *runtimeconfig.Manager
+	now             func() time.Time
+	scorer          skillTriggerScorer
+	embeddingScorer SkillTriggerEmbeddingScorer
 }
 
 // New constructs a skill loader with event handler wiring and default lexical scorer.
@@ -50,6 +83,11 @@ func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.M
 // SetRuntimeManager updates runtime configuration source for trigger scoring and policy lookup.
 func (l *Loader) SetRuntimeManager(mgr *runtimeconfig.Manager) {
 	l.runtimeMgr = mgr
+}
+
+// SetEmbeddingScorer registers host-provided embedding scorer for semantic trigger scoring.
+func (l *Loader) SetEmbeddingScorer(scorer SkillTriggerEmbeddingScorer) {
+	l.embeddingScorer = scorer
 }
 
 // Discover parses AGENTS.md and returns discovered skill specs in deterministic name order.
@@ -129,12 +167,14 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 		return types.SkillBundle{}, nil
 	}
 
-	explicit, semantic := l.selectSkills(specs, in.UserInput)
+	explicit, semantic := l.selectSkills(ctx, specs, in.UserInput)
 	selected := make([]types.SkillSpec, 0, len(specs))
 	selected = append(selected, explicit...)
-	for _, s := range semantic {
-		if !containsSkill(selected, s.Name) {
-			selected = append(selected, s)
+	semanticByName := map[string]scoredSkill{}
+	for _, item := range semantic {
+		semanticByName[item.spec.Name] = item
+		if !containsSkill(selected, item.spec.Name) {
+			selected = append(selected, item.spec)
 		}
 	}
 	if len(selected) == 0 {
@@ -148,9 +188,16 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 
 	for _, spec := range selected {
 		stepStart := l.now()
+		scorePayload := map[string]any{}
+		if meta, ok := semanticByName[spec.Name]; ok {
+			scorePayload = scorePayloadFromMeta(meta)
+		} else {
+			scorePayload["strategy"] = skillTriggerStrategyExplicit
+			scorePayload["final_score"] = 1.0
+		}
 		content, err := os.ReadFile(spec.Path)
 		if err != nil {
-			l.emit(ctx, runID, "skill.warning", map[string]any{
+			payload := map[string]any{
 				"name":        spec.Name,
 				"action":      "compile",
 				"status":      "warning",
@@ -158,21 +205,29 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 				"reason":      "compile read failed",
 				"path":        spec.Path,
 				"latency_ms":  l.now().Sub(stepStart).Milliseconds(),
-			})
+			}
+			for k, v := range scorePayload {
+				payload[k] = v
+			}
+			l.emit(ctx, runID, "skill.warning", payload)
 			continue
 		}
 		fragments = append(fragments, string(content))
 		workflowHints = append(workflowHints, spec.Description)
 		enabled := parseEnabledTools(string(content))
 		enabledTools = append(enabledTools, enabled...)
-		l.emit(ctx, runID, "skill.loaded", map[string]any{
+		payload := map[string]any{
 			"name":          spec.Name,
 			"path":          spec.Path,
 			"action":        "compile",
 			"status":        "success",
 			"enabled_tools": len(enabled),
 			"latency_ms":    l.now().Sub(stepStart).Milliseconds(),
-		})
+		}
+		for k, v := range scorePayload {
+			payload[k] = v
+		}
+		l.emit(ctx, runID, "skill.loaded", payload)
 	}
 
 	workflowHints = resolveDirectiveConflicts(workflowHints)
@@ -185,13 +240,14 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 	}, nil
 }
 
-func (l *Loader) selectSkills(specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []types.SkillSpec) {
+func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []scoredSkill) {
 	lower := strings.ToLower(input)
 	scoring := l.triggerScoringConfig()
 	scorer := l.scorer
 	if scorer == nil {
 		scorer = lexicalWeightedKeywordScorer{}
 	}
+	strategy := normalizedSkillTriggerStrategy(scoring.Strategy)
 	candidates := make([]scoredSkill, 0, len(specs))
 	for i, s := range specs {
 		nameLower := strings.ToLower(s.Name)
@@ -199,14 +255,28 @@ func (l *Loader) selectSkills(specs []types.SkillSpec, input string) (explicit [
 			explicit = append(explicit, s)
 			continue
 		}
-		score := scorer.Score(lower, s, scoring)
-		if scoring.SuppressLowConfidence && score < scoring.ConfidenceThreshold {
+		lexicalScore := scorer.Score(lower, s, scoring)
+		finalScore := lexicalScore
+		embeddingScore := 0.0
+		fallbackReason := ""
+		if strategy == runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding {
+			finalScore, embeddingScore, fallbackReason = l.scoreWithEmbedding(ctx, lower, s, scoring, lexicalScore)
+		}
+		if scoring.SuppressLowConfidence && finalScore < scoring.ConfidenceThreshold {
 			continue
 		}
-		if !scoring.SuppressLowConfidence && score <= 0 {
+		if !scoring.SuppressLowConfidence && finalScore <= 0 {
 			continue
 		}
-		candidates = append(candidates, scoredSkill{spec: s, score: score, index: i})
+		candidates = append(candidates, scoredSkill{
+			spec:           s,
+			score:          finalScore,
+			index:          i,
+			strategy:       strategy,
+			lexicalScore:   lexicalScore,
+			embeddingScore: embeddingScore,
+			fallbackReason: fallbackReason,
+		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left := candidates[i]
@@ -227,11 +297,7 @@ func (l *Loader) selectSkills(specs []types.SkillSpec, input string) (explicit [
 			return left.index < right.index
 		}
 	})
-	semantic = make([]types.SkillSpec, 0, len(candidates))
-	for _, c := range candidates {
-		semantic = append(semantic, c.spec)
-	}
-	return explicit, semantic
+	return explicit, candidates
 }
 
 func tokenize(in string) []string {
@@ -376,9 +442,78 @@ func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg r
 }
 
 type scoredSkill struct {
-	spec  types.SkillSpec
-	score float64
-	index int
+	spec           types.SkillSpec
+	score          float64
+	index          int
+	strategy       string
+	lexicalScore   float64
+	embeddingScore float64
+	fallbackReason string
+}
+
+func normalizedSkillTriggerStrategy(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding:
+		return runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding
+	default:
+		return runtimeconfig.SkillTriggerScoringStrategyLexicalWeightedKeywords
+	}
+}
+
+func (l *Loader) scoreWithEmbedding(
+	ctx context.Context,
+	input string,
+	s types.SkillSpec,
+	cfg runtimeconfig.SkillTriggerScoringConfig,
+	lexicalScore float64,
+) (finalScore float64, embeddingScore float64, fallbackReason string) {
+	if !cfg.Embedding.Enabled {
+		return lexicalScore, 0, skillEmbeddingFallbackScorerMissing
+	}
+	if l.embeddingScorer == nil {
+		return lexicalScore, 0, skillEmbeddingFallbackScorerMissing
+	}
+
+	timeout := cfg.Embedding.Timeout
+	if timeout <= 0 {
+		timeout = runtimeconfig.DefaultConfig().Skill.TriggerScoring.Embedding.Timeout
+	}
+	scoreCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	score, err := l.embeddingScorer.Score(scoreCtx, SkillTriggerEmbeddingScoreRequest{
+		Provider:  cfg.Embedding.Provider,
+		Model:     cfg.Embedding.Model,
+		Input:     input,
+		SkillName: s.Name,
+		SkillDesc: s.Description,
+		Triggers:  append([]string(nil), s.Triggers...),
+	})
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(scoreCtx.Err(), context.DeadlineExceeded) {
+		return lexicalScore, 0, skillEmbeddingFallbackTimeout
+	}
+	if err != nil {
+		return lexicalScore, 0, skillEmbeddingFallbackError
+	}
+	if score != score || score < 0 || score > 1 {
+		return lexicalScore, 0, skillEmbeddingFallbackInvalidScore
+	}
+	final := cfg.Embedding.LexicalWeight*lexicalScore + cfg.Embedding.EmbeddingWeight*score
+	return final, score, ""
+}
+
+func scorePayloadFromMeta(meta scoredSkill) map[string]any {
+	payload := map[string]any{
+		"strategy":    meta.strategy,
+		"final_score": meta.score,
+	}
+	if meta.strategy == runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding {
+		payload["embedding_score"] = meta.embeddingScore
+	}
+	if strings.TrimSpace(meta.fallbackReason) != "" {
+		payload["fallback_reason"] = strings.TrimSpace(meta.fallbackReason)
+	}
+	return payload
 }
 
 func parsePriority(raw string) (int, error) {
@@ -396,8 +531,6 @@ func (l *Loader) triggerScoringConfig() runtimeconfig.SkillTriggerScoringConfig 
 	}
 	return runtimeconfig.DefaultConfig().Skill.TriggerScoring
 }
-
-// TODO: Keep scorer internal for now; add embedding scorer implementation behind this interface in follow-up.
 
 func (l *Loader) emit(ctx context.Context, runID string, typ string, payload map[string]any) {
 	if l.eventHandler == nil {

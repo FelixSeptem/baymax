@@ -322,6 +322,15 @@ func TestSkillTriggerScoringDefaults(t *testing.T) {
 	if len(cfg.Skill.TriggerScoring.KeywordWeights) == 0 {
 		t.Fatal("skill.trigger_scoring.keyword_weights must not be empty")
 	}
+	if cfg.Skill.TriggerScoring.Embedding.Timeout <= 0 {
+		t.Fatalf("skill.trigger_scoring.embedding.timeout = %v, want > 0", cfg.Skill.TriggerScoring.Embedding.Timeout)
+	}
+	if cfg.Skill.TriggerScoring.Embedding.SimilarityMetric != SkillTriggerScoringSimilarityCosine {
+		t.Fatalf("skill.trigger_scoring.embedding.similarity_metric = %q, want %q", cfg.Skill.TriggerScoring.Embedding.SimilarityMetric, SkillTriggerScoringSimilarityCosine)
+	}
+	if cfg.Skill.TriggerScoring.Embedding.LexicalWeight != 0.7 || cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight != 0.3 {
+		t.Fatalf("skill.trigger_scoring.embedding weights = (%v,%v), want (0.7,0.3)", cfg.Skill.TriggerScoring.Embedding.LexicalWeight, cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight)
+	}
 }
 
 func TestSkillTriggerScoringLoadEnvOverFile(t *testing.T) {
@@ -389,6 +398,86 @@ func TestSkillTriggerScoringValidateRejectsEmptyOrNonPositiveWeights(t *testing.
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for non-positive skill.trigger_scoring.keyword_weights value")
 	}
+}
+
+func TestSkillTriggerScoringEmbeddingLoadEnvOverFile(t *testing.T) {
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_STRATEGY", SkillTriggerScoringStrategyLexicalPlusEmbedding)
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_EMBEDDING_TIMEOUT", "450ms")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_EMBEDDING_LEXICAL_WEIGHT", "0.6")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.42
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      db: 1.9
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 300ms
+      similarity_metric: cosine
+      lexical_weight: 0.7
+      embedding_weight: 0.3
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Skill.TriggerScoring.Strategy != SkillTriggerScoringStrategyLexicalPlusEmbedding {
+		t.Fatalf("skill.trigger_scoring.strategy = %q, want %q", cfg.Skill.TriggerScoring.Strategy, SkillTriggerScoringStrategyLexicalPlusEmbedding)
+	}
+	if cfg.Skill.TriggerScoring.Embedding.Timeout != 450*time.Millisecond {
+		t.Fatalf("skill.trigger_scoring.embedding.timeout = %v, want 450ms", cfg.Skill.TriggerScoring.Embedding.Timeout)
+	}
+	if cfg.Skill.TriggerScoring.Embedding.LexicalWeight != 0.6 {
+		t.Fatalf("skill.trigger_scoring.embedding.lexical_weight = %v, want 0.6", cfg.Skill.TriggerScoring.Embedding.LexicalWeight)
+	}
+}
+
+func TestSkillTriggerScoringValidateRejectsEmbeddingConfig(t *testing.T) {
+	t.Run("strategy_requires_embedding_enabled", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Strategy = SkillTriggerScoringStrategyLexicalPlusEmbedding
+		cfg.Skill.TriggerScoring.Embedding.Enabled = false
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for strategy requiring embedding.enabled=true")
+		}
+	})
+
+	t.Run("invalid_similarity_metric", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Embedding.SimilarityMetric = "dot_product"
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.embedding.similarity_metric")
+		}
+	})
+
+	t.Run("invalid_weights", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Embedding.LexicalWeight = -0.1
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.embedding.lexical_weight")
+		}
+		cfg = DefaultConfig()
+		cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight = -0.1
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.embedding.embedding_weight")
+		}
+		cfg = DefaultConfig()
+		cfg.Skill.TriggerScoring.Embedding.LexicalWeight = 0
+		cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight = 0
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for zero skill.trigger_scoring.embedding weights")
+		}
+	})
 }
 
 func TestActionGateDefaults(t *testing.T) {

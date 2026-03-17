@@ -80,7 +80,7 @@ provider_fallback:
 
 skill:
   trigger_scoring:
-    strategy: lexical_weighted_keywords # 当前仅支持该策略
+    strategy: lexical_weighted_keywords # lexical_weighted_keywords|lexical_plus_embedding
     confidence_threshold: 0.25          # [0,1]
     tie_break: highest_priority         # highest_priority|first_registered
     suppress_low_confidence: true
@@ -89,6 +89,14 @@ skill:
       db: 1.5
       sql: 1.6
       search: 1.2
+    embedding:
+      enabled: false
+      provider: openai # openai|gemini|anthropic
+      model: text-embedding-3-small
+      timeout: 300ms
+      similarity_metric: cosine # D2 仅支持 cosine
+      lexical_weight: 0.7
+      embedding_weight: 0.3
 
 action_gate:
   enabled: true
@@ -289,11 +297,16 @@ CA4 阈值解析顺序：
 3. 两者冲突时选取更高压力分区，并写入 `ca3_pressure_reason` + `ca3_pressure_trigger`。
 
 Skill trigger scoring 校验语义：
-1. `strategy` 当前必须为 `lexical_weighted_keywords`。
+1. `strategy` 仅支持 `lexical_weighted_keywords|lexical_plus_embedding`。
 2. `confidence_threshold` 必须在 `[0,1]`。
 3. `tie_break` 仅支持 `highest_priority|first_registered`。
 4. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
-5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效）。
+5. `embedding.timeout` 必须 `> 0`。
+6. `embedding.similarity_metric` 当前必须为 `cosine`。
+7. `embedding.lexical_weight|embedding_weight` 必须在 `[0,1]` 且和 `> 0`。
+8. `strategy=lexical_plus_embedding` 时，`embedding.enabled` 必须为 `true`。
+9. `embedding.enabled=true` 时，`embedding.provider` 必须是 `openai|gemini|anthropic` 且 `embedding.model` 非空。
+10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 drop_low_priority 校验语义：
 1. `concurrency.backpressure=drop_low_priority` 在 `local + mcp + skill` 调度语义上统一生效。
@@ -373,6 +386,12 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.CA2ExternalTrends(query)`：CA2 external retriever provider 维度趋势聚合（窗口模式：`time_window`）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
+
+Skill trigger scoring（D2）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
+- `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。
+- `final_score`：最终触发分数。
+- `embedding_score`：embedding 分数（仅 `lexical_plus_embedding` 路径）。
+- `fallback_reason`：embedding 回退原因（如 `embedding.scorer_missing|embedding.timeout|embedding.error|embedding.invalid_score`）。
 
 默认调试路径仍为 library-first；D1 补充了可选离线回放命令：`go run ./cmd/diagnostics-replay -input diagnostics.json`。
 

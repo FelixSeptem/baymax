@@ -986,3 +986,98 @@ For equivalent requests and effective configuration, Run and Stream MUST emit se
 - **WHEN** equivalent deny alerts are produced in Run and Stream
 - **THEN** delivery-mode, retry, queue-drop, and circuit-state diagnostics are semantically equivalent
 
+### Requirement: Runtime config SHALL expose CA2 agentic routing controls with deterministic precedence
+Runtime configuration MUST expose CA2 agentic routing controls under `context_assembler.ca2.agentic.*` with precedence `env > file > default`.
+
+At minimum, runtime MUST support:
+- callback decision timeout,
+- callback failure policy.
+
+For this milestone, callback failure policy MUST support `best_effort_rules`, meaning callback failures fallback to rule-based routing and do not terminate assemble flow.
+
+Invalid timeout or unsupported failure policy values MUST fail fast during startup and hot reload.
+
+#### Scenario: Startup with CA2 agentic routing overrides
+- **WHEN** runtime starts with CA2 agentic controls defined in both YAML and environment variables
+- **THEN** effective CA2 agentic controls resolve by `env > file > default`
+
+#### Scenario: Invalid CA2 agentic timeout
+- **WHEN** runtime configuration sets non-positive callback decision timeout
+- **THEN** startup or hot reload fails fast with validation error
+
+#### Scenario: Invalid CA2 agentic failure policy
+- **WHEN** runtime configuration sets unsupported callback failure policy
+- **THEN** startup or hot reload fails fast with validation error
+
+### Requirement: Runtime diagnostics SHALL expose additive CA2 agentic routing fields
+Runtime diagnostics MUST expose additive CA2 routing observability fields sufficient to triage agentic decision and fallback behavior, including:
+- `stage2_router_mode`,
+- `stage2_router_decision`,
+- `stage2_router_reason`,
+- `stage2_router_latency_ms`,
+- `stage2_router_error`.
+
+These fields MUST be backward-compatible and MUST NOT redefine existing CA2 Stage2 retrieval field semantics.
+
+#### Scenario: Consumer inspects successful agentic routing decision
+- **WHEN** application queries diagnostics for runs using `routing_mode=agentic` with successful callback decision
+- **THEN** diagnostics include normalized router mode, decision, reason, and decision latency fields
+
+#### Scenario: Consumer inspects callback failure fallback
+- **WHEN** application queries diagnostics for runs using `routing_mode=agentic` and callback fails
+- **THEN** diagnostics include normalized router error and fallback reason while preserving existing stage-policy behavior
+
+### Requirement: Run and Stream SHALL preserve CA2 agentic routing diagnostics semantic equivalence
+For equivalent requests and effective configuration, Run and Stream MUST emit semantically equivalent CA2 agentic routing diagnostics fields.
+
+#### Scenario: Equivalent CA2 agentic routing diagnostics in Run and Stream
+- **WHEN** equivalent requests execute under the same CA2 agentic routing configuration
+- **THEN** diagnostics fields `stage2_router_mode|stage2_router_decision|stage2_router_reason|stage2_router_latency_ms|stage2_router_error` are semantically equivalent across Run and Stream
+
+### Requirement: Runtime config SHALL expose skill embedding trigger scoring controls with deterministic precedence
+Runtime configuration MUST expose embedding-enhanced skill trigger scoring controls under `skill.trigger_scoring.embedding.*` with precedence `env > file > default`.
+
+At minimum, runtime MUST support:
+- embedding scorer enablement and strategy activation controls,
+- embedding timeout control,
+- similarity metric selector for this milestone,
+- lexical/embedding linear fusion weights.
+
+For this milestone, configuration is managed through runtime JSON/YAML path only and MUST NOT require additional CLI parameters.
+
+#### Scenario: Startup with skill embedding scoring overrides
+- **WHEN** runtime starts with skill embedding scoring controls defined in both YAML and environment variables
+- **THEN** effective skill embedding controls resolve by `env > file > default`
+
+#### Scenario: Invalid skill embedding timeout
+- **WHEN** runtime configuration sets non-positive skill embedding timeout
+- **THEN** startup or hot reload fails fast with validation error
+
+#### Scenario: Invalid skill embedding fusion weights
+- **WHEN** runtime configuration sets invalid lexical/embedding fusion weights
+- **THEN** startup or hot reload fails fast with validation error
+
+### Requirement: Runtime diagnostics SHALL expose additive skill trigger scoring observability fields
+Runtime diagnostics MUST expose additive skill-trigger observability fields sufficient for lexical-plus-embedding triage, including at minimum:
+- active trigger scoring strategy,
+- final trigger score,
+- embedding score contribution (when available),
+- embedding fallback reason (when fallback occurs).
+
+These fields MUST be backward-compatible and MUST NOT redefine existing skill lifecycle diagnostics semantics.
+
+#### Scenario: Consumer inspects successful lexical-plus-embedding trigger
+- **WHEN** application queries skill diagnostics for runs using embedding-enhanced trigger scoring
+- **THEN** diagnostics include strategy, final score, and embedding score contribution fields
+
+#### Scenario: Consumer inspects embedding fallback
+- **WHEN** application queries skill diagnostics for runs where embedding path falls back to lexical
+- **THEN** diagnostics include normalized fallback reason while preserving existing lifecycle fields
+
+### Requirement: Run and Stream SHALL preserve skill trigger scoring diagnostics semantic equivalence
+For equivalent requests and effective configuration, Run and Stream MUST emit semantically equivalent skill trigger scoring diagnostics fields.
+
+#### Scenario: Equivalent skill trigger diagnostics in Run and Stream
+- **WHEN** equivalent requests execute under the same skill trigger scoring configuration and scorer behavior
+- **THEN** diagnostics fields for strategy, final score, and fallback class are semantically equivalent across Run and Stream
+

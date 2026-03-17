@@ -2,6 +2,7 @@ package loader
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,6 +215,235 @@ skill:
 	}
 }
 
+func TestCompileLexicalPlusEmbeddingWeightedScore(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_plus_embedding
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      database: 1.0
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 200ms
+      similarity_metric: cosine
+      lexical_weight: 0.6
+      embedding_weight: 0.4
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	skillPath := filepath.Join(dir, "one", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: database tool\n- tool: local.sql"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{{Name: "db-helper", Path: skillPath, Description: "database tool"}}
+	col := &collector{}
+	l := NewWithRuntimeManager(col, mgr)
+	l.SetEmbeddingScorer(SkillTriggerEmbeddingScorerFunc(func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+		return 0.5, nil
+	}))
+
+	_, err = l.Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	last := col.events[len(col.events)-1]
+	if last.Type != "skill.loaded" {
+		t.Fatalf("last event = %q, want skill.loaded", last.Type)
+	}
+	if last.Payload["strategy"] != runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding {
+		t.Fatalf("strategy = %#v, want lexical_plus_embedding", last.Payload["strategy"])
+	}
+	if got, _ := last.Payload["embedding_score"].(float64); got != 0.5 {
+		t.Fatalf("embedding_score = %v, want 0.5", got)
+	}
+	if got, _ := last.Payload["final_score"].(float64); got != 0.8 {
+		t.Fatalf("final_score = %v, want 0.8", got)
+	}
+	if _, ok := last.Payload["fallback_reason"]; ok {
+		t.Fatalf("fallback_reason should be empty, payload=%#v", last.Payload)
+	}
+}
+
+func TestCompileLexicalPlusEmbeddingFallbackReasons(t *testing.T) {
+	newLoader := func(t *testing.T) (*Loader, []types.SkillSpec, *collector) {
+		t.Helper()
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "runtime.yaml")
+		cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_plus_embedding
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      database: 1.0
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 20ms
+      similarity_metric: cosine
+      lexical_weight: 0.7
+      embedding_weight: 0.3
+`
+		if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+		if err != nil {
+			t.Fatalf("NewManager failed: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+		skillPath := filepath.Join(dir, "one", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(skillPath, []byte("description: database tool\n- tool: local.sql"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		specs := []types.SkillSpec{{Name: "db-helper", Path: skillPath, Description: "database tool"}}
+		col := &collector{}
+		return NewWithRuntimeManager(col, mgr), specs, col
+	}
+
+	t.Run("missing", func(t *testing.T) {
+		l, specs, col := newLoader(t)
+		_, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		last := col.events[len(col.events)-1]
+		if last.Payload["fallback_reason"] != "embedding.scorer_missing" {
+			t.Fatalf("fallback_reason = %#v, want embedding.scorer_missing", last.Payload["fallback_reason"])
+		}
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		l, specs, col := newLoader(t)
+		l.SetEmbeddingScorer(SkillTriggerEmbeddingScorerFunc(func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+			<-ctx.Done()
+			return 0, ctx.Err()
+		}))
+		_, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		last := col.events[len(col.events)-1]
+		if last.Payload["fallback_reason"] != "embedding.timeout" {
+			t.Fatalf("fallback_reason = %#v, want embedding.timeout", last.Payload["fallback_reason"])
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		l, specs, col := newLoader(t)
+		l.SetEmbeddingScorer(SkillTriggerEmbeddingScorerFunc(func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+			return 0, errors.New("boom")
+		}))
+		_, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		last := col.events[len(col.events)-1]
+		if last.Payload["fallback_reason"] != "embedding.error" {
+			t.Fatalf("fallback_reason = %#v, want embedding.error", last.Payload["fallback_reason"])
+		}
+	})
+
+	t.Run("invalid_score", func(t *testing.T) {
+		l, specs, col := newLoader(t)
+		l.SetEmbeddingScorer(SkillTriggerEmbeddingScorerFunc(func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+			return 1.5, nil
+		}))
+		_, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		last := col.events[len(col.events)-1]
+		if last.Payload["fallback_reason"] != "embedding.invalid_score" {
+			t.Fatalf("fallback_reason = %#v, want embedding.invalid_score", last.Payload["fallback_reason"])
+		}
+	})
+}
+
+func TestCompileLexicalPlusEmbeddingRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_plus_embedding
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    keyword_weights:
+      database: 1.0
+    embedding:
+      enabled: true
+      provider: openai
+      model: text-embedding-3-small
+      timeout: 200ms
+      similarity_metric: cosine
+      lexical_weight: 0.7
+      embedding_weight: 0.3
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	skillPath := filepath.Join(dir, "one", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: database tool\n- tool: local.sql"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{{Name: "db-helper", Path: skillPath, Description: "database tool", Priority: 3}}
+	newLoader := func() *Loader {
+		l := NewWithRuntimeManager(nil, mgr)
+		l.SetEmbeddingScorer(SkillTriggerEmbeddingScorerFunc(func(ctx context.Context, req SkillTriggerEmbeddingScoreRequest) (float64, error) {
+			return 0.6, nil
+		}))
+		return l
+	}
+	runBundle, err := newLoader().Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+	if err != nil {
+		t.Fatalf("run compile failed: %v", err)
+	}
+	streamBundle, err := newLoader().Compile(context.Background(), specs, types.SkillInput{UserInput: "database"})
+	if err != nil {
+		t.Fatalf("stream compile failed: %v", err)
+	}
+	if len(runBundle.SystemPromptFragments) != len(streamBundle.SystemPromptFragments) {
+		t.Fatalf("run/stream bundle size mismatch: run=%d stream=%d", len(runBundle.SystemPromptFragments), len(streamBundle.SystemPromptFragments))
+	}
+	if len(runBundle.EnabledTools) != len(streamBundle.EnabledTools) || runBundle.EnabledTools[0] != streamBundle.EnabledTools[0] {
+		t.Fatalf("run/stream tool selection mismatch: run=%#v stream=%#v", runBundle.EnabledTools, streamBundle.EnabledTools)
+	}
+}
+
 func TestCompileTieBreakDeterministicAcrossRuns(t *testing.T) {
 	dir := t.TempDir()
 	aPath := filepath.Join(dir, "a", "SKILL.md")
@@ -320,6 +550,12 @@ diagnostics:
 	if items[0].SkillName != "db-skill" || items[0].Status != "success" || items[0].Action != "compile" {
 		t.Fatalf("unexpected skill diag: %#v", items[0])
 	}
+	if items[0].Payload["strategy"] != skillTriggerStrategyExplicit {
+		t.Fatalf("skill strategy payload = %#v, want explicit", items[0].Payload["strategy"])
+	}
+	if items[0].Payload["final_score"] != float64(1) {
+		t.Fatalf("skill final_score payload = %#v, want 1", items[0].Payload["final_score"])
+	}
 }
 
 func TestSkillDiagnosticsWarningAndReplayDedup(t *testing.T) {
@@ -378,6 +614,8 @@ diagnostics:
 			"error_class": string(types.ErrSkill),
 			"reason":      "compile read failed",
 			"path":        filepath.Join(dir, "missing", "SKILL.md"),
+			"strategy":    skillTriggerStrategyExplicit,
+			"final_score": float64(1),
 		},
 	}
 	rec.OnEvent(context.Background(), replay)

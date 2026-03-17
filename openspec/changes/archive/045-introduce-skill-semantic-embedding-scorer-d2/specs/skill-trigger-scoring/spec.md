@@ -1,8 +1,5 @@
-# skill-trigger-scoring Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change introduce-skill-trigger-scoring-and-contract-tests-d1. Update Purpose after archive.
-## Requirements
 ### Requirement: Skill loader SHALL use configurable lexical trigger scoring by default
 The skill loader MUST evaluate semantic trigger candidates with a configurable trigger-scoring strategy. The default strategy MUST remain lexical weighted-keyword scoring, and runtime configuration MUST be able to switch to embedding-enhanced strategy without changing external APIs.
 
@@ -13,28 +10,6 @@ The skill loader MUST evaluate semantic trigger candidates with a configurable t
 #### Scenario: Runtime switches to embedding-enhanced strategy
 - **WHEN** runtime configuration sets strategy to `lexical_plus_embedding`
 - **THEN** loader evaluates candidates with lexical+embedding fusion and applies configured confidence threshold
-
-### Requirement: Skill loader SHALL use highest-priority tie-break for equal scores
-When two or more skill candidates have equal final score, the loader MUST deterministically select by `highest-priority` rule.
-
-#### Scenario: Equal scores with different priorities
-- **WHEN** two candidates produce the same score and one has higher configured priority
-- **THEN** loader selects the higher-priority candidate
-
-#### Scenario: Equal scores and equal priorities
-- **WHEN** two candidates produce the same score and same priority
-- **THEN** loader applies deterministic stable order and produces repeatable selection result
-
-### Requirement: Low-confidence suppression SHALL be enabled by default
-The runtime MUST enable low-confidence suppression by default so weak semantic matches do not trigger skill activation unless explicitly disabled.
-
-#### Scenario: Default config without explicit suppression override
-- **WHEN** runtime starts with default skill trigger scoring configuration
-- **THEN** low-confidence suppression is enabled and below-threshold candidates are filtered out
-
-#### Scenario: Explicit suppression disable
-- **WHEN** runtime configuration explicitly disables low-confidence suppression
-- **THEN** loader allows below-threshold candidates to continue according to configured fallback behavior
 
 ### Requirement: Skill trigger scoring architecture SHALL reserve scorer extension interface
 The implementation MUST provide an internal scorer extension interface for embedding-based trigger scoring integration and MUST support host registration of embedding scorer implementation without changing public loader APIs.
@@ -47,16 +22,7 @@ The implementation MUST provide an internal scorer extension interface for embed
 - **WHEN** runtime runs with `lexical_plus_embedding` but no embedding scorer is registered
 - **THEN** loader falls back to lexical-only scoring path with normalized fallback reason and continues compile flow
 
-### Requirement: Skill trigger scoring behavior SHALL be guarded by contract tests
-Repository MUST include contract tests that verify threshold behavior, tie-break determinism, and low-confidence suppression defaults.
-
-#### Scenario: Contract suite validates equal-score tie-break
-- **WHEN** contract tests execute with equal-score candidate fixtures
-- **THEN** tests assert deterministic `highest-priority` selection
-
-#### Scenario: Contract suite validates suppression defaults
-- **WHEN** contract tests execute with default configuration
-- **THEN** below-threshold candidates are not activated and test fails on regression
+## ADDED Requirements
 
 ### Requirement: Skill trigger scoring SHALL support linear weighted lexical-plus-embedding fusion
 For `lexical_plus_embedding` strategy, loader MUST compute final candidate score with linear weighted fusion:
@@ -93,4 +59,3 @@ For equivalent inputs, equivalent effective configuration, and equivalent scorer
 #### Scenario: Equivalent embedding fallback in Run and Stream
 - **WHEN** equivalent requests execute with `lexical_plus_embedding` and embedding path fails with the same failure class
 - **THEN** Run and Stream both fallback to lexical scoring and produce semantically equivalent selection outcome
-

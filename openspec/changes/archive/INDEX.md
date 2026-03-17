@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-17 15:19:00
+Updated: 2026-03-17 16:23:45
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -45,3 +45,4 @@ Updated: 2026-03-17 15:19:00
 - 041 -> harden-security-s2-tool-permission-rate-limit-and-io-filter-e8
 - 042 -> introduce-security-s3-event-taxonomy-and-callback-alerting-e9
 - 043 -> harden-security-s4-callback-delivery-reliability
+- 044 -> implement-ca2-agentic-routing-baseline

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
@@ -167,7 +168,7 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 		return types.SkillBundle{}, nil
 	}
 
-	explicit, semantic := l.selectSkills(ctx, specs, in.UserInput)
+	explicit, semantic, selectionMeta := l.selectSkills(ctx, specs, in.UserInput)
 	selected := make([]types.SkillSpec, 0, len(specs))
 	selected = append(selected, explicit...)
 	semanticByName := map[string]scoredSkill{}
@@ -194,6 +195,8 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 		} else {
 			scorePayload["strategy"] = skillTriggerStrategyExplicit
 			scorePayload["final_score"] = 1.0
+			scorePayload["tokenizer_mode"] = selectionMeta.tokenizerMode
+			scorePayload["candidate_pruned_count"] = selectionMeta.candidatePrunedCount
 		}
 		content, err := os.ReadFile(spec.Path)
 		if err != nil {
@@ -240,7 +243,7 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 	}, nil
 }
 
-func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []scoredSkill) {
+func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, input string) (explicit []types.SkillSpec, semantic []scoredSkill, meta skillSelectionMeta) {
 	lower := strings.ToLower(input)
 	scoring := l.triggerScoringConfig()
 	scorer := l.scorer
@@ -248,6 +251,7 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 		scorer = lexicalWeightedKeywordScorer{}
 	}
 	strategy := normalizedSkillTriggerStrategy(scoring.Strategy)
+	tokenizerMode := normalizedSkillTriggerTokenizerMode(scoring.Lexical.TokenizerMode)
 	candidates := make([]scoredSkill, 0, len(specs))
 	for i, s := range specs {
 		nameLower := strings.ToLower(s.Name)
@@ -276,6 +280,7 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 			lexicalScore:   lexicalScore,
 			embeddingScore: embeddingScore,
 			fallbackReason: fallbackReason,
+			tokenizerMode:  tokenizerMode,
 		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -297,21 +302,90 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 			return left.index < right.index
 		}
 	})
-	return explicit, candidates
+	maxSemanticCandidates := scoring.MaxSemanticCandidates
+	if maxSemanticCandidates <= 0 {
+		maxSemanticCandidates = runtimeconfig.DefaultConfig().Skill.TriggerScoring.MaxSemanticCandidates
+	}
+	prunedCount := 0
+	if maxSemanticCandidates > 0 && len(candidates) > maxSemanticCandidates {
+		prunedCount = len(candidates) - maxSemanticCandidates
+		candidates = candidates[:maxSemanticCandidates]
+	}
+	for i := range candidates {
+		candidates[i].candidatePrunedCount = prunedCount
+	}
+	return explicit, candidates, skillSelectionMeta{
+		tokenizerMode:        tokenizerMode,
+		candidatePrunedCount: prunedCount,
+	}
 }
 
-func tokenize(in string) []string {
-	f := func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_'
+func tokenize(in string, mode string) []string {
+	switch normalizedSkillTriggerTokenizerMode(mode) {
+	case runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN:
+		return tokenizeMixedCJKEN(in)
+	default:
+		return tokenizeMixedCJKEN(in)
 	}
-	parts := strings.FieldsFunc(in, f)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if len(p) >= 3 {
-			out = append(out, strings.ToLower(p))
+}
+
+func tokenizeMixedCJKEN(in string) []string {
+	out := make([]string, 0, len(in)/2)
+	ascii := strings.Builder{}
+	cjkRun := make([]rune, 0, 8)
+	flushASCII := func() {
+		if ascii.Len() < 3 {
+			ascii.Reset()
+			return
 		}
+		out = append(out, strings.ToLower(ascii.String()))
+		ascii.Reset()
 	}
+	flushCJK := func() {
+		if len(cjkRun) == 0 {
+			return
+		}
+		if len(cjkRun) == 1 {
+			out = append(out, string(cjkRun[0]))
+			cjkRun = cjkRun[:0]
+			return
+		}
+		for i := 0; i < len(cjkRun)-1; i++ {
+			out = append(out, string(cjkRun[i:i+2]))
+		}
+		out = append(out, string(cjkRun))
+		cjkRun = cjkRun[:0]
+	}
+	for _, r := range in {
+		if isASCIIWordRune(r) {
+			flushCJK()
+			ascii.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		flushASCII()
+		if isCJKRune(r) {
+			cjkRun = append(cjkRun, r)
+			continue
+		}
+		flushCJK()
+	}
+	flushASCII()
+	flushCJK()
 	return out
+}
+
+func isASCIIWordRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '_'
+}
+
+func isCJKRune(r rune) bool {
+	return unicode.Is(unicode.Han, r) ||
+		unicode.Is(unicode.Hiragana, r) ||
+		unicode.Is(unicode.Katakana, r) ||
+		unicode.Is(unicode.Hangul, r)
 }
 
 func parseSkillMeta(path string) (desc string, triggers []string, priority int) {
@@ -418,7 +492,7 @@ func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg r
 	if hay == "" {
 		return 0
 	}
-	inputTokens := tokenize(input)
+	inputTokens := tokenize(input, cfg.Lexical.TokenizerMode)
 	if len(inputTokens) == 0 {
 		return 0
 	}
@@ -442,13 +516,20 @@ func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg r
 }
 
 type scoredSkill struct {
-	spec           types.SkillSpec
-	score          float64
-	index          int
-	strategy       string
-	lexicalScore   float64
-	embeddingScore float64
-	fallbackReason string
+	spec                 types.SkillSpec
+	score                float64
+	index                int
+	strategy             string
+	lexicalScore         float64
+	embeddingScore       float64
+	fallbackReason       string
+	tokenizerMode        string
+	candidatePrunedCount int
+}
+
+type skillSelectionMeta struct {
+	tokenizerMode        string
+	candidatePrunedCount int
 }
 
 func normalizedSkillTriggerStrategy(raw string) string {
@@ -457,6 +538,15 @@ func normalizedSkillTriggerStrategy(raw string) string {
 		return runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding
 	default:
 		return runtimeconfig.SkillTriggerScoringStrategyLexicalWeightedKeywords
+	}
+}
+
+func normalizedSkillTriggerTokenizerMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN:
+		return runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN
+	default:
+		return runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN
 	}
 }
 
@@ -504,8 +594,10 @@ func (l *Loader) scoreWithEmbedding(
 
 func scorePayloadFromMeta(meta scoredSkill) map[string]any {
 	payload := map[string]any{
-		"strategy":    meta.strategy,
-		"final_score": meta.score,
+		"strategy":               meta.strategy,
+		"final_score":            meta.score,
+		"tokenizer_mode":         meta.tokenizerMode,
+		"candidate_pruned_count": meta.candidatePrunedCount,
 	}
 	if meta.strategy == runtimeconfig.SkillTriggerScoringStrategyLexicalPlusEmbedding {
 		payload["embedding_score"] = meta.embeddingScore

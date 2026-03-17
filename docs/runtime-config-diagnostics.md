@@ -84,6 +84,9 @@ skill:
     confidence_threshold: 0.25          # [0,1]
     tie_break: highest_priority         # highest_priority|first_registered
     suppress_low_confidence: true
+    max_semantic_candidates: 3          # semantic 候选 top-k 预算，必须 > 0
+    lexical:
+      tokenizer_mode: mixed_cjk_en      # D3: 当前仅支持 mixed_cjk_en
     keyword_weights:
       database: 1.5
       db: 1.5
@@ -300,13 +303,15 @@ Skill trigger scoring 校验语义：
 1. `strategy` 仅支持 `lexical_weighted_keywords|lexical_plus_embedding`。
 2. `confidence_threshold` 必须在 `[0,1]`。
 3. `tie_break` 仅支持 `highest_priority|first_registered`。
-4. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
-5. `embedding.timeout` 必须 `> 0`。
-6. `embedding.similarity_metric` 当前必须为 `cosine`。
-7. `embedding.lexical_weight|embedding_weight` 必须在 `[0,1]` 且和 `> 0`。
-8. `strategy=lexical_plus_embedding` 时，`embedding.enabled` 必须为 `true`。
-9. `embedding.enabled=true` 时，`embedding.provider` 必须是 `openai|gemini|anthropic` 且 `embedding.model` 非空。
-10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+4. `lexical.tokenizer_mode` 当前仅支持 `mixed_cjk_en`。
+5. `max_semantic_candidates` 必须 `> 0`。
+6. `keyword_weights` 必须非空，且每个权重必须 `> 0`。
+7. `embedding.timeout` 必须 `> 0`。
+8. `embedding.similarity_metric` 当前必须为 `cosine`。
+9. `embedding.lexical_weight|embedding_weight` 必须在 `[0,1]` 且和 `> 0`。
+10. `strategy=lexical_plus_embedding` 时，`embedding.enabled` 必须为 `true`。
+11. `embedding.enabled=true` 时，`embedding.provider` 必须是 `openai|gemini|anthropic` 且 `embedding.model` 非空。
+12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 drop_low_priority 校验语义：
 1. `concurrency.backpressure=drop_low_priority` 在 `local + mcp + skill` 调度语义上统一生效。
@@ -387,9 +392,11 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
-Skill trigger scoring（D2）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
+Skill trigger scoring（D2/D3）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
 - `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。
 - `final_score`：最终触发分数。
+- `tokenizer_mode`：lexical 分词模式（当前 `mixed_cjk_en`；默认 redaction 不会将该观测字段误判为敏感信息）。
+- `candidate_pruned_count`：按 `max_semantic_candidates` 裁剪的 semantic 候选数量。
 - `embedding_score`：embedding 分数（仅 `lexical_plus_embedding` 路径）。
 - `fallback_reason`：embedding 回退原因（如 `embedding.scorer_missing|embedding.timeout|embedding.error|embedding.invalid_score`）。
 
@@ -690,7 +697,7 @@ Action Timeline reason code（H3 相关）：
   - `runtime/diagnostics`（配置快照与诊断 payload）
   - `observability/event`（JSON logger 与 runtime recorder）
   - `context/assembler`（stage2 payload 与 tail recap）
-- 脱敏策略默认按 key 关键词匹配，支持扩展 matcher 接口（后续阶段可接入更复杂策略）。
+- 脱敏策略默认按 key 关键词段匹配（非任意子串），支持扩展 matcher 接口（后续阶段可接入更复杂策略）。
 
 ## 安全治理（S2）
 
@@ -822,7 +829,7 @@ security:
 ## 限制
 
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。
-- 脱敏规则基于 key 命名匹配（`secret/token/password/api_key`），后续可按需要扩展。
+- 脱敏规则基于 key 关键词段匹配（如 `secret/token/password/api_key`）；`tokenizer_mode` 等观测字段不会因包含 `token` 子串而被误脱敏。
 - `security.redaction.strategy` 当前仅支持 `keyword`，配置其他值会 fail-fast。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 - context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。

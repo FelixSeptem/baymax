@@ -3,6 +3,7 @@ package redaction
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 const maskValue = "***"
@@ -128,7 +129,7 @@ func (r *Redactor) isSensitiveKey(key string) bool {
 		return false
 	}
 	for _, kw := range r.keywords {
-		if strings.Contains(k, kw) {
+		if keyContainsKeyword(k, kw) {
 			return true
 		}
 	}
@@ -138,4 +139,50 @@ func (r *Redactor) isSensitiveKey(key string) bool {
 		}
 	}
 	return false
+}
+
+func keyContainsKeyword(key, keyword string) bool {
+	keyTokens := splitKeywordTokens(key)
+	keywordTokens := splitKeywordTokens(keyword)
+	if len(keyTokens) == 0 || len(keywordTokens) == 0 || len(keywordTokens) > len(keyTokens) {
+		return false
+	}
+	for i := 0; i <= len(keyTokens)-len(keywordTokens); i++ {
+		matched := true
+		for j := 0; j < len(keywordTokens); j++ {
+			if keyTokens[i+j] != keywordTokens[j] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func splitKeywordTokens(in string) []string {
+	trimmed := strings.TrimSpace(in)
+	if trimmed == "" {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	token := strings.Builder{}
+	flush := func() {
+		if token.Len() == 0 {
+			return
+		}
+		out = append(out, token.String())
+		token.Reset()
+	}
+	for _, r := range trimmed {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			token.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
 }

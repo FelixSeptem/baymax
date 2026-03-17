@@ -138,6 +138,7 @@
 - [x] `harden-runner-cancel-storm-and-backpressure-baseline-r5`：完成 runner 取消风暴与背压基线收敛（默认 `block`、`cancel.propagated`/`backpressure.block` reason、并发诊断字段、Run/Stream 契约对齐、cancel-storm benchmark 输出 `p95` + `goroutine peak`）。
 - [x] `introduce-skill-trigger-scoring-and-contract-tests-d1`：完成 skill trigger scoring 收敛（默认 lexical weighted-keyword、`highest_priority` tie-break、低置信度抑制默认开启、runtime YAML 配置与合同测试）。
 - [x] `introduce-skill-semantic-embedding-scorer-d2`：完成 skill trigger scoring embedding 增强（`lexical_plus_embedding` 线性加权、best-effort lexical 回退、`skill.trigger_scoring.embedding.*` 配置与诊断字段、等价性契约测试）。
+- [x] `harden-skill-trigger-multilingual-lexical-and-budget-d3`：完成 skill trigger scoring 多语言词法与预算收敛（`mixed_cjk_en` 分词、`max_semantic_candidates` top-k 裁剪、`tokenizer_mode/candidate_pruned_count` 诊断字段、Run/Stream 等价契约测试）。
 - [x] `introduce-drop-low-priority-backpressure-r6`：完成 `drop_low_priority` 背压策略基线（local dispatch）、全量 drop fail-fast、`backpressure.drop_low_priority` reason 与契约测试/benchmark 收敛。
 - [x] `extend-drop-low-priority-backpressure-to-mcp-and-skill-r7`：将 `drop_low_priority` 语义扩展到 `local+mcp+skill`，补齐分桶诊断、跨路径 fail-fast 与契约/benchmark 收敛。
 
@@ -314,7 +315,7 @@
 
 - 清理仓库中的临时/备份产物与目录规范化（持续项）。
 - 收敛 `mcp/http` 与 `mcp/stdio` 中重复的重试/事件逻辑到共享组件。
-- TODO（skill scoring 演进）：当前仅实现 lexical weighted-keyword；后续在 scorer internal 接口上增量接入 embedding 检索/打分能力。
+- TODO（skill scoring 演进）：继续扩展多语言词法策略与预算自适应（当前已支持 `mixed_cjk_en` + 固定 top-k），并按实测语料评估更细粒度分词/裁剪策略。
 - 为 runner 添加更多混合压力测试（高并发 tool/mcp/skill + 取消风暴 + 安全告警投递干扰场景）。
 - 统一错误分类与错误处理策略（细化 error taxonomy 与跨模块映射）。
 - API 版本控制与兼容策略文档化（在对外接口扩张前完成）。

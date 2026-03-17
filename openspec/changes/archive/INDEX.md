@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-17 17:01:19
+Updated: 2026-03-17 17:25:27
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -47,3 +47,4 @@ Updated: 2026-03-17 17:01:19
 - 043 -> harden-security-s4-callback-delivery-reliability
 - 044 -> implement-ca2-agentic-routing-baseline
 - 045 -> introduce-skill-semantic-embedding-scorer-d2
+- 046 -> harden-skill-trigger-multilingual-lexical-and-budget-d3

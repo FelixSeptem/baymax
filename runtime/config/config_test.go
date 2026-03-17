@@ -322,6 +322,12 @@ func TestSkillTriggerScoringDefaults(t *testing.T) {
 	if len(cfg.Skill.TriggerScoring.KeywordWeights) == 0 {
 		t.Fatal("skill.trigger_scoring.keyword_weights must not be empty")
 	}
+	if cfg.Skill.TriggerScoring.Lexical.TokenizerMode != SkillTriggerScoringTokenizerMixedCJKEN {
+		t.Fatalf("skill.trigger_scoring.lexical.tokenizer_mode = %q, want %q", cfg.Skill.TriggerScoring.Lexical.TokenizerMode, SkillTriggerScoringTokenizerMixedCJKEN)
+	}
+	if cfg.Skill.TriggerScoring.MaxSemanticCandidates != 3 {
+		t.Fatalf("skill.trigger_scoring.max_semantic_candidates = %d, want 3", cfg.Skill.TriggerScoring.MaxSemanticCandidates)
+	}
 	if cfg.Skill.TriggerScoring.Embedding.Timeout <= 0 {
 		t.Fatalf("skill.trigger_scoring.embedding.timeout = %v, want > 0", cfg.Skill.TriggerScoring.Embedding.Timeout)
 	}
@@ -337,6 +343,8 @@ func TestSkillTriggerScoringLoadEnvOverFile(t *testing.T) {
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_TIE_BREAK", SkillTriggerScoringTieBreakFirstRegistered)
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_SUPPRESS_LOW_CONFIDENCE", "false")
 	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_CONFIDENCE_THRESHOLD", "0.61")
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_LEXICAL_TOKENIZER_MODE", SkillTriggerScoringTokenizerMixedCJKEN)
+	t.Setenv("BAYMAX_SKILL_TRIGGER_SCORING_MAX_SEMANTIC_CANDIDATES", "5")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -346,6 +354,9 @@ skill:
     tie_break: highest_priority
     suppress_low_confidence: true
     confidence_threshold: 0.33
+    max_semantic_candidates: 2
+    lexical:
+      tokenizer_mode: mixed_cjk_en
     keyword_weights:
       db: 1.9
       api: 1.4
@@ -365,6 +376,12 @@ skill:
 	}
 	if cfg.Skill.TriggerScoring.ConfidenceThreshold != 0.61 {
 		t.Fatalf("skill.trigger_scoring.confidence_threshold = %v, want 0.61", cfg.Skill.TriggerScoring.ConfidenceThreshold)
+	}
+	if cfg.Skill.TriggerScoring.MaxSemanticCandidates != 5 {
+		t.Fatalf("skill.trigger_scoring.max_semantic_candidates = %d, want 5 from env", cfg.Skill.TriggerScoring.MaxSemanticCandidates)
+	}
+	if cfg.Skill.TriggerScoring.Lexical.TokenizerMode != SkillTriggerScoringTokenizerMixedCJKEN {
+		t.Fatalf("skill.trigger_scoring.lexical.tokenizer_mode = %q, want %q", cfg.Skill.TriggerScoring.Lexical.TokenizerMode, SkillTriggerScoringTokenizerMixedCJKEN)
 	}
 	if cfg.Skill.TriggerScoring.KeywordWeights["db"] != 1.9 {
 		t.Fatalf("skill.trigger_scoring.keyword_weights.db = %v, want 1.9", cfg.Skill.TriggerScoring.KeywordWeights["db"])
@@ -476,6 +493,24 @@ func TestSkillTriggerScoringValidateRejectsEmbeddingConfig(t *testing.T) {
 		cfg.Skill.TriggerScoring.Embedding.EmbeddingWeight = 0
 		if err := Validate(cfg); err == nil {
 			t.Fatal("expected validation error for zero skill.trigger_scoring.embedding weights")
+		}
+	})
+}
+
+func TestSkillTriggerScoringValidateRejectsLexicalBudgetConfig(t *testing.T) {
+	t.Run("invalid_tokenizer_mode", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.Lexical.TokenizerMode = "unicode_all"
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.lexical.tokenizer_mode")
+		}
+	})
+
+	t.Run("non_positive_max_semantic_candidates", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.Skill.TriggerScoring.MaxSemanticCandidates = 0
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected validation error for skill.trigger_scoring.max_semantic_candidates")
 		}
 	})
 }

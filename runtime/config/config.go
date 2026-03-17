@@ -73,6 +73,7 @@ const (
 	SkillTriggerScoringTieBreakHighestPriority         = "highest_priority"
 	SkillTriggerScoringTieBreakFirstRegistered         = "first_registered"
 	SkillTriggerScoringSimilarityCosine                = "cosine"
+	SkillTriggerScoringTokenizerMixedCJKEN             = "mixed_cjk_en"
 )
 
 const (
@@ -182,7 +183,13 @@ type SkillTriggerScoringConfig struct {
 	TieBreak              string                             `json:"tie_break"`
 	SuppressLowConfidence bool                               `json:"suppress_low_confidence"`
 	KeywordWeights        map[string]float64                 `json:"keyword_weights"`
+	Lexical               SkillTriggerScoringLexicalConfig   `json:"lexical"`
+	MaxSemanticCandidates int                                `json:"max_semantic_candidates"`
 	Embedding             SkillTriggerScoringEmbeddingConfig `json:"embedding"`
+}
+
+type SkillTriggerScoringLexicalConfig struct {
+	TokenizerMode string `json:"tokenizer_mode"`
 }
 
 type SkillTriggerScoringEmbeddingConfig struct {
@@ -627,6 +634,10 @@ func DefaultConfig() Config {
 					"lookup":   1.1,
 					"migrate":  1.3,
 				},
+				Lexical: SkillTriggerScoringLexicalConfig{
+					TokenizerMode: SkillTriggerScoringTokenizerMixedCJKEN,
+				},
+				MaxSemanticCandidates: 3,
 				Embedding: SkillTriggerScoringEmbeddingConfig{
 					Enabled:          false,
 					Provider:         "openai",
@@ -1076,6 +1087,14 @@ func Validate(cfg Config) error {
 	}
 	if len(scoring.KeywordWeights) == 0 {
 		return errors.New("skill.trigger_scoring.keyword_weights must not be empty")
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(scoring.Lexical.TokenizerMode)); mode {
+	case SkillTriggerScoringTokenizerMixedCJKEN:
+	default:
+		return fmt.Errorf("skill.trigger_scoring.lexical.tokenizer_mode must be one of [%s], got %q", SkillTriggerScoringTokenizerMixedCJKEN, scoring.Lexical.TokenizerMode)
+	}
+	if scoring.MaxSemanticCandidates <= 0 {
+		return errors.New("skill.trigger_scoring.max_semantic_candidates must be > 0")
 	}
 	for keyword, weight := range scoring.KeywordWeights {
 		k := strings.TrimSpace(strings.ToLower(keyword))
@@ -1952,6 +1971,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
 	v.SetDefault("skill.trigger_scoring.suppress_low_confidence", base.Skill.TriggerScoring.SuppressLowConfidence)
 	v.SetDefault("skill.trigger_scoring.keyword_weights", base.Skill.TriggerScoring.KeywordWeights)
+	v.SetDefault("skill.trigger_scoring.lexical.tokenizer_mode", base.Skill.TriggerScoring.Lexical.TokenizerMode)
+	v.SetDefault("skill.trigger_scoring.max_semantic_candidates", base.Skill.TriggerScoring.MaxSemanticCandidates)
 	v.SetDefault("skill.trigger_scoring.embedding.enabled", base.Skill.TriggerScoring.Embedding.Enabled)
 	v.SetDefault("skill.trigger_scoring.embedding.provider", base.Skill.TriggerScoring.Embedding.Provider)
 	v.SetDefault("skill.trigger_scoring.embedding.model", base.Skill.TriggerScoring.Embedding.Model)
@@ -2135,6 +2156,8 @@ func buildConfig(v *viper.Viper) Config {
 	if weights := normalizeFloatMap(v.GetStringMap("skill.trigger_scoring.keyword_weights")); len(weights) > 0 {
 		cfg.Skill.TriggerScoring.KeywordWeights = weights
 	}
+	cfg.Skill.TriggerScoring.Lexical.TokenizerMode = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.lexical.tokenizer_mode")))
+	cfg.Skill.TriggerScoring.MaxSemanticCandidates = v.GetInt("skill.trigger_scoring.max_semantic_candidates")
 	cfg.Skill.TriggerScoring.Embedding.Enabled = v.GetBool("skill.trigger_scoring.embedding.enabled")
 	cfg.Skill.TriggerScoring.Embedding.Provider = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.provider")))
 	cfg.Skill.TriggerScoring.Embedding.Model = strings.TrimSpace(v.GetString("skill.trigger_scoring.embedding.model"))

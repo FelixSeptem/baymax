@@ -32,6 +32,21 @@ func TestSanitizeMapExtendedKeywords(t *testing.T) {
 	}
 }
 
+func TestSanitizeMapTokenKeywordKeepsTokenizerMode(t *testing.T) {
+	r := New(true, []string{"token"})
+	in := map[string]any{
+		"tokenizer_mode": "mixed_cjk_en",
+		"bearer_token":   "abc",
+	}
+	out := r.SanitizeMap(in)
+	if out["tokenizer_mode"] != "mixed_cjk_en" {
+		t.Fatalf("tokenizer_mode = %#v, want mixed_cjk_en", out["tokenizer_mode"])
+	}
+	if out["bearer_token"] != "***" {
+		t.Fatalf("bearer_token = %#v, want ***", out["bearer_token"])
+	}
+}
+
 func TestSanitizeMapWithMatcherExtension(t *testing.T) {
 	r := New(true, []string{"token"}, WithMatcher(customMatcher{}))
 	in := map[string]any{"credential": "xyz"}

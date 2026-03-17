@@ -136,7 +136,7 @@
 说明：H1.5/H16 已完成 timeline 单 run 聚合 + 跨 run 趋势聚合收敛；同一 run 的 timeline 重放不重复计数（幂等保证）。
 
 ### 6. Security Baseline (S1)
-- 统一脱敏管线：关键词基线（`token/password/secret/api_key/apikey`）+ 扩展 matcher 口
+- 统一脱敏管线：关键词段匹配基线（`token/password/secret/api_key/apikey`，按 key segment 匹配，非任意子串）+ 扩展 matcher 口
 - 脱敏覆盖路径：`runtime/diagnostics`、`observability/event`、`context/assembler`
 - 质量门禁新增 `govulncheck`，默认 `strict`（发现漏洞即失败）
 - 安全扫描模式支持 `strict|warn`，通过环境变量控制

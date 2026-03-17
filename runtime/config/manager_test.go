@@ -183,6 +183,49 @@ security:
 	}
 }
 
+func TestManagerRedactPayloadKeepsSkillTokenizerSignal(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+security:
+  redaction:
+    enabled: true
+    strategy: keyword
+    keywords: [token, password, secret, api_key, apikey]
+`)
+
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	out := mgr.RedactPayload(map[string]any{
+		"tokenizer_mode":         SkillTriggerScoringTokenizerMixedCJKEN,
+		"candidate_pruned_count": 1,
+		"bearer_token":           "secret-token",
+	})
+	if out["tokenizer_mode"] != SkillTriggerScoringTokenizerMixedCJKEN {
+		t.Fatalf("tokenizer_mode = %#v, want %q", out["tokenizer_mode"], SkillTriggerScoringTokenizerMixedCJKEN)
+	}
+	if out["candidate_pruned_count"] != 1 {
+		t.Fatalf("candidate_pruned_count = %#v, want 1", out["candidate_pruned_count"])
+	}
+	if out["bearer_token"] != "***" {
+		t.Fatalf("bearer_token = %#v, want ***", out["bearer_token"])
+	}
+}
+
 func TestManagerPrecheckStage2External(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
@@ -462,6 +505,62 @@ reload:
 	after := mgr.EffectiveConfig().Skill.TriggerScoring.Embedding.LexicalWeight
 	if after != before {
 		t.Fatalf("invalid skill embedding reload should rollback, lexical_weight = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerSkillTriggerLexicalBudgetInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    max_semantic_candidates: 3
+    lexical:
+      tokenizer_mode: mixed_cjk_en
+    keyword_weights:
+      db: 1.5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Skill.TriggerScoring.MaxSemanticCandidates
+	if before != 3 {
+		t.Fatalf("before max_semantic_candidates = %d, want 3", before)
+	}
+
+	writeConfig(t, file, `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: true
+    max_semantic_candidates: 0
+    lexical:
+      tokenizer_mode: mixed_cjk_en
+    keyword_weights:
+      db: 1.5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Skill.TriggerScoring.MaxSemanticCandidates
+	if after != before {
+		t.Fatalf("invalid lexical budget reload should rollback, max_semantic_candidates = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

@@ -215,6 +215,120 @@ skill:
 	}
 }
 
+func TestCompileMixedCJKENLexicalTokenization(t *testing.T) {
+	dir := t.TempDir()
+	cnPath := filepath.Join(dir, "cn", "SKILL.md")
+	mixPath := filepath.Join(dir, "mix", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(cnPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(mixPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cnPath, []byte("description: 数据库迁移\n- tool: local.cn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mixPath, []byte("description: 数据库 migration\n- tool: local.mix"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []types.SkillSpec{
+		{Name: "cn-skill", Path: cnPath, Description: "数据库迁移"},
+		{Name: "mix-skill", Path: mixPath, Description: "数据库 migration"},
+	}
+	l := New(nil)
+
+	cnBundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "请执行数据库迁移"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(cnBundle.SystemPromptFragments) == 0 {
+		t.Fatalf("expected chinese lexical trigger hit, got %#v", cnBundle.SystemPromptFragments)
+	}
+
+	mixBundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "请做 database 迁移"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(mixBundle.SystemPromptFragments) == 0 {
+		t.Fatalf("expected mixed lexical trigger hit, got %#v", mixBundle.SystemPromptFragments)
+	}
+}
+
+func TestCompileTopKBudgetAndExplicitBypass(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    max_semantic_candidates: 1
+    keyword_weights:
+      search: 1.0
+      alpha: 1.0
+      beta: 1.0
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	makeSkill := func(name, tool string) string {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("description: search alpha beta\n- tool: "+tool), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	specs := []types.SkillSpec{
+		{Name: "explicit-skill", Path: makeSkill("explicit", "local.explicit"), Description: "search alpha beta", Priority: 1},
+		{Name: "s1", Path: makeSkill("s1", "local.s1"), Description: "search alpha beta", Priority: 9},
+		{Name: "s2", Path: makeSkill("s2", "local.s2"), Description: "search alpha beta", Priority: 8},
+		{Name: "s3", Path: makeSkill("s3", "local.s3"), Description: "search alpha beta", Priority: 7},
+	}
+	col := &collector{}
+	l := NewWithRuntimeManager(col, mgr)
+
+	bundle, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "请用 explicit-skill 做 search alpha beta"})
+	if err != nil {
+		t.Fatalf("Compile failed: %v", err)
+	}
+	if len(bundle.EnabledTools) != 2 {
+		t.Fatalf("enabled tools len = %d, want 2 (explicit + top1 semantic)", len(bundle.EnabledTools))
+	}
+	if bundle.EnabledTools[0] != "local.explicit" {
+		t.Fatalf("expected explicit skill first, got %#v", bundle.EnabledTools)
+	}
+	if bundle.EnabledTools[1] != "local.s1" {
+		t.Fatalf("expected highest-priority semantic skill kept by top-k, got %#v", bundle.EnabledTools)
+	}
+	loaded := 0
+	for _, ev := range col.events {
+		if ev.Type != "skill.loaded" {
+			continue
+		}
+		loaded++
+		if ev.Payload["tokenizer_mode"] != runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN {
+			t.Fatalf("tokenizer_mode = %#v, want %q", ev.Payload["tokenizer_mode"], runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN)
+		}
+		if got, _ := ev.Payload["candidate_pruned_count"].(int); got != 2 {
+			t.Fatalf("candidate_pruned_count = %#v, want 2", ev.Payload["candidate_pruned_count"])
+		}
+	}
+	if loaded != 2 {
+		t.Fatalf("loaded event count = %d, want 2", loaded)
+	}
+}
+
 func TestCompileLexicalPlusEmbeddingWeightedScore(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runtime.yaml")
@@ -444,6 +558,84 @@ skill:
 	}
 }
 
+func TestCompileMultilingualBudgetRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := `
+skill:
+  trigger_scoring:
+    strategy: lexical_weighted_keywords
+    confidence_threshold: 0.25
+    tie_break: highest_priority
+    suppress_low_confidence: false
+    max_semantic_candidates: 2
+    keyword_weights:
+      数据库: 1.5
+      migrate: 1.4
+      search: 1.2
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	makeSkill := func(name, tool string, p int) types.SkillSpec {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("description: 数据库 migrate search\n- tool: "+tool), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return types.SkillSpec{Name: name, Path: path, Description: "数据库 migrate search", Priority: p}
+	}
+	specs := []types.SkillSpec{
+		makeSkill("s1", "local.s1", 9),
+		makeSkill("s2", "local.s2", 8),
+		makeSkill("s3", "local.s3", 7),
+	}
+	input := "请做数据库 migrate search"
+	runCollector := &collector{}
+	streamCollector := &collector{}
+
+	runBundle, err := NewWithRuntimeManager(runCollector, mgr).Compile(context.Background(), specs, types.SkillInput{UserInput: input})
+	if err != nil {
+		t.Fatalf("run compile failed: %v", err)
+	}
+	streamBundle, err := NewWithRuntimeManager(streamCollector, mgr).Compile(context.Background(), specs, types.SkillInput{UserInput: input})
+	if err != nil {
+		t.Fatalf("stream compile failed: %v", err)
+	}
+	if len(runBundle.EnabledTools) != len(streamBundle.EnabledTools) {
+		t.Fatalf("run/stream tool count mismatch: run=%#v stream=%#v", runBundle.EnabledTools, streamBundle.EnabledTools)
+	}
+	for i := range runBundle.EnabledTools {
+		if runBundle.EnabledTools[i] != streamBundle.EnabledTools[i] {
+			t.Fatalf("run/stream tool order mismatch: run=%#v stream=%#v", runBundle.EnabledTools, streamBundle.EnabledTools)
+		}
+	}
+	assertLoadedPayload := func(t *testing.T, items []types.Event) {
+		t.Helper()
+		for _, ev := range items {
+			if ev.Type != "skill.loaded" {
+				continue
+			}
+			if ev.Payload["tokenizer_mode"] != runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN {
+				t.Fatalf("tokenizer_mode = %#v, want %q", ev.Payload["tokenizer_mode"], runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN)
+			}
+			if ev.Payload["candidate_pruned_count"] != 1 {
+				t.Fatalf("candidate_pruned_count = %#v, want 1", ev.Payload["candidate_pruned_count"])
+			}
+		}
+	}
+	assertLoadedPayload(t, runCollector.events)
+	assertLoadedPayload(t, streamCollector.events)
+}
+
 func TestCompileTieBreakDeterministicAcrossRuns(t *testing.T) {
 	dir := t.TempDir()
 	aPath := filepath.Join(dir, "a", "SKILL.md")
@@ -556,6 +748,12 @@ diagnostics:
 	if items[0].Payload["final_score"] != float64(1) {
 		t.Fatalf("skill final_score payload = %#v, want 1", items[0].Payload["final_score"])
 	}
+	if items[0].Payload["tokenizer_mode"] != runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN {
+		t.Fatalf("skill tokenizer_mode payload = %#v, want %q", items[0].Payload["tokenizer_mode"], runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN)
+	}
+	if items[0].Payload["candidate_pruned_count"] != 0 {
+		t.Fatalf("skill candidate_pruned_count payload = %#v, want 0", items[0].Payload["candidate_pruned_count"])
+	}
 }
 
 func TestSkillDiagnosticsWarningAndReplayDedup(t *testing.T) {
@@ -608,14 +806,16 @@ diagnostics:
 		Type:    "skill.warning",
 		RunID:   "run-1",
 		Payload: map[string]any{
-			"name":        "missing",
-			"action":      "compile",
-			"status":      "warning",
-			"error_class": string(types.ErrSkill),
-			"reason":      "compile read failed",
-			"path":        filepath.Join(dir, "missing", "SKILL.md"),
-			"strategy":    skillTriggerStrategyExplicit,
-			"final_score": float64(1),
+			"name":                   "missing",
+			"action":                 "compile",
+			"status":                 "warning",
+			"error_class":            string(types.ErrSkill),
+			"reason":                 "compile read failed",
+			"path":                   filepath.Join(dir, "missing", "SKILL.md"),
+			"strategy":               skillTriggerStrategyExplicit,
+			"final_score":            float64(1),
+			"tokenizer_mode":         runtimeconfig.SkillTriggerScoringTokenizerMixedCJKEN,
+			"candidate_pruned_count": 0,
 		},
 	}
 	rec.OnEvent(context.Background(), replay)

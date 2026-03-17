@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-16
+更新时间：2026-03-17
 
 ## 目标
 
@@ -141,9 +141,12 @@ context_assembler:
       provider: file       # file|http|rag|db|elasticsearch
       file_path: /tmp/baymax/context-stage2.jsonl
       external:
-        profile: http_generic # http_generic|ragflow_like|graphrag_like|elasticsearch_like
+        profile: http_generic # legacy: http_generic；template-pack: ragflow_like|graphrag_like|elasticsearch_like|explicit_only
         endpoint: https://retriever.example.com/search # non-file provider 必填
         method: POST # POST|PUT
+        hints:
+          enabled: false
+          capabilities: [metadata_filter] # 小写；允许 [a-z0-9._/-]
         auth:
           bearer_token: ${RETRIEVER_TOKEN}
           header_name: Authorization
@@ -307,6 +310,12 @@ ca2_external_trend 校验语义：
 4. `diagnostics.ca2_external_trend.thresholds.hit_rate` 必须在 `[0,1]`。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+ca2 stage2 external hint/template 校验语义：
+1. `context_assembler.ca2.stage2.external.profile` 仅支持 `http_generic|ragflow_like|graphrag_like|elasticsearch_like|explicit_only`。
+2. `context_assembler.ca2.stage2.external.hints.enabled=true` 时，`hints.capabilities` 必须非空。
+3. `hints.capabilities[*]` 必须使用小写并满足字符集 `[a-z0-9._/-]`。
+4. 非法 hint/template 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 ca3 compaction 校验语义：
 1. `context_assembler.ca3.compaction.mode` 仅允许 `truncate|semantic`。
 2. `context_assembler.ca3.compaction.semantic_timeout` 必须 `> 0`。
@@ -416,12 +425,60 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `stage2_latency_ms`：Stage2 耗时（毫秒）。
 - `stage2_provider`：Stage2 使用的 provider（file/http/rag/db/elasticsearch）。
 - `stage2_profile`：Stage2 external profile（`http_generic|ragflow_like|graphrag_like|elasticsearch_like|file`）。
+- `stage2_template_profile`：Stage2 模板解析使用的 template profile（可与 `stage2_profile` 并存，增量兼容）。
+- `stage2_template_resolution_source`：模板解析来源（`profile_defaults_only|profile_defaults_then_explicit_overrides|explicit_only`）。
+- `stage2_hint_applied`：本次 Stage2 是否成功应用 capability hints。
+- `stage2_hint_mismatch_reason`：hint 不匹配原因（例如 `hint.unsupported`；仅观测，不自动动作）。
 - `stage2_hit_count`：Stage2 本次命中的 chunk 数量。
 - `stage2_source`：Stage2 数据源标识（provider 或响应映射字段）。
 - `stage2_reason`：Stage2 执行原因/结果摘要（如 `ok`/`empty`/`timeout`/`fetch_error`）。
 - `stage2_reason_code`：Stage2 机器可读原因码（如 `ok`/`timeout`/`http_status`/`upstream_error`）。
 - `stage2_error_layer`：Stage2 错误分层（`transport|protocol|semantic`，成功时为空）。
 - `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
+
+### CA2 E3 Template-Pack YAML 样例（精简）
+
+```yaml
+# graphrag_like
+context_assembler:
+  ca2:
+    stage2:
+      provider: http
+      external:
+        profile: graphrag_like
+        endpoint: https://retriever.example.com/graphrag/search
+        hints:
+          enabled: true
+          capabilities: [metadata_filter]
+```
+
+```yaml
+# ragflow_like
+context_assembler:
+  ca2:
+    stage2:
+      provider: rag
+      external:
+        profile: ragflow_like
+        endpoint: https://retriever.example.com/ragflow/query
+        hints:
+          enabled: true
+          capabilities: [metadata_filter, rerank_metadata]
+```
+
+```yaml
+# elasticsearch_like
+context_assembler:
+  ca2:
+    stage2:
+      provider: elasticsearch
+      external:
+        profile: elasticsearch_like
+        endpoint: https://retriever.example.com/es/search
+        hints:
+          enabled: true
+          capabilities: [dsl_query, metadata_filter]
+```
 
 ### Run 诊断新增字段（Context Assembler CA3）
 

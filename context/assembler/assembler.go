@@ -401,6 +401,12 @@ func (a *Assembler) applyCA2(
 	}
 	outcome.Stage.Stage2Provider = p.Name()
 	outcome.Stage.Stage2Profile = stage2ProfileFromConfig(cfg.CA2.Stage2.External.Profile, p.Name())
+	outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromConfig(cfg.CA2.Stage2.External.Profile, p.Name())
+	outcome.Stage.Stage2TemplateResolutionSource = stage2TemplateResolutionSourceFromConfig(
+		cfg.CA2.Stage2.External.TemplateResolutionSource,
+		cfg.CA2.Stage2.External.Profile,
+		p.Name(),
+	)
 	stage2Ctx, cancel := context.WithTimeout(ctx, cfg.CA2.Timeout.Stage2)
 	defer cancel()
 	resp, err := p.Fetch(stage2Ctx, provider.Request{
@@ -408,6 +414,7 @@ func (a *Assembler) applyCA2(
 		SessionID: req.SessionID,
 		Input:     modelReq.Input,
 		MaxItems:  cfg.CA2.TailRecap.MaxItems,
+		Hints:     stage2HintsFromConfig(cfg.CA2.Stage2.External.Hints),
 	})
 	outcome.Stage.Stage2LatencyMs = a.now().Sub(stage2Start).Milliseconds()
 	if err != nil {
@@ -432,6 +439,13 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.Stage2ErrorLayer = stage2ErrorLayerFromMeta(resp.Meta, "")
 		outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
 		outcome.Stage.Stage2Profile = stage2ProfileFromMeta(resp.Meta, outcome.Stage.Stage2Profile)
+		outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromMeta(resp.Meta, outcome.Stage.Stage2TemplateProfile)
+		outcome.Stage.Stage2TemplateResolutionSource = stage2TemplateResolutionSourceFromMeta(
+			resp.Meta,
+			outcome.Stage.Stage2TemplateResolutionSource,
+		)
+		outcome.Stage.Stage2HintApplied = stage2HintAppliedFromMeta(resp.Meta)
+		outcome.Stage.Stage2HintMismatchReason = stage2HintMismatchReasonFromMeta(resp.Meta)
 		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
@@ -449,6 +463,13 @@ func (a *Assembler) applyCA2(
 	outcome.Stage.Stage2ReasonCode = stage2ReasonCodeFromMeta(resp.Meta, "ok")
 	outcome.Stage.Stage2ErrorLayer = stage2ErrorLayerFromMeta(resp.Meta, "")
 	outcome.Stage.Stage2Profile = stage2ProfileFromMeta(resp.Meta, outcome.Stage.Stage2Profile)
+	outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromMeta(resp.Meta, outcome.Stage.Stage2TemplateProfile)
+	outcome.Stage.Stage2TemplateResolutionSource = stage2TemplateResolutionSourceFromMeta(
+		resp.Meta,
+		outcome.Stage.Stage2TemplateResolutionSource,
+	)
+	outcome.Stage.Stage2HintApplied = stage2HintAppliedFromMeta(resp.Meta)
+	outcome.Stage.Stage2HintMismatchReason = stage2HintMismatchReasonFromMeta(resp.Meta)
 	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
@@ -504,6 +525,44 @@ func stage2ProfileFromMeta(meta map[string]any, fallback string) string {
 	return fallback
 }
 
+func stage2TemplateProfileFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if profile, ok := meta["template_profile"].(string); ok && strings.TrimSpace(profile) != "" {
+		return strings.TrimSpace(profile)
+	}
+	return fallback
+}
+
+func stage2TemplateResolutionSourceFromMeta(meta map[string]any, fallback string) string {
+	if len(meta) == 0 {
+		return fallback
+	}
+	if source, ok := meta["template_resolution_source"].(string); ok && strings.TrimSpace(source) != "" {
+		return strings.TrimSpace(source)
+	}
+	return fallback
+}
+
+func stage2HintAppliedFromMeta(meta map[string]any) bool {
+	if len(meta) == 0 {
+		return false
+	}
+	applied, _ := meta["hint_applied"].(bool)
+	return applied
+}
+
+func stage2HintMismatchReasonFromMeta(meta map[string]any) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	if reason, ok := meta["hint_mismatch_reason"].(string); ok && strings.TrimSpace(reason) != "" {
+		return strings.TrimSpace(reason)
+	}
+	return ""
+}
+
 func stage2ProfileFromConfig(profile, providerName string) string {
 	out := strings.TrimSpace(profile)
 	if out != "" {
@@ -513,6 +572,52 @@ func stage2ProfileFromConfig(profile, providerName string) string {
 		return "file"
 	}
 	return runtimeconfig.ContextStage2ExternalProfileHTTPGeneric
+}
+
+func stage2TemplateProfileFromConfig(profile, providerName string) string {
+	out := strings.TrimSpace(profile)
+	if out != "" {
+		return out
+	}
+	if strings.EqualFold(strings.TrimSpace(providerName), runtimeconfig.ContextStage2ProviderFile) {
+		return "file"
+	}
+	return runtimeconfig.ContextStage2ExternalProfileHTTPGeneric
+}
+
+func stage2TemplateResolutionSourceFromConfig(source, profile, providerName string) string {
+	resolved := strings.TrimSpace(source)
+	if resolved != "" {
+		return resolved
+	}
+	if strings.EqualFold(strings.TrimSpace(providerName), runtimeconfig.ContextStage2ProviderFile) {
+		return runtimeconfig.Stage2TemplateResolutionExplicitOnly
+	}
+	p := strings.ToLower(strings.TrimSpace(profile))
+	if p == "" || p == runtimeconfig.ContextStage2ExternalProfileExplicitOnly {
+		return runtimeconfig.Stage2TemplateResolutionExplicitOnly
+	}
+	return runtimeconfig.Stage2TemplateResolutionProfileDefaultsOnly
+}
+
+func stage2HintsFromConfig(cfg runtimeconfig.ContextAssemblerCA2ExternalHintConfig) provider.CapabilityHints {
+	if !cfg.Enabled || len(cfg.Capabilities) == 0 {
+		return provider.CapabilityHints{}
+	}
+	out := make([]string, 0, len(cfg.Capabilities))
+	seen := map[string]struct{}{}
+	for _, capability := range cfg.Capabilities {
+		item := strings.ToLower(strings.TrimSpace(capability))
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return provider.CapabilityHints{Capabilities: out}
 }
 
 func stage2ReasonFromError(err error) (reason string, reasonCode string, errorLayer string) {

@@ -309,3 +309,76 @@ func TestHTTPProviderFetchClassifiesTransportTimeout(t *testing.T) {
 		t.Fatalf("fetchErr = %#v", fetchErr)
 	}
 }
+
+func TestHTTPProviderFetchCarriesHintOutcomeObservationally(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		var reqPayload map[string]any
+		if err := json.Unmarshal(body, &reqPayload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		hints, ok := reqPayload["capability_hints"].([]any)
+		if !ok || len(hints) != 1 {
+			t.Fatalf("capability_hints = %#v, want one hint", reqPayload["capability_hints"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"chunks": []string{"ctx-1"},
+			"source": "http",
+			"reason": "ok",
+		})
+	}))
+	defer ts.Close()
+
+	p, err := NewWithConfig(Config{
+		Name: runtimeconfig.ContextStage2ProviderHTTP,
+		External: runtimeconfig.ContextAssemblerCA2ExternalConfig{
+			Profile:                  runtimeconfig.ContextStage2ExternalProfileRAGFlowLike,
+			TemplateResolutionSource: runtimeconfig.Stage2TemplateResolutionProfileDefaultsWithOverride,
+			Endpoint:                 ts.URL,
+			Method:                   "POST",
+			Mapping: runtimeconfig.ContextAssemblerCA2ExternalMappingConfig{
+				Request: runtimeconfig.ContextAssemblerCA2RequestMappingConfig{
+					Mode:       "plain",
+					QueryField: "query",
+				},
+				Response: runtimeconfig.ContextAssemblerCA2ResponseMappingConfig{
+					ChunksField: "chunks",
+					SourceField: "source",
+					ReasonField: "reason",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+
+	resp, err := p.Fetch(context.Background(), Request{
+		Input: "hello",
+		Hints: CapabilityHints{
+			Capabilities: []string{"dsl_query"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("fetch failed: %v", err)
+	}
+	if got, _ := resp.Meta["hint_applied"].(bool); got {
+		t.Fatalf("hint_applied = %v, want false", got)
+	}
+	if resp.Meta["hint_mismatch_reason"] != "hint.unsupported" {
+		t.Fatalf("hint_mismatch_reason = %#v, want hint.unsupported", resp.Meta["hint_mismatch_reason"])
+	}
+	if resp.Meta["template_profile"] != runtimeconfig.ContextStage2ExternalProfileRAGFlowLike {
+		t.Fatalf("template_profile = %#v, want ragflow_like", resp.Meta["template_profile"])
+	}
+	if resp.Meta["template_resolution_source"] != runtimeconfig.Stage2TemplateResolutionProfileDefaultsWithOverride {
+		t.Fatalf(
+			"template_resolution_source = %#v, want %q",
+			resp.Meta["template_resolution_source"],
+			runtimeconfig.Stage2TemplateResolutionProfileDefaultsWithOverride,
+		)
+	}
+}

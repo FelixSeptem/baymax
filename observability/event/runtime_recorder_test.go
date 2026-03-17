@@ -132,6 +132,10 @@ mcp:
 			"stage2_latency_ms":                        int64(0),
 			"stage2_provider":                          "file",
 			"stage2_profile":                           "http_generic",
+			"stage2_template_profile":                  "ragflow_like",
+			"stage2_template_resolution_source":        "profile_defaults_then_explicit_overrides",
+			"stage2_hint_applied":                      false,
+			"stage2_hint_mismatch_reason":              "hint.unsupported",
 			"stage2_hit_count":                         2,
 			"stage2_source":                            "http",
 			"stage2_reason":                            "ok",
@@ -198,6 +202,11 @@ mcp:
 	}
 	if items[0].Stage2ReasonCode != "ok" || items[0].Stage2Profile != "http_generic" {
 		t.Fatalf("ca2 retrieval extended fields mismatch: %#v", items[0])
+	}
+	if items[0].Stage2TemplateProfile != "ragflow_like" ||
+		items[0].Stage2TemplateResolutionSource != "profile_defaults_then_explicit_overrides" ||
+		items[0].Stage2HintMismatchReason != "hint.unsupported" {
+		t.Fatalf("ca2 hint/template fields mismatch: %#v", items[0])
 	}
 	if items[0].CA3PressureZone != "warning" || items[0].CA3PressureReason == "" {
 		t.Fatalf("ca3 fields mismatch: %#v", items[0])

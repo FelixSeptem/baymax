@@ -53,6 +53,10 @@ type RunRecord struct {
 	Stage2LatencyMs                      int64                             `json:"stage2_latency_ms,omitempty"`
 	Stage2Provider                       string                            `json:"stage2_provider,omitempty"`
 	Stage2Profile                        string                            `json:"stage2_profile,omitempty"`
+	Stage2TemplateProfile                string                            `json:"stage2_template_profile,omitempty"`
+	Stage2TemplateResolutionSource       string                            `json:"stage2_template_resolution_source,omitempty"`
+	Stage2HintApplied                    bool                              `json:"stage2_hint_applied,omitempty"`
+	Stage2HintMismatchReason             string                            `json:"stage2_hint_mismatch_reason,omitempty"`
 	Stage2HitCount                       int                               `json:"stage2_hit_count,omitempty"`
 	Stage2Source                         string                            `json:"stage2_source,omitempty"`
 	Stage2Reason                         string                            `json:"stage2_reason,omitempty"`

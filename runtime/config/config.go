@@ -44,6 +44,7 @@ const (
 	ContextStage2ExternalProfileRAGFlowLike       = "ragflow_like"
 	ContextStage2ExternalProfileGraphRAGLike      = "graphrag_like"
 	ContextStage2ExternalProfileElasticsearchLike = "elasticsearch_like"
+	ContextStage2ExternalProfileExplicitOnly      = "explicit_only"
 )
 
 const (
@@ -218,12 +219,14 @@ type ContextAssemblerCA2Stage2Config struct {
 }
 
 type ContextAssemblerCA2ExternalConfig struct {
-	Profile  string                                   `json:"profile"`
-	Endpoint string                                   `json:"endpoint"`
-	Method   string                                   `json:"method"`
-	Auth     ContextAssemblerCA2ExternalAuthConfig    `json:"auth"`
-	Headers  map[string]string                        `json:"headers"`
-	Mapping  ContextAssemblerCA2ExternalMappingConfig `json:"mapping"`
+	Profile                  string                                   `json:"profile"`
+	TemplateResolutionSource string                                   `json:"template_resolution_source,omitempty"`
+	Endpoint                 string                                   `json:"endpoint"`
+	Method                   string                                   `json:"method"`
+	Auth                     ContextAssemblerCA2ExternalAuthConfig    `json:"auth"`
+	Headers                  map[string]string                        `json:"headers"`
+	Mapping                  ContextAssemblerCA2ExternalMappingConfig `json:"mapping"`
+	Hints                    ContextAssemblerCA2ExternalHintConfig    `json:"hints"`
 }
 
 type ContextAssemblerCA2ExternalAuthConfig struct {
@@ -252,6 +255,11 @@ type ContextAssemblerCA2ResponseMappingConfig struct {
 	ReasonField       string `json:"reason_field"`
 	ErrorField        string `json:"error_field"`
 	ErrorMessageField string `json:"error_message_field"`
+}
+
+type ContextAssemblerCA2ExternalHintConfig struct {
+	Enabled      bool     `json:"enabled"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type ContextAssemblerCA2RoutingConfig struct {
@@ -532,9 +540,10 @@ func DefaultConfig() Config {
 					Provider: "file",
 					FilePath: filepath.Join(os.TempDir(), "baymax", "context-stage2.jsonl"),
 					External: ContextAssemblerCA2ExternalConfig{
-						Profile:  ContextStage2ExternalProfileHTTPGeneric,
-						Endpoint: "",
-						Method:   "POST",
+						Profile:                  ContextStage2ExternalProfileHTTPGeneric,
+						TemplateResolutionSource: Stage2TemplateResolutionProfileDefaultsOnly,
+						Endpoint:                 "",
+						Method:                   "POST",
 						Auth: ContextAssemblerCA2ExternalAuthConfig{
 							BearerToken: "",
 							HeaderName:  "Authorization",
@@ -557,6 +566,10 @@ func DefaultConfig() Config {
 								ErrorField:        "error",
 								ErrorMessageField: "error.message",
 							},
+						},
+						Hints: ContextAssemblerCA2ExternalHintConfig{
+							Enabled:      false,
+							Capabilities: []string{},
 						},
 					},
 				},
@@ -1471,6 +1484,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca2.stage2.provider", base.ContextAssembler.CA2.Stage2.Provider)
 	v.SetDefault("context_assembler.ca2.stage2.file_path", base.ContextAssembler.CA2.Stage2.FilePath)
 	v.SetDefault("context_assembler.ca2.stage2.external.profile", base.ContextAssembler.CA2.Stage2.External.Profile)
+	v.SetDefault("context_assembler.ca2.stage2.external.hints.enabled", base.ContextAssembler.CA2.Stage2.External.Hints.Enabled)
+	v.SetDefault("context_assembler.ca2.stage2.external.hints.capabilities", base.ContextAssembler.CA2.Stage2.External.Hints.Capabilities)
 	v.SetDefault("context_assembler.ca2.routing.min_input_chars", base.ContextAssembler.CA2.Routing.MinInputChars)
 	v.SetDefault("context_assembler.ca2.routing.trigger_keywords", base.ContextAssembler.CA2.Routing.TriggerKeywords)
 	v.SetDefault("context_assembler.ca2.routing.require_system_guard", base.ContextAssembler.CA2.Routing.RequireSystemGuard)
@@ -1724,57 +1739,78 @@ func buildStage2ExternalConfig(v *viper.Viper, base ContextAssemblerCA2ExternalC
 		profile = strings.ToLower(strings.TrimSpace(base.Profile))
 	}
 	out := applyStage2ExternalProfile(ContextAssemblerCA2ExternalConfig{Profile: profile})
+	explicitOverride := false
 	if endpoint := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.endpoint")); endpoint != "" {
 		out.Endpoint = endpoint
+		explicitOverride = true
 	}
 	if method := strings.ToUpper(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.method"))); method != "" {
 		out.Method = method
+		explicitOverride = true
 	}
 	if token := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.auth.bearer_token")); token != "" {
 		out.Auth.BearerToken = token
+		explicitOverride = true
 	}
 	if header := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.auth.header_name")); header != "" {
 		out.Auth.HeaderName = header
+		explicitOverride = true
 	}
 	if headers := normalizeStringMap(v.GetStringMapString("context_assembler.ca2.stage2.external.headers")); len(headers) > 0 {
 		out.Headers = headers
+		explicitOverride = true
 	}
 	if mode := strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.mode"))); mode != "" {
 		out.Mapping.Request.Mode = mode
+		explicitOverride = true
 	}
 	if methodName := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.method_name")); methodName != "" {
 		out.Mapping.Request.MethodName = methodName
+		explicitOverride = true
 	}
 	if version := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.jsonrpc_version")); version != "" {
 		out.Mapping.Request.JSONRPCVersion = version
+		explicitOverride = true
 	}
 	if queryField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.query_field")); queryField != "" {
 		out.Mapping.Request.QueryField = queryField
+		explicitOverride = true
 	}
 	if sessionField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.session_id_field")); sessionField != "" {
 		out.Mapping.Request.SessionIDField = sessionField
+		explicitOverride = true
 	}
 	if runField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.run_id_field")); runField != "" {
 		out.Mapping.Request.RunIDField = runField
+		explicitOverride = true
 	}
 	if maxField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.request.max_items_field")); maxField != "" {
 		out.Mapping.Request.MaxItemsField = maxField
+		explicitOverride = true
 	}
 	if chunksField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.chunks_field")); chunksField != "" {
 		out.Mapping.Response.ChunksField = chunksField
+		explicitOverride = true
 	}
 	if sourceField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.source_field")); sourceField != "" {
 		out.Mapping.Response.SourceField = sourceField
+		explicitOverride = true
 	}
 	if reasonField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.reason_field")); reasonField != "" {
 		out.Mapping.Response.ReasonField = reasonField
+		explicitOverride = true
 	}
 	if errorField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.error_field")); errorField != "" {
 		out.Mapping.Response.ErrorField = errorField
+		explicitOverride = true
 	}
 	if messageField := strings.TrimSpace(v.GetString("context_assembler.ca2.stage2.external.mapping.response.error_message_field")); messageField != "" {
 		out.Mapping.Response.ErrorMessageField = messageField
+		explicitOverride = true
 	}
+	out.Hints.Enabled = v.GetBool("context_assembler.ca2.stage2.external.hints.enabled")
+	out.Hints.Capabilities = normalizeHintCapabilities(v.GetStringSlice("context_assembler.ca2.stage2.external.hints.capabilities"))
+	out.TemplateResolutionSource = resolveStage2TemplateResolutionSource(out.Profile, explicitOverride)
 	return out
 }
 

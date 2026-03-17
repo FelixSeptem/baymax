@@ -1253,6 +1253,16 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.Stage2Profile != "" {
 		payload["stage2_profile"] = meta.Assemble.Stage.Stage2Profile
 	}
+	if meta.Assemble.Stage.Stage2TemplateProfile != "" {
+		payload["stage2_template_profile"] = meta.Assemble.Stage.Stage2TemplateProfile
+	}
+	if meta.Assemble.Stage.Stage2TemplateResolutionSource != "" {
+		payload["stage2_template_resolution_source"] = meta.Assemble.Stage.Stage2TemplateResolutionSource
+	}
+	payload["stage2_hint_applied"] = meta.Assemble.Stage.Stage2HintApplied
+	if meta.Assemble.Stage.Stage2HintMismatchReason != "" {
+		payload["stage2_hint_mismatch_reason"] = meta.Assemble.Stage.Stage2HintMismatchReason
+	}
 	if meta.Assemble.Stage.Stage2HitCount > 0 {
 		payload["stage2_hit_count"] = meta.Assemble.Stage.Stage2HitCount
 	}

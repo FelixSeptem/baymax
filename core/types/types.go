@@ -342,19 +342,23 @@ const (
 )
 
 type AssembleStage struct {
-	Status           AssembleStageStatus `json:"status,omitempty"`
-	Stage2SkipReason string              `json:"stage2_skip_reason,omitempty"`
-	Stage1LatencyMs  int64               `json:"stage1_latency_ms,omitempty"`
-	Stage2LatencyMs  int64               `json:"stage2_latency_ms,omitempty"`
-	Stage2Provider   string              `json:"stage2_provider,omitempty"`
-	Stage2Profile    string              `json:"stage2_profile,omitempty"`
-	Stage2HitCount   int                 `json:"stage2_hit_count,omitempty"`
-	Stage2Source     string              `json:"stage2_source,omitempty"`
-	Stage2Reason     string              `json:"stage2_reason,omitempty"`
-	Stage2ReasonCode string              `json:"stage2_reason_code,omitempty"`
-	Stage2ErrorLayer string              `json:"stage2_error_layer,omitempty"`
-	PressureZone     string              `json:"pressure_zone,omitempty"`
-	PressureReason   string              `json:"pressure_reason,omitempty"`
+	Status                         AssembleStageStatus `json:"status,omitempty"`
+	Stage2SkipReason               string              `json:"stage2_skip_reason,omitempty"`
+	Stage1LatencyMs                int64               `json:"stage1_latency_ms,omitempty"`
+	Stage2LatencyMs                int64               `json:"stage2_latency_ms,omitempty"`
+	Stage2Provider                 string              `json:"stage2_provider,omitempty"`
+	Stage2Profile                  string              `json:"stage2_profile,omitempty"`
+	Stage2TemplateProfile          string              `json:"stage2_template_profile,omitempty"`
+	Stage2TemplateResolutionSource string              `json:"stage2_template_resolution_source,omitempty"`
+	Stage2HintApplied              bool                `json:"stage2_hint_applied,omitempty"`
+	Stage2HintMismatchReason       string              `json:"stage2_hint_mismatch_reason,omitempty"`
+	Stage2HitCount                 int                 `json:"stage2_hit_count,omitempty"`
+	Stage2Source                   string              `json:"stage2_source,omitempty"`
+	Stage2Reason                   string              `json:"stage2_reason,omitempty"`
+	Stage2ReasonCode               string              `json:"stage2_reason_code,omitempty"`
+	Stage2ErrorLayer               string              `json:"stage2_error_layer,omitempty"`
+	PressureZone                   string              `json:"pressure_zone,omitempty"`
+	PressureReason                 string              `json:"pressure_reason,omitempty"`
 	// PressureTriggerSource stores the concrete trigger branch selected by CA3/CA4 logic.
 	PressureTriggerSource             string           `json:"pressure_trigger_source,omitempty"`
 	ZoneResidencyMs                   map[string]int64 `json:"zone_residency_ms,omitempty"`

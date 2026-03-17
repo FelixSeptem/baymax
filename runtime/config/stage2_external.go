@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -13,6 +14,14 @@ const (
 	PrecheckSeverityWarning PrecheckSeverity = "warning"
 	PrecheckSeverityError   PrecheckSeverity = "error"
 )
+
+const (
+	Stage2TemplateResolutionProfileDefaultsOnly         = "profile_defaults_only"
+	Stage2TemplateResolutionProfileDefaultsWithOverride = "profile_defaults_then_explicit_overrides"
+	Stage2TemplateResolutionExplicitOnly                = "explicit_only"
+)
+
+var hintCapabilityPattern = regexp.MustCompile(`^[a-z0-9._/\-]+$`)
 
 type ExternalPrecheckFinding struct {
 	Severity PrecheckSeverity `json:"severity"`
@@ -54,6 +63,15 @@ func SupportedStage2ExternalProfiles() []string {
 		ContextStage2ExternalProfileRAGFlowLike,
 		ContextStage2ExternalProfileGraphRAGLike,
 		ContextStage2ExternalProfileElasticsearchLike,
+		ContextStage2ExternalProfileExplicitOnly,
+	}
+}
+
+func SupportedStage2TemplatePackProfiles() []string {
+	return []string{
+		ContextStage2ExternalProfileRAGFlowLike,
+		ContextStage2ExternalProfileGraphRAGLike,
+		ContextStage2ExternalProfileElasticsearchLike,
 	}
 }
 
@@ -67,6 +85,8 @@ func applyStage2ExternalProfile(in ContextAssemblerCA2ExternalConfig) ContextAss
 	switch profile {
 	case ContextStage2ExternalProfileHTTPGeneric:
 		// keep base defaults
+	case ContextStage2ExternalProfileExplicitOnly:
+		// keep base defaults; explicit fields still override after profile application.
 	case ContextStage2ExternalProfileRAGFlowLike:
 		out.Mapping.Request.QueryField = "question"
 		out.Mapping.Request.MaxItemsField = "top_k"
@@ -97,12 +117,16 @@ func applyStage2ExternalProfile(in ContextAssemblerCA2ExternalConfig) ContextAss
 		// Preserve user input for invalid profile and let precheck return explicit error.
 	}
 	out.Profile = profile
+	out.TemplateResolutionSource = resolveStage2TemplateResolutionSource(profile, false)
 	return out
 }
 
 func mergeExternalOverrides(base, override ContextAssemblerCA2ExternalConfig) ContextAssemblerCA2ExternalConfig {
 	if strings.TrimSpace(override.Profile) != "" {
 		base.Profile = strings.ToLower(strings.TrimSpace(override.Profile))
+	}
+	if strings.TrimSpace(override.TemplateResolutionSource) != "" {
+		base.TemplateResolutionSource = strings.ToLower(strings.TrimSpace(override.TemplateResolutionSource))
 	}
 	if strings.TrimSpace(override.Endpoint) != "" {
 		base.Endpoint = strings.TrimSpace(override.Endpoint)
@@ -155,6 +179,10 @@ func mergeExternalOverrides(base, override ContextAssemblerCA2ExternalConfig) Co
 	if strings.TrimSpace(override.Mapping.Response.ErrorMessageField) != "" {
 		base.Mapping.Response.ErrorMessageField = strings.TrimSpace(override.Mapping.Response.ErrorMessageField)
 	}
+	base.Hints.Enabled = override.Hints.Enabled
+	if len(override.Hints.Capabilities) > 0 {
+		base.Hints.Capabilities = normalizeHintCapabilities(override.Hints.Capabilities)
+	}
 	return base
 }
 
@@ -170,6 +198,9 @@ func PrecheckStage2External(provider string, cfg ContextAssemblerCA2ExternalConf
 			Field:    "context_assembler.ca2.stage2.external.profile",
 			Message:  fmt.Sprintf("unsupported profile %q", cfg.Profile),
 		})
+	}
+	if strings.TrimSpace(out.TemplateResolutionSource) == "" {
+		out.TemplateResolutionSource = resolveStage2TemplateResolutionSource(out.Profile, true)
 	}
 	if providerName != ContextStage2ProviderFile && strings.TrimSpace(out.Endpoint) == "" {
 		findings = append(findings, ExternalPrecheckFinding{
@@ -243,9 +274,63 @@ func PrecheckStage2External(provider string, cfg ContextAssemblerCA2ExternalConf
 			Message:  "external retriever bearer token is empty; ensure upstream endpoint accepts anonymous requests",
 		})
 	}
+	out.Hints.Capabilities = normalizeHintCapabilities(out.Hints.Capabilities)
+	if out.Hints.Enabled {
+		if len(out.Hints.Capabilities) == 0 {
+			findings = append(findings, ExternalPrecheckFinding{
+				Severity: PrecheckSeverityError,
+				Code:     "missing_hint_capabilities",
+				Field:    "context_assembler.ca2.stage2.external.hints.capabilities",
+				Message:  "context_assembler.ca2.stage2.external.hints.capabilities is required when hints.enabled=true",
+			})
+		}
+		for i, capability := range out.Hints.Capabilities {
+			if !hintCapabilityPattern.MatchString(capability) {
+				findings = append(findings, ExternalPrecheckFinding{
+					Severity: PrecheckSeverityError,
+					Code:     "invalid_hint_capability",
+					Field:    fmt.Sprintf("context_assembler.ca2.stage2.external.hints.capabilities[%d]", i),
+					Message:  fmt.Sprintf("invalid hint capability %q: allowed charset is [a-z0-9._/-]", capability),
+				})
+			}
+		}
+	}
 
 	return ExternalPrecheckResult{
 		Normalized: out,
 		Findings:   findings,
 	}
+}
+
+func normalizeHintCapabilities(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, item := range in {
+		for _, chunk := range strings.Split(item, ",") {
+			capability := strings.ToLower(strings.TrimSpace(chunk))
+			if capability == "" {
+				continue
+			}
+			if _, ok := seen[capability]; ok {
+				continue
+			}
+			seen[capability] = struct{}{}
+			out = append(out, capability)
+		}
+	}
+	return out
+}
+
+func resolveStage2TemplateResolutionSource(profile string, explicitOverrides bool) string {
+	normalizedProfile := strings.ToLower(strings.TrimSpace(profile))
+	if normalizedProfile == "" || normalizedProfile == ContextStage2ExternalProfileExplicitOnly {
+		return Stage2TemplateResolutionExplicitOnly
+	}
+	if explicitOverrides {
+		return Stage2TemplateResolutionProfileDefaultsWithOverride
+	}
+	return Stage2TemplateResolutionProfileDefaultsOnly
 }

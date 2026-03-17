@@ -606,6 +606,33 @@ func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
 	}
 }
 
+func BenchmarkCA2HintTemplateResolution(b *testing.B) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA2.Stage2.External
+	cfg.Profile = runtimeconfig.ContextStage2ExternalProfileRAGFlowLike
+	cfg.Endpoint = "http://127.0.0.1:8080/retrieve"
+	cfg.Mapping.Request.QueryField = "payload.query"
+	cfg.Hints.Enabled = true
+	cfg.Hints.Capabilities = []string{"metadata_filter", "rerank_metadata"}
+
+	durations := make([]int64, 0, b.N)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		result := runtimeconfig.PrecheckStage2External(runtimeconfig.ContextStage2ProviderHTTP, cfg)
+		if err := result.FirstError(); err != nil {
+			b.Fatalf("precheck failed: %v", err)
+		}
+		if result.Normalized.TemplateResolutionSource == "" {
+			b.Fatalf("template_resolution_source should not be empty: %#v", result.Normalized)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
 func percentileNs(values []int64, percentile int) int64 {
 	if len(values) == 0 || percentile <= 0 {
 		return 0

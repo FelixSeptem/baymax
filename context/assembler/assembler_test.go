@@ -311,6 +311,22 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 	if result.Stage.Stage2Profile != "file" {
 		t.Fatalf("stage2_profile = %q, want file", result.Stage.Stage2Profile)
 	}
+	if result.Stage.Stage2TemplateProfile != "file" {
+		t.Fatalf("stage2_template_profile = %q, want file", result.Stage.Stage2TemplateProfile)
+	}
+	if result.Stage.Stage2TemplateResolutionSource != runtimeconfig.Stage2TemplateResolutionExplicitOnly {
+		t.Fatalf(
+			"stage2_template_resolution_source = %q, want %q",
+			result.Stage.Stage2TemplateResolutionSource,
+			runtimeconfig.Stage2TemplateResolutionExplicitOnly,
+		)
+	}
+	if result.Stage.Stage2HintApplied {
+		t.Fatalf("stage2_hint_applied = %v, want false", result.Stage.Stage2HintApplied)
+	}
+	if result.Stage.Stage2HintMismatchReason != "" {
+		t.Fatalf("stage2_hint_mismatch_reason = %q, want empty", result.Stage.Stage2HintMismatchReason)
+	}
 }
 
 func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {

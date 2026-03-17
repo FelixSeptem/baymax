@@ -23,6 +23,8 @@
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
 - Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
+- CA2 external retriever supports capability-hint SPI extension and template-pack resolution with deterministic precedence (`profile defaults -> explicit overrides`) and `explicit_only` compatibility mode.
+- Run diagnostics include CA2 hint/template additive fields: `stage2_template_profile`, `stage2_template_resolution_source`, `stage2_hint_applied`, `stage2_hint_mismatch_reason`.
 - Runtime diagnostics expose CA2 external provider-scoped trend API with fields `provider/window_start/window_end/p95_latency_ms/error_rate/hit_rate`.
 - CA2 external trend threshold-hit signals are observational only and do not trigger automatic strategy actions in v1.
 - Context Assembler CA3 memory pressure control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.

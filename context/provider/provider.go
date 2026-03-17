@@ -61,6 +61,11 @@ type Request struct {
 	SessionID string
 	Input     string
 	MaxItems  int
+	Hints     CapabilityHints
+}
+
+type CapabilityHints struct {
+	Capabilities []string
 }
 
 type Response struct {
@@ -155,12 +160,18 @@ func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	return Response{
 		Chunks: items,
 		Meta: map[string]any{
-			"source":      "file",
-			"matched":     len(items),
-			"reason":      "ok",
-			"reason_code": "ok",
-			"error_layer": "",
-			"profile":     "file",
+			"source":                       "file",
+			"matched":                      len(items),
+			"reason":                       "ok",
+			"reason_code":                  "ok",
+			"error_layer":                  "",
+			"profile":                      "file",
+			"template_profile":             "file",
+			"template_resolution_source":   runtimeconfig.Stage2TemplateResolutionExplicitOnly,
+			"hint_applied":                 false,
+			"hint_mismatch_reason":         "",
+			"capability_hints_forwarded":   []string{},
+			"capability_hints_unsupported": []string{},
 		},
 	}, nil
 }
@@ -280,24 +291,39 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	if profile == "" {
 		profile = runtimeconfig.ContextStage2ExternalProfileHTTPGeneric
 	}
+	templateResolutionSource := strings.TrimSpace(p.cfg.TemplateResolutionSource)
+	if templateResolutionSource == "" {
+		templateResolutionSource = runtimeconfig.Stage2TemplateResolutionProfileDefaultsOnly
+	}
+	hintApplied, hintMismatchReason, unsupportedHints := evaluateHintOutcome(p.name, req.Hints.Capabilities)
 	return Response{Chunks: chunks, Meta: map[string]any{
-		"source":      source,
-		"matched":     len(chunks),
-		"reason":      reason,
-		"reason_code": "ok",
-		"error_layer": "",
-		"profile":     profile,
+		"source":                       source,
+		"matched":                      len(chunks),
+		"reason":                       reason,
+		"reason_code":                  "ok",
+		"error_layer":                  "",
+		"profile":                      profile,
+		"template_profile":             profile,
+		"template_resolution_source":   templateResolutionSource,
+		"hint_applied":                 hintApplied,
+		"hint_mismatch_reason":         hintMismatchReason,
+		"capability_hints_forwarded":   normalizeHintList(req.Hints.Capabilities),
+		"capability_hints_unsupported": unsupportedHints,
 	}}, nil
 }
 
 func (p *httpProvider) buildRequestPayload(req Request) map[string]any {
 	mapping := p.cfg.Mapping.Request
+	hints := normalizeHintList(req.Hints.Capabilities)
 	if strings.EqualFold(strings.TrimSpace(mapping.Mode), "jsonrpc2") {
 		params := map[string]any{}
 		setByPath(params, nonEmpty(mapping.QueryField, "query"), req.Input)
 		setByPath(params, nonEmpty(mapping.SessionIDField, "session_id"), req.SessionID)
 		setByPath(params, nonEmpty(mapping.RunIDField, "run_id"), req.RunID)
 		setByPath(params, nonEmpty(mapping.MaxItemsField, "max_items"), req.MaxItems)
+		if len(hints) > 0 {
+			params["capability_hints"] = hints
+		}
 		return map[string]any{
 			"jsonrpc": nonEmpty(mapping.JSONRPCVersion, "2.0"),
 			"id":      nonEmpty(req.RunID, strconv.FormatInt(time.Now().UnixNano(), 10)),
@@ -310,6 +336,9 @@ func (p *httpProvider) buildRequestPayload(req Request) map[string]any {
 	setByPath(payload, nonEmpty(mapping.SessionIDField, "session_id"), req.SessionID)
 	setByPath(payload, nonEmpty(mapping.RunIDField, "run_id"), req.RunID)
 	setByPath(payload, nonEmpty(mapping.MaxItemsField, "max_items"), req.MaxItems)
+	if len(hints) > 0 {
+		payload["capability_hints"] = hints
+	}
 	return payload
 }
 
@@ -411,5 +440,66 @@ func classifyTransportError(err error) error {
 		Code:    code,
 		Message: msg,
 		Cause:   err,
+	}
+}
+
+func normalizeHintList(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, item := range in {
+		value := strings.ToLower(strings.TrimSpace(item))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func evaluateHintOutcome(providerName string, requested []string) (bool, string, []string) {
+	normalized := normalizeHintList(requested)
+	if len(normalized) == 0 {
+		return false, "", []string{}
+	}
+	supported := supportedHintCapabilities(providerName)
+	unsupported := make([]string, 0, len(normalized))
+	for _, capability := range normalized {
+		if _, ok := supported[capability]; ok {
+			continue
+		}
+		unsupported = append(unsupported, capability)
+	}
+	if len(unsupported) > 0 {
+		return false, "hint.unsupported", unsupported
+	}
+	return true, "", []string{}
+}
+
+func supportedHintCapabilities(providerName string) map[string]struct{} {
+	switch strings.ToLower(strings.TrimSpace(providerName)) {
+	case runtimeconfig.ContextStage2ProviderElasticsearch:
+		return map[string]struct{}{
+			"dsl_query":        {},
+			"metadata_filter":  {},
+			"vector_filter":    {},
+			"rerank_metadata":  {},
+			"hybrid_candidate": {},
+		}
+	case runtimeconfig.ContextStage2ProviderRAG, runtimeconfig.ContextStage2ProviderDB:
+		return map[string]struct{}{
+			"metadata_filter": {},
+			"rerank_metadata": {},
+		}
+	default:
+		return map[string]struct{}{
+			"metadata_filter": {},
+		}
 	}
 }

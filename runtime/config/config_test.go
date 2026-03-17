@@ -805,6 +805,75 @@ context_assembler:
 	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField != "data.chunks" {
 		t.Fatalf("chunks_field = %q, want data.chunks", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Response.ChunksField)
 	}
+	if cfg.ContextAssembler.CA2.Stage2.External.TemplateResolutionSource != Stage2TemplateResolutionProfileDefaultsWithOverride {
+		t.Fatalf(
+			"template_resolution_source = %q, want %q",
+			cfg.ContextAssembler.CA2.Stage2.External.TemplateResolutionSource,
+			Stage2TemplateResolutionProfileDefaultsWithOverride,
+		)
+	}
+}
+
+func TestContextAssemblerCA2ExternalExplicitOnlyProfileAccepted(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+context_assembler:
+  ca2:
+    enabled: true
+    stage2:
+      provider: http
+      external:
+        profile: explicit_only
+        endpoint: http://file.example/retrieve
+        mapping:
+          request:
+            mode: plain
+            query_field: payload.query
+          response:
+            chunks_field: result.chunks
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Profile != ContextStage2ExternalProfileExplicitOnly {
+		t.Fatalf("profile = %q, want explicit_only", cfg.ContextAssembler.CA2.Stage2.External.Profile)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.TemplateResolutionSource != Stage2TemplateResolutionExplicitOnly {
+		t.Fatalf(
+			"template_resolution_source = %q, want %q",
+			cfg.ContextAssembler.CA2.Stage2.External.TemplateResolutionSource,
+			Stage2TemplateResolutionExplicitOnly,
+		)
+	}
+	if cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField != "payload.query" {
+		t.Fatalf("query_field = %q, want payload.query", cfg.ContextAssembler.CA2.Stage2.External.Mapping.Request.QueryField)
+	}
+}
+
+func TestContextAssemblerCA2ExternalHintsValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.Provider = ContextStage2ProviderHTTP
+	cfg.ContextAssembler.CA2.Stage2.External.Endpoint = "http://127.0.0.1:8080/retrieve"
+	cfg.ContextAssembler.CA2.Stage2.External.Hints.Enabled = true
+	cfg.ContextAssembler.CA2.Stage2.External.Hints.Capabilities = []string{}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for empty hints.capabilities when hints.enabled=true")
+	}
+
+	cfg.ContextAssembler.CA2.Stage2.External.Hints.Capabilities = []string{"bad hint"}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for malformed hint capability")
+	}
+
+	cfg.ContextAssembler.CA2.Stage2.External.Hints.Capabilities = []string{"rerank", "metadata_filter"}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate failed for valid hints: %v", err)
+	}
 }
 
 func TestPrecheckStage2ExternalWarningAndError(t *testing.T) {

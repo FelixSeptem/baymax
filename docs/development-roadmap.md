@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-16
+更新时间：2026-03-17
 
 ## 目标
 
@@ -118,6 +118,7 @@
 - [x] `implement-context-assembler-ca2-lazy-stage-routing-and-tail-recap`：完成 CA2 双阶段路由、file provider、tail recap 与 CA2 诊断字段。
 - [x] `activate-ca2-external-retriever-spi-and-http-adapter`：完成 Stage2 External Retriever SPI、HTTP adapter、`http/rag/db/elasticsearch` 可运行路径与新增诊断字段。
 - [x] `harden-ca2-external-retriever-observability-and-thresholds-e2`：完成 CA2 external provider 维度趋势聚合与静态阈值信号（`p95_latency_ms/error_rate/hit_rate`，默认窗口 `15m`）。
+- [x] `extend-ca2-external-retriever-capability-hints-and-template-pack-e3`：完成 CA2 external capability hints 扩展口与 template pack 收敛（`graphrag_like|ragflow_like|elasticsearch_like` + `explicit_only`），新增 `stage2_template_*` / `stage2_hint_*` 诊断字段、Run/Stream 等价契约与 hint/template 解析 benchmark 基线。
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。
@@ -169,7 +170,7 @@
   - 文档解析与分片策略接口（parser/chunker contract），与 Context Assembler 对齐
   - 检索结果与 CA2 Stage2 集成约定（保持 fail-fast/best-effort 语义一致）
   - 通过配置映射请求/响应字段与鉴权信息接入外部服务（已完成最小闭环）
-  - TODO：补充更多 provider 风格映射模板与接入示例（GraphRAG/RAGFlow/ES 等）
+  - 已完成首批 provider 风格映射模板（GraphRAG/RAGFlow/ES）；后续按接入反馈继续扩展模板集合与示例。
 
 - CA2 External Retriever 后续演进（R3-R4）：
   - 详细计划、触发门槛、观测治理统一维护在 `docs/ca2-external-retriever-evolution.md`（单一事实源）。

@@ -84,6 +84,12 @@ const (
 	SecurityModelIOFilterBlockActionDeny = "deny"
 	SecurityEventAlertPolicyDenyOnly     = "deny_only"
 	SecurityEventAlertSinkCallback       = "callback"
+	SecurityEventDeliveryModeSync        = "sync"
+	SecurityEventDeliveryModeAsync       = "async"
+	SecurityEventDeliveryOverflowDropOld = "drop_old"
+	SecurityEventCircuitStateClosed      = "closed"
+	SecurityEventCircuitStateOpen        = "open"
+	SecurityEventCircuitStateHalfOpen    = "half_open"
 	SecurityEventSeverityLow             = "low"
 	SecurityEventSeverityMedium          = "medium"
 	SecurityEventSeverityHigh            = "high"
@@ -479,9 +485,10 @@ type SecurityModelIOFilterStageConfig struct {
 }
 
 type SecurityEventConfig struct {
-	Enabled  bool                     `json:"enabled"`
-	Alert    SecurityEventAlertConfig `json:"alert"`
-	Severity SecuritySeverityConfig   `json:"severity"`
+	Enabled  bool                        `json:"enabled"`
+	Alert    SecurityEventAlertConfig    `json:"alert"`
+	Delivery SecurityEventDeliveryConfig `json:"delivery"`
+	Severity SecuritySeverityConfig      `json:"severity"`
 }
 
 type SecurityEventAlertConfig struct {
@@ -492,6 +499,31 @@ type SecurityEventAlertConfig struct {
 
 type SecurityEventAlertCallbackConfig struct {
 	RequireRegistered bool `json:"require_registered"`
+}
+
+type SecurityEventDeliveryConfig struct {
+	Mode           string                             `json:"mode"`
+	Queue          SecurityEventDeliveryQueueConfig   `json:"queue"`
+	Timeout        time.Duration                      `json:"timeout"`
+	Retry          SecurityEventDeliveryRetryConfig   `json:"retry"`
+	CircuitBreaker SecurityEventDeliveryCircuitConfig `json:"circuit_breaker"`
+}
+
+type SecurityEventDeliveryQueueConfig struct {
+	Size           int    `json:"size"`
+	OverflowPolicy string `json:"overflow_policy"`
+}
+
+type SecurityEventDeliveryRetryConfig struct {
+	MaxAttempts    int           `json:"max_attempts"`
+	BackoffInitial time.Duration `json:"backoff_initial"`
+	BackoffMax     time.Duration `json:"backoff_max"`
+}
+
+type SecurityEventDeliveryCircuitConfig struct {
+	FailureThreshold int           `json:"failure_threshold"`
+	OpenWindow       time.Duration `json:"open_window"`
+	HalfOpenProbes   int           `json:"half_open_probes"`
 }
 
 type SecuritySeverityConfig struct {
@@ -800,6 +832,24 @@ func DefaultConfig() Config {
 					Sink:          SecurityEventAlertSinkCallback,
 					Callback: SecurityEventAlertCallbackConfig{
 						RequireRegistered: false,
+					},
+				},
+				Delivery: SecurityEventDeliveryConfig{
+					Mode: SecurityEventDeliveryModeAsync,
+					Queue: SecurityEventDeliveryQueueConfig{
+						Size:           128,
+						OverflowPolicy: SecurityEventDeliveryOverflowDropOld,
+					},
+					Timeout: 1200 * time.Millisecond,
+					Retry: SecurityEventDeliveryRetryConfig{
+						MaxAttempts:    3,
+						BackoffInitial: 120 * time.Millisecond,
+						BackoffMax:     800 * time.Millisecond,
+					},
+					CircuitBreaker: SecurityEventDeliveryCircuitConfig{
+						FailureThreshold: 5,
+						OpenWindow:       5 * time.Second,
+						HalfOpenProbes:   1,
 					},
 				},
 				Severity: SecuritySeverityConfig{
@@ -1297,6 +1347,9 @@ func validateSecurityEventConfig(cfg SecurityEventConfig) error {
 	if err := validateSecurityEventAlert(cfg.Alert); err != nil {
 		return err
 	}
+	if err := validateSecurityEventDelivery(cfg.Delivery); err != nil {
+		return err
+	}
 	if err := validateSecuritySeverity(cfg.Severity.Default, "security.security_event.severity.default"); err != nil {
 		return err
 	}
@@ -1336,6 +1389,56 @@ func validateSecurityEventAlert(cfg SecurityEventAlertConfig) error {
 	case SecurityEventAlertSinkCallback:
 	default:
 		return fmt.Errorf("security.security_event.alert.sink must be one of [%s], got %q", SecurityEventAlertSinkCallback, cfg.Sink)
+	}
+	return nil
+}
+
+func validateSecurityEventDelivery(cfg SecurityEventDeliveryConfig) error {
+	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
+	case SecurityEventDeliveryModeSync, SecurityEventDeliveryModeAsync:
+	default:
+		return fmt.Errorf(
+			"security.security_event.delivery.mode must be one of [%s,%s], got %q",
+			SecurityEventDeliveryModeSync,
+			SecurityEventDeliveryModeAsync,
+			cfg.Mode,
+		)
+	}
+	if cfg.Queue.Size <= 0 {
+		return errors.New("security.security_event.delivery.queue.size must be > 0")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Queue.OverflowPolicy)) {
+	case SecurityEventDeliveryOverflowDropOld:
+	default:
+		return fmt.Errorf(
+			"security.security_event.delivery.queue.overflow_policy must be one of [%s], got %q",
+			SecurityEventDeliveryOverflowDropOld,
+			cfg.Queue.OverflowPolicy,
+		)
+	}
+	if cfg.Timeout <= 0 {
+		return errors.New("security.security_event.delivery.timeout must be > 0")
+	}
+	if cfg.Retry.MaxAttempts <= 0 || cfg.Retry.MaxAttempts > 3 {
+		return errors.New("security.security_event.delivery.retry.max_attempts must be in [1,3]")
+	}
+	if cfg.Retry.BackoffInitial <= 0 {
+		return errors.New("security.security_event.delivery.retry.backoff_initial must be > 0")
+	}
+	if cfg.Retry.BackoffMax <= 0 {
+		return errors.New("security.security_event.delivery.retry.backoff_max must be > 0")
+	}
+	if cfg.Retry.BackoffMax < cfg.Retry.BackoffInitial {
+		return errors.New("security.security_event.delivery.retry.backoff_max must be >= backoff_initial")
+	}
+	if cfg.CircuitBreaker.FailureThreshold <= 0 {
+		return errors.New("security.security_event.delivery.circuit_breaker.failure_threshold must be > 0")
+	}
+	if cfg.CircuitBreaker.OpenWindow <= 0 {
+		return errors.New("security.security_event.delivery.circuit_breaker.open_window must be > 0")
+	}
+	if cfg.CircuitBreaker.HalfOpenProbes <= 0 {
+		return errors.New("security.security_event.delivery.circuit_breaker.half_open_probes must be > 0")
 	}
 	return nil
 }
@@ -1869,6 +1972,16 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.security_event.alert.trigger_policy", base.Security.SecurityEvent.Alert.TriggerPolicy)
 	v.SetDefault("security.security_event.alert.sink", base.Security.SecurityEvent.Alert.Sink)
 	v.SetDefault("security.security_event.alert.callback.require_registered", base.Security.SecurityEvent.Alert.Callback.RequireRegistered)
+	v.SetDefault("security.security_event.delivery.mode", base.Security.SecurityEvent.Delivery.Mode)
+	v.SetDefault("security.security_event.delivery.queue.size", base.Security.SecurityEvent.Delivery.Queue.Size)
+	v.SetDefault("security.security_event.delivery.queue.overflow_policy", base.Security.SecurityEvent.Delivery.Queue.OverflowPolicy)
+	v.SetDefault("security.security_event.delivery.timeout", base.Security.SecurityEvent.Delivery.Timeout)
+	v.SetDefault("security.security_event.delivery.retry.max_attempts", base.Security.SecurityEvent.Delivery.Retry.MaxAttempts)
+	v.SetDefault("security.security_event.delivery.retry.backoff_initial", base.Security.SecurityEvent.Delivery.Retry.BackoffInitial)
+	v.SetDefault("security.security_event.delivery.retry.backoff_max", base.Security.SecurityEvent.Delivery.Retry.BackoffMax)
+	v.SetDefault("security.security_event.delivery.circuit_breaker.failure_threshold", base.Security.SecurityEvent.Delivery.CircuitBreaker.FailureThreshold)
+	v.SetDefault("security.security_event.delivery.circuit_breaker.open_window", base.Security.SecurityEvent.Delivery.CircuitBreaker.OpenWindow)
+	v.SetDefault("security.security_event.delivery.circuit_breaker.half_open_probes", base.Security.SecurityEvent.Delivery.CircuitBreaker.HalfOpenProbes)
 	v.SetDefault("security.security_event.severity.default", base.Security.SecurityEvent.Severity.Default)
 	v.SetDefault("security.security_event.severity.by_policy_kind", base.Security.SecurityEvent.Severity.ByPolicyKind)
 	v.SetDefault("security.security_event.severity.by_reason_code", base.Security.SecurityEvent.Severity.ByReasonCode)
@@ -2027,6 +2140,16 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Security.SecurityEvent.Alert.TriggerPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.trigger_policy")))
 	cfg.Security.SecurityEvent.Alert.Sink = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.sink")))
 	cfg.Security.SecurityEvent.Alert.Callback.RequireRegistered = v.GetBool("security.security_event.alert.callback.require_registered")
+	cfg.Security.SecurityEvent.Delivery.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.delivery.mode")))
+	cfg.Security.SecurityEvent.Delivery.Queue.Size = v.GetInt("security.security_event.delivery.queue.size")
+	cfg.Security.SecurityEvent.Delivery.Queue.OverflowPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.delivery.queue.overflow_policy")))
+	cfg.Security.SecurityEvent.Delivery.Timeout = v.GetDuration("security.security_event.delivery.timeout")
+	cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts = v.GetInt("security.security_event.delivery.retry.max_attempts")
+	cfg.Security.SecurityEvent.Delivery.Retry.BackoffInitial = v.GetDuration("security.security_event.delivery.retry.backoff_initial")
+	cfg.Security.SecurityEvent.Delivery.Retry.BackoffMax = v.GetDuration("security.security_event.delivery.retry.backoff_max")
+	cfg.Security.SecurityEvent.Delivery.CircuitBreaker.FailureThreshold = v.GetInt("security.security_event.delivery.circuit_breaker.failure_threshold")
+	cfg.Security.SecurityEvent.Delivery.CircuitBreaker.OpenWindow = v.GetDuration("security.security_event.delivery.circuit_breaker.open_window")
+	cfg.Security.SecurityEvent.Delivery.CircuitBreaker.HalfOpenProbes = v.GetInt("security.security_event.delivery.circuit_breaker.half_open_probes")
 	cfg.Security.SecurityEvent.Severity.Default = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.severity.default")))
 	cfg.Security.SecurityEvent.Severity.ByPolicyKind = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_policy_kind"))
 	cfg.Security.SecurityEvent.Severity.ByReasonCode = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_reason_code"))

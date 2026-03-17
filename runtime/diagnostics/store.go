@@ -45,6 +45,12 @@ type RunRecord struct {
 	Severity                             string                            `json:"severity,omitempty"`
 	AlertDispatchStatus                  string                            `json:"alert_dispatch_status,omitempty"`
 	AlertDispatchFailureReason           string                            `json:"alert_dispatch_failure_reason,omitempty"`
+	AlertDeliveryMode                    string                            `json:"alert_delivery_mode,omitempty"`
+	AlertRetryCount                      int                               `json:"alert_retry_count,omitempty"`
+	AlertQueueDropped                    bool                              `json:"alert_queue_dropped,omitempty"`
+	AlertQueueDropCount                  int                               `json:"alert_queue_drop_count,omitempty"`
+	AlertCircuitState                    string                            `json:"alert_circuit_state,omitempty"`
+	AlertCircuitOpenReason               string                            `json:"alert_circuit_open_reason,omitempty"`
 	ModelProvider                        string                            `json:"model_provider,omitempty"`
 	FallbackUsed                         bool                              `json:"fallback_used,omitempty"`
 	FallbackInitial                      string                            `json:"fallback_initial,omitempty"`

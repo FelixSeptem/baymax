@@ -29,9 +29,13 @@ const (
 	securityAlertDispatchSkipped      = "skipped"
 	securityAlertDispatchSucceeded    = "succeeded"
 	securityAlertDispatchFailed       = "failed"
+	securityAlertDispatchQueued       = "queued"
 
 	securityAlertFailureCallbackMissing = "alert.callback_missing"
 	securityAlertFailureCallbackError   = "alert.callback_error"
+	securityAlertFailureCallbackTimeout = "alert.callback_timeout"
+	securityAlertFailureRetryExhausted  = "alert.retry_exhausted"
+	securityAlertFailureCircuitOpen     = "alert.circuit_open"
 )
 
 type securityDecision struct {
@@ -43,6 +47,12 @@ type securityDecision struct {
 	Severity            string
 	AlertDispatchStatus string
 	AlertFailureReason  string
+	AlertDeliveryMode   string
+	AlertRetryCount     int
+	AlertQueueDropped   bool
+	AlertQueueDropCount int
+	AlertCircuitState   string
+	AlertCircuitReason  string
 }
 
 type toolRateWindow struct {
@@ -322,7 +332,15 @@ func (e *Engine) finalizeSecurityDecision(ctx context.Context, runID string, ite
 	decision.Decision = strings.ToLower(strings.TrimSpace(decision.Decision))
 	decision.ReasonCode = normalizeReasonCode(decision.ReasonCode, "")
 	decision.Severity = e.resolveSecuritySeverity(decision)
-	decision.AlertDispatchStatus, decision.AlertFailureReason = e.dispatchSecurityAlert(ctx, runID, iteration, decision)
+	outcome := e.dispatchSecurityAlert(ctx, runID, iteration, decision)
+	decision.AlertDispatchStatus = outcome.Status
+	decision.AlertFailureReason = outcome.FailureReason
+	decision.AlertDeliveryMode = outcome.DeliveryMode
+	decision.AlertRetryCount = outcome.RetryCount
+	decision.AlertQueueDropped = outcome.QueueDropped
+	decision.AlertQueueDropCount = outcome.QueueDropCount
+	decision.AlertCircuitState = outcome.CircuitState
+	decision.AlertCircuitReason = outcome.CircuitOpenReason
 	return decision
 }
 
@@ -361,42 +379,69 @@ func normalizeSecuritySeverity(raw string, fallback string) string {
 	}
 }
 
-func (e *Engine) dispatchSecurityAlert(ctx context.Context, runID string, iteration int, decision securityDecision) (string, string) {
+func (e *Engine) dispatchSecurityAlert(ctx context.Context, runID string, iteration int, decision securityDecision) securityAlertDispatchResult {
 	cfg := e.securityEventConfig()
+	mode := normalizeSecurityAlertDeliveryMode(cfg.Delivery.Mode)
 	if !cfg.Enabled {
-		return securityAlertDispatchDisabled, ""
+		return securityAlertDispatchResult{
+			Status:       securityAlertDispatchDisabled,
+			DeliveryMode: mode,
+			CircuitState: runtimeconfig.SecurityEventCircuitStateClosed,
+		}
 	}
 	if decision.Decision != string(types.SecurityFilterDecisionDeny) {
-		return securityAlertDispatchNotTriggered, ""
+		return securityAlertDispatchResult{
+			Status:       securityAlertDispatchNotTriggered,
+			DeliveryMode: mode,
+			CircuitState: runtimeconfig.SecurityEventCircuitStateClosed,
+		}
 	}
 	if cfg.Alert.TriggerPolicy != runtimeconfig.SecurityEventAlertPolicyDenyOnly {
-		return securityAlertDispatchDisabled, ""
+		return securityAlertDispatchResult{
+			Status:       securityAlertDispatchDisabled,
+			DeliveryMode: mode,
+			CircuitState: runtimeconfig.SecurityEventCircuitStateClosed,
+		}
 	}
 	if cfg.Alert.Sink != runtimeconfig.SecurityEventAlertSinkCallback {
-		return securityAlertDispatchFailed, securityAlertFailureCallbackMissing
+		return securityAlertDispatchResult{
+			Status:        securityAlertDispatchFailed,
+			FailureReason: securityAlertFailureCallbackMissing,
+			DeliveryMode:  mode,
+			CircuitState:  runtimeconfig.SecurityEventCircuitStateClosed,
+		}
 	}
 	if e.securityAlert == nil {
 		if cfg.Alert.Callback.RequireRegistered {
-			return securityAlertDispatchFailed, securityAlertFailureCallbackMissing
+			return securityAlertDispatchResult{
+				Status:        securityAlertDispatchFailed,
+				FailureReason: securityAlertFailureCallbackMissing,
+				DeliveryMode:  mode,
+				CircuitState:  runtimeconfig.SecurityEventCircuitStateClosed,
+			}
 		}
-		return securityAlertDispatchSkipped, ""
+		return securityAlertDispatchResult{
+			Status:       securityAlertDispatchSkipped,
+			DeliveryMode: mode,
+			CircuitState: runtimeconfig.SecurityEventCircuitStateClosed,
+		}
 	}
-	err := e.securityAlert(ctx, types.SecurityEvent{
-		EventID:       e.securityEventID(runID, iteration),
-		RunID:         strings.TrimSpace(runID),
-		Iteration:     iteration,
-		PolicyKind:    decision.PolicyKind,
-		NamespaceTool: decision.NamespaceTool,
-		FilterStage:   decision.FilterStage,
-		Decision:      decision.Decision,
-		ReasonCode:    decision.ReasonCode,
-		Severity:      decision.Severity,
-		Timestamp:     e.now(),
+	return e.securityDeliveryExecutor().dispatch(ctx, securityAlertDeliveryRequest{
+		Config:   cfg.Delivery,
+		Callback: e.securityAlert,
+		Event: types.SecurityEvent{
+			EventID:       e.securityEventID(runID, iteration),
+			RunID:         strings.TrimSpace(runID),
+			Iteration:     iteration,
+			PolicyKind:    decision.PolicyKind,
+			NamespaceTool: decision.NamespaceTool,
+			FilterStage:   decision.FilterStage,
+			Decision:      decision.Decision,
+			ReasonCode:    decision.ReasonCode,
+			Severity:      decision.Severity,
+			Timestamp:     e.now(),
+		},
 	})
-	if err != nil {
-		return securityAlertDispatchFailed, securityAlertFailureCallbackError
-	}
-	return securityAlertDispatchSucceeded, ""
 }
 
 func (e *Engine) securityEventID(runID string, iteration int) string {
@@ -476,6 +521,22 @@ func securityDeniedError(message string, decision securityDecision, extra map[st
 	if decision.AlertFailureReason != "" {
 		details["alert_dispatch_failure_reason"] = decision.AlertFailureReason
 	}
+	if decision.AlertDeliveryMode != "" {
+		details["alert_delivery_mode"] = decision.AlertDeliveryMode
+	}
+	details["alert_retry_count"] = decision.AlertRetryCount
+	if decision.AlertQueueDropped {
+		details["alert_queue_dropped"] = true
+	}
+	if decision.AlertQueueDropCount > 0 {
+		details["alert_queue_drop_count"] = decision.AlertQueueDropCount
+	}
+	if decision.AlertCircuitState != "" {
+		details["alert_circuit_state"] = decision.AlertCircuitState
+	}
+	if decision.AlertCircuitReason != "" {
+		details["alert_circuit_open_reason"] = decision.AlertCircuitReason
+	}
 	for k, v := range extra {
 		details[k] = v
 	}
@@ -484,6 +545,29 @@ func securityDeniedError(message string, decision securityDecision, extra map[st
 		Message:   message,
 		Retryable: false,
 		Details:   details,
+	}
+}
+
+func (e *Engine) securityDeliveryExecutor() *securityAlertDeliveryExecutor {
+	if e == nil {
+		return newSecurityAlertDeliveryExecutor(time.Now)
+	}
+	e.securityDeliveryMu.Lock()
+	defer e.securityDeliveryMu.Unlock()
+	if e.securityDelivery == nil {
+		e.securityDelivery = newSecurityAlertDeliveryExecutor(e.now)
+	}
+	return e.securityDelivery
+}
+
+func normalizeSecurityAlertDeliveryMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case runtimeconfig.SecurityEventDeliveryModeSync:
+		return runtimeconfig.SecurityEventDeliveryModeSync
+	case runtimeconfig.SecurityEventDeliveryModeAsync:
+		return runtimeconfig.SecurityEventDeliveryModeAsync
+	default:
+		return runtimeconfig.SecurityEventDeliveryModeAsync
 	}
 }
 

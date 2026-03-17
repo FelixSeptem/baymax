@@ -130,6 +130,12 @@ mcp:
 			"severity":                                 "high",
 			"alert_dispatch_status":                    "failed",
 			"alert_dispatch_failure_reason":            "alert.callback_error",
+			"alert_delivery_mode":                      "sync",
+			"alert_retry_count":                        2,
+			"alert_queue_dropped":                      true,
+			"alert_queue_drop_count":                   1,
+			"alert_circuit_state":                      "open",
+			"alert_circuit_open_reason":                "alert.callback_error",
 			"prefix_hash":                              "abc123",
 			"assemble_latency_ms":                      int64(8),
 			"assemble_status":                          "success",
@@ -207,6 +213,12 @@ mcp:
 	}
 	if items[0].Severity != "high" || items[0].AlertDispatchStatus != "failed" || items[0].AlertDispatchFailureReason != "alert.callback_error" {
 		t.Fatalf("security severity/alert fields mismatch: %#v", items[0])
+	}
+	if items[0].AlertDeliveryMode != "sync" || items[0].AlertRetryCount != 2 || !items[0].AlertQueueDropped || items[0].AlertQueueDropCount != 1 {
+		t.Fatalf("security delivery fields mismatch: %#v", items[0])
+	}
+	if items[0].AlertCircuitState != "open" || items[0].AlertCircuitOpenReason != "alert.callback_error" {
+		t.Fatalf("security circuit fields mismatch: %#v", items[0])
 	}
 	if items[0].PrefixHash != "abc123" || items[0].AssembleLatencyMs != 8 || items[0].AssembleStatus != "success" {
 		t.Fatalf("assembler fields mismatch: %#v", items[0])

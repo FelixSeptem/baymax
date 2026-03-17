@@ -459,6 +459,80 @@ reload:
 	}
 }
 
+func TestSecurityDeliveryContractInvalidSecurityEventDeliveryReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+    delivery:
+      mode: async
+      queue:
+        size: 32
+        overflow_policy: drop_old
+      timeout: 1s
+      retry:
+        max_attempts: 3
+        backoff_initial: 40ms
+        backoff_max: 120ms
+      circuit_breaker:
+        failure_threshold: 5
+        open_window: 3s
+        half_open_probes: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.SecurityEvent.Delivery.Mode
+	if before != SecurityEventDeliveryModeAsync {
+		t.Fatalf("before delivery.mode = %q, want async", before)
+	}
+
+	writeConfig(t, file, `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+    delivery:
+      mode: async
+      queue:
+        size: 32
+        overflow_policy: drop_old
+      timeout: 1s
+      retry:
+        max_attempts: 5
+        backoff_initial: 40ms
+        backoff_max: 120ms
+      circuit_breaker:
+        failure_threshold: 5
+        open_window: 3s
+        half_open_probes: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.SecurityEvent.Delivery.Retry.MaxAttempts
+	if after != 3 {
+		t.Fatalf("invalid security_event.delivery reload should rollback, max_attempts = %d, want 3", after)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

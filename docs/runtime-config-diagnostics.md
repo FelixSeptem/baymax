@@ -713,9 +713,9 @@ security:
 - Windows: `pwsh -File scripts/check-security-policy-contract.ps1`
 - CI Job: `security-policy-gate`（仅 PR 触发）
 
-## 安全事件治理（S3）
+## 安全事件与投递治理（S3/S4）
 
-在 S2 阻断基础上，新增统一安全事件 taxonomy 与 deny-only callback 告警契约：
+在 S2 阻断基础上，S3 提供统一安全事件 taxonomy 与 deny-only callback 契约，S4 补充 callback 投递可靠性治理（async 队列、drop_old、重试、熔断）：
 
 ```yaml
 security:
@@ -726,6 +726,20 @@ security:
       sink: callback            # 当前仅支持 callback
       callback:
         require_registered: false
+    delivery:
+      mode: async               # sync|async，默认 async
+      queue:
+        size: 128               # 有界队列
+        overflow_policy: drop_old
+      timeout: 1200ms           # 单次 callback 调用超时
+      retry:
+        max_attempts: 3         # 最大尝试次数（含首调）
+        backoff_initial: 120ms
+        backoff_max: 800ms
+      circuit_breaker:
+        failure_threshold: 5
+        open_window: 5s
+        half_open_probes: 1
     severity:
       default: high             # low|medium|high
       by_policy_kind:
@@ -740,20 +754,32 @@ security:
 
 1. 统一事件字段：`policy_kind|namespace_tool|filter_stage|decision|reason_code|severity`。
 2. 仅 `decision=deny` 触发 callback；`allow|match` 只保留观测，不触发告警。
-3. callback 失败不会改变原有安全决策（仍保持 deny），仅追加告警投递失败诊断。
-4. Run/Stream 在等价输入与配置下需保持 `policy_kind|decision|reason_code|severity|alert_dispatch_status` 语义等价。
+3. `mode=async` 下 deny 主路径只保证“入队/快速失败”，不等待 callback 完成；`mode=sync` 下主路径等待 callback 执行结果。
+4. 队列满时按 `drop_old` 丢弃最旧待发送事件，保留最新告警。
+5. callback 失败不会改变原有安全决策（仍保持 deny），仅追加告警投递失败诊断。
+6. 熔断状态机采用 `closed|open|half_open`（Hystrix 风格）：`open` 期间快速失败，窗口到期后进入 `half_open` 试探恢复。
+7. Run/Stream 在等价输入与配置下需保持 `policy_kind|decision|reason_code|severity|alert_dispatch_status|alert_delivery_mode|alert_retry_count|alert_circuit_state` 语义等价。
 
 新增 run 诊断字段（增量兼容）：
 
 - `severity`: 归一化严重级别（`low|medium|high`）
-- `alert_dispatch_status`: 告警投递状态（`disabled|not_triggered|skipped|succeeded|failed`）
-- `alert_dispatch_failure_reason`: 告警投递失败原因码（如 `alert.callback_missing|alert.callback_error`）
+- `alert_dispatch_status`: 告警投递状态（`disabled|not_triggered|skipped|queued|succeeded|failed`）
+- `alert_dispatch_failure_reason`: 告警投递失败原因码（如 `alert.callback_missing|alert.callback_timeout|alert.retry_exhausted|alert.circuit_open`）
+- `alert_delivery_mode`: 投递模式（`sync|async`）
+- `alert_retry_count`: 当前事件实际重试次数（不含首调）
+- `alert_queue_dropped`: 当前事件入队时是否触发队列丢弃
+- `alert_queue_drop_count`: 当前事件入队触发的丢弃数量
+- `alert_circuit_state`: 熔断状态（`closed|open|half_open`）
+- `alert_circuit_open_reason`: 熔断打开原因码（如 `alert.callback_error|alert.callback_timeout`）
 
-独立安全事件门禁（required-check 候选）：
+独立安全门禁（required-check 候选）：
 
 - Linux/macOS: `bash scripts/check-security-event-contract.sh`
 - Windows: `pwsh -File scripts/check-security-event-contract.ps1`
 - CI Job: `security-event-gate`（仅 PR 触发）
+- Linux/macOS: `bash scripts/check-security-delivery-contract.sh`
+- Windows: `pwsh -File scripts/check-security-delivery-contract.ps1`
+- CI Job: `security-delivery-gate`（仅 PR 触发）
 
 ## 热更新语义
 

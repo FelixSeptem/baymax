@@ -736,6 +736,31 @@ func TestSecurityEventS3Defaults(t *testing.T) {
 	}
 }
 
+func TestSecurityEventS4DeliveryDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Security.SecurityEvent.Delivery.Mode != SecurityEventDeliveryModeAsync {
+		t.Fatalf("security.security_event.delivery.mode = %q, want async", cfg.Security.SecurityEvent.Delivery.Mode)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Queue.Size <= 0 {
+		t.Fatalf("security.security_event.delivery.queue.size = %d, want > 0", cfg.Security.SecurityEvent.Delivery.Queue.Size)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Queue.OverflowPolicy != SecurityEventDeliveryOverflowDropOld {
+		t.Fatalf(
+			"security.security_event.delivery.queue.overflow_policy = %q, want drop_old",
+			cfg.Security.SecurityEvent.Delivery.Queue.OverflowPolicy,
+		)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts != 3 {
+		t.Fatalf("security.security_event.delivery.retry.max_attempts = %d, want 3", cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts)
+	}
+	if cfg.Security.SecurityEvent.Delivery.CircuitBreaker.FailureThreshold <= 0 {
+		t.Fatalf(
+			"security.security_event.delivery.circuit_breaker.failure_threshold = %d, want > 0",
+			cfg.Security.SecurityEvent.Delivery.CircuitBreaker.FailureThreshold,
+		)
+	}
+}
+
 func TestSecurityEventS3EnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_ALERT_TRIGGER_POLICY", "deny_only")
 	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_SEVERITY_DEFAULT", "medium")
@@ -770,6 +795,87 @@ security:
 	}
 }
 
+func TestSecurityEventS4DeliveryEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_DELIVERY_MODE", "sync")
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_DELIVERY_RETRY_MAX_ATTEMPTS", "2")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  security_event:
+    delivery:
+      mode: async
+      queue:
+        size: 17
+        overflow_policy: drop_old
+      timeout: 900ms
+      retry:
+        max_attempts: 3
+        backoff_initial: 20ms
+        backoff_max: 60ms
+      circuit_breaker:
+        failure_threshold: 7
+        open_window: 3s
+        half_open_probes: 1
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Mode != SecurityEventDeliveryModeSync {
+		t.Fatalf("security.security_event.delivery.mode = %q, want env override sync", cfg.Security.SecurityEvent.Delivery.Mode)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts != 2 {
+		t.Fatalf(
+			"security.security_event.delivery.retry.max_attempts = %d, want env override 2",
+			cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts,
+		)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Queue.Size != 17 {
+		t.Fatalf("security.security_event.delivery.queue.size = %d, want 17 from file", cfg.Security.SecurityEvent.Delivery.Queue.Size)
+	}
+}
+
+func TestSecurityDeliveryContractConfigDefaultsAndPrecedence(t *testing.T) {
+	base := DefaultConfig()
+	if base.Security.SecurityEvent.Delivery.Mode != SecurityEventDeliveryModeAsync {
+		t.Fatalf("default delivery mode = %q, want async", base.Security.SecurityEvent.Delivery.Mode)
+	}
+
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_DELIVERY_MODE", "sync")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  security_event:
+    delivery:
+      mode: async
+      queue:
+        size: 9
+        overflow_policy: drop_old
+      timeout: 1s
+      retry:
+        max_attempts: 3
+        backoff_initial: 20ms
+        backoff_max: 100ms
+      circuit_breaker:
+        failure_threshold: 4
+        open_window: 2s
+        half_open_probes: 1
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.SecurityEvent.Delivery.Mode != SecurityEventDeliveryModeSync {
+		t.Fatalf("delivery.mode = %q, want env override sync", cfg.Security.SecurityEvent.Delivery.Mode)
+	}
+}
+
 func TestSecurityEventContractValidateRejectsInvalidS3Config(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Security.SecurityEvent.Alert.TriggerPolicy = "all"
@@ -787,6 +893,39 @@ func TestSecurityEventContractValidateRejectsInvalidS3Config(t *testing.T) {
 	cfg.Security.SecurityEvent.Severity.ByReasonCode = map[string]string{"security.permission_denied": "critical"}
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "by_reason_code") {
 		t.Fatalf("expected invalid by_reason_code severity validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Delivery.Mode = "queue"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.security_event.delivery.mode") {
+		t.Fatalf("expected invalid delivery mode validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Delivery.Retry.MaxAttempts = 4
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "retry.max_attempts") {
+		t.Fatalf("expected invalid retry.max_attempts validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Delivery.CircuitBreaker.OpenWindow = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "circuit_breaker.open_window") {
+		t.Fatalf("expected invalid circuit_breaker.open_window validation error, got %v", err)
+	}
+}
+
+func TestSecurityDeliveryContractValidateRejectsMalformedDeliveryConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.SecurityEvent.Delivery.Queue.OverflowPolicy = "drop_new"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "overflow_policy") {
+		t.Fatalf("expected overflow_policy validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Delivery.Retry.BackoffInitial = 50 * time.Millisecond
+	cfg.Security.SecurityEvent.Delivery.Retry.BackoffMax = 10 * time.Millisecond
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "backoff_max") {
+		t.Fatalf("expected retry backoff validation error, got %v", err)
 	}
 }
 

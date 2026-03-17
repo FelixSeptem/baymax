@@ -48,6 +48,8 @@ type Engine struct {
 	modelInputFilters  []types.ModelInputSecurityFilter
 	modelOutputFilters []types.ModelOutputSecurityFilter
 	securityAlert      types.SecurityAlertCallback
+	securityDeliveryMu sync.Mutex
+	securityDelivery   *securityAlertDeliveryExecutor
 	now                func() time.Time
 	newRunID           func() string
 	capCacheMu         sync.RWMutex
@@ -561,32 +563,38 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:         lastSelection.Provider,
-					Initial:          lastSelection.Initial,
-					Path:             selectionPath,
-					Required:         lastSelection.Required,
-					UsedFallback:     fallbackUsed,
-					Assemble:         lastAssemble,
-					GateChecks:       gateStats.Checks,
-					GateDenied:       gateStats.DeniedCount,
-					GateTimeout:      gateStats.TimeoutCount,
-					GateRuleHits:     gateStats.RuleHitCount,
-					GateRuleLast:     gateStats.RuleLastID,
-					HitlAwait:        hitlStats.AwaitCount,
-					HitlResumed:      hitlStats.ResumeCount,
-					HitlCanceled:     hitlStats.CancelByUserCount,
-					CancelProp:       concurrencyStats.CancelPropagatedCount,
-					BackDrop:         concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:     concurrencyStats.InflightPeak,
-					SecurityPolicy:   lastSecurity.PolicyKind,
-					NamespaceTool:    lastSecurity.NamespaceTool,
-					FilterStage:      lastSecurity.FilterStage,
-					SecurityDecision: lastSecurity.Decision,
-					ReasonCode:       lastSecurity.ReasonCode,
-					Severity:         lastSecurity.Severity,
-					AlertStatus:      lastSecurity.AlertDispatchStatus,
-					AlertFailure:     lastSecurity.AlertFailureReason,
+					Provider:            lastSelection.Provider,
+					Initial:             lastSelection.Initial,
+					Path:                selectionPath,
+					Required:            lastSelection.Required,
+					UsedFallback:        fallbackUsed,
+					Assemble:            lastAssemble,
+					GateChecks:          gateStats.Checks,
+					GateDenied:          gateStats.DeniedCount,
+					GateTimeout:         gateStats.TimeoutCount,
+					GateRuleHits:        gateStats.RuleHitCount,
+					GateRuleLast:        gateStats.RuleLastID,
+					HitlAwait:           hitlStats.AwaitCount,
+					HitlResumed:         hitlStats.ResumeCount,
+					HitlCanceled:        hitlStats.CancelByUserCount,
+					CancelProp:          concurrencyStats.CancelPropagatedCount,
+					BackDrop:            concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:        concurrencyStats.InflightPeak,
+					SecurityPolicy:      lastSecurity.PolicyKind,
+					NamespaceTool:       lastSecurity.NamespaceTool,
+					FilterStage:         lastSecurity.FilterStage,
+					SecurityDecision:    lastSecurity.Decision,
+					ReasonCode:          lastSecurity.ReasonCode,
+					Severity:            lastSecurity.Severity,
+					AlertStatus:         lastSecurity.AlertDispatchStatus,
+					AlertFailure:        lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:     lastSecurity.AlertRetryCount,
+					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:   lastSecurity.AlertCircuitState,
+					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 				}),
 			})
 			return result, nil
@@ -612,33 +620,39 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-					Provider:         lastSelection.Provider,
-					Initial:          lastSelection.Initial,
-					Path:             selectionPath,
-					Required:         lastSelection.Required,
-					Reason:           lastSelection.Reason,
-					UsedFallback:     fallbackUsed,
-					Assemble:         lastAssemble,
-					GateChecks:       gateStats.Checks,
-					GateDenied:       gateStats.DeniedCount,
-					GateTimeout:      gateStats.TimeoutCount,
-					GateRuleHits:     gateStats.RuleHitCount,
-					GateRuleLast:     gateStats.RuleLastID,
-					HitlAwait:        hitlStats.AwaitCount,
-					HitlResumed:      hitlStats.ResumeCount,
-					HitlCanceled:     hitlStats.CancelByUserCount,
-					CancelProp:       concurrencyStats.CancelPropagatedCount,
-					BackDrop:         concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:     concurrencyStats.InflightPeak,
-					SecurityPolicy:   lastSecurity.PolicyKind,
-					NamespaceTool:    lastSecurity.NamespaceTool,
-					FilterStage:      lastSecurity.FilterStage,
-					SecurityDecision: lastSecurity.Decision,
-					ReasonCode:       lastSecurity.ReasonCode,
-					Severity:         lastSecurity.Severity,
-					AlertStatus:      lastSecurity.AlertDispatchStatus,
-					AlertFailure:     lastSecurity.AlertFailureReason,
+					Provider:            lastSelection.Provider,
+					Initial:             lastSelection.Initial,
+					Path:                selectionPath,
+					Required:            lastSelection.Required,
+					Reason:              lastSelection.Reason,
+					UsedFallback:        fallbackUsed,
+					Assemble:            lastAssemble,
+					GateChecks:          gateStats.Checks,
+					GateDenied:          gateStats.DeniedCount,
+					GateTimeout:         gateStats.TimeoutCount,
+					GateRuleHits:        gateStats.RuleHitCount,
+					GateRuleLast:        gateStats.RuleLastID,
+					HitlAwait:           hitlStats.AwaitCount,
+					HitlResumed:         hitlStats.ResumeCount,
+					HitlCanceled:        hitlStats.CancelByUserCount,
+					CancelProp:          concurrencyStats.CancelPropagatedCount,
+					BackDrop:            concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:        concurrencyStats.InflightPeak,
+					SecurityPolicy:      lastSecurity.PolicyKind,
+					NamespaceTool:       lastSecurity.NamespaceTool,
+					FilterStage:         lastSecurity.FilterStage,
+					SecurityDecision:    lastSecurity.Decision,
+					ReasonCode:          lastSecurity.ReasonCode,
+					Severity:            lastSecurity.Severity,
+					AlertStatus:         lastSecurity.AlertDispatchStatus,
+					AlertFailure:        lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:     lastSecurity.AlertRetryCount,
+					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:   lastSecurity.AlertCircuitState,
+					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 				}),
 			})
 			return result, runErr
@@ -688,21 +702,27 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", string(selErr.Class), runFinishMeta{
-				Provider:         selection.Provider,
-				Initial:          selection.Initial,
-				Path:             selectionPath,
-				Required:         required,
-				UsedFallback:     selection.UsedFallback,
-				Reason:           selErr.Message,
-				Assemble:         types.ContextAssembleResult{},
-				SecurityPolicy:   lastSecurity.PolicyKind,
-				NamespaceTool:    lastSecurity.NamespaceTool,
-				FilterStage:      lastSecurity.FilterStage,
-				SecurityDecision: lastSecurity.Decision,
-				ReasonCode:       lastSecurity.ReasonCode,
-				Severity:         lastSecurity.Severity,
-				AlertStatus:      lastSecurity.AlertDispatchStatus,
-				AlertFailure:     lastSecurity.AlertFailureReason,
+				Provider:            selection.Provider,
+				Initial:             selection.Initial,
+				Path:                selectionPath,
+				Required:            required,
+				UsedFallback:        selection.UsedFallback,
+				Reason:              selErr.Message,
+				Assemble:            types.ContextAssembleResult{},
+				SecurityPolicy:      lastSecurity.PolicyKind,
+				NamespaceTool:       lastSecurity.NamespaceTool,
+				FilterStage:         lastSecurity.FilterStage,
+				SecurityDecision:    lastSecurity.Decision,
+				ReasonCode:          lastSecurity.ReasonCode,
+				Severity:            lastSecurity.Severity,
+				AlertStatus:         lastSecurity.AlertDispatchStatus,
+				AlertFailure:        lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:     lastSecurity.AlertRetryCount,
+				AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:   lastSecurity.AlertCircuitState,
+				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 			}),
 		})
 		return result, errors.New(selErr.Message)
@@ -757,20 +777,26 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", string(types.ErrContext), runFinishMeta{
-				Provider:         "",
-				Initial:          "",
-				Path:             selectionPath,
-				Required:         required,
-				UsedFallback:     false,
-				Assemble:         lastAssemble,
-				SecurityPolicy:   lastSecurity.PolicyKind,
-				NamespaceTool:    lastSecurity.NamespaceTool,
-				FilterStage:      lastSecurity.FilterStage,
-				SecurityDecision: lastSecurity.Decision,
-				ReasonCode:       lastSecurity.ReasonCode,
-				Severity:         lastSecurity.Severity,
-				AlertStatus:      lastSecurity.AlertDispatchStatus,
-				AlertFailure:     lastSecurity.AlertFailureReason,
+				Provider:            "",
+				Initial:             "",
+				Path:                selectionPath,
+				Required:            required,
+				UsedFallback:        false,
+				Assemble:            lastAssemble,
+				SecurityPolicy:      lastSecurity.PolicyKind,
+				NamespaceTool:       lastSecurity.NamespaceTool,
+				FilterStage:         lastSecurity.FilterStage,
+				SecurityDecision:    lastSecurity.Decision,
+				ReasonCode:          lastSecurity.ReasonCode,
+				Severity:            lastSecurity.Severity,
+				AlertStatus:         lastSecurity.AlertDispatchStatus,
+				AlertFailure:        lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:     lastSecurity.AlertRetryCount,
+				AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:   lastSecurity.AlertCircuitState,
+				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 			}),
 		})
 		return result, assembleErr
@@ -800,20 +826,26 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", string(types.ErrSecurity), runFinishMeta{
-				Provider:         selection.Provider,
-				Initial:          selection.Initial,
-				Path:             selectionPath,
-				Required:         required,
-				UsedFallback:     selection.UsedFallback,
-				Assemble:         lastAssemble,
-				SecurityPolicy:   lastSecurity.PolicyKind,
-				NamespaceTool:    lastSecurity.NamespaceTool,
-				FilterStage:      lastSecurity.FilterStage,
-				SecurityDecision: lastSecurity.Decision,
-				ReasonCode:       lastSecurity.ReasonCode,
-				Severity:         lastSecurity.Severity,
-				AlertStatus:      lastSecurity.AlertDispatchStatus,
-				AlertFailure:     lastSecurity.AlertFailureReason,
+				Provider:            selection.Provider,
+				Initial:             selection.Initial,
+				Path:                selectionPath,
+				Required:            required,
+				UsedFallback:        selection.UsedFallback,
+				Assemble:            lastAssemble,
+				SecurityPolicy:      lastSecurity.PolicyKind,
+				NamespaceTool:       lastSecurity.NamespaceTool,
+				FilterStage:         lastSecurity.FilterStage,
+				SecurityDecision:    lastSecurity.Decision,
+				ReasonCode:          lastSecurity.ReasonCode,
+				Severity:            lastSecurity.Severity,
+				AlertStatus:         lastSecurity.AlertDispatchStatus,
+				AlertFailure:        lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:     lastSecurity.AlertRetryCount,
+				AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:   lastSecurity.AlertCircuitState,
+				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 			}),
 		})
 		return result, filterErr
@@ -991,32 +1023,38 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-				Provider:         selection.Provider,
-				Initial:          selection.Initial,
-				Path:             selectionPath,
-				Required:         required,
-				UsedFallback:     selection.UsedFallback,
-				Assemble:         lastAssemble,
-				GateChecks:       gateStats.Checks,
-				GateDenied:       gateStats.DeniedCount,
-				GateTimeout:      gateStats.TimeoutCount,
-				GateRuleHits:     gateStats.RuleHitCount,
-				GateRuleLast:     gateStats.RuleLastID,
-				HitlAwait:        hitlStats.AwaitCount,
-				HitlResumed:      hitlStats.ResumeCount,
-				HitlCanceled:     hitlStats.CancelByUserCount,
-				CancelProp:       concurrencyStats.CancelPropagatedCount,
-				BackDrop:         concurrencyStats.BackpressureDropCount,
-				BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
-				InflightPeak:     concurrencyStats.InflightPeak,
-				SecurityPolicy:   lastSecurity.PolicyKind,
-				NamespaceTool:    lastSecurity.NamespaceTool,
-				FilterStage:      lastSecurity.FilterStage,
-				SecurityDecision: lastSecurity.Decision,
-				ReasonCode:       lastSecurity.ReasonCode,
-				Severity:         lastSecurity.Severity,
-				AlertStatus:      lastSecurity.AlertDispatchStatus,
-				AlertFailure:     lastSecurity.AlertFailureReason,
+				Provider:            selection.Provider,
+				Initial:             selection.Initial,
+				Path:                selectionPath,
+				Required:            required,
+				UsedFallback:        selection.UsedFallback,
+				Assemble:            lastAssemble,
+				GateChecks:          gateStats.Checks,
+				GateDenied:          gateStats.DeniedCount,
+				GateTimeout:         gateStats.TimeoutCount,
+				GateRuleHits:        gateStats.RuleHitCount,
+				GateRuleLast:        gateStats.RuleLastID,
+				HitlAwait:           hitlStats.AwaitCount,
+				HitlResumed:         hitlStats.ResumeCount,
+				HitlCanceled:        hitlStats.CancelByUserCount,
+				CancelProp:          concurrencyStats.CancelPropagatedCount,
+				BackDrop:            concurrencyStats.BackpressureDropCount,
+				BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:        concurrencyStats.InflightPeak,
+				SecurityPolicy:      lastSecurity.PolicyKind,
+				NamespaceTool:       lastSecurity.NamespaceTool,
+				FilterStage:         lastSecurity.FilterStage,
+				SecurityDecision:    lastSecurity.Decision,
+				ReasonCode:          lastSecurity.ReasonCode,
+				Severity:            lastSecurity.Severity,
+				AlertStatus:         lastSecurity.AlertDispatchStatus,
+				AlertFailure:        lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:     lastSecurity.AlertRetryCount,
+				AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:   lastSecurity.AlertCircuitState,
+				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 			}),
 		})
 		return result, err
@@ -1039,32 +1077,38 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		Iteration: iteration,
 		Time:      e.now(),
 		Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-			Provider:         selection.Provider,
-			Initial:          selection.Initial,
-			Path:             selectionPath,
-			Required:         required,
-			UsedFallback:     selection.UsedFallback,
-			Assemble:         lastAssemble,
-			GateChecks:       gateStats.Checks,
-			GateDenied:       gateStats.DeniedCount,
-			GateTimeout:      gateStats.TimeoutCount,
-			GateRuleHits:     gateStats.RuleHitCount,
-			GateRuleLast:     gateStats.RuleLastID,
-			HitlAwait:        hitlStats.AwaitCount,
-			HitlResumed:      hitlStats.ResumeCount,
-			HitlCanceled:     hitlStats.CancelByUserCount,
-			CancelProp:       concurrencyStats.CancelPropagatedCount,
-			BackDrop:         concurrencyStats.BackpressureDropCount,
-			BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
-			InflightPeak:     concurrencyStats.InflightPeak,
-			SecurityPolicy:   lastSecurity.PolicyKind,
-			NamespaceTool:    lastSecurity.NamespaceTool,
-			FilterStage:      lastSecurity.FilterStage,
-			SecurityDecision: lastSecurity.Decision,
-			ReasonCode:       lastSecurity.ReasonCode,
-			Severity:         lastSecurity.Severity,
-			AlertStatus:      lastSecurity.AlertDispatchStatus,
-			AlertFailure:     lastSecurity.AlertFailureReason,
+			Provider:            selection.Provider,
+			Initial:             selection.Initial,
+			Path:                selectionPath,
+			Required:            required,
+			UsedFallback:        selection.UsedFallback,
+			Assemble:            lastAssemble,
+			GateChecks:          gateStats.Checks,
+			GateDenied:          gateStats.DeniedCount,
+			GateTimeout:         gateStats.TimeoutCount,
+			GateRuleHits:        gateStats.RuleHitCount,
+			GateRuleLast:        gateStats.RuleLastID,
+			HitlAwait:           hitlStats.AwaitCount,
+			HitlResumed:         hitlStats.ResumeCount,
+			HitlCanceled:        hitlStats.CancelByUserCount,
+			CancelProp:          concurrencyStats.CancelPropagatedCount,
+			BackDrop:            concurrencyStats.BackpressureDropCount,
+			BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+			InflightPeak:        concurrencyStats.InflightPeak,
+			SecurityPolicy:      lastSecurity.PolicyKind,
+			NamespaceTool:       lastSecurity.NamespaceTool,
+			FilterStage:         lastSecurity.FilterStage,
+			SecurityDecision:    lastSecurity.Decision,
+			ReasonCode:          lastSecurity.ReasonCode,
+			Severity:            lastSecurity.Severity,
+			AlertStatus:         lastSecurity.AlertDispatchStatus,
+			AlertFailure:        lastSecurity.AlertFailureReason,
+			AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+			AlertRetryCount:     lastSecurity.AlertRetryCount,
+			AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+			AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+			AlertCircuitState:   lastSecurity.AlertCircuitState,
+			AlertCircuitReason:  lastSecurity.AlertCircuitReason,
 		}),
 	})
 	return result, nil
@@ -1375,33 +1419,39 @@ func (e *Engine) discoverCapabilities(
 }
 
 type runFinishMeta struct {
-	Provider         string
-	Initial          string
-	Path             []string
-	Required         []types.ModelCapability
-	UsedFallback     bool
-	Reason           string
-	Assemble         types.ContextAssembleResult
-	GateChecks       int
-	GateDenied       int
-	GateTimeout      int
-	GateRuleHits     int
-	GateRuleLast     string
-	HitlAwait        int
-	HitlResumed      int
-	HitlCanceled     int
-	CancelProp       int
-	BackDrop         int
-	BackDropByPhase  map[string]int
-	InflightPeak     int
-	SecurityPolicy   string
-	NamespaceTool    string
-	FilterStage      string
-	SecurityDecision string
-	ReasonCode       string
-	Severity         string
-	AlertStatus      string
-	AlertFailure     string
+	Provider            string
+	Initial             string
+	Path                []string
+	Required            []types.ModelCapability
+	UsedFallback        bool
+	Reason              string
+	Assemble            types.ContextAssembleResult
+	GateChecks          int
+	GateDenied          int
+	GateTimeout         int
+	GateRuleHits        int
+	GateRuleLast        string
+	HitlAwait           int
+	HitlResumed         int
+	HitlCanceled        int
+	CancelProp          int
+	BackDrop            int
+	BackDropByPhase     map[string]int
+	InflightPeak        int
+	SecurityPolicy      string
+	NamespaceTool       string
+	FilterStage         string
+	SecurityDecision    string
+	ReasonCode          string
+	Severity            string
+	AlertStatus         string
+	AlertFailure        string
+	AlertDeliveryMode   string
+	AlertRetryCount     int
+	AlertQueueDropped   bool
+	AlertQueueDropCount int
+	AlertCircuitState   string
+	AlertCircuitReason  string
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1606,6 +1656,22 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.AlertFailure != "" {
 		payload["alert_dispatch_failure_reason"] = meta.AlertFailure
+	}
+	if meta.AlertDeliveryMode != "" {
+		payload["alert_delivery_mode"] = meta.AlertDeliveryMode
+	}
+	payload["alert_retry_count"] = meta.AlertRetryCount
+	if meta.AlertQueueDropped {
+		payload["alert_queue_dropped"] = true
+	}
+	if meta.AlertQueueDropCount > 0 {
+		payload["alert_queue_drop_count"] = meta.AlertQueueDropCount
+	}
+	if meta.AlertCircuitState != "" {
+		payload["alert_circuit_state"] = meta.AlertCircuitState
+	}
+	if meta.AlertCircuitReason != "" {
+		payload["alert_circuit_open_reason"] = meta.AlertCircuitReason
 	}
 	return payload
 }

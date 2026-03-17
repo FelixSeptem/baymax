@@ -1188,6 +1188,11 @@ security:
       sink: callback
       callback:
         require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
     severity:
       default: high
       by_reason_code:
@@ -1265,6 +1270,11 @@ security:
       sink: callback
       callback:
         require_registered: true
+    delivery:
+      mode: sync
+      timeout: 100ms
+      retry:
+        max_attempts: 1
 `
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -1306,8 +1316,8 @@ security:
 	if finished.Payload["alert_dispatch_status"] != "failed" {
 		t.Fatalf("alert_dispatch_status = %#v, want failed", finished.Payload["alert_dispatch_status"])
 	}
-	if finished.Payload["alert_dispatch_failure_reason"] != "alert.callback_error" {
-		t.Fatalf("alert_dispatch_failure_reason = %#v, want alert.callback_error", finished.Payload["alert_dispatch_failure_reason"])
+	if finished.Payload["alert_dispatch_failure_reason"] != "alert.retry_exhausted" {
+		t.Fatalf("alert_dispatch_failure_reason = %#v, want alert.retry_exhausted", finished.Payload["alert_dispatch_failure_reason"])
 	}
 }
 
@@ -1331,6 +1341,11 @@ security:
       sink: callback
       callback:
         require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
 `
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -1401,6 +1416,11 @@ security:
       sink: callback
       callback:
         require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
     severity:
       default: high
       by_reason_code:
@@ -1470,10 +1490,234 @@ security:
 	if !ok {
 		t.Fatal("missing stream run.finished")
 	}
-	for _, key := range []string{"policy_kind", "decision", "reason_code", "severity", "alert_dispatch_status"} {
+	for _, key := range []string{
+		"policy_kind",
+		"decision",
+		"reason_code",
+		"severity",
+		"alert_dispatch_status",
+		"alert_delivery_mode",
+		"alert_retry_count",
+		"alert_circuit_state",
+	} {
 		if runFinished.Payload[key] != streamFinished.Payload[key] {
 			t.Fatalf("%s mismatch run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
 		}
+	}
+}
+
+func TestSecurityDeliveryContractAsyncQueueOverflowDropsOldest(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: async
+      queue:
+        size: 1
+        overflow_policy: drop_old
+      timeout: 1s
+      retry:
+        max_attempts: 1
+        backoff_initial: 1ms
+        backoff_max: 1ms
+      circuit_breaker:
+        failure_threshold: 10
+        open_window: 1s
+        half_open_probes: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	engine := New(
+		&fakeModel{},
+		WithRuntimeManager(mgr),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			select {
+			case started <- struct{}{}:
+				<-release
+			default:
+			}
+			return nil
+		}),
+	)
+	decision := securityDecision{
+		PolicyKind: "permission",
+		Decision:   string(types.SecurityFilterDecisionDeny),
+		ReasonCode: "security.permission_denied",
+		Severity:   "high",
+	}
+
+	first := engine.dispatchSecurityAlert(context.Background(), "run-1", 1, decision)
+	if first.Status != securityAlertDispatchQueued {
+		t.Fatalf("first status = %q, want queued", first.Status)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first async callback did not start")
+	}
+	_ = engine.dispatchSecurityAlert(context.Background(), "run-1", 2, decision)
+	third := engine.dispatchSecurityAlert(context.Background(), "run-1", 3, decision)
+	if third.Status != securityAlertDispatchQueued {
+		t.Fatalf("third status = %q, want queued", third.Status)
+	}
+	if !third.QueueDropped || third.QueueDropCount != 1 {
+		t.Fatalf("queue drop diagnostics mismatch: %#v", third)
+	}
+	close(release)
+}
+
+func TestSecurityDeliveryContractRetryBudget(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 40ms
+      retry:
+        max_attempts: 3
+        backoff_initial: 1ms
+        backoff_max: 2ms
+      circuit_breaker:
+        failure_threshold: 10
+        open_window: 40ms
+        half_open_probes: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	failuresLeft := 2
+	callbackCalls := 0
+	engine := New(
+		&fakeModel{},
+		WithRuntimeManager(mgr),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			callbackCalls++
+			if failuresLeft > 0 {
+				failuresLeft--
+				return errors.New("callback failed")
+			}
+			return nil
+		}),
+	)
+	decision := securityDecision{
+		PolicyKind: "permission",
+		Decision:   string(types.SecurityFilterDecisionDeny),
+		ReasonCode: "security.permission_denied",
+		Severity:   "high",
+	}
+
+	outcome := engine.dispatchSecurityAlert(context.Background(), "run-sync", 1, decision)
+	if outcome.Status != securityAlertDispatchSucceeded || outcome.RetryCount != 2 {
+		t.Fatalf("retry outcome mismatch: %#v", outcome)
+	}
+	if callbackCalls != 3 {
+		t.Fatalf("callback calls = %d, want 3", callbackCalls)
+	}
+}
+
+func TestSecurityDeliveryContractCircuitTransitions(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 40ms
+      retry:
+        max_attempts: 1
+        backoff_initial: 1ms
+        backoff_max: 1ms
+      circuit_breaker:
+        failure_threshold: 2
+        open_window: 40ms
+        half_open_probes: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	fail := true
+	callbackCalls := 0
+	engine := New(
+		&fakeModel{},
+		WithRuntimeManager(mgr),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			callbackCalls++
+			if fail {
+				return errors.New("callback failed")
+			}
+			return nil
+		}),
+	)
+	decision := securityDecision{
+		PolicyKind: "permission",
+		Decision:   string(types.SecurityFilterDecisionDeny),
+		ReasonCode: "security.permission_denied",
+		Severity:   "high",
+	}
+
+	_ = engine.dispatchSecurityAlert(context.Background(), "run-sync", 1, decision)
+	opening := engine.dispatchSecurityAlert(context.Background(), "run-sync", 2, decision)
+	if opening.CircuitState != runtimeconfig.SecurityEventCircuitStateOpen {
+		t.Fatalf("circuit should open after threshold failures, got %#v", opening)
+	}
+	beforeFastFailCalls := callbackCalls
+	fastFail := engine.dispatchSecurityAlert(context.Background(), "run-sync", 3, decision)
+	if fastFail.FailureReason != securityAlertFailureCircuitOpen {
+		t.Fatalf("fast-fail reason = %q, want %q", fastFail.FailureReason, securityAlertFailureCircuitOpen)
+	}
+	if callbackCalls != beforeFastFailCalls {
+		t.Fatalf("circuit open fast-fail should skip callback, calls before=%d after=%d", beforeFastFailCalls, callbackCalls)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+	fail = false
+	afterRecovery := engine.dispatchSecurityAlert(context.Background(), "run-sync", 4, decision)
+	if afterRecovery.Status != securityAlertDispatchSucceeded {
+		t.Fatalf("half-open recovery should succeed, got %#v", afterRecovery)
+	}
+	if afterRecovery.CircuitState != runtimeconfig.SecurityEventCircuitStateClosed {
+		t.Fatalf("circuit state after recovery = %q, want closed", afterRecovery.CircuitState)
 	}
 }
 

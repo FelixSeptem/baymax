@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "run_id": "run-1",
+      "sequence": 1,
+      "phase": "run",
+      "status": "running",
+      "timestamp": "2026-03-17T10:00:01Z"
+    },
+    {
+      "run_id": "run-1",
+      "sequence": 2,
+      "phase": "model",
+      "status": "failed",
+      "reason": "model_error",
+      "timestamp": "2026-03-17T10:00:02Z"
+    },
+    {
+      "run_id": "run-1",
+      "sequence": 3,
+      "phase": "tool",
+      "status": "succeeded",
+      "timestamp": "2026-03-17T10:00:03Z"
+    }
+  ]
+}

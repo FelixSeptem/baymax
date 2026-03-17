@@ -1,0 +1,10 @@
+{
+  "timeline_events": [
+    {
+      "run_id": "run-1",
+      "sequence": 1,
+      "status": "running",
+      "timestamp": "2026-03-17T10:00:01Z"
+    }
+  ]
+}

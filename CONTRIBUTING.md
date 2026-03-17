@@ -47,6 +47,7 @@ golangci-lint run --config .golangci.yml
 PR 模板为中文优先，接受英文内容；但结构与必填检查项必须完整。
 
 默认 CI 在 pull request 事件执行 `contribution-template-gate`。建议在分支保护中将其设为 required status check。
+DX D1 补充 `diagnostics-replay-gate`（replay 契约回归），建议同样设为 required status check。
 
 ## 评审检查清单（Required）
 

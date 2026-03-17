@@ -27,6 +27,7 @@ const (
 
 var ErrAgenticRoutingNotReady = errors.New("context stage routing agentic mode not ready")
 
+// Assembler composes context before model execution using CA1/CA2/CA3 policies.
 type Assembler struct {
 	cfgProvider          func() runtimeconfig.ContextAssemblerConfig
 	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
@@ -47,8 +48,10 @@ type Assembler struct {
 	defaultReranker SemanticReranker
 }
 
+// Option customizes assembler behavior for embedding/reranker/redaction integrations.
 type Option func(*Assembler)
 
+// WithRedactionConfigProvider injects runtime redaction config provider for recap/stage2 sanitization.
 func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedactionConfig) Option {
 	return func(a *Assembler) {
 		if provider != nil {
@@ -57,6 +60,7 @@ func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedaction
 	}
 }
 
+// WithSemanticEmbeddingScorer registers semantic embedding scorer extension.
 func WithSemanticEmbeddingScorer(key string, scorer SemanticEmbeddingScorer) Option {
 	return func(a *Assembler) {
 		a.embeddingKey = strings.TrimSpace(key)
@@ -64,6 +68,7 @@ func WithSemanticEmbeddingScorer(key string, scorer SemanticEmbeddingScorer) Opt
 	}
 }
 
+// WithSemanticReranker registers provider-specific semantic reranker extension.
 func WithSemanticReranker(provider string, reranker SemanticReranker) Option {
 	return func(a *Assembler) {
 		if reranker == nil {
@@ -80,6 +85,7 @@ func WithSemanticReranker(provider string, reranker SemanticReranker) Option {
 	}
 }
 
+// New creates a context assembler with runtime config provider and optional extensions.
 func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option) *Assembler {
 	baseSecurity := runtimeconfig.DefaultConfig().Security.Redaction
 	a := &Assembler{
@@ -101,6 +107,7 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 	return a
 }
 
+// Assemble builds model-ready context with CA1/CA2/CA3 policies and diagnostics metadata.
 func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleRequest, modelReq types.ModelRequest) (types.ModelRequest, types.ContextAssembleResult, error) {
 	start := a.now()
 	cfg := a.cfgProvider()

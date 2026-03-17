@@ -2,10 +2,10 @@
 
 一个 `library-first` 的 Go Agent Loop 运行时，支持模型循环、工具调度、MCP 双传输、技能加载与可观测性。
 
-## 当前状态（2026-03-16）
+## 当前状态（2026-03-17）
 
 - OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
-- 最近归档：`035-implement-ca3-semantic-embedding-adapter-e3`。
+- 最近归档：`039-realign-pre1-governance-and-blocking-contribution-gates-e6`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
@@ -401,11 +401,12 @@ bash scripts/check-ca4-benchmark-regression.sh
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
 - 默认执行：
   - `contribution-template-gate`（PR 模板必填项阻断校验）
+  - `diagnostics-replay-gate`（diagnostics replay 契约校验）
   - `scripts/check-quality-gate.sh`
   - `scripts/check-runtime-boundaries.sh`
   - `scripts/check-docs-consistency.ps1`
   - benchmark smoke（`go test ./integration -run ^$ -bench Benchmark -benchtime=50ms`）
-- 分支保护建议将 `contribution-template-gate` 设为 required status check。
+- 分支保护建议将 `contribution-template-gate` 与 `diagnostics-replay-gate` 设为 required status check。
 
 ### 安全报告
 - 漏洞报告请走 `SECURITY.md` 中的邮箱私报流程：`whenhow94@qq.com`（请勿公开提 issue）。
@@ -423,6 +424,8 @@ bash scripts/check-ca4-benchmark-regression.sh
 - `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
 - `scripts/check-contribution-template.sh`：PR 模板完整性与必勾选项阻断校验（CI pull_request 使用）。
 - `scripts/check-contribution-template.ps1`：Windows 等价 PR 模板阻断校验脚本。
+- `scripts/check-diagnostics-replay-contract.sh`：diagnostics replay 契约回归校验（CI pull_request 使用）。
+- `scripts/check-diagnostics-replay-contract.ps1`：Windows 等价 diagnostics replay 契约回归校验脚本。
 - `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。
 
 ## Examples Pattern Index
@@ -470,6 +473,8 @@ go run ./examples/08-multi-agent-network-bridge
 - 性能回归策略：`docs/performance-policy.md`
 - MCP 可靠性 profile：`docs/mcp-runtime-profiles.md`
 - 运行时配置与诊断 API：`docs/runtime-config-diagnostics.md`
+- D1 API 参考覆盖：`docs/api-reference-d1.md`
+- Diagnostics JSON Replay 指南：`docs/diagnostics-replay.md`
 - Runtime 模块边界：`docs/runtime-module-boundaries.md`
 - Context Assembler 分期计划：`docs/context-assembler-phased-plan.md`
 - 模块化评审矩阵：`docs/modular-e2e-review-matrix.md`

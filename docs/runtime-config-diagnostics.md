@@ -366,7 +366,15 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
 
-当前不提供 CLI 诊断命令。
+默认调试路径仍为 library-first；D1 补充了可选离线回放命令：`go run ./cmd/diagnostics-replay -input diagnostics.json`。
+
+## 诊断回放（D1）
+
+- 输入：diagnostics JSON（`timeline_events` 或 `events`）。
+- 输出：精简 timeline 视图（`run_id/sequence/phase/status/reason/timestamp`）。
+- 目标：离线排障与契约回归，不依赖在线 runtime API。
+
+详细使用说明见：`docs/diagnostics-replay.md`。
 
 ## CA3 Token Count 职责分工
 

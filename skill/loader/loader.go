@@ -20,6 +20,7 @@ import (
 
 var skillPathPattern = regexp.MustCompile(`\(file:\s*([^\)]+)\)`)
 
+// Loader discovers and compiles skills from repository metadata.
 type Loader struct {
 	eventHandler types.EventHandler
 	runtimeMgr   *runtimeconfig.Manager
@@ -27,6 +28,7 @@ type Loader struct {
 	scorer       skillTriggerScorer
 }
 
+// New constructs a skill loader with event handler wiring and default lexical scorer.
 func New(eventHandler types.EventHandler) *Loader {
 	return &Loader{
 		eventHandler: eventHandler,
@@ -35,6 +37,7 @@ func New(eventHandler types.EventHandler) *Loader {
 	}
 }
 
+// NewWithRuntimeManager constructs a skill loader that reads trigger scoring settings from runtime config manager.
 func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.Manager) *Loader {
 	return &Loader{
 		eventHandler: eventHandler,
@@ -44,10 +47,12 @@ func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.M
 	}
 }
 
+// SetRuntimeManager updates runtime configuration source for trigger scoring and policy lookup.
 func (l *Loader) SetRuntimeManager(mgr *runtimeconfig.Manager) {
 	l.runtimeMgr = mgr
 }
 
+// Discover parses AGENTS.md and returns discovered skill specs in deterministic name order.
 func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, error) {
 	ctx, span := otel.Tracer("baymax/skill/loader").Start(ctx, "skill.discover")
 	defer span.End()
@@ -116,6 +121,7 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 	return specs, nil
 }
 
+// Compile resolves explicit and semantic skill matches and builds an executable skill bundle.
 func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
 	ctx, span := otel.Tracer("baymax/skill/loader").Start(ctx, "skill.compile")
 	defer span.End()
@@ -410,10 +416,12 @@ func (l *Loader) emit(ctx context.Context, runID string, typ string, payload map
 
 var _ types.SkillLoader = (*Loader)(nil)
 
+// NewDefault builds a loader with default settings and no event handler.
 func NewDefault() *Loader {
 	return New(nil)
 }
 
+// MustCompile compiles a skill bundle and panics on error for bootstrap-time use cases.
 func MustCompile(ctx context.Context, loader types.SkillLoader, specs []types.SkillSpec, in types.SkillInput) types.SkillBundle {
 	bundle, err := loader.Compile(ctx, specs, in)
 	if err != nil {

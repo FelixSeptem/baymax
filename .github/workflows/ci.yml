@@ -30,6 +30,25 @@ jobs:
       - name: Contribution Template Gate
         run: bash scripts/check-contribution-template.sh "$GITHUB_EVENT_PATH"
 
+  diagnostics-replay-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Diagnostics Replay Gate
+        run: bash scripts/check-diagnostics-replay-contract.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

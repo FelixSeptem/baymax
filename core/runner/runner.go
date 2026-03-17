@@ -30,8 +30,10 @@ const (
 	StateAbort      State = "Abort"
 )
 
+// Option customizes engine wiring such as tool runtime, tracing, runtime config, and HITL hooks.
 type Option func(*Engine)
 
+// Engine orchestrates run/stream model loop, tool dispatch, context assembly, and diagnostics emission.
 type Engine struct {
 	model              types.ModelClient
 	models             map[string]types.ModelClient
@@ -68,6 +70,7 @@ type classifiedModelError interface {
 	ClassifiedError() *types.ClassifiedError
 }
 
+// New creates a runner engine with default tracer and context assembler wiring.
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
 		model:    model,
@@ -103,6 +106,7 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 	return e
 }
 
+// WithLocalRegistry enables local tool dispatch backed by the provided tool registry.
 func WithLocalRegistry(registry *local.Registry) Option {
 	return func(e *Engine) {
 		e.dispatcher = local.NewDispatcher(registry)
@@ -112,6 +116,7 @@ func WithLocalRegistry(registry *local.Registry) Option {
 	}
 }
 
+// WithTraceManager overrides the default trace manager.
 func WithTraceManager(tracer *obsTrace.Manager) Option {
 	return func(e *Engine) {
 		if tracer != nil {
@@ -120,6 +125,7 @@ func WithTraceManager(tracer *obsTrace.Manager) Option {
 	}
 }
 
+// WithRuntimeManager injects runtime configuration/diagnostics manager into engine and dispatcher.
 func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	return func(e *Engine) {
 		e.runtimeMgr = mgr
@@ -129,6 +135,7 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	}
 }
 
+// WithProviderModels registers provider-name to model-client mapping for step-level fallback selection.
 func WithProviderModels(primary string, providers map[string]types.ModelClient) Option {
 	return func(e *Engine) {
 		for name, client := range providers {
@@ -140,24 +147,28 @@ func WithProviderModels(primary string, providers map[string]types.ModelClient) 
 	}
 }
 
+// WithActionGateMatcher injects custom action gate matcher implementation.
 func WithActionGateMatcher(matcher types.ActionGateMatcher) Option {
 	return func(e *Engine) {
 		e.actionGateMatcher = matcher
 	}
 }
 
+// WithActionGateResolver injects custom action gate confirmation resolver implementation.
 func WithActionGateResolver(resolver types.ActionGateResolver) Option {
 	return func(e *Engine) {
 		e.actionGateResolver = resolver
 	}
 }
 
+// WithClarificationResolver injects custom clarification resolver for HITL await/resume flow.
 func WithClarificationResolver(resolver types.ClarificationResolver) Option {
 	return func(e *Engine) {
 		e.clarification = resolver
 	}
 }
 
+// Run executes a non-streaming agent loop and returns a final run result.
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
@@ -551,6 +562,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	}
 }
 
+// Stream executes a streaming agent loop while preserving timeline/error semantics with Run.
 func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)

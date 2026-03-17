@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-17 11:49:42
+Updated: 2026-03-17 12:38:09
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -41,3 +41,4 @@ Updated: 2026-03-17 11:49:42
 - 037 -> govern-ca3-threshold-rollout-and-observability-e5
 - 038 -> extend-ca2-external-retriever-capability-hints-and-template-pack-e3
 - 039 -> realign-pre1-governance-and-blocking-contribution-gates-e6
+- 040 -> improve-dx-d1-api-reference-and-diagnostics-replay-e7

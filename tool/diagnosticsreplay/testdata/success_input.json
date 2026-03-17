@@ -1,0 +1,43 @@
+{
+  "events": [
+    {
+      "type": "run.started",
+      "run_id": "run-1",
+      "time": "2026-03-17T10:00:00Z",
+      "payload": {}
+    },
+    {
+      "type": "action.timeline",
+      "run_id": "run-1",
+      "time": "2026-03-17T10:00:03Z",
+      "payload": {
+        "sequence": 3,
+        "phase": "tool",
+        "status": "succeeded",
+        "reason": ""
+      }
+    },
+    {
+      "type": "action.timeline",
+      "run_id": "run-1",
+      "time": "2026-03-17T10:00:01Z",
+      "payload": {
+        "sequence": 1,
+        "phase": "run",
+        "status": "running",
+        "reason": ""
+      }
+    },
+    {
+      "type": "action.timeline",
+      "run_id": "run-1",
+      "time": "2026-03-17T10:00:02Z",
+      "payload": {
+        "sequence": 2,
+        "phase": "model",
+        "status": "failed",
+        "reason": "model_error"
+      }
+    }
+  ]
+}

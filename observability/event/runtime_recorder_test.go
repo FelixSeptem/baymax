@@ -142,6 +142,11 @@ mcp:
 			"guard_violation":                          "",
 			"assemble_stage_status":                    "stage1_only",
 			"stage2_skip_reason":                       "routing.threshold.not_met",
+			"stage2_router_mode":                       "agentic",
+			"stage2_router_decision":                   "skip_stage2",
+			"stage2_router_reason":                     "agentic.fallback.agentic.callback_missing|routing.threshold.not_met",
+			"stage2_router_latency_ms":                 int64(7),
+			"stage2_router_error":                      "agentic.callback_missing",
 			"stage1_latency_ms":                        int64(3),
 			"stage2_latency_ms":                        int64(0),
 			"stage2_provider":                          "file",
@@ -225,6 +230,15 @@ mcp:
 	}
 	if items[0].AssembleStageStatus != "stage1_only" || items[0].Stage2SkipReason == "" || items[0].RecapStatus != "appended" {
 		t.Fatalf("ca2 fields mismatch: %#v", items[0])
+	}
+	if items[0].Stage2RouterMode != "agentic" || items[0].Stage2RouterDecision != "skip_stage2" {
+		t.Fatalf("ca2 router mode/decision mismatch: %#v", items[0])
+	}
+	if items[0].Stage2RouterLatencyMs != 7 || items[0].Stage2RouterError != "agentic.callback_missing" {
+		t.Fatalf("ca2 router latency/error mismatch: %#v", items[0])
+	}
+	if !strings.Contains(items[0].Stage2RouterReason, "agentic.fallback.agentic.callback_missing") {
+		t.Fatalf("ca2 router reason mismatch: %#v", items[0])
 	}
 	if items[0].Stage2HitCount != 2 || items[0].Stage2Source != "http" || items[0].Stage2Reason != "ok" {
 		t.Fatalf("ca2 retrieval fields mismatch: %#v", items[0])

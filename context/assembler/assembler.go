@@ -25,7 +25,48 @@ const (
 	StatusBypass  = "bypass"
 )
 
-var ErrAgenticRoutingNotReady = errors.New("context stage routing agentic mode not ready")
+const (
+	stage2RouterModeRules   = "rules"
+	stage2RouterModeAgentic = "agentic"
+
+	stage2RouterDecisionRun  = "run_stage2"
+	stage2RouterDecisionSkip = "skip_stage2"
+
+	stage2RouterErrCallbackMissing = "agentic.callback_missing"
+	stage2RouterErrCallbackTimeout = "agentic.callback_timeout"
+	stage2RouterErrCallbackError   = "agentic.callback_error"
+	stage2RouterErrInvalidDecision = "agentic.invalid_decision"
+)
+
+// AgenticRoutingRequest is the normalized callback input for CA2 agentic routing.
+type AgenticRoutingRequest struct {
+	RunID         string
+	SessionID     string
+	ModelProvider string
+	Model         string
+	Input         string
+	Messages      []types.Message
+	Capabilities  []types.ModelCapability
+}
+
+// AgenticRoutingDecision is the callback output for CA2 Stage2 routing.
+type AgenticRoutingDecision struct {
+	RunStage2 bool
+	Reason    string
+}
+
+// AgenticRouter decides whether Stage2 should run for a CA2 assemble cycle.
+type AgenticRouter interface {
+	DecideStage2(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error)
+}
+
+// AgenticRouterFunc adapts a function to AgenticRouter.
+type AgenticRouterFunc func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error)
+
+// DecideStage2 invokes wrapped function.
+func (f AgenticRouterFunc) DecideStage2(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+	return f(ctx, req)
+}
 
 // Assembler composes context before model execution using CA1/CA2/CA3 policies.
 type Assembler struct {
@@ -46,6 +87,7 @@ type Assembler struct {
 	embeddingKey    string
 	rerankers       map[string]SemanticReranker
 	defaultReranker SemanticReranker
+	agenticRouter   AgenticRouter
 }
 
 // Option customizes assembler behavior for embedding/reranker/redaction integrations.
@@ -85,6 +127,13 @@ func WithSemanticReranker(provider string, reranker SemanticReranker) Option {
 	}
 }
 
+// WithAgenticRouter registers a host callback for CA2 agentic routing decisions.
+func WithAgenticRouter(router AgenticRouter) Option {
+	return func(a *Assembler) {
+		a.agenticRouter = router
+	}
+}
+
 // New creates a context assembler with runtime config provider and optional extensions.
 func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option) *Assembler {
 	baseSecurity := runtimeconfig.DefaultConfig().Security.Redaction
@@ -105,6 +154,13 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		}
 	}
 	return a
+}
+
+// SetAgenticRouter updates agentic router callback at runtime.
+func (a *Assembler) SetAgenticRouter(router AgenticRouter) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.agenticRouter = router
 }
 
 // Assemble builds model-ready context with CA1/CA2/CA3 policies and diagnostics metadata.
@@ -319,6 +375,12 @@ func (a *Assembler) rememberHash(key, hash string) {
 	a.prefixCache[key] = hash
 }
 
+func (a *Assembler) snapshotAgenticRouter() AgenticRouter {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.agenticRouter
+}
+
 func stableSessionKey(sessionID, runID, prefixVersion string) string {
 	base := strings.TrimSpace(sessionID)
 	if base == "" {
@@ -373,12 +435,18 @@ func (a *Assembler) applyCA2(
 	outcome types.ContextAssembleResult,
 	ca3 ca3Decision,
 ) (types.ModelRequest, types.ContextAssembleResult, error) {
-	if strings.EqualFold(strings.TrimSpace(cfg.CA2.RoutingMode), "agentic") {
-		// TODO(ca2): plug in agentic decision provider once the dedicated milestone lands.
-		return modelReq, outcome, ErrAgenticRoutingNotReady
+	mode := normalizedStage2RouterMode(cfg.CA2.RoutingMode)
+	outcome.Stage.Stage2RouterMode = mode
+	shouldStage2, skipReason, routerReason, routerError, routerLatency := a.resolveStage2Decision(ctx, req, modelReq, cfg)
+	outcome.Stage.Stage2RouterLatencyMs = routerLatency
+	outcome.Stage.Stage2RouterError = routerError
+	if shouldStage2 {
+		outcome.Stage.Stage2RouterDecision = stage2RouterDecisionRun
+	} else {
+		outcome.Stage.Stage2RouterDecision = stage2RouterDecisionSkip
 	}
+	outcome.Stage.Stage2RouterReason = routerReason
 
-	shouldStage2, skipReason := shouldRunStage2(modelReq, cfg.CA2.Routing)
 	if !shouldStage2 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = skipReason
@@ -480,6 +548,83 @@ func (a *Assembler) applyCA2(
 	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
+}
+
+func (a *Assembler) resolveStage2Decision(
+	ctx context.Context,
+	req types.ContextAssembleRequest,
+	modelReq types.ModelRequest,
+	cfg runtimeconfig.ContextAssemblerConfig,
+) (bool, string, string, string, int64) {
+	mode := normalizedStage2RouterMode(cfg.CA2.RoutingMode)
+	if mode != stage2RouterModeAgentic {
+		shouldStage2, skipReason := shouldRunStage2(modelReq, cfg.CA2.Routing)
+		if shouldStage2 {
+			return true, "", "rules.threshold.met", "", 0
+		}
+		return false, skipReason, skipReason, "", 0
+	}
+
+	start := a.now()
+	router := a.snapshotAgenticRouter()
+	if router == nil {
+		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackMissing, 0)
+	}
+
+	timeout := cfg.CA2.Agentic.DecisionTimeout
+	if timeout <= 0 {
+		timeout = runtimeconfig.DefaultConfig().ContextAssembler.CA2.Agentic.DecisionTimeout
+	}
+	routerCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	decision, err := router.DecideStage2(routerCtx, AgenticRoutingRequest{
+		RunID:         req.RunID,
+		SessionID:     req.SessionID,
+		ModelProvider: req.ModelProvider,
+		Model:         req.Model,
+		Input:         modelReq.Input,
+		Messages:      append([]types.Message(nil), modelReq.Messages...),
+		Capabilities:  req.Capabilities.Normalized(),
+	})
+	latency := a.now().Sub(start).Milliseconds()
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(routerCtx.Err(), context.DeadlineExceeded) {
+		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackTimeout, latency)
+	}
+	if err != nil {
+		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackError, latency)
+	}
+	reason := strings.TrimSpace(decision.Reason)
+	if reason == "" {
+		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrInvalidDecision, latency)
+	}
+	if decision.RunStage2 {
+		return true, "", reason, "", latency
+	}
+	return false, "routing.agentic.skip", reason, "", latency
+}
+
+func fallbackStage2Decision(
+	modelReq types.ModelRequest,
+	routing runtimeconfig.ContextAssemblerCA2RoutingConfig,
+	routerError string,
+	latencyMs int64,
+) (bool, string, string, string, int64) {
+	shouldStage2, skipReason := shouldRunStage2(modelReq, routing)
+	baseReason := "agentic.fallback." + routerError
+	if shouldStage2 {
+		return true, "", baseReason, routerError, latencyMs
+	}
+	if skipReason != "" {
+		return false, skipReason, baseReason + "|" + skipReason, routerError, latencyMs
+	}
+	return false, "routing.threshold.not_met", baseReason, routerError, latencyMs
+}
+
+func normalizedStage2RouterMode(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), stage2RouterModeAgentic) {
+		return stage2RouterModeAgentic
+	}
+	return stage2RouterModeRules
 }
 
 func sourceFromMeta(meta map[string]any, fallback string) string {

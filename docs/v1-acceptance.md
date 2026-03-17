@@ -23,6 +23,8 @@
 - Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
 - Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
 - Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
+- Context Assembler CA2 `agentic` routing is available via host callback, and callback failure classes (`missing|timeout|error|invalid`) fallback to `rules` under `best_effort_rules`.
+- Run diagnostics include CA2 agentic routing additive fields: `stage2_router_mode`, `stage2_router_decision`, `stage2_router_reason`, `stage2_router_latency_ms`, `stage2_router_error`.
 - CA2 external retriever supports capability-hint SPI extension and template-pack resolution with deterministic precedence (`profile defaults -> explicit overrides`) and `explicit_only` compatibility mode.
 - Run diagnostics include CA2 hint/template additive fields: `stage2_template_profile`, `stage2_template_resolution_source`, `stage2_hint_applied`, `stage2_hint_mismatch_reason`.
 - Runtime diagnostics expose CA2 external provider-scoped trend API with fields `provider/window_start/window_end/p95_latency_ms/error_rate/hit_rate`.
@@ -62,6 +64,6 @@
 - Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
 - Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
-- Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
+- Context Assembler CA2 `agentic` 路由需要宿主注册 callback；未注册或 callback 失败时会按 `best_effort_rules` 回退到 `rules`。
 - Anthropic embedding path uses deterministic adapter fallback implementation in v1 baseline; quality may differ from official provider embeddings and should be tuned with corpus evidence.
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。

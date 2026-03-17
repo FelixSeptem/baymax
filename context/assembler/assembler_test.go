@@ -124,6 +124,230 @@ func TestAssemblerCA2RoutesToStage2ByKeyword(t *testing.T) {
 	}
 }
 
+func TestAssemblerCA2AgenticCallbackRunStage2(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.RoutingMode = "agentic"
+	cfg.CA2.Stage2.Provider = "file"
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"agentic-ctx"}`), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfg.CA2.Stage2.FilePath = stage2File
+	cfg.CA2.Routing.MinInputChars = 9999
+	cfg.CA2.Routing.TriggerKeywords = nil
+
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithAgenticRouter(AgenticRouterFunc(func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+			if req.SessionID != "session-1" {
+				t.Fatalf("session_id = %q, want session-1", req.SessionID)
+			}
+			return AgenticRoutingDecision{RunStage2: true, Reason: "agentic.force_stage2"}, nil
+		})),
+	)
+
+	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-agentic-1",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         "short",
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-agentic-1",
+		Input:    "short",
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Status != types.AssembleStageStatusStage2Used {
+		t.Fatalf("stage status = %q, want stage2_used", result.Stage.Status)
+	}
+	if result.Stage.Stage2RouterMode != "agentic" || result.Stage.Stage2RouterDecision != "run_stage2" {
+		t.Fatalf("router mode/decision mismatch: %#v", result.Stage)
+	}
+	if result.Stage.Stage2RouterReason != "agentic.force_stage2" {
+		t.Fatalf("router reason = %q, want agentic.force_stage2", result.Stage.Stage2RouterReason)
+	}
+	if result.Stage.Stage2RouterError != "" {
+		t.Fatalf("router error = %q, want empty", result.Stage.Stage2RouterError)
+	}
+	found := false
+	for _, msg := range outReq.Messages {
+		if strings.Contains(msg.Content, "agentic-ctx") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("stage2 context not appended: %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerCA2AgenticCallbackSkipStage2(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.RoutingMode = "agentic"
+	cfg.CA2.Routing.MinInputChars = 1
+
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithAgenticRouter(AgenticRouterFunc(func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+			return AgenticRoutingDecision{RunStage2: false, Reason: "agentic.low_value"}, nil
+		})),
+	)
+
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-agentic-2",
+		SessionID:     "session-1",
+		PrefixVersion: "ca1",
+		Input:         "lookup please",
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-agentic-2",
+		Input:    "lookup please",
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Status != types.AssembleStageStatusStage1Only {
+		t.Fatalf("stage status = %q, want stage1_only", result.Stage.Status)
+	}
+	if result.Stage.Stage2SkipReason != "routing.agentic.skip" {
+		t.Fatalf("stage2 skip reason = %q, want routing.agentic.skip", result.Stage.Stage2SkipReason)
+	}
+	if result.Stage.Stage2RouterDecision != "skip_stage2" || result.Stage.Stage2RouterReason != "agentic.low_value" {
+		t.Fatalf("router decision/reason mismatch: %#v", result.Stage)
+	}
+}
+
+func TestAssemblerCA2AgenticCallbackFallbackClasses(t *testing.T) {
+	type tc struct {
+		name           string
+		router         AgenticRouter
+		input          string
+		minInputChars  int
+		timeout        time.Duration
+		wantDecision   string
+		wantSkipReason string
+		wantErrCode    string
+		wantContains   string
+	}
+	cases := []tc{
+		{
+			name:           "missing_callback",
+			router:         nil,
+			input:          "x",
+			minInputChars:  9999,
+			wantDecision:   "skip_stage2",
+			wantSkipReason: "routing.threshold.not_met",
+			wantErrCode:    "agentic.callback_missing",
+			wantContains:   "agentic.fallback.agentic.callback_missing",
+		},
+		{
+			name:  "timeout_callback",
+			input: "lookup",
+			router: AgenticRouterFunc(func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+				<-ctx.Done()
+				return AgenticRoutingDecision{}, ctx.Err()
+			}),
+			minInputChars:  1,
+			timeout:        5 * time.Millisecond,
+			wantDecision:   "run_stage2",
+			wantSkipReason: "",
+			wantErrCode:    "agentic.callback_timeout",
+			wantContains:   "agentic.fallback.agentic.callback_timeout",
+		},
+		{
+			name:  "error_callback",
+			input: "x",
+			router: AgenticRouterFunc(func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+				return AgenticRoutingDecision{}, errors.New("boom")
+			}),
+			minInputChars:  9999,
+			wantDecision:   "skip_stage2",
+			wantSkipReason: "routing.threshold.not_met",
+			wantErrCode:    "agentic.callback_error",
+			wantContains:   "agentic.fallback.agentic.callback_error",
+		},
+		{
+			name:  "invalid_decision",
+			input: "x",
+			router: AgenticRouterFunc(func(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error) {
+				return AgenticRoutingDecision{RunStage2: true, Reason: ""}, nil
+			}),
+			minInputChars:  9999,
+			wantDecision:   "skip_stage2",
+			wantSkipReason: "routing.threshold.not_met",
+			wantErrCode:    "agentic.invalid_decision",
+			wantContains:   "agentic.fallback.agentic.invalid_decision",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			cfg := runtimeconfig.DefaultConfig().ContextAssembler
+			cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+			cfg.CA2.Enabled = true
+			cfg.CA2.RoutingMode = "agentic"
+			cfg.CA2.Routing.MinInputChars = c.minInputChars
+			cfg.CA2.Routing.TriggerKeywords = nil
+			cfg.CA2.Routing.RequireSystemGuard = false
+			cfg.CA2.Stage2.Provider = "file"
+			stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+			if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"fallback-ctx"}`), 0o600); err != nil {
+				t.Fatalf("write stage2 file: %v", err)
+			}
+			cfg.CA2.Stage2.FilePath = stage2File
+			if c.timeout > 0 {
+				cfg.CA2.Agentic.DecisionTimeout = c.timeout
+			}
+
+			var a *Assembler
+			if c.router != nil {
+				a = New(func() runtimeconfig.ContextAssemblerConfig { return cfg }, WithAgenticRouter(c.router))
+			} else {
+				a = New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+			}
+
+			_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+				RunID:         "run-" + c.name,
+				SessionID:     "session-1",
+				PrefixVersion: "ca1",
+				Input:         c.input,
+				Messages:      []types.Message{{Role: "system", Content: "s"}},
+			}, types.ModelRequest{
+				RunID:    "run-" + c.name,
+				Input:    c.input,
+				Messages: []types.Message{{Role: "system", Content: "s"}},
+			})
+			if err != nil {
+				t.Fatalf("Assemble failed: %v", err)
+			}
+			if result.Stage.Stage2RouterMode != "agentic" {
+				t.Fatalf("router mode = %q, want agentic", result.Stage.Stage2RouterMode)
+			}
+			if result.Stage.Stage2RouterDecision != c.wantDecision {
+				t.Fatalf("router decision = %q, want %q", result.Stage.Stage2RouterDecision, c.wantDecision)
+			}
+			if result.Stage.Stage2SkipReason != c.wantSkipReason {
+				t.Fatalf("stage2 skip reason = %q, want %q", result.Stage.Stage2SkipReason, c.wantSkipReason)
+			}
+			if result.Stage.Stage2RouterError != c.wantErrCode {
+				t.Fatalf("router error = %q, want %q", result.Stage.Stage2RouterError, c.wantErrCode)
+			}
+			if !strings.Contains(result.Stage.Stage2RouterReason, c.wantContains) {
+				t.Fatalf("router reason = %q, want contains %q", result.Stage.Stage2RouterReason, c.wantContains)
+			}
+		})
+	}
+}
+
 func TestAssemblerCA2Stage2BestEffort(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")

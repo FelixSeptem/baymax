@@ -40,6 +40,10 @@ const (
 )
 
 const (
+	ContextCA2AgenticFailurePolicyBestEffortRules = "best_effort_rules"
+)
+
+const (
 	ContextStage2ExternalProfileHTTPGeneric       = "http_generic"
 	ContextStage2ExternalProfileRAGFlowLike       = "ragflow_like"
 	ContextStage2ExternalProfileGraphRAGLike      = "graphrag_like"
@@ -216,11 +220,17 @@ type ContextAssemblerGuardConfig struct {
 type ContextAssemblerCA2Config struct {
 	Enabled     bool                               `json:"enabled"`
 	RoutingMode string                             `json:"routing_mode"`
+	Agentic     ContextAssemblerCA2AgenticConfig   `json:"agentic"`
 	StagePolicy ContextAssemblerCA2StagePolicy     `json:"stage_policy"`
 	Timeout     ContextAssemblerCA2TimeoutConfig   `json:"timeout"`
 	Stage2      ContextAssemblerCA2Stage2Config    `json:"stage2"`
 	Routing     ContextAssemblerCA2RoutingConfig   `json:"routing"`
 	TailRecap   ContextAssemblerCA2TailRecapConfig `json:"tail_recap"`
+}
+
+type ContextAssemblerCA2AgenticConfig struct {
+	DecisionTimeout time.Duration `json:"decision_timeout"`
+	FailurePolicy   string        `json:"failure_policy"`
 }
 
 type ContextAssemblerCA2StagePolicy struct {
@@ -634,6 +644,10 @@ func DefaultConfig() Config {
 			CA2: ContextAssemblerCA2Config{
 				Enabled:     false,
 				RoutingMode: "rules",
+				Agentic: ContextAssemblerCA2AgenticConfig{
+					DecisionTimeout: 80 * time.Millisecond,
+					FailurePolicy:   ContextCA2AgenticFailurePolicyBestEffortRules,
+				},
 				StagePolicy: ContextAssemblerCA2StagePolicy{
 					Stage1: "fail_fast",
 					Stage2: "best_effort",
@@ -1155,6 +1169,17 @@ func Validate(cfg Config) error {
 				return fmt.Errorf("context_assembler.ca2.routing_mode must be one of [rules,agentic], got %q", cfg.ContextAssembler.CA2.RoutingMode)
 			}
 			cfg.ContextAssembler.CA2.RoutingMode = mode
+			if cfg.ContextAssembler.CA2.Agentic.DecisionTimeout <= 0 {
+				return errors.New("context_assembler.ca2.agentic.decision_timeout must be > 0")
+			}
+			agenticPolicy := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.Agentic.FailurePolicy))
+			if agenticPolicy == "" {
+				agenticPolicy = ContextCA2AgenticFailurePolicyBestEffortRules
+			}
+			if err := validateCA2AgenticFailurePolicy(agenticPolicy, "context_assembler.ca2.agentic.failure_policy"); err != nil {
+				return err
+			}
+			cfg.ContextAssembler.CA2.Agentic.FailurePolicy = agenticPolicy
 
 			stage1Policy := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.StagePolicy.Stage1))
 			if err := validateStagePolicy(stage1Policy, "context_assembler.ca2.stage_policy.stage1"); err != nil {
@@ -1234,6 +1259,15 @@ func validateStagePolicy(v, field string) error {
 		return nil
 	default:
 		return fmt.Errorf("%s must be one of [fail_fast,best_effort]", field)
+	}
+}
+
+func validateCA2AgenticFailurePolicy(v, field string) error {
+	switch v {
+	case ContextCA2AgenticFailurePolicyBestEffortRules:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [%s]", field, ContextCA2AgenticFailurePolicyBestEffortRules)
 	}
 }
 
@@ -1866,6 +1900,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.guard.fail_fast", base.ContextAssembler.Guard.FailFast)
 	v.SetDefault("context_assembler.ca2.enabled", base.ContextAssembler.CA2.Enabled)
 	v.SetDefault("context_assembler.ca2.routing_mode", base.ContextAssembler.CA2.RoutingMode)
+	v.SetDefault("context_assembler.ca2.agentic.decision_timeout", base.ContextAssembler.CA2.Agentic.DecisionTimeout)
+	v.SetDefault("context_assembler.ca2.agentic.failure_policy", base.ContextAssembler.CA2.Agentic.FailurePolicy)
 	v.SetDefault("context_assembler.ca2.stage_policy.stage1", base.ContextAssembler.CA2.StagePolicy.Stage1)
 	v.SetDefault("context_assembler.ca2.stage_policy.stage2", base.ContextAssembler.CA2.StagePolicy.Stage2)
 	v.SetDefault("context_assembler.ca2.timeout.stage1", base.ContextAssembler.CA2.Timeout.Stage1)
@@ -2040,6 +2076,8 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.Guard.FailFast = v.GetBool("context_assembler.guard.fail_fast")
 	cfg.ContextAssembler.CA2.Enabled = v.GetBool("context_assembler.ca2.enabled")
 	cfg.ContextAssembler.CA2.RoutingMode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.routing_mode")))
+	cfg.ContextAssembler.CA2.Agentic.DecisionTimeout = v.GetDuration("context_assembler.ca2.agentic.decision_timeout")
+	cfg.ContextAssembler.CA2.Agentic.FailurePolicy = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.agentic.failure_policy")))
 	cfg.ContextAssembler.CA2.StagePolicy.Stage1 = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage_policy.stage1")))
 	cfg.ContextAssembler.CA2.StagePolicy.Stage2 = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.stage_policy.stage2")))
 	cfg.ContextAssembler.CA2.Timeout.Stage1 = v.GetDuration("context_assembler.ca2.timeout.stage1")

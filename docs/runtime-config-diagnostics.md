@@ -130,7 +130,10 @@ context_assembler:
     fail_fast: true # 默认 true
   ca2:
     enabled: false
-    routing_mode: rules # rules|agentic（agentic 当前为预留占位）
+    routing_mode: rules # rules|agentic
+    agentic:
+      decision_timeout: 80ms
+      failure_policy: best_effort_rules # 当前仅支持 best_effort_rules
     stage_policy:
       stage1: fail_fast    # fail_fast|best_effort
       stage2: best_effort  # fail_fast|best_effort
@@ -316,6 +319,11 @@ ca2 stage2 external hint/template 校验语义：
 3. `hints.capabilities[*]` 必须使用小写并满足字符集 `[a-z0-9._/-]`。
 4. 非法 hint/template 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+ca2 agentic routing 校验语义：
+1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
+2. `context_assembler.ca2.agentic.failure_policy` 当前仅允许 `best_effort_rules`。
+3. 非法 agentic 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 ca3 compaction 校验语义：
 1. `context_assembler.ca3.compaction.mode` 仅允许 `truncate|semantic`。
 2. `context_assembler.ca3.compaction.semantic_timeout` 必须 `> 0`。
@@ -429,6 +437,11 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 - `assemble_stage_status`：CA2 阶段结果（`stage1_only|stage2_used|degraded|bypass|failed`）。
 - `stage2_skip_reason`：Stage2 跳过或降级原因（规则未命中/provider 不可用等）。
+- `stage2_router_mode`：CA2 路由模式（`rules|agentic`）。
+- `stage2_router_decision`：CA2 路由决策（`run_stage2|skip_stage2`）。
+- `stage2_router_reason`：路由决策/回退原因（成功 reason 或 fallback 标记）。
+- `stage2_router_latency_ms`：agentic callback 决策耗时（毫秒，rules 模式通常为 0）。
+- `stage2_router_error`：agentic callback 归一化错误码（如 `agentic.callback_missing|agentic.callback_timeout|agentic.callback_error|agentic.invalid_decision`）。
 - `stage1_latency_ms`：Stage1 耗时（毫秒）。
 - `stage2_latency_ms`：Stage2 耗时（毫秒）。
 - `stage2_provider`：Stage2 使用的 provider（file/http/rag/db/elasticsearch）。
@@ -794,7 +807,6 @@ security:
 - `security.redaction.strategy` 当前仅支持 `keyword`，配置其他值会 fail-fast。
 - provider fallback 仅在 model-step 边界进行，不支持流式响应开始后的 mid-stream 切换。
 - context assembler CA1 仅提供文件 journal（append-only）；数据库后端仅接口占位，配置为 `db` 会启动即 fail-fast。
-- context assembler CA2 的 `agentic` routing mode 当前仍为占位；配置后会返回明确 not-ready 错误。
 
 ## 迁移映射（功能命名）
 

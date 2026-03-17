@@ -140,6 +140,15 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	}
 }
 
+// WithContextAssemblerAgenticRouter injects host callback for CA2 agentic routing decisions.
+func WithContextAssemblerAgenticRouter(router assembler.AgenticRouter) Option {
+	return func(e *Engine) {
+		if e.assembler != nil {
+			e.assembler.SetAgenticRouter(router)
+		}
+	}
+}
+
 // WithProviderModels registers provider-name to model-client mapping for step-level fallback selection.
 func WithProviderModels(primary string, providers map[string]types.ModelClient) Option {
 	return func(e *Engine) {
@@ -1500,6 +1509,21 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.Assemble.Stage.Stage2SkipReason != "" {
 		payload["stage2_skip_reason"] = meta.Assemble.Stage.Stage2SkipReason
+	}
+	if meta.Assemble.Stage.Stage2RouterMode != "" {
+		payload["stage2_router_mode"] = meta.Assemble.Stage.Stage2RouterMode
+	}
+	if meta.Assemble.Stage.Stage2RouterDecision != "" {
+		payload["stage2_router_decision"] = meta.Assemble.Stage.Stage2RouterDecision
+	}
+	if meta.Assemble.Stage.Stage2RouterReason != "" {
+		payload["stage2_router_reason"] = meta.Assemble.Stage.Stage2RouterReason
+	}
+	if meta.Assemble.Stage.Stage2RouterLatencyMs > 0 {
+		payload["stage2_router_latency_ms"] = meta.Assemble.Stage.Stage2RouterLatencyMs
+	}
+	if meta.Assemble.Stage.Stage2RouterError != "" {
+		payload["stage2_router_error"] = meta.Assemble.Stage.Stage2RouterError
 	}
 	if meta.Assemble.Stage.Stage1LatencyMs > 0 {
 		payload["stage1_latency_ms"] = meta.Assemble.Stage.Stage1LatencyMs

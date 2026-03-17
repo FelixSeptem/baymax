@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -342,6 +343,63 @@ reload:
 	time.Sleep(250 * time.Millisecond)
 	if mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend.Window != 1*time.Minute {
 		t.Fatalf("invalid reload should rollback CA2 trend config, got %#v", mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend)
+	}
+}
+
+func TestManagerCA2AgenticInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	stage2File := filepath.ToSlash(filepath.Join(t.TempDir(), "stage2.jsonl"))
+	writeConfig(t, file, fmt.Sprintf(`
+context_assembler:
+  enabled: true
+  ca2:
+    enabled: true
+    routing_mode: agentic
+    agentic:
+      decision_timeout: 80ms
+      failure_policy: %s
+    stage2:
+      provider: file
+      file_path: %s
+reload:
+  enabled: true
+  debounce: 20ms
+`, ContextCA2AgenticFailurePolicyBestEffortRules, stage2File))
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().ContextAssembler.CA2.Agentic.FailurePolicy
+	if before != ContextCA2AgenticFailurePolicyBestEffortRules {
+		t.Fatalf("before failure_policy = %q, want %q", before, ContextCA2AgenticFailurePolicyBestEffortRules)
+	}
+
+	writeConfig(t, file, fmt.Sprintf(`
+context_assembler:
+  enabled: true
+  ca2:
+    enabled: true
+    routing_mode: agentic
+    agentic:
+      decision_timeout: 80ms
+      failure_policy: deny
+    stage2:
+      provider: file
+      file_path: %s
+reload:
+  enabled: true
+  debounce: 20ms
+`, stage2File))
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().ContextAssembler.CA2.Agentic.FailurePolicy
+	if after != before {
+		t.Fatalf("invalid ca2 agentic reload should rollback, failure_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
 	}
 }
 

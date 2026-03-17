@@ -123,6 +123,7 @@
 - [x] `activate-ca2-external-retriever-spi-and-http-adapter`：完成 Stage2 External Retriever SPI、HTTP adapter、`http/rag/db/elasticsearch` 可运行路径与新增诊断字段。
 - [x] `harden-ca2-external-retriever-observability-and-thresholds-e2`：完成 CA2 external provider 维度趋势聚合与静态阈值信号（`p95_latency_ms/error_rate/hit_rate`，默认窗口 `15m`）。
 - [x] `extend-ca2-external-retriever-capability-hints-and-template-pack-e3`：完成 CA2 external capability hints 扩展口与 template pack 收敛（`graphrag_like|ragflow_like|elasticsearch_like` + `explicit_only`），新增 `stage2_template_*` / `stage2_hint_*` 诊断字段、Run/Stream 等价契约与 hint/template 解析 benchmark 基线。
+- [x] `implement-ca2-agentic-routing-baseline`：完成 CA2 `agentic` callback 路由基线、`best_effort_rules -> rules` 失败回退、最小路由诊断字段（`stage2_router_*`）与 Run/Stream 语义等价契约。
 - [x] `add-r3-advanced-concurrency-pattern-examples-05-07`：完成 R3 高阶示例扩容（05/06/07/08），并为异步与多代理示例补齐结构化事件输出与 runtime manager 接入。
 - [x] `standardize-action-timeline-events-h1`：完成 Action Timeline 结构化事件契约（Run/Stream 语义一致、默认启用、`context_assembler` 独立 phase、新增 `canceled` 状态）。
 - [x] `converge-action-timeline-observability-h15`：完成 Action Timeline phase 级聚合可观测收敛（含 `latency_p95_ms`、重放幂等、Run/Stream 分布等价）。

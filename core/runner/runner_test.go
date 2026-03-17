@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/core/types"
 	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -3510,6 +3511,197 @@ action_gate:
 	}
 	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
 		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+}
+
+func TestCA2AgenticRoutingRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	stage2File := filepath.Join(dir, "stage2.jsonl")
+	if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"agentic-ctx"}`), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := fmt.Sprintf(`
+context_assembler:
+  enabled: true
+  journal_path: '%s'
+  ca2:
+    enabled: true
+    routing_mode: agentic
+    agentic:
+      decision_timeout: 80ms
+      failure_policy: best_effort_rules
+    stage2:
+      provider: file
+      file_path: '%s'
+    routing:
+      min_input_chars: 9999
+      trigger_keywords: []
+  ca3:
+    enabled: false
+`, filepath.ToSlash(filepath.Join(dir, "journal.jsonl")), filepath.ToSlash(stage2File))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	router := assembler.AgenticRouterFunc(func(ctx context.Context, req assembler.AgenticRoutingRequest) (assembler.AgenticRoutingDecision, error) {
+		return assembler.AgenticRoutingDecision{RunStage2: true, Reason: "agentic.force_stage2"}, nil
+	})
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithContextAssemblerAgenticRouter(router))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithContextAssemblerAgenticRouter(router))
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	baseReq := types.RunRequest{
+		SessionID: "session-1",
+		Input:     "short",
+		Messages:  []types.Message{{Role: "system", Content: "s"}},
+	}
+
+	runRes, runErr := runEngine.Run(context.Background(), baseReq, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), baseReq, streamCollector)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("run/stream failed: run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	keys := []string{
+		"assemble_stage_status",
+		"stage2_router_mode",
+		"stage2_router_decision",
+		"stage2_router_reason",
+		"stage2_router_error",
+	}
+	for _, key := range keys {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("run/stream payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
+	if runFinished.Payload["stage2_router_mode"] != "agentic" {
+		t.Fatalf("stage2_router_mode = %#v, want agentic", runFinished.Payload["stage2_router_mode"])
+	}
+	if runFinished.Payload["stage2_router_decision"] != "run_stage2" {
+		t.Fatalf("stage2_router_decision = %#v, want run_stage2", runFinished.Payload["stage2_router_decision"])
+	}
+	if runFinished.Payload["stage2_router_reason"] != "agentic.force_stage2" {
+		t.Fatalf("stage2_router_reason = %#v, want agentic.force_stage2", runFinished.Payload["stage2_router_reason"])
+	}
+}
+
+func TestCA2AgenticRoutingFallbackRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := fmt.Sprintf(`
+context_assembler:
+  enabled: true
+  journal_path: '%s'
+  ca2:
+    enabled: true
+    routing_mode: agentic
+    agentic:
+      decision_timeout: 80ms
+      failure_policy: best_effort_rules
+    routing:
+      min_input_chars: 9999
+      trigger_keywords: []
+  ca3:
+    enabled: false
+`, filepath.ToSlash(filepath.Join(dir, "journal.jsonl")))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	baseReq := types.RunRequest{
+		SessionID: "session-1",
+		Input:     "short",
+		Messages:  []types.Message{{Role: "system", Content: "s"}},
+	}
+
+	runRes, runErr := runEngine.Run(context.Background(), baseReq, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), baseReq, streamCollector)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("run/stream failed: run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	keys := []string{
+		"assemble_stage_status",
+		"stage2_skip_reason",
+		"stage2_router_mode",
+		"stage2_router_decision",
+		"stage2_router_reason",
+		"stage2_router_error",
+	}
+	for _, key := range keys {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("run/stream payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
+	if runFinished.Payload["stage2_router_mode"] != "agentic" {
+		t.Fatalf("stage2_router_mode = %#v, want agentic", runFinished.Payload["stage2_router_mode"])
+	}
+	if runFinished.Payload["stage2_router_decision"] != "skip_stage2" {
+		t.Fatalf("stage2_router_decision = %#v, want skip_stage2", runFinished.Payload["stage2_router_decision"])
+	}
+	if runFinished.Payload["stage2_router_error"] != "agentic.callback_missing" {
+		t.Fatalf("stage2_router_error = %#v, want agentic.callback_missing", runFinished.Payload["stage2_router_error"])
+	}
+	reason, _ := runFinished.Payload["stage2_router_reason"].(string)
+	if !strings.Contains(reason, "agentic.fallback.agentic.callback_missing") {
+		t.Fatalf("stage2_router_reason = %q, want fallback marker", reason)
 	}
 }
 

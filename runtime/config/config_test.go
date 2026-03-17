@@ -582,6 +582,12 @@ func TestContextAssemblerCA2Defaults(t *testing.T) {
 	if cfg.ContextAssembler.CA2.Stage2.Provider != "file" {
 		t.Fatalf("stage2.provider = %q, want file", cfg.ContextAssembler.CA2.Stage2.Provider)
 	}
+	if cfg.ContextAssembler.CA2.Agentic.DecisionTimeout <= 0 {
+		t.Fatalf("agentic.decision_timeout = %v, want > 0", cfg.ContextAssembler.CA2.Agentic.DecisionTimeout)
+	}
+	if cfg.ContextAssembler.CA2.Agentic.FailurePolicy != ContextCA2AgenticFailurePolicyBestEffortRules {
+		t.Fatalf("agentic.failure_policy = %q, want %q", cfg.ContextAssembler.CA2.Agentic.FailurePolicy, ContextCA2AgenticFailurePolicyBestEffortRules)
+	}
 }
 
 func TestContextAssemblerCA2ValidationRejectsInvalidMode(t *testing.T) {
@@ -596,6 +602,8 @@ func TestContextAssemblerCA2ValidationRejectsInvalidMode(t *testing.T) {
 func TestContextAssemblerCA2EnvOverride(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ENABLED", "true")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ROUTING_MODE", "rules")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_AGENTIC_DECISION_TIMEOUT", "150ms")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_AGENTIC_FAILURE_POLICY", ContextCA2AgenticFailurePolicyBestEffortRules)
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE_POLICY_STAGE2", "fail_fast")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_PROVIDER", "file")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_FILE_PATH", filepath.Join(t.TempDir(), "stage2.jsonl"))
@@ -608,6 +616,30 @@ func TestContextAssemblerCA2EnvOverride(t *testing.T) {
 	}
 	if cfg.ContextAssembler.CA2.StagePolicy.Stage2 != "fail_fast" {
 		t.Fatalf("stage2 policy = %q, want fail_fast", cfg.ContextAssembler.CA2.StagePolicy.Stage2)
+	}
+	if cfg.ContextAssembler.CA2.Agentic.DecisionTimeout != 150*time.Millisecond {
+		t.Fatalf("agentic.decision_timeout = %v, want 150ms", cfg.ContextAssembler.CA2.Agentic.DecisionTimeout)
+	}
+	if cfg.ContextAssembler.CA2.Agentic.FailurePolicy != ContextCA2AgenticFailurePolicyBestEffortRules {
+		t.Fatalf("agentic.failure_policy = %q, want %q", cfg.ContextAssembler.CA2.Agentic.FailurePolicy, ContextCA2AgenticFailurePolicyBestEffortRules)
+	}
+}
+
+func TestContextAssemblerCA2ValidationRejectsInvalidAgenticTimeout(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Agentic.DecisionTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid ca2 agentic timeout")
+	}
+}
+
+func TestContextAssemblerCA2ValidationRejectsInvalidAgenticFailurePolicy(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA2.Enabled = true
+	cfg.ContextAssembler.CA2.Agentic.FailurePolicy = "deny"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid ca2 agentic failure policy")
 	}
 }
 

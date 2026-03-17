@@ -15,15 +15,16 @@ The runtime MUST emit structured Action Timeline events for agent execution with
 - **THEN** timeline output does not emit fake phase events for `mcp` or `skill`
 
 ### Requirement: Action timeline status enum SHALL be stable and include cancellation semantics
-The runtime MUST use normalized timeline status enums: `pending`, `running`, `succeeded`, `failed`, `skipped`, and `canceled`. Producers and consumers MUST treat these values as canonical status semantics for H1.
+The runtime MUST use normalized timeline status enums: `pending`, `running`, `succeeded`, `failed`, `skipped`, and `canceled`.
 
-#### Scenario: Successful phase transition
-- **WHEN** a phase completes without error
-- **THEN** the phase timeline status transitions to `succeeded`
+For multi-agent domains, domain-specific lifecycle statuses MAY exist internally, but they MUST map deterministically to the normalized timeline status enums before timeline emission and aggregate diagnostics ingestion.
 
-#### Scenario: Explicit cancellation transition
-- **WHEN** execution is canceled by timeout or caller cancellation path
-- **THEN** affected phase or run timeline status is emitted as `canceled`
+Mandatory mapping for this milestone:
+- A2A `submitted` MUST map to normalized timeline status `pending`.
+
+#### Scenario: A2A submitted status is emitted through timeline
+- **WHEN** A2A lifecycle transitions to `submitted`
+- **THEN** timeline and aggregate diagnostics use normalized status `pending`
 
 ### Requirement: Run and Stream paths SHALL preserve timeline semantic equivalence
 The runtime MUST preserve semantic equivalence of timeline phase/status transitions between Run and Stream paths for equivalent execution outcomes.
@@ -182,4 +183,31 @@ For equivalent workloads, CA2 external retriever threshold-hit signals and provi
 #### Scenario: Equivalent workload remains below threshold in Run and Stream
 - **WHEN** equivalent requests executed via Run and Stream stay under configured CA2 external thresholds
 - **THEN** both paths expose semantically equivalent no-hit diagnostics outcomes
+
+### Requirement: Action timeline SHALL enforce multi-agent reason namespace consistency
+Multi-agent timeline reason codes MUST be namespace-qualified by domain and MUST use one of the approved prefixes:
+- `team.*`
+- `workflow.*`
+- `a2a.*`
+
+Unqualified or cross-domain ambiguous reason codes MUST be rejected by contract validation for related changes.
+
+#### Scenario: Teams collect reason is emitted
+- **WHEN** Teams orchestration emits collect-path timeline reason
+- **THEN** reason code uses `team.collect` namespace
+
+#### Scenario: Workflow retry reason is emitted
+- **WHEN** workflow step enters retry path
+- **THEN** reason code uses `workflow.retry` namespace
+
+#### Scenario: A2A callback retry reason is emitted
+- **WHEN** A2A callback delivery enters retry path
+- **THEN** reason code uses `a2a.callback_retry` namespace
+
+### Requirement: Action timeline SHALL use canonical peer field naming for A2A correlation
+When A2A timeline events include remote peer context, payload field naming MUST use `peer_id` as canonical key.
+
+#### Scenario: A2A submit event includes remote peer correlation
+- **WHEN** runtime emits timeline event for A2A submit path
+- **THEN** event payload uses `peer_id` for remote peer identification
 

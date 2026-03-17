@@ -10,6 +10,11 @@ Action Timeline events emitted by Teams orchestration MUST include normalized co
 ### Requirement: Action timeline SHALL normalize Teams orchestration reason codes
 Timeline reason semantics for Teams orchestration MUST include normalized codes for dispatch, collect, and resolution paths.
 
+For this milestone, Teams reason codes MUST use `team.*` namespace and include at minimum:
+- `team.dispatch`
+- `team.collect`
+- `team.resolve`
+
 #### Scenario: Team collect path is observed
 - **WHEN** coordinator collects worker results
-- **THEN** timeline events expose a stable collect reason code that can be aggregated consistently across runs
+- **THEN** timeline events expose reason code `team.collect` that can be aggregated consistently across runs

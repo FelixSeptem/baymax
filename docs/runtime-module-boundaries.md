@@ -53,6 +53,11 @@
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。
 
+R4 多代理共享契约前置门禁（阻断级）：
+- Linux/macOS: `bash scripts/check-multi-agent-shared-contract.sh`
+- Windows: `pwsh -File scripts/check-multi-agent-shared-contract.ps1`
+- required-check 候选: `multi-agent-shared-contract-gate`
+
 ## Owner 建议
 
 - `runtime/config`：平台基础设施 owner

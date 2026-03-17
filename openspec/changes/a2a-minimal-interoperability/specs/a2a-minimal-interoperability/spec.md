@@ -10,9 +10,15 @@ The runtime MUST provide minimal A2A interoperability primitives for task submis
 ### Requirement: A2A lifecycle statuses SHALL be normalized and queryable
 A2A task lifecycle statuses MUST be normalized to `submitted`, `running`, `succeeded`, `failed`, and `canceled`, and MUST be queryable until terminal state.
 
+For cross-domain observability, A2A status `submitted` MUST map to unified semantic-layer status `pending` before timeline aggregation and run-level diagnostics summarization.
+
 #### Scenario: Client polls task status
 - **WHEN** client queries an in-progress A2A task
 - **THEN** server returns a normalized status value and latest progress metadata
+
+#### Scenario: Submitted state enters timeline aggregation
+- **WHEN** an A2A task is in `submitted` lifecycle state
+- **THEN** timeline and aggregate diagnostics treat it as normalized status `pending`
 
 ### Requirement: Runtime SHALL support Agent Card capability discovery for A2A routing
 The runtime MUST support Agent Card capability discovery and use discovered capability metadata as routing input for A2A peer selection.

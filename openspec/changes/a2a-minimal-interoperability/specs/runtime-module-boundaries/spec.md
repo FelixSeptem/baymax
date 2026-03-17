@@ -10,6 +10,11 @@ Architecture boundaries MUST enforce that A2A modules own inter-agent collaborat
 ### Requirement: A2A modules SHALL consume runtime observability through the shared single-writer path
 A2A modules MUST emit events and diagnostics through the same `observability/event.RuntimeRecorder` single-writer path used by existing runtime components.
 
+A2A change implementation MUST pass shared multi-agent contract gate before merge, including:
+- status mapping consistency (including `submitted -> pending` mapping at semantic layer),
+- reason namespace consistency (`team.*|workflow.*|a2a.*`),
+- canonical peer-field naming consistency (`peer_id`).
+
 #### Scenario: A2A module adds diagnostic output
 - **WHEN** A2A module records lifecycle outcomes
 - **THEN** diagnostics flow through the shared event recorder path and do not introduce direct diagnostics store writes

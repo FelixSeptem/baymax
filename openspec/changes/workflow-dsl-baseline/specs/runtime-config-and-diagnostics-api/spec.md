@@ -3,6 +3,8 @@
 ### Requirement: Runtime config SHALL expose Workflow baseline settings
 Runtime configuration MUST expose workflow baseline settings with deterministic precedence `env > file > default`, including workflow enablement, planner validation mode, default step timeout, and checkpoint backend selector.
 
+For this milestone, workflow configuration keys MUST remain domain-scoped under `workflow.*` namespace and MUST NOT overlap with teams/a2a keys.
+
 #### Scenario: Startup applies workflow config overrides
 - **WHEN** workflow config is provided through both file and environment variables
 - **THEN** runtime resolves effective workflow settings with `env > file > default` and rejects invalid configuration values

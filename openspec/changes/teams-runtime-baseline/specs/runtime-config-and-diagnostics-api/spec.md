@@ -3,6 +3,8 @@
 ### Requirement: Runtime SHALL expose Teams baseline configuration with deterministic precedence
 Runtime configuration MUST expose Teams baseline fields with precedence `env > file > default`, including at minimum enablement, default strategy, task timeout, and strategy-specific guardrails.
 
+For this milestone, Teams configuration keys MUST remain domain-scoped under `teams.*` namespace and MUST NOT overlap with workflow/a2a keys.
+
 #### Scenario: Startup loads Teams defaults with environment override
 - **WHEN** runtime starts with Teams config values in both YAML and environment variables
 - **THEN** effective Teams configuration resolves with `env > file > default` and invalid values fail fast

@@ -4,45 +4,18 @@
 TBD - created by archiving change add-runtime-config-and-diagnostics-api-with-hot-reload. Update Purpose after archive.
 ## Requirements
 ### Requirement: Runtime SHALL load configuration with deterministic precedence
-The runtime MUST load configuration from defaults, YAML file, and environment variables with precedence `env > file > default`. This configuration capability MUST be owned by a global runtime module and be consumable by MCP, runner, local tool, skill loader, and observability components through stable interfaces.
+The runtime MUST load configuration from defaults, YAML file, and environment variables with precedence `env > file > default`.
 
-For provider capability fallback, runtime configuration MUST additionally support validated fallback policy fields (including ordered provider candidates and discovery/cache controls) under the same precedence and validation pipeline.
+For R4 multi-agent domains, config namespaces MUST be non-overlapping and domain-scoped, and shared keys MUST NOT carry conflicting semantics across domains.
 
-Runtime configuration MUST additionally support context assembler CA1 baseline fields with deterministic precedence, including `context_assembler.enabled` (default true), file journal path, prefix version, guard fail-fast toggle, and storage backend selector (file active, db placeholder).
+Required domain scopes for this milestone:
+- `teams.*`
+- `workflow.*`
+- `a2a.*`
 
-Runtime configuration MUST additionally support context assembler CA2 fields with deterministic precedence, including staged assembly enablement, stage routing mode, stage-level failure policy, stage timeouts, and Stage2 provider selector (`file|http|rag|db|elasticsearch`) with provider-level endpoint/auth/JSON-mapping controls.
-
-For CA2 external retriever, runtime configuration MUST support `external.profile` defaults (`http_generic`, `ragflow_like`, `graphrag_like`, `elasticsearch_like`) and MUST apply explicit config overrides on top of selected profile defaults.
-
-Runtime configuration MUST additionally support security S1 baseline fields with deterministic precedence, including security scan mode (`strict|warn`), scan tool toggles, redaction enablement, and extensible sensitive-key keyword lists.
-
-#### Scenario: Startup with file and environment overrides
-- **WHEN** runtime starts with a YAML config file and overlapping environment variables
-- **THEN** effective configuration uses environment values first, then file values, then defaults for unset keys
-
-#### Scenario: Startup without config file
-- **WHEN** runtime starts without a config file
-- **THEN** runtime uses default values and applicable environment overrides
-
-#### Scenario: Startup with fallback policy overrides
-- **WHEN** runtime starts with fallback policy defined in both YAML and environment variables
-- **THEN** effective fallback policy resolves using `env > file > default` and is available to model-step provider selection
-
-#### Scenario: Startup with context assembler defaults
-- **WHEN** runtime starts without explicit context assembler overrides
-- **THEN** context assembler baseline config resolves with default enabled state and valid file-backed journal settings
-
-#### Scenario: Startup with CA2 stage policy overrides
-- **WHEN** runtime starts with CA2 stage policy fields defined in both YAML and environment variables
-- **THEN** effective CA2 stage policy resolves using `env > file > default` and is available to assembler routing and stage execution
-
-#### Scenario: Startup with security baseline overrides
-- **WHEN** runtime starts with security scan and redaction fields defined in both YAML and environment variables
-- **THEN** effective security baseline configuration resolves using `env > file > default` and is available to quality-gate and runtime redaction flow
-
-#### Scenario: Startup with external retriever profile overrides
-- **WHEN** runtime starts with CA2 external profile selected and explicit mapping/auth/header overrides configured
-- **THEN** effective Stage2 external config resolves profile defaults first and then applies explicit override values
+#### Scenario: Multi-agent domains define overlapping semantic keys
+- **WHEN** teams/workflow/a2a configs define similarly named keys
+- **THEN** each key remains domain-scoped and no shared key changes meaning across domains
 
 ### Requirement: Runtime SHALL validate configuration and fail fast on invalid startup input
 The runtime MUST validate required fields, numeric ranges, and enum values before activation; invalid startup configuration MUST return an error and abort initialization.
@@ -1155,4 +1128,20 @@ For equivalent requests and effective configuration, Run and Stream MUST emit se
 #### Scenario: Equivalent lexical-budget diagnostics in Run and Stream
 - **WHEN** equivalent requests execute with the same tokenizer mode and budget controls
 - **THEN** diagnostics for lexical-budget fields are semantically equivalent across Run and Stream
+
+### Requirement: Runtime diagnostics SHALL expose canonical multi-agent naming with additive compatibility
+Runtime diagnostics fields for multi-agent domains MUST follow canonical snake_case naming and remain additive to existing contracts.
+
+Canonical shared naming constraints:
+- identifier fields MUST align with `run_id/session_id/team_id/workflow_id/task_id/step_id/agent_id`.
+- A2A remote peer identifier MUST use `peer_id`.
+- lifecycle aggregates MUST preserve existing idempotent replay semantics.
+
+#### Scenario: Consumer reads multi-agent diagnostics payload
+- **WHEN** diagnostics include teams/workflow/a2a summary fields
+- **THEN** field naming follows canonical snake_case and `peer_id` is used for A2A peer identity
+
+#### Scenario: Legacy consumer ignores new multi-agent fields
+- **WHEN** an existing diagnostics consumer parses only historical fields
+- **THEN** the consumer remains compatible because multi-agent fields are additive only
 

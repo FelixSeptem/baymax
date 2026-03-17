@@ -36,23 +36,72 @@
   - `task_id`：由编排层在 dispatch 时创建并保持到 terminal。
   - `step_id`：来自 DSL 声明键，不在运行时重写。
 
+## 状态语义层与映射
+
+多代理路径统一使用 timeline 语义层状态：
+- `pending`
+- `running`
+- `succeeded`
+- `failed`
+- `skipped`
+- `canceled`
+
+子域可以保留 raw 状态，但必须可确定性映射到统一语义层。
+
+| 子域 | raw 状态 | 统一语义层状态 |
+| --- | --- | --- |
+| teams | `pending` | `pending` |
+| teams | `running` | `running` |
+| teams | `succeeded` | `succeeded` |
+| teams | `failed` | `failed` |
+| teams | `skipped` | `skipped` |
+| teams | `canceled` | `canceled` |
+| workflow | `pending` | `pending` |
+| workflow | `running` | `running` |
+| workflow | `succeeded` | `succeeded` |
+| workflow | `failed` | `failed` |
+| workflow | `skipped` | `skipped` |
+| workflow | `canceled` | `canceled` |
+| a2a | `submitted` | `pending` |
+| a2a | `running` | `running` |
+| a2a | `succeeded` | `succeeded` |
+| a2a | `failed` | `failed` |
+| a2a | `canceled` | `canceled` |
+
+约束：
+- 映射规则必须稳定可回放。
+- 同一事件重放不得改变映射结果。
+- 任何新增 raw 状态必须在本文件补齐映射后才能进入实现。
+
 ## 事件映射规则
 
 - Action Timeline 事件在相关路径中应携带：
   - Teams：`team_id`, `agent_id`, `task_id`
   - Workflow：`workflow_id`, `step_id`, `task_id`
-  - A2A：`agent_id`, `task_id`（可附远端 peer 标识）
+  - A2A：`agent_id`, `task_id`, `peer_id`
 - reason code 需要保持“路径 + 动作”可判别，例如：
-  - `team.dispatch`, `team.collect`
+  - `team.dispatch`, `team.collect`, `team.resolve`
   - `workflow.schedule`, `workflow.retry`, `workflow.resume`
-  - `a2a.submit`, `a2a.status_poll`, `a2a.callback_retry`
+  - `a2a.submit`, `a2a.status_poll`, `a2a.callback_retry`, `a2a.resolve`
+
+## Reason 命名空间规范
+
+多代理新增 reason code 仅允许以下前缀：
+- `team.*`
+- `workflow.*`
+- `a2a.*`
+
+约束：
+- 禁止无前缀 reason（例如 `dispatch`、`retry`）。
+- 禁止跨域复用前缀表达其他子域语义。
+- 未通过前缀规范检查的变更视为阻断级失败。
 
 ## 诊断映射规则
 
 - run 级摘要字段采用 additive 扩展，不破坏既有消费者：
   - Teams：`team_id`, `team_strategy`, `team_task_total`, `team_task_failed`
   - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_resume_count`
-  - A2A：`a2a_task_total`, `a2a_task_failed`, `a2a_peer`, `a2a_error_layer`
+  - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 
 ## 兼容性要求

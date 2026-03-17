@@ -852,6 +852,56 @@ reload:
 	}
 }
 
+func TestManagerTeamsInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+teams:
+  enabled: true
+  default_strategy: serial
+  task_timeout: 1s
+  parallel:
+    max_workers: 3
+  vote:
+    tie_break: highest_priority
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Teams.DefaultStrategy
+	if before != TeamsStrategySerial {
+		t.Fatalf("before teams.default_strategy = %q, want %q", before, TeamsStrategySerial)
+	}
+
+	writeConfig(t, file, `
+teams:
+  enabled: true
+  default_strategy: weighted
+  task_timeout: 1s
+  parallel:
+    max_workers: 3
+  vote:
+    tie_break: highest_priority
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Teams.DefaultStrategy
+	if after != before {
+		t.Fatalf("invalid teams reload should rollback, default_strategy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

@@ -305,6 +305,89 @@ func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
 	}
 }
 
+func TestTeamsConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Teams.Enabled {
+		t.Fatal("teams.enabled = true, want false")
+	}
+	if cfg.Teams.DefaultStrategy != TeamsStrategySerial {
+		t.Fatalf("teams.default_strategy = %q, want %q", cfg.Teams.DefaultStrategy, TeamsStrategySerial)
+	}
+	if cfg.Teams.TaskTimeout <= 0 {
+		t.Fatalf("teams.task_timeout = %v, want > 0", cfg.Teams.TaskTimeout)
+	}
+	if cfg.Teams.Parallel.MaxWorkers <= 0 {
+		t.Fatalf("teams.parallel.max_workers = %d, want > 0", cfg.Teams.Parallel.MaxWorkers)
+	}
+	if cfg.Teams.Vote.TieBreak != TeamsVoteTieBreakHighestPriority {
+		t.Fatalf("teams.vote.tie_break = %q, want %q", cfg.Teams.Vote.TieBreak, TeamsVoteTieBreakHighestPriority)
+	}
+}
+
+func TestTeamsConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_TEAMS_DEFAULT_STRATEGY", TeamsStrategyParallel)
+	t.Setenv("BAYMAX_TEAMS_TASK_TIMEOUT", "900ms")
+	t.Setenv("BAYMAX_TEAMS_PARALLEL_MAX_WORKERS", "6")
+	t.Setenv("BAYMAX_TEAMS_VOTE_TIE_BREAK", TeamsVoteTieBreakFirstTaskID)
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+teams:
+  enabled: false
+  default_strategy: serial
+  task_timeout: 2s
+  parallel:
+    max_workers: 3
+  vote:
+    tie_break: highest_priority
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Teams.DefaultStrategy != TeamsStrategyParallel {
+		t.Fatalf("teams.default_strategy = %q, want %q", cfg.Teams.DefaultStrategy, TeamsStrategyParallel)
+	}
+	if cfg.Teams.TaskTimeout != 900*time.Millisecond {
+		t.Fatalf("teams.task_timeout = %v, want 900ms", cfg.Teams.TaskTimeout)
+	}
+	if cfg.Teams.Parallel.MaxWorkers != 6 {
+		t.Fatalf("teams.parallel.max_workers = %d, want 6", cfg.Teams.Parallel.MaxWorkers)
+	}
+	if cfg.Teams.Vote.TieBreak != TeamsVoteTieBreakFirstTaskID {
+		t.Fatalf("teams.vote.tie_break = %q, want %q", cfg.Teams.Vote.TieBreak, TeamsVoteTieBreakFirstTaskID)
+	}
+}
+
+func TestTeamsConfigValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Teams.DefaultStrategy = "weighted"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for teams.default_strategy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Teams.TaskTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for teams.task_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Teams.Parallel.MaxWorkers = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for teams.parallel.max_workers")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Teams.Vote.TieBreak = "latest"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for teams.vote.tie_break")
+	}
+}
+
 func TestSkillTriggerScoringDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Skill.TriggerScoring.Strategy != SkillTriggerScoringStrategyLexicalWeightedKeywords {

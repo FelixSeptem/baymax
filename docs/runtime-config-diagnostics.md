@@ -78,6 +78,15 @@ provider_fallback:
   discovery_timeout: 1500ms
   discovery_cache_ttl: 5m
 
+teams:
+  enabled: false
+  default_strategy: serial # serial|parallel|vote
+  task_timeout: 3s          # 必须 > 0
+  parallel:
+    max_workers: 4          # 并行策略 worker 上限，必须 > 0
+  vote:
+    tie_break: highest_priority # highest_priority|first_task_id
+
 skill:
   trigger_scoring:
     strategy: lexical_weighted_keywords # lexical_weighted_keywords|lexical_plus_embedding
@@ -346,6 +355,13 @@ ca2 stage2 external hint/template 校验语义：
 2. `context_assembler.ca2.stage2.external.hints.enabled=true` 时，`hints.capabilities` 必须非空。
 3. `hints.capabilities[*]` 必须使用小写并满足字符集 `[a-z0-9._/-]`。
 4. 非法 hint/template 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+teams baseline 校验语义：
+1. `teams.default_strategy` 仅支持 `serial|parallel|vote`。
+2. `teams.task_timeout` 必须 `> 0`。
+3. `teams.parallel.max_workers` 必须 `> 0`。
+4. `teams.vote.tie_break` 仅支持 `highest_priority|first_task_id`。
+5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -655,6 +671,16 @@ Action Timeline reason code（gate 相关）：
 - `backpressure.drop_low_priority`：命中 drop_low_priority 背压丢弃路径（`local|mcp|skill` 统一语义）。
 - `cancel.propagated`：父上下文取消已传播到当前执行分支（Run/Stream 对齐）。
 
+Action Timeline reason code（Teams 基线）：
+- `team.dispatch`：Teams coordinator/leader 分发任务。
+- `team.collect`：Teams 收集 worker 结果并写入任务终态。
+- `team.resolve`：Teams 在策略收敛阶段产出最终决策。
+
+Teams Timeline 关联字段（按可用性增量携带）：
+- `team_id`
+- `agent_id`
+- `task_id`
+
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
 2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
@@ -672,6 +698,18 @@ Action Gate 规则优先级（H4）：
 - `backpressure_drop_count`：本次 run 背压丢弃次数（`block` 策略下应为 `0`，`drop_low_priority` 可大于 `0`）。
 - `backpressure_drop_count_by_phase`：本次 run 背压丢弃分桶计数（`local|mcp|skill`）。
 - `inflight_peak`：本次 run 观测到的在途并发峰值（run 级）。
+
+### Run 诊断新增字段（Teams 基线 T1）
+
+- `team_id`：本次 Teams 协作执行标识。
+- `team_strategy`：本次 Teams 策略（`serial|parallel|vote`）。
+- `team_task_total`：本次 Teams 任务总数。
+- `team_task_failed`：本次 Teams 失败任务数。
+- `team_task_canceled`：本次 Teams 取消任务数。
+
+语义约束：
+- 字段为 additive 扩展，不影响既有 run 摘要消费者。
+- Teams 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

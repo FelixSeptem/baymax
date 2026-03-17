@@ -1,6 +1,6 @@
 # Runtime Module Boundaries
 
-更新时间：2026-03-13
+更新时间：2026-03-17
 
 ## 目标
 
@@ -17,6 +17,10 @@
   - 统一诊断数据模型与有界存储
   - `call/run/reload/skill` 记录与查询
   - 配置脱敏输出辅助
+- `orchestration/teams`
+  - Teams 协作编排基线（`serial|parallel|vote`）
+  - 角色与任务生命周期语义（`leader|worker|coordinator` + `pending/running/succeeded/failed/skipped/canceled`）
+  - 通过标准事件发射 Teams timeline/摘要元数据（不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
 - `mcp/retry`
@@ -43,12 +47,13 @@
 
 `runtime/*` -> (no dependency on `mcp/http` or `mcp/stdio`)
 
-`mcp/*`, `core/*`, `tool/*`, `skill/*`, `observability/*` -> `runtime/*`
+`mcp/*`, `core/*`, `tool/*`, `skill/*`, `observability/*`, `orchestration/*` -> `runtime/*`
 
 禁止方向：
 
 - `runtime/config` 或 `runtime/diagnostics` 反向依赖 `mcp/http` / `mcp/stdio`
 - 非 `mcp/*` 包依赖 `mcp/internal/*`
+- Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。

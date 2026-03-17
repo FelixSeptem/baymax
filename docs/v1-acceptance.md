@@ -17,6 +17,9 @@
 - Runtime diagnostics expose library APIs for recent run/MCP summaries and sanitized effective config snapshots.
 - Runtime diagnostics expose cross-run Action Timeline trend API with both `last_n_runs` and `time_window` modes.
 - Runtime diagnostics use single-writer event ingestion with idempotent run/skill dedup semantics.
+- Teams orchestration baseline is available as independent module (`orchestration/teams`) with deterministic `serial|parallel|vote` strategies, explicit task lifecycle states, and Run/Stream semantic equivalence.
+- Teams timeline reasons and metadata are normalized with `team.*` namespace and `team_id/agent_id/task_id` correlation fields.
+- Run diagnostics include Teams additive summary fields: `team_id`, `team_strategy`, `team_task_total`, `team_task_failed`, `team_task_canceled`.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.

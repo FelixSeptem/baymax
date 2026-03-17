@@ -85,6 +85,30 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:             time.Now(),
+		RunID:            "run-team-1",
+		Status:           "failed",
+		TeamID:           "team-alpha",
+		TeamStrategy:     "parallel",
+		TeamTaskTotal:    5,
+		TeamTaskFailed:   2,
+		TeamTaskCanceled: 1,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if runs[0].TeamTaskTotal != 5 || runs[0].TeamTaskFailed != 2 || runs[0].TeamTaskCanceled != 1 {
+		t.Fatalf("team aggregate should stay stable under replay, got %#v", runs[0])
+	}
+}
+
 func TestStoreSkillDedupConcurrent(t *testing.T) {
 	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{

@@ -79,6 +79,14 @@ const (
 )
 
 const (
+	TeamsStrategySerial              = "serial"
+	TeamsStrategyParallel            = "parallel"
+	TeamsStrategyVote                = "vote"
+	TeamsVoteTieBreakHighestPriority = "highest_priority"
+	TeamsVoteTieBreakFirstTaskID     = "first_task_id"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -110,6 +118,7 @@ type Config struct {
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
+	Teams            TeamsConfig            `json:"teams"`
 	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
 	Clarification    ClarificationConfig    `json:"clarification"`
@@ -173,6 +182,22 @@ type ProviderFallbackConfig struct {
 	Providers         []string      `json:"providers"`
 	DiscoveryTimeout  time.Duration `json:"discovery_timeout"`
 	DiscoveryCacheTTL time.Duration `json:"discovery_cache_ttl"`
+}
+
+type TeamsConfig struct {
+	Enabled         bool                `json:"enabled"`
+	DefaultStrategy string              `json:"default_strategy"`
+	TaskTimeout     time.Duration       `json:"task_timeout"`
+	Parallel        TeamsParallelConfig `json:"parallel"`
+	Vote            TeamsVoteConfig     `json:"vote"`
+}
+
+type TeamsParallelConfig struct {
+	MaxWorkers int `json:"max_workers"`
+}
+
+type TeamsVoteConfig struct {
+	TieBreak string `json:"tie_break"`
 }
 
 type SkillConfig struct {
@@ -633,6 +658,17 @@ func DefaultConfig() Config {
 			DiscoveryTimeout:  1500 * time.Millisecond,
 			DiscoveryCacheTTL: 5 * time.Minute,
 		},
+		Teams: TeamsConfig{
+			Enabled:         false,
+			DefaultStrategy: TeamsStrategySerial,
+			TaskTimeout:     3 * time.Second,
+			Parallel: TeamsParallelConfig{
+				MaxWorkers: 4,
+			},
+			Vote: TeamsVoteConfig{
+				TieBreak: TeamsVoteTieBreakHighestPriority,
+			},
+		},
 		Skill: SkillConfig{
 			TriggerScoring: SkillTriggerScoringConfig{
 				Strategy:              SkillTriggerScoringStrategyLexicalWeightedKeywords,
@@ -1087,6 +1123,33 @@ func Validate(cfg Config) error {
 	}
 	if cfg.ProviderFallback.DiscoveryCacheTTL <= 0 {
 		return errors.New("provider_fallback.discovery_cache_ttl must be > 0")
+	}
+	switch strategy := strings.ToLower(strings.TrimSpace(cfg.Teams.DefaultStrategy)); strategy {
+	case TeamsStrategySerial, TeamsStrategyParallel, TeamsStrategyVote:
+	default:
+		return fmt.Errorf(
+			"teams.default_strategy must be one of [%s,%s,%s], got %q",
+			TeamsStrategySerial,
+			TeamsStrategyParallel,
+			TeamsStrategyVote,
+			cfg.Teams.DefaultStrategy,
+		)
+	}
+	if cfg.Teams.TaskTimeout <= 0 {
+		return errors.New("teams.task_timeout must be > 0")
+	}
+	if cfg.Teams.Parallel.MaxWorkers <= 0 {
+		return errors.New("teams.parallel.max_workers must be > 0")
+	}
+	switch tieBreak := strings.ToLower(strings.TrimSpace(cfg.Teams.Vote.TieBreak)); tieBreak {
+	case TeamsVoteTieBreakHighestPriority, TeamsVoteTieBreakFirstTaskID:
+	default:
+		return fmt.Errorf(
+			"teams.vote.tie_break must be one of [%s,%s], got %q",
+			TeamsVoteTieBreakHighestPriority,
+			TeamsVoteTieBreakFirstTaskID,
+			cfg.Teams.Vote.TieBreak,
+		)
 	}
 	scoring := cfg.Skill.TriggerScoring
 	switch strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy)); strategy {
@@ -2010,6 +2073,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
 	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
 	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
+	v.SetDefault("teams.enabled", base.Teams.Enabled)
+	v.SetDefault("teams.default_strategy", base.Teams.DefaultStrategy)
+	v.SetDefault("teams.task_timeout", base.Teams.TaskTimeout)
+	v.SetDefault("teams.parallel.max_workers", base.Teams.Parallel.MaxWorkers)
+	v.SetDefault("teams.vote.tie_break", base.Teams.Vote.TieBreak)
 	v.SetDefault("skill.trigger_scoring.strategy", base.Skill.TriggerScoring.Strategy)
 	v.SetDefault("skill.trigger_scoring.confidence_threshold", base.Skill.TriggerScoring.ConfidenceThreshold)
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
@@ -2197,6 +2265,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
 	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
 	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
+	cfg.Teams.Enabled = v.GetBool("teams.enabled")
+	cfg.Teams.DefaultStrategy = strings.ToLower(strings.TrimSpace(v.GetString("teams.default_strategy")))
+	cfg.Teams.TaskTimeout = v.GetDuration("teams.task_timeout")
+	cfg.Teams.Parallel.MaxWorkers = v.GetInt("teams.parallel.max_workers")
+	cfg.Teams.Vote.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("teams.vote.tie_break")))
 	cfg.Skill.TriggerScoring.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.strategy")))
 	cfg.Skill.TriggerScoring.ConfidenceThreshold = v.GetFloat64("skill.trigger_scoring.confidence_threshold")
 	cfg.Skill.TriggerScoring.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.tie_break")))

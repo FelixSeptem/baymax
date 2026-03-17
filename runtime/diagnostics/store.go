@@ -110,6 +110,11 @@ type RunRecord struct {
 	CA3CompactionRerankerThresholdDrift  float64                           `json:"ca3_compaction_reranker_threshold_drift,omitempty"`
 	CA3RetainedEvidence                  int                               `json:"ca3_compaction_retained_evidence_count,omitempty"`
 	RecapStatus                          string                            `json:"recap_status,omitempty"`
+	TeamID                               string                            `json:"team_id,omitempty"`
+	TeamStrategy                         string                            `json:"team_strategy,omitempty"`
+	TeamTaskTotal                        int                               `json:"team_task_total,omitempty"`
+	TeamTaskFailed                       int                               `json:"team_task_failed,omitempty"`
+	TeamTaskCanceled                     int                               `json:"team_task_canceled,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

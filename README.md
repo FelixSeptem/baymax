@@ -441,6 +441,9 @@ bash scripts/check-ca4-benchmark-regression.sh
 | `examples/07-multi-agent-async-channel` | Multi-Agent + Structure + HITL Clarification | 单进程 channel 协作与 await/resume 演示 |
 | `examples/08-multi-agent-network-bridge` | Multi-Agent + Structure (Network) | HTTP + JSON-RPC 2.0 网络桥接 |
 
+Teams baseline 说明：
+- `orchestration/teams` 提供可复用协作运行时（`serial|parallel|vote`），`examples/07` 与 `examples/08` 可作为接入范式参考。
+
 运行示例：
 ```bash
 go run ./examples/05-parallel-tools-fanout
@@ -458,6 +461,7 @@ go run ./examples/08-multi-agent-network-bridge
 - `model/openai`: OpenAI 官方 SDK 适配
 - `model/anthropic`: Anthropic 官方 SDK 适配
 - `model/gemini`: Gemini 官方 SDK 适配
+- `orchestration/teams`: Teams 协作编排基线模块
 - `skill/loader`: AGENTS/SKILL 发现与编译
 - `context/provider`: CA2 stage2 retrieval SPI、file provider 与 external HTTP adapter
 - `observability/event`, `observability/trace`: 事件与 trace

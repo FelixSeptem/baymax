@@ -187,6 +187,11 @@ mcp:
 			"ca3_compaction_reranker_threshold_drift":  0.12,
 			"ca3_compaction_retained_evidence_count":   2,
 			"recap_status":                             "appended",
+			"team_id":                                  "team-alpha",
+			"team_strategy":                            "parallel",
+			"team_task_total":                          5,
+			"team_task_failed":                         1,
+			"team_task_canceled":                       1,
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -289,6 +294,12 @@ mcp:
 	}
 	if items[0].CA3CompactionRerankerThresholdDrift <= 0 {
 		t.Fatalf("ca3 compaction reranker threshold drift mismatch: %#v", items[0])
+	}
+	if items[0].TeamID != "team-alpha" || items[0].TeamStrategy != "parallel" {
+		t.Fatalf("teams summary id/strategy mismatch: %#v", items[0])
+	}
+	if items[0].TeamTaskTotal != 5 || items[0].TeamTaskFailed != 1 || items[0].TeamTaskCanceled != 1 {
+		t.Fatalf("teams summary counters mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

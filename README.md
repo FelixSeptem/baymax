@@ -11,8 +11,8 @@
 
 ## Open Source P0
 
-- 版本与兼容承诺：`docs/versioning-and-compatibility.md`
-- 安全响应入口：`SECURITY.md`（使用 GitHub Security Advisory 私密披露）
+- 版本策略（pre-1.x 无兼容性承诺）：`docs/versioning-and-compatibility.md`
+- 安全响应入口：`SECURITY.md`（邮箱私报，best-effort）
 - 贡献与评审流程：`CONTRIBUTING.md`
 - 社区行为规范：`CODE_OF_CONDUCT.md`
 - 变更记录模板：`CHANGELOG.md`
@@ -400,13 +400,15 @@ bash scripts/check-ca4-benchmark-regression.sh
 ### CI
 - 仓库内置 CI 工作流：`.github/workflows/ci.yml`
 - 默认执行：
+  - `contribution-template-gate`（PR 模板必填项阻断校验）
   - `scripts/check-quality-gate.sh`
   - `scripts/check-runtime-boundaries.sh`
   - `scripts/check-docs-consistency.ps1`
   - benchmark smoke（`go test ./integration -run ^$ -bench Benchmark -benchtime=50ms`）
+- 分支保护建议将 `contribution-template-gate` 设为 required status check。
 
 ### 安全报告
-- 漏洞报告请使用 GitHub Security Advisory（私密报告流程），详见：`SECURITY.md`
+- 漏洞报告请走 `SECURITY.md` 中的邮箱私报流程：`whenhow94@qq.com`（请勿公开提 issue）。
 
 ## 脚本清单（当前保留）
 
@@ -419,6 +421,8 @@ bash scripts/check-ca4-benchmark-regression.sh
 - `scripts/ca4-benchmark-baseline.env`：CA4 benchmark 基线与默认阈值配置。
 - `scripts/check-runtime-boundaries.sh`：runtime 模块边界静态检查。
 - `scripts/check-docs-consistency.ps1`：README/docs 引用与关键章节一致性检查。
+- `scripts/check-contribution-template.sh`：PR 模板完整性与必勾选项阻断校验（CI pull_request 使用）。
+- `scripts/check-contribution-template.ps1`：Windows 等价 PR 模板阻断校验脚本。
 - `scripts/openspec-archive-seq.ps1`：OpenSpec 归档序号规范化与归档索引维护。
 
 ## Examples Pattern Index

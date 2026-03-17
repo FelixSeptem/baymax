@@ -2,9 +2,10 @@
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities through GitHub Security Advisory (private reporting).
+Please report potential vulnerabilities by email:
 
-- Go to: Security tab -> Advisories -> Report a vulnerability.
+- `whenhow94@qq.com`
+- Subject suggestion: `[baymax-security] <short summary>`
 - Do not create a public issue for unpatched vulnerabilities.
 
 ## Scope
@@ -14,19 +15,19 @@ This process covers vulnerabilities in:
 - Runtime packages and adapters in this repository.
 - Build/test scripts and CI workflows that affect supply-chain safety.
 
-## Response Timeline
+## Response Process (Best-Effort, No SLA)
 
-- Initial triage acknowledgement: within 3 business days.
-- Severity assessment and owner assignment: within 5 business days.
-- Remediation target:
-  - Critical: 7 calendar days
-  - High: 14 calendar days
-  - Medium: 30 calendar days
-  - Low: best effort in normal release cycle
+This is a personal project in pre-1.x stage. Reports are handled on a best-effort basis, with no guaranteed response or remediation timelines.
+
+Maintainers will attempt to:
+- Confirm receipt.
+- Triage severity and impact.
+- Prepare fix/mitigation when feasible.
+- Publish disclosure notes when appropriate.
 
 ## Disclosure Process
 
-1. Receive report through GitHub Security Advisory.
+1. Receive report through the security email channel.
 2. Triage and classify severity.
 3. Prepare fix and validation.
 4. Coordinate disclosure timing with reporter.
@@ -34,5 +35,5 @@ This process covers vulnerabilities in:
 
 ## Supported Versions
 
-Security fixes are prioritized for the active mainline branch.
-Backports are best-effort and evaluated case by case.
+Security fixes are prioritized for the latest minor line.
+Backports to older minors are best-effort and evaluated case by case.

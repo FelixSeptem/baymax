@@ -1,35 +1,33 @@
 ---
-name: Bug report
-about: Report a reproducible bug
+name: 缺陷反馈 Bug report
+about: 报告可复现缺陷（中文优先，接受英文）
 labels: bug
 ---
 
-## Summary
+## 问题摘要 Summary（必填）
 
-Describe the bug clearly.
+<!-- 清晰描述问题现象。 -->
 
-## Reproduction
+## 复现步骤 Reproduction（必填）
 
-Steps to reproduce:
+1.
+2.
+3.
 
-1. 
-2. 
-3. 
+## 预期行为 Expected（必填）
 
-## Expected Behavior
+<!-- 你期望发生什么。 -->
 
-What did you expect to happen?
+## 实际行为 Actual（必填）
 
-## Actual Behavior
+<!-- 实际发生了什么。 -->
 
-What actually happened?
-
-## Environment
+## 环境信息 Environment（必填）
 
 - OS:
 - Go version:
 - Commit/Branch:
 
-## Logs / Output
+## 日志与输出 Logs（建议）
 
-Provide relevant logs or error output.
+<!-- 粘贴关键日志、报错或截图链接。 -->

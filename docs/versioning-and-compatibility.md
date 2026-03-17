@@ -2,32 +2,42 @@
 
 ## Versioning Policy
 
-This project follows Semantic Versioning (`MAJOR.MINOR.PATCH`).
+This project uses Semantic Versioning notation (`MAJOR.MINOR.PATCH`) for release identification.
 
-- `MAJOR`: incompatible public behavior changes.
-- `MINOR`: backward-compatible feature additions.
-- `PATCH`: backward-compatible bug fixes and non-functional improvements.
+- In the pre-`1.0.0` stage, version increments communicate change scope but do **not** imply strict compatibility guarantees.
+- `MAJOR`/`MINOR`/`PATCH` labels are best-effort signals for maintainers and users, not a compatibility contract before `1.0.0`.
 
 Pre-release identifiers (for example `-rc.1`) may be used before a stable release.
 
-## Breaking Change Policy
+## Pre-1.x Compatibility Posture
 
-A change is considered breaking when at least one of the following is true:
+Before `1.0.0`, this repository does **not** provide compatibility commitments for:
 
-- Public API behavior changes in a way existing integrations cannot keep working without modification.
-- Runtime config fields or accepted enum values are removed or redefined incompatibly.
-- Diagnostics or event contracts remove required fields used by downstream systems.
+- Public API behavior.
+- Runtime config field shapes and accepted enum sets.
+- Diagnostics/event contract details.
 
-Every breaking change MUST be documented in:
+Maintainers still aim to minimize unnecessary disruption and document meaningful behavior changes through changelog and release notes.
 
-- `CHANGELOG.md` under a `Breaking Changes` section.
-- Release notes with migration guidance.
+## Change Disclosure
 
-## Go Version Support Window
+When a change has migration impact, maintainers SHOULD document:
+
+- What changed.
+- Why it changed.
+- Suggested migration direction (if available).
+
+`CHANGELOG.md` remains the primary disclosure entry.
+
+## Maintenance Window
+
+- Supported line: latest minor only.
+- Security and bug fixes are prioritized for the latest minor line; older minors are best-effort.
+
+## Go Version Baseline
 
 - Minimum supported Go version: `1.26`.
-- CI baseline runs on the version in `go.mod`.
-- New releases SHOULD keep at least one active Go major line support window unless explicitly documented otherwise.
+- CI baseline runs on the version declared in `go.mod`.
 
 ## Provider Compatibility Levels
 
@@ -46,11 +56,11 @@ Compatibility levels:
 Current baseline classification:
 
 - OpenAI/Anthropic/Gemini adapters: `stable` at repository contract level (`Generate`/`Stream` and error taxonomy mappings).
-- Provider-specific extended semantics: may evolve and are documented incrementally in docs and changelog.
+- Provider-specific extended semantics: may evolve quickly in pre-1.x and are documented incrementally in docs/changelog.
 
 ## Documentation Source of Truth
 
-To avoid drift, compatibility commitments are maintained in:
+To avoid drift, governance policy is maintained in:
 
 - This file (`docs/versioning-and-compatibility.md`)
 - `README.md` (entry links only)

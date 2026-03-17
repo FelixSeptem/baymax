@@ -1,25 +1,25 @@
 ---
-name: Feature request
-about: Propose a new feature or enhancement
+name: 功能建议 Feature request
+about: 提交新功能或增强建议（中文优先，接受英文）
 labels: enhancement
 ---
 
-## Problem Statement
+## 问题背景 Problem（必填）
 
-What problem are you trying to solve?
+<!-- 你要解决的真实问题是什么。 -->
 
-## Proposed Solution
+## 建议方案 Proposed solution（必填）
 
-Describe the preferred solution.
+<!-- 说明首选方案。 -->
 
-## Alternatives Considered
+## 备选方案 Alternatives（必填）
 
-List alternatives you've considered.
+<!-- 至少列一个备选，若无请写“暂无”。 -->
 
-## Compatibility Impact
+## 影响范围 Impact（必填）
 
-Any runtime/config/api compatibility impact?
+<!-- 说明对 runtime/config/api/docs 的潜在影响。 -->
 
-## Additional Context
+## 补充信息 Additional context（可选）
 
-Add references or examples if useful.
+<!-- 参考链接、示例或对比信息。 -->

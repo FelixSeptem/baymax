@@ -1,8 +1,5 @@
-# open-source-governance-baseline Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change establish-open-source-p0-governance-baseline. Update Purpose after archive.
-## Requirements
 ### Requirement: Repository SHALL define versioning and compatibility policy
 The repository MUST publish a versioning policy using Semantic Versioning notation and MUST explicitly declare that, before `1.0.0`, the project does not provide API/runtime/config compatibility guarantees.
 
@@ -39,11 +36,3 @@ Templates MUST define required checklist and context fields for tests, docs sync
 #### Scenario: Maintainer triages incoming issue
 - **WHEN** a user opens a bug or feature request
 - **THEN** the template captures minimum structured information for reproducible triage in Chinese-first form while accepting English content
-
-### Requirement: Repository SHALL publish a community conduct guideline
-The repository MUST include a code-of-conduct document and reference it from contributor-facing documentation.
-
-#### Scenario: Community member reviews participation expectations
-- **WHEN** a contributor checks collaboration norms
-- **THEN** the contributor can find behavior expectations and escalation path in a version-controlled guideline
-

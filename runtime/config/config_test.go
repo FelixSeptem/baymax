@@ -858,6 +858,12 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 			cfg.ContextAssembler.CA3.Compaction.Embedding.EmbeddingWeight,
 		)
 	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled {
+		t.Fatal("ca3.compaction.reranker.enabled = true, want false")
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout <= 0 {
+		t.Fatalf("ca3.compaction.reranker.timeout = %v, want > 0", cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout)
+	}
 }
 
 func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -983,6 +989,60 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidSimilarityMetric(t
 	cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric = "dot"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for invalid embedding similarity metric")
+	}
+}
+
+func TestContextAssemblerCA3RerankerValidationRejectsMissingProfile(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Provider = "openai"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.ContextAssembler.CA3.Compaction.Embedding.Timeout = 400 * time.Millisecond
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled = true
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout = 300 * time.Millisecond
+	cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"gemini:text-embedding-004": 0.6,
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for missing provider/model reranker threshold profile")
+	}
+}
+
+func TestContextAssemblerCA3RerankerEnvOverride(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+context_assembler:
+  ca3:
+    compaction:
+      embedding:
+        enabled: true
+        selector: default
+        provider: openai
+        model: text-embedding-3-small
+        timeout: 300ms
+      reranker:
+        enabled: true
+        timeout: 250ms
+        max_retries: 2
+        threshold_profiles:
+          openai:text-embedding-3-small: 0.62
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled {
+		t.Fatal("ca3.compaction.reranker.enabled = false, want true")
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.MaxRetries != 2 {
+		t.Fatalf("ca3.compaction.reranker.max_retries = %d, want 2", cfg.ContextAssembler.CA3.Compaction.Reranker.MaxRetries)
+	}
+	if cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles["openai:text-embedding-3-small"] != 0.62 {
+		t.Fatalf("missing reranker threshold profile, got %#v", cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles)
 	}
 }
 

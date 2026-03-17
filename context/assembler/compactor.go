@@ -28,6 +28,7 @@ type ca3CompactionResult struct {
 	Messages                []types.Message
 	CompressionRatio        float64
 	Fallback                bool
+	GateThreshold           float64
 	QualityScore            float64
 	QualityReason           string
 	FallbackReason          string
@@ -36,6 +37,12 @@ type ca3CompactionResult struct {
 	EmbeddingContribution   float64
 	EmbeddingStatus         string
 	EmbeddingFallbackReason string
+	RerankerUsed            bool
+	RerankerProvider        string
+	RerankerModel           string
+	RerankerThresholdSource string
+	RerankerThresholdHit    bool
+	RerankerFallbackReason  string
 }
 
 type truncateCompactor struct{}
@@ -83,6 +90,7 @@ func (c *truncateCompactor) compact(_ context.Context, req ca3CompactionRequest)
 type semanticCompactor struct {
 	client    types.ModelClient
 	embedding SemanticEmbeddingScorer
+	reranker  SemanticReranker
 }
 
 func (c *semanticCompactor) mode() string {
@@ -103,9 +111,18 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	qualityScores := make([]float64, 0, len(req.ModelReq.Messages))
 	qualityReasons := make([]string, 0, len(req.ModelReq.Messages))
 	embeddingProvider := strings.ToLower(strings.TrimSpace(req.Config.Compaction.Embedding.Provider))
+	embeddingModel := strings.TrimSpace(req.Config.Compaction.Embedding.Model)
 	embeddingStatus := "disabled"
 	embeddingSimilarityScores := make([]float64, 0, len(req.ModelReq.Messages))
 	embeddingFallbackReason := ""
+	rerankerUsed := false
+	rerankerThreshold := req.Config.Compaction.Quality.Threshold
+	rerankerThresholdSource := "quality_threshold"
+	rerankerThresholdHit := false
+	rerankerFallbackReason := ""
+	rerankerCfg := req.Config.Compaction.Reranker
+	rerankerProvider := embeddingProvider
+	rerankerModel := embeddingModel
 	if req.Config.Compaction.Embedding.Enabled {
 		embeddingStatus = "enabled"
 		if c.embedding == nil {
@@ -114,6 +131,13 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			}
 			embeddingStatus = "fallback_rule_only"
 			embeddingFallbackReason = "embedding_hook_not_bound"
+		}
+	}
+	if rerankerCfg.Enabled {
+		key := normalizeThresholdProfileKey(embeddingProvider, embeddingModel)
+		if value, ok := rerankerCfg.ThresholdProfiles[key]; ok {
+			rerankerThreshold = value
+			rerankerThresholdSource = "provider_model_profile"
 		}
 	}
 	for _, msg := range req.ModelReq.Messages {
@@ -156,6 +180,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			req.Config.Compaction.Evidence,
 		)
 		qualityScore := ruleScore
+		lastSimilarity := 0.0
 		if req.Config.Compaction.Embedding.Enabled && c.embedding != nil {
 			scoreCtx := ctx
 			cancel := func() {}
@@ -182,8 +207,35 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			} else {
 				qualityScore = blendSemanticQuality(ruleScore, similarity, req.Config.Compaction.Embedding.RuleWeight, req.Config.Compaction.Embedding.EmbeddingWeight)
 				embeddingSimilarityScores = append(embeddingSimilarityScores, similarity)
+				lastSimilarity = similarity
 				qualityReason = appendReason(qualityReason, "embedding_cosine")
 			}
+		}
+		if rerankerCfg.Enabled && c.reranker != nil {
+			rerankScore, rerankErr := applyRerankerWithRetry(ctx, c.reranker, rerankerCfg, SemanticRerankRequest{
+				Provider:      embeddingProvider,
+				Model:         embeddingModel,
+				Source:        msg.Content,
+				Summary:       content,
+				RuleScore:     ruleScore,
+				Embedding:     lastSimilarity,
+				CurrentScore:  qualityScore,
+				BaseThreshold: rerankerThreshold,
+			})
+			if rerankErr != nil {
+				if !isBestEffortPolicy(req.StagePolicy) {
+					return ca3CompactionResult{}, fmt.Errorf("reranker failed: %w", rerankErr)
+				}
+				rerankerFallbackReason = "reranker_error"
+				qualityReason = appendReason(qualityReason, rerankerFallbackReason)
+			} else {
+				rerankerUsed = true
+				qualityScore = rerankScore
+				qualityReason = appendReason(qualityReason, "reranker_applied")
+			}
+		}
+		if rerankerCfg.Enabled && qualityScore < rerankerThreshold {
+			rerankerThresholdHit = true
 		}
 		qualityScores = append(qualityScores, qualityScore)
 		qualityReasons = append(qualityReasons, qualityReason)
@@ -214,6 +266,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	return ca3CompactionResult{
 		Messages:                out,
 		CompressionRatio:        compression,
+		GateThreshold:           rerankerThreshold,
 		QualityScore:            score,
 		QualityReason:           reason,
 		EmbeddingProvider:       embeddingProvider,
@@ -221,7 +274,50 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		EmbeddingContribution:   embeddingContribution,
 		EmbeddingStatus:         embeddingStatus,
 		EmbeddingFallbackReason: embeddingFallbackReason,
+		RerankerUsed:            rerankerUsed,
+		RerankerProvider:        rerankerProvider,
+		RerankerModel:           rerankerModel,
+		RerankerThresholdSource: rerankerThresholdSource,
+		RerankerThresholdHit:    rerankerThresholdHit,
+		RerankerFallbackReason:  rerankerFallbackReason,
 	}, nil
+}
+
+func applyRerankerWithRetry(
+	ctx context.Context,
+	reranker SemanticReranker,
+	cfg runtimeconfig.ContextAssemblerCA3CompactionRerankerConfig,
+	req SemanticRerankRequest,
+) (float64, error) {
+	if reranker == nil {
+		return req.CurrentScore, errors.New("reranker not configured")
+	}
+	attempts := cfg.MaxRetries + 1
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		rerankCtx := ctx
+		cancel := func() {}
+		if cfg.Timeout > 0 {
+			rerankCtx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+		}
+		out, err := reranker.Rerank(rerankCtx, req)
+		cancel()
+		if err == nil {
+			score := out.Score
+			if score < 0 {
+				score = 0
+			}
+			if score > 1 {
+				score = 1
+			}
+			return score, nil
+		}
+		lastErr = err
+	}
+	return req.CurrentScore, lastErr
 }
 
 func blendSemanticQuality(ruleScore, similarity, ruleWeight, embeddingWeight float64) float64 {

@@ -601,7 +601,13 @@ type modelClientFunc struct {
 
 type embeddingScorerFunc func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error)
 
+type rerankerFunc func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error)
+
 func (f embeddingScorerFunc) Score(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+	return f(ctx, req)
+}
+
+func (f rerankerFunc) Rerank(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
 	return f(ctx, req)
 }
 
@@ -1020,5 +1026,153 @@ func TestAssemblerCA3PruneRetainsEvidenceAndReportsCount(t *testing.T) {
 	}
 	if !foundEvidence {
 		t.Fatalf("evidence message should be retained: %#v", outReq.Messages)
+	}
+}
+
+func TestBuildEmbeddingScorerAnthropicUsablePath(t *testing.T) {
+	scorer, err := buildEmbeddingScorer(runtimeconfig.ContextAssemblerCA3CompactionEmbeddingConfig{
+		Enabled:  true,
+		Selector: "default",
+		Provider: "anthropic",
+		Model:    "claude-3-haiku",
+		Timeout:  200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("buildEmbeddingScorer failed: %v", err)
+	}
+	score, err := scorer.Score(context.Background(), SemanticEmbeddingScoreRequest{
+		Selector: "default",
+		Provider: "anthropic",
+		Model:    "claude-3-haiku",
+		Source:   "alpha beta",
+		Summary:  "alpha beta compact",
+	})
+	if err != nil {
+		t.Fatalf("anthropic score failed: %v", err)
+	}
+	if score < 0 || score > 1 {
+		t.Fatalf("anthropic score out of range: %v", score)
+	}
+}
+
+func TestAssemblerCA3RerankerBestEffortFallback(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.Embedding.Enabled = true
+	cfg.CA3.Compaction.Embedding.Selector = "default"
+	cfg.CA3.Compaction.Embedding.Provider = "openai"
+	cfg.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.Enabled = true
+	cfg.CA3.Compaction.Reranker.Timeout = 200 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.MaxRetries = 0
+	cfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.5,
+	}
+	cfg.CA2.StagePolicy.Stage1 = "best_effort"
+
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithSemanticEmbeddingScorer("test", embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+			return 0.8, nil
+		})),
+		WithSemanticReranker("openai", rerankerFunc(func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
+			return SemanticRerankResult{}, errors.New("reranker unavailable")
+		})),
+	)
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-reranker-best-effort",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 20),
+		Messages: []types.Message{
+			{Role: "system", Content: "base"},
+			{Role: "user", Content: strings.Repeat("long semantic content ", 30)},
+		},
+		ModelClient: client,
+	}, types.ModelRequest{
+		RunID:    "run-reranker-best-effort",
+		Input:    strings.Repeat("need compact ", 20),
+		Model:    "gpt-4.1-mini",
+		Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 30)}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.CompactionRerankerFallbackReason != "reranker_error" {
+		t.Fatalf("reranker fallback reason = %q, want reranker_error", result.Stage.CompactionRerankerFallbackReason)
+	}
+}
+
+func TestAssemblerCA3RerankerFailFast(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA3.Enabled = true
+	cfg.CA3.MaxContextTokens = 120
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 1, Comfort: 2, Warning: 3, Danger: 4, Emergency: 5,
+	}
+	cfg.CA3.Compaction.Mode = "semantic"
+	cfg.CA3.Compaction.Embedding.Enabled = true
+	cfg.CA3.Compaction.Embedding.Selector = "default"
+	cfg.CA3.Compaction.Embedding.Provider = "openai"
+	cfg.CA3.Compaction.Embedding.Model = "text-embedding-3-small"
+	cfg.CA3.Compaction.Embedding.Timeout = 300 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.Enabled = true
+	cfg.CA3.Compaction.Reranker.Timeout = 200 * time.Millisecond
+	cfg.CA3.Compaction.Reranker.MaxRetries = 0
+	cfg.CA3.Compaction.Reranker.ThresholdProfiles = map[string]float64{
+		"openai:text-embedding-3-small": 0.5,
+	}
+	cfg.CA2.StagePolicy.Stage1 = "fail_fast"
+	client := modelClientFunc{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "semantic-summary"}, nil
+		},
+	}
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithSemanticEmbeddingScorer("test", embeddingScorerFunc(func(ctx context.Context, req SemanticEmbeddingScoreRequest) (float64, error) {
+			return 0.8, nil
+		})),
+		WithSemanticReranker("openai", rerankerFunc(func(ctx context.Context, req SemanticRerankRequest) (SemanticRerankResult, error) {
+			return SemanticRerankResult{}, errors.New("reranker failed")
+		})),
+	)
+	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-reranker-fail-fast",
+		SessionID:     "s-1",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("need compact ", 20),
+		Messages: []types.Message{
+			{Role: "system", Content: "base"},
+			{Role: "user", Content: strings.Repeat("long semantic content ", 30)},
+		},
+		ModelClient: client,
+	}, types.ModelRequest{
+		RunID:    "run-reranker-fail-fast",
+		Input:    strings.Repeat("need compact ", 20),
+		Model:    "gpt-4.1-mini",
+		Messages: []types.Message{{Role: "system", Content: "base"}, {Role: "user", Content: strings.Repeat("long semantic content ", 30)}},
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast reranker error")
 	}
 }

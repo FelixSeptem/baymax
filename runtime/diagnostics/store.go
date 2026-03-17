@@ -76,6 +76,12 @@ type RunRecord struct {
 	CA3CompactionEmbeddingContribution   float64                           `json:"ca3_compaction_embedding_contribution,omitempty"`
 	CA3CompactionEmbeddingStatus         string                            `json:"ca3_compaction_embedding_status,omitempty"`
 	CA3CompactionEmbeddingFallbackReason string                            `json:"ca3_compaction_embedding_fallback_reason,omitempty"`
+	CA3CompactionRerankerUsed            bool                              `json:"ca3_compaction_reranker_used,omitempty"`
+	CA3CompactionRerankerProvider        string                            `json:"ca3_compaction_reranker_provider,omitempty"`
+	CA3CompactionRerankerModel           string                            `json:"ca3_compaction_reranker_model,omitempty"`
+	CA3CompactionRerankerThresholdSource string                            `json:"ca3_compaction_reranker_threshold_source,omitempty"`
+	CA3CompactionRerankerThresholdHit    bool                              `json:"ca3_compaction_reranker_threshold_hit,omitempty"`
+	CA3CompactionRerankerFallbackReason  string                            `json:"ca3_compaction_reranker_fallback_reason,omitempty"`
 	CA3RetainedEvidence                  int                               `json:"ca3_compaction_retained_evidence_count,omitempty"`
 	RecapStatus                          string                            `json:"recap_status,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`

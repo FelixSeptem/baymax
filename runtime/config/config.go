@@ -334,6 +334,7 @@ type ContextAssemblerCA3CompactionConfig struct {
 	Quality          ContextAssemblerCA3CompactionQualityConfig   `json:"quality"`
 	SemanticTemplate ContextAssemblerCA3SemanticTemplateConfig    `json:"semantic_template"`
 	Embedding        ContextAssemblerCA3CompactionEmbeddingConfig `json:"embedding"`
+	Reranker         ContextAssemblerCA3CompactionRerankerConfig  `json:"reranker"`
 	Evidence         ContextAssemblerCA3CompactionEvidenceConfig  `json:"evidence"`
 }
 
@@ -380,6 +381,13 @@ type ContextAssemblerCA3EmbeddingProviderAuthsConfig struct {
 type ContextAssemblerCA3CompactionEvidenceConfig struct {
 	Keywords     []string `json:"keywords"`
 	RecentWindow int      `json:"recent_window"`
+}
+
+type ContextAssemblerCA3CompactionRerankerConfig struct {
+	Enabled           bool               `json:"enabled"`
+	Timeout           time.Duration      `json:"timeout"`
+	MaxRetries        int                `json:"max_retries"`
+	ThresholdProfiles map[string]float64 `json:"threshold_profiles"`
 }
 
 type SecurityConfig struct {
@@ -628,6 +636,12 @@ func DefaultConfig() Config {
 						EmbeddingWeight:  0.3,
 						Auth:             ContextAssemblerCA3EmbeddingAuthConfig{},
 						ProviderAuth:     ContextAssemblerCA3EmbeddingProviderAuthsConfig{},
+					},
+					Reranker: ContextAssemblerCA3CompactionRerankerConfig{
+						Enabled:           false,
+						Timeout:           500 * time.Millisecond,
+						MaxRetries:        1,
+						ThresholdProfiles: map[string]float64{},
 					},
 					Evidence: ContextAssemblerCA3CompactionEvidenceConfig{
 						Keywords:     []string{"decision", "constraint", "todo", "risk"},
@@ -1228,10 +1242,53 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 			return errors.New("context_assembler.ca3.compaction.embedding.timeout must be > 0 when embedding.enabled=true")
 		}
 	}
+	reranker := cfg.Compaction.Reranker
+	if reranker.MaxRetries < 0 {
+		return errors.New("context_assembler.ca3.compaction.reranker.max_retries must be >= 0")
+	}
+	if reranker.Enabled {
+		if !embedding.Enabled {
+			return errors.New("context_assembler.ca3.compaction.reranker requires embedding.enabled=true")
+		}
+		if reranker.Timeout <= 0 {
+			return errors.New("context_assembler.ca3.compaction.reranker.timeout must be > 0 when reranker.enabled=true")
+		}
+		if len(reranker.ThresholdProfiles) == 0 {
+			return errors.New("context_assembler.ca3.compaction.reranker.threshold_profiles must not be empty when reranker.enabled=true")
+		}
+		selectedKey := buildCA3ThresholdProfileKey(embedding.Provider, embedding.Model)
+		if selectedKey == "" {
+			return errors.New("context_assembler.ca3.compaction.reranker requires embedding provider/model to resolve threshold profile")
+		}
+		threshold, ok := reranker.ThresholdProfiles[selectedKey]
+		if !ok {
+			return fmt.Errorf("context_assembler.ca3.compaction.reranker.threshold_profiles missing key %q", selectedKey)
+		}
+		if threshold < 0 || threshold > 1 {
+			return fmt.Errorf("context_assembler.ca3.compaction.reranker.threshold_profiles[%q] must be in [0,1]", selectedKey)
+		}
+	}
+	for key, value := range reranker.ThresholdProfiles {
+		if strings.TrimSpace(key) == "" {
+			return errors.New("context_assembler.ca3.compaction.reranker.threshold_profiles contains empty key")
+		}
+		if value < 0 || value > 1 {
+			return fmt.Errorf("context_assembler.ca3.compaction.reranker.threshold_profiles[%q] must be in [0,1]", key)
+		}
+	}
 	if cfg.Compaction.Evidence.RecentWindow < 0 {
 		return errors.New("context_assembler.ca3.compaction.evidence.recent_window must be >= 0")
 	}
 	return nil
+}
+
+func buildCA3ThresholdProfileKey(provider, model string) string {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	m := strings.ToLower(strings.TrimSpace(model))
+	if p == "" || m == "" {
+		return ""
+	}
+	return p + ":" + m
 }
 
 func validateSemanticTemplate(cfg ContextAssemblerCA3SemanticTemplateConfig) error {
@@ -1428,6 +1485,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.gemini.base_url", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.BaseURL)
 	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.api_key", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.APIKey)
 	v.SetDefault("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.base_url", base.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.BaseURL)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.enabled", base.ContextAssembler.CA3.Compaction.Reranker.Enabled)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.timeout", base.ContextAssembler.CA3.Compaction.Reranker.Timeout)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.max_retries", base.ContextAssembler.CA3.Compaction.Reranker.MaxRetries)
+	v.SetDefault("context_assembler.ca3.compaction.reranker.threshold_profiles", base.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.keywords", base.ContextAssembler.CA3.Compaction.Evidence.Keywords)
 	v.SetDefault("context_assembler.ca3.compaction.evidence.recent_window", base.ContextAssembler.CA3.Compaction.Evidence.RecentWindow)
 	v.SetDefault("security.scan.mode", base.Security.Scan.Mode)
@@ -1555,6 +1616,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Gemini.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.gemini.base_url"))
 	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.APIKey = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.api_key"))
 	cfg.ContextAssembler.CA3.Compaction.Embedding.ProviderAuth.Anthropic.BaseURL = strings.TrimSpace(v.GetString("context_assembler.ca3.compaction.embedding.provider_auth.anthropic.base_url"))
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Enabled = v.GetBool("context_assembler.ca3.compaction.reranker.enabled")
+	cfg.ContextAssembler.CA3.Compaction.Reranker.Timeout = v.GetDuration("context_assembler.ca3.compaction.reranker.timeout")
+	cfg.ContextAssembler.CA3.Compaction.Reranker.MaxRetries = v.GetInt("context_assembler.ca3.compaction.reranker.max_retries")
+	cfg.ContextAssembler.CA3.Compaction.Reranker.ThresholdProfiles = normalizeFloatMap(v.GetStringMap("context_assembler.ca3.compaction.reranker.threshold_profiles"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.Keywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.compaction.evidence.keywords"))
 	cfg.ContextAssembler.CA3.Compaction.Evidence.RecentWindow = v.GetInt("context_assembler.ca3.compaction.evidence.recent_window")
 	cfg.Security.Scan.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.scan.mode")))

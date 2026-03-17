@@ -28,7 +28,9 @@
 - Context Assembler CA3 memory pressure control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.
 - Context Assembler CA3 compaction supports `truncate|semantic` with default `truncate`; semantic path uses current model client and preserves `best_effort` fallback / `fail_fast` terminate semantics.
 - Context Assembler CA3 semantic compaction quality gate and template controls are enabled (rule-based score + runtime template + embedding adapter for `openai|gemini|anthropic`, cosine-only in v1).
-- Run diagnostics include CA3 compaction fields: `ca3_compaction_mode`, `ca3_compaction_fallback`, `ca3_compaction_fallback_reason`, `ca3_compaction_quality_score`, `ca3_compaction_quality_reason`, `ca3_compaction_embedding_provider`, `ca3_compaction_embedding_similarity`, `ca3_compaction_embedding_contribution`, `ca3_compaction_embedding_status`, `ca3_compaction_embedding_fallback_reason`, `ca3_compaction_retained_evidence_count`.
+- Context Assembler CA3 reranker stage is available (default-off), supports provider-specific extension registration, and enforces provider/model threshold profile presence when enabled.
+- Run diagnostics include CA3 compaction fields: `ca3_compaction_mode`, `ca3_compaction_fallback`, `ca3_compaction_fallback_reason`, `ca3_compaction_quality_score`, `ca3_compaction_quality_reason`, `ca3_compaction_embedding_provider`, `ca3_compaction_embedding_similarity`, `ca3_compaction_embedding_contribution`, `ca3_compaction_embedding_status`, `ca3_compaction_embedding_fallback_reason`, `ca3_compaction_reranker_used`, `ca3_compaction_reranker_provider`, `ca3_compaction_reranker_model`, `ca3_compaction_reranker_threshold_source`, `ca3_compaction_reranker_threshold_hit`, `ca3_compaction_reranker_fallback_reason`, `ca3_compaction_retained_evidence_count`.
+- Offline CA3 threshold tuning toolkit is available via `cmd/ca3-threshold-tuning` with stable schema version and minimal markdown report output.
 - Action Gate HITL H2 is enabled with default `require_confirm`, timeout-deny semantics, and Run/Stream equivalent deny/timeout behavior.
 - Clarification HITL H3 is enabled with native `await_user -> resumed -> canceled_by_user` lifecycle, structured `clarification_request` payload, and Run/Stream equivalent timeout-cancel behavior.
 - Action Gate H4 parameter-schema rules are enabled with operator + composite conditions (`AND/OR`), deterministic priority over keyword/tool decisions, and Run/Stream semantic equivalence.
@@ -58,6 +60,6 @@
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
 - Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
 - Context Assembler agentic routing mode is reserved as TODO hook and currently returns explicit not-ready classification.
-- Anthropic embedding path is adapter-wired for policy/diagnostic consistency, but current SDK path may return unsupported error and follow `best_effort|fail_fast` semantics.
+- Anthropic embedding path uses deterministic adapter fallback implementation in v1 baseline; quality may differ from official provider embeddings and should be tuned with corpus evidence.
 - Action Gate H2 当前仍仅覆盖执行前确认（tool name + keyword）；参数 schema 风险规则留作后续迭代。
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。

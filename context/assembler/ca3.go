@@ -180,6 +180,12 @@ func (a *Assembler) applyCA3(
 	embeddingContribution := 0.0
 	embeddingStatus := ""
 	embeddingFallbackReason := ""
+	rerankerUsed := false
+	rerankerProvider := ""
+	rerankerModel := ""
+	rerankerThresholdSource := ""
+	rerankerThresholdHit := false
+	rerankerFallbackReason := ""
 	retainedEvidenceCount := 0
 
 	switch zone {
@@ -201,6 +207,12 @@ func (a *Assembler) applyCA3(
 			embeddingContribution = compaction.EmbeddingContribution
 			embeddingStatus = compaction.EmbeddingStatus
 			embeddingFallbackReason = compaction.EmbeddingFallbackReason
+			rerankerUsed = compaction.RerankerUsed
+			rerankerProvider = compaction.RerankerProvider
+			rerankerModel = compaction.RerankerModel
+			rerankerThresholdSource = compaction.RerankerThresholdSource
+			rerankerThresholdHit = compaction.RerankerThresholdHit
+			rerankerFallbackReason = compaction.RerankerFallbackReason
 		}
 	case ca3ZoneDanger:
 		if cfg.CA3.Squash.Enabled {
@@ -220,6 +232,12 @@ func (a *Assembler) applyCA3(
 			embeddingContribution = compaction.EmbeddingContribution
 			embeddingStatus = compaction.EmbeddingStatus
 			embeddingFallbackReason = compaction.EmbeddingFallbackReason
+			rerankerUsed = compaction.RerankerUsed
+			rerankerProvider = compaction.RerankerProvider
+			rerankerModel = compaction.RerankerModel
+			rerankerThresholdSource = compaction.RerankerThresholdSource
+			rerankerThresholdHit = compaction.RerankerThresholdHit
+			rerankerFallbackReason = compaction.RerankerFallbackReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			var pruned []spillRecord
@@ -244,6 +262,12 @@ func (a *Assembler) applyCA3(
 			embeddingContribution = compaction.EmbeddingContribution
 			embeddingStatus = compaction.EmbeddingStatus
 			embeddingFallbackReason = compaction.EmbeddingFallbackReason
+			rerankerUsed = compaction.RerankerUsed
+			rerankerProvider = compaction.RerankerProvider
+			rerankerModel = compaction.RerankerModel
+			rerankerThresholdSource = compaction.RerankerThresholdSource
+			rerankerThresholdHit = compaction.RerankerThresholdHit
+			rerankerFallbackReason = compaction.RerankerFallbackReason
 		}
 		if cfg.CA3.Prune.Enabled {
 			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, cfg.CA3, state)
@@ -298,6 +322,20 @@ func (a *Assembler) applyCA3(
 	if strings.TrimSpace(embeddingFallbackReason) != "" {
 		outcome.Stage.CompactionEmbeddingFallbackReason = embeddingFallbackReason
 	}
+	outcome.Stage.CompactionRerankerUsed = rerankerUsed
+	if strings.TrimSpace(rerankerProvider) != "" {
+		outcome.Stage.CompactionRerankerProvider = rerankerProvider
+	}
+	if strings.TrimSpace(rerankerModel) != "" {
+		outcome.Stage.CompactionRerankerModel = rerankerModel
+	}
+	if strings.TrimSpace(rerankerThresholdSource) != "" {
+		outcome.Stage.CompactionRerankerThresholdSource = rerankerThresholdSource
+	}
+	outcome.Stage.CompactionRerankerThresholdHit = rerankerThresholdHit
+	if strings.TrimSpace(rerankerFallbackReason) != "" {
+		outcome.Stage.CompactionRerankerFallbackReason = rerankerFallbackReason
+	}
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
 	}
@@ -319,7 +357,7 @@ func (a *Assembler) applyCompaction(
 		StagePolicy: ca3StagePolicy(cfg, stage),
 	}
 	mode := normalizeCompactionMode(cfg.CA3.Compaction.Mode)
-	primary, err := a.compactorFor(mode, assembleReq, cfg.CA3.Compaction.Embedding)
+	primary, err := a.compactorFor(mode, assembleReq, cfg.CA3.Compaction.Embedding, cfg.CA3.Compaction.Reranker)
 	if err != nil {
 		return ca3CompactionResult{}, err
 	}
@@ -331,8 +369,12 @@ func (a *Assembler) applyCompaction(
 	}
 	result, err := primary.compact(semanticCtx, request)
 	if err == nil {
-		if mode == "semantic" && result.QualityScore < cfg.CA3.Compaction.Quality.Threshold {
-			err = newSemanticQualityGateError(result.QualityScore, cfg.CA3.Compaction.Quality.Threshold, result.QualityReason)
+		threshold := cfg.CA3.Compaction.Quality.Threshold
+		if result.GateThreshold > 0 {
+			threshold = result.GateThreshold
+		}
+		if mode == "semantic" && result.QualityScore < threshold {
+			err = newSemanticQualityGateError(result.QualityScore, threshold, result.QualityReason)
 		}
 	}
 	if err == nil {
@@ -355,6 +397,13 @@ func (a *Assembler) applyCompaction(
 	fallbackRes.EmbeddingContribution = result.EmbeddingContribution
 	fallbackRes.EmbeddingStatus = result.EmbeddingStatus
 	fallbackRes.EmbeddingFallbackReason = result.EmbeddingFallbackReason
+	fallbackRes.RerankerUsed = result.RerankerUsed
+	fallbackRes.RerankerProvider = result.RerankerProvider
+	fallbackRes.RerankerModel = result.RerankerModel
+	fallbackRes.RerankerThresholdSource = result.RerankerThresholdSource
+	fallbackRes.RerankerThresholdHit = result.RerankerThresholdHit
+	fallbackRes.RerankerFallbackReason = result.RerankerFallbackReason
+	fallbackRes.GateThreshold = result.GateThreshold
 	fallbackRes.FallbackReason = semanticFallbackReason(err)
 	recordCompactionAccess(fallbackRes.Messages, state)
 	return fallbackRes, nil
@@ -364,13 +413,15 @@ func (a *Assembler) compactorFor(
 	mode string,
 	req types.ContextAssembleRequest,
 	embeddingCfg runtimeconfig.ContextAssemblerCA3CompactionEmbeddingConfig,
+	rerankerCfg runtimeconfig.ContextAssemblerCA3CompactionRerankerConfig,
 ) (ca3Compactor, error) {
 	if mode == "semantic" {
 		scorer, err := a.ensureEmbeddingScorer(embeddingCfg)
 		if err != nil {
 			return nil, err
 		}
-		return &semanticCompactor{client: req.ModelClient, embedding: scorer}, nil
+		reranker := a.resolveReranker(embeddingCfg, rerankerCfg)
+		return &semanticCompactor{client: req.ModelClient, embedding: scorer, reranker: reranker}, nil
 	}
 	return &truncateCompactor{}, nil
 }
@@ -407,6 +458,22 @@ func (a *Assembler) ensureEmbeddingScorer(cfg runtimeconfig.ContextAssemblerCA3C
 	a.embeddingScorer = scorer
 	a.embeddingKey = key
 	return a.embeddingScorer, nil
+}
+
+func (a *Assembler) resolveReranker(
+	embeddingCfg runtimeconfig.ContextAssemblerCA3CompactionEmbeddingConfig,
+	rerankerCfg runtimeconfig.ContextAssemblerCA3CompactionRerankerConfig,
+) SemanticReranker {
+	if !rerankerCfg.Enabled {
+		return nil
+	}
+	provider := strings.ToLower(strings.TrimSpace(embeddingCfg.Provider))
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if rr, ok := a.rerankers[provider]; ok && rr != nil {
+		return rr
+	}
+	return a.defaultReranker
 }
 
 type semanticQualityGateError struct {

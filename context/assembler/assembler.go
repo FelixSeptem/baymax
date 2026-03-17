@@ -43,6 +43,8 @@ type Assembler struct {
 	spillBackendKey string
 	embeddingScorer SemanticEmbeddingScorer
 	embeddingKey    string
+	rerankers       map[string]SemanticReranker
+	defaultReranker SemanticReranker
 }
 
 type Option func(*Assembler)
@@ -62,6 +64,22 @@ func WithSemanticEmbeddingScorer(key string, scorer SemanticEmbeddingScorer) Opt
 	}
 }
 
+func WithSemanticReranker(provider string, reranker SemanticReranker) Option {
+	return func(a *Assembler) {
+		if reranker == nil {
+			return
+		}
+		key := strings.ToLower(strings.TrimSpace(provider))
+		if key == "" {
+			return
+		}
+		if a.rerankers == nil {
+			a.rerankers = map[string]SemanticReranker{}
+		}
+		a.rerankers[key] = reranker
+	}
+}
+
 func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option) *Assembler {
 	baseSecurity := runtimeconfig.DefaultConfig().Security.Redaction
 	a := &Assembler{
@@ -69,9 +87,11 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		redactionCfgProvider: func() runtimeconfig.SecurityRedactionConfig {
 			return baseSecurity
 		},
-		now:         time.Now,
-		prefixCache: map[string]string{},
-		ca3State:    map[string]*ca3RunState{},
+		now:             time.Now,
+		prefixCache:     map[string]string{},
+		ca3State:        map[string]*ca3RunState{},
+		rerankers:       map[string]SemanticReranker{},
+		defaultReranker: &defaultSemanticReranker{},
 	}
 	for _, opt := range opts {
 		if opt != nil {

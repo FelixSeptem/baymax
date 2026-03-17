@@ -372,6 +372,12 @@ type AssembleStage struct {
 	CompactionEmbeddingContribution   float64          `json:"compaction_embedding_contribution,omitempty"`
 	CompactionEmbeddingStatus         string           `json:"compaction_embedding_status,omitempty"`
 	CompactionEmbeddingFallbackReason string           `json:"compaction_embedding_fallback_reason,omitempty"`
+	CompactionRerankerUsed            bool             `json:"compaction_reranker_used,omitempty"`
+	CompactionRerankerProvider        string           `json:"compaction_reranker_provider,omitempty"`
+	CompactionRerankerModel           string           `json:"compaction_reranker_model,omitempty"`
+	CompactionRerankerThresholdSource string           `json:"compaction_reranker_threshold_source,omitempty"`
+	CompactionRerankerThresholdHit    bool             `json:"compaction_reranker_threshold_hit,omitempty"`
+	CompactionRerankerFallbackReason  string           `json:"compaction_reranker_fallback_reason,omitempty"`
 	RetainedEvidenceCount             int              `json:"retained_evidence_count,omitempty"`
 }
 

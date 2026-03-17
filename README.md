@@ -5,7 +5,7 @@
 ## 当前状态（2026-03-16）
 
 - OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
-- 最近归档：`032-harden-ca2-external-retriever-observability-and-thresholds-e2`。
+- 最近归档：`035-implement-ca3-semantic-embedding-adapter-e3`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5、Action Gate H2、安全基线 S1。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
 
@@ -68,14 +68,19 @@
   - `context_assembler.ca3.compaction.mode`：`truncate|semantic`（默认 `truncate`）
   - `semantic` 通过当前 model client 路径执行语义压缩；`best_effort` 失败回退 `truncate`，`fail_fast` 失败即终止
   - quality gate：`context_assembler.ca3.compaction.quality.threshold + weights`（coverage/compression/validity）
+  - reranker：`context_assembler.ca3.compaction.reranker.*`（默认关闭）
+    - `enabled`、`timeout`、`max_retries`
+    - `threshold_profiles`（key=`provider:model`，开启 reranker 时必须包含当前 provider/model）
+    - 支持 provider-specific 扩展接口（`assembler.WithSemanticReranker`），未注册时走内置默认 reranker
   - semantic template：`context_assembler.ca3.compaction.semantic_template.prompt + allowed_placeholders`（启动/热更新 fail-fast 校验）
   - embedding adapter：支持 `openai|gemini|anthropic` provider 选择，默认 `cosine` 混合评分（`rule_weight=0.7`、`embedding_weight=0.3`）
   - embedding 凭证：支持 `embedding.auth.*` 独立配置与 `embedding.provider_auth.<provider>.*` 覆盖
+  - Anthropic embedding：E4 起提供可用路径（不再是 unsupported-only 分支）
   - prune 证据保留：`context_assembler.ca3.compaction.evidence.keywords` + `recent_window`
 - 保护标记：`critical`/`immutable` 命中后不参与 squash/prune
 - Token 计数（CA4）：`sdk_preferred` 固定回退链路 `provider -> local tiktoken -> lightweight estimate`，计数失败仅 fail-open（不阻断主流程）
 - OpenAI token 计数语义：用于阈值策略估算，不承诺账单精度
-- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_fallback_reason`、`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_embedding_provider`、`ca3_compaction_embedding_similarity`、`ca3_compaction_embedding_contribution`、`ca3_compaction_embedding_status`、`ca3_compaction_embedding_fallback_reason`、`ca3_compaction_retained_evidence_count`
+- 新增 run 诊断字段：`ca3_pressure_zone`、`ca3_pressure_reason`、`ca3_pressure_trigger`、`ca3_zone_residency_ms`、`ca3_trigger_counts`、`ca3_compression_ratio`、`ca3_spill_count`、`ca3_swap_back_count`、`ca3_compaction_mode`、`ca3_compaction_fallback`、`ca3_compaction_fallback_reason`、`ca3_compaction_quality_score`、`ca3_compaction_quality_reason`、`ca3_compaction_embedding_provider`、`ca3_compaction_embedding_similarity`、`ca3_compaction_embedding_contribution`、`ca3_compaction_embedding_status`、`ca3_compaction_embedding_fallback_reason`、`ca3_compaction_reranker_used`、`ca3_compaction_reranker_provider`、`ca3_compaction_reranker_model`、`ca3_compaction_reranker_threshold_source`、`ca3_compaction_reranker_threshold_hit`、`ca3_compaction_reranker_fallback_reason`、`ca3_compaction_retained_evidence_count`
 
 ### 3.7 HITL（H2 + H3 + H4）
 - 工具执行前 Gate：在 `core/runner` 的 tool dispatch 前执行风险判定（首期规则仅 `tool name + keyword`）。
@@ -316,6 +321,12 @@ context_assembler:
           openai: { api_key: "", base_url: "" }
           gemini: { api_key: "", base_url: "" }
           anthropic: { api_key: "", base_url: "" }
+      reranker:
+        enabled: false
+        timeout: 500ms
+        max_retries: 1
+        threshold_profiles:
+          openai:text-embedding-3-small: 0.62
       evidence:
         keywords: [decision, constraint, todo, risk]
         recent_window: 0
@@ -327,6 +338,11 @@ clarification:
 ```
 
 完整字段、默认值、校验与诊断口径请以 `docs/runtime-config-diagnostics.md` 为准。
+
+CA3 阈值调优（离线工具，最小 markdown 输出）：
+```bash
+go run ./cmd/ca3-threshold-tuning -input tuning-input.json -output tuning-report.md
+```
 
 ### 运行测试
 ```bash

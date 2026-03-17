@@ -113,6 +113,13 @@
   - 混合评分：规则分 + cosine 相似度分量，默认权重 `rule=0.7`、`embedding=0.3`。
   - 独立凭证：支持 `embedding.auth.*` 与 `embedding.provider_auth.<provider>.*`。
   - 诊断字段：新增 `ca3_compaction_embedding_*` 系列字段用于 provider/状态/贡献观测。
+- CA3 semantic E4 加固（已完成，2026-03-17）：
+  - 新增 reranker 阶段（默认关闭），位于 base hybrid score 之后、最终 gate 之前。
+  - reranker 配置：`context_assembler.ca3.compaction.reranker.enabled|timeout|max_retries|threshold_profiles`。
+  - 阈值 profile：开启 reranker 时要求 provider/model 对应阈值 profile 存在（fail-fast）。
+  - 扩展接口：支持 provider-specific reranker 注册（`assembler.WithSemanticReranker`）。
+  - 新增诊断字段：`ca3_compaction_reranker_*` 系列。
+  - 提供离线阈值调优工具入口：`cmd/ca3-threshold-tuning`（最小 markdown 输出）。
 - Prune 证据保留规则：`keywords + recent_window`，并输出保留计数诊断字段。
 - 支持 spill/swap（文件落盘与按需回填），保留 provenance path：
   - 溢出内容保留 `origin_ref` 便于完整路径追溯。

@@ -1,18 +1,4 @@
-# ca3-semantic-embedding-adapter Specification
-
-## Purpose
-TBD - created by archiving change implement-ca3-semantic-embedding-adapter-e3. Update Purpose after archive.
-## Requirements
-### Requirement: CA3 embedding adapters SHALL provide multi-provider similarity scoring
-CA3 semantic quality pipeline MUST support provider-backed embedding adapters for OpenAI, Gemini, and Anthropic that compute similarity signals for quality evaluation when embedding scorer is enabled.
-
-#### Scenario: Embedding scorer enabled and selected adapter available
-- **WHEN** runtime enables CA3 embedding scorer and selected adapter (OpenAI, Gemini, or Anthropic) is available
-- **THEN** CA3 computes embedding similarity and includes it in quality evaluation
-
-#### Scenario: Embedding scorer disabled
-- **WHEN** runtime does not enable CA3 embedding scorer
-- **THEN** CA3 quality evaluation runs without embedding similarity contribution
+## MODIFIED Requirements
 
 ### Requirement: CA3 hybrid quality scoring SHALL be deterministic and weight-driven
 CA3 MUST compute base hybrid quality score using deterministic weighted composition of rule score and cosine-based embedding similarity score, with validated bounded weights.
@@ -38,17 +24,6 @@ Embedding adapter and reranker-stage failures MUST preserve existing stage polic
 - **WHEN** embedding adapter call or reranker stage fails and stage policy is `fail_fast`
 - **THEN** CA3 terminates assembly with normalized error before model execution
 
-### Requirement: CA3 embedding configuration SHALL support independent credentials
-CA3 embedding adapter execution MUST support provider-specific independent credentials and MUST allow fallback to shared model-step credentials when independent credentials are not configured.
-
-#### Scenario: Independent credentials configured
-- **WHEN** runtime provides provider-specific embedding credentials
-- **THEN** embedding adapter uses independent credentials for embedding calls
-
-#### Scenario: Independent credentials not configured
-- **WHEN** runtime does not provide provider-specific embedding credentials
-- **THEN** embedding adapter uses shared model-step credentials according to credential precedence rules
-
 ### Requirement: Run and Stream SHALL remain semantically equivalent with embedding scoring
 For equivalent input and effective config, Run and Stream paths MUST produce semantically equivalent mode selection, reranker usage, fallback behavior, and quality gate outcomes.
 
@@ -59,6 +34,34 @@ For equivalent input and effective config, Run and Stream paths MUST produce sem
 #### Scenario: Equivalent Run and Stream fallback path
 - **WHEN** equivalent requests encounter adapter/reranker failure under `best_effort`
 - **THEN** both Run and Stream fall back to pre-reranker path with semantically equivalent diagnostics
+
+## ADDED Requirements
+
+### Requirement: CA3 reranker SHALL support provider/model-scoped threshold profiles
+CA3 reranker execution MUST require explicit provider+model threshold profile for the selected provider/model when reranker is enabled.
+
+Missing provider+model threshold profile MUST be treated as configuration error and MUST fail fast before runtime activation.
+
+#### Scenario: Provider+model profile exists
+- **WHEN** reranker is enabled and provider+model threshold profile is configured
+- **THEN** CA3 applies the provider+model threshold profile for final gate decision
+
+#### Scenario: Provider+model profile missing
+- **WHEN** reranker is enabled and provider+model profile is unavailable
+- **THEN** runtime rejects config with fail-fast validation error
+
+### Requirement: CA3 reranker diagnostics SHALL expose provider/model quality signals
+CA3 MUST emit additive diagnostics for reranker path selection and quality decision context, including provider/model identity, threshold source, and reranker fallback reason when applicable.
+
+#### Scenario: Reranker success diagnostics
+- **WHEN** reranker executes successfully
+- **THEN** diagnostics include provider/model identity and threshold source fields
+
+#### Scenario: Reranker fallback diagnostics
+- **WHEN** reranker falls back or is bypassed under policy handling
+- **THEN** diagnostics include explicit fallback reason and effective quality path marker
+
+## ADDED Requirements
 
 ### Requirement: CA3 reranker SHALL expose extensible provider-specific implementation interface
 CA3 MUST define a stable internal extension interface for provider-specific reranker implementations.
@@ -79,4 +82,3 @@ E4 reranker flow MUST provide usable execution paths for OpenAI, Gemini, and Ant
 #### Scenario: Anthropic reranker selected
 - **WHEN** runtime enables reranker with Anthropic provider/model config
 - **THEN** CA3 executes usable Anthropic reranker path without relying on unsupported-only fallback behavior
-

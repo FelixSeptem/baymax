@@ -127,6 +127,28 @@ func (m *fakeGateMatcher) Evaluate(ctx context.Context, check types.ActionGateCh
 	return m.evaluate(ctx, check)
 }
 
+type fakeModelInputFilter struct {
+	filter func(ctx context.Context, req types.ModelRequest) (types.ModelRequest, types.SecurityFilterResult, error)
+}
+
+func (f *fakeModelInputFilter) FilterModelInput(ctx context.Context, req types.ModelRequest) (types.ModelRequest, types.SecurityFilterResult, error) {
+	if f.filter == nil {
+		return req, types.SecurityFilterResult{Decision: types.SecurityFilterDecisionAllow}, nil
+	}
+	return f.filter(ctx, req)
+}
+
+type fakeModelOutputFilter struct {
+	filter func(ctx context.Context, output string) (string, types.SecurityFilterResult, error)
+}
+
+func (f *fakeModelOutputFilter) FilterModelOutput(ctx context.Context, output string) (string, types.SecurityFilterResult, error) {
+	if f.filter == nil {
+		return output, types.SecurityFilterResult{Decision: types.SecurityFilterDecisionAllow}, nil
+	}
+	return f.filter(ctx, output)
+}
+
 type eventCollector struct {
 	mu    sync.Mutex
 	types []string
@@ -599,6 +621,859 @@ mcp:
 	}
 	if runs[0].Status != "failed" || runs[0].ErrorClass != string(types.ErrModel) {
 		t.Fatalf("unexpected failed run diagnostics: %#v", runs[0])
+	}
+}
+
+func TestSecurityPolicyContractPermissionAllowAndDeny(t *testing.T) {
+	t.Run("allow", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+		cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: allow
+    rate_limit:
+      enabled: false
+`
+		if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+		if err != nil {
+			t.Fatalf("NewManager failed: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+
+		reg := local.NewRegistry()
+		invoked := 0
+		_, _ = reg.Register(&fakeTool{
+			name: "echo",
+			invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+				invoked++
+				return types.ToolResult{Content: "ok"}, nil
+			},
+		})
+		turn := 0
+		model := &fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				turn++
+				if turn == 1 {
+					return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+				}
+				return types.ModelResponse{FinalAnswer: "done"}, nil
+			},
+		}
+		engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+		res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "allow"}, nil)
+		if runErr != nil {
+			t.Fatalf("run should allow tool call, got %v", runErr)
+		}
+		if res.FinalAnswer != "done" {
+			t.Fatalf("final answer = %q, want done", res.FinalAnswer)
+		}
+		if invoked != 1 {
+			t.Fatalf("tool invoke count = %d, want 1", invoked)
+		}
+	})
+
+	t.Run("deny", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+		cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: deny
+    rate_limit:
+      enabled: false
+`
+		if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+		if err != nil {
+			t.Fatalf("NewManager failed: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+
+		reg := local.NewRegistry()
+		invoked := 0
+		_, _ = reg.Register(&fakeTool{
+			name: "echo",
+			invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+				invoked++
+				return types.ToolResult{Content: "ok"}, nil
+			},
+		})
+		model := &fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			},
+		}
+		collector := &eventCollector{}
+		engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+		res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "deny"}, collector)
+		if runErr == nil {
+			t.Fatal("expected permission deny error")
+		}
+		if res.Error == nil || res.Error.Class != types.ErrSecurity {
+			t.Fatalf("error class = %#v, want ErrSecurity", res.Error)
+		}
+		if invoked != 0 {
+			t.Fatalf("tool invoke count = %d, want 0", invoked)
+		}
+		finished, ok := collector.lastNonTimelineEvent()
+		if !ok {
+			t.Fatal("missing run.finished")
+		}
+		if finished.Payload["policy_kind"] != "permission" || finished.Payload["namespace_tool"] != "local+echo" {
+			t.Fatalf("unexpected policy diagnostics payload: %#v", finished.Payload)
+		}
+		if finished.Payload["decision"] != "deny" || finished.Payload["reason_code"] != "security.permission_denied" {
+			t.Fatalf("unexpected decision diagnostics payload: %#v", finished.Payload)
+		}
+	})
+}
+
+func TestSecurityPolicyContractRateLimitDeny(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+    rate_limit:
+      enabled: true
+      scope: process
+      window: 1m
+      limit: 1
+      by_tool_limit:
+        local+echo: 1
+      exceed_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	invoked := 0
+	_, _ = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			invoked++
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	turn := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			turn++
+			switch turn {
+			case 1:
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			case 2:
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c2", Name: "local.echo"}}}, nil
+			default:
+				return types.ModelResponse{FinalAnswer: "done"}, nil
+			}
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "rate-limit"}, collector)
+	if runErr == nil {
+		t.Fatal("expected rate-limit deny error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("error class = %#v, want ErrSecurity", res.Error)
+	}
+	if invoked != 1 {
+		t.Fatalf("tool invoke count = %d, want 1", invoked)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["policy_kind"] != "rate_limit" || finished.Payload["namespace_tool"] != "local+echo" {
+		t.Fatalf("unexpected rate-limit diagnostics payload: %#v", finished.Payload)
+	}
+	if finished.Payload["decision"] != "deny" || finished.Payload["reason_code"] != "security.rate_limit_exceeded" {
+		t.Fatalf("unexpected rate-limit decision payload: %#v", finished.Payload)
+	}
+}
+
+func TestSecurityPolicyContractRequireRegisteredInputFilter(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: true
+    input:
+      enabled: true
+      block_action: deny
+    output:
+      enabled: false
+      block_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	called := 0
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			called++
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "blocked"}, collector)
+	if runErr == nil {
+		t.Fatal("expected filter registration deny error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("error class = %#v, want ErrSecurity", res.Error)
+	}
+	if called != 0 {
+		t.Fatalf("model invoke count = %d, want 0", called)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["policy_kind"] != "io_filter" || finished.Payload["filter_stage"] != "input" {
+		t.Fatalf("unexpected io-filter diagnostics payload: %#v", finished.Payload)
+	}
+	if finished.Payload["decision"] != "deny" || finished.Payload["reason_code"] != "security.io_filter_missing" {
+		t.Fatalf("unexpected io-filter decision payload: %#v", finished.Payload)
+	}
+}
+
+func TestSecurityPolicyContractInputFilterDenyRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: false
+    input:
+      enabled: true
+      block_action: deny
+    output:
+      enabled: false
+      block_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runCalled := 0
+	streamCalled := 0
+	inputDeny := &fakeModelInputFilter{
+		filter: func(ctx context.Context, req types.ModelRequest) (types.ModelRequest, types.SecurityFilterResult, error) {
+			return req, types.SecurityFilterResult{
+				Decision:   types.SecurityFilterDecisionDeny,
+				ReasonCode: "contract.input.blocked",
+			}, nil
+		},
+	}
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			runCalled++
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamCalled++
+			return nil
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithModelInputFilters(inputDeny))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithModelInputFilters(inputDeny))
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x"}, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected input filter deny for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runCalled != 0 || streamCalled != 0 {
+		t.Fatalf("model invocation should be blocked before provider call, run=%d stream=%d", runCalled, streamCalled)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	if runFinished.Payload["filter_stage"] != "input" || streamFinished.Payload["filter_stage"] != "input" {
+		t.Fatalf("filter stage mismatch run=%#v stream=%#v", runFinished.Payload["filter_stage"], streamFinished.Payload["filter_stage"])
+	}
+	if runFinished.Payload["reason_code"] != "contract.input.blocked" || streamFinished.Payload["reason_code"] != "contract.input.blocked" {
+		t.Fatalf("reason code mismatch run=%#v stream=%#v", runFinished.Payload["reason_code"], streamFinished.Payload["reason_code"])
+	}
+}
+
+func TestSecurityPolicyContractRunAndStreamPermissionSemanticsEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: deny
+    rate_limit:
+      enabled: false
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "echo"})
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{
+					CallID: "c1",
+					Name:   "local.echo",
+				},
+			})
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithLocalRegistry(reg))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x"}, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected deny errors for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	if runFinished.Payload["policy_kind"] != "permission" || streamFinished.Payload["policy_kind"] != "permission" {
+		t.Fatalf("policy kind mismatch run=%#v stream=%#v", runFinished.Payload["policy_kind"], streamFinished.Payload["policy_kind"])
+	}
+	if runFinished.Payload["reason_code"] != "security.permission_denied" || streamFinished.Payload["reason_code"] != "security.permission_denied" {
+		t.Fatalf("reason code mismatch run=%#v stream=%#v", runFinished.Payload["reason_code"], streamFinished.Payload["reason_code"])
+	}
+}
+
+func TestSecurityPolicyContractOutputFilterDenyRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: false
+    input:
+      enabled: false
+      block_action: deny
+    output:
+      enabled: true
+      block_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	denyFilter := &fakeModelOutputFilter{
+		filter: func(ctx context.Context, output string) (string, types.SecurityFilterResult, error) {
+			return output, types.SecurityFilterResult{
+				Decision:   types.SecurityFilterDecisionDeny,
+				ReasonCode: "contract.output.blocked",
+			}, nil
+		},
+	}
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "secret"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type:      types.ModelEventTypeOutputTextDelta,
+				TextDelta: "secret",
+			})
+		},
+	}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithModelOutputFilters(denyFilter))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithModelOutputFilters(denyFilter))
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x"}, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected output filter deny for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	if runFinished.Payload["policy_kind"] != "io_filter" || streamFinished.Payload["policy_kind"] != "io_filter" {
+		t.Fatalf("policy kind mismatch run=%#v stream=%#v", runFinished.Payload["policy_kind"], streamFinished.Payload["policy_kind"])
+	}
+	if runFinished.Payload["filter_stage"] != "output" || streamFinished.Payload["filter_stage"] != "output" {
+		t.Fatalf("filter stage mismatch run=%#v stream=%#v", runFinished.Payload["filter_stage"], streamFinished.Payload["filter_stage"])
+	}
+	if runFinished.Payload["decision"] != "deny" || streamFinished.Payload["decision"] != "deny" {
+		t.Fatalf("decision mismatch run=%#v stream=%#v", runFinished.Payload["decision"], streamFinished.Payload["decision"])
+	}
+	if runFinished.Payload["reason_code"] != "contract.output.blocked" || streamFinished.Payload["reason_code"] != "contract.output.blocked" {
+		t.Fatalf("reason code mismatch run=%#v stream=%#v", runFinished.Payload["reason_code"], streamFinished.Payload["reason_code"])
+	}
+}
+
+func TestSecurityPolicyContractFilterMatchDiagnostics(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: false
+    input:
+      enabled: false
+      block_action: deny
+    output:
+      enabled: true
+      block_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	matchFilter := &fakeModelOutputFilter{
+		filter: func(ctx context.Context, output string) (string, types.SecurityFilterResult, error) {
+			return strings.ToUpper(output), types.SecurityFilterResult{
+				Decision:   types.SecurityFilterDecisionMatch,
+				ReasonCode: "contract.output.matched",
+			}, nil
+		},
+	}
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "hello"}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithRuntimeManager(mgr), WithModelOutputFilters(matchFilter))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr != nil {
+		t.Fatalf("run failed: %v", runErr)
+	}
+	if res.FinalAnswer != "HELLO" {
+		t.Fatalf("final answer = %q, want HELLO", res.FinalAnswer)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["policy_kind"] != "io_filter" || finished.Payload["decision"] != "match" {
+		t.Fatalf("expected io_filter match diagnostics, got %#v", finished.Payload)
+	}
+	if finished.Payload["reason_code"] != "contract.output.matched" {
+		t.Fatalf("reason_code = %#v, want contract.output.matched", finished.Payload["reason_code"])
+	}
+}
+
+func TestSecurityEventContractPermissionDenyTriggersCallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: deny
+    rate_limit:
+      enabled: false
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    severity:
+      default: high
+      by_reason_code:
+        security.permission_denied: medium
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "echo"})
+
+	events := make([]types.SecurityEvent, 0, 1)
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			events = append(events, event)
+			return nil
+		}),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr == nil || res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected security deny, got err=%v result=%#v", runErr, res.Error)
+	}
+	if len(events) != 1 {
+		t.Fatalf("callback events len = %d, want 1", len(events))
+	}
+	if events[0].PolicyKind != "permission" || events[0].Decision != "deny" || events[0].ReasonCode != "security.permission_denied" {
+		t.Fatalf("callback taxonomy mismatch: %#v", events[0])
+	}
+	if events[0].Severity != "medium" {
+		t.Fatalf("callback severity = %q, want medium", events[0].Severity)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["severity"] != "medium" {
+		t.Fatalf("run.finished severity = %#v, want medium", finished.Payload["severity"])
+	}
+	if finished.Payload["alert_dispatch_status"] != "succeeded" {
+		t.Fatalf("run.finished alert_dispatch_status = %#v, want succeeded", finished.Payload["alert_dispatch_status"])
+	}
+}
+
+func TestSecurityEventContractCallbackFailureDoesNotChangeDenyOutcome(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: deny
+    rate_limit:
+      enabled: false
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "echo"})
+
+	calls := 0
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			calls++
+			return errors.New("boom")
+		}),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr == nil || res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected security deny, got err=%v result=%#v", runErr, res.Error)
+	}
+	if calls != 1 {
+		t.Fatalf("callback calls = %d, want 1", calls)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["alert_dispatch_status"] != "failed" {
+		t.Fatalf("alert_dispatch_status = %#v, want failed", finished.Payload["alert_dispatch_status"])
+	}
+	if finished.Payload["alert_dispatch_failure_reason"] != "alert.callback_error" {
+		t.Fatalf("alert_dispatch_failure_reason = %#v, want alert.callback_error", finished.Payload["alert_dispatch_failure_reason"])
+	}
+}
+
+func TestSecurityEventContractMatchDoesNotTriggerCallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: false
+    input:
+      enabled: false
+      block_action: deny
+    output:
+      enabled: true
+      block_action: deny
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	calls := 0
+	matchFilter := &fakeModelOutputFilter{
+		filter: func(ctx context.Context, output string) (string, types.SecurityFilterResult, error) {
+			return strings.ToUpper(output), types.SecurityFilterResult{
+				Decision:   types.SecurityFilterDecisionMatch,
+				ReasonCode: "security.io_filter_match",
+			}, nil
+		},
+	}
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				return types.ModelResponse{FinalAnswer: "ok"}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithModelOutputFilters(matchFilter),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			calls++
+			return nil
+		}),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr != nil || res.FinalAnswer != "OK" {
+		t.Fatalf("unexpected run result, err=%v answer=%q", runErr, res.FinalAnswer)
+	}
+	if calls != 0 {
+		t.Fatalf("callback calls = %d, want 0 for match", calls)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["alert_dispatch_status"] != "not_triggered" {
+		t.Fatalf("alert_dispatch_status = %#v, want not_triggered", finished.Payload["alert_dispatch_status"])
+	}
+}
+
+func TestSecurityEventContractRunAndStreamSeverityAndAlertEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: deny
+    rate_limit:
+      enabled: false
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    severity:
+      default: high
+      by_reason_code:
+        security.permission_denied: medium
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "echo"})
+
+	runAlerts := 0
+	streamAlerts := 0
+	runEngine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			runAlerts++
+			return nil
+		}),
+	)
+	streamEngine := New(
+		&fakeModel{
+			stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+				return onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "c1",
+						Name:   "local.echo",
+					},
+				})
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			streamAlerts++
+			return nil
+		}),
+	)
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	_, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x"}, runCollector)
+	_, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x"}, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected deny errors for run/stream, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runAlerts != 1 || streamAlerts != 1 {
+		t.Fatalf("callback alert count mismatch run=%d stream=%d", runAlerts, streamAlerts)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	for _, key := range []string{"policy_kind", "decision", "reason_code", "severity", "alert_dispatch_status"} {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("%s mismatch run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
 	}
 }
 

@@ -345,6 +345,120 @@ reload:
 	}
 }
 
+func TestSecurityPolicyContractInvalidSecurityReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+echo: allow
+    rate_limit:
+      enabled: true
+      scope: process
+      window: 1m
+      limit: 10
+      exceed_action: deny
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.ToolGovernance.Permission.ByTool["local+echo"]
+	if before != SecurityToolPolicyAllow {
+		t.Fatalf("before policy = %q, want allow", before)
+	}
+
+	writeConfig(t, file, `
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local.echo: deny
+    rate_limit:
+      enabled: true
+      scope: process
+      window: 1m
+      limit: 10
+      exceed_action: deny
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.ToolGovernance.Permission.ByTool["local+echo"]
+	if after != before {
+		t.Fatalf("invalid security reload should rollback, policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestSecurityEventContractInvalidSecurityEventReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: false
+    severity:
+      default: high
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.SecurityEvent.Alert.TriggerPolicy
+	if before != SecurityEventAlertPolicyDenyOnly {
+		t.Fatalf("before trigger_policy = %q, want deny_only", before)
+	}
+
+	writeConfig(t, file, `
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: all
+      sink: callback
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.SecurityEvent.Alert.TriggerPolicy
+	if after != before {
+		t.Fatalf("invalid security_event reload should rollback, trigger_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

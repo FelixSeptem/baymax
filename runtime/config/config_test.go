@@ -662,6 +662,154 @@ func TestValidateRejectsEmptyRedactionKeywordsWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestSecurityS2Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Security.ToolGovernance.Enabled {
+		t.Fatal("security.tool_governance.enabled = false, want true")
+	}
+	if cfg.Security.ToolGovernance.Mode != SecurityGovernanceModeEnforce {
+		t.Fatalf("security.tool_governance.mode = %q, want enforce", cfg.Security.ToolGovernance.Mode)
+	}
+	if cfg.Security.ToolGovernance.RateLimit.Scope != SecurityToolRateLimitScopeProcess {
+		t.Fatalf("security.tool_governance.rate_limit.scope = %q, want process", cfg.Security.ToolGovernance.RateLimit.Scope)
+	}
+	if cfg.Security.ToolGovernance.RateLimit.ExceedAction != SecurityToolPolicyDeny {
+		t.Fatalf("security.tool_governance.rate_limit.exceed_action = %q, want deny", cfg.Security.ToolGovernance.RateLimit.ExceedAction)
+	}
+	if !cfg.Security.ModelIOFiltering.Enabled {
+		t.Fatal("security.model_io_filtering.enabled = false, want true")
+	}
+	if cfg.Security.ModelIOFiltering.RequireRegisteredFilter {
+		t.Fatal("security.model_io_filtering.require_registered_filter = true, want false")
+	}
+	if cfg.Security.ModelIOFiltering.Input.BlockAction != SecurityModelIOFilterBlockActionDeny {
+		t.Fatalf("security.model_io_filtering.input.block_action = %q, want deny", cfg.Security.ModelIOFiltering.Input.BlockAction)
+	}
+	if cfg.Security.ModelIOFiltering.Output.BlockAction != SecurityModelIOFilterBlockActionDeny {
+		t.Fatalf("security.model_io_filtering.output.block_action = %q, want deny", cfg.Security.ModelIOFiltering.Output.BlockAction)
+	}
+}
+
+func TestSecurityS2EnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_TOOL_GOVERNANCE_RATE_LIMIT_LIMIT", "9")
+	t.Setenv("BAYMAX_SECURITY_MODEL_IO_FILTERING_REQUIRE_REGISTERED_FILTER", "true")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  tool_governance:
+    rate_limit:
+      limit: 3
+  model_io_filtering:
+    require_registered_filter: false
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.ToolGovernance.RateLimit.Limit != 9 {
+		t.Fatalf("security.tool_governance.rate_limit.limit = %d, want 9", cfg.Security.ToolGovernance.RateLimit.Limit)
+	}
+	if !cfg.Security.ModelIOFiltering.RequireRegisteredFilter {
+		t.Fatal("security.model_io_filtering.require_registered_filter = false, want true")
+	}
+}
+
+func TestSecurityEventS3Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Security.SecurityEvent.Enabled {
+		t.Fatal("security.security_event.enabled = false, want true")
+	}
+	if cfg.Security.SecurityEvent.Alert.TriggerPolicy != SecurityEventAlertPolicyDenyOnly {
+		t.Fatalf("security.security_event.alert.trigger_policy = %q, want deny_only", cfg.Security.SecurityEvent.Alert.TriggerPolicy)
+	}
+	if cfg.Security.SecurityEvent.Alert.Sink != SecurityEventAlertSinkCallback {
+		t.Fatalf("security.security_event.alert.sink = %q, want callback", cfg.Security.SecurityEvent.Alert.Sink)
+	}
+	if cfg.Security.SecurityEvent.Severity.Default != SecurityEventSeverityHigh {
+		t.Fatalf("security.security_event.severity.default = %q, want high", cfg.Security.SecurityEvent.Severity.Default)
+	}
+	if cfg.Security.SecurityEvent.Severity.ByReasonCode["security.io_filter_match"] != SecurityEventSeverityMedium {
+		t.Fatalf("security.security_event.severity.by_reason_code.security.io_filter_match = %q, want medium", cfg.Security.SecurityEvent.Severity.ByReasonCode["security.io_filter_match"])
+	}
+}
+
+func TestSecurityEventS3EnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_ALERT_TRIGGER_POLICY", "deny_only")
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_SEVERITY_DEFAULT", "medium")
+	t.Setenv("BAYMAX_SECURITY_SECURITY_EVENT_ALERT_CALLBACK_REQUIRE_REGISTERED", "true")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  security_event:
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: false
+    severity:
+      default: high
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.SecurityEvent.Alert.TriggerPolicy != SecurityEventAlertPolicyDenyOnly {
+		t.Fatalf("security.security_event.alert.trigger_policy = %q, want deny_only", cfg.Security.SecurityEvent.Alert.TriggerPolicy)
+	}
+	if cfg.Security.SecurityEvent.Severity.Default != SecurityEventSeverityMedium {
+		t.Fatalf("security.security_event.severity.default = %q, want env override medium", cfg.Security.SecurityEvent.Severity.Default)
+	}
+	if !cfg.Security.SecurityEvent.Alert.Callback.RequireRegistered {
+		t.Fatal("security.security_event.alert.callback.require_registered = false, want true from env")
+	}
+}
+
+func TestSecurityEventContractValidateRejectsInvalidS3Config(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.SecurityEvent.Alert.TriggerPolicy = "all"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.security_event.alert.trigger_policy") {
+		t.Fatalf("expected invalid trigger_policy validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Severity.ByPolicyKind = map[string]string{"unknown": "high"}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "by_policy_kind") {
+		t.Fatalf("expected invalid by_policy_kind validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.SecurityEvent.Severity.ByReasonCode = map[string]string{"security.permission_denied": "critical"}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "by_reason_code") {
+		t.Fatalf("expected invalid by_reason_code severity validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsMalformedNamespaceToolSelector(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.ToolGovernance.Permission.ByTool = map[string]string{
+		"local.echo": SecurityToolPolicyDeny,
+	}
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), "namespace+tool") {
+		t.Fatalf("expected namespace+tool validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidModelIOFilterBlockAction(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.ModelIOFiltering.Output.BlockAction = "warn"
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), "security.model_io_filtering.output.block_action") {
+		t.Fatalf("expected output block_action validation error, got %v", err)
+	}
+}
+
 func TestContextAssemblerCA2ProviderEnumAcceptsExternalProviders(t *testing.T) {
 	for _, provider := range []string{"http", "rag", "db", "elasticsearch"} {
 		cfg := DefaultConfig()

@@ -151,3 +151,47 @@ The CI workflow MUST expose replay validation in an independent job suitable for
 - **WHEN** maintainer reviews available status checks
 - **THEN** replay gate appears as a distinct check that can be configured as required
 
+### Requirement: Quality gate SHALL include S2 security policy contract checks
+The standard CI validation flow MUST include S2 security policy contract checks that validate:
+- `namespace+tool` permission deny/allow semantics,
+- process-scoped rate-limit deny semantics,
+- model input/output filtering deny semantics,
+- hot-reload invalid-update rollback semantics.
+
+Failures in S2 security policy contract checks MUST block merge.
+
+#### Scenario: S2 security contract check fails in pull request
+- **WHEN** CI runs S2 security contract checks and expected permission/rate-limit/filter/reload behavior diverges from fixtures
+- **THEN** security policy gate exits non-zero and pull request cannot pass required validation
+
+#### Scenario: S2 security contract check passes in pull request
+- **WHEN** CI runs S2 security contract checks and all expected behaviors match fixtures
+- **THEN** security policy gate reports success and does not block merge
+
+### Requirement: Security policy gate SHALL be exposed as independent required-check candidate
+The CI workflow MUST expose S2 security policy validation in an independent job suitable for branch-protection required status checks.
+
+#### Scenario: Maintainer configures branch protection for S2
+- **WHEN** maintainer reviews available CI status checks
+- **THEN** security policy gate appears as a distinct check that can be configured as required
+
+### Requirement: Quality gate SHALL include S3 security-event contract checks
+The standard CI validation flow MUST include S3 security-event contract checks that validate deny-only alert triggering, callback dispatch semantics, severity normalization, and Run/Stream semantic equivalence.
+
+Failures in S3 security-event contract checks MUST block merge.
+
+#### Scenario: S3 security-event contract check fails
+- **WHEN** CI runs S3 security-event contracts and observed taxonomy/alert semantics diverge from fixtures
+- **THEN** security-event gate exits non-zero and pull request cannot pass required validation
+
+#### Scenario: S3 security-event contract check passes
+- **WHEN** CI runs S3 security-event contracts and all expected behaviors match fixtures
+- **THEN** security-event gate reports success and does not block merge
+
+### Requirement: Security-event gate SHALL be exposed as independent required-check candidate
+The CI workflow MUST expose S3 security-event validation in an independent job suitable for branch-protection required status checks.
+
+#### Scenario: Maintainer configures branch protection for S3
+- **WHEN** maintainer reviews available CI checks
+- **THEN** security-event gate appears as a distinct check that can be configured as required
+

@@ -122,6 +122,14 @@ mcp:
 			"latency_ms":                               int64(120),
 			"tool_calls":                               3,
 			"error_class":                              "ErrTool",
+			"policy_kind":                              "permission",
+			"namespace_tool":                           "local+shell",
+			"filter_stage":                             "input",
+			"decision":                                 "deny",
+			"reason_code":                              "security.permission_denied",
+			"severity":                                 "high",
+			"alert_dispatch_status":                    "failed",
+			"alert_dispatch_failure_reason":            "alert.callback_error",
 			"prefix_hash":                              "abc123",
 			"assemble_latency_ms":                      int64(8),
 			"assemble_status":                          "success",
@@ -190,6 +198,15 @@ mcp:
 	}
 	if items[0].Status != "failed" || items[0].ErrorClass != "ErrTool" || items[0].ToolCalls != 3 {
 		t.Fatalf("unexpected run record: %#v", items[0])
+	}
+	if items[0].PolicyKind != "permission" || items[0].NamespaceTool != "local+shell" || items[0].Decision != "deny" {
+		t.Fatalf("security fields mismatch: %#v", items[0])
+	}
+	if items[0].FilterStage != "input" || items[0].ReasonCode != "security.permission_denied" {
+		t.Fatalf("security filter/reason mismatch: %#v", items[0])
+	}
+	if items[0].Severity != "high" || items[0].AlertDispatchStatus != "failed" || items[0].AlertDispatchFailureReason != "alert.callback_error" {
+		t.Fatalf("security severity/alert fields mismatch: %#v", items[0])
 	}
 	if items[0].PrefixHash != "abc123" || items[0].AssembleLatencyMs != 8 || items[0].AssembleStatus != "success" {
 		t.Fatalf("assembler fields mismatch: %#v", items[0])

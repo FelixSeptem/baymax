@@ -37,6 +37,14 @@ type RunRecord struct {
 	ToolCalls                            int                               `json:"tool_calls"`
 	LatencyMs                            int64                             `json:"latency_ms"`
 	ErrorClass                           string                            `json:"error_class,omitempty"`
+	PolicyKind                           string                            `json:"policy_kind,omitempty"`
+	NamespaceTool                        string                            `json:"namespace_tool,omitempty"`
+	FilterStage                          string                            `json:"filter_stage,omitempty"`
+	Decision                             string                            `json:"decision,omitempty"`
+	ReasonCode                           string                            `json:"reason_code,omitempty"`
+	Severity                             string                            `json:"severity,omitempty"`
+	AlertDispatchStatus                  string                            `json:"alert_dispatch_status,omitempty"`
+	AlertDispatchFailureReason           string                            `json:"alert_dispatch_failure_reason,omitempty"`
 	ModelProvider                        string                            `json:"model_provider,omitempty"`
 	FallbackUsed                         bool                              `json:"fallback_used,omitempty"`
 	FallbackInitial                      string                            `json:"fallback_initial,omitempty"`

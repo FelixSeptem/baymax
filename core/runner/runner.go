@@ -45,6 +45,9 @@ type Engine struct {
 	actionGateMatcher  types.ActionGateMatcher
 	actionGateResolver types.ActionGateResolver
 	clarification      types.ClarificationResolver
+	modelInputFilters  []types.ModelInputSecurityFilter
+	modelOutputFilters []types.ModelOutputSecurityFilter
+	securityAlert      types.SecurityAlertCallback
 	now                func() time.Time
 	newRunID           func() string
 	capCacheMu         sync.RWMutex
@@ -168,6 +171,27 @@ func WithClarificationResolver(resolver types.ClarificationResolver) Option {
 	}
 }
 
+// WithModelInputFilters registers host-provided model input security filters.
+func WithModelInputFilters(filters ...types.ModelInputSecurityFilter) Option {
+	return func(e *Engine) {
+		e.modelInputFilters = normalizeInputFilters(filters)
+	}
+}
+
+// WithModelOutputFilters registers host-provided model output security filters.
+func WithModelOutputFilters(filters ...types.ModelOutputSecurityFilter) Option {
+	return func(e *Engine) {
+		e.modelOutputFilters = normalizeOutputFilters(filters)
+	}
+}
+
+// WithSecurityAlertCallback registers a host callback sink for deny-only security alerts.
+func WithSecurityAlertCallback(callback types.SecurityAlertCallback) Option {
+	return func(e *Engine) {
+		e.securityAlert = callback
+	}
+}
+
 // Run executes a non-streaming agent loop and returns a final run result.
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
@@ -194,6 +218,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	gateStats := actionGateStats{}
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
+	lastSecurity := securityDecision{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -259,6 +284,18 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 			}
 			modelReq = assembledReq
+			filteredReq, filterDecision, filterTerminal, filterErr := e.applyInputFilters(ctx, runID, iteration, modelReq)
+			if filterDecision != nil {
+				lastSecurity = *filterDecision
+			}
+			if filterTerminal != nil {
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusFailed, lastSecurity.ReasonCode)
+				terminal = filterTerminal
+				runErr = filterErr
+				state = StateAbort
+				continue
+			}
+			modelReq = filteredReq
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 			lastSelection = selection
@@ -307,6 +344,20 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateAbort
 				continue
 			}
+			if strings.TrimSpace(resp.FinalAnswer) != "" {
+				filteredOutput, filterDecision, filterTerminal, filterErr := e.applyOutputFilters(ctx, runID, iteration, resp.FinalAnswer)
+				if filterDecision != nil {
+					lastSecurity = *filterDecision
+				}
+				if filterTerminal != nil {
+					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusFailed, lastSecurity.ReasonCode)
+					terminal = filterTerminal
+					runErr = filterErr
+					state = StateAbort
+					continue
+				}
+				resp.FinalAnswer = filteredOutput
+			}
 			lastResponse = resp
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
@@ -351,6 +402,23 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "tool_runtime_disabled")
 				warnings = append(warnings, "tool calls requested but tool runtime is not enabled")
 				state = StateModelStep
+				continue
+			}
+			toolSecurityDecision, toolSecurityTerminal, toolSecurityErr := e.enforceToolSecurityForCalls(
+				ctx,
+				h,
+				runID,
+				iteration,
+				&timelineSeq,
+				lastResponse.ToolCalls,
+			)
+			if toolSecurityDecision != nil {
+				lastSecurity = *toolSecurityDecision
+			}
+			if toolSecurityTerminal != nil {
+				terminal = toolSecurityTerminal
+				runErr = toolSecurityErr
+				state = StateAbort
 				continue
 			}
 			terminal, runErr = e.enforceActionGateForToolCalls(
@@ -493,24 +561,32 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:        lastSelection.Provider,
-					Initial:         lastSelection.Initial,
-					Path:            selectionPath,
-					Required:        lastSelection.Required,
-					UsedFallback:    fallbackUsed,
-					Assemble:        lastAssemble,
-					GateChecks:      gateStats.Checks,
-					GateDenied:      gateStats.DeniedCount,
-					GateTimeout:     gateStats.TimeoutCount,
-					GateRuleHits:    gateStats.RuleHitCount,
-					GateRuleLast:    gateStats.RuleLastID,
-					HitlAwait:       hitlStats.AwaitCount,
-					HitlResumed:     hitlStats.ResumeCount,
-					HitlCanceled:    hitlStats.CancelByUserCount,
-					CancelProp:      concurrencyStats.CancelPropagatedCount,
-					BackDrop:        concurrencyStats.BackpressureDropCount,
-					BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:    concurrencyStats.InflightPeak,
+					Provider:         lastSelection.Provider,
+					Initial:          lastSelection.Initial,
+					Path:             selectionPath,
+					Required:         lastSelection.Required,
+					UsedFallback:     fallbackUsed,
+					Assemble:         lastAssemble,
+					GateChecks:       gateStats.Checks,
+					GateDenied:       gateStats.DeniedCount,
+					GateTimeout:      gateStats.TimeoutCount,
+					GateRuleHits:     gateStats.RuleHitCount,
+					GateRuleLast:     gateStats.RuleLastID,
+					HitlAwait:        hitlStats.AwaitCount,
+					HitlResumed:      hitlStats.ResumeCount,
+					HitlCanceled:     hitlStats.CancelByUserCount,
+					CancelProp:       concurrencyStats.CancelPropagatedCount,
+					BackDrop:         concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:     concurrencyStats.InflightPeak,
+					SecurityPolicy:   lastSecurity.PolicyKind,
+					NamespaceTool:    lastSecurity.NamespaceTool,
+					FilterStage:      lastSecurity.FilterStage,
+					SecurityDecision: lastSecurity.Decision,
+					ReasonCode:       lastSecurity.ReasonCode,
+					Severity:         lastSecurity.Severity,
+					AlertStatus:      lastSecurity.AlertDispatchStatus,
+					AlertFailure:     lastSecurity.AlertFailureReason,
 				}),
 			})
 			return result, nil
@@ -536,25 +612,33 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-					Provider:        lastSelection.Provider,
-					Initial:         lastSelection.Initial,
-					Path:            selectionPath,
-					Required:        lastSelection.Required,
-					Reason:          lastSelection.Reason,
-					UsedFallback:    fallbackUsed,
-					Assemble:        lastAssemble,
-					GateChecks:      gateStats.Checks,
-					GateDenied:      gateStats.DeniedCount,
-					GateTimeout:     gateStats.TimeoutCount,
-					GateRuleHits:    gateStats.RuleHitCount,
-					GateRuleLast:    gateStats.RuleLastID,
-					HitlAwait:       hitlStats.AwaitCount,
-					HitlResumed:     hitlStats.ResumeCount,
-					HitlCanceled:    hitlStats.CancelByUserCount,
-					CancelProp:      concurrencyStats.CancelPropagatedCount,
-					BackDrop:        concurrencyStats.BackpressureDropCount,
-					BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:    concurrencyStats.InflightPeak,
+					Provider:         lastSelection.Provider,
+					Initial:          lastSelection.Initial,
+					Path:             selectionPath,
+					Required:         lastSelection.Required,
+					Reason:           lastSelection.Reason,
+					UsedFallback:     fallbackUsed,
+					Assemble:         lastAssemble,
+					GateChecks:       gateStats.Checks,
+					GateDenied:       gateStats.DeniedCount,
+					GateTimeout:      gateStats.TimeoutCount,
+					GateRuleHits:     gateStats.RuleHitCount,
+					GateRuleLast:     gateStats.RuleLastID,
+					HitlAwait:        hitlStats.AwaitCount,
+					HitlResumed:      hitlStats.ResumeCount,
+					HitlCanceled:     hitlStats.CancelByUserCount,
+					CancelProp:       concurrencyStats.CancelPropagatedCount,
+					BackDrop:         concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:     concurrencyStats.InflightPeak,
+					SecurityPolicy:   lastSecurity.PolicyKind,
+					NamespaceTool:    lastSecurity.NamespaceTool,
+					FilterStage:      lastSecurity.FilterStage,
+					SecurityDecision: lastSecurity.Decision,
+					ReasonCode:       lastSecurity.ReasonCode,
+					Severity:         lastSecurity.Severity,
+					AlertStatus:      lastSecurity.AlertDispatchStatus,
+					AlertFailure:     lastSecurity.AlertFailureReason,
 				}),
 			})
 			return result, runErr
@@ -581,6 +665,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	gateStats := actionGateStats{}
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
+	lastSecurity := securityDecision{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -603,13 +688,21 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", string(selErr.Class), runFinishMeta{
-				Provider:     selection.Provider,
-				Initial:      selection.Initial,
-				Path:         selectionPath,
-				Required:     required,
-				UsedFallback: selection.UsedFallback,
-				Reason:       selErr.Message,
-				Assemble:     types.ContextAssembleResult{},
+				Provider:         selection.Provider,
+				Initial:          selection.Initial,
+				Path:             selectionPath,
+				Required:         required,
+				UsedFallback:     selection.UsedFallback,
+				Reason:           selErr.Message,
+				Assemble:         types.ContextAssembleResult{},
+				SecurityPolicy:   lastSecurity.PolicyKind,
+				NamespaceTool:    lastSecurity.NamespaceTool,
+				FilterStage:      lastSecurity.FilterStage,
+				SecurityDecision: lastSecurity.Decision,
+				ReasonCode:       lastSecurity.ReasonCode,
+				Severity:         lastSecurity.Severity,
+				AlertStatus:      lastSecurity.AlertDispatchStatus,
+				AlertFailure:     lastSecurity.AlertFailureReason,
 			}),
 		})
 		return result, errors.New(selErr.Message)
@@ -664,12 +757,20 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", string(types.ErrContext), runFinishMeta{
-				Provider:     "",
-				Initial:      "",
-				Path:         selectionPath,
-				Required:     required,
-				UsedFallback: false,
-				Assemble:     lastAssemble,
+				Provider:         "",
+				Initial:          "",
+				Path:             selectionPath,
+				Required:         required,
+				UsedFallback:     false,
+				Assemble:         lastAssemble,
+				SecurityPolicy:   lastSecurity.PolicyKind,
+				NamespaceTool:    lastSecurity.NamespaceTool,
+				FilterStage:      lastSecurity.FilterStage,
+				SecurityDecision: lastSecurity.Decision,
+				ReasonCode:       lastSecurity.ReasonCode,
+				Severity:         lastSecurity.Severity,
+				AlertStatus:      lastSecurity.AlertDispatchStatus,
+				AlertFailure:     lastSecurity.AlertFailureReason,
 			}),
 		})
 		return result, assembleErr
@@ -678,6 +779,46 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
 	}
 	modelReq = assembledReq
+	filteredReq, filterDecision, filterTerminal, filterErr := e.applyInputFilters(ctx, runID, iteration, modelReq)
+	if filterDecision != nil {
+		lastSecurity = *filterDecision
+	}
+	if filterTerminal != nil {
+		result := types.RunResult{
+			RunID:      runID,
+			Iterations: iteration,
+			LatencyMs:  e.now().Sub(start).Milliseconds(),
+			Error:      filterTerminal,
+		}
+		runTimelineStatus, runTimelineReason := classifyRunTerminal(result.Error, filterErr)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusFailed, lastSecurity.ReasonCode)
+		e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, runTimelineStatus, runTimelineReason)
+		e.emit(ctx, h, types.Event{
+			Version:   "v1",
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: runFinishedPayload(result, "failed", string(types.ErrSecurity), runFinishMeta{
+				Provider:         selection.Provider,
+				Initial:          selection.Initial,
+				Path:             selectionPath,
+				Required:         required,
+				UsedFallback:     selection.UsedFallback,
+				Assemble:         lastAssemble,
+				SecurityPolicy:   lastSecurity.PolicyKind,
+				NamespaceTool:    lastSecurity.NamespaceTool,
+				FilterStage:      lastSecurity.FilterStage,
+				SecurityDecision: lastSecurity.Decision,
+				ReasonCode:       lastSecurity.ReasonCode,
+				Severity:         lastSecurity.Severity,
+				AlertStatus:      lastSecurity.AlertDispatchStatus,
+				AlertFailure:     lastSecurity.AlertFailureReason,
+			}),
+		})
+		return result, filterErr
+	}
+	modelReq = filteredReq
 	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 	e.emit(ctx, h, types.Event{
@@ -695,23 +836,56 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
 	modelCtx, modelSpan := e.tracer.StartStep(stepCtx, "model.stream", attribute.Int("iteration.index", iteration))
 	err := selectedModel.Stream(modelCtx, modelReq, func(ev types.ModelEvent) error {
-		payload := map[string]any{
-			"event_type": ev.Type,
-			"delta":      ev.TextDelta,
+		normalizedEvent := ev
+		if normalizedEvent.Type == types.ModelEventTypeFinalAnswer || normalizedEvent.Type == types.ModelEventTypeOutputTextDelta {
+			filteredOutput, filterDecision, filterTerminal, filterErr := e.applyOutputFilters(stepCtx, runID, iteration, normalizedEvent.TextDelta)
+			if filterDecision != nil {
+				lastSecurity = *filterDecision
+			}
+			if filterTerminal != nil {
+				return &actionGateViolationError{
+					classified: filterTerminal,
+					err:        filterErr,
+				}
+			}
+			normalizedEvent.TextDelta = filteredOutput
 		}
-		if ev.ToolCall != nil {
-			payload["tool_call"] = ev.ToolCall
-		}
-		if ev.ClarificationRequest != nil {
-			payload["clarification_request"] = map[string]any{
-				"request_id":      strings.TrimSpace(ev.ClarificationRequest.RequestID),
-				"questions":       ev.ClarificationRequest.Questions,
-				"context_summary": strings.TrimSpace(ev.ClarificationRequest.ContextSummary),
-				"timeout_ms":      ev.ClarificationRequest.Timeout.Milliseconds(),
+		if normalizedEvent.ToolCall != nil {
+			toolSecurityDecision, toolSecurityTerminal, toolSecurityErr := e.enforceToolSecurityForCalls(
+				stepCtx,
+				h,
+				runID,
+				iteration,
+				&timelineSeq,
+				[]types.ToolCall{*normalizedEvent.ToolCall},
+			)
+			if toolSecurityDecision != nil {
+				lastSecurity = *toolSecurityDecision
+			}
+			if toolSecurityTerminal != nil {
+				return &actionGateViolationError{
+					classified: toolSecurityTerminal,
+					err:        toolSecurityErr,
+				}
 			}
 		}
-		if len(ev.Meta) > 0 {
-			payload["meta"] = ev.Meta
+		payload := map[string]any{
+			"event_type": normalizedEvent.Type,
+			"delta":      normalizedEvent.TextDelta,
+		}
+		if normalizedEvent.ToolCall != nil {
+			payload["tool_call"] = normalizedEvent.ToolCall
+		}
+		if normalizedEvent.ClarificationRequest != nil {
+			payload["clarification_request"] = map[string]any{
+				"request_id":      strings.TrimSpace(normalizedEvent.ClarificationRequest.RequestID),
+				"questions":       normalizedEvent.ClarificationRequest.Questions,
+				"context_summary": strings.TrimSpace(normalizedEvent.ClarificationRequest.ContextSummary),
+				"timeout_ms":      normalizedEvent.ClarificationRequest.Timeout.Milliseconds(),
+			}
+		}
+		if len(normalizedEvent.Meta) > 0 {
+			payload["meta"] = normalizedEvent.Meta
 		}
 		e.emit(stepCtx, h, types.Event{
 			Version:   "v1",
@@ -721,11 +895,11 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Time:      e.now(),
 			Payload:   payload,
 		})
-		if ev.Type == "final_answer" || ev.Type == "response.output_text.delta" {
-			final += ev.TextDelta
+		if normalizedEvent.Type == types.ModelEventTypeFinalAnswer || normalizedEvent.Type == types.ModelEventTypeOutputTextDelta {
+			final += normalizedEvent.TextDelta
 		}
-		if ev.ClarificationRequest != nil || ev.Type == types.ModelEventTypeClarificationRequest {
-			request := ev.ClarificationRequest
+		if normalizedEvent.ClarificationRequest != nil || normalizedEvent.Type == types.ModelEventTypeClarificationRequest {
+			request := normalizedEvent.ClarificationRequest
 			if request == nil {
 				request = &types.ClarificationRequest{}
 			}
@@ -750,7 +924,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			}
 			req = applyClarificationResponse(req, clarification)
 		}
-		if ev.ToolCall != nil {
+		if normalizedEvent.ToolCall != nil {
 			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
 			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusRunning, "")
 			gateTerm, gateRunErr := e.enforceActionGateForToolCalls(
@@ -760,7 +934,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				runID,
 				iteration,
 				&timelineSeq,
-				[]types.ToolCall{*ev.ToolCall},
+				[]types.ToolCall{*normalizedEvent.ToolCall},
 				&gateStats,
 			)
 			if gateTerm != nil {
@@ -817,24 +991,32 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			Iteration: iteration,
 			Time:      e.now(),
 			Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-				Provider:        selection.Provider,
-				Initial:         selection.Initial,
-				Path:            selectionPath,
-				Required:        required,
-				UsedFallback:    selection.UsedFallback,
-				Assemble:        lastAssemble,
-				GateChecks:      gateStats.Checks,
-				GateDenied:      gateStats.DeniedCount,
-				GateTimeout:     gateStats.TimeoutCount,
-				GateRuleHits:    gateStats.RuleHitCount,
-				GateRuleLast:    gateStats.RuleLastID,
-				HitlAwait:       hitlStats.AwaitCount,
-				HitlResumed:     hitlStats.ResumeCount,
-				HitlCanceled:    hitlStats.CancelByUserCount,
-				CancelProp:      concurrencyStats.CancelPropagatedCount,
-				BackDrop:        concurrencyStats.BackpressureDropCount,
-				BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
-				InflightPeak:    concurrencyStats.InflightPeak,
+				Provider:         selection.Provider,
+				Initial:          selection.Initial,
+				Path:             selectionPath,
+				Required:         required,
+				UsedFallback:     selection.UsedFallback,
+				Assemble:         lastAssemble,
+				GateChecks:       gateStats.Checks,
+				GateDenied:       gateStats.DeniedCount,
+				GateTimeout:      gateStats.TimeoutCount,
+				GateRuleHits:     gateStats.RuleHitCount,
+				GateRuleLast:     gateStats.RuleLastID,
+				HitlAwait:        hitlStats.AwaitCount,
+				HitlResumed:      hitlStats.ResumeCount,
+				HitlCanceled:     hitlStats.CancelByUserCount,
+				CancelProp:       concurrencyStats.CancelPropagatedCount,
+				BackDrop:         concurrencyStats.BackpressureDropCount,
+				BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:     concurrencyStats.InflightPeak,
+				SecurityPolicy:   lastSecurity.PolicyKind,
+				NamespaceTool:    lastSecurity.NamespaceTool,
+				FilterStage:      lastSecurity.FilterStage,
+				SecurityDecision: lastSecurity.Decision,
+				ReasonCode:       lastSecurity.ReasonCode,
+				Severity:         lastSecurity.Severity,
+				AlertStatus:      lastSecurity.AlertDispatchStatus,
+				AlertFailure:     lastSecurity.AlertFailureReason,
 			}),
 		})
 		return result, err
@@ -857,24 +1039,32 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		Iteration: iteration,
 		Time:      e.now(),
 		Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-			Provider:        selection.Provider,
-			Initial:         selection.Initial,
-			Path:            selectionPath,
-			Required:        required,
-			UsedFallback:    selection.UsedFallback,
-			Assemble:        lastAssemble,
-			GateChecks:      gateStats.Checks,
-			GateDenied:      gateStats.DeniedCount,
-			GateTimeout:     gateStats.TimeoutCount,
-			GateRuleHits:    gateStats.RuleHitCount,
-			GateRuleLast:    gateStats.RuleLastID,
-			HitlAwait:       hitlStats.AwaitCount,
-			HitlResumed:     hitlStats.ResumeCount,
-			HitlCanceled:    hitlStats.CancelByUserCount,
-			CancelProp:      concurrencyStats.CancelPropagatedCount,
-			BackDrop:        concurrencyStats.BackpressureDropCount,
-			BackDropByPhase: concurrencyStats.BackpressureDropByPhase,
-			InflightPeak:    concurrencyStats.InflightPeak,
+			Provider:         selection.Provider,
+			Initial:          selection.Initial,
+			Path:             selectionPath,
+			Required:         required,
+			UsedFallback:     selection.UsedFallback,
+			Assemble:         lastAssemble,
+			GateChecks:       gateStats.Checks,
+			GateDenied:       gateStats.DeniedCount,
+			GateTimeout:      gateStats.TimeoutCount,
+			GateRuleHits:     gateStats.RuleHitCount,
+			GateRuleLast:     gateStats.RuleLastID,
+			HitlAwait:        hitlStats.AwaitCount,
+			HitlResumed:      hitlStats.ResumeCount,
+			HitlCanceled:     hitlStats.CancelByUserCount,
+			CancelProp:       concurrencyStats.CancelPropagatedCount,
+			BackDrop:         concurrencyStats.BackpressureDropCount,
+			BackDropByPhase:  concurrencyStats.BackpressureDropByPhase,
+			InflightPeak:     concurrencyStats.InflightPeak,
+			SecurityPolicy:   lastSecurity.PolicyKind,
+			NamespaceTool:    lastSecurity.NamespaceTool,
+			FilterStage:      lastSecurity.FilterStage,
+			SecurityDecision: lastSecurity.Decision,
+			ReasonCode:       lastSecurity.ReasonCode,
+			Severity:         lastSecurity.Severity,
+			AlertStatus:      lastSecurity.AlertDispatchStatus,
+			AlertFailure:     lastSecurity.AlertFailureReason,
 		}),
 	})
 	return result, nil
@@ -1185,25 +1375,33 @@ func (e *Engine) discoverCapabilities(
 }
 
 type runFinishMeta struct {
-	Provider        string
-	Initial         string
-	Path            []string
-	Required        []types.ModelCapability
-	UsedFallback    bool
-	Reason          string
-	Assemble        types.ContextAssembleResult
-	GateChecks      int
-	GateDenied      int
-	GateTimeout     int
-	GateRuleHits    int
-	GateRuleLast    string
-	HitlAwait       int
-	HitlResumed     int
-	HitlCanceled    int
-	CancelProp      int
-	BackDrop        int
-	BackDropByPhase map[string]int
-	InflightPeak    int
+	Provider         string
+	Initial          string
+	Path             []string
+	Required         []types.ModelCapability
+	UsedFallback     bool
+	Reason           string
+	Assemble         types.ContextAssembleResult
+	GateChecks       int
+	GateDenied       int
+	GateTimeout      int
+	GateRuleHits     int
+	GateRuleLast     string
+	HitlAwait        int
+	HitlResumed      int
+	HitlCanceled     int
+	CancelProp       int
+	BackDrop         int
+	BackDropByPhase  map[string]int
+	InflightPeak     int
+	SecurityPolicy   string
+	NamespaceTool    string
+	FilterStage      string
+	SecurityDecision string
+	ReasonCode       string
+	Severity         string
+	AlertStatus      string
+	AlertFailure     string
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1385,6 +1583,30 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["backpressure_drop_count_by_phase"] = meta.BackDropByPhase
 	}
 	payload["inflight_peak"] = meta.InflightPeak
+	if meta.SecurityPolicy != "" {
+		payload["policy_kind"] = meta.SecurityPolicy
+	}
+	if meta.NamespaceTool != "" {
+		payload["namespace_tool"] = meta.NamespaceTool
+	}
+	if meta.FilterStage != "" {
+		payload["filter_stage"] = meta.FilterStage
+	}
+	if meta.SecurityDecision != "" {
+		payload["decision"] = meta.SecurityDecision
+	}
+	if meta.ReasonCode != "" {
+		payload["reason_code"] = meta.ReasonCode
+	}
+	if meta.Severity != "" {
+		payload["severity"] = meta.Severity
+	}
+	if meta.AlertStatus != "" {
+		payload["alert_dispatch_status"] = meta.AlertStatus
+	}
+	if meta.AlertFailure != "" {
+		payload["alert_dispatch_failure_reason"] = meta.AlertFailure
+	}
 	return payload
 }
 
@@ -1423,6 +1645,8 @@ func classifyRunTerminal(terminal *types.ClassifiedError, runErr error) (types.A
 		return types.ActionStatusFailed, "model_error"
 	case types.ErrTool:
 		return types.ActionStatusFailed, "tool_error"
+	case types.ErrSecurity:
+		return types.ActionStatusFailed, "security_error"
 	case types.ErrHITL:
 		return types.ActionStatusFailed, "hitl_error"
 	default:
@@ -1453,6 +1677,8 @@ func classifyClassifiedTimelineError(err *types.ClassifiedError) (types.ActionSt
 		return types.ActionStatusFailed, "model_error"
 	case types.ErrTool:
 		return types.ActionStatusFailed, "tool_error"
+	case types.ErrSecurity:
+		return types.ActionStatusFailed, "security_error"
 	case types.ErrIterationLimit:
 		return types.ActionStatusFailed, "iteration_limit"
 	default:

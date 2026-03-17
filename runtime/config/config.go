@@ -74,6 +74,21 @@ const (
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
 
+const (
+	SecurityGovernanceModeEnforce        = "enforce"
+	SecurityToolPolicyAllow              = "allow"
+	SecurityToolPolicyDeny               = "deny"
+	SecurityToolRateLimitScopeProcess    = "process"
+	SecurityModelIOFilterStageInput      = "input"
+	SecurityModelIOFilterStageOutput     = "output"
+	SecurityModelIOFilterBlockActionDeny = "deny"
+	SecurityEventAlertPolicyDenyOnly     = "deny_only"
+	SecurityEventAlertSinkCallback       = "callback"
+	SecurityEventSeverityLow             = "low"
+	SecurityEventSeverityMedium          = "medium"
+	SecurityEventSeverityHigh            = "high"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -411,8 +426,11 @@ type ContextAssemblerCA3CompactionRerankerGovernanceConfig struct {
 }
 
 type SecurityConfig struct {
-	Scan      SecurityScanConfig      `json:"scan"`
-	Redaction SecurityRedactionConfig `json:"redaction"`
+	Scan             SecurityScanConfig             `json:"scan"`
+	Redaction        SecurityRedactionConfig        `json:"redaction"`
+	ToolGovernance   SecurityToolGovernanceConfig   `json:"tool_governance"`
+	ModelIOFiltering SecurityModelIOFilteringConfig `json:"model_io_filtering"`
+	SecurityEvent    SecurityEventConfig            `json:"security_event"`
 }
 
 type SecurityScanConfig struct {
@@ -424,6 +442,62 @@ type SecurityRedactionConfig struct {
 	Enabled  bool     `json:"enabled"`
 	Strategy string   `json:"strategy"`
 	Keywords []string `json:"keywords"`
+}
+
+type SecurityToolGovernanceConfig struct {
+	Enabled    bool                     `json:"enabled"`
+	Mode       string                   `json:"mode"`
+	Permission SecurityPermissionConfig `json:"permission"`
+	RateLimit  SecurityRateLimitConfig  `json:"rate_limit"`
+}
+
+type SecurityPermissionConfig struct {
+	Default    string            `json:"default"`
+	DenyAction string            `json:"deny_action"`
+	ByTool     map[string]string `json:"by_tool"`
+}
+
+type SecurityRateLimitConfig struct {
+	Enabled      bool           `json:"enabled"`
+	Scope        string         `json:"scope"`
+	Window       time.Duration  `json:"window"`
+	Limit        int            `json:"limit"`
+	ByToolLimit  map[string]int `json:"by_tool_limit"`
+	ExceedAction string         `json:"exceed_action"`
+}
+
+type SecurityModelIOFilteringConfig struct {
+	Enabled                 bool                             `json:"enabled"`
+	RequireRegisteredFilter bool                             `json:"require_registered_filter"`
+	Input                   SecurityModelIOFilterStageConfig `json:"input"`
+	Output                  SecurityModelIOFilterStageConfig `json:"output"`
+}
+
+type SecurityModelIOFilterStageConfig struct {
+	Enabled     bool   `json:"enabled"`
+	BlockAction string `json:"block_action"`
+}
+
+type SecurityEventConfig struct {
+	Enabled  bool                     `json:"enabled"`
+	Alert    SecurityEventAlertConfig `json:"alert"`
+	Severity SecuritySeverityConfig   `json:"severity"`
+}
+
+type SecurityEventAlertConfig struct {
+	TriggerPolicy string                           `json:"trigger_policy"`
+	Sink          string                           `json:"sink"`
+	Callback      SecurityEventAlertCallbackConfig `json:"callback"`
+}
+
+type SecurityEventAlertCallbackConfig struct {
+	RequireRegistered bool `json:"require_registered"`
+}
+
+type SecuritySeverityConfig struct {
+	Default      string            `json:"default"`
+	ByPolicyKind map[string]string `json:"by_policy_kind"`
+	ByReasonCode map[string]string `json:"by_reason_code"`
 }
 
 type LoadOptions struct {
@@ -689,6 +763,61 @@ func DefaultConfig() Config {
 				Enabled:  true,
 				Strategy: SecurityRedactionKeyword,
 				Keywords: []string{"token", "password", "secret", "api_key", "apikey"},
+			},
+			ToolGovernance: SecurityToolGovernanceConfig{
+				Enabled: true,
+				Mode:    SecurityGovernanceModeEnforce,
+				Permission: SecurityPermissionConfig{
+					Default:    SecurityToolPolicyAllow,
+					DenyAction: SecurityToolPolicyDeny,
+					ByTool:     map[string]string{},
+				},
+				RateLimit: SecurityRateLimitConfig{
+					Enabled:      true,
+					Scope:        SecurityToolRateLimitScopeProcess,
+					Window:       time.Minute,
+					Limit:        120,
+					ByToolLimit:  map[string]int{},
+					ExceedAction: SecurityToolPolicyDeny,
+				},
+			},
+			ModelIOFiltering: SecurityModelIOFilteringConfig{
+				Enabled:                 true,
+				RequireRegisteredFilter: false,
+				Input: SecurityModelIOFilterStageConfig{
+					Enabled:     true,
+					BlockAction: SecurityModelIOFilterBlockActionDeny,
+				},
+				Output: SecurityModelIOFilterStageConfig{
+					Enabled:     true,
+					BlockAction: SecurityModelIOFilterBlockActionDeny,
+				},
+			},
+			SecurityEvent: SecurityEventConfig{
+				Enabled: true,
+				Alert: SecurityEventAlertConfig{
+					TriggerPolicy: SecurityEventAlertPolicyDenyOnly,
+					Sink:          SecurityEventAlertSinkCallback,
+					Callback: SecurityEventAlertCallbackConfig{
+						RequireRegistered: false,
+					},
+				},
+				Severity: SecuritySeverityConfig{
+					Default: SecurityEventSeverityHigh,
+					ByPolicyKind: map[string]string{
+						"permission": SecurityEventSeverityHigh,
+						"rate_limit": SecurityEventSeverityHigh,
+						"io_filter":  SecurityEventSeverityHigh,
+					},
+					ByReasonCode: map[string]string{
+						"security.permission_denied":   SecurityEventSeverityHigh,
+						"security.rate_limit_exceeded": SecurityEventSeverityHigh,
+						"security.io_filter_denied":    SecurityEventSeverityHigh,
+						"security.io_filter_error":     SecurityEventSeverityHigh,
+						"security.io_filter_missing":   SecurityEventSeverityHigh,
+						"security.io_filter_match":     SecurityEventSeverityMedium,
+					},
+				},
 			},
 		},
 	}
@@ -1040,7 +1169,13 @@ func Validate(cfg Config) error {
 	if cfg.Security.Redaction.Enabled && len(normalizeKeywords(cfg.Security.Redaction.Keywords)) == 0 {
 		return errors.New("security.redaction.keywords must not be empty when security.redaction.enabled=true")
 	}
-	return nil
+	if err := validateSecurityToolGovernance(cfg.Security.ToolGovernance); err != nil {
+		return err
+	}
+	if err := validateSecurityModelIOFiltering(cfg.Security.ModelIOFiltering); err != nil {
+		return err
+	}
+	return validateSecurityEventConfig(cfg.Security.SecurityEvent)
 }
 
 func validateStagePolicy(v, field string) error {
@@ -1086,6 +1221,157 @@ func validateActionGatePolicy(v, field string) error {
 	default:
 		return fmt.Errorf("%s must be one of [allow,require_confirm,deny]", field)
 	}
+}
+
+func validateSecurityToolGovernance(cfg SecurityToolGovernanceConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		mode = SecurityGovernanceModeEnforce
+	}
+	switch mode {
+	case SecurityGovernanceModeEnforce:
+	default:
+		return fmt.Errorf("security.tool_governance.mode must be one of [%s], got %q", SecurityGovernanceModeEnforce, cfg.Mode)
+	}
+	if err := validateSecurityPolicyValue(cfg.Permission.Default, "security.tool_governance.permission.default", []string{SecurityToolPolicyAllow, SecurityToolPolicyDeny}); err != nil {
+		return err
+	}
+	if err := validateSecurityPolicyValue(cfg.Permission.DenyAction, "security.tool_governance.permission.deny_action", []string{SecurityToolPolicyDeny}); err != nil {
+		return err
+	}
+	for key, policy := range cfg.Permission.ByTool {
+		if err := validateNamespaceToolKey(key, fmt.Sprintf("security.tool_governance.permission.by_tool.%s", key)); err != nil {
+			return err
+		}
+		if err := validateSecurityPolicyValue(policy, fmt.Sprintf("security.tool_governance.permission.by_tool.%s", key), []string{SecurityToolPolicyAllow, SecurityToolPolicyDeny}); err != nil {
+			return err
+		}
+	}
+	if cfg.RateLimit.Enabled {
+		scope := strings.ToLower(strings.TrimSpace(cfg.RateLimit.Scope))
+		if scope == "" {
+			scope = SecurityToolRateLimitScopeProcess
+		}
+		switch scope {
+		case SecurityToolRateLimitScopeProcess:
+		default:
+			return fmt.Errorf("security.tool_governance.rate_limit.scope must be one of [%s], got %q", SecurityToolRateLimitScopeProcess, cfg.RateLimit.Scope)
+		}
+		if cfg.RateLimit.Window <= 0 {
+			return errors.New("security.tool_governance.rate_limit.window must be > 0")
+		}
+		if cfg.RateLimit.Limit <= 0 {
+			return errors.New("security.tool_governance.rate_limit.limit must be > 0")
+		}
+		for key, limit := range cfg.RateLimit.ByToolLimit {
+			if err := validateNamespaceToolKey(key, fmt.Sprintf("security.tool_governance.rate_limit.by_tool_limit.%s", key)); err != nil {
+				return err
+			}
+			if limit <= 0 {
+				return fmt.Errorf("security.tool_governance.rate_limit.by_tool_limit.%s must be > 0", key)
+			}
+		}
+		if err := validateSecurityPolicyValue(cfg.RateLimit.ExceedAction, "security.tool_governance.rate_limit.exceed_action", []string{SecurityToolPolicyDeny}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSecurityModelIOFiltering(cfg SecurityModelIOFilteringConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if err := validateSecurityModelIOFilterStage(cfg.Input, SecurityModelIOFilterStageInput); err != nil {
+		return err
+	}
+	return validateSecurityModelIOFilterStage(cfg.Output, SecurityModelIOFilterStageOutput)
+}
+
+func validateSecurityModelIOFilterStage(cfg SecurityModelIOFilterStageConfig, stage string) error {
+	field := fmt.Sprintf("security.model_io_filtering.%s.block_action", stage)
+	return validateSecurityPolicyValue(cfg.BlockAction, field, []string{SecurityModelIOFilterBlockActionDeny})
+}
+
+func validateSecurityEventConfig(cfg SecurityEventConfig) error {
+	if err := validateSecurityEventAlert(cfg.Alert); err != nil {
+		return err
+	}
+	if err := validateSecuritySeverity(cfg.Severity.Default, "security.security_event.severity.default"); err != nil {
+		return err
+	}
+	for key, level := range cfg.Severity.ByPolicyKind {
+		kind := strings.ToLower(strings.TrimSpace(key))
+		if kind == "" {
+			return errors.New("security.security_event.severity.by_policy_kind contains empty key")
+		}
+		switch kind {
+		case "permission", "rate_limit", "io_filter":
+		default:
+			return fmt.Errorf("security.security_event.severity.by_policy_kind.%s must be one of [permission,rate_limit,io_filter]", kind)
+		}
+		if err := validateSecuritySeverity(level, fmt.Sprintf("security.security_event.severity.by_policy_kind.%s", kind)); err != nil {
+			return err
+		}
+	}
+	for key, level := range cfg.Severity.ByReasonCode {
+		reason := strings.ToLower(strings.TrimSpace(key))
+		if reason == "" {
+			return errors.New("security.security_event.severity.by_reason_code contains empty key")
+		}
+		if err := validateSecuritySeverity(level, fmt.Sprintf("security.security_event.severity.by_reason_code.%s", reason)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSecurityEventAlert(cfg SecurityEventAlertConfig) error {
+	switch strings.ToLower(strings.TrimSpace(cfg.TriggerPolicy)) {
+	case SecurityEventAlertPolicyDenyOnly:
+	default:
+		return fmt.Errorf("security.security_event.alert.trigger_policy must be one of [%s], got %q", SecurityEventAlertPolicyDenyOnly, cfg.TriggerPolicy)
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Sink)) {
+	case SecurityEventAlertSinkCallback:
+	default:
+		return fmt.Errorf("security.security_event.alert.sink must be one of [%s], got %q", SecurityEventAlertSinkCallback, cfg.Sink)
+	}
+	return nil
+}
+
+func validateSecuritySeverity(value, field string) error {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case SecurityEventSeverityLow, SecurityEventSeverityMedium, SecurityEventSeverityHigh:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of [%s,%s,%s], got %q", field, SecurityEventSeverityLow, SecurityEventSeverityMedium, SecurityEventSeverityHigh, value)
+	}
+}
+
+func validateSecurityPolicyValue(value, field string, allowed []string) error {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" && len(allowed) > 0 {
+		normalized = allowed[0]
+	}
+	for _, item := range allowed {
+		if normalized == item {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s must be one of [%s], got %q", field, strings.Join(allowed, ","), value)
+}
+
+func validateNamespaceToolKey(raw, field string) error {
+	key := strings.ToLower(strings.TrimSpace(raw))
+	parts := strings.Split(key, "+")
+	if len(parts) != 2 {
+		return fmt.Errorf("%s must be in namespace+tool format, got %q", field, raw)
+	}
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return fmt.Errorf("%s must be in namespace+tool format, got %q", field, raw)
+	}
+	return nil
 }
 
 func validateActionGateRuleCondition(c types.ActionGateRuleCondition, field string) error {
@@ -1562,6 +1848,30 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.redaction.enabled", base.Security.Redaction.Enabled)
 	v.SetDefault("security.redaction.strategy", base.Security.Redaction.Strategy)
 	v.SetDefault("security.redaction.keywords", base.Security.Redaction.Keywords)
+	v.SetDefault("security.tool_governance.enabled", base.Security.ToolGovernance.Enabled)
+	v.SetDefault("security.tool_governance.mode", base.Security.ToolGovernance.Mode)
+	v.SetDefault("security.tool_governance.permission.default", base.Security.ToolGovernance.Permission.Default)
+	v.SetDefault("security.tool_governance.permission.deny_action", base.Security.ToolGovernance.Permission.DenyAction)
+	v.SetDefault("security.tool_governance.permission.by_tool", base.Security.ToolGovernance.Permission.ByTool)
+	v.SetDefault("security.tool_governance.rate_limit.enabled", base.Security.ToolGovernance.RateLimit.Enabled)
+	v.SetDefault("security.tool_governance.rate_limit.scope", base.Security.ToolGovernance.RateLimit.Scope)
+	v.SetDefault("security.tool_governance.rate_limit.window", base.Security.ToolGovernance.RateLimit.Window)
+	v.SetDefault("security.tool_governance.rate_limit.limit", base.Security.ToolGovernance.RateLimit.Limit)
+	v.SetDefault("security.tool_governance.rate_limit.by_tool_limit", base.Security.ToolGovernance.RateLimit.ByToolLimit)
+	v.SetDefault("security.tool_governance.rate_limit.exceed_action", base.Security.ToolGovernance.RateLimit.ExceedAction)
+	v.SetDefault("security.model_io_filtering.enabled", base.Security.ModelIOFiltering.Enabled)
+	v.SetDefault("security.model_io_filtering.require_registered_filter", base.Security.ModelIOFiltering.RequireRegisteredFilter)
+	v.SetDefault("security.model_io_filtering.input.enabled", base.Security.ModelIOFiltering.Input.Enabled)
+	v.SetDefault("security.model_io_filtering.input.block_action", base.Security.ModelIOFiltering.Input.BlockAction)
+	v.SetDefault("security.model_io_filtering.output.enabled", base.Security.ModelIOFiltering.Output.Enabled)
+	v.SetDefault("security.model_io_filtering.output.block_action", base.Security.ModelIOFiltering.Output.BlockAction)
+	v.SetDefault("security.security_event.enabled", base.Security.SecurityEvent.Enabled)
+	v.SetDefault("security.security_event.alert.trigger_policy", base.Security.SecurityEvent.Alert.TriggerPolicy)
+	v.SetDefault("security.security_event.alert.sink", base.Security.SecurityEvent.Alert.Sink)
+	v.SetDefault("security.security_event.alert.callback.require_registered", base.Security.SecurityEvent.Alert.Callback.RequireRegistered)
+	v.SetDefault("security.security_event.severity.default", base.Security.SecurityEvent.Severity.Default)
+	v.SetDefault("security.security_event.severity.by_policy_kind", base.Security.SecurityEvent.Severity.ByPolicyKind)
+	v.SetDefault("security.security_event.severity.by_reason_code", base.Security.SecurityEvent.Severity.ByReasonCode)
 }
 
 func buildConfig(v *viper.Viper) Config {
@@ -1696,6 +2006,30 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Security.Redaction.Enabled = v.GetBool("security.redaction.enabled")
 	cfg.Security.Redaction.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("security.redaction.strategy")))
 	cfg.Security.Redaction.Keywords = normalizeKeywords(v.GetStringSlice("security.redaction.keywords"))
+	cfg.Security.ToolGovernance.Enabled = v.GetBool("security.tool_governance.enabled")
+	cfg.Security.ToolGovernance.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.tool_governance.mode")))
+	cfg.Security.ToolGovernance.Permission.Default = strings.ToLower(strings.TrimSpace(v.GetString("security.tool_governance.permission.default")))
+	cfg.Security.ToolGovernance.Permission.DenyAction = strings.ToLower(strings.TrimSpace(v.GetString("security.tool_governance.permission.deny_action")))
+	cfg.Security.ToolGovernance.Permission.ByTool = normalizeNamespaceToolPolicyMap(v.GetStringMapString("security.tool_governance.permission.by_tool"))
+	cfg.Security.ToolGovernance.RateLimit.Enabled = v.GetBool("security.tool_governance.rate_limit.enabled")
+	cfg.Security.ToolGovernance.RateLimit.Scope = strings.ToLower(strings.TrimSpace(v.GetString("security.tool_governance.rate_limit.scope")))
+	cfg.Security.ToolGovernance.RateLimit.Window = v.GetDuration("security.tool_governance.rate_limit.window")
+	cfg.Security.ToolGovernance.RateLimit.Limit = v.GetInt("security.tool_governance.rate_limit.limit")
+	cfg.Security.ToolGovernance.RateLimit.ByToolLimit = normalizeNamespaceToolIntMap(v.GetStringMap("security.tool_governance.rate_limit.by_tool_limit"))
+	cfg.Security.ToolGovernance.RateLimit.ExceedAction = strings.ToLower(strings.TrimSpace(v.GetString("security.tool_governance.rate_limit.exceed_action")))
+	cfg.Security.ModelIOFiltering.Enabled = v.GetBool("security.model_io_filtering.enabled")
+	cfg.Security.ModelIOFiltering.RequireRegisteredFilter = v.GetBool("security.model_io_filtering.require_registered_filter")
+	cfg.Security.ModelIOFiltering.Input.Enabled = v.GetBool("security.model_io_filtering.input.enabled")
+	cfg.Security.ModelIOFiltering.Input.BlockAction = strings.ToLower(strings.TrimSpace(v.GetString("security.model_io_filtering.input.block_action")))
+	cfg.Security.ModelIOFiltering.Output.Enabled = v.GetBool("security.model_io_filtering.output.enabled")
+	cfg.Security.ModelIOFiltering.Output.BlockAction = strings.ToLower(strings.TrimSpace(v.GetString("security.model_io_filtering.output.block_action")))
+	cfg.Security.SecurityEvent.Enabled = v.GetBool("security.security_event.enabled")
+	cfg.Security.SecurityEvent.Alert.TriggerPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.trigger_policy")))
+	cfg.Security.SecurityEvent.Alert.Sink = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.sink")))
+	cfg.Security.SecurityEvent.Alert.Callback.RequireRegistered = v.GetBool("security.security_event.alert.callback.require_registered")
+	cfg.Security.SecurityEvent.Severity.Default = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.severity.default")))
+	cfg.Security.SecurityEvent.Severity.ByPolicyKind = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_policy_kind"))
+	cfg.Security.SecurityEvent.Severity.ByReasonCode = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_reason_code"))
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {
@@ -1900,6 +2234,53 @@ func normalizeStringToPolicyMap(in map[string]string) map[string]string {
 			continue
 		}
 		out[key] = value
+	}
+	return out
+}
+
+func normalizeNamespaceToolPolicyMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for rawKey, rawValue := range in {
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		value := strings.ToLower(strings.TrimSpace(rawValue))
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func normalizeNamespaceToolIntMap(in map[string]any) map[string]int {
+	if len(in) == 0 {
+		return map[string]int{}
+	}
+	out := make(map[string]int, len(in))
+	for rawKey, rawValue := range in {
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		if key == "" {
+			continue
+		}
+		switch tv := rawValue.(type) {
+		case int:
+			out[key] = tv
+		case int64:
+			out[key] = int(tv)
+		case int32:
+			out[key] = int(tv)
+		case float64:
+			out[key] = int(tv)
+		case float32:
+			out[key] = int(tv)
+		case string:
+			var parsed int
+			if _, err := fmt.Sscanf(strings.TrimSpace(tv), "%d", &parsed); err == nil {
+				out[key] = parsed
+			}
+		}
 	}
 	return out
 }

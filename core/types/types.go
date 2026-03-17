@@ -46,6 +46,42 @@ type ActionGateResolver interface {
 	Confirm(ctx context.Context, req ActionGateConfirmRequest) (bool, error)
 }
 
+type SecurityFilterDecision string
+
+const (
+	SecurityFilterDecisionAllow SecurityFilterDecision = "allow"
+	SecurityFilterDecisionMatch SecurityFilterDecision = "match"
+	SecurityFilterDecisionDeny  SecurityFilterDecision = "deny"
+)
+
+type SecurityFilterResult struct {
+	Decision   SecurityFilterDecision `json:"decision,omitempty"`
+	ReasonCode string                 `json:"reason_code,omitempty"`
+}
+
+type SecurityEvent struct {
+	EventID       string    `json:"event_id,omitempty"`
+	RunID         string    `json:"run_id,omitempty"`
+	Iteration     int       `json:"iteration,omitempty"`
+	PolicyKind    string    `json:"policy_kind,omitempty"`
+	NamespaceTool string    `json:"namespace_tool,omitempty"`
+	FilterStage   string    `json:"filter_stage,omitempty"`
+	Decision      string    `json:"decision,omitempty"`
+	ReasonCode    string    `json:"reason_code,omitempty"`
+	Severity      string    `json:"severity,omitempty"`
+	Timestamp     time.Time `json:"timestamp,omitempty"`
+}
+
+type SecurityAlertCallback func(ctx context.Context, event SecurityEvent) error
+
+type ModelInputSecurityFilter interface {
+	FilterModelInput(ctx context.Context, req ModelRequest) (ModelRequest, SecurityFilterResult, error)
+}
+
+type ModelOutputSecurityFilter interface {
+	FilterModelOutput(ctx context.Context, output string) (string, SecurityFilterResult, error)
+}
+
 type ActionGateRuleOperator string
 
 const (

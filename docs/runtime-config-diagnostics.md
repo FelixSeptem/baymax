@@ -660,6 +660,101 @@ Action Timeline reason code（H3 相关）：
   - `context/assembler`（stage2 payload 与 tail recap）
 - 脱敏策略默认按 key 关键词匹配，支持扩展 matcher 接口（后续阶段可接入更复杂策略）。
 
+## 安全治理（S2）
+
+新增 S2 策略入口，统一覆盖 `namespace+tool` 权限、进程级限流、模型输入/输出过滤：
+
+```yaml
+security:
+  tool_governance:
+    enabled: true
+    mode: enforce
+    permission:
+      default: allow
+      deny_action: deny
+      by_tool:
+        local+shell: deny
+    rate_limit:
+      enabled: true
+      scope: process
+      window: 1m
+      limit: 120
+      by_tool_limit:
+        local+search: 30
+      exceed_action: deny
+  model_io_filtering:
+    enabled: true
+    require_registered_filter: false
+    input:
+      enabled: true
+      block_action: deny
+    output:
+      enabled: true
+      block_action: deny
+```
+
+校验与热更新语义：
+
+1. `namespace+tool` 选择器格式非法（例如 `local.echo`）会在启动与热更新阶段 fail-fast。
+2. `mode/scope/block_action` 非法枚举值会 fail-fast。
+3. 热更新遵循原子切换：有效配置立即生效；无效更新回滚到上一有效快照。
+
+新增 run 诊断字段（增量兼容）：
+
+- `policy_kind`: `permission|rate_limit|io_filter`
+- `namespace_tool`: 匹配到的 `namespace+tool`
+- `filter_stage`: `input|output`
+- `decision`: `allow|match|deny`
+- `reason_code`: 归一化原因码（如 `security.permission_denied`、`security.rate_limit_exceeded`、`security.io_filter_match`、`security.io_filter_denied`）
+
+独立安全门禁（required-check 候选）：
+
+- Linux/macOS: `bash scripts/check-security-policy-contract.sh`
+- Windows: `pwsh -File scripts/check-security-policy-contract.ps1`
+- CI Job: `security-policy-gate`（仅 PR 触发）
+
+## 安全事件治理（S3）
+
+在 S2 阻断基础上，新增统一安全事件 taxonomy 与 deny-only callback 告警契约：
+
+```yaml
+security:
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only # 当前仅支持 deny_only
+      sink: callback            # 当前仅支持 callback
+      callback:
+        require_registered: false
+    severity:
+      default: high             # low|medium|high
+      by_policy_kind:
+        permission: high
+        rate_limit: high
+        io_filter: high
+      by_reason_code:
+        security.io_filter_match: medium
+```
+
+运行时语义：
+
+1. 统一事件字段：`policy_kind|namespace_tool|filter_stage|decision|reason_code|severity`。
+2. 仅 `decision=deny` 触发 callback；`allow|match` 只保留观测，不触发告警。
+3. callback 失败不会改变原有安全决策（仍保持 deny），仅追加告警投递失败诊断。
+4. Run/Stream 在等价输入与配置下需保持 `policy_kind|decision|reason_code|severity|alert_dispatch_status` 语义等价。
+
+新增 run 诊断字段（增量兼容）：
+
+- `severity`: 归一化严重级别（`low|medium|high`）
+- `alert_dispatch_status`: 告警投递状态（`disabled|not_triggered|skipped|succeeded|failed`）
+- `alert_dispatch_failure_reason`: 告警投递失败原因码（如 `alert.callback_missing|alert.callback_error`）
+
+独立安全事件门禁（required-check 候选）：
+
+- Linux/macOS: `bash scripts/check-security-event-contract.sh`
+- Windows: `pwsh -File scripts/check-security-event-contract.ps1`
+- CI Job: `security-event-gate`（仅 PR 触发）
+
 ## 热更新语义
 
 - 触发机制：监听配置文件变更。

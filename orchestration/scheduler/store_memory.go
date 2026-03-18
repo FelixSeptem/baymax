@@ -1,0 +1,70 @@
+package scheduler
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"time"
+)
+
+type MemoryStore struct {
+	mu    sync.Mutex
+	state schedulerState
+}
+
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{state: newSchedulerState("memory")}
+}
+
+func (s *MemoryStore) Backend() string {
+	return "memory"
+}
+
+func (s *MemoryStore) Enqueue(_ context.Context, task Task, now time.Time) (TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.enqueue(task, now)
+}
+
+func (s *MemoryStore) Claim(_ context.Context, workerID string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.claim(strings.TrimSpace(workerID), now, leaseTimeout)
+}
+
+func (s *MemoryStore) Heartbeat(_ context.Context, taskID, attemptID, leaseToken string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.heartbeat(taskID, attemptID, leaseToken, now, leaseTimeout)
+}
+
+func (s *MemoryStore) ExpireLeases(_ context.Context, now time.Time) ([]ClaimedTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.expireLeases(now), nil
+}
+
+func (s *MemoryStore) Requeue(_ context.Context, taskID, _ string, now time.Time) (TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.requeue(taskID, now)
+}
+
+func (s *MemoryStore) CommitTerminal(_ context.Context, commit TerminalCommit) (CommitResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.commitTerminal(commit)
+}
+
+func (s *MemoryStore) Get(_ context.Context, taskID string) (TaskRecord, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.state.get(taskID)
+	return record, ok, nil
+}
+
+func (s *MemoryStore) Stats(_ context.Context) (Stats, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.Stats, nil
+}

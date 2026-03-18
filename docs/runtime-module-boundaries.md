@@ -33,6 +33,11 @@
   - A2A delivery 模式协商与降级（`callback|sse`）以及版本协商（`strict_major + min_supported_minor`）仅在 `a2a/*` 实现，不下沉到 MCP 传输层
   - 保留并透传组合编排关联字段（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）
   - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
+- `orchestration/scheduler`
+  - 分布式 subagent 调度基线（enqueue/claim/heartbeat/lease_expire/requeue/complete/fail）
+  - 维护 task/attempt/lease 状态机与 terminal commit 幂等语义（`task_id+attempt_id`）
+  - parent-child guardrail（`max_depth|max_active_children|child_timeout_budget`）fail-fast 拒绝
+  - 通过标准事件发射 Scheduler/Subagent timeline（`scheduler.*` / `subagent.*`，不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
 - `mcp/retry`
@@ -68,6 +73,7 @@
 - Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
+- Scheduler 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。

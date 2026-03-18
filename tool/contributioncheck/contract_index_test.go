@@ -28,6 +28,16 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Security Policy S2",
 		"Security Event S3",
 		"Security Delivery S4",
+		"Composed Orchestration A5",
+		"Teams Mixed Local+Remote A5",
+		"Workflow A2A Step A5",
+		"Composed Remote Failure A5",
+		"Composed Config/Reload A5",
+		"Composed Diagnostics Replay A5",
+		"Scheduler Crash Takeover A6",
+		"Scheduler Idempotent Replay A6",
+		"Scheduler Run/Stream Equivalence A6",
+		"A2A Scheduler Retry A6",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

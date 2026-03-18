@@ -171,6 +171,72 @@ func TestParallelMixedLocalAndRemoteExecution(t *testing.T) {
 	}
 }
 
+func TestRemoteFailureAggregatesAndTimelineReasons(t *testing.T) {
+	collector := &timelineCollector{}
+	engine := New(WithTimelineEmitter(collector))
+	plan := Plan{
+		RunID:      "run-team-remote-fail",
+		TeamID:     "team-remote-fail",
+		WorkflowID: "wf-remote-fail",
+		StepID:     "step-remote-fail",
+		Strategy:   StrategySerial,
+		Tasks: []Task{
+			{
+				TaskID:  "remote-fail",
+				AgentID: "agent-remote",
+				Role:    RoleWorker,
+				Target:  TaskTargetRemote,
+				Remote: RemoteTarget{
+					PeerID: "peer-fail",
+					Method: "delegate",
+				},
+				RemoteRunner: RemoteTaskRunnerFunc(func(ctx context.Context, plan Plan, task Task) (TaskResult, error) {
+					return TaskResult{}, errors.New("remote boom")
+				}),
+			},
+		},
+	}
+
+	res, err := engine.Run(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(res.Tasks) != 1 {
+		t.Fatalf("task count = %d, want 1", len(res.Tasks))
+	}
+	if res.TeamTaskFailed != 1 || res.TeamRemoteTotal != 1 || res.TeamRemoteFailed != 1 {
+		t.Fatalf("remote failure aggregate mismatch: %#v", res)
+	}
+	task := res.Tasks[0]
+	if task.Status != TaskStatusFailed || task.Reason != "task.error" || task.Target != TaskTargetRemote {
+		t.Fatalf("remote task terminal mismatch: %#v", task)
+	}
+
+	reasons := map[string]bool{}
+	for _, ev := range collector.events {
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		reasons[reason] = true
+		if reason == ReasonDispatchRemote || reason == ReasonCollectRemote {
+			if ev.Payload["team_id"] != "team-remote-fail" ||
+				ev.Payload["workflow_id"] != "wf-remote-fail" ||
+				ev.Payload["step_id"] != "step-remote-fail" ||
+				ev.Payload["task_id"] != "remote-fail" ||
+				ev.Payload["agent_id"] != "agent-remote" ||
+				ev.Payload["peer_id"] != "peer-fail" {
+				t.Fatalf("remote failure timeline metadata mismatch: %#v", ev.Payload)
+			}
+		}
+	}
+	for _, reason := range []string{ReasonDispatchRemote, ReasonCollectRemote, ReasonResolve} {
+		if !reasons[reason] {
+			t.Fatalf("missing timeline reason %q", reason)
+		}
+	}
+}
+
 func TestMixedCancellationConvergence(t *testing.T) {
 	engine := New()
 	plan := Plan{

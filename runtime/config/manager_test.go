@@ -1194,6 +1194,96 @@ reload:
 	}
 }
 
+func TestManagerSchedulerInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Scheduler.HeartbeatInterval
+	if before != 500*time.Millisecond {
+		t.Fatalf("before scheduler.heartbeat_interval = %v, want 500ms", before)
+	}
+
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 2s
+  queue_limit: 1024
+  retry_max_attempts: 3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Scheduler.HeartbeatInterval
+	if after != before {
+		t.Fatalf("invalid scheduler reload should rollback, heartbeat_interval = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerSubagentInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+subagent:
+  max_depth: 4
+  max_active_children: 8
+  child_timeout_budget: 5s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Subagent.MaxDepth
+	if before != 4 {
+		t.Fatalf("before subagent.max_depth = %d, want 4", before)
+	}
+
+	writeConfig(t, file, `
+subagent:
+  max_depth: 0
+  max_active_children: 8
+  child_timeout_budget: 5s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Subagent.MaxDepth
+	if after != before {
+		t.Fatalf("invalid subagent reload should rollback, max_depth = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

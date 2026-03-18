@@ -314,6 +314,24 @@ concurrency:
     droppable_priorities: [low]
 ```
 
+组合编排（A5）最小配置示例：
+```yaml
+teams:
+  enabled: true
+  default_strategy: parallel
+  remote:
+    enabled: true
+    require_peer_id: true
+
+workflow:
+  enabled: true
+  planner_validation_mode: strict
+  remote:
+    enabled: true
+    require_peer_id: true
+    default_retry_max_attempts: 2
+```
+
 Action Timeline 趋势聚合（H16）最小配置示例：
 ```yaml
 diagnostics:
@@ -499,9 +517,13 @@ bash scripts/check-ca4-benchmark-regression.sh
 
 Teams baseline 说明：
 - `orchestration/teams` 提供可复用协作运行时（`serial|parallel|vote`），`examples/07` 与 `examples/08` 可作为接入范式参考。
+- 支持 mixed local/remote 执行目标（`target=local|remote`），remote 路径 reason 为 `team.dispatch_remote` / `team.collect_remote`。
+- run 摘要新增 remote 聚合字段：`team_remote_task_total`、`team_remote_task_failed`（additive，不影响既有消费者）。
 
 Workflow baseline 说明：
 - `orchestration/workflow` 提供 workflow DSL 基线执行器（`step/depends_on/condition/retry/timeout`），可与现有 runner/tool/mcp/skill 适配器组合接入。
+- 支持 A2A remote step（`kind=a2a`），沿用 workflow 既有 `retry/timeout/checkpoint` 语义，调度 reason 为 `workflow.dispatch_a2a`。
+- run 摘要新增 remote 聚合字段：`workflow_remote_step_total`、`workflow_remote_step_failed`（additive，不影响既有消费者）。
 
 运行示例：
 ```bash

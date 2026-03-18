@@ -22,6 +22,17 @@
   - `mcp.active_profile` -> `BAYMAX_MCP_ACTIVE_PROFILE`
   - `mcp.profiles.default.retry` -> `BAYMAX_MCP_PROFILES_DEFAULT_RETRY`
   - `reload.debounce` -> `BAYMAX_RELOAD_DEBOUNCE`
+  - `teams.remote.enabled` -> `BAYMAX_TEAMS_REMOTE_ENABLED`
+  - `teams.remote.require_peer_id` -> `BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`
+  - `workflow.remote.enabled` -> `BAYMAX_WORKFLOW_REMOTE_ENABLED`
+  - `workflow.remote.default_retry_max_attempts` -> `BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS`
+  - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
+  - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
+  - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
+  - `scheduler.heartbeat_interval` -> `BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL`
+  - `subagent.max_depth` -> `BAYMAX_SUBAGENT_MAX_DEPTH`
+  - `subagent.max_active_children` -> `BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN`
+  - `subagent.child_timeout_budget` -> `BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET`
 
 ## YAML Schema（核心字段）
 
@@ -121,6 +132,20 @@ a2a:
     enabled: true
     require_all: true
     max_candidates: 16            # 必须 > 0
+
+scheduler:
+  enabled: false
+  backend: memory                 # memory|file
+  path: /tmp/baymax/scheduler-state.json # backend=file 时建议显式配置
+  lease_timeout: 2s               # 必须 > 0
+  heartbeat_interval: 500ms       # 必须 > 0 且 < lease_timeout
+  queue_limit: 1024               # 必须 > 0
+  retry_max_attempts: 3           # 必须 > 0
+
+subagent:
+  max_depth: 4                    # 必须 > 0
+  max_active_children: 8          # 必须 > 0
+  child_timeout_budget: 5s        # 必须 > 0
 
 skill:
   trigger_scoring:
@@ -417,6 +442,15 @@ a2a baseline 校验语义：
 9. `a2a.capability_discovery.max_candidates` 必须 `> 0`。
 10. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
 11. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+scheduler/subagent baseline 校验语义：
+1. `scheduler.backend` 仅支持 `memory|file`。
+2. `scheduler.backend=file` 时 `scheduler.path` 必须非空。
+3. `scheduler.lease_timeout` 必须 `> 0`。
+4. `scheduler.heartbeat_interval` 必须 `> 0` 且 `< scheduler.lease_timeout`。
+5. `scheduler.queue_limit` 与 `scheduler.retry_max_attempts` 必须 `> 0`。
+6. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -776,6 +810,26 @@ A2A Timeline 关联字段（按可用性增量携带）：
 - `version_local`
 - `version_peer`
 
+Action Timeline reason code（Scheduler/Subagent 基线）：
+- `scheduler.enqueue`：调度任务入队。
+- `scheduler.claim`：worker 原子领取任务并创建 lease。
+- `scheduler.heartbeat`：worker 续租当前 lease。
+- `scheduler.lease_expired`：lease 超时失效，当前 attempt 进入过期态。
+- `scheduler.requeue`：任务重新进入可领取队列（接管路径）。
+- `subagent.spawn`：父 run 创建子任务（通过 guardrail 校验）。
+- `subagent.join`：子任务进入终态并回收聚合。
+- `subagent.budget_reject`：子任务创建被预算/阈值策略拒绝。
+
+Scheduler/Subagent Timeline 关联字段（按可用性增量携带）：
+- `run_id`
+- `workflow_id`
+- `team_id`
+- `step_id`
+- `task_id`
+- `attempt_id`
+- `agent_id`
+- `peer_id`
+
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
 2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
@@ -838,6 +892,20 @@ Action Gate 规则优先级（H4）：
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
 - A2A 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
+
+### Run 诊断新增字段（Scheduler/Subagent 基线 A6）
+
+- `scheduler_backend`：调度后端类型（`memory|file`）。
+- `scheduler_queue_total`：本次 run 的 scheduler 入队总数。
+- `scheduler_claim_total`：本次 run 的 scheduler claim 总数。
+- `scheduler_reclaim_total`：本次 run 的 lease 过期接管（requeue）总数。
+- `subagent_child_total`：本次 run 创建的子任务总数。
+- `subagent_child_failed`：本次 run 子任务失败总数。
+- `subagent_budget_reject_total`：本次 run 因 guardrail/budget 被拒绝的子任务总数。
+
+语义约束：
+- 字段为 additive 扩展，不影响既有 run 摘要消费者。
+- Scheduler/Subagent 摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

@@ -100,6 +100,11 @@ const (
 )
 
 const (
+	SchedulerBackendMemory = "memory"
+	SchedulerBackendFile   = "file"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -134,6 +139,8 @@ type Config struct {
 	Teams            TeamsConfig            `json:"teams"`
 	Workflow         WorkflowConfig         `json:"workflow"`
 	A2A              A2AConfig              `json:"a2a"`
+	Scheduler        SchedulerConfig        `json:"scheduler"`
+	Subagent         SubagentConfig         `json:"subagent"`
 	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
 	Clarification    ClarificationConfig    `json:"clarification"`
@@ -274,6 +281,22 @@ type A2ACapabilityDiscoveryConfig struct {
 	Enabled       bool `json:"enabled"`
 	RequireAll    bool `json:"require_all"`
 	MaxCandidates int  `json:"max_candidates"`
+}
+
+type SchedulerConfig struct {
+	Enabled           bool          `json:"enabled"`
+	Backend           string        `json:"backend"`
+	Path              string        `json:"path"`
+	LeaseTimeout      time.Duration `json:"lease_timeout"`
+	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
+	QueueLimit        int           `json:"queue_limit"`
+	RetryMaxAttempts  int           `json:"retry_max_attempts"`
+}
+
+type SubagentConfig struct {
+	MaxDepth           int           `json:"max_depth"`
+	MaxActiveChildren  int           `json:"max_active_children"`
+	ChildTimeoutBudget time.Duration `json:"child_timeout_budget"`
 }
 
 type SkillConfig struct {
@@ -787,6 +810,20 @@ func DefaultConfig() Config {
 				RequireAll:    true,
 				MaxCandidates: 16,
 			},
+		},
+		Scheduler: SchedulerConfig{
+			Enabled:           false,
+			Backend:           SchedulerBackendMemory,
+			Path:              filepath.Join(os.TempDir(), "baymax", "scheduler-state.json"),
+			LeaseTimeout:      2 * time.Second,
+			HeartbeatInterval: 500 * time.Millisecond,
+			QueueLimit:        1024,
+			RetryMaxAttempts:  3,
+		},
+		Subagent: SubagentConfig{
+			MaxDepth:           4,
+			MaxActiveChildren:  8,
+			ChildTimeoutBudget: 5 * time.Second,
 		},
 		Skill: SkillConfig{
 			TriggerScoring: SkillTriggerScoringConfig{
@@ -1355,6 +1392,44 @@ func Validate(cfg Config) error {
 	}
 	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
 		return errors.New("a2a.capability_discovery.max_candidates must be > 0")
+	}
+	switch backend := strings.ToLower(strings.TrimSpace(cfg.Scheduler.Backend)); backend {
+	case SchedulerBackendMemory:
+	case SchedulerBackendFile:
+		if strings.TrimSpace(cfg.Scheduler.Path) == "" {
+			return errors.New("scheduler.path is required when scheduler.backend=file")
+		}
+	default:
+		return fmt.Errorf(
+			"scheduler.backend must be one of [%s,%s], got %q",
+			SchedulerBackendMemory,
+			SchedulerBackendFile,
+			cfg.Scheduler.Backend,
+		)
+	}
+	if cfg.Scheduler.LeaseTimeout <= 0 {
+		return errors.New("scheduler.lease_timeout must be > 0")
+	}
+	if cfg.Scheduler.HeartbeatInterval <= 0 {
+		return errors.New("scheduler.heartbeat_interval must be > 0")
+	}
+	if cfg.Scheduler.HeartbeatInterval >= cfg.Scheduler.LeaseTimeout {
+		return errors.New("scheduler.heartbeat_interval must be < scheduler.lease_timeout")
+	}
+	if cfg.Scheduler.QueueLimit <= 0 {
+		return errors.New("scheduler.queue_limit must be > 0")
+	}
+	if cfg.Scheduler.RetryMaxAttempts <= 0 {
+		return errors.New("scheduler.retry_max_attempts must be > 0")
+	}
+	if cfg.Subagent.MaxDepth <= 0 {
+		return errors.New("subagent.max_depth must be > 0")
+	}
+	if cfg.Subagent.MaxActiveChildren <= 0 {
+		return errors.New("subagent.max_active_children must be > 0")
+	}
+	if cfg.Subagent.ChildTimeoutBudget <= 0 {
+		return errors.New("subagent.child_timeout_budget must be > 0")
 	}
 	scoring := cfg.Skill.TriggerScoring
 	switch strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy)); strategy {
@@ -2306,6 +2381,16 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("a2a.capability_discovery.enabled", base.A2A.CapabilityDiscovery.Enabled)
 	v.SetDefault("a2a.capability_discovery.require_all", base.A2A.CapabilityDiscovery.RequireAll)
 	v.SetDefault("a2a.capability_discovery.max_candidates", base.A2A.CapabilityDiscovery.MaxCandidates)
+	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
+	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
+	v.SetDefault("scheduler.path", base.Scheduler.Path)
+	v.SetDefault("scheduler.lease_timeout", base.Scheduler.LeaseTimeout)
+	v.SetDefault("scheduler.heartbeat_interval", base.Scheduler.HeartbeatInterval)
+	v.SetDefault("scheduler.queue_limit", base.Scheduler.QueueLimit)
+	v.SetDefault("scheduler.retry_max_attempts", base.Scheduler.RetryMaxAttempts)
+	v.SetDefault("subagent.max_depth", base.Subagent.MaxDepth)
+	v.SetDefault("subagent.max_active_children", base.Subagent.MaxActiveChildren)
+	v.SetDefault("subagent.child_timeout_budget", base.Subagent.ChildTimeoutBudget)
 	v.SetDefault("skill.trigger_scoring.strategy", base.Skill.TriggerScoring.Strategy)
 	v.SetDefault("skill.trigger_scoring.confidence_threshold", base.Skill.TriggerScoring.ConfidenceThreshold)
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
@@ -2521,6 +2606,16 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.A2A.CapabilityDiscovery.Enabled = v.GetBool("a2a.capability_discovery.enabled")
 	cfg.A2A.CapabilityDiscovery.RequireAll = v.GetBool("a2a.capability_discovery.require_all")
 	cfg.A2A.CapabilityDiscovery.MaxCandidates = v.GetInt("a2a.capability_discovery.max_candidates")
+	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
+	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
+	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))
+	cfg.Scheduler.LeaseTimeout = v.GetDuration("scheduler.lease_timeout")
+	cfg.Scheduler.HeartbeatInterval = v.GetDuration("scheduler.heartbeat_interval")
+	cfg.Scheduler.QueueLimit = v.GetInt("scheduler.queue_limit")
+	cfg.Scheduler.RetryMaxAttempts = v.GetInt("scheduler.retry_max_attempts")
+	cfg.Subagent.MaxDepth = v.GetInt("subagent.max_depth")
+	cfg.Subagent.MaxActiveChildren = v.GetInt("subagent.max_active_children")
+	cfg.Subagent.ChildTimeoutBudget = v.GetDuration("subagent.child_timeout_budget")
 	cfg.Skill.TriggerScoring.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.strategy")))
 	cfg.Skill.TriggerScoring.ConfidenceThreshold = v.GetFloat64("skill.trigger_scoring.confidence_threshold")
 	cfg.Skill.TriggerScoring.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.tie_break")))

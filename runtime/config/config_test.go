@@ -2062,3 +2062,112 @@ func TestContextAssemblerCA3ValidateAcceptsCompleteStageOverride(t *testing.T) {
 		t.Fatalf("Validate returned error for complete stage2 override: %v", err)
 	}
 }
+
+func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Scheduler.Enabled {
+		t.Fatal("scheduler.enabled = true, want false")
+	}
+	if cfg.Scheduler.Backend != SchedulerBackendMemory {
+		t.Fatalf("scheduler.backend = %q, want memory", cfg.Scheduler.Backend)
+	}
+	if cfg.Scheduler.LeaseTimeout <= 0 {
+		t.Fatalf("scheduler.lease_timeout = %v, want > 0", cfg.Scheduler.LeaseTimeout)
+	}
+	if cfg.Scheduler.HeartbeatInterval <= 0 {
+		t.Fatalf("scheduler.heartbeat_interval = %v, want > 0", cfg.Scheduler.HeartbeatInterval)
+	}
+	if cfg.Scheduler.HeartbeatInterval >= cfg.Scheduler.LeaseTimeout {
+		t.Fatalf("scheduler heartbeat/lease relation invalid: heartbeat=%v lease=%v", cfg.Scheduler.HeartbeatInterval, cfg.Scheduler.LeaseTimeout)
+	}
+	if cfg.Scheduler.QueueLimit <= 0 || cfg.Scheduler.RetryMaxAttempts <= 0 {
+		t.Fatalf("scheduler queue/retry defaults invalid: %#v", cfg.Scheduler)
+	}
+	if cfg.Subagent.MaxDepth <= 0 || cfg.Subagent.MaxActiveChildren <= 0 || cfg.Subagent.ChildTimeoutBudget <= 0 {
+		t.Fatalf("subagent defaults invalid: %#v", cfg.Subagent)
+	}
+}
+
+func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SCHEDULER_ENABLED", "true")
+	t.Setenv("BAYMAX_SCHEDULER_BACKEND", SchedulerBackendFile)
+	t.Setenv("BAYMAX_SCHEDULER_PATH", "/tmp/scheduler-state-override.json")
+	t.Setenv("BAYMAX_SCHEDULER_LEASE_TIMEOUT", "3s")
+	t.Setenv("BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL", "800ms")
+	t.Setenv("BAYMAX_SCHEDULER_QUEUE_LIMIT", "2048")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_SUBAGENT_MAX_DEPTH", "7")
+	t.Setenv("BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN", "11")
+	t.Setenv("BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET", "9s")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+scheduler:
+  enabled: false
+  backend: memory
+  path: /tmp/scheduler-state-file.json
+  lease_timeout: 2s
+  heartbeat_interval: 400ms
+  queue_limit: 128
+  retry_max_attempts: 2
+subagent:
+  max_depth: 4
+  max_active_children: 8
+  child_timeout_budget: 5s
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Scheduler.Enabled || cfg.Scheduler.Backend != SchedulerBackendFile {
+		t.Fatalf("scheduler env override failed: %#v", cfg.Scheduler)
+	}
+	if cfg.Scheduler.Path != "/tmp/scheduler-state-override.json" {
+		t.Fatalf("scheduler.path = %q, want /tmp/scheduler-state-override.json", cfg.Scheduler.Path)
+	}
+	if cfg.Scheduler.LeaseTimeout != 3*time.Second || cfg.Scheduler.HeartbeatInterval != 800*time.Millisecond {
+		t.Fatalf("scheduler lease/heartbeat override mismatch: %#v", cfg.Scheduler)
+	}
+	if cfg.Scheduler.QueueLimit != 2048 || cfg.Scheduler.RetryMaxAttempts != 5 {
+		t.Fatalf("scheduler queue/retry override mismatch: %#v", cfg.Scheduler)
+	}
+	if cfg.Subagent.MaxDepth != 7 || cfg.Subagent.MaxActiveChildren != 11 || cfg.Subagent.ChildTimeoutBudget != 9*time.Second {
+		t.Fatalf("subagent override mismatch: %#v", cfg.Subagent)
+	}
+}
+
+func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Scheduler.Backend = "db"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.backend")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Backend = SchedulerBackendFile
+	cfg.Scheduler.Path = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.HeartbeatInterval = cfg.Scheduler.LeaseTimeout
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error when heartbeat_interval >= lease_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.QueueLimit = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.queue_limit")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Subagent.MaxDepth = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for subagent.max_depth")
+	}
+}

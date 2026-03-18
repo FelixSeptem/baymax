@@ -494,3 +494,55 @@ func TestTimelineCarriesA2AMetadataAndReason(t *testing.T) {
 		t.Fatalf("missing reason %q in timeline", ReasonDispatchA2A)
 	}
 }
+
+func TestA2AFailureStillUsesDispatchReasonNamespace(t *testing.T) {
+	collector := &timelineCollector{}
+	engine := New(
+		WithTimelineEmitter(collector),
+		WithStepAdapter(DispatchAdapter{
+			A2A: func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error) {
+				return StepOutput{}, errors.New("remote failure")
+			},
+		}),
+	)
+	req := RunRequest{
+		RunID: "run-a2a-fail-reason",
+		DSL: Definition{
+			WorkflowID: "wf-a2a-fail-reason",
+			Steps: []Step{
+				{
+					StepID:  "remote-fail",
+					TaskID:  "task-remote-fail",
+					Kind:    StepKindA2A,
+					TeamID:  "team-fail",
+					AgentID: "agent-fail",
+					PeerID:  "peer-fail",
+				},
+			},
+		},
+	}
+	res, err := engine.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if res.WorkflowStatus != "failed" || res.WorkflowRemoteTotal != 1 || res.WorkflowRemoteFailed != 1 {
+		t.Fatalf("workflow failure aggregate mismatch: %#v", res)
+	}
+
+	dispatchCount := 0
+	for _, ev := range collector.events {
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		if !strings.HasPrefix(reason, "workflow.") {
+			t.Fatalf("reason namespace mismatch: %q", reason)
+		}
+		if reason == ReasonDispatchA2A {
+			dispatchCount++
+		}
+	}
+	if dispatchCount < 2 {
+		t.Fatalf("dispatch reason count = %d, want >= 2 (running + terminal)", dispatchCount)
+	}
+}

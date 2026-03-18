@@ -15,7 +15,7 @@ Scheduler and subagent observability output MUST enter diagnostics through `obse
 - **THEN** diagnostics ingestion occurs through RuntimeRecorder and not via direct diagnostics store writes
 
 ### Requirement: Shared contract governance SHALL include scheduler/subagent consistency checks
-Shared contract gate MUST validate scheduler/subagent identifier mapping and reason namespace compliance in addition to existing team/workflow/a2a checks.
+Shared multi-agent contract gate MUST validate scheduler/subagent identifier mapping and reason namespace compliance in addition to existing team/workflow/a2a checks.
 
 #### Scenario: Change introduces non-namespaced scheduler reason
 - **WHEN** scheduler/subagent change emits reason outside approved namespace conventions

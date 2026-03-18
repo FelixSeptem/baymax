@@ -134,6 +134,13 @@ type RunRecord struct {
 	A2AVersionLocal                      string                            `json:"a2a_version_local,omitempty"`
 	A2AVersionPeer                       string                            `json:"a2a_version_peer,omitempty"`
 	A2AVersionNegotiationResult          string                            `json:"a2a_version_negotiation_result,omitempty"`
+	SchedulerBackend                     string                            `json:"scheduler_backend,omitempty"`
+	SchedulerQueueTotal                  int                               `json:"scheduler_queue_total,omitempty"`
+	SchedulerClaimTotal                  int                               `json:"scheduler_claim_total,omitempty"`
+	SchedulerReclaimTotal                int                               `json:"scheduler_reclaim_total,omitempty"`
+	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
+	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
+	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

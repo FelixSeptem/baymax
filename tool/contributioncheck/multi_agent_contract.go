@@ -3,17 +3,22 @@ package contributioncheck
 import "strings"
 
 type MultiAgentContractSnapshot struct {
-	IdentifierDoc             string
-	TeamsTimelineSpec         string
-	WorkflowTimelineSpec      string
-	A2ATimelineSpec           string
-	A2ACoreSpec               string
-	TeamsRuntimeConfigSpec    string
-	WorkflowRuntimeConfigSpec string
-	A2ARuntimeConfigSpec      string
-	TeamsBoundarySpec         string
-	WorkflowBoundarySpec      string
-	A2ABoundarySpec           string
+	IdentifierDoc              string
+	RuntimeConfigDoc           string
+	V1AcceptanceDoc            string
+	TeamsTimelineSpec          string
+	WorkflowTimelineSpec       string
+	A2ATimelineSpec            string
+	SchedulerTimelineSpec      string
+	A2ACoreSpec                string
+	TeamsRuntimeConfigSpec     string
+	WorkflowRuntimeConfigSpec  string
+	A2ARuntimeConfigSpec       string
+	SchedulerRuntimeConfigSpec string
+	TeamsBoundarySpec          string
+	WorkflowBoundarySpec       string
+	A2ABoundarySpec            string
+	SchedulerBoundarySpec      string
 }
 
 func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapshot) []Violation {
@@ -34,31 +39,41 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 
 	if !strings.Contains(snapshot.IdentifierDoc, "`team.*`") ||
 		!strings.Contains(snapshot.IdentifierDoc, "`workflow.*`") ||
-		!strings.Contains(snapshot.IdentifierDoc, "`a2a.*`") {
+		!strings.Contains(snapshot.IdentifierDoc, "`a2a.*`") ||
+		!strings.Contains(snapshot.IdentifierDoc, "`scheduler.*`") ||
+		!strings.Contains(snapshot.IdentifierDoc, "`subagent.*`") {
 		violations = append(violations, Violation{
 			Code:    "missing_reason_namespace_contract",
-			Message: "identifier model must define team/workflow/a2a reason namespaces",
+			Message: "identifier model must define team/workflow/a2a/scheduler/subagent reason namespaces",
 		})
 	}
 
 	requiredReasons := map[string]string{
-		"team.dispatch":         snapshot.TeamsTimelineSpec,
-		"team.collect":          snapshot.TeamsTimelineSpec,
-		"team.resolve":          snapshot.TeamsTimelineSpec,
-		"team.dispatch_remote":  snapshot.TeamsTimelineSpec,
-		"team.collect_remote":   snapshot.TeamsTimelineSpec,
-		"workflow.schedule":     snapshot.WorkflowTimelineSpec,
-		"workflow.retry":        snapshot.WorkflowTimelineSpec,
-		"workflow.resume":       snapshot.WorkflowTimelineSpec,
-		"workflow.dispatch_a2a": snapshot.WorkflowTimelineSpec,
-		"a2a.submit":            snapshot.A2ATimelineSpec,
-		"a2a.status_poll":       snapshot.A2ATimelineSpec,
-		"a2a.callback_retry":    snapshot.A2ATimelineSpec,
-		"a2a.resolve":           snapshot.A2ATimelineSpec,
-		"a2a.sse_subscribe":     snapshot.A2ATimelineSpec,
-		"a2a.sse_reconnect":     snapshot.A2ATimelineSpec,
-		"a2a.delivery_fallback": snapshot.A2ATimelineSpec,
-		"a2a.version_mismatch":  snapshot.A2ATimelineSpec,
+		"team.dispatch":           snapshot.TeamsTimelineSpec,
+		"team.collect":            snapshot.TeamsTimelineSpec,
+		"team.resolve":            snapshot.TeamsTimelineSpec,
+		"team.dispatch_remote":    snapshot.TeamsTimelineSpec,
+		"team.collect_remote":     snapshot.TeamsTimelineSpec,
+		"workflow.schedule":       snapshot.WorkflowTimelineSpec,
+		"workflow.retry":          snapshot.WorkflowTimelineSpec,
+		"workflow.resume":         snapshot.WorkflowTimelineSpec,
+		"workflow.dispatch_a2a":   snapshot.WorkflowTimelineSpec,
+		"a2a.submit":              snapshot.A2ATimelineSpec,
+		"a2a.status_poll":         snapshot.A2ATimelineSpec,
+		"a2a.callback_retry":      snapshot.A2ATimelineSpec,
+		"a2a.resolve":             snapshot.A2ATimelineSpec,
+		"a2a.sse_subscribe":       snapshot.A2ATimelineSpec,
+		"a2a.sse_reconnect":       snapshot.A2ATimelineSpec,
+		"a2a.delivery_fallback":   snapshot.A2ATimelineSpec,
+		"a2a.version_mismatch":    snapshot.A2ATimelineSpec,
+		"scheduler.enqueue":       snapshot.SchedulerTimelineSpec,
+		"scheduler.claim":         snapshot.SchedulerTimelineSpec,
+		"scheduler.heartbeat":     snapshot.SchedulerTimelineSpec,
+		"scheduler.lease_expired": snapshot.SchedulerTimelineSpec,
+		"scheduler.requeue":       snapshot.SchedulerTimelineSpec,
+		"subagent.spawn":          snapshot.SchedulerTimelineSpec,
+		"subagent.join":           snapshot.SchedulerTimelineSpec,
+		"subagent.budget_reject":  snapshot.SchedulerTimelineSpec,
 	}
 	for reason, source := range requiredReasons {
 		if !strings.Contains(source, reason) {
@@ -82,6 +97,7 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`team_id`",
 		"`step_id`",
 		"`task_id`",
+		"`attempt_id`",
 		"`agent_id`",
 		"`peer_id`",
 	}
@@ -128,6 +144,112 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		}
 	}
 
+	requiredComposedSummaryFields := []string{
+		"`team_remote_task_total`",
+		"`team_remote_task_failed`",
+		"`workflow_remote_step_total`",
+		"`workflow_remote_step_failed`",
+		"`scheduler_queue_total`",
+		"`scheduler_claim_total`",
+		"`scheduler_reclaim_total`",
+		"`subagent_child_total`",
+		"`subagent_child_failed`",
+		"`subagent_budget_reject_total`",
+	}
+	for _, field := range requiredComposedSummaryFields {
+		if !strings.Contains(snapshot.IdentifierDoc, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_identifier_summary_field_" + strings.Trim(field, "`"),
+				Message: "identifier model missing composed additive summary field: " + field,
+			})
+		}
+	}
+
+	requiredComposedReasonsInDoc := []string{
+		"`team.dispatch_remote`",
+		"`team.collect_remote`",
+		"`workflow.dispatch_a2a`",
+		"`scheduler.enqueue`",
+		"`scheduler.claim`",
+		"`scheduler.heartbeat`",
+		"`scheduler.lease_expired`",
+		"`scheduler.requeue`",
+		"`subagent.spawn`",
+		"`subagent.join`",
+		"`subagent.budget_reject`",
+	}
+	for _, reason := range requiredComposedReasonsInDoc {
+		if !strings.Contains(snapshot.RuntimeConfigDoc, reason) {
+			violations = append(violations, Violation{
+				Code:    "missing_runtime_doc_reason_" + strings.ReplaceAll(strings.Trim(reason, "`"), ".", "_"),
+				Message: "runtime config/diagnostics doc missing composed reason contract: " + reason,
+			})
+		}
+	}
+
+	requiredComposedDocFields := []string{
+		"`team_remote_task_total`",
+		"`team_remote_task_failed`",
+		"`workflow_remote_step_total`",
+		"`workflow_remote_step_failed`",
+		"`scheduler_backend`",
+		"`scheduler_queue_total`",
+		"`scheduler_claim_total`",
+		"`scheduler_reclaim_total`",
+		"`subagent_child_total`",
+		"`subagent_child_failed`",
+		"`subagent_budget_reject_total`",
+	}
+	for _, field := range requiredComposedDocFields {
+		if !strings.Contains(snapshot.RuntimeConfigDoc, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_runtime_doc_field_" + strings.Trim(field, "`"),
+				Message: "runtime config/diagnostics doc missing composed summary field: " + field,
+			})
+		}
+	}
+
+	requiredComposedEnvMappings := []string{
+		"`BAYMAX_TEAMS_REMOTE_ENABLED`",
+		"`BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`",
+		"`BAYMAX_WORKFLOW_REMOTE_ENABLED`",
+		"`BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS`",
+		"`BAYMAX_SCHEDULER_ENABLED`",
+		"`BAYMAX_SCHEDULER_BACKEND`",
+		"`BAYMAX_SCHEDULER_LEASE_TIMEOUT`",
+		"`BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL`",
+		"`BAYMAX_SUBAGENT_MAX_DEPTH`",
+		"`BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN`",
+		"`BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET`",
+	}
+	for _, mapping := range requiredComposedEnvMappings {
+		if !strings.Contains(snapshot.RuntimeConfigDoc, mapping) {
+			violations = append(violations, Violation{
+				Code:    "missing_runtime_doc_env_mapping_" + strings.ToLower(strings.Trim(mapping, "`")),
+				Message: "runtime config/diagnostics doc missing composed env mapping: " + mapping,
+			})
+		}
+	}
+
+	requiredComposedAcceptanceMarkers := []string{
+		"`teams.remote.*`",
+		"`workflow.remote.*`",
+		"`team_remote_task_total`",
+		"`workflow_remote_step_total`",
+		"`scheduler.*`",
+		"`subagent.*`",
+		"`scheduler_queue_total`",
+		"`subagent_child_total`",
+	}
+	for _, marker := range requiredComposedAcceptanceMarkers {
+		if !strings.Contains(snapshot.V1AcceptanceDoc, marker) {
+			violations = append(violations, Violation{
+				Code:    "missing_v1_acceptance_marker_" + strings.ReplaceAll(strings.Trim(marker, "`"), ".", "_"),
+				Message: "v1 acceptance doc missing composed orchestration marker: " + marker,
+			})
+		}
+	}
+
 	deprecatedA2AFieldAliases := []string{
 		"`a2aDeliveryMode`",
 		"`a2aVersionLocal`",
@@ -151,21 +273,53 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		})
 	}
 
+	schedulerRuntimeSpecLower := strings.ToLower(snapshot.SchedulerRuntimeConfigSpec)
+	hasSchedulerScope := strings.Contains(snapshot.SchedulerRuntimeConfigSpec, "`scheduler.*`") ||
+		strings.Contains(schedulerRuntimeSpecLower, "scheduler and subagent")
+	hasSubagentScope := strings.Contains(snapshot.SchedulerRuntimeConfigSpec, "`subagent.*`") ||
+		strings.Contains(schedulerRuntimeSpecLower, "scheduler and subagent")
 	if !strings.Contains(snapshot.TeamsRuntimeConfigSpec, "`teams.*`") ||
 		!strings.Contains(snapshot.WorkflowRuntimeConfigSpec, "`workflow.*`") ||
-		!strings.Contains(snapshot.A2ARuntimeConfigSpec, "`a2a.*`") {
+		!strings.Contains(snapshot.A2ARuntimeConfigSpec, "`a2a.*`") ||
+		!hasSchedulerScope ||
+		!hasSubagentScope {
 		violations = append(violations, Violation{
 			Code:    "missing_domain_scoped_config_namespaces",
-			Message: "teams/workflow/a2a runtime config specs must declare domain-scoped namespaces",
+			Message: "teams/workflow/a2a/scheduler/subagent runtime config specs must declare domain-scoped namespaces",
+		})
+	}
+	if !strings.Contains(snapshot.TeamsRuntimeConfigSpec, "teams remote-worker enablement and defaults") {
+		violations = append(violations, Violation{
+			Code:    "missing_teams_remote_config_contract",
+			Message: "teams runtime config spec must include remote-worker enablement/default contract",
+		})
+	}
+	if !strings.Contains(snapshot.WorkflowRuntimeConfigSpec, "workflow remote-step enablement and defaults") {
+		violations = append(violations, Violation{
+			Code:    "missing_workflow_remote_config_contract",
+			Message: "workflow runtime config spec must include remote-step enablement/default contract",
+		})
+	}
+	if !strings.Contains(snapshot.TeamsRuntimeConfigSpec, "remote execution totals and failure markers") &&
+		!strings.Contains(snapshot.WorkflowRuntimeConfigSpec, "remote execution totals and failure markers") &&
+		!strings.Contains(snapshot.SchedulerRuntimeConfigSpec, "scheduler/subagent summary") {
+		violations = append(violations, Violation{
+			Code:    "missing_composed_summary_contract",
+			Message: "runtime config spec must include composed diagnostics summary contract",
 		})
 	}
 
-	if !strings.Contains(snapshot.TeamsBoundarySpec, "shared multi-agent contract gate") ||
-		!strings.Contains(snapshot.WorkflowBoundarySpec, "shared multi-agent contract gate") ||
-		!strings.Contains(snapshot.A2ABoundarySpec, "shared multi-agent contract gate") {
+	teamsBoundary := strings.ToLower(snapshot.TeamsBoundarySpec)
+	workflowBoundary := strings.ToLower(snapshot.WorkflowBoundarySpec)
+	a2aBoundary := strings.ToLower(snapshot.A2ABoundarySpec)
+	schedulerBoundary := strings.ToLower(snapshot.SchedulerBoundarySpec)
+	if !strings.Contains(teamsBoundary, "shared multi-agent contract gate") ||
+		!strings.Contains(workflowBoundary, "shared multi-agent contract gate") ||
+		!strings.Contains(a2aBoundary, "shared multi-agent contract gate") ||
+		!strings.Contains(schedulerBoundary, "shared multi-agent contract gate") {
 		violations = append(violations, Violation{
 			Code:    "missing_blocking_shared_contract_gate",
-			Message: "teams/workflow/a2a boundary specs must declare blocking shared-contract gate",
+			Message: "teams/workflow/a2a/scheduler boundary specs must declare blocking shared-contract gate",
 		})
 	}
 

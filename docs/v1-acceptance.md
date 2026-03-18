@@ -28,6 +28,10 @@
 - Workflow supports A2A remote step kind (`kind=a2a`) under existing retry/timeout/checkpoint semantics, with timeline reason `workflow.dispatch_a2a`.
 - Run diagnostics include Workflow remote additive summary fields: `workflow_remote_step_total`, `workflow_remote_step_failed`.
 - Runtime config exposes composed-orchestration controls under existing domains (`teams.remote.*`, `workflow.remote.*`) with deterministic precedence `env > file > default`.
+- Distributed subagent scheduler baseline is available as independent module (`orchestration/scheduler`) with durable enqueue/claim/heartbeat/lease-expire/requeue semantics.
+- Scheduler/Subagent timeline reasons and metadata are normalized with `scheduler.*|subagent.*` namespace and `task_id/attempt_id` correlation fields.
+- Runtime config exposes scheduler/subagent controls under dedicated domains (`scheduler.*`, `subagent.*`) with deterministic precedence `env > file > default`.
+- Run diagnostics include Scheduler/Subagent additive summary fields: `scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.
@@ -65,7 +69,7 @@
 
 ## Known Limitations (V1 Non-goals)
 
-- No distributed orchestration or cross-process execution coordination.
+- Distributed scheduler is baseline-only (single queue domain); no multi-tenant control-plane or global load-balancing.
 - No persisted checkpoint/replay for crash recovery between sessions.
 - No built-in multi-tenant control-plane, RBAC, or audit pipeline.
 - Skill semantic embedding scorer requires host-side registration; if missing or failing, runtime falls back to lexical scoring under best-effort policy.

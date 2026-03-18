@@ -133,6 +133,32 @@ func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:          time.Now(),
+		RunID:         "run-a2a-1",
+		Status:        "failed",
+		A2ATaskTotal:  4,
+		A2ATaskFailed: 1,
+		PeerID:        "peer-1",
+		A2AErrorLayer: "transport",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if runs[0].A2ATaskTotal != 4 || runs[0].A2ATaskFailed != 1 {
+		t.Fatalf("a2a aggregate should stay stable under replay, got %#v", runs[0])
+	}
+	if runs[0].PeerID != "peer-1" || runs[0].A2AErrorLayer != "transport" {
+		t.Fatalf("a2a fields mismatch under replay, got %#v", runs[0])
+	}
+}
+
 func TestStoreSkillDedupConcurrent(t *testing.T) {
 	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{

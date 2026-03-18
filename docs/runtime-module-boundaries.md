@@ -1,6 +1,6 @@
 # Runtime Module Boundaries
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## 目标
 
@@ -25,6 +25,10 @@
   - Workflow DSL 基线（`step/depends_on/condition/retry/timeout`）解析与静态 DAG 校验
   - 确定性调度、重试/超时、checkpoint/resume 执行语义
   - 通过标准事件发射 Workflow timeline/摘要元数据（不直接写 diagnostics store）
+- `a2a`
+  - A2A 最小互联能力（`submit/status/result`）与任务生命周期语义
+  - Agent Card 能力发现与确定性路由输入（静态注册 + capability 匹配）
+  - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
 - `mcp/retry`
@@ -59,6 +63,7 @@
 - 非 `mcp/*` 包依赖 `mcp/internal/*`
 - Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
+- A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。

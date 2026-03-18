@@ -13,15 +13,15 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	snapshot := MultiAgentContractSnapshot{
 		IdentifierDoc:             mustRead(t, filepath.Join(root, "docs", "multi-agent-identifier-model.md")),
 		TeamsTimelineSpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
-		WorkflowTimelineSpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "action-timeline-events", "spec.md")),
-		A2ATimelineSpec:           mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "action-timeline-events", "spec.md")),
-		A2ACoreSpec:               mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "a2a-minimal-interoperability", "spec.md")),
+		WorkflowTimelineSpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		A2ATimelineSpec:           mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		A2ACoreSpec:               mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
 		TeamsRuntimeConfigSpec:    mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
-		WorkflowRuntimeConfigSpec: mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "runtime-config-and-diagnostics-api", "spec.md")),
-		A2ARuntimeConfigSpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		WorkflowRuntimeConfigSpec: mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		A2ARuntimeConfigSpec:      mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		TeamsBoundarySpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
-		WorkflowBoundarySpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "runtime-module-boundaries", "spec.md")),
-		A2ABoundarySpec:           mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "runtime-module-boundaries", "spec.md")),
+		WorkflowBoundarySpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		A2ABoundarySpec:           mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 	}
 
 	violations := ValidateMultiAgentSharedContractSnapshot(snapshot)

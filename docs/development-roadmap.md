@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## 目标
 
@@ -309,6 +309,11 @@
   - 交付与 MCP 互补边界测试：A2A 仅处理 Agent 协作，MCP 仅处理工具调用，避免语义重叠。
   - 验收：跨协议契约测试（A2A + MCP 组合）通过，关键链路接入 timeline/diagnostics。
 
+### R4 进展（2026-03-18）
+- [x] `a2a-minimal-interoperability`：完成 A2A 最小互联基线（`submit/status/result`）、`submitted -> pending` 语义映射、Agent Card 能力路由、有界重试与错误归一化。
+- [x] 完成 A2A 配置与诊断契约收敛：`a2a.*` 配置（`env > file > default`）、run 摘要字段（`a2a_task_total/a2a_task_failed/peer_id/a2a_error_layer`）、single-writer + idempotency 验证。
+- [x] 完成 A2A + MCP 组合契约测试与文档口径同步（边界职责、reason namespace、shared-contract gate）。
+
 - R4-T4（平台化与治理增强，目标窗口：2026-06-10 之后）
   - 多租户、RBAC、审计流水线与 control plane 进入增量交付。
   - Session 生命周期管理（创建、恢复、终止）与跨会话恢复策略落地。
@@ -340,8 +345,8 @@
 ## A2A 里程碑（规划，当前不实现）
 
 - A1（R3 预研）：完成 A2A 协议语义映射设计（任务状态机、SSE/推送、能力发现），输出设计文档与边界说明。
-- A2（R4 前半）：实现最小 A2A Client/Server 互联能力，支持基础任务提交、状态查询与结果回传。
-- A3（R4 后半）：与现有 observability/diagnostics 集成，补齐跨协议契约测试（A2A + MCP 组合场景）。
+- A2（R4 前半，已完成）：实现最小 A2A Client/Server 互联能力，支持基础任务提交、状态查询与结果回传。
+- A3（R4 后半，已完成基线）：完成 observability/diagnostics 集成，并补齐跨协议契约测试（A2A + MCP 组合场景）。
 
 参考资料：
 - https://a2aprotocol.ai/blog/2025-full-guide-a2a-protocol-zh

@@ -467,6 +467,97 @@ func TestWorkflowConfigValidationRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestA2AConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.A2A.Enabled {
+		t.Fatal("a2a.enabled = true, want false")
+	}
+	if cfg.A2A.ClientTimeout <= 0 {
+		t.Fatalf("a2a.client_timeout = %v, want > 0", cfg.A2A.ClientTimeout)
+	}
+	if cfg.A2A.CallbackRetry.MaxAttempts != 3 {
+		t.Fatalf("a2a.callback_retry.max_attempts = %d, want 3", cfg.A2A.CallbackRetry.MaxAttempts)
+	}
+	if cfg.A2A.CallbackRetry.Backoff <= 0 {
+		t.Fatalf("a2a.callback_retry.backoff = %v, want > 0", cfg.A2A.CallbackRetry.Backoff)
+	}
+	if !cfg.A2A.CapabilityDiscovery.Enabled {
+		t.Fatal("a2a.capability_discovery.enabled = false, want true")
+	}
+	if !cfg.A2A.CapabilityDiscovery.RequireAll {
+		t.Fatal("a2a.capability_discovery.require_all = false, want true")
+	}
+	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
+		t.Fatalf("a2a.capability_discovery.max_candidates = %d, want > 0", cfg.A2A.CapabilityDiscovery.MaxCandidates)
+	}
+}
+
+func TestA2AConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_A2A_CLIENT_TIMEOUT", "900ms")
+	t.Setenv("BAYMAX_A2A_CALLBACK_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_A2A_CAPABILITY_DISCOVERY_REQUIRE_ALL", "false")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+a2a:
+  enabled: true
+  client_timeout: 2s
+  callback_retry:
+    max_attempts: 2
+    backoff: 50ms
+  capability_discovery:
+    enabled: true
+    require_all: true
+    max_candidates: 9
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.A2A.ClientTimeout != 900*time.Millisecond {
+		t.Fatalf("a2a.client_timeout = %v, want 900ms", cfg.A2A.ClientTimeout)
+	}
+	if cfg.A2A.CallbackRetry.MaxAttempts != 5 {
+		t.Fatalf("a2a.callback_retry.max_attempts = %d, want 5", cfg.A2A.CallbackRetry.MaxAttempts)
+	}
+	if cfg.A2A.CapabilityDiscovery.RequireAll {
+		t.Fatal("a2a.capability_discovery.require_all = true, want false from env")
+	}
+	if cfg.A2A.CapabilityDiscovery.MaxCandidates != 9 {
+		t.Fatalf("a2a.capability_discovery.max_candidates = %d, want 9", cfg.A2A.CapabilityDiscovery.MaxCandidates)
+	}
+}
+
+func TestA2AConfigValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.A2A.ClientTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.client_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.CallbackRetry.MaxAttempts = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.callback_retry.max_attempts")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.CallbackRetry.Backoff = -1 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.callback_retry.backoff")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.CapabilityDiscovery.MaxCandidates = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.capability_discovery.max_candidates")
+	}
+}
+
 func TestSkillTriggerScoringDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Skill.TriggerScoring.Strategy != SkillTriggerScoringStrategyLexicalWeightedKeywords {

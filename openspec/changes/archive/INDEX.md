@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-18 10:19:38
+Updated: 2026-03-18 10:48:47
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -52,3 +52,4 @@ Updated: 2026-03-18 10:19:38
 - 048 -> freeze-r4-shared-multi-agent-contracts
 - 049 -> teams-runtime-baseline
 - 050 -> workflow-dsl-baseline
+- 051 -> a2a-minimal-interoperability

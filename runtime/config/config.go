@@ -127,6 +127,7 @@ type Config struct {
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	Teams            TeamsConfig            `json:"teams"`
 	Workflow         WorkflowConfig         `json:"workflow"`
+	A2A              A2AConfig              `json:"a2a"`
 	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
 	Clarification    ClarificationConfig    `json:"clarification"`
@@ -214,6 +215,24 @@ type WorkflowConfig struct {
 	DefaultStepTimeout    time.Duration `json:"default_step_timeout"`
 	CheckpointBackend     string        `json:"checkpoint_backend"`
 	CheckpointPath        string        `json:"checkpoint_path"`
+}
+
+type A2AConfig struct {
+	Enabled             bool                         `json:"enabled"`
+	ClientTimeout       time.Duration                `json:"client_timeout"`
+	CallbackRetry       A2ACallbackRetryConfig       `json:"callback_retry"`
+	CapabilityDiscovery A2ACapabilityDiscoveryConfig `json:"capability_discovery"`
+}
+
+type A2ACallbackRetryConfig struct {
+	MaxAttempts int           `json:"max_attempts"`
+	Backoff     time.Duration `json:"backoff"`
+}
+
+type A2ACapabilityDiscoveryConfig struct {
+	Enabled       bool `json:"enabled"`
+	RequireAll    bool `json:"require_all"`
+	MaxCandidates int  `json:"max_candidates"`
 }
 
 type SkillConfig struct {
@@ -691,6 +710,19 @@ func DefaultConfig() Config {
 			DefaultStepTimeout:    3 * time.Second,
 			CheckpointBackend:     WorkflowCheckpointMemory,
 			CheckpointPath:        filepath.Join(os.TempDir(), "baymax", "workflow-checkpoints"),
+		},
+		A2A: A2AConfig{
+			Enabled:       false,
+			ClientTimeout: 1500 * time.Millisecond,
+			CallbackRetry: A2ACallbackRetryConfig{
+				MaxAttempts: 3,
+				Backoff:     100 * time.Millisecond,
+			},
+			CapabilityDiscovery: A2ACapabilityDiscoveryConfig{
+				Enabled:       true,
+				RequireAll:    true,
+				MaxCandidates: 16,
+			},
 		},
 		Skill: SkillConfig{
 			TriggerScoring: SkillTriggerScoringConfig{
@@ -1200,6 +1232,18 @@ func Validate(cfg Config) error {
 			WorkflowCheckpointFile,
 			cfg.Workflow.CheckpointBackend,
 		)
+	}
+	if cfg.A2A.ClientTimeout <= 0 {
+		return errors.New("a2a.client_timeout must be > 0")
+	}
+	if cfg.A2A.CallbackRetry.MaxAttempts <= 0 {
+		return errors.New("a2a.callback_retry.max_attempts must be > 0")
+	}
+	if cfg.A2A.CallbackRetry.Backoff < 0 {
+		return errors.New("a2a.callback_retry.backoff must be >= 0")
+	}
+	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
+		return errors.New("a2a.capability_discovery.max_candidates must be > 0")
 	}
 	scoring := cfg.Skill.TriggerScoring
 	switch strategy := strings.ToLower(strings.TrimSpace(scoring.Strategy)); strategy {
@@ -2133,6 +2177,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("workflow.default_step_timeout", base.Workflow.DefaultStepTimeout)
 	v.SetDefault("workflow.checkpoint_backend", base.Workflow.CheckpointBackend)
 	v.SetDefault("workflow.checkpoint_path", base.Workflow.CheckpointPath)
+	v.SetDefault("a2a.enabled", base.A2A.Enabled)
+	v.SetDefault("a2a.client_timeout", base.A2A.ClientTimeout)
+	v.SetDefault("a2a.callback_retry.max_attempts", base.A2A.CallbackRetry.MaxAttempts)
+	v.SetDefault("a2a.callback_retry.backoff", base.A2A.CallbackRetry.Backoff)
+	v.SetDefault("a2a.capability_discovery.enabled", base.A2A.CapabilityDiscovery.Enabled)
+	v.SetDefault("a2a.capability_discovery.require_all", base.A2A.CapabilityDiscovery.RequireAll)
+	v.SetDefault("a2a.capability_discovery.max_candidates", base.A2A.CapabilityDiscovery.MaxCandidates)
 	v.SetDefault("skill.trigger_scoring.strategy", base.Skill.TriggerScoring.Strategy)
 	v.SetDefault("skill.trigger_scoring.confidence_threshold", base.Skill.TriggerScoring.ConfidenceThreshold)
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
@@ -2330,6 +2381,13 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Workflow.DefaultStepTimeout = v.GetDuration("workflow.default_step_timeout")
 	cfg.Workflow.CheckpointBackend = strings.ToLower(strings.TrimSpace(v.GetString("workflow.checkpoint_backend")))
 	cfg.Workflow.CheckpointPath = strings.TrimSpace(v.GetString("workflow.checkpoint_path"))
+	cfg.A2A.Enabled = v.GetBool("a2a.enabled")
+	cfg.A2A.ClientTimeout = v.GetDuration("a2a.client_timeout")
+	cfg.A2A.CallbackRetry.MaxAttempts = v.GetInt("a2a.callback_retry.max_attempts")
+	cfg.A2A.CallbackRetry.Backoff = v.GetDuration("a2a.callback_retry.backoff")
+	cfg.A2A.CapabilityDiscovery.Enabled = v.GetBool("a2a.capability_discovery.enabled")
+	cfg.A2A.CapabilityDiscovery.RequireAll = v.GetBool("a2a.capability_discovery.require_all")
+	cfg.A2A.CapabilityDiscovery.MaxCandidates = v.GetInt("a2a.capability_discovery.max_candidates")
 	cfg.Skill.TriggerScoring.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.strategy")))
 	cfg.Skill.TriggerScoring.ConfidenceThreshold = v.GetFloat64("skill.trigger_scoring.confidence_threshold")
 	cfg.Skill.TriggerScoring.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.tie_break")))

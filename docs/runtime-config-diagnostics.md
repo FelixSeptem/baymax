@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## 目标
 
@@ -93,6 +93,17 @@ workflow:
   default_step_timeout: 3s        # 必须 > 0
   checkpoint_backend: memory      # memory|file
   checkpoint_path: /tmp/baymax/workflow-checkpoints # backend=file 时必填
+
+a2a:
+  enabled: false
+  client_timeout: 1500ms          # 必须 > 0
+  callback_retry:
+    max_attempts: 3               # 必须 > 0
+    backoff: 100ms                # 必须 >= 0
+  capability_discovery:
+    enabled: true
+    require_all: true
+    max_candidates: 16            # 必须 > 0
 
 skill:
   trigger_scoring:
@@ -376,6 +387,14 @@ workflow baseline 校验语义：
 3. `workflow.checkpoint_backend` 仅支持 `memory|file`。
 4. `workflow.checkpoint_backend=file` 时，`workflow.checkpoint_path` 必须非空。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+a2a baseline 校验语义：
+1. `a2a.client_timeout` 必须 `> 0`。
+2. `a2a.callback_retry.max_attempts` 必须 `> 0`。
+3. `a2a.callback_retry.backoff` 必须 `>= 0`。
+4. `a2a.capability_discovery.max_candidates` 必须 `> 0`。
+5. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
+6. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -704,6 +723,17 @@ Workflow Timeline 关联字段（按可用性增量携带）：
 - `workflow_id`
 - `step_id`
 
+Action Timeline reason code（A2A 基线）：
+- `a2a.submit`：A2A 提交任务到对端并进入可查询生命周期。
+- `a2a.status_poll`：A2A 客户端轮询任务状态。
+- `a2a.callback_retry`：A2A 结果回调在有界重试中再次投递。
+- `a2a.resolve`：A2A 任务进入终态并完成结果解析。
+
+A2A Timeline 关联字段（按可用性增量携带）：
+- `task_id`
+- `agent_id`
+- `peer_id`
+
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
 2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
@@ -745,6 +775,17 @@ Action Gate 规则优先级（H4）：
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
 - Workflow 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
+
+### Run 诊断新增字段（A2A 基线 A2）
+
+- `a2a_task_total`：本次 run 的 A2A 任务总数。
+- `a2a_task_failed`：本次 run 的 A2A 失败任务数。
+- `peer_id`：本次 run 主要关联的对端 agent 标识。
+- `a2a_error_layer`：A2A 失败分层（`transport|protocol|semantic`）。
+
+语义约束：
+- 字段为 additive 扩展，不影响既有 run 摘要消费者。
+- A2A 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

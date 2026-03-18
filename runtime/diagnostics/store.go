@@ -120,6 +120,10 @@ type RunRecord struct {
 	WorkflowStepTotal                    int                               `json:"workflow_step_total,omitempty"`
 	WorkflowStepFailed                   int                               `json:"workflow_step_failed,omitempty"`
 	WorkflowResumeCount                  int                               `json:"workflow_resume_count,omitempty"`
+	A2ATaskTotal                         int                               `json:"a2a_task_total,omitempty"`
+	A2ATaskFailed                        int                               `json:"a2a_task_failed,omitempty"`
+	PeerID                               string                            `json:"peer_id,omitempty"`
+	A2AErrorLayer                        string                            `json:"a2a_error_layer,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

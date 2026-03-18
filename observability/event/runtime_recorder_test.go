@@ -197,6 +197,10 @@ mcp:
 			"workflow_step_total":                      7,
 			"workflow_step_failed":                     2,
 			"workflow_resume_count":                    1,
+			"a2a_task_total":                           4,
+			"a2a_task_failed":                          1,
+			"peer_id":                                  "peer-a2a-1",
+			"a2a_error_layer":                          "transport",
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -311,6 +315,12 @@ mcp:
 	}
 	if items[0].WorkflowStepTotal != 7 || items[0].WorkflowStepFailed != 2 || items[0].WorkflowResumeCount != 1 {
 		t.Fatalf("workflow summary counters mismatch: %#v", items[0])
+	}
+	if items[0].A2ATaskTotal != 4 || items[0].A2ATaskFailed != 1 {
+		t.Fatalf("a2a summary counters mismatch: %#v", items[0])
+	}
+	if items[0].PeerID != "peer-a2a-1" || items[0].A2AErrorLayer != "transport" {
+		t.Fatalf("a2a summary fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

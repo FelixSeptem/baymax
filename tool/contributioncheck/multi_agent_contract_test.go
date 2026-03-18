@@ -13,31 +13,59 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	a2aTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	a2aCoreSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "a2a-delivery-and-version-negotiation", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
 	}, "\n")
 	a2aRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	a2aBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+	}, "\n")
+	teamsTimelineSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
+	}, "\n")
+	workflowTimelineSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
+	}, "\n")
+	teamsRuntimeConfigSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+	}, "\n")
+	workflowRuntimeConfigSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+	}, "\n")
+	teamsBoundarySpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+	}, "\n")
+	workflowBoundarySpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
 		IdentifierDoc:             mustRead(t, filepath.Join(root, "docs", "multi-agent-identifier-model.md")),
-		TeamsTimelineSpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
-		WorkflowTimelineSpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		TeamsTimelineSpec:         teamsTimelineSpec,
+		WorkflowTimelineSpec:      workflowTimelineSpec,
 		A2ATimelineSpec:           a2aTimelineSpec,
 		A2ACoreSpec:               a2aCoreSpec,
-		TeamsRuntimeConfigSpec:    mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
-		WorkflowRuntimeConfigSpec: mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		TeamsRuntimeConfigSpec:    teamsRuntimeConfigSpec,
+		WorkflowRuntimeConfigSpec: workflowRuntimeConfigSpec,
 		A2ARuntimeConfigSpec:      a2aRuntimeConfigSpec,
-		TeamsBoundarySpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
-		WorkflowBoundarySpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		TeamsBoundarySpec:         teamsBoundarySpec,
+		WorkflowBoundarySpec:      workflowBoundarySpec,
 		A2ABoundarySpec:           a2aBoundarySpec,
 	}
 
@@ -76,11 +104,20 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_a2a_submitted_pending_alignment",
 		"missing_reason_namespace_contract",
 		"missing_reason_team_dispatch",
+		"missing_reason_team_dispatch_remote",
+		"missing_reason_team_collect_remote",
 		"missing_reason_workflow_schedule",
+		"missing_reason_workflow_dispatch_a2a",
 		"missing_reason_a2a_submit",
 		"missing_reason_a2a_sse_subscribe",
 		"missing_reason_a2a_version_mismatch",
 		"missing_peer_id_canonical_naming",
+		"missing_identifier_field_workflow_id",
+		"missing_identifier_field_team_id",
+		"missing_identifier_field_step_id",
+		"missing_identifier_field_task_id",
+		"missing_identifier_field_agent_id",
+		"missing_identifier_field_peer_id",
 		"missing_a2a_timeline_field_delivery_mode",
 		"missing_a2a_summary_field_a2a_delivery_mode",
 		"non_snake_case_a2a_field_detected",

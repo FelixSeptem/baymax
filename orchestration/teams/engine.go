@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	ReasonDispatch = "team.dispatch"
-	ReasonCollect  = "team.collect"
-	ReasonResolve  = "team.resolve"
+	ReasonDispatch       = "team.dispatch"
+	ReasonCollect        = "team.collect"
+	ReasonResolve        = "team.resolve"
+	ReasonDispatchRemote = "team.dispatch_remote"
+	ReasonCollectRemote  = "team.collect_remote"
 )
 
 type Role string
@@ -69,22 +71,51 @@ func (f TaskRunnerFunc) Run(ctx context.Context, task Task) (TaskResult, error) 
 	return f(ctx, task)
 }
 
+type RemoteTaskRunner interface {
+	RunRemote(ctx context.Context, plan Plan, task Task) (TaskResult, error)
+}
+
+type RemoteTaskRunnerFunc func(ctx context.Context, plan Plan, task Task) (TaskResult, error)
+
+func (f RemoteTaskRunnerFunc) RunRemote(ctx context.Context, plan Plan, task Task) (TaskResult, error) {
+	return f(ctx, plan, task)
+}
+
 type TaskResult struct {
 	Output any    `json:"output,omitempty"`
 	Vote   string `json:"vote,omitempty"`
 }
 
+type TaskTarget string
+
+const (
+	TaskTargetLocal  TaskTarget = "local"
+	TaskTargetRemote TaskTarget = "remote"
+)
+
+type RemoteTarget struct {
+	PeerID               string         `json:"peer_id,omitempty"`
+	Method               string         `json:"method,omitempty"`
+	RequiredCapabilities []string       `json:"required_capabilities,omitempty"`
+	Payload              map[string]any `json:"payload,omitempty"`
+}
+
 type Task struct {
-	TaskID   string     `json:"task_id"`
-	AgentID  string     `json:"agent_id"`
-	Role     Role       `json:"role"`
-	Priority int        `json:"priority,omitempty"`
-	Runner   TaskRunner `json:"-"`
+	TaskID       string           `json:"task_id"`
+	AgentID      string           `json:"agent_id"`
+	Role         Role             `json:"role"`
+	Priority     int              `json:"priority,omitempty"`
+	Target       TaskTarget       `json:"target,omitempty"`
+	Remote       RemoteTarget     `json:"remote,omitempty"`
+	Runner       TaskRunner       `json:"-"`
+	RemoteRunner RemoteTaskRunner `json:"-"`
 }
 
 type Plan struct {
 	RunID                 string                 `json:"run_id,omitempty"`
 	TeamID                string                 `json:"team_id"`
+	WorkflowID            string                 `json:"workflow_id,omitempty"`
+	StepID                string                 `json:"step_id,omitempty"`
 	Strategy              Strategy               `json:"strategy,omitempty"`
 	Tasks                 []Task                 `json:"tasks"`
 	TaskTimeout           time.Duration          `json:"task_timeout,omitempty"`
@@ -99,6 +130,8 @@ type TaskRecord struct {
 	TaskID   string     `json:"task_id"`
 	AgentID  string     `json:"agent_id"`
 	Role     Role       `json:"role"`
+	Target   TaskTarget `json:"target,omitempty"`
+	PeerID   string     `json:"peer_id,omitempty"`
 	Priority int        `json:"priority,omitempty"`
 	Status   TaskStatus `json:"status"`
 	Reason   string     `json:"reason,omitempty"`
@@ -110,21 +143,29 @@ type TaskRecord struct {
 type Result struct {
 	RunID            string       `json:"run_id,omitempty"`
 	TeamID           string       `json:"team_id"`
+	WorkflowID       string       `json:"workflow_id,omitempty"`
+	StepID           string       `json:"step_id,omitempty"`
 	Strategy         Strategy     `json:"team_strategy"`
 	WinnerVote       string       `json:"winner_vote,omitempty"`
 	Tasks            []TaskRecord `json:"tasks"`
 	TeamTaskTotal    int          `json:"team_task_total"`
 	TeamTaskFailed   int          `json:"team_task_failed"`
 	TeamTaskCanceled int          `json:"team_task_canceled"`
+	TeamRemoteTotal  int          `json:"team_remote_task_total,omitempty"`
+	TeamRemoteFailed int          `json:"team_remote_task_failed,omitempty"`
 }
 
 func (r Result) RunFinishedPayload() map[string]any {
 	return map[string]any{
-		"team_id":            r.TeamID,
-		"team_strategy":      string(r.Strategy),
-		"team_task_total":    r.TeamTaskTotal,
-		"team_task_failed":   r.TeamTaskFailed,
-		"team_task_canceled": r.TeamTaskCanceled,
+		"team_id":                 r.TeamID,
+		"workflow_id":             r.WorkflowID,
+		"step_id":                 r.StepID,
+		"team_strategy":           string(r.Strategy),
+		"team_task_total":         r.TeamTaskTotal,
+		"team_task_failed":        r.TeamTaskFailed,
+		"team_task_canceled":      r.TeamTaskCanceled,
+		"team_remote_task_total":  r.TeamRemoteTotal,
+		"team_remote_task_failed": r.TeamRemoteFailed,
 	}
 }
 
@@ -176,6 +217,8 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 			TaskID:   task.TaskID,
 			AgentID:  task.AgentID,
 			Role:     task.Role,
+			Target:   task.Target,
+			PeerID:   task.Remote.PeerID,
 			Priority: task.Priority,
 			Status:   TaskStatusPending,
 		}
@@ -221,7 +264,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		if halt {
 			records[i].Status = TaskStatusSkipped
 			records[i].Reason = "policy.fail_fast"
-			e.emitTimeline(ctx, plan, seq, records[i].Status, ReasonCollect, &records[i])
+			e.emitTimeline(ctx, plan, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
 			if onEvent != nil {
 				snap := records[i]
 				if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -232,7 +275,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		}
 
 		records[i].Status = TaskStatusRunning
-		e.emitTimeline(ctx, plan, seq, records[i].Status, ReasonDispatch, &records[i])
+		e.emitTimeline(ctx, plan, seq, records[i].Status, dispatchReasonForRecord(records[i]), &records[i])
 		if onEvent != nil {
 			snap := records[i]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -246,7 +289,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		records[i].Error = result.Error
 		records[i].Vote = result.Vote
 		records[i].Output = result.Output
-		e.emitTimeline(ctx, plan, seq, records[i].Status, ReasonCollect, &records[i])
+		e.emitTimeline(ctx, plan, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
 		if onEvent != nil {
 			snap := records[i]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -266,7 +309,7 @@ func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records
 	for _, idx := range skippedIdx {
 		records[idx].Status = TaskStatusSkipped
 		records[idx].Reason = skipReason
-		e.emitTimeline(ctx, plan, seq, records[idx].Status, ReasonCollect, &records[idx])
+		e.emitTimeline(ctx, plan, seq, records[idx].Status, collectReasonForRecord(records[idx]), &records[idx])
 		if onEvent != nil {
 			snap := records[idx]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -280,7 +323,7 @@ func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records
 
 	for _, idx := range runIdx {
 		records[idx].Status = TaskStatusRunning
-		e.emitTimeline(ctx, plan, seq, records[idx].Status, ReasonDispatch, &records[idx])
+		e.emitTimeline(ctx, plan, seq, records[idx].Status, dispatchReasonForRecord(records[idx]), &records[idx])
 		if onEvent != nil {
 			snap := records[idx]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -329,7 +372,7 @@ func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records
 		records[it.index].Error = it.result.Error
 		records[it.index].Vote = it.result.Vote
 		records[it.index].Output = it.result.Output
-		e.emitTimeline(execCtx, plan, seq, records[it.index].Status, ReasonCollect, &records[it.index])
+		e.emitTimeline(execCtx, plan, seq, records[it.index].Status, collectReasonForRecord(records[it.index]), &records[it.index])
 		if onEvent != nil {
 			snap := records[it.index]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -349,14 +392,22 @@ func buildResult(plan Plan, records []TaskRecord) Result {
 	out := Result{
 		RunID:         strings.TrimSpace(plan.RunID),
 		TeamID:        plan.TeamID,
+		WorkflowID:    strings.TrimSpace(plan.WorkflowID),
+		StepID:        strings.TrimSpace(plan.StepID),
 		Strategy:      plan.Strategy,
 		Tasks:         append([]TaskRecord(nil), records...),
 		TeamTaskTotal: len(records),
 	}
 	for _, record := range records {
+		if record.Target == TaskTargetRemote {
+			out.TeamRemoteTotal++
+		}
 		switch record.Status {
 		case TaskStatusFailed:
 			out.TeamTaskFailed++
+			if record.Target == TaskTargetRemote {
+				out.TeamRemoteFailed++
+			}
 		case TaskStatusCanceled:
 			out.TeamTaskCanceled++
 		}
@@ -399,9 +450,6 @@ type taskExecution struct {
 }
 
 func executeTask(ctx context.Context, plan Plan, task Task) taskExecution {
-	if task.Runner == nil {
-		return taskExecution{Status: TaskStatusFailed, Reason: "task.runner_missing"}
-	}
 	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return taskExecution{Status: TaskStatusCanceled, Reason: "cancel.propagated", Error: ctx.Err().Error()}
 	}
@@ -416,7 +464,22 @@ func executeTask(ctx context.Context, plan Plan, task Task) taskExecution {
 	}
 	defer cancel()
 
-	result, err := task.Runner.Run(runCtx, task)
+	var (
+		result TaskResult
+		err    error
+	)
+	switch task.Target {
+	case TaskTargetRemote:
+		if task.RemoteRunner == nil {
+			return taskExecution{Status: TaskStatusFailed, Reason: "task.remote_runner_missing"}
+		}
+		result, err = task.RemoteRunner.RunRemote(runCtx, plan, task)
+	default:
+		if task.Runner == nil {
+			return taskExecution{Status: TaskStatusFailed, Reason: "task.runner_missing"}
+		}
+		result, err = task.Runner.Run(runCtx, task)
+	}
 	if err == nil {
 		return taskExecution{
 			Status: TaskStatusSucceeded,
@@ -572,6 +635,8 @@ func resolveVoteWinner(records []TaskRecord, tieBreak VoteTieBreak) string {
 
 func normalizePlan(plan Plan) (Plan, error) {
 	plan.TeamID = strings.TrimSpace(plan.TeamID)
+	plan.WorkflowID = strings.TrimSpace(plan.WorkflowID)
+	plan.StepID = strings.TrimSpace(plan.StepID)
 	if plan.TeamID == "" {
 		return Plan{}, errors.New("team_id is required")
 	}
@@ -633,6 +698,10 @@ func normalizePlan(plan Plan) (Plan, error) {
 		plan.Tasks[i].TaskID = strings.TrimSpace(plan.Tasks[i].TaskID)
 		plan.Tasks[i].AgentID = strings.TrimSpace(plan.Tasks[i].AgentID)
 		plan.Tasks[i].Role = Role(strings.ToLower(strings.TrimSpace(string(plan.Tasks[i].Role))))
+		plan.Tasks[i].Target = TaskTarget(strings.ToLower(strings.TrimSpace(string(plan.Tasks[i].Target))))
+		if plan.Tasks[i].Target == "" {
+			plan.Tasks[i].Target = TaskTargetLocal
+		}
 		if plan.Tasks[i].Role == "" {
 			plan.Tasks[i].Role = RoleWorker
 		}
@@ -651,8 +720,22 @@ func normalizePlan(plan Plan) (Plan, error) {
 		if plan.Tasks[i].AgentID == "" {
 			return Plan{}, fmt.Errorf("tasks[%d].agent_id is required", i)
 		}
-		if plan.Tasks[i].Runner == nil {
-			return Plan{}, fmt.Errorf("tasks[%d].runner is required", i)
+		switch plan.Tasks[i].Target {
+		case TaskTargetLocal:
+			if plan.Tasks[i].Runner == nil {
+				return Plan{}, fmt.Errorf("tasks[%d].runner is required when target=local", i)
+			}
+		case TaskTargetRemote:
+			plan.Tasks[i].Remote.PeerID = strings.TrimSpace(plan.Tasks[i].Remote.PeerID)
+			plan.Tasks[i].Remote.Method = strings.TrimSpace(plan.Tasks[i].Remote.Method)
+			if plan.Tasks[i].Remote.PeerID == "" {
+				return Plan{}, fmt.Errorf("tasks[%d].remote.peer_id is required when target=remote", i)
+			}
+			if plan.Tasks[i].RemoteRunner == nil {
+				return Plan{}, fmt.Errorf("tasks[%d].remote_runner is required when target=remote", i)
+			}
+		default:
+			return Plan{}, fmt.Errorf("tasks[%d].target must be local|remote", i)
 		}
 	}
 	return plan, nil
@@ -670,9 +753,18 @@ func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status
 		"reason":   reason,
 		"team_id":  plan.TeamID,
 	}
+	if plan.WorkflowID != "" {
+		payload["workflow_id"] = plan.WorkflowID
+	}
+	if plan.StepID != "" {
+		payload["step_id"] = plan.StepID
+	}
 	if task != nil {
 		payload["agent_id"] = task.AgentID
 		payload["task_id"] = task.TaskID
+		if task.PeerID != "" {
+			payload["peer_id"] = task.PeerID
+		}
 	}
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
@@ -681,4 +773,18 @@ func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status
 		Time:    e.now(),
 		Payload: payload,
 	})
+}
+
+func dispatchReasonForRecord(record TaskRecord) string {
+	if record.Target == TaskTargetRemote {
+		return ReasonDispatchRemote
+	}
+	return ReasonDispatch
+}
+
+func collectReasonForRecord(record TaskRecord) string {
+	if record.Target == TaskTargetRemote {
+		return ReasonCollectRemote
+	}
+	return ReasonCollect
 }

@@ -322,13 +322,22 @@ func TestTeamsConfigDefaults(t *testing.T) {
 	if cfg.Teams.Vote.TieBreak != TeamsVoteTieBreakHighestPriority {
 		t.Fatalf("teams.vote.tie_break = %q, want %q", cfg.Teams.Vote.TieBreak, TeamsVoteTieBreakHighestPriority)
 	}
+	if cfg.Teams.Remote.Enabled {
+		t.Fatal("teams.remote.enabled = true, want false")
+	}
+	if !cfg.Teams.Remote.RequirePeerID {
+		t.Fatal("teams.remote.require_peer_id = false, want true")
+	}
 }
 
 func TestTeamsConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_TEAMS_ENABLED", "true")
 	t.Setenv("BAYMAX_TEAMS_DEFAULT_STRATEGY", TeamsStrategyParallel)
 	t.Setenv("BAYMAX_TEAMS_TASK_TIMEOUT", "900ms")
 	t.Setenv("BAYMAX_TEAMS_PARALLEL_MAX_WORKERS", "6")
 	t.Setenv("BAYMAX_TEAMS_VOTE_TIE_BREAK", TeamsVoteTieBreakFirstTaskID)
+	t.Setenv("BAYMAX_TEAMS_REMOTE_ENABLED", "true")
+	t.Setenv("BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID", "false")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -340,6 +349,9 @@ teams:
     max_workers: 3
   vote:
     tie_break: highest_priority
+  remote:
+    enabled: false
+    require_peer_id: true
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -359,6 +371,12 @@ teams:
 	}
 	if cfg.Teams.Vote.TieBreak != TeamsVoteTieBreakFirstTaskID {
 		t.Fatalf("teams.vote.tie_break = %q, want %q", cfg.Teams.Vote.TieBreak, TeamsVoteTieBreakFirstTaskID)
+	}
+	if !cfg.Teams.Remote.Enabled {
+		t.Fatal("teams.remote.enabled = false, want true from env")
+	}
+	if cfg.Teams.Remote.RequirePeerID {
+		t.Fatal("teams.remote.require_peer_id = true, want false from env")
 	}
 }
 
@@ -386,6 +404,13 @@ func TestTeamsConfigValidationRejectsInvalidValues(t *testing.T) {
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for teams.vote.tie_break")
 	}
+
+	cfg = DefaultConfig()
+	cfg.Teams.Remote.Enabled = true
+	cfg.Teams.Enabled = false
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for teams.remote.enabled when teams.enabled=false")
+	}
 }
 
 func TestWorkflowConfigDefaults(t *testing.T) {
@@ -402,13 +427,26 @@ func TestWorkflowConfigDefaults(t *testing.T) {
 	if cfg.Workflow.CheckpointBackend != WorkflowCheckpointMemory {
 		t.Fatalf("workflow.checkpoint_backend = %q, want %q", cfg.Workflow.CheckpointBackend, WorkflowCheckpointMemory)
 	}
+	if cfg.Workflow.Remote.Enabled {
+		t.Fatal("workflow.remote.enabled = true, want false")
+	}
+	if !cfg.Workflow.Remote.RequirePeerID {
+		t.Fatal("workflow.remote.require_peer_id = false, want true")
+	}
+	if cfg.Workflow.Remote.DefaultRetryMaxAttempts != 2 {
+		t.Fatalf("workflow.remote.default_retry_max_attempts = %d, want 2", cfg.Workflow.Remote.DefaultRetryMaxAttempts)
+	}
 }
 
 func TestWorkflowConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_WORKFLOW_ENABLED", "true")
 	t.Setenv("BAYMAX_WORKFLOW_PLANNER_VALIDATION_MODE", WorkflowValidationModeWarn)
 	t.Setenv("BAYMAX_WORKFLOW_DEFAULT_STEP_TIMEOUT", "1400ms")
 	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_BACKEND", WorkflowCheckpointFile)
 	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_PATH", "/tmp/workflow-checkpoints")
+	t.Setenv("BAYMAX_WORKFLOW_REMOTE_ENABLED", "true")
+	t.Setenv("BAYMAX_WORKFLOW_REMOTE_REQUIRE_PEER_ID", "false")
+	t.Setenv("BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS", "5")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -418,6 +456,10 @@ workflow:
   default_step_timeout: 3s
   checkpoint_backend: memory
   checkpoint_path: /tmp/ignored
+  remote:
+    enabled: false
+    require_peer_id: true
+    default_retry_max_attempts: 1
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -437,6 +479,15 @@ workflow:
 	}
 	if cfg.Workflow.CheckpointPath != "/tmp/workflow-checkpoints" {
 		t.Fatalf("workflow.checkpoint_path = %q, want /tmp/workflow-checkpoints", cfg.Workflow.CheckpointPath)
+	}
+	if !cfg.Workflow.Remote.Enabled {
+		t.Fatal("workflow.remote.enabled = false, want true from env")
+	}
+	if cfg.Workflow.Remote.RequirePeerID {
+		t.Fatal("workflow.remote.require_peer_id = true, want false from env")
+	}
+	if cfg.Workflow.Remote.DefaultRetryMaxAttempts != 5 {
+		t.Fatalf("workflow.remote.default_retry_max_attempts = %d, want 5", cfg.Workflow.Remote.DefaultRetryMaxAttempts)
 	}
 }
 
@@ -464,6 +515,19 @@ func TestWorkflowConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Workflow.CheckpointPath = ""
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for workflow.checkpoint_path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Workflow.Remote.Enabled = true
+	cfg.Workflow.Enabled = false
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.remote.enabled when workflow.enabled=false")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Workflow.Remote.DefaultRetryMaxAttempts = -1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.remote.default_retry_max_attempts")
 	}
 }
 

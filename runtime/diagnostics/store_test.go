@@ -88,14 +88,16 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:             time.Now(),
-		RunID:            "run-team-1",
-		Status:           "failed",
-		TeamID:           "team-alpha",
-		TeamStrategy:     "parallel",
-		TeamTaskTotal:    5,
-		TeamTaskFailed:   2,
-		TeamTaskCanceled: 1,
+		Time:                 time.Now(),
+		RunID:                "run-team-1",
+		Status:               "failed",
+		TeamID:               "team-alpha",
+		TeamStrategy:         "parallel",
+		TeamTaskTotal:        5,
+		TeamTaskFailed:       2,
+		TeamTaskCanceled:     1,
+		TeamRemoteTaskTotal:  3,
+		TeamRemoteTaskFailed: 1,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -104,7 +106,8 @@ func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 	if len(runs) != 1 {
 		t.Fatalf("run records = %d, want 1", len(runs))
 	}
-	if runs[0].TeamTaskTotal != 5 || runs[0].TeamTaskFailed != 2 || runs[0].TeamTaskCanceled != 1 {
+	if runs[0].TeamTaskTotal != 5 || runs[0].TeamTaskFailed != 2 || runs[0].TeamTaskCanceled != 1 ||
+		runs[0].TeamRemoteTaskTotal != 3 || runs[0].TeamRemoteTaskFailed != 1 {
 		t.Fatalf("team aggregate should stay stable under replay, got %#v", runs[0])
 	}
 }
@@ -112,14 +115,16 @@ func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                time.Now(),
-		RunID:               "run-workflow-1",
-		Status:              "failed",
-		WorkflowID:          "wf-alpha",
-		WorkflowStatus:      "failed",
-		WorkflowStepTotal:   6,
-		WorkflowStepFailed:  2,
-		WorkflowResumeCount: 1,
+		Time:                     time.Now(),
+		RunID:                    "run-workflow-1",
+		Status:                   "failed",
+		WorkflowID:               "wf-alpha",
+		WorkflowStatus:           "failed",
+		WorkflowStepTotal:        6,
+		WorkflowStepFailed:       2,
+		WorkflowRemoteStepTotal:  2,
+		WorkflowRemoteStepFailed: 1,
+		WorkflowResumeCount:      1,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -128,7 +133,9 @@ func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 	if len(runs) != 1 {
 		t.Fatalf("run records = %d, want 1", len(runs))
 	}
-	if runs[0].WorkflowStepTotal != 6 || runs[0].WorkflowStepFailed != 2 || runs[0].WorkflowResumeCount != 1 {
+	if runs[0].WorkflowStepTotal != 6 || runs[0].WorkflowStepFailed != 2 ||
+		runs[0].WorkflowRemoteStepTotal != 2 || runs[0].WorkflowRemoteStepFailed != 1 ||
+		runs[0].WorkflowResumeCount != 1 {
 		t.Fatalf("workflow aggregate should stay stable under replay, got %#v", runs[0])
 	}
 }

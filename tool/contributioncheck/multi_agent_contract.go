@@ -45,9 +45,12 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"team.dispatch":         snapshot.TeamsTimelineSpec,
 		"team.collect":          snapshot.TeamsTimelineSpec,
 		"team.resolve":          snapshot.TeamsTimelineSpec,
+		"team.dispatch_remote":  snapshot.TeamsTimelineSpec,
+		"team.collect_remote":   snapshot.TeamsTimelineSpec,
 		"workflow.schedule":     snapshot.WorkflowTimelineSpec,
 		"workflow.retry":        snapshot.WorkflowTimelineSpec,
 		"workflow.resume":       snapshot.WorkflowTimelineSpec,
+		"workflow.dispatch_a2a": snapshot.WorkflowTimelineSpec,
 		"a2a.submit":            snapshot.A2ATimelineSpec,
 		"a2a.status_poll":       snapshot.A2ATimelineSpec,
 		"a2a.callback_retry":    snapshot.A2ATimelineSpec,
@@ -73,6 +76,22 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 			Code:    "missing_peer_id_canonical_naming",
 			Message: "peer_id must be used as canonical A2A peer identifier field",
 		})
+	}
+	requiredCorrelationFields := []string{
+		"`workflow_id`",
+		"`team_id`",
+		"`step_id`",
+		"`task_id`",
+		"`agent_id`",
+		"`peer_id`",
+	}
+	for _, field := range requiredCorrelationFields {
+		if !strings.Contains(snapshot.IdentifierDoc, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_identifier_field_" + strings.Trim(field, "`"),
+				Message: "identifier model missing canonical field: " + field,
+			})
+		}
 	}
 
 	requiredA2ATimelineFields := []string{

@@ -65,6 +65,9 @@ const (
 
 type TaskRequest struct {
 	TaskID                   string         `json:"task_id,omitempty"`
+	WorkflowID               string         `json:"workflow_id,omitempty"`
+	TeamID                   string         `json:"team_id,omitempty"`
+	StepID                   string         `json:"step_id,omitempty"`
 	AgentID                  string         `json:"agent_id"`
 	PeerID                   string         `json:"peer_id,omitempty"`
 	Method                   string         `json:"method,omitempty"`
@@ -80,6 +83,9 @@ type TaskRequest struct {
 
 type TaskRecord struct {
 	TaskID                   string           `json:"task_id"`
+	WorkflowID               string           `json:"workflow_id,omitempty"`
+	TeamID                   string           `json:"team_id,omitempty"`
+	StepID                   string           `json:"step_id,omitempty"`
 	AgentID                  string           `json:"agent_id"`
 	PeerID                   string           `json:"peer_id"`
 	Status                   TaskStatus       `json:"status"`
@@ -260,6 +266,9 @@ func NewInMemoryServer(handler Handler, timeline types.EventHandler) *InMemorySe
 func (s *InMemoryServer) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error) {
 	s.mu.Lock()
 	req.TaskID = strings.TrimSpace(req.TaskID)
+	req.WorkflowID = strings.TrimSpace(req.WorkflowID)
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	req.StepID = strings.TrimSpace(req.StepID)
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.PeerID = strings.TrimSpace(req.PeerID)
 	req.Method = strings.TrimSpace(req.Method)
@@ -279,6 +288,9 @@ func (s *InMemoryServer) Submit(ctx context.Context, req TaskRequest) (TaskRecor
 	}
 	record := TaskRecord{
 		TaskID:                   req.TaskID,
+		WorkflowID:               req.WorkflowID,
+		TeamID:                   req.TeamID,
+		StepID:                   req.StepID,
 		AgentID:                  req.AgentID,
 		PeerID:                   req.PeerID,
 		Status:                   StatusSubmitted,
@@ -402,6 +414,15 @@ func (s *InMemoryServer) emitTimeline(ctx context.Context, record TaskRecord, re
 		"delivery_mode": record.DeliveryMode,
 		"version_local": record.VersionLocal,
 		"version_peer":  record.VersionPeer,
+	}
+	if strings.TrimSpace(record.WorkflowID) != "" {
+		payload["workflow_id"] = strings.TrimSpace(record.WorkflowID)
+	}
+	if strings.TrimSpace(record.TeamID) != "" {
+		payload["team_id"] = strings.TrimSpace(record.TeamID)
+	}
+	if strings.TrimSpace(record.StepID) != "" {
+		payload["step_id"] = strings.TrimSpace(record.StepID)
 	}
 	if record.DeliveryFallbackUsed {
 		payload["delivery_fallback_used"] = true
@@ -539,6 +560,9 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 		return TaskRecord{}, errors.New("a2a client server is not configured")
 	}
 	req.TaskID = strings.TrimSpace(req.TaskID)
+	req.WorkflowID = strings.TrimSpace(req.WorkflowID)
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	req.StepID = strings.TrimSpace(req.StepID)
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.PeerID = strings.TrimSpace(req.PeerID)
 	if req.TaskID == "" {
@@ -558,6 +582,9 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 	if err != nil {
 		record := TaskRecord{
 			TaskID:                   req.TaskID,
+			WorkflowID:               req.WorkflowID,
+			TeamID:                   req.TeamID,
+			StepID:                   req.StepID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusFailed,
@@ -585,6 +612,9 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 	if err != nil {
 		record := TaskRecord{
 			TaskID:                   req.TaskID,
+			WorkflowID:               req.WorkflowID,
+			TeamID:                   req.TeamID,
+			StepID:                   req.StepID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusFailed,
@@ -611,6 +641,9 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 	if fallbackUsed {
 		record := TaskRecord{
 			TaskID:                   req.TaskID,
+			WorkflowID:               req.WorkflowID,
+			TeamID:                   req.TeamID,
+			StepID:                   req.StepID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusSubmitted,
@@ -642,6 +675,15 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 		}
 		if strings.TrimSpace(record.DeliveryMode) == "" {
 			record.DeliveryMode = req.DeliveryMode
+		}
+		if strings.TrimSpace(record.WorkflowID) == "" {
+			record.WorkflowID = req.WorkflowID
+		}
+		if strings.TrimSpace(record.TeamID) == "" {
+			record.TeamID = req.TeamID
+		}
+		if strings.TrimSpace(record.StepID) == "" {
+			record.StepID = req.StepID
 		}
 		if strings.TrimSpace(record.VersionLocal) == "" {
 			record.VersionLocal = req.VersionLocal
@@ -696,6 +738,9 @@ func (c *Client) WaitResult(
 					sseReconnectAttempt++
 					retryRecord := TaskRecord{
 						TaskID:                   strings.TrimSpace(taskID),
+						WorkflowID:               lastRecord.WorkflowID,
+						TeamID:                   lastRecord.TeamID,
+						StepID:                   lastRecord.StepID,
 						AgentID:                  lastRecord.AgentID,
 						PeerID:                   lastRecord.PeerID,
 						Status:                   StatusRunning,
@@ -754,6 +799,15 @@ func (c *Client) WaitResult(
 			}
 			if strings.TrimSpace(result.DeliveryMode) == "" {
 				result.DeliveryMode = mode
+			}
+			if strings.TrimSpace(result.WorkflowID) == "" {
+				result.WorkflowID = record.WorkflowID
+			}
+			if strings.TrimSpace(result.TeamID) == "" {
+				result.TeamID = record.TeamID
+			}
+			if strings.TrimSpace(result.StepID) == "" {
+				result.StepID = record.StepID
 			}
 			if strings.TrimSpace(result.VersionLocal) == "" {
 				result.VersionLocal = record.VersionLocal
@@ -849,6 +903,15 @@ func (c *Client) emitTimeline(ctx context.Context, record TaskRecord, reason str
 		"delivery_mode": record.DeliveryMode,
 		"version_local": record.VersionLocal,
 		"version_peer":  record.VersionPeer,
+	}
+	if strings.TrimSpace(record.WorkflowID) != "" {
+		payload["workflow_id"] = strings.TrimSpace(record.WorkflowID)
+	}
+	if strings.TrimSpace(record.TeamID) != "" {
+		payload["team_id"] = strings.TrimSpace(record.TeamID)
+	}
+	if strings.TrimSpace(record.StepID) != "" {
+		payload["step_id"] = strings.TrimSpace(record.StepID)
 	}
 	if record.DeliveryFallbackUsed {
 		payload["delivery_fallback_used"] = true

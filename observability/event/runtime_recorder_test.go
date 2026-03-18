@@ -192,10 +192,14 @@ mcp:
 			"team_task_total":                          5,
 			"team_task_failed":                         1,
 			"team_task_canceled":                       1,
+			"team_remote_task_total":                   3,
+			"team_remote_task_failed":                  1,
 			"workflow_id":                              "wf-alpha",
 			"workflow_status":                          "failed",
 			"workflow_step_total":                      7,
 			"workflow_step_failed":                     2,
+			"workflow_remote_step_total":               4,
+			"workflow_remote_step_failed":              2,
 			"workflow_resume_count":                    1,
 			"a2a_task_total":                           4,
 			"a2a_task_failed":                          1,
@@ -316,11 +320,17 @@ mcp:
 	if items[0].TeamTaskTotal != 5 || items[0].TeamTaskFailed != 1 || items[0].TeamTaskCanceled != 1 {
 		t.Fatalf("teams summary counters mismatch: %#v", items[0])
 	}
+	if items[0].TeamRemoteTaskTotal != 3 || items[0].TeamRemoteTaskFailed != 1 {
+		t.Fatalf("teams remote summary counters mismatch: %#v", items[0])
+	}
 	if items[0].WorkflowID != "wf-alpha" || items[0].WorkflowStatus != "failed" {
 		t.Fatalf("workflow summary id/status mismatch: %#v", items[0])
 	}
 	if items[0].WorkflowStepTotal != 7 || items[0].WorkflowStepFailed != 2 || items[0].WorkflowResumeCount != 1 {
 		t.Fatalf("workflow summary counters mismatch: %#v", items[0])
+	}
+	if items[0].WorkflowRemoteStepTotal != 4 || items[0].WorkflowRemoteStepFailed != 2 {
+		t.Fatalf("workflow remote summary counters mismatch: %#v", items[0])
 	}
 	if items[0].A2ATaskTotal != 4 || items[0].A2ATaskFailed != 1 {
 		t.Fatalf("a2a summary counters mismatch: %#v", items[0])

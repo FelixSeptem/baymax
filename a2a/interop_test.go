@@ -84,9 +84,12 @@ func TestA2ASubmitStatusResultAndTimelineNormalization(t *testing.T) {
 	}, collector)
 
 	submitted, err := client.Submit(context.Background(), TaskRequest{
-		AgentID: "agent-a",
-		PeerID:  "peer-1",
-		Method:  "echo",
+		WorkflowID: "wf-a2a",
+		TeamID:     "team-a2a",
+		StepID:     "step-a2a",
+		AgentID:    "agent-a",
+		PeerID:     "peer-1",
+		Method:     "echo",
 	})
 	if err != nil {
 		t.Fatalf("Submit failed: %v", err)
@@ -108,6 +111,9 @@ func TestA2ASubmitStatusResultAndTimelineNormalization(t *testing.T) {
 	if result.Result["echo"] != "echo" {
 		t.Fatalf("result payload mismatch: %#v", result.Result)
 	}
+	if result.WorkflowID != "wf-a2a" || result.TeamID != "team-a2a" || result.StepID != "step-a2a" {
+		t.Fatalf("correlation metadata mismatch: %#v", result)
+	}
 
 	events := collector.Snapshot()
 	if len(events) == 0 {
@@ -128,6 +134,9 @@ func TestA2ASubmitStatusResultAndTimelineNormalization(t *testing.T) {
 			}
 			if ev.Payload["task_id"] == "" || ev.Payload["agent_id"] == "" || ev.Payload["peer_id"] == "" {
 				t.Fatalf("submit payload missing correlation fields: %#v", ev.Payload)
+			}
+			if ev.Payload["workflow_id"] != "wf-a2a" || ev.Payload["team_id"] != "team-a2a" || ev.Payload["step_id"] != "step-a2a" {
+				t.Fatalf("submit payload missing composed correlation fields: %#v", ev.Payload)
 			}
 		}
 	}

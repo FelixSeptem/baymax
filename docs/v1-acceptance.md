@@ -20,9 +20,14 @@
 - Teams orchestration baseline is available as independent module (`orchestration/teams`) with deterministic `serial|parallel|vote` strategies, explicit task lifecycle states, and Run/Stream semantic equivalence.
 - Teams timeline reasons and metadata are normalized with `team.*` namespace and `team_id/agent_id/task_id` correlation fields.
 - Run diagnostics include Teams additive summary fields: `team_id`, `team_strategy`, `team_task_total`, `team_task_failed`, `team_task_canceled`.
+- Teams mixed local+remote execution is available via unified task model (`target=local|remote`), with remote timeline reasons `team.dispatch_remote/team.collect_remote` and Run/Stream semantic equivalence.
+- Run diagnostics include Teams remote additive summary fields: `team_remote_task_total`, `team_remote_task_failed`.
 - Workflow DSL baseline is available as independent module (`orchestration/workflow`) with schema parse/validate (`step/depends_on/condition/retry/timeout`), deterministic scheduling, bounded retry/timeout, and checkpoint/resume semantics.
 - Workflow timeline reasons and metadata are normalized with `workflow.*` namespace and `workflow_id/step_id` correlation fields.
 - Run diagnostics include Workflow additive summary fields: `workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`.
+- Workflow supports A2A remote step kind (`kind=a2a`) under existing retry/timeout/checkpoint semantics, with timeline reason `workflow.dispatch_a2a`.
+- Run diagnostics include Workflow remote additive summary fields: `workflow_remote_step_total`, `workflow_remote_step_failed`.
+- Runtime config exposes composed-orchestration controls under existing domains (`teams.remote.*`, `workflow.remote.*`) with deterministic precedence `env > file > default`.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.

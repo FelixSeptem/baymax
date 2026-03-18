@@ -86,6 +86,9 @@ teams:
     max_workers: 4          # 并行策略 worker 上限，必须 > 0
   vote:
     tie_break: highest_priority # highest_priority|first_task_id
+  remote:
+    enabled: false             # 启用 remote task 时，要求 teams.enabled=true
+    require_peer_id: true      # remote task 是否强制 peer_id
 
 workflow:
   enabled: false
@@ -93,6 +96,10 @@ workflow:
   default_step_timeout: 3s        # 必须 > 0
   checkpoint_backend: memory      # memory|file
   checkpoint_path: /tmp/baymax/workflow-checkpoints # backend=file 时必填
+  remote:
+    enabled: false                # 启用 a2a remote step 时，要求 workflow.enabled=true
+    require_peer_id: true         # a2a step 是否强制 peer_id
+    default_retry_max_attempts: 2 # 必须 >= 0
 
 a2a:
   enabled: false
@@ -723,20 +730,30 @@ Action Timeline reason code（Teams 基线）：
 - `team.dispatch`：Teams coordinator/leader 分发任务。
 - `team.collect`：Teams 收集 worker 结果并写入任务终态。
 - `team.resolve`：Teams 在策略收敛阶段产出最终决策。
+- `team.dispatch_remote`：Teams 分发 remote worker（A2A 路径）。
+- `team.collect_remote`：Teams 收集 remote worker 结果并写入终态。
 
 Teams Timeline 关联字段（按可用性增量携带）：
 - `team_id`
+- `workflow_id`
+- `step_id`
 - `agent_id`
 - `task_id`
+- `peer_id`
 
 Action Timeline reason code（Workflow 基线）：
 - `workflow.schedule`：Workflow step 被调度执行或进入终态。
 - `workflow.retry`：Workflow step 在失败后进入下一次重试。
 - `workflow.resume`：Workflow 从 checkpoint 恢复并跳过已完成 step。
+- `workflow.dispatch_a2a`：Workflow 调度 A2A remote step。
 
 Workflow Timeline 关联字段（按可用性增量携带）：
 - `workflow_id`
 - `step_id`
+- `task_id`
+- `team_id`
+- `agent_id`
+- `peer_id`
 
 Action Timeline reason code（A2A 基线）：
 - `a2a.submit`：A2A 提交任务到对端并进入可查询生命周期。
@@ -749,6 +766,9 @@ Action Timeline reason code（A2A 基线）：
 - `a2a.resolve`：A2A 任务进入终态并完成结果解析。
 
 A2A Timeline 关联字段（按可用性增量携带）：
+- `workflow_id`
+- `team_id`
+- `step_id`
 - `task_id`
 - `agent_id`
 - `peer_id`
@@ -781,6 +801,8 @@ Action Gate 规则优先级（H4）：
 - `team_task_total`：本次 Teams 任务总数。
 - `team_task_failed`：本次 Teams 失败任务数。
 - `team_task_canceled`：本次 Teams 取消任务数。
+- `team_remote_task_total`：本次 Teams remote 任务总数。
+- `team_remote_task_failed`：本次 Teams remote 失败任务数。
 
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
@@ -792,6 +814,8 @@ Action Gate 规则优先级（H4）：
 - `workflow_status`：workflow 最终状态（如 `succeeded|failed`）。
 - `workflow_step_total`：workflow step 总数。
 - `workflow_step_failed`：workflow 失败 step 数。
+- `workflow_remote_step_total`：workflow 中 A2A remote step 总数。
+- `workflow_remote_step_failed`：workflow 中 A2A remote 失败 step 数。
 - `workflow_resume_count`：本次 run 的 workflow 恢复次数。
 
 语义约束：

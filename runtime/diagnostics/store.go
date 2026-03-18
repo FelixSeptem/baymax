@@ -115,10 +115,14 @@ type RunRecord struct {
 	TeamTaskTotal                        int                               `json:"team_task_total,omitempty"`
 	TeamTaskFailed                       int                               `json:"team_task_failed,omitempty"`
 	TeamTaskCanceled                     int                               `json:"team_task_canceled,omitempty"`
+	TeamRemoteTaskTotal                  int                               `json:"team_remote_task_total,omitempty"`
+	TeamRemoteTaskFailed                 int                               `json:"team_remote_task_failed,omitempty"`
 	WorkflowID                           string                            `json:"workflow_id,omitempty"`
 	WorkflowStatus                       string                            `json:"workflow_status,omitempty"`
 	WorkflowStepTotal                    int                               `json:"workflow_step_total,omitempty"`
 	WorkflowStepFailed                   int                               `json:"workflow_step_failed,omitempty"`
+	WorkflowRemoteStepTotal              int                               `json:"workflow_remote_step_total,omitempty"`
+	WorkflowRemoteStepFailed             int                               `json:"workflow_remote_step_failed,omitempty"`
 	WorkflowResumeCount                  int                               `json:"workflow_resume_count,omitempty"`
 	A2ATaskTotal                         int                               `json:"a2a_task_total,omitempty"`
 	A2ATaskFailed                        int                               `json:"a2a_task_failed,omitempty"`

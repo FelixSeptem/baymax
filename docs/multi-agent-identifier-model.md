@@ -17,6 +17,7 @@
 | `task_id` | 一个协作任务实例标识 | team/workflow/a2a | 任务路径必填 |
 | `step_id` | workflow 内步骤标识 | workflow step | Workflow 路径必填 |
 | `agent_id` | 参与协作的 agent 标识 | team/a2a | 多 agent 路径必填 |
+| `peer_id` | A2A 对端 agent 标识 | a2a | A2A 路径必填 |
 
 ## 关联关系
 
@@ -77,11 +78,11 @@
 
 - Action Timeline 事件在相关路径中应携带：
   - Teams：`team_id`, `agent_id`, `task_id`
-  - Workflow：`workflow_id`, `step_id`, `task_id`
-  - A2A：`agent_id`, `task_id`, `peer_id`
+  - Workflow：`workflow_id`, `step_id`, `task_id`（A2A remote step 额外携带 `team_id/agent_id/peer_id`）
+  - A2A：`workflow_id`, `team_id`, `step_id`, `agent_id`, `task_id`, `peer_id`
 - reason code 需要保持“路径 + 动作”可判别，例如：
-  - `team.dispatch`, `team.collect`, `team.resolve`
-  - `workflow.schedule`, `workflow.retry`, `workflow.resume`
+  - `team.dispatch`, `team.collect`, `team.resolve`, `team.dispatch_remote`, `team.collect_remote`
+  - `workflow.schedule`, `workflow.retry`, `workflow.resume`, `workflow.dispatch_a2a`
   - `a2a.submit`, `a2a.status_poll`, `a2a.sse_subscribe`, `a2a.sse_reconnect`, `a2a.delivery_fallback`, `a2a.version_mismatch`, `a2a.callback_retry`, `a2a.resolve`
 
 ## Reason 命名空间规范
@@ -99,8 +100,8 @@
 ## 诊断映射规则
 
 - run 级摘要字段采用 additive 扩展，不破坏既有消费者：
-  - Teams：`team_id`, `team_strategy`, `team_task_total`, `team_task_failed`
-  - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_resume_count`
+  - Teams：`team_id`, `team_strategy`, `team_task_total`, `team_task_failed`, `team_task_canceled`, `team_remote_task_total`, `team_remote_task_failed`
+  - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`, `workflow_remote_step_total`, `workflow_remote_step_failed`
   - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 

@@ -205,6 +205,7 @@ type TeamsConfig struct {
 	TaskTimeout     time.Duration       `json:"task_timeout"`
 	Parallel        TeamsParallelConfig `json:"parallel"`
 	Vote            TeamsVoteConfig     `json:"vote"`
+	Remote          TeamsRemoteConfig   `json:"remote"`
 }
 
 type TeamsParallelConfig struct {
@@ -215,12 +216,24 @@ type TeamsVoteConfig struct {
 	TieBreak string `json:"tie_break"`
 }
 
+type TeamsRemoteConfig struct {
+	Enabled       bool `json:"enabled"`
+	RequirePeerID bool `json:"require_peer_id"`
+}
+
 type WorkflowConfig struct {
-	Enabled               bool          `json:"enabled"`
-	PlannerValidationMode string        `json:"planner_validation_mode"`
-	DefaultStepTimeout    time.Duration `json:"default_step_timeout"`
-	CheckpointBackend     string        `json:"checkpoint_backend"`
-	CheckpointPath        string        `json:"checkpoint_path"`
+	Enabled               bool                 `json:"enabled"`
+	PlannerValidationMode string               `json:"planner_validation_mode"`
+	DefaultStepTimeout    time.Duration        `json:"default_step_timeout"`
+	CheckpointBackend     string               `json:"checkpoint_backend"`
+	CheckpointPath        string               `json:"checkpoint_path"`
+	Remote                WorkflowRemoteConfig `json:"remote"`
+}
+
+type WorkflowRemoteConfig struct {
+	Enabled                 bool `json:"enabled"`
+	RequirePeerID           bool `json:"require_peer_id"`
+	DefaultRetryMaxAttempts int  `json:"default_retry_max_attempts"`
 }
 
 type A2AConfig struct {
@@ -731,6 +744,10 @@ func DefaultConfig() Config {
 			Vote: TeamsVoteConfig{
 				TieBreak: TeamsVoteTieBreakHighestPriority,
 			},
+			Remote: TeamsRemoteConfig{
+				Enabled:       false,
+				RequirePeerID: true,
+			},
 		},
 		Workflow: WorkflowConfig{
 			Enabled:               false,
@@ -738,6 +755,11 @@ func DefaultConfig() Config {
 			DefaultStepTimeout:    3 * time.Second,
 			CheckpointBackend:     WorkflowCheckpointMemory,
 			CheckpointPath:        filepath.Join(os.TempDir(), "baymax", "workflow-checkpoints"),
+			Remote: WorkflowRemoteConfig{
+				Enabled:                 false,
+				RequirePeerID:           true,
+				DefaultRetryMaxAttempts: 2,
+			},
 		},
 		A2A: A2AConfig{
 			Enabled:       false,
@@ -1248,6 +1270,9 @@ func Validate(cfg Config) error {
 			cfg.Teams.Vote.TieBreak,
 		)
 	}
+	if cfg.Teams.Remote.Enabled && !cfg.Teams.Enabled {
+		return errors.New("teams.remote.enabled requires teams.enabled=true")
+	}
 	switch mode := strings.ToLower(strings.TrimSpace(cfg.Workflow.PlannerValidationMode)); mode {
 	case WorkflowValidationModeStrict, WorkflowValidationModeWarn:
 	default:
@@ -1274,6 +1299,12 @@ func Validate(cfg Config) error {
 			WorkflowCheckpointFile,
 			cfg.Workflow.CheckpointBackend,
 		)
+	}
+	if cfg.Workflow.Remote.Enabled && !cfg.Workflow.Enabled {
+		return errors.New("workflow.remote.enabled requires workflow.enabled=true")
+	}
+	if cfg.Workflow.Remote.DefaultRetryMaxAttempts < 0 {
+		return errors.New("workflow.remote.default_retry_max_attempts must be >= 0")
 	}
 	if cfg.A2A.ClientTimeout <= 0 {
 		return errors.New("a2a.client_timeout must be > 0")
@@ -2252,11 +2283,16 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("teams.task_timeout", base.Teams.TaskTimeout)
 	v.SetDefault("teams.parallel.max_workers", base.Teams.Parallel.MaxWorkers)
 	v.SetDefault("teams.vote.tie_break", base.Teams.Vote.TieBreak)
+	v.SetDefault("teams.remote.enabled", base.Teams.Remote.Enabled)
+	v.SetDefault("teams.remote.require_peer_id", base.Teams.Remote.RequirePeerID)
 	v.SetDefault("workflow.enabled", base.Workflow.Enabled)
 	v.SetDefault("workflow.planner_validation_mode", base.Workflow.PlannerValidationMode)
 	v.SetDefault("workflow.default_step_timeout", base.Workflow.DefaultStepTimeout)
 	v.SetDefault("workflow.checkpoint_backend", base.Workflow.CheckpointBackend)
 	v.SetDefault("workflow.checkpoint_path", base.Workflow.CheckpointPath)
+	v.SetDefault("workflow.remote.enabled", base.Workflow.Remote.Enabled)
+	v.SetDefault("workflow.remote.require_peer_id", base.Workflow.Remote.RequirePeerID)
+	v.SetDefault("workflow.remote.default_retry_max_attempts", base.Workflow.Remote.DefaultRetryMaxAttempts)
 	v.SetDefault("a2a.enabled", base.A2A.Enabled)
 	v.SetDefault("a2a.client_timeout", base.A2A.ClientTimeout)
 	v.SetDefault("a2a.delivery.mode", base.A2A.Delivery.Mode)
@@ -2462,11 +2498,16 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Teams.TaskTimeout = v.GetDuration("teams.task_timeout")
 	cfg.Teams.Parallel.MaxWorkers = v.GetInt("teams.parallel.max_workers")
 	cfg.Teams.Vote.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("teams.vote.tie_break")))
+	cfg.Teams.Remote.Enabled = v.GetBool("teams.remote.enabled")
+	cfg.Teams.Remote.RequirePeerID = v.GetBool("teams.remote.require_peer_id")
 	cfg.Workflow.Enabled = v.GetBool("workflow.enabled")
 	cfg.Workflow.PlannerValidationMode = strings.ToLower(strings.TrimSpace(v.GetString("workflow.planner_validation_mode")))
 	cfg.Workflow.DefaultStepTimeout = v.GetDuration("workflow.default_step_timeout")
 	cfg.Workflow.CheckpointBackend = strings.ToLower(strings.TrimSpace(v.GetString("workflow.checkpoint_backend")))
 	cfg.Workflow.CheckpointPath = strings.TrimSpace(v.GetString("workflow.checkpoint_path"))
+	cfg.Workflow.Remote.Enabled = v.GetBool("workflow.remote.enabled")
+	cfg.Workflow.Remote.RequirePeerID = v.GetBool("workflow.remote.require_peer_id")
+	cfg.Workflow.Remote.DefaultRetryMaxAttempts = v.GetInt("workflow.remote.default_retry_max_attempts")
 	cfg.A2A.Enabled = v.GetBool("a2a.enabled")
 	cfg.A2A.ClientTimeout = v.GetDuration("a2a.client_timeout")
 	cfg.A2A.Delivery.Mode = strings.ToLower(strings.TrimSpace(v.GetString("a2a.delivery.mode")))

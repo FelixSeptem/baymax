@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	ReasonSchedule = "workflow.schedule"
-	ReasonRetry    = "workflow.retry"
-	ReasonResume   = "workflow.resume"
+	ReasonSchedule    = "workflow.schedule"
+	ReasonRetry       = "workflow.retry"
+	ReasonResume      = "workflow.resume"
+	ReasonDispatchA2A = "workflow.dispatch_a2a"
 )
 
 type StepStatus string
@@ -40,6 +41,7 @@ const (
 	StepKindTool   StepKind = "tool"
 	StepKindMCP    StepKind = "mcp"
 	StepKindSkill  StepKind = "skill"
+	StepKindA2A    StepKind = "a2a"
 )
 
 type StepCondition string
@@ -63,6 +65,8 @@ const (
 	ErrCodeInvalidRetryMaxAttempts ValidationErrorCode = "invalid_retry_max_attempts"
 	ErrCodeInvalidRetryBackoff     ValidationErrorCode = "invalid_retry_backoff"
 	ErrCodeInvalidStepTimeout      ValidationErrorCode = "invalid_step_timeout"
+	ErrCodeA2AAgentIDRequired      ValidationErrorCode = "a2a_agent_id_required"
+	ErrCodeA2APeerIDRequired       ValidationErrorCode = "a2a_peer_id_required"
 	ErrCodeNoSteps                 ValidationErrorCode = "no_steps"
 )
 
@@ -101,6 +105,9 @@ type Step struct {
 	StepID    string         `json:"step_id,omitempty" yaml:"step_id,omitempty"`
 	Step      string         `json:"step,omitempty" yaml:"step,omitempty"`
 	TaskID    string         `json:"task_id,omitempty" yaml:"task_id,omitempty"`
+	TeamID    string         `json:"team_id,omitempty" yaml:"team_id,omitempty"`
+	AgentID   string         `json:"agent_id,omitempty" yaml:"agent_id,omitempty"`
+	PeerID    string         `json:"peer_id,omitempty" yaml:"peer_id,omitempty"`
 	Kind      StepKind       `json:"kind,omitempty" yaml:"kind,omitempty"`
 	DependsOn []string       `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
 	Condition StepCondition  `json:"condition,omitempty" yaml:"condition,omitempty"`
@@ -132,6 +139,7 @@ type DispatchAdapter struct {
 	Tool   func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 	MCP    func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 	Skill  func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
+	A2A    func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 }
 
 func (a DispatchAdapter) Execute(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error) {
@@ -156,6 +164,11 @@ func (a DispatchAdapter) Execute(ctx context.Context, workflowID string, step St
 			return StepOutput{}, errors.New("workflow skill adapter is missing")
 		}
 		return a.Skill(ctx, workflowID, step, attempt)
+	case StepKindA2A:
+		if a.A2A == nil {
+			return StepOutput{}, errors.New("workflow a2a adapter is missing")
+		}
+		return a.A2A(ctx, workflowID, step, attempt)
 	default:
 		return StepOutput{}, fmt.Errorf("unsupported workflow step kind %q", step.Kind)
 	}
@@ -282,23 +295,27 @@ type StepResult struct {
 }
 
 type RunResult struct {
-	RunID               string       `json:"run_id,omitempty"`
-	WorkflowID          string       `json:"workflow_id"`
-	WorkflowStatus      string       `json:"workflow_status"`
-	WorkflowStepTotal   int          `json:"workflow_step_total"`
-	WorkflowStepFailed  int          `json:"workflow_step_failed"`
-	WorkflowResumeCount int          `json:"workflow_resume_count"`
-	Steps               []StepResult `json:"steps"`
-	ExecutionOrder      []string     `json:"execution_order,omitempty"`
+	RunID                string       `json:"run_id,omitempty"`
+	WorkflowID           string       `json:"workflow_id"`
+	WorkflowStatus       string       `json:"workflow_status"`
+	WorkflowStepTotal    int          `json:"workflow_step_total"`
+	WorkflowStepFailed   int          `json:"workflow_step_failed"`
+	WorkflowRemoteTotal  int          `json:"workflow_remote_step_total,omitempty"`
+	WorkflowRemoteFailed int          `json:"workflow_remote_step_failed,omitempty"`
+	WorkflowResumeCount  int          `json:"workflow_resume_count"`
+	Steps                []StepResult `json:"steps"`
+	ExecutionOrder       []string     `json:"execution_order,omitempty"`
 }
 
 func (r RunResult) RunFinishedPayload() map[string]any {
 	return map[string]any{
-		"workflow_id":           r.WorkflowID,
-		"workflow_status":       r.WorkflowStatus,
-		"workflow_step_total":   r.WorkflowStepTotal,
-		"workflow_step_failed":  r.WorkflowStepFailed,
-		"workflow_resume_count": r.WorkflowResumeCount,
+		"workflow_id":                 r.WorkflowID,
+		"workflow_status":             r.WorkflowStatus,
+		"workflow_step_total":         r.WorkflowStepTotal,
+		"workflow_step_failed":        r.WorkflowStepFailed,
+		"workflow_remote_step_total":  r.WorkflowRemoteTotal,
+		"workflow_remote_step_failed": r.WorkflowRemoteFailed,
+		"workflow_resume_count":       r.WorkflowResumeCount,
 	}
 }
 
@@ -372,6 +389,9 @@ func normalizeDefinition(def Definition) Definition {
 		if def.Steps[i].TaskID == "" {
 			def.Steps[i].TaskID = def.Steps[i].StepID
 		}
+		def.Steps[i].TeamID = strings.TrimSpace(def.Steps[i].TeamID)
+		def.Steps[i].AgentID = strings.TrimSpace(def.Steps[i].AgentID)
+		def.Steps[i].PeerID = strings.TrimSpace(def.Steps[i].PeerID)
 		def.Steps[i].Kind = normalizeStepKind(def.Steps[i].Kind)
 		def.Steps[i].Condition = normalizeCondition(def.Steps[i].Condition)
 		def.Steps[i].DependsOn = normalizeDependsOn(def.Steps[i].DependsOn)
@@ -453,7 +473,7 @@ func ValidateDefinition(def Definition) ValidationErrors {
 		stepsByID[step.StepID] = step
 
 		switch step.Kind {
-		case StepKindRunner, StepKindTool, StepKindMCP, StepKindSkill:
+		case StepKindRunner, StepKindTool, StepKindMCP, StepKindSkill, StepKindA2A:
 		default:
 			violations = append(violations, ValidationError{
 				Code:    ErrCodeUnsupportedStepKind,
@@ -461,6 +481,24 @@ func ValidateDefinition(def Definition) ValidationErrors {
 				Field:   "steps.kind",
 				Message: fmt.Sprintf("unsupported step kind %q", step.Kind),
 			})
+		}
+		if step.Kind == StepKindA2A {
+			if strings.TrimSpace(step.AgentID) == "" {
+				violations = append(violations, ValidationError{
+					Code:    ErrCodeA2AAgentIDRequired,
+					StepID:  step.StepID,
+					Field:   "steps.agent_id",
+					Message: "agent_id is required for a2a step",
+				})
+			}
+			if strings.TrimSpace(step.PeerID) == "" {
+				violations = append(violations, ValidationError{
+					Code:    ErrCodeA2APeerIDRequired,
+					StepID:  step.StepID,
+					Field:   "steps.peer_id",
+					Message: "peer_id is required for a2a step",
+				})
+			}
 		}
 		switch step.Condition {
 		case ConditionAlways, ConditionOnSuccess, ConditionOnFailure:
@@ -667,7 +705,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 				case StepStatusSucceeded, StepStatusSkipped:
 					current.Status = state.Status
 					current.Attempts = state.Attempts
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, stepID, state.Status, ReasonResume, &seq)
+					e.emitTimeline(ctx, req.RunID, def.WorkflowID, stepsByID[stepID], state.Status, ReasonResume, &seq)
 					if onEvent != nil {
 						snap := *current
 						if err := onEvent(StreamEvent{Kind: "workflow.resumed.step", Step: &snap}); err != nil {
@@ -699,7 +737,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 			if !conditionMatched(step, results) {
 				record.Status = StepStatusSkipped
 				record.Reason = "condition.not_matched"
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, record.Status, ReasonSchedule, &seq)
+				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, record.Status, reasonForStepDispatch(step), &seq)
 				if onEvent != nil {
 					snap := *record
 					if err := onEvent(StreamEvent{Kind: "workflow.step", Step: &snap}); err != nil {
@@ -719,7 +757,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 			for attempt := 1; attempt <= maxAttempts; attempt++ {
 				record.Attempts = attempt
 				record.Status = StepStatusRunning
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, StepStatusRunning, ReasonSchedule, &seq)
+				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusRunning, reasonForStepDispatch(step), &seq)
 
 				timeout := step.Timeout
 				if timeout <= 0 {
@@ -736,7 +774,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					record.Reason = ""
 					record.Error = ""
 					record.Output = output
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, StepStatusSucceeded, ReasonSchedule, &seq)
+					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusSucceeded, reasonForStepDispatch(step), &seq)
 					break
 				}
 
@@ -745,7 +783,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 				if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					record.Status = StepStatusCanceled
 					record.Reason = "cancel.propagated"
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, StepStatusCanceled, ReasonSchedule, &seq)
+					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusCanceled, reasonForStepDispatch(step), &seq)
 					break
 				}
 				if errors.Is(err, context.DeadlineExceeded) {
@@ -756,7 +794,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					record.Reason = "step.error"
 				}
 				if attempt < maxAttempts {
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, StepStatusPending, ReasonRetry, &seq)
+					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusPending, ReasonRetry, &seq)
 					if step.Retry.Backoff > 0 {
 						timer := time.NewTimer(step.Retry.Backoff)
 						select {
@@ -769,7 +807,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					}
 					continue
 				}
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step.StepID, record.Status, ReasonSchedule, &seq)
+				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, record.Status, reasonForStepDispatch(step), &seq)
 			}
 
 			if onEvent != nil {
@@ -882,8 +920,14 @@ func buildResult(runID, workflowID string, resumeCount int, steps []Step, result
 			continue
 		}
 		out.Steps = append(out.Steps, *item)
+		if isA2AStepByID(steps, item.StepID) {
+			out.WorkflowRemoteTotal++
+		}
 		if item.Status == StepStatusFailed {
 			out.WorkflowStepFailed++
+			if isA2AStepByID(steps, item.StepID) {
+				out.WorkflowRemoteFailed++
+			}
 		}
 	}
 	out.WorkflowStatus = "succeeded"
@@ -894,6 +938,20 @@ func buildResult(runID, workflowID string, resumeCount int, steps []Step, result
 		}
 	}
 	return out
+}
+
+func isA2AStepByID(steps []Step, stepID string) bool {
+	id := strings.TrimSpace(stepID)
+	if id == "" {
+		return false
+	}
+	for _, step := range steps {
+		if strings.TrimSpace(step.StepID) != id {
+			continue
+		}
+		return normalizeStepKind(step.Kind) == StepKindA2A
+	}
+	return false
 }
 
 func (e *Engine) saveCheckpoint(
@@ -927,7 +985,8 @@ func (e *Engine) saveCheckpoint(
 
 func (e *Engine) emitTimeline(
 	ctx context.Context,
-	runID, workflowID, stepID string,
+	runID, workflowID string,
+	step Step,
 	status StepStatus,
 	reason string,
 	seq *int64,
@@ -936,6 +995,11 @@ func (e *Engine) emitTimeline(
 		return
 	}
 	*seq++
+	stepID := strings.TrimSpace(step.StepID)
+	taskID := strings.TrimSpace(step.TaskID)
+	if taskID == "" {
+		taskID = stepID
+	}
 	payload := map[string]any{
 		"phase":       string(types.ActionPhaseRun),
 		"status":      string(status),
@@ -943,9 +1007,20 @@ func (e *Engine) emitTimeline(
 		"reason":      reason,
 		"workflow_id": workflowID,
 	}
-	if strings.TrimSpace(stepID) != "" {
+	if stepID != "" {
 		payload["step_id"] = stepID
-		payload["task_id"] = stepID
+	}
+	if taskID != "" {
+		payload["task_id"] = taskID
+	}
+	if teamID := strings.TrimSpace(step.TeamID); teamID != "" {
+		payload["team_id"] = teamID
+	}
+	if agentID := strings.TrimSpace(step.AgentID); agentID != "" {
+		payload["agent_id"] = agentID
+	}
+	if peerID := strings.TrimSpace(step.PeerID); peerID != "" {
+		payload["peer_id"] = peerID
 	}
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
@@ -954,4 +1029,11 @@ func (e *Engine) emitTimeline(
 		Time:    e.now(),
 		Payload: payload,
 	})
+}
+
+func reasonForStepDispatch(step Step) string {
+	if normalizeStepKind(step.Kind) == StepKindA2A {
+		return ReasonDispatchA2A
+	}
+	return ReasonSchedule
 }

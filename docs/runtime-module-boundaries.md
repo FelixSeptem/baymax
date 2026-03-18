@@ -19,16 +19,19 @@
   - 配置脱敏输出辅助
 - `orchestration/teams`
   - Teams 协作编排基线（`serial|parallel|vote`）
+  - Mixed local/remote worker 执行目标（`target=local|remote`）与统一任务生命周期
   - 角色与任务生命周期语义（`leader|worker|coordinator` + `pending/running/succeeded/failed/skipped/canceled`）
-  - 通过标准事件发射 Teams timeline/摘要元数据（不直接写 diagnostics store）
+  - 通过标准事件发射 Teams timeline/摘要元数据（含 `team.dispatch_remote/team.collect_remote`，不直接写 diagnostics store）
 - `orchestration/workflow`
   - Workflow DSL 基线（`step/depends_on/condition/retry/timeout`）解析与静态 DAG 校验
+  - A2A remote step（`kind=a2a`）在现有 adapter 下执行，复用 workflow retry/timeout/checkpoint 语义
   - 确定性调度、重试/超时、checkpoint/resume 执行语义
-  - 通过标准事件发射 Workflow timeline/摘要元数据（不直接写 diagnostics store）
+  - 通过标准事件发射 Workflow timeline/摘要元数据（含 `workflow.dispatch_a2a`，不直接写 diagnostics store）
 - `a2a`
   - A2A 最小互联能力（`submit/status/result`）与任务生命周期语义
   - Agent Card 能力发现与确定性路由输入（静态注册 + capability 匹配）
   - A2A delivery 模式协商与降级（`callback|sse`）以及版本协商（`strict_major + min_supported_minor`）仅在 `a2a/*` 实现，不下沉到 MCP 传输层
+  - 保留并透传组合编排关联字段（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）
   - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
@@ -65,6 +68,7 @@
 - Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
+- 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。

@@ -902,6 +902,62 @@ reload:
 	}
 }
 
+func TestManagerTeamsRemoteInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+teams:
+  enabled: true
+  default_strategy: serial
+  task_timeout: 1s
+  parallel:
+    max_workers: 3
+  vote:
+    tie_break: highest_priority
+  remote:
+    enabled: false
+    require_peer_id: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Teams.Remote.Enabled
+	if before {
+		t.Fatal("before teams.remote.enabled = true, want false")
+	}
+
+	writeConfig(t, file, `
+teams:
+  enabled: false
+  default_strategy: serial
+  task_timeout: 1s
+  parallel:
+    max_workers: 3
+  vote:
+    tie_break: highest_priority
+  remote:
+    enabled: true
+    require_peer_id: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Teams.Remote.Enabled
+	if after != before {
+		t.Fatalf("invalid teams remote reload should rollback, remote.enabled = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerWorkflowInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
@@ -939,6 +995,58 @@ reload:
 	after := mgr.EffectiveConfig().Workflow.DefaultStepTimeout
 	if after != 1200*time.Millisecond {
 		t.Fatalf("invalid workflow reload should rollback, default_step_timeout = %v, want 1200ms", after)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerWorkflowRemoteInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+workflow:
+  enabled: true
+  planner_validation_mode: strict
+  default_step_timeout: 1200ms
+  checkpoint_backend: memory
+  remote:
+    enabled: true
+    require_peer_id: true
+    default_retry_max_attempts: 2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Workflow.Remote.DefaultRetryMaxAttempts
+	if before != 2 {
+		t.Fatalf("before workflow.remote.default_retry_max_attempts = %d, want 2", before)
+	}
+
+	writeConfig(t, file, `
+workflow:
+  enabled: true
+  planner_validation_mode: strict
+  default_step_timeout: 1200ms
+  checkpoint_backend: memory
+  remote:
+    enabled: true
+    require_peer_id: true
+    default_retry_max_attempts: -1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Workflow.Remote.DefaultRetryMaxAttempts
+	if after != before {
+		t.Fatalf("invalid workflow remote reload should rollback, default_retry_max_attempts = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

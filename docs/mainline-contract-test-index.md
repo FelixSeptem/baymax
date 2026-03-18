@@ -34,6 +34,9 @@
 | Skill Trigger Scoring D3 | `skill/loader/loader_test.go::TestCompileMixedCJKENLexicalTokenization` | `skill/loader/loader_test.go::TestCompileTopKBudgetAndExplicitBypass` |
 | Skill Trigger Run/Stream Equivalence D3 | `skill/loader/loader_test.go::TestCompileMultilingualBudgetRunAndStreamSemanticEquivalent` | `runtime/config/manager_test.go::TestManagerSkillTriggerLexicalBudgetInvalidReloadRollsBack` |
 | A2A Delivery/Version Negotiation A4 | `a2a/interop_test.go::TestSSEReconnectAndSubscribeReasons` | `a2a/interop_test.go::TestRunAndStreamSemanticEquivalenceForFallbackAndVersionMismatch` |
+| Composed Orchestration A5 | `integration/composed_orchestration_contract_test.go::TestWorkflowA2ARemoteStepRunStreamContract` | `integration/composed_orchestration_contract_test.go::TestComposedA2AAndMCPBoundaryRegression` |
+| Teams Mixed Local+Remote A5 | `orchestration/teams/engine_test.go::TestParallelMixedLocalAndRemoteExecution` | `orchestration/teams/engine_test.go::TestMixedCancellationConvergence` |
+| Workflow A2A Step A5 | `orchestration/workflow/engine_test.go::TestA2ARetryAndTimeoutSemantics` | `orchestration/workflow/engine_test.go::TestA2ACheckpointResumeSemantics` |
 | R4 Shared Contract Freeze Gate | `tool/contributioncheck/multi_agent_contract_test.go::TestMultiAgentSharedContractSnapshotPass` | `tool/contributioncheck/multi_agent_contract_test.go::TestValidateMultiAgentSharedContractDetectsViolations` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |

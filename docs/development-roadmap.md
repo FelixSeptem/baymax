@@ -314,6 +314,8 @@
 - [x] 完成 A2A 配置与诊断契约收敛：`a2a.*` 配置（`env > file > default`）、run 摘要字段（`a2a_task_total/a2a_task_failed/peer_id/a2a_error_layer`）、single-writer + idempotency 验证。
 - [x] 完成 A2A + MCP 组合契约测试与文档口径同步（边界职责、reason namespace、shared-contract gate）。
 - [x] `harden-a2a-delivery-and-card-version-negotiation-a4`：完成 delivery 协商与确定性 fallback（`callback|sse`）、SSE reconnect/ callback retry 有界控制、Agent Card 版本协商（`strict_major`）与新增 timeline/diagnostics 字段契约。
+- [x] `compose-teams-workflow-with-a2a-remote-execution-a5`：完成 Workflow `kind=a2a` remote step、Teams `target=remote` 混编执行、新增 reason（`workflow.dispatch_a2a/team.dispatch_remote/team.collect_remote`）与跨域关联字段透传（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）。
+- [x] 完成组合编排配置与诊断收敛：`teams.remote.*`/`workflow.remote.*`（`env > file > default`）与 run 摘要字段（`team_remote_task_total/team_remote_task_failed/workflow_remote_step_total/workflow_remote_step_failed`），并补齐热更新回滚与 replay 幂等测试。
 
 - R4-T4（平台化与治理增强，目标窗口：2026-06-10 之后）
   - 多租户、RBAC、审计流水线与 control plane 进入增量交付。

@@ -17,6 +17,62 @@
 - 社区行为规范：`CODE_OF_CONDUCT.md`
 - 变更记录模板：`CHANGELOG.md`
 
+## 架构设计
+
+Baymax 采用 `library-first` + `contract-first` 架构，核心目标是把「可嵌入的运行时能力」与「可回归的行为契约」同时做实。整体遵循分层与单向依赖：
+
+```text
+Application / SDK 用户代码
+        |
+        v
+core/runner  +  orchestration/*  +  a2a/*
+        |
+        v
+context/*  +  tool/local  +  mcp/http|stdio  +  model/*
+        |
+        v
+observability/event (RuntimeRecorder single-writer)
+        |
+        v
+runtime/diagnostics    runtime/config
+```
+
+关键设计点：
+
+- `core/runner` 统一 Run/Stream 主状态机，负责模型步进、工具调度和终止语义。
+- `orchestration/teams` 与 `orchestration/workflow` 提供多代理协作与工作流编排基线能力，复用 runner/tool/mcp/model 既有接口。
+- `a2a` 聚焦跨 Agent 互联最小面（`submit/status/result` + capability/delivery/version 协商），保持与 MCP 传输层解耦。
+- `runtime/config` 与 `runtime/diagnostics` 是全局运行时横切能力，严格遵循 `env > file > default` 与 fail-fast/回滚策略。
+- 诊断写入必须走 `observability/event.RuntimeRecorder` 单写入口，避免多处写入导致语义漂移。
+
+边界约束和依赖方向详见：`docs/runtime-module-boundaries.md`。
+
+## 核心模块
+
+| 模块 | 目录 | 角色定位 | 现状说明 |
+| --- | --- | --- | --- |
+| Runner Core | `core/runner` | Agent Loop 状态机与 Run/Stream 统一语义 | 已稳定提供主循环、终止条件、策略中止 |
+| Type Contracts | `core/types` | 统一 DTO、错误分类、接口约束 | 作为跨模块契约基础，被所有核心域复用 |
+| Model Adapters | `model/openai` `model/anthropic` `model/gemini` | 屏蔽 Provider SDK 差异，提供 `Generate/Stream` 能力 | 支持能力探测与 provider fallback 预检 |
+| Local Tool Runtime | `tool/local` | 本地工具注册、schema 校验、并发调度与执行策略 | 支持 fail-fast / continue-on-error |
+| MCP Runtime | `mcp/http` `mcp/stdio` `mcp/profile` `mcp/retry` `mcp/diag` | 远程工具协议接入、可靠性控制与诊断归一化 | HTTP/STDIO 双传输均可接入统一运行时配置 |
+| Context Assembler | `context/assembler` `context/journal` `context/guard` `context/provider` | 上下文装配、检索融合、记忆压力治理与守卫校验 | 已覆盖 CA1-CA4 分层语义与关键诊断字段 |
+| Runtime Config | `runtime/config` | 配置加载、校验、热更新、原子回滚 | 固定优先级 `env > file > default` |
+| Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 统一诊断模型、事件时间线、trace 关联与查询 | `RuntimeRecorder` 单写入口已落地 |
+| Skill System | `skill/loader` | AGENTS/SKILL 发现、触发评分、Bundle 组装 | 支持显式触发优先与语义触发兜底 |
+| Orchestration Baselines | `orchestration/teams` `orchestration/workflow` | 多角色协作编排与 DSL 工作流执行 | 提供可复用的 `serial/parallel/vote` 与 DAG 基线 |
+| A2A Interop | `a2a` | Agent-to-Agent 最小互联契约与协商机制 | 具备 capability route 与 delivery/version 协商基线 |
+| Runtime Security | `runtime/security` | 运行时脱敏与安全治理基础能力 | 默认接入关键诊断/事件/上下文路径 |
+
+## 设计哲学
+
+- **Library First**：优先提供可嵌入、可组合的 Go 库能力，而不是绑定单一产品形态。
+- **Contract First**：行为变更由 OpenSpec + 合同测试驱动，要求代码、测试、文档同 PR 同步。
+- **Fail Fast with Controlled Fallback**：非法配置、越界热更新、契约不一致优先快速失败；仅在定义好的路径降级。
+- **Observability as a Runtime Primitive**：把 timeline/trace/diagnostics 视为运行时基础能力，而不是附加日志。
+- **Clear Boundaries over Convenience**：通过模块边界约束控制耦合（例如 `runtime/*` 不反向依赖 MCP 传输实现）。
+- **Consistency over Feature Speed**：Run 与 Stream 语义一致、同类事件 reason code 一致、跨模块字段命名一致。
+
 ## 已实现能力
 
 ### 1. Runner Loop

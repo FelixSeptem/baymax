@@ -10,18 +10,35 @@ import (
 
 func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	root := repoRoot(t)
+	a2aTimelineSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "action-timeline-events", "spec.md")),
+	}, "\n")
+	a2aCoreSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
+		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "a2a-delivery-and-version-negotiation", "spec.md")),
+	}, "\n")
+	a2aRuntimeConfigSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+	}, "\n")
+	a2aBoundarySpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+	}, "\n")
+
 	snapshot := MultiAgentContractSnapshot{
 		IdentifierDoc:             mustRead(t, filepath.Join(root, "docs", "multi-agent-identifier-model.md")),
 		TeamsTimelineSpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		WorkflowTimelineSpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
-		A2ATimelineSpec:           mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "action-timeline-events", "spec.md")),
-		A2ACoreSpec:               mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
+		A2ATimelineSpec:           a2aTimelineSpec,
+		A2ACoreSpec:               a2aCoreSpec,
 		TeamsRuntimeConfigSpec:    mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		WorkflowRuntimeConfigSpec: mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
-		A2ARuntimeConfigSpec:      mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		A2ARuntimeConfigSpec:      a2aRuntimeConfigSpec,
 		TeamsBoundarySpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		WorkflowBoundarySpec:      mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
-		A2ABoundarySpec:           mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		A2ABoundarySpec:           a2aBoundarySpec,
 	}
 
 	violations := ValidateMultiAgentSharedContractSnapshot(snapshot)
@@ -35,11 +52,11 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		IdentifierDoc:             "no mapping and no namespace",
 		TeamsTimelineSpec:         "collect without namespace",
 		WorkflowTimelineSpec:      "retry without namespace",
-		A2ATimelineSpec:           "remote peer identifier and callback-retry",
+		A2ATimelineSpec:           "remote peer identifier and callback-retry only",
 		A2ACoreSpec:               "submitted only",
 		TeamsRuntimeConfigSpec:    "teams config",
 		WorkflowRuntimeConfigSpec: "workflow config",
-		A2ARuntimeConfigSpec:      "a2a config with `a2a_peer`",
+		A2ARuntimeConfigSpec:      "a2a config with `a2a_peer` and `a2aDeliveryMode`",
 		TeamsBoundarySpec:         "no gate",
 		WorkflowBoundarySpec:      "no gate",
 		A2ABoundarySpec:           "no gate",
@@ -61,7 +78,12 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_reason_team_dispatch",
 		"missing_reason_workflow_schedule",
 		"missing_reason_a2a_submit",
+		"missing_reason_a2a_sse_subscribe",
+		"missing_reason_a2a_version_mismatch",
 		"missing_peer_id_canonical_naming",
+		"missing_a2a_timeline_field_delivery_mode",
+		"missing_a2a_summary_field_a2a_delivery_mode",
+		"non_snake_case_a2a_field_detected",
 		"deprecated_a2a_peer_field_detected",
 		"missing_domain_scoped_config_namespaces",
 		"missing_blocking_shared_contract_gate",

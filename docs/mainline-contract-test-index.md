@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## 目标
 
@@ -33,6 +33,7 @@
 | Skill Trigger Scoring D2 | `skill/loader/loader_test.go::TestCompileLexicalPlusEmbeddingWeightedScore` | `skill/loader/loader_test.go::TestCompileLexicalPlusEmbeddingFallbackReasons` |
 | Skill Trigger Scoring D3 | `skill/loader/loader_test.go::TestCompileMixedCJKENLexicalTokenization` | `skill/loader/loader_test.go::TestCompileTopKBudgetAndExplicitBypass` |
 | Skill Trigger Run/Stream Equivalence D3 | `skill/loader/loader_test.go::TestCompileMultilingualBudgetRunAndStreamSemanticEquivalent` | `runtime/config/manager_test.go::TestManagerSkillTriggerLexicalBudgetInvalidReloadRollsBack` |
+| A2A Delivery/Version Negotiation A4 | `a2a/interop_test.go::TestSSEReconnectAndSubscribeReasons` | `a2a/interop_test.go::TestRunAndStreamSemanticEquivalenceForFallbackAndVersionMismatch` |
 | R4 Shared Contract Freeze Gate | `tool/contributioncheck/multi_agent_contract_test.go::TestMultiAgentSharedContractSnapshotPass` | `tool/contributioncheck/multi_agent_contract_test.go::TestValidateMultiAgentSharedContractDetectsViolations` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |

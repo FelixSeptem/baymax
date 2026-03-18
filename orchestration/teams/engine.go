@@ -662,7 +662,7 @@ func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status
 	if e == nil || e.timelineEmitter == nil || seq == nil {
 		return
 	}
-	*seq = *seq + 1
+	*seq++
 	payload := map[string]any{
 		"phase":    string(types.ActionPhaseRun),
 		"status":   string(status),

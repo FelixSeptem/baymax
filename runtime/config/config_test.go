@@ -475,11 +475,23 @@ func TestA2AConfigDefaults(t *testing.T) {
 	if cfg.A2A.ClientTimeout <= 0 {
 		t.Fatalf("a2a.client_timeout = %v, want > 0", cfg.A2A.ClientTimeout)
 	}
-	if cfg.A2A.CallbackRetry.MaxAttempts != 3 {
-		t.Fatalf("a2a.callback_retry.max_attempts = %d, want 3", cfg.A2A.CallbackRetry.MaxAttempts)
+	if cfg.A2A.Delivery.Mode != A2ADeliveryModeCallback {
+		t.Fatalf("a2a.delivery.mode = %q, want callback", cfg.A2A.Delivery.Mode)
 	}
-	if cfg.A2A.CallbackRetry.Backoff <= 0 {
-		t.Fatalf("a2a.callback_retry.backoff = %v, want > 0", cfg.A2A.CallbackRetry.Backoff)
+	if cfg.A2A.Delivery.FallbackMode != A2ADeliveryModeCallback {
+		t.Fatalf("a2a.delivery.fallback_mode = %q, want callback", cfg.A2A.Delivery.FallbackMode)
+	}
+	if cfg.A2A.Delivery.CallbackRetry.MaxAttempts != 3 {
+		t.Fatalf("a2a.delivery.callback_retry.max_attempts = %d, want 3", cfg.A2A.Delivery.CallbackRetry.MaxAttempts)
+	}
+	if cfg.A2A.Delivery.SSEReconnect.MaxAttempts != 3 {
+		t.Fatalf("a2a.delivery.sse_reconnect.max_attempts = %d, want 3", cfg.A2A.Delivery.SSEReconnect.MaxAttempts)
+	}
+	if cfg.A2A.Card.VersionPolicy.Mode != A2ACardVersionPolicyStrictMajor {
+		t.Fatalf("a2a.card.version_policy.mode = %q, want strict_major", cfg.A2A.Card.VersionPolicy.Mode)
+	}
+	if cfg.A2A.Card.VersionPolicy.MinSupportedMinor != 0 {
+		t.Fatalf("a2a.card.version_policy.min_supported_minor = %d, want 0", cfg.A2A.Card.VersionPolicy.MinSupportedMinor)
 	}
 	if !cfg.A2A.CapabilityDiscovery.Enabled {
 		t.Fatal("a2a.capability_discovery.enabled = false, want true")
@@ -494,7 +506,9 @@ func TestA2AConfigDefaults(t *testing.T) {
 
 func TestA2AConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_A2A_CLIENT_TIMEOUT", "900ms")
-	t.Setenv("BAYMAX_A2A_CALLBACK_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_A2A_DELIVERY_MODE", A2ADeliveryModeSSE)
+	t.Setenv("BAYMAX_A2A_DELIVERY_CALLBACK_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_A2A_CARD_VERSION_POLICY_MIN_SUPPORTED_MINOR", "2")
 	t.Setenv("BAYMAX_A2A_CAPABILITY_DISCOVERY_REQUIRE_ALL", "false")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
@@ -502,9 +516,19 @@ func TestA2AConfigEnvOverridePrecedence(t *testing.T) {
 a2a:
   enabled: true
   client_timeout: 2s
-  callback_retry:
-    max_attempts: 2
-    backoff: 50ms
+  delivery:
+    mode: callback
+    fallback_mode: callback
+    callback_retry:
+      max_attempts: 2
+      backoff: 50ms
+    sse_reconnect:
+      max_attempts: 4
+      backoff: 60ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 1
   capability_discovery:
     enabled: true
     require_all: true
@@ -521,8 +545,14 @@ a2a:
 	if cfg.A2A.ClientTimeout != 900*time.Millisecond {
 		t.Fatalf("a2a.client_timeout = %v, want 900ms", cfg.A2A.ClientTimeout)
 	}
-	if cfg.A2A.CallbackRetry.MaxAttempts != 5 {
-		t.Fatalf("a2a.callback_retry.max_attempts = %d, want 5", cfg.A2A.CallbackRetry.MaxAttempts)
+	if cfg.A2A.Delivery.Mode != A2ADeliveryModeSSE {
+		t.Fatalf("a2a.delivery.mode = %q, want sse", cfg.A2A.Delivery.Mode)
+	}
+	if cfg.A2A.Delivery.CallbackRetry.MaxAttempts != 5 {
+		t.Fatalf("a2a.delivery.callback_retry.max_attempts = %d, want 5", cfg.A2A.Delivery.CallbackRetry.MaxAttempts)
+	}
+	if cfg.A2A.Card.VersionPolicy.MinSupportedMinor != 2 {
+		t.Fatalf("a2a.card.version_policy.min_supported_minor = %d, want 2", cfg.A2A.Card.VersionPolicy.MinSupportedMinor)
 	}
 	if cfg.A2A.CapabilityDiscovery.RequireAll {
 		t.Fatal("a2a.capability_discovery.require_all = true, want false from env")
@@ -540,15 +570,27 @@ func TestA2AConfigValidationRejectsInvalidValues(t *testing.T) {
 	}
 
 	cfg = DefaultConfig()
-	cfg.A2A.CallbackRetry.MaxAttempts = 0
+	cfg.A2A.Delivery.Mode = "websocket"
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for a2a.callback_retry.max_attempts")
+		t.Fatal("expected validation error for a2a.delivery.mode")
 	}
 
 	cfg = DefaultConfig()
-	cfg.A2A.CallbackRetry.Backoff = -1 * time.Millisecond
+	cfg.A2A.Delivery.SSEReconnect.MaxAttempts = 0
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for a2a.callback_retry.backoff")
+		t.Fatal("expected validation error for a2a.delivery.sse_reconnect.max_attempts")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.Card.VersionPolicy.Mode = "compat"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.card.version_policy.mode")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.Card.VersionPolicy.MinSupportedMinor = -1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.card.version_policy.min_supported_minor")
 	}
 
 	cfg = DefaultConfig()

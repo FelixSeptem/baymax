@@ -28,6 +28,7 @@
 - `a2a`
   - A2A 最小互联能力（`submit/status/result`）与任务生命周期语义
   - Agent Card 能力发现与确定性路由输入（静态注册 + capability 匹配）
+  - A2A delivery 模式协商与降级（`callback|sse`）以及版本协商（`strict_major + min_supported_minor`）仅在 `a2a/*` 实现，不下沉到 MCP 传输层
   - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）

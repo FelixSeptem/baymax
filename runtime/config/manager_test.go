@@ -952,9 +952,19 @@ func TestManagerA2AInvalidReloadRollsBack(t *testing.T) {
 a2a:
   enabled: true
   client_timeout: 1200ms
-  callback_retry:
-    max_attempts: 3
-    backoff: 80ms
+  delivery:
+    mode: callback
+    fallback_mode: sse
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 3
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 0
   capability_discovery:
     enabled: true
     require_all: true
@@ -977,10 +987,20 @@ reload:
 	writeConfig(t, file, `
 a2a:
   enabled: true
-  client_timeout: 0s
-  callback_retry:
-    max_attempts: 3
-    backoff: 80ms
+  client_timeout: 1200ms
+  delivery:
+    mode: callback
+    fallback_mode: sse
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 0
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 0
   capability_discovery:
     enabled: true
     require_all: true
@@ -993,6 +1013,72 @@ reload:
 	after := mgr.EffectiveConfig().A2A.ClientTimeout
 	if after != before {
 		t.Fatalf("invalid a2a reload should rollback, client_timeout = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerA2AVersionPolicyInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+a2a:
+  enabled: true
+  client_timeout: 1200ms
+  delivery:
+    mode: callback
+    fallback_mode: callback
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 3
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().A2A.Card.VersionPolicy.MinSupportedMinor
+	if before != 1 {
+		t.Fatalf("before min_supported_minor = %d, want 1", before)
+	}
+
+	writeConfig(t, file, `
+a2a:
+  enabled: true
+  client_timeout: 1200ms
+  delivery:
+    mode: callback
+    fallback_mode: callback
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 3
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: compat
+      min_supported_minor: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().A2A.Card.VersionPolicy.MinSupportedMinor
+	if after != before {
+		t.Fatalf("invalid a2a version policy reload should rollback, min_supported_minor = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

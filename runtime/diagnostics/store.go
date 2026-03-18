@@ -124,6 +124,12 @@ type RunRecord struct {
 	A2ATaskFailed                        int                               `json:"a2a_task_failed,omitempty"`
 	PeerID                               string                            `json:"peer_id,omitempty"`
 	A2AErrorLayer                        string                            `json:"a2a_error_layer,omitempty"`
+	A2ADeliveryMode                      string                            `json:"a2a_delivery_mode,omitempty"`
+	A2ADeliveryFallbackUsed              bool                              `json:"a2a_delivery_fallback_used,omitempty"`
+	A2ADeliveryFallbackReason            string                            `json:"a2a_delivery_fallback_reason,omitempty"`
+	A2AVersionLocal                      string                            `json:"a2a_version_local,omitempty"`
+	A2AVersionPeer                       string                            `json:"a2a_version_peer,omitempty"`
+	A2AVersionNegotiationResult          string                            `json:"a2a_version_negotiation_result,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

@@ -97,9 +97,19 @@ workflow:
 a2a:
   enabled: false
   client_timeout: 1500ms          # 必须 > 0
-  callback_retry:
-    max_attempts: 3               # 必须 > 0
-    backoff: 100ms                # 必须 >= 0
+  delivery:
+    mode: callback                # callback|sse
+    fallback_mode: callback       # callback|sse
+    callback_retry:
+      max_attempts: 3             # 必须 > 0
+      backoff: 100ms              # 必须 >= 0
+    sse_reconnect:
+      max_attempts: 3             # 必须 > 0
+      backoff: 100ms              # 必须 >= 0
+  card:
+    version_policy:
+      mode: strict_major          # 当前仅支持 strict_major
+      min_supported_minor: 0      # 必须 >= 0
   capability_discovery:
     enabled: true
     require_all: true
@@ -390,11 +400,16 @@ workflow baseline 校验语义：
 
 a2a baseline 校验语义：
 1. `a2a.client_timeout` 必须 `> 0`。
-2. `a2a.callback_retry.max_attempts` 必须 `> 0`。
-3. `a2a.callback_retry.backoff` 必须 `>= 0`。
-4. `a2a.capability_discovery.max_candidates` 必须 `> 0`。
-5. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
-6. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+2. `a2a.delivery.mode` / `a2a.delivery.fallback_mode` 仅支持 `callback|sse`。
+3. `a2a.delivery.callback_retry.max_attempts` 必须 `> 0`。
+4. `a2a.delivery.callback_retry.backoff` 必须 `>= 0`。
+5. `a2a.delivery.sse_reconnect.max_attempts` 必须 `> 0`。
+6. `a2a.delivery.sse_reconnect.backoff` 必须 `>= 0`。
+7. `a2a.card.version_policy.mode` 当前仅支持 `strict_major`。
+8. `a2a.card.version_policy.min_supported_minor` 必须 `>= 0`。
+9. `a2a.capability_discovery.max_candidates` 必须 `> 0`。
+10. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
+11. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -726,6 +741,10 @@ Workflow Timeline 关联字段（按可用性增量携带）：
 Action Timeline reason code（A2A 基线）：
 - `a2a.submit`：A2A 提交任务到对端并进入可查询生命周期。
 - `a2a.status_poll`：A2A 客户端轮询任务状态。
+- `a2a.sse_subscribe`：A2A 以 SSE 交付模式发起订阅。
+- `a2a.sse_reconnect`：A2A 在 SSE 订阅失败后执行有界重连。
+- `a2a.delivery_fallback`：A2A 交付模式从首选模式降级到 fallback 模式。
+- `a2a.version_mismatch`：A2A Agent Card 版本协商失败（strict major）。
 - `a2a.callback_retry`：A2A 结果回调在有界重试中再次投递。
 - `a2a.resolve`：A2A 任务进入终态并完成结果解析。
 
@@ -733,6 +752,9 @@ A2A Timeline 关联字段（按可用性增量携带）：
 - `task_id`
 - `agent_id`
 - `peer_id`
+- `delivery_mode`
+- `version_local`
+- `version_peer`
 
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
@@ -782,6 +804,12 @@ Action Gate 规则优先级（H4）：
 - `a2a_task_failed`：本次 run 的 A2A 失败任务数。
 - `peer_id`：本次 run 主要关联的对端 agent 标识。
 - `a2a_error_layer`：A2A 失败分层（`transport|protocol|semantic`）。
+- `a2a_delivery_mode`：本次 run 最终采用的 A2A 交付模式（`callback|sse`）。
+- `a2a_delivery_fallback_used`：是否发生交付模式回退。
+- `a2a_delivery_fallback_reason`：交付模式回退原因码（如 `a2a.delivery_unsupported`）。
+- `a2a_version_local`：本端 Agent Card 版本。
+- `a2a_version_peer`：对端 Agent Card 版本。
+- `a2a_version_negotiation_result`：版本协商结果（如 `compatible|mismatch`）。
 
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。

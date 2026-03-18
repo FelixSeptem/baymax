@@ -136,13 +136,19 @@ func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:          time.Now(),
-		RunID:         "run-a2a-1",
-		Status:        "failed",
-		A2ATaskTotal:  4,
-		A2ATaskFailed: 1,
-		PeerID:        "peer-1",
-		A2AErrorLayer: "transport",
+		Time:                        time.Now(),
+		RunID:                       "run-a2a-1",
+		Status:                      "failed",
+		A2ATaskTotal:                4,
+		A2ATaskFailed:               1,
+		PeerID:                      "peer-1",
+		A2AErrorLayer:               "transport",
+		A2ADeliveryMode:             "sse",
+		A2ADeliveryFallbackUsed:     true,
+		A2ADeliveryFallbackReason:   "a2a.delivery_unsupported",
+		A2AVersionLocal:             "a2a.v1.2",
+		A2AVersionPeer:              "a2a.v1.0",
+		A2AVersionNegotiationResult: "compatible",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -156,6 +162,12 @@ func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
 	}
 	if runs[0].PeerID != "peer-1" || runs[0].A2AErrorLayer != "transport" {
 		t.Fatalf("a2a fields mismatch under replay, got %#v", runs[0])
+	}
+	if runs[0].A2ADeliveryMode != "sse" || !runs[0].A2ADeliveryFallbackUsed || runs[0].A2ADeliveryFallbackReason != "a2a.delivery_unsupported" {
+		t.Fatalf("a2a delivery fields mismatch under replay, got %#v", runs[0])
+	}
+	if runs[0].A2AVersionLocal != "a2a.v1.2" || runs[0].A2AVersionPeer != "a2a.v1.0" || runs[0].A2AVersionNegotiationResult != "compatible" {
+		t.Fatalf("a2a version fields mismatch under replay, got %#v", runs[0])
 	}
 }
 

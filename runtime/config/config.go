@@ -94,6 +94,12 @@ const (
 )
 
 const (
+	A2ADeliveryModeCallback         = "callback"
+	A2ADeliveryModeSSE              = "sse"
+	A2ACardVersionPolicyStrictMajor = "strict_major"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -220,13 +226,35 @@ type WorkflowConfig struct {
 type A2AConfig struct {
 	Enabled             bool                         `json:"enabled"`
 	ClientTimeout       time.Duration                `json:"client_timeout"`
-	CallbackRetry       A2ACallbackRetryConfig       `json:"callback_retry"`
+	Delivery            A2ADeliveryConfig            `json:"delivery"`
+	Card                A2ACardConfig                `json:"card"`
 	CapabilityDiscovery A2ACapabilityDiscoveryConfig `json:"capability_discovery"`
 }
 
-type A2ACallbackRetryConfig struct {
+type A2ADeliveryConfig struct {
+	Mode          string                     `json:"mode"`
+	FallbackMode  string                     `json:"fallback_mode"`
+	CallbackRetry A2ADeliveryRetryConfig     `json:"callback_retry"`
+	SSEReconnect  A2ADeliveryReconnectConfig `json:"sse_reconnect"`
+}
+
+type A2ADeliveryRetryConfig struct {
 	MaxAttempts int           `json:"max_attempts"`
 	Backoff     time.Duration `json:"backoff"`
+}
+
+type A2ADeliveryReconnectConfig struct {
+	MaxAttempts int           `json:"max_attempts"`
+	Backoff     time.Duration `json:"backoff"`
+}
+
+type A2ACardConfig struct {
+	VersionPolicy A2ACardVersionPolicyConfig `json:"version_policy"`
+}
+
+type A2ACardVersionPolicyConfig struct {
+	Mode              string `json:"mode"`
+	MinSupportedMinor int    `json:"min_supported_minor"`
 }
 
 type A2ACapabilityDiscoveryConfig struct {
@@ -714,9 +742,23 @@ func DefaultConfig() Config {
 		A2A: A2AConfig{
 			Enabled:       false,
 			ClientTimeout: 1500 * time.Millisecond,
-			CallbackRetry: A2ACallbackRetryConfig{
-				MaxAttempts: 3,
-				Backoff:     100 * time.Millisecond,
+			Delivery: A2ADeliveryConfig{
+				Mode:         A2ADeliveryModeCallback,
+				FallbackMode: A2ADeliveryModeCallback,
+				CallbackRetry: A2ADeliveryRetryConfig{
+					MaxAttempts: 3,
+					Backoff:     100 * time.Millisecond,
+				},
+				SSEReconnect: A2ADeliveryReconnectConfig{
+					MaxAttempts: 3,
+					Backoff:     100 * time.Millisecond,
+				},
+			},
+			Card: A2ACardConfig{
+				VersionPolicy: A2ACardVersionPolicyConfig{
+					Mode:              A2ACardVersionPolicyStrictMajor,
+					MinSupportedMinor: 0,
+				},
 			},
 			CapabilityDiscovery: A2ACapabilityDiscoveryConfig{
 				Enabled:       true,
@@ -1236,11 +1278,49 @@ func Validate(cfg Config) error {
 	if cfg.A2A.ClientTimeout <= 0 {
 		return errors.New("a2a.client_timeout must be > 0")
 	}
-	if cfg.A2A.CallbackRetry.MaxAttempts <= 0 {
-		return errors.New("a2a.callback_retry.max_attempts must be > 0")
+	switch mode := strings.ToLower(strings.TrimSpace(cfg.A2A.Delivery.Mode)); mode {
+	case A2ADeliveryModeCallback, A2ADeliveryModeSSE:
+	default:
+		return fmt.Errorf(
+			"a2a.delivery.mode must be one of [%s,%s], got %q",
+			A2ADeliveryModeCallback,
+			A2ADeliveryModeSSE,
+			cfg.A2A.Delivery.Mode,
+		)
 	}
-	if cfg.A2A.CallbackRetry.Backoff < 0 {
-		return errors.New("a2a.callback_retry.backoff must be >= 0")
+	switch fallback := strings.ToLower(strings.TrimSpace(cfg.A2A.Delivery.FallbackMode)); fallback {
+	case A2ADeliveryModeCallback, A2ADeliveryModeSSE:
+	default:
+		return fmt.Errorf(
+			"a2a.delivery.fallback_mode must be one of [%s,%s], got %q",
+			A2ADeliveryModeCallback,
+			A2ADeliveryModeSSE,
+			cfg.A2A.Delivery.FallbackMode,
+		)
+	}
+	if cfg.A2A.Delivery.CallbackRetry.MaxAttempts <= 0 {
+		return errors.New("a2a.delivery.callback_retry.max_attempts must be > 0")
+	}
+	if cfg.A2A.Delivery.CallbackRetry.Backoff < 0 {
+		return errors.New("a2a.delivery.callback_retry.backoff must be >= 0")
+	}
+	if cfg.A2A.Delivery.SSEReconnect.MaxAttempts <= 0 {
+		return errors.New("a2a.delivery.sse_reconnect.max_attempts must be > 0")
+	}
+	if cfg.A2A.Delivery.SSEReconnect.Backoff < 0 {
+		return errors.New("a2a.delivery.sse_reconnect.backoff must be >= 0")
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(cfg.A2A.Card.VersionPolicy.Mode)); mode {
+	case A2ACardVersionPolicyStrictMajor:
+	default:
+		return fmt.Errorf(
+			"a2a.card.version_policy.mode must be one of [%s], got %q",
+			A2ACardVersionPolicyStrictMajor,
+			cfg.A2A.Card.VersionPolicy.Mode,
+		)
+	}
+	if cfg.A2A.Card.VersionPolicy.MinSupportedMinor < 0 {
+		return errors.New("a2a.card.version_policy.min_supported_minor must be >= 0")
 	}
 	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
 		return errors.New("a2a.capability_discovery.max_candidates must be > 0")
@@ -2179,8 +2259,14 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("workflow.checkpoint_path", base.Workflow.CheckpointPath)
 	v.SetDefault("a2a.enabled", base.A2A.Enabled)
 	v.SetDefault("a2a.client_timeout", base.A2A.ClientTimeout)
-	v.SetDefault("a2a.callback_retry.max_attempts", base.A2A.CallbackRetry.MaxAttempts)
-	v.SetDefault("a2a.callback_retry.backoff", base.A2A.CallbackRetry.Backoff)
+	v.SetDefault("a2a.delivery.mode", base.A2A.Delivery.Mode)
+	v.SetDefault("a2a.delivery.fallback_mode", base.A2A.Delivery.FallbackMode)
+	v.SetDefault("a2a.delivery.callback_retry.max_attempts", base.A2A.Delivery.CallbackRetry.MaxAttempts)
+	v.SetDefault("a2a.delivery.callback_retry.backoff", base.A2A.Delivery.CallbackRetry.Backoff)
+	v.SetDefault("a2a.delivery.sse_reconnect.max_attempts", base.A2A.Delivery.SSEReconnect.MaxAttempts)
+	v.SetDefault("a2a.delivery.sse_reconnect.backoff", base.A2A.Delivery.SSEReconnect.Backoff)
+	v.SetDefault("a2a.card.version_policy.mode", base.A2A.Card.VersionPolicy.Mode)
+	v.SetDefault("a2a.card.version_policy.min_supported_minor", base.A2A.Card.VersionPolicy.MinSupportedMinor)
 	v.SetDefault("a2a.capability_discovery.enabled", base.A2A.CapabilityDiscovery.Enabled)
 	v.SetDefault("a2a.capability_discovery.require_all", base.A2A.CapabilityDiscovery.RequireAll)
 	v.SetDefault("a2a.capability_discovery.max_candidates", base.A2A.CapabilityDiscovery.MaxCandidates)
@@ -2383,8 +2469,14 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Workflow.CheckpointPath = strings.TrimSpace(v.GetString("workflow.checkpoint_path"))
 	cfg.A2A.Enabled = v.GetBool("a2a.enabled")
 	cfg.A2A.ClientTimeout = v.GetDuration("a2a.client_timeout")
-	cfg.A2A.CallbackRetry.MaxAttempts = v.GetInt("a2a.callback_retry.max_attempts")
-	cfg.A2A.CallbackRetry.Backoff = v.GetDuration("a2a.callback_retry.backoff")
+	cfg.A2A.Delivery.Mode = strings.ToLower(strings.TrimSpace(v.GetString("a2a.delivery.mode")))
+	cfg.A2A.Delivery.FallbackMode = strings.ToLower(strings.TrimSpace(v.GetString("a2a.delivery.fallback_mode")))
+	cfg.A2A.Delivery.CallbackRetry.MaxAttempts = v.GetInt("a2a.delivery.callback_retry.max_attempts")
+	cfg.A2A.Delivery.CallbackRetry.Backoff = v.GetDuration("a2a.delivery.callback_retry.backoff")
+	cfg.A2A.Delivery.SSEReconnect.MaxAttempts = v.GetInt("a2a.delivery.sse_reconnect.max_attempts")
+	cfg.A2A.Delivery.SSEReconnect.Backoff = v.GetDuration("a2a.delivery.sse_reconnect.backoff")
+	cfg.A2A.Card.VersionPolicy.Mode = strings.ToLower(strings.TrimSpace(v.GetString("a2a.card.version_policy.mode")))
+	cfg.A2A.Card.VersionPolicy.MinSupportedMinor = v.GetInt("a2a.card.version_policy.min_supported_minor")
 	cfg.A2A.CapabilityDiscovery.Enabled = v.GetBool("a2a.capability_discovery.enabled")
 	cfg.A2A.CapabilityDiscovery.RequireAll = v.GetBool("a2a.capability_discovery.require_all")
 	cfg.A2A.CapabilityDiscovery.MaxCandidates = v.GetInt("a2a.capability_discovery.max_candidates")

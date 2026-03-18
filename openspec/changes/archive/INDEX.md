@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-18 10:48:47
+Updated: 2026-03-18 11:24:53
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -53,3 +53,4 @@ Updated: 2026-03-18 10:48:47
 - 049 -> teams-runtime-baseline
 - 050 -> workflow-dsl-baseline
 - 051 -> a2a-minimal-interoperability
+- 052 -> harden-a2a-delivery-and-card-version-negotiation-a4

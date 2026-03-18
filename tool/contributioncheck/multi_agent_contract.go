@@ -42,16 +42,20 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 	}
 
 	requiredReasons := map[string]string{
-		"team.dispatch":      snapshot.TeamsTimelineSpec,
-		"team.collect":       snapshot.TeamsTimelineSpec,
-		"team.resolve":       snapshot.TeamsTimelineSpec,
-		"workflow.schedule":  snapshot.WorkflowTimelineSpec,
-		"workflow.retry":     snapshot.WorkflowTimelineSpec,
-		"workflow.resume":    snapshot.WorkflowTimelineSpec,
-		"a2a.submit":         snapshot.A2ATimelineSpec,
-		"a2a.status_poll":    snapshot.A2ATimelineSpec,
-		"a2a.callback_retry": snapshot.A2ATimelineSpec,
-		"a2a.resolve":        snapshot.A2ATimelineSpec,
+		"team.dispatch":         snapshot.TeamsTimelineSpec,
+		"team.collect":          snapshot.TeamsTimelineSpec,
+		"team.resolve":          snapshot.TeamsTimelineSpec,
+		"workflow.schedule":     snapshot.WorkflowTimelineSpec,
+		"workflow.retry":        snapshot.WorkflowTimelineSpec,
+		"workflow.resume":       snapshot.WorkflowTimelineSpec,
+		"a2a.submit":            snapshot.A2ATimelineSpec,
+		"a2a.status_poll":       snapshot.A2ATimelineSpec,
+		"a2a.callback_retry":    snapshot.A2ATimelineSpec,
+		"a2a.resolve":           snapshot.A2ATimelineSpec,
+		"a2a.sse_subscribe":     snapshot.A2ATimelineSpec,
+		"a2a.sse_reconnect":     snapshot.A2ATimelineSpec,
+		"a2a.delivery_fallback": snapshot.A2ATimelineSpec,
+		"a2a.version_mismatch":  snapshot.A2ATimelineSpec,
 	}
 	for reason, source := range requiredReasons {
 		if !strings.Contains(source, reason) {
@@ -69,6 +73,56 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 			Code:    "missing_peer_id_canonical_naming",
 			Message: "peer_id must be used as canonical A2A peer identifier field",
 		})
+	}
+
+	requiredA2ATimelineFields := []string{
+		"`task_id`",
+		"`agent_id`",
+		"`peer_id`",
+		"`delivery_mode`",
+		"`version_local`",
+		"`version_peer`",
+	}
+	for _, field := range requiredA2ATimelineFields {
+		if !strings.Contains(snapshot.A2ATimelineSpec, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_a2a_timeline_field_" + strings.Trim(field, "`"),
+				Message: "missing required A2A timeline correlation field: " + field,
+			})
+		}
+	}
+
+	requiredA2ASummaryFields := []string{
+		"`a2a_delivery_mode`",
+		"`a2a_delivery_fallback_used`",
+		"`a2a_delivery_fallback_reason`",
+		"`a2a_version_local`",
+		"`a2a_version_peer`",
+		"`a2a_version_negotiation_result`",
+	}
+	for _, field := range requiredA2ASummaryFields {
+		if !strings.Contains(snapshot.A2ARuntimeConfigSpec, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_a2a_summary_field_" + strings.Trim(field, "`"),
+				Message: "missing required A2A additive summary field: " + field,
+			})
+		}
+	}
+
+	deprecatedA2AFieldAliases := []string{
+		"`a2aDeliveryMode`",
+		"`a2aVersionLocal`",
+		"`a2aVersionPeer`",
+		"`a2aVersionNegotiationResult`",
+	}
+	for _, field := range deprecatedA2AFieldAliases {
+		if strings.Contains(snapshot.IdentifierDoc, field) || strings.Contains(snapshot.A2ARuntimeConfigSpec, field) {
+			violations = append(violations, Violation{
+				Code:    "non_snake_case_a2a_field_detected",
+				Message: "non-snake-case A2A field detected; use snake_case additive fields",
+			})
+			break
+		}
 	}
 
 	if strings.Contains(snapshot.IdentifierDoc, "`a2a_peer`") || strings.Contains(snapshot.A2ARuntimeConfigSpec, "`a2a_peer`") {

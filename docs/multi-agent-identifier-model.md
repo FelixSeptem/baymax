@@ -1,6 +1,6 @@
 # Multi-Agent Identifier Model
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## 目标
 
@@ -82,7 +82,7 @@
 - reason code 需要保持“路径 + 动作”可判别，例如：
   - `team.dispatch`, `team.collect`, `team.resolve`
   - `workflow.schedule`, `workflow.retry`, `workflow.resume`
-  - `a2a.submit`, `a2a.status_poll`, `a2a.callback_retry`, `a2a.resolve`
+  - `a2a.submit`, `a2a.status_poll`, `a2a.sse_subscribe`, `a2a.sse_reconnect`, `a2a.delivery_fallback`, `a2a.version_mismatch`, `a2a.callback_retry`, `a2a.resolve`
 
 ## Reason 命名空间规范
 
@@ -101,7 +101,7 @@
 - run 级摘要字段采用 additive 扩展，不破坏既有消费者：
   - Teams：`team_id`, `team_strategy`, `team_task_total`, `team_task_failed`
   - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_resume_count`
-  - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`
+  - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 
 ## 兼容性要求

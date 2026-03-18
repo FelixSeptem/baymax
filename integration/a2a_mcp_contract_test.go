@@ -53,17 +53,28 @@ func TestA2AMCPContractHappyPath(t *testing.T) {
 	}), timeline)
 	client := a2a.NewClient(server, []a2a.AgentCard{
 		{
-			AgentID:      "agent-remote",
-			PeerID:       "peer-remote",
-			Capabilities: []string{"tool.call"},
-			Priority:     1,
+			AgentID:                "agent-remote",
+			PeerID:                 "peer-remote",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{a2a.DeliveryModeCallback},
+			Capabilities:           []string{"tool.call"},
+			Priority:               1,
 		},
 	}, a2a.DeterministicRouter{RequireAll: true}, a2a.ClientPolicy{
 		Timeout:            300 * time.Millisecond,
 		RequestMaxAttempts: 1,
-		CallbackRetry: a2a.RetryPolicy{
-			MaxAttempts: 2,
-			Backoff:     5 * time.Millisecond,
+		Delivery: a2a.DeliveryPolicy{
+			Mode:         a2a.DeliveryModeSSE,
+			FallbackMode: a2a.DeliveryModeCallback,
+			CallbackRetry: a2a.RetryPolicy{
+				MaxAttempts: 2,
+				Backoff:     5 * time.Millisecond,
+			},
+		},
+		CardVersion: a2a.CardVersionPolicy{
+			Mode:              a2a.VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.2",
+			MinSupportedMinor: 0,
 		},
 	}, timeline)
 
@@ -105,6 +116,12 @@ func TestA2AMCPContractHappyPath(t *testing.T) {
 	if summary.PeerID != "peer-remote" {
 		t.Fatalf("peer_id = %q, want peer-remote", summary.PeerID)
 	}
+	if summary.A2ADeliveryMode != a2a.DeliveryModeCallback || !summary.A2ADeliveryFallbackUsed || summary.A2ADeliveryFallbackReason != a2a.DeliveryErrorUnsupported {
+		t.Fatalf("delivery summary mismatch: %#v", summary)
+	}
+	if summary.A2AVersionLocal != "a2a.v1.2" || summary.A2AVersionPeer != "a2a.v1.0" || summary.A2AVersionNegotiationResult != a2a.VersionNegotiationCompatible {
+		t.Fatalf("version summary mismatch: %#v", summary)
+	}
 
 	reasons := map[string]bool{}
 	for _, ev := range timeline.snapshot() {
@@ -118,6 +135,7 @@ func TestA2AMCPContractHappyPath(t *testing.T) {
 	for _, reason := range []string{
 		a2a.ReasonSubmit,
 		a2a.ReasonStatusPoll,
+		a2a.ReasonDeliveryFallback,
 		a2a.ReasonCallbackRetry,
 		a2a.ReasonResolve,
 	} {

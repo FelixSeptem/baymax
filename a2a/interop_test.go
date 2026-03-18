@@ -30,6 +30,32 @@ func (c *timelineCollector) Snapshot() []types.Event {
 	return out
 }
 
+type flakyStatusServer struct {
+	inner      Server
+	failStatus int
+	mu         sync.Mutex
+	statusCall int
+}
+
+func (s *flakyStatusServer) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error) {
+	return s.inner.Submit(ctx, req)
+}
+
+func (s *flakyStatusServer) Status(ctx context.Context, taskID string) (TaskRecord, error) {
+	s.mu.Lock()
+	s.statusCall++
+	call := s.statusCall
+	s.mu.Unlock()
+	if call <= s.failStatus {
+		return TaskRecord{}, errors.New("connection reset by peer")
+	}
+	return s.inner.Status(ctx, taskID)
+}
+
+func (s *flakyStatusServer) Result(ctx context.Context, taskID string) (TaskRecord, error) {
+	return s.inner.Result(ctx, taskID)
+}
+
 func waitForTerminal(t *testing.T, server Server, taskID string) TaskRecord {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -167,6 +193,165 @@ func TestClientUsesCapabilityRoutingWhenPeerMissing(t *testing.T) {
 	}
 }
 
+func TestDeliveryNegotiationFallbackAndUnsupported(t *testing.T) {
+	collector := &timelineCollector{}
+	server := NewInMemoryServer(HandlerFunc(func(ctx context.Context, req TaskRequest) (map[string]any, error) {
+		return map[string]any{"ok": true}, nil
+	}), collector)
+	client := NewClient(server, []AgentCard{
+		{
+			AgentID:                "agent-1",
+			PeerID:                 "peer-1",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{DeliveryModeCallback},
+			Capabilities:           []string{"search"},
+		},
+	}, DeterministicRouter{RequireAll: true}, ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		Delivery: DeliveryPolicy{
+			Mode:         DeliveryModeSSE,
+			FallbackMode: DeliveryModeCallback,
+		},
+		CardVersion: CardVersionPolicy{
+			Mode:              VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.1",
+			MinSupportedMinor: 0,
+		},
+	}, collector)
+
+	record, err := client.Submit(context.Background(), TaskRequest{
+		AgentID:              "agent-origin",
+		RequiredCapabilities: []string{"search"},
+	})
+	if err != nil {
+		t.Fatalf("Submit failed: %v", err)
+	}
+	if record.DeliveryMode != DeliveryModeCallback {
+		t.Fatalf("delivery_mode = %q, want callback", record.DeliveryMode)
+	}
+	if !record.DeliveryFallbackUsed || record.DeliveryFallbackReason != DeliveryErrorUnsupported {
+		t.Fatalf("fallback fields mismatch: %#v", record)
+	}
+	foundFallbackReason := false
+	for _, ev := range collector.Snapshot() {
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		if reason == ReasonDeliveryFallback {
+			foundFallbackReason = true
+		}
+	}
+	if !foundFallbackReason {
+		t.Fatalf("missing timeline reason %q", ReasonDeliveryFallback)
+	}
+
+	unsupportedClient := NewClient(server, []AgentCard{
+		{
+			AgentID:                "agent-2",
+			PeerID:                 "peer-2",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{DeliveryModeCallback},
+			Capabilities:           []string{"search"},
+		},
+	}, DeterministicRouter{RequireAll: true}, ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		Delivery: DeliveryPolicy{
+			Mode:         DeliveryModeSSE,
+			FallbackMode: DeliveryModeSSE,
+		},
+		CardVersion: CardVersionPolicy{
+			Mode:              VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.0",
+			MinSupportedMinor: 0,
+		},
+	}, collector)
+	_, err = unsupportedClient.Submit(context.Background(), TaskRequest{
+		AgentID:              "agent-origin",
+		RequiredCapabilities: []string{"search"},
+	})
+	if err == nil {
+		t.Fatal("expected delivery unsupported error")
+	}
+	class, layer, code := ClassifyError(err)
+	if class != types.ErrMCP || layer != ErrorLayerProtocol || code != DeliveryErrorUnsupported {
+		t.Fatalf("classify mismatch: got (%q,%q,%q)", class, layer, code)
+	}
+}
+
+func TestSSEReconnectAndSubscribeReasons(t *testing.T) {
+	collector := &timelineCollector{}
+	baseServer := NewInMemoryServer(HandlerFunc(func(ctx context.Context, req TaskRequest) (map[string]any, error) {
+		return map[string]any{"ok": true}, nil
+	}), collector)
+	server := &flakyStatusServer{inner: baseServer, failStatus: 2}
+
+	client := NewClient(server, []AgentCard{
+		{
+			AgentID:                "agent-sse",
+			PeerID:                 "peer-sse",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{DeliveryModeSSE},
+			Capabilities:           []string{"stream"},
+		},
+	}, DeterministicRouter{RequireAll: true}, ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		Delivery: DeliveryPolicy{
+			Mode:         DeliveryModeSSE,
+			FallbackMode: DeliveryModeCallback,
+			SSEReconnect: RetryPolicy{
+				MaxAttempts: 3,
+				Backoff:     5 * time.Millisecond,
+			},
+		},
+		CardVersion: CardVersionPolicy{
+			Mode:              VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.0",
+			MinSupportedMinor: 0,
+		},
+	}, collector)
+
+	submitted, err := client.Submit(context.Background(), TaskRequest{
+		AgentID:              "agent-origin",
+		RequiredCapabilities: []string{"stream"},
+		Method:               "watch",
+	})
+	if err != nil {
+		t.Fatalf("Submit failed: %v", err)
+	}
+	result, err := client.WaitResult(context.Background(), submitted.TaskID, 10*time.Millisecond, nil)
+	if err != nil {
+		t.Fatalf("WaitResult failed: %v", err)
+	}
+	if result.Status != StatusSucceeded {
+		t.Fatalf("status = %q, want succeeded", result.Status)
+	}
+
+	subscribeSeen := false
+	reconnectCount := 0
+	for _, ev := range collector.Snapshot() {
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		switch reason {
+		case ReasonSSESubscribe:
+			subscribeSeen = true
+		case ReasonSSEReconnect:
+			reconnectCount++
+		}
+	}
+	if !subscribeSeen {
+		t.Fatalf("missing timeline reason %q", ReasonSSESubscribe)
+	}
+	if reconnectCount != 2 {
+		t.Fatalf("reconnect reason count = %d, want 2", reconnectCount)
+	}
+}
+
 func TestCallbackRetryBoundedAndReasonCode(t *testing.T) {
 	collector := &timelineCollector{}
 	server := NewInMemoryServer(HandlerFunc(func(ctx context.Context, req TaskRequest) (map[string]any, error) {
@@ -263,6 +448,13 @@ func TestClassifyErrorMapping(t *testing.T) {
 			wantLayer: ErrorLayerProtocol,
 			wantCode:  "unknown",
 		},
+		{
+			name:      "version_mismatch_code",
+			err:       newA2AReasonError(DeliveryErrorVersionMismatch, ErrorLayerSemantic, nil, "mismatch"),
+			wantClass: types.ErrContext,
+			wantLayer: ErrorLayerSemantic,
+			wantCode:  DeliveryErrorVersionMismatch,
+		},
 	}
 	for _, tc := range testCases {
 		tc := tc
@@ -278,6 +470,62 @@ func TestClassifyErrorMapping(t *testing.T) {
 					tc.wantLayer,
 					tc.wantCode,
 				)
+			}
+		})
+	}
+}
+
+func TestCardVersionNegotiationMatrix(t *testing.T) {
+	testCases := []struct {
+		name        string
+		policy      CardVersionPolicy
+		peerVersion string
+		wantResult  string
+		wantErr     bool
+	}{
+		{
+			name: "major_equal_minor_compatible",
+			policy: CardVersionPolicy{
+				Mode:              VersionPolicyStrictMajor,
+				LocalVersion:      "a2a.v1.2",
+				MinSupportedMinor: 0,
+			},
+			peerVersion: "a2a.v1.0",
+			wantResult:  VersionNegotiationCompatible,
+			wantErr:     false,
+		},
+		{
+			name: "major_equal_minor_too_low",
+			policy: CardVersionPolicy{
+				Mode:              VersionPolicyStrictMajor,
+				LocalVersion:      "a2a.v1.2",
+				MinSupportedMinor: 1,
+			},
+			peerVersion: "a2a.v1.0",
+			wantResult:  VersionNegotiationMismatch,
+			wantErr:     true,
+		},
+		{
+			name: "major_mismatch",
+			policy: CardVersionPolicy{
+				Mode:              VersionPolicyStrictMajor,
+				LocalVersion:      "a2a.v1.2",
+				MinSupportedMinor: 0,
+			},
+			peerVersion: "a2a.v2.0",
+			wantResult:  VersionNegotiationMismatch,
+			wantErr:     true,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, result, err := negotiateCardVersion(tc.policy, tc.peerVersion)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err presence = %v, want %v, err=%v", err != nil, tc.wantErr, err)
+			}
+			if result != tc.wantResult {
+				t.Fatalf("result = %q, want %q", result, tc.wantResult)
 			}
 		})
 	}
@@ -343,16 +591,136 @@ func TestRunAndStreamSemanticEquivalence(t *testing.T) {
 	}
 }
 
+func TestRunAndStreamSemanticEquivalenceForFallbackAndVersionMismatch(t *testing.T) {
+	server := NewInMemoryServer(HandlerFunc(func(ctx context.Context, req TaskRequest) (map[string]any, error) {
+		return map[string]any{"ok": true}, nil
+	}), nil)
+	client := NewClient(server, []AgentCard{
+		{
+			AgentID:                "agent-a",
+			PeerID:                 "peer-a",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{DeliveryModeCallback},
+			Capabilities:           []string{"search"},
+		},
+	}, DeterministicRouter{RequireAll: true}, ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		Delivery: DeliveryPolicy{
+			Mode:         DeliveryModeSSE,
+			FallbackMode: DeliveryModeCallback,
+		},
+		CardVersion: CardVersionPolicy{
+			Mode:              VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.2",
+			MinSupportedMinor: 0,
+		},
+	}, nil)
+
+	streamSubmitted, err := client.Submit(context.Background(), TaskRequest{
+		AgentID:              "agent-origin",
+		RequiredCapabilities: []string{"search"},
+	})
+	if err != nil {
+		t.Fatalf("stream submit failed: %v", err)
+	}
+	streamResult, err := client.WaitResult(context.Background(), streamSubmitted.TaskID, 10*time.Millisecond, nil)
+	if err != nil {
+		t.Fatalf("stream wait failed: %v", err)
+	}
+	runSubmitted, err := server.Submit(context.Background(), TaskRequest{
+		TaskID:                   "run-fallback",
+		AgentID:                  "agent-origin",
+		PeerID:                   "peer-a",
+		Method:                   "ok",
+		DeliveryMode:             DeliveryModeCallback,
+		DeliveryFallbackUsed:     true,
+		DeliveryFallbackReason:   DeliveryErrorUnsupported,
+		VersionLocal:             "a2a.v1.2",
+		VersionPeer:              "a2a.v1.0",
+		VersionNegotiationResult: VersionNegotiationCompatible,
+	})
+	if err != nil {
+		t.Fatalf("run submit failed: %v", err)
+	}
+	waitForTerminal(t, server, runSubmitted.TaskID)
+	runResult, err := server.Result(context.Background(), runSubmitted.TaskID)
+	if err != nil {
+		t.Fatalf("run result failed: %v", err)
+	}
+	if streamResult.DeliveryMode != runResult.DeliveryMode ||
+		streamResult.DeliveryFallbackUsed != runResult.DeliveryFallbackUsed ||
+		streamResult.VersionNegotiationResult != runResult.VersionNegotiationResult {
+		t.Fatalf("fallback semantics mismatch run=%#v stream=%#v", runResult, streamResult)
+	}
+
+	_, runPeer, runVerResult, runErr := negotiateCardVersion(CardVersionPolicy{
+		Mode:              VersionPolicyStrictMajor,
+		LocalVersion:      "a2a.v1.0",
+		MinSupportedMinor: 0,
+	}, "a2a.v2.0")
+	if runErr == nil {
+		t.Fatal("expected run-path version mismatch")
+	}
+	streamMismatchClient := NewClient(server, []AgentCard{
+		{
+			AgentID:                "agent-b",
+			PeerID:                 "peer-b",
+			SchemaVersion:          "a2a.v2.0",
+			SupportedDeliveryModes: []string{DeliveryModeCallback},
+			Capabilities:           []string{"search"},
+		},
+	}, DeterministicRouter{RequireAll: true}, ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		Delivery: DeliveryPolicy{
+			Mode:         DeliveryModeCallback,
+			FallbackMode: DeliveryModeCallback,
+		},
+		CardVersion: CardVersionPolicy{
+			Mode:              VersionPolicyStrictMajor,
+			LocalVersion:      "a2a.v1.0",
+			MinSupportedMinor: 0,
+		},
+	}, nil)
+	_, streamErr := streamMismatchClient.Submit(context.Background(), TaskRequest{
+		AgentID:              "agent-origin",
+		RequiredCapabilities: []string{"search"},
+	})
+	if streamErr == nil {
+		t.Fatal("expected stream-path version mismatch")
+	}
+	runClass, runLayer, runCode := ClassifyError(runErr)
+	streamClass, streamLayer, streamCode := ClassifyError(streamErr)
+	if runClass != streamClass || runLayer != streamLayer || runCode != streamCode || runVerResult != VersionNegotiationMismatch || runPeer != "a2a.v2.0" {
+		t.Fatalf(
+			"version mismatch semantics mismatch run=(%q,%q,%q) stream=(%q,%q,%q)",
+			runClass,
+			runLayer,
+			runCode,
+			streamClass,
+			streamLayer,
+			streamCode,
+		)
+	}
+}
+
 func TestBuildRunSummaryReplayIdempotency(t *testing.T) {
 	base := time.Now()
 	tasks := []TaskRecord{
 		{
-			TaskID:        "task-1",
-			AgentID:       "agent-a",
-			PeerID:        "peer-z",
-			Status:        StatusFailed,
-			A2AErrorLayer: "transport",
-			UpdatedAt:     base.Add(20 * time.Millisecond),
+			TaskID:                   "task-1",
+			AgentID:                  "agent-a",
+			PeerID:                   "peer-z",
+			Status:                   StatusFailed,
+			A2AErrorLayer:            "transport",
+			UpdatedAt:                base.Add(20 * time.Millisecond),
+			DeliveryMode:             DeliveryModeSSE,
+			DeliveryFallbackUsed:     true,
+			DeliveryFallbackReason:   DeliveryErrorUnsupported,
+			VersionLocal:             "a2a.v1.2",
+			VersionPeer:              "a2a.v1.0",
+			VersionNegotiationResult: VersionNegotiationCompatible,
 		},
 		{
 			TaskID:        "task-1",
@@ -389,5 +757,11 @@ func TestBuildRunSummaryReplayIdempotency(t *testing.T) {
 	}
 	if summary.A2AErrorLayer != "transport" {
 		t.Fatalf("a2a_error_layer = %q, want transport", summary.A2AErrorLayer)
+	}
+	if summary.A2ADeliveryMode != DeliveryModeSSE || !summary.A2ADeliveryFallbackUsed || summary.A2ADeliveryFallbackReason != DeliveryErrorUnsupported {
+		t.Fatalf("a2a delivery summary mismatch: %#v", summary)
+	}
+	if summary.A2AVersionLocal != "a2a.v1.2" || summary.A2AVersionPeer != "a2a.v1.0" || summary.A2AVersionNegotiationResult != VersionNegotiationCompatible {
+		t.Fatalf("a2a version summary mismatch: %#v", summary)
 	}
 }

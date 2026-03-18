@@ -201,6 +201,12 @@ mcp:
 			"a2a_task_failed":                          1,
 			"peer_id":                                  "peer-a2a-1",
 			"a2a_error_layer":                          "transport",
+			"a2a_delivery_mode":                        "sse",
+			"a2a_delivery_fallback_used":               true,
+			"a2a_delivery_fallback_reason":             "a2a.delivery_unsupported",
+			"a2a_version_local":                        "a2a.v1.2",
+			"a2a_version_peer":                         "a2a.v1.0",
+			"a2a_version_negotiation_result":           "compatible",
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -321,6 +327,12 @@ mcp:
 	}
 	if items[0].PeerID != "peer-a2a-1" || items[0].A2AErrorLayer != "transport" {
 		t.Fatalf("a2a summary fields mismatch: %#v", items[0])
+	}
+	if items[0].A2ADeliveryMode != "sse" || !items[0].A2ADeliveryFallbackUsed || items[0].A2ADeliveryFallbackReason != "a2a.delivery_unsupported" {
+		t.Fatalf("a2a delivery fields mismatch: %#v", items[0])
+	}
+	if items[0].A2AVersionLocal != "a2a.v1.2" || items[0].A2AVersionPeer != "a2a.v1.0" || items[0].A2AVersionNegotiationResult != "compatible" {
+		t.Fatalf("a2a version fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

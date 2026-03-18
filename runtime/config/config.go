@@ -87,6 +87,13 @@ const (
 )
 
 const (
+	WorkflowValidationModeStrict = "strict"
+	WorkflowValidationModeWarn   = "warn"
+	WorkflowCheckpointMemory     = "memory"
+	WorkflowCheckpointFile       = "file"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -119,6 +126,7 @@ type Config struct {
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	Teams            TeamsConfig            `json:"teams"`
+	Workflow         WorkflowConfig         `json:"workflow"`
 	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
 	Clarification    ClarificationConfig    `json:"clarification"`
@@ -198,6 +206,14 @@ type TeamsParallelConfig struct {
 
 type TeamsVoteConfig struct {
 	TieBreak string `json:"tie_break"`
+}
+
+type WorkflowConfig struct {
+	Enabled               bool          `json:"enabled"`
+	PlannerValidationMode string        `json:"planner_validation_mode"`
+	DefaultStepTimeout    time.Duration `json:"default_step_timeout"`
+	CheckpointBackend     string        `json:"checkpoint_backend"`
+	CheckpointPath        string        `json:"checkpoint_path"`
 }
 
 type SkillConfig struct {
@@ -668,6 +684,13 @@ func DefaultConfig() Config {
 			Vote: TeamsVoteConfig{
 				TieBreak: TeamsVoteTieBreakHighestPriority,
 			},
+		},
+		Workflow: WorkflowConfig{
+			Enabled:               false,
+			PlannerValidationMode: WorkflowValidationModeStrict,
+			DefaultStepTimeout:    3 * time.Second,
+			CheckpointBackend:     WorkflowCheckpointMemory,
+			CheckpointPath:        filepath.Join(os.TempDir(), "baymax", "workflow-checkpoints"),
 		},
 		Skill: SkillConfig{
 			TriggerScoring: SkillTriggerScoringConfig{
@@ -1149,6 +1172,33 @@ func Validate(cfg Config) error {
 			TeamsVoteTieBreakHighestPriority,
 			TeamsVoteTieBreakFirstTaskID,
 			cfg.Teams.Vote.TieBreak,
+		)
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(cfg.Workflow.PlannerValidationMode)); mode {
+	case WorkflowValidationModeStrict, WorkflowValidationModeWarn:
+	default:
+		return fmt.Errorf(
+			"workflow.planner_validation_mode must be one of [%s,%s], got %q",
+			WorkflowValidationModeStrict,
+			WorkflowValidationModeWarn,
+			cfg.Workflow.PlannerValidationMode,
+		)
+	}
+	if cfg.Workflow.DefaultStepTimeout <= 0 {
+		return errors.New("workflow.default_step_timeout must be > 0")
+	}
+	switch backend := strings.ToLower(strings.TrimSpace(cfg.Workflow.CheckpointBackend)); backend {
+	case WorkflowCheckpointMemory:
+	case WorkflowCheckpointFile:
+		if strings.TrimSpace(cfg.Workflow.CheckpointPath) == "" {
+			return errors.New("workflow.checkpoint_path is required when workflow.checkpoint_backend=file")
+		}
+	default:
+		return fmt.Errorf(
+			"workflow.checkpoint_backend must be one of [%s,%s], got %q",
+			WorkflowCheckpointMemory,
+			WorkflowCheckpointFile,
+			cfg.Workflow.CheckpointBackend,
 		)
 	}
 	scoring := cfg.Skill.TriggerScoring
@@ -2078,6 +2128,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("teams.task_timeout", base.Teams.TaskTimeout)
 	v.SetDefault("teams.parallel.max_workers", base.Teams.Parallel.MaxWorkers)
 	v.SetDefault("teams.vote.tie_break", base.Teams.Vote.TieBreak)
+	v.SetDefault("workflow.enabled", base.Workflow.Enabled)
+	v.SetDefault("workflow.planner_validation_mode", base.Workflow.PlannerValidationMode)
+	v.SetDefault("workflow.default_step_timeout", base.Workflow.DefaultStepTimeout)
+	v.SetDefault("workflow.checkpoint_backend", base.Workflow.CheckpointBackend)
+	v.SetDefault("workflow.checkpoint_path", base.Workflow.CheckpointPath)
 	v.SetDefault("skill.trigger_scoring.strategy", base.Skill.TriggerScoring.Strategy)
 	v.SetDefault("skill.trigger_scoring.confidence_threshold", base.Skill.TriggerScoring.ConfidenceThreshold)
 	v.SetDefault("skill.trigger_scoring.tie_break", base.Skill.TriggerScoring.TieBreak)
@@ -2270,6 +2325,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Teams.TaskTimeout = v.GetDuration("teams.task_timeout")
 	cfg.Teams.Parallel.MaxWorkers = v.GetInt("teams.parallel.max_workers")
 	cfg.Teams.Vote.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("teams.vote.tie_break")))
+	cfg.Workflow.Enabled = v.GetBool("workflow.enabled")
+	cfg.Workflow.PlannerValidationMode = strings.ToLower(strings.TrimSpace(v.GetString("workflow.planner_validation_mode")))
+	cfg.Workflow.DefaultStepTimeout = v.GetDuration("workflow.default_step_timeout")
+	cfg.Workflow.CheckpointBackend = strings.ToLower(strings.TrimSpace(v.GetString("workflow.checkpoint_backend")))
+	cfg.Workflow.CheckpointPath = strings.TrimSpace(v.GetString("workflow.checkpoint_path"))
 	cfg.Skill.TriggerScoring.Strategy = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.strategy")))
 	cfg.Skill.TriggerScoring.ConfidenceThreshold = v.GetFloat64("skill.trigger_scoring.confidence_threshold")
 	cfg.Skill.TriggerScoring.TieBreak = strings.ToLower(strings.TrimSpace(v.GetString("skill.trigger_scoring.tie_break")))

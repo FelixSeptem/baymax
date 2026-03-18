@@ -115,6 +115,11 @@ type RunRecord struct {
 	TeamTaskTotal                        int                               `json:"team_task_total,omitempty"`
 	TeamTaskFailed                       int                               `json:"team_task_failed,omitempty"`
 	TeamTaskCanceled                     int                               `json:"team_task_canceled,omitempty"`
+	WorkflowID                           string                            `json:"workflow_id,omitempty"`
+	WorkflowStatus                       string                            `json:"workflow_status,omitempty"`
+	WorkflowStepTotal                    int                               `json:"workflow_step_total,omitempty"`
+	WorkflowStepFailed                   int                               `json:"workflow_step_failed,omitempty"`
+	WorkflowResumeCount                  int                               `json:"workflow_resume_count,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

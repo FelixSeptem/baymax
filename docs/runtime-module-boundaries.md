@@ -21,6 +21,10 @@
   - Teams 协作编排基线（`serial|parallel|vote`）
   - 角色与任务生命周期语义（`leader|worker|coordinator` + `pending/running/succeeded/failed/skipped/canceled`）
   - 通过标准事件发射 Teams timeline/摘要元数据（不直接写 diagnostics store）
+- `orchestration/workflow`
+  - Workflow DSL 基线（`step/depends_on/condition/retry/timeout`）解析与静态 DAG 校验
+  - 确定性调度、重试/超时、checkpoint/resume 执行语义
+  - 通过标准事件发射 Workflow timeline/摘要元数据（不直接写 diagnostics store）
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
 - `mcp/retry`
@@ -54,6 +58,7 @@
 - `runtime/config` 或 `runtime/diagnostics` 反向依赖 `mcp/http` / `mcp/stdio`
 - 非 `mcp/*` 包依赖 `mcp/internal/*`
 - Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
+- Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。

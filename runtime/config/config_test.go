@@ -388,6 +388,85 @@ func TestTeamsConfigValidationRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestWorkflowConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Workflow.Enabled {
+		t.Fatal("workflow.enabled = true, want false")
+	}
+	if cfg.Workflow.PlannerValidationMode != WorkflowValidationModeStrict {
+		t.Fatalf("workflow.planner_validation_mode = %q, want %q", cfg.Workflow.PlannerValidationMode, WorkflowValidationModeStrict)
+	}
+	if cfg.Workflow.DefaultStepTimeout <= 0 {
+		t.Fatalf("workflow.default_step_timeout = %v, want > 0", cfg.Workflow.DefaultStepTimeout)
+	}
+	if cfg.Workflow.CheckpointBackend != WorkflowCheckpointMemory {
+		t.Fatalf("workflow.checkpoint_backend = %q, want %q", cfg.Workflow.CheckpointBackend, WorkflowCheckpointMemory)
+	}
+}
+
+func TestWorkflowConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_WORKFLOW_PLANNER_VALIDATION_MODE", WorkflowValidationModeWarn)
+	t.Setenv("BAYMAX_WORKFLOW_DEFAULT_STEP_TIMEOUT", "1400ms")
+	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_BACKEND", WorkflowCheckpointFile)
+	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_PATH", "/tmp/workflow-checkpoints")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+workflow:
+  enabled: false
+  planner_validation_mode: strict
+  default_step_timeout: 3s
+  checkpoint_backend: memory
+  checkpoint_path: /tmp/ignored
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Workflow.PlannerValidationMode != WorkflowValidationModeWarn {
+		t.Fatalf("workflow.planner_validation_mode = %q, want %q", cfg.Workflow.PlannerValidationMode, WorkflowValidationModeWarn)
+	}
+	if cfg.Workflow.DefaultStepTimeout != 1400*time.Millisecond {
+		t.Fatalf("workflow.default_step_timeout = %v, want 1400ms", cfg.Workflow.DefaultStepTimeout)
+	}
+	if cfg.Workflow.CheckpointBackend != WorkflowCheckpointFile {
+		t.Fatalf("workflow.checkpoint_backend = %q, want %q", cfg.Workflow.CheckpointBackend, WorkflowCheckpointFile)
+	}
+	if cfg.Workflow.CheckpointPath != "/tmp/workflow-checkpoints" {
+		t.Fatalf("workflow.checkpoint_path = %q, want /tmp/workflow-checkpoints", cfg.Workflow.CheckpointPath)
+	}
+}
+
+func TestWorkflowConfigValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Workflow.PlannerValidationMode = "relaxed"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.planner_validation_mode")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Workflow.DefaultStepTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.default_step_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Workflow.CheckpointBackend = "db"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.checkpoint_backend")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Workflow.CheckpointBackend = WorkflowCheckpointFile
+	cfg.Workflow.CheckpointPath = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for workflow.checkpoint_path when backend=file")
+	}
+}
+
 func TestSkillTriggerScoringDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Skill.TriggerScoring.Strategy != SkillTriggerScoringStrategyLexicalWeightedKeywords {

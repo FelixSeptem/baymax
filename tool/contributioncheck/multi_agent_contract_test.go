@@ -3,6 +3,8 @@ package contributioncheck
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -10,14 +12,14 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	root := repoRoot(t)
 	snapshot := MultiAgentContractSnapshot{
 		IdentifierDoc:             mustRead(t, filepath.Join(root, "docs", "multi-agent-identifier-model.md")),
-		TeamsTimelineSpec:         mustRead(t, filepath.Join(root, "openspec", "changes", "teams-runtime-baseline", "specs", "action-timeline-events", "spec.md")),
+		TeamsTimelineSpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		WorkflowTimelineSpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "action-timeline-events", "spec.md")),
 		A2ATimelineSpec:           mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "action-timeline-events", "spec.md")),
 		A2ACoreSpec:               mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "a2a-minimal-interoperability", "spec.md")),
-		TeamsRuntimeConfigSpec:    mustRead(t, filepath.Join(root, "openspec", "changes", "teams-runtime-baseline", "specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		TeamsRuntimeConfigSpec:    mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		WorkflowRuntimeConfigSpec: mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		A2ARuntimeConfigSpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "runtime-config-and-diagnostics-api", "spec.md")),
-		TeamsBoundarySpec:         mustRead(t, filepath.Join(root, "openspec", "changes", "teams-runtime-baseline", "specs", "runtime-module-boundaries", "spec.md")),
+		TeamsBoundarySpec:         mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		WorkflowBoundarySpec:      mustRead(t, filepath.Join(root, "openspec", "changes", "workflow-dsl-baseline", "specs", "runtime-module-boundaries", "spec.md")),
 		A2ABoundarySpec:           mustRead(t, filepath.Join(root, "openspec", "changes", "a2a-minimal-interoperability", "specs", "runtime-module-boundaries", "spec.md")),
 	}
@@ -78,4 +80,34 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(raw)
+}
+
+func mustReadChangeSpec(t *testing.T, root, changeName, relPath string) string {
+	t.Helper()
+	active := filepath.Join(root, "openspec", "changes", changeName, relPath)
+	if _, err := os.Stat(active); err == nil {
+		return mustRead(t, active)
+	}
+
+	archiveRoot := filepath.Join(root, "openspec", "changes", "archive")
+	dirs, err := os.ReadDir(archiveRoot)
+	if err != nil {
+		t.Fatalf("read archive root: %v", err)
+	}
+	prefix := "-" + changeName
+	candidates := make([]string, 0)
+	for _, entry := range dirs {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, prefix) {
+			candidates = append(candidates, filepath.Join(archiveRoot, name, relPath))
+		}
+	}
+	if len(candidates) == 0 {
+		t.Fatalf("change %q not found in active or archive", changeName)
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i] > candidates[j] })
+	return mustRead(t, candidates[0])
 }

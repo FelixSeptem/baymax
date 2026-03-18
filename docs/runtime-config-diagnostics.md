@@ -87,6 +87,13 @@ teams:
   vote:
     tie_break: highest_priority # highest_priority|first_task_id
 
+workflow:
+  enabled: false
+  planner_validation_mode: strict # strict|warn
+  default_step_timeout: 3s        # 必须 > 0
+  checkpoint_backend: memory      # memory|file
+  checkpoint_path: /tmp/baymax/workflow-checkpoints # backend=file 时必填
+
 skill:
   trigger_scoring:
     strategy: lexical_weighted_keywords # lexical_weighted_keywords|lexical_plus_embedding
@@ -361,6 +368,13 @@ teams baseline 校验语义：
 2. `teams.task_timeout` 必须 `> 0`。
 3. `teams.parallel.max_workers` 必须 `> 0`。
 4. `teams.vote.tie_break` 仅支持 `highest_priority|first_task_id`。
+5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+workflow baseline 校验语义：
+1. `workflow.planner_validation_mode` 仅支持 `strict|warn`。
+2. `workflow.default_step_timeout` 必须 `> 0`。
+3. `workflow.checkpoint_backend` 仅支持 `memory|file`。
+4. `workflow.checkpoint_backend=file` 时，`workflow.checkpoint_path` 必须非空。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
@@ -681,6 +695,15 @@ Teams Timeline 关联字段（按可用性增量携带）：
 - `agent_id`
 - `task_id`
 
+Action Timeline reason code（Workflow 基线）：
+- `workflow.schedule`：Workflow step 被调度执行或进入终态。
+- `workflow.retry`：Workflow step 在失败后进入下一次重试。
+- `workflow.resume`：Workflow 从 checkpoint 恢复并跳过已完成 step。
+
+Workflow Timeline 关联字段（按可用性增量携带）：
+- `workflow_id`
+- `step_id`
+
 Action Gate 规则优先级（H4）：
 1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
 2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
@@ -710,6 +733,18 @@ Action Gate 规则优先级（H4）：
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
 - Teams 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
+
+### Run 诊断新增字段（Workflow 基线 W1）
+
+- `workflow_id`：本次 workflow 实例标识。
+- `workflow_status`：workflow 最终状态（如 `succeeded|failed`）。
+- `workflow_step_total`：workflow step 总数。
+- `workflow_step_failed`：workflow 失败 step 数。
+- `workflow_resume_count`：本次 run 的 workflow 恢复次数。
+
+语义约束：
+- 字段为 additive 扩展，不影响既有 run 摘要消费者。
+- Workflow 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

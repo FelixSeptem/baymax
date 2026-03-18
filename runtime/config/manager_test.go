@@ -902,6 +902,50 @@ reload:
 	}
 }
 
+func TestManagerWorkflowInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+workflow:
+  enabled: true
+  planner_validation_mode: strict
+  default_step_timeout: 1200ms
+  checkpoint_backend: memory
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Workflow.PlannerValidationMode
+	if before != WorkflowValidationModeStrict {
+		t.Fatalf("before planner_validation_mode = %q, want %q", before, WorkflowValidationModeStrict)
+	}
+
+	writeConfig(t, file, `
+workflow:
+  enabled: true
+  planner_validation_mode: strict
+  default_step_timeout: 0s
+  checkpoint_backend: memory
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Workflow.DefaultStepTimeout
+	if after != 1200*time.Millisecond {
+		t.Fatalf("invalid workflow reload should rollback, default_step_timeout = %v, want 1200ms", after)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

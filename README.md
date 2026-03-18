@@ -444,6 +444,9 @@ bash scripts/check-ca4-benchmark-regression.sh
 Teams baseline 说明：
 - `orchestration/teams` 提供可复用协作运行时（`serial|parallel|vote`），`examples/07` 与 `examples/08` 可作为接入范式参考。
 
+Workflow baseline 说明：
+- `orchestration/workflow` 提供 workflow DSL 基线执行器（`step/depends_on/condition/retry/timeout`），可与现有 runner/tool/mcp/skill 适配器组合接入。
+
 运行示例：
 ```bash
 go run ./examples/05-parallel-tools-fanout
@@ -462,6 +465,7 @@ go run ./examples/08-multi-agent-network-bridge
 - `model/anthropic`: Anthropic 官方 SDK 适配
 - `model/gemini`: Gemini 官方 SDK 适配
 - `orchestration/teams`: Teams 协作编排基线模块
+- `orchestration/workflow`: Workflow DSL 确定性编排基线模块
 - `skill/loader`: AGENTS/SKILL 发现与编译
 - `context/provider`: CA2 stage2 retrieval SPI、file provider 与 external HTTP adapter
 - `observability/event`, `observability/trace`: 事件与 trace

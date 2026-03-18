@@ -20,6 +20,9 @@
 - Teams orchestration baseline is available as independent module (`orchestration/teams`) with deterministic `serial|parallel|vote` strategies, explicit task lifecycle states, and Run/Stream semantic equivalence.
 - Teams timeline reasons and metadata are normalized with `team.*` namespace and `team_id/agent_id/task_id` correlation fields.
 - Run diagnostics include Teams additive summary fields: `team_id`, `team_strategy`, `team_task_total`, `team_task_failed`, `team_task_canceled`.
+- Workflow DSL baseline is available as independent module (`orchestration/workflow`) with schema parse/validate (`step/depends_on/condition/retry/timeout`), deterministic scheduling, bounded retry/timeout, and checkpoint/resume semantics.
+- Workflow timeline reasons and metadata are normalized with `workflow.*` namespace and `workflow_id/step_id` correlation fields.
+- Run diagnostics include Workflow additive summary fields: `workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.

@@ -907,6 +907,16 @@ Action Gate 规则优先级（H4）：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
 - Scheduler/Subagent 摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
+### Run 诊断新增字段（Composer A8）
+
+- `composer_managed`：是否由 `orchestration/composer` 统一组合入口托管执行。
+- `scheduler_backend_fallback`：scheduler 初始化是否发生了 fallback（例如 `file -> memory`）。
+- `scheduler_backend_fallback_reason`：scheduler fallback 原因码（例如 `scheduler.backend.file_init_failed`）。
+
+热更新生效边界（A8）：
+- composer 消费 `teams.*` / `workflow.*` / `a2a.*` / `scheduler.*` / `subagent.*` 快照。
+- scheduler/subagent 变更采用 `next_attempt_only`：仅影响新 `enqueue/spawn/claim` 边界；in-flight attempt 不回溯修改已创建 lease 语义。
+
 ### Compatibility Window (A5/A6)
 
 兼容窗口规则：`additive + nullable + default`
@@ -916,9 +926,10 @@ Action Gate 规则优先级（H4）：
 | Teams Remote（`team_remote_*`） | 新增字段不影响既有字段 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Workflow Remote（`workflow_remote_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
+| Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
 
 legacy consumers 行为示例：
-- 仅解析 A4 及更早字段的消费者，可以忽略 `team_remote_*` / `workflow_remote_*` / `scheduler_*` / `subagent_*`，不会影响既有逻辑。
+- 仅解析 A4 及更早字段的消费者，可以忽略 `team_remote_*` / `workflow_remote_*` / `scheduler_*` / `subagent_*` / `composer_managed` / `scheduler_backend_fallback*`，不会影响既有逻辑。
 - 解析器应将缺省字段视为 nullable fallback：缺失时回退为 `0`（计数）或空字符串（枚举/标识），而不是报错终止。
 - 新增字段禁止改变既有字段含义；仅允许增量扩展，不允许“同名改语义”。
 

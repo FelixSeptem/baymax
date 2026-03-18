@@ -319,6 +319,7 @@
 - [x] `distributed-subagent-scheduler-baseline-a6`：完成 `orchestration/scheduler` 基线（durable queue + lease claim + heartbeat + lease-expire takeover + terminal commit 幂等），新增 reason（`scheduler.*|subagent.*`）与关联字段（`task_id/attempt_id`），补齐 `scheduler.*`/`subagent.*` 配置、run 摘要字段与 shared-contract gate 收敛。
 - [x] `close-a5-a6-tail-contract-and-governance-a7`：完成 A5/A6 收口治理（兼容窗口 `additive+nullable+default`、scheduler/subagent canonical taxonomy、`task_id+attempt_id` 关联字段门禁、scheduler recovery 专项回归套件）。
 - [x] 新增 scheduler/subagent 收口门禁命令路径（required-check 候选）：`go test ./integration -run '^TestSchedulerRecovery' -count=1`（已纳入 `check-multi-agent-shared-contract.*`）。
+- [x] `introduce-lib-first-agent-composer-with-scheduler-bridge-a8`：完成 `orchestration/composer` library-first 组合入口（`Run/Stream + scheduler-managed child bridge(local|a2a)`），落地 scheduler backend fallback-to-memory、`next_attempt_only` 热更新边界、`composer_managed/scheduler_backend_fallback*` 摘要字段，并将 composer contract suite 纳入 shared-contract gate。
 
 - R4-T4（平台化与治理增强，目标窗口：2026-06-10 之后）
   - 多租户、RBAC、审计流水线与 control plane 进入增量交付。

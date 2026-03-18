@@ -32,6 +32,9 @@
 - Scheduler/Subagent timeline reasons and metadata are normalized with `scheduler.*|subagent.*` namespace and `task_id/attempt_id` correlation fields.
 - Runtime config exposes scheduler/subagent controls under dedicated domains (`scheduler.*`, `subagent.*`) with deterministic precedence `env > file > default`.
 - Run diagnostics include Scheduler/Subagent additive summary fields: `scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`.
+- Library-first composer entrypoint is available as independent module (`orchestration/composer`) and can execute Run/Stream without host-side manual wiring of runner/workflow/teams/a2a/scheduler internals.
+- Composer-managed runs expose additive summary fields `composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason` with compatibility-window semantics.
+- Scheduler/Subagent hot-reload in composer path applies on `next_attempt_only` boundaries and does not retroactively mutate in-flight attempt lease semantics.
 - A5/A6 additive summary fields follow a compatibility window (`additive + nullable + default`); legacy consumers can ignore missing new fields and rely on nullable fallback defaults.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.

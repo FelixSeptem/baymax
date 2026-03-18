@@ -211,7 +211,10 @@ mcp:
 			"a2a_version_local":                        "a2a.v1.2",
 			"a2a_version_peer":                         "a2a.v1.0",
 			"a2a_version_negotiation_result":           "compatible",
+			"composer_managed":                         true,
 			"scheduler_backend":                        "file",
+			"scheduler_backend_fallback":               true,
+			"scheduler_backend_fallback_reason":        "scheduler.backend.file_init_failed",
 			"scheduler_queue_total":                    3,
 			"scheduler_claim_total":                    4,
 			"scheduler_reclaim_total":                  1,
@@ -351,7 +354,13 @@ mcp:
 	if items[0].A2AVersionLocal != "a2a.v1.2" || items[0].A2AVersionPeer != "a2a.v1.0" || items[0].A2AVersionNegotiationResult != "compatible" {
 		t.Fatalf("a2a version fields mismatch: %#v", items[0])
 	}
-	if items[0].SchedulerBackend != "file" || items[0].SchedulerQueueTotal != 3 || items[0].SchedulerClaimTotal != 4 || items[0].SchedulerReclaimTotal != 1 {
+	if !items[0].ComposerManaged {
+		t.Fatalf("composer marker mismatch: %#v", items[0])
+	}
+	if items[0].SchedulerBackend != "file" || !items[0].SchedulerBackendFallback || items[0].SchedulerBackendFallbackReason != "scheduler.backend.file_init_failed" {
+		t.Fatalf("scheduler fallback markers mismatch: %#v", items[0])
+	}
+	if items[0].SchedulerQueueTotal != 3 || items[0].SchedulerClaimTotal != 4 || items[0].SchedulerReclaimTotal != 1 {
 		t.Fatalf("scheduler fields mismatch: %#v", items[0])
 	}
 	if items[0].SubagentChildTotal != 2 || items[0].SubagentChildFailed != 1 || items[0].SubagentBudgetRejectTotal != 1 {

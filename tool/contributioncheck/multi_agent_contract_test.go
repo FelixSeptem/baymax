@@ -41,6 +41,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	schedulerTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	teamsRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
@@ -53,6 +54,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	schedulerRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	teamsBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
@@ -65,12 +67,22 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	schedulerBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+	}, "\n")
+	composerCoreSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
+	}, "\n")
+	composerGateSpec := strings.Join([]string{
+		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "go-quality-gate", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
 		IdentifierDoc:              mustRead(t, filepath.Join(root, "docs", "multi-agent-identifier-model.md")),
 		RuntimeConfigDoc:           mustRead(t, filepath.Join(root, "docs", "runtime-config-diagnostics.md")),
 		V1AcceptanceDoc:            mustRead(t, filepath.Join(root, "docs", "v1-acceptance.md")),
+		ComposerCoreSpec:           composerCoreSpec,
+		ComposerGateSpec:           composerGateSpec,
 		TeamsTimelineSpec:          teamsTimelineSpec,
 		WorkflowTimelineSpec:       workflowTimelineSpec,
 		A2ATimelineSpec:            a2aTimelineSpec,
@@ -97,6 +109,8 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		IdentifierDoc:              "no mapping and no namespace",
 		RuntimeConfigDoc:           "runtime doc missing composed reasons and summary fields",
 		V1AcceptanceDoc:            "acceptance doc missing composed markers",
+		ComposerCoreSpec:           "manual assembly only",
+		ComposerGateSpec:           "quality gate missing composer suite",
 		TeamsTimelineSpec:          "collect without namespace",
 		WorkflowTimelineSpec:       "retry without namespace",
 		A2ATimelineSpec:            "remote peer identifier and callback-retry only",
@@ -124,6 +138,7 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 	required := []string{
 		"missing_status_mapping_a2a_submitted_pending",
 		"missing_a2a_submitted_pending_alignment",
+		"missing_composer_entrypoint_contract",
 		"missing_reason_namespace_contract",
 		"missing_reason_team_dispatch",
 		"missing_reason_team_dispatch_remote",
@@ -176,6 +191,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_field_team_remote_task_failed",
 		"missing_runtime_doc_field_workflow_remote_step_total",
 		"missing_runtime_doc_field_workflow_remote_step_failed",
+		"missing_runtime_doc_field_composer_managed",
+		"missing_runtime_doc_field_scheduler_backend_fallback",
+		"missing_runtime_doc_field_scheduler_backend_fallback_reason",
 		"missing_runtime_doc_field_scheduler_backend",
 		"missing_runtime_doc_field_scheduler_queue_total",
 		"missing_runtime_doc_field_scheduler_claim_total",
@@ -198,6 +216,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_env_mapping_baymax_subagent_max_depth",
 		"missing_runtime_doc_env_mapping_baymax_subagent_max_active_children",
 		"missing_runtime_doc_env_mapping_baymax_subagent_child_timeout_budget",
+		"missing_scheduler_runtime_spec_field_composer_managed",
+		"missing_scheduler_runtime_spec_field_scheduler_backend_fallback",
+		"missing_scheduler_runtime_spec_field_scheduler_backend_fallback_reason",
 		"missing_v1_acceptance_marker_teams_remote_*",
 		"missing_v1_acceptance_marker_workflow_remote_*",
 		"missing_v1_acceptance_marker_team_remote_task_total",
@@ -216,6 +237,8 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_workflow_remote_config_contract",
 		"missing_composed_summary_contract",
 		"missing_blocking_shared_contract_gate",
+		"missing_composer_boundary_contract",
+		"missing_composer_gate_contract",
 	}
 	for _, code := range required {
 		if _, ok := codes[code]; !ok {

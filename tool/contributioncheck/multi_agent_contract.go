@@ -6,6 +6,8 @@ type MultiAgentContractSnapshot struct {
 	IdentifierDoc              string
 	RuntimeConfigDoc           string
 	V1AcceptanceDoc            string
+	ComposerCoreSpec           string
+	ComposerGateSpec           string
 	TeamsTimelineSpec          string
 	WorkflowTimelineSpec       string
 	A2ATimelineSpec            string
@@ -34,6 +36,13 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		violations = append(violations, Violation{
 			Code:    "missing_a2a_submitted_pending_alignment",
 			Message: "a2a lifecycle spec must align submitted with pending semantic layer",
+		})
+	}
+	if !strings.Contains(snapshot.ComposerCoreSpec, "`orchestration/composer`") ||
+		!strings.Contains(strings.ToLower(snapshot.ComposerCoreSpec), "run and stream") {
+		violations = append(violations, Violation{
+			Code:    "missing_composer_entrypoint_contract",
+			Message: "composer spec must define orchestration/composer Run and Stream entrypoint contract",
 		})
 	}
 
@@ -200,6 +209,9 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 	}
 
 	requiredComposedDocFields := []string{
+		"`composer_managed`",
+		"`scheduler_backend_fallback`",
+		"`scheduler_backend_fallback_reason`",
 		"`team_remote_task_total`",
 		"`team_remote_task_failed`",
 		"`workflow_remote_step_total`",
@@ -211,6 +223,19 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`subagent_child_total`",
 		"`subagent_child_failed`",
 		"`subagent_budget_reject_total`",
+	}
+	requiredComposerRuntimeFields := []string{
+		"`composer_managed`",
+		"`scheduler_backend_fallback`",
+		"`scheduler_backend_fallback_reason`",
+	}
+	for _, field := range requiredComposerRuntimeFields {
+		if !strings.Contains(snapshot.SchedulerRuntimeConfigSpec, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_scheduler_runtime_spec_field_" + strings.Trim(field, "`"),
+				Message: "scheduler runtime config spec missing composer additive field: " + field,
+			})
+		}
 	}
 	for _, field := range requiredComposedDocFields {
 		if !strings.Contains(snapshot.RuntimeConfigDoc, field) {
@@ -355,6 +380,19 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		violations = append(violations, Violation{
 			Code:    "missing_blocking_shared_contract_gate",
 			Message: "teams/workflow/a2a/scheduler boundary specs must declare blocking shared-contract gate",
+		})
+	}
+	if !strings.Contains(strings.ToLower(schedulerBoundary), "orchestration/composer") {
+		violations = append(violations, Violation{
+			Code:    "missing_composer_boundary_contract",
+			Message: "runtime boundary specs must include orchestration/composer ownership and dependency boundary",
+		})
+	}
+	if !strings.Contains(strings.ToLower(snapshot.ComposerGateSpec), "composer contract suite") ||
+		!strings.Contains(strings.ToLower(snapshot.ComposerGateSpec), "shared multi-agent gate") {
+		violations = append(violations, Violation{
+			Code:    "missing_composer_gate_contract",
+			Message: "quality gate spec must include composer contract suite in shared multi-agent gate path",
 		})
 	}
 

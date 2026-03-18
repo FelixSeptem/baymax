@@ -111,6 +111,7 @@
   - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`, `workflow_remote_step_total`, `workflow_remote_step_failed`
   - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`
   - Scheduler/Subagent：`scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`
+  - Composer：`composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 
 ## 兼容性要求

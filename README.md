@@ -40,6 +40,7 @@ runtime/diagnostics    runtime/config
 关键设计点：
 
 - `core/runner` 统一 Run/Stream 主状态机，负责模型步进、工具调度和终止语义。
+- `orchestration/composer` 提供 library-first 组合入口，统一装配 `runner + workflow + teams + a2a + scheduler`。
 - `orchestration/teams` 与 `orchestration/workflow` 提供多代理协作与工作流编排基线能力，复用 runner/tool/mcp/model 既有接口。
 - `a2a` 聚焦跨 Agent 互联最小面（`submit/status/result` + capability/delivery/version 协商），保持与 MCP 传输层解耦。
 - `runtime/config` 与 `runtime/diagnostics` 是全局运行时横切能力，严格遵循 `env > file > default` 与 fail-fast/回滚策略。
@@ -60,6 +61,7 @@ runtime/diagnostics    runtime/config
 | Runtime Config | `runtime/config` | 配置加载、校验、热更新、原子回滚 | 固定优先级 `env > file > default` |
 | Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 统一诊断模型、事件时间线、trace 关联与查询 | `RuntimeRecorder` 单写入口已落地 |
 | Skill System | `skill/loader` | AGENTS/SKILL 发现、触发评分、Bundle 组装 | 支持显式触发优先与语义触发兜底 |
+| Composer Orchestration | `orchestration/composer` | Library-first 组合入口（Run/Stream + scheduler child bridge） | 收敛多模块接入与 run 摘要注入口径 |
 | Orchestration Baselines | `orchestration/teams` `orchestration/workflow` | 多角色协作编排与 DSL 工作流执行 | 提供可复用的 `serial/parallel/vote` 与 DAG 基线 |
 | A2A Interop | `a2a` | Agent-to-Agent 最小互联契约与协商机制 | 具备 capability route 与 delivery/version 协商基线 |
 | Runtime Security | `runtime/security` | 运行时脱敏与安全治理基础能力 | 默认接入关键诊断/事件/上下文路径 |
@@ -271,6 +273,27 @@ defer mgr.Close()
 ```
 
 更多字段与环境变量映射见：`docs/runtime-config-diagnostics.md`
+
+Composer（A8）最小接入示例：
+```go
+comp, err := composer.NewBuilder(model).
+    WithRuntimeManager(mgr).
+    WithEventHandler(dispatcher). // 可选：JSON logger + RuntimeRecorder
+    WithA2AClient(a2aClient).     // 可选：需要 a2a child-run 时注入
+    Build()
+if err != nil {
+    panic(err)
+}
+
+res, err := comp.Run(ctx, types.RunRequest{
+    RunID: "run-composer-demo",
+    Input: "hello composer",
+}, nil)
+if err != nil {
+    panic(err)
+}
+_ = res
+```
 
 Action Gate（H2）最小配置示例：
 ```yaml
@@ -512,11 +535,11 @@ bash scripts/check-ca4-benchmark-regression.sh
 | `examples/04-streaming-interrupt` | Structure | 流式中断与收敛 |
 | `examples/05-parallel-tools-fanout` | Parallel | goroutine fanout 并发工具执行 |
 | `examples/06-async-job-progress` | Map-Reduce-like + Parallel | 异步任务进度回传与聚合 |
-| `examples/07-multi-agent-async-channel` | Multi-Agent + Structure + HITL Clarification | 单进程 channel 协作与 await/resume 演示 |
-| `examples/08-multi-agent-network-bridge` | Multi-Agent + Structure (Network) | HTTP + JSON-RPC 2.0 网络桥接 |
+| `examples/07-multi-agent-async-channel` | Multi-Agent + Composer + Scheduler(Local) | composer + scheduler local child-run 的异步 channel 协作 |
+| `examples/08-multi-agent-network-bridge` | Multi-Agent + Composer + Scheduler(A2A) | composer + scheduler a2a child-run 的网络桥接 |
 
 Teams baseline 说明：
-- `orchestration/teams` 提供可复用协作运行时（`serial|parallel|vote`），`examples/07` 与 `examples/08` 可作为接入范式参考。
+- `orchestration/teams` 提供可复用协作运行时（`serial|parallel|vote`），推荐通过 `orchestration/composer` 统一装配接入。
 - 支持 mixed local/remote 执行目标（`target=local|remote`），remote 路径 reason 为 `team.dispatch_remote` / `team.collect_remote`。
 - run 摘要新增 remote 聚合字段：`team_remote_task_total`、`team_remote_task_failed`（additive，不影响既有消费者）。
 

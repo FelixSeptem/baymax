@@ -1,37 +1,34 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"time"
 
+	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/observability/event"
+	"github.com/FelixSeptem/baymax/orchestration/composer"
+	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
-type rpcRequest struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      string         `json:"id"`
-	Method  string         `json:"method"`
-	Params  map[string]any `json:"params,omitempty"`
+type stubModel struct{}
+
+func (stubModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	_ = ctx
+	_ = req
+	return types.ModelResponse{FinalAnswer: "composer a2a child-run completed"}, nil
 }
 
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type rpcResponse struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      string         `json:"id"`
-	Result  map[string]any `json:"result,omitempty"`
-	Error   *rpcError      `json:"error,omitempty"`
+func (stubModel) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	_ = ctx
+	_ = req
+	return onEvent(types.ModelEvent{
+		Type:      types.ModelEventTypeFinalAnswer,
+		TextDelta: "composer stream a2a child-run completed",
+	})
 }
 
 func main() {
@@ -41,73 +38,88 @@ func main() {
 	}
 	defer func() { _ = mgr.Close() }()
 
-	runID := "ex08-run"
 	ctx := context.Background()
+	runID := "ex08-run"
 	dispatcher := event.NewDispatcher(
 		event.NewJSONLoggerWithRuntimeManager(os.Stdout, mgr),
 		event.NewRuntimeRecorder(mgr),
 	)
-	emit := func(t string, payload map[string]any) {
-		dispatcher.Emit(ctx, types.Event{
-			Version: types.EventSchemaVersionV1,
-			Type:    t,
-			RunID:   runID,
-			Time:    time.Now(),
-			Payload: payload,
-		})
-	}
+	handler := eventHandlerFunc(func(ctx context.Context, ev types.Event) {
+		dispatcher.Emit(ctx, ev)
+	})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() { _ = r.Body.Close() }()
-		var req rpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			_ = json.NewEncoder(w).Encode(rpcResponse{
-				JSONRPC: "2.0",
-				ID:      "",
-				Error:   &rpcError{Code: -32700, Message: "parse error"},
-			})
-			return
-		}
-		emit("agent.network.server.received", map[string]any{"method": req.Method, "id": req.ID})
-		resp := rpcResponse{JSONRPC: "2.0", ID: req.ID}
-		switch req.Method {
-		case "agent.process":
-			input, _ := req.Params["input"].(string)
-			resp.Result = map[string]any{"output": "processed:" + input}
-		default:
-			resp.Error = &rpcError{Code: -32601, Message: "method not found"}
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
+	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(ctx context.Context, req a2a.TaskRequest) (map[string]any, error) {
+		_ = ctx
+		return map[string]any{
+			"output":      "remote-processed",
+			"task_id":     req.TaskID,
+			"workflow_id": req.WorkflowID,
+			"step_id":     req.StepID,
+		}, nil
+	}), handler)
+	client := a2a.NewClient(server, []a2a.AgentCard{
+		{
+			AgentID:                "agent-remote",
+			PeerID:                 "peer-remote",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{a2a.DeliveryModeCallback, a2a.DeliveryModeSSE},
+		},
+	}, a2a.DeterministicRouter{RequireAll: true}, a2a.ClientPolicy{
+		Timeout:            500 * time.Millisecond,
+		RequestMaxAttempts: 1,
+	}, handler)
 
-	request := rpcRequest{
-		JSONRPC: "2.0",
-		ID:      "req-1",
-		Method:  "agent.process",
-		Params:  map[string]any{"input": "hello-network"},
-	}
-	raw, _ := json.Marshal(request)
-	emit("agent.network.client.sent", map[string]any{"method": request.Method, "id": request.ID})
-
-	httpResp, err := http.Post(server.URL, "application/json", bytes.NewReader(raw))
+	comp, err := composer.NewBuilder(stubModel{}).
+		WithRuntimeManager(mgr).
+		WithEventHandler(handler).
+		WithA2AClient(client).
+		Build()
 	if err != nil {
 		panic(err)
 	}
-	defer func() { _ = httpResp.Body.Close() }()
 
-	var response rpcResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&response); err != nil {
+	for i := 1; i <= 2; i++ {
+		taskID := fmt.Sprintf("remote-task-%d", i)
+		out, err := comp.DispatchChild(ctx, composer.ChildDispatchRequest{
+			Task: scheduler.Task{
+				TaskID:     taskID,
+				RunID:      runID,
+				WorkflowID: "wf-net-bridge",
+				TeamID:     "team-net-bridge",
+				StepID:     fmt.Sprintf("step-%d", i),
+				AgentID:    "agent-main",
+				PeerID:     "peer-remote",
+				Payload: map[string]any{
+					"input": fmt.Sprintf("payload-%d", i),
+				},
+			},
+			Target:       composer.ChildTargetA2A,
+			ParentDepth:  0,
+			ChildTimeout: 800 * time.Millisecond,
+			PollInterval: 20 * time.Millisecond,
+		})
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("dispatch task=%s commit_status=%s result=%v\n", taskID, out.Commit.Status, out.Commit.Result)
+	}
+
+	if _, err := comp.Run(ctx, types.RunRequest{RunID: runID, Input: "summarize a2a child-run results"}, nil); err != nil {
 		panic(err)
 	}
-	emit("agent.network.client.received", map[string]any{
-		"id":      response.ID,
-		"has_err": response.Error != nil,
-	})
-
-	if response.Error != nil {
-		fmt.Printf("rpc error: code=%d message=%s\n", response.Error.Code, response.Error.Message)
-		return
+	runs := mgr.RecentRuns(1)
+	if len(runs) > 0 {
+		fmt.Printf("composer summary backend=%s fallback=%v child_total=%d child_failed=%d\n",
+			runs[0].SchedulerBackend,
+			runs[0].SchedulerBackendFallback,
+			runs[0].SubagentChildTotal,
+			runs[0].SubagentChildFailed,
+		)
 	}
-	fmt.Printf("jsonrpc=%s id=%s result=%v\n", response.JSONRPC, response.ID, response.Result)
+}
+
+type eventHandlerFunc func(ctx context.Context, ev types.Event)
+
+func (f eventHandlerFunc) OnEvent(ctx context.Context, ev types.Event) {
+	f(ctx, ev)
 }

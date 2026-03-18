@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/observability/event"
+	"github.com/FelixSeptem/baymax/orchestration/composer"
+	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
@@ -16,16 +19,21 @@ type task struct {
 	Text string
 }
 
-type clarificationRequest struct {
-	RequestID      string
-	Questions      []string
-	ContextSummary string
-	TimeoutMs      int64
+type stubModel struct{}
+
+func (stubModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	_ = ctx
+	_ = req
+	return types.ModelResponse{FinalAnswer: "composer local child-run completed"}, nil
 }
 
-type clarificationResponse struct {
-	RequestID string
-	Answers   []string
+func (stubModel) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	_ = ctx
+	_ = req
+	return onEvent(types.ModelEvent{
+		Type:      types.ModelEventTypeFinalAnswer,
+		TextDelta: "composer stream local child-run completed",
+	})
 }
 
 func main() {
@@ -41,81 +49,57 @@ func main() {
 		event.NewJSONLoggerWithRuntimeManager(os.Stdout, mgr),
 		event.NewRuntimeRecorder(mgr),
 	)
-	emit := func(t string, payload map[string]any) {
-		dispatcher.Emit(ctx, types.Event{
-			Version: types.EventSchemaVersionV1,
-			Type:    t,
-			RunID:   runID,
-			Time:    time.Now(),
-			Payload: payload,
-		})
+	handler := eventHandlerFunc(func(ctx context.Context, ev types.Event) {
+		dispatcher.Emit(ctx, ev)
+	})
+
+	comp, err := composer.NewBuilder(stubModel{}).
+		WithRuntimeManager(mgr).
+		WithEventHandler(handler).
+		Build()
+	if err != nil {
+		panic(err)
 	}
 
-	coordinatorToWorker := make(chan task, 4)
-	workerToCoordinator := make(chan string, 4)
-	clarifyReq := make(chan clarificationRequest, 1)
-	clarifyResp := make(chan clarificationResponse, 1)
-	done := make(chan struct{})
-	clarifierDone := make(chan struct{})
+	coordinatorToWorker := make(chan task, 8)
+	workerToCoordinator := make(chan string, 8)
+	var wg sync.WaitGroup
 
 	go func() {
-		defer close(done)
+		defer close(workerToCoordinator)
 		for t := range coordinatorToWorker {
-			emit("agent.worker.started", map[string]any{"task_id": t.ID})
-			time.Sleep(50 * time.Millisecond)
-			workerToCoordinator <- "processed:" + t.Text
-			emit("agent.worker.completed", map[string]any{"task_id": t.ID})
-		}
-		close(workerToCoordinator)
-	}()
-
-	go func() {
-		defer close(clarifierDone)
-		for req := range clarifyReq {
-			emit("hitl.clarification.requested", map[string]any{
-				"clarification_request": map[string]any{
-					"request_id":      req.RequestID,
-					"questions":       req.Questions,
-					"context_summary": req.ContextSummary,
-					"timeout_ms":      req.TimeoutMs,
+			out, err := comp.DispatchChild(ctx, composer.ChildDispatchRequest{
+				Task: scheduler.Task{
+					TaskID: t.ID,
+					RunID:  runID,
+					Payload: map[string]any{
+						"text": t.Text,
+					},
 				},
+				Target:               composer.ChildTargetLocal,
+				ParentDepth:          0,
+				ParentActiveChildren: 0,
+				ChildTimeout:         300 * time.Millisecond,
+				LocalRunner: composer.LocalChildRunnerFunc(func(ctx context.Context, task scheduler.Task) (map[string]any, error) {
+					_ = ctx
+					text, _ := task.Payload["text"].(string)
+					time.Sleep(40 * time.Millisecond)
+					return map[string]any{"output": "processed:" + text}, nil
+				}),
 			})
-			time.Sleep(20 * time.Millisecond)
-			clarifyResp <- clarificationResponse{
-				RequestID: req.RequestID,
-				Answers:   []string{"priority=high"},
+			if err != nil {
+				workerToCoordinator <- "error:" + err.Error()
+				wg.Done()
+				continue
 			}
+			value, _ := out.Commit.Result["output"].(string)
+			workerToCoordinator <- value
+			wg.Done()
 		}
-		close(clarifyResp)
 	}()
 
-	request := clarificationRequest{
-		RequestID:      "clarify-1",
-		Questions:      []string{"Please provide processing priority"},
-		ContextSummary: "worker needs priority before dispatch",
-		TimeoutMs:      5000,
-	}
-	emit(types.EventTypeActionTimeline, map[string]any{
-		"phase":    string(types.ActionPhaseHITL),
-		"status":   string(types.ActionStatusPending),
-		"reason":   "hitl.await_user",
-		"sequence": int64(1),
-	})
-	clarifyReq <- request
-	reply := <-clarifyResp
-	emit(types.EventTypeActionTimeline, map[string]any{
-		"phase":    string(types.ActionPhaseHITL),
-		"status":   string(types.ActionStatusSucceeded),
-		"reason":   "hitl.resumed",
-		"sequence": int64(2),
-	})
-	emit("hitl.clarification.resumed", map[string]any{
-		"request_id": reply.RequestID,
-		"answers":    reply.Answers,
-	})
-
-	emit("agent.coordinator.dispatch", map[string]any{"count": 3})
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= 4; i++ {
+		wg.Add(1)
 		coordinatorToWorker <- task{
 			ID:   fmt.Sprintf("t-%d", i),
 			Text: fmt.Sprintf("payload-%d", i),
@@ -123,15 +107,31 @@ func main() {
 	}
 	close(coordinatorToWorker)
 
-	results := make([]string, 0, 3)
+	results := make([]string, 0, 4)
 	for r := range workerToCoordinator {
 		results = append(results, r)
-		emit("agent.coordinator.collect", map[string]any{"result": r})
 	}
-	<-done
-	close(clarifyReq)
-	<-clarifierDone
-
-	emit("agent.coordinator.completed", map[string]any{"results": len(results)})
+	wg.Wait()
+	if _, err := comp.Run(ctx, types.RunRequest{
+		RunID: runID,
+		Input: "summarize local child-run results",
+	}, nil); err != nil {
+		panic(err)
+	}
+	runs := mgr.RecentRuns(1)
+	if len(runs) > 0 {
+		fmt.Printf("composer summary backend=%s child_total=%d child_failed=%d budget_reject=%d\n",
+			runs[0].SchedulerBackend,
+			runs[0].SubagentChildTotal,
+			runs[0].SubagentChildFailed,
+			runs[0].SubagentBudgetRejectTotal,
+		)
+	}
 	fmt.Printf("channel results=%v\n", results)
+}
+
+type eventHandlerFunc func(ctx context.Context, ev types.Event)
+
+func (f eventHandlerFunc) OnEvent(ctx context.Context, ev types.Event) {
+	f(ctx, ev)
 }

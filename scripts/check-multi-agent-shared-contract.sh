@@ -14,3 +14,6 @@ go test ./tool/contributioncheck -run '^TestValidateMultiAgentSharedContractDete
 
 echo "[multi-agent-shared-contract-gate] scheduler/subagent closure suite"
 go test ./integration -run '^TestSchedulerRecovery' -count=1
+
+echo "[multi-agent-shared-contract-gate] composer closure suite"
+go test ./integration -run '^TestComposerContract' -count=1

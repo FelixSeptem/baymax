@@ -2083,6 +2083,15 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Scheduler.QueueLimit <= 0 || cfg.Scheduler.RetryMaxAttempts <= 0 {
 		t.Fatalf("scheduler queue/retry defaults invalid: %#v", cfg.Scheduler)
 	}
+	if cfg.Recovery.Enabled {
+		t.Fatal("recovery.enabled = true, want false")
+	}
+	if cfg.Recovery.Backend != RecoveryBackendMemory {
+		t.Fatalf("recovery.backend = %q, want memory", cfg.Recovery.Backend)
+	}
+	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
+		t.Fatalf("recovery.conflict_policy = %q, want fail_fast", cfg.Recovery.ConflictPolicy)
+	}
 	if cfg.Subagent.MaxDepth <= 0 || cfg.Subagent.MaxActiveChildren <= 0 || cfg.Subagent.ChildTimeoutBudget <= 0 {
 		t.Fatalf("subagent defaults invalid: %#v", cfg.Subagent)
 	}
@@ -2096,6 +2105,10 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL", "800ms")
 	t.Setenv("BAYMAX_SCHEDULER_QUEUE_LIMIT", "2048")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_RECOVERY_ENABLED", "true")
+	t.Setenv("BAYMAX_RECOVERY_BACKEND", RecoveryBackendFile)
+	t.Setenv("BAYMAX_RECOVERY_PATH", "/tmp/recovery-override")
+	t.Setenv("BAYMAX_RECOVERY_CONFLICT_POLICY", RecoveryConflictPolicyFailFast)
 	t.Setenv("BAYMAX_SUBAGENT_MAX_DEPTH", "7")
 	t.Setenv("BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN", "11")
 	t.Setenv("BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET", "9s")
@@ -2110,6 +2123,11 @@ scheduler:
   heartbeat_interval: 400ms
   queue_limit: 128
   retry_max_attempts: 2
+recovery:
+  enabled: false
+  backend: memory
+  path: /tmp/recovery-file
+  conflict_policy: fail_fast
 subagent:
   max_depth: 4
   max_active_children: 8
@@ -2133,6 +2151,12 @@ subagent:
 	}
 	if cfg.Scheduler.QueueLimit != 2048 || cfg.Scheduler.RetryMaxAttempts != 5 {
 		t.Fatalf("scheduler queue/retry override mismatch: %#v", cfg.Scheduler)
+	}
+	if !cfg.Recovery.Enabled || cfg.Recovery.Backend != RecoveryBackendFile || cfg.Recovery.Path != "/tmp/recovery-override" {
+		t.Fatalf("recovery override mismatch: %#v", cfg.Recovery)
+	}
+	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
+		t.Fatalf("recovery conflict_policy override mismatch: %#v", cfg.Recovery)
 	}
 	if cfg.Subagent.MaxDepth != 7 || cfg.Subagent.MaxActiveChildren != 11 || cfg.Subagent.ChildTimeoutBudget != 9*time.Second {
 		t.Fatalf("subagent override mismatch: %#v", cfg.Subagent)
@@ -2163,6 +2187,25 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Scheduler.QueueLimit = 0
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for scheduler.queue_limit")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.Backend = "db"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.backend")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.Backend = RecoveryBackendFile
+	cfg.Recovery.Path = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.ConflictPolicy = "merge"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.conflict_policy")
 	}
 
 	cfg = DefaultConfig()

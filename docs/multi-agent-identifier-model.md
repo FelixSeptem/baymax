@@ -89,6 +89,7 @@
   - `a2a.submit`, `a2a.status_poll`, `a2a.sse_subscribe`, `a2a.sse_reconnect`, `a2a.delivery_fallback`, `a2a.version_mismatch`, `a2a.callback_retry`, `a2a.resolve`
   - `scheduler.enqueue`, `scheduler.claim`, `scheduler.heartbeat`, `scheduler.lease_expired`, `scheduler.requeue`
   - `subagent.spawn`, `subagent.join`, `subagent.budget_reject`
+  - `recovery.restore`, `recovery.replay`, `recovery.conflict`
 
 ## Reason 命名空间规范
 
@@ -98,6 +99,7 @@
 - `a2a.*`
 - `scheduler.*`
 - `subagent.*`
+- `recovery.*`
 
 约束：
 - 禁止无前缀 reason（例如 `dispatch`、`retry`）。
@@ -111,6 +113,7 @@
   - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`, `workflow_remote_step_total`, `workflow_remote_step_failed`
   - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`
   - Scheduler/Subagent：`scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`
+  - Recovery：`recovery_enabled`, `recovery_recovered`, `recovery_replay_total`, `recovery_conflict`, `recovery_conflict_code`, `recovery_fallback_used`, `recovery_fallback_reason`
   - Composer：`composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 

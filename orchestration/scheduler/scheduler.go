@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -161,6 +162,36 @@ func (s *Scheduler) Get(ctx context.Context, taskID string) (TaskRecord, bool, e
 
 func (s *Scheduler) Stats(ctx context.Context) (Stats, error) {
 	return s.store.Stats(ctx)
+}
+
+func (s *Scheduler) Snapshot(ctx context.Context) (StoreSnapshot, error) {
+	type snapshotter interface {
+		Snapshot(context.Context) (StoreSnapshot, error)
+	}
+	store, ok := s.store.(snapshotter)
+	if !ok {
+		return StoreSnapshot{}, errors.New("scheduler store does not support snapshot")
+	}
+	return store.Snapshot(ctx)
+}
+
+func (s *Scheduler) Restore(ctx context.Context, snapshot StoreSnapshot) error {
+	type restorer interface {
+		Restore(context.Context, StoreSnapshot) error
+	}
+	store, ok := s.store.(restorer)
+	if !ok {
+		return errors.New("scheduler store does not support restore")
+	}
+	return store.Restore(ctx, snapshot)
+}
+
+func (s *Scheduler) SnapshotEquivalent(ctx context.Context, snapshot StoreSnapshot) (bool, error) {
+	current, err := s.Snapshot(ctx)
+	if err != nil {
+		return false, err
+	}
+	return reflect.DeepEqual(current, snapshot), nil
 }
 
 func (s *Scheduler) emitTimeline(

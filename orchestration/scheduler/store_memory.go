@@ -68,3 +68,15 @@ func (s *MemoryStore) Stats(_ context.Context) (Stats, error) {
 	defer s.mu.Unlock()
 	return s.state.Stats, nil
 }
+
+func (s *MemoryStore) Snapshot(_ context.Context) (StoreSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.snapshot(), nil
+}
+
+func (s *MemoryStore) Restore(_ context.Context, snapshot StoreSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.restore(snapshot)
+}

@@ -44,6 +44,9 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Composer Run/Stream Equivalence A8",
 		"Composer Scheduler Fallback A8",
 		"Composer Child Replay Idempotency A8",
+		"Composer Recovery Cross-Session A9",
+		"Composer Recovery Replay Idempotency A9",
+		"Composer Recovery Conflict Fail-Fast A9",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

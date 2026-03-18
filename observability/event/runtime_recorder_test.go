@@ -221,6 +221,13 @@ mcp:
 			"subagent_child_total":                     2,
 			"subagent_child_failed":                    1,
 			"subagent_budget_reject_total":             1,
+			"recovery_enabled":                         true,
+			"recovery_recovered":                       true,
+			"recovery_replay_total":                    2,
+			"recovery_conflict":                        false,
+			"recovery_conflict_code":                   "",
+			"recovery_fallback_used":                   true,
+			"recovery_fallback_reason":                 "recovery.backend.file_init_failed",
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -365,6 +372,12 @@ mcp:
 	}
 	if items[0].SubagentChildTotal != 2 || items[0].SubagentChildFailed != 1 || items[0].SubagentBudgetRejectTotal != 1 {
 		t.Fatalf("subagent fields mismatch: %#v", items[0])
+	}
+	if !items[0].RecoveryEnabled || !items[0].RecoveryRecovered || items[0].RecoveryReplayTotal != 2 {
+		t.Fatalf("recovery summary fields mismatch: %#v", items[0])
+	}
+	if !items[0].RecoveryFallbackUsed || items[0].RecoveryFallbackReason != "recovery.backend.file_init_failed" {
+		t.Fatalf("recovery fallback fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])

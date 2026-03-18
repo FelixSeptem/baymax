@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,118 @@ func TestMemoryAndFileStoreParity(t *testing.T) {
 		t.Run(item.name, func(t *testing.T) {
 			runStoreParitySuite(t, item.build(t))
 		})
+	}
+}
+
+func TestStoreSnapshotRestoreRoundTrip(t *testing.T) {
+	type factory struct {
+		name  string
+		build func(t *testing.T) QueueStore
+	}
+	factories := []factory{
+		{
+			name: "memory",
+			build: func(t *testing.T) QueueStore {
+				t.Helper()
+				return NewMemoryStore()
+			},
+		},
+		{
+			name: "file",
+			build: func(t *testing.T) QueueStore {
+				t.Helper()
+				store, err := NewFileStore(filepath.Join(t.TempDir(), "scheduler-state.json"))
+				if err != nil {
+					t.Fatalf("new file store: %v", err)
+				}
+				return store
+			},
+		},
+	}
+	for _, item := range factories {
+		item := item
+		t.Run(item.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := item.build(t)
+			snapStore, ok := store.(interface {
+				Snapshot(context.Context) (StoreSnapshot, error)
+				Restore(context.Context, StoreSnapshot) error
+			})
+			if !ok {
+				t.Fatalf("store %T does not implement snapshot/restore", store)
+			}
+
+			now := time.Now()
+			if _, err := store.Enqueue(ctx, Task{TaskID: "task-snap-1", RunID: "run-snap"}, now); err != nil {
+				t.Fatalf("enqueue #1: %v", err)
+			}
+			if _, err := store.Enqueue(ctx, Task{TaskID: "task-snap-2", RunID: "run-snap"}, now); err != nil {
+				t.Fatalf("enqueue #2: %v", err)
+			}
+			claimed, ok, err := store.Claim(ctx, "worker-snap", now.Add(10*time.Millisecond), 1*time.Second)
+			if err != nil || !ok {
+				t.Fatalf("claim failed: ok=%v err=%v", ok, err)
+			}
+			if _, err := store.CommitTerminal(ctx, TerminalCommit{
+				TaskID:      claimed.Record.Task.TaskID,
+				AttemptID:   claimed.Attempt.AttemptID,
+				Status:      TaskStateSucceeded,
+				Result:      map[string]any{"ok": true},
+				CommittedAt: now.Add(100 * time.Millisecond),
+			}); err != nil {
+				t.Fatalf("commit failed: %v", err)
+			}
+
+			snapshot, err := snapStore.Snapshot(ctx)
+			if err != nil {
+				t.Fatalf("snapshot failed: %v", err)
+			}
+			restored := item.build(t)
+			restorer, ok := restored.(interface {
+				Snapshot(context.Context) (StoreSnapshot, error)
+				Restore(context.Context, StoreSnapshot) error
+			})
+			if !ok {
+				t.Fatalf("restored store %T does not implement snapshot/restore", restored)
+			}
+			if err := restorer.Restore(ctx, snapshot); err != nil {
+				t.Fatalf("restore failed: %v", err)
+			}
+			snapAfter, err := restorer.Snapshot(ctx)
+			if err != nil {
+				t.Fatalf("snapshot after restore failed: %v", err)
+			}
+			if len(snapAfter.Tasks) != len(snapshot.Tasks) || len(snapAfter.Queue) != len(snapshot.Queue) {
+				t.Fatalf("snapshot roundtrip mismatch: before=%#v after=%#v", snapshot, snapAfter)
+			}
+		})
+	}
+}
+
+func TestFileStoreCorruptSnapshotFailsFast(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corrupt-state.json")
+	content := `{
+  "tasks": {
+    "task-corrupt": {
+      "task": {"task_id":"task-corrupt"},
+      "state":"running",
+      "current_attempt_id":"missing",
+      "attempts":[]
+    }
+  },
+  "queue": [],
+  "terminal_commits": {},
+  "stats": {"backend":"file"}
+}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write corrupt snapshot: %v", err)
+	}
+	_, err := NewFileStore(path)
+	if err == nil {
+		t.Fatal("expected file store load to fail for corrupt snapshot")
+	}
+	if !errors.Is(err, ErrSnapshotCorrupt) {
+		t.Fatalf("expected ErrSnapshotCorrupt, got %v", err)
 	}
 }
 

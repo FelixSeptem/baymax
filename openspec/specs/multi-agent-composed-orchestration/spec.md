@@ -38,3 +38,17 @@ Composer-managed composed flows MUST continue using existing namespaced timeline
 - **WHEN** composed orchestration emits timeline events under composer management
 - **THEN** each multi-agent reason remains in the existing canonical namespace set and remains correlation-compatible with shared contract checks
 
+### Requirement: Composed orchestration SHALL expose resume and recover entrypoints
+Composed orchestration MUST provide explicit resume/recover entrypoints so hosts can restore interrupted multi-agent executions through library interfaces.
+
+#### Scenario: Host invokes composed recover API
+- **WHEN** host calls the composed recovery entrypoint with a persisted run context
+- **THEN** workflow, teams, scheduler, and A2A paths are resumed under one composed recovery contract
+
+### Requirement: Recovery SHALL be default-disabled unless explicitly enabled
+Composed recovery behavior MUST remain disabled by default and MUST require explicit runtime configuration enablement.
+
+#### Scenario: Recovery flag is not enabled
+- **WHEN** runtime starts with default configuration
+- **THEN** composed runtime does not activate recovery flow and preserves existing non-recovery behavior
+

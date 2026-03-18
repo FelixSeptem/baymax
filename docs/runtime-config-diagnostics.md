@@ -33,6 +33,10 @@
   - `subagent.max_depth` -> `BAYMAX_SUBAGENT_MAX_DEPTH`
   - `subagent.max_active_children` -> `BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN`
   - `subagent.child_timeout_budget` -> `BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET`
+  - `recovery.enabled` -> `BAYMAX_RECOVERY_ENABLED`
+  - `recovery.backend` -> `BAYMAX_RECOVERY_BACKEND`
+  - `recovery.path` -> `BAYMAX_RECOVERY_PATH`
+  - `recovery.conflict_policy` -> `BAYMAX_RECOVERY_CONFLICT_POLICY`
 
 ## YAML Schema（核心字段）
 
@@ -141,6 +145,12 @@ scheduler:
   heartbeat_interval: 500ms       # 必须 > 0 且 < lease_timeout
   queue_limit: 1024               # 必须 > 0
   retry_max_attempts: 3           # 必须 > 0
+
+recovery:
+  enabled: false
+  backend: memory                 # memory|file
+  path: /tmp/baymax/recovery      # backend=file 时必填
+  conflict_policy: fail_fast      # 当前仅支持 fail_fast
 
 subagent:
   max_depth: 4                    # 必须 > 0
@@ -819,6 +829,9 @@ Action Timeline reason code（Scheduler/Subagent 基线）：
 - `subagent.spawn`：父 run 创建子任务（通过 guardrail 校验）。
 - `subagent.join`：子任务进入终态并回收聚合。
 - `subagent.budget_reject`：子任务创建被预算/阈值策略拒绝。
+- `recovery.restore`：composer 加载恢复快照并恢复 workflow/scheduler 状态。
+- `recovery.replay`：恢复后重放 in-flight/terminal 收敛路径。
+- `recovery.conflict`：恢复阶段检测到冲突并按策略终止（`fail_fast`）。
 
 Scheduler/Subagent Timeline 关联字段（按可用性增量携带）：
 - `run_id`
@@ -913,6 +926,16 @@ Action Gate 规则优先级（H4）：
 - `scheduler_backend_fallback`：scheduler 初始化是否发生了 fallback（例如 `file -> memory`）。
 - `scheduler_backend_fallback_reason`：scheduler fallback 原因码（例如 `scheduler.backend.file_init_failed`）。
 
+### Run 诊断新增字段（Recovery A9）
+
+- `recovery_enabled`：本次 run 是否启用 recovery（配置快照口径）。
+- `recovery_recovered`：本次 run 是否发生跨会话恢复。
+- `recovery_replay_total`：恢复阶段执行的重放条目总数。
+- `recovery_conflict`：恢复阶段是否检测到冲突。
+- `recovery_conflict_code`：冲突归一化原因码（例如 `recovery.conflict.task_terminal_mismatch`）。
+- `recovery_fallback_used`：恢复路径是否触发降级（例如不可恢复时回退 fresh run）。
+- `recovery_fallback_reason`：恢复降级原因码（例如 `recovery.snapshot.not_found`）。
+
 热更新生效边界（A8）：
 - composer 消费 `teams.*` / `workflow.*` / `a2a.*` / `scheduler.*` / `subagent.*` 快照。
 - scheduler/subagent 变更采用 `next_attempt_only`：仅影响新 `enqueue/spawn/claim` 边界；in-flight attempt 不回溯修改已创建 lease 语义。
@@ -927,9 +950,10 @@ Action Gate 规则优先级（H4）：
 | Workflow Remote（`workflow_remote_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
+| Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
 
 legacy consumers 行为示例：
-- 仅解析 A4 及更早字段的消费者，可以忽略 `team_remote_*` / `workflow_remote_*` / `scheduler_*` / `subagent_*` / `composer_managed` / `scheduler_backend_fallback*`，不会影响既有逻辑。
+- 仅解析 A4 及更早字段的消费者，可以忽略 `team_remote_*` / `workflow_remote_*` / `scheduler_*` / `subagent_*` / `composer_managed` / `scheduler_backend_fallback*` / `recovery_*`，不会影响既有逻辑。
 - 解析器应将缺省字段视为 nullable fallback：缺失时回退为 `0`（计数）或空字符串（枚举/标识），而不是报错终止。
 - 新增字段禁止改变既有字段含义；仅允许增量扩展，不允许“同名改语义”。
 

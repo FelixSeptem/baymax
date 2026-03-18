@@ -2,12 +2,13 @@
 
 一个 `library-first` 的 Go Agent Loop 运行时，支持模型循环、工具调度、MCP 双传输、技能加载与可观测性。
 
-## 当前状态（2026-03-17）
+## 当前状态（2026-03-18）
 
 - OpenSpec 活跃变更请以 `openspec list --json` 实时结果为准。
 - 最近归档：`043-harden-security-s4-callback-delivery-reliability`。
 - 核心能力已覆盖：多 Provider、CA1-CA4、Action Timeline H1/H1.5/H16、HITL H2/H3/H4、安全基线 S1-S4。
 - 归档清单见：`openspec/changes/archive/INDEX.md`。
+- 下一步 lib-first 多 Agent 收敛清单见：`docs/development-roadmap.md` 的 `Lib-First Multi-Agent 差距收敛清单（2026-03-18）`。
 
 ## Open Source P0
 
@@ -41,6 +42,7 @@ runtime/diagnostics    runtime/config
 
 - `core/runner` 统一 Run/Stream 主状态机，负责模型步进、工具调度和终止语义。
 - `orchestration/composer` 提供 library-first 组合入口，统一装配 `runner + workflow + teams + a2a + scheduler`。
+- composer 恢复域默认关闭（`recovery.enabled=false`）；启用后按 `load -> validate -> reconcile -> resume` 状态机执行，冲突策略当前固定 `fail_fast`。
 - `orchestration/teams` 与 `orchestration/workflow` 提供多代理协作与工作流编排基线能力，复用 runner/tool/mcp/model 既有接口。
 - `a2a` 聚焦跨 Agent 互联最小面（`submit/status/result` + capability/delivery/version 协商），保持与 MCP 传输层解耦。
 - `runtime/config` 与 `runtime/diagnostics` 是全局运行时横切能力，严格遵循 `env > file > default` 与 fail-fast/回滚策略。
@@ -295,6 +297,16 @@ if err != nil {
 _ = res
 ```
 
+Recovery（A9）最小配置示例（默认关闭，按需启用）：
+```yaml
+recovery:
+  enabled: true
+  backend: file               # memory|file
+  path: /tmp/baymax/recovery  # backend=file 时必填
+  conflict_policy: fail_fast  # 当前仅支持 fail_fast
+```
+启用后，run 摘要会增量输出 `recovery_enabled`、`recovery_recovered`、`recovery_replay_total`、`recovery_conflict`、`recovery_conflict_code`、`recovery_fallback_used`、`recovery_fallback_reason`。
+
 Action Gate（H2）最小配置示例：
 ```yaml
 action_gate:
@@ -547,6 +559,10 @@ Workflow baseline 说明：
 - `orchestration/workflow` 提供 workflow DSL 基线执行器（`step/depends_on/condition/retry/timeout`），可与现有 runner/tool/mcp/skill 适配器组合接入。
 - 支持 A2A remote step（`kind=a2a`），沿用 workflow 既有 `retry/timeout/checkpoint` 语义，调度 reason 为 `workflow.dispatch_a2a`。
 - run 摘要新增 remote 聚合字段：`workflow_remote_step_total`、`workflow_remote_step_failed`（additive，不影响既有消费者）。
+
+Composer Recovery baseline 说明：
+- `orchestration/composer` 提供跨会话恢复编排（默认关闭），恢复 timeline reason 为 `recovery.restore` / `recovery.replay` / `recovery.conflict`。
+- 冲突策略当前固定 `fail_fast`；冲突时终止恢复路径并输出标准错误分类，避免静默覆盖已提交终态。
 
 运行示例：
 ```bash

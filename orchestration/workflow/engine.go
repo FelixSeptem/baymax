@@ -367,6 +367,20 @@ func New(opts ...Option) *Engine {
 	return e
 }
 
+func (e *Engine) LoadCheckpoint(ctx context.Context, workflowID string) (Checkpoint, bool, error) {
+	if e == nil || e.checkpoints == nil {
+		return Checkpoint{}, false, nil
+	}
+	return e.checkpoints.Load(ctx, strings.TrimSpace(workflowID))
+}
+
+func (e *Engine) RestoreCheckpoint(ctx context.Context, cp Checkpoint) error {
+	if e == nil || e.checkpoints == nil {
+		return nil
+	}
+	return e.checkpoints.Save(ctx, cp)
+}
+
 func ParseDefinition(raw []byte) (Definition, error) {
 	var def Definition
 	if err := json.Unmarshal(raw, &def); err == nil {

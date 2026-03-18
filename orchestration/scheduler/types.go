@@ -239,7 +239,16 @@ var (
 	ErrTaskNotClaimable   = errors.New("scheduler task is not claimable")
 	ErrTaskNotRunning     = errors.New("scheduler task is not running")
 	ErrStaleAttempt       = errors.New("scheduler stale attempt commit")
+	ErrSnapshotCorrupt    = errors.New("scheduler snapshot is corrupt")
 )
+
+type StoreSnapshot struct {
+	Backend         string           `json:"backend"`
+	Tasks           []TaskRecord     `json:"tasks,omitempty"`
+	Queue           []string         `json:"queue,omitempty"`
+	TerminalCommits []TerminalCommit `json:"terminal_commits,omitempty"`
+	Stats           Stats            `json:"stats"`
+}
 
 type Guardrails struct {
 	MaxDepth           int           `json:"max_depth"`

@@ -32,6 +32,7 @@
 - Scheduler/Subagent timeline reasons and metadata are normalized with `scheduler.*|subagent.*` namespace and `task_id/attempt_id` correlation fields.
 - Runtime config exposes scheduler/subagent controls under dedicated domains (`scheduler.*`, `subagent.*`) with deterministic precedence `env > file > default`.
 - Run diagnostics include Scheduler/Subagent additive summary fields: `scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`.
+- Composer recovery baseline is available with optional persisted recovery domain (`recovery.*`, default-off) and additive run summary marker `recovery_enabled`.
 - Library-first composer entrypoint is available as independent module (`orchestration/composer`) and can execute Run/Stream without host-side manual wiring of runner/workflow/teams/a2a/scheduler internals.
 - Composer-managed runs expose additive summary fields `composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason` with compatibility-window semantics.
 - Scheduler/Subagent hot-reload in composer path applies on `next_attempt_only` boundaries and does not retroactively mutate in-flight attempt lease semantics.
@@ -74,7 +75,7 @@
 ## Known Limitations (V1 Non-goals)
 
 - Distributed scheduler is baseline-only (single queue domain); no multi-tenant control-plane or global load-balancing.
-- No persisted checkpoint/replay for crash recovery between sessions.
+- Cross-session checkpoint/replay recovery is default-off (`recovery.enabled=false`) and requires explicit enablement; conflict policy is currently fixed to `fail_fast`.
 - No built-in multi-tenant control-plane, RBAC, or audit pipeline.
 - Skill semantic embedding scorer requires host-side registration; if missing or failing, runtime falls back to lexical scoring under best-effort policy.
 - MCP HTTP/stdio reliability profile is available, but tuning thresholds may still require environment-specific adjustment.

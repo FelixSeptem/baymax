@@ -17,3 +17,6 @@ go test ./integration -run '^TestSchedulerRecovery' -count=1
 
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
+
+echo "[multi-agent-shared-contract-gate] composer recovery suite"
+go test ./integration -run '^TestComposerRecovery' -count=1

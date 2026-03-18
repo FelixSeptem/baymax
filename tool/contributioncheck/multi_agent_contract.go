@@ -83,6 +83,9 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"subagent.spawn":          snapshot.SchedulerTimelineSpec,
 		"subagent.join":           snapshot.SchedulerTimelineSpec,
 		"subagent.budget_reject":  snapshot.SchedulerTimelineSpec,
+		"recovery.restore":        snapshot.SchedulerTimelineSpec,
+		"recovery.replay":         snapshot.SchedulerTimelineSpec,
+		"recovery.conflict":       snapshot.SchedulerTimelineSpec,
 	}
 	for reason, source := range requiredReasons {
 		if !strings.Contains(source, reason) {
@@ -93,6 +96,7 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		}
 	}
 	requiredSchedulerTimelineFields := []string{
+		"`run_id`",
 		"`task_id`",
 		"`attempt_id`",
 	}
@@ -176,6 +180,13 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`subagent_child_total`",
 		"`subagent_child_failed`",
 		"`subagent_budget_reject_total`",
+		"`recovery_enabled`",
+		"`recovery_recovered`",
+		"`recovery_replay_total`",
+		"`recovery_conflict`",
+		"`recovery_conflict_code`",
+		"`recovery_fallback_used`",
+		"`recovery_fallback_reason`",
 	}
 	for _, field := range requiredComposedSummaryFields {
 		if !strings.Contains(snapshot.IdentifierDoc, field) {
@@ -198,6 +209,9 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`subagent.spawn`",
 		"`subagent.join`",
 		"`subagent.budget_reject`",
+		"`recovery.restore`",
+		"`recovery.replay`",
+		"`recovery.conflict`",
 	}
 	for _, reason := range requiredComposedReasonsInDoc {
 		if !strings.Contains(snapshot.RuntimeConfigDoc, reason) {
@@ -223,11 +237,25 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`subagent_child_total`",
 		"`subagent_child_failed`",
 		"`subagent_budget_reject_total`",
+		"`recovery_enabled`",
+		"`recovery_recovered`",
+		"`recovery_replay_total`",
+		"`recovery_conflict`",
+		"`recovery_conflict_code`",
+		"`recovery_fallback_used`",
+		"`recovery_fallback_reason`",
 	}
 	requiredComposerRuntimeFields := []string{
 		"`composer_managed`",
 		"`scheduler_backend_fallback`",
 		"`scheduler_backend_fallback_reason`",
+		"`recovery_enabled`",
+		"`recovery_recovered`",
+		"`recovery_replay_total`",
+		"`recovery_conflict`",
+		"`recovery_conflict_code`",
+		"`recovery_fallback_used`",
+		"`recovery_fallback_reason`",
 	}
 	for _, field := range requiredComposerRuntimeFields {
 		if !strings.Contains(snapshot.SchedulerRuntimeConfigSpec, field) {
@@ -294,6 +322,8 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		"`subagent.*`",
 		"`scheduler_queue_total`",
 		"`subagent_child_total`",
+		"`recovery.*`",
+		"`recovery_enabled`",
 	}
 	for _, marker := range requiredComposedAcceptanceMarkers {
 		if !strings.Contains(snapshot.V1AcceptanceDoc, marker) {

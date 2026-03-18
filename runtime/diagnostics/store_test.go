@@ -210,6 +210,34 @@ func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                   time.Now(),
+		RunID:                  "run-recovery-1",
+		Status:                 "success",
+		RecoveryEnabled:        true,
+		RecoveryRecovered:      true,
+		RecoveryReplayTotal:    2,
+		RecoveryConflict:       false,
+		RecoveryFallbackUsed:   true,
+		RecoveryFallbackReason: "recovery.backend.file_init_failed",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if !runs[0].RecoveryEnabled || !runs[0].RecoveryRecovered || runs[0].RecoveryReplayTotal != 2 {
+		t.Fatalf("recovery aggregate mismatch under replay, got %#v", runs[0])
+	}
+	if !runs[0].RecoveryFallbackUsed || runs[0].RecoveryFallbackReason != "recovery.backend.file_init_failed" {
+		t.Fatalf("recovery fallback mismatch under replay, got %#v", runs[0])
+	}
+}
+
 func TestStoreSkillDedupConcurrent(t *testing.T) {
 	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{

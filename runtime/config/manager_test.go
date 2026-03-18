@@ -1242,6 +1242,48 @@ reload:
 	}
 }
 
+func TestManagerRecoveryInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  conflict_policy: fail_fast
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Recovery.ConflictPolicy
+	if before != RecoveryConflictPolicyFailFast {
+		t.Fatalf("before recovery.conflict_policy = %q, want fail_fast", before)
+	}
+
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  conflict_policy: best_effort
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Recovery.ConflictPolicy
+	if after != before {
+		t.Fatalf("invalid recovery reload should rollback, conflict_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerSubagentInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

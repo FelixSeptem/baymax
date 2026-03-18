@@ -127,6 +127,21 @@ func (s *FileStore) Stats(_ context.Context) (Stats, error) {
 	return s.state.Stats, nil
 }
 
+func (s *FileStore) Snapshot(_ context.Context) (StoreSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.snapshot(), nil
+}
+
+func (s *FileStore) Restore(_ context.Context, snapshot StoreSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.state.restore(snapshot); err != nil {
+		return err
+	}
+	return s.persist()
+}
+
 func (s *FileStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -150,8 +165,12 @@ func (s *FileStore) load() error {
 	if decoded.TerminalCommits == nil {
 		decoded.TerminalCommits = map[string]TerminalCommit{}
 	}
-	decoded.Stats.Backend = "file"
-	s.state = decoded
+	snapshot := decoded.snapshot()
+	snapshot.Backend = "file"
+	snapshot.Stats.Backend = "file"
+	if err := s.state.restore(snapshot); err != nil {
+		return fmt.Errorf("decode scheduler file backend: %w", err)
+	}
 	return nil
 }
 

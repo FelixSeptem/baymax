@@ -299,3 +299,181 @@ func cloneTaskRecord(in TaskRecord) TaskRecord {
 func terminalCommitKey(taskID, attemptID string) string {
 	return strings.TrimSpace(taskID) + "|" + strings.TrimSpace(attemptID)
 }
+
+func (s *schedulerState) snapshot() StoreSnapshot {
+	if s == nil {
+		return StoreSnapshot{}
+	}
+	taskIDs := make([]string, 0, len(s.Tasks))
+	for taskID := range s.Tasks {
+		taskIDs = append(taskIDs, taskID)
+	}
+	sort.Strings(taskIDs)
+	tasks := make([]TaskRecord, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		record := s.Tasks[taskID]
+		if record == nil {
+			continue
+		}
+		tasks = append(tasks, cloneTaskRecord(*record))
+	}
+
+	commitKeys := make([]string, 0, len(s.TerminalCommits))
+	for key := range s.TerminalCommits {
+		commitKeys = append(commitKeys, key)
+	}
+	sort.Strings(commitKeys)
+	commits := make([]TerminalCommit, 0, len(commitKeys))
+	for _, key := range commitKeys {
+		commit := s.TerminalCommits[key]
+		normalized := commit
+		normalized.TaskID = strings.TrimSpace(normalized.TaskID)
+		normalized.AttemptID = strings.TrimSpace(normalized.AttemptID)
+		normalized.ErrorMessage = strings.TrimSpace(normalized.ErrorMessage)
+		normalized.ErrorLayer = strings.TrimSpace(normalized.ErrorLayer)
+		normalized.OutcomeKey = strings.TrimSpace(normalized.OutcomeKey)
+		normalized.Result = copyMap(normalized.Result)
+		commits = append(commits, normalized)
+	}
+
+	return StoreSnapshot{
+		Backend:         strings.TrimSpace(s.Stats.Backend),
+		Tasks:           tasks,
+		Queue:           append([]string(nil), s.Queue...),
+		TerminalCommits: commits,
+		Stats:           s.Stats,
+	}
+}
+
+func (s *schedulerState) restore(snapshot StoreSnapshot) error {
+	if s == nil {
+		return fmt.Errorf("%w: scheduler state is nil", ErrSnapshotCorrupt)
+	}
+	tasks := make(map[string]*TaskRecord, len(snapshot.Tasks))
+	for i := range snapshot.Tasks {
+		record := cloneTaskRecord(snapshot.Tasks[i])
+		taskID := strings.TrimSpace(record.Task.TaskID)
+		if taskID == "" {
+			return fmt.Errorf("%w: tasks[%d].task.task_id is required", ErrSnapshotCorrupt, i)
+		}
+		if _, exists := tasks[taskID]; exists {
+			return fmt.Errorf("%w: duplicate task_id %q", ErrSnapshotCorrupt, taskID)
+		}
+		record.Task.TaskID = taskID
+		record.Task.RunID = strings.TrimSpace(record.Task.RunID)
+		record.Task.WorkflowID = strings.TrimSpace(record.Task.WorkflowID)
+		record.Task.TeamID = strings.TrimSpace(record.Task.TeamID)
+		record.Task.StepID = strings.TrimSpace(record.Task.StepID)
+		record.Task.AgentID = strings.TrimSpace(record.Task.AgentID)
+		record.Task.PeerID = strings.TrimSpace(record.Task.PeerID)
+		record.Task.ParentRunID = strings.TrimSpace(record.Task.ParentRunID)
+
+		currentAttemptID := strings.TrimSpace(record.CurrentAttempt)
+		record.CurrentAttempt = currentAttemptID
+		attemptSeen := map[string]struct{}{}
+		currentExists := false
+		for idx := range record.Attempts {
+			attemptID := strings.TrimSpace(record.Attempts[idx].AttemptID)
+			if attemptID == "" {
+				return fmt.Errorf("%w: tasks[%d].attempts[%d].attempt_id is required", ErrSnapshotCorrupt, i, idx)
+			}
+			if _, exists := attemptSeen[attemptID]; exists {
+				return fmt.Errorf("%w: duplicate attempt_id %q for task %q", ErrSnapshotCorrupt, attemptID, taskID)
+			}
+			attemptSeen[attemptID] = struct{}{}
+			record.Attempts[idx].AttemptID = attemptID
+			record.Attempts[idx].WorkerID = strings.TrimSpace(record.Attempts[idx].WorkerID)
+			record.Attempts[idx].LeaseToken = strings.TrimSpace(record.Attempts[idx].LeaseToken)
+			if attemptID == currentAttemptID {
+				currentExists = true
+			}
+		}
+		switch record.State {
+		case TaskStateQueued:
+			if currentAttemptID != "" {
+				return fmt.Errorf("%w: queued task %q must not have current_attempt_id", ErrSnapshotCorrupt, taskID)
+			}
+		case TaskStateRunning:
+			if currentAttemptID == "" || !currentExists {
+				return fmt.Errorf("%w: running task %q requires current_attempt_id", ErrSnapshotCorrupt, taskID)
+			}
+		case TaskStateSucceeded, TaskStateFailed:
+			if currentAttemptID != "" {
+				return fmt.Errorf("%w: terminal task %q must not have current_attempt_id", ErrSnapshotCorrupt, taskID)
+			}
+		default:
+			return fmt.Errorf("%w: unsupported task state %q for task %q", ErrSnapshotCorrupt, record.State, taskID)
+		}
+		record.ErrorMessage = strings.TrimSpace(record.ErrorMessage)
+		record.ErrorLayer = strings.TrimSpace(record.ErrorLayer)
+		record.Result = copyMap(record.Result)
+		tasks[taskID] = &record
+	}
+
+	queue := make([]string, 0, len(snapshot.Queue))
+	queueSeen := map[string]struct{}{}
+	for i := range snapshot.Queue {
+		taskID := strings.TrimSpace(snapshot.Queue[i])
+		if taskID == "" {
+			continue
+		}
+		record := tasks[taskID]
+		if record == nil {
+			return fmt.Errorf("%w: queue references unknown task %q", ErrSnapshotCorrupt, taskID)
+		}
+		if record.State != TaskStateQueued {
+			return fmt.Errorf("%w: queue task %q must be queued", ErrSnapshotCorrupt, taskID)
+		}
+		if _, exists := queueSeen[taskID]; exists {
+			return fmt.Errorf("%w: duplicate queue task_id %q", ErrSnapshotCorrupt, taskID)
+		}
+		queueSeen[taskID] = struct{}{}
+		queue = append(queue, taskID)
+	}
+
+	terminalCommits := make(map[string]TerminalCommit, len(snapshot.TerminalCommits))
+	for i := range snapshot.TerminalCommits {
+		commit := snapshot.TerminalCommits[i]
+		taskID := strings.TrimSpace(commit.TaskID)
+		attemptID := strings.TrimSpace(commit.AttemptID)
+		if taskID == "" || attemptID == "" {
+			return fmt.Errorf("%w: terminal_commits[%d] requires task_id and attempt_id", ErrSnapshotCorrupt, i)
+		}
+		switch commit.Status {
+		case TaskStateSucceeded, TaskStateFailed:
+		default:
+			return fmt.Errorf("%w: terminal_commits[%d] has unsupported status %q", ErrSnapshotCorrupt, i, commit.Status)
+		}
+		key := terminalCommitKey(taskID, attemptID)
+		if _, exists := terminalCommits[key]; exists {
+			return fmt.Errorf("%w: duplicate terminal commit %q", ErrSnapshotCorrupt, key)
+		}
+		normalized := commit
+		normalized.TaskID = taskID
+		normalized.AttemptID = attemptID
+		normalized.ErrorMessage = strings.TrimSpace(normalized.ErrorMessage)
+		normalized.ErrorLayer = strings.TrimSpace(normalized.ErrorLayer)
+		normalized.OutcomeKey = strings.TrimSpace(normalized.OutcomeKey)
+		normalized.Result = copyMap(normalized.Result)
+		terminalCommits[key] = normalized
+	}
+
+	backend := strings.TrimSpace(snapshot.Stats.Backend)
+	if backend == "" {
+		backend = strings.TrimSpace(snapshot.Backend)
+	}
+	if backend == "" {
+		backend = strings.TrimSpace(s.Stats.Backend)
+	}
+	if backend == "" {
+		backend = "memory"
+	}
+	stats := snapshot.Stats
+	stats.Backend = backend
+
+	s.Tasks = tasks
+	s.Queue = queue
+	s.TerminalCommits = terminalCommits
+	s.Stats = stats
+	return nil
+}

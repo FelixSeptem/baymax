@@ -144,6 +144,13 @@ type RunRecord struct {
 	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
 	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
 	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`
+	RecoveryEnabled                      bool                              `json:"recovery_enabled,omitempty"`
+	RecoveryRecovered                    bool                              `json:"recovery_recovered,omitempty"`
+	RecoveryReplayTotal                  int                               `json:"recovery_replay_total,omitempty"`
+	RecoveryConflict                     bool                              `json:"recovery_conflict,omitempty"`
+	RecoveryConflictCode                 string                            `json:"recovery_conflict_code,omitempty"`
+	RecoveryFallbackUsed                 bool                              `json:"recovery_fallback_used,omitempty"`
+	RecoveryFallbackReason               string                            `json:"recovery_fallback_reason,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

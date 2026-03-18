@@ -124,6 +124,13 @@ func WithSchedulerStore(store scheduler.QueueStore) Option {
 	}
 }
 
+func WithRecoveryStore(store RecoveryStore) Option {
+	return func(c *Composer) {
+		c.recoveryStore = store
+		c.managedRecoveryStore = false
+	}
+}
+
 func WithA2AClient(client scheduler.A2AClient) Option {
 	return func(c *Composer) {
 		c.a2aClient = client
@@ -171,6 +178,16 @@ func (b *Builder) WithA2AClient(client scheduler.A2AClient) *Builder {
 	return b
 }
 
+func (b *Builder) WithRecoveryStore(store RecoveryStore) *Builder {
+	b.opts = append(b.opts, WithRecoveryStore(store))
+	return b
+}
+
+func (b *Builder) WithSchedulerStore(store scheduler.QueueStore) *Builder {
+	b.opts = append(b.opts, WithSchedulerStore(store))
+	return b
+}
+
 func (b *Builder) WithChildWorkerID(workerID string) *Builder {
 	b.opts = append(b.opts, WithChildWorkerID(workerID))
 	return b
@@ -194,6 +211,7 @@ type Composer struct {
 	workflow       WorkflowEngine
 	scheduler      *scheduler.Scheduler
 	schedulerStore scheduler.QueueStore
+	recoveryStore  RecoveryStore
 	a2aClient      scheduler.A2AClient
 
 	schedulerMu                sync.RWMutex
@@ -207,6 +225,16 @@ type Composer struct {
 	schedulerRetryMaxAttempts  int
 	schedulerGuardrails        scheduler.Guardrails
 
+	managedRecoveryStore      bool
+	recoverySignature         string
+	recoveryConfiguredBackend string
+	recoveryBackend           string
+	recoveryPath              string
+	recoveryEnabled           bool
+	recoveryFallback          bool
+	recoveryFallbackReason    string
+	recoveryConflictPolicy    string
+
 	now               func() time.Time
 	childWorkerID     string
 	childPollInterval time.Duration
@@ -216,22 +244,30 @@ type Composer struct {
 }
 
 type runStat struct {
-	ChildTotal      int
-	ChildFailed     int
-	BudgetReject    int
-	Backend         string
-	BackendFallback bool
-	FallbackReason  string
-	ComposerManaged bool
+	ChildTotal             int
+	ChildFailed            int
+	BudgetReject           int
+	Backend                string
+	BackendFallback        bool
+	FallbackReason         string
+	ComposerManaged        bool
+	RecoveryEnabled        bool
+	RecoveryRecovered      bool
+	RecoveryReplayTotal    int
+	RecoveryConflict       bool
+	RecoveryConflictCode   string
+	RecoveryFallback       bool
+	RecoveryFallbackReason string
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 	c := &Composer{
-		now:               time.Now,
-		childWorkerID:     defaultChildWorkerID,
-		childPollInterval: defaultChildPollTimeout,
-		managedScheduler:  true,
-		runStat:           map[string]*runStat{},
+		now:                  time.Now,
+		childWorkerID:        defaultChildWorkerID,
+		childPollInterval:    defaultChildPollTimeout,
+		managedScheduler:     true,
+		managedRecoveryStore: true,
+		runStat:              map[string]*runStat{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -275,17 +311,22 @@ func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 		c.schedulerConfiguredBackend = "custom"
 		c.schedulerBackend = "custom"
 	}
+	if err := c.initRecovery(c.effectiveConfig()); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
 
 func (c *Composer) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	c.refreshSchedulerForNextAttempt()
+	c.refreshRecoveryForNextAttempt()
 	return c.runner.Run(ctx, req, c.bridgeHandler(h))
 }
 
 func (c *Composer) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	c.refreshSchedulerForNextAttempt()
+	c.refreshRecoveryForNextAttempt()
 	return c.runner.Stream(ctx, req, c.bridgeHandler(h))
 }
 
@@ -342,6 +383,7 @@ func (c *Composer) SpawnChild(ctx context.Context, req ChildDispatchRequest) (sc
 		}
 		return scheduler.TaskRecord{}, err
 	}
+	c.maybePersistRecoverySnapshot(ctx, strings.TrimSpace(record.Task.RunID))
 	return record, nil
 }
 
@@ -412,6 +454,7 @@ func (c *Composer) CommitChildTerminal(ctx context.Context, commit scheduler.Ter
 	if !result.Duplicate {
 		c.addChildOutcome(result.Record.Task.RunID, commit.Status == scheduler.TaskStateFailed)
 	}
+	c.maybePersistRecoverySnapshot(ctx, strings.TrimSpace(result.Record.Task.RunID))
 	return result, nil
 }
 
@@ -540,6 +583,25 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["subagent_child_total"] = stats.ChildTotal
 	payload["subagent_child_failed"] = stats.ChildFailed
 	payload["subagent_budget_reject_total"] = stats.BudgetReject
+	payload["recovery_enabled"] = stats.RecoveryEnabled
+	if stats.RecoveryRecovered {
+		payload["recovery_recovered"] = true
+	}
+	if stats.RecoveryReplayTotal > 0 {
+		payload["recovery_replay_total"] = stats.RecoveryReplayTotal
+	}
+	if stats.RecoveryConflict {
+		payload["recovery_conflict"] = true
+	}
+	if stats.RecoveryConflictCode != "" {
+		payload["recovery_conflict_code"] = stats.RecoveryConflictCode
+	}
+	if stats.RecoveryFallback {
+		payload["recovery_fallback_used"] = true
+	}
+	if stats.RecoveryFallbackReason != "" {
+		payload["recovery_fallback_reason"] = stats.RecoveryFallbackReason
+	}
 
 	if s := c.Scheduler(); s != nil {
 		summary, err := s.Stats(context.Background())
@@ -557,10 +619,13 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 
 func (c *Composer) snapshotRunStat(runID string) runStat {
 	stat := runStat{
-		ComposerManaged: true,
-		Backend:         strings.TrimSpace(c.schedulerBackend),
-		BackendFallback: c.schedulerFallback,
-		FallbackReason:  strings.TrimSpace(c.schedulerFallbackReason),
+		ComposerManaged:        true,
+		Backend:                strings.TrimSpace(c.schedulerBackend),
+		BackendFallback:        c.schedulerFallback,
+		FallbackReason:         strings.TrimSpace(c.schedulerFallbackReason),
+		RecoveryEnabled:        c.recoveryEnabled,
+		RecoveryFallback:       c.recoveryFallback,
+		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
 	}
 	if runID == "" {
 		return stat
@@ -605,10 +670,13 @@ func (c *Composer) ensureRunStat(runID string) *runStat {
 		return stat
 	}
 	stat := &runStat{
-		ComposerManaged: true,
-		Backend:         strings.TrimSpace(c.schedulerBackend),
-		BackendFallback: c.schedulerFallback,
-		FallbackReason:  strings.TrimSpace(c.schedulerFallbackReason),
+		ComposerManaged:        true,
+		Backend:                strings.TrimSpace(c.schedulerBackend),
+		BackendFallback:        c.schedulerFallback,
+		FallbackReason:         strings.TrimSpace(c.schedulerFallbackReason),
+		RecoveryEnabled:        c.recoveryEnabled,
+		RecoveryFallback:       c.recoveryFallback,
+		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
 	}
 	c.runStat[runID] = stat
 	return stat

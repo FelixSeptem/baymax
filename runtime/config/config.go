@@ -105,6 +105,12 @@ const (
 )
 
 const (
+	RecoveryBackendMemory          = "memory"
+	RecoveryBackendFile            = "file"
+	RecoveryConflictPolicyFailFast = "fail_fast"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -140,6 +146,7 @@ type Config struct {
 	Workflow         WorkflowConfig         `json:"workflow"`
 	A2A              A2AConfig              `json:"a2a"`
 	Scheduler        SchedulerConfig        `json:"scheduler"`
+	Recovery         RecoveryConfig         `json:"recovery"`
 	Subagent         SubagentConfig         `json:"subagent"`
 	Skill            SkillConfig            `json:"skill"`
 	ActionGate       ActionGateConfig       `json:"action_gate"`
@@ -291,6 +298,13 @@ type SchedulerConfig struct {
 	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
 	QueueLimit        int           `json:"queue_limit"`
 	RetryMaxAttempts  int           `json:"retry_max_attempts"`
+}
+
+type RecoveryConfig struct {
+	Enabled        bool   `json:"enabled"`
+	Backend        string `json:"backend"`
+	Path           string `json:"path"`
+	ConflictPolicy string `json:"conflict_policy"`
 }
 
 type SubagentConfig struct {
@@ -819,6 +833,12 @@ func DefaultConfig() Config {
 			HeartbeatInterval: 500 * time.Millisecond,
 			QueueLimit:        1024,
 			RetryMaxAttempts:  3,
+		},
+		Recovery: RecoveryConfig{
+			Enabled:        false,
+			Backend:        RecoveryBackendMemory,
+			Path:           filepath.Join(os.TempDir(), "baymax", "recovery"),
+			ConflictPolicy: RecoveryConflictPolicyFailFast,
 		},
 		Subagent: SubagentConfig{
 			MaxDepth:           4,
@@ -1421,6 +1441,29 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Scheduler.RetryMaxAttempts <= 0 {
 		return errors.New("scheduler.retry_max_attempts must be > 0")
+	}
+	switch backend := strings.ToLower(strings.TrimSpace(cfg.Recovery.Backend)); backend {
+	case RecoveryBackendMemory:
+	case RecoveryBackendFile:
+		if strings.TrimSpace(cfg.Recovery.Path) == "" {
+			return errors.New("recovery.path is required when recovery.backend=file")
+		}
+	default:
+		return fmt.Errorf(
+			"recovery.backend must be one of [%s,%s], got %q",
+			RecoveryBackendMemory,
+			RecoveryBackendFile,
+			cfg.Recovery.Backend,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Recovery.ConflictPolicy)); policy {
+	case RecoveryConflictPolicyFailFast:
+	default:
+		return fmt.Errorf(
+			"recovery.conflict_policy must be one of [%s], got %q",
+			RecoveryConflictPolicyFailFast,
+			cfg.Recovery.ConflictPolicy,
+		)
 	}
 	if cfg.Subagent.MaxDepth <= 0 {
 		return errors.New("subagent.max_depth must be > 0")
@@ -2388,6 +2431,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.heartbeat_interval", base.Scheduler.HeartbeatInterval)
 	v.SetDefault("scheduler.queue_limit", base.Scheduler.QueueLimit)
 	v.SetDefault("scheduler.retry_max_attempts", base.Scheduler.RetryMaxAttempts)
+	v.SetDefault("recovery.enabled", base.Recovery.Enabled)
+	v.SetDefault("recovery.backend", base.Recovery.Backend)
+	v.SetDefault("recovery.path", base.Recovery.Path)
+	v.SetDefault("recovery.conflict_policy", base.Recovery.ConflictPolicy)
 	v.SetDefault("subagent.max_depth", base.Subagent.MaxDepth)
 	v.SetDefault("subagent.max_active_children", base.Subagent.MaxActiveChildren)
 	v.SetDefault("subagent.child_timeout_budget", base.Subagent.ChildTimeoutBudget)
@@ -2613,6 +2660,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Scheduler.HeartbeatInterval = v.GetDuration("scheduler.heartbeat_interval")
 	cfg.Scheduler.QueueLimit = v.GetInt("scheduler.queue_limit")
 	cfg.Scheduler.RetryMaxAttempts = v.GetInt("scheduler.retry_max_attempts")
+	cfg.Recovery.Enabled = v.GetBool("recovery.enabled")
+	cfg.Recovery.Backend = strings.ToLower(strings.TrimSpace(v.GetString("recovery.backend")))
+	cfg.Recovery.Path = strings.TrimSpace(v.GetString("recovery.path"))
+	cfg.Recovery.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.conflict_policy")))
 	cfg.Subagent.MaxDepth = v.GetInt("subagent.max_depth")
 	cfg.Subagent.MaxActiveChildren = v.GetInt("subagent.max_active_children")
 	cfg.Subagent.ChildTimeoutBudget = v.GetDuration("subagent.child_timeout_budget")

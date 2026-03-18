@@ -3,6 +3,9 @@
 ### Requirement: Shared multi-agent gate SHALL include session recovery contract suite
 Quality gate contract MUST include session recovery and deterministic replay tests in the existing shared multi-agent gate scripts.
 
+Required gate path:
+- `go test ./integration -run '^TestComposerRecovery' -count=1`
+
 #### Scenario: CI runs shared multi-agent gate after recovery rollout
 - **WHEN** CI executes `check-multi-agent-shared-contract.*`
 - **THEN** recovery/replay contract suites run as blocking checks in the same gate path

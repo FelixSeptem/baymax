@@ -21,6 +21,7 @@
   - `library-first` 组合入口，统一装配 `runner + workflow + teams + a2a + scheduler`
   - 负责组合层接缝与调度桥接，不吸收 provider 协议逻辑或 transport 内部细节
   - 组合路径摘要仅通过标准事件注入（`run.finished` additive 字段），不直接写 diagnostics store
+  - recovery 编排（load/validate/reconcile/resume）仅由 composer 收口；恢复快照与重放结果必须经标准事件进入 RuntimeRecorder 单写路径
 - `orchestration/teams`
   - Teams 协作编排基线（`serial|parallel|vote`）
   - Mixed local/remote worker 执行目标（`target=local|remote`）与统一任务生命周期
@@ -90,6 +91,7 @@ R4 多代理共享契约前置门禁（阻断级）：
 - required-check 候选: `multi-agent-shared-contract-gate`
 - Scheduler/Subagent 收口要求：reason 必须为 `scheduler.*|subagent.*`，且 scheduler 管理路径需携带 `task_id` / `attempt_id` 关联字段。
 - Composer 收口要求：`orchestration/composer` 仅做 orchestration glue；scheduler fallback 与子任务摘要信号必须以事件方式进入 RuntimeRecorder 单写路径。
+- Recovery 收口要求：`orchestration/composer` 负责恢复状态机与冲突终止语义（`fail_fast`）；恢复 reason（`recovery.restore|recovery.replay|recovery.conflict`）与 run 摘要字段必须走事件单写入口。
 - 明确禁止：`orchestration/scheduler` 直接写 `runtime/diagnostics`（必须经 `observability/event.RuntimeRecorder` 单写入口）。
 
 ## Owner 建议

@@ -3,6 +3,12 @@
 ### Requirement: Runtime config SHALL expose recovery controls with default disabled
 Runtime configuration MUST expose recovery controls and default `recovery.enabled` to false.
 
+Recovery config fields:
+- `recovery.enabled`
+- `recovery.backend`
+- `recovery.path`
+- `recovery.conflict_policy`
+
 #### Scenario: Runtime loads default config without recovery settings
 - **WHEN** runtime starts using default config values
 - **THEN** recovery is disabled unless explicitly enabled by config input
@@ -16,6 +22,15 @@ Runtime configuration MUST expose recovery conflict policy and MUST enforce `fai
 
 ### Requirement: Diagnostics SHALL expose additive recovery markers
 Run diagnostics MUST include additive recovery markers (enabled/recovered/replay/conflict/fallback indicators) while preserving compatibility-window semantics.
+
+Required additive summary fields:
+- `recovery_enabled`
+- `recovery_recovered`
+- `recovery_replay_total`
+- `recovery_conflict`
+- `recovery_conflict_code`
+- `recovery_fallback_used`
+- `recovery_fallback_reason`
 
 #### Scenario: Legacy consumer reads run summary after recovery rollout
 - **WHEN** legacy consumer parses run summary produced with recovery-capable runtime

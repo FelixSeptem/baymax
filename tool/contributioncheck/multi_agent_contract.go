@@ -83,6 +83,18 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 			})
 		}
 	}
+	requiredSchedulerTimelineFields := []string{
+		"`task_id`",
+		"`attempt_id`",
+	}
+	for _, field := range requiredSchedulerTimelineFields {
+		if !strings.Contains(snapshot.SchedulerTimelineSpec, field) {
+			violations = append(violations, Violation{
+				Code:    "missing_scheduler_timeline_field_" + strings.Trim(field, "`"),
+				Message: "missing required scheduler timeline correlation field: " + field,
+			})
+		}
+	}
 
 	if !strings.Contains(snapshot.IdentifierDoc, "`peer_id`") ||
 		!strings.Contains(snapshot.A2ATimelineSpec, "`peer_id`") ||
@@ -208,6 +220,23 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 			})
 		}
 	}
+	requiredCompatibilityWindowMarkers := []struct {
+		code   string
+		marker string
+	}{
+		{code: "missing_runtime_doc_compatibility_window_title", marker: "Compatibility Window (A5/A6)"},
+		{code: "missing_runtime_doc_compatibility_window_rule", marker: "additive + nullable + default"},
+		{code: "missing_runtime_doc_compatibility_window_legacy_example", marker: "legacy consumers"},
+		{code: "missing_runtime_doc_compatibility_window_nullable_fallback", marker: "nullable fallback"},
+	}
+	for _, item := range requiredCompatibilityWindowMarkers {
+		if !strings.Contains(snapshot.RuntimeConfigDoc, item.marker) {
+			violations = append(violations, Violation{
+				Code:    item.code,
+				Message: "runtime config/diagnostics doc missing compatibility-window marker: " + item.marker,
+			})
+		}
+	}
 
 	requiredComposedEnvMappings := []string{
 		"`BAYMAX_TEAMS_REMOTE_ENABLED`",
@@ -248,6 +277,12 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 				Message: "v1 acceptance doc missing composed orchestration marker: " + marker,
 			})
 		}
+	}
+	if !strings.Contains(snapshot.V1AcceptanceDoc, "compatibility window") {
+		violations = append(violations, Violation{
+			Code:    "missing_v1_acceptance_compatibility_window_marker",
+			Message: "v1 acceptance doc must mention A5/A6 compatibility window semantics",
+		})
 	}
 
 	deprecatedA2AFieldAliases := []string{

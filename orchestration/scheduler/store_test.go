@@ -268,12 +268,37 @@ func TestSchedulerGuardrailBudgetRejectAndTimelineReasons(t *testing.T) {
 	}
 }
 
+func TestCanonicalReasonMapper(t *testing.T) {
+	required := []string{
+		ReasonEnqueue,
+		ReasonClaim,
+		ReasonHeartbeat,
+		ReasonLeaseExpired,
+		ReasonRequeue,
+		ReasonSpawn,
+		ReasonJoin,
+		ReasonBudgetReject,
+	}
+	for _, reason := range required {
+		mapped, ok := CanonicalReason(reason)
+		if !ok {
+			t.Fatalf("expected canonical reason %q to be accepted", reason)
+		}
+		if mapped != reason {
+			t.Fatalf("mapped reason = %q, want %q", mapped, reason)
+		}
+	}
+	if mapped, ok := CanonicalReason("enqueue"); ok || mapped != "" {
+		t.Fatalf("expected non-canonical reason to be rejected, got mapped=%q ok=%v", mapped, ok)
+	}
+}
+
 func TestSchedulerLifecycleTimelineCorrelation(t *testing.T) {
 	collector := &testTimelineCollector{}
 	s, err := New(
 		NewMemoryStore(),
 		WithTimelineEmitter(collector),
-		WithLeaseTimeout(500*time.Millisecond),
+		WithLeaseTimeout(80*time.Millisecond),
 	)
 	if err != nil {
 		t.Fatalf("new scheduler: %v", err)
@@ -302,9 +327,21 @@ func TestSchedulerLifecycleTimelineCorrelation(t *testing.T) {
 	if _, err := s.Heartbeat(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID, claimed.Attempt.LeaseToken); err != nil {
 		t.Fatalf("heartbeat failed: %v", err)
 	}
+	time.Sleep(120 * time.Millisecond)
+	expired, err := s.ExpireLeases(ctx)
+	if err != nil {
+		t.Fatalf("expire leases failed: %v", err)
+	}
+	if len(expired) != 1 {
+		t.Fatalf("expired len = %d, want 1", len(expired))
+	}
+	reclaimed, ok, err := s.Claim(ctx, "worker-2")
+	if err != nil || !ok {
+		t.Fatalf("reclaim failed: ok=%v err=%v", ok, err)
+	}
 	if _, err := s.Complete(ctx, TerminalCommit{
-		TaskID:      claimed.Record.Task.TaskID,
-		AttemptID:   claimed.Attempt.AttemptID,
+		TaskID:      reclaimed.Record.Task.TaskID,
+		AttemptID:   reclaimed.Attempt.AttemptID,
 		Status:      TaskStateSucceeded,
 		Result:      map[string]any{"done": true},
 		CommittedAt: time.Now(),
@@ -316,6 +353,7 @@ func TestSchedulerLifecycleTimelineCorrelation(t *testing.T) {
 		ReasonEnqueue:   false,
 		ReasonClaim:     false,
 		ReasonHeartbeat: false,
+		ReasonRequeue:   false,
 		ReasonJoin:      false,
 	}
 	for _, ev := range collector.events {
@@ -326,10 +364,13 @@ func TestSchedulerLifecycleTimelineCorrelation(t *testing.T) {
 		if _, ok := requiredReasons[reason]; ok {
 			requiredReasons[reason] = true
 		}
-		if reason == ReasonClaim || reason == ReasonHeartbeat || reason == ReasonJoin {
+		if reason == ReasonClaim || reason == ReasonHeartbeat || reason == ReasonRequeue || reason == ReasonJoin {
 			if ev.Payload["task_id"] == "" || ev.Payload["attempt_id"] == "" {
 				t.Fatalf("missing task/attempt correlation in payload: %#v", ev.Payload)
 			}
+		}
+		if reason == ReasonEnqueue && ev.Payload["task_id"] == "" {
+			t.Fatalf("missing task correlation in enqueue payload: %#v", ev.Payload)
 		}
 		if ev.Payload["workflow_id"] != "wf-timeline" || ev.Payload["team_id"] != "team-timeline" || ev.Payload["step_id"] != "step-timeline" {
 			t.Fatalf("run linkage metadata mismatch: %#v", ev.Payload)

@@ -40,6 +40,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	}, "\n")
 	schedulerTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	teamsRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
@@ -51,6 +52,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	}, "\n")
 	schedulerRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	teamsBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
@@ -62,6 +64,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	}, "\n")
 	schedulerBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a5-a6-tail-contract-and-governance-a7", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
@@ -138,6 +141,8 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_reason_subagent_spawn",
 		"missing_reason_subagent_join",
 		"missing_reason_subagent_budget_reject",
+		"missing_scheduler_timeline_field_task_id",
+		"missing_scheduler_timeline_field_attempt_id",
 		"missing_peer_id_canonical_naming",
 		"missing_identifier_field_workflow_id",
 		"missing_identifier_field_team_id",
@@ -178,6 +183,10 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_field_subagent_child_total",
 		"missing_runtime_doc_field_subagent_child_failed",
 		"missing_runtime_doc_field_subagent_budget_reject_total",
+		"missing_runtime_doc_compatibility_window_title",
+		"missing_runtime_doc_compatibility_window_rule",
+		"missing_runtime_doc_compatibility_window_legacy_example",
+		"missing_runtime_doc_compatibility_window_nullable_fallback",
 		"missing_runtime_doc_env_mapping_baymax_teams_remote_enabled",
 		"missing_runtime_doc_env_mapping_baymax_teams_remote_require_peer_id",
 		"missing_runtime_doc_env_mapping_baymax_workflow_remote_enabled",
@@ -197,6 +206,7 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_v1_acceptance_marker_subagent_*",
 		"missing_v1_acceptance_marker_scheduler_queue_total",
 		"missing_v1_acceptance_marker_subagent_child_total",
+		"missing_v1_acceptance_compatibility_window_marker",
 		"missing_a2a_timeline_field_delivery_mode",
 		"missing_a2a_summary_field_a2a_delivery_mode",
 		"non_snake_case_a2a_field_detected",

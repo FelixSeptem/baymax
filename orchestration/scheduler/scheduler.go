@@ -110,7 +110,7 @@ func (s *Scheduler) ExpireLeases(ctx context.Context) ([]ClaimedTask, error) {
 	}
 	for _, item := range expired {
 		s.emitTimeline(ctx, item.Record, item.Attempt, types.ActionStatusFailed, ReasonLeaseExpired)
-		s.emitTimeline(ctx, item.Record, Attempt{}, types.ActionStatusPending, ReasonRequeue)
+		s.emitTimeline(ctx, item.Record, item.Attempt, types.ActionStatusPending, ReasonRequeue)
 	}
 	return expired, nil
 }
@@ -120,7 +120,8 @@ func (s *Scheduler) Requeue(ctx context.Context, taskID, reason string) (TaskRec
 	if err != nil {
 		return TaskRecord{}, err
 	}
-	s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusPending, ReasonRequeue)
+	attempt, _ := record.currentAttempt()
+	s.emitTimeline(ctx, record, attempt, types.ActionStatusPending, ReasonRequeue)
 	return record, nil
 }
 
@@ -172,8 +173,8 @@ func (s *Scheduler) emitTimeline(
 	if s == nil || s.timeline == nil {
 		return
 	}
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
+	reason, ok := CanonicalReason(reason)
+	if !ok {
 		return
 	}
 	sequence := s.seq.Add(1)

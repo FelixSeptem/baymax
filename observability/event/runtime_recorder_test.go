@@ -571,3 +571,77 @@ mcp:
 		t.Fatalf("mcp/skill cancel aggregates mismatch: mcp=%#v skill=%#v", mcpAgg, skillAgg)
 	}
 }
+
+func TestRuntimeRecorderAcceptsSchedulerNamespaceTimelineEvents(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	now := time.Now()
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   "run-scheduler-namespace",
+		Time:    now,
+		Payload: map[string]any{
+			"phase":      "run",
+			"status":     "running",
+			"reason":     "scheduler.claim",
+			"task_id":    "task-1",
+			"attempt_id": "attempt-1",
+			"sequence":   int64(1),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   "run-scheduler-namespace",
+		Time:    now.Add(10 * time.Millisecond),
+		Payload: map[string]any{
+			"phase":      "run",
+			"status":     "succeeded",
+			"reason":     "subagent.join",
+			"task_id":    "task-1",
+			"attempt_id": "attempt-1",
+			"sequence":   int64(2),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-scheduler-namespace",
+		Time:    now.Add(20 * time.Millisecond),
+		Payload: map[string]any{
+			"status": "success",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	agg := items[0].TimelinePhases["run"]
+	if agg.CountTotal != 1 {
+		t.Fatalf("timeline aggregate count_total = %d, want 1", agg.CountTotal)
+	}
+}

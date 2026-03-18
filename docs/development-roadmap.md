@@ -317,6 +317,8 @@
 - [x] `compose-teams-workflow-with-a2a-remote-execution-a5`：完成 Workflow `kind=a2a` remote step、Teams `target=remote` 混编执行、新增 reason（`workflow.dispatch_a2a/team.dispatch_remote/team.collect_remote`）与跨域关联字段透传（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）。
 - [x] 完成组合编排配置与诊断收敛：`teams.remote.*`/`workflow.remote.*`（`env > file > default`）与 run 摘要字段（`team_remote_task_total/team_remote_task_failed/workflow_remote_step_total/workflow_remote_step_failed`），并补齐热更新回滚与 replay 幂等测试。
 - [x] `distributed-subagent-scheduler-baseline-a6`：完成 `orchestration/scheduler` 基线（durable queue + lease claim + heartbeat + lease-expire takeover + terminal commit 幂等），新增 reason（`scheduler.*|subagent.*`）与关联字段（`task_id/attempt_id`），补齐 `scheduler.*`/`subagent.*` 配置、run 摘要字段与 shared-contract gate 收敛。
+- [x] `close-a5-a6-tail-contract-and-governance-a7`：完成 A5/A6 收口治理（兼容窗口 `additive+nullable+default`、scheduler/subagent canonical taxonomy、`task_id+attempt_id` 关联字段门禁、scheduler recovery 专项回归套件）。
+- [x] 新增 scheduler/subagent 收口门禁命令路径（required-check 候选）：`go test ./integration -run '^TestSchedulerRecovery' -count=1`（已纳入 `check-multi-agent-shared-contract.*`）。
 
 - R4-T4（平台化与治理增强，目标窗口：2026-06-10 之后）
   - 多租户、RBAC、审计流水线与 control plane 进入增量交付。

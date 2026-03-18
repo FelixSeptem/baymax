@@ -6,6 +6,8 @@
 
 提供主干流程与契约测试用例的一一映射，作为质量门禁核对入口。
 
+A5/A6 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility window（`additive + nullable + default`）条款。
+
 ## 索引
 
 | 主干流程 | 正向场景 | 异常/降级场景 |
@@ -44,6 +46,9 @@
 | Scheduler Idempotent Replay A6 | `integration/distributed_subagent_scheduler_contract_test.go::TestSchedulerDuplicateSubmitResultReplayIdempotency` | `runtime/diagnostics/store_test.go::TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent` |
 | Scheduler Run/Stream Equivalence A6 | `integration/distributed_subagent_scheduler_contract_test.go::TestSchedulerManagedRunStreamSemanticEquivalence` | `integration/distributed_subagent_scheduler_contract_test.go::TestSchedulerManagedRunStreamSemanticEquivalence` |
 | A2A Scheduler Retry A6 | `orchestration/scheduler/a2a_adapter_test.go::TestExecuteClaimWithA2ASuccess` | `orchestration/scheduler/a2a_adapter_test.go::TestExecuteClaimWithA2ASubmitTransportErrorIsRetryable` |
+| Scheduler Recovery Takeover A7 | `integration/scheduler_recovery_contract_test.go::TestSchedulerRecoveryCrashLeaseExpiryTakeover` | `integration/scheduler_recovery_contract_test.go::TestSchedulerRecoveryTimelineCorrelationRequiredFields` |
+| Scheduler Recovery Idempotency A7 | `integration/scheduler_recovery_contract_test.go::TestSchedulerRecoveryDuplicateSubmitCommitIdempotency` | `runtime/diagnostics/store_test.go::TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent` |
+| Scheduler Recovery Run/Stream A7 | `integration/scheduler_recovery_contract_test.go::TestSchedulerRecoveryRunStreamSemanticEquivalence` | `integration/scheduler_recovery_contract_test.go::TestSchedulerRecoveryRunStreamSemanticEquivalence` |
 | R4 Shared Contract Freeze Gate | `tool/contributioncheck/multi_agent_contract_test.go::TestMultiAgentSharedContractSnapshotPass` | `tool/contributioncheck/multi_agent_contract_test.go::TestValidateMultiAgentSharedContractDetectsViolations` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |

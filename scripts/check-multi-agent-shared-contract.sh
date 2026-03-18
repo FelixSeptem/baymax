@@ -11,3 +11,6 @@ go test ./tool/contributioncheck -run '^TestMultiAgentSharedContractSnapshotPass
 
 echo "[multi-agent-shared-contract-gate] validator negative contract cases"
 go test ./tool/contributioncheck -run '^TestValidateMultiAgentSharedContractDetectsViolations$' -count=1
+
+echo "[multi-agent-shared-contract-gate] scheduler/subagent closure suite"
+go test ./integration -run '^TestSchedulerRecovery' -count=1

@@ -38,6 +38,9 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Scheduler Idempotent Replay A6",
 		"Scheduler Run/Stream Equivalence A6",
 		"A2A Scheduler Retry A6",
+		"Scheduler Recovery Takeover A7",
+		"Scheduler Recovery Idempotency A7",
+		"Scheduler Recovery Run/Stream A7",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

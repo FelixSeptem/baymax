@@ -83,6 +83,8 @@ R4 多代理共享契约前置门禁（阻断级）：
 - Linux/macOS: `bash scripts/check-multi-agent-shared-contract.sh`
 - Windows: `pwsh -File scripts/check-multi-agent-shared-contract.ps1`
 - required-check 候选: `multi-agent-shared-contract-gate`
+- Scheduler/Subagent 收口要求：reason 必须为 `scheduler.*|subagent.*`，且 scheduler 管理路径需携带 `task_id` / `attempt_id` 关联字段。
+- 明确禁止：`orchestration/scheduler` 直接写 `runtime/diagnostics`（必须经 `observability/event.RuntimeRecorder` 单写入口）。
 
 ## Owner 建议
 

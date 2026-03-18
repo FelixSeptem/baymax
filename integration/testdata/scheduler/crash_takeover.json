@@ -1,0 +1,6 @@
+{
+  "task_id": "fixture-crash-takeover",
+  "run_id": "fixture-run-crash-takeover",
+  "lease_timeout_ms": 80,
+  "expire_wait_ms": 120
+}

@@ -214,3 +214,15 @@ CI workflow MUST expose S4 delivery validation as an independent job named `secu
 - **WHEN** maintainer reviews available CI checks
 - **THEN** `security-delivery-gate` appears as a distinct status check
 
+### Requirement: CI quality gate SHALL include scheduler crash-recovery and takeover contract suite
+CI MUST include a dedicated scheduler crash-recovery/takeover contract suite for A6 closure.
+
+The suite MUST cover:
+- worker crash + lease expiry takeover,
+- duplicate submit/commit idempotency,
+- Run/Stream semantic equivalence under scheduler-managed flows.
+
+#### Scenario: Scheduler closure gate runs in CI
+- **WHEN** scheduler closure gate executes
+- **THEN** recovery/idempotency/equivalence regressions fail the gate before merge
+

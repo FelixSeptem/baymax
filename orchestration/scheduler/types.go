@@ -22,6 +22,26 @@ const (
 	ReasonBudgetReject = "subagent.budget_reject"
 )
 
+var canonicalReasonSet = map[string]struct{}{
+	ReasonEnqueue:      {},
+	ReasonClaim:        {},
+	ReasonHeartbeat:    {},
+	ReasonLeaseExpired: {},
+	ReasonRequeue:      {},
+	ReasonSpawn:        {},
+	ReasonJoin:         {},
+	ReasonBudgetReject: {},
+}
+
+func CanonicalReason(reason string) (string, bool) {
+	normalized := strings.TrimSpace(reason)
+	_, ok := canonicalReasonSet[normalized]
+	if !ok {
+		return "", false
+	}
+	return normalized, true
+}
+
 type TaskState string
 
 const (

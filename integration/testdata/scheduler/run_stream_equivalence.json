@@ -1,0 +1,6 @@
+{
+  "task_id": "fixture-run-stream-equivalence",
+  "run_id": "fixture-run-stream",
+  "lease_timeout_ms": 500,
+  "expire_wait_ms": 120
+}

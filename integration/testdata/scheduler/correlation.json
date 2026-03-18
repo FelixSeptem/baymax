@@ -1,0 +1,6 @@
+{
+  "task_id": "fixture-correlation",
+  "run_id": "fixture-run-correlation",
+  "lease_timeout_ms": 80,
+  "expire_wait_ms": 120
+}

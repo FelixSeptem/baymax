@@ -21,6 +21,9 @@ go test ./integration -run '^TestSchedulerQoS' -count=1
 echo "[multi-agent-shared-contract-gate] sync invocation suite"
 go test ./integration -run '^TestSyncInvocationContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] async reporting suite"
+go test ./integration -run '^TestAsyncReportingContract' -count=1
+
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

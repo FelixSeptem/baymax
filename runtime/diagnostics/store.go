@@ -134,6 +134,10 @@ type RunRecord struct {
 	A2AVersionLocal                      string                            `json:"a2a_version_local,omitempty"`
 	A2AVersionPeer                       string                            `json:"a2a_version_peer,omitempty"`
 	A2AVersionNegotiationResult          string                            `json:"a2a_version_negotiation_result,omitempty"`
+	A2AAsyncReportTotal                  int                               `json:"a2a_async_report_total,omitempty"`
+	A2AAsyncReportFailed                 int                               `json:"a2a_async_report_failed,omitempty"`
+	A2AAsyncReportRetryTotal             int                               `json:"a2a_async_report_retry_total,omitempty"`
+	A2AAsyncReportDedupTotal             int                               `json:"a2a_async_report_dedup_total,omitempty"`
 	ComposerManaged                      bool                              `json:"composer_managed,omitempty"`
 	SchedulerBackend                     string                            `json:"scheduler_backend,omitempty"`
 	SchedulerQoSMode                     string                            `json:"scheduler_qos_mode,omitempty"`

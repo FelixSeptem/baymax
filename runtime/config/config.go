@@ -97,6 +97,8 @@ const (
 	A2ADeliveryModeCallback         = "callback"
 	A2ADeliveryModeSSE              = "sse"
 	A2ACardVersionPolicyStrictMajor = "strict_major"
+	A2AAsyncReportingSinkCallback   = "callback"
+	A2AAsyncReportingSinkChannel    = "channel"
 )
 
 const (
@@ -258,6 +260,7 @@ type A2AConfig struct {
 	Delivery            A2ADeliveryConfig            `json:"delivery"`
 	Card                A2ACardConfig                `json:"card"`
 	CapabilityDiscovery A2ACapabilityDiscoveryConfig `json:"capability_discovery"`
+	AsyncReporting      A2AAsyncReportingConfig      `json:"async_reporting"`
 }
 
 type A2ADeliveryConfig struct {
@@ -290,6 +293,18 @@ type A2ACapabilityDiscoveryConfig struct {
 	Enabled       bool `json:"enabled"`
 	RequireAll    bool `json:"require_all"`
 	MaxCandidates int  `json:"max_candidates"`
+}
+
+type A2AAsyncReportingConfig struct {
+	Enabled bool                         `json:"enabled"`
+	Sink    string                       `json:"sink"`
+	Retry   A2AAsyncReportingRetryConfig `json:"retry"`
+}
+
+type A2AAsyncReportingRetryConfig struct {
+	MaxAttempts    int           `json:"max_attempts"`
+	BackoffInitial time.Duration `json:"backoff_initial"`
+	BackoffMax     time.Duration `json:"backoff_max"`
 }
 
 type SchedulerConfig struct {
@@ -853,6 +868,15 @@ func DefaultConfig() Config {
 				Enabled:       true,
 				RequireAll:    true,
 				MaxCandidates: 16,
+			},
+			AsyncReporting: A2AAsyncReportingConfig{
+				Enabled: false,
+				Sink:    A2AAsyncReportingSinkCallback,
+				Retry: A2AAsyncReportingRetryConfig{
+					MaxAttempts:    3,
+					BackoffInitial: 50 * time.Millisecond,
+					BackoffMax:     500 * time.Millisecond,
+				},
 			},
 		},
 		Scheduler: SchedulerConfig{
@@ -1460,6 +1484,25 @@ func Validate(cfg Config) error {
 	}
 	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
 		return errors.New("a2a.capability_discovery.max_candidates must be > 0")
+	}
+	switch sink := strings.ToLower(strings.TrimSpace(cfg.A2A.AsyncReporting.Sink)); sink {
+	case A2AAsyncReportingSinkCallback, A2AAsyncReportingSinkChannel:
+	default:
+		return fmt.Errorf(
+			"a2a.async_reporting.sink must be one of [%s,%s], got %q",
+			A2AAsyncReportingSinkCallback,
+			A2AAsyncReportingSinkChannel,
+			cfg.A2A.AsyncReporting.Sink,
+		)
+	}
+	if cfg.A2A.AsyncReporting.Retry.MaxAttempts <= 0 {
+		return errors.New("a2a.async_reporting.retry.max_attempts must be > 0")
+	}
+	if cfg.A2A.AsyncReporting.Retry.BackoffInitial < 0 {
+		return errors.New("a2a.async_reporting.retry.backoff_initial must be >= 0")
+	}
+	if cfg.A2A.AsyncReporting.Retry.BackoffMax < cfg.A2A.AsyncReporting.Retry.BackoffInitial {
+		return errors.New("a2a.async_reporting.retry.backoff_max must be >= a2a.async_reporting.retry.backoff_initial")
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Scheduler.Backend)); backend {
 	case SchedulerBackendMemory:
@@ -2502,6 +2545,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("a2a.capability_discovery.enabled", base.A2A.CapabilityDiscovery.Enabled)
 	v.SetDefault("a2a.capability_discovery.require_all", base.A2A.CapabilityDiscovery.RequireAll)
 	v.SetDefault("a2a.capability_discovery.max_candidates", base.A2A.CapabilityDiscovery.MaxCandidates)
+	v.SetDefault("a2a.async_reporting.enabled", base.A2A.AsyncReporting.Enabled)
+	v.SetDefault("a2a.async_reporting.sink", base.A2A.AsyncReporting.Sink)
+	v.SetDefault("a2a.async_reporting.retry.max_attempts", base.A2A.AsyncReporting.Retry.MaxAttempts)
+	v.SetDefault("a2a.async_reporting.retry.backoff_initial", base.A2A.AsyncReporting.Retry.BackoffInitial)
+	v.SetDefault("a2a.async_reporting.retry.backoff_max", base.A2A.AsyncReporting.Retry.BackoffMax)
 	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
 	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
 	v.SetDefault("scheduler.path", base.Scheduler.Path)
@@ -2739,6 +2787,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.A2A.CapabilityDiscovery.Enabled = v.GetBool("a2a.capability_discovery.enabled")
 	cfg.A2A.CapabilityDiscovery.RequireAll = v.GetBool("a2a.capability_discovery.require_all")
 	cfg.A2A.CapabilityDiscovery.MaxCandidates = v.GetInt("a2a.capability_discovery.max_candidates")
+	cfg.A2A.AsyncReporting.Enabled = v.GetBool("a2a.async_reporting.enabled")
+	cfg.A2A.AsyncReporting.Sink = strings.ToLower(strings.TrimSpace(v.GetString("a2a.async_reporting.sink")))
+	cfg.A2A.AsyncReporting.Retry.MaxAttempts = v.GetInt("a2a.async_reporting.retry.max_attempts")
+	cfg.A2A.AsyncReporting.Retry.BackoffInitial = v.GetDuration("a2a.async_reporting.retry.backoff_initial")
+	cfg.A2A.AsyncReporting.Retry.BackoffMax = v.GetDuration("a2a.async_reporting.retry.backoff_max")
 	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
 	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
 	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))

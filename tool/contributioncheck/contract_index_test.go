@@ -53,6 +53,10 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Sync Invocation Coverage A11",
 		"Sync Invocation Run/Stream Equivalence A11",
 		"Sync Invocation Scheduler Canceled Mapping A11",
+		"Async Reporting Delivery A12",
+		"Async Reporting Dedup Replay A12",
+		"Async Reporting Run/Stream Equivalence A12",
+		"Async Reporting Recovery Replay A12",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

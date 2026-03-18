@@ -14,21 +14,26 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	a2aCoreSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "a2a-delivery-and-version-negotiation", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-async-reporting", "spec.md")),
 	}, "\n")
 	a2aRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	a2aBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
 	}, "\n")
 	teamsTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
@@ -80,11 +85,14 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "multi-agent-session-recovery", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
 	}, "\n")
 	composerGateSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "go-quality-gate", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "go-quality-gate", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{

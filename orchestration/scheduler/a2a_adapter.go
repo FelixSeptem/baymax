@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,9 +22,16 @@ type A2AClient interface {
 	) (a2a.TaskRecord, error)
 }
 
+type A2AAsyncClient interface {
+	A2AClient
+	SubmitAsync(ctx context.Context, req a2a.TaskRequest, sink a2a.ReportSink) (a2a.AsyncSubmitAck, error)
+}
+
 type A2AExecution struct {
-	Commit    TerminalCommit
-	Retryable bool
+	Commit        TerminalCommit
+	Retryable     bool
+	AsyncAccepted bool
+	AsyncTaskID   string
 }
 
 func ExecuteClaimWithA2A(
@@ -34,17 +42,7 @@ func ExecuteClaimWithA2A(
 ) (A2AExecution, error) {
 	task := claimed.Record.Task
 	attempt := claimed.Attempt
-	req := invoke.Request{
-		TaskID:       strings.TrimSpace(task.TaskID) + "-" + strings.TrimSpace(attempt.AttemptID),
-		WorkflowID:   strings.TrimSpace(task.WorkflowID),
-		TeamID:       strings.TrimSpace(task.TeamID),
-		StepID:       strings.TrimSpace(task.StepID),
-		AgentID:      strings.TrimSpace(task.AgentID),
-		PeerID:       strings.TrimSpace(task.PeerID),
-		Method:       "scheduler.dispatch",
-		Payload:      copyMap(task.Payload),
-		PollInterval: pollInterval,
-	}
+	req := buildInvokeRequest(claimed, pollInterval)
 	if req.AgentID == "" {
 		req.AgentID = "scheduler-worker"
 	}
@@ -115,6 +113,88 @@ func ExecuteClaimWithA2A(
 	}
 }
 
+func SubmitClaimWithA2AAsync(
+	ctx context.Context,
+	client A2AAsyncClient,
+	claimed ClaimedTask,
+	sink a2a.ReportSink,
+) (a2a.AsyncSubmitAck, error) {
+	if client == nil {
+		return a2a.AsyncSubmitAck{}, errors.New("a2a async client is required")
+	}
+	req := buildTaskRequest(claimed)
+	if req.AgentID == "" {
+		req.AgentID = "scheduler-worker"
+	}
+	if req.PeerID == "" {
+		req.PeerID = "scheduler-peer"
+	}
+	if req.Payload == nil {
+		req.Payload = map[string]any{}
+	}
+	req.Payload["attempt_id"] = strings.TrimSpace(claimed.Attempt.AttemptID)
+	ack, err := client.SubmitAsync(ctx, req, sink)
+	if err != nil {
+		return a2a.AsyncSubmitAck{}, err
+	}
+	if strings.TrimSpace(ack.TaskID) == "" {
+		ack.TaskID = req.TaskID
+	}
+	return ack, nil
+}
+
+func ExecutionFromAsyncReport(claimed ClaimedTask, report a2a.AsyncReport) (A2AExecution, error) {
+	attemptID := strings.TrimSpace(report.AttemptID)
+	if attemptID == "" {
+		attemptID = strings.TrimSpace(claimed.Attempt.AttemptID)
+	}
+	if attemptID == "" {
+		return failedExecutionFromA2AError(claimed, errors.New("async report attempt_id is required")), errors.New("async report attempt_id is required")
+	}
+	switch report.Status {
+	case a2a.StatusSucceeded:
+		return A2AExecution{
+			Commit: TerminalCommit{
+				TaskID:      claimed.Record.Task.TaskID,
+				AttemptID:   attemptID,
+				Status:      TaskStateSucceeded,
+				Result:      copyMap(report.Result),
+				OutcomeKey:  strings.TrimSpace(report.OutcomeKey),
+				CommittedAt: time.Now(),
+			},
+		}, nil
+	case a2a.StatusFailed, a2a.StatusCanceled:
+		class := report.ErrorClass
+		if class == "" {
+			class = types.ErrMCP
+		}
+		layer := strings.TrimSpace(report.ErrorLayer)
+		if layer == "" {
+			layer = string(a2a.ErrorLayerProtocol)
+		}
+		message := strings.TrimSpace(report.ErrorMessage)
+		if message == "" {
+			message = fmt.Sprintf("a2a async terminal status %q", report.Status)
+		}
+		return A2AExecution{
+			Commit: TerminalCommit{
+				TaskID:       claimed.Record.Task.TaskID,
+				AttemptID:    attemptID,
+				Status:       TaskStateFailed,
+				ErrorMessage: message,
+				ErrorClass:   class,
+				ErrorLayer:   layer,
+				OutcomeKey:   strings.TrimSpace(report.OutcomeKey),
+				CommittedAt:  time.Now(),
+			},
+			Retryable: layer == string(a2a.ErrorLayerTransport),
+		}, nil
+	default:
+		err := fmt.Errorf("unsupported async report status %q", report.Status)
+		return failedExecutionFromA2AError(claimed, err), err
+	}
+}
+
 func failedExecutionFromInvokeError(claimed ClaimedTask, outcome invoke.Outcome, err error) A2AExecution {
 	if outcome.Error == nil {
 		return failedExecutionFromA2AError(claimed, err)
@@ -165,5 +245,36 @@ func failedExecutionFromA2AError(claimed ClaimedTask, err error) A2AExecution {
 			CommittedAt:  time.Now(),
 		},
 		Retryable: errorLayer == string(a2a.ErrorLayerTransport),
+	}
+}
+
+func buildInvokeRequest(claimed ClaimedTask, pollInterval time.Duration) invoke.Request {
+	task := claimed.Record.Task
+	attempt := claimed.Attempt
+	return invoke.Request{
+		TaskID:       strings.TrimSpace(task.TaskID) + "-" + strings.TrimSpace(attempt.AttemptID),
+		WorkflowID:   strings.TrimSpace(task.WorkflowID),
+		TeamID:       strings.TrimSpace(task.TeamID),
+		StepID:       strings.TrimSpace(task.StepID),
+		AgentID:      strings.TrimSpace(task.AgentID),
+		PeerID:       strings.TrimSpace(task.PeerID),
+		Method:       "scheduler.dispatch",
+		Payload:      copyMap(task.Payload),
+		PollInterval: pollInterval,
+	}
+}
+
+func buildTaskRequest(claimed ClaimedTask) a2a.TaskRequest {
+	req := buildInvokeRequest(claimed, 0)
+	return a2a.TaskRequest{
+		TaskID:     strings.TrimSpace(req.TaskID),
+		WorkflowID: strings.TrimSpace(req.WorkflowID),
+		TeamID:     strings.TrimSpace(req.TeamID),
+		StepID:     strings.TrimSpace(req.StepID),
+		AttemptID:  strings.TrimSpace(claimed.Attempt.AttemptID),
+		AgentID:    strings.TrimSpace(req.AgentID),
+		PeerID:     strings.TrimSpace(req.PeerID),
+		Method:     strings.TrimSpace(req.Method),
+		Payload:    copyMap(req.Payload),
 	}
 }

@@ -26,6 +26,11 @@
   - `teams.remote.require_peer_id` -> `BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`
   - `workflow.remote.enabled` -> `BAYMAX_WORKFLOW_REMOTE_ENABLED`
   - `workflow.remote.default_retry_max_attempts` -> `BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS`
+  - `a2a.async_reporting.enabled` -> `BAYMAX_A2A_ASYNC_REPORTING_ENABLED`
+  - `a2a.async_reporting.sink` -> `BAYMAX_A2A_ASYNC_REPORTING_SINK`
+  - `a2a.async_reporting.retry.max_attempts` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_MAX_ATTEMPTS`
+  - `a2a.async_reporting.retry.backoff_initial` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_BACKOFF_INITIAL`
+  - `a2a.async_reporting.retry.backoff_max` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_BACKOFF_MAX`
   - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
@@ -144,6 +149,13 @@ a2a:
     enabled: true
     require_all: true
     max_candidates: 16            # 必须 > 0
+  async_reporting:
+    enabled: false
+    sink: callback                # callback|channel
+    retry:
+      max_attempts: 3             # 必须 > 0
+      backoff_initial: 50ms       # 必须 >= 0
+      backoff_max: 500ms          # 必须 >= backoff_initial
 
 scheduler:
   enabled: false
@@ -471,8 +483,12 @@ a2a baseline 校验语义：
 7. `a2a.card.version_policy.mode` 当前仅支持 `strict_major`。
 8. `a2a.card.version_policy.min_supported_minor` 必须 `>= 0`。
 9. `a2a.capability_discovery.max_candidates` 必须 `> 0`。
-10. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
-11. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+10. `a2a.async_reporting.sink` 仅支持 `callback|channel`。
+11. `a2a.async_reporting.retry.max_attempts` 必须 `> 0`。
+12. `a2a.async_reporting.retry.backoff_initial` 必须 `>= 0`。
+13. `a2a.async_reporting.retry.backoff_max` 必须 `>= a2a.async_reporting.retry.backoff_initial`。
+14. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
+15. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 a2a 同步调用契约（A11）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
@@ -841,6 +857,11 @@ Action Timeline reason code（A2A 基线）：
 - `a2a.version_mismatch`：A2A Agent Card 版本协商失败（strict major）。
 - `a2a.callback_retry`：A2A 结果回调在有界重试中再次投递。
 - `a2a.resolve`：A2A 任务进入终态并完成结果解析。
+- `a2a.async_submit`：A2A 异步提交成功并返回 accepted 句柄。
+- `a2a.async_report_deliver`：A2A 异步回报投递成功。
+- `a2a.async_report_retry`：A2A 异步回报在可重试失败后进入下一次投递。
+- `a2a.async_report_dedup`：A2A 异步回报命中幂等去重并收敛。
+- `a2a.async_report_drop`：A2A 异步回报在重试预算耗尽或不可重试时被丢弃。
 
 A2A Timeline 关联字段（按可用性增量携带）：
 - `workflow_id`
@@ -938,6 +959,10 @@ Action Gate 规则优先级（H4）：
 - `a2a_version_local`：本端 Agent Card 版本。
 - `a2a_version_peer`：对端 Agent Card 版本。
 - `a2a_version_negotiation_result`：版本协商结果（如 `compatible|mismatch`）。
+- `a2a_async_report_total`：本次 run 的异步回报总次数（按逻辑回报计数）。
+- `a2a_async_report_failed`：本次 run 的异步回报失败次数（最终 drop 口径）。
+- `a2a_async_report_retry_total`：本次 run 的异步回报重试总次数（不含首调）。
+- `a2a_async_report_dedup_total`：本次 run 的异步回报去重命中次数。
 
 语义约束：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。

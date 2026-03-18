@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
@@ -42,6 +43,7 @@ func (f LocalChildRunnerFunc) RunChild(ctx context.Context, task scheduler.Task)
 type ChildDispatchRequest struct {
 	Task                 scheduler.Task
 	Target               ChildTarget
+	Async                bool
 	ParentDepth          int
 	ParentActiveChildren int
 	ChildTimeout         time.Duration
@@ -51,11 +53,13 @@ type ChildDispatchRequest struct {
 }
 
 type ChildDispatchResult struct {
-	Record     scheduler.TaskRecord
-	Claimed    scheduler.ClaimedTask
-	Commit     scheduler.TerminalCommit
-	CommitMeta scheduler.CommitResult
-	Retryable  bool
+	Record        scheduler.TaskRecord
+	Claimed       scheduler.ClaimedTask
+	Commit        scheduler.TerminalCommit
+	CommitMeta    scheduler.CommitResult
+	Retryable     bool
+	AsyncAccepted bool
+	AsyncTaskID   string
 }
 
 type Runner interface {
@@ -247,6 +251,10 @@ type runStat struct {
 	ChildTotal             int
 	ChildFailed            int
 	BudgetReject           int
+	A2AAsyncReportTotal    int
+	A2AAsyncReportFailed   int
+	A2AAsyncReportRetry    int
+	A2AAsyncReportDedup    int
 	Backend                string
 	BackendFallback        bool
 	FallbackReason         string
@@ -258,6 +266,8 @@ type runStat struct {
 	RecoveryConflictCode   string
 	RecoveryFallback       bool
 	RecoveryFallbackReason string
+	asyncReportSeen        map[string]struct{}
+	asyncReportDedupSeen   map[string]struct{}
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
@@ -417,6 +427,16 @@ func (c *Composer) DispatchChild(ctx context.Context, req ChildDispatchRequest) 
 	}
 
 	execution, execErr := c.executeChild(ctx, req, claimed)
+	if execution.AsyncAccepted {
+		out := ChildDispatchResult{
+			Record:        claimed.Record,
+			Claimed:       claimed,
+			Retryable:     execution.Retryable,
+			AsyncAccepted: true,
+			AsyncTaskID:   strings.TrimSpace(execution.AsyncTaskID),
+		}
+		return out, execErr
+	}
 	commitMeta, commitErr := c.CommitChildTerminal(ctx, execution.Commit)
 	out := ChildDispatchResult{
 		Record:     claimed.Record,
@@ -481,6 +501,9 @@ func (c *Composer) executeChild(
 				},
 			}, err
 		}
+		if req.Async {
+			return c.executeA2AChildAsync(ctx, claimed)
+		}
 		pollInterval := req.PollInterval
 		if pollInterval <= 0 {
 			pollInterval = c.childPollInterval
@@ -500,6 +523,82 @@ func (c *Composer) executeChild(
 			},
 		}, err
 	}
+}
+
+func (c *Composer) executeA2AChildAsync(
+	ctx context.Context,
+	claimed scheduler.ClaimedTask,
+) (scheduler.A2AExecution, error) {
+	asyncClient, ok := c.a2aClient.(scheduler.A2AAsyncClient)
+	if !ok {
+		err := errors.New("a2a client does not support async submit")
+		return scheduler.A2AExecution{
+			Commit: scheduler.TerminalCommit{
+				TaskID:       claimed.Record.Task.TaskID,
+				AttemptID:    claimed.Attempt.AttemptID,
+				Status:       scheduler.TaskStateFailed,
+				ErrorMessage: err.Error(),
+				ErrorClass:   types.ErrMCP,
+				ErrorLayer:   string(a2a.ErrorLayerProtocol),
+				CommittedAt:  c.now(),
+			},
+		}, err
+	}
+
+	sink := a2a.NewCallbackReportSink(func(cbCtx context.Context, report a2a.AsyncReport) error {
+		if strings.TrimSpace(report.AttemptID) == "" {
+			report.AttemptID = strings.TrimSpace(claimed.Attempt.AttemptID)
+		}
+		if strings.TrimSpace(report.ReportKey) == "" {
+			report.ReportKey = a2a.BuildAsyncReportKey(report)
+		}
+		execution, err := scheduler.ExecutionFromAsyncReport(claimed, report)
+		if err != nil {
+			return &a2a.AsyncReportDeliveryError{Cause: err, Retryable: false}
+		}
+		commitMeta, commitErr := c.CommitChildTerminal(cbCtx, execution.Commit)
+		if commitErr != nil {
+			retryable := execution.Retryable
+			if errors.Is(commitErr, scheduler.ErrTaskNotFound) ||
+				errors.Is(commitErr, scheduler.ErrTaskNotRunning) ||
+				errors.Is(commitErr, scheduler.ErrStaleAttempt) {
+				retryable = false
+			}
+			return &a2a.AsyncReportDeliveryError{Cause: commitErr, Retryable: retryable}
+		}
+		c.addAsyncReportOutcome(strings.TrimSpace(claimed.Record.Task.RunID), report, commitMeta.Duplicate)
+		if commitMeta.Duplicate {
+			c.emitAsyncReportDedupTimeline(cbCtx, claimed, report)
+		}
+		return nil
+	})
+	ack, err := scheduler.SubmitClaimWithA2AAsync(ctx, asyncClient, claimed, sink)
+	if err != nil {
+		class, layer, _ := a2a.ClassifyError(err)
+		if class == "" {
+			class = types.ErrMCP
+		}
+		errorLayer := strings.TrimSpace(string(layer))
+		if errorLayer == "" {
+			errorLayer = string(a2a.ErrorLayerProtocol)
+		}
+		return scheduler.A2AExecution{
+			Commit: scheduler.TerminalCommit{
+				TaskID:       claimed.Record.Task.TaskID,
+				AttemptID:    claimed.Attempt.AttemptID,
+				Status:       scheduler.TaskStateFailed,
+				ErrorMessage: strings.TrimSpace(err.Error()),
+				ErrorClass:   class,
+				ErrorLayer:   errorLayer,
+				CommittedAt:  c.now(),
+			},
+			Retryable: errorLayer == string(a2a.ErrorLayerTransport),
+		}, err
+	}
+	return scheduler.A2AExecution{
+		AsyncAccepted: true,
+		AsyncTaskID:   strings.TrimSpace(ack.TaskID),
+	}, nil
 }
 
 func (c *Composer) executeLocalChild(
@@ -583,6 +682,10 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["subagent_child_total"] = stats.ChildTotal
 	payload["subagent_child_failed"] = stats.ChildFailed
 	payload["subagent_budget_reject_total"] = stats.BudgetReject
+	payload["a2a_async_report_total"] = stats.A2AAsyncReportTotal
+	payload["a2a_async_report_failed"] = stats.A2AAsyncReportFailed
+	payload["a2a_async_report_retry_total"] = stats.A2AAsyncReportRetry
+	payload["a2a_async_report_dedup_total"] = stats.A2AAsyncReportDedup
 	payload["recovery_enabled"] = stats.RecoveryEnabled
 	if stats.RecoveryRecovered {
 		payload["recovery_recovered"] = true
@@ -672,6 +775,73 @@ func (c *Composer) addBudgetReject(runID string) {
 	stat.BudgetReject++
 }
 
+func (c *Composer) addAsyncReportOutcome(runID string, report a2a.AsyncReport, duplicate bool) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	reportKey := strings.TrimSpace(report.ReportKey)
+	if reportKey == "" {
+		reportKey = a2a.BuildAsyncReportKey(report)
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	if stat.asyncReportSeen == nil {
+		stat.asyncReportSeen = map[string]struct{}{}
+	}
+	if stat.asyncReportDedupSeen == nil {
+		stat.asyncReportDedupSeen = map[string]struct{}{}
+	}
+	if duplicate {
+		if _, ok := stat.asyncReportDedupSeen[reportKey]; !ok {
+			stat.asyncReportDedupSeen[reportKey] = struct{}{}
+			stat.A2AAsyncReportDedup++
+		}
+		return
+	}
+	if _, exists := stat.asyncReportSeen[reportKey]; exists {
+		return
+	}
+	stat.asyncReportSeen[reportKey] = struct{}{}
+	stat.A2AAsyncReportTotal++
+	if report.Status == a2a.StatusFailed || report.Status == a2a.StatusCanceled {
+		stat.A2AAsyncReportFailed++
+	}
+	if report.DeliveryAttempt > 1 {
+		stat.A2AAsyncReportRetry += report.DeliveryAttempt - 1
+	}
+}
+
+func (c *Composer) emitAsyncReportDedupTimeline(ctx context.Context, claimed scheduler.ClaimedTask, report a2a.AsyncReport) {
+	if c == nil || c.handler == nil {
+		return
+	}
+	payload := map[string]any{
+		"phase":         string(types.ActionPhaseRun),
+		"status":        string(mapAsyncReportStatus(report.Status)),
+		"reason":        a2a.ReasonAsyncReportDedup,
+		"sequence":      c.now().UnixNano(),
+		"task_id":       strings.TrimSpace(claimed.Record.Task.TaskID),
+		"attempt_id":    strings.TrimSpace(claimed.Attempt.AttemptID),
+		"agent_id":      strings.TrimSpace(claimed.Record.Task.AgentID),
+		"peer_id":       strings.TrimSpace(claimed.Record.Task.PeerID),
+		"workflow_id":   strings.TrimSpace(claimed.Record.Task.WorkflowID),
+		"team_id":       strings.TrimSpace(claimed.Record.Task.TeamID),
+		"step_id":       strings.TrimSpace(claimed.Record.Task.StepID),
+		"report_key":    strings.TrimSpace(report.ReportKey),
+		"outcome_key":   strings.TrimSpace(report.OutcomeKey),
+		"delivery_mode": a2a.AsyncReportSinkCallback,
+	}
+	c.handler.OnEvent(ctx, types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   strings.TrimSpace(claimed.Record.Task.RunID),
+		Time:    c.now(),
+		Payload: payload,
+	})
+}
+
 func (c *Composer) ensureRunStat(runID string) *runStat {
 	if stat, ok := c.runStat[runID]; ok {
 		return stat
@@ -684,9 +854,26 @@ func (c *Composer) ensureRunStat(runID string) *runStat {
 		RecoveryEnabled:        c.recoveryEnabled,
 		RecoveryFallback:       c.recoveryFallback,
 		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
+		asyncReportSeen:        map[string]struct{}{},
+		asyncReportDedupSeen:   map[string]struct{}{},
 	}
 	c.runStat[runID] = stat
 	return stat
+}
+
+func mapAsyncReportStatus(status a2a.TaskStatus) types.ActionStatus {
+	switch status {
+	case a2a.StatusSubmitted:
+		return types.ActionStatusPending
+	case a2a.StatusRunning:
+		return types.ActionStatusRunning
+	case a2a.StatusSucceeded:
+		return types.ActionStatusSucceeded
+	case a2a.StatusCanceled:
+		return types.ActionStatusCanceled
+	default:
+		return types.ActionStatusFailed
+	}
 }
 
 func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {

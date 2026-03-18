@@ -211,6 +211,10 @@ mcp:
 			"a2a_version_local":                        "a2a.v1.2",
 			"a2a_version_peer":                         "a2a.v1.0",
 			"a2a_version_negotiation_result":           "compatible",
+			"a2a_async_report_total":                   3,
+			"a2a_async_report_failed":                  1,
+			"a2a_async_report_retry_total":             2,
+			"a2a_async_report_dedup_total":             1,
 			"composer_managed":                         true,
 			"scheduler_backend":                        "file",
 			"scheduler_qos_mode":                       "priority",
@@ -365,6 +369,12 @@ mcp:
 	}
 	if items[0].A2AVersionLocal != "a2a.v1.2" || items[0].A2AVersionPeer != "a2a.v1.0" || items[0].A2AVersionNegotiationResult != "compatible" {
 		t.Fatalf("a2a version fields mismatch: %#v", items[0])
+	}
+	if items[0].A2AAsyncReportTotal != 3 ||
+		items[0].A2AAsyncReportFailed != 1 ||
+		items[0].A2AAsyncReportRetryTotal != 2 ||
+		items[0].A2AAsyncReportDedupTotal != 1 {
+		t.Fatalf("a2a async report fields mismatch: %#v", items[0])
 	}
 	if !items[0].ComposerManaged {
 		t.Fatalf("composer marker mismatch: %#v", items[0])

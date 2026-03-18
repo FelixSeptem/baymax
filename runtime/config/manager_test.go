@@ -1194,6 +1194,86 @@ reload:
 	}
 }
 
+func TestManagerA2AAsyncReportingInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+a2a:
+  enabled: true
+  client_timeout: 1200ms
+  delivery:
+    mode: callback
+    fallback_mode: callback
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 3
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 1
+  async_reporting:
+    enabled: true
+    sink: callback
+    retry:
+      max_attempts: 3
+      backoff_initial: 50ms
+      backoff_max: 400ms
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().A2A.AsyncReporting.Retry.MaxAttempts
+	if before != 3 {
+		t.Fatalf("before async_reporting.retry.max_attempts = %d, want 3", before)
+	}
+
+	writeConfig(t, file, `
+a2a:
+  enabled: true
+  client_timeout: 1200ms
+  delivery:
+    mode: callback
+    fallback_mode: callback
+    callback_retry:
+      max_attempts: 3
+      backoff: 80ms
+    sse_reconnect:
+      max_attempts: 3
+      backoff: 80ms
+  card:
+    version_policy:
+      mode: strict_major
+      min_supported_minor: 1
+  async_reporting:
+    enabled: true
+    sink: callback
+    retry:
+      max_attempts: 3
+      backoff_initial: 500ms
+      backoff_max: 200ms
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().A2A.AsyncReporting.Retry.MaxAttempts
+	if after != before {
+		t.Fatalf("invalid async reporting reload should rollback, max_attempts = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerSchedulerInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

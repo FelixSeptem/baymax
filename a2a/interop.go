@@ -13,14 +13,19 @@ import (
 )
 
 const (
-	ReasonSubmit           = "a2a.submit"
-	ReasonStatusPoll       = "a2a.status_poll"
-	ReasonCallbackRetry    = "a2a.callback_retry"
-	ReasonResolve          = "a2a.resolve"
-	ReasonSSESubscribe     = "a2a.sse_subscribe"
-	ReasonSSEReconnect     = "a2a.sse_reconnect"
-	ReasonDeliveryFallback = "a2a.delivery_fallback"
-	ReasonVersionMismatch  = "a2a.version_mismatch"
+	ReasonSubmit             = "a2a.submit"
+	ReasonStatusPoll         = "a2a.status_poll"
+	ReasonCallbackRetry      = "a2a.callback_retry"
+	ReasonResolve            = "a2a.resolve"
+	ReasonSSESubscribe       = "a2a.sse_subscribe"
+	ReasonSSEReconnect       = "a2a.sse_reconnect"
+	ReasonDeliveryFallback   = "a2a.delivery_fallback"
+	ReasonVersionMismatch    = "a2a.version_mismatch"
+	ReasonAsyncSubmit        = "a2a.async_submit"
+	ReasonAsyncReportDeliver = "a2a.async_report_deliver"
+	ReasonAsyncReportRetry   = "a2a.async_report_retry"
+	ReasonAsyncReportDedup   = "a2a.async_report_dedup"
+	ReasonAsyncReportDrop    = "a2a.async_report_drop"
 )
 
 const (
@@ -68,6 +73,7 @@ type TaskRequest struct {
 	WorkflowID               string         `json:"workflow_id,omitempty"`
 	TeamID                   string         `json:"team_id,omitempty"`
 	StepID                   string         `json:"step_id,omitempty"`
+	AttemptID                string         `json:"attempt_id,omitempty"`
 	AgentID                  string         `json:"agent_id"`
 	PeerID                   string         `json:"peer_id,omitempty"`
 	Method                   string         `json:"method,omitempty"`
@@ -86,6 +92,7 @@ type TaskRecord struct {
 	WorkflowID               string           `json:"workflow_id,omitempty"`
 	TeamID                   string           `json:"team_id,omitempty"`
 	StepID                   string           `json:"step_id,omitempty"`
+	AttemptID                string           `json:"attempt_id,omitempty"`
 	AgentID                  string           `json:"agent_id"`
 	PeerID                   string           `json:"peer_id"`
 	Status                   TaskStatus       `json:"status"`
@@ -269,6 +276,7 @@ func (s *InMemoryServer) Submit(ctx context.Context, req TaskRequest) (TaskRecor
 	req.WorkflowID = strings.TrimSpace(req.WorkflowID)
 	req.TeamID = strings.TrimSpace(req.TeamID)
 	req.StepID = strings.TrimSpace(req.StepID)
+	req.AttemptID = strings.TrimSpace(req.AttemptID)
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.PeerID = strings.TrimSpace(req.PeerID)
 	req.Method = strings.TrimSpace(req.Method)
@@ -291,6 +299,7 @@ func (s *InMemoryServer) Submit(ctx context.Context, req TaskRequest) (TaskRecor
 		WorkflowID:               req.WorkflowID,
 		TeamID:                   req.TeamID,
 		StepID:                   req.StepID,
+		AttemptID:                req.AttemptID,
 		AgentID:                  req.AgentID,
 		PeerID:                   req.PeerID,
 		Status:                   StatusSubmitted,
@@ -409,6 +418,7 @@ func (s *InMemoryServer) emitTimeline(ctx context.Context, record TaskRecord, re
 		"reason":        reason,
 		"sequence":      now.UnixNano(),
 		"task_id":       record.TaskID,
+		"attempt_id":    record.AttemptID,
 		"agent_id":      record.AgentID,
 		"peer_id":       record.PeerID,
 		"delivery_mode": record.DeliveryMode,
@@ -482,6 +492,7 @@ type ClientPolicy struct {
 	CallbackRetry      RetryPolicy
 	Delivery           DeliveryPolicy
 	CardVersion        CardVersionPolicy
+	AsyncReporting     AsyncReportingPolicy
 }
 
 type RetryPolicy struct {
@@ -490,13 +501,14 @@ type RetryPolicy struct {
 }
 
 type Client struct {
-	server   Server
-	router   Router
-	cards    []AgentCard
-	policy   ClientPolicy
-	now      func() time.Time
-	timeline types.EventHandler
-	pending  sync.Map
+	server         Server
+	router         Router
+	cards          []AgentCard
+	policy         ClientPolicy
+	now            func() time.Time
+	timeline       types.EventHandler
+	pending        sync.Map
+	asyncDelivered sync.Map
 }
 
 func NewClient(server Server, cards []AgentCard, router Router, policy ClientPolicy, timeline types.EventHandler) *Client {
@@ -545,6 +557,7 @@ func NewClient(server Server, cards []AgentCard, router Router, policy ClientPol
 	if policy.CardVersion.MinSupportedMinor < 0 {
 		policy.CardVersion.MinSupportedMinor = 0
 	}
+	policy.AsyncReporting = normalizeAsyncReportingPolicy(policy.AsyncReporting)
 	return &Client{
 		server:   server,
 		router:   router,
@@ -563,6 +576,7 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 	req.WorkflowID = strings.TrimSpace(req.WorkflowID)
 	req.TeamID = strings.TrimSpace(req.TeamID)
 	req.StepID = strings.TrimSpace(req.StepID)
+	req.AttemptID = strings.TrimSpace(req.AttemptID)
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.PeerID = strings.TrimSpace(req.PeerID)
 	if req.TaskID == "" {
@@ -585,6 +599,7 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 			WorkflowID:               req.WorkflowID,
 			TeamID:                   req.TeamID,
 			StepID:                   req.StepID,
+			AttemptID:                req.AttemptID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusFailed,
@@ -615,6 +630,7 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 			WorkflowID:               req.WorkflowID,
 			TeamID:                   req.TeamID,
 			StepID:                   req.StepID,
+			AttemptID:                req.AttemptID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusFailed,
@@ -644,6 +660,7 @@ func (c *Client) Submit(ctx context.Context, req TaskRequest) (TaskRecord, error
 			WorkflowID:               req.WorkflowID,
 			TeamID:                   req.TeamID,
 			StepID:                   req.StepID,
+			AttemptID:                req.AttemptID,
 			AgentID:                  req.AgentID,
 			PeerID:                   req.PeerID,
 			Status:                   StatusSubmitted,
@@ -741,6 +758,7 @@ func (c *Client) WaitResult(
 						WorkflowID:               lastRecord.WorkflowID,
 						TeamID:                   lastRecord.TeamID,
 						StepID:                   lastRecord.StepID,
+						AttemptID:                lastRecord.AttemptID,
 						AgentID:                  lastRecord.AgentID,
 						PeerID:                   lastRecord.PeerID,
 						Status:                   StatusRunning,
@@ -808,6 +826,9 @@ func (c *Client) WaitResult(
 			}
 			if strings.TrimSpace(result.StepID) == "" {
 				result.StepID = record.StepID
+			}
+			if strings.TrimSpace(result.AttemptID) == "" {
+				result.AttemptID = record.AttemptID
 			}
 			if strings.TrimSpace(result.VersionLocal) == "" {
 				result.VersionLocal = record.VersionLocal
@@ -889,6 +910,10 @@ func (c *Client) deliverCallback(ctx context.Context, record TaskRecord, callbac
 }
 
 func (c *Client) emitTimeline(ctx context.Context, record TaskRecord, reason string) {
+	c.emitTimelineWithExtras(ctx, record, reason, nil)
+}
+
+func (c *Client) emitTimelineWithExtras(ctx context.Context, record TaskRecord, reason string, extras map[string]any) {
 	if c == nil || c.timeline == nil {
 		return
 	}
@@ -903,6 +928,9 @@ func (c *Client) emitTimeline(ctx context.Context, record TaskRecord, reason str
 		"delivery_mode": record.DeliveryMode,
 		"version_local": record.VersionLocal,
 		"version_peer":  record.VersionPeer,
+	}
+	if strings.TrimSpace(record.AttemptID) != "" {
+		payload["attempt_id"] = strings.TrimSpace(record.AttemptID)
 	}
 	if strings.TrimSpace(record.WorkflowID) != "" {
 		payload["workflow_id"] = strings.TrimSpace(record.WorkflowID)
@@ -921,6 +949,9 @@ func (c *Client) emitTimeline(ctx context.Context, record TaskRecord, reason str
 	}
 	if strings.TrimSpace(record.VersionNegotiationResult) != "" {
 		payload["version_negotiation_result"] = strings.TrimSpace(record.VersionNegotiationResult)
+	}
+	for key, value := range extras {
+		payload[key] = value
 	}
 	c.timeline.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,

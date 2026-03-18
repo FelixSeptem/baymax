@@ -566,6 +566,22 @@ func TestA2AConfigDefaults(t *testing.T) {
 	if cfg.A2A.CapabilityDiscovery.MaxCandidates <= 0 {
 		t.Fatalf("a2a.capability_discovery.max_candidates = %d, want > 0", cfg.A2A.CapabilityDiscovery.MaxCandidates)
 	}
+	if cfg.A2A.AsyncReporting.Enabled {
+		t.Fatal("a2a.async_reporting.enabled = true, want false")
+	}
+	if cfg.A2A.AsyncReporting.Sink != A2AAsyncReportingSinkCallback {
+		t.Fatalf("a2a.async_reporting.sink = %q, want callback", cfg.A2A.AsyncReporting.Sink)
+	}
+	if cfg.A2A.AsyncReporting.Retry.MaxAttempts != 3 {
+		t.Fatalf("a2a.async_reporting.retry.max_attempts = %d, want 3", cfg.A2A.AsyncReporting.Retry.MaxAttempts)
+	}
+	if cfg.A2A.AsyncReporting.Retry.BackoffInitial <= 0 || cfg.A2A.AsyncReporting.Retry.BackoffMax <= 0 {
+		t.Fatalf(
+			"a2a.async_reporting.retry backoff values must be > 0, got initial=%v max=%v",
+			cfg.A2A.AsyncReporting.Retry.BackoffInitial,
+			cfg.A2A.AsyncReporting.Retry.BackoffMax,
+		)
+	}
 }
 
 func TestA2AConfigEnvOverridePrecedence(t *testing.T) {
@@ -574,6 +590,8 @@ func TestA2AConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_A2A_DELIVERY_CALLBACK_RETRY_MAX_ATTEMPTS", "5")
 	t.Setenv("BAYMAX_A2A_CARD_VERSION_POLICY_MIN_SUPPORTED_MINOR", "2")
 	t.Setenv("BAYMAX_A2A_CAPABILITY_DISCOVERY_REQUIRE_ALL", "false")
+	t.Setenv("BAYMAX_A2A_ASYNC_REPORTING_SINK", A2AAsyncReportingSinkChannel)
+	t.Setenv("BAYMAX_A2A_ASYNC_REPORTING_RETRY_MAX_ATTEMPTS", "6")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -597,6 +615,13 @@ a2a:
     enabled: true
     require_all: true
     max_candidates: 9
+  async_reporting:
+    enabled: true
+    sink: callback
+    retry:
+      max_attempts: 2
+      backoff_initial: 40ms
+      backoff_max: 200ms
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -623,6 +648,19 @@ a2a:
 	}
 	if cfg.A2A.CapabilityDiscovery.MaxCandidates != 9 {
 		t.Fatalf("a2a.capability_discovery.max_candidates = %d, want 9", cfg.A2A.CapabilityDiscovery.MaxCandidates)
+	}
+	if cfg.A2A.AsyncReporting.Sink != A2AAsyncReportingSinkChannel {
+		t.Fatalf("a2a.async_reporting.sink = %q, want channel from env", cfg.A2A.AsyncReporting.Sink)
+	}
+	if cfg.A2A.AsyncReporting.Retry.MaxAttempts != 6 {
+		t.Fatalf("a2a.async_reporting.retry.max_attempts = %d, want 6 from env", cfg.A2A.AsyncReporting.Retry.MaxAttempts)
+	}
+	if cfg.A2A.AsyncReporting.Retry.BackoffInitial != 40*time.Millisecond || cfg.A2A.AsyncReporting.Retry.BackoffMax != 200*time.Millisecond {
+		t.Fatalf(
+			"a2a.async_reporting.retry backoff values = (%v,%v), want (40ms,200ms)",
+			cfg.A2A.AsyncReporting.Retry.BackoffInitial,
+			cfg.A2A.AsyncReporting.Retry.BackoffMax,
+		)
 	}
 }
 
@@ -661,6 +699,25 @@ func TestA2AConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.A2A.CapabilityDiscovery.MaxCandidates = 0
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for a2a.capability_discovery.max_candidates")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.AsyncReporting.Sink = "webhook"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.async_reporting.sink")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.AsyncReporting.Retry.MaxAttempts = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.async_reporting.retry.max_attempts")
+	}
+
+	cfg = DefaultConfig()
+	cfg.A2A.AsyncReporting.Retry.BackoffInitial = 100 * time.Millisecond
+	cfg.A2A.AsyncReporting.Retry.BackoffMax = 10 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for a2a.async_reporting.retry.backoff_max")
 	}
 }
 

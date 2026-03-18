@@ -607,9 +607,16 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		summary, err := s.Stats(context.Background())
 		if err == nil {
 			payload["scheduler_backend"] = strings.TrimSpace(summary.Backend)
+			if strings.TrimSpace(summary.QoSMode) != "" {
+				payload["scheduler_qos_mode"] = strings.TrimSpace(summary.QoSMode)
+			}
 			payload["scheduler_queue_total"] = summary.QueueTotal
 			payload["scheduler_claim_total"] = summary.ClaimTotal
 			payload["scheduler_reclaim_total"] = summary.ReclaimTotal
+			payload["scheduler_priority_claim_total"] = summary.PriorityClaimTotal
+			payload["scheduler_fairness_yield_total"] = summary.FairnessYieldTotal
+			payload["scheduler_retry_backoff_total"] = summary.RetryBackoffTotal
+			payload["scheduler_dead_letter_total"] = summary.DeadLetterTotal
 		}
 	}
 
@@ -718,11 +725,13 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 		MaxActiveChildren:  cfg.Subagent.MaxActiveChildren,
 		ChildTimeoutBudget: cfg.Subagent.ChildTimeoutBudget,
 	}
+	governance := c.schedulerGovernanceConfig(cfg)
 	s, err := scheduler.New(
 		store,
 		scheduler.WithTimelineEmitter(c.handler),
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
+		scheduler.WithGovernance(governance),
 	)
 	if err != nil {
 		return err
@@ -770,11 +779,13 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 		MaxActiveChildren:  cfg.Subagent.MaxActiveChildren,
 		ChildTimeoutBudget: cfg.Subagent.ChildTimeoutBudget,
 	}
+	governance := c.schedulerGovernanceConfig(cfg)
 	updated, err := scheduler.New(
 		store,
 		scheduler.WithTimelineEmitter(c.handler),
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
+		scheduler.WithGovernance(governance),
 	)
 	if err != nil {
 		return
@@ -792,14 +803,45 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d",
+		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
 		cfg.Subagent.ChildTimeoutBudget.Milliseconds(),
 		cfg.Scheduler.QueueLimit,
 		cfg.Scheduler.RetryMaxAttempts,
+		strings.TrimSpace(strings.ToLower(cfg.Scheduler.QoS.Mode)),
+		cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority,
+		cfg.Scheduler.DLQ.Enabled,
+		cfg.Scheduler.Retry.Backoff.Enabled,
+		cfg.Scheduler.Retry.Backoff.Initial.Milliseconds(),
+		cfg.Scheduler.Retry.Backoff.Max.Milliseconds(),
+		cfg.Scheduler.Retry.Backoff.Multiplier,
+		cfg.Scheduler.Retry.Backoff.JitterRatio,
 	)
+}
+
+func (c *Composer) schedulerGovernanceConfig(cfg runtimeconfig.Config) scheduler.GovernanceConfig {
+	mode := scheduler.QoSMode(strings.TrimSpace(strings.ToLower(cfg.Scheduler.QoS.Mode)))
+	if mode == "" {
+		mode = scheduler.QoSModeFIFO
+	}
+	return scheduler.GovernanceConfig{
+		QoS: mode,
+		Fairness: scheduler.FairnessConfig{
+			MaxConsecutiveClaimsPerPriority: cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority,
+		},
+		DLQ: scheduler.DLQConfig{
+			Enabled: cfg.Scheduler.DLQ.Enabled,
+		},
+		Backoff: scheduler.RetryBackoffConfig{
+			Enabled:     cfg.Scheduler.Retry.Backoff.Enabled,
+			Initial:     cfg.Scheduler.Retry.Backoff.Initial,
+			Max:         cfg.Scheduler.Retry.Backoff.Max,
+			Multiplier:  cfg.Scheduler.Retry.Backoff.Multiplier,
+			JitterRatio: cfg.Scheduler.Retry.Backoff.JitterRatio,
+		},
+	}
 }
 
 func (c *Composer) effectiveConfig() runtimeconfig.Config {

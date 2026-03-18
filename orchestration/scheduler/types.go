@@ -12,25 +12,33 @@ import (
 )
 
 const (
-	ReasonEnqueue      = "scheduler.enqueue"
-	ReasonClaim        = "scheduler.claim"
-	ReasonHeartbeat    = "scheduler.heartbeat"
-	ReasonLeaseExpired = "scheduler.lease_expired"
-	ReasonRequeue      = "scheduler.requeue"
-	ReasonSpawn        = "subagent.spawn"
-	ReasonJoin         = "subagent.join"
-	ReasonBudgetReject = "subagent.budget_reject"
+	ReasonEnqueue       = "scheduler.enqueue"
+	ReasonClaim         = "scheduler.claim"
+	ReasonHeartbeat     = "scheduler.heartbeat"
+	ReasonLeaseExpired  = "scheduler.lease_expired"
+	ReasonRequeue       = "scheduler.requeue"
+	ReasonQoSClaim      = "scheduler.qos_claim"
+	ReasonFairnessYield = "scheduler.fairness_yield"
+	ReasonRetryBackoff  = "scheduler.retry_backoff"
+	ReasonDeadLetter    = "scheduler.dead_letter"
+	ReasonSpawn         = "subagent.spawn"
+	ReasonJoin          = "subagent.join"
+	ReasonBudgetReject  = "subagent.budget_reject"
 )
 
 var canonicalReasonSet = map[string]struct{}{
-	ReasonEnqueue:      {},
-	ReasonClaim:        {},
-	ReasonHeartbeat:    {},
-	ReasonLeaseExpired: {},
-	ReasonRequeue:      {},
-	ReasonSpawn:        {},
-	ReasonJoin:         {},
-	ReasonBudgetReject: {},
+	ReasonEnqueue:       {},
+	ReasonClaim:         {},
+	ReasonHeartbeat:     {},
+	ReasonLeaseExpired:  {},
+	ReasonRequeue:       {},
+	ReasonQoSClaim:      {},
+	ReasonFairnessYield: {},
+	ReasonRetryBackoff:  {},
+	ReasonDeadLetter:    {},
+	ReasonSpawn:         {},
+	ReasonJoin:          {},
+	ReasonBudgetReject:  {},
 }
 
 func CanonicalReason(reason string) (string, bool) {
@@ -45,10 +53,17 @@ func CanonicalReason(reason string) (string, bool) {
 type TaskState string
 
 const (
-	TaskStateQueued    TaskState = "queued"
-	TaskStateRunning   TaskState = "running"
-	TaskStateSucceeded TaskState = "succeeded"
-	TaskStateFailed    TaskState = "failed"
+	TaskStateQueued     TaskState = "queued"
+	TaskStateRunning    TaskState = "running"
+	TaskStateSucceeded  TaskState = "succeeded"
+	TaskStateFailed     TaskState = "failed"
+	TaskStateDeadLetter TaskState = "dead_letter"
+)
+
+const (
+	TaskPriorityHigh   = "high"
+	TaskPriorityNormal = "normal"
+	TaskPriorityLow    = "low"
 )
 
 type AttemptStatus string
@@ -69,6 +84,7 @@ type Task struct {
 	AgentID     string         `json:"agent_id,omitempty"`
 	PeerID      string         `json:"peer_id,omitempty"`
 	ParentRunID string         `json:"parent_run_id,omitempty"`
+	Priority    string         `json:"priority,omitempty"`
 	Payload     map[string]any `json:"payload,omitempty"`
 	MaxAttempts int            `json:"max_attempts,omitempty"`
 }
@@ -83,8 +99,21 @@ func normalizeTask(in Task) (Task, error) {
 	out.AgentID = strings.TrimSpace(out.AgentID)
 	out.PeerID = strings.TrimSpace(out.PeerID)
 	out.ParentRunID = strings.TrimSpace(out.ParentRunID)
+	out.Priority = strings.ToLower(strings.TrimSpace(out.Priority))
 	if out.TaskID == "" {
 		return Task{}, errors.New("task_id is required")
+	}
+	if out.Priority == "" {
+		if payloadPriority, ok := out.Payload["priority"].(string); ok {
+			out.Priority = strings.ToLower(strings.TrimSpace(payloadPriority))
+		}
+	}
+	switch out.Priority {
+	case TaskPriorityHigh, TaskPriorityNormal, TaskPriorityLow:
+	case "":
+		out.Priority = TaskPriorityNormal
+	default:
+		return Task{}, fmt.Errorf("priority must be one of [%s,%s,%s], got %q", TaskPriorityHigh, TaskPriorityNormal, TaskPriorityLow, out.Priority)
 	}
 	if out.MaxAttempts <= 0 {
 		out.MaxAttempts = 3
@@ -110,6 +139,8 @@ type TaskRecord struct {
 	State          TaskState        `json:"state"`
 	Attempts       []Attempt        `json:"attempts,omitempty"`
 	CurrentAttempt string           `json:"current_attempt_id,omitempty"`
+	NextEligibleAt time.Time        `json:"next_eligible_at,omitempty"`
+	DeadLetterCode string           `json:"dead_letter_code,omitempty"`
 	Result         map[string]any   `json:"result,omitempty"`
 	ErrorMessage   string           `json:"error_message,omitempty"`
 	ErrorClass     types.ErrorClass `json:"error_class,omitempty"`
@@ -136,8 +167,10 @@ func (r TaskRecord) currentAttempt() (Attempt, bool) {
 }
 
 type ClaimedTask struct {
-	Record  TaskRecord `json:"record"`
-	Attempt Attempt    `json:"attempt"`
+	Record          TaskRecord `json:"record"`
+	Attempt         Attempt    `json:"attempt"`
+	TaskPriority    string     `json:"task_priority,omitempty"`
+	FairnessYielded bool       `json:"fairness_yielded,omitempty"`
 }
 
 type TerminalCommit struct {
@@ -210,12 +243,17 @@ type CommitResult struct {
 
 type Stats struct {
 	Backend                      string `json:"backend"`
+	QoSMode                      string `json:"qos_mode,omitempty"`
 	QueueTotal                   int    `json:"queue_total"`
 	ClaimTotal                   int    `json:"claim_total"`
 	ReclaimTotal                 int    `json:"reclaim_total"`
 	LeaseExpiredTotal            int    `json:"lease_expired_total"`
 	CompleteTotal                int    `json:"complete_total"`
 	FailTotal                    int    `json:"fail_total"`
+	PriorityClaimTotal           int    `json:"priority_claim_total,omitempty"`
+	FairnessYieldTotal           int    `json:"fairness_yield_total,omitempty"`
+	RetryBackoffTotal            int    `json:"retry_backoff_total,omitempty"`
+	DeadLetterTotal              int    `json:"dead_letter_total,omitempty"`
 	DuplicateTerminalCommitTotal int    `json:"duplicate_terminal_commit_total"`
 }
 
@@ -254,6 +292,36 @@ type Guardrails struct {
 	MaxDepth           int           `json:"max_depth"`
 	MaxActiveChildren  int           `json:"max_active_children"`
 	ChildTimeoutBudget time.Duration `json:"child_timeout_budget"`
+}
+
+type QoSMode string
+
+const (
+	QoSModeFIFO     QoSMode = "fifo"
+	QoSModePriority QoSMode = "priority"
+)
+
+type FairnessConfig struct {
+	MaxConsecutiveClaimsPerPriority int `json:"max_consecutive_claims_per_priority"`
+}
+
+type DLQConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type RetryBackoffConfig struct {
+	Enabled     bool          `json:"enabled"`
+	Initial     time.Duration `json:"initial"`
+	Max         time.Duration `json:"max"`
+	Multiplier  float64       `json:"multiplier"`
+	JitterRatio float64       `json:"jitter_ratio"`
+}
+
+type GovernanceConfig struct {
+	QoS      QoSMode            `json:"qos_mode"`
+	Fairness FairnessConfig     `json:"fairness"`
+	DLQ      DLQConfig          `json:"dlq"`
+	Backoff  RetryBackoffConfig `json:"backoff"`
 }
 
 type SpawnRequest struct {

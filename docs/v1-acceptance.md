@@ -30,8 +30,9 @@
 - Runtime config exposes composed-orchestration controls under existing domains (`teams.remote.*`, `workflow.remote.*`) with deterministic precedence `env > file > default`.
 - Distributed subagent scheduler baseline is available as independent module (`orchestration/scheduler`) with durable enqueue/claim/heartbeat/lease-expire/requeue semantics.
 - Scheduler/Subagent timeline reasons and metadata are normalized with `scheduler.*|subagent.*` namespace and `task_id/attempt_id` correlation fields.
-- Runtime config exposes scheduler/subagent controls under dedicated domains (`scheduler.*`, `subagent.*`) with deterministic precedence `env > file > default`.
-- Run diagnostics include Scheduler/Subagent additive summary fields: `scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`.
+- Runtime config exposes scheduler/subagent controls under dedicated domains (`scheduler.*`, `scheduler.qos.*`, `scheduler.dlq.*`, `subagent.*`) with deterministic precedence `env > file > default`.
+- Scheduler QoS governance supports `fifo|priority` mode, fairness window, retry backoff (default-off), and dead-letter transfer with deterministic timeline reasons (`scheduler.qos_claim`, `scheduler.fairness_yield`, `scheduler.retry_backoff`, `scheduler.dead_letter`).
+- Run diagnostics include Scheduler/Subagent additive summary fields: `scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `scheduler_qos_mode`, `scheduler_priority_claim_total`, `scheduler_fairness_yield_total`, `scheduler_retry_backoff_total`, `scheduler_dead_letter_total`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`.
 - Composer recovery baseline is available with optional persisted recovery domain (`recovery.*`, default-off) and additive run summary marker `recovery_enabled`.
 - Library-first composer entrypoint is available as independent module (`orchestration/composer`) and can execute Run/Stream without host-side manual wiring of runner/workflow/teams/a2a/scheduler internals.
 - Composer-managed runs expose additive summary fields `composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason` with compatibility-window semantics.

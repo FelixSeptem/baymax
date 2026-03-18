@@ -36,6 +36,12 @@ func (s *FileStore) Backend() string {
 	return "file"
 }
 
+func (s *FileStore) SetGovernance(cfg GovernanceConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setGovernance(cfg)
+}
+
 func (s *FileStore) Enqueue(_ context.Context, task Task, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -136,11 +136,16 @@ type RunRecord struct {
 	A2AVersionNegotiationResult          string                            `json:"a2a_version_negotiation_result,omitempty"`
 	ComposerManaged                      bool                              `json:"composer_managed,omitempty"`
 	SchedulerBackend                     string                            `json:"scheduler_backend,omitempty"`
+	SchedulerQoSMode                     string                            `json:"scheduler_qos_mode,omitempty"`
 	SchedulerBackendFallback             bool                              `json:"scheduler_backend_fallback,omitempty"`
 	SchedulerBackendFallbackReason       string                            `json:"scheduler_backend_fallback_reason,omitempty"`
 	SchedulerQueueTotal                  int                               `json:"scheduler_queue_total,omitempty"`
 	SchedulerClaimTotal                  int                               `json:"scheduler_claim_total,omitempty"`
 	SchedulerReclaimTotal                int                               `json:"scheduler_reclaim_total,omitempty"`
+	SchedulerPriorityClaimTotal          int                               `json:"scheduler_priority_claim_total,omitempty"`
+	SchedulerFairnessYieldTotal          int                               `json:"scheduler_fairness_yield_total,omitempty"`
+	SchedulerRetryBackoffTotal           int                               `json:"scheduler_retry_backoff_total,omitempty"`
+	SchedulerDeadLetterTotal             int                               `json:"scheduler_dead_letter_total,omitempty"`
 	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
 	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
 	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`

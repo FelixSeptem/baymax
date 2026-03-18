@@ -128,6 +128,34 @@ func TestExecuteClaimWithA2AFailedTerminalMapsErrorLayer(t *testing.T) {
 	}
 }
 
+func TestExecuteClaimWithA2ACanceledTerminalMapsToFailedDeterministically(t *testing.T) {
+	claimed := ClaimedTask{
+		Record:  TaskRecord{Task: Task{TaskID: "task-a2a-terminal-canceled"}},
+		Attempt: Attempt{AttemptID: "task-a2a-terminal-canceled-attempt-1"},
+	}
+	result, err := ExecuteClaimWithA2A(context.Background(), fakeA2AClient{
+		record: a2a.TaskRecord{
+			TaskID:        "dummy",
+			Status:        a2a.StatusCanceled,
+			ErrorClass:    "ErrMCP",
+			A2AErrorLayer: string(a2a.ErrorLayerProtocol),
+			ErrorMessage:  "canceled by peer",
+		},
+	}, claimed, 5*time.Millisecond)
+	if err != nil {
+		t.Fatalf("canceled terminal should not return execution error, got %v", err)
+	}
+	if result.Commit.Status != TaskStateFailed {
+		t.Fatalf("commit status = %q, want failed", result.Commit.Status)
+	}
+	if result.Retryable {
+		t.Fatal("protocol-layer canceled terminal should not be retryable")
+	}
+	if result.Commit.ErrorLayer != string(a2a.ErrorLayerProtocol) {
+		t.Fatalf("error layer = %q, want protocol", result.Commit.ErrorLayer)
+	}
+}
+
 func TestFailedExecutionFromA2AErrorFallbackClassification(t *testing.T) {
 	claimed := ClaimedTask{
 		Record:  TaskRecord{Task: Task{TaskID: "task-a2a-fallback"}},

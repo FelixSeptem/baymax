@@ -1242,6 +1242,74 @@ reload:
 	}
 }
 
+func TestManagerSchedulerQoSInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  qos:
+    mode: fifo
+    fairness:
+      max_consecutive_claims_per_priority: 3
+  retry:
+    backoff:
+      initial: 50ms
+      max: 2s
+      multiplier: 2
+      jitter_ratio: 0.2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority
+	if before != 3 {
+		t.Fatalf("before scheduler.qos.fairness.max_consecutive_claims_per_priority = %d, want 3", before)
+	}
+
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  qos:
+    mode: priority
+    fairness:
+      max_consecutive_claims_per_priority: 0
+  retry:
+    backoff:
+      initial: 50ms
+      max: 2s
+      multiplier: 2
+      jitter_ratio: 0.2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority
+	if after != before {
+		t.Fatalf("invalid scheduler qos reload should rollback, fairness.max_consecutive_claims_per_priority = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRecoveryInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

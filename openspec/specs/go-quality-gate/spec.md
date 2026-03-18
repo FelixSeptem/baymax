@@ -257,3 +257,31 @@ Recovery contract suite MUST fail on Run/Stream semantic divergence, replay coun
 - **WHEN** recovery conflict handling regresses to non-fail-fast behavior
 - **THEN** recovery contract tests fail and block merge
 
+### Requirement: Quality gate SHALL include scheduler QoS and dead-letter contract suites
+The shared multi-agent quality gate MUST include scheduler qos/fairness/dead-letter contract tests as blocking checks.
+
+#### Scenario: CI executes shared multi-agent gate after A10 rollout
+- **WHEN** CI runs `check-multi-agent-shared-contract.*`
+- **THEN** scheduler QoS and dead-letter suites execute as blocking checks in that gate path
+
+### Requirement: QoS gate SHALL block fairness and dead-letter regressions
+QoS contract suites MUST fail on fairness-window violations, dead-letter transfer regressions, or retry-backoff policy drift.
+
+#### Scenario: Regression bypasses fairness threshold
+- **WHEN** high-priority claims exceed configured fairness window without yielding
+- **THEN** QoS contract tests fail and block merge
+
+### Requirement: Quality gate SHALL include shared synchronous invocation contract tests
+The shared multi-agent quality gate MUST include contract suites validating shared synchronous invocation behavior across orchestration integration paths.
+
+#### Scenario: CI executes shared multi-agent contract gate for A11
+- **WHEN** CI runs shared multi-agent contract scripts after A11 rollout
+- **THEN** shared synchronous invocation contract tests are executed as blocking checks
+
+### Requirement: Synchronous invocation gate SHALL block semantic divergence
+Shared synchronous invocation contract suite MUST fail on timeout/cancellation precedence regressions, error-layer normalization drift, or Run/Stream semantic divergence.
+
+#### Scenario: Regression changes cancellation precedence in one module path
+- **WHEN** one orchestration path diverges from shared synchronous invocation cancellation semantics
+- **THEN** contract suite fails and blocks merge
+

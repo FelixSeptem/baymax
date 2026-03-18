@@ -102,6 +102,8 @@ const (
 const (
 	SchedulerBackendMemory = "memory"
 	SchedulerBackendFile   = "file"
+	SchedulerQoSModeFIFO   = "fifo"
+	SchedulerQoSModePrio   = "priority"
 )
 
 const (
@@ -291,13 +293,41 @@ type A2ACapabilityDiscoveryConfig struct {
 }
 
 type SchedulerConfig struct {
-	Enabled           bool          `json:"enabled"`
-	Backend           string        `json:"backend"`
-	Path              string        `json:"path"`
-	LeaseTimeout      time.Duration `json:"lease_timeout"`
-	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
-	QueueLimit        int           `json:"queue_limit"`
-	RetryMaxAttempts  int           `json:"retry_max_attempts"`
+	Enabled           bool                 `json:"enabled"`
+	Backend           string               `json:"backend"`
+	Path              string               `json:"path"`
+	LeaseTimeout      time.Duration        `json:"lease_timeout"`
+	HeartbeatInterval time.Duration        `json:"heartbeat_interval"`
+	QueueLimit        int                  `json:"queue_limit"`
+	RetryMaxAttempts  int                  `json:"retry_max_attempts"`
+	QoS               SchedulerQoSConfig   `json:"qos"`
+	DLQ               SchedulerDLQConfig   `json:"dlq"`
+	Retry             SchedulerRetryConfig `json:"retry"`
+}
+
+type SchedulerQoSConfig struct {
+	Mode     string                  `json:"mode"`
+	Fairness SchedulerFairnessConfig `json:"fairness"`
+}
+
+type SchedulerFairnessConfig struct {
+	MaxConsecutiveClaimsPerPriority int `json:"max_consecutive_claims_per_priority"`
+}
+
+type SchedulerDLQConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type SchedulerRetryConfig struct {
+	Backoff SchedulerRetryBackoffConfig `json:"backoff"`
+}
+
+type SchedulerRetryBackoffConfig struct {
+	Enabled     bool          `json:"enabled"`
+	Initial     time.Duration `json:"initial"`
+	Max         time.Duration `json:"max"`
+	Multiplier  float64       `json:"multiplier"`
+	JitterRatio float64       `json:"jitter_ratio"`
 }
 
 type RecoveryConfig struct {
@@ -833,6 +863,24 @@ func DefaultConfig() Config {
 			HeartbeatInterval: 500 * time.Millisecond,
 			QueueLimit:        1024,
 			RetryMaxAttempts:  3,
+			QoS: SchedulerQoSConfig{
+				Mode: SchedulerQoSModeFIFO,
+				Fairness: SchedulerFairnessConfig{
+					MaxConsecutiveClaimsPerPriority: 3,
+				},
+			},
+			DLQ: SchedulerDLQConfig{
+				Enabled: false,
+			},
+			Retry: SchedulerRetryConfig{
+				Backoff: SchedulerRetryBackoffConfig{
+					Enabled:     false,
+					Initial:     50 * time.Millisecond,
+					Max:         2 * time.Second,
+					Multiplier:  2.0,
+					JitterRatio: 0.2,
+				},
+			},
 		},
 		Recovery: RecoveryConfig{
 			Enabled:        false,
@@ -1441,6 +1489,36 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Scheduler.RetryMaxAttempts <= 0 {
 		return errors.New("scheduler.retry_max_attempts must be > 0")
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(cfg.Scheduler.QoS.Mode)); mode {
+	case SchedulerQoSModeFIFO, SchedulerQoSModePrio:
+	default:
+		return fmt.Errorf(
+			"scheduler.qos.mode must be one of [%s,%s], got %q",
+			SchedulerQoSModeFIFO,
+			SchedulerQoSModePrio,
+			cfg.Scheduler.QoS.Mode,
+		)
+	}
+	if cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority <= 0 {
+		return errors.New("scheduler.qos.fairness.max_consecutive_claims_per_priority must be > 0")
+	}
+	if cfg.Scheduler.Retry.Backoff.Enabled {
+		if cfg.Scheduler.Retry.Backoff.Initial <= 0 {
+			return errors.New("scheduler.retry.backoff.initial must be > 0 when enabled")
+		}
+		if cfg.Scheduler.Retry.Backoff.Max <= 0 {
+			return errors.New("scheduler.retry.backoff.max must be > 0 when enabled")
+		}
+		if cfg.Scheduler.Retry.Backoff.Max < cfg.Scheduler.Retry.Backoff.Initial {
+			return errors.New("scheduler.retry.backoff.max must be >= scheduler.retry.backoff.initial")
+		}
+		if cfg.Scheduler.Retry.Backoff.Multiplier < 1 {
+			return errors.New("scheduler.retry.backoff.multiplier must be >= 1")
+		}
+		if cfg.Scheduler.Retry.Backoff.JitterRatio < 0 || cfg.Scheduler.Retry.Backoff.JitterRatio > 1 {
+			return errors.New("scheduler.retry.backoff.jitter_ratio must be in [0,1]")
+		}
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Recovery.Backend)); backend {
 	case RecoveryBackendMemory:
@@ -2431,6 +2509,14 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.heartbeat_interval", base.Scheduler.HeartbeatInterval)
 	v.SetDefault("scheduler.queue_limit", base.Scheduler.QueueLimit)
 	v.SetDefault("scheduler.retry_max_attempts", base.Scheduler.RetryMaxAttempts)
+	v.SetDefault("scheduler.qos.mode", base.Scheduler.QoS.Mode)
+	v.SetDefault("scheduler.qos.fairness.max_consecutive_claims_per_priority", base.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority)
+	v.SetDefault("scheduler.dlq.enabled", base.Scheduler.DLQ.Enabled)
+	v.SetDefault("scheduler.retry.backoff.enabled", base.Scheduler.Retry.Backoff.Enabled)
+	v.SetDefault("scheduler.retry.backoff.initial", base.Scheduler.Retry.Backoff.Initial)
+	v.SetDefault("scheduler.retry.backoff.max", base.Scheduler.Retry.Backoff.Max)
+	v.SetDefault("scheduler.retry.backoff.multiplier", base.Scheduler.Retry.Backoff.Multiplier)
+	v.SetDefault("scheduler.retry.backoff.jitter_ratio", base.Scheduler.Retry.Backoff.JitterRatio)
 	v.SetDefault("recovery.enabled", base.Recovery.Enabled)
 	v.SetDefault("recovery.backend", base.Recovery.Backend)
 	v.SetDefault("recovery.path", base.Recovery.Path)
@@ -2660,6 +2746,14 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Scheduler.HeartbeatInterval = v.GetDuration("scheduler.heartbeat_interval")
 	cfg.Scheduler.QueueLimit = v.GetInt("scheduler.queue_limit")
 	cfg.Scheduler.RetryMaxAttempts = v.GetInt("scheduler.retry_max_attempts")
+	cfg.Scheduler.QoS.Mode = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.qos.mode")))
+	cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority = v.GetInt("scheduler.qos.fairness.max_consecutive_claims_per_priority")
+	cfg.Scheduler.DLQ.Enabled = v.GetBool("scheduler.dlq.enabled")
+	cfg.Scheduler.Retry.Backoff.Enabled = v.GetBool("scheduler.retry.backoff.enabled")
+	cfg.Scheduler.Retry.Backoff.Initial = v.GetDuration("scheduler.retry.backoff.initial")
+	cfg.Scheduler.Retry.Backoff.Max = v.GetDuration("scheduler.retry.backoff.max")
+	cfg.Scheduler.Retry.Backoff.Multiplier = v.GetFloat64("scheduler.retry.backoff.multiplier")
+	cfg.Scheduler.Retry.Backoff.JitterRatio = v.GetFloat64("scheduler.retry.backoff.jitter_ratio")
 	cfg.Recovery.Enabled = v.GetBool("recovery.enabled")
 	cfg.Recovery.Backend = strings.ToLower(strings.TrimSpace(v.GetString("recovery.backend")))
 	cfg.Recovery.Path = strings.TrimSpace(v.GetString("recovery.path"))

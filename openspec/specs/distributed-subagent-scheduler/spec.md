@@ -80,3 +80,38 @@ If recovered scheduler state cannot be reconciled with runtime state, scheduler 
 - **WHEN** recovered current attempt identity conflicts with runtime claimable state
 - **THEN** scheduler emits conflict classification and recovery terminates without best-effort continuation
 
+### Requirement: Scheduler SHALL preserve compatibility when QoS is disabled
+When QoS mode is not enabled, scheduler MUST preserve existing FIFO-compatible claim behavior and retry semantics.
+
+#### Scenario: Existing scheduler integration runs under default config
+- **WHEN** host uses scheduler without qos-specific config
+- **THEN** scheduler behavior remains compatible with pre-A10 FIFO baseline
+
+### Requirement: Scheduler terminal path SHALL include dead-letter terminal classification
+Scheduler terminal outcomes MUST include explicit dead-letter classification when tasks are moved out of normal retry lifecycle.
+
+#### Scenario: Retry-exhausted task enters dead-letter
+- **WHEN** dead-letter policy is enabled and retry budget is exhausted
+- **THEN** task terminal classification includes dead-letter reason and no further standard queue claims occur
+
+### Requirement: Scheduler A2A adapter SHALL use shared synchronous invocation contract
+Scheduler-managed A2A dispatch adapter MUST use shared synchronous invocation contract for submit/wait/normalize behavior instead of path-local duplicated logic.
+
+#### Scenario: Scheduler claim executes remote child through A2A
+- **WHEN** scheduler worker executes claimed task through A2A bridge
+- **THEN** adapter invokes shared synchronous invocation and receives normalized terminal mapping
+
+### Requirement: Scheduler retryability mapping SHALL follow normalized transport classification
+Scheduler retryability decision for A2A execution MUST be derived from normalized error-layer classification where transport-layer failures are retryable and non-transport failures are non-retryable by default.
+
+#### Scenario: Scheduler receives protocol-layer failure
+- **WHEN** shared synchronous invocation returns protocol-layer failure
+- **THEN** scheduler marks commit as failed and non-retryable
+
+### Requirement: Scheduler canceled remote terminal SHALL converge deterministically
+When remote A2A terminal state is `canceled`, scheduler terminal commit path MUST converge deterministically under existing terminal commit contract.
+
+#### Scenario: A2A terminal status is canceled during scheduler-managed execution
+- **WHEN** scheduler adapter receives canceled terminal from A2A
+- **THEN** scheduler produces deterministic terminal commit outcome compatible with existing commit API
+

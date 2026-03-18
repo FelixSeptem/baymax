@@ -2083,6 +2083,25 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Scheduler.QueueLimit <= 0 || cfg.Scheduler.RetryMaxAttempts <= 0 {
 		t.Fatalf("scheduler queue/retry defaults invalid: %#v", cfg.Scheduler)
 	}
+	if cfg.Scheduler.QoS.Mode != SchedulerQoSModeFIFO {
+		t.Fatalf("scheduler.qos.mode = %q, want fifo", cfg.Scheduler.QoS.Mode)
+	}
+	if cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority != 3 {
+		t.Fatalf(
+			"scheduler.qos.fairness.max_consecutive_claims_per_priority = %d, want 3",
+			cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority,
+		)
+	}
+	if cfg.Scheduler.DLQ.Enabled {
+		t.Fatal("scheduler.dlq.enabled = true, want false")
+	}
+	if cfg.Scheduler.Retry.Backoff.Initial <= 0 ||
+		cfg.Scheduler.Retry.Backoff.Max < cfg.Scheduler.Retry.Backoff.Initial ||
+		cfg.Scheduler.Retry.Backoff.Multiplier < 1 ||
+		cfg.Scheduler.Retry.Backoff.JitterRatio < 0 ||
+		cfg.Scheduler.Retry.Backoff.JitterRatio > 1 {
+		t.Fatalf("scheduler.retry.backoff defaults invalid: %#v", cfg.Scheduler.Retry.Backoff)
+	}
 	if cfg.Recovery.Enabled {
 		t.Fatal("recovery.enabled = true, want false")
 	}
@@ -2105,6 +2124,14 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL", "800ms")
 	t.Setenv("BAYMAX_SCHEDULER_QUEUE_LIMIT", "2048")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_SCHEDULER_QOS_MODE", SchedulerQoSModePrio)
+	t.Setenv("BAYMAX_SCHEDULER_QOS_FAIRNESS_MAX_CONSECUTIVE_CLAIMS_PER_PRIORITY", "4")
+	t.Setenv("BAYMAX_SCHEDULER_DLQ_ENABLED", "true")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED", "true")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL", "80ms")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_MAX", "2s")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_MULTIPLIER", "2.5")
+	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_JITTER_RATIO", "0.35")
 	t.Setenv("BAYMAX_RECOVERY_ENABLED", "true")
 	t.Setenv("BAYMAX_RECOVERY_BACKEND", RecoveryBackendFile)
 	t.Setenv("BAYMAX_RECOVERY_PATH", "/tmp/recovery-override")
@@ -2123,6 +2150,19 @@ scheduler:
   heartbeat_interval: 400ms
   queue_limit: 128
   retry_max_attempts: 2
+  qos:
+    mode: fifo
+    fairness:
+      max_consecutive_claims_per_priority: 2
+  dlq:
+    enabled: false
+  retry:
+    backoff:
+      enabled: false
+      initial: 40ms
+      max: 1s
+      multiplier: 2
+      jitter_ratio: 0.20
 recovery:
   enabled: false
   backend: memory
@@ -2151,6 +2191,22 @@ subagent:
 	}
 	if cfg.Scheduler.QueueLimit != 2048 || cfg.Scheduler.RetryMaxAttempts != 5 {
 		t.Fatalf("scheduler queue/retry override mismatch: %#v", cfg.Scheduler)
+	}
+	if cfg.Scheduler.QoS.Mode != SchedulerQoSModePrio ||
+		cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority != 4 {
+		t.Fatalf("scheduler qos override mismatch: %#v", cfg.Scheduler.QoS)
+	}
+	if !cfg.Scheduler.DLQ.Enabled {
+		t.Fatalf("scheduler dlq override mismatch: %#v", cfg.Scheduler.DLQ)
+	}
+	if cfg.Scheduler.Retry.Backoff.Initial != 80*time.Millisecond ||
+		cfg.Scheduler.Retry.Backoff.Max != 2*time.Second ||
+		cfg.Scheduler.Retry.Backoff.Multiplier != 2.5 ||
+		cfg.Scheduler.Retry.Backoff.JitterRatio != 0.35 {
+		t.Fatalf("scheduler retry backoff override mismatch: %#v", cfg.Scheduler.Retry.Backoff)
+	}
+	if !cfg.Scheduler.Retry.Backoff.Enabled {
+		t.Fatalf("scheduler retry backoff enabled override mismatch: %#v", cfg.Scheduler.Retry.Backoff)
 	}
 	if !cfg.Recovery.Enabled || cfg.Recovery.Backend != RecoveryBackendFile || cfg.Recovery.Path != "/tmp/recovery-override" {
 		t.Fatalf("recovery override mismatch: %#v", cfg.Recovery)
@@ -2187,6 +2243,47 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Scheduler.QueueLimit = 0
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for scheduler.queue_limit")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.QoS.Mode = "weighted"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.qos.mode")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.qos.fairness.max_consecutive_claims_per_priority")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Retry.Backoff.Enabled = true
+	cfg.Scheduler.Retry.Backoff.Initial = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.retry.backoff.initial")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Retry.Backoff.Enabled = true
+	cfg.Scheduler.Retry.Backoff.Max = 10 * time.Millisecond
+	cfg.Scheduler.Retry.Backoff.Initial = 20 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.retry.backoff.max")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Retry.Backoff.Enabled = true
+	cfg.Scheduler.Retry.Backoff.Multiplier = 0.9
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.retry.backoff.multiplier")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Retry.Backoff.Enabled = true
+	cfg.Scheduler.Retry.Backoff.JitterRatio = 1.5
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.retry.backoff.jitter_ratio")
 	}
 
 	cfg = DefaultConfig()

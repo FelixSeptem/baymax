@@ -16,6 +16,7 @@
 - 安全响应入口：`SECURITY.md`（邮箱私报，best-effort）
 - 贡献与评审流程：`CONTRIBUTING.md`
 - 社区行为规范：`CODE_OF_CONDUCT.md`
+- 开源许可证：`LICENSE`（Apache License 2.0）
 - 变更记录模板：`CHANGELOG.md`
 
 ## 架构设计
@@ -297,6 +298,22 @@ if err != nil {
 _ = res
 ```
 
+统一同步远程调用（A11）推荐用法：
+```go
+wf := workflow.New(workflow.WithStepAdapter(workflow.DispatchAdapter{
+    A2A: workflow.NewA2AStepAdapter(a2aClient, workflow.A2AStepAdapterOptions{
+        Method:       "workflow.delegate",
+        PollInterval: 20 * time.Millisecond, // 省略时默认 20ms
+    }),
+}))
+
+teamEngine := teams.New()
+remoteRunner := teams.NewA2ARemoteTaskRunner(a2aClient, teams.A2ARemoteRunnerOptions{
+    PollInterval: 20 * time.Millisecond, // 省略时默认 20ms
+})
+```
+同步契约统一遵循 `submit -> wait -> terminal normalize`，并以调用方 `context` 取消/超时为最高优先级。
+
 Recovery（A9）最小配置示例（默认关闭，按需启用）：
 ```yaml
 recovery:
@@ -306,6 +323,31 @@ recovery:
   conflict_policy: fail_fast  # 当前仅支持 fail_fast
 ```
 启用后，run 摘要会增量输出 `recovery_enabled`、`recovery_recovered`、`recovery_replay_total`、`recovery_conflict`、`recovery_conflict_code`、`recovery_fallback_used`、`recovery_fallback_reason`。
+
+Scheduler QoS/DLQ（A10）最小配置示例（保持 A6/A7 兼容默认）：
+```yaml
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  qos:
+    mode: priority # fifo|priority，默认 fifo
+    fairness:
+      max_consecutive_claims_per_priority: 3
+  dlq:
+    enabled: true
+  retry:
+    backoff:
+      enabled: true # 默认 false；关闭时维持即时重试可领取语义
+      initial: 100ms
+      max: 2s
+      multiplier: 2.0
+      jitter_ratio: 0.2
+```
+启用后，run 摘要会增量输出 `scheduler_qos_mode`、`scheduler_priority_claim_total`、`scheduler_fairness_yield_total`、`scheduler_retry_backoff_total`、`scheduler_dead_letter_total`。
 
 Action Gate（H2）最小配置示例：
 ```yaml

@@ -381,6 +381,153 @@ func TestSchedulerGuardrailBudgetRejectAndTimelineReasons(t *testing.T) {
 	}
 }
 
+func TestSchedulerPriorityClaimWithFairnessWindow(t *testing.T) {
+	s, err := New(
+		NewMemoryStore(),
+		WithGovernance(GovernanceConfig{
+			QoS: QoSModePriority,
+			Fairness: FairnessConfig{
+				MaxConsecutiveClaimsPerPriority: 3,
+			},
+			DLQ: DLQConfig{Enabled: false},
+			Backoff: RetryBackoffConfig{
+				Enabled:     true,
+				Initial:     10 * time.Millisecond,
+				Max:         50 * time.Millisecond,
+				Multiplier:  2.0,
+				JitterRatio: 0,
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+
+	ctx := context.Background()
+	tasks := []Task{
+		{TaskID: "high-1", RunID: "run-priority", Priority: TaskPriorityHigh},
+		{TaskID: "high-2", RunID: "run-priority", Priority: TaskPriorityHigh},
+		{TaskID: "high-3", RunID: "run-priority", Priority: TaskPriorityHigh},
+		{TaskID: "high-4", RunID: "run-priority", Priority: TaskPriorityHigh},
+		{TaskID: "low-1", RunID: "run-priority", Priority: TaskPriorityLow},
+	}
+	for _, task := range tasks {
+		if _, err := s.Enqueue(ctx, task); err != nil {
+			t.Fatalf("enqueue %q: %v", task.TaskID, err)
+		}
+	}
+
+	claimIDs := make([]string, 0, 4)
+	for i := 0; i < 4; i++ {
+		claimed, ok, err := s.Claim(ctx, "worker-priority")
+		if err != nil || !ok {
+			t.Fatalf("claim #%d failed: ok=%v err=%v", i+1, ok, err)
+		}
+		claimIDs = append(claimIDs, claimed.Record.Task.TaskID)
+		if i == 3 && !claimed.FairnessYielded {
+			t.Fatal("fourth claim should be fairness-yielded")
+		}
+	}
+	want := []string{"high-1", "high-2", "high-3", "low-1"}
+	for i := range want {
+		if claimIDs[i] != want[i] {
+			t.Fatalf("claim order mismatch at %d: got %q want %q (all=%#v)", i, claimIDs[i], want[i], claimIDs)
+		}
+	}
+
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats failed: %v", err)
+	}
+	if stats.QoSMode != string(QoSModePriority) {
+		t.Fatalf("stats.qos_mode = %q, want %q", stats.QoSMode, QoSModePriority)
+	}
+	if stats.PriorityClaimTotal < 4 {
+		t.Fatalf("priority_claim_total = %d, want >= 4", stats.PriorityClaimTotal)
+	}
+	if stats.FairnessYieldTotal < 1 {
+		t.Fatalf("fairness_yield_total = %d, want >= 1", stats.FairnessYieldTotal)
+	}
+}
+
+func TestSchedulerRetryBackoffAndDeadLetter(t *testing.T) {
+	s, err := New(
+		NewMemoryStore(),
+		WithLeaseTimeout(2*time.Second),
+		WithGovernance(GovernanceConfig{
+			QoS: QoSModeFIFO,
+			Fairness: FairnessConfig{
+				MaxConsecutiveClaimsPerPriority: 3,
+			},
+			DLQ: DLQConfig{Enabled: true},
+			Backoff: RetryBackoffConfig{
+				Enabled:     true,
+				Initial:     40 * time.Millisecond,
+				Max:         200 * time.Millisecond,
+				Multiplier:  2.0,
+				JitterRatio: 0,
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:      "task-dlq",
+		RunID:       "run-dlq",
+		MaxAttempts: 2,
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	claimed1, ok, err := s.Claim(ctx, "worker-a")
+	if err != nil || !ok {
+		t.Fatalf("claim #1 failed: ok=%v err=%v", ok, err)
+	}
+	requeued, err := s.Requeue(ctx, claimed1.Record.Task.TaskID, "retryable_error")
+	if err != nil {
+		t.Fatalf("requeue #1 failed: %v", err)
+	}
+	if requeued.State != TaskStateQueued {
+		t.Fatalf("state after first requeue = %q, want queued", requeued.State)
+	}
+	if requeued.NextEligibleAt.IsZero() {
+		t.Fatal("next_eligible_at should be set after backoff requeue")
+	}
+
+	if _, ok, err := s.Claim(ctx, "worker-b"); err != nil || ok {
+		t.Fatalf("claim during backoff should be blocked: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(70 * time.Millisecond)
+	claimed2, ok, err := s.Claim(ctx, "worker-b")
+	if err != nil || !ok {
+		t.Fatalf("claim #2 failed: ok=%v err=%v", ok, err)
+	}
+
+	dlqRecord, err := s.Requeue(ctx, claimed2.Record.Task.TaskID, "retryable_error")
+	if err != nil {
+		t.Fatalf("requeue #2 failed: %v", err)
+	}
+	if dlqRecord.State != TaskStateDeadLetter {
+		t.Fatalf("state after retry exhaustion = %q, want dead_letter", dlqRecord.State)
+	}
+	if strings.TrimSpace(dlqRecord.DeadLetterCode) == "" {
+		t.Fatal("dead_letter_code should be set")
+	}
+
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats failed: %v", err)
+	}
+	if stats.RetryBackoffTotal < 1 {
+		t.Fatalf("retry_backoff_total = %d, want >= 1", stats.RetryBackoffTotal)
+	}
+	if stats.DeadLetterTotal != 1 {
+		t.Fatalf("dead_letter_total = %d, want 1", stats.DeadLetterTotal)
+	}
+}
+
 func TestCanonicalReasonMapper(t *testing.T) {
 	required := []string{
 		ReasonEnqueue,
@@ -388,6 +535,10 @@ func TestCanonicalReasonMapper(t *testing.T) {
 		ReasonHeartbeat,
 		ReasonLeaseExpired,
 		ReasonRequeue,
+		ReasonQoSClaim,
+		ReasonFairnessYield,
+		ReasonRetryBackoff,
+		ReasonDeadLetter,
 		ReasonSpawn,
 		ReasonJoin,
 		ReasonBudgetReject,
@@ -448,6 +599,7 @@ func TestSchedulerLifecycleTimelineCorrelation(t *testing.T) {
 	if len(expired) != 1 {
 		t.Fatalf("expired len = %d, want 1", len(expired))
 	}
+	time.Sleep(70 * time.Millisecond)
 	reclaimed, ok, err := s.Claim(ctx, "worker-2")
 	if err != nil || !ok {
 		t.Fatalf("reclaim failed: ok=%v err=%v", ok, err)

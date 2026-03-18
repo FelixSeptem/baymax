@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-18 17:46:43
+Updated: 2026-03-18 22:16:05
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -59,3 +59,5 @@ Updated: 2026-03-18 17:46:43
 - 055 -> close-a5-a6-tail-contract-and-governance-a7
 - 056 -> introduce-lib-first-agent-composer-with-scheduler-bridge-a8
 - 057 -> harden-composed-session-recovery-and-deterministic-replay-a9
+- 058 -> introduce-scheduler-qos-fairness-and-deadletter-governance-a10
+- 059 -> unify-sync-agent-invocation-contract-a11

@@ -30,6 +30,14 @@
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
   - `scheduler.heartbeat_interval` -> `BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL`
+  - `scheduler.qos.mode` -> `BAYMAX_SCHEDULER_QOS_MODE`
+  - `scheduler.qos.fairness.max_consecutive_claims_per_priority` -> `BAYMAX_SCHEDULER_QOS_FAIRNESS_MAX_CONSECUTIVE_CLAIMS_PER_PRIORITY`
+  - `scheduler.dlq.enabled` -> `BAYMAX_SCHEDULER_DLQ_ENABLED`
+  - `scheduler.retry.backoff.enabled` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED`
+  - `scheduler.retry.backoff.initial` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL`
+  - `scheduler.retry.backoff.max` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_MAX`
+  - `scheduler.retry.backoff.multiplier` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_MULTIPLIER`
+  - `scheduler.retry.backoff.jitter_ratio` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_JITTER_RATIO`
   - `subagent.max_depth` -> `BAYMAX_SUBAGENT_MAX_DEPTH`
   - `subagent.max_active_children` -> `BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN`
   - `subagent.child_timeout_budget` -> `BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET`
@@ -145,6 +153,19 @@ scheduler:
   heartbeat_interval: 500ms       # 必须 > 0 且 < lease_timeout
   queue_limit: 1024               # 必须 > 0
   retry_max_attempts: 3           # 必须 > 0
+  qos:
+    mode: fifo                    # fifo|priority（默认 fifo）
+    fairness:
+      max_consecutive_claims_per_priority: 3 # 必须 > 0
+  dlq:
+    enabled: false                # 默认 false
+  retry:
+    backoff:
+      enabled: false              # 默认 false（兼容 A6/A7 立即可 claim 语义）
+      initial: 100ms              # enabled=true 时必须 > 0
+      max: 2s                     # enabled=true 时必须 > 0 且 >= initial
+      multiplier: 2.0             # enabled=true 时必须 > 1
+      jitter_ratio: 0.2           # enabled=true 时必须在 [0,1]
 
 recovery:
   enabled: false
@@ -453,14 +474,26 @@ a2a baseline 校验语义：
 10. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
 11. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+a2a 同步调用契约（A11）：
+1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
+2. `poll_interval` 缺省使用兼容默认值 `20ms`，调用方可按路径覆盖。
+3. 同步调用以调用方 `context` 为单一权威，取消/超时优先于轮询等待。
+4. 失败输出统一归一为 `transport|protocol|semantic` 错误层与 `retryable` 提示。
+5. A11 不新增破坏性配置键；保持既有 `a2a.*`、`teams.*`、`workflow.*`、`scheduler.*` 配置兼容。
+
 scheduler/subagent baseline 校验语义：
 1. `scheduler.backend` 仅支持 `memory|file`。
 2. `scheduler.backend=file` 时 `scheduler.path` 必须非空。
 3. `scheduler.lease_timeout` 必须 `> 0`。
 4. `scheduler.heartbeat_interval` 必须 `> 0` 且 `< scheduler.lease_timeout`。
 5. `scheduler.queue_limit` 与 `scheduler.retry_max_attempts` 必须 `> 0`。
-6. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
-7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+6. `scheduler.qos.mode` 仅支持 `fifo|priority`。
+7. `scheduler.qos.fairness.max_consecutive_claims_per_priority` 必须 `> 0`。
+8. `scheduler.dlq.enabled` 为布尔值开关，默认 `false`。
+9. `scheduler.retry.backoff.enabled=false` 时不强制校验其余 backoff 参数范围。
+10. `scheduler.retry.backoff.enabled=true` 时：`initial>0`、`max>=initial`、`multiplier>1`、`jitter_ratio` 在 `[0,1]`。
+11. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -826,6 +859,10 @@ Action Timeline reason code（Scheduler/Subagent 基线）：
 - `scheduler.heartbeat`：worker 续租当前 lease。
 - `scheduler.lease_expired`：lease 超时失效，当前 attempt 进入过期态。
 - `scheduler.requeue`：任务重新进入可领取队列（接管路径）。
+- `scheduler.qos_claim`：priority 模式下按 QoS 规则完成 claim。
+- `scheduler.fairness_yield`：同优先级达到 fairness 连续窗口后让渡 claim。
+- `scheduler.retry_backoff`：任务重试被调度到 backoff 窗口（设置 next eligible 时间）。
+- `scheduler.dead_letter`：任务超过重试上限后进入 dead-letter 终态。
 - `subagent.spawn`：父 run 创建子任务（通过 guardrail 校验）。
 - `subagent.join`：子任务进入终态并回收聚合。
 - `subagent.budget_reject`：子任务创建被预算/阈值策略拒绝。
@@ -912,6 +949,11 @@ Action Gate 规则优先级（H4）：
 - `scheduler_queue_total`：本次 run 的 scheduler 入队总数。
 - `scheduler_claim_total`：本次 run 的 scheduler claim 总数。
 - `scheduler_reclaim_total`：本次 run 的 lease 过期接管（requeue）总数。
+- `scheduler_qos_mode`：本次 run 生效的调度模式（`fifo|priority`）。
+- `scheduler_priority_claim_total`：本次 run 在 priority QoS 路径下的 claim 总数。
+- `scheduler_fairness_yield_total`：本次 run 触发 fairness 让渡的次数。
+- `scheduler_retry_backoff_total`：本次 run 触发 retry backoff 调度的次数。
+- `scheduler_dead_letter_total`：本次 run 进入 dead-letter 的任务次数。
 - `subagent_child_total`：本次 run 创建的子任务总数。
 - `subagent_child_failed`：本次 run 子任务失败总数。
 - `subagent_budget_reject_total`：本次 run 因 guardrail/budget 被拒绝的子任务总数。

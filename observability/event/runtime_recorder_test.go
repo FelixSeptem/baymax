@@ -213,11 +213,16 @@ mcp:
 			"a2a_version_negotiation_result":           "compatible",
 			"composer_managed":                         true,
 			"scheduler_backend":                        "file",
+			"scheduler_qos_mode":                       "priority",
 			"scheduler_backend_fallback":               true,
 			"scheduler_backend_fallback_reason":        "scheduler.backend.file_init_failed",
 			"scheduler_queue_total":                    3,
 			"scheduler_claim_total":                    4,
 			"scheduler_reclaim_total":                  1,
+			"scheduler_priority_claim_total":           3,
+			"scheduler_fairness_yield_total":           1,
+			"scheduler_retry_backoff_total":            2,
+			"scheduler_dead_letter_total":              1,
 			"subagent_child_total":                     2,
 			"subagent_child_failed":                    1,
 			"subagent_budget_reject_total":             1,
@@ -369,6 +374,13 @@ mcp:
 	}
 	if items[0].SchedulerQueueTotal != 3 || items[0].SchedulerClaimTotal != 4 || items[0].SchedulerReclaimTotal != 1 {
 		t.Fatalf("scheduler fields mismatch: %#v", items[0])
+	}
+	if items[0].SchedulerQoSMode != "priority" ||
+		items[0].SchedulerPriorityClaimTotal != 3 ||
+		items[0].SchedulerFairnessYieldTotal != 1 ||
+		items[0].SchedulerRetryBackoffTotal != 2 ||
+		items[0].SchedulerDeadLetterTotal != 1 {
+		t.Fatalf("scheduler qos fields mismatch: %#v", items[0])
 	}
 	if items[0].SubagentChildTotal != 2 || items[0].SubagentChildFailed != 1 || items[0].SubagentBudgetRejectTotal != 1 {
 		t.Fatalf("subagent fields mismatch: %#v", items[0])

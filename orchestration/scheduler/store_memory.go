@@ -16,6 +16,12 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{state: newSchedulerState("memory")}
 }
 
+func (s *MemoryStore) SetGovernance(cfg GovernanceConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setGovernance(cfg)
+}
+
 func (s *MemoryStore) Backend() string {
 	return "memory"
 }

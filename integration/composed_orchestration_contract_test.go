@@ -2,7 +2,6 @@ package integration
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -37,30 +36,10 @@ func TestWorkflowA2ARemoteStepRunStreamContract(t *testing.T) {
 	}, timeline)
 
 	adapter := workflow.DispatchAdapter{
-		A2A: func(ctx context.Context, workflowID string, step workflow.Step, attempt int) (workflow.StepOutput, error) {
-			req := a2a.TaskRequest{
-				TaskID:     fmt.Sprintf("%s-attempt-%d-%d", step.TaskID, attempt, time.Now().UnixNano()),
-				WorkflowID: workflowID,
-				TeamID:     step.TeamID,
-				StepID:     step.StepID,
-				AgentID:    step.AgentID,
-				PeerID:     step.PeerID,
-				Method:     "workflow.delegate",
-				Payload:    step.Payload,
-			}
-			submitted, err := client.Submit(ctx, req)
-			if err != nil {
-				return workflow.StepOutput{}, err
-			}
-			record, err := client.WaitResult(ctx, submitted.TaskID, 5*time.Millisecond, nil)
-			if err != nil {
-				return workflow.StepOutput{}, err
-			}
-			if record.Status != a2a.StatusSucceeded {
-				return workflow.StepOutput{}, fmt.Errorf("a2a task status %q", record.Status)
-			}
-			return workflow.StepOutput{Payload: record.Result}, nil
-		},
+		A2A: workflow.NewA2AStepAdapter(client, workflow.A2AStepAdapterOptions{
+			Method:       "workflow.delegate",
+			PollInterval: 5 * time.Millisecond,
+		}),
 	}
 	engine := workflow.New(
 		workflow.WithStepAdapter(adapter),
@@ -176,29 +155,8 @@ func TestTeamsMixedLocalRemoteRunStreamContract(t *testing.T) {
 						"intent": "review",
 					},
 				},
-				RemoteRunner: teams.RemoteTaskRunnerFunc(func(ctx context.Context, plan teams.Plan, task teams.Task) (teams.TaskResult, error) {
-					req := a2a.TaskRequest{
-						TaskID:     fmt.Sprintf("%s-%d", task.TaskID, time.Now().UnixNano()),
-						WorkflowID: plan.WorkflowID,
-						TeamID:     plan.TeamID,
-						StepID:     plan.StepID,
-						AgentID:    task.AgentID,
-						PeerID:     task.Remote.PeerID,
-						Method:     task.Remote.Method,
-						Payload:    task.Remote.Payload,
-					}
-					submitted, err := client.Submit(ctx, req)
-					if err != nil {
-						return teams.TaskResult{}, err
-					}
-					record, err := client.WaitResult(ctx, submitted.TaskID, 5*time.Millisecond, nil)
-					if err != nil {
-						return teams.TaskResult{}, err
-					}
-					if record.Status != a2a.StatusSucceeded {
-						return teams.TaskResult{}, fmt.Errorf("remote status %q", record.Status)
-					}
-					return teams.TaskResult{Vote: "yes", Output: record.Result}, nil
+				RemoteRunner: teams.NewA2ARemoteTaskRunner(client, teams.A2ARemoteRunnerOptions{
+					PollInterval: 5 * time.Millisecond,
 				}),
 			},
 		},
@@ -282,24 +240,9 @@ func TestComposedA2AAndMCPBoundaryRegression(t *testing.T) {
 				}
 				return workflow.StepOutput{Payload: map[string]any{"mcp": resp.Content}}, nil
 			},
-			A2A: func(ctx context.Context, workflowID string, step workflow.Step, attempt int) (workflow.StepOutput, error) {
-				submitted, err := client.Submit(ctx, a2a.TaskRequest{
-					TaskID:     fmt.Sprintf("%s-%d", step.TaskID, time.Now().UnixNano()),
-					WorkflowID: workflowID,
-					TeamID:     step.TeamID,
-					StepID:     step.StepID,
-					AgentID:    step.AgentID,
-					PeerID:     step.PeerID,
-				})
-				if err != nil {
-					return workflow.StepOutput{}, err
-				}
-				record, err := client.WaitResult(ctx, submitted.TaskID, 5*time.Millisecond, nil)
-				if err != nil {
-					return workflow.StepOutput{}, err
-				}
-				return workflow.StepOutput{Payload: record.Result}, nil
-			},
+			A2A: workflow.NewA2AStepAdapter(client, workflow.A2AStepAdapterOptions{
+				PollInterval: 5 * time.Millisecond,
+			}),
 		}),
 	)
 

@@ -34,10 +34,17 @@ func WithGuardrails(guardrails Guardrails) Option {
 	}
 }
 
+func WithGovernance(cfg GovernanceConfig) Option {
+	return func(s *Scheduler) {
+		s.governance = normalizeGovernanceConfig(cfg)
+	}
+}
+
 type Scheduler struct {
 	store        QueueStore
 	leaseTimeout time.Duration
 	guardrails   Guardrails
+	governance   GovernanceConfig
 	timeline     types.EventHandler
 	now          func() time.Time
 	seq          atomic.Int64
@@ -50,6 +57,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 	s := &Scheduler{
 		store:        store,
 		leaseTimeout: 2 * time.Second,
+		governance:   defaultGovernanceConfig(),
 		now:          time.Now,
 	}
 	for _, opt := range opts {
@@ -59,6 +67,12 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 	}
 	if s.leaseTimeout <= 0 {
 		return nil, fmt.Errorf("lease timeout must be > 0")
+	}
+	s.governance = normalizeGovernanceConfig(s.governance)
+	if configurable, ok := store.(interface {
+		SetGovernance(GovernanceConfig)
+	}); ok {
+		configurable.SetGovernance(s.governance)
 	}
 	return s, nil
 }
@@ -87,11 +101,26 @@ func (s *Scheduler) SpawnChild(ctx context.Context, req SpawnRequest) (TaskRecor
 }
 
 func (s *Scheduler) Claim(ctx context.Context, workerID string) (ClaimedTask, bool, error) {
-	claimed, ok, err := s.store.Claim(ctx, workerID, s.nowTime(), s.leaseTimeout)
+	now := s.nowTime()
+	claimed, ok, err := s.store.Claim(ctx, workerID, now, s.leaseTimeout)
 	if err != nil || !ok {
 		return claimed, ok, err
 	}
 	s.emitTimeline(ctx, claimed.Record, claimed.Attempt, types.ActionStatusRunning, ReasonClaim)
+	if s.governance.QoS == QoSModePriority {
+		s.emitTimelineWithExtras(ctx, claimed.Record, claimed.Attempt, types.ActionStatusRunning, ReasonQoSClaim, map[string]any{
+			"qos_mode":      string(s.governance.QoS),
+			"task_priority": normalizedPriority(claimed.TaskPriority),
+		})
+		if claimed.FairnessYielded {
+			s.emitTimelineWithExtras(ctx, claimed.Record, claimed.Attempt, types.ActionStatusPending, ReasonFairnessYield, map[string]any{
+				"qos_mode":         string(s.governance.QoS),
+				"task_priority":    normalizedPriority(claimed.TaskPriority),
+				"fairness_window":  s.governance.Fairness.MaxConsecutiveClaimsPerPriority,
+				"fairness_yielded": true,
+			})
+		}
+	}
 	return claimed, true, nil
 }
 
@@ -105,24 +134,64 @@ func (s *Scheduler) Heartbeat(ctx context.Context, taskID, attemptID, leaseToken
 }
 
 func (s *Scheduler) ExpireLeases(ctx context.Context) ([]ClaimedTask, error) {
-	expired, err := s.store.ExpireLeases(ctx, s.nowTime())
+	now := s.nowTime()
+	expired, err := s.store.ExpireLeases(ctx, now)
 	if err != nil {
 		return nil, err
 	}
 	for _, item := range expired {
 		s.emitTimeline(ctx, item.Record, item.Attempt, types.ActionStatusFailed, ReasonLeaseExpired)
-		s.emitTimeline(ctx, item.Record, item.Attempt, types.ActionStatusPending, ReasonRequeue)
+		switch item.Record.State {
+		case TaskStateQueued:
+			s.emitTimeline(ctx, item.Record, item.Attempt, types.ActionStatusPending, ReasonRequeue)
+			if !item.Record.NextEligibleAt.IsZero() && item.Record.NextEligibleAt.After(now) {
+				s.emitTimelineWithExtras(ctx, item.Record, item.Attempt, types.ActionStatusPending, ReasonRetryBackoff, map[string]any{
+					"task_priority": normalizedPriority(item.Record.Task.Priority),
+					"backoff_ms":    item.Record.NextEligibleAt.Sub(now).Milliseconds(),
+					"max_attempts":  item.Record.Task.MaxAttempts,
+				})
+			}
+		case TaskStateDeadLetter:
+			s.emitTimelineWithExtras(ctx, item.Record, item.Attempt, types.ActionStatusFailed, ReasonDeadLetter, map[string]any{
+				"task_priority":     normalizedPriority(item.Record.Task.Priority),
+				"dead_letter_code":  strings.TrimSpace(item.Record.DeadLetterCode),
+				"max_attempts":      item.Record.Task.MaxAttempts,
+				"dead_letter_state": string(TaskStateDeadLetter),
+				"retry_exhausted":   true,
+				"retry_attempts":    len(item.Record.Attempts),
+			})
+		}
 	}
 	return expired, nil
 }
 
 func (s *Scheduler) Requeue(ctx context.Context, taskID, reason string) (TaskRecord, error) {
-	record, err := s.store.Requeue(ctx, taskID, reason, s.nowTime())
+	now := s.nowTime()
+	record, err := s.store.Requeue(ctx, taskID, reason, now)
 	if err != nil {
 		return TaskRecord{}, err
 	}
-	attempt, _ := record.currentAttempt()
-	s.emitTimeline(ctx, record, attempt, types.ActionStatusPending, ReasonRequeue)
+	attempt := latestAttempt(record)
+	switch record.State {
+	case TaskStateQueued:
+		s.emitTimeline(ctx, record, attempt, types.ActionStatusPending, ReasonRequeue)
+		if !record.NextEligibleAt.IsZero() && record.NextEligibleAt.After(now) {
+			s.emitTimelineWithExtras(ctx, record, attempt, types.ActionStatusPending, ReasonRetryBackoff, map[string]any{
+				"task_priority": normalizedPriority(record.Task.Priority),
+				"backoff_ms":    record.NextEligibleAt.Sub(now).Milliseconds(),
+				"max_attempts":  record.Task.MaxAttempts,
+			})
+		}
+	case TaskStateDeadLetter:
+		s.emitTimelineWithExtras(ctx, record, attempt, types.ActionStatusFailed, ReasonDeadLetter, map[string]any{
+			"task_priority":     normalizedPriority(record.Task.Priority),
+			"dead_letter_code":  strings.TrimSpace(record.DeadLetterCode),
+			"max_attempts":      record.Task.MaxAttempts,
+			"dead_letter_state": string(TaskStateDeadLetter),
+			"retry_exhausted":   true,
+			"retry_attempts":    len(record.Attempts),
+		})
+	}
 	return record, nil
 }
 
@@ -201,6 +270,17 @@ func (s *Scheduler) emitTimeline(
 	status types.ActionStatus,
 	reason string,
 ) {
+	s.emitTimelineWithExtras(ctx, record, attempt, status, reason, nil)
+}
+
+func (s *Scheduler) emitTimelineWithExtras(
+	ctx context.Context,
+	record TaskRecord,
+	attempt Attempt,
+	status types.ActionStatus,
+	reason string,
+	extras map[string]any,
+) {
 	if s == nil || s.timeline == nil {
 		return
 	}
@@ -240,6 +320,9 @@ func (s *Scheduler) emitTimeline(
 	if parentRunID := strings.TrimSpace(record.Task.ParentRunID); parentRunID != "" {
 		payload["parent_run_id"] = parentRunID
 	}
+	for k, v := range extras {
+		payload[k] = v
+	}
 	s.timeline.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    types.EventTypeActionTimeline,
@@ -247,6 +330,13 @@ func (s *Scheduler) emitTimeline(
 		Time:    s.nowTime(),
 		Payload: payload,
 	})
+}
+
+func latestAttempt(record TaskRecord) Attempt {
+	if len(record.Attempts) == 0 {
+		return Attempt{}
+	}
+	return record.Attempts[len(record.Attempts)-1]
 }
 
 func (s *Scheduler) nowTime() time.Time {

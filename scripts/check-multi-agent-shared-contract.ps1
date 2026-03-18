@@ -20,6 +20,12 @@ go test ./tool/contributioncheck -run '^TestValidateMultiAgentSharedContractDete
 Write-Host "[multi-agent-shared-contract-gate] scheduler/subagent closure suite"
 go test ./integration -run '^TestSchedulerRecovery' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] scheduler qos/dlq suite"
+go test ./integration -run '^TestSchedulerQoS' -count=1
+
+Write-Host "[multi-agent-shared-contract-gate] sync invocation suite"
+go test ./integration -run '^TestSyncInvocationContract' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

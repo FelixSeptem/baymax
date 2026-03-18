@@ -3,6 +3,12 @@
 ### Requirement: Timeline SHALL include canonical scheduler QoS and dead-letter reasons
 Action timeline MUST include canonical namespaced reasons for QoS claim decisions, fairness yielding, retry backoff scheduling, and dead-letter transitions.
 
+Canonical reasons:
+- `scheduler.qos_claim`
+- `scheduler.fairness_yield`
+- `scheduler.retry_backoff`
+- `scheduler.dead_letter`
+
 #### Scenario: Priority mode with fairness and dead-letter is active
 - **WHEN** scheduler emits timeline events under qos/fairness/dlq paths
 - **THEN** reasons remain namespaced and contract-checkable under scheduler/subagent taxonomy

@@ -12,15 +12,81 @@ type schedulerState struct {
 	Queue           []string                  `json:"queue"`
 	TerminalCommits map[string]TerminalCommit `json:"terminal_commits"`
 	Stats           Stats                     `json:"stats"`
+	governance      GovernanceConfig
+	lastPriority    string
+	lastConsecutive int
 }
 
 func newSchedulerState(backend string) schedulerState {
+	cfg := defaultGovernanceConfig()
 	return schedulerState{
 		Tasks:           map[string]*TaskRecord{},
 		Queue:           []string{},
 		TerminalCommits: map[string]TerminalCommit{},
-		Stats:           Stats{Backend: strings.TrimSpace(backend)},
+		Stats: Stats{
+			Backend: strings.TrimSpace(backend),
+			QoSMode: string(cfg.QoS),
+		},
+		governance: cfg,
 	}
+}
+
+func defaultGovernanceConfig() GovernanceConfig {
+	return GovernanceConfig{
+		QoS: QoSModeFIFO,
+		Fairness: FairnessConfig{
+			MaxConsecutiveClaimsPerPriority: 3,
+		},
+		DLQ: DLQConfig{
+			Enabled: false,
+		},
+		Backoff: RetryBackoffConfig{
+			Enabled:     false,
+			Initial:     50 * time.Millisecond,
+			Max:         2 * time.Second,
+			Multiplier:  2.0,
+			JitterRatio: 0.2,
+		},
+	}
+}
+
+func normalizeGovernanceConfig(cfg GovernanceConfig) GovernanceConfig {
+	out := cfg
+	switch out.QoS {
+	case QoSModePriority:
+	default:
+		out.QoS = QoSModeFIFO
+	}
+	if out.Fairness.MaxConsecutiveClaimsPerPriority <= 0 {
+		out.Fairness.MaxConsecutiveClaimsPerPriority = 3
+	}
+	if out.Backoff.Initial <= 0 {
+		out.Backoff.Initial = 50 * time.Millisecond
+	}
+	if out.Backoff.Max <= 0 || out.Backoff.Max < out.Backoff.Initial {
+		out.Backoff.Max = 2 * time.Second
+		if out.Backoff.Max < out.Backoff.Initial {
+			out.Backoff.Max = out.Backoff.Initial
+		}
+	}
+	if out.Backoff.Multiplier < 1 {
+		out.Backoff.Multiplier = 1
+	}
+	if out.Backoff.JitterRatio < 0 {
+		out.Backoff.JitterRatio = 0
+	}
+	if out.Backoff.JitterRatio > 1 {
+		out.Backoff.JitterRatio = 1
+	}
+	return out
+}
+
+func (s *schedulerState) setGovernance(cfg GovernanceConfig) {
+	if s == nil {
+		return
+	}
+	s.governance = normalizeGovernanceConfig(cfg)
+	s.Stats.QoSMode = string(s.governance.QoS)
 }
 
 func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
@@ -60,36 +126,55 @@ func (s *schedulerState) claim(workerID string, now time.Time, leaseTimeout time
 	}
 	s.expireLeases(now)
 
-	for len(s.Queue) > 0 {
-		taskID := s.Queue[0]
-		s.Queue = s.Queue[1:]
-		record := s.Tasks[taskID]
-		if record == nil {
-			continue
-		}
-		if record.State != TaskStateQueued {
-			continue
-		}
-
-		nextAttempt := len(record.Attempts) + 1
-		attempt := Attempt{
-			AttemptID:      fmt.Sprintf("%s-attempt-%d", taskID, nextAttempt),
-			Attempt:        nextAttempt,
-			WorkerID:       workerID,
-			LeaseToken:     fmt.Sprintf("%s-lease-%d", taskID, now.UnixNano()),
-			Status:         AttemptStatusRunning,
-			StartedAt:      now,
-			HeartbeatAt:    now,
-			LeaseExpiresAt: now.Add(leaseTimeout),
-		}
-		record.Attempts = append(record.Attempts, attempt)
-		record.CurrentAttempt = attempt.AttemptID
-		record.State = TaskStateRunning
-		record.UpdatedAt = now
-		s.Stats.ClaimTotal++
-		return ClaimedTask{Record: cloneTaskRecord(*record), Attempt: attempt}, true, nil
+	index, yielded := s.nextClaimableIndex(now)
+	if index < 0 {
+		return ClaimedTask{}, false, nil
 	}
-	return ClaimedTask{}, false, nil
+	taskID := s.Queue[index]
+	s.Queue = append(s.Queue[:index], s.Queue[index+1:]...)
+	record := s.Tasks[taskID]
+	if record == nil || record.State != TaskStateQueued {
+		return ClaimedTask{}, false, nil
+	}
+
+	nextAttempt := len(record.Attempts) + 1
+	attempt := Attempt{
+		AttemptID:      fmt.Sprintf("%s-attempt-%d", taskID, nextAttempt),
+		Attempt:        nextAttempt,
+		WorkerID:       workerID,
+		LeaseToken:     fmt.Sprintf("%s-lease-%d", taskID, now.UnixNano()),
+		Status:         AttemptStatusRunning,
+		StartedAt:      now,
+		HeartbeatAt:    now,
+		LeaseExpiresAt: now.Add(leaseTimeout),
+	}
+	record.Attempts = append(record.Attempts, attempt)
+	record.CurrentAttempt = attempt.AttemptID
+	record.NextEligibleAt = time.Time{}
+	record.State = TaskStateRunning
+	record.UpdatedAt = now
+
+	priority := normalizedPriority(record.Task.Priority)
+	if s.governance.QoS == QoSModePriority {
+		s.Stats.PriorityClaimTotal++
+	}
+	if yielded {
+		s.Stats.FairnessYieldTotal++
+	}
+	if priority == s.lastPriority {
+		s.lastConsecutive++
+	} else {
+		s.lastPriority = priority
+		s.lastConsecutive = 1
+	}
+	s.Stats.ClaimTotal++
+	s.Stats.QoSMode = string(s.governance.QoS)
+	return ClaimedTask{
+		Record:          cloneTaskRecord(*record),
+		Attempt:         attempt,
+		TaskPriority:    priority,
+		FairnessYielded: yielded,
+	}, true, nil
 }
 
 func (s *schedulerState) heartbeat(taskID, attemptID, leaseToken string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, error) {
@@ -164,20 +249,8 @@ func (s *schedulerState) expireLeases(now time.Time) []ClaimedTask {
 		if !ok {
 			continue
 		}
-		current.Status = AttemptStatusExpired
-		current.TerminalAt = now
-		for i := range record.Attempts {
-			if record.Attempts[i].AttemptID == current.AttemptID {
-				record.Attempts[i] = current
-				break
-			}
-		}
-		record.CurrentAttempt = ""
-		record.State = TaskStateQueued
-		record.UpdatedAt = now
-		s.Queue = append(s.Queue, taskID)
+		s.handleRetryTransition(taskID, record, current, now)
 		s.Stats.LeaseExpiredTotal++
-		s.Stats.ReclaimTotal++
 		out = append(out, ClaimedTask{Record: cloneTaskRecord(*record), Attempt: current})
 	}
 	return out
@@ -202,6 +275,83 @@ func (s *schedulerState) requeue(taskID string, now time.Time) (TaskRecord, erro
 	if !ok {
 		return TaskRecord{}, ErrAttemptNotFound
 	}
+	s.handleRetryTransition(taskID, record, current, now)
+	return cloneTaskRecord(*record), nil
+}
+
+func (s *schedulerState) nextClaimableIndex(now time.Time) (int, bool) {
+	firstEligible := -1
+	byPriority := map[string]int{}
+	for idx := range s.Queue {
+		taskID := strings.TrimSpace(s.Queue[idx])
+		record := s.Tasks[taskID]
+		if !isClaimableRecord(record, now) {
+			continue
+		}
+		if firstEligible < 0 {
+			firstEligible = idx
+		}
+		priority := normalizedPriority(record.Task.Priority)
+		if _, exists := byPriority[priority]; !exists {
+			byPriority[priority] = idx
+		}
+	}
+	if firstEligible < 0 {
+		return -1, false
+	}
+	if s.governance.QoS != QoSModePriority {
+		return firstEligible, false
+	}
+
+	priorityOrder := []string{TaskPriorityHigh, TaskPriorityNormal, TaskPriorityLow}
+	selectedPriority := ""
+	selectedIndex := -1
+	for _, priority := range priorityOrder {
+		if idx, ok := byPriority[priority]; ok {
+			selectedPriority = priority
+			selectedIndex = idx
+			break
+		}
+	}
+	if selectedIndex < 0 {
+		return firstEligible, false
+	}
+	threshold := s.governance.Fairness.MaxConsecutiveClaimsPerPriority
+	if threshold > 0 && s.lastPriority == selectedPriority && s.lastConsecutive >= threshold {
+		for _, priority := range priorityOrder {
+			if priority == selectedPriority {
+				continue
+			}
+			if idx, ok := byPriority[priority]; ok {
+				return idx, true
+			}
+		}
+	}
+	return selectedIndex, false
+}
+
+func isClaimableRecord(record *TaskRecord, now time.Time) bool {
+	if record == nil || record.State != TaskStateQueued {
+		return false
+	}
+	if record.NextEligibleAt.IsZero() {
+		return true
+	}
+	return !record.NextEligibleAt.After(now)
+}
+
+func normalizedPriority(priority string) string {
+	switch strings.ToLower(strings.TrimSpace(priority)) {
+	case TaskPriorityHigh:
+		return TaskPriorityHigh
+	case TaskPriorityLow:
+		return TaskPriorityLow
+	default:
+		return TaskPriorityNormal
+	}
+}
+
+func (s *schedulerState) handleRetryTransition(taskID string, record *TaskRecord, current Attempt, now time.Time) {
 	current.Status = AttemptStatusExpired
 	current.TerminalAt = now
 	for i := range record.Attempts {
@@ -211,11 +361,95 @@ func (s *schedulerState) requeue(taskID string, now time.Time) (TaskRecord, erro
 		}
 	}
 	record.CurrentAttempt = ""
-	record.State = TaskStateQueued
 	record.UpdatedAt = now
+
+	maxAttempts := record.Task.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+	if len(record.Attempts) >= maxAttempts {
+		record.NextEligibleAt = time.Time{}
+		if s.governance.DLQ.Enabled {
+			record.State = TaskStateDeadLetter
+			record.DeadLetterCode = "retry_exhausted"
+			record.ErrorMessage = "retry attempts exhausted"
+			s.Stats.DeadLetterTotal++
+			return
+		}
+		record.State = TaskStateFailed
+		record.ErrorMessage = "retry attempts exhausted"
+		s.Stats.FailTotal++
+		return
+	}
+
+	record.State = TaskStateQueued
+	record.DeadLetterCode = ""
+	backoff := s.retryDelay(taskID, current)
+	record.NextEligibleAt = now.Add(backoff)
 	s.Queue = append(s.Queue, taskID)
 	s.Stats.ReclaimTotal++
-	return cloneTaskRecord(*record), nil
+	if backoff > 0 {
+		s.Stats.RetryBackoffTotal++
+	}
+}
+
+func (s *schedulerState) retryDelay(taskID string, current Attempt) time.Duration {
+	if !s.governance.Backoff.Enabled {
+		return 0
+	}
+	base := float64(s.governance.Backoff.Initial)
+	if base <= 0 {
+		base = float64(50 * time.Millisecond)
+	}
+	multiplier := s.governance.Backoff.Multiplier
+	if multiplier < 1 {
+		multiplier = 1
+	}
+	attemptNum := current.Attempt
+	if attemptNum <= 0 {
+		attemptNum = 1
+	}
+	delayFloat := base
+	for i := 1; i < attemptNum; i++ {
+		delayFloat *= multiplier
+	}
+	maxDelay := float64(s.governance.Backoff.Max)
+	if maxDelay <= 0 {
+		maxDelay = float64(2 * time.Second)
+	}
+	if delayFloat > maxDelay {
+		delayFloat = maxDelay
+	}
+	delay := time.Duration(delayFloat)
+	jitterRatio := s.governance.Backoff.JitterRatio
+	if jitterRatio <= 0 {
+		return delay
+	}
+	jitterRange := int64(float64(delay) * jitterRatio)
+	if jitterRange <= 0 {
+		return delay
+	}
+	seed := stableRetryJitterSeed(taskID, current.AttemptID, current.Attempt)
+	jitter := (seed % (2*jitterRange + 1)) - jitterRange
+	withJitter := int64(delay) + jitter
+	if withJitter < 0 {
+		withJitter = 0
+	}
+	if withJitter > int64(s.governance.Backoff.Max) {
+		withJitter = int64(s.governance.Backoff.Max)
+	}
+	return time.Duration(withJitter)
+}
+
+func stableRetryJitterSeed(taskID, attemptID string, attempt int) int64 {
+	raw := strings.TrimSpace(taskID) + "|" + strings.TrimSpace(attemptID) + "|" + fmt.Sprintf("%d", attempt)
+	var h uint64 = 1469598103934665603
+	const prime uint64 = 1099511628211
+	for i := 0; i < len(raw); i++ {
+		h ^= uint64(raw[i])
+		h *= prime
+	}
+	return int64(h & 0x7fffffffffffffff)
 }
 
 func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, error) {
@@ -261,6 +495,8 @@ func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, er
 	}
 	record.CurrentAttempt = ""
 	record.State = normalized.Status
+	record.NextEligibleAt = time.Time{}
+	record.DeadLetterCode = ""
 	record.UpdatedAt = normalized.CommittedAt
 	record.ErrorMessage = normalized.ErrorMessage
 	record.ErrorClass = normalized.ErrorClass
@@ -397,7 +633,7 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 			if currentAttemptID == "" || !currentExists {
 				return fmt.Errorf("%w: running task %q requires current_attempt_id", ErrSnapshotCorrupt, taskID)
 			}
-		case TaskStateSucceeded, TaskStateFailed:
+		case TaskStateSucceeded, TaskStateFailed, TaskStateDeadLetter:
 			if currentAttemptID != "" {
 				return fmt.Errorf("%w: terminal task %q must not have current_attempt_id", ErrSnapshotCorrupt, taskID)
 			}
@@ -406,6 +642,10 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		}
 		record.ErrorMessage = strings.TrimSpace(record.ErrorMessage)
 		record.ErrorLayer = strings.TrimSpace(record.ErrorLayer)
+		record.DeadLetterCode = strings.TrimSpace(record.DeadLetterCode)
+		if record.State != TaskStateQueued {
+			record.NextEligibleAt = time.Time{}
+		}
 		record.Result = copyMap(record.Result)
 		tasks[taskID] = &record
 	}
@@ -470,10 +710,15 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 	}
 	stats := snapshot.Stats
 	stats.Backend = backend
+	if strings.TrimSpace(stats.QoSMode) == "" {
+		stats.QoSMode = string(s.governance.QoS)
+	}
 
 	s.Tasks = tasks
 	s.Queue = queue
 	s.TerminalCommits = terminalCommits
 	s.Stats = stats
+	s.lastPriority = ""
+	s.lastConsecutive = 0
 	return nil
 }

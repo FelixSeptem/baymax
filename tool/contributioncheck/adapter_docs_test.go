@@ -49,6 +49,8 @@ func TestAdapterOnboardingDocsConsistency(t *testing.T) {
 		"Model provider adapter template",
 		"Tool adapter template",
 		"onboarding skeleton",
+		"check-adapter-conformance.ps1",
+		"check-adapter-conformance.sh",
 	} {
 		if !strings.Contains(templateIndex, marker) {
 			t.Fatalf("[adapter-docs] docs/external-adapter-template-index.md missing marker: %s", marker)
@@ -63,9 +65,21 @@ func TestAdapterOnboardingDocsConsistency(t *testing.T) {
 		"recommended pattern",
 		"compatibility notes",
 		"additive + nullable + default + fail-fast",
+		"check-adapter-conformance.ps1",
+		"check-adapter-conformance.sh",
 	} {
 		if !strings.Contains(mappingDoc, marker) {
 			t.Fatalf("[adapter-docs] docs/adapter-migration-mapping.md missing marker: %s", marker)
+		}
+	}
+
+	for _, rel := range []string{
+		"scripts/check-adapter-conformance.sh",
+		"scripts/check-adapter-conformance.ps1",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("[adapter-docs] missing adapter conformance script: %s (%v)", rel, err)
 		}
 	}
 }

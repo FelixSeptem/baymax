@@ -24,6 +24,14 @@ catch {
     throw "[quality-gate][adapter-docs] adapter template/migration mapping docs consistency failed: $($_.Exception.Message)"
 }
 
+Write-Host "[quality-gate] adapter conformance"
+try {
+    pwsh -File scripts/check-adapter-conformance.ps1
+}
+catch {
+    throw "[quality-gate][adapter-conformance] adapter conformance harness failed: $($_.Exception.Message)"
+}
+
 Write-Host "[quality-gate] go test ./..."
 go test ./...
 

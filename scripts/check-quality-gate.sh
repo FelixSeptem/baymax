@@ -20,6 +20,12 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] adapter conformance"
+if ! bash scripts/check-adapter-conformance.sh; then
+  echo "[quality-gate][adapter-conformance] adapter conformance harness failed"
+  exit 1
+fi
+
 echo "[quality-gate] go test ./..."
 go test ./...
 

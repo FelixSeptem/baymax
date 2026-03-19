@@ -148,3 +148,20 @@ Compatibility notes:
 - fail-fast: 非法配置/非法输入必须在边界处快速失败。
 
 该边界与仓库兼容策略保持一致：`docs/versioning-and-compatibility.md`。
+
+## A22 Conformance 对齐
+
+迁移完成后建议执行：
+
+```bash
+bash scripts/check-adapter-conformance.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-conformance.ps1
+```
+
+若 conformance 失败，优先检查：
+- 模板实现是否仍满足 capability-domain 对照关系；
+- reason taxonomy 是否保持 namespaced 规范；
+- optional capability 降级行为是否仍 deterministic。

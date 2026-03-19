@@ -18,7 +18,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A18（统一 run/team/workflow/task 诊断检索 API）已归档并稳定。
 - A19（多代理主链路性能基线门禁）已归档并稳定。
 - A20（全链路参考示例与 smoke gate）已归档并稳定。
-- A21（外部适配样板与迁移映射）进行中。
+- A21（外部适配样板与迁移映射）已归档并稳定。
+- A22（外部适配一致性 harness 与 gate）进行中。
 
 ## 架构设计
 
@@ -418,6 +419,24 @@ go run ./examples/templates/model-adapter-template
 go run ./examples/templates/tool-adapter-template
 ```
 
+### 14) External Adapter Conformance Harness（A22）
+
+A22 提供外部适配一致性验收入口，覆盖：
+- 最小矩阵：`MCP > Model > Tool`
+- 离线 deterministic fixture（无外部凭证依赖）
+- 语义检查：run/stream 等价、错误归一、降级语义、mandatory input fail-fast
+- gate 阻断：任一 case 失败即 non-zero
+
+执行命令：
+
+```bash
+bash scripts/check-adapter-conformance.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-conformance.ps1
+```
+
 ## 开发验证
 
 最小建议命令：
@@ -452,6 +471,7 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 路线图与阶段进度：`docs/development-roadmap.md`
 - 外部适配模板索引：`docs/external-adapter-template-index.md`
 - 适配迁移映射：`docs/adapter-migration-mapping.md`
+- 适配一致性验收：`scripts/check-adapter-conformance.sh` / `scripts/check-adapter-conformance.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`
 - 主干契约测试索引：`docs/mainline-contract-test-index.md`

@@ -60,7 +60,9 @@ if (Test-Path "docs/external-adapter-template-index.md") {
         "MCP adapter template",
         "Model provider adapter template",
         "Tool adapter template",
-        "onboarding skeleton"
+        "onboarding skeleton",
+        "check-adapter-conformance.ps1",
+        "check-adapter-conformance.sh"
     )) {
         if ($templateIndex -notmatch [regex]::Escape($marker)) {
             $adapterIssues += "docs/external-adapter-template-index.md missing marker: $marker"
@@ -76,11 +78,22 @@ if (Test-Path "docs/adapter-migration-mapping.md") {
         "previous pattern",
         "recommended pattern",
         "compatibility notes",
-        "additive + nullable + default + fail-fast"
+        "additive + nullable + default + fail-fast",
+        "check-adapter-conformance.ps1",
+        "check-adapter-conformance.sh"
     )) {
         if ($mappingDoc -notmatch [regex]::Escape($marker)) {
             $adapterIssues += "docs/adapter-migration-mapping.md missing marker: $marker"
         }
+    }
+}
+
+foreach ($path in @(
+    "scripts/check-adapter-conformance.sh",
+    "scripts/check-adapter-conformance.ps1"
+)) {
+    if (-not (Test-Path $path)) {
+        $adapterIssues += "missing adapter conformance script: $path"
     }
 }
 

@@ -63,3 +63,22 @@
 - 迁移映射：`docs/adapter-migration-mapping.md`
 - API 参考入口：`docs/api-reference-d1.md`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
+
+## Conformance 验收入口（A22）
+
+模板交付后，必须通过 A22 一致性验收：
+
+```bash
+bash scripts/check-adapter-conformance.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-conformance.ps1
+```
+
+验收覆盖：
+- MCP/Model/Tool 最小矩阵（优先级 `MCP > Model > Tool`）
+- 默认离线执行（stub/fake）
+- run/stream 语义等价（适用项）
+- 错误分类与 reason taxonomy 归一
+- mandatory input fail-fast

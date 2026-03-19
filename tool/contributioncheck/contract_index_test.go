@@ -73,6 +73,8 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Full-Chain Reference Example A20 Quality Path",
 		"External Adapter Template A21 Docs Consistency",
 		"External Adapter Template A21 Contribution Traceability",
+		"External Adapter Conformance A22 Matrix",
+		"External Adapter Conformance A22 Gate Path",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

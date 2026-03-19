@@ -4,153 +4,96 @@
 
 ## 定位
 
-Baymax 的主线定位是 `library-first + contract-first`：
-- 优先交付可嵌入 Go runtime 能力，而不是平台化控制面。
-- 所有行为变化以 OpenSpec + 契约测试驱动。
-- 文档、代码、测试必须同一节奏更新。
+Baymax 主线保持 `library-first + contract-first`：
+- 交付可嵌入 Go runtime，而非平台化控制面。
+- 以 OpenSpec + 契约测试驱动行为变更。
+- 代码、测试、文档同一 PR 同步收敛。
 
-## 现状快照（以代码与 OpenSpec 为准）
+## 当前状态（以代码与 OpenSpec 为准）
 
 状态口径：
-- 活跃变更实时口径：`openspec list --json`
-- 已归档口径：`openspec/changes/archive/INDEX.md`
+- 活跃变更：`openspec list --json`
+- 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：R1-R3 主线能力、A4-A20。
+- 已归档并稳定：A4-A21（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射）。
 - 进行中：
-  - `introduce-external-adapter-template-and-migration-mapping-a21`
-- 待规划/探索：A22+。
+  - `introduce-external-adapter-conformance-harness-and-gate-a22`
+  - `introduce-adapter-scaffold-generator-and-conformance-bootstrap-a23`
 
-## 当前代码能力（简版）
+## 1.0.0 基线定义（本仓库后续参考口径）
 
-已稳定主干：
-- Runner Run/Stream 统一语义（并发与背压基线）。
-- 多 Provider（OpenAI/Anthropic/Gemini）与能力探测/降级。
-- Context Assembler CA1-CA4。
-- 安全治理 S1-S4。
-- 多代理基础编排：`teams` / `workflow` / `a2a` / `scheduler` / `composer`。
+`1.0.0` 以“收口基线”为目标，不再按 A 编号无限扩展范围。当前基线由以下能力组成：
 
-已收口能力（已归档）：
-- A12 异步回报：`a2a.async_*` reason taxonomy、回报重试与幂等去重。
-- A13 延后调度：`scheduler.delayed_*` reason taxonomy、`not_before` 语义。
-- A14 尾项治理：shared gate + cross-mode 矩阵 + docs/index 收敛。
-- A15 workflow 图可组合：subgraph/template、compile-before-plan、canonical ID 与 fail-fast 校验。
-- A16 协作原语统一：`orchestration/collab` + `composer.collab.*` + `collab_*` 诊断字段。
-- A17 恢复边界收敛：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 语义冻结。
-- A18 统一检索 API：`run/team/workflow/task` 过滤、分页排序游标与 fail-fast/空集语义。
-- A19 主链路性能门禁：多代理 baseline + 相对阈值回归阻断（`ns/op+p95-ns/op+allocs/op`）。
+1. 运行时主干稳定：
+- Runner Run/Stream 统一语义与并发背压基线。
+- Multi-provider（OpenAI/Anthropic/Gemini）统一 contract。
+- Context Assembler CA1-CA4、Security S1-S4 已归档能力。
 
-## 近期变更进度
+2. 多代理主链路稳定：
+- A11-A18（同步/异步/延后、恢复边界、协作原语、统一诊断查询）语义收口。
+- Shared contract gate 与 Run/Stream 等价约束保持阻断。
 
-### A14（已归档）
+3. 质量与可回归稳定：
+- A19 性能回归门禁（基线 + 相对阈值）。
+- A20 全链路示例 smoke 阻断门禁。
 
-目标：完成 A12/A13 契约冻结、门禁矩阵与文档收敛。  
-口径：`close-a12-a13-tail-contract-and-compatibility-governance-a14`（archived）。
+4. 外部接入稳定：
+- A21 模板与迁移映射（已归档）。
+- A22 conformance harness（进行中，需归档）。
+- A23 scaffold + conformance bootstrap（进行中，需归档）。
 
-### A15（已归档）
+## 1.0.0 里程碑与退出条件
 
-目标：在不改写执行状态机前提下增强 workflow 图编译复用能力。  
-口径：`enhance-workflow-graph-composability-a15`（archived）。
+### M1：外部适配链路收口（当前阶段）
 
-### A16（已归档）
+完成条件：
+- A22 归档：`MCP > Model > Tool` 最小一致性矩阵与 gate 阻断路径稳定。
+- A23 归档：脚手架生成、默认目录、`--force` 覆盖策略、bootstrap 对齐与 drift gate 稳定。
+- `README` / `runtime-config` / `contract-index` / roadmap 口径对齐。
 
-目标：补齐统一协作原语（handoff/delegation/aggregation）并收敛语义与门禁。  
-口径：`introduce-multi-agent-collaboration-primitives-a16`（archived）。
-结果：`orchestration/collab` 原语包、teams/workflow/composer 接入、`composer.collab.*` 配置、`collab_*` 诊断字段、A16 integration 套件与 shared gate 已收口。
+### M2：1.0.0-RC 冻结
 
-### A17（已归档）
+完成条件：
+- 不再接收新增功能型提案（A24+）。
+- 全量质量门禁连续通过（本地与 CI 口径一致）。
+- 无 P0 未关闭缺陷（语义错误、数据损坏、崩溃、严重性能回退、安全阻断问题）。
 
-目标：收敛长任务恢复边界（resume/in-flight/timeout reentry）并强化恢复一致性。  
-口径：`harden-long-running-recovery-boundary-and-timeout-reentry-a17`（archived）。
-范围：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 配置、composer/scheduler 恢复边界判定、A17 合同矩阵与 shared gate 收敛。
+### M3：1.0.0 发布
 
-### A18（已归档）
+完成条件：
+- RC 阶段无新增破坏性语义调整。
+- 变更仅限 P0/P1 缺陷修复与文档澄清。
+- `CHANGELOG` 与版本策略文档完成发布同步。
 
-目标：补齐按 `run/team/workflow/task` 的统一诊断检索 API 与分页/排序/游标/校验契约。  
-口径：`introduce-unified-run-team-workflow-task-query-api-a18`（archived）。
-范围：`runtime/diagnostics.QueryRuns` 统一入口、`page_size=50`/`<=200`、`time desc` 默认排序、opaque cursor、`task_id` 无匹配空集语义、shared gate 阻断校验。
+## 新增提案收敛规则（避免无限追加）
 
-### A19（已归档）
+从本文件生效起，到 `1.0.0` 发布前遵循：
 
-目标：把多代理主链路性能基线纳入标准门禁与 CI 阻断。  
-口径：`introduce-multi-agent-mainline-performance-baseline-gate-a19`（archived）。
-范围：主链路 benchmark baseline、`ns/op+p95-ns/op+allocs/op` 相对回归阈值（默认 `8%/12%/10%`）、`check-quality-gate.*` 接入与文档索引映射。
+1. 默认不新增 A24+ 功能提案。
+2. 仅允许以下“阻断型提案”进入：
+- P0 安全问题修复。
+- P0 正确性问题（contract 违背、Run/Stream 语义不一致）。
+- P0 稳定性问题（崩溃、死锁、数据损坏、不可恢复回退）。
+- 已有门禁项的严重回归修复（性能/契约/质量门禁无法通过）。
+3. 非阻断型需求统一进入 `post-1.0 backlog`，不进入 1.0.0 范围。
+4. 任何例外必须在提案中写明：`Why now`、风险、回滚方案、对 1.0.0 时间线影响。
 
-### A20（已归档）
+## Post-1.0 Backlog（仅登记，不纳入 1.0.0）
 
-目标：补齐 `team + workflow + a2a + scheduler + recovery` 的全链路参考示例。  
-口径：`introduce-full-chain-multi-agent-reference-example-a20`（archived）。
-范围：`examples/09-*` 全链路示例、Run/Stream 双路径、async+delayed+recovery 组合、示例 smoke 阻断。
+以下方向明确延后：
+- 平台化控制面（多租户、RBAC、审计与运营面板）。
+- 跨租户全局调度与控制平面。
+- 市场化/托管化 adapter registry 能力。
 
-### A21（进行中）
+说明：`post-1.0 backlog` 只做记录，不作为当前迭代实施输入。
 
-目标：补齐外部适配样板与迁移映射文档，降低外部接入成本与迁移风险。  
-口径：`introduce-external-adapter-template-and-migration-mapping-a21`（active）。
-范围：MCP/Model/Tool 样板（优先级 `MCP > Model > Tool`）、能力域+代码片段双维迁移映射、常见错误替代写法、docs consistency/contributioncheck 对齐。
-追踪：`docs/external-adapter-template-index.md`、`docs/adapter-migration-mapping.md`、`scripts/check-docs-consistency.*`、`tool/contributioncheck/adapter_docs_test.go`。
+## 执行与验收规则
 
-## 主线进度（摘要）
-
-通信与尾项治理：
-1. A11：同步执行并等待结果（已实施）。
-2. A12：异步执行后汇报（已归档）。
-3. A13：定时延后执行（已归档）。
-4. A14：A12/A13 尾项收口治理（已归档）。
-
-编排与恢复增强：
-1. A15：workflow 图可组合能力（已归档）。
-2. A16：协作原语统一契约（已归档）。
-3. A17：长任务恢复边界与重入策略（已归档）。
-
-诊断检索增强：
-1. A18：统一 run/team/workflow/task 查询契约（已归档）。
-
-性能与示例增强：
-1. A19：多代理主链路性能基线门禁（已归档）。
-2. A20：全链路参考示例（已归档）。
-
-接入与迁移增强：
-1. A21：外部适配样板与迁移映射文档（进行中）。
-
-## Lib-First Multi-Agent 差距收敛清单（2026-03-19）
-
-P0（必须优先）：
-- [x] A9 恢复能力主干落地并归档。
-- [x] A10 调度治理落地并验收。
-- [x] A14 尾项收口（shared gate + matrix + docs/index）完成并归档。
-- [x] reason taxonomy 与 run summary 兼容语义统一（`additive + nullable + default`）。
-
-P1（紧随其后）：
-- [x] workflow 图能力增强（A15）。
-- [x] multi-agent 协作原语增强（A16 已归档）。
-- [x] 长任务恢复边界收敛（A17 已归档）。
-- [x] 按 run/team/workflow/task 的统一检索 API（A18 已归档，库接口优先）。
-- [x] 多代理主链路性能基线纳入 CI（A19 已归档，吞吐/延迟/重试放大/recovery 时间）。
-
-P2（可选，DX/生态）：
-- [x] 最小 replay CLI 工具链（`cmd/diagnostics-replay` + contract gate）。
-- [x] 全链路示例（A20 已归档：team + workflow + a2a + scheduler + recovery）。
-- [ ] 外部适配样板与迁移映射文档（A21 进行中）。
-
-推荐顺序：
-1. 完成并归档 A21（外部适配样板与迁移映射文档）。
-2. 推进 A22+ DX/生态增量项。
-
-## 非近期范围（为保持简洁，明确延后）
-
-以下能力不进入当前主线：
-- 多租户控制面、RBAC、审计平台化。
-- Web 控制台与运营平台。
-- 全局调度控制面与跨租户负载均衡。
-
-说明：相关方向保留在长期 `R4 platformization` 议题，不影响当前 lib-first 路线。
-
-## 执行规则
-
-- 优先单变更推进；若并行推进多个 change，必须显式声明依赖边界并保持每个 PR 聚焦单一 change。
-- 提案到实现必须遵循顺序：`proposal/design/spec/tasks -> code -> tests -> docs`。
+- 单变更优先；并行变更需显式依赖边界。
+- 严格顺序：`proposal/design/spec/tasks -> code -> tests -> docs`。
 - 合并前最少验证：
   - `go test ./...`
   - `go test -race ./...`
   - `pwsh -File scripts/check-docs-consistency.ps1`
-  - `pwsh -File scripts/check-multi-agent-shared-contract.ps1`
+  - `pwsh -File scripts/check-quality-gate.ps1`

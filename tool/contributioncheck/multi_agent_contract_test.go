@@ -49,6 +49,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	teamsRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
@@ -64,6 +65,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	teamsBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
@@ -87,12 +89,14 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "multi-agent-session-recovery", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
 	}, "\n")
 	composerGateSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "go-quality-gate", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "go-quality-gate", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
@@ -167,6 +171,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_reason_a2a_sse_subscribe",
 		"missing_reason_a2a_version_mismatch",
 		"missing_reason_scheduler_enqueue",
+		"missing_reason_scheduler_delayed_enqueue",
+		"missing_reason_scheduler_delayed_wait",
+		"missing_reason_scheduler_delayed_ready",
 		"missing_reason_scheduler_claim",
 		"missing_reason_scheduler_heartbeat",
 		"missing_reason_scheduler_lease_expired",
@@ -204,6 +211,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_identifier_summary_field_scheduler_fairness_yield_total",
 		"missing_identifier_summary_field_scheduler_retry_backoff_total",
 		"missing_identifier_summary_field_scheduler_dead_letter_total",
+		"missing_identifier_summary_field_scheduler_delayed_task_total",
+		"missing_identifier_summary_field_scheduler_delayed_claim_total",
+		"missing_identifier_summary_field_scheduler_delayed_wait_ms_p95",
 		"missing_identifier_summary_field_subagent_child_total",
 		"missing_identifier_summary_field_subagent_child_failed",
 		"missing_identifier_summary_field_subagent_budget_reject_total",
@@ -218,6 +228,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_reason_team_collect_remote",
 		"missing_runtime_doc_reason_workflow_dispatch_a2a",
 		"missing_runtime_doc_reason_scheduler_enqueue",
+		"missing_runtime_doc_reason_scheduler_delayed_enqueue",
+		"missing_runtime_doc_reason_scheduler_delayed_wait",
+		"missing_runtime_doc_reason_scheduler_delayed_ready",
 		"missing_runtime_doc_reason_scheduler_claim",
 		"missing_runtime_doc_reason_scheduler_heartbeat",
 		"missing_runtime_doc_reason_scheduler_lease_expired",
@@ -248,6 +261,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_field_scheduler_fairness_yield_total",
 		"missing_runtime_doc_field_scheduler_retry_backoff_total",
 		"missing_runtime_doc_field_scheduler_dead_letter_total",
+		"missing_runtime_doc_field_scheduler_delayed_task_total",
+		"missing_runtime_doc_field_scheduler_delayed_claim_total",
+		"missing_runtime_doc_field_scheduler_delayed_wait_ms_p95",
 		"missing_runtime_doc_field_subagent_child_total",
 		"missing_runtime_doc_field_subagent_child_failed",
 		"missing_runtime_doc_field_subagent_budget_reject_total",
@@ -289,6 +305,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_scheduler_runtime_spec_field_scheduler_fairness_yield_total",
 		"missing_scheduler_runtime_spec_field_scheduler_retry_backoff_total",
 		"missing_scheduler_runtime_spec_field_scheduler_dead_letter_total",
+		"missing_scheduler_runtime_spec_field_scheduler_delayed_task_total",
+		"missing_scheduler_runtime_spec_field_scheduler_delayed_claim_total",
+		"missing_scheduler_runtime_spec_field_scheduler_delayed_wait_ms_p95",
 		"missing_scheduler_runtime_spec_field_recovery_enabled",
 		"missing_scheduler_runtime_spec_field_recovery_recovered",
 		"missing_scheduler_runtime_spec_field_recovery_replay_total",

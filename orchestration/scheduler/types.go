@@ -12,33 +12,39 @@ import (
 )
 
 const (
-	ReasonEnqueue       = "scheduler.enqueue"
-	ReasonClaim         = "scheduler.claim"
-	ReasonHeartbeat     = "scheduler.heartbeat"
-	ReasonLeaseExpired  = "scheduler.lease_expired"
-	ReasonRequeue       = "scheduler.requeue"
-	ReasonQoSClaim      = "scheduler.qos_claim"
-	ReasonFairnessYield = "scheduler.fairness_yield"
-	ReasonRetryBackoff  = "scheduler.retry_backoff"
-	ReasonDeadLetter    = "scheduler.dead_letter"
-	ReasonSpawn         = "subagent.spawn"
-	ReasonJoin          = "subagent.join"
-	ReasonBudgetReject  = "subagent.budget_reject"
+	ReasonEnqueue        = "scheduler.enqueue"
+	ReasonDelayedEnqueue = "scheduler.delayed_enqueue"
+	ReasonDelayedWait    = "scheduler.delayed_wait"
+	ReasonDelayedReady   = "scheduler.delayed_ready"
+	ReasonClaim          = "scheduler.claim"
+	ReasonHeartbeat      = "scheduler.heartbeat"
+	ReasonLeaseExpired   = "scheduler.lease_expired"
+	ReasonRequeue        = "scheduler.requeue"
+	ReasonQoSClaim       = "scheduler.qos_claim"
+	ReasonFairnessYield  = "scheduler.fairness_yield"
+	ReasonRetryBackoff   = "scheduler.retry_backoff"
+	ReasonDeadLetter     = "scheduler.dead_letter"
+	ReasonSpawn          = "subagent.spawn"
+	ReasonJoin           = "subagent.join"
+	ReasonBudgetReject   = "subagent.budget_reject"
 )
 
 var canonicalReasonSet = map[string]struct{}{
-	ReasonEnqueue:       {},
-	ReasonClaim:         {},
-	ReasonHeartbeat:     {},
-	ReasonLeaseExpired:  {},
-	ReasonRequeue:       {},
-	ReasonQoSClaim:      {},
-	ReasonFairnessYield: {},
-	ReasonRetryBackoff:  {},
-	ReasonDeadLetter:    {},
-	ReasonSpawn:         {},
-	ReasonJoin:          {},
-	ReasonBudgetReject:  {},
+	ReasonEnqueue:        {},
+	ReasonDelayedEnqueue: {},
+	ReasonDelayedWait:    {},
+	ReasonDelayedReady:   {},
+	ReasonClaim:          {},
+	ReasonHeartbeat:      {},
+	ReasonLeaseExpired:   {},
+	ReasonRequeue:        {},
+	ReasonQoSClaim:       {},
+	ReasonFairnessYield:  {},
+	ReasonRetryBackoff:   {},
+	ReasonDeadLetter:     {},
+	ReasonSpawn:          {},
+	ReasonJoin:           {},
+	ReasonBudgetReject:   {},
 }
 
 func CanonicalReason(reason string) (string, bool) {
@@ -87,6 +93,7 @@ type Task struct {
 	Priority    string         `json:"priority,omitempty"`
 	Payload     map[string]any `json:"payload,omitempty"`
 	MaxAttempts int            `json:"max_attempts,omitempty"`
+	NotBefore   time.Time      `json:"not_before,omitempty"`
 }
 
 func normalizeTask(in Task) (Task, error) {
@@ -117,6 +124,9 @@ func normalizeTask(in Task) (Task, error) {
 	}
 	if out.MaxAttempts <= 0 {
 		out.MaxAttempts = 3
+	}
+	if !out.NotBefore.IsZero() {
+		out.NotBefore = out.NotBefore.UTC()
 	}
 	out.Payload = copyMap(out.Payload)
 	return out, nil
@@ -254,6 +264,9 @@ type Stats struct {
 	FairnessYieldTotal           int    `json:"fairness_yield_total,omitempty"`
 	RetryBackoffTotal            int    `json:"retry_backoff_total,omitempty"`
 	DeadLetterTotal              int    `json:"dead_letter_total,omitempty"`
+	DelayedTaskTotal             int    `json:"delayed_task_total,omitempty"`
+	DelayedClaimTotal            int    `json:"delayed_claim_total,omitempty"`
+	DelayedWaitMsP95             int64  `json:"delayed_wait_ms_p95,omitempty"`
 	DuplicateTerminalCommitTotal int    `json:"duplicate_terminal_commit_total"`
 }
 
@@ -285,6 +298,7 @@ type StoreSnapshot struct {
 	Tasks           []TaskRecord     `json:"tasks,omitempty"`
 	Queue           []string         `json:"queue,omitempty"`
 	TerminalCommits []TerminalCommit `json:"terminal_commits,omitempty"`
+	DelayedWaitMs   []int64          `json:"delayed_wait_ms,omitempty"`
 	Stats           Stats            `json:"stats"`
 }
 

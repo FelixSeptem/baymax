@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-18 23:28:24
+Updated: 2026-03-19 10:04:08
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -62,3 +62,4 @@ Updated: 2026-03-18 23:28:24
 - 058 -> introduce-scheduler-qos-fairness-and-deadletter-governance-a10
 - 059 -> unify-sync-agent-invocation-contract-a11
 - 060 -> introduce-async-agent-reporting-contract-a12
+- 061 -> introduce-delayed-dispatch-not-before-contract-a13

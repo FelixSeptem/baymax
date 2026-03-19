@@ -78,11 +78,26 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 }
 
 func (s *Scheduler) Enqueue(ctx context.Context, task Task) (TaskRecord, error) {
-	record, err := s.store.Enqueue(ctx, task, s.nowTime())
+	now := s.nowTime()
+	record, err := s.store.Enqueue(ctx, task, now)
 	if err != nil {
 		return TaskRecord{}, err
 	}
 	s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusPending, ReasonEnqueue)
+	if isTaskDelayed(record.Task, now) {
+		remainingMs := record.Task.NotBefore.Sub(now).Milliseconds()
+		if remainingMs < 0 {
+			remainingMs = 0
+		}
+		s.emitTimelineWithExtras(ctx, record, Attempt{}, types.ActionStatusPending, ReasonDelayedEnqueue, map[string]any{
+			"not_before_unix_ms": record.Task.NotBefore.UnixMilli(),
+			"remaining_delay_ms": remainingMs,
+		})
+		s.emitTimelineWithExtras(ctx, record, Attempt{}, types.ActionStatusPending, ReasonDelayedWait, map[string]any{
+			"not_before_unix_ms": record.Task.NotBefore.UnixMilli(),
+			"remaining_delay_ms": remainingMs,
+		})
+	}
 	return record, nil
 }
 
@@ -105,6 +120,16 @@ func (s *Scheduler) Claim(ctx context.Context, workerID string) (ClaimedTask, bo
 	claimed, ok, err := s.store.Claim(ctx, workerID, now, s.leaseTimeout)
 	if err != nil || !ok {
 		return claimed, ok, err
+	}
+	if isTaskDelayed(claimed.Record.Task, claimed.Record.CreatedAt) {
+		waitMs := now.Sub(claimed.Record.CreatedAt).Milliseconds()
+		if waitMs < 0 {
+			waitMs = 0
+		}
+		s.emitTimelineWithExtras(ctx, claimed.Record, claimed.Attempt, types.ActionStatusPending, ReasonDelayedReady, map[string]any{
+			"not_before_unix_ms": claimed.Record.Task.NotBefore.UnixMilli(),
+			"delayed_wait_ms":    waitMs,
+		})
 	}
 	s.emitTimeline(ctx, claimed.Record, claimed.Attempt, types.ActionStatusRunning, ReasonClaim)
 	if s.governance.QoS == QoSModePriority {

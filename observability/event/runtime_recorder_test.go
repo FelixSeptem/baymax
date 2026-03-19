@@ -227,6 +227,9 @@ mcp:
 			"scheduler_fairness_yield_total":           1,
 			"scheduler_retry_backoff_total":            2,
 			"scheduler_dead_letter_total":              1,
+			"scheduler_delayed_task_total":             2,
+			"scheduler_delayed_claim_total":            2,
+			"scheduler_delayed_wait_ms_p95":            int64(180),
 			"subagent_child_total":                     2,
 			"subagent_child_failed":                    1,
 			"subagent_budget_reject_total":             1,
@@ -391,6 +394,11 @@ mcp:
 		items[0].SchedulerRetryBackoffTotal != 2 ||
 		items[0].SchedulerDeadLetterTotal != 1 {
 		t.Fatalf("scheduler qos fields mismatch: %#v", items[0])
+	}
+	if items[0].SchedulerDelayedTaskTotal != 2 ||
+		items[0].SchedulerDelayedClaimTotal != 2 ||
+		items[0].SchedulerDelayedWaitMsP95 != 180 {
+		t.Fatalf("scheduler delayed fields mismatch: %#v", items[0])
 	}
 	if items[0].SubagentChildTotal != 2 || items[0].SubagentChildFailed != 1 || items[0].SubagentBudgetRejectTotal != 1 {
 		t.Fatalf("subagent fields mismatch: %#v", items[0])

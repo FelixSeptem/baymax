@@ -181,16 +181,19 @@ func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                      time.Now(),
-		RunID:                     "run-scheduler-1",
-		Status:                    "success",
-		SchedulerBackend:          "file",
-		SchedulerQueueTotal:       3,
-		SchedulerClaimTotal:       4,
-		SchedulerReclaimTotal:     1,
-		SubagentChildTotal:        2,
-		SubagentChildFailed:       1,
-		SubagentBudgetRejectTotal: 1,
+		Time:                       time.Now(),
+		RunID:                      "run-scheduler-1",
+		Status:                     "success",
+		SchedulerBackend:           "file",
+		SchedulerQueueTotal:        3,
+		SchedulerClaimTotal:        4,
+		SchedulerReclaimTotal:      1,
+		SchedulerDelayedTaskTotal:  2,
+		SchedulerDelayedClaimTotal: 2,
+		SchedulerDelayedWaitMsP95:  180,
+		SubagentChildTotal:         2,
+		SubagentChildFailed:        1,
+		SubagentBudgetRejectTotal:  1,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -203,6 +206,9 @@ func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 		runs[0].SchedulerQueueTotal != 3 ||
 		runs[0].SchedulerClaimTotal != 4 ||
 		runs[0].SchedulerReclaimTotal != 1 ||
+		runs[0].SchedulerDelayedTaskTotal != 2 ||
+		runs[0].SchedulerDelayedClaimTotal != 2 ||
+		runs[0].SchedulerDelayedWaitMsP95 != 180 ||
 		runs[0].SubagentChildTotal != 2 ||
 		runs[0].SubagentChildFailed != 1 ||
 		runs[0].SubagentBudgetRejectTotal != 1 {

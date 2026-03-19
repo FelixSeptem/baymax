@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,106 @@ func TestComposerContractRunStreamSemanticEquivalence(t *testing.T) {
 	}
 	if runFinishedCount < 2 {
 		t.Fatalf("run.finished count=%d, want >=2", runFinishedCount)
+	}
+}
+
+func TestComposerContractDelayedChildRunStreamEquivalence(t *testing.T) {
+	exec := func(stream bool, runID, taskID string) (runtimediag.RunRecord, error) {
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A13_TEST"})
+		if err != nil {
+			return runtimediag.RunRecord{}, err
+		}
+		defer func() { _ = mgr.Close() }()
+
+		model := fakes.NewModel([]fakes.ModelStep{
+			{Response: types.ModelResponse{FinalAnswer: "ok"}},
+		})
+		model.SetStream([]types.ModelEvent{
+			{Type: types.ModelEventTypeFinalAnswer, TextDelta: "ok"},
+		}, nil)
+
+		dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+		comp, err := composer.NewBuilder(model).
+			WithRuntimeManager(mgr).
+			WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+			Build()
+		if err != nil {
+			return runtimediag.RunRecord{}, err
+		}
+
+		notBefore := time.Now().Add(90 * time.Millisecond)
+		if _, err := comp.SpawnChild(context.Background(), composer.ChildDispatchRequest{
+			Task: scheduler.Task{
+				TaskID:    taskID,
+				RunID:     runID,
+				NotBefore: notBefore,
+			},
+		}); err != nil {
+			return runtimediag.RunRecord{}, err
+		}
+		if _, ok, err := comp.Scheduler().Claim(context.Background(), "worker-delayed-a13"); err != nil {
+			return runtimediag.RunRecord{}, err
+		} else if ok {
+			return runtimediag.RunRecord{}, errors.New("task claimed before not_before boundary")
+		}
+		time.Sleep(110 * time.Millisecond)
+		claimed, ok, err := comp.Scheduler().Claim(context.Background(), "worker-delayed-a13")
+		if err != nil || !ok {
+			if err != nil {
+				return runtimediag.RunRecord{}, err
+			}
+			return runtimediag.RunRecord{}, errors.New("task not claimable after not_before boundary")
+		}
+		if _, err := comp.CommitChildTerminal(context.Background(), scheduler.TerminalCommit{
+			TaskID:      claimed.Record.Task.TaskID,
+			AttemptID:   claimed.Attempt.AttemptID,
+			Status:      scheduler.TaskStateSucceeded,
+			Result:      map[string]any{"ok": true},
+			CommittedAt: time.Now(),
+		}); err != nil {
+			return runtimediag.RunRecord{}, err
+		}
+
+		req := types.RunRequest{RunID: runID, Input: "emit-finished"}
+		if stream {
+			if _, err := comp.Stream(context.Background(), req, nil); err != nil {
+				return runtimediag.RunRecord{}, err
+			}
+		} else {
+			if _, err := comp.Run(context.Background(), req, nil); err != nil {
+				return runtimediag.RunRecord{}, err
+			}
+		}
+		return findRunRecord(t, mgr.RecentRuns(10), runID), nil
+	}
+
+	runRecord, err := exec(false, "run-a13-delayed-run", "task-a13-delayed-run")
+	if err != nil {
+		t.Fatalf("run path failed: %v", err)
+	}
+	streamRecord, err := exec(true, "run-a13-delayed-stream", "task-a13-delayed-stream")
+	if err != nil {
+		t.Fatalf("stream path failed: %v", err)
+	}
+	if runRecord.Status != streamRecord.Status {
+		t.Fatalf("status mismatch run=%q stream=%q", runRecord.Status, streamRecord.Status)
+	}
+	if runRecord.SchedulerDelayedTaskTotal != streamRecord.SchedulerDelayedTaskTotal ||
+		runRecord.SchedulerDelayedClaimTotal != streamRecord.SchedulerDelayedClaimTotal {
+		t.Fatalf("delayed totals mismatch run=%#v stream=%#v", runRecord, streamRecord)
+	}
+	diff := runRecord.SchedulerDelayedWaitMsP95 - streamRecord.SchedulerDelayedWaitMsP95
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 30 {
+		t.Fatalf("delayed wait p95 mismatch beyond tolerance run=%d stream=%d diff=%d", runRecord.SchedulerDelayedWaitMsP95, streamRecord.SchedulerDelayedWaitMsP95, diff)
+	}
+	if runRecord.SchedulerDelayedTaskTotal != 1 || runRecord.SchedulerDelayedClaimTotal != 1 {
+		t.Fatalf("unexpected delayed counters in run summary: %#v", runRecord)
+	}
+	if runRecord.SchedulerDelayedWaitMsP95 <= 0 {
+		t.Fatalf("scheduler_delayed_wait_ms_p95=%d, want > 0", runRecord.SchedulerDelayedWaitMsP95)
 	}
 }
 

@@ -174,6 +174,23 @@ if err != nil {
 fmt.Printf("accepted task=%s at=%s\n", ack.TaskID, ack.AcceptedAt.Format(time.RFC3339Nano))
 ```
 
+### 6) Scheduler 延后调度（A13）
+
+```go
+notBefore := time.Now().Add(30 * time.Second)
+record, err := comp.SpawnChild(ctx, composer.ChildDispatchRequest{
+	Task: scheduler.Task{
+		TaskID:    "task-delayed-demo",
+		RunID:     "run-delayed-demo",
+		NotBefore: notBefore,
+	},
+})
+if err != nil {
+	panic(err)
+}
+fmt.Printf("delayed task=%s not_before=%s\n", record.Task.TaskID, record.Task.NotBefore.Format(time.RFC3339Nano))
+```
+
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
 ## 开发验证

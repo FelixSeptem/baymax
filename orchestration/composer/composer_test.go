@@ -181,6 +181,42 @@ func TestComposerGuardrailFailFastEmitsBudgetRejectAndSummary(t *testing.T) {
 	}
 }
 
+func TestComposerSpawnChildPassesNotBeforeThrough(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A13_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	notBefore := time.Now().Add(100 * time.Millisecond)
+	record, err := comp.SpawnChild(context.Background(), ChildDispatchRequest{
+		Task: scheduler.Task{
+			TaskID:    "task-a13-not-before",
+			RunID:     "run-a13-not-before",
+			NotBefore: notBefore,
+		},
+	})
+	if err != nil {
+		t.Fatalf("spawn child failed: %v", err)
+	}
+	if record.Task.NotBefore.IsZero() || !record.Task.NotBefore.Equal(notBefore.UTC()) {
+		t.Fatalf("spawned task not_before mismatch: got=%s want=%s", record.Task.NotBefore, notBefore.UTC())
+	}
+	if _, ok, err := comp.Scheduler().Claim(context.Background(), "worker-a13"); err != nil || ok {
+		t.Fatalf("child should not be claimable before not_before: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if _, ok, err := comp.Scheduler().Claim(context.Background(), "worker-a13"); err != nil || !ok {
+		t.Fatalf("child should be claimable after not_before: ok=%v err=%v", ok, err)
+	}
+}
+
 func writeComposerRuntimeConfig(t *testing.T, path string, leaseTimeout time.Duration) {
 	t.Helper()
 	cfg := strings.Join([]string{

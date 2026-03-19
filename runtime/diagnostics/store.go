@@ -150,6 +150,9 @@ type RunRecord struct {
 	SchedulerFairnessYieldTotal          int                               `json:"scheduler_fairness_yield_total,omitempty"`
 	SchedulerRetryBackoffTotal           int                               `json:"scheduler_retry_backoff_total,omitempty"`
 	SchedulerDeadLetterTotal             int                               `json:"scheduler_dead_letter_total,omitempty"`
+	SchedulerDelayedTaskTotal            int                               `json:"scheduler_delayed_task_total,omitempty"`
+	SchedulerDelayedClaimTotal           int                               `json:"scheduler_delayed_claim_total,omitempty"`
+	SchedulerDelayedWaitMsP95            int64                             `json:"scheduler_delayed_wait_ms_p95,omitempty"`
 	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
 	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
 	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`

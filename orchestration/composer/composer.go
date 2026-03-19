@@ -720,6 +720,9 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["scheduler_fairness_yield_total"] = summary.FairnessYieldTotal
 			payload["scheduler_retry_backoff_total"] = summary.RetryBackoffTotal
 			payload["scheduler_dead_letter_total"] = summary.DeadLetterTotal
+			payload["scheduler_delayed_task_total"] = summary.DelayedTaskTotal
+			payload["scheduler_delayed_claim_total"] = summary.DelayedClaimTotal
+			payload["scheduler_delayed_wait_ms_p95"] = summary.DelayedWaitMsP95
 		}
 	}
 

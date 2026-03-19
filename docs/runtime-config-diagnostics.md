@@ -508,8 +508,10 @@ scheduler/subagent baseline 校验语义：
 8. `scheduler.dlq.enabled` 为布尔值开关，默认 `false`。
 9. `scheduler.retry.backoff.enabled=false` 时不强制校验其余 backoff 参数范围。
 10. `scheduler.retry.backoff.enabled=true` 时：`initial>0`、`max>=initial`、`multiplier>1`、`jitter_ratio` 在 `[0,1]`。
-11. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
-12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+11. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
+12. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
+13. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+14. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -876,6 +878,9 @@ A2A Timeline 关联字段（按可用性增量携带）：
 
 Action Timeline reason code（Scheduler/Subagent 基线）：
 - `scheduler.enqueue`：调度任务入队。
+- `scheduler.delayed_enqueue`：任务带 `not_before` 入队并进入延后调度语义。
+- `scheduler.delayed_wait`：延后任务未到 `not_before` 边界，仍处于等待状态。
+- `scheduler.delayed_ready`：延后任务到达 `not_before` 边界并进入可领取状态。
 - `scheduler.claim`：worker 原子领取任务并创建 lease。
 - `scheduler.heartbeat`：worker 续租当前 lease。
 - `scheduler.lease_expired`：lease 超时失效，当前 attempt 进入过期态。
@@ -979,6 +984,9 @@ Action Gate 规则优先级（H4）：
 - `scheduler_fairness_yield_total`：本次 run 触发 fairness 让渡的次数。
 - `scheduler_retry_backoff_total`：本次 run 触发 retry backoff 调度的次数。
 - `scheduler_dead_letter_total`：本次 run 进入 dead-letter 的任务次数。
+- `scheduler_delayed_task_total`：本次 run 带 `not_before` 且进入延后语义的任务总数。
+- `scheduler_delayed_claim_total`：本次 run 进入延后语义并最终被 claim 的任务总数。
+- `scheduler_delayed_wait_ms_p95`：本次 run 延后任务从入队到 claim 的等待时延 p95（毫秒）。
 - `subagent_child_total`：本次 run 创建的子任务总数。
 - `subagent_child_failed`：本次 run 子任务失败总数。
 - `subagent_budget_reject_total`：本次 run 因 guardrail/budget 被拒绝的子任务总数。

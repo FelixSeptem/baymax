@@ -528,9 +528,183 @@ func TestSchedulerRetryBackoffAndDeadLetter(t *testing.T) {
 	}
 }
 
+func TestSchedulerNotBeforeSemanticsAndStats(t *testing.T) {
+	s, err := New(NewMemoryStore(), WithLeaseTimeout(500*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	now := time.Now()
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID: "task-not-before-empty",
+		RunID:  "run-not-before",
+	}); err != nil {
+		t.Fatalf("enqueue empty not_before: %v", err)
+	}
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:    "task-not-before-past",
+		RunID:     "run-not-before",
+		NotBefore: now.Add(-time.Second),
+	}); err != nil {
+		t.Fatalf("enqueue past not_before: %v", err)
+	}
+	futureNotBefore := now.Add(100 * time.Millisecond)
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:    "task-not-before-future",
+		RunID:     "run-not-before",
+		NotBefore: futureNotBefore,
+	}); err != nil {
+		t.Fatalf("enqueue future not_before: %v", err)
+	}
+
+	claimed1, ok, err := s.Claim(ctx, "worker-not-before")
+	if err != nil || !ok {
+		t.Fatalf("claim #1 failed: ok=%v err=%v", ok, err)
+	}
+	if claimed1.Record.Task.TaskID != "task-not-before-empty" {
+		t.Fatalf("claim #1 task=%q, want task-not-before-empty", claimed1.Record.Task.TaskID)
+	}
+	claimed2, ok, err := s.Claim(ctx, "worker-not-before")
+	if err != nil || !ok {
+		t.Fatalf("claim #2 failed: ok=%v err=%v", ok, err)
+	}
+	if claimed2.Record.Task.TaskID != "task-not-before-past" {
+		t.Fatalf("claim #2 task=%q, want task-not-before-past", claimed2.Record.Task.TaskID)
+	}
+	if _, ok, err := s.Claim(ctx, "worker-not-before"); err != nil || ok {
+		t.Fatalf("future task should not be claimable yet: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	claimed3, ok, err := s.Claim(ctx, "worker-not-before")
+	if err != nil || !ok {
+		t.Fatalf("claim #3 failed: ok=%v err=%v", ok, err)
+	}
+	if claimed3.Record.Task.TaskID != "task-not-before-future" {
+		t.Fatalf("claim #3 task=%q, want task-not-before-future", claimed3.Record.Task.TaskID)
+	}
+
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats failed: %v", err)
+	}
+	if stats.DelayedTaskTotal != 1 {
+		t.Fatalf("delayed_task_total = %d, want 1", stats.DelayedTaskTotal)
+	}
+	if stats.DelayedClaimTotal != 1 {
+		t.Fatalf("delayed_claim_total = %d, want 1", stats.DelayedClaimTotal)
+	}
+	if stats.DelayedWaitMsP95 <= 0 {
+		t.Fatalf("delayed_wait_ms_p95 = %d, want > 0", stats.DelayedWaitMsP95)
+	}
+}
+
+func TestSchedulerClaimComposesDelayedAndRetryGate(t *testing.T) {
+	s, err := New(
+		NewMemoryStore(),
+		WithLeaseTimeout(500*time.Millisecond),
+		WithGovernance(GovernanceConfig{
+			QoS: QoSModeFIFO,
+			Fairness: FairnessConfig{
+				MaxConsecutiveClaimsPerPriority: 3,
+			},
+			DLQ: DLQConfig{Enabled: false},
+			Backoff: RetryBackoffConfig{
+				Enabled:     true,
+				Initial:     60 * time.Millisecond,
+				Max:         60 * time.Millisecond,
+				Multiplier:  2.0,
+				JitterRatio: 0,
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:      "task-delayed-retry",
+		RunID:       "run-delayed-retry",
+		MaxAttempts: 3,
+		NotBefore:   time.Now().Add(100 * time.Millisecond),
+	}); err != nil {
+		t.Fatalf("enqueue delayed task: %v", err)
+	}
+	if _, ok, err := s.Claim(ctx, "worker-a"); err != nil || ok {
+		t.Fatalf("delayed task should not be claimable before not_before: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	claimed, ok, err := s.Claim(ctx, "worker-a")
+	if err != nil || !ok {
+		t.Fatalf("claim after not_before failed: ok=%v err=%v", ok, err)
+	}
+	if _, err := s.Requeue(ctx, claimed.Record.Task.TaskID, "retryable"); err != nil {
+		t.Fatalf("requeue failed: %v", err)
+	}
+	if _, ok, err := s.Claim(ctx, "worker-b"); err != nil || ok {
+		t.Fatalf("task should be blocked by retry backoff: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if _, ok, err := s.Claim(ctx, "worker-b"); err != nil || !ok {
+		t.Fatalf("task should be claimable after both gates pass: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSchedulerDelayedTimelineReasons(t *testing.T) {
+	collector := &testTimelineCollector{}
+	s, err := New(
+		NewMemoryStore(),
+		WithTimelineEmitter(collector),
+		WithLeaseTimeout(500*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:    "task-delayed-timeline",
+		RunID:     "run-delayed-timeline",
+		NotBefore: time.Now().Add(80 * time.Millisecond),
+	}); err != nil {
+		t.Fatalf("enqueue delayed task: %v", err)
+	}
+	if _, ok, err := s.Claim(ctx, "worker-timeline"); err != nil || ok {
+		t.Fatalf("delayed task should not be claimable before not_before: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, ok, err := s.Claim(ctx, "worker-timeline"); err != nil || !ok {
+		t.Fatalf("delayed task should become claimable: ok=%v err=%v", ok, err)
+	}
+
+	requiredReasons := map[string]bool{
+		ReasonDelayedEnqueue: false,
+		ReasonDelayedWait:    false,
+		ReasonDelayedReady:   false,
+	}
+	for _, ev := range collector.events {
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		if _, ok := requiredReasons[reason]; ok {
+			requiredReasons[reason] = true
+			if ev.Payload["task_id"] == "" {
+				t.Fatalf("missing task_id on delayed reason %q: %#v", reason, ev.Payload)
+			}
+		}
+	}
+	for reason, seen := range requiredReasons {
+		if !seen {
+			t.Fatalf("missing delayed timeline reason %q", reason)
+		}
+	}
+}
+
 func TestCanonicalReasonMapper(t *testing.T) {
 	required := []string{
 		ReasonEnqueue,
+		ReasonDelayedEnqueue,
+		ReasonDelayedWait,
+		ReasonDelayedReady,
 		ReasonClaim,
 		ReasonHeartbeat,
 		ReasonLeaseExpired,

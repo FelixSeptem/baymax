@@ -11,6 +11,7 @@ type schedulerState struct {
 	Tasks           map[string]*TaskRecord    `json:"tasks"`
 	Queue           []string                  `json:"queue"`
 	TerminalCommits map[string]TerminalCommit `json:"terminal_commits"`
+	DelayedWaitMs   []int64                   `json:"delayed_wait_ms,omitempty"`
 	Stats           Stats                     `json:"stats"`
 	governance      GovernanceConfig
 	lastPriority    string
@@ -23,6 +24,7 @@ func newSchedulerState(backend string) schedulerState {
 		Tasks:           map[string]*TaskRecord{},
 		Queue:           []string{},
 		TerminalCommits: map[string]TerminalCommit{},
+		DelayedWaitMs:   []int64{},
 		Stats: Stats{
 			Backend: strings.TrimSpace(backend),
 			QoSMode: string(cfg.QoS),
@@ -110,6 +112,9 @@ func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
 	s.Tasks[normalized.TaskID] = &record
 	s.Queue = append(s.Queue, normalized.TaskID)
 	s.Stats.QueueTotal++
+	if isTaskDelayed(normalized, now) {
+		s.Stats.DelayedTaskTotal++
+	}
 	return cloneTaskRecord(record), nil
 }
 
@@ -136,6 +141,8 @@ func (s *schedulerState) claim(workerID string, now time.Time, leaseTimeout time
 	if record == nil || record.State != TaskStateQueued {
 		return ClaimedTask{}, false, nil
 	}
+	delayedTask := isTaskDelayed(record.Task, record.CreatedAt)
+	delayedWaitMs := delayedWaitDurationMs(record, now)
 
 	nextAttempt := len(record.Attempts) + 1
 	attempt := Attempt{
@@ -168,6 +175,11 @@ func (s *schedulerState) claim(workerID string, now time.Time, leaseTimeout time
 		s.lastConsecutive = 1
 	}
 	s.Stats.ClaimTotal++
+	if delayedTask {
+		s.Stats.DelayedClaimTotal++
+		s.DelayedWaitMs = append(s.DelayedWaitMs, delayedWaitMs)
+		s.Stats.DelayedWaitMsP95 = percentileP95Int64(s.DelayedWaitMs)
+	}
 	s.Stats.QoSMode = string(s.governance.QoS)
 	return ClaimedTask{
 		Record:          cloneTaskRecord(*record),
@@ -332,6 +344,9 @@ func (s *schedulerState) nextClaimableIndex(now time.Time) (int, bool) {
 
 func isClaimableRecord(record *TaskRecord, now time.Time) bool {
 	if record == nil || record.State != TaskStateQueued {
+		return false
+	}
+	if !record.Task.NotBefore.IsZero() && record.Task.NotBefore.After(now) {
 		return false
 	}
 	if record.NextEligibleAt.IsZero() {
@@ -577,6 +592,7 @@ func (s *schedulerState) snapshot() StoreSnapshot {
 		Tasks:           tasks,
 		Queue:           append([]string(nil), s.Queue...),
 		TerminalCommits: commits,
+		DelayedWaitMs:   append([]int64(nil), s.DelayedWaitMs...),
 		Stats:           s.Stats,
 	}
 }
@@ -595,14 +611,11 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		if _, exists := tasks[taskID]; exists {
 			return fmt.Errorf("%w: duplicate task_id %q", ErrSnapshotCorrupt, taskID)
 		}
-		record.Task.TaskID = taskID
-		record.Task.RunID = strings.TrimSpace(record.Task.RunID)
-		record.Task.WorkflowID = strings.TrimSpace(record.Task.WorkflowID)
-		record.Task.TeamID = strings.TrimSpace(record.Task.TeamID)
-		record.Task.StepID = strings.TrimSpace(record.Task.StepID)
-		record.Task.AgentID = strings.TrimSpace(record.Task.AgentID)
-		record.Task.PeerID = strings.TrimSpace(record.Task.PeerID)
-		record.Task.ParentRunID = strings.TrimSpace(record.Task.ParentRunID)
+		normalizedTask, err := normalizeTask(record.Task)
+		if err != nil {
+			return fmt.Errorf("%w: tasks[%d].task is invalid: %v", ErrSnapshotCorrupt, i, err)
+		}
+		record.Task = normalizedTask
 
 		currentAttemptID := strings.TrimSpace(record.CurrentAttempt)
 		record.CurrentAttempt = currentAttemptID
@@ -713,12 +726,54 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 	if strings.TrimSpace(stats.QoSMode) == "" {
 		stats.QoSMode = string(s.governance.QoS)
 	}
+	delayedWaitMs := append([]int64(nil), snapshot.DelayedWaitMs...)
+	if len(delayedWaitMs) > 0 {
+		stats.DelayedWaitMsP95 = percentileP95Int64(delayedWaitMs)
+	}
 
 	s.Tasks = tasks
 	s.Queue = queue
 	s.TerminalCommits = terminalCommits
+	s.DelayedWaitMs = delayedWaitMs
 	s.Stats = stats
 	s.lastPriority = ""
 	s.lastConsecutive = 0
 	return nil
+}
+
+func isTaskDelayed(task Task, createdAt time.Time) bool {
+	if task.NotBefore.IsZero() {
+		return false
+	}
+	if createdAt.IsZero() {
+		return true
+	}
+	return task.NotBefore.After(createdAt)
+}
+
+func delayedWaitDurationMs(record *TaskRecord, now time.Time) int64 {
+	if record == nil || now.IsZero() {
+		return 0
+	}
+	wait := now.Sub(record.CreatedAt).Milliseconds()
+	if wait < 0 {
+		return 0
+	}
+	return wait
+}
+
+func percentileP95Int64(samples []int64) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	cp := append([]int64(nil), samples...)
+	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	index := int(float64(len(cp))*0.95 + 0.9999999)
+	if index <= 0 {
+		index = 1
+	}
+	if index > len(cp) {
+		index = len(cp)
+	}
+	return cp[index-1]
 }

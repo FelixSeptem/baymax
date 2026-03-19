@@ -57,6 +57,10 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Async Reporting Dedup Replay A12",
 		"Async Reporting Run/Stream Equivalence A12",
 		"Async Reporting Recovery Replay A12",
+		"Delayed Dispatch Eligibility A13",
+		"Delayed Dispatch Recovery A13",
+		"Delayed Dispatch Run/Stream Equivalence A13",
+		"Delayed Dispatch Async Compatibility A13",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

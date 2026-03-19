@@ -55,19 +55,30 @@ const (
 type ValidationErrorCode string
 
 const (
-	ErrCodeWorkflowIDRequired      ValidationErrorCode = "workflow_id_required"
-	ErrCodeStepIDRequired          ValidationErrorCode = "step_id_required"
-	ErrCodeDuplicateStepID         ValidationErrorCode = "duplicate_step_id"
-	ErrCodeMissingDependency       ValidationErrorCode = "missing_dependency"
-	ErrCodeDependencyCycle         ValidationErrorCode = "dependency_cycle"
-	ErrCodeUnsupportedCondition    ValidationErrorCode = "unsupported_condition"
-	ErrCodeUnsupportedStepKind     ValidationErrorCode = "unsupported_step_kind"
-	ErrCodeInvalidRetryMaxAttempts ValidationErrorCode = "invalid_retry_max_attempts"
-	ErrCodeInvalidRetryBackoff     ValidationErrorCode = "invalid_retry_backoff"
-	ErrCodeInvalidStepTimeout      ValidationErrorCode = "invalid_step_timeout"
-	ErrCodeA2AAgentIDRequired      ValidationErrorCode = "a2a_agent_id_required"
-	ErrCodeA2APeerIDRequired       ValidationErrorCode = "a2a_peer_id_required"
-	ErrCodeNoSteps                 ValidationErrorCode = "no_steps"
+	ErrCodeWorkflowIDRequired          ValidationErrorCode = "workflow_id_required"
+	ErrCodeStepIDRequired              ValidationErrorCode = "step_id_required"
+	ErrCodeDuplicateStepID             ValidationErrorCode = "duplicate_step_id"
+	ErrCodeMissingDependency           ValidationErrorCode = "missing_dependency"
+	ErrCodeDependencyCycle             ValidationErrorCode = "dependency_cycle"
+	ErrCodeUnsupportedCondition        ValidationErrorCode = "unsupported_condition"
+	ErrCodeUnsupportedStepKind         ValidationErrorCode = "unsupported_step_kind"
+	ErrCodeInvalidRetryMaxAttempts     ValidationErrorCode = "invalid_retry_max_attempts"
+	ErrCodeInvalidRetryBackoff         ValidationErrorCode = "invalid_retry_backoff"
+	ErrCodeInvalidStepTimeout          ValidationErrorCode = "invalid_step_timeout"
+	ErrCodeA2AAgentIDRequired          ValidationErrorCode = "a2a_agent_id_required"
+	ErrCodeA2APeerIDRequired           ValidationErrorCode = "a2a_peer_id_required"
+	ErrCodeNoSteps                     ValidationErrorCode = "no_steps"
+	ErrCodeGraphComposabilityDisabled  ValidationErrorCode = "graph_composability_disabled"
+	ErrCodeSubgraphNotFound            ValidationErrorCode = "subgraph_not_found"
+	ErrCodeSubgraphDepthExceeded       ValidationErrorCode = "subgraph_depth_exceeded"
+	ErrCodeSubgraphCycle               ValidationErrorCode = "subgraph_cycle"
+	ErrCodeSubgraphAliasCollision      ValidationErrorCode = "subgraph_alias_collision"
+	ErrCodeExpandedStepIDCollision     ValidationErrorCode = "expanded_step_id_collision"
+	ErrCodeConditionTemplateNotFound   ValidationErrorCode = "condition_template_not_found"
+	ErrCodeConditionTemplateVarMissing ValidationErrorCode = "condition_template_var_missing"
+	ErrCodeConditionTemplateScope      ValidationErrorCode = "condition_template_scope_violation"
+	ErrCodeSubgraphOverrideForbidden   ValidationErrorCode = "subgraph_override_forbidden"
+	ErrCodeSubgraphOverrideStepMissing ValidationErrorCode = "subgraph_override_step_missing"
 )
 
 type ValidationError struct {
@@ -101,24 +112,41 @@ type Retry struct {
 	Backoff     time.Duration `json:"backoff,omitempty" yaml:"backoff,omitempty"`
 }
 
+type StepOverride struct {
+	Retry   *Retry         `json:"retry,omitempty" yaml:"retry,omitempty"`
+	Timeout *time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Kind    *StepKind      `json:"kind,omitempty" yaml:"kind,omitempty"`
+}
+
 type Step struct {
-	StepID    string         `json:"step_id,omitempty" yaml:"step_id,omitempty"`
-	Step      string         `json:"step,omitempty" yaml:"step,omitempty"`
-	TaskID    string         `json:"task_id,omitempty" yaml:"task_id,omitempty"`
-	TeamID    string         `json:"team_id,omitempty" yaml:"team_id,omitempty"`
-	AgentID   string         `json:"agent_id,omitempty" yaml:"agent_id,omitempty"`
-	PeerID    string         `json:"peer_id,omitempty" yaml:"peer_id,omitempty"`
-	Kind      StepKind       `json:"kind,omitempty" yaml:"kind,omitempty"`
-	DependsOn []string       `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
-	Condition StepCondition  `json:"condition,omitempty" yaml:"condition,omitempty"`
-	Retry     Retry          `json:"retry,omitempty" yaml:"retry,omitempty"`
-	Timeout   time.Duration  `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Payload   map[string]any `json:"payload,omitempty" yaml:"payload,omitempty"`
+	StepID            string                  `json:"step_id,omitempty" yaml:"step_id,omitempty"`
+	Step              string                  `json:"step,omitempty" yaml:"step,omitempty"`
+	TaskID            string                  `json:"task_id,omitempty" yaml:"task_id,omitempty"`
+	TeamID            string                  `json:"team_id,omitempty" yaml:"team_id,omitempty"`
+	AgentID           string                  `json:"agent_id,omitempty" yaml:"agent_id,omitempty"`
+	PeerID            string                  `json:"peer_id,omitempty" yaml:"peer_id,omitempty"`
+	Kind              StepKind                `json:"kind,omitempty" yaml:"kind,omitempty"`
+	DependsOn         []string                `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
+	Condition         StepCondition           `json:"condition,omitempty" yaml:"condition,omitempty"`
+	Retry             Retry                   `json:"retry,omitempty" yaml:"retry,omitempty"`
+	Timeout           time.Duration           `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Payload           map[string]any          `json:"payload,omitempty" yaml:"payload,omitempty"`
+	UseSubgraph       string                  `json:"use_subgraph,omitempty" yaml:"use_subgraph,omitempty"`
+	Alias             string                  `json:"alias,omitempty" yaml:"alias,omitempty"`
+	ConditionTemplate string                  `json:"condition_template,omitempty" yaml:"condition_template,omitempty"`
+	TemplateVars      map[string]string       `json:"template_vars,omitempty" yaml:"template_vars,omitempty"`
+	Overrides         map[string]StepOverride `json:"overrides,omitempty" yaml:"overrides,omitempty"`
+}
+
+type Subgraph struct {
+	Steps []Step `json:"steps,omitempty" yaml:"steps,omitempty"`
 }
 
 type Definition struct {
-	WorkflowID string `json:"workflow_id" yaml:"workflow_id"`
-	Steps      []Step `json:"steps" yaml:"steps"`
+	WorkflowID         string              `json:"workflow_id" yaml:"workflow_id"`
+	Steps              []Step              `json:"steps" yaml:"steps"`
+	Subgraphs          map[string]Subgraph `json:"subgraphs,omitempty" yaml:"subgraphs,omitempty"`
+	ConditionTemplates map[string]string   `json:"condition_templates,omitempty" yaml:"condition_templates,omitempty"`
 }
 
 type Planner interface {
@@ -295,27 +323,33 @@ type StepResult struct {
 }
 
 type RunResult struct {
-	RunID                string       `json:"run_id,omitempty"`
-	WorkflowID           string       `json:"workflow_id"`
-	WorkflowStatus       string       `json:"workflow_status"`
-	WorkflowStepTotal    int          `json:"workflow_step_total"`
-	WorkflowStepFailed   int          `json:"workflow_step_failed"`
-	WorkflowRemoteTotal  int          `json:"workflow_remote_step_total,omitempty"`
-	WorkflowRemoteFailed int          `json:"workflow_remote_step_failed,omitempty"`
-	WorkflowResumeCount  int          `json:"workflow_resume_count"`
-	Steps                []StepResult `json:"steps"`
-	ExecutionOrder       []string     `json:"execution_order,omitempty"`
+	RunID                          string       `json:"run_id,omitempty"`
+	WorkflowID                     string       `json:"workflow_id"`
+	WorkflowStatus                 string       `json:"workflow_status"`
+	WorkflowStepTotal              int          `json:"workflow_step_total"`
+	WorkflowStepFailed             int          `json:"workflow_step_failed"`
+	WorkflowRemoteTotal            int          `json:"workflow_remote_step_total,omitempty"`
+	WorkflowRemoteFailed           int          `json:"workflow_remote_step_failed,omitempty"`
+	WorkflowSubgraphExpansionTotal int          `json:"workflow_subgraph_expansion_total,omitempty"`
+	WorkflowConditionTemplateTotal int          `json:"workflow_condition_template_total,omitempty"`
+	WorkflowGraphCompileFailed     bool         `json:"workflow_graph_compile_failed,omitempty"`
+	WorkflowResumeCount            int          `json:"workflow_resume_count"`
+	Steps                          []StepResult `json:"steps"`
+	ExecutionOrder                 []string     `json:"execution_order,omitempty"`
 }
 
 func (r RunResult) RunFinishedPayload() map[string]any {
 	return map[string]any{
-		"workflow_id":                 r.WorkflowID,
-		"workflow_status":             r.WorkflowStatus,
-		"workflow_step_total":         r.WorkflowStepTotal,
-		"workflow_step_failed":        r.WorkflowStepFailed,
-		"workflow_remote_step_total":  r.WorkflowRemoteTotal,
-		"workflow_remote_step_failed": r.WorkflowRemoteFailed,
-		"workflow_resume_count":       r.WorkflowResumeCount,
+		"workflow_id":                       r.WorkflowID,
+		"workflow_status":                   r.WorkflowStatus,
+		"workflow_step_total":               r.WorkflowStepTotal,
+		"workflow_step_failed":              r.WorkflowStepFailed,
+		"workflow_remote_step_total":        r.WorkflowRemoteTotal,
+		"workflow_remote_step_failed":       r.WorkflowRemoteFailed,
+		"workflow_subgraph_expansion_total": r.WorkflowSubgraphExpansionTotal,
+		"workflow_condition_template_total": r.WorkflowConditionTemplateTotal,
+		"workflow_graph_compile_failed":     r.WorkflowGraphCompileFailed,
+		"workflow_resume_count":             r.WorkflowResumeCount,
 	}
 }
 
@@ -344,12 +378,17 @@ func WithDefaultStepTimeout(timeout time.Duration) Option {
 	return func(e *Engine) { e.defaultStepTimeout = timeout }
 }
 
+func WithGraphComposabilityEnabled(enabled bool) Option {
+	return func(e *Engine) { e.graphComposabilityEnabled = enabled }
+}
+
 type Engine struct {
-	adapter            StepAdapter
-	checkpoints        CheckpointStore
-	timelineEmitter    types.EventHandler
-	defaultStepTimeout time.Duration
-	now                func() time.Time
+	adapter                   StepAdapter
+	checkpoints               CheckpointStore
+	timelineEmitter           types.EventHandler
+	defaultStepTimeout        time.Duration
+	graphComposabilityEnabled bool
+	now                       func() time.Time
 }
 
 func New(opts ...Option) *Engine {
@@ -394,23 +433,111 @@ func ParseDefinition(raw []byte) (Definition, error) {
 
 func normalizeDefinition(def Definition) Definition {
 	def.WorkflowID = strings.TrimSpace(def.WorkflowID)
-	for i := range def.Steps {
-		if strings.TrimSpace(def.Steps[i].StepID) == "" {
-			def.Steps[i].StepID = strings.TrimSpace(def.Steps[i].Step)
+	if len(def.Subgraphs) > 0 {
+		next := make(map[string]Subgraph, len(def.Subgraphs))
+		for name, sub := range def.Subgraphs {
+			key := strings.TrimSpace(name)
+			if key == "" {
+				continue
+			}
+			sub.Steps = normalizeSteps(sub.Steps)
+			next[key] = sub
 		}
-		def.Steps[i].StepID = strings.TrimSpace(def.Steps[i].StepID)
-		def.Steps[i].TaskID = strings.TrimSpace(def.Steps[i].TaskID)
-		if def.Steps[i].TaskID == "" {
-			def.Steps[i].TaskID = def.Steps[i].StepID
-		}
-		def.Steps[i].TeamID = strings.TrimSpace(def.Steps[i].TeamID)
-		def.Steps[i].AgentID = strings.TrimSpace(def.Steps[i].AgentID)
-		def.Steps[i].PeerID = strings.TrimSpace(def.Steps[i].PeerID)
-		def.Steps[i].Kind = normalizeStepKind(def.Steps[i].Kind)
-		def.Steps[i].Condition = normalizeCondition(def.Steps[i].Condition)
-		def.Steps[i].DependsOn = normalizeDependsOn(def.Steps[i].DependsOn)
+		def.Subgraphs = next
 	}
+	if len(def.ConditionTemplates) > 0 {
+		next := make(map[string]string, len(def.ConditionTemplates))
+		for name, template := range def.ConditionTemplates {
+			key := strings.TrimSpace(name)
+			if key == "" {
+				continue
+			}
+			next[key] = strings.TrimSpace(template)
+		}
+		def.ConditionTemplates = next
+	}
+	def.Steps = normalizeSteps(def.Steps)
 	return def
+}
+
+func normalizeSteps(steps []Step) []Step {
+	for i := range steps {
+		if strings.TrimSpace(steps[i].StepID) == "" {
+			steps[i].StepID = strings.TrimSpace(steps[i].Step)
+		}
+		steps[i].StepID = strings.TrimSpace(steps[i].StepID)
+		steps[i].UseSubgraph = strings.TrimSpace(steps[i].UseSubgraph)
+		steps[i].Alias = strings.TrimSpace(steps[i].Alias)
+		if steps[i].StepID == "" {
+			if steps[i].Alias != "" {
+				steps[i].StepID = steps[i].Alias
+			} else if steps[i].UseSubgraph != "" {
+				steps[i].StepID = steps[i].UseSubgraph
+			}
+		}
+		steps[i].TaskID = strings.TrimSpace(steps[i].TaskID)
+		if steps[i].TaskID == "" {
+			steps[i].TaskID = steps[i].StepID
+		}
+		steps[i].TeamID = strings.TrimSpace(steps[i].TeamID)
+		steps[i].AgentID = strings.TrimSpace(steps[i].AgentID)
+		steps[i].PeerID = strings.TrimSpace(steps[i].PeerID)
+		steps[i].Kind = normalizeStepKind(steps[i].Kind)
+		steps[i].Condition = normalizeCondition(steps[i].Condition)
+		steps[i].DependsOn = normalizeDependsOn(steps[i].DependsOn)
+		steps[i].ConditionTemplate = strings.TrimSpace(steps[i].ConditionTemplate)
+		steps[i].TemplateVars = normalizeStringMap(steps[i].TemplateVars)
+		steps[i].Overrides = normalizeOverrideMap(steps[i].Overrides)
+	}
+	return steps
+}
+
+func normalizeStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(v)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeOverrideMap(in map[string]StepOverride) map[string]StepOverride {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]StepOverride, len(in))
+	for k, override := range in {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		if override.Retry != nil {
+			cp := *override.Retry
+			override.Retry = &cp
+		}
+		if override.Timeout != nil {
+			value := *override.Timeout
+			override.Timeout = &value
+		}
+		if override.Kind != nil {
+			kind := normalizeStepKind(*override.Kind)
+			override.Kind = &kind
+		}
+		out[key] = override
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func normalizeStepKind(kind StepKind) StepKind {
@@ -628,6 +755,11 @@ func hasCycle(steps []Step) bool {
 
 func (e *Engine) Plan(def Definition) ([]string, error) {
 	def = normalizeDefinition(def)
+	compiled, _, err := e.compileDefinition(def)
+	if err != nil {
+		return nil, err
+	}
+	def = compiled
 	if errs := ValidateDefinition(def); len(errs) > 0 {
 		return nil, errs
 	}
@@ -683,6 +815,11 @@ func (e *Engine) Stream(ctx context.Context, req RunRequest, onEvent func(Stream
 
 func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(StreamEvent) error) (RunResult, error) {
 	def := normalizeDefinition(req.DSL)
+	compiled, compileSummary, err := e.compileDefinition(def)
+	if err != nil {
+		return RunResult{}, err
+	}
+	def = compiled
 	if errs := ValidateDefinition(def); len(errs) > 0 {
 		return RunResult{}, errs
 	}
@@ -836,7 +973,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 		}
 	}
 
-	out := buildResult(req.RunID, def.WorkflowID, resumeCount, def.Steps, results, executionOrder)
+	out := buildResult(req.RunID, def.WorkflowID, resumeCount, def.Steps, results, executionOrder, compileSummary)
 	if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, out.WorkflowStatus, resumeCount, results); err != nil {
 		return RunResult{}, err
 	}
@@ -915,13 +1052,23 @@ func isTerminal(status StepStatus) bool {
 	}
 }
 
-func buildResult(runID, workflowID string, resumeCount int, steps []Step, results map[string]*StepResult, executionOrder []string) RunResult {
+func buildResult(
+	runID, workflowID string,
+	resumeCount int,
+	steps []Step,
+	results map[string]*StepResult,
+	executionOrder []string,
+	compileSummary graphCompileSummary,
+) RunResult {
 	out := RunResult{
-		RunID:               strings.TrimSpace(runID),
-		WorkflowID:          workflowID,
-		WorkflowResumeCount: resumeCount,
-		WorkflowStepTotal:   len(steps),
-		ExecutionOrder:      append([]string(nil), executionOrder...),
+		RunID:                          strings.TrimSpace(runID),
+		WorkflowID:                     workflowID,
+		WorkflowResumeCount:            resumeCount,
+		WorkflowStepTotal:              len(steps),
+		ExecutionOrder:                 append([]string(nil), executionOrder...),
+		WorkflowSubgraphExpansionTotal: compileSummary.SubgraphExpansionTotal,
+		WorkflowConditionTemplateTotal: compileSummary.ConditionTemplateTotal,
+		WorkflowGraphCompileFailed:     compileSummary.GraphCompileFailed,
 	}
 	keys := make([]string, 0, len(results))
 	for key := range results {

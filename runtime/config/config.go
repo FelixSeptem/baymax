@@ -240,12 +240,17 @@ type TeamsRemoteConfig struct {
 }
 
 type WorkflowConfig struct {
-	Enabled               bool                 `json:"enabled"`
-	PlannerValidationMode string               `json:"planner_validation_mode"`
-	DefaultStepTimeout    time.Duration        `json:"default_step_timeout"`
-	CheckpointBackend     string               `json:"checkpoint_backend"`
-	CheckpointPath        string               `json:"checkpoint_path"`
-	Remote                WorkflowRemoteConfig `json:"remote"`
+	Enabled               bool                             `json:"enabled"`
+	PlannerValidationMode string                           `json:"planner_validation_mode"`
+	DefaultStepTimeout    time.Duration                    `json:"default_step_timeout"`
+	CheckpointBackend     string                           `json:"checkpoint_backend"`
+	CheckpointPath        string                           `json:"checkpoint_path"`
+	GraphComposability    WorkflowGraphComposabilityConfig `json:"graph_composability"`
+	Remote                WorkflowRemoteConfig             `json:"remote"`
+}
+
+type WorkflowGraphComposabilityConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type WorkflowRemoteConfig struct {
@@ -837,6 +842,9 @@ func DefaultConfig() Config {
 			DefaultStepTimeout:    3 * time.Second,
 			CheckpointBackend:     WorkflowCheckpointMemory,
 			CheckpointPath:        filepath.Join(os.TempDir(), "baymax", "workflow-checkpoints"),
+			GraphComposability: WorkflowGraphComposabilityConfig{
+				Enabled: false,
+			},
 			Remote: WorkflowRemoteConfig{
 				Enabled:                 false,
 				RequirePeerID:           true,
@@ -2529,6 +2537,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("workflow.default_step_timeout", base.Workflow.DefaultStepTimeout)
 	v.SetDefault("workflow.checkpoint_backend", base.Workflow.CheckpointBackend)
 	v.SetDefault("workflow.checkpoint_path", base.Workflow.CheckpointPath)
+	v.SetDefault("workflow.graph_composability.enabled", base.Workflow.GraphComposability.Enabled)
 	v.SetDefault("workflow.remote.enabled", base.Workflow.Remote.Enabled)
 	v.SetDefault("workflow.remote.require_peer_id", base.Workflow.Remote.RequirePeerID)
 	v.SetDefault("workflow.remote.default_retry_max_attempts", base.Workflow.Remote.DefaultRetryMaxAttempts)
@@ -2771,6 +2780,7 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Workflow.DefaultStepTimeout = v.GetDuration("workflow.default_step_timeout")
 	cfg.Workflow.CheckpointBackend = strings.ToLower(strings.TrimSpace(v.GetString("workflow.checkpoint_backend")))
 	cfg.Workflow.CheckpointPath = strings.TrimSpace(v.GetString("workflow.checkpoint_path"))
+	cfg.Workflow.GraphComposability.Enabled = v.GetBool("workflow.graph_composability.enabled")
 	cfg.Workflow.Remote.Enabled = v.GetBool("workflow.remote.enabled")
 	cfg.Workflow.Remote.RequirePeerID = v.GetBool("workflow.remote.require_peer_id")
 	cfg.Workflow.Remote.DefaultRetryMaxAttempts = v.GetInt("workflow.remote.default_retry_max_attempts")

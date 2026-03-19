@@ -309,7 +309,12 @@ func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 		c.teams = teams.New(teams.WithTimelineEmitter(c.handler))
 	}
 	if c.workflow == nil {
-		c.workflow = workflow.New(workflow.WithTimelineEmitter(c.handler))
+		cfg := c.effectiveConfig()
+		c.workflow = workflow.New(
+			workflow.WithTimelineEmitter(c.handler),
+			workflow.WithDefaultStepTimeout(cfg.Workflow.DefaultStepTimeout),
+			workflow.WithGraphComposabilityEnabled(cfg.Workflow.GraphComposability.Enabled),
+		)
 	}
 
 	if c.scheduler == nil {

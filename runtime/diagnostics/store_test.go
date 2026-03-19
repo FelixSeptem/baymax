@@ -115,16 +115,19 @@ func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                     time.Now(),
-		RunID:                    "run-workflow-1",
-		Status:                   "failed",
-		WorkflowID:               "wf-alpha",
-		WorkflowStatus:           "failed",
-		WorkflowStepTotal:        6,
-		WorkflowStepFailed:       2,
-		WorkflowRemoteStepTotal:  2,
-		WorkflowRemoteStepFailed: 1,
-		WorkflowResumeCount:      1,
+		Time:                           time.Now(),
+		RunID:                          "run-workflow-1",
+		Status:                         "failed",
+		WorkflowID:                     "wf-alpha",
+		WorkflowStatus:                 "failed",
+		WorkflowStepTotal:              6,
+		WorkflowStepFailed:             2,
+		WorkflowRemoteStepTotal:        2,
+		WorkflowRemoteStepFailed:       1,
+		WorkflowSubgraphExpansionTotal: 3,
+		WorkflowConditionTemplateTotal: 2,
+		WorkflowGraphCompileFailed:     false,
+		WorkflowResumeCount:            1,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -135,7 +138,8 @@ func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 	}
 	if runs[0].WorkflowStepTotal != 6 || runs[0].WorkflowStepFailed != 2 ||
 		runs[0].WorkflowRemoteStepTotal != 2 || runs[0].WorkflowRemoteStepFailed != 1 ||
-		runs[0].WorkflowResumeCount != 1 {
+		runs[0].WorkflowSubgraphExpansionTotal != 3 || runs[0].WorkflowConditionTemplateTotal != 2 ||
+		runs[0].WorkflowGraphCompileFailed || runs[0].WorkflowResumeCount != 1 {
 		t.Fatalf("workflow aggregate should stay stable under replay, got %#v", runs[0])
 	}
 }

@@ -191,6 +191,44 @@ if err != nil {
 fmt.Printf("delayed task=%s not_before=%s\n", record.Task.TaskID, record.Task.NotBefore.Format(time.RFC3339Nano))
 ```
 
+### 7) Workflow Graph Composability（A15，默认关闭）
+
+先在 runtime config 显式开启：
+
+```yaml
+workflow:
+  graph_composability:
+    enabled: true
+```
+
+最小 composable DSL 示例（`subgraphs + use_subgraph + condition_templates`）：
+
+```yaml
+workflow_id: wf-a15-demo
+condition_templates:
+  gate: "{{when}}"
+subgraphs:
+  prepare:
+    steps:
+      - step_id: fetch
+        kind: runner
+      - step_id: validate
+        kind: runner
+        depends_on: [fetch]
+steps:
+  - step_id: prep
+    use_subgraph: prepare
+    alias: prepare
+  - step_id: finalize
+    kind: runner
+    depends_on: [prep]
+    condition_template: gate
+    template_vars:
+      when: on_success
+```
+
+展开后稳定 step_id 形态为 `<subgraph_alias>/<step_id>`，例如 `prepare/fetch`、`prepare/validate`。
+
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
 ## 开发验证

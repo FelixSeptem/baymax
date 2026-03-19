@@ -65,6 +65,10 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Tail Governance QoS+Recovery A14",
 		"Tail Governance Parser Compatibility A14",
 		"Tail Governance Async+Delayed Replay A14",
+		"Workflow Graph Composability Determinism A15",
+		"Workflow Graph Composability Compile Fail-Fast A15",
+		"Workflow Graph Composability Run/Stream+Resume A15",
+		"Workflow Graph Composability Composer Path A15",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

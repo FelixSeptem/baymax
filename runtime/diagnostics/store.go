@@ -123,6 +123,9 @@ type RunRecord struct {
 	WorkflowStepFailed                   int                               `json:"workflow_step_failed,omitempty"`
 	WorkflowRemoteStepTotal              int                               `json:"workflow_remote_step_total,omitempty"`
 	WorkflowRemoteStepFailed             int                               `json:"workflow_remote_step_failed,omitempty"`
+	WorkflowSubgraphExpansionTotal       int                               `json:"workflow_subgraph_expansion_total,omitempty"`
+	WorkflowConditionTemplateTotal       int                               `json:"workflow_condition_template_total,omitempty"`
+	WorkflowGraphCompileFailed           bool                              `json:"workflow_graph_compile_failed,omitempty"`
 	WorkflowResumeCount                  int                               `json:"workflow_resume_count,omitempty"`
 	A2ATaskTotal                         int                               `json:"a2a_task_total,omitempty"`
 	A2ATaskFailed                        int                               `json:"a2a_task_failed,omitempty"`

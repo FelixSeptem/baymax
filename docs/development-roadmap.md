@@ -16,9 +16,9 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - 已归档口径：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：R1-R3 主线能力、A4-A13。
-- 进行中：`close-a12-a13-tail-contract-and-compatibility-governance-a14`（收口治理）。
-- 待规划/探索：`enhance-workflow-graph-composability-a15`。
+- 已归档并稳定：R1-R3 主线能力、A4-A14。
+- 进行中：`enhance-workflow-graph-composability-a15`。
+- 待规划/探索：A16+。
 
 ## 当前代码能力（简版）
 
@@ -54,20 +54,29 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - OpenSpec change：`introduce-delayed-dispatch-not-before-contract-a13`（archived）。
 - 范围聚焦：`scheduler.task.not_before`、claim 双 gate、恢复后时间语义一致性、delayed timeline reason 与 run diagnostics additive 字段。
 
-### A14（进行中）
+### A14（已归档）
 
 目标：不新增运行时功能，完成 A12/A13 的契约冻结、门禁矩阵与文档收敛。
 
 口径：
-- OpenSpec change：`close-a12-a13-tail-contract-and-compatibility-governance-a14`（active）。
+- OpenSpec change：`close-a12-a13-tail-contract-and-compatibility-governance-a14`（archived）。
 - 范围聚焦：shared contract reason completeness、`sync/async/delayed × Run/Stream × qos/recovery` 矩阵、A12/A13 兼容窗口 parser 语义、roadmap/index/doc 一致性。
+
+### A15（进行中）
+
+目标：在保持 workflow 执行状态机不变的前提下，引入图编译复用能力（subgraph + condition template）。
+
+口径：
+- OpenSpec change：`enhance-workflow-graph-composability-a15`（active）。
+- 范围聚焦：compile-before-plan 展开、深度上限 `3`、canonical ID `<alias>/<step_id>`、override 策略（允许 `retry/timeout`、禁止 `kind`）、Run/Stream fail-fast 一致性、diagnostics additive 字段与 gate/doc 收口。
 
 ### 通信能力主线进度（A11-A14）
 
 1. A11：同步执行并等待结果（已实施）。
 2. A12：异步执行后汇报（已归档）。
 3. A13：定时延后执行（已归档）。
-4. A14：尾项收口治理（进行中）。
+4. A14：尾项收口治理（已归档）。
+5. A15：workflow 图可组合能力（进行中）。
 
 ## Lib-First Multi-Agent 差距收敛清单（2026-03-19）
 
@@ -75,7 +84,7 @@ P0（必须优先）：
 - [x] A9 恢复能力主干落地。
 - [x] A9 文档与契约收口后归档。
 - [x] A10 调度治理落地并验收。
-- [ ] A14 尾项收口（shared gate + matrix + docs/index）完成并归档。
+- [x] A14 尾项收口（shared gate + matrix + docs/index）完成并归档。
 - [x] 新增 reason taxonomy 与 run summary 解析语义统一（`additive + nullable + default`）。
 
 P1（紧随其后）：
@@ -91,8 +100,8 @@ P2（可选，DX/生态）：
 - [ ] 外部适配样板与迁移映射文档。
 
 推荐顺序：
-1. 完成并归档 A14（不扩功能，先收口治理）。
-2. 推进 P1 编排能力与协作原语（A15 起）。
+1. 完成 A15（workflow graph composability）并归档。
+2. 推进 P1 协作原语与恢复边界增强（A16+）。
 3. 推进 P1 观测与性能回归门禁。
 4. 补齐 P2 DX/生态能力。
 

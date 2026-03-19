@@ -24,6 +24,7 @@
   - `reload.debounce` -> `BAYMAX_RELOAD_DEBOUNCE`
   - `teams.remote.enabled` -> `BAYMAX_TEAMS_REMOTE_ENABLED`
   - `teams.remote.require_peer_id` -> `BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`
+  - `workflow.graph_composability.enabled` -> `BAYMAX_WORKFLOW_GRAPH_COMPOSABILITY_ENABLED`
   - `workflow.remote.enabled` -> `BAYMAX_WORKFLOW_REMOTE_ENABLED`
   - `workflow.remote.default_retry_max_attempts` -> `BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS`
   - `a2a.async_reporting.enabled` -> `BAYMAX_A2A_ASYNC_REPORTING_ENABLED`
@@ -124,6 +125,8 @@ workflow:
   default_step_timeout: 3s        # 必须 > 0
   checkpoint_backend: memory      # memory|file
   checkpoint_path: /tmp/baymax/workflow-checkpoints # backend=file 时必填
+  graph_composability:
+    enabled: false                # A15，默认关闭；开启后启用 subgraphs/use_subgraph/condition_templates 编译展开
   remote:
     enabled: false                # 启用 a2a remote step 时，要求 workflow.enabled=true
     require_peer_id: true         # a2a step 是否强制 peer_id
@@ -946,6 +949,9 @@ Action Gate 规则优先级（H4）：
 - `workflow_step_failed`：workflow 失败 step 数。
 - `workflow_remote_step_total`：workflow 中 A2A remote step 总数。
 - `workflow_remote_step_failed`：workflow 中 A2A remote 失败 step 数。
+- `workflow_subgraph_expansion_total`：workflow 图编译阶段展开出的子图 step 总数（A15）。
+- `workflow_condition_template_total`：workflow 图编译阶段解析的 condition template 次数（A15）。
+- `workflow_graph_compile_failed`：workflow 图编译是否失败（A15，布尔值）。
 - `workflow_resume_count`：本次 run 的 workflow 恢复次数。
 
 语义约束：
@@ -1024,6 +1030,7 @@ Action Gate 规则优先级（H4）：
 | A12 Async Reporting（`a2a_async_report_*`） | 新增字段不影响既有字段 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | A13 Delayed Dispatch（`scheduler_delayed_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
+| A15 Workflow Graph Composability（`workflow_subgraph_expansion_total` / `workflow_condition_template_total` / `workflow_graph_compile_failed`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` / `false` 解析 |
 | Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
 | Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
 

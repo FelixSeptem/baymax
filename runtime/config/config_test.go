@@ -427,6 +427,9 @@ func TestWorkflowConfigDefaults(t *testing.T) {
 	if cfg.Workflow.CheckpointBackend != WorkflowCheckpointMemory {
 		t.Fatalf("workflow.checkpoint_backend = %q, want %q", cfg.Workflow.CheckpointBackend, WorkflowCheckpointMemory)
 	}
+	if cfg.Workflow.GraphComposability.Enabled {
+		t.Fatal("workflow.graph_composability.enabled = true, want false")
+	}
 	if cfg.Workflow.Remote.Enabled {
 		t.Fatal("workflow.remote.enabled = true, want false")
 	}
@@ -444,6 +447,7 @@ func TestWorkflowConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_WORKFLOW_DEFAULT_STEP_TIMEOUT", "1400ms")
 	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_BACKEND", WorkflowCheckpointFile)
 	t.Setenv("BAYMAX_WORKFLOW_CHECKPOINT_PATH", "/tmp/workflow-checkpoints")
+	t.Setenv("BAYMAX_WORKFLOW_GRAPH_COMPOSABILITY_ENABLED", "true")
 	t.Setenv("BAYMAX_WORKFLOW_REMOTE_ENABLED", "true")
 	t.Setenv("BAYMAX_WORKFLOW_REMOTE_REQUIRE_PEER_ID", "false")
 	t.Setenv("BAYMAX_WORKFLOW_REMOTE_DEFAULT_RETRY_MAX_ATTEMPTS", "5")
@@ -456,6 +460,8 @@ workflow:
   default_step_timeout: 3s
   checkpoint_backend: memory
   checkpoint_path: /tmp/ignored
+  graph_composability:
+    enabled: false
   remote:
     enabled: false
     require_peer_id: true
@@ -479,6 +485,9 @@ workflow:
 	}
 	if cfg.Workflow.CheckpointPath != "/tmp/workflow-checkpoints" {
 		t.Fatalf("workflow.checkpoint_path = %q, want /tmp/workflow-checkpoints", cfg.Workflow.CheckpointPath)
+	}
+	if !cfg.Workflow.GraphComposability.Enabled {
+		t.Fatal("workflow.graph_composability.enabled = false, want true from env")
 	}
 	if !cfg.Workflow.Remote.Enabled {
 		t.Fatal("workflow.remote.enabled = false, want true from env")

@@ -200,6 +200,9 @@ mcp:
 			"workflow_step_failed":                     2,
 			"workflow_remote_step_total":               4,
 			"workflow_remote_step_failed":              2,
+			"workflow_subgraph_expansion_total":        3,
+			"workflow_condition_template_total":        2,
+			"workflow_graph_compile_failed":            false,
 			"workflow_resume_count":                    1,
 			"a2a_task_total":                           4,
 			"a2a_task_failed":                          1,
@@ -361,6 +364,9 @@ mcp:
 	if items[0].WorkflowRemoteStepTotal != 4 || items[0].WorkflowRemoteStepFailed != 2 {
 		t.Fatalf("workflow remote summary counters mismatch: %#v", items[0])
 	}
+	if items[0].WorkflowSubgraphExpansionTotal != 3 || items[0].WorkflowConditionTemplateTotal != 2 || items[0].WorkflowGraphCompileFailed {
+		t.Fatalf("workflow graph compile summary mismatch: %#v", items[0])
+	}
 	if items[0].A2ATaskTotal != 4 || items[0].A2ATaskFailed != 1 {
 		t.Fatalf("a2a summary counters mismatch: %#v", items[0])
 	}
@@ -487,7 +493,10 @@ mcp:
 		got.A2AAsyncReportDedupTotal != 0 ||
 		got.SchedulerDelayedTaskTotal != 0 ||
 		got.SchedulerDelayedClaimTotal != 0 ||
-		got.SchedulerDelayedWaitMsP95 != 0 {
+		got.SchedulerDelayedWaitMsP95 != 0 ||
+		got.WorkflowSubgraphExpansionTotal != 0 ||
+		got.WorkflowConditionTemplateTotal != 0 ||
+		got.WorkflowGraphCompileFailed {
 		t.Fatalf("missing A12/A13 additive fields must resolve to documented defaults: %#v", got)
 	}
 }

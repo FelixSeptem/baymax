@@ -30,6 +30,9 @@ go test ./integration -run '^TestDelayedDispatchContract' -count=1
 echo "[multi-agent-shared-contract-gate] a14 closure matrix suite"
 go test ./integration -run '^TestTailGovernanceA14' -count=1
 
+echo "[multi-agent-shared-contract-gate] workflow graph composability suite"
+go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1
+
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

@@ -32,6 +32,9 @@ go test ./integration -run '^TestAsyncReportingContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] delayed dispatch suite"
 go test ./integration -run '^TestDelayedDispatchContract' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] a14 closure matrix suite"
+go test ./integration -run '^TestTailGovernanceA14' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

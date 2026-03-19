@@ -15,6 +15,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	a2aCoreSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "a2a-minimal-interoperability", "spec.md")),
@@ -28,6 +29,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "harden-a2a-delivery-and-card-version-negotiation-a4", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	a2aBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "a2a-minimal-interoperability", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
@@ -50,6 +52,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	teamsRuntimeConfigSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
@@ -66,6 +69,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "harden-composed-session-recovery-and-deterministic-replay-a9", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "runtime-config-and-diagnostics-api", "spec.md")),
 	}, "\n")
 	teamsBoundarySpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "runtime-module-boundaries", "spec.md")),
@@ -97,6 +101,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-scheduler-qos-fairness-and-deadletter-governance-a10", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "go-quality-gate", "spec.md")),
+		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "go-quality-gate", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
@@ -276,8 +281,9 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_field_recovery_fallback_reason",
 		"missing_runtime_doc_compatibility_window_title",
 		"missing_runtime_doc_compatibility_window_rule",
-		"missing_runtime_doc_compatibility_window_legacy_example",
-		"missing_runtime_doc_compatibility_window_nullable_fallback",
+		"missing_runtime_doc_compatibility_window_default_rule",
+		"missing_runtime_doc_compatibility_window_ignore_unknown_rule",
+		"missing_runtime_doc_compatibility_window_stable_existing_rule",
 		"missing_runtime_doc_env_mapping_baymax_teams_remote_enabled",
 		"missing_runtime_doc_env_mapping_baymax_teams_remote_require_peer_id",
 		"missing_runtime_doc_env_mapping_baymax_workflow_remote_enabled",
@@ -329,6 +335,7 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_v1_acceptance_marker_recovery_*",
 		"missing_v1_acceptance_marker_recovery_enabled",
 		"missing_v1_acceptance_compatibility_window_marker",
+		"missing_v1_acceptance_a12_a13_compatibility_marker",
 		"missing_a2a_timeline_field_delivery_mode",
 		"missing_a2a_summary_field_a2a_delivery_mode",
 		"non_snake_case_a2a_field_detected",
@@ -340,6 +347,7 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_blocking_shared_contract_gate",
 		"missing_composer_boundary_contract",
 		"missing_composer_gate_contract",
+		"missing_single_blocking_gate_marker",
 	}
 	for _, code := range required {
 		if _, ok := codes[code]; !ok {

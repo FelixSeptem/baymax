@@ -219,3 +219,62 @@ func TestDelayedDispatchContractAsyncReportingCompatibility(t *testing.T) {
 		t.Fatalf("delayed+async summary mismatch: %#v", stats)
 	}
 }
+
+func TestDelayedDispatchContractAsyncDelayedReplayNoInflation(t *testing.T) {
+	s, err := scheduler.New(
+		scheduler.NewMemoryStore(),
+		scheduler.WithLeaseTimeout(500*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, scheduler.Task{
+		TaskID:    "task-delayed-async-replay-a14",
+		RunID:     "run-delayed-async-replay-a14",
+		NotBefore: time.Now().Add(90 * time.Millisecond),
+	}); err != nil {
+		t.Fatalf("enqueue delayed task: %v", err)
+	}
+	if _, ok, err := s.Claim(ctx, "worker-async-replay-a14"); err != nil || ok {
+		t.Fatalf("delayed task should be blocked before not_before: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(110 * time.Millisecond)
+	claimed, ok, err := s.Claim(ctx, "worker-async-replay-a14")
+	if err != nil || !ok {
+		t.Fatalf("delayed task should be claimable after boundary: ok=%v err=%v", ok, err)
+	}
+
+	report := a2a.AsyncReport{
+		ReportKey:  "delayed-async-replay-a14-report",
+		OutcomeKey: "succeeded|ok",
+		TaskID:     claimed.Record.Task.TaskID,
+		AttemptID:  claimed.Attempt.AttemptID,
+		Status:     a2a.StatusSucceeded,
+		Result:     map[string]any{"ok": true},
+	}
+	firstExec, err := scheduler.ExecutionFromAsyncReport(claimed, report)
+	if err != nil {
+		t.Fatalf("ExecutionFromAsyncReport failed: %v", err)
+	}
+	if _, err := s.Complete(ctx, firstExec.Commit); err != nil {
+		t.Fatalf("first complete failed: %v", err)
+	}
+	replayExec, err := scheduler.ExecutionFromAsyncReport(claimed, report)
+	if err != nil {
+		t.Fatalf("ExecutionFromAsyncReport replay failed: %v", err)
+	}
+	if _, err := s.Complete(ctx, replayExec.Commit); err != nil {
+		t.Fatalf("replay complete failed: %v", err)
+	}
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats failed: %v", err)
+	}
+	if stats.DelayedTaskTotal != 1 ||
+		stats.DelayedClaimTotal != 1 ||
+		stats.CompleteTotal != 1 ||
+		stats.DuplicateTerminalCommitTotal != 1 {
+		t.Fatalf("delayed+async replay should not inflate logical aggregates: %#v", stats)
+	}
+}

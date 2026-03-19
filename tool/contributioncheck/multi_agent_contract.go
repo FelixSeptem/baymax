@@ -329,10 +329,11 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		code   string
 		marker string
 	}{
-		{code: "missing_runtime_doc_compatibility_window_title", marker: "Compatibility Window (A5/A6)"},
+		{code: "missing_runtime_doc_compatibility_window_title", marker: "Compatibility Window (A12/A13)"},
 		{code: "missing_runtime_doc_compatibility_window_rule", marker: "additive + nullable + default"},
-		{code: "missing_runtime_doc_compatibility_window_legacy_example", marker: "legacy consumers"},
-		{code: "missing_runtime_doc_compatibility_window_nullable_fallback", marker: "nullable fallback"},
+		{code: "missing_runtime_doc_compatibility_window_default_rule", marker: "missing additive fields resolve to documented default values"},
+		{code: "missing_runtime_doc_compatibility_window_ignore_unknown_rule", marker: "unknown future additive fields are safely ignored"},
+		{code: "missing_runtime_doc_compatibility_window_stable_existing_rule", marker: "pre-existing field semantics remain unchanged"},
 	}
 	for _, item := range requiredCompatibilityWindowMarkers {
 		if !strings.Contains(snapshot.RuntimeConfigDoc, item.marker) {
@@ -399,7 +400,13 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 	if !strings.Contains(snapshot.V1AcceptanceDoc, "compatibility window") {
 		violations = append(violations, Violation{
 			Code:    "missing_v1_acceptance_compatibility_window_marker",
-			Message: "v1 acceptance doc must mention A5/A6 compatibility window semantics",
+			Message: "v1 acceptance doc must mention A12/A13 compatibility window semantics",
+		})
+	}
+	if !strings.Contains(snapshot.V1AcceptanceDoc, "A12/A13 additive summary fields") {
+		violations = append(violations, Violation{
+			Code:    "missing_v1_acceptance_a12_a13_compatibility_marker",
+			Message: "v1 acceptance doc must pin compatibility window to A12/A13 additive summary fields",
 		})
 	}
 
@@ -486,6 +493,12 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		violations = append(violations, Violation{
 			Code:    "missing_composer_gate_contract",
 			Message: "quality gate spec must include composer contract suite in shared multi-agent gate path",
+		})
+	}
+	if !strings.Contains(strings.ToLower(snapshot.ComposerGateSpec), "disconnected parallel gate") {
+		violations = append(violations, Violation{
+			Code:    "missing_single_blocking_gate_marker",
+			Message: "quality gate spec must explicitly prohibit disconnected parallel gates in the same contract domain",
 		})
 	}
 

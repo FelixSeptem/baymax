@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-18
+更新时间：2026-03-19
 
 ## 目标
 
@@ -1015,22 +1015,23 @@ Action Gate 规则优先级（H4）：
 - composer 消费 `teams.*` / `workflow.*` / `a2a.*` / `scheduler.*` / `subagent.*` 快照。
 - scheduler/subagent 变更采用 `next_attempt_only`：仅影响新 `enqueue/spawn/claim` 边界；in-flight attempt 不回溯修改已创建 lease 语义。
 
-### Compatibility Window (A5/A6)
+### Compatibility Window (A12/A13)
 
 兼容窗口规则：`additive + nullable + default`
 
 | 字段族 | additive | nullable | default |
 | --- | --- | --- | --- |
-| Teams Remote（`team_remote_*`） | 新增字段不影响既有字段 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
-| Workflow Remote（`workflow_remote_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
+| A12 Async Reporting（`a2a_async_report_*`） | 新增字段不影响既有字段 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
+| A13 Delayed Dispatch（`scheduler_delayed_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
 | Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
 
 legacy consumers 行为示例：
-- 仅解析 A4 及更早字段的消费者，可以忽略 `team_remote_*` / `workflow_remote_*` / `scheduler_*` / `subagent_*` / `composer_managed` / `scheduler_backend_fallback*` / `recovery_*`，不会影响既有逻辑。
-- 解析器应将缺省字段视为 nullable fallback：缺失时回退为 `0`（计数）或空字符串（枚举/标识），而不是报错终止。
-- 新增字段禁止改变既有字段含义；仅允许增量扩展，不允许“同名改语义”。
+- 仅解析 A11 及更早字段的消费者，可以忽略 `a2a_async_report_*` / `scheduler_delayed_*`，不会影响既有逻辑。
+- missing additive fields resolve to documented default values（缺失字段按 `0`、`false` 或空字符串回退）。
+- unknown future additive fields are safely ignored（未知新增字段默认忽略，不阻断解析）。
+- pre-existing field semantics remain unchanged（既有字段语义不变，禁止同名改语义）。
 
 ### Run 诊断新增字段（HITL Clarification H3）
 

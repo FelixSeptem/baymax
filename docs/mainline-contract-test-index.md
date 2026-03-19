@@ -1,12 +1,12 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-18
+更新时间：2026-03-19
 
 ## 目标
 
 提供主干流程与契约测试用例的一一映射，作为质量门禁核对入口。
 
-A5/A6 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility window（`additive + nullable + default`）条款。
+A12/A13 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility window（`additive + nullable + default`）条款。
 
 ## 索引
 
@@ -69,6 +69,10 @@ A5/A6 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility windo
 | Delayed Dispatch Recovery A13 | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractRecoveryNoEarlyClaim` | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractRecoveryNoEarlyClaim` |
 | Delayed Dispatch Run/Stream Equivalence A13 | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractRunStreamSemanticEquivalence` | `integration/composer_contract_test.go::TestComposerContractDelayedChildRunStreamEquivalence` |
 | Delayed Dispatch Async Compatibility A13 | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractAsyncReportingCompatibility` | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractAsyncReportingCompatibility` |
+| Tail Governance Cross-Mode Matrix A14 | `integration/tail_governance_contract_test.go::TestTailGovernanceA14CrossModeMatrixRunStream` | `integration/tail_governance_contract_test.go::TestTailGovernanceA14CrossModeMatrixRunStream` |
+| Tail Governance QoS+Recovery A14 | `integration/tail_governance_contract_test.go::TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence` | `integration/tail_governance_contract_test.go::TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence` |
+| Tail Governance Parser Compatibility A14 | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault` | `runtime/diagnostics/store_test.go::TestStoreRunAsyncDelayedAggregateReplayIsIdempotent` |
+| Tail Governance Async+Delayed Replay A14 | `integration/delayed_dispatch_contract_test.go::TestDelayedDispatchContractAsyncDelayedReplayNoInflation` | `runtime/diagnostics/store_test.go::TestStoreRunAsyncDelayedAggregateReplayIsIdempotent` |
 | R4 Shared Contract Freeze Gate | `tool/contributioncheck/multi_agent_contract_test.go::TestMultiAgentSharedContractSnapshotPass` | `tool/contributioncheck/multi_agent_contract_test.go::TestValidateMultiAgentSharedContractDetectsViolations` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |

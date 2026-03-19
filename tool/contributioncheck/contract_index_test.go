@@ -61,6 +61,10 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Delayed Dispatch Recovery A13",
 		"Delayed Dispatch Run/Stream Equivalence A13",
 		"Delayed Dispatch Async Compatibility A13",
+		"Tail Governance Cross-Mode Matrix A14",
+		"Tail Governance QoS+Recovery A14",
+		"Tail Governance Parser Compatibility A14",
+		"Tail Governance Async+Delayed Replay A14",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

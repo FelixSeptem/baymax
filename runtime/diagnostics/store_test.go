@@ -178,6 +178,38 @@ func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                       time.Now(),
+		RunID:                      "run-a14-async-delayed",
+		Status:                     "success",
+		A2AAsyncReportTotal:        3,
+		A2AAsyncReportFailed:       1,
+		A2AAsyncReportRetryTotal:   2,
+		A2AAsyncReportDedupTotal:   1,
+		SchedulerDelayedTaskTotal:  2,
+		SchedulerDelayedClaimTotal: 2,
+		SchedulerDelayedWaitMsP95:  180,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if runs[0].A2AAsyncReportTotal != 3 ||
+		runs[0].A2AAsyncReportFailed != 1 ||
+		runs[0].A2AAsyncReportRetryTotal != 2 ||
+		runs[0].A2AAsyncReportDedupTotal != 1 ||
+		runs[0].SchedulerDelayedTaskTotal != 2 ||
+		runs[0].SchedulerDelayedClaimTotal != 2 ||
+		runs[0].SchedulerDelayedWaitMsP95 != 180 {
+		t.Fatalf("combined async+delayed aggregate should stay stable under replay, got %#v", runs[0])
+	}
+}
+
 func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

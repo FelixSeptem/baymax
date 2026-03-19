@@ -16,11 +16,10 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - 已归档口径：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：R1-R3 主线能力、A4-A18。
+- 已归档并稳定：R1-R3 主线能力、A4-A20。
 - 进行中：
-  - `introduce-multi-agent-mainline-performance-baseline-gate-a19`
-  - `introduce-full-chain-multi-agent-reference-example-a20`
-- 待规划/探索：A21+。
+  - `introduce-external-adapter-template-and-migration-mapping-a21`
+- 待规划/探索：A22+。
 
 ## 当前代码能力（简版）
 
@@ -39,6 +38,7 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - A16 协作原语统一：`orchestration/collab` + `composer.collab.*` + `collab_*` 诊断字段。
 - A17 恢复边界收敛：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 语义冻结。
 - A18 统一检索 API：`run/team/workflow/task` 过滤、分页排序游标与 fail-fast/空集语义。
+- A19 主链路性能门禁：多代理 baseline + 相对阈值回归阻断（`ns/op+p95-ns/op+allocs/op`）。
 
 ## 近期变更进度
 
@@ -70,17 +70,24 @@ Baymax 的主线定位是 `library-first + contract-first`：
 口径：`introduce-unified-run-team-workflow-task-query-api-a18`（archived）。
 范围：`runtime/diagnostics.QueryRuns` 统一入口、`page_size=50`/`<=200`、`time desc` 默认排序、opaque cursor、`task_id` 无匹配空集语义、shared gate 阻断校验。
 
-### A19（进行中）
+### A19（已归档）
 
 目标：把多代理主链路性能基线纳入标准门禁与 CI 阻断。  
-口径：`introduce-multi-agent-mainline-performance-baseline-gate-a19`（active）。
+口径：`introduce-multi-agent-mainline-performance-baseline-gate-a19`（archived）。
 范围：主链路 benchmark baseline、`ns/op+p95-ns/op+allocs/op` 相对回归阈值（默认 `8%/12%/10%`）、`check-quality-gate.*` 接入与文档索引映射。
 
-### A20（进行中）
+### A20（已归档）
 
 目标：补齐 `team + workflow + a2a + scheduler + recovery` 的全链路参考示例。  
-口径：`introduce-full-chain-multi-agent-reference-example-a20`（active）。
+口径：`introduce-full-chain-multi-agent-reference-example-a20`（archived）。
 范围：`examples/09-*` 全链路示例、Run/Stream 双路径、async+delayed+recovery 组合、示例 smoke 阻断。
+
+### A21（进行中）
+
+目标：补齐外部适配样板与迁移映射文档，降低外部接入成本与迁移风险。  
+口径：`introduce-external-adapter-template-and-migration-mapping-a21`（active）。
+范围：MCP/Model/Tool 样板（优先级 `MCP > Model > Tool`）、能力域+代码片段双维迁移映射、常见错误替代写法、docs consistency/contributioncheck 对齐。
+追踪：`docs/external-adapter-template-index.md`、`docs/adapter-migration-mapping.md`、`scripts/check-docs-consistency.*`、`tool/contributioncheck/adapter_docs_test.go`。
 
 ## 主线进度（摘要）
 
@@ -99,8 +106,11 @@ Baymax 的主线定位是 `library-first + contract-first`：
 1. A18：统一 run/team/workflow/task 查询契约（已归档）。
 
 性能与示例增强：
-1. A19：多代理主链路性能基线门禁（进行中）。
-2. A20：全链路参考示例（进行中）。
+1. A19：多代理主链路性能基线门禁（已归档）。
+2. A20：全链路参考示例（已归档）。
+
+接入与迁移增强：
+1. A21：外部适配样板与迁移映射文档（进行中）。
 
 ## Lib-First Multi-Agent 差距收敛清单（2026-03-19）
 
@@ -115,17 +125,16 @@ P1（紧随其后）：
 - [x] multi-agent 协作原语增强（A16 已归档）。
 - [x] 长任务恢复边界收敛（A17 已归档）。
 - [x] 按 run/team/workflow/task 的统一检索 API（A18 已归档，库接口优先）。
-- [ ] 多代理主链路性能基线纳入 CI（A19 进行中，吞吐/延迟/重试放大/recovery 时间）。
+- [x] 多代理主链路性能基线纳入 CI（A19 已归档，吞吐/延迟/重试放大/recovery 时间）。
 
 P2（可选，DX/生态）：
 - [x] 最小 replay CLI 工具链（`cmd/diagnostics-replay` + contract gate）。
-- [ ] 全链路示例（A20 进行中：team + workflow + a2a + scheduler + recovery）。
-- [ ] 外部适配样板与迁移映射文档。
+- [x] 全链路示例（A20 已归档：team + workflow + a2a + scheduler + recovery）。
+- [ ] 外部适配样板与迁移映射文档（A21 进行中）。
 
 推荐顺序：
-1. 完成并归档 A19（性能基线门禁）。
-2. 完成并归档 A20（全链路参考示例）。
-3. 推进外部适配样板与迁移映射文档（A21+）。
+1. 完成并归档 A21（外部适配样板与迁移映射文档）。
+2. 推进 A22+ DX/生态增量项。
 
 ## 非近期范围（为保持简洁，明确延后）
 

@@ -14,6 +14,12 @@ fi
 echo "[quality-gate] repo hygiene"
 bash scripts/check-repo-hygiene.sh
 
+echo "[quality-gate] docs consistency"
+if ! bash scripts/check-docs-consistency.sh; then
+  echo "[quality-gate][adapter-docs] adapter template/migration mapping docs consistency failed (missing or stale entry)"
+  exit 1
+fi
+
 echo "[quality-gate] go test ./..."
 go test ./...
 
@@ -43,6 +49,9 @@ bash scripts/check-ca4-benchmark-regression.sh
 
 echo "[quality-gate] multi-agent mainline benchmark regression"
 bash scripts/check-multi-agent-performance-regression.sh
+
+echo "[quality-gate] full-chain example smoke"
+bash scripts/check-full-chain-example-smoke.sh
 
 scan_mode="${BAYMAX_SECURITY_SCAN_MODE:-strict}"
 govulncheck_enabled="${BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED:-true}"

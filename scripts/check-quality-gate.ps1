@@ -16,6 +16,14 @@ if (-not $env:CGO_ENABLED) {
 Write-Host "[quality-gate] repo hygiene"
 pwsh -File scripts/check-repo-hygiene.ps1
 
+Write-Host "[quality-gate] docs consistency"
+try {
+    pwsh -File scripts/check-docs-consistency.ps1
+}
+catch {
+    throw "[quality-gate][adapter-docs] adapter template/migration mapping docs consistency failed: $($_.Exception.Message)"
+}
+
 Write-Host "[quality-gate] go test ./..."
 go test ./...
 
@@ -41,6 +49,9 @@ pwsh -File scripts/check-ca4-benchmark-regression.ps1
 
 Write-Host "[quality-gate] multi-agent mainline benchmark regression"
 pwsh -File scripts/check-multi-agent-performance-regression.ps1
+
+Write-Host "[quality-gate] full-chain example smoke"
+pwsh -File scripts/check-full-chain-example-smoke.ps1
 
 $scanMode = if ($env:BAYMAX_SECURITY_SCAN_MODE) { $env:BAYMAX_SECURITY_SCAN_MODE.Trim().ToLowerInvariant() } else { "strict" }
 $govulncheckEnabled = if ($env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED) { $env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED.Trim().ToLowerInvariant() } else { "true" }

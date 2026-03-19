@@ -1,6 +1,6 @@
 # D1 API 参考覆盖（core/runtime/context/skill）
 
-更新时间：2026-03-17
+更新时间：2026-03-19
 
 ## 目标与范围
 
@@ -63,3 +63,14 @@ bundle, _ := ldr.Compile(ctx, specs, types.SkillInput{UserInput: userInput})
 
 - 以上清单中的 API 若有语义变化，应在同一 PR 更新本文档或附带明确 follow-up。
 - README 的“文档”入口必须包含本文件链接。
+
+## Adapter Onboarding Navigation（A21）
+
+外部适配接入入口：
+- 模板索引：`docs/external-adapter-template-index.md`
+- 迁移映射：`docs/adapter-migration-mapping.md`
+
+适配类别（优先级）：
+1. MCP adapter template
+2. Model provider adapter template
+3. Tool adapter template

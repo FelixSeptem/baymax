@@ -16,7 +16,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 当前里程碑快照（2026-03-19）：
 - A17（长任务恢复边界）已归档并稳定。
 - A18（统一 run/team/workflow/task 诊断检索 API）已归档并稳定。
-- A19（多代理主链路性能基线门禁）进行中。
+- A19（多代理主链路性能基线门禁）已归档并稳定。
+- A20（全链路参考示例与 smoke gate）已归档并稳定。
+- A21（外部适配样板与迁移映射）进行中。
 
 ## 架构设计
 
@@ -372,6 +374,50 @@ pwsh -File scripts/check-multi-agent-performance-regression.ps1
 - `p95-ns/op` 最大退化 `12%`
 - `allocs/op` 最大退化 `10%`
 
+### 12) Full-Chain Multi-Agent Reference Example（A20）
+
+A20 提供一个单入口示例，串联：
+- `teams + workflow + a2a + scheduler + recovery`
+- 默认 in-memory A2A（不依赖外部网络）
+- Run/Stream 双路径语义对照
+- async + delayed + recovery 检查点
+
+运行命令：
+
+```bash
+go run ./examples/09-multi-agent-full-chain-reference
+```
+
+示例 smoke（本地/CI 一致）：
+
+```bash
+bash scripts/check-full-chain-example-smoke.sh
+```
+
+```powershell
+pwsh -File scripts/check-full-chain-example-smoke.ps1
+```
+
+### 13) External Adapter Template + Migration Mapping（A21）
+
+A21 提供外部接入样板与迁移映射，覆盖：
+- 模板优先级：`MCP > Model > Tool`
+- 能力域 + 代码片段双维迁移映射
+- 常见错误与替代写法
+- 统一兼容边界：`additive + nullable + default + fail-fast`
+
+入口文档：
+- `docs/external-adapter-template-index.md`
+- `docs/adapter-migration-mapping.md`
+
+最小模板运行命令：
+
+```bash
+go run ./examples/templates/mcp-adapter-template
+go run ./examples/templates/model-adapter-template
+go run ./examples/templates/tool-adapter-template
+```
+
 ## 开发验证
 
 最小建议命令：
@@ -399,10 +445,13 @@ pwsh -File scripts/check-docs-consistency.ps1
 - `examples/06-async-job-progress`：异步任务进度回传
 - `examples/07-multi-agent-async-channel`：Composer + Scheduler(Local)
 - `examples/08-multi-agent-network-bridge`：Composer + Scheduler(A2A)
+- `examples/09-multi-agent-full-chain-reference`：Teams + Workflow + A2A + Scheduler + Recovery（Run/Stream + async/delayed/recovery）
 
 ## 文档入口
 
 - 路线图与阶段进度：`docs/development-roadmap.md`
+- 外部适配模板索引：`docs/external-adapter-template-index.md`
+- 适配迁移映射：`docs/adapter-migration-mapping.md`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`
 - 主干契约测试索引：`docs/mainline-contract-test-index.md`

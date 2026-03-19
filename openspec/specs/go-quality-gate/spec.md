@@ -465,3 +465,54 @@ Default CI workflow MUST invoke quality gate steps that include the same multi-a
 - **WHEN** CI runs the default quality-gate job
 - **THEN** multi-agent performance regression check behavior matches local quality-gate scripts
 
+### Requirement: Quality gate SHALL include full-chain example smoke validation
+The standard quality gate MUST execute smoke validation for the full-chain multi-agent reference example as a blocking step.
+
+This validation MUST be included in both shell and PowerShell quality-gate scripts.
+
+#### Scenario: Shell quality gate runs
+- **WHEN** contributor executes `bash scripts/check-quality-gate.sh`
+- **THEN** full-chain example smoke validation runs as a required blocking step
+
+#### Scenario: PowerShell quality gate runs
+- **WHEN** contributor executes `pwsh -File scripts/check-quality-gate.ps1`
+- **THEN** equivalent full-chain example smoke validation runs as a required blocking step
+
+### Requirement: Example smoke gate SHALL fail fast on execution drift
+If full-chain example smoke command fails, times out, or misses required success markers, quality gate MUST fail and return non-zero status.
+
+#### Scenario: Example execution fails
+- **WHEN** full-chain example smoke command exits with non-zero status
+- **THEN** quality gate fails and blocks merge
+
+#### Scenario: Example output misses required convergence markers
+- **WHEN** smoke validation cannot find required success/checkpoint markers
+- **THEN** quality gate fails with explicit example-smoke classification
+
+### Requirement: Mainline index SHALL trace full-chain example smoke coverage
+The repository MUST update mainline contract/index documentation to include traceability between full-chain example smoke checks and corresponding gate paths.
+
+#### Scenario: Contributor audits full-chain example validation mapping
+- **WHEN** contributor inspects mainline index after A20
+- **THEN** full-chain example smoke check has explicit mapping to quality-gate execution path
+
+### Requirement: Quality gate SHALL validate adapter template and migration-doc consistency
+The repository quality validation flow MUST verify that external adapter template documentation and migration mapping indexes are synchronized with declared navigation entries.
+
+Validation MUST run through existing docs consistency and contribution check paths.
+
+#### Scenario: Docs index misses adapter mapping entry
+- **WHEN** adapter template docs are added or renamed without index synchronization
+- **THEN** docs consistency or contribution checks fail and block validation
+
+#### Scenario: Migration mapping link is stale
+- **WHEN** migration mapping reference points to missing or moved document path
+- **THEN** validation fails with explicit documentation consistency error
+
+### Requirement: Quality gate SHALL keep traceability for adapter migration guidance
+Mainline documentation checks MUST preserve traceability between adapter templates, migration mapping docs, and repository entry points.
+
+#### Scenario: Maintainer audits adapter onboarding coverage
+- **WHEN** maintainer reviews contribution check outputs and docs index
+- **THEN** template and migration mapping paths are traceable from repository documentation entry points
+

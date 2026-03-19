@@ -69,6 +69,10 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Workflow Graph Composability Compile Fail-Fast A15",
 		"Workflow Graph Composability Run/Stream+Resume A15",
 		"Workflow Graph Composability Composer Path A15",
+		"Full-Chain Reference Example A20 Smoke Gate",
+		"Full-Chain Reference Example A20 Quality Path",
+		"External Adapter Template A21 Docs Consistency",
+		"External Adapter Template A21 Contribution Traceability",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

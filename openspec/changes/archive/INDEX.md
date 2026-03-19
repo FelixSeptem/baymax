@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-19 14:13:47
+Updated: 2026-03-19 14:57:17
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -69,3 +69,5 @@ Updated: 2026-03-19 14:13:47
 - 065 -> harden-long-running-recovery-boundary-and-timeout-reentry-a17
 - 066 -> introduce-unified-run-team-workflow-task-query-api-a18
 - 067 -> introduce-multi-agent-mainline-performance-baseline-gate-a19
+- 068 -> introduce-full-chain-multi-agent-reference-example-a20
+- 069 -> introduce-external-adapter-template-and-migration-mapping-a21

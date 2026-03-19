@@ -13,6 +13,11 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
+当前里程碑快照（2026-03-19）：
+- A16（协作原语）已归档并稳定。
+- A17（长任务恢复边界）进行中。
+- A18（统一 run/team/workflow/task 诊断检索 API）进行中。
+
 ## 架构设计
 
 Baymax 采用分层组合与单向依赖，核心结构如下：
@@ -55,7 +60,7 @@ runtime/config + runtime/diagnostics
 | Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` | 工作流、多代理协作、调度与组合入口 |
 | A2A Interop | `a2a` | Agent-to-Agent 互联契约（submit/status/result） |
 | Runtime Config | `runtime/config` | 配置加载、校验、热更新、回滚 |
-| Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 可观测性、诊断查询与追踪 |
+| Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 可观测性、诊断存储与查询（当前以 `Recent* + Trends` 为主） |
 | Skill Loader | `skill/loader` | AGENTS/SKILL 发现、评分、bundle 组装 |
 | Runtime Security | `runtime/security` | 脱敏与安全治理基础能力 |
 
@@ -268,7 +273,7 @@ _ = err
 
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
-### 9) Long-Running Recovery Boundary（A17）
+### 9) Long-Running Recovery Boundary（A17，进行中）
 
 恢复开启时，A17 默认启用以下边界策略：
 
@@ -296,6 +301,51 @@ run 摘要会新增 recovery-boundary 诊断字段：
 - `recovery_inflight_policy`
 - `recovery_timeout_reentry_total`
 - `recovery_timeout_reentry_exhausted_total`
+
+### 10) Unified Diagnostics Query（A18）
+
+`runtime/config.Manager` 新增统一 run 诊断检索入口：
+- `QueryRuns(query)`
+
+查询能力：
+- 过滤字段：`run_id`、`team_id`、`workflow_id`、`task_id`、`status`、`time_range`
+- 多条件语义：`AND`
+- 分页默认：`page_size=50`，上限 `200`
+- 排序默认：`time desc`
+- 游标：opaque cursor（不暴露内部 offset/index）
+
+最小调用示例：
+
+```go
+pageSize := 20
+res, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{
+	TeamID:     "team-alpha",
+	WorkflowID: "wf-alpha",
+	Status:     "failed",
+	PageSize:   &pageSize,
+})
+if err != nil {
+	panic(err)
+}
+for _, item := range res.Items {
+	fmt.Printf("run=%s status=%s time=%s\n", item.RunID, item.Status, item.Time.Format(time.RFC3339Nano))
+}
+if res.NextCursor != "" {
+	next, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{
+		TeamID:     "team-alpha",
+		WorkflowID: "wf-alpha",
+		Status:     "failed",
+		PageSize:   &pageSize,
+		Cursor:     res.NextCursor,
+	})
+	_ = next
+	_ = err
+}
+```
+
+兼容说明：
+- `RecentRuns/RecentCalls/RecentSkills` 与趋势查询接口保持兼容不变。
+- 对合法但无匹配的 `task_id`，返回空结果集而非错误。
 
 ## 开发验证
 

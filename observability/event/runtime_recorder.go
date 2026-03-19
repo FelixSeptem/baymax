@@ -152,6 +152,7 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			WorkflowConditionTemplateTotal:       payloadInt(payload, "workflow_condition_template_total"),
 			WorkflowGraphCompileFailed:           payloadBool(payload, "workflow_graph_compile_failed"),
 			WorkflowResumeCount:                  payloadInt(payload, "workflow_resume_count"),
+			TaskID:                               payloadString(payload, "task_id"),
 			A2ATaskTotal:                         payloadInt(payload, "a2a_task_total"),
 			A2ATaskFailed:                        payloadInt(payload, "a2a_task_failed"),
 			PeerID:                               payloadString(payload, "peer_id"),

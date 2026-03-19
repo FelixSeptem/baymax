@@ -8,6 +8,11 @@
 - 异步提交后回报：`SubmitAsync` + `ReportSink`
 - 状态查询与结果解析：`Status` / `Result`
 
+对应主线能力：
+- A11：同步调用语义（已实施）
+- A12：异步回报语义（已归档）
+- A13：延后调度由 `orchestration/scheduler` 承载，A2A 负责任务互联字段透传
+
 ## 架构设计
 
 当前实现采用“客户端策略 + 服务端任务状态机”结构：
@@ -16,6 +21,8 @@
 - `Client` 负责路由、版本协商、交付模式协商与等待策略
 - `DeterministicRouter` 基于能力集与优先级做确定性 peer 选择
 - 异步回报通过 `ReportSink` 抽象支持 callback/channel 两种落点
+
+异步回报默认由运行时配置控制（`a2a.async_reporting.enabled` 默认 `false`），开启后遵循重试与去重语义。
 
 交付与兼容策略已内建：
 

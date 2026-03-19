@@ -595,10 +595,31 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentRuns(n)`：最近 N 次 run 摘要。
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
 - `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
+- `Manager.QueryRuns(query)`：统一 run 诊断查询（A18，多维过滤 + 分页 + 排序 + 游标）。
 - `Manager.TimelineTrends(query)`：跨 run Action Timeline 趋势聚合（窗口模式：`last_n_runs|time_window`）。
 - `Manager.CA2ExternalTrends(query)`：CA2 external retriever provider 维度趋势聚合（窗口模式：`time_window`）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
 - `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
+
+### Unified Query API（A18）
+
+统一查询请求支持以下过滤字段（多条件按 `AND` 语义组合）：
+- `run_id`
+- `team_id`
+- `workflow_id`
+- `task_id`
+- `status`
+- `time_range`
+
+统一查询分页/排序语义：
+- 默认分页：`page_size=50`
+- 最大分页：`page_size<=200`（越界 fail-fast）
+- 默认排序：`time desc`
+- 游标：`opaque cursor`（不暴露内部 offset/index 结构）
+
+错误与空集语义：
+- 非法参数（如非法 `status`、无效 `time_range`、非法 `page_size`、不可解码 cursor）均 fail-fast。
+- 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
 
 Skill trigger scoring（D2/D3/D4）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
 - `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。

@@ -2,6 +2,7 @@ package diagnostics
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -127,6 +128,7 @@ type RunRecord struct {
 	WorkflowConditionTemplateTotal       int                               `json:"workflow_condition_template_total,omitempty"`
 	WorkflowGraphCompileFailed           bool                              `json:"workflow_graph_compile_failed,omitempty"`
 	WorkflowResumeCount                  int                               `json:"workflow_resume_count,omitempty"`
+	TaskID                               string                            `json:"task_id,omitempty"`
 	A2ATaskTotal                         int                               `json:"a2a_task_total,omitempty"`
 	A2ATaskFailed                        int                               `json:"a2a_task_failed,omitempty"`
 	PeerID                               string                            `json:"peer_id,omitempty"`
@@ -310,6 +312,59 @@ type CA2ExternalTrendRecord struct {
 	HitRate                float64        `json:"hit_rate"`
 	ThresholdHits          []string       `json:"threshold_hits,omitempty"`
 	ErrorLayerDistribution map[string]int `json:"error_layer_distribution,omitempty"`
+}
+
+const (
+	DefaultUnifiedQueryPageSize = 50
+	MaxUnifiedQueryPageSize     = 200
+)
+
+type UnifiedQueryTimeRange struct {
+	Start time.Time `json:"start,omitempty"`
+	End   time.Time `json:"end,omitempty"`
+}
+
+type UnifiedQuerySort struct {
+	Field string `json:"field,omitempty"`
+	Order string `json:"order,omitempty"`
+}
+
+type UnifiedRunQueryRequest struct {
+	RunID      string                 `json:"run_id,omitempty"`
+	TeamID     string                 `json:"team_id,omitempty"`
+	WorkflowID string                 `json:"workflow_id,omitempty"`
+	TaskID     string                 `json:"task_id,omitempty"`
+	Status     string                 `json:"status,omitempty"`
+	TimeRange  *UnifiedQueryTimeRange `json:"time_range,omitempty"`
+	PageSize   *int                   `json:"page_size,omitempty"`
+	Sort       UnifiedQuerySort       `json:"sort,omitempty"`
+	Cursor     string                 `json:"cursor,omitempty"`
+}
+
+type UnifiedRunQueryResult struct {
+	Items      []RunRecord `json:"items"`
+	NextCursor string      `json:"next_cursor,omitempty"`
+	PageSize   int         `json:"page_size"`
+	SortField  string      `json:"sort_field"`
+	SortOrder  string      `json:"sort_order"`
+}
+
+type normalizedUnifiedRunQuery struct {
+	RunID      string
+	TeamID     string
+	WorkflowID string
+	TaskID     string
+	Status     string
+	TimeRange  *UnifiedQueryTimeRange
+	PageSize   int
+	SortField  string
+	SortOrder  string
+	Cursor     string
+}
+
+type unifiedRunQueryCursor struct {
+	Offset    int    `json:"offset"`
+	QueryHash string `json:"query_hash"`
 }
 
 func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig, ca2 CA2ExternalTrendConfig) *Store {
@@ -554,6 +609,55 @@ func (d *Store) RecentRuns(n int) []RunRecord {
 	return tailCopy(d.runs, n)
 }
 
+func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	q, err := normalizeUnifiedRunQuery(req)
+	if err != nil {
+		return UnifiedRunQueryResult{}, err
+	}
+	queryHash := unifiedRunQueryHash(q)
+	start, err := decodeUnifiedRunCursor(q.Cursor, queryHash)
+	if err != nil {
+		return UnifiedRunQueryResult{}, err
+	}
+
+	filtered := make([]RunRecord, 0, len(d.runs))
+	for i := range d.runs {
+		if matchesUnifiedRunQuery(d.runs[i], q) {
+			filtered = append(filtered, d.runs[i])
+		}
+	}
+	sortUnifiedRunQuery(filtered, q.SortOrder)
+
+	if start > len(filtered) {
+		return UnifiedRunQueryResult{}, fmt.Errorf("invalid query cursor")
+	}
+	end := start + q.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	items := append([]RunRecord(nil), filtered[start:end]...)
+	nextCursor := ""
+	if end < len(filtered) {
+		nextCursor, err = encodeUnifiedRunCursor(unifiedRunQueryCursor{
+			Offset:    end,
+			QueryHash: queryHash,
+		})
+		if err != nil {
+			return UnifiedRunQueryResult{}, err
+		}
+	}
+	return UnifiedRunQueryResult{
+		Items:      items,
+		NextCursor: nextCursor,
+		PageSize:   q.PageSize,
+		SortField:  q.SortField,
+		SortOrder:  q.SortOrder,
+	}, nil
+}
+
 func (d *Store) TimelineTrends(query TimelineTrendQuery) []TimelineTrendRecord {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -777,6 +881,160 @@ func normalizeSkillStatus(status string) string {
 	default:
 		return "warning"
 	}
+}
+
+func normalizeUnifiedRunQuery(req UnifiedRunQueryRequest) (normalizedUnifiedRunQuery, error) {
+	pageSize := DefaultUnifiedQueryPageSize
+	if req.PageSize != nil {
+		if *req.PageSize <= 0 || *req.PageSize > MaxUnifiedQueryPageSize {
+			return normalizedUnifiedRunQuery{}, fmt.Errorf("page_size must be within [1,%d]", MaxUnifiedQueryPageSize)
+		}
+		pageSize = *req.PageSize
+	}
+	sortField := strings.ToLower(strings.TrimSpace(req.Sort.Field))
+	if sortField == "" {
+		sortField = "time"
+	}
+	if sortField != "time" {
+		return normalizedUnifiedRunQuery{}, fmt.Errorf("unsupported sort.field %q", req.Sort.Field)
+	}
+	sortOrder := strings.ToLower(strings.TrimSpace(req.Sort.Order))
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		return normalizedUnifiedRunQuery{}, fmt.Errorf("unsupported sort.order %q", req.Sort.Order)
+	}
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != "" && status != "success" && status != "failed" {
+		return normalizedUnifiedRunQuery{}, fmt.Errorf("unsupported status filter %q", req.Status)
+	}
+	var tr *UnifiedQueryTimeRange
+	if req.TimeRange != nil {
+		start := req.TimeRange.Start
+		end := req.TimeRange.End
+		if !start.IsZero() && !end.IsZero() && start.After(end) {
+			return normalizedUnifiedRunQuery{}, fmt.Errorf("time_range.start must be <= time_range.end")
+		}
+		tr = &UnifiedQueryTimeRange{Start: start, End: end}
+	}
+	return normalizedUnifiedRunQuery{
+		RunID:      strings.TrimSpace(req.RunID),
+		TeamID:     strings.TrimSpace(req.TeamID),
+		WorkflowID: strings.TrimSpace(req.WorkflowID),
+		TaskID:     strings.TrimSpace(req.TaskID),
+		Status:     status,
+		TimeRange:  tr,
+		PageSize:   pageSize,
+		SortField:  sortField,
+		SortOrder:  sortOrder,
+		Cursor:     strings.TrimSpace(req.Cursor),
+	}, nil
+}
+
+func unifiedRunQueryHash(q normalizedUnifiedRunQuery) string {
+	start := int64(0)
+	end := int64(0)
+	if q.TimeRange != nil {
+		if !q.TimeRange.Start.IsZero() {
+			start = q.TimeRange.Start.UnixNano()
+		}
+		if !q.TimeRange.End.IsZero() {
+			end = q.TimeRange.End.UnixNano()
+		}
+	}
+	raw := strings.Join([]string{
+		q.RunID,
+		q.TeamID,
+		q.WorkflowID,
+		q.TaskID,
+		q.Status,
+		fmt.Sprintf("%d", start),
+		fmt.Sprintf("%d", end),
+		q.SortField,
+		q.SortOrder,
+		fmt.Sprintf("%d", q.PageSize),
+	}, "|")
+	sum := sha1.Sum([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func encodeUnifiedRunCursor(c unifiedRunQueryCursor) (string, error) {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return "", fmt.Errorf("encode query cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeUnifiedRunCursor(cursor, expectedHash string) (int, error) {
+	if strings.TrimSpace(cursor) == "" {
+		return 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+	if err != nil {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	var decoded unifiedRunQueryCursor
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	if decoded.Offset < 0 || strings.TrimSpace(decoded.QueryHash) == "" {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	if strings.TrimSpace(decoded.QueryHash) != strings.TrimSpace(expectedHash) {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	return decoded.Offset, nil
+}
+
+func matchesUnifiedRunQuery(rec RunRecord, q normalizedUnifiedRunQuery) bool {
+	if q.RunID != "" && strings.TrimSpace(rec.RunID) != q.RunID {
+		return false
+	}
+	if q.TeamID != "" && strings.TrimSpace(rec.TeamID) != q.TeamID {
+		return false
+	}
+	if q.WorkflowID != "" && strings.TrimSpace(rec.WorkflowID) != q.WorkflowID {
+		return false
+	}
+	if q.TaskID != "" && strings.TrimSpace(rec.TaskID) != q.TaskID {
+		return false
+	}
+	if q.Status != "" && strings.ToLower(strings.TrimSpace(rec.Status)) != q.Status {
+		return false
+	}
+	if q.TimeRange != nil {
+		if !q.TimeRange.Start.IsZero() {
+			if rec.Time.IsZero() || rec.Time.Before(q.TimeRange.Start) {
+				return false
+			}
+		}
+		if !q.TimeRange.End.IsZero() {
+			if rec.Time.IsZero() || rec.Time.After(q.TimeRange.End) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func sortUnifiedRunQuery(items []RunRecord, order string) {
+	desc := strings.TrimSpace(strings.ToLower(order)) != "asc"
+	sort.SliceStable(items, func(i, j int) bool {
+		left := items[i]
+		right := items[j]
+		if left.Time.Equal(right.Time) {
+			if strings.TrimSpace(left.RunID) == strings.TrimSpace(right.RunID) {
+				return strings.TrimSpace(left.Status) < strings.TrimSpace(right.Status)
+			}
+			return strings.TrimSpace(left.RunID) < strings.TrimSpace(right.RunID)
+		}
+		if desc {
+			return left.Time.After(right.Time)
+		}
+		return left.Time.Before(right.Time)
+	})
 }
 
 func payloadDigest(payload map[string]any) string {

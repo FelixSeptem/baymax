@@ -9,6 +9,11 @@
 - `teams`：多角色协作（serial/parallel/vote）
 - `scheduler`：任务队列、lease、重试、QoS、DLQ、子任务护栏
 - `invoke`：统一 A2A 同步调用抽象
+- `collab`：协作原语（handoff/delegation/aggregation）统一抽象
+
+当前进度（2026-03-19）：
+- A16 协作原语能力已归档并收口到 `orchestration/collab`。
+- A17 长任务恢复边界仍在实施中，涉及 `composer + scheduler` 的恢复重入判定。
 
 ## 架构设计
 
@@ -19,6 +24,7 @@
 - `teams` 负责本地/远程任务执行与结果收敛
 - `scheduler` 负责任务生命周期状态机与治理策略
 - `invoke` 负责 `submit + wait + normalize` 的 A2A 同步调用统一口径
+- `collab` 负责跨路径一致的 handoff/delegation/aggregation 语义
 
 所有编排路径通过标准 `action.timeline` / `run.finished` 事件暴露状态。
 
@@ -29,6 +35,7 @@
 - `teams/engine.go`
 - `scheduler/scheduler.go`
 - `invoke/sync.go`
+- `collab/primitives.go`
 
 ## 边界与依赖
 

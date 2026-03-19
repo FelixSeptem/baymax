@@ -65,6 +65,7 @@ Baymax 的主线定位是 `library-first + contract-first`：
 
 目标：补齐按 `run/team/workflow/task` 的统一诊断检索 API 与分页/排序/游标/校验契约。  
 口径：`introduce-unified-run-team-workflow-task-query-api-a18`（active）。
+范围：`runtime/diagnostics.QueryRuns` 统一入口、`page_size=50`/`<=200`、`time desc` 默认排序、opaque cursor、`task_id` 无匹配空集语义、shared gate 阻断校验。
 
 ## 主线进度（摘要）
 

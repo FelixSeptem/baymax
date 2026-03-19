@@ -405,6 +405,60 @@ reload:
 	}
 }
 
+func TestManagerUnifiedRunQueryAPIAndCompatibility(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	base := time.Now()
+	mgr.RecordRun(runtimediag.RunRecord{
+		Time:       base,
+		RunID:      "run-a18-manager-1",
+		Status:     "success",
+		TeamID:     "team-a",
+		WorkflowID: "wf-a",
+		TaskID:     "task-a18-manager-1",
+	})
+
+	query, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{
+		RunID: "run-a18-manager-1",
+	})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(query.Items) != 1 || query.Items[0].RunID != "run-a18-manager-1" {
+		t.Fatalf("query result mismatch: %#v", query)
+	}
+	if query.PageSize != runtimediag.DefaultUnifiedQueryPageSize || query.SortField != "time" || query.SortOrder != "desc" {
+		t.Fatalf("query defaults mismatch: %#v", query)
+	}
+
+	recent := mgr.RecentRuns(5)
+	if len(recent) != 1 || recent[0].RunID != "run-a18-manager-1" {
+		t.Fatalf("RecentRuns compatibility changed: %#v", recent)
+	}
+	pageSizeInvalid := 201
+	if _, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{PageSize: &pageSizeInvalid}); err == nil {
+		t.Fatal("expected fail-fast for invalid page size")
+	}
+}
+
 func TestManagerCA2AgenticInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	stage2File := filepath.ToSlash(filepath.Join(t.TempDir(), "stage2.jsonl"))

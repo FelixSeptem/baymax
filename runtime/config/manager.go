@@ -274,6 +274,11 @@ func (m *Manager) RecentRuns(n int) []runtimediag.RunRecord {
 	return m.diag.RecentRuns(n)
 }
 
+// QueryRuns executes unified diagnostics query with filters/pagination/sort/cursor.
+func (m *Manager) QueryRuns(req runtimediag.UnifiedRunQueryRequest) (runtimediag.UnifiedRunQueryResult, error) {
+	return m.diag.QueryRuns(req)
+}
+
 // TimelineTrends returns cross-run timeline trend aggregates.
 func (m *Manager) TimelineTrends(query runtimediag.TimelineTrendQuery) []runtimediag.TimelineTrendRecord {
 	return m.diag.TimelineTrends(query)

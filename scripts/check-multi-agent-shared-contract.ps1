@@ -44,6 +44,9 @@ go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1
 Write-Host "[multi-agent-shared-contract-gate] recovery boundary suite"
 go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] unified query suite"
+go test ./integration -run '^TestUnifiedQueryContract' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

@@ -9,6 +9,11 @@
 - 热更新监听、原子切换与失败回滚
 - 对外提供策略解析与脱敏辅助接口
 
+当前进度（2026-03-19）：
+- A16 已归档：`composer.collab.*` 配置已稳定。
+- A17 进行中：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 已进入配置契约。
+- A18 进行中：统一诊断检索 API 不新增 feature flag，沿用 diagnostics 标准能力入口。
+
 ## 架构设计
 
 核心对象是 `Manager`：
@@ -22,6 +27,15 @@
 - 为 MCP/并发/编排模块提供策略解析
 - 管理 `runtime/diagnostics.Store` 容量与趋势配置
 - 暴露统一脱敏输出（`EffectiveConfigSanitized`）
+
+关键默认值（多代理相关）：
+- `composer.collab.enabled=false`
+- `workflow.graph_composability.enabled=false`
+- `a2a.async_reporting.enabled=false`
+- `scheduler.qos.mode=fifo`
+- `scheduler.dlq.enabled=false`
+- `recovery.enabled=false`
+- `recovery.conflict_policy=fail_fast`
 
 ## 关键入口
 

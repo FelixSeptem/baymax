@@ -318,6 +318,217 @@ func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreUnifiedRunQueryAndSemantics(t *testing.T) {
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	base := time.Now()
+	d.AddRun(RunRecord{
+		Time:       base.Add(1 * time.Second),
+		RunID:      "run-a18-1",
+		Status:     "success",
+		TeamID:     "team-a",
+		WorkflowID: "wf-a",
+		TaskID:     "task-a18-1",
+	})
+	d.AddRun(RunRecord{
+		Time:       base.Add(2 * time.Second),
+		RunID:      "run-a18-2",
+		Status:     "failed",
+		TeamID:     "team-a",
+		WorkflowID: "wf-a",
+		TaskID:     "task-a18-2",
+	})
+	d.AddRun(RunRecord{
+		Time:       base.Add(3 * time.Second),
+		RunID:      "run-a18-3",
+		Status:     "failed",
+		TeamID:     "team-a",
+		WorkflowID: "wf-b",
+		TaskID:     "task-a18-3",
+	})
+
+	got, err := d.QueryRuns(UnifiedRunQueryRequest{TeamID: "team-a"})
+	if err != nil {
+		t.Fatalf("query team filter failed: %v", err)
+	}
+	if got.PageSize != DefaultUnifiedQueryPageSize {
+		t.Fatalf("default page_size = %d, want %d", got.PageSize, DefaultUnifiedQueryPageSize)
+	}
+	if got.SortField != "time" || got.SortOrder != "desc" {
+		t.Fatalf("default sort mismatch: %#v", got)
+	}
+	if len(got.Items) != 3 {
+		t.Fatalf("items len = %d, want 3", len(got.Items))
+	}
+	if got.Items[0].RunID != "run-a18-3" || got.Items[1].RunID != "run-a18-2" || got.Items[2].RunID != "run-a18-1" {
+		t.Fatalf("default time desc order mismatch: %#v", got.Items)
+	}
+
+	got, err = d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:     "team-a",
+		WorkflowID: "wf-a",
+		Status:     "failed",
+	})
+	if err != nil {
+		t.Fatalf("query AND filters failed: %v", err)
+	}
+	if len(got.Items) != 1 || got.Items[0].RunID != "run-a18-2" {
+		t.Fatalf("AND filter result mismatch: %#v", got.Items)
+	}
+
+	got, err = d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a18-1"})
+	if err != nil {
+		t.Fatalf("query single run_id failed: %v", err)
+	}
+	if len(got.Items) != 1 || got.Items[0].RunID != "run-a18-1" {
+		t.Fatalf("single run filter mismatch: %#v", got.Items)
+	}
+
+	got, err = d.QueryRuns(UnifiedRunQueryRequest{TaskID: "task-a18-missing"})
+	if err != nil {
+		t.Fatalf("query missing task_id should not error: %v", err)
+	}
+	if len(got.Items) != 0 {
+		t.Fatalf("missing task_id should return empty set, got %#v", got.Items)
+	}
+}
+
+func TestStoreUnifiedRunQueryValidationAndPagingBounds(t *testing.T) {
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	base := time.Now()
+	for i := 0; i < 5; i++ {
+		d.AddRun(RunRecord{
+			Time:       base.Add(time.Duration(i) * time.Second),
+			RunID:      "run-a18-page-" + strconv.Itoa(i),
+			Status:     "success",
+			TeamID:     "team-a",
+			WorkflowID: "wf-a",
+			TaskID:     "task-a18-page-" + strconv.Itoa(i),
+		})
+	}
+
+	pageSize2 := 2
+	got, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize2,
+	})
+	if err != nil {
+		t.Fatalf("query with page_size=2 failed: %v", err)
+	}
+	if len(got.Items) != 2 || got.NextCursor == "" {
+		t.Fatalf("page_size=2 pagination mismatch: %#v", got)
+	}
+
+	pageSizeTooLarge := 201
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{PageSize: &pageSizeTooLarge}); err == nil {
+		t.Fatal("expected fail-fast for page_size > 200")
+	}
+	pageSizeZero := 0
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{PageSize: &pageSizeZero}); err == nil {
+		t.Fatal("expected fail-fast for page_size lower bound")
+	}
+	pageSizeNegative := -1
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{PageSize: &pageSizeNegative}); err == nil {
+		t.Fatal("expected fail-fast for negative page_size")
+	}
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{Status: "pending"}); err == nil {
+		t.Fatal("expected fail-fast for invalid status filter")
+	}
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TimeRange: &UnifiedQueryTimeRange{
+			Start: base.Add(10 * time.Second),
+			End:   base.Add(1 * time.Second),
+		},
+	}); err == nil {
+		t.Fatal("expected fail-fast for invalid time range")
+	}
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{
+		Sort: UnifiedQuerySort{Field: "run_id", Order: "desc"},
+	}); err == nil {
+		t.Fatal("expected fail-fast for unsupported sort field")
+	}
+}
+
+func TestStoreUnifiedRunQueryCursorDeterministicAndFailFast(t *testing.T) {
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	base := time.Now()
+	for i := 0; i < 3; i++ {
+		d.AddRun(RunRecord{
+			Time:       base.Add(time.Duration(i) * time.Second),
+			RunID:      "run-a18-cursor-" + strconv.Itoa(i),
+			Status:     "success",
+			TeamID:     "team-a",
+			WorkflowID: "wf-a",
+			TaskID:     "task-a18-cursor-" + strconv.Itoa(i),
+		})
+	}
+
+	pageSize1 := 1
+	req := UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize1,
+	}
+	first, err := d.QueryRuns(req)
+	if err != nil {
+		t.Fatalf("first page query failed: %v", err)
+	}
+	if len(first.Items) != 1 || first.NextCursor == "" {
+		t.Fatalf("first page mismatch: %#v", first)
+	}
+	if first.NextCursor == "1" {
+		t.Fatalf("cursor must be opaque, got %#v", first.NextCursor)
+	}
+
+	second, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize1,
+		Cursor:   first.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("second page query failed: %v", err)
+	}
+	if len(second.Items) != 1 {
+		t.Fatalf("second page mismatch: %#v", second)
+	}
+	secondAgain, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize1,
+		Cursor:   first.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("second page replay failed: %v", err)
+	}
+	if len(secondAgain.Items) != 1 || secondAgain.Items[0].RunID != second.Items[0].RunID {
+		t.Fatalf("cursor traversal must be deterministic: %#v vs %#v", secondAgain, second)
+	}
+
+	third, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize1,
+		Cursor:   second.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("third page query failed: %v", err)
+	}
+	if len(third.Items) != 1 || third.NextCursor != "" {
+		t.Fatalf("third page mismatch: %#v", third)
+	}
+
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-a",
+		PageSize: &pageSize1,
+		Cursor:   "not-a-valid-cursor",
+	}); err == nil {
+		t.Fatal("expected fail-fast for malformed cursor")
+	}
+	if _, err := d.QueryRuns(UnifiedRunQueryRequest{
+		TeamID:   "team-b",
+		PageSize: &pageSize1,
+		Cursor:   first.NextCursor,
+	}); err == nil {
+		t.Fatal("expected fail-fast for cursor query boundary mismatch")
+	}
+}
+
 func TestStoreSkillDedupConcurrent(t *testing.T) {
 	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{

@@ -204,6 +204,7 @@ mcp:
 			"workflow_condition_template_total":        2,
 			"workflow_graph_compile_failed":            false,
 			"workflow_resume_count":                    1,
+			"task_id":                                  "task-observed-1",
 			"a2a_task_total":                           4,
 			"a2a_task_failed":                          1,
 			"peer_id":                                  "peer-a2a-1",
@@ -375,6 +376,9 @@ mcp:
 	}
 	if items[0].WorkflowSubgraphExpansionTotal != 3 || items[0].WorkflowConditionTemplateTotal != 2 || items[0].WorkflowGraphCompileFailed {
 		t.Fatalf("workflow graph compile summary mismatch: %#v", items[0])
+	}
+	if items[0].TaskID != "task-observed-1" {
+		t.Fatalf("task_id mismatch: %#v", items[0])
 	}
 	if items[0].A2ATaskTotal != 4 || items[0].A2ATaskFailed != 1 {
 		t.Fatalf("a2a summary counters mismatch: %#v", items[0])

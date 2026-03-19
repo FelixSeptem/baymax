@@ -5,9 +5,11 @@ import "strings"
 type MultiAgentContractSnapshot struct {
 	IdentifierDoc              string
 	RuntimeConfigDoc           string
+	MainlineContractIndexDoc   string
 	V1AcceptanceDoc            string
 	ComposerCoreSpec           string
 	ComposerGateSpec           string
+	UnifiedQuerySpec           string
 	TeamsTimelineSpec          string
 	WorkflowTimelineSpec       string
 	A2ATimelineSpec            string
@@ -441,6 +443,63 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		violations = append(violations, Violation{
 			Code:    "missing_v1_acceptance_a12_a13_compatibility_marker",
 			Message: "v1 acceptance doc must pin compatibility window to A12/A13 additive summary fields",
+		})
+	}
+	requiredUnifiedQuerySpecMarkers := []struct {
+		code   string
+		marker string
+	}{
+		{code: "unified_query_semantic_drift_missing_and_semantics", marker: "`AND` semantics"},
+		{code: "unified_query_semantic_drift_missing_default_page_size", marker: "page_size=50"},
+		{code: "unified_query_semantic_drift_missing_page_size_limit", marker: "page_size <= 200"},
+		{code: "unified_query_semantic_drift_missing_default_sort", marker: "time desc"},
+		{code: "unified_query_semantic_drift_missing_opaque_cursor", marker: "opaque cursor"},
+		{code: "unified_query_semantic_drift_missing_empty_set_semantics", marker: "empty result set"},
+	}
+	for _, marker := range requiredUnifiedQuerySpecMarkers {
+		if !strings.Contains(snapshot.UnifiedQuerySpec, marker.marker) {
+			violations = append(violations, Violation{
+				Code:    marker.code,
+				Message: "unified query spec drift detected: missing marker " + marker.marker,
+			})
+		}
+	}
+	requiredUnifiedQueryRuntimeDocMarkers := []struct {
+		code   string
+		marker string
+	}{
+		{code: "missing_runtime_doc_unified_query_run_id_filter", marker: "`run_id`"},
+		{code: "missing_runtime_doc_unified_query_team_id_filter", marker: "`team_id`"},
+		{code: "missing_runtime_doc_unified_query_workflow_id_filter", marker: "`workflow_id`"},
+		{code: "missing_runtime_doc_unified_query_task_id_filter", marker: "`task_id`"},
+		{code: "missing_runtime_doc_unified_query_status_filter", marker: "`status`"},
+		{code: "missing_runtime_doc_unified_query_time_range_filter", marker: "`time_range`"},
+		{code: "missing_runtime_doc_unified_query_page_default", marker: "`page_size=50`"},
+		{code: "missing_runtime_doc_unified_query_page_limit", marker: "`page_size<=200`"},
+		{code: "missing_runtime_doc_unified_query_sort_default", marker: "`time desc`"},
+		{code: "missing_runtime_doc_unified_query_cursor", marker: "opaque cursor"},
+		{code: "missing_runtime_doc_unified_query_task_no_match", marker: "empty result set"},
+	}
+	for _, marker := range requiredUnifiedQueryRuntimeDocMarkers {
+		if !strings.Contains(snapshot.RuntimeConfigDoc, marker.marker) {
+			violations = append(violations, Violation{
+				Code:    marker.code,
+				Message: "runtime config/diagnostics doc missing unified query marker: " + marker.marker,
+			})
+		}
+	}
+	if !strings.Contains(strings.ToLower(snapshot.ComposerGateSpec), "unified query contract suites") {
+		violations = append(violations, Violation{
+			Code:    "missing_unified_query_gate_contract",
+			Message: "shared quality gate spec must include unified query contract suites",
+		})
+	}
+	if !strings.Contains(snapshot.MainlineContractIndexDoc, "Unified Query A18") ||
+		!strings.Contains(snapshot.MainlineContractIndexDoc, "TestUnifiedQueryContractUnmatchedTaskIDEmptySet") ||
+		!strings.Contains(snapshot.MainlineContractIndexDoc, "TestUnifiedQueryContractReplayIdempotentSummaries") {
+		violations = append(violations, Violation{
+			Code:    "missing_mainline_index_unified_query_mapping",
+			Message: "mainline contract index must map unified query rows to concrete tests",
 		})
 	}
 

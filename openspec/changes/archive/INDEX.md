@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-19 15:15:21
+Updated: 2026-03-19 15:55:19
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -72,3 +72,4 @@ Updated: 2026-03-19 15:15:21
 - 068 -> introduce-full-chain-multi-agent-reference-example-a20
 - 069 -> introduce-external-adapter-template-and-migration-mapping-a21
 - 070 -> introduce-external-adapter-conformance-harness-and-gate-a22
+- 071 -> introduce-adapter-scaffold-generator-and-conformance-bootstrap-a23

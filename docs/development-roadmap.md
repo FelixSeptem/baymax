@@ -16,14 +16,15 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：A4-A21（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射）。
+- 已归档并稳定：A4-A22（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness）。
 - 进行中：
-  - `introduce-external-adapter-conformance-harness-and-gate-a22`
   - `introduce-adapter-scaffold-generator-and-conformance-bootstrap-a23`
+  - `govern-pre1-release-track-and-change-admission-a24`
 
-## 1.0.0 基线定义（本仓库后续参考口径）
+## 版本阶段口径（延续 0.x）
 
-`1.0.0` 以“收口基线”为目标，不再按 A 编号无限扩展范围。当前基线由以下能力组成：
+当前仓库**不做 `1.0.0` / prod-ready 承诺**，继续沿用 `0.x` 治理口径（见 `docs/versioning-and-compatibility.md`）。
+在 `0.x` 阶段，版本号用于表达变更范围，不构成稳定兼容承诺；主线目标是“持续收敛、可回归迭代”。
 
 1. 运行时主干稳定：
 - Runner Run/Stream 统一语义与并发背压基线。
@@ -40,53 +41,51 @@ Baymax 主线保持 `library-first + contract-first`：
 
 4. 外部接入稳定：
 - A21 模板与迁移映射（已归档）。
-- A22 conformance harness（进行中，需归档）。
-- A23 scaffold + conformance bootstrap（进行中，需归档）。
+- A22 conformance harness（已归档）。
+- A23 scaffold + conformance bootstrap（进行中）。
 
-## 1.0.0 里程碑与退出条件
+## 近期收口优先级（0.x）
 
-### M1：外部适配链路收口（当前阶段）
+### P0：完成 A23 并归档（当前阶段）
 
 完成条件：
-- A22 归档：`MCP > Model > Tool` 最小一致性矩阵与 gate 阻断路径稳定。
 - A23 归档：脚手架生成、默认目录、`--force` 覆盖策略、bootstrap 对齐与 drift gate 稳定。
 - `README` / `runtime-config` / `contract-index` / roadmap 口径对齐。
 
-### M2：1.0.0-RC 冻结
+A23 实施顺序（收敛变更域）：
+1. 完成 `adapter/scaffold` 库与 `cmd/adapter-scaffold` 薄 CLI，锁定参数契约与冲突 fail-fast。
+2. 生成三类最小 onboarding 产物，并在 bootstrap 中固定映射 A22 最小矩阵。
+3. 增加 `check-adapter-scaffold-drift.sh/.ps1` 并接入 `check-quality-gate.sh/.ps1` 阻断路径。
+4. 最后同步 README 与主干契约索引，保证生成、漂移、conformance 可追踪闭环。
+
+### P1：0.x 质量与治理持续收敛
 
 完成条件：
-- 不再接收新增功能型提案（A24+）。
-- 全量质量门禁连续通过（本地与 CI 口径一致）。
-- 无 P0 未关闭缺陷（语义错误、数据损坏、崩溃、严重性能回退、安全阻断问题）。
+- 所有变更继续通过质量门禁（`check-quality-gate.*`）与契约索引追踪。
+- 新增能力按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
+- 对外发布继续以 `0.x` 说明风险与兼容预期。
 
-### M3：1.0.0 发布
+## 新增提案准入规则（0.x 阶段）
 
-完成条件：
-- RC 阶段无新增破坏性语义调整。
-- 变更仅限 P0/P1 缺陷修复与文档澄清。
-- `CHANGELOG` 与版本策略文档完成发布同步。
+从本文件生效起，`0.x` 阶段新增提案需满足：
 
-## 新增提案收敛规则（避免无限追加）
+1. 必须直接服务于以下至少一类目标：
+- 契约一致性（Run/Stream、reason taxonomy、错误分层、兼容语义）。
+- 可靠性与安全（fail-fast、回滚、幂等、恢复边界、安全治理）。
+- 质量门禁与可回归性（contract/perf/docs gate）。
+- 外部接入 DX（模板、迁移、脚手架、conformance）且可被 gate 验证。
+2. 必须保持 lib-first 边界，不引入平台化控制面能力。
+3. 必须在提案内说明：`Why now`、风险、回滚点、文档影响、验证命令。
+4. 不满足以上条件的需求，统一记录为长期方向，不进入近期执行。
 
-从本文件生效起，到 `1.0.0` 发布前遵循：
-
-1. 默认不新增 A24+ 功能提案。
-2. 仅允许以下“阻断型提案”进入：
-- P0 安全问题修复。
-- P0 正确性问题（contract 违背、Run/Stream 语义不一致）。
-- P0 稳定性问题（崩溃、死锁、数据损坏、不可恢复回退）。
-- 已有门禁项的严重回归修复（性能/契约/质量门禁无法通过）。
-3. 非阻断型需求统一进入 `post-1.0 backlog`，不进入 1.0.0 范围。
-4. 任何例外必须在提案中写明：`Why now`、风险、回滚方案、对 1.0.0 时间线影响。
-
-## Post-1.0 Backlog（仅登记，不纳入 1.0.0）
+## 长期方向（不进入近期主线）
 
 以下方向明确延后：
 - 平台化控制面（多租户、RBAC、审计与运营面板）。
 - 跨租户全局调度与控制平面。
 - 市场化/托管化 adapter registry 能力。
 
-说明：`post-1.0 backlog` 只做记录，不作为当前迭代实施输入。
+说明：上述方向在 `0.x` 阶段只登记，不作为当前迭代实施输入。
 
 ## 执行与验收规则
 

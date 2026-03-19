@@ -19,7 +19,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A19（多代理主链路性能基线门禁）已归档并稳定。
 - A20（全链路参考示例与 smoke gate）已归档并稳定。
 - A21（外部适配样板与迁移映射）已归档并稳定。
-- A22（外部适配一致性 harness 与 gate）进行中。
+- A22（外部适配一致性 harness 与 gate）已归档并稳定。
+- A23（外部适配脚手架生成与 bootstrap）进行中。
 
 ## 架构设计
 
@@ -437,6 +438,33 @@ bash scripts/check-adapter-conformance.sh
 pwsh -File scripts/check-adapter-conformance.ps1
 ```
 
+### 15) Adapter Scaffold Generator + Drift Gate（A23）
+
+A23 提供外部适配脚手架生成与漂移阻断，覆盖：
+- 统一命令入口：`mcp | model | tool`
+- 默认输出目录：`examples/adapters/<type>-<name>`
+- 默认 no-overwrite；冲突 fail-fast；`-force` 显式覆盖
+- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`
+- conformance bootstrap 与 A22 最小矩阵映射（`mcp-normalization-fail-fast` / `model-run-stream-downgrade` / `tool-invoke-fail-fast`）
+
+生成命令：
+
+```bash
+go run ./cmd/adapter-scaffold -type mcp -name demo-mcp
+go run ./cmd/adapter-scaffold -type model -name demo-model
+go run ./cmd/adapter-scaffold -type tool -name demo-tool
+```
+
+漂移检查（阻断）：
+
+```bash
+bash scripts/check-adapter-scaffold-drift.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-scaffold-drift.ps1
+```
+
 ## 开发验证
 
 最小建议命令：
@@ -472,6 +500,7 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 外部适配模板索引：`docs/external-adapter-template-index.md`
 - 适配迁移映射：`docs/adapter-migration-mapping.md`
 - 适配一致性验收：`scripts/check-adapter-conformance.sh` / `scripts/check-adapter-conformance.ps1`
+- 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`
 - 主干契约测试索引：`docs/mainline-contract-test-index.md`

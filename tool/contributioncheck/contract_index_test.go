@@ -75,6 +75,9 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"External Adapter Template A21 Contribution Traceability",
 		"External Adapter Conformance A22 Matrix",
 		"External Adapter Conformance A22 Gate Path",
+		"Adapter Scaffold A23 Determinism + Conflict",
+		"Adapter Scaffold A23 Bootstrap Mapping + Offline Executable",
+		"Adapter Scaffold A23 Drift Gate Path",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

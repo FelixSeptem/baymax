@@ -26,6 +26,12 @@ if ! bash scripts/check-adapter-conformance.sh; then
   exit 1
 fi
 
+echo "[quality-gate] adapter scaffold drift"
+if ! bash scripts/check-adapter-scaffold-drift.sh; then
+  echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"
+  exit 1
+fi
+
 echo "[quality-gate] go test ./..."
 go test ./...
 

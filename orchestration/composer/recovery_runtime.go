@@ -37,6 +37,22 @@ func (c *Composer) initRecovery(cfg runtimeconfig.Config) error {
 	if conflictPolicy == "" {
 		conflictPolicy = runtimeconfig.RecoveryConflictPolicyFailFast
 	}
+	resumeBoundary := strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary))
+	if resumeBoundary == "" {
+		resumeBoundary = runtimeconfig.RecoveryResumeBoundaryNextAttemptOnly
+	}
+	inflightPolicy := strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy))
+	if inflightPolicy == "" {
+		inflightPolicy = runtimeconfig.RecoveryInflightPolicyNoRewind
+	}
+	timeoutReentryPolicy := strings.TrimSpace(strings.ToLower(cfg.Recovery.TimeoutReentryPolicy))
+	if timeoutReentryPolicy == "" {
+		timeoutReentryPolicy = runtimeconfig.RecoveryTimeoutReentryPolicySingleReentryFail
+	}
+	timeoutReentryMaxPerTask := cfg.Recovery.TimeoutReentryMaxPerTask
+	if timeoutReentryMaxPerTask <= 0 {
+		timeoutReentryMaxPerTask = 1
+	}
 	store := c.recoveryStore
 	fallback := false
 	fallbackReason := ""
@@ -80,6 +96,10 @@ func (c *Composer) initRecovery(cfg runtimeconfig.Config) error {
 	c.recoveryFallback = fallback
 	c.recoveryFallbackReason = fallbackReason
 	c.recoveryConflictPolicy = conflictPolicy
+	c.recoveryResumeBoundary = resumeBoundary
+	c.recoveryInflightPolicy = inflightPolicy
+	c.recoveryTimeoutReentryPolicy = timeoutReentryPolicy
+	c.recoveryTimeoutReentryMaxPerTask = timeoutReentryMaxPerTask
 	c.recoverySignature = c.recoveryConfigSignature(cfg)
 	c.schedulerMu.Unlock()
 	return nil
@@ -108,6 +128,10 @@ func (c *Composer) recoveryConfigSignature(cfg runtimeconfig.Config) string {
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.Backend)),
 		strings.TrimSpace(cfg.Recovery.Path),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.ConflictPolicy)),
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.TimeoutReentryPolicy)),
+		fmt.Sprintf("%d", cfg.Recovery.TimeoutReentryMaxPerTask),
 	}, "|")
 }
 
@@ -251,6 +275,15 @@ func (c *Composer) Recover(ctx context.Context, req RecoverRequest) (RecoverResu
 			RecoveryErrorPolicyUnsupported,
 			fmt.Sprintf("unsupported recovery conflict policy %q", normalized.ConflictPolicy),
 			nil,
+		)
+	}
+	if violation, ok := validateRecoveryBoundary(normalized.Scheduler); ok {
+		c.markRecoveryConflict(runID, "boundary_violation")
+		c.emitRecoveryTimeline(ctx, runID, RecoveryReasonConflict, types.ActionStatusFailed, violation.TaskID, violation.AttemptID)
+		return RecoverResult{}, newRecoveryError(
+			RecoveryErrorConflict,
+			"recovery fail_fast: recovery boundary violation",
+			violation.Err,
 		)
 	}
 
@@ -469,6 +502,8 @@ func (c *Composer) markRecoveryRecovered(runID string, replayTotal int) {
 	defer c.runMu.Unlock()
 	stat := c.ensureRunStat(runID)
 	stat.RecoveryEnabled = true
+	stat.RecoveryResumeBoundary = strings.TrimSpace(c.recoveryResumeBoundary)
+	stat.RecoveryInflightPolicy = strings.TrimSpace(c.recoveryInflightPolicy)
 	stat.RecoveryRecovered = true
 	stat.RecoveryReplayTotal = replayTotal
 	stat.RecoveryConflict = false
@@ -484,6 +519,8 @@ func (c *Composer) markRecoveryConflict(runID, conflictCode string) {
 	defer c.runMu.Unlock()
 	stat := c.ensureRunStat(runID)
 	stat.RecoveryEnabled = true
+	stat.RecoveryResumeBoundary = strings.TrimSpace(c.recoveryResumeBoundary)
+	stat.RecoveryInflightPolicy = strings.TrimSpace(c.recoveryInflightPolicy)
 	stat.RecoveryConflict = true
 	stat.RecoveryConflictCode = strings.TrimSpace(conflictCode)
 }
@@ -497,6 +534,78 @@ func (c *Composer) markRecoveryFallback(runID, reason string) {
 	defer c.runMu.Unlock()
 	stat := c.ensureRunStat(runID)
 	stat.RecoveryEnabled = true
+	stat.RecoveryResumeBoundary = strings.TrimSpace(c.recoveryResumeBoundary)
+	stat.RecoveryInflightPolicy = strings.TrimSpace(c.recoveryInflightPolicy)
 	stat.RecoveryFallback = true
 	stat.RecoveryFallbackReason = strings.TrimSpace(reason)
+}
+
+type recoveryBoundaryViolation struct {
+	TaskID    string
+	AttemptID string
+	Err       error
+}
+
+func validateRecoveryBoundary(snapshot scheduler.StoreSnapshot) (recoveryBoundaryViolation, bool) {
+	if len(snapshot.Tasks) == 0 {
+		return recoveryBoundaryViolation{}, false
+	}
+	queueSet := make(map[string]struct{}, len(snapshot.Queue))
+	for i := range snapshot.Queue {
+		taskID := strings.TrimSpace(snapshot.Queue[i])
+		if taskID == "" {
+			continue
+		}
+		queueSet[taskID] = struct{}{}
+	}
+	for i := range snapshot.Tasks {
+		record := snapshot.Tasks[i]
+		taskID := strings.TrimSpace(record.Task.TaskID)
+		switch record.State {
+		case scheduler.TaskStateSucceeded, scheduler.TaskStateFailed, scheduler.TaskStateDeadLetter:
+			if _, exists := queueSet[taskID]; exists {
+				return recoveryBoundaryViolation{
+					TaskID: taskID,
+					Err:    fmt.Errorf("terminal task %q is queued under no_rewind policy", taskID),
+				}, true
+			}
+			if strings.TrimSpace(record.CurrentAttempt) != "" {
+				return recoveryBoundaryViolation{
+					TaskID: taskID,
+					Err:    fmt.Errorf("terminal task %q has current_attempt_id under no_rewind policy", taskID),
+				}, true
+			}
+		case scheduler.TaskStateRunning:
+			currentAttemptID := strings.TrimSpace(record.CurrentAttempt)
+			if currentAttemptID == "" {
+				return recoveryBoundaryViolation{
+					TaskID: taskID,
+					Err:    fmt.Errorf("running task %q has empty current_attempt_id under next_attempt_only policy", taskID),
+				}, true
+			}
+			found := false
+			for j := range record.Attempts {
+				if strings.TrimSpace(record.Attempts[j].AttemptID) != currentAttemptID {
+					continue
+				}
+				found = true
+				if record.Attempts[j].Status != scheduler.AttemptStatusRunning {
+					return recoveryBoundaryViolation{
+						TaskID:    taskID,
+						AttemptID: currentAttemptID,
+						Err:       fmt.Errorf("running task %q current attempt %q is not running", taskID, currentAttemptID),
+					}, true
+				}
+				break
+			}
+			if !found {
+				return recoveryBoundaryViolation{
+					TaskID:    taskID,
+					AttemptID: currentAttemptID,
+					Err:       fmt.Errorf("running task %q current attempt %q missing from attempts", taskID, currentAttemptID),
+				}, true
+			}
+		}
+	}
+	return recoveryBoundaryViolation{}, false
 }

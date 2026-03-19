@@ -16,11 +16,11 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - 已归档口径：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：R1-R3 主线能力、A4-A15。
+- 已归档并稳定：R1-R3 主线能力、A4-A16。
 - 进行中：
-  - `introduce-multi-agent-collaboration-primitives-a16`
   - `harden-long-running-recovery-boundary-and-timeout-reentry-a17`
-- 待规划/探索：A18+。
+  - `introduce-unified-run-team-workflow-task-query-api-a18`
+- 待规划/探索：A19+。
 
 ## 当前代码能力（简版）
 
@@ -49,16 +49,22 @@ Baymax 的主线定位是 `library-first + contract-first`：
 目标：在不改写执行状态机前提下增强 workflow 图编译复用能力。  
 口径：`enhance-workflow-graph-composability-a15`（archived）。
 
-### A16（进行中）
+### A16（已归档）
 
 目标：补齐统一协作原语（handoff/delegation/aggregation）并收敛语义与门禁。  
-口径：`introduce-multi-agent-collaboration-primitives-a16`（active）。
-当前落地点：`orchestration/collab` 原语包、teams/workflow/composer 接入、`composer.collab.*` 配置、`collab_*` 诊断字段、A16 integration 套件与 shared gate。
+口径：`introduce-multi-agent-collaboration-primitives-a16`（archived）。
+结果：`orchestration/collab` 原语包、teams/workflow/composer 接入、`composer.collab.*` 配置、`collab_*` 诊断字段、A16 integration 套件与 shared gate 已收口。
 
 ### A17（进行中）
 
 目标：收敛长任务恢复边界（resume/in-flight/timeout reentry）并强化恢复一致性。  
 口径：`harden-long-running-recovery-boundary-and-timeout-reentry-a17`（active）。
+范围：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 配置、composer/scheduler 恢复边界判定、A17 合同矩阵与 shared gate 收敛。
+
+### A18（进行中）
+
+目标：补齐按 `run/team/workflow/task` 的统一诊断检索 API 与分页/排序/游标/校验契约。  
+口径：`introduce-unified-run-team-workflow-task-query-api-a18`（active）。
 
 ## 主线进度（摘要）
 
@@ -70,8 +76,11 @@ Baymax 的主线定位是 `library-first + contract-first`：
 
 编排与恢复增强：
 1. A15：workflow 图可组合能力（已归档）。
-2. A16：协作原语统一契约（进行中）。
+2. A16：协作原语统一契约（已归档）。
 3. A17：长任务恢复边界与重入策略（进行中）。
+
+诊断检索增强：
+1. A18：统一 run/team/workflow/task 查询契约（进行中）。
 
 ## Lib-First Multi-Agent 差距收敛清单（2026-03-19）
 
@@ -83,9 +92,9 @@ P0（必须优先）：
 
 P1（紧随其后）：
 - [x] workflow 图能力增强（A15）。
-- [ ] multi-agent 协作原语增强（A16 进行中）。
+- [x] multi-agent 协作原语增强（A16 已归档）。
 - [ ] 长任务恢复边界收敛（A17 进行中）。
-- [ ] 按 run/team/workflow/task 的统一检索 API（库接口优先）。
+- [ ] 按 run/team/workflow/task 的统一检索 API（A18 进行中，库接口优先）。
 - [ ] 多代理主链路性能基线纳入 CI（吞吐/延迟/重试放大/recovery 时间）。
 
 P2（可选，DX/生态）：
@@ -94,11 +103,10 @@ P2（可选，DX/生态）：
 - [ ] 外部适配样板与迁移映射文档。
 
 推荐顺序：
-1. 完成并归档 A16（协作原语）。
-2. 完成并归档 A17（恢复边界）。
-3. 推进统一检索 API（run/team/workflow/task）。
-4. 推进多代理性能基线门禁。
-5. 补齐 P2 DX/生态能力。
+1. 完成并归档 A17（恢复边界）。
+2. 完成并归档 A18（统一检索 API）。
+3. 推进多代理性能基线门禁。
+4. 补齐 P2 DX/生态能力。
 
 ## 非近期范围（为保持简洁，明确延后）
 
@@ -111,7 +119,7 @@ P2（可选，DX/生态）：
 
 ## 执行规则
 
-- 每次只推进一个 OpenSpec change，避免并行大改导致口径漂移。
+- 优先单变更推进；若并行推进多个 change，必须显式声明依赖边界并保持每个 PR 聚焦单一 change。
 - 提案到实现必须遵循顺序：`proposal/design/spec/tasks -> code -> tests -> docs`。
 - 合并前最少验证：
   - `go test ./...`

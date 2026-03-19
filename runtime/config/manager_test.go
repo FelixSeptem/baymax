@@ -1445,6 +1445,10 @@ recovery:
   enabled: true
   backend: memory
   conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
 reload:
   enabled: true
   debounce: 20ms
@@ -1459,12 +1463,20 @@ reload:
 	if before != RecoveryConflictPolicyFailFast {
 		t.Fatalf("before recovery.conflict_policy = %q, want fail_fast", before)
 	}
+	beforeBoundary := mgr.EffectiveConfig().Recovery.ResumeBoundary
+	if beforeBoundary != RecoveryResumeBoundaryNextAttemptOnly {
+		t.Fatalf("before recovery.resume_boundary = %q, want %q", beforeBoundary, RecoveryResumeBoundaryNextAttemptOnly)
+	}
 
 	writeConfig(t, file, `
 recovery:
   enabled: true
   backend: memory
   conflict_policy: best_effort
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
 reload:
   enabled: true
   debounce: 20ms
@@ -1473,6 +1485,56 @@ reload:
 	after := mgr.EffectiveConfig().Recovery.ConflictPolicy
 	if after != before {
 		t.Fatalf("invalid recovery reload should rollback, conflict_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerRecoveryBoundaryInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Recovery.TimeoutReentryMaxPerTask
+	if before != 1 {
+		t.Fatalf("before recovery.timeout_reentry_max_per_task = %d, want 1", before)
+	}
+
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Recovery.TimeoutReentryMaxPerTask
+	if after != before {
+		t.Fatalf("invalid recovery boundary reload should rollback, timeout_reentry_max_per_task = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

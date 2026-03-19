@@ -55,6 +55,10 @@
   - `recovery.backend` -> `BAYMAX_RECOVERY_BACKEND`
   - `recovery.path` -> `BAYMAX_RECOVERY_PATH`
   - `recovery.conflict_policy` -> `BAYMAX_RECOVERY_CONFLICT_POLICY`
+  - `recovery.resume_boundary` -> `BAYMAX_RECOVERY_RESUME_BOUNDARY`
+  - `recovery.inflight_policy` -> `BAYMAX_RECOVERY_INFLIGHT_POLICY`
+  - `recovery.timeout_reentry_policy` -> `BAYMAX_RECOVERY_TIMEOUT_REENTRY_POLICY`
+  - `recovery.timeout_reentry_max_per_task` -> `BAYMAX_RECOVERY_TIMEOUT_REENTRY_MAX_PER_TASK`
 
 ## YAML Schema（核心字段）
 
@@ -199,6 +203,10 @@ recovery:
   backend: memory                 # memory|file
   path: /tmp/baymax/recovery      # backend=file 时必填
   conflict_policy: fail_fast      # 当前仅支持 fail_fast
+  resume_boundary: next_attempt_only           # 当前仅支持 next_attempt_only
+  inflight_policy: no_rewind                   # 当前仅支持 no_rewind
+  timeout_reentry_policy: single_reentry_then_fail # 当前仅支持 single_reentry_then_fail
+  timeout_reentry_max_per_task: 1              # 当前固定为 1
 
 subagent:
   max_depth: 4                    # 必须 > 0
@@ -527,6 +535,15 @@ scheduler/subagent baseline 校验语义：
 12. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
 13. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
 14. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+recovery boundary（A17）校验语义：
+1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
+2. `recovery.resume_boundary` 当前仅支持 `next_attempt_only`。
+3. `recovery.inflight_policy` 当前仅支持 `no_rewind`。
+4. `recovery.timeout_reentry_policy` 当前仅支持 `single_reentry_then_fail`。
+5. `recovery.timeout_reentry_max_per_task` 当前固定为 `1`（用于单次 timeout 重入预算）。
+6. `recovery.enabled=false` 时 recovery-boundary 治理不激活，行为保持基线路径不变。
+7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 ca2 agentic routing 校验语义：
 1. `context_assembler.ca2.agentic.decision_timeout` 必须 `> 0`。
@@ -1037,11 +1054,15 @@ Action Gate 规则优先级（H4）：
 - 字段为 additive 扩展，不影响既有 run 摘要消费者。
 - 协作摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
 
-### Run 诊断新增字段（Recovery A9）
+### Run 诊断新增字段（Recovery A9/A17）
 
 - `recovery_enabled`：本次 run 是否启用 recovery（配置快照口径）。
+- `recovery_resume_boundary`：本次 run 生效的恢复边界策略（当前固定 `next_attempt_only`）。
+- `recovery_inflight_policy`：本次 run 生效的 in-flight 恢复策略（当前固定 `no_rewind`）。
 - `recovery_recovered`：本次 run 是否发生跨会话恢复。
 - `recovery_replay_total`：恢复阶段执行的重放条目总数。
+- `recovery_timeout_reentry_total`：恢复边界下 timeout 重入总次数。
+- `recovery_timeout_reentry_exhausted_total`：恢复边界下 timeout 重入预算耗尽次数。
 - `recovery_conflict`：恢复阶段是否检测到冲突。
 - `recovery_conflict_code`：冲突归一化原因码（例如 `recovery.conflict.task_terminal_mismatch`）。
 - `recovery_fallback_used`：恢复路径是否触发降级（例如不可恢复时回退 fresh run）。
@@ -1063,6 +1084,7 @@ Action Gate 规则优先级（H4）：
 | A15 Workflow Graph Composability（`workflow_subgraph_expansion_total` / `workflow_condition_template_total` / `workflow_graph_compile_failed`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` / `false` 解析 |
 | Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
 | A16 Collaboration Primitives（`collab_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
+| A17 Recovery Boundary（`recovery_resume_boundary` / `recovery_inflight_policy` / `recovery_timeout_reentry_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按空字符串或 `0` 解析 |
 | Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
 
 legacy consumers 行为示例：

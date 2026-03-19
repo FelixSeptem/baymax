@@ -229,15 +229,19 @@ type Composer struct {
 	schedulerRetryMaxAttempts  int
 	schedulerGuardrails        scheduler.Guardrails
 
-	managedRecoveryStore      bool
-	recoverySignature         string
-	recoveryConfiguredBackend string
-	recoveryBackend           string
-	recoveryPath              string
-	recoveryEnabled           bool
-	recoveryFallback          bool
-	recoveryFallbackReason    string
-	recoveryConflictPolicy    string
+	managedRecoveryStore             bool
+	recoverySignature                string
+	recoveryConfiguredBackend        string
+	recoveryBackend                  string
+	recoveryPath                     string
+	recoveryEnabled                  bool
+	recoveryResumeBoundary           string
+	recoveryInflightPolicy           string
+	recoveryTimeoutReentryPolicy     string
+	recoveryTimeoutReentryMaxPerTask int
+	recoveryFallback                 bool
+	recoveryFallbackReason           string
+	recoveryConflictPolicy           string
 
 	now               func() time.Time
 	childWorkerID     string
@@ -269,6 +273,8 @@ type runStat struct {
 	RecoveryReplayTotal       int
 	RecoveryConflict          bool
 	RecoveryConflictCode      string
+	RecoveryResumeBoundary    string
+	RecoveryInflightPolicy    string
 	RecoveryFallback          bool
 	RecoveryFallbackReason    string
 	asyncReportSeen           map[string]struct{}
@@ -705,6 +711,12 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["a2a_async_report_retry_total"] = stats.A2AAsyncReportRetry
 	payload["a2a_async_report_dedup_total"] = stats.A2AAsyncReportDedup
 	payload["recovery_enabled"] = stats.RecoveryEnabled
+	if strings.TrimSpace(stats.RecoveryResumeBoundary) != "" {
+		payload["recovery_resume_boundary"] = strings.TrimSpace(stats.RecoveryResumeBoundary)
+	}
+	if strings.TrimSpace(stats.RecoveryInflightPolicy) != "" {
+		payload["recovery_inflight_policy"] = strings.TrimSpace(stats.RecoveryInflightPolicy)
+	}
 	if stats.RecoveryRecovered {
 		payload["recovery_recovered"] = true
 	}
@@ -741,6 +753,8 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["scheduler_delayed_task_total"] = summary.DelayedTaskTotal
 			payload["scheduler_delayed_claim_total"] = summary.DelayedClaimTotal
 			payload["scheduler_delayed_wait_ms_p95"] = summary.DelayedWaitMsP95
+			payload["recovery_timeout_reentry_total"] = summary.RecoveryTimeoutReentryTotal
+			payload["recovery_timeout_reentry_exhausted_total"] = summary.RecoveryTimeoutReentryExhaustedTotal
 		}
 	}
 
@@ -755,6 +769,8 @@ func (c *Composer) snapshotRunStat(runID string) runStat {
 		BackendFallback:        c.schedulerFallback,
 		FallbackReason:         strings.TrimSpace(c.schedulerFallbackReason),
 		RecoveryEnabled:        c.recoveryEnabled,
+		RecoveryResumeBoundary: strings.TrimSpace(c.recoveryResumeBoundary),
+		RecoveryInflightPolicy: strings.TrimSpace(c.recoveryInflightPolicy),
 		RecoveryFallback:       c.recoveryFallback,
 		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
 	}
@@ -992,6 +1008,8 @@ func (c *Composer) ensureRunStat(runID string) *runStat {
 		BackendFallback:        c.schedulerFallback,
 		FallbackReason:         strings.TrimSpace(c.schedulerFallbackReason),
 		RecoveryEnabled:        c.recoveryEnabled,
+		RecoveryResumeBoundary: strings.TrimSpace(c.recoveryResumeBoundary),
+		RecoveryInflightPolicy: strings.TrimSpace(c.recoveryInflightPolicy),
 		RecoveryFallback:       c.recoveryFallback,
 		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
 		asyncReportSeen:        map[string]struct{}{},
@@ -1059,6 +1077,7 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
 	if err != nil {
 		return err
@@ -1113,6 +1132,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
 	if err != nil {
 		return
@@ -1130,7 +1150,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f",
+		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%t|%s|%s|%s|%d",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
@@ -1145,6 +1165,11 @@ func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Scheduler.Retry.Backoff.Max.Milliseconds(),
 		cfg.Scheduler.Retry.Backoff.Multiplier,
 		cfg.Scheduler.Retry.Backoff.JitterRatio,
+		cfg.Recovery.Enabled,
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
+		strings.TrimSpace(strings.ToLower(cfg.Recovery.TimeoutReentryPolicy)),
+		cfg.Recovery.TimeoutReentryMaxPerTask,
 	)
 }
 
@@ -1168,6 +1193,16 @@ func (c *Composer) schedulerGovernanceConfig(cfg runtimeconfig.Config) scheduler
 			Multiplier:  cfg.Scheduler.Retry.Backoff.Multiplier,
 			JitterRatio: cfg.Scheduler.Retry.Backoff.JitterRatio,
 		},
+	}
+}
+
+func (c *Composer) schedulerRecoveryBoundaryConfig(cfg runtimeconfig.Config) scheduler.RecoveryBoundaryConfig {
+	return scheduler.RecoveryBoundaryConfig{
+		Enabled:                  cfg.Recovery.Enabled,
+		ResumeBoundary:           strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
+		InflightPolicy:           strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
+		TimeoutReentryPolicy:     strings.TrimSpace(strings.ToLower(cfg.Recovery.TimeoutReentryPolicy)),
+		TimeoutReentryMaxPerTask: cfg.Recovery.TimeoutReentryMaxPerTask,
 	}
 }
 

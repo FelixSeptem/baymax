@@ -2245,6 +2245,18 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
 		t.Fatalf("recovery.conflict_policy = %q, want fail_fast", cfg.Recovery.ConflictPolicy)
 	}
+	if cfg.Recovery.ResumeBoundary != RecoveryResumeBoundaryNextAttemptOnly {
+		t.Fatalf("recovery.resume_boundary = %q, want %q", cfg.Recovery.ResumeBoundary, RecoveryResumeBoundaryNextAttemptOnly)
+	}
+	if cfg.Recovery.InflightPolicy != RecoveryInflightPolicyNoRewind {
+		t.Fatalf("recovery.inflight_policy = %q, want %q", cfg.Recovery.InflightPolicy, RecoveryInflightPolicyNoRewind)
+	}
+	if cfg.Recovery.TimeoutReentryPolicy != RecoveryTimeoutReentryPolicySingleReentryFail {
+		t.Fatalf("recovery.timeout_reentry_policy = %q, want %q", cfg.Recovery.TimeoutReentryPolicy, RecoveryTimeoutReentryPolicySingleReentryFail)
+	}
+	if cfg.Recovery.TimeoutReentryMaxPerTask != 1 {
+		t.Fatalf("recovery.timeout_reentry_max_per_task = %d, want 1", cfg.Recovery.TimeoutReentryMaxPerTask)
+	}
 	if cfg.Subagent.MaxDepth <= 0 || cfg.Subagent.MaxActiveChildren <= 0 || cfg.Subagent.ChildTimeoutBudget <= 0 {
 		t.Fatalf("subagent defaults invalid: %#v", cfg.Subagent)
 	}
@@ -2270,6 +2282,10 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RECOVERY_BACKEND", RecoveryBackendFile)
 	t.Setenv("BAYMAX_RECOVERY_PATH", "/tmp/recovery-override")
 	t.Setenv("BAYMAX_RECOVERY_CONFLICT_POLICY", RecoveryConflictPolicyFailFast)
+	t.Setenv("BAYMAX_RECOVERY_RESUME_BOUNDARY", RecoveryResumeBoundaryNextAttemptOnly)
+	t.Setenv("BAYMAX_RECOVERY_INFLIGHT_POLICY", RecoveryInflightPolicyNoRewind)
+	t.Setenv("BAYMAX_RECOVERY_TIMEOUT_REENTRY_POLICY", RecoveryTimeoutReentryPolicySingleReentryFail)
+	t.Setenv("BAYMAX_RECOVERY_TIMEOUT_REENTRY_MAX_PER_TASK", "1")
 	t.Setenv("BAYMAX_SUBAGENT_MAX_DEPTH", "7")
 	t.Setenv("BAYMAX_SUBAGENT_MAX_ACTIVE_CHILDREN", "11")
 	t.Setenv("BAYMAX_SUBAGENT_CHILD_TIMEOUT_BUDGET", "9s")
@@ -2302,6 +2318,10 @@ recovery:
   backend: memory
   path: /tmp/recovery-file
   conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
 subagent:
   max_depth: 4
   max_active_children: 8
@@ -2347,6 +2367,12 @@ subagent:
 	}
 	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
 		t.Fatalf("recovery conflict_policy override mismatch: %#v", cfg.Recovery)
+	}
+	if cfg.Recovery.ResumeBoundary != RecoveryResumeBoundaryNextAttemptOnly ||
+		cfg.Recovery.InflightPolicy != RecoveryInflightPolicyNoRewind ||
+		cfg.Recovery.TimeoutReentryPolicy != RecoveryTimeoutReentryPolicySingleReentryFail ||
+		cfg.Recovery.TimeoutReentryMaxPerTask != 1 {
+		t.Fatalf("recovery boundary override mismatch: %#v", cfg.Recovery)
 	}
 	if cfg.Subagent.MaxDepth != 7 || cfg.Subagent.MaxActiveChildren != 11 || cfg.Subagent.ChildTimeoutBudget != 9*time.Second {
 		t.Fatalf("subagent override mismatch: %#v", cfg.Subagent)
@@ -2437,6 +2463,30 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Recovery.ConflictPolicy = "merge"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for recovery.conflict_policy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.ResumeBoundary = "immediate_rewrite"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.resume_boundary")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.InflightPolicy = "rewind"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.inflight_policy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.TimeoutReentryPolicy = "multi_reentry"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.timeout_reentry_policy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.TimeoutReentryMaxPerTask = 2
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.timeout_reentry_max_per_task")
 	}
 
 	cfg = DefaultConfig()

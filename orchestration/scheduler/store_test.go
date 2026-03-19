@@ -528,6 +528,136 @@ func TestSchedulerRetryBackoffAndDeadLetter(t *testing.T) {
 	}
 }
 
+func TestSchedulerRecoveryBoundarySingleReentryThenFail(t *testing.T) {
+	s, err := New(
+		NewMemoryStore(),
+		WithLeaseTimeout(60*time.Millisecond),
+		WithRecoveryBoundary(RecoveryBoundaryConfig{
+			Enabled:                  true,
+			ResumeBoundary:           RecoveryResumeBoundaryNextAttemptOnly,
+			InflightPolicy:           RecoveryInflightPolicyNoRewind,
+			TimeoutReentryPolicy:     RecoveryTimeoutReentryPolicySingleReentryFail,
+			TimeoutReentryMaxPerTask: 1,
+		}),
+		WithGovernance(GovernanceConfig{
+			QoS: QoSModeFIFO,
+			Fairness: FairnessConfig{
+				MaxConsecutiveClaimsPerPriority: 3,
+			},
+			DLQ: DLQConfig{Enabled: true},
+			Backoff: RetryBackoffConfig{
+				Enabled:     false,
+				Initial:     10 * time.Millisecond,
+				Max:         20 * time.Millisecond,
+				Multiplier:  2.0,
+				JitterRatio: 0,
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:      "task-recovery-boundary",
+		RunID:       "run-recovery-boundary",
+		MaxAttempts: 5,
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, ok, err := s.Claim(ctx, "worker-rb-a"); err != nil || !ok {
+		t.Fatalf("claim #1 failed: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(90 * time.Millisecond)
+	expiredFirst, err := s.ExpireLeases(ctx)
+	if err != nil {
+		t.Fatalf("expire leases #1: %v", err)
+	}
+	if len(expiredFirst) != 1 {
+		t.Fatalf("expired #1 len = %d, want 1", len(expiredFirst))
+	}
+	if expiredFirst[0].Record.State != TaskStateQueued {
+		t.Fatalf("first timeout should requeue once, state=%q", expiredFirst[0].Record.State)
+	}
+
+	if _, ok, err := s.Claim(ctx, "worker-rb-b"); err != nil || !ok {
+		t.Fatalf("claim #2 failed: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(90 * time.Millisecond)
+	expiredSecond, err := s.ExpireLeases(ctx)
+	if err != nil {
+		t.Fatalf("expire leases #2: %v", err)
+	}
+	if len(expiredSecond) != 1 {
+		t.Fatalf("expired #2 len = %d, want 1", len(expiredSecond))
+	}
+	if expiredSecond[0].Record.State != TaskStateFailed {
+		t.Fatalf("second timeout should fail deterministically, state=%q", expiredSecond[0].Record.State)
+	}
+	if !strings.Contains(strings.ToLower(expiredSecond[0].Record.ErrorMessage), "reentry budget exhausted") {
+		t.Fatalf("unexpected boundary exhaustion error message: %q", expiredSecond[0].Record.ErrorMessage)
+	}
+
+	if _, ok, err := s.Claim(ctx, "worker-rb-c"); err != nil || ok {
+		t.Fatalf("task should not be claimable after reentry exhaustion: ok=%v err=%v", ok, err)
+	}
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats failed: %v", err)
+	}
+	if stats.RecoveryTimeoutReentryTotal != 1 {
+		t.Fatalf("recovery_timeout_reentry_total = %d, want 1", stats.RecoveryTimeoutReentryTotal)
+	}
+	if stats.RecoveryTimeoutReentryExhaustedTotal != 1 {
+		t.Fatalf("recovery_timeout_reentry_exhausted_total = %d, want 1", stats.RecoveryTimeoutReentryExhaustedTotal)
+	}
+}
+
+func TestSchedulerRestoreNoRewindRejectsTerminalTaskWithRunningAttempt(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	store.SetRecoveryBoundary(RecoveryBoundaryConfig{
+		Enabled:                  true,
+		ResumeBoundary:           RecoveryResumeBoundaryNextAttemptOnly,
+		InflightPolicy:           RecoveryInflightPolicyNoRewind,
+		TimeoutReentryPolicy:     RecoveryTimeoutReentryPolicySingleReentryFail,
+		TimeoutReentryMaxPerTask: 1,
+	})
+	now := time.Now()
+	err := store.Restore(ctx, StoreSnapshot{
+		Backend: "memory",
+		Tasks: []TaskRecord{
+			{
+				Task: Task{
+					TaskID: "task-terminal-no-rewind",
+					RunID:  "run-no-rewind",
+				},
+				State: TaskStateSucceeded,
+				Attempts: []Attempt{
+					{
+						AttemptID:      "task-terminal-no-rewind-attempt-1",
+						Attempt:        1,
+						Status:         AttemptStatusRunning,
+						StartedAt:      now.Add(-time.Second),
+						HeartbeatAt:    now.Add(-500 * time.Millisecond),
+						LeaseExpiresAt: now.Add(time.Second),
+					},
+				},
+				CurrentAttempt: "",
+				CreatedAt:      now.Add(-time.Second),
+				UpdatedAt:      now,
+			},
+		},
+		Stats: Stats{
+			Backend: "memory",
+		},
+	})
+	if !errors.Is(err, ErrSnapshotCorrupt) {
+		t.Fatalf("restore error = %v, want ErrSnapshotCorrupt", err)
+	}
+}
+
 func TestSchedulerNotBeforeSemanticsAndStats(t *testing.T) {
 	s, err := New(NewMemoryStore(), WithLeaseTimeout(500*time.Millisecond))
 	if err != nil {

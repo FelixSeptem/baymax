@@ -42,6 +42,12 @@ func (s *FileStore) SetGovernance(cfg GovernanceConfig) {
 	s.state.setGovernance(cfg)
 }
 
+func (s *FileStore) SetRecoveryBoundary(cfg RecoveryBoundaryConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setRecoveryBoundary(cfg)
+}
+
 func (s *FileStore) Enqueue(_ context.Context, task Task, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

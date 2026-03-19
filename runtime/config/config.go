@@ -109,9 +109,12 @@ const (
 )
 
 const (
-	RecoveryBackendMemory          = "memory"
-	RecoveryBackendFile            = "file"
-	RecoveryConflictPolicyFailFast = "fail_fast"
+	RecoveryBackendMemory                         = "memory"
+	RecoveryBackendFile                           = "file"
+	RecoveryConflictPolicyFailFast                = "fail_fast"
+	RecoveryResumeBoundaryNextAttemptOnly         = "next_attempt_only"
+	RecoveryInflightPolicyNoRewind                = "no_rewind"
+	RecoveryTimeoutReentryPolicySingleReentryFail = "single_reentry_then_fail"
 )
 
 const (
@@ -374,10 +377,14 @@ type SchedulerRetryBackoffConfig struct {
 }
 
 type RecoveryConfig struct {
-	Enabled        bool   `json:"enabled"`
-	Backend        string `json:"backend"`
-	Path           string `json:"path"`
-	ConflictPolicy string `json:"conflict_policy"`
+	Enabled                  bool   `json:"enabled"`
+	Backend                  string `json:"backend"`
+	Path                     string `json:"path"`
+	ConflictPolicy           string `json:"conflict_policy"`
+	ResumeBoundary           string `json:"resume_boundary"`
+	InflightPolicy           string `json:"inflight_policy"`
+	TimeoutReentryPolicy     string `json:"timeout_reentry_policy"`
+	TimeoutReentryMaxPerTask int    `json:"timeout_reentry_max_per_task"`
 }
 
 type SubagentConfig struct {
@@ -948,10 +955,14 @@ func DefaultConfig() Config {
 			},
 		},
 		Recovery: RecoveryConfig{
-			Enabled:        false,
-			Backend:        RecoveryBackendMemory,
-			Path:           filepath.Join(os.TempDir(), "baymax", "recovery"),
-			ConflictPolicy: RecoveryConflictPolicyFailFast,
+			Enabled:                  false,
+			Backend:                  RecoveryBackendMemory,
+			Path:                     filepath.Join(os.TempDir(), "baymax", "recovery"),
+			ConflictPolicy:           RecoveryConflictPolicyFailFast,
+			ResumeBoundary:           RecoveryResumeBoundaryNextAttemptOnly,
+			InflightPolicy:           RecoveryInflightPolicyNoRewind,
+			TimeoutReentryPolicy:     RecoveryTimeoutReentryPolicySingleReentryFail,
+			TimeoutReentryMaxPerTask: 1,
 		},
 		Subagent: SubagentConfig{
 			MaxDepth:           4,
@@ -1649,6 +1660,36 @@ func Validate(cfg Config) error {
 			RecoveryConflictPolicyFailFast,
 			cfg.Recovery.ConflictPolicy,
 		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Recovery.ResumeBoundary)); policy {
+	case RecoveryResumeBoundaryNextAttemptOnly:
+	default:
+		return fmt.Errorf(
+			"recovery.resume_boundary must be one of [%s], got %q",
+			RecoveryResumeBoundaryNextAttemptOnly,
+			cfg.Recovery.ResumeBoundary,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Recovery.InflightPolicy)); policy {
+	case RecoveryInflightPolicyNoRewind:
+	default:
+		return fmt.Errorf(
+			"recovery.inflight_policy must be one of [%s], got %q",
+			RecoveryInflightPolicyNoRewind,
+			cfg.Recovery.InflightPolicy,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Recovery.TimeoutReentryPolicy)); policy {
+	case RecoveryTimeoutReentryPolicySingleReentryFail:
+	default:
+		return fmt.Errorf(
+			"recovery.timeout_reentry_policy must be one of [%s], got %q",
+			RecoveryTimeoutReentryPolicySingleReentryFail,
+			cfg.Recovery.TimeoutReentryPolicy,
+		)
+	}
+	if cfg.Recovery.TimeoutReentryMaxPerTask != 1 {
+		return errors.New("recovery.timeout_reentry_max_per_task must be 1")
 	}
 	if cfg.Subagent.MaxDepth <= 0 {
 		return errors.New("subagent.max_depth must be > 0")
@@ -2638,6 +2679,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("recovery.backend", base.Recovery.Backend)
 	v.SetDefault("recovery.path", base.Recovery.Path)
 	v.SetDefault("recovery.conflict_policy", base.Recovery.ConflictPolicy)
+	v.SetDefault("recovery.resume_boundary", base.Recovery.ResumeBoundary)
+	v.SetDefault("recovery.inflight_policy", base.Recovery.InflightPolicy)
+	v.SetDefault("recovery.timeout_reentry_policy", base.Recovery.TimeoutReentryPolicy)
+	v.SetDefault("recovery.timeout_reentry_max_per_task", base.Recovery.TimeoutReentryMaxPerTask)
 	v.SetDefault("subagent.max_depth", base.Subagent.MaxDepth)
 	v.SetDefault("subagent.max_active_children", base.Subagent.MaxActiveChildren)
 	v.SetDefault("subagent.child_timeout_budget", base.Subagent.ChildTimeoutBudget)
@@ -2885,6 +2930,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Recovery.Backend = strings.ToLower(strings.TrimSpace(v.GetString("recovery.backend")))
 	cfg.Recovery.Path = strings.TrimSpace(v.GetString("recovery.path"))
 	cfg.Recovery.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.conflict_policy")))
+	cfg.Recovery.ResumeBoundary = strings.ToLower(strings.TrimSpace(v.GetString("recovery.resume_boundary")))
+	cfg.Recovery.InflightPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.inflight_policy")))
+	cfg.Recovery.TimeoutReentryPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.timeout_reentry_policy")))
+	cfg.Recovery.TimeoutReentryMaxPerTask = v.GetInt("recovery.timeout_reentry_max_per_task")
 	cfg.Subagent.MaxDepth = v.GetInt("subagent.max_depth")
 	cfg.Subagent.MaxActiveChildren = v.GetInt("subagent.max_active_children")
 	cfg.Subagent.ChildTimeoutBudget = v.GetDuration("subagent.child_timeout_budget")

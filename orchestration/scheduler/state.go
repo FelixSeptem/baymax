@@ -8,14 +8,15 @@ import (
 )
 
 type schedulerState struct {
-	Tasks           map[string]*TaskRecord    `json:"tasks"`
-	Queue           []string                  `json:"queue"`
-	TerminalCommits map[string]TerminalCommit `json:"terminal_commits"`
-	DelayedWaitMs   []int64                   `json:"delayed_wait_ms,omitempty"`
-	Stats           Stats                     `json:"stats"`
-	governance      GovernanceConfig
-	lastPriority    string
-	lastConsecutive int
+	Tasks            map[string]*TaskRecord    `json:"tasks"`
+	Queue            []string                  `json:"queue"`
+	TerminalCommits  map[string]TerminalCommit `json:"terminal_commits"`
+	DelayedWaitMs    []int64                   `json:"delayed_wait_ms,omitempty"`
+	Stats            Stats                     `json:"stats"`
+	governance       GovernanceConfig
+	recoveryBoundary RecoveryBoundaryConfig
+	lastPriority     string
+	lastConsecutive  int
 }
 
 func newSchedulerState(backend string) schedulerState {
@@ -29,7 +30,8 @@ func newSchedulerState(backend string) schedulerState {
 			Backend: strings.TrimSpace(backend),
 			QoSMode: string(cfg.QoS),
 		},
-		governance: cfg,
+		governance:       cfg,
+		recoveryBoundary: defaultRecoveryBoundaryConfig(),
 	}
 }
 
@@ -83,12 +85,49 @@ func normalizeGovernanceConfig(cfg GovernanceConfig) GovernanceConfig {
 	return out
 }
 
+func defaultRecoveryBoundaryConfig() RecoveryBoundaryConfig {
+	return RecoveryBoundaryConfig{
+		Enabled:                  false,
+		ResumeBoundary:           RecoveryResumeBoundaryNextAttemptOnly,
+		InflightPolicy:           RecoveryInflightPolicyNoRewind,
+		TimeoutReentryPolicy:     RecoveryTimeoutReentryPolicySingleReentryFail,
+		TimeoutReentryMaxPerTask: 1,
+	}
+}
+
+func normalizeRecoveryBoundaryConfig(cfg RecoveryBoundaryConfig) RecoveryBoundaryConfig {
+	out := cfg
+	out.ResumeBoundary = strings.ToLower(strings.TrimSpace(out.ResumeBoundary))
+	if out.ResumeBoundary == "" {
+		out.ResumeBoundary = RecoveryResumeBoundaryNextAttemptOnly
+	}
+	out.InflightPolicy = strings.ToLower(strings.TrimSpace(out.InflightPolicy))
+	if out.InflightPolicy == "" {
+		out.InflightPolicy = RecoveryInflightPolicyNoRewind
+	}
+	out.TimeoutReentryPolicy = strings.ToLower(strings.TrimSpace(out.TimeoutReentryPolicy))
+	if out.TimeoutReentryPolicy == "" {
+		out.TimeoutReentryPolicy = RecoveryTimeoutReentryPolicySingleReentryFail
+	}
+	if out.TimeoutReentryMaxPerTask <= 0 {
+		out.TimeoutReentryMaxPerTask = 1
+	}
+	return out
+}
+
 func (s *schedulerState) setGovernance(cfg GovernanceConfig) {
 	if s == nil {
 		return
 	}
 	s.governance = normalizeGovernanceConfig(cfg)
 	s.Stats.QoSMode = string(s.governance.QoS)
+}
+
+func (s *schedulerState) setRecoveryBoundary(cfg RecoveryBoundaryConfig) {
+	if s == nil {
+		return
+	}
+	s.recoveryBoundary = normalizeRecoveryBoundaryConfig(cfg)
 }
 
 func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
@@ -382,6 +421,22 @@ func (s *schedulerState) handleRetryTransition(taskID string, record *TaskRecord
 	if maxAttempts <= 0 {
 		maxAttempts = 3
 	}
+	if s.recoveryBoundary.Enabled && s.recoveryBoundary.TimeoutReentryPolicy == RecoveryTimeoutReentryPolicySingleReentryFail {
+		reentryBudget := s.recoveryBoundary.TimeoutReentryMaxPerTask
+		if reentryBudget <= 0 {
+			reentryBudget = 1
+		}
+		reentriesUsed := len(record.Attempts) - 1
+		if reentriesUsed >= reentryBudget {
+			record.State = TaskStateFailed
+			record.NextEligibleAt = time.Time{}
+			record.DeadLetterCode = ""
+			record.ErrorMessage = "recovery timeout reentry budget exhausted"
+			s.Stats.FailTotal++
+			s.Stats.RecoveryTimeoutReentryExhaustedTotal++
+			return
+		}
+	}
 	if len(record.Attempts) >= maxAttempts {
 		record.NextEligibleAt = time.Time{}
 		if s.governance.DLQ.Enabled {
@@ -403,6 +458,9 @@ func (s *schedulerState) handleRetryTransition(taskID string, record *TaskRecord
 	record.NextEligibleAt = now.Add(backoff)
 	s.Queue = append(s.Queue, taskID)
 	s.Stats.ReclaimTotal++
+	if s.recoveryBoundary.Enabled && s.recoveryBoundary.TimeoutReentryPolicy == RecoveryTimeoutReentryPolicySingleReentryFail {
+		s.Stats.RecoveryTimeoutReentryTotal++
+	}
 	if backoff > 0 {
 		s.Stats.RetryBackoffTotal++
 	}
@@ -652,6 +710,21 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 			}
 		default:
 			return fmt.Errorf("%w: unsupported task state %q for task %q", ErrSnapshotCorrupt, record.State, taskID)
+		}
+		if s.recoveryBoundary.Enabled && s.recoveryBoundary.InflightPolicy == RecoveryInflightPolicyNoRewind {
+			if record.State == TaskStateSucceeded || record.State == TaskStateFailed || record.State == TaskStateDeadLetter {
+				for idx := range record.Attempts {
+					if record.Attempts[idx].Status == AttemptStatusRunning {
+						return fmt.Errorf("%w: terminal task %q contains running attempt under no_rewind policy", ErrSnapshotCorrupt, taskID)
+					}
+				}
+			}
+		}
+		if s.recoveryBoundary.Enabled && s.recoveryBoundary.ResumeBoundary == RecoveryResumeBoundaryNextAttemptOnly && record.State == TaskStateRunning {
+			current, ok := record.currentAttempt()
+			if !ok || current.Status != AttemptStatusRunning {
+				return fmt.Errorf("%w: running task %q has invalid current attempt under next_attempt_only policy", ErrSnapshotCorrupt, taskID)
+			}
 		}
 		record.ErrorMessage = strings.TrimSpace(record.ErrorMessage)
 		record.ErrorLayer = strings.TrimSpace(record.ErrorLayer)

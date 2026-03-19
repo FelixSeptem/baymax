@@ -22,6 +22,12 @@ func (s *MemoryStore) SetGovernance(cfg GovernanceConfig) {
 	s.state.setGovernance(cfg)
 }
 
+func (s *MemoryStore) SetRecoveryBoundary(cfg RecoveryBoundaryConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setRecoveryBoundary(cfg)
+}
+
 func (s *MemoryStore) Backend() string {
 	return "memory"
 }

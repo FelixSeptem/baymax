@@ -41,6 +41,9 @@ go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1
 Write-Host "[multi-agent-shared-contract-gate] collaboration primitives suite"
 go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] recovery boundary suite"
+go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

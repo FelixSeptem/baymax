@@ -104,6 +104,15 @@ func TestComposerRecoveryCrossSessionResumeSuccess(t *testing.T) {
 	if !run.RecoveryEnabled || !run.RecoveryRecovered || run.RecoveryReplayTotal != 1 {
 		t.Fatalf("recovery run summary mismatch: %#v", run)
 	}
+	if run.RecoveryResumeBoundary != runtimeconfig.RecoveryResumeBoundaryNextAttemptOnly {
+		t.Fatalf("recovery_resume_boundary=%q, want %q", run.RecoveryResumeBoundary, runtimeconfig.RecoveryResumeBoundaryNextAttemptOnly)
+	}
+	if run.RecoveryInflightPolicy != runtimeconfig.RecoveryInflightPolicyNoRewind {
+		t.Fatalf("recovery_inflight_policy=%q, want %q", run.RecoveryInflightPolicy, runtimeconfig.RecoveryInflightPolicyNoRewind)
+	}
+	if run.RecoveryTimeoutReentryTotal != 0 || run.RecoveryTimeoutReentryExhaustedTotal != 0 {
+		t.Fatalf("unexpected recovery timeout reentry counters: %#v", run)
+	}
 }
 
 func TestComposerRecoveryReplayIdempotent(t *testing.T) {
@@ -169,6 +178,10 @@ func TestComposerRecoveryReplayIdempotent(t *testing.T) {
 	if stats1.CompleteTotal != stats2.CompleteTotal || stats1.FailTotal != stats2.FailTotal || stats1.QueueTotal != stats2.QueueTotal {
 		t.Fatalf("recovery replay should be idempotent: stats1=%#v stats2=%#v", stats1, stats2)
 	}
+	if stats1.RecoveryTimeoutReentryTotal != stats2.RecoveryTimeoutReentryTotal ||
+		stats1.RecoveryTimeoutReentryExhaustedTotal != stats2.RecoveryTimeoutReentryExhaustedTotal {
+		t.Fatalf("recovery timeout reentry stats should be idempotent: stats1=%#v stats2=%#v", stats1, stats2)
+	}
 }
 
 func TestComposerRecoveryConflictFailFast(t *testing.T) {
@@ -232,6 +245,79 @@ func TestComposerRecoveryConflictFailFast(t *testing.T) {
 	}
 }
 
+func TestComposerRecoveryBoundaryViolationClassifiedAsConflict(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A17_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	store := composer.NewMemoryRecoveryStore()
+	now := time.Now()
+	runID := "run-a17-boundary-conflict"
+	taskID := "task-a17-boundary-conflict"
+	attemptID := taskID + "-attempt-1"
+	if err := store.Save(context.Background(), composer.RecoverySnapshot{
+		Version:   composer.RecoverySnapshotVersion,
+		UpdatedAt: now,
+		Run: composer.RecoveryRunSnapshot{
+			RunID: runID,
+		},
+		Scheduler: scheduler.StoreSnapshot{
+			Backend: "memory",
+			Tasks: []scheduler.TaskRecord{
+				{
+					Task:  scheduler.Task{TaskID: taskID, RunID: runID},
+					State: scheduler.TaskStateSucceeded,
+					Attempts: []scheduler.Attempt{
+						{
+							AttemptID:  attemptID,
+							Attempt:    1,
+							Status:     scheduler.AttemptStatusSucceeded,
+							StartedAt:  now.Add(-2 * time.Second),
+							TerminalAt: now.Add(-time.Second),
+						},
+					},
+					CurrentAttempt: "",
+					CreatedAt:      now.Add(-2 * time.Second),
+					UpdatedAt:      now,
+				},
+			},
+			Queue: []string{taskID},
+			Stats: scheduler.Stats{Backend: "memory"},
+		},
+		Replay: composer.RecoveryReplayCursor{
+			Sequence:            now.UnixNano(),
+			TerminalCommitCount: 1,
+		},
+		ConflictPolicy: runtimeconfig.RecoveryConflictPolicyFailFast,
+	}); err != nil {
+		t.Fatalf("save boundary-violating snapshot: %v", err)
+	}
+
+	comp, err := composer.NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithRecoveryStore(store).
+		WithSchedulerStore(scheduler.NewMemoryStore()).
+		Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	_, recoverErr := comp.Recover(context.Background(), composer.RecoverRequest{RunID: runID})
+	if recoverErr == nil {
+		t.Fatal("expected boundary violation conflict error")
+	}
+	var recErr *composer.RecoveryError
+	if !errors.As(recoverErr, &recErr) {
+		t.Fatalf("expected RecoveryError, got %T (%v)", recoverErr, recoverErr)
+	}
+	if recErr.Code != composer.RecoveryErrorConflict {
+		t.Fatalf("recovery error code = %q, want %q", recErr.Code, composer.RecoveryErrorConflict)
+	}
+}
+
 func writeRecoveryRuntimeConfig(t *testing.T, path, recoveryPath string) {
 	t.Helper()
 	content := strings.Join([]string{
@@ -249,6 +335,10 @@ func writeRecoveryRuntimeConfig(t *testing.T, path, recoveryPath string) {
 		"  backend: file",
 		"  path: " + filepath.ToSlash(recoveryPath),
 		"  conflict_policy: fail_fast",
+		"  resume_boundary: next_attempt_only",
+		"  inflight_policy: no_rewind",
+		"  timeout_reentry_policy: single_reentry_then_fail",
+		"  timeout_reentry_max_per_task: 1",
 		"subagent:",
 		"  max_depth: 4",
 		"  max_active_children: 8",

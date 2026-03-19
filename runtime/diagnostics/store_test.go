@@ -255,15 +255,19 @@ func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                   time.Now(),
-		RunID:                  "run-recovery-1",
-		Status:                 "success",
-		RecoveryEnabled:        true,
-		RecoveryRecovered:      true,
-		RecoveryReplayTotal:    2,
-		RecoveryConflict:       false,
-		RecoveryFallbackUsed:   true,
-		RecoveryFallbackReason: "recovery.backend.file_init_failed",
+		Time:                                 time.Now(),
+		RunID:                                "run-recovery-1",
+		Status:                               "success",
+		RecoveryEnabled:                      true,
+		RecoveryResumeBoundary:               "next_attempt_only",
+		RecoveryInflightPolicy:               "no_rewind",
+		RecoveryRecovered:                    true,
+		RecoveryReplayTotal:                  2,
+		RecoveryTimeoutReentryTotal:          1,
+		RecoveryTimeoutReentryExhaustedTotal: 1,
+		RecoveryConflict:                     false,
+		RecoveryFallbackUsed:                 true,
+		RecoveryFallbackReason:               "recovery.backend.file_init_failed",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -274,6 +278,12 @@ func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
 	}
 	if !runs[0].RecoveryEnabled || !runs[0].RecoveryRecovered || runs[0].RecoveryReplayTotal != 2 {
 		t.Fatalf("recovery aggregate mismatch under replay, got %#v", runs[0])
+	}
+	if runs[0].RecoveryResumeBoundary != "next_attempt_only" ||
+		runs[0].RecoveryInflightPolicy != "no_rewind" ||
+		runs[0].RecoveryTimeoutReentryTotal != 1 ||
+		runs[0].RecoveryTimeoutReentryExhaustedTotal != 1 {
+		t.Fatalf("recovery boundary aggregate mismatch under replay, got %#v", runs[0])
 	}
 	if !runs[0].RecoveryFallbackUsed || runs[0].RecoveryFallbackReason != "recovery.backend.file_init_failed" {
 		t.Fatalf("recovery fallback mismatch under replay, got %#v", runs[0])

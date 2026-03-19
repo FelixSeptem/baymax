@@ -1,6 +1,6 @@
 # Multi-Agent Identifier Model
 
-更新时间：2026-03-18
+更新时间：2026-03-19
 
 ## 目标
 
@@ -117,7 +117,7 @@
   - Collaboration：`collab_handoff_total`, `collab_delegation_total`, `collab_aggregation_total`, `collab_aggregation_strategy`, `collab_fail_fast_total`
   - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`, `a2a_async_report_total`, `a2a_async_report_failed`, `a2a_async_report_retry_total`, `a2a_async_report_dedup_total`
   - Scheduler/Subagent：`scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `scheduler_qos_mode`, `scheduler_priority_claim_total`, `scheduler_fairness_yield_total`, `scheduler_retry_backoff_total`, `scheduler_dead_letter_total`, `scheduler_delayed_task_total`, `scheduler_delayed_claim_total`, `scheduler_delayed_wait_ms_p95`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`
-  - Recovery：`recovery_enabled`, `recovery_recovered`, `recovery_replay_total`, `recovery_conflict`, `recovery_conflict_code`, `recovery_fallback_used`, `recovery_fallback_reason`
+  - Recovery：`recovery_enabled`, `recovery_resume_boundary`, `recovery_inflight_policy`, `recovery_recovered`, `recovery_replay_total`, `recovery_timeout_reentry_total`, `recovery_timeout_reentry_exhausted_total`, `recovery_conflict`, `recovery_conflict_code`, `recovery_fallback_used`, `recovery_fallback_reason`
   - Composer：`composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason`
 - 所有新增字段遵循 single-writer + idempotent replay 约束。
 

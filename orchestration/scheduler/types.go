@@ -252,22 +252,38 @@ type CommitResult struct {
 }
 
 type Stats struct {
-	Backend                      string `json:"backend"`
-	QoSMode                      string `json:"qos_mode,omitempty"`
-	QueueTotal                   int    `json:"queue_total"`
-	ClaimTotal                   int    `json:"claim_total"`
-	ReclaimTotal                 int    `json:"reclaim_total"`
-	LeaseExpiredTotal            int    `json:"lease_expired_total"`
-	CompleteTotal                int    `json:"complete_total"`
-	FailTotal                    int    `json:"fail_total"`
-	PriorityClaimTotal           int    `json:"priority_claim_total,omitempty"`
-	FairnessYieldTotal           int    `json:"fairness_yield_total,omitempty"`
-	RetryBackoffTotal            int    `json:"retry_backoff_total,omitempty"`
-	DeadLetterTotal              int    `json:"dead_letter_total,omitempty"`
-	DelayedTaskTotal             int    `json:"delayed_task_total,omitempty"`
-	DelayedClaimTotal            int    `json:"delayed_claim_total,omitempty"`
-	DelayedWaitMsP95             int64  `json:"delayed_wait_ms_p95,omitempty"`
-	DuplicateTerminalCommitTotal int    `json:"duplicate_terminal_commit_total"`
+	Backend                              string `json:"backend"`
+	QoSMode                              string `json:"qos_mode,omitempty"`
+	QueueTotal                           int    `json:"queue_total"`
+	ClaimTotal                           int    `json:"claim_total"`
+	ReclaimTotal                         int    `json:"reclaim_total"`
+	LeaseExpiredTotal                    int    `json:"lease_expired_total"`
+	CompleteTotal                        int    `json:"complete_total"`
+	FailTotal                            int    `json:"fail_total"`
+	PriorityClaimTotal                   int    `json:"priority_claim_total,omitempty"`
+	FairnessYieldTotal                   int    `json:"fairness_yield_total,omitempty"`
+	RetryBackoffTotal                    int    `json:"retry_backoff_total,omitempty"`
+	DeadLetterTotal                      int    `json:"dead_letter_total,omitempty"`
+	DelayedTaskTotal                     int    `json:"delayed_task_total,omitempty"`
+	DelayedClaimTotal                    int    `json:"delayed_claim_total,omitempty"`
+	DelayedWaitMsP95                     int64  `json:"delayed_wait_ms_p95,omitempty"`
+	RecoveryTimeoutReentryTotal          int    `json:"recovery_timeout_reentry_total,omitempty"`
+	RecoveryTimeoutReentryExhaustedTotal int    `json:"recovery_timeout_reentry_exhausted_total,omitempty"`
+	DuplicateTerminalCommitTotal         int    `json:"duplicate_terminal_commit_total"`
+}
+
+const (
+	RecoveryResumeBoundaryNextAttemptOnly         = "next_attempt_only"
+	RecoveryInflightPolicyNoRewind                = "no_rewind"
+	RecoveryTimeoutReentryPolicySingleReentryFail = "single_reentry_then_fail"
+)
+
+type RecoveryBoundaryConfig struct {
+	Enabled                  bool   `json:"enabled"`
+	ResumeBoundary           string `json:"resume_boundary,omitempty"`
+	InflightPolicy           string `json:"inflight_policy,omitempty"`
+	TimeoutReentryPolicy     string `json:"timeout_reentry_policy,omitempty"`
+	TimeoutReentryMaxPerTask int    `json:"timeout_reentry_max_per_task,omitempty"`
 }
 
 type QueueStore interface {

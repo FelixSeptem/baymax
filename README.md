@@ -268,6 +268,35 @@ _ = err
 
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
+### 9) Long-Running Recovery Boundary（A17）
+
+恢复开启时，A17 默认启用以下边界策略：
+
+- `resume_boundary=next_attempt_only`
+- `inflight_policy=no_rewind`
+- `timeout_reentry_policy=single_reentry_then_fail`
+- `timeout_reentry_max_per_task=1`
+
+最小配置示例：
+
+```yaml
+recovery:
+  enabled: true
+  backend: file
+  path: /tmp/baymax/recovery
+  conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
+```
+
+run 摘要会新增 recovery-boundary 诊断字段：
+- `recovery_resume_boundary`
+- `recovery_inflight_policy`
+- `recovery_timeout_reentry_total`
+- `recovery_timeout_reentry_exhausted_total`
+
 ## 开发验证
 
 最小建议命令：

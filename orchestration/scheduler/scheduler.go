@@ -40,14 +40,21 @@ func WithGovernance(cfg GovernanceConfig) Option {
 	}
 }
 
+func WithRecoveryBoundary(cfg RecoveryBoundaryConfig) Option {
+	return func(s *Scheduler) {
+		s.recoveryBoundary = normalizeRecoveryBoundaryConfig(cfg)
+	}
+}
+
 type Scheduler struct {
-	store        QueueStore
-	leaseTimeout time.Duration
-	guardrails   Guardrails
-	governance   GovernanceConfig
-	timeline     types.EventHandler
-	now          func() time.Time
-	seq          atomic.Int64
+	store            QueueStore
+	leaseTimeout     time.Duration
+	guardrails       Guardrails
+	governance       GovernanceConfig
+	recoveryBoundary RecoveryBoundaryConfig
+	timeline         types.EventHandler
+	now              func() time.Time
+	seq              atomic.Int64
 }
 
 func New(store QueueStore, opts ...Option) (*Scheduler, error) {
@@ -55,10 +62,11 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		return nil, errors.New("scheduler queue store is required")
 	}
 	s := &Scheduler{
-		store:        store,
-		leaseTimeout: 2 * time.Second,
-		governance:   defaultGovernanceConfig(),
-		now:          time.Now,
+		store:            store,
+		leaseTimeout:     2 * time.Second,
+		governance:       defaultGovernanceConfig(),
+		recoveryBoundary: defaultRecoveryBoundaryConfig(),
+		now:              time.Now,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -73,6 +81,11 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		SetGovernance(GovernanceConfig)
 	}); ok {
 		configurable.SetGovernance(s.governance)
+	}
+	if configurable, ok := store.(interface {
+		SetRecoveryBoundary(RecoveryBoundaryConfig)
+	}); ok {
+		configurable.SetRecoveryBoundary(s.recoveryBoundary)
 	}
 	return s, nil
 }

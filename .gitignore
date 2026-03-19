@@ -1,4 +1,5 @@
 .gocache
 .gomodcache
+.golangci-cache
 .tmp
 *.go.[0-9]*

@@ -280,6 +280,34 @@ func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                      time.Now(),
+		RunID:                     "run-collab-1",
+		Status:                    "success",
+		CollabHandoffTotal:        1,
+		CollabDelegationTotal:     2,
+		CollabAggregationTotal:    2,
+		CollabAggregationStrategy: "all_settled",
+		CollabFailFastTotal:       1,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records = %d, want 1", len(runs))
+	}
+	if runs[0].CollabHandoffTotal != 1 ||
+		runs[0].CollabDelegationTotal != 2 ||
+		runs[0].CollabAggregationTotal != 2 ||
+		runs[0].CollabAggregationStrategy != "all_settled" ||
+		runs[0].CollabFailFastTotal != 1 {
+		t.Fatalf("collab aggregate mismatch under replay, got %#v", runs[0])
+	}
+}
+
 func TestStoreSkillDedupConcurrent(t *testing.T) {
 	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{

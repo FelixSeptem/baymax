@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
 
@@ -32,7 +32,7 @@ func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) R
 		if method == "" {
 			method = "team.dispatch"
 		}
-		outcome, err := invoke.InvokeSync(ctx, client, invoke.Request{
+		outcome, err := collab.DelegateSync(ctx, client, invoke.Request{
 			TaskID:       taskID,
 			WorkflowID:   strings.TrimSpace(plan.WorkflowID),
 			TeamID:       strings.TrimSpace(plan.TeamID),
@@ -46,15 +46,15 @@ func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) R
 		if err != nil {
 			return TaskResult{}, err
 		}
-		if outcome.TerminalStatus != a2a.StatusSucceeded {
-			message := fmt.Sprintf("a2a task status %q", outcome.TerminalStatus)
-			if outcome.Error != nil && strings.TrimSpace(outcome.Error.Message) != "" {
-				message = strings.TrimSpace(outcome.Error.Message)
+		if outcome.Status != collab.StatusSucceeded {
+			message := strings.TrimSpace(outcome.Error)
+			if message == "" {
+				message = fmt.Sprintf("a2a task status %q", outcome.Status)
 			}
 			return TaskResult{}, errors.New(message)
 		}
-		out := TaskResult{Output: cloneRemotePayload(outcome.Result)}
-		if vote, ok := outcome.Result["vote"].(string); ok {
+		out := TaskResult{Output: cloneRemotePayload(outcome.Payload)}
+		if vote, ok := outcome.Payload["vote"].(string); ok {
 			out.Vote = strings.TrimSpace(vote)
 		}
 		return out, nil

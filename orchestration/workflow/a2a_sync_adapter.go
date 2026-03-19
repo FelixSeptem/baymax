@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
 
@@ -37,7 +37,7 @@ func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(co
 			}
 			taskID = fmt.Sprintf("%s-attempt-%d-%d", baseID, attempt, time.Now().UnixNano())
 		}
-		outcome, err := invoke.InvokeSync(ctx, client, invoke.Request{
+		outcome, err := collab.DelegateSync(ctx, client, invoke.Request{
 			TaskID:       taskID,
 			WorkflowID:   strings.TrimSpace(workflowID),
 			TeamID:       strings.TrimSpace(step.TeamID),
@@ -51,14 +51,14 @@ func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(co
 		if err != nil {
 			return StepOutput{}, err
 		}
-		if outcome.TerminalStatus != a2a.StatusSucceeded {
-			message := fmt.Sprintf("a2a task status %q", outcome.TerminalStatus)
-			if outcome.Error != nil && strings.TrimSpace(outcome.Error.Message) != "" {
-				message = strings.TrimSpace(outcome.Error.Message)
+		if outcome.Status != collab.StatusSucceeded {
+			message := strings.TrimSpace(outcome.Error)
+			if message == "" {
+				message = fmt.Sprintf("a2a task status %q", outcome.Status)
 			}
 			return StepOutput{}, errors.New(message)
 		}
-		return StepOutput{Payload: clonePayload(outcome.Result)}, nil
+		return StepOutput{Payload: clonePayload(outcome.Payload)}, nil
 	}
 }
 

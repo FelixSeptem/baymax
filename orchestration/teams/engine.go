@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 )
 
 const (
@@ -18,6 +19,9 @@ const (
 	ReasonResolve        = "team.resolve"
 	ReasonDispatchRemote = "team.dispatch_remote"
 	ReasonCollectRemote  = "team.collect_remote"
+	ReasonHandoff        = "team.handoff"
+	ReasonDelegation     = "team.delegation"
+	ReasonAggregation    = "team.aggregation"
 )
 
 type Role string
@@ -101,14 +105,15 @@ type RemoteTarget struct {
 }
 
 type Task struct {
-	TaskID       string           `json:"task_id"`
-	AgentID      string           `json:"agent_id"`
-	Role         Role             `json:"role"`
-	Priority     int              `json:"priority,omitempty"`
-	Target       TaskTarget       `json:"target,omitempty"`
-	Remote       RemoteTarget     `json:"remote,omitempty"`
-	Runner       TaskRunner       `json:"-"`
-	RemoteRunner RemoteTaskRunner `json:"-"`
+	TaskID          string           `json:"task_id"`
+	AgentID         string           `json:"agent_id"`
+	Role            Role             `json:"role"`
+	Priority        int              `json:"priority,omitempty"`
+	CollabPrimitive string           `json:"collab_primitive,omitempty"`
+	Target          TaskTarget       `json:"target,omitempty"`
+	Remote          RemoteTarget     `json:"remote,omitempty"`
+	Runner          TaskRunner       `json:"-"`
+	RemoteRunner    RemoteTaskRunner `json:"-"`
 }
 
 type Plan struct {
@@ -127,17 +132,18 @@ type Plan struct {
 }
 
 type TaskRecord struct {
-	TaskID   string     `json:"task_id"`
-	AgentID  string     `json:"agent_id"`
-	Role     Role       `json:"role"`
-	Target   TaskTarget `json:"target,omitempty"`
-	PeerID   string     `json:"peer_id,omitempty"`
-	Priority int        `json:"priority,omitempty"`
-	Status   TaskStatus `json:"status"`
-	Reason   string     `json:"reason,omitempty"`
-	Error    string     `json:"error,omitempty"`
-	Vote     string     `json:"vote,omitempty"`
-	Output   any        `json:"output,omitempty"`
+	TaskID          string     `json:"task_id"`
+	AgentID         string     `json:"agent_id"`
+	Role            Role       `json:"role"`
+	Target          TaskTarget `json:"target,omitempty"`
+	CollabPrimitive string     `json:"collab_primitive,omitempty"`
+	PeerID          string     `json:"peer_id,omitempty"`
+	Priority        int        `json:"priority,omitempty"`
+	Status          TaskStatus `json:"status"`
+	Reason          string     `json:"reason,omitempty"`
+	Error           string     `json:"error,omitempty"`
+	Vote            string     `json:"vote,omitempty"`
+	Output          any        `json:"output,omitempty"`
 }
 
 type Result struct {
@@ -214,13 +220,14 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 	records := make([]TaskRecord, len(plan.Tasks))
 	for i, task := range plan.Tasks {
 		records[i] = TaskRecord{
-			TaskID:   task.TaskID,
-			AgentID:  task.AgentID,
-			Role:     task.Role,
-			Target:   task.Target,
-			PeerID:   task.Remote.PeerID,
-			Priority: task.Priority,
-			Status:   TaskStatusPending,
+			TaskID:          task.TaskID,
+			AgentID:         task.AgentID,
+			Role:            task.Role,
+			Target:          task.Target,
+			CollabPrimitive: task.CollabPrimitive,
+			PeerID:          task.Remote.PeerID,
+			Priority:        task.Priority,
+			Status:          TaskStatusPending,
 		}
 	}
 
@@ -264,6 +271,9 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		if halt {
 			records[i].Status = TaskStatusSkipped
 			records[i].Reason = "policy.fail_fast"
+			if strings.EqualFold(strings.TrimSpace(records[i].CollabPrimitive), string(collab.PrimitiveHandoff)) {
+				records[i].Reason = ReasonHandoff
+			}
 			e.emitTimeline(ctx, plan, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
 			if onEvent != nil {
 				snap := records[i]
@@ -698,6 +708,7 @@ func normalizePlan(plan Plan) (Plan, error) {
 		plan.Tasks[i].TaskID = strings.TrimSpace(plan.Tasks[i].TaskID)
 		plan.Tasks[i].AgentID = strings.TrimSpace(plan.Tasks[i].AgentID)
 		plan.Tasks[i].Role = Role(strings.ToLower(strings.TrimSpace(string(plan.Tasks[i].Role))))
+		plan.Tasks[i].CollabPrimitive = strings.ToLower(strings.TrimSpace(plan.Tasks[i].CollabPrimitive))
 		plan.Tasks[i].Target = TaskTarget(strings.ToLower(strings.TrimSpace(string(plan.Tasks[i].Target))))
 		if plan.Tasks[i].Target == "" {
 			plan.Tasks[i].Target = TaskTargetLocal
@@ -719,6 +730,11 @@ func normalizePlan(plan Plan) (Plan, error) {
 		seen[plan.Tasks[i].TaskID] = struct{}{}
 		if plan.Tasks[i].AgentID == "" {
 			return Plan{}, fmt.Errorf("tasks[%d].agent_id is required", i)
+		}
+		if plan.Tasks[i].CollabPrimitive != "" {
+			if _, err := collab.ParsePrimitive(collab.Primitive(plan.Tasks[i].CollabPrimitive)); err != nil {
+				return Plan{}, fmt.Errorf("tasks[%d].collab_primitive is invalid: %w", i, err)
+			}
 		}
 		switch plan.Tasks[i].Target {
 		case TaskTargetLocal:
@@ -776,6 +792,12 @@ func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status
 }
 
 func dispatchReasonForRecord(record TaskRecord) string {
+	switch collab.Primitive(strings.ToLower(strings.TrimSpace(record.CollabPrimitive))) {
+	case collab.PrimitiveHandoff:
+		return ReasonHandoff
+	case collab.PrimitiveDelegation:
+		return ReasonDelegation
+	}
 	if record.Target == TaskTargetRemote {
 		return ReasonDispatchRemote
 	}
@@ -783,6 +805,12 @@ func dispatchReasonForRecord(record TaskRecord) string {
 }
 
 func collectReasonForRecord(record TaskRecord) string {
+	switch collab.Primitive(strings.ToLower(strings.TrimSpace(record.CollabPrimitive))) {
+	case collab.PrimitiveHandoff:
+		return ReasonHandoff
+	case collab.PrimitiveAggregation:
+		return ReasonAggregation
+	}
 	if record.Target == TaskTargetRemote {
 		return ReasonCollectRemote
 	}

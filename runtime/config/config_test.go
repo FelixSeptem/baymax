@@ -305,6 +305,74 @@ func TestProviderFallbackValidateRejectsEnabledWithoutProviders(t *testing.T) {
 	}
 }
 
+func TestComposerCollabConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Composer.Collab.Enabled {
+		t.Fatal("composer.collab.enabled = true, want false")
+	}
+	if cfg.Composer.Collab.DefaultAggregation != ComposerCollabAggregationAllSettled {
+		t.Fatalf("composer.collab.default_aggregation = %q, want %q", cfg.Composer.Collab.DefaultAggregation, ComposerCollabAggregationAllSettled)
+	}
+	if cfg.Composer.Collab.FailurePolicy != ComposerCollabFailurePolicyFailFast {
+		t.Fatalf("composer.collab.failure_policy = %q, want %q", cfg.Composer.Collab.FailurePolicy, ComposerCollabFailurePolicyFailFast)
+	}
+	if cfg.Composer.Collab.Retry.Enabled {
+		t.Fatal("composer.collab.retry.enabled = true, want false")
+	}
+}
+
+func TestComposerCollabConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_ENABLED", "true")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_DEFAULT_AGGREGATION", ComposerCollabAggregationFirstSuccess)
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_FAILURE_POLICY", ComposerCollabFailurePolicyBestEffort)
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_ENABLED", "false")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+composer:
+  collab:
+    enabled: false
+    default_aggregation: all_settled
+    failure_policy: fail_fast
+    retry:
+      enabled: false
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Composer.Collab.Enabled {
+		t.Fatal("composer.collab.enabled = false, want true from env")
+	}
+	if cfg.Composer.Collab.DefaultAggregation != ComposerCollabAggregationFirstSuccess {
+		t.Fatalf("composer.collab.default_aggregation = %q, want %q", cfg.Composer.Collab.DefaultAggregation, ComposerCollabAggregationFirstSuccess)
+	}
+	if cfg.Composer.Collab.FailurePolicy != ComposerCollabFailurePolicyBestEffort {
+		t.Fatalf("composer.collab.failure_policy = %q, want %q", cfg.Composer.Collab.FailurePolicy, ComposerCollabFailurePolicyBestEffort)
+	}
+}
+
+func TestComposerCollabConfigValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Composer.Collab.DefaultAggregation = "quorum"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.default_aggregation")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.FailurePolicy = "unknown"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.failure_policy")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.Enabled = true
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.enabled=true")
+	}
+}
+
 func TestTeamsConfigDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Teams.Enabled {

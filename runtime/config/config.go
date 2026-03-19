@@ -115,6 +115,13 @@ const (
 )
 
 const (
+	ComposerCollabAggregationAllSettled   = "all_settled"
+	ComposerCollabAggregationFirstSuccess = "first_success"
+	ComposerCollabFailurePolicyFailFast   = "fail_fast"
+	ComposerCollabFailurePolicyBestEffort = "best_effort"
+)
+
+const (
 	CA3RerankerGovernanceModeEnforce = "enforce"
 	CA3RerankerGovernanceModeDryRun  = "dry_run"
 )
@@ -146,6 +153,7 @@ type Config struct {
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
+	Composer         ComposerConfig         `json:"composer"`
 	Teams            TeamsConfig            `json:"teams"`
 	Workflow         WorkflowConfig         `json:"workflow"`
 	A2A              A2AConfig              `json:"a2a"`
@@ -157,6 +165,21 @@ type Config struct {
 	Clarification    ClarificationConfig    `json:"clarification"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
 	Security         SecurityConfig         `json:"security"`
+}
+
+type ComposerConfig struct {
+	Collab ComposerCollabConfig `json:"collab"`
+}
+
+type ComposerCollabConfig struct {
+	Enabled            bool                      `json:"enabled"`
+	DefaultAggregation string                    `json:"default_aggregation"`
+	FailurePolicy      string                    `json:"failure_policy"`
+	Retry              ComposerCollabRetryConfig `json:"retry"`
+}
+
+type ComposerCollabRetryConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type MCPConfig struct {
@@ -821,6 +844,16 @@ func DefaultConfig() Config {
 			DiscoveryTimeout:  1500 * time.Millisecond,
 			DiscoveryCacheTTL: 5 * time.Minute,
 		},
+		Composer: ComposerConfig{
+			Collab: ComposerCollabConfig{
+				Enabled:            false,
+				DefaultAggregation: ComposerCollabAggregationAllSettled,
+				FailurePolicy:      ComposerCollabFailurePolicyFailFast,
+				Retry: ComposerCollabRetryConfig{
+					Enabled: false,
+				},
+			},
+		},
 		Teams: TeamsConfig{
 			Enabled:         false,
 			DefaultStrategy: TeamsStrategySerial,
@@ -1379,6 +1412,29 @@ func Validate(cfg Config) error {
 	}
 	if cfg.ProviderFallback.DiscoveryCacheTTL <= 0 {
 		return errors.New("provider_fallback.discovery_cache_ttl must be > 0")
+	}
+	switch agg := strings.ToLower(strings.TrimSpace(cfg.Composer.Collab.DefaultAggregation)); agg {
+	case ComposerCollabAggregationAllSettled, ComposerCollabAggregationFirstSuccess:
+	default:
+		return fmt.Errorf(
+			"composer.collab.default_aggregation must be one of [%s,%s], got %q",
+			ComposerCollabAggregationAllSettled,
+			ComposerCollabAggregationFirstSuccess,
+			cfg.Composer.Collab.DefaultAggregation,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Composer.Collab.FailurePolicy)); policy {
+	case ComposerCollabFailurePolicyFailFast, ComposerCollabFailurePolicyBestEffort:
+	default:
+		return fmt.Errorf(
+			"composer.collab.failure_policy must be one of [%s,%s], got %q",
+			ComposerCollabFailurePolicyFailFast,
+			ComposerCollabFailurePolicyBestEffort,
+			cfg.Composer.Collab.FailurePolicy,
+		)
+	}
+	if cfg.Composer.Collab.Retry.Enabled {
+		return errors.New("composer.collab.retry.enabled must be false: primitive-layer retry is disabled")
 	}
 	switch strategy := strings.ToLower(strings.TrimSpace(cfg.Teams.DefaultStrategy)); strategy {
 	case TeamsStrategySerial, TeamsStrategyParallel, TeamsStrategyVote:
@@ -2525,6 +2581,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("provider_fallback.providers", base.ProviderFallback.Providers)
 	v.SetDefault("provider_fallback.discovery_timeout", base.ProviderFallback.DiscoveryTimeout)
 	v.SetDefault("provider_fallback.discovery_cache_ttl", base.ProviderFallback.DiscoveryCacheTTL)
+	v.SetDefault("composer.collab.enabled", base.Composer.Collab.Enabled)
+	v.SetDefault("composer.collab.default_aggregation", base.Composer.Collab.DefaultAggregation)
+	v.SetDefault("composer.collab.failure_policy", base.Composer.Collab.FailurePolicy)
+	v.SetDefault("composer.collab.retry.enabled", base.Composer.Collab.Retry.Enabled)
 	v.SetDefault("teams.enabled", base.Teams.Enabled)
 	v.SetDefault("teams.default_strategy", base.Teams.DefaultStrategy)
 	v.SetDefault("teams.task_timeout", base.Teams.TaskTimeout)
@@ -2768,6 +2828,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.ProviderFallback.Providers = normalizeProviders(v.GetStringSlice("provider_fallback.providers"))
 	cfg.ProviderFallback.DiscoveryTimeout = v.GetDuration("provider_fallback.discovery_timeout")
 	cfg.ProviderFallback.DiscoveryCacheTTL = v.GetDuration("provider_fallback.discovery_cache_ttl")
+	cfg.Composer.Collab.Enabled = v.GetBool("composer.collab.enabled")
+	cfg.Composer.Collab.DefaultAggregation = strings.ToLower(strings.TrimSpace(v.GetString("composer.collab.default_aggregation")))
+	cfg.Composer.Collab.FailurePolicy = strings.ToLower(strings.TrimSpace(v.GetString("composer.collab.failure_policy")))
+	cfg.Composer.Collab.Retry.Enabled = v.GetBool("composer.collab.retry.enabled")
 	cfg.Teams.Enabled = v.GetBool("teams.enabled")
 	cfg.Teams.DefaultStrategy = strings.ToLower(strings.TrimSpace(v.GetString("teams.default_strategy")))
 	cfg.Teams.TaskTimeout = v.GetDuration("teams.task_timeout")

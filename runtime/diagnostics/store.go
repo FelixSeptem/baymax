@@ -159,6 +159,11 @@ type RunRecord struct {
 	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
 	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
 	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`
+	CollabHandoffTotal                   int                               `json:"collab_handoff_total,omitempty"`
+	CollabDelegationTotal                int                               `json:"collab_delegation_total,omitempty"`
+	CollabAggregationTotal               int                               `json:"collab_aggregation_total,omitempty"`
+	CollabAggregationStrategy            string                            `json:"collab_aggregation_strategy,omitempty"`
+	CollabFailFastTotal                  int                               `json:"collab_fail_fast_total,omitempty"`
 	RecoveryEnabled                      bool                              `json:"recovery_enabled,omitempty"`
 	RecoveryRecovered                    bool                              `json:"recovery_recovered,omitempty"`
 	RecoveryReplayTotal                  int                               `json:"recovery_replay_total,omitempty"`

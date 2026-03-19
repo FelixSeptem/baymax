@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
 
@@ -32,7 +33,7 @@ func NewA2AAsyncRemoteTaskRunner(client invoke.AsyncClient, opts A2AAsyncRemoteR
 		if method == "" {
 			method = "team.dispatch"
 		}
-		ack, err := invoke.InvokeAsync(ctx, client, invoke.AsyncRequest{
+		ack, err := collab.DelegateAsync(ctx, client, invoke.AsyncRequest{
 			TaskID:     taskID,
 			WorkflowID: strings.TrimSpace(plan.WorkflowID),
 			TeamID:     strings.TrimSpace(plan.TeamID),

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,6 +22,9 @@ const (
 	ReasonRetry       = "workflow.retry"
 	ReasonResume      = "workflow.resume"
 	ReasonDispatchA2A = "workflow.dispatch_a2a"
+	ReasonHandoff     = "workflow.handoff"
+	ReasonDelegation  = "workflow.delegation"
+	ReasonAggregation = "workflow.aggregation"
 )
 
 type StepStatus string
@@ -131,6 +135,7 @@ type Step struct {
 	Retry             Retry                   `json:"retry,omitempty" yaml:"retry,omitempty"`
 	Timeout           time.Duration           `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	Payload           map[string]any          `json:"payload,omitempty" yaml:"payload,omitempty"`
+	CollabPrimitive   string                  `json:"collab_primitive,omitempty" yaml:"collab_primitive,omitempty"`
 	UseSubgraph       string                  `json:"use_subgraph,omitempty" yaml:"use_subgraph,omitempty"`
 	Alias             string                  `json:"alias,omitempty" yaml:"alias,omitempty"`
 	ConditionTemplate string                  `json:"condition_template,omitempty" yaml:"condition_template,omitempty"`
@@ -485,6 +490,7 @@ func normalizeSteps(steps []Step) []Step {
 		steps[i].Kind = normalizeStepKind(steps[i].Kind)
 		steps[i].Condition = normalizeCondition(steps[i].Condition)
 		steps[i].DependsOn = normalizeDependsOn(steps[i].DependsOn)
+		steps[i].CollabPrimitive = strings.ToLower(strings.TrimSpace(steps[i].CollabPrimitive))
 		steps[i].ConditionTemplate = strings.TrimSpace(steps[i].ConditionTemplate)
 		steps[i].TemplateVars = normalizeStringMap(steps[i].TemplateVars)
 		steps[i].Overrides = normalizeOverrideMap(steps[i].Overrides)
@@ -638,6 +644,16 @@ func ValidateDefinition(def Definition) ValidationErrors {
 					StepID:  step.StepID,
 					Field:   "steps.peer_id",
 					Message: "peer_id is required for a2a step",
+				})
+			}
+		}
+		if step.CollabPrimitive != "" {
+			if _, err := collab.ParsePrimitive(collab.Primitive(step.CollabPrimitive)); err != nil {
+				violations = append(violations, ValidationError{
+					Code:    ErrCodeUnsupportedCondition,
+					StepID:  step.StepID,
+					Field:   "steps.collab_primitive",
+					Message: err.Error(),
 				})
 			}
 		}
@@ -1193,6 +1209,14 @@ func (e *Engine) emitTimeline(
 }
 
 func reasonForStepDispatch(step Step) string {
+	switch collab.Primitive(strings.ToLower(strings.TrimSpace(step.CollabPrimitive))) {
+	case collab.PrimitiveHandoff:
+		return ReasonHandoff
+	case collab.PrimitiveDelegation:
+		return ReasonDelegation
+	case collab.PrimitiveAggregation:
+		return ReasonAggregation
+	}
 	if normalizeStepKind(step.Kind) == StepKindA2A {
 		return ReasonDispatchA2A
 	}

@@ -248,26 +248,31 @@ type Composer struct {
 }
 
 type runStat struct {
-	ChildTotal             int
-	ChildFailed            int
-	BudgetReject           int
-	A2AAsyncReportTotal    int
-	A2AAsyncReportFailed   int
-	A2AAsyncReportRetry    int
-	A2AAsyncReportDedup    int
-	Backend                string
-	BackendFallback        bool
-	FallbackReason         string
-	ComposerManaged        bool
-	RecoveryEnabled        bool
-	RecoveryRecovered      bool
-	RecoveryReplayTotal    int
-	RecoveryConflict       bool
-	RecoveryConflictCode   string
-	RecoveryFallback       bool
-	RecoveryFallbackReason string
-	asyncReportSeen        map[string]struct{}
-	asyncReportDedupSeen   map[string]struct{}
+	ChildTotal                int
+	ChildFailed               int
+	BudgetReject              int
+	CollabHandoffTotal        int
+	CollabDelegationTotal     int
+	CollabAggregationTotal    int
+	CollabAggregationStrategy string
+	CollabFailFastTotal       int
+	A2AAsyncReportTotal       int
+	A2AAsyncReportFailed      int
+	A2AAsyncReportRetry       int
+	A2AAsyncReportDedup       int
+	Backend                   string
+	BackendFallback           bool
+	FallbackReason            string
+	ComposerManaged           bool
+	RecoveryEnabled           bool
+	RecoveryRecovered         bool
+	RecoveryReplayTotal       int
+	RecoveryConflict          bool
+	RecoveryConflictCode      string
+	RecoveryFallback          bool
+	RecoveryFallbackReason    string
+	asyncReportSeen           map[string]struct{}
+	asyncReportDedupSeen      map[string]struct{}
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
@@ -478,6 +483,7 @@ func (c *Composer) CommitChildTerminal(ctx context.Context, commit scheduler.Ter
 	}
 	if !result.Duplicate {
 		c.addChildOutcome(result.Record.Task.RunID, commit.Status == scheduler.TaskStateFailed)
+		c.addCollabOutcome(result.Record.Task, commit.Status == scheduler.TaskStateFailed)
 	}
 	c.maybePersistRecoverySnapshot(ctx, strings.TrimSpace(result.Record.Task.RunID))
 	return result, nil
@@ -687,6 +693,13 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["subagent_child_total"] = stats.ChildTotal
 	payload["subagent_child_failed"] = stats.ChildFailed
 	payload["subagent_budget_reject_total"] = stats.BudgetReject
+	payload["collab_handoff_total"] = stats.CollabHandoffTotal
+	payload["collab_delegation_total"] = stats.CollabDelegationTotal
+	payload["collab_aggregation_total"] = stats.CollabAggregationTotal
+	if strings.TrimSpace(stats.CollabAggregationStrategy) != "" {
+		payload["collab_aggregation_strategy"] = strings.TrimSpace(stats.CollabAggregationStrategy)
+	}
+	payload["collab_fail_fast_total"] = stats.CollabFailFastTotal
 	payload["a2a_async_report_total"] = stats.A2AAsyncReportTotal
 	payload["a2a_async_report_failed"] = stats.A2AAsyncReportFailed
 	payload["a2a_async_report_retry_total"] = stats.A2AAsyncReportRetry
@@ -781,6 +794,125 @@ func (c *Composer) addBudgetReject(runID string) {
 	defer c.runMu.Unlock()
 	stat := c.ensureRunStat(runID)
 	stat.BudgetReject++
+}
+
+func (c *Composer) addCollabOutcome(task scheduler.Task, failed bool) {
+	if c == nil {
+		return
+	}
+	cfg := c.effectiveConfig()
+	if !cfg.Composer.Collab.Enabled {
+		return
+	}
+	runID := strings.TrimSpace(task.RunID)
+	if runID == "" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	strategy := strings.TrimSpace(cfg.Composer.Collab.DefaultAggregation)
+	if strategy == "" {
+		strategy = runtimeconfig.ComposerCollabAggregationAllSettled
+	}
+	stat.CollabAggregationStrategy = strategy
+	primitive := collabPrimitiveFromTask(task)
+	switch primitive {
+	case "handoff":
+		stat.CollabHandoffTotal++
+		stat.CollabAggregationTotal++
+	case "delegation":
+		stat.CollabDelegationTotal++
+		stat.CollabAggregationTotal++
+	case "aggregation":
+		stat.CollabAggregationTotal++
+	default:
+		if strings.TrimSpace(task.PeerID) != "" {
+			stat.CollabDelegationTotal++
+			stat.CollabAggregationTotal++
+		}
+	}
+	if failed && strings.EqualFold(strings.TrimSpace(cfg.Composer.Collab.FailurePolicy), runtimeconfig.ComposerCollabFailurePolicyFailFast) {
+		stat.CollabFailFastTotal++
+	}
+}
+
+func (c *Composer) rebuildCollabStatsFromSchedulerSnapshot(runID string, snapshot scheduler.StoreSnapshot) {
+	if c == nil {
+		return
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	cfg := c.effectiveConfig()
+	if !cfg.Composer.Collab.Enabled {
+		return
+	}
+	strategy := strings.TrimSpace(cfg.Composer.Collab.DefaultAggregation)
+	if strategy == "" {
+		strategy = runtimeconfig.ComposerCollabAggregationAllSettled
+	}
+	failFast := strings.EqualFold(strings.TrimSpace(cfg.Composer.Collab.FailurePolicy), runtimeconfig.ComposerCollabFailurePolicyFailFast)
+
+	handoffTotal := 0
+	delegationTotal := 0
+	aggregationTotal := 0
+	failFastTotal := 0
+	for i := range snapshot.Tasks {
+		record := snapshot.Tasks[i]
+		task := record.Task
+		if strings.TrimSpace(task.RunID) != runID {
+			continue
+		}
+		failed := record.State == scheduler.TaskStateFailed || record.State == scheduler.TaskStateDeadLetter
+		succeeded := record.State == scheduler.TaskStateSucceeded
+		if !failed && !succeeded {
+			continue
+		}
+		switch collabPrimitiveFromTask(task) {
+		case "handoff":
+			handoffTotal++
+			aggregationTotal++
+		case "delegation":
+			delegationTotal++
+			aggregationTotal++
+		case "aggregation":
+			aggregationTotal++
+		default:
+			if strings.TrimSpace(task.PeerID) != "" {
+				delegationTotal++
+				aggregationTotal++
+			}
+		}
+		if failed && failFast {
+			failFastTotal++
+		}
+	}
+
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	stat.CollabHandoffTotal = handoffTotal
+	stat.CollabDelegationTotal = delegationTotal
+	stat.CollabAggregationTotal = aggregationTotal
+	stat.CollabAggregationStrategy = strategy
+	stat.CollabFailFastTotal = failFastTotal
+}
+
+func collabPrimitiveFromTask(task scheduler.Task) string {
+	if len(task.Payload) == 0 {
+		return ""
+	}
+	raw, ok := task.Payload["collab_primitive"]
+	if !ok {
+		return ""
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func (c *Composer) addAsyncReportOutcome(runID string, report a2a.AsyncReport, duplicate bool) {

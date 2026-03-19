@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
 
@@ -37,7 +38,7 @@ func NewA2AAsyncStepAdapter(client invoke.AsyncClient, opts A2AAsyncStepAdapterO
 			}
 			taskID = fmt.Sprintf("%s-attempt-%d-%d", baseID, attempt, time.Now().UnixNano())
 		}
-		ack, err := invoke.InvokeAsync(ctx, client, invoke.AsyncRequest{
+		ack, err := collab.DelegateAsync(ctx, client, invoke.AsyncRequest{
 			TaskID:     taskID,
 			WorkflowID: strings.TrimSpace(workflowID),
 			TeamID:     strings.TrimSpace(step.TeamID),

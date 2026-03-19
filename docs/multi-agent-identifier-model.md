@@ -85,7 +85,9 @@
   - Scheduler/Subagent：`run_id`, `workflow_id`, `team_id`, `step_id`, `task_id`, `attempt_id`, `agent_id`, `peer_id`
 - reason code 需要保持“路径 + 动作”可判别，例如：
   - `team.dispatch`, `team.collect`, `team.resolve`, `team.dispatch_remote`, `team.collect_remote`
+  - `team.handoff`, `team.delegation`, `team.aggregation`
   - `workflow.schedule`, `workflow.retry`, `workflow.resume`, `workflow.dispatch_a2a`
+  - `workflow.handoff`, `workflow.delegation`, `workflow.aggregation`
   - `a2a.submit`, `a2a.status_poll`, `a2a.sse_subscribe`, `a2a.sse_reconnect`, `a2a.delivery_fallback`, `a2a.version_mismatch`, `a2a.callback_retry`, `a2a.resolve`
   - `a2a.async_submit`, `a2a.async_report_deliver`, `a2a.async_report_retry`, `a2a.async_report_dedup`, `a2a.async_report_drop`
   - `scheduler.enqueue`, `scheduler.delayed_enqueue`, `scheduler.delayed_wait`, `scheduler.delayed_ready`, `scheduler.claim`, `scheduler.heartbeat`, `scheduler.lease_expired`, `scheduler.requeue`, `scheduler.qos_claim`, `scheduler.fairness_yield`, `scheduler.retry_backoff`, `scheduler.dead_letter`
@@ -112,6 +114,7 @@
 - run 级摘要字段采用 additive 扩展，不破坏既有消费者：
   - Teams：`team_id`, `team_strategy`, `team_task_total`, `team_task_failed`, `team_task_canceled`, `team_remote_task_total`, `team_remote_task_failed`
   - Workflow：`workflow_id`, `workflow_status`, `workflow_step_total`, `workflow_step_failed`, `workflow_resume_count`, `workflow_remote_step_total`, `workflow_remote_step_failed`
+  - Collaboration：`collab_handoff_total`, `collab_delegation_total`, `collab_aggregation_total`, `collab_aggregation_strategy`, `collab_fail_fast_total`
   - A2A：`a2a_task_total`, `a2a_task_failed`, `peer_id`, `a2a_error_layer`, `a2a_delivery_mode`, `a2a_delivery_fallback_used`, `a2a_delivery_fallback_reason`, `a2a_version_local`, `a2a_version_peer`, `a2a_version_negotiation_result`, `a2a_async_report_total`, `a2a_async_report_failed`, `a2a_async_report_retry_total`, `a2a_async_report_dedup_total`
   - Scheduler/Subagent：`scheduler_backend`, `scheduler_queue_total`, `scheduler_claim_total`, `scheduler_reclaim_total`, `scheduler_qos_mode`, `scheduler_priority_claim_total`, `scheduler_fairness_yield_total`, `scheduler_retry_backoff_total`, `scheduler_dead_letter_total`, `scheduler_delayed_task_total`, `scheduler_delayed_claim_total`, `scheduler_delayed_wait_ms_p95`, `subagent_child_total`, `subagent_child_failed`, `subagent_budget_reject_total`
   - Recovery：`recovery_enabled`, `recovery_recovered`, `recovery_replay_total`, `recovery_conflict`, `recovery_conflict_code`, `recovery_fallback_used`, `recovery_fallback_reason`

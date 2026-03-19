@@ -22,6 +22,10 @@
   - `mcp.active_profile` -> `BAYMAX_MCP_ACTIVE_PROFILE`
   - `mcp.profiles.default.retry` -> `BAYMAX_MCP_PROFILES_DEFAULT_RETRY`
   - `reload.debounce` -> `BAYMAX_RELOAD_DEBOUNCE`
+  - `composer.collab.enabled` -> `BAYMAX_COMPOSER_COLLAB_ENABLED`
+  - `composer.collab.default_aggregation` -> `BAYMAX_COMPOSER_COLLAB_DEFAULT_AGGREGATION`
+  - `composer.collab.failure_policy` -> `BAYMAX_COMPOSER_COLLAB_FAILURE_POLICY`
+  - `composer.collab.retry.enabled` -> `BAYMAX_COMPOSER_COLLAB_RETRY_ENABLED`
   - `teams.remote.enabled` -> `BAYMAX_TEAMS_REMOTE_ENABLED`
   - `teams.remote.require_peer_id` -> `BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`
   - `workflow.graph_composability.enabled` -> `BAYMAX_WORKFLOW_GRAPH_COMPOSABILITY_ENABLED`
@@ -106,6 +110,14 @@ provider_fallback:
   providers: [openai, anthropic, gemini] # 有序候选链；enabled=true 时必须非空
   discovery_timeout: 1500ms
   discovery_cache_ttl: 5m
+
+composer:
+  collab:
+    enabled: false                   # A16 feature flag，默认关闭
+    default_aggregation: all_settled # all_settled|first_success
+    failure_policy: fail_fast        # fail_fast|best_effort
+    retry:
+      enabled: false                 # A16：协作原语层重试固定关闭
 
 teams:
   enabled: false
@@ -830,6 +842,9 @@ Action Timeline reason code（Teams 基线）：
 - `team.resolve`：Teams 在策略收敛阶段产出最终决策。
 - `team.dispatch_remote`：Teams 分发 remote worker（A2A 路径）。
 - `team.collect_remote`：Teams 收集 remote worker 结果并写入终态。
+- `team.handoff`：Teams 在角色切换中执行协作交接语义。
+- `team.delegation`：Teams 执行协作委派语义。
+- `team.aggregation`：Teams 执行协作聚合语义。
 
 Teams Timeline 关联字段（按可用性增量携带）：
 - `team_id`
@@ -844,6 +859,9 @@ Action Timeline reason code（Workflow 基线）：
 - `workflow.retry`：Workflow step 在失败后进入下一次重试。
 - `workflow.resume`：Workflow 从 checkpoint 恢复并跳过已完成 step。
 - `workflow.dispatch_a2a`：Workflow 调度 A2A remote step。
+- `workflow.handoff`：Workflow step 使用协作交接语义。
+- `workflow.delegation`：Workflow step 使用协作委派语义。
+- `workflow.aggregation`：Workflow step 使用协作聚合语义。
 
 Workflow Timeline 关联字段（按可用性增量携带）：
 - `workflow_id`
@@ -1007,6 +1025,18 @@ Action Gate 规则优先级（H4）：
 - `scheduler_backend_fallback`：scheduler 初始化是否发生了 fallback（例如 `file -> memory`）。
 - `scheduler_backend_fallback_reason`：scheduler fallback 原因码（例如 `scheduler.backend.file_init_failed`）。
 
+### Run 诊断新增字段（Collaboration Primitives A16）
+
+- `collab_handoff_total`：本次 run 中协作原语 `handoff` 的终态收敛计数。
+- `collab_delegation_total`：本次 run 中协作原语 `delegation` 的终态收敛计数。
+- `collab_aggregation_total`：本次 run 中协作原语 `aggregation` 的终态收敛计数。
+- `collab_aggregation_strategy`：本次 run 生效的聚合策略（`all_settled|first_success`）。
+- `collab_fail_fast_total`：本次 run 在 `fail_fast` 策略下触发的协作失败快停计数。
+
+语义约束：
+- 字段为 additive 扩展，不影响既有 run 摘要消费者。
+- 协作摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
+
 ### Run 诊断新增字段（Recovery A9）
 
 - `recovery_enabled`：本次 run 是否启用 recovery（配置快照口径）。
@@ -1032,6 +1062,7 @@ Action Gate 规则优先级（H4）：
 | Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | A15 Workflow Graph Composability（`workflow_subgraph_expansion_total` / `workflow_condition_template_total` / `workflow_graph_compile_failed`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` / `false` 解析 |
 | Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
+| A16 Collaboration Primitives（`collab_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
 
 legacy consumers 行为示例：

@@ -902,6 +902,54 @@ reload:
 	}
 }
 
+func TestManagerComposerCollabInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+composer:
+  collab:
+    enabled: true
+    default_aggregation: all_settled
+    failure_policy: fail_fast
+    retry:
+      enabled: false
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Composer.Collab.DefaultAggregation
+	if before != ComposerCollabAggregationAllSettled {
+		t.Fatalf("before default_aggregation = %q, want all_settled", before)
+	}
+
+	writeConfig(t, file, `
+composer:
+  collab:
+    enabled: true
+    default_aggregation: quorum
+    failure_policy: fail_fast
+    retry:
+      enabled: false
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Composer.Collab.DefaultAggregation
+	if after != before {
+		t.Fatalf("invalid composer collab reload should rollback, default_aggregation = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerTeamsRemoteInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

@@ -229,6 +229,43 @@ steps:
 
 展开后稳定 step_id 形态为 `<subgraph_alias>/<step_id>`，例如 `prepare/fetch`、`prepare/validate`。
 
+### 8) Collaboration Primitives（A16，默认关闭）
+
+先在 runtime config 显式开启：
+
+```yaml
+composer:
+  collab:
+    enabled: true
+    default_aggregation: all_settled
+    failure_policy: fail_fast
+    retry:
+      enabled: false
+```
+
+库级原语入口位于 `orchestration/collab`，最小聚合示例：
+
+```go
+cfg := collab.DefaultConfig()
+cfg.Enabled = true
+
+res, err := collab.Execute(ctx, cfg, collab.Request{
+	Primitive: collab.PrimitiveAggregation,
+	Strategy:  collab.AggregationAllSettled,
+	Aggregation: []collab.Branch{
+		{
+			ID:       "delegate-a",
+			Required: true,
+			Execute: func(context.Context) (collab.Outcome, error) {
+				return collab.Outcome{Status: collab.StatusSucceeded}, nil
+			},
+		},
+	},
+})
+_ = res
+_ = err
+```
+
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
 ## 开发验证

@@ -40,10 +40,12 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 	teamsTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "teams-runtime-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-multi-agent-collaboration-primitives-a16", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	workflowTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "workflow-dsl-baseline", filepath.Join("specs", "action-timeline-events", "spec.md")),
 		mustReadChangeSpec(t, root, "compose-teams-workflow-with-a2a-remote-execution-a5", filepath.Join("specs", "action-timeline-events", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-multi-agent-collaboration-primitives-a16", filepath.Join("specs", "action-timeline-events", "spec.md")),
 	}, "\n")
 	schedulerTimelineSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "distributed-subagent-scheduler-baseline-a6", filepath.Join("specs", "action-timeline-events", "spec.md")),
@@ -94,6 +96,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-composed-orchestration", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-multi-agent-collaboration-primitives-a16", filepath.Join("specs", "multi-agent-lib-first-composer", "spec.md")),
 	}, "\n")
 	composerGateSpec := strings.Join([]string{
 		mustReadChangeSpec(t, root, "introduce-lib-first-agent-composer-with-scheduler-bridge-a8", filepath.Join("specs", "go-quality-gate", "spec.md")),
@@ -102,6 +105,7 @@ func TestMultiAgentSharedContractSnapshotPass(t *testing.T) {
 		mustReadChangeSpec(t, root, "introduce-async-agent-reporting-contract-a12", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "introduce-delayed-dispatch-not-before-contract-a13", filepath.Join("specs", "go-quality-gate", "spec.md")),
 		mustReadChangeSpec(t, root, "close-a12-a13-tail-contract-and-compatibility-governance-a14", filepath.Join("specs", "go-quality-gate", "spec.md")),
+		mustReadChangeSpec(t, root, "introduce-multi-agent-collaboration-primitives-a16", filepath.Join("specs", "go-quality-gate", "spec.md")),
 	}, "\n")
 
 	snapshot := MultiAgentContractSnapshot{
@@ -170,8 +174,14 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_reason_team_dispatch",
 		"missing_reason_team_dispatch_remote",
 		"missing_reason_team_collect_remote",
+		"missing_reason_team_handoff",
+		"missing_reason_team_delegation",
+		"missing_reason_team_aggregation",
 		"missing_reason_workflow_schedule",
 		"missing_reason_workflow_dispatch_a2a",
+		"missing_reason_workflow_handoff",
+		"missing_reason_workflow_delegation",
+		"missing_reason_workflow_aggregation",
 		"missing_reason_a2a_submit",
 		"missing_reason_a2a_sse_subscribe",
 		"missing_reason_a2a_version_mismatch",
@@ -208,6 +218,11 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_identifier_summary_field_team_remote_task_failed",
 		"missing_identifier_summary_field_workflow_remote_step_total",
 		"missing_identifier_summary_field_workflow_remote_step_failed",
+		"missing_identifier_summary_field_collab_handoff_total",
+		"missing_identifier_summary_field_collab_delegation_total",
+		"missing_identifier_summary_field_collab_aggregation_total",
+		"missing_identifier_summary_field_collab_aggregation_strategy",
+		"missing_identifier_summary_field_collab_fail_fast_total",
 		"missing_identifier_summary_field_scheduler_queue_total",
 		"missing_identifier_summary_field_scheduler_claim_total",
 		"missing_identifier_summary_field_scheduler_reclaim_total",
@@ -231,7 +246,13 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_identifier_summary_field_recovery_fallback_reason",
 		"missing_runtime_doc_reason_team_dispatch_remote",
 		"missing_runtime_doc_reason_team_collect_remote",
+		"missing_runtime_doc_reason_team_handoff",
+		"missing_runtime_doc_reason_team_delegation",
+		"missing_runtime_doc_reason_team_aggregation",
 		"missing_runtime_doc_reason_workflow_dispatch_a2a",
+		"missing_runtime_doc_reason_workflow_handoff",
+		"missing_runtime_doc_reason_workflow_delegation",
+		"missing_runtime_doc_reason_workflow_aggregation",
 		"missing_runtime_doc_reason_scheduler_enqueue",
 		"missing_runtime_doc_reason_scheduler_delayed_enqueue",
 		"missing_runtime_doc_reason_scheduler_delayed_wait",
@@ -254,6 +275,11 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_runtime_doc_field_team_remote_task_failed",
 		"missing_runtime_doc_field_workflow_remote_step_total",
 		"missing_runtime_doc_field_workflow_remote_step_failed",
+		"missing_runtime_doc_field_collab_handoff_total",
+		"missing_runtime_doc_field_collab_delegation_total",
+		"missing_runtime_doc_field_collab_aggregation_total",
+		"missing_runtime_doc_field_collab_aggregation_strategy",
+		"missing_runtime_doc_field_collab_fail_fast_total",
 		"missing_runtime_doc_field_composer_managed",
 		"missing_runtime_doc_field_scheduler_backend_fallback",
 		"missing_runtime_doc_field_scheduler_backend_fallback_reason",

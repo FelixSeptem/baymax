@@ -236,6 +236,11 @@ mcp:
 			"subagent_child_total":                     2,
 			"subagent_child_failed":                    1,
 			"subagent_budget_reject_total":             1,
+			"collab_handoff_total":                     1,
+			"collab_delegation_total":                  2,
+			"collab_aggregation_total":                 2,
+			"collab_aggregation_strategy":              "all_settled",
+			"collab_fail_fast_total":                   1,
 			"recovery_enabled":                         true,
 			"recovery_recovered":                       true,
 			"recovery_replay_total":                    2,
@@ -409,6 +414,13 @@ mcp:
 	if items[0].SubagentChildTotal != 2 || items[0].SubagentChildFailed != 1 || items[0].SubagentBudgetRejectTotal != 1 {
 		t.Fatalf("subagent fields mismatch: %#v", items[0])
 	}
+	if items[0].CollabHandoffTotal != 1 ||
+		items[0].CollabDelegationTotal != 2 ||
+		items[0].CollabAggregationTotal != 2 ||
+		items[0].CollabAggregationStrategy != "all_settled" ||
+		items[0].CollabFailFastTotal != 1 {
+		t.Fatalf("collab fields mismatch: %#v", items[0])
+	}
 	if !items[0].RecoveryEnabled || !items[0].RecoveryRecovered || items[0].RecoveryReplayTotal != 2 {
 		t.Fatalf("recovery summary fields mismatch: %#v", items[0])
 	}
@@ -498,6 +510,60 @@ mcp:
 		got.WorkflowConditionTemplateTotal != 0 ||
 		got.WorkflowGraphCompileFailed {
 		t.Fatalf("missing A12/A13 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA16ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a16-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(12),
+			"a16_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 12 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.CollabHandoffTotal != 0 ||
+		got.CollabDelegationTotal != 0 ||
+		got.CollabAggregationTotal != 0 ||
+		got.CollabAggregationStrategy != "" ||
+		got.CollabFailFastTotal != 0 {
+		t.Fatalf("missing A16 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

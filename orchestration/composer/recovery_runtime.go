@@ -294,6 +294,7 @@ func (c *Composer) Recover(ctx context.Context, req RecoverRequest) (RecoverResu
 		return RecoverResult{}, newRecoveryError(RecoveryErrorConflict, "recovery fail_fast: a2a in-flight correlation mismatch", err)
 	}
 
+	c.rebuildCollabStatsFromSchedulerSnapshot(runID, normalized.Scheduler)
 	c.markRecoveryRecovered(runID, normalized.Replay.TerminalCommitCount)
 	c.emitRecoveryTimeline(ctx, runID, RecoveryReasonRestore, types.ActionStatusSucceeded, "", "")
 	c.emitRecoveryTimeline(ctx, runID, RecoveryReasonReplay, types.ActionStatusSucceeded, "", "")

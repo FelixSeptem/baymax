@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-19 13:16:17
+Updated: 2026-03-19 14:13:47
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -68,3 +68,4 @@ Updated: 2026-03-19 13:16:17
 - 064 -> introduce-multi-agent-collaboration-primitives-a16
 - 065 -> harden-long-running-recovery-boundary-and-timeout-reentry-a17
 - 066 -> introduce-unified-run-team-workflow-task-query-api-a18
+- 067 -> introduce-multi-agent-mainline-performance-baseline-gate-a19

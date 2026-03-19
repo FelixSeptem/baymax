@@ -10,12 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	httpmcp "github.com/FelixSeptem/baymax/mcp/http"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	"github.com/FelixSeptem/baymax/orchestration/scheduler"
+	"github.com/FelixSeptem/baymax/orchestration/workflow"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/tool/local"
@@ -106,7 +109,11 @@ func BenchmarkToolFanOutCancelStorm(b *testing.B) {
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
 		_, _ = dispatcher.Dispatch(ctx, calls, cfg)
 		cancel()
-		durations = append(durations, time.Since(start).Nanoseconds())
+		elapsed := time.Since(start).Nanoseconds()
+		if elapsed <= 0 {
+			elapsed = 1000
+		}
+		durations = append(durations, elapsed)
 		if n := runtime.NumGoroutine(); n > goroutinePeak {
 			goroutinePeak = n
 		}
@@ -151,7 +158,11 @@ func BenchmarkToolFanOutDropLowPriority(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
 		_, _ = dispatcher.Dispatch(context.Background(), calls, cfg)
-		durations = append(durations, time.Since(start).Nanoseconds())
+		elapsed := time.Since(start).Nanoseconds()
+		if elapsed <= 0 {
+			elapsed = 1000
+		}
+		durations = append(durations, elapsed)
 		if n := runtime.NumGoroutine(); n > goroutinePeak {
 			goroutinePeak = n
 		}
@@ -200,7 +211,11 @@ func BenchmarkToolFanOutDropLowPriorityMCPAndSkill(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
 		_, _ = dispatcher.Dispatch(context.Background(), calls, cfg)
-		durations = append(durations, time.Since(start).Nanoseconds())
+		elapsed := time.Since(start).Nanoseconds()
+		if elapsed <= 0 {
+			elapsed = 1000
+		}
+		durations = append(durations, elapsed)
 		if n := runtime.NumGoroutine(); n > goroutinePeak {
 			goroutinePeak = n
 		}
@@ -212,6 +227,261 @@ func BenchmarkToolFanOutDropLowPriorityMCPAndSkill(b *testing.B) {
 	if goroutinePeak > 0 {
 		b.ReportMetric(float64(goroutinePeak), "goroutine-peak")
 	}
+}
+
+func BenchmarkMultiAgentMainlineSyncInvocation(b *testing.B) {
+	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(_ context.Context, req a2a.TaskRequest) (map[string]any, error) {
+		return map[string]any{
+			"ok":          true,
+			"workflow_id": req.WorkflowID,
+			"team_id":     req.TeamID,
+		}, nil
+	}), nil)
+	client := a2a.NewClient(server, []a2a.AgentCard{
+		{
+			AgentID:                "bench-agent-remote",
+			PeerID:                 "bench-peer-remote",
+			SchemaVersion:          "a2a.v1.0",
+			SupportedDeliveryModes: []string{a2a.DeliveryModeCallback},
+		},
+	}, a2a.DeterministicRouter{RequireAll: true}, a2a.ClientPolicy{
+		Timeout:            400 * time.Millisecond,
+		RequestMaxAttempts: 1,
+	}, nil)
+	workflowEngine := workflow.New(
+		workflow.WithStepAdapter(workflow.DispatchAdapter{
+			A2A: workflow.NewA2AStepAdapter(client, workflow.A2AStepAdapterOptions{
+				Method:       "workflow.delegate",
+				PollInterval: 5 * time.Millisecond,
+			}),
+		}),
+	)
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		res, err := workflowEngine.Run(context.Background(), workflow.RunRequest{
+			RunID: fmt.Sprintf("bench-a19-sync-%d", i),
+			DSL: workflow.Definition{
+				WorkflowID: "bench-a19-sync-workflow",
+				Steps: []workflow.Step{
+					{
+						StepID:  "bench-remote-step",
+						TaskID:  fmt.Sprintf("bench-sync-task-%d", i),
+						Kind:    workflow.StepKindA2A,
+						TeamID:  "bench-sync-team",
+						AgentID: "bench-agent-main",
+						PeerID:  "bench-peer-remote",
+					},
+				},
+			},
+		})
+		if err != nil {
+			b.Fatalf("sync workflow run failed: %v", err)
+		}
+		if res.WorkflowStatus != "succeeded" || res.WorkflowRemoteTotal != 1 || res.WorkflowRemoteFailed != 0 {
+			b.Fatalf("sync workflow aggregate mismatch: %#v", res)
+		}
+		elapsed := time.Since(start).Nanoseconds()
+		if elapsed <= 0 {
+			elapsed = 1000
+		}
+		durations = append(durations, elapsed)
+	}
+	b.StopTimer()
+	p95 := percentileNs(durations, 95)
+	if p95 <= 0 && b.N > 0 {
+		p95 = b.Elapsed().Nanoseconds() / int64(b.N)
+	}
+	if p95 <= 0 {
+		p95 = 1
+	}
+	b.ReportMetric(float64(p95), "p95-ns/op")
+}
+
+func BenchmarkMultiAgentMainlineAsyncReporting(b *testing.B) {
+	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(_ context.Context, _ a2a.TaskRequest) (map[string]any, error) {
+		return map[string]any{"ok": true}, nil
+	}), nil)
+	client := a2a.NewClient(server, nil, nil, a2a.ClientPolicy{
+		Timeout:            300 * time.Millisecond,
+		RequestMaxAttempts: 1,
+		AsyncReporting: a2a.AsyncReportingPolicy{
+			Enabled: true,
+			Retry: a2a.AsyncReportingRetryPolicy{
+				MaxAttempts:    2,
+				BackoffInitial: time.Millisecond,
+				BackoffMax:     2 * time.Millisecond,
+			},
+			JitterRatio: 0,
+		},
+	}, nil)
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sink := a2a.NewChannelReportSink(1)
+		start := time.Now()
+		ack, err := client.SubmitAsync(context.Background(), a2a.TaskRequest{
+			TaskID:  fmt.Sprintf("bench-a19-async-task-%d", i),
+			AgentID: "bench-agent-async",
+			PeerID:  "bench-peer-async",
+			Method:  "bench.async",
+		}, sink)
+		if err != nil {
+			b.Fatalf("async submit failed: %v", err)
+		}
+
+		select {
+		case report := <-sink.Channel():
+			if report.TaskID != ack.TaskID || report.Status != a2a.StatusSucceeded {
+				b.Fatalf("unexpected async report: %#v", report)
+			}
+		case <-time.After(2 * time.Second):
+			b.Fatal("timed out waiting for async report")
+		}
+
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	p95 := percentileNs(durations, 95)
+	if p95 <= 0 && b.N > 0 {
+		p95 = b.Elapsed().Nanoseconds() / int64(b.N)
+	}
+	if p95 <= 0 {
+		p95 = 1
+	}
+	b.ReportMetric(float64(p95), "p95-ns/op")
+}
+
+func BenchmarkMultiAgentMainlineDelayedDispatch(b *testing.B) {
+	ctx := context.Background()
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		s, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
+		if err != nil {
+			b.Fatalf("new scheduler: %v", err)
+		}
+
+		taskID := fmt.Sprintf("bench-a19-delayed-task-%d", i)
+		if _, err := s.Enqueue(ctx, scheduler.Task{
+			TaskID:    taskID,
+			RunID:     "bench-a19-delayed-run",
+			NotBefore: time.Now().Add(120 * time.Microsecond),
+		}); err != nil {
+			b.Fatalf("enqueue delayed task failed: %v", err)
+		}
+		claimed, ok, err := s.Claim(ctx, "bench-delayed-worker")
+		if err != nil {
+			b.Fatalf("claim delayed task failed: %v", err)
+		}
+		if !ok {
+			time.Sleep(180 * time.Microsecond)
+			claimed, ok, err = s.Claim(ctx, "bench-delayed-worker")
+			if err != nil || !ok {
+				b.Fatalf("claim delayed task after wait failed: ok=%v err=%v", ok, err)
+			}
+		}
+		if _, err := s.Complete(ctx, scheduler.TerminalCommit{
+			TaskID:      claimed.Record.Task.TaskID,
+			AttemptID:   claimed.Attempt.AttemptID,
+			Status:      scheduler.TaskStateSucceeded,
+			CommittedAt: time.Now(),
+			Result:      map[string]any{"ok": true},
+		}); err != nil {
+			b.Fatalf("complete delayed task failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	p95 := percentileNs(durations, 95)
+	if p95 <= 0 && b.N > 0 {
+		p95 = b.Elapsed().Nanoseconds() / int64(b.N)
+	}
+	if p95 <= 0 {
+		p95 = 1
+	}
+	b.ReportMetric(float64(p95), "p95-ns/op")
+}
+
+func BenchmarkMultiAgentMainlineRecoveryReplay(b *testing.B) {
+	ctx := context.Background()
+	setupScheduler, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
+	if err != nil {
+		b.Fatalf("new setup scheduler: %v", err)
+	}
+	if _, err := setupScheduler.Enqueue(ctx, scheduler.Task{
+		TaskID: "bench-a19-recovery-task",
+		RunID:  "bench-a19-recovery-run",
+	}); err != nil {
+		b.Fatalf("enqueue setup task failed: %v", err)
+	}
+	claimed, ok, err := setupScheduler.Claim(ctx, "bench-recovery-worker")
+	if err != nil || !ok {
+		b.Fatalf("claim setup task failed: ok=%v err=%v", ok, err)
+	}
+	commit := scheduler.TerminalCommit{
+		TaskID:      claimed.Record.Task.TaskID,
+		AttemptID:   claimed.Attempt.AttemptID,
+		Status:      scheduler.TaskStateSucceeded,
+		CommittedAt: time.Now(),
+		Result:      map[string]any{"ok": true},
+	}
+	if _, err := setupScheduler.Complete(ctx, commit); err != nil {
+		b.Fatalf("complete setup task failed: %v", err)
+	}
+	snapshot, err := setupScheduler.Snapshot(ctx)
+	if err != nil {
+		b.Fatalf("snapshot setup scheduler failed: %v", err)
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		replayedScheduler, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
+		if err != nil {
+			b.Fatalf("new replay scheduler: %v", err)
+		}
+		if err := replayedScheduler.Restore(ctx, snapshot); err != nil {
+			b.Fatalf("restore snapshot failed: %v", err)
+		}
+		before, err := replayedScheduler.Stats(ctx)
+		if err != nil {
+			b.Fatalf("stats before replay failed: %v", err)
+		}
+		replayResult, err := replayedScheduler.Complete(ctx, commit)
+		if err != nil {
+			b.Fatalf("replay complete failed: %v", err)
+		}
+		after, err := replayedScheduler.Stats(ctx)
+		if err != nil {
+			b.Fatalf("stats after replay failed: %v", err)
+		}
+		if !replayResult.Duplicate {
+			b.Fatalf("replay complete should be duplicate: %#v", replayResult)
+		}
+		if before.CompleteTotal != after.CompleteTotal {
+			b.Fatalf("replay should not inflate complete_total before=%d after=%d", before.CompleteTotal, after.CompleteTotal)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	p95 := percentileNs(durations, 95)
+	if p95 <= 0 && b.N > 0 {
+		p95 = b.Elapsed().Nanoseconds() / int64(b.N)
+	}
+	if p95 <= 0 {
+		p95 = 1
+	}
+	b.ReportMetric(float64(p95), "p95-ns/op")
 }
 
 func BenchmarkMCPReconnectOverhead(b *testing.B) {

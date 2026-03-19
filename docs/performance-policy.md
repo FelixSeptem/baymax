@@ -1,10 +1,10 @@
 # Performance Regression Policy
 
-更新时间：2026-03-13
+更新时间：2026-03-19
 
 ## Scope
 
-本策略用于评估并发与异步运行时改造的性能回归风险，覆盖 runner/tool/mcp 关键路径。
+本策略用于评估运行时性能回归风险，覆盖 runner/tool/mcp 与 multi-agent 主链路关键路径。
 
 ## Baseline
 
@@ -29,10 +29,33 @@
 - `BenchmarkToolFanOutHighConcurrency`
 - `BenchmarkToolFanOutSlowCall`
 - `BenchmarkToolFanOutCancelStorm`
+- `BenchmarkMultiAgentMainlineSyncInvocation`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkMultiAgentMainlineAsyncReporting`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkMultiAgentMainlineDelayedDispatch`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkMultiAgentMainlineRecoveryReplay`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkCA4PressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - `BenchmarkCA3SemanticCompactionLatency`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - `BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - 现有关键基准（iteration latency、MCP reconnect overhead）
+
+Multi-agent 主链路回归门禁（本地/CI 一致）：
+
+```bash
+bash scripts/check-multi-agent-performance-regression.sh
+```
+
+```powershell
+pwsh -File scripts/check-multi-agent-performance-regression.ps1
+```
+
+默认参数（可通过环境变量覆盖）：
+- `BAYMAX_MULTI_AGENT_BENCH_BENCHTIME=200ms`
+- `BAYMAX_MULTI_AGENT_BENCH_COUNT=5`
+
+默认阈值（可通过环境变量覆盖）：
+- `BAYMAX_MULTI_AGENT_BENCH_MAX_NS_DEGRADATION_PCT=8`
+- `BAYMAX_MULTI_AGENT_BENCH_MAX_P95_DEGRADATION_PCT=12`
+- `BAYMAX_MULTI_AGENT_BENCH_MAX_ALLOCS_DEGRADATION_PCT=10`
 
 CA4 回归门禁（本地/CI 一致）：
 

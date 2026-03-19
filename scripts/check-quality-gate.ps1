@@ -9,6 +9,9 @@ if (-not $env:GOCACHE) {
 if (-not $env:GOLANGCI_LINT_CACHE) {
     $env:GOLANGCI_LINT_CACHE = Join-Path $repoRoot ".gocache/golangci-lint"
 }
+if (-not $env:CGO_ENABLED) {
+    $env:CGO_ENABLED = "1"
+}
 
 Write-Host "[quality-gate] repo hygiene"
 pwsh -File scripts/check-repo-hygiene.ps1
@@ -35,6 +38,9 @@ golangci-lint run --config $lintConfig
 
 Write-Host "[quality-gate] CA4 benchmark regression"
 pwsh -File scripts/check-ca4-benchmark-regression.ps1
+
+Write-Host "[quality-gate] multi-agent mainline benchmark regression"
+pwsh -File scripts/check-multi-agent-performance-regression.ps1
 
 $scanMode = if ($env:BAYMAX_SECURITY_SCAN_MODE) { $env:BAYMAX_SECURITY_SCAN_MODE.Trim().ToLowerInvariant() } else { "strict" }
 $govulncheckEnabled = if ($env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED) { $env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED.Trim().ToLowerInvariant() } else { "true" }

@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-19）：
-- A16（协作原语）已归档并稳定。
-- A17（长任务恢复边界）进行中。
-- A18（统一 run/team/workflow/task 诊断检索 API）进行中。
+- A17（长任务恢复边界）已归档并稳定。
+- A18（统一 run/team/workflow/task 诊断检索 API）已归档并稳定。
+- A19（多代理主链路性能基线门禁）进行中。
 
 ## 架构设计
 
@@ -273,7 +273,7 @@ _ = err
 
 更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
 
-### 9) Long-Running Recovery Boundary（A17，进行中）
+### 9) Long-Running Recovery Boundary（A17）
 
 恢复开启时，A17 默认启用以下边界策略：
 
@@ -346,6 +346,31 @@ if res.NextCursor != "" {
 兼容说明：
 - `RecentRuns/RecentCalls/RecentSkills` 与趋势查询接口保持兼容不变。
 - 对合法但无匹配的 `task_id`，返回空结果集而非错误。
+
+### 11) Multi-Agent Mainline Performance Gate（A19）
+
+A19 增加多代理主链路性能回归门禁，覆盖：
+- `BenchmarkMultiAgentMainlineSyncInvocation`
+- `BenchmarkMultiAgentMainlineAsyncReporting`
+- `BenchmarkMultiAgentMainlineDelayedDispatch`
+- `BenchmarkMultiAgentMainlineRecoveryReplay`
+
+回归检查命令（本地/CI 一致）：
+
+```bash
+bash scripts/check-multi-agent-performance-regression.sh
+```
+
+```powershell
+pwsh -File scripts/check-multi-agent-performance-regression.ps1
+```
+
+默认参数与阈值（可被环境变量覆盖）：
+- `benchtime=200ms`
+- `count=5`
+- `ns/op` 最大退化 `8%`
+- `p95-ns/op` 最大退化 `12%`
+- `allocs/op` 最大退化 `10%`
 
 ## 开发验证
 

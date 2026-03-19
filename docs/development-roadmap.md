@@ -16,11 +16,11 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - 已归档口径：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：R1-R3 主线能力、A4-A16。
+- 已归档并稳定：R1-R3 主线能力、A4-A18。
 - 进行中：
-  - `harden-long-running-recovery-boundary-and-timeout-reentry-a17`
-  - `introduce-unified-run-team-workflow-task-query-api-a18`
-- 待规划/探索：A19+。
+  - `introduce-multi-agent-mainline-performance-baseline-gate-a19`
+  - `introduce-full-chain-multi-agent-reference-example-a20`
+- 待规划/探索：A21+。
 
 ## 当前代码能力（简版）
 
@@ -36,6 +36,9 @@ Baymax 的主线定位是 `library-first + contract-first`：
 - A13 延后调度：`scheduler.delayed_*` reason taxonomy、`not_before` 语义。
 - A14 尾项治理：shared gate + cross-mode 矩阵 + docs/index 收敛。
 - A15 workflow 图可组合：subgraph/template、compile-before-plan、canonical ID 与 fail-fast 校验。
+- A16 协作原语统一：`orchestration/collab` + `composer.collab.*` + `collab_*` 诊断字段。
+- A17 恢复边界收敛：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 语义冻结。
+- A18 统一检索 API：`run/team/workflow/task` 过滤、分页排序游标与 fail-fast/空集语义。
 
 ## 近期变更进度
 
@@ -55,17 +58,29 @@ Baymax 的主线定位是 `library-first + contract-first`：
 口径：`introduce-multi-agent-collaboration-primitives-a16`（archived）。
 结果：`orchestration/collab` 原语包、teams/workflow/composer 接入、`composer.collab.*` 配置、`collab_*` 诊断字段、A16 integration 套件与 shared gate 已收口。
 
-### A17（进行中）
+### A17（已归档）
 
 目标：收敛长任务恢复边界（resume/in-flight/timeout reentry）并强化恢复一致性。  
-口径：`harden-long-running-recovery-boundary-and-timeout-reentry-a17`（active）。
+口径：`harden-long-running-recovery-boundary-and-timeout-reentry-a17`（archived）。
 范围：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 配置、composer/scheduler 恢复边界判定、A17 合同矩阵与 shared gate 收敛。
 
-### A18（进行中）
+### A18（已归档）
 
 目标：补齐按 `run/team/workflow/task` 的统一诊断检索 API 与分页/排序/游标/校验契约。  
-口径：`introduce-unified-run-team-workflow-task-query-api-a18`（active）。
+口径：`introduce-unified-run-team-workflow-task-query-api-a18`（archived）。
 范围：`runtime/diagnostics.QueryRuns` 统一入口、`page_size=50`/`<=200`、`time desc` 默认排序、opaque cursor、`task_id` 无匹配空集语义、shared gate 阻断校验。
+
+### A19（进行中）
+
+目标：把多代理主链路性能基线纳入标准门禁与 CI 阻断。  
+口径：`introduce-multi-agent-mainline-performance-baseline-gate-a19`（active）。
+范围：主链路 benchmark baseline、`ns/op+p95-ns/op+allocs/op` 相对回归阈值（默认 `8%/12%/10%`）、`check-quality-gate.*` 接入与文档索引映射。
+
+### A20（进行中）
+
+目标：补齐 `team + workflow + a2a + scheduler + recovery` 的全链路参考示例。  
+口径：`introduce-full-chain-multi-agent-reference-example-a20`（active）。
+范围：`examples/09-*` 全链路示例、Run/Stream 双路径、async+delayed+recovery 组合、示例 smoke 阻断。
 
 ## 主线进度（摘要）
 
@@ -78,10 +93,14 @@ Baymax 的主线定位是 `library-first + contract-first`：
 编排与恢复增强：
 1. A15：workflow 图可组合能力（已归档）。
 2. A16：协作原语统一契约（已归档）。
-3. A17：长任务恢复边界与重入策略（进行中）。
+3. A17：长任务恢复边界与重入策略（已归档）。
 
 诊断检索增强：
-1. A18：统一 run/team/workflow/task 查询契约（进行中）。
+1. A18：统一 run/team/workflow/task 查询契约（已归档）。
+
+性能与示例增强：
+1. A19：多代理主链路性能基线门禁（进行中）。
+2. A20：全链路参考示例（进行中）。
 
 ## Lib-First Multi-Agent 差距收敛清单（2026-03-19）
 
@@ -94,20 +113,19 @@ P0（必须优先）：
 P1（紧随其后）：
 - [x] workflow 图能力增强（A15）。
 - [x] multi-agent 协作原语增强（A16 已归档）。
-- [ ] 长任务恢复边界收敛（A17 进行中）。
-- [ ] 按 run/team/workflow/task 的统一检索 API（A18 进行中，库接口优先）。
-- [ ] 多代理主链路性能基线纳入 CI（吞吐/延迟/重试放大/recovery 时间）。
+- [x] 长任务恢复边界收敛（A17 已归档）。
+- [x] 按 run/team/workflow/task 的统一检索 API（A18 已归档，库接口优先）。
+- [ ] 多代理主链路性能基线纳入 CI（A19 进行中，吞吐/延迟/重试放大/recovery 时间）。
 
 P2（可选，DX/生态）：
-- [ ] 最小 replay CLI 工具链。
-- [ ] 全链路示例（team + workflow + a2a + scheduler + recovery）。
+- [x] 最小 replay CLI 工具链（`cmd/diagnostics-replay` + contract gate）。
+- [ ] 全链路示例（A20 进行中：team + workflow + a2a + scheduler + recovery）。
 - [ ] 外部适配样板与迁移映射文档。
 
 推荐顺序：
-1. 完成并归档 A17（恢复边界）。
-2. 完成并归档 A18（统一检索 API）。
-3. 推进多代理性能基线门禁。
-4. 补齐 P2 DX/生态能力。
+1. 完成并归档 A19（性能基线门禁）。
+2. 完成并归档 A20（全链路参考示例）。
+3. 推进外部适配样板与迁移映射文档（A21+）。
 
 ## 非近期范围（为保持简洁，明确延后）
 

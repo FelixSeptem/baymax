@@ -11,8 +11,8 @@
 
 当前进度（2026-03-19）：
 - A16 已归档：`composer.collab.*` 配置已稳定。
-- A17 进行中：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 已进入配置契约。
-- A18 进行中：统一诊断检索 API 不新增 feature flag，沿用 diagnostics 标准能力入口。
+- A17 已归档：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 已进入稳定配置契约。
+- A18 已归档：统一诊断检索 API 已收口，沿用 diagnostics 标准能力入口。
 
 ## 架构设计
 
@@ -47,3 +47,21 @@
 - `runtime/config` 不依赖 `mcp/http` 或 `mcp/stdio` 传输实现。
 - 非法配置和非法热更新必须 fail-fast，并保持旧快照可回滚。
 - 配置字段变更需要同步更新 `docs/runtime-config-diagnostics.md` 与契约测试。
+
+## 配置与默认值
+
+- 默认值入口：`DefaultConfig`。
+- 优先级固定：`env > file > default`，并在 `EffectiveConfig` 中体现最终快照。
+- 热更新默认允许监听，但非法更新会阻断并回滚到上一个有效快照。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./runtime/config -count=1`。
+- 关键观测字段：reload 成功/失败计数、回滚标记、配置来源优先级。
+- 与 diagnostics 的联动验证需覆盖 QueryRuns 与趋势查询兼容语义。
+
+## 扩展点与常见误用
+
+- 扩展点：新增配置子域时同步 parser、validator、docs、契约测试。
+- 常见误用：只更新默认值不更新文档与测试，导致 gate 漂移。
+- 常见误用：热更新失败后继续使用脏快照，破坏 fail-fast + rollback 语义。

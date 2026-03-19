@@ -34,3 +34,21 @@
 - 业务模块负责“发事件”，`observability` 负责“记录与分发”，保持职责分离。
 - 诊断写入应仅经过 `RuntimeRecorder`，避免多写入口导致统计漂移。
 - 该域不承载业务策略判定，只承载观测语义映射。
+
+## 配置与默认值
+
+- 观测行为默认由 `runtime/config` 提供的 diagnostics 与 redaction 策略控制。
+- trace 子域默认使用轻量包装；若未注入 OTel exporter，则保持本地最小 trace 语义。
+- RuntimeRecorder 默认启用幂等去重，避免 replay 导致计数膨胀。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./observability/event -count=1`。
+- 观测契约回归需覆盖 timeline parser、runtime recorder 幂等与字段兼容。
+- 与 `runtime/diagnostics` 联动验证写入收敛和查询可见性。
+
+## 扩展点与常见误用
+
+- 扩展点：新增事件处理器、扩展 trace span 标签、增强 recorder 归档策略。
+- 常见误用：直接在业务域写 diagnostics，绕过 dispatcher/recorder 链路。
+- 常见误用：引入非标准事件字段而不更新 parser 与索引文档。

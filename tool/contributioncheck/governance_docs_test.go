@@ -24,6 +24,7 @@ func TestValidatePre1GovernanceDocsDetectsStageConflict(t *testing.T) {
 	roadmap := strings.Join([]string{
 		"版本阶段口径（延续 0.x）",
 		"不做 `1.0.0` / prod-ready 承诺",
+		"允许新增能力型提案",
 		"新增提案准入规则（0.x 阶段）",
 		"`Why now`",
 		"风险",
@@ -44,11 +45,13 @@ func TestValidatePre1GovernanceDocsDetectsStageConflict(t *testing.T) {
 		"pre-`1.0.0`",
 		"does **not** imply `1.0.0/prod-ready` commitments",
 		"Pre-1 Proposal Admission Baseline",
+		"Capability additions are allowed in `0.x` when admission fields and quality-gate requirements are satisfied.",
 	}, "\n")
 	readme := strings.Join([]string{
 		"版本阶段快照",
 		"`0.x` pre-1 阶段",
 		"不做 `1.0.0/prod-ready` 承诺",
+		"`0.x` 阶段允许新增能力型提案",
 	}, "\n")
 
 	issues := ValidatePre1GovernanceDocs(roadmap, versioning, readme)

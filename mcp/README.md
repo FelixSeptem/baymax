@@ -34,3 +34,21 @@
 - `mcp/internal/*` 仅供 `mcp/*` 内部复用，其他域禁止依赖。
 - `runtime/*` 不反向依赖传输实现，保持配置域与传输域解耦。
 - 传输层发射标准事件与调用记录，不直接破坏 RuntimeRecorder 单写口径。
+
+## 配置与默认值
+
+- 默认重试预算与超时由 `mcp/profile` 和 runtime config 快照共同决定。
+- HTTP/STDIO 客户端默认采用保守并发与背压策略，避免放大瞬时流量峰值。
+- 未命中 profile 时回退到 runtime 默认策略，不做隐式 aggressive retry。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./mcp/http ./mcp/stdio ./mcp/internal/reliability -count=1`。
+- `scripts/check-quality-gate.*` 会覆盖 race/lint 与跨模块契约回归。
+- 观测层通过 `mcp/internal/observability` 对接统一事件链路。
+
+## 扩展点与常见误用
+
+- 扩展点：新增 profile 模板、扩展 retry 策略、增强 diag 摘要维度。
+- 常见误用：在调用方重复实现 transport 重试，叠加重试风暴。
+- 常见误用：跨模块直接依赖 `mcp/internal/*`，破坏包边界约束。

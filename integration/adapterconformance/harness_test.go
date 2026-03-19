@@ -2,11 +2,14 @@ package adapterconformance
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
+	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -157,6 +160,108 @@ func TestAdapterConformanceTemplateTraceabilityAndDriftGuard(t *testing.T) {
 			t.Fatalf("mapping doc drift: missing unified compatibility boundary marker")
 		}
 	}
+}
+
+func TestAdapterConformanceManifestActivationSuccess(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
+	result, err := ActivateAdapterManifest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+		"model.capability.token_count",
+	})
+	if err != nil {
+		t.Fatalf("activate adapter manifest: %v", err)
+	}
+	if len(result.OptionalDowngrades) != 0 {
+		t.Fatalf("unexpected downgrades: %#v", result.OptionalDowngrades)
+	}
+}
+
+func TestAdapterConformanceManifestCompatibilityFailFast(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "mcp-fixture", "adapter-manifest.json")
+	_, err := ActivateAdapterManifest(path, "0.27.0", "mcp-normalization-fail-fast", []string{
+		"mcp.invoke.required_input",
+		"mcp.response.normalized",
+	})
+	if err == nil {
+		t.Fatal("expected compatibility mismatch")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != adaptermanifest.CodeCompatibilityMismatch {
+		t.Fatalf("unexpected compatibility error classification: %#v", ce)
+	}
+}
+
+func TestAdapterConformanceManifestRequiredCapabilityFailFast(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "tool-fixture", "adapter-manifest.json")
+	_, err := ActivateAdapterManifest(path, "0.26.0-rc.2", "tool-invoke-fail-fast", []string{
+		"tool.schema.rich_validation",
+	})
+	if err == nil {
+		t.Fatal("expected required capability mismatch")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != adaptermanifest.CodeRequiredCapabilityMissing {
+		t.Fatalf("unexpected required capability classification: %#v", ce)
+	}
+}
+
+func TestAdapterConformanceManifestOptionalCapabilityDowngradeDeterministic(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
+	res1, err1 := ActivateAdapterManifest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	})
+	res2, err2 := ActivateAdapterManifest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	})
+	if err1 != nil || err2 != nil {
+		t.Fatalf("unexpected activation error err1=%v err2=%v", err1, err2)
+	}
+	if len(res1.OptionalDowngrades) != 1 || len(res2.OptionalDowngrades) != 1 {
+		t.Fatalf("expected single optional downgrade, got %#v %#v", res1.OptionalDowngrades, res2.OptionalDowngrades)
+	}
+	if res1.OptionalDowngrades[0] != res2.OptionalDowngrades[0] {
+		t.Fatalf("non-deterministic optional downgrade reason: %#v vs %#v", res1.OptionalDowngrades[0], res2.OptionalDowngrades[0])
+	}
+	if !strings.HasPrefix(res1.OptionalDowngrades[0].ReasonCode, "adapter.manifest.capability.optional_missing.") {
+		t.Fatalf("unexpected downgrade reason code: %s", res1.OptionalDowngrades[0].ReasonCode)
+	}
+}
+
+func TestAdapterConformanceManifestProfileAlignmentForFixtures(t *testing.T) {
+	root := repoRoot(t)
+	testCases := []struct {
+		fixtureDir string
+		scenarioID string
+	}{
+		{fixtureDir: "mcp-fixture", scenarioID: "mcp-normalization-fail-fast"},
+		{fixtureDir: "model-fixture", scenarioID: "model-run-stream-downgrade"},
+		{fixtureDir: "tool-fixture", scenarioID: "tool-invoke-fail-fast"},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.fixtureDir, func(t *testing.T) {
+			dir := filepath.Join(root, "integration", "testdata", "adapter-scaffold", tc.fixtureDir)
+			if err := ValidateManifestProfileAlignmentForScaffold(dir, tc.scenarioID); err != nil {
+				t.Fatalf("fixture manifest alignment failed: %v", err)
+			}
+		})
+	}
+}
+
+func contractErr(t *testing.T, err error) *adaptermanifest.ContractError {
+	t.Helper()
+	ce := &adaptermanifest.ContractError{}
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected manifest ContractError, got %T (%v)", err, err)
+	}
+	return ce
 }
 
 func mustRead(t *testing.T, path string) string {

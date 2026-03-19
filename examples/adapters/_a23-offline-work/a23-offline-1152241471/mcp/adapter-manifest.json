@@ -1,0 +1,11 @@
+{
+  "type": "mcp",
+  "name": "offline",
+  "version": "0.1.0",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["mcp.invoke.required_input", "mcp.response.normalized"],
+    "optional": ["mcp.transport.sse"]
+  },
+  "conformance_profile": "mcp-normalization-fail-fast"
+}

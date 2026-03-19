@@ -36,6 +36,7 @@ $versioningDoc = Get-Content -Raw docs/versioning-and-compatibility.md
 foreach ($marker in @(
     '版本阶段口径（延续 0.x）',
     '不做 `1.0.0` / prod-ready 承诺',
+    '允许新增能力型提案',
     '新增提案准入规则（0.x 阶段）'
 )) {
     if ($roadmapDoc -notmatch [regex]::Escape($marker)) {
@@ -80,7 +81,8 @@ foreach ($marker in @(
 foreach ($marker in @(
     'pre-`1.0.0`',
     'does **not** imply `1.0.0/prod-ready` commitments',
-    'Pre-1 Proposal Admission Baseline'
+    'Pre-1 Proposal Admission Baseline',
+    'Capability additions are allowed in `0.x`'
 )) {
     if ($versioningDoc -notmatch [regex]::Escape($marker)) {
         $pre1Issues += "docs/versioning-and-compatibility.md missing marker: $marker"
@@ -90,7 +92,8 @@ foreach ($marker in @(
 foreach ($marker in @(
     '版本阶段快照',
     '`0.x` pre-1 阶段',
-    '不做 `1.0.0/prod-ready` 承诺'
+    '不做 `1.0.0/prod-ready` 承诺',
+    '`0.x` 阶段允许新增能力型提案'
 )) {
     if ($readme -notmatch [regex]::Escape($marker)) {
         $pre1Issues += "README.md missing pre-1 release snapshot marker: $marker"
@@ -173,6 +176,6 @@ if ($adapterIssues.Count -gt 0) {
     Write-Error ("[adapter-docs] missing or stale adapter template/mapping entries: " + ($adapterIssues -join "; "))
 }
 
-go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict)$' -count=1
+go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection)$' -count=1
 
 Write-Host "Docs consistency check passed."

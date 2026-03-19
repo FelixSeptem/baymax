@@ -21,10 +21,14 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A21（外部适配样板与迁移映射）已归档并稳定。
 - A22（外部适配一致性 harness 与 gate）已归档并稳定。
 - A23（外部适配脚手架生成与 bootstrap）已归档并稳定。
-- A24（pre-1 发布轨道治理与提案准入规则）进行中。
+- A24（pre-1 发布轨道治理与提案准入规则）已归档并稳定。
+- A25（状态口径对齐与核心模块 README 丰富度门禁）已归档并稳定。
+- A26（Adapter Manifest 与 Runtime Compatibility 契约）进行中。
+- A27（Adapter Capability Negotiation 与 Fallback Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
+- `0.x` 阶段允许新增能力型提案，前提是满足提案准入字段与质量门禁阻断要求。
 - 提案准入规则与边界以 `docs/development-roadmap.md`、`docs/versioning-and-compatibility.md` 为准。
 
 ## 架构设计
@@ -449,7 +453,7 @@ A23 提供外部适配脚手架生成与漂移阻断，覆盖：
 - 统一命令入口：`mcp | model | tool`
 - 默认输出目录：`examples/adapters/<type>-<name>`
 - 默认 no-overwrite；冲突 fail-fast；`-force` 显式覆盖
-- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`
+- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`、`adapter-manifest.json`
 - conformance bootstrap 与 A22 最小矩阵映射（`mcp-normalization-fail-fast` / `model-run-stream-downgrade` / `tool-invoke-fail-fast`）
 
 生成命令：
@@ -468,6 +472,25 @@ bash scripts/check-adapter-scaffold-drift.sh
 
 ```powershell
 pwsh -File scripts/check-adapter-scaffold-drift.ps1
+```
+
+### 16) Adapter Manifest + Runtime Compatibility Contract（A26）
+
+A26 增加外部 adapter 的 manifest 合同与运行时兼容校验，覆盖：
+- manifest 必填字段：`type/name/version/baymax_compat/capabilities.required/capabilities.optional/conformance_profile`
+- `baymax_compat` semver range 校验（支持 `-rc` 预发布版本）
+- 接入边界 fail-fast：manifest 缺失/非法、版本不兼容、required capability 不满足
+- optional capability 缺失时 deterministic downgrade reason
+- scaffold/conformance 对齐：生成模板默认产出 `adapter-manifest.json`，并校验 profile 与 capability 断言一致
+
+manifest 合同校验命令（本地/CI 一致）：
+
+```bash
+bash scripts/check-adapter-manifest-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-manifest-contract.ps1
 ```
 
 ## 开发验证
@@ -505,6 +528,7 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 外部适配模板索引：`docs/external-adapter-template-index.md`
 - 适配迁移映射：`docs/adapter-migration-mapping.md`
 - 适配一致性验收：`scripts/check-adapter-conformance.sh` / `scripts/check-adapter-conformance.ps1`
+- 适配 manifest 合同校验：`scripts/check-adapter-manifest-contract.sh` / `scripts/check-adapter-manifest-contract.ps1`
 - 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`

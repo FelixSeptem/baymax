@@ -113,7 +113,7 @@ func TestGenerateForceOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate with force: %v", err)
 	}
-	if len(plan.Files) != 4 {
+	if len(plan.Files) != 5 {
 		t.Fatalf("unexpected generated file count: %d", len(plan.Files))
 	}
 
@@ -152,7 +152,7 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("build plan: %v", err)
 			}
-			if len(plan.Files) != 4 {
+			if len(plan.Files) != 5 {
 				t.Fatalf("unexpected file count: %d", len(plan.Files))
 			}
 			if !sort.StringsAreSorted(planFileNames(plan.Files)) {
@@ -165,6 +165,14 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 			}
 			if !strings.Contains(bootstrap, "adapterconformance."+tc.categoryRef) {
 				t.Fatalf("bootstrap missing category mapping %q", tc.categoryRef)
+			}
+
+			manifest := findFileContent(t, plan.Files, "adapter-manifest.json")
+			if !strings.Contains(manifest, `"baymax_compat": ">=0.26.0-rc.1 <0.27.0"`) {
+				t.Fatalf("manifest missing default baymax_compat range: %s", manifest)
+			}
+			if !strings.Contains(manifest, `"conformance_profile": "`+tc.scenarioID+`"`) {
+				t.Fatalf("manifest missing conformance_profile %q", tc.scenarioID)
 			}
 		})
 	}

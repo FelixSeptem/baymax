@@ -602,3 +602,60 @@ If governance docs contain semantic conflicts between pre-1 posture and stable-r
 - **WHEN** roadmap and versioning docs consistently express pre-1 posture
 - **THEN** docs consistency validation passes without governance-stage failure
 
+### Requirement: Quality gate SHALL include release status parity validation for progress docs
+Repository docs consistency checks MUST validate status parity between OpenSpec authority sources and contributor-facing progress docs.
+
+This validation MUST be executed in both shell and PowerShell documentation consistency paths and treated as blocking in quality gate.
+
+#### Scenario: Shell docs consistency path executes
+- **WHEN** contributor runs `bash scripts/check-docs-consistency.sh`
+- **THEN** release status parity validation runs and failures return non-zero
+
+#### Scenario: PowerShell docs consistency path executes
+- **WHEN** contributor runs `pwsh -File scripts/check-docs-consistency.ps1`
+- **THEN** equivalent release status parity validation runs with same blocking semantics
+
+### Requirement: Quality gate SHALL include core module README richness validation
+Repository docs consistency checks MUST validate required section baseline for covered core module README files.
+
+Failures in module README richness validation MUST fail quality gate.
+
+#### Scenario: Covered module README misses required section
+- **WHEN** docs consistency checks detect missing required section marker in covered module README
+- **THEN** quality gate exits non-zero and blocks merge
+
+#### Scenario: Covered module READMEs satisfy richness baseline
+- **WHEN** all covered module READMEs include required sections or explicit N/A markers
+- **THEN** docs consistency checks pass without module-readme-richness failure
+
+### Requirement: Mainline contract index SHALL map status parity and module README gates
+Mainline contract documentation MUST map status parity and module README richness checks to concrete tests or script entries.
+
+#### Scenario: Maintainer audits governance gate traceability
+- **WHEN** maintainer inspects `docs/mainline-contract-test-index.md`
+- **THEN** maintainer can identify status parity and module README richness gate paths and corresponding check entries
+
+### Requirement: Quality gate SHALL include adapter manifest contract validation as blocking step
+The standard quality gate MUST execute adapter manifest contract validation and MUST treat failures as blocking.
+
+This validation MUST be integrated into both shell and PowerShell quality-gate paths.
+
+#### Scenario: Contributor runs shell quality gate
+- **WHEN** contributor executes `bash scripts/check-quality-gate.sh`
+- **THEN** adapter manifest contract validation runs as required blocking step
+
+#### Scenario: Contributor runs PowerShell quality gate
+- **WHEN** contributor executes `pwsh -File scripts/check-quality-gate.ps1`
+- **THEN** equivalent adapter manifest contract validation runs as required blocking step
+
+### Requirement: Manifest contract gate SHALL fail fast with deterministic non-zero status
+If manifest schema, compatibility range, or required capability checks fail, validation MUST fail fast and return deterministic non-zero status.
+
+#### Scenario: Manifest compatibility check fails
+- **WHEN** manifest contract validation detects incompatible `baymax_compat` or invalid semver expression
+- **THEN** quality gate exits non-zero and blocks merge
+
+#### Scenario: Manifest contract checks pass
+- **WHEN** all required manifest schema and compatibility checks pass
+- **THEN** quality gate proceeds without manifest-gate failure
+

@@ -13,7 +13,7 @@
 
 当前进度（2026-03-19）：
 - A16 协作原语能力已归档并收口到 `orchestration/collab`。
-- A17 长任务恢复边界仍在实施中，涉及 `composer + scheduler` 的恢复重入判定。
+- A17 长任务恢复边界已归档并稳定。
 
 ## 架构设计
 
@@ -42,3 +42,21 @@
 - 编排层不承载 provider 协议或 MCP transport 细节。
 - 编排层不直接写 `runtime/diagnostics`，必须经 `observability/event.RuntimeRecorder` 收口。
 - reason namespace（如 `team.*`、`workflow.*`、`scheduler.*`、`subagent.*`）需保持稳定以支持契约测试。
+
+## 配置与默认值
+
+- 编排默认配置由 `runtime/config` 提供：如 collab 开关、scheduler QoS、recovery 边界。
+- `composer.collab.enabled=false`、`scheduler.dlq.enabled=false` 等保守默认保证 pre-1 行为稳定。
+- workflow graph composability 默认关闭，需显式开启。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./orchestration/... -count=1` 与 `go test ./integration -run 'TestComposer|TestScheduler|TestWorkflow' -count=1`。
+- 质量门禁中覆盖多代理性能基线、full-chain smoke、shared contract suites。
+- 关键观测字段：dispatch reason、attempt id、recovery replay counters。
+
+## 扩展点与常见误用
+
+- 扩展点：新增协作原语策略、扩展 scheduler store、引入新的 workflow step 执行器。
+- 常见误用：在编排层直接依赖模型或传输 SDK，导致跨域耦合。
+- 常见误用：修改 reason namespace 而不更新契约索引与回归测试。

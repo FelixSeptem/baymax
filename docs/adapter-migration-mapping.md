@@ -20,6 +20,7 @@
 | MCP adapter | 在业务代码中直接散落网络调用与重试逻辑 | 收敛到 `mcp/http` 或 `mcp/stdio` 客户端，并由 profile/runtime policy 管理 | additive 字段可增量引入；旧字段缺失走 default；非法配置 fail-fast |
 | Model adapter | 直接在上层绑定 provider SDK 类型 | 在 `model/<provider>` 实现 `types.ModelClient` + 能力探测接口 | nullable 字段允许为空；新增能力字段保持 backward-safe |
 | Tool adapter | 工具执行逻辑与业务主流程耦合 | 使用 `types.Tool` + `tool/local.Registry` 显式注册 | schema 变更需保持 additive 优先，破坏性变更需 fail-fast |
+| Adapter manifest | 接入前无统一兼容边界声明 | 为每个外部 adapter 提供 `adapter-manifest.json` 并在激活前校验 | `baymax_compat` 必须可解析；required fail-fast；optional downgrade 必须 deterministic |
 
 ## Code-Snippet Mapping
 
@@ -149,6 +150,30 @@ Compatibility notes:
 
 该边界与仓库兼容策略保持一致：`docs/versioning-and-compatibility.md`。
 
+## Manifest Migration Notes（A26）
+
+迁移到 A26 后，建议在 adapter 根目录补齐 `adapter-manifest.json`，最小结构：
+
+```json
+{
+  "type": "model",
+  "name": "demo-model",
+  "version": "0.1.0",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["model.run_stream.semantic_equivalent", "model.response.mandatory_fields"],
+    "optional": ["model.capability.token_count"]
+  },
+  "conformance_profile": "model-run-stream-downgrade"
+}
+```
+
+兼容语义补充：
+- `baymax_compat` 不命中时，接入边界必须 fail-fast，不允许隐式继续。
+- `capabilities.required` 缺失时必须 fail-fast，错误分类保持 deterministic。
+- `capabilities.optional` 缺失允许降级，并保留可回放的 downgrade reason code。
+- `conformance_profile` 与执行场景不一致时，conformance harness 必须阻断。
+
 ## A22 Conformance 对齐
 
 迁移完成后建议执行：
@@ -159,6 +184,14 @@ bash scripts/check-adapter-conformance.sh
 
 ```powershell
 pwsh -File scripts/check-adapter-conformance.ps1
+```
+
+```bash
+bash scripts/check-adapter-manifest-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-manifest-contract.ps1
 ```
 
 若 conformance 失败，优先检查：

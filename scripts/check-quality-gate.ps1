@@ -32,6 +32,14 @@ catch {
     throw "[quality-gate][adapter-conformance] adapter conformance harness failed: $($_.Exception.Message)"
 }
 
+Write-Host "[quality-gate] adapter manifest contract"
+try {
+    pwsh -File scripts/check-adapter-manifest-contract.ps1
+}
+catch {
+    throw "[quality-gate][adapter-manifest-contract] adapter manifest contract check failed: $($_.Exception.Message)"
+}
+
 Write-Host "[quality-gate] adapter scaffold drift"
 try {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1

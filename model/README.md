@@ -36,3 +36,21 @@
 - Provider 协议细节必须收敛在 `model/<provider>`，不得泄漏到 `core/*` 或 `context/*`。
 - 上层仅依赖 `core/types` 契约接口，不依赖具体 SDK 类型。
 - 新增 provider 时应复用同一事件和错误语义，避免跨 provider 行为漂移。
+
+## 配置与默认值
+
+- Provider 选择、模型名与凭证来自运行时配置与环境变量，不在 `model/*` 中硬编码。
+- 未显式声明能力时，适配器应回退为保守能力集（如 token counting unsupported）。
+- 错误归类默认走 `providererror` 标准路径。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./model/openai ./model/anthropic ./model/gemini -count=1`。
+- 主链路验证通过 `core/runner` 与 integration 契约测试覆盖 run/stream 等价。
+- provider 错误与降级语义需在诊断事件中保持可追踪原因码。
+
+## 扩展点与常见误用
+
+- 扩展点：新增 provider 子包并实现 `types.ModelClient` + capability discovery。
+- 常见误用：把 SDK 原始类型直接暴露到 `core/*`，造成边界泄漏。
+- 常见误用：run 与 stream 返回不同语义终态，破坏契约一致性。

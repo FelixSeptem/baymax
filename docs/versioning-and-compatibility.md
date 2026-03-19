@@ -72,6 +72,7 @@ To avoid drift, governance policy is maintained in:
 
 Before `1.0.0`, proposals are expected to stay bounded and reviewable:
 
+- Capability additions are allowed in `0.x` when admission fields and quality-gate requirements are satisfied.
 - Mandatory fields: `Why now`, risk, rollback, docs impact, validation commands.
 - Objective category: each proposal maps to at least one bounded target category from roadmap governance.
 - Long-term platformization topics remain documented directions, not near-term execution scope.

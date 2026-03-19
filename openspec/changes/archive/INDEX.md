@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-19 16:12:59
+Updated: 2026-03-19 21:26:15
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -74,3 +74,5 @@ Updated: 2026-03-19 16:12:59
 - 070 -> introduce-external-adapter-conformance-harness-and-gate-a22
 - 071 -> introduce-adapter-scaffold-generator-and-conformance-bootstrap-a23
 - 072 -> govern-pre1-release-track-and-change-admission-a24
+- 073 -> enforce-status-parity-and-core-module-readme-richness-a25
+- 074 -> introduce-adapter-manifest-and-runtime-compatibility-contract-a26

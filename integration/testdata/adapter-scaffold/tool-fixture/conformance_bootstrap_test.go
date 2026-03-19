@@ -27,4 +27,8 @@ func TestConformanceBootstrapAlignment(t *testing.T) {
 	if !found {
 		t.Fatalf("missing A22 scenario mapping: %s", expectedScenarioID)
 	}
+
+	if err := adapterconformance.ValidateManifestProfileAlignmentForScaffold(".", expectedScenarioID); err != nil {
+		t.Fatalf("manifest-profile alignment failed: %v", err)
+	}
 }

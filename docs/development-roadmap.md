@@ -16,14 +16,16 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：A4-A23（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate）。
+- 已归档并稳定：A4-A25（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁）。
 - 进行中：
-  - `govern-pre1-release-track-and-change-admission-a24`
+  - `introduce-adapter-manifest-and-runtime-compatibility-contract-a26`
+  - `introduce-adapter-capability-negotiation-and-fallback-contract-a27`
 
 ## 版本阶段口径（延续 0.x）
 
 当前仓库**不做 `1.0.0` / prod-ready 承诺**，继续沿用 `0.x` 治理口径（见 `docs/versioning-and-compatibility.md`）。
 在 `0.x` 阶段，版本号用于表达变更范围，不构成稳定兼容承诺；主线目标是“持续收敛、可回归迭代”。
+`0.x` 阶段**允许新增能力型提案**，不采用“仅治理/仅修复”的限制；新增能力需满足准入字段与质量门禁要求。
 
 1. 运行时主干稳定：
 - Runner Run/Stream 统一语义与并发背压基线。
@@ -45,30 +47,40 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 近期收口优先级（0.x）
 
-### P0：完成 A24 并归档（当前阶段）
+### P0：完成 A26 并归档（当前阶段）
 
 完成条件：
-- A24 归档：pre-1 口径、提案准入规则、docs consistency 阻断规则完成收敛。
-- `README` / `versioning` / `contract-index` / roadmap 口径对齐。
+- A26 收敛：adapter manifest schema 与 runtime compatibility 激活边界完成 fail-fast 接入。
+- A23 scaffold 默认生成 `adapter-manifest.json`，A22 conformance 能验证 manifest-profile 对齐。
+- `check-adapter-manifest-contract.*` 接入 `check-quality-gate.*` 并保持 shell/PowerShell 阻断一致。
 
-A24 实施顺序（收敛变更域）：
-1. 固化 `0.x` 口径，明确不做 `1.0.0/prod-ready` 承诺。
-2. 固化提案准入字段：`Why now`、风险、回滚、文档影响、验证命令。
-3. 固化 bounded 目标类别，并将平台化方向标记为非近期执行范围。
-4. 扩展 docs consistency 与 contributioncheck，保持 shell/PowerShell 阻断一致性。
+A26 实施顺序（收敛变更域）：
+1. 新增 manifest schema/validator + semver range（含 `-rc`）并固化错误分类。
+2. 在 adapter 激活边界接入兼容校验（missing/invalid/mismatch/required-missing fail-fast）。
+3. 扩展 scaffold 与 conformance：manifest 模板默认生成、profile/capability 对齐检查阻断。
+4. 接入 manifest contract gate 到质量门禁，并补齐主干索引与文档入口。
 
 ### P1：0.x 质量与治理持续收敛
 
 完成条件：
 - 所有变更继续通过质量门禁（`check-quality-gate.*`）与契约索引追踪。
-- 新增能力按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
+- 允许新增能力按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
 - 对外发布继续以 `0.x` 说明风险与兼容预期。
+
+## 维护提示（状态快照更新）
+
+每次归档或切换活跃 change 后，维护者应同步执行以下最小流程，避免触发 A25 口径漂移阻断：
+
+1. 以 `openspec list --json` 与 `openspec/changes/archive/INDEX.md` 作为唯一状态权威源。
+2. 更新 `README.md` 的里程碑快照和 `docs/development-roadmap.md` 的“当前状态”在研列表，确保 active/archived 语义一致。
+3. 若状态变更涉及门禁映射，更新 `docs/mainline-contract-test-index.md` 的对应行。
+4. 提交前执行 `pwsh -File scripts/check-docs-consistency.ps1`（或 shell 等价脚本）确认无漂移。
 
 ## 新增提案准入规则（0.x 阶段）
 
 从本文件生效起，`0.x` 阶段新增提案需满足：
 
-1. 必须直接服务于以下至少一类目标：
+1. 允许新增能力型提案进入近期执行，但必须直接服务于以下至少一类目标：
 - 契约一致性（Run/Stream、reason taxonomy、错误分层、兼容语义）。
 - 可靠性与安全（fail-fast、回滚、幂等、恢复边界、安全治理）。
 - 质量门禁回归治理（contract/perf/docs gate regression）。

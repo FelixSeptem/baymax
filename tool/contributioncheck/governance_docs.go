@@ -8,6 +8,7 @@ func ValidatePre1GovernanceDocs(roadmap, versioning, readme string) []string {
 	roadmapMarkers := []string{
 		"版本阶段口径（延续 0.x）",
 		"不做 `1.0.0` / prod-ready 承诺",
+		"允许新增能力型提案",
 		"新增提案准入规则（0.x 阶段）",
 		"`Why now`",
 		"风险",
@@ -33,6 +34,7 @@ func ValidatePre1GovernanceDocs(roadmap, versioning, readme string) []string {
 		"pre-`1.0.0`",
 		"does **not** imply `1.0.0/prod-ready` commitments",
 		"Pre-1 Proposal Admission Baseline",
+		"Capability additions are allowed in `0.x`",
 	}
 	for _, marker := range versioningMarkers {
 		if !strings.Contains(versioning, marker) {
@@ -44,6 +46,7 @@ func ValidatePre1GovernanceDocs(roadmap, versioning, readme string) []string {
 		"版本阶段快照",
 		"`0.x` pre-1 阶段",
 		"不做 `1.0.0/prod-ready` 承诺",
+		"`0.x` 阶段允许新增能力型提案",
 	}
 	for _, marker := range readmeMarkers {
 		if !strings.Contains(readme, marker) {

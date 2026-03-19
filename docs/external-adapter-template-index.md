@@ -14,6 +14,7 @@
 模板边界：
 - 仅用于 onboarding skeleton 和迁移参考。
 - 不提供生产级运行保障（多租户隔离、SLO、审计、全量安全策略）。
+- A26 起，模板默认携带 `adapter-manifest.json`，用于接入前 compatibility contract 校验。
 
 ## 模板导航
 
@@ -64,6 +65,23 @@
 - API 参考入口：`docs/api-reference-d1.md`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 
+## Manifest Template Guidance（A26）
+
+从 A26 起，脚手架模板默认生成 `adapter-manifest.json`，字段包含：
+- `type`
+- `name`
+- `version`
+- `baymax_compat`
+- `capabilities.required`
+- `capabilities.optional`
+- `conformance_profile`
+
+约束要点：
+- `baymax_compat` 使用 semver range，可包含 `-rc` 预发布表达。
+- `required` 能力缺失时必须 fail-fast。
+- `optional` 能力缺失允许降级，但必须输出 deterministic downgrade reason。
+- `conformance_profile` 必须与 conformance bootstrap 场景 ID 一致（避免模板漂移）。
+
 ## Conformance 验收入口（A22）
 
 模板交付后，必须通过 A22 一致性验收：
@@ -74,6 +92,14 @@ bash scripts/check-adapter-conformance.sh
 
 ```powershell
 pwsh -File scripts/check-adapter-conformance.ps1
+```
+
+```bash
+bash scripts/check-adapter-manifest-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-manifest-contract.ps1
 ```
 
 验收覆盖：

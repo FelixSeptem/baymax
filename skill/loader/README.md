@@ -32,3 +32,21 @@
 - 仅处理技能元数据与编译，不直接执行工具调用。
 - 通过 `types.SkillLoader` 契约与上层解耦，避免耦合具体编排器。
 - 评分策略变更需同步配置校验、文档与契约测试。
+
+## 配置与默认值
+
+- 默认评分策略与预算由 `runtime/config` 的 skill trigger 子域提供。
+- 未注入 embedding scorer 时会降级到词法评分路径并记录原因码。
+- 默认预算策略支持 `fixed` 与 `adaptive`，按配置生效。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./skill/loader -count=1`。
+- 关键观测事件：`skill.discovered`、`skill.loaded`、`skill.warning`。
+- 与 runtime config 联动验证需覆盖评分权重、预算阈值和回滚语义。
+
+## 扩展点与常见误用
+
+- 扩展点：新增 scorer、扩展 tokenization 策略、增加 skill metadata 字段。
+- 常见误用：在 loader 层执行工具调用，破坏“发现/编译”职责边界。
+- 常见误用：embedding 故障后直接失败而不走降级策略，导致可用性下降。

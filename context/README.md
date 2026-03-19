@@ -33,3 +33,21 @@
 - `context/*` 不直接依赖 provider 官方 SDK；模型能力应通过 `model/*` 间接复用。
 - stage2 错误层、reason code、hint 元数据需保持契约稳定，供 diagnostics 聚合。
 - 该域只生成标准结果与事件，不直接写 `runtime/diagnostics` 存储。
+
+## 配置与默认值
+
+- CA1-CA4 阈值与策略默认值由 `runtime/config` 提供，`context/*` 只消费快照。
+- Stage2 外部检索默认采用 best-effort，可按治理策略切换 fail-fast。
+- CA3/CA4 语义压缩与压力门限默认走保守参数，避免过度剪裁。
+
+## 可观测性与验证
+
+- 关键验证：`go test ./context/assembler ./context/guard ./context/journal ./context/provider -count=1`。
+- 可观测指标包括 phase 延迟、pressure level、stage2 provider 错误分层。
+- 回归重点是 run/stream 语义一致与 reason taxonomy 稳定。
+
+## 扩展点与常见误用
+
+- 扩展点：新增 stage2 provider adapter、扩展 CA3 reranker/scorer、接入新阈值治理策略。
+- 常见误用：在 assembler 内直接做 provider SDK 调用，绕过 provider 抽象层。
+- 常见误用：无诊断标注地引入压缩策略变更，导致线上排障困难。

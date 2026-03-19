@@ -78,6 +78,9 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Adapter Scaffold A23 Determinism + Conflict",
 		"Adapter Scaffold A23 Bootstrap Mapping + Offline Executable",
 		"Adapter Scaffold A23 Drift Gate Path",
+		"Pre-1 Governance A24 Docs Consistency",
+		"Pre-1 Governance A24 Gate Path",
+		"Pre-1 Governance A24 Quality Path",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

@@ -6,6 +6,7 @@ This project uses Semantic Versioning notation (`MAJOR.MINOR.PATCH`) for release
 
 - In the pre-`1.0.0` stage, version increments communicate change scope but do **not** imply strict compatibility guarantees.
 - `MAJOR`/`MINOR`/`PATCH` labels are best-effort signals for maintainers and users, not a compatibility contract before `1.0.0`.
+- Current governance posture stays in `0.x` and does **not** imply `1.0.0/prod-ready` commitments by default.
 
 Pre-release identifiers (for example `-rc.1`) may be used before a stable release.
 
@@ -63,5 +64,14 @@ Current baseline classification:
 To avoid drift, governance policy is maintained in:
 
 - This file (`docs/versioning-and-compatibility.md`)
-- `README.md` (entry links only)
+- `docs/development-roadmap.md` (pre-1 roadmap scope + proposal admission rules)
+- `README.md` (contributor-facing release snapshot)
 - `CHANGELOG.md` (release-by-release changes)
+
+## Pre-1 Proposal Admission Baseline
+
+Before `1.0.0`, proposals are expected to stay bounded and reviewable:
+
+- Mandatory fields: `Why now`, risk, rollback, docs impact, validation commands.
+- Objective category: each proposal maps to at least one bounded target category from roadmap governance.
+- Long-term platformization topics remain documented directions, not near-term execution scope.

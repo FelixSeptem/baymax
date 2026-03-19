@@ -21,7 +21,7 @@ try {
     pwsh -File scripts/check-docs-consistency.ps1
 }
 catch {
-    throw "[quality-gate][adapter-docs] adapter template/migration mapping docs consistency failed: $($_.Exception.Message)"
+    throw "[quality-gate][docs-consistency] docs consistency failed (adapter mapping or pre1 governance drift): $($_.Exception.Message)"
 }
 
 Write-Host "[quality-gate] adapter conformance"

@@ -20,7 +20,12 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A20（全链路参考示例与 smoke gate）已归档并稳定。
 - A21（外部适配样板与迁移映射）已归档并稳定。
 - A22（外部适配一致性 harness 与 gate）已归档并稳定。
-- A23（外部适配脚手架生成与 bootstrap）进行中。
+- A23（外部适配脚手架生成与 bootstrap）已归档并稳定。
+- A24（pre-1 发布轨道治理与提案准入规则）进行中。
+
+版本阶段快照：
+- 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
+- 提案准入规则与边界以 `docs/development-roadmap.md`、`docs/versioning-and-compatibility.md` 为准。
 
 ## 架构设计
 

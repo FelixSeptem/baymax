@@ -16,9 +16,8 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-19：
-- 已归档并稳定：A4-A22（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness）。
+- 已归档并稳定：A4-A23（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate）。
 - 进行中：
-  - `introduce-adapter-scaffold-generator-and-conformance-bootstrap-a23`
   - `govern-pre1-release-track-and-change-admission-a24`
 
 ## 版本阶段口径（延续 0.x）
@@ -42,21 +41,21 @@ Baymax 主线保持 `library-first + contract-first`：
 4. 外部接入稳定：
 - A21 模板与迁移映射（已归档）。
 - A22 conformance harness（已归档）。
-- A23 scaffold + conformance bootstrap（进行中）。
+- A23 scaffold + conformance bootstrap（已归档）。
 
 ## 近期收口优先级（0.x）
 
-### P0：完成 A23 并归档（当前阶段）
+### P0：完成 A24 并归档（当前阶段）
 
 完成条件：
-- A23 归档：脚手架生成、默认目录、`--force` 覆盖策略、bootstrap 对齐与 drift gate 稳定。
-- `README` / `runtime-config` / `contract-index` / roadmap 口径对齐。
+- A24 归档：pre-1 口径、提案准入规则、docs consistency 阻断规则完成收敛。
+- `README` / `versioning` / `contract-index` / roadmap 口径对齐。
 
-A23 实施顺序（收敛变更域）：
-1. 完成 `adapter/scaffold` 库与 `cmd/adapter-scaffold` 薄 CLI，锁定参数契约与冲突 fail-fast。
-2. 生成三类最小 onboarding 产物，并在 bootstrap 中固定映射 A22 最小矩阵。
-3. 增加 `check-adapter-scaffold-drift.sh/.ps1` 并接入 `check-quality-gate.sh/.ps1` 阻断路径。
-4. 最后同步 README 与主干契约索引，保证生成、漂移、conformance 可追踪闭环。
+A24 实施顺序（收敛变更域）：
+1. 固化 `0.x` 口径，明确不做 `1.0.0/prod-ready` 承诺。
+2. 固化提案准入字段：`Why now`、风险、回滚、文档影响、验证命令。
+3. 固化 bounded 目标类别，并将平台化方向标记为非近期执行范围。
+4. 扩展 docs consistency 与 contributioncheck，保持 shell/PowerShell 阻断一致性。
 
 ### P1：0.x 质量与治理持续收敛
 
@@ -72,7 +71,7 @@ A23 实施顺序（收敛变更域）：
 1. 必须直接服务于以下至少一类目标：
 - 契约一致性（Run/Stream、reason taxonomy、错误分层、兼容语义）。
 - 可靠性与安全（fail-fast、回滚、幂等、恢复边界、安全治理）。
-- 质量门禁与可回归性（contract/perf/docs gate）。
+- 质量门禁回归治理（contract/perf/docs gate regression）。
 - 外部接入 DX（模板、迁移、脚手架、conformance）且可被 gate 验证。
 2. 必须保持 lib-first 边界，不引入平台化控制面能力。
 3. 必须在提案内说明：`Why now`、风险、回滚点、文档影响、验证命令。

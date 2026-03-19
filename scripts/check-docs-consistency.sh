@@ -32,6 +32,51 @@ if [[ "${boundary_doc}" != *"依赖方向"* ]]; then
   exit 1
 fi
 
+pre1_issues=()
+roadmap_doc="$(cat docs/development-roadmap.md)"
+versioning_doc="$(cat docs/versioning-and-compatibility.md)"
+
+for marker in "版本阶段口径（延续 0.x）" '不做 `1.0.0` / prod-ready 承诺' "新增提案准入规则（0.x 阶段）"; do
+  if [[ "${roadmap_doc}" != *"${marker}"* ]]; then
+    pre1_issues+=("docs/development-roadmap.md missing marker: ${marker}")
+  fi
+done
+
+for marker in '`Why now`' "风险" "回滚" "文档影响" "验证命令"; do
+  if [[ "${roadmap_doc}" != *"${marker}"* ]]; then
+    pre1_issues+=("docs/development-roadmap.md missing proposal admission field marker: ${marker}")
+  fi
+done
+
+for marker in "契约一致性" "可靠性与安全" "质量门禁回归治理" "外部接入 DX"; do
+  if [[ "${roadmap_doc}" != *"${marker}"* ]]; then
+    pre1_issues+=("docs/development-roadmap.md missing bounded objective category: ${marker}")
+  fi
+done
+
+for marker in "长期方向（不进入近期主线）" "平台化控制面" "跨租户全局调度与控制平面" "市场化/托管化 adapter registry 能力"; do
+  if [[ "${roadmap_doc}" != *"${marker}"* ]]; then
+    pre1_issues+=("docs/development-roadmap.md missing long-term deferral marker: ${marker}")
+  fi
+done
+
+for marker in 'pre-`1.0.0`' 'does **not** imply `1.0.0/prod-ready` commitments' "Pre-1 Proposal Admission Baseline"; do
+  if [[ "${versioning_doc}" != *"${marker}"* ]]; then
+    pre1_issues+=("docs/versioning-and-compatibility.md missing marker: ${marker}")
+  fi
+done
+
+for marker in "版本阶段快照" '`0.x` pre-1 阶段' '不做 `1.0.0/prod-ready` 承诺'; do
+  if [[ "${readme}" != *"${marker}"* ]]; then
+    pre1_issues+=("README.md missing pre-1 release snapshot marker: ${marker}")
+  fi
+done
+
+if (( ${#pre1_issues[@]} > 0 )); then
+  echo "[pre1-governance] missing or stale pre-1 governance entries: ${pre1_issues[*]}"
+  exit 1
+fi
+
 adapter_issues=()
 adapter_docs=(
   "docs/external-adapter-template-index.md"
@@ -86,6 +131,6 @@ if (( ${#adapter_issues[@]} > 0 )); then
   exit 1
 fi
 
-go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency)$' -count=1
+go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict)$' -count=1
 
 echo "Docs consistency check passed."

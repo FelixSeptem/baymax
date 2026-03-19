@@ -97,6 +97,9 @@ A12/A13 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility win
 | Adapter Scaffold A23 Determinism + Conflict | `adapter/scaffold/scaffold_test.go::TestBuildPlanDeterministic`、`adapter/scaffold/scaffold_test.go::TestGenerateConflictFailFastNoPartialWrite`、`adapter/scaffold/scaffold_test.go::TestGenerateForceOverwrite` | `adapter/scaffold/scaffold_test.go::TestDefaultOutputPathWhenOutputOmitted` |
 | Adapter Scaffold A23 Bootstrap Mapping + Offline Executable | `adapter/scaffold/scaffold_test.go::TestBuildPlanIncludesCategoryBootstrapHints` | `adapter/scaffold/scaffold_test.go::TestGeneratedConformanceBootstrapOfflineExecutable` |
 | Adapter Scaffold A23 Drift Gate Path | `scripts/check-adapter-scaffold-drift.sh` | `scripts/check-adapter-scaffold-drift.ps1` |
+| Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
+| Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
+| Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | R4 Shared Contract Freeze Gate | `tool/contributioncheck/multi_agent_contract_test.go::TestMultiAgentSharedContractSnapshotPass` | `tool/contributioncheck/multi_agent_contract_test.go::TestValidateMultiAgentSharedContractDetectsViolations` |
 | CA3 Semantic Embedding Adapter E3 | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight` | `context/assembler/assembler_test.go::TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast` |
 | CA3 Reranker And Tuning E4 | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerBestEffortFallback` | `context/assembler/assembler_test.go::TestAssemblerCA3RerankerFailFast` |

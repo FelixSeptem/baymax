@@ -29,6 +29,78 @@ if ($boundaryDoc -notmatch "依赖方向") {
     Write-Error "docs/runtime-module-boundaries.md must include dependency direction section."
 }
 
+$pre1Issues = @()
+$roadmapDoc = Get-Content -Raw docs/development-roadmap.md
+$versioningDoc = Get-Content -Raw docs/versioning-and-compatibility.md
+
+foreach ($marker in @(
+    '版本阶段口径（延续 0.x）',
+    '不做 `1.0.0` / prod-ready 承诺',
+    '新增提案准入规则（0.x 阶段）'
+)) {
+    if ($roadmapDoc -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "docs/development-roadmap.md missing marker: $marker"
+    }
+}
+
+foreach ($marker in @(
+    '`Why now`',
+    '风险',
+    '回滚',
+    '文档影响',
+    '验证命令'
+)) {
+    if ($roadmapDoc -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "docs/development-roadmap.md missing proposal admission field marker: $marker"
+    }
+}
+
+foreach ($marker in @(
+    '契约一致性',
+    '可靠性与安全',
+    '质量门禁回归治理',
+    '外部接入 DX'
+)) {
+    if ($roadmapDoc -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "docs/development-roadmap.md missing bounded objective category: $marker"
+    }
+}
+
+foreach ($marker in @(
+    '长期方向（不进入近期主线）',
+    '平台化控制面',
+    '跨租户全局调度与控制平面',
+    '市场化/托管化 adapter registry 能力'
+)) {
+    if ($roadmapDoc -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "docs/development-roadmap.md missing long-term deferral marker: $marker"
+    }
+}
+
+foreach ($marker in @(
+    'pre-`1.0.0`',
+    'does **not** imply `1.0.0/prod-ready` commitments',
+    'Pre-1 Proposal Admission Baseline'
+)) {
+    if ($versioningDoc -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "docs/versioning-and-compatibility.md missing marker: $marker"
+    }
+}
+
+foreach ($marker in @(
+    '版本阶段快照',
+    '`0.x` pre-1 阶段',
+    '不做 `1.0.0/prod-ready` 承诺'
+)) {
+    if ($readme -notmatch [regex]::Escape($marker)) {
+        $pre1Issues += "README.md missing pre-1 release snapshot marker: $marker"
+    }
+}
+
+if ($pre1Issues.Count -gt 0) {
+    Write-Error ("[pre1-governance] missing or stale pre-1 governance entries: " + ($pre1Issues -join "; "))
+}
+
 $adapterIssues = @()
 $adapterDocs = @(
     "docs/external-adapter-template-index.md",
@@ -101,6 +173,6 @@ if ($adapterIssues.Count -gt 0) {
     Write-Error ("[adapter-docs] missing or stale adapter template/mapping entries: " + ($adapterIssues -join "; "))
 }
 
-go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency)$' -count=1
+go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict)$' -count=1
 
 Write-Host "Docs consistency check passed."

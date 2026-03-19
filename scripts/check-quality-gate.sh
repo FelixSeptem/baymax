@@ -16,7 +16,7 @@ bash scripts/check-repo-hygiene.sh
 
 echo "[quality-gate] docs consistency"
 if ! bash scripts/check-docs-consistency.sh; then
-  echo "[quality-gate][adapter-docs] adapter template/migration mapping docs consistency failed (missing or stale entry)"
+  echo "[quality-gate][docs-consistency] docs consistency failed (adapter mapping or pre1 governance drift)"
   exit 1
 fi
 

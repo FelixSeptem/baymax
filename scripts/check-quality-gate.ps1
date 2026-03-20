@@ -40,6 +40,14 @@ catch {
     throw "[quality-gate][adapter-manifest-contract] adapter manifest contract check failed: $($_.Exception.Message)"
 }
 
+Write-Host "[quality-gate] adapter capability negotiation contract"
+try {
+    pwsh -File scripts/check-adapter-capability-contract.ps1
+}
+catch {
+    throw "[quality-gate][adapter-capability-contract] adapter capability negotiation contract check failed: $($_.Exception.Message)"
+}
+
 Write-Host "[quality-gate] adapter scaffold drift"
 try {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1

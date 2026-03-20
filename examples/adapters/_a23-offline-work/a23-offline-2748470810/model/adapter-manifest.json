@@ -1,0 +1,15 @@
+{
+  "type": "model",
+  "name": "offline",
+  "version": "0.1.0",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["model.run_stream.semantic_equivalent", "model.response.mandatory_fields"],
+    "optional": ["model.capability.token_count"]
+  },
+  "negotiation": {
+    "default_strategy": "fail_fast",
+    "allow_request_override": true
+  },
+  "conformance_profile": "model-run-stream-downgrade"
+}

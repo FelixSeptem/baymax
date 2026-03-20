@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 )
 
 const (
@@ -18,6 +20,7 @@ const (
 	CodeInvalidCompatExpression   = "adapter-manifest.invalid-compat-expression"
 	CodeCompatibilityMismatch     = "adapter-manifest.compatibility-mismatch"
 	CodeRequiredCapabilityMissing = "adapter-manifest.required-capability-missing"
+	CodeInvalidNegotiationConfig  = "adapter-manifest.invalid-negotiation-config"
 )
 
 var (
@@ -36,7 +39,13 @@ type Manifest struct {
 	Version            string       `json:"version"`
 	BaymaxCompat       string       `json:"baymax_compat"`
 	Capabilities       Capabilities `json:"capabilities"`
+	Negotiation        Negotiation  `json:"negotiation,omitempty"`
 	ConformanceProfile string       `json:"conformance_profile"`
+}
+
+type Negotiation struct {
+	DefaultStrategy      string `json:"default_strategy,omitempty"`
+	AllowRequestOverride bool   `json:"allow_request_override,omitempty"`
 }
 
 type ContractError struct {
@@ -60,8 +69,20 @@ type OptionalDowngrade struct {
 	ReasonCode string
 }
 
+type CapabilityRequest struct {
+	Required         []string
+	Optional         []string
+	StrategyOverride string
+}
+
 type ActivationResult struct {
 	OptionalDowngrades []OptionalDowngrade
+	StrategyApplied    string
+	StrategyOverride   bool
+	MissingRequired    []string
+	MissingOptional    []string
+	ReasonCodes        []string
+	Diagnostics        adaptercap.Diagnostics
 }
 
 func LoadFile(path string) (Manifest, error) {
@@ -182,10 +203,24 @@ func Validate(manifest Manifest) error {
 			Message: "invalid semver range expression",
 		}
 	}
+	if strings.TrimSpace(normalized.Negotiation.DefaultStrategy) != "" && !adaptercap.IsStrategy(normalized.Negotiation.DefaultStrategy) {
+		return &ContractError{
+			Code:    CodeInvalidNegotiationConfig,
+			Field:   "negotiation.default_strategy",
+			Message: "default_strategy must be one of [fail_fast,best_effort]",
+		}
+	}
 	return nil
 }
 
 func Activate(manifest Manifest, runtimeVersion string, availableCapabilities []string) (ActivationResult, error) {
+	return ActivateWithRequest(manifest, runtimeVersion, availableCapabilities, CapabilityRequest{
+		Required: append([]string(nil), manifest.Capabilities.Required...),
+		Optional: append([]string(nil), manifest.Capabilities.Optional...),
+	})
+}
+
+func ActivateWithRequest(manifest Manifest, runtimeVersion string, availableCapabilities []string, request CapabilityRequest) (ActivationResult, error) {
 	normalized := normalize(manifest)
 	if err := Validate(normalized); err != nil {
 		return ActivationResult{}, err
@@ -214,34 +249,64 @@ func Activate(manifest Manifest, runtimeVersion string, availableCapabilities []
 		}
 		available[key] = struct{}{}
 	}
+	supportedSet := adaptercap.Set{
+		Required: filterAvailableCapabilities(normalized.Capabilities.Required, available),
+		Optional: filterAvailableCapabilities(normalized.Capabilities.Optional, available),
+	}
 
-	for _, required := range normalized.Capabilities.Required {
-		key := normalizeCapability(required)
-		if _, ok := available[key]; ok {
-			continue
+	defaultStrategy := strings.TrimSpace(normalized.Negotiation.DefaultStrategy)
+	if defaultStrategy == "" {
+		defaultStrategy = adaptercap.StrategyFailFast
+	}
+	reqStrategy := strings.TrimSpace(request.StrategyOverride)
+	if reqStrategy != "" && !normalized.Negotiation.AllowRequestOverride {
+		return ActivationResult{}, &ContractError{
+			Code:    CodeInvalidNegotiationConfig,
+			Field:   "negotiation.allow_request_override",
+			Message: "request strategy override is not allowed by manifest negotiation policy",
 		}
+	}
+
+	outcome, err := adaptercap.Negotiate(defaultStrategy, adaptercap.Set{
+		Required: append([]string(nil), supportedSet.Required...),
+		Optional: append([]string(nil), supportedSet.Optional...),
+	}, adaptercap.Request{
+		Required:         append([]string(nil), request.Required...),
+		Optional:         append([]string(nil), request.Optional...),
+		StrategyOverride: reqStrategy,
+	})
+	if err != nil {
+		return ActivationResult{}, err
+	}
+
+	if !outcome.Accepted {
 		return ActivationResult{}, &ContractError{
 			Code:    CodeRequiredCapabilityMissing,
 			Field:   "capabilities.required",
-			Message: "required capability unavailable: " + key,
+			Message: "required capability unavailable: " + strings.Join(outcome.MissingRequired, ","),
 		}
 	}
 
-	downgrades := make([]OptionalDowngrade, 0)
-	for _, optional := range normalized.Capabilities.Optional {
-		key := normalizeCapability(optional)
-		if _, ok := available[key]; ok {
-			continue
-		}
+	downgrades := make([]OptionalDowngrade, 0, len(outcome.DowngradedOptional))
+	for _, missingOptional := range outcome.DowngradedOptional {
 		downgrades = append(downgrades, OptionalDowngrade{
-			Capability: key,
-			ReasonCode: "adapter.manifest.capability.optional_missing." + reasonSegment(key),
+			Capability: missingOptional,
+			ReasonCode: "adapter.manifest.capability.optional_missing." + reasonSegment(missingOptional),
 		})
 	}
+
 	sort.Slice(downgrades, func(i, j int) bool {
 		return downgrades[i].Capability < downgrades[j].Capability
 	})
-	return ActivationResult{OptionalDowngrades: downgrades}, nil
+	return ActivationResult{
+		OptionalDowngrades: downgrades,
+		StrategyApplied:    outcome.AppliedStrategy,
+		StrategyOverride:   outcome.StrategyOverrideApplied,
+		MissingRequired:    append([]string(nil), outcome.MissingRequired...),
+		MissingOptional:    append([]string(nil), outcome.MissingOptional...),
+		ReasonCodes:        append([]string(nil), outcome.Reasons...),
+		Diagnostics:        outcome.Diagnostics,
+	}, nil
 }
 
 func normalize(manifest Manifest) Manifest {
@@ -249,6 +314,7 @@ func normalize(manifest Manifest) Manifest {
 	manifest.Name = strings.ToLower(strings.TrimSpace(manifest.Name))
 	manifest.Version = strings.TrimSpace(manifest.Version)
 	manifest.BaymaxCompat = strings.TrimSpace(manifest.BaymaxCompat)
+	manifest.Negotiation.DefaultStrategy = strings.ToLower(strings.TrimSpace(manifest.Negotiation.DefaultStrategy))
 	manifest.ConformanceProfile = strings.ToLower(strings.TrimSpace(manifest.ConformanceProfile))
 	manifest.Capabilities.Required = normalizeCapabilities(manifest.Capabilities.Required)
 	manifest.Capabilities.Optional = normalizeCapabilities(manifest.Capabilities.Optional)
@@ -288,6 +354,24 @@ func hasEmptyCapability(items []string) bool {
 		}
 	}
 	return false
+}
+
+func filterAvailableCapabilities(items []string, available map[string]struct{}) []string {
+	if len(items) == 0 || len(available) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		key := normalizeCapability(item)
+		if key == "" {
+			continue
+		}
+		if _, ok := available[key]; !ok {
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
 }
 
 func reasonSegment(capability string) string {

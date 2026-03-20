@@ -113,7 +113,7 @@ func TestGenerateForceOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate with force: %v", err)
 	}
-	if len(plan.Files) != 5 {
+	if len(plan.Files) != 6 {
 		t.Fatalf("unexpected generated file count: %d", len(plan.Files))
 	}
 
@@ -152,7 +152,7 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("build plan: %v", err)
 			}
-			if len(plan.Files) != 5 {
+			if len(plan.Files) != 6 {
 				t.Fatalf("unexpected file count: %d", len(plan.Files))
 			}
 			if !sort.StringsAreSorted(planFileNames(plan.Files)) {
@@ -173,6 +173,20 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 			}
 			if !strings.Contains(manifest, `"conformance_profile": "`+tc.scenarioID+`"`) {
 				t.Fatalf("manifest missing conformance_profile %q", tc.scenarioID)
+			}
+			if !strings.Contains(manifest, `"default_strategy": "fail_fast"`) {
+				t.Fatalf("manifest missing default negotiation strategy fail_fast: %s", manifest)
+			}
+			if !strings.Contains(manifest, `"allow_request_override": true`) {
+				t.Fatalf("manifest missing allow_request_override hook: %s", manifest)
+			}
+
+			negotiation := findFileContent(t, plan.Files, "capability_negotiation_test.go")
+			if !strings.Contains(negotiation, "StrategyOverride: adaptercap.StrategyBestEffort") {
+				t.Fatalf("capability negotiation skeleton missing request-level override hook")
+			}
+			if !strings.Contains(negotiation, "fail_fast") {
+				t.Fatalf("capability negotiation skeleton missing default strategy marker")
 			}
 		})
 	}

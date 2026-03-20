@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## 定位
 
@@ -15,11 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-19：
-- 已归档并稳定：A4-A25（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁）。
+截至 2026-03-20：
+- 已归档并稳定：A4-A26（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约）。
 - 进行中：
-  - `introduce-adapter-manifest-and-runtime-compatibility-contract-a26`
   - `introduce-adapter-capability-negotiation-and-fallback-contract-a27`
+  - `introduce-adapter-contract-profile-versioning-and-replay-gate-a28`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -47,18 +47,19 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 近期收口优先级（0.x）
 
-### P0：完成 A26 并归档（当前阶段）
+### P0：收口 A27 并推进 A28（当前阶段）
 
 完成条件：
-- A26 收敛：adapter manifest schema 与 runtime compatibility 激活边界完成 fail-fast 接入。
-- A23 scaffold 默认生成 `adapter-manifest.json`，A22 conformance 能验证 manifest-profile 对齐。
-- `check-adapter-manifest-contract.*` 接入 `check-quality-gate.*` 并保持 shell/PowerShell 阻断一致。
+- A27 收敛：adapter capability negotiation（`required/optional`）与 fallback 策略（`fail_fast|best_effort`）语义稳定，且 Run/Stream 协商结果等价。
+- A28 起步：引入 `contract_profile_version` 与 runtime 支持窗口校验（默认 `current + previous`），不兼容 fail-fast。
+- `check-adapter-capability-contract.*` 与 `check-adapter-contract-replay.*` 并入 `check-quality-gate.*`，shell/PowerShell 阻断一致。
+- A22 conformance 与 A23 scaffold 可覆盖 manifest + capability + profile/replay 组合路径。
 
-A26 实施顺序（收敛变更域）：
-1. 新增 manifest schema/validator + semver range（含 `-rc`）并固化错误分类。
-2. 在 adapter 激活边界接入兼容校验（missing/invalid/mismatch/required-missing fail-fast）。
-3. 扩展 scaffold 与 conformance：manifest 模板默认生成、profile/capability 对齐检查阻断。
-4. 接入 manifest contract gate 到质量门禁，并补齐主干索引与文档入口。
+A27/A28 实施顺序（收敛变更域）：
+1. 收敛 A27 协商内核：requested-vs-declared 匹配、策略覆盖与 reason taxonomy。
+2. 将 A27 协商语义接入 A22 conformance 与 A23 scaffold，保证模板与验收口径一致。
+3. 引入 A28 profile version 与兼容窗口校验，并补齐 replay fixtures（manifest/negotiation/reason taxonomy）。
+4. 接入 `adapter-capability` 与 `adapter-contract-replay` gate 到质量门禁，更新主干索引与文档入口。
 
 ### P1：0.x 质量与治理持续收敛
 

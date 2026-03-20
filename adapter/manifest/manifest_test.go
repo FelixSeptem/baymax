@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 )
 
 func TestParseAndValidateManifestSuccess(t *testing.T) {
@@ -111,10 +113,18 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 			Required: []string{"model.generate", "model.stream"},
 			Optional: []string{"model.token_count", "model.safety_filter"},
 		},
+		Negotiation: Negotiation{
+			DefaultStrategy:      adaptercap.StrategyFailFast,
+			AllowRequestOverride: true,
+		},
 		ConformanceProfile: "model-run-stream-downgrade",
 	}
 
-	outcome, err := Activate(manifest, "0.26.0-rc.3", []string{"model.generate", "model.stream", "model.safety_filter"})
+	outcome, err := ActivateWithRequest(manifest, "0.26.0-rc.3", []string{"model.generate", "model.stream", "model.safety_filter"}, CapabilityRequest{
+		Required:         []string{"model.generate", "model.stream"},
+		Optional:         []string{"model.token_count"},
+		StrategyOverride: adaptercap.StrategyBestEffort,
+	})
 	if err != nil {
 		t.Fatalf("activate success path: %v", err)
 	}
@@ -123,6 +133,9 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 	}
 	if outcome.OptionalDowngrades[0].Capability != "model.token_count" {
 		t.Fatalf("unexpected downgrade capability: %#v", outcome.OptionalDowngrades[0])
+	}
+	if !outcome.StrategyOverride || outcome.StrategyApplied != adaptercap.StrategyBestEffort {
+		t.Fatalf("unexpected negotiation strategy info: %#v", outcome)
 	}
 
 	_, err = Activate(manifest, "0.27.0", []string{"model.generate", "model.stream"})
@@ -134,6 +147,14 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 		t.Fatalf("unexpected compatibility mismatch error: %#v", compatErr)
 	}
 
+	_, err = ActivateWithRequest(manifest, "0.26.0-rc.3", []string{"model.generate", "model.stream"}, CapabilityRequest{
+		Required: []string{"model.generate", "model.stream"},
+		Optional: []string{"model.token_count"},
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast missing optional request to reject")
+	}
+
 	_, err = Activate(manifest, "0.26.0-rc.3", []string{"model.generate"})
 	if err == nil {
 		t.Fatal("expected required capability failure")
@@ -141,6 +162,30 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 	requiredErr := contractErr(t, err)
 	if requiredErr.Code != CodeRequiredCapabilityMissing || requiredErr.Field != "capabilities.required" {
 		t.Fatalf("unexpected required capability error: %#v", requiredErr)
+	}
+}
+
+func TestValidateNegotiationConfigRejectsInvalidDefaultStrategy(t *testing.T) {
+	err := Validate(Manifest{
+		Type:         "tool",
+		Name:         "demo-tool",
+		Version:      "0.1.0",
+		BaymaxCompat: ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		Negotiation: Negotiation{
+			DefaultStrategy: "random",
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+	})
+	if err == nil {
+		t.Fatal("expected invalid negotiation config")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeInvalidNegotiationConfig || ce.Field != "negotiation.default_strategy" {
+		t.Fatalf("unexpected error: %#v", ce)
 	}
 }
 

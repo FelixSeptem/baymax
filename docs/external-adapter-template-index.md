@@ -1,6 +1,6 @@
 # External Adapter Template Index (A21)
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## 目标
 
@@ -15,6 +15,7 @@
 - 仅用于 onboarding skeleton 和迁移参考。
 - 不提供生产级运行保障（多租户隔离、SLO、审计、全量安全策略）。
 - A26 起，模板默认携带 `adapter-manifest.json`，用于接入前 compatibility contract 校验。
+- A27 起，脚手架默认携带 `capability_negotiation_test.go`，用于协商与回退契约 baseline。
 
 ## 模板导航
 
@@ -108,3 +109,36 @@ pwsh -File scripts/check-adapter-manifest-contract.ps1
 - run/stream 语义等价（适用项）
 - 错误分类与 reason taxonomy 归一
 - mandatory input fail-fast
+
+## Capability Negotiation Scaffold Guidance（A27）
+
+从 A27 起，脚手架在保留 `adapter-manifest.json` 的同时，新增：
+- `capability_negotiation_test.go`：覆盖 fail-fast、best-effort override、run/stream 协商等价基线。
+- manifest `negotiation` 段默认值：
+  - `default_strategy: fail_fast`
+  - `allow_request_override: true`
+
+协商语义约束：
+- required capability 缺失必须 fail-fast（`adapter.capability.missing_required`）。
+- optional capability 在 `best_effort` 下允许降级（`adapter.capability.optional_downgraded`）。
+- 请求策略覆盖生效时记录 `adapter.capability.strategy_override_applied`。
+
+A27 契约验收入口：
+
+```bash
+bash scripts/check-adapter-capability-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-capability-contract.ps1
+```
+
+## Profile Versioning & Replay Guidance（A28，进行中）
+
+A28 当前处于实施阶段，目标是补齐 profile version 与 replay gate：
+- 在 manifest/conformance/negotiation 链路统一引入 `contract_profile_version`。
+- runtime 侧执行 profile 支持窗口校验（默认 `current + previous`，不命中 fail-fast）。
+- 增加 replay 基线用于识别契约语义漂移（manifest/compat/negotiation/reason taxonomy）。
+
+注意：
+- 该能力尚在进行中，最终字段名、脚本入口和阻断策略以实际代码与 OpenSpec 变更为准。

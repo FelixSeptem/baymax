@@ -13,7 +13,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-19）：
+当前里程碑快照（2026-03-20）：
 - A17（长任务恢复边界）已归档并稳定。
 - A18（统一 run/team/workflow/task 诊断检索 API）已归档并稳定。
 - A19（多代理主链路性能基线门禁）已归档并稳定。
@@ -23,8 +23,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A23（外部适配脚手架生成与 bootstrap）已归档并稳定。
 - A24（pre-1 发布轨道治理与提案准入规则）已归档并稳定。
 - A25（状态口径对齐与核心模块 README 丰富度门禁）已归档并稳定。
-- A26（Adapter Manifest 与 Runtime Compatibility 契约）进行中。
+- A26（Adapter Manifest 与 Runtime Compatibility 契约）已归档并稳定。
 - A27（Adapter Capability Negotiation 与 Fallback Contract）进行中。
+- A28（Adapter Contract Profile Versioning 与 Replay Gate）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -72,6 +73,7 @@ runtime/config + runtime/diagnostics
 | Context Assembler | `context/assembler` `context/journal` `context/guard` `context/provider` | 上下文装配、检索与守卫 |
 | Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` | 工作流、多代理协作、调度与组合入口 |
 | A2A Interop | `a2a` | Agent-to-Agent 互联契约（submit/status/result） |
+| Adapter Contracts | `adapter/manifest` `adapter/capability` `adapter/scaffold` | 外部适配契约、能力协商与脚手架治理 |
 | Runtime Config | `runtime/config` | 配置加载、校验、热更新、回滚 |
 | Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 可观测性、诊断存储与查询（当前以 `Recent* + Trends` 为主） |
 | Skill Loader | `skill/loader` | AGENTS/SKILL 发现、评分、bundle 组装 |
@@ -87,6 +89,7 @@ runtime/config + runtime/diagnostics
 - [Model Adapters 说明](model/README.md)
 - [Context Assembler 说明](context/README.md)
 - [Orchestration 说明](orchestration/README.md)
+- [Adapter Contracts 说明](adapter/README.md)
 - [Runtime Config 说明](runtime/config/README.md)
 - [Runtime Diagnostics 说明](runtime/diagnostics/README.md)
 - [Runtime Security 说明](runtime/security/README.md)
@@ -453,7 +456,7 @@ A23 提供外部适配脚手架生成与漂移阻断，覆盖：
 - 统一命令入口：`mcp | model | tool`
 - 默认输出目录：`examples/adapters/<type>-<name>`
 - 默认 no-overwrite；冲突 fail-fast；`-force` 显式覆盖
-- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`、`adapter-manifest.json`
+- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`、`capability_negotiation_test.go`、`adapter-manifest.json`
 - conformance bootstrap 与 A22 最小矩阵映射（`mcp-normalization-fail-fast` / `model-run-stream-downgrade` / `tool-invoke-fail-fast`）
 
 生成命令：
@@ -474,7 +477,7 @@ bash scripts/check-adapter-scaffold-drift.sh
 pwsh -File scripts/check-adapter-scaffold-drift.ps1
 ```
 
-### 16) Adapter Manifest + Runtime Compatibility Contract（A26）
+### 16) Adapter Manifest + Runtime Compatibility Contract（A26，已归档）
 
 A26 增加外部 adapter 的 manifest 合同与运行时兼容校验，覆盖：
 - manifest 必填字段：`type/name/version/baymax_compat/capabilities.required/capabilities.optional/conformance_profile`
@@ -492,6 +495,33 @@ bash scripts/check-adapter-manifest-contract.sh
 ```powershell
 pwsh -File scripts/check-adapter-manifest-contract.ps1
 ```
+
+### 17) Adapter Capability Negotiation + Fallback Contract（A27，进行中）
+
+A27 正在实施外部 adapter 能力协商与回退契约，当前收敛范围：
+- 协商策略：默认 `fail_fast`，可按请求显式覆盖到 `best_effort`（受 manifest `negotiation.allow_request_override` 约束）
+- 原因分类固定：`adapter.capability.missing_required`、`adapter.capability.optional_downgraded`、`adapter.capability.strategy_override_applied`
+- optional 缺失在 `best_effort` 下 deterministic downgrade，在 `fail_fast` 下拒绝
+- Run/Stream 在同输入下协商结果语义等价（accept/reject/downgrade + reason taxonomy）
+- scaffold 默认内置 `capability_negotiation_test.go` 作为协商基线测试骨架
+
+能力协商契约校验命令（本地/CI 一致）：
+
+```bash
+bash scripts/check-adapter-capability-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-capability-contract.ps1
+```
+
+### 18) Adapter Contract Profile Versioning + Replay Gate（A28，进行中）
+
+A28 正在实施 adapter 合同 profile 版本化与回放门禁，当前目标：
+- 引入 `contract_profile_version`，统一 manifest / conformance / negotiation 三条链路的 profile 版本口径。
+- 增加 runtime 侧 profile 支持窗口校验（默认 `current + previous`），不命中 fail-fast。
+- 补齐 profile replay 基线（manifest/compat/negotiation/reason taxonomy）以支持稳定回归。
+- 相关 gate 会并入质量门禁，最终命令入口以 A28 变更落地为准。
 
 ## 开发验证
 
@@ -529,6 +559,7 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 适配迁移映射：`docs/adapter-migration-mapping.md`
 - 适配一致性验收：`scripts/check-adapter-conformance.sh` / `scripts/check-adapter-conformance.ps1`
 - 适配 manifest 合同校验：`scripts/check-adapter-manifest-contract.sh` / `scripts/check-adapter-manifest-contract.ps1`
+- 适配能力协商合同校验：`scripts/check-adapter-capability-contract.sh` / `scripts/check-adapter-capability-contract.ps1`
 - 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`

@@ -1,6 +1,6 @@
 # Runtime Module Boundaries
 
-更新时间：2026-03-18
+更新时间：2026-03-20
 
 ## 目标
 
@@ -42,6 +42,18 @@
   - A2A delivery 模式协商与降级（`callback|sse`）以及版本协商（`strict_major + min_supported_minor`）仅在 `a2a/*` 实现，不下沉到 MCP 传输层
   - 保留并透传组合编排关联字段（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）
   - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
+- `adapter/manifest`
+  - 外部 adapter manifest 合同解析、字段校验与兼容范围判定（A26）
+  - 激活边界 fail-fast（missing/invalid/compat-mismatch/required-missing）
+  - 输出 deterministic 合同错误分类，供 conformance 与 gate 回归复用
+- `adapter/capability`
+  - requested vs declared capability 协商（A27）
+  - 策略收敛：`fail_fast|best_effort` 与 override 语义
+  - reason taxonomy 收敛：`adapter.capability.*` 命名空间
+- `adapter/scaffold`
+  - 外部 adapter 脚手架生成与模板收口
+  - 生成 manifest/conformance/negotiation baseline 测试骨架
+  - 通过 drift gate 维持模板与主线契约一致
 - `orchestration/scheduler`
   - 分布式 subagent 调度基线（enqueue/claim/heartbeat/lease_expire/requeue/complete/fail）
   - QoS 治理能力（`scheduler.qos.mode` + fairness 窗口 + retry backoff + DLQ）仅在该模块内实现
@@ -74,7 +86,7 @@
 
 `runtime/*` -> (no dependency on `mcp/http` or `mcp/stdio`)
 
-`mcp/*`, `core/*`, `tool/*`, `skill/*`, `observability/*`, `orchestration/*` -> `runtime/*`
+`mcp/*`, `core/*`, `tool/*`, `skill/*`, `observability/*`, `orchestration/*`, `adapter/*` -> `runtime/*`
 
 禁止方向：
 
@@ -83,9 +95,11 @@
 - Teams 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
+- Adapter 契约模块直接写 `runtime/diagnostics` 存储（必须经标准事件/门禁链路收口）
 - Scheduler 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Composer 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）
+- 在 `adapter/*` 之外重复实现 manifest/capability 合同解析，造成错误分类与回放语义漂移
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。

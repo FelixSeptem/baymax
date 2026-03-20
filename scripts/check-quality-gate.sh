@@ -32,6 +32,12 @@ if ! bash scripts/check-adapter-manifest-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] adapter capability negotiation contract"
+if ! bash scripts/check-adapter-capability-contract.sh; then
+  echo "[quality-gate][adapter-capability-contract] adapter capability negotiation contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## 目标
 
@@ -1093,6 +1093,26 @@ Action Gate 规则优先级（H4）：
 - composer 消费 `teams.*` / `workflow.*` / `a2a.*` / `scheduler.*` / `subagent.*` 快照。
 - scheduler/subagent 变更采用 `next_attempt_only`：仅影响新 `enqueue/spawn/claim` 边界；in-flight attempt 不回溯修改已创建 lease 语义。
 
+### Adapter Capability Negotiation 诊断字段（A27）
+
+外部 adapter 激活协商会额外产出以下诊断字段（`adapter/capability.Diagnostics` 对应 JSON tag）：
+- `adapter_capability_strategy_applied`
+- `adapter_capability_strategy_override_applied`
+- `adapter_capability_missing_required`
+- `adapter_capability_missing_optional`
+- `adapter_capability_downgraded_optional`
+- `adapter_capability_reason_codes`
+
+reason taxonomy 固定为：
+- `adapter.capability.missing_required`
+- `adapter.capability.optional_downgraded`
+- `adapter.capability.strategy_override_applied`
+
+协商语义说明：
+- 默认策略为 `fail_fast`；当请求未携带 optional 时，optional 缺失不影响成功路径。
+- 请求显式 override 到 `best_effort` 且 manifest 允许时，optional 缺失走 deterministic downgrade。
+- Run 与 Stream 在同请求上下文下必须产出语义等价的 accept/reject/downgrade 与 reason taxonomy。
+
 ### Compatibility Window (A12/A13)
 
 兼容窗口规则：`additive + nullable + default`
@@ -1107,6 +1127,7 @@ Action Gate 规则优先级（H4）：
 | A16 Collaboration Primitives（`collab_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
 | A17 Recovery Boundary（`recovery_resume_boundary` / `recovery_inflight_policy` / `recovery_timeout_reentry_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按空字符串或 `0` 解析 |
 | Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
+| A27 Adapter Capability Negotiation（`adapter_capability_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按空字符串 / `false` / 空数组解析 |
 
 legacy consumers 行为示例：
 - 仅解析 A11 及更早字段的消费者，可以忽略 `a2a_async_report_*` / `scheduler_delayed_*`，不会影响既有逻辑。

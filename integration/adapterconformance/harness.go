@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -22,46 +23,54 @@ const (
 )
 
 type Scenario struct {
-	ID                   string
-	Category             Category
-	PriorityTier         int
-	TemplatePath         string
-	TraceComment         string
-	RequiredCapabilities []string
-	OptionalCapabilities []string
-	ConformanceProfile   string
+	ID                    string
+	Category              Category
+	PriorityTier          int
+	TemplatePath          string
+	TraceComment          string
+	RequiredCapabilities  []string
+	OptionalCapabilities  []string
+	ConformanceProfile    string
+	DefaultStrategy       string
+	AllowStrategyOverride bool
 }
 
 var MinimumMatrix = []Scenario{
 	{
-		ID:                   "mcp-normalization-fail-fast",
-		Category:             CategoryMCP,
-		PriorityTier:         1,
-		TemplatePath:         "examples/templates/mcp-adapter-template/main.go",
-		TraceComment:         "A21 template linkage: MCP adapter template baseline and fail-fast boundary",
-		RequiredCapabilities: []string{"mcp.invoke.required_input", "mcp.response.normalized"},
-		OptionalCapabilities: []string{"mcp.transport.sse"},
-		ConformanceProfile:   "mcp-normalization-fail-fast",
+		ID:                    "mcp-normalization-fail-fast",
+		Category:              CategoryMCP,
+		PriorityTier:          1,
+		TemplatePath:          "examples/templates/mcp-adapter-template/main.go",
+		TraceComment:          "A21 template linkage: MCP adapter template baseline and fail-fast boundary",
+		RequiredCapabilities:  []string{"mcp.invoke.required_input", "mcp.response.normalized"},
+		OptionalCapabilities:  []string{"mcp.transport.sse"},
+		ConformanceProfile:    "mcp-normalization-fail-fast",
+		DefaultStrategy:       adaptercap.StrategyFailFast,
+		AllowStrategyOverride: true,
 	},
 	{
-		ID:                   "model-run-stream-downgrade",
-		Category:             CategoryModel,
-		PriorityTier:         2,
-		TemplatePath:         "examples/templates/model-adapter-template/main.go",
-		TraceComment:         "A21 template linkage: Model adapter template run/stream equivalence and downgrade semantics",
-		RequiredCapabilities: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
-		OptionalCapabilities: []string{"model.capability.token_count"},
-		ConformanceProfile:   "model-run-stream-downgrade",
+		ID:                    "model-run-stream-downgrade",
+		Category:              CategoryModel,
+		PriorityTier:          2,
+		TemplatePath:          "examples/templates/model-adapter-template/main.go",
+		TraceComment:          "A21 template linkage: Model adapter template run/stream equivalence and downgrade semantics",
+		RequiredCapabilities:  []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		OptionalCapabilities:  []string{"model.capability.token_count"},
+		ConformanceProfile:    "model-run-stream-downgrade",
+		DefaultStrategy:       adaptercap.StrategyFailFast,
+		AllowStrategyOverride: true,
 	},
 	{
-		ID:                   "tool-invoke-fail-fast",
-		Category:             CategoryTool,
-		PriorityTier:         3,
-		TemplatePath:         "examples/templates/tool-adapter-template/main.go",
-		TraceComment:         "A21 template linkage: Tool adapter template invocation and mandatory-input fail-fast",
-		RequiredCapabilities: []string{"tool.invoke.required_input"},
-		OptionalCapabilities: []string{"tool.schema.rich_validation"},
-		ConformanceProfile:   "tool-invoke-fail-fast",
+		ID:                    "tool-invoke-fail-fast",
+		Category:              CategoryTool,
+		PriorityTier:          3,
+		TemplatePath:          "examples/templates/tool-adapter-template/main.go",
+		TraceComment:          "A21 template linkage: Tool adapter template invocation and mandatory-input fail-fast",
+		RequiredCapabilities:  []string{"tool.invoke.required_input"},
+		OptionalCapabilities:  []string{"tool.schema.rich_validation"},
+		ConformanceProfile:    "tool-invoke-fail-fast",
+		DefaultStrategy:       adaptercap.StrategyFailFast,
+		AllowStrategyOverride: true,
 	},
 }
 
@@ -125,6 +134,12 @@ func ValidateMinimumMatrix(matrix []Scenario) error {
 		if row.OptionalCapabilities == nil {
 			return fmt.Errorf("scenario %q missing optional capability assertions", row.ID)
 		}
+		if strings.TrimSpace(row.DefaultStrategy) == "" {
+			row.DefaultStrategy = adaptercap.StrategyFailFast
+		}
+		if !adaptercap.IsStrategy(row.DefaultStrategy) {
+			return fmt.Errorf("scenario %q has invalid default strategy %q", row.ID, row.DefaultStrategy)
+		}
 		covered[row.Category] = true
 		priority[row.Category] = row.PriorityTier
 	}
@@ -164,6 +179,20 @@ func ValidateManifestProfileAlignment(manifest adaptermanifest.Manifest, scenari
 	if normalized.ConformanceProfile != strings.TrimSpace(scenario.ConformanceProfile) {
 		return fmt.Errorf("manifest-profile-mismatch: conformance_profile %q does not match scenario %q", normalized.ConformanceProfile, scenario.ConformanceProfile)
 	}
+	expectedStrategy := strings.TrimSpace(scenario.DefaultStrategy)
+	if expectedStrategy == "" {
+		expectedStrategy = adaptercap.StrategyFailFast
+	}
+	actualStrategy := strings.TrimSpace(normalized.Negotiation.DefaultStrategy)
+	if actualStrategy == "" {
+		actualStrategy = adaptercap.StrategyFailFast
+	}
+	if actualStrategy != expectedStrategy {
+		return fmt.Errorf("manifest-profile-mismatch: negotiation.default_strategy %q does not match scenario strategy %q", actualStrategy, expectedStrategy)
+	}
+	if normalized.Negotiation.AllowRequestOverride != scenario.AllowStrategyOverride {
+		return fmt.Errorf("manifest-profile-mismatch: negotiation.allow_request_override %v does not match scenario %v", normalized.Negotiation.AllowRequestOverride, scenario.AllowStrategyOverride)
+	}
 	missingRequired := missingCapabilities(scenario.RequiredCapabilities, normalized.Capabilities.Required)
 	if len(missingRequired) > 0 {
 		return fmt.Errorf("missing required-capability coverage: %s", strings.Join(missingRequired, ", "))
@@ -184,6 +213,10 @@ func ValidateManifestProfileAlignmentFile(path string, scenario Scenario) error 
 }
 
 func ActivateAdapterManifest(path, runtimeVersion, scenarioID string, availableCapabilities []string) (adaptermanifest.ActivationResult, error) {
+	return ActivateAdapterManifestWithRequest(path, runtimeVersion, scenarioID, availableCapabilities, adaptercap.Request{})
+}
+
+func ActivateAdapterManifestWithRequest(path, runtimeVersion, scenarioID string, availableCapabilities []string, request adaptercap.Request) (adaptermanifest.ActivationResult, error) {
 	scenario, ok := ScenarioByID(scenarioID)
 	if !ok {
 		return adaptermanifest.ActivationResult{}, fmt.Errorf("unknown conformance scenario: %s", scenarioID)
@@ -195,7 +228,19 @@ func ActivateAdapterManifest(path, runtimeVersion, scenarioID string, availableC
 	if err := ValidateManifestProfileAlignment(manifest, scenario); err != nil {
 		return adaptermanifest.ActivationResult{}, err
 	}
-	return adaptermanifest.Activate(manifest, runtimeVersion, availableCapabilities)
+	required := request.Required
+	if required == nil {
+		required = append([]string(nil), scenario.RequiredCapabilities...)
+	}
+	optional := request.Optional
+	if optional == nil {
+		optional = append([]string(nil), scenario.OptionalCapabilities...)
+	}
+	return adaptermanifest.ActivateWithRequest(manifest, runtimeVersion, availableCapabilities, adaptermanifest.CapabilityRequest{
+		Required:         append([]string(nil), required...),
+		Optional:         append([]string(nil), optional...),
+		StrategyOverride: strings.TrimSpace(request.StrategyOverride),
+	})
 }
 
 func ValidateManifestProfileAlignmentForScaffold(rootDir, scenarioID string) error {

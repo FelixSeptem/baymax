@@ -19,6 +19,7 @@ var coveredModuleReadmes = []string{
 	"model/README.md",
 	"context/README.md",
 	"orchestration/README.md",
+	"adapter/README.md",
 	"runtime/config/README.md",
 	"runtime/diagnostics/README.md",
 	"runtime/security/README.md",

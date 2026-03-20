@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
+	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -212,14 +214,19 @@ func TestAdapterConformanceManifestRequiredCapabilityFailFast(t *testing.T) {
 func TestAdapterConformanceManifestOptionalCapabilityDowngradeDeterministic(t *testing.T) {
 	root := repoRoot(t)
 	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
-	res1, err1 := ActivateAdapterManifest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+	req := adaptercap.Request{
+		Required:         []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		Optional:         []string{"model.capability.token_count"},
+		StrategyOverride: adaptercap.StrategyBestEffort,
+	}
+	res1, err1 := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
 		"model.run_stream.semantic_equivalent",
 		"model.response.mandatory_fields",
-	})
-	res2, err2 := ActivateAdapterManifest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+	}, req)
+	res2, err2 := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
 		"model.run_stream.semantic_equivalent",
 		"model.response.mandatory_fields",
-	})
+	}, req)
 	if err1 != nil || err2 != nil {
 		t.Fatalf("unexpected activation error err1=%v err2=%v", err1, err2)
 	}
@@ -231,6 +238,12 @@ func TestAdapterConformanceManifestOptionalCapabilityDowngradeDeterministic(t *t
 	}
 	if !strings.HasPrefix(res1.OptionalDowngrades[0].ReasonCode, "adapter.manifest.capability.optional_missing.") {
 		t.Fatalf("unexpected downgrade reason code: %s", res1.OptionalDowngrades[0].ReasonCode)
+	}
+	if res1.StrategyApplied != adaptercap.StrategyBestEffort || !res1.StrategyOverride {
+		t.Fatalf("unexpected strategy diagnostics: %#v", res1)
+	}
+	if !containsReason(res1.ReasonCodes, adaptercap.ReasonOptionalDowngraded) || !containsReason(res1.ReasonCodes, adaptercap.ReasonStrategyOverrideApply) {
+		t.Fatalf("unexpected negotiation reasons: %#v", res1.ReasonCodes)
 	}
 }
 
@@ -255,6 +268,112 @@ func TestAdapterConformanceManifestProfileAlignmentForFixtures(t *testing.T) {
 	}
 }
 
+func TestAdapterConformanceManifestNegotiationDefaultFailFast(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
+	_, err := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	}, adaptercap.Request{
+		Required: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		Optional: []string{"model.capability.token_count"},
+	})
+	if err == nil {
+		t.Fatal("expected fail_fast to reject missing optional capability request")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != adaptermanifest.CodeRequiredCapabilityMissing {
+		t.Fatalf("unexpected error code: %#v", ce)
+	}
+}
+
+func TestAdapterConformanceManifestNegotiationRunStreamSemanticEquivalent(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
+
+	runAccepted, runErr := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+		"model.capability.token_count",
+	}, adaptercap.Request{
+		Required: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+	})
+	streamAccepted, streamErr := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+		"model.capability.token_count",
+	}, adaptercap.Request{
+		Required: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+	})
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("expected acceptance on both paths runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if !reflect.DeepEqual(runAccepted.ReasonCodes, streamAccepted.ReasonCodes) {
+		t.Fatalf("accept reason mismatch run=%#v stream=%#v", runAccepted.ReasonCodes, streamAccepted.ReasonCodes)
+	}
+
+	runRejectRes, runRejectErrRaw := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+	}, adaptercap.Request{
+		Required: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+	})
+	runRejectErr := mustActivationError(t, runRejectRes, runRejectErrRaw)
+	streamRejectRes, streamRejectErrRaw := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+	}, adaptercap.Request{
+		Required: []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+	})
+	streamRejectErr := mustActivationError(t, streamRejectRes, streamRejectErrRaw)
+	if runRejectErr.Code != streamRejectErr.Code || runRejectErr.Field != streamRejectErr.Field {
+		t.Fatalf("reject classification mismatch run=%#v stream=%#v", runRejectErr, streamRejectErr)
+	}
+
+	runDowngrade, runDowngradeErr := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	}, adaptercap.Request{
+		Required:         []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		Optional:         []string{"model.capability.token_count"},
+		StrategyOverride: adaptercap.StrategyBestEffort,
+	})
+	streamDowngrade, streamDowngradeErr := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	}, adaptercap.Request{
+		Required:         []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		Optional:         []string{"model.capability.token_count"},
+		StrategyOverride: adaptercap.StrategyBestEffort,
+	})
+	if runDowngradeErr != nil || streamDowngradeErr != nil {
+		t.Fatalf("downgrade path should succeed runErr=%v streamErr=%v", runDowngradeErr, streamDowngradeErr)
+	}
+	if !reflect.DeepEqual(runDowngrade.ReasonCodes, streamDowngrade.ReasonCodes) {
+		t.Fatalf("downgrade reason mismatch run=%#v stream=%#v", runDowngrade.ReasonCodes, streamDowngrade.ReasonCodes)
+	}
+}
+
+func TestAdapterConformanceManifestNegotiationInvalidStrategy(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "integration", "testdata", "adapter-scaffold", "model-fixture", "adapter-manifest.json")
+	_, err := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{
+		"model.run_stream.semantic_equivalent",
+		"model.response.mandatory_fields",
+	}, adaptercap.Request{
+		Required:         []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
+		StrategyOverride: "invalid",
+	})
+	if err == nil {
+		t.Fatal("expected invalid strategy error")
+	}
+	var ne *adaptercap.NegotiationError
+	if !errors.As(err, &ne) {
+		t.Fatalf("expected negotiation error, got %T (%v)", err, err)
+	}
+	if ne.Code != adaptercap.CodeInvalidStrategy {
+		t.Fatalf("unexpected negotiation error code: %#v", ne)
+	}
+}
+
 func contractErr(t *testing.T, err error) *adaptermanifest.ContractError {
 	t.Helper()
 	ce := &adaptermanifest.ContractError{}
@@ -262,6 +381,23 @@ func contractErr(t *testing.T, err error) *adaptermanifest.ContractError {
 		t.Fatalf("expected manifest ContractError, got %T (%v)", err, err)
 	}
 	return ce
+}
+
+func mustActivationError(t *testing.T, _ adaptermanifest.ActivationResult, err error) *adaptermanifest.ContractError {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected activation error")
+	}
+	return contractErr(t, err)
+}
+
+func containsReason(reasons []string, target string) bool {
+	for _, reason := range reasons {
+		if reason == target {
+			return true
+		}
+	}
+	return false
 }
 
 func mustRead(t *testing.T, path string) string {

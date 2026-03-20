@@ -7,5 +7,9 @@
     "required": ["mcp.invoke.required_input", "mcp.response.normalized"],
     "optional": ["mcp.transport.sse"]
   },
+  "negotiation": {
+    "default_strategy": "fail_fast",
+    "allow_request_override": true
+  },
   "conformance_profile": "mcp-normalization-fail-fast"
 }

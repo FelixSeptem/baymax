@@ -1,6 +1,6 @@
 # Adapter Migration Mapping (A21)
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## 目标
 
@@ -164,6 +164,10 @@ Compatibility notes:
     "required": ["model.run_stream.semantic_equivalent", "model.response.mandatory_fields"],
     "optional": ["model.capability.token_count"]
   },
+  "negotiation": {
+    "default_strategy": "fail_fast",
+    "allow_request_override": true
+  },
   "conformance_profile": "model-run-stream-downgrade"
 }
 ```
@@ -172,6 +176,8 @@ Compatibility notes:
 - `baymax_compat` 不命中时，接入边界必须 fail-fast，不允许隐式继续。
 - `capabilities.required` 缺失时必须 fail-fast，错误分类保持 deterministic。
 - `capabilities.optional` 缺失允许降级，并保留可回放的 downgrade reason code。
+- `negotiation.default_strategy` 默认建议 `fail_fast`；非法策略值必须在接入边界 fail-fast。
+- `negotiation.allow_request_override=true` 时可按请求覆盖到 `best_effort`，并记录 override reason taxonomy。
 - `conformance_profile` 与执行场景不一致时，conformance harness 必须阻断。
 
 ## A22 Conformance 对齐
@@ -194,7 +200,27 @@ bash scripts/check-adapter-manifest-contract.sh
 pwsh -File scripts/check-adapter-manifest-contract.ps1
 ```
 
+```bash
+bash scripts/check-adapter-capability-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-capability-contract.ps1
+```
+
 若 conformance 失败，优先检查：
 - 模板实现是否仍满足 capability-domain 对照关系；
 - reason taxonomy 是否保持 namespaced 规范；
-- optional capability 降级行为是否仍 deterministic。
+- optional capability 降级行为是否仍 deterministic；
+- negotiation 默认策略与 override 开关是否与 conformance profile 对齐。
+
+## Profile Versioning Migration Notes（A28，进行中）
+
+A28 正在补齐 profile version 与 replay gate，迁移侧建议提前准备：
+- 在 adapter 合同元数据中预留 `contract_profile_version` 字段位置（语义以最终落地代码为准）。
+- 将 profile 版本与 `conformance_profile` 一起纳入发布记录，避免“版本已升级但验收矩阵未切换”。
+- 为 manifest/negotiation/reason taxonomy 维护最小 replay fixture，升级后先跑回放再放量。
+
+约束提醒：
+- 若 profile 不在 runtime 支持窗口内，应 fail-fast，而不是隐式降级继续执行。
+- 回放基线出现漂移时优先修复契约差异，再更新 fixture，避免“用新基线覆盖旧问题”。

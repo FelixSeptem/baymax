@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## 目标
 
@@ -101,6 +101,10 @@ A12/A13 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility win
 | Adapter Manifest Runtime Activation A26 | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestActivationSuccess` | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestRequiredCapabilityFailFast` |
 | Adapter Manifest Scaffold/Conformance Alignment A26 | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestProfileAlignmentForFixtures` | `adapter/scaffold/scaffold_test.go::TestBuildPlanIncludesCategoryBootstrapHints` |
 | Adapter Manifest Contract A26 Gate Path | `scripts/check-adapter-manifest-contract.sh` | `scripts/check-adapter-manifest-contract.ps1` |
+| Adapter Capability Negotiation A27 Core Semantics | `adapter/capability/negotiation_test.go::TestNegotiateBestEffortOptionalDowngrade` | `adapter/capability/negotiation_test.go::TestNegotiateFailFastOptionalRequestedRejected` |
+| Adapter Capability Negotiation A27 Run/Stream Equivalence | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestNegotiationRunStreamSemanticEquivalent` | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestNegotiationInvalidStrategy` |
+| Adapter Capability Negotiation A27 Scaffold + Conformance Alignment | `adapter/scaffold/scaffold_test.go::TestBuildPlanIncludesCategoryBootstrapHints` | `integration/adapterconformance/harness_test.go::TestAdapterConformanceManifestProfileAlignmentForFixtures` |
+| Adapter Capability Negotiation A27 Gate Path | `scripts/check-adapter-capability-contract.sh` | `scripts/check-adapter-capability-contract.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

@@ -354,7 +354,9 @@ func extractRecoveryA2AInFlightStates(snapshot scheduler.StoreSnapshot) []Recove
 		if strings.TrimSpace(task.PeerID) == "" {
 			continue
 		}
-		if record.State != scheduler.TaskStateQueued && record.State != scheduler.TaskStateRunning {
+		if record.State != scheduler.TaskStateQueued &&
+			record.State != scheduler.TaskStateRunning &&
+			record.State != scheduler.TaskStateAwaitingReport {
 			continue
 		}
 		entry := RecoveryA2AInFlightState{
@@ -575,12 +577,12 @@ func validateRecoveryBoundary(snapshot scheduler.StoreSnapshot) (recoveryBoundar
 					Err:    fmt.Errorf("terminal task %q has current_attempt_id under no_rewind policy", taskID),
 				}, true
 			}
-		case scheduler.TaskStateRunning:
+		case scheduler.TaskStateRunning, scheduler.TaskStateAwaitingReport:
 			currentAttemptID := strings.TrimSpace(record.CurrentAttempt)
 			if currentAttemptID == "" {
 				return recoveryBoundaryViolation{
 					TaskID: taskID,
-					Err:    fmt.Errorf("running task %q has empty current_attempt_id under next_attempt_only policy", taskID),
+					Err:    fmt.Errorf("inflight task %q has empty current_attempt_id under next_attempt_only policy", taskID),
 				}, true
 			}
 			found := false
@@ -593,7 +595,7 @@ func validateRecoveryBoundary(snapshot scheduler.StoreSnapshot) (recoveryBoundar
 					return recoveryBoundaryViolation{
 						TaskID:    taskID,
 						AttemptID: currentAttemptID,
-						Err:       fmt.Errorf("running task %q current attempt %q is not running", taskID, currentAttemptID),
+						Err:       fmt.Errorf("inflight task %q current attempt %q is not running", taskID, currentAttemptID),
 					}, true
 				}
 				break
@@ -602,7 +604,7 @@ func validateRecoveryBoundary(snapshot scheduler.StoreSnapshot) (recoveryBoundar
 				return recoveryBoundaryViolation{
 					TaskID:    taskID,
 					AttemptID: currentAttemptID,
-					Err:       fmt.Errorf("running task %q current attempt %q missing from attempts", taskID, currentAttemptID),
+					Err:       fmt.Errorf("inflight task %q current attempt %q missing from attempts", taskID, currentAttemptID),
 				}, true
 			}
 		}

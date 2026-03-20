@@ -1492,6 +1492,62 @@ reload:
 	}
 }
 
+func TestManagerSchedulerAsyncAwaitInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  async_await:
+    report_timeout: 15m
+    late_report_policy: drop_and_record
+    timeout_terminal: failed
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Scheduler.AsyncAwait.ReportTimeout
+	if before != 15*time.Minute {
+		t.Fatalf("before scheduler.async_await.report_timeout = %v, want 15m", before)
+	}
+
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  async_await:
+    report_timeout: 0s
+    late_report_policy: overwrite
+    timeout_terminal: timeout
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Scheduler.AsyncAwait.ReportTimeout
+	if after != before {
+		t.Fatalf("invalid scheduler async_await reload should rollback, report_timeout = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRecoveryInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

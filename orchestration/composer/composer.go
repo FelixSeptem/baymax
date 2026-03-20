@@ -264,6 +264,10 @@ type runStat struct {
 	A2AAsyncReportFailed      int
 	A2AAsyncReportRetry       int
 	A2AAsyncReportDedup       int
+	AsyncAwaitTotal           int
+	AsyncTimeoutTotal         int
+	AsyncLateReportTotal      int
+	AsyncReportDedupTotal     int
 	Backend                   string
 	BackendFallback           bool
 	FallbackReason            string
@@ -279,6 +283,8 @@ type runStat struct {
 	RecoveryFallbackReason    string
 	asyncReportSeen           map[string]struct{}
 	asyncReportDedupSeen      map[string]struct{}
+	asyncLateReportSeen       map[string]struct{}
+	asyncAwaitSeen            map[string]struct{}
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
@@ -495,6 +501,23 @@ func (c *Composer) CommitChildTerminal(ctx context.Context, commit scheduler.Ter
 	return result, nil
 }
 
+func (c *Composer) CommitAsyncReportTerminal(ctx context.Context, commit scheduler.TerminalCommit) (scheduler.CommitResult, error) {
+	s := c.Scheduler()
+	if s == nil {
+		return scheduler.CommitResult{}, errors.New("scheduler is not initialized")
+	}
+	result, err := s.CommitAsyncReportTerminal(ctx, commit)
+	if err != nil {
+		return scheduler.CommitResult{}, err
+	}
+	if !result.Duplicate && !result.LateReport {
+		c.addChildOutcome(result.Record.Task.RunID, commit.Status == scheduler.TaskStateFailed)
+		c.addCollabOutcome(result.Record.Task, commit.Status == scheduler.TaskStateFailed)
+	}
+	c.maybePersistRecoverySnapshot(ctx, strings.TrimSpace(result.Record.Task.RunID))
+	return result, nil
+}
+
 func (c *Composer) executeChild(
 	ctx context.Context,
 	req ChildDispatchRequest,
@@ -573,17 +596,25 @@ func (c *Composer) executeA2AChildAsync(
 		if err != nil {
 			return &a2a.AsyncReportDeliveryError{Cause: err, Retryable: false}
 		}
-		commitMeta, commitErr := c.CommitChildTerminal(cbCtx, execution.Commit)
+		commitMeta, commitErr := c.CommitAsyncReportTerminal(cbCtx, execution.Commit)
 		if commitErr != nil {
 			retryable := execution.Retryable
 			if errors.Is(commitErr, scheduler.ErrTaskNotFound) ||
 				errors.Is(commitErr, scheduler.ErrTaskNotRunning) ||
+				errors.Is(commitErr, scheduler.ErrTaskNotAwaitingReport) ||
 				errors.Is(commitErr, scheduler.ErrStaleAttempt) {
 				retryable = false
 			}
 			return &a2a.AsyncReportDeliveryError{Cause: commitErr, Retryable: retryable}
 		}
-		c.addAsyncReportOutcome(strings.TrimSpace(claimed.Record.Task.RunID), report, commitMeta.Duplicate)
+		runID := strings.TrimSpace(claimed.Record.Task.RunID)
+		if commitMeta.LateReport {
+			if c.addAsyncLateReportOutcome(runID, report, commitMeta.Duplicate) {
+				c.emitAsyncLateReportTimeline(cbCtx, claimed, report)
+			}
+			return nil
+		}
+		c.addAsyncReportOutcome(runID, report, commitMeta.Duplicate)
 		if commitMeta.Duplicate {
 			c.emitAsyncReportDedupTimeline(cbCtx, claimed, report)
 		}
@@ -612,6 +643,20 @@ func (c *Composer) executeA2AChildAsync(
 			Retryable: errorLayer == string(a2a.ErrorLayerTransport),
 		}, err
 	}
+	if _, markErr := c.Scheduler().MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID); markErr != nil {
+		return scheduler.A2AExecution{
+			Commit: scheduler.TerminalCommit{
+				TaskID:       claimed.Record.Task.TaskID,
+				AttemptID:    claimed.Attempt.AttemptID,
+				Status:       scheduler.TaskStateFailed,
+				ErrorMessage: strings.TrimSpace(markErr.Error()),
+				ErrorClass:   types.ErrContext,
+				ErrorLayer:   "scheduler",
+				CommittedAt:  c.now(),
+			},
+		}, markErr
+	}
+	c.addAsyncAwait(strings.TrimSpace(claimed.Record.Task.RunID), claimed.Record.Task.TaskID, claimed.Attempt.AttemptID)
 	return scheduler.A2AExecution{
 		AsyncAccepted: true,
 		AsyncTaskID:   strings.TrimSpace(ack.TaskID),
@@ -710,6 +755,10 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["a2a_async_report_failed"] = stats.A2AAsyncReportFailed
 	payload["a2a_async_report_retry_total"] = stats.A2AAsyncReportRetry
 	payload["a2a_async_report_dedup_total"] = stats.A2AAsyncReportDedup
+	payload["async_await_total"] = stats.AsyncAwaitTotal
+	payload["async_timeout_total"] = stats.AsyncTimeoutTotal
+	payload["async_late_report_total"] = stats.AsyncLateReportTotal
+	payload["async_report_dedup_total"] = stats.AsyncReportDedupTotal
 	payload["recovery_enabled"] = stats.RecoveryEnabled
 	if strings.TrimSpace(stats.RecoveryResumeBoundary) != "" {
 		payload["recovery_resume_boundary"] = strings.TrimSpace(stats.RecoveryResumeBoundary)
@@ -753,6 +802,8 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["scheduler_delayed_task_total"] = summary.DelayedTaskTotal
 			payload["scheduler_delayed_claim_total"] = summary.DelayedClaimTotal
 			payload["scheduler_delayed_wait_ms_p95"] = summary.DelayedWaitMsP95
+			payload["async_await_total"] = summary.AsyncAwaitTotal
+			payload["async_timeout_total"] = summary.AsyncTimeoutTotal
 			payload["recovery_timeout_reentry_total"] = summary.RecoveryTimeoutReentryTotal
 			payload["recovery_timeout_reentry_exhausted_total"] = summary.RecoveryTimeoutReentryExhaustedTotal
 		}
@@ -949,10 +1000,17 @@ func (c *Composer) addAsyncReportOutcome(runID string, report a2a.AsyncReport, d
 	if stat.asyncReportDedupSeen == nil {
 		stat.asyncReportDedupSeen = map[string]struct{}{}
 	}
+	if stat.asyncLateReportSeen == nil {
+		stat.asyncLateReportSeen = map[string]struct{}{}
+	}
+	if stat.asyncAwaitSeen == nil {
+		stat.asyncAwaitSeen = map[string]struct{}{}
+	}
 	if duplicate {
 		if _, ok := stat.asyncReportDedupSeen[reportKey]; !ok {
 			stat.asyncReportDedupSeen[reportKey] = struct{}{}
 			stat.A2AAsyncReportDedup++
+			stat.AsyncReportDedupTotal++
 		}
 		return
 	}
@@ -967,6 +1025,62 @@ func (c *Composer) addAsyncReportOutcome(runID string, report a2a.AsyncReport, d
 	if report.DeliveryAttempt > 1 {
 		stat.A2AAsyncReportRetry += report.DeliveryAttempt - 1
 	}
+}
+
+func (c *Composer) addAsyncLateReportOutcome(runID string, report a2a.AsyncReport, duplicate bool) bool {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return false
+	}
+	reportKey := strings.TrimSpace(report.ReportKey)
+	if reportKey == "" {
+		reportKey = a2a.BuildAsyncReportKey(report)
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	if stat.asyncLateReportSeen == nil {
+		stat.asyncLateReportSeen = map[string]struct{}{}
+	}
+	if stat.asyncReportDedupSeen == nil {
+		stat.asyncReportDedupSeen = map[string]struct{}{}
+	}
+	firstLate := false
+	if _, ok := stat.asyncLateReportSeen[reportKey]; !ok {
+		stat.asyncLateReportSeen[reportKey] = struct{}{}
+		stat.AsyncLateReportTotal++
+		firstLate = true
+	}
+	if duplicate {
+		if _, ok := stat.asyncReportDedupSeen[reportKey]; !ok {
+			stat.asyncReportDedupSeen[reportKey] = struct{}{}
+			stat.A2AAsyncReportDedup++
+			stat.AsyncReportDedupTotal++
+		}
+	}
+	return firstLate
+}
+
+func (c *Composer) addAsyncAwait(runID, taskID, attemptID string) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	key := strings.TrimSpace(taskID) + "|" + strings.TrimSpace(attemptID)
+	if key == "|" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	if stat.asyncAwaitSeen == nil {
+		stat.asyncAwaitSeen = map[string]struct{}{}
+	}
+	if _, ok := stat.asyncAwaitSeen[key]; ok {
+		return
+	}
+	stat.asyncAwaitSeen[key] = struct{}{}
+	stat.AsyncAwaitTotal++
 }
 
 func (c *Composer) emitAsyncReportDedupTimeline(ctx context.Context, claimed scheduler.ClaimedTask, report a2a.AsyncReport) {
@@ -998,6 +1112,36 @@ func (c *Composer) emitAsyncReportDedupTimeline(ctx context.Context, claimed sch
 	})
 }
 
+func (c *Composer) emitAsyncLateReportTimeline(ctx context.Context, claimed scheduler.ClaimedTask, report a2a.AsyncReport) {
+	if c == nil || c.handler == nil {
+		return
+	}
+	payload := map[string]any{
+		"phase":              string(types.ActionPhaseRun),
+		"status":             string(mapAsyncReportStatus(report.Status)),
+		"reason":             scheduler.ReasonAsyncLateReport,
+		"sequence":           c.now().UnixNano(),
+		"task_id":            strings.TrimSpace(claimed.Record.Task.TaskID),
+		"attempt_id":         strings.TrimSpace(claimed.Attempt.AttemptID),
+		"agent_id":           strings.TrimSpace(claimed.Record.Task.AgentID),
+		"peer_id":            strings.TrimSpace(claimed.Record.Task.PeerID),
+		"workflow_id":        strings.TrimSpace(claimed.Record.Task.WorkflowID),
+		"team_id":            strings.TrimSpace(claimed.Record.Task.TeamID),
+		"step_id":            strings.TrimSpace(claimed.Record.Task.StepID),
+		"report_key":         strings.TrimSpace(report.ReportKey),
+		"outcome_key":        strings.TrimSpace(report.OutcomeKey),
+		"delivery_mode":      a2a.AsyncReportSinkCallback,
+		"late_report_policy": runtimeconfig.AsyncLateReportPolicyDropAndRecord,
+	}
+	c.handler.OnEvent(ctx, types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   strings.TrimSpace(claimed.Record.Task.RunID),
+		Time:    c.now(),
+		Payload: payload,
+	})
+}
+
 func (c *Composer) ensureRunStat(runID string) *runStat {
 	if stat, ok := c.runStat[runID]; ok {
 		return stat
@@ -1014,6 +1158,8 @@ func (c *Composer) ensureRunStat(runID string) *runStat {
 		RecoveryFallbackReason: strings.TrimSpace(c.recoveryFallbackReason),
 		asyncReportSeen:        map[string]struct{}{},
 		asyncReportDedupSeen:   map[string]struct{}{},
+		asyncLateReportSeen:    map[string]struct{}{},
+		asyncAwaitSeen:         map[string]struct{}{},
 	}
 	c.runStat[runID] = stat
 	return stat
@@ -1077,6 +1223,7 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithAsyncAwait(c.schedulerAsyncAwaitConfig(cfg)),
 		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
 	if err != nil {
@@ -1132,6 +1279,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithAsyncAwait(c.schedulerAsyncAwaitConfig(cfg)),
 		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
 	if err != nil {
@@ -1150,7 +1298,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%t|%s|%s|%s|%d",
+		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%s|%s|%s|%d",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
@@ -1165,6 +1313,9 @@ func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Scheduler.Retry.Backoff.Max.Milliseconds(),
 		cfg.Scheduler.Retry.Backoff.Multiplier,
 		cfg.Scheduler.Retry.Backoff.JitterRatio,
+		cfg.Scheduler.AsyncAwait.ReportTimeout.Milliseconds(),
+		strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.LateReportPolicy)),
+		cfg.Scheduler.AsyncAwait.TimeoutTerminal,
 		cfg.Recovery.Enabled,
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
@@ -1203,6 +1354,14 @@ func (c *Composer) schedulerRecoveryBoundaryConfig(cfg runtimeconfig.Config) sch
 		InflightPolicy:           strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
 		TimeoutReentryPolicy:     strings.TrimSpace(strings.ToLower(cfg.Recovery.TimeoutReentryPolicy)),
 		TimeoutReentryMaxPerTask: cfg.Recovery.TimeoutReentryMaxPerTask,
+	}
+}
+
+func (c *Composer) schedulerAsyncAwaitConfig(cfg runtimeconfig.Config) scheduler.AsyncAwaitConfig {
+	return scheduler.AsyncAwaitConfig{
+		ReportTimeout:    cfg.Scheduler.AsyncAwait.ReportTimeout,
+		LateReportPolicy: strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.LateReportPolicy)),
+		TimeoutTerminal:  scheduler.TaskState(strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.TimeoutTerminal))),
 	}
 }
 

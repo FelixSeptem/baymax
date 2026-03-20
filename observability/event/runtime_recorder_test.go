@@ -219,6 +219,10 @@ mcp:
 			"a2a_async_report_failed":                  1,
 			"a2a_async_report_retry_total":             2,
 			"a2a_async_report_dedup_total":             1,
+			"async_await_total":                        2,
+			"async_timeout_total":                      1,
+			"async_late_report_total":                  1,
+			"async_report_dedup_total":                 1,
 			"composer_managed":                         true,
 			"scheduler_backend":                        "file",
 			"scheduler_qos_mode":                       "priority",
@@ -398,6 +402,12 @@ mcp:
 		items[0].A2AAsyncReportDedupTotal != 1 {
 		t.Fatalf("a2a async report fields mismatch: %#v", items[0])
 	}
+	if items[0].AsyncAwaitTotal != 2 ||
+		items[0].AsyncTimeoutTotal != 1 ||
+		items[0].AsyncLateReportTotal != 1 ||
+		items[0].AsyncReportDedupTotal != 1 {
+		t.Fatalf("a31 async-await fields mismatch: %#v", items[0])
+	}
 	if !items[0].ComposerManaged {
 		t.Fatalf("composer marker mismatch: %#v", items[0])
 	}
@@ -517,6 +527,10 @@ mcp:
 		got.A2AAsyncReportFailed != 0 ||
 		got.A2AAsyncReportRetryTotal != 0 ||
 		got.A2AAsyncReportDedupTotal != 0 ||
+		got.AsyncAwaitTotal != 0 ||
+		got.AsyncTimeoutTotal != 0 ||
+		got.AsyncLateReportTotal != 0 ||
+		got.AsyncReportDedupTotal != 0 ||
 		got.SchedulerDelayedTaskTotal != 0 ||
 		got.SchedulerDelayedClaimTotal != 0 ||
 		got.SchedulerDelayedWaitMsP95 != 0 ||

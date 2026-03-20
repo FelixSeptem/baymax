@@ -1,5 +1,7 @@
 # V1 Acceptance And Known Limitations
 
+> 说明：本文件是能力清单参考，不构成 `1.0.0/prod-ready` 承诺；版本阶段口径以 `docs/development-roadmap.md` 与 `docs/versioning-and-compatibility.md` 为准。
+
 ## Acceptance Checklist
 
 - Multi-turn tool-call loop runs in-process with bounded iteration and timeout policy.

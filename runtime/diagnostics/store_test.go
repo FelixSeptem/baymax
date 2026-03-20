@@ -192,6 +192,10 @@ func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
 		A2AAsyncReportFailed:       1,
 		A2AAsyncReportRetryTotal:   2,
 		A2AAsyncReportDedupTotal:   1,
+		AsyncAwaitTotal:            2,
+		AsyncTimeoutTotal:          1,
+		AsyncLateReportTotal:       1,
+		AsyncReportDedupTotal:      1,
 		SchedulerDelayedTaskTotal:  2,
 		SchedulerDelayedClaimTotal: 2,
 		SchedulerDelayedWaitMsP95:  180,
@@ -207,6 +211,10 @@ func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
 		runs[0].A2AAsyncReportFailed != 1 ||
 		runs[0].A2AAsyncReportRetryTotal != 2 ||
 		runs[0].A2AAsyncReportDedupTotal != 1 ||
+		runs[0].AsyncAwaitTotal != 2 ||
+		runs[0].AsyncTimeoutTotal != 1 ||
+		runs[0].AsyncLateReportTotal != 1 ||
+		runs[0].AsyncReportDedupTotal != 1 ||
 		runs[0].SchedulerDelayedTaskTotal != 2 ||
 		runs[0].SchedulerDelayedClaimTotal != 2 ||
 		runs[0].SchedulerDelayedWaitMsP95 != 180 {

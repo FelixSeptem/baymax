@@ -28,6 +28,12 @@ func (s *MemoryStore) SetRecoveryBoundary(cfg RecoveryBoundaryConfig) {
 	s.state.setRecoveryBoundary(cfg)
 }
 
+func (s *MemoryStore) SetAsyncAwait(cfg AsyncAwaitConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setAsyncAwait(cfg)
+}
+
 func (s *MemoryStore) Backend() string {
 	return "memory"
 }
@@ -56,6 +62,18 @@ func (s *MemoryStore) ExpireLeases(_ context.Context, now time.Time) ([]ClaimedT
 	return s.state.expireLeases(now), nil
 }
 
+func (s *MemoryStore) ExpireAwaitingReports(_ context.Context, now time.Time) ([]ClaimedTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.expireAwaitingReports(now), nil
+}
+
+func (s *MemoryStore) MarkAwaitingReport(_ context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.markAwaitingReport(taskID, attemptID, now, reportTimeout)
+}
+
 func (s *MemoryStore) Requeue(_ context.Context, taskID, _ string, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -66,6 +84,12 @@ func (s *MemoryStore) CommitTerminal(_ context.Context, commit TerminalCommit) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.commitTerminal(commit)
+}
+
+func (s *MemoryStore) CommitAsyncReportTerminal(_ context.Context, commit TerminalCommit) (CommitResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.commitAsyncReportTerminal(commit)
 }
 
 func (s *MemoryStore) Get(_ context.Context, taskID string) (TaskRecord, bool, error) {

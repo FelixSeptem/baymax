@@ -48,6 +48,12 @@ func (s *FileStore) SetRecoveryBoundary(cfg RecoveryBoundaryConfig) {
 	s.state.setRecoveryBoundary(cfg)
 }
 
+func (s *FileStore) SetAsyncAwait(cfg AsyncAwaitConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setAsyncAwait(cfg)
+}
+
 func (s *FileStore) Enqueue(_ context.Context, task Task, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,6 +106,32 @@ func (s *FileStore) ExpireLeases(_ context.Context, now time.Time) ([]ClaimedTas
 	return expired, nil
 }
 
+func (s *FileStore) ExpireAwaitingReports(_ context.Context, now time.Time) ([]ClaimedTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	expired := s.state.expireAwaitingReports(now)
+	if len(expired) == 0 {
+		return nil, nil
+	}
+	if err := s.persist(); err != nil {
+		return nil, err
+	}
+	return expired, nil
+}
+
+func (s *FileStore) MarkAwaitingReport(_ context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, err := s.state.markAwaitingReport(taskID, attemptID, now, reportTimeout)
+	if err != nil {
+		return TaskRecord{}, err
+	}
+	if err := s.persist(); err != nil {
+		return TaskRecord{}, err
+	}
+	return record, nil
+}
+
 func (s *FileStore) Requeue(_ context.Context, taskID, _ string, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,6 +151,22 @@ func (s *FileStore) CommitTerminal(_ context.Context, commit TerminalCommit) (Co
 	result, err := s.state.commitTerminal(commit)
 	if err != nil {
 		return CommitResult{}, err
+	}
+	if err := s.persist(); err != nil {
+		return CommitResult{}, err
+	}
+	return result, nil
+}
+
+func (s *FileStore) CommitAsyncReportTerminal(_ context.Context, commit TerminalCommit) (CommitResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.state.commitAsyncReportTerminal(commit)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if result.Duplicate || result.LateReport {
+		return result, nil
 	}
 	if err := s.persist(); err != nil {
 		return CommitResult{}, err

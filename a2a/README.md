@@ -8,11 +8,9 @@
 - 异步提交后回报：`SubmitAsync` + `ReportSink`
 - 状态查询与结果解析：`Status` / `Result`
 
-对应主线能力：
-- A11：同步调用语义（已实施）
-- A12：异步回报语义（已归档）
-- A13：延后调度由 `orchestration/scheduler` 承载，A2A 负责任务互联字段透传
-- A30：主线调用面收敛到 `orchestration/mailbox`（A2A direct sync/async 入口进入 deprecated 路径）
+当前主线路径：
+- 同步/异步/延后协作统一由 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge` 收口。
+- `a2a` 继续提供 submit/status/result 互联语义与互操作契约。
 
 ## 架构设计
 
@@ -41,7 +39,7 @@
 - 只依赖 `core/types` 契约与事件接口，不直接写 `runtime/diagnostics`。
 - 观测通过 `types.EventHandler` 发射 `action.timeline` 事件，后续由 `observability/event.RuntimeRecorder` 收口。
 - A2A 语义不下沉到 `mcp/*` 传输层，保持协作语义与工具传输语义解耦。
-- 主线建议经 `orchestration/invoke/mailbox_bridge` 接入 A2A；直接 `Submit+WaitResult` / `SubmitAsync+ReportSink` 作为过渡兼容路径。
+- 主线建议经 `orchestration/invoke/mailbox_bridge` 接入 A2A；直接 `Submit+WaitResult` / `SubmitAsync+ReportSink` 属于兼容入口。
 
 ## 配置与默认值
 

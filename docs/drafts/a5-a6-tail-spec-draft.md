@@ -1,6 +1,8 @@
 # A5/A6 Tail Spec Draft
 
-更新时间：2026-03-18
+更新时间：2026-03-20
+
+> 说明：本文件是历史草稿归档，仅作背景参考，不代表当前主线状态。
 
 ## 目的
 
@@ -99,4 +101,3 @@ The suite MUST cover:
 - `docs/runtime-config-diagnostics.md`：补充 scheduler/subagent 字段解释、兼容窗口说明
 - `docs/runtime-module-boundaries.md`：补充 scheduler owner 与禁止依赖方向
 - `docs/v1-acceptance.md`：在已落地后更新 limitations 与 acceptance 条目
-

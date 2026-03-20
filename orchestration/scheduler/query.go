@@ -154,7 +154,7 @@ func normalizeTaskBoardQuery(req TaskBoardQueryRequest) (normalizedTaskBoardQuer
 	state := strings.ToLower(strings.TrimSpace(req.State))
 	if state != "" {
 		switch state {
-		case string(TaskStateQueued), string(TaskStateRunning), string(TaskStateSucceeded), string(TaskStateFailed), string(TaskStateDeadLetter):
+		case string(TaskStateQueued), string(TaskStateRunning), string(TaskStateAwaitingReport), string(TaskStateSucceeded), string(TaskStateFailed), string(TaskStateDeadLetter):
 		default:
 			return normalizedTaskBoardQuery{}, fmt.Errorf("unsupported state filter %q", req.State)
 		}

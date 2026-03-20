@@ -46,11 +46,18 @@ func WithRecoveryBoundary(cfg RecoveryBoundaryConfig) Option {
 	}
 }
 
+func WithAsyncAwait(cfg AsyncAwaitConfig) Option {
+	return func(s *Scheduler) {
+		s.asyncAwait = normalizeAsyncAwaitConfig(cfg)
+	}
+}
+
 type Scheduler struct {
 	store            QueueStore
 	leaseTimeout     time.Duration
 	guardrails       Guardrails
 	governance       GovernanceConfig
+	asyncAwait       AsyncAwaitConfig
 	recoveryBoundary RecoveryBoundaryConfig
 	timeline         types.EventHandler
 	now              func() time.Time
@@ -65,6 +72,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		store:            store,
 		leaseTimeout:     2 * time.Second,
 		governance:       defaultGovernanceConfig(),
+		asyncAwait:       defaultAsyncAwaitConfig(),
 		recoveryBoundary: defaultRecoveryBoundaryConfig(),
 		now:              time.Now,
 	}
@@ -77,6 +85,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		return nil, fmt.Errorf("lease timeout must be > 0")
 	}
 	s.governance = normalizeGovernanceConfig(s.governance)
+	s.asyncAwait = normalizeAsyncAwaitConfig(s.asyncAwait)
 	if configurable, ok := store.(interface {
 		SetGovernance(GovernanceConfig)
 	}); ok {
@@ -86,6 +95,11 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		SetRecoveryBoundary(RecoveryBoundaryConfig)
 	}); ok {
 		configurable.SetRecoveryBoundary(s.recoveryBoundary)
+	}
+	if configurable, ok := store.(interface {
+		SetAsyncAwait(AsyncAwaitConfig)
+	}); ok {
+		configurable.SetAsyncAwait(s.asyncAwait)
 	}
 	return s, nil
 }
@@ -200,7 +214,47 @@ func (s *Scheduler) ExpireLeases(ctx context.Context) ([]ClaimedTask, error) {
 			})
 		}
 	}
+	awaitingExpired, err := s.store.ExpireAwaitingReports(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range awaitingExpired {
+		extras := map[string]any{
+			"task_priority":    normalizedPriority(item.Record.Task.Priority),
+			"timeout_terminal": string(item.Record.State),
+		}
+		if !item.Record.ReportTimeoutAt.IsZero() {
+			extras["report_timeout_at_unix_ms"] = item.Record.ReportTimeoutAt.UnixMilli()
+		}
+		s.emitTimelineWithExtras(ctx, item.Record, item.Attempt, types.ActionStatusFailed, ReasonAsyncTimeout, extras)
+		if item.Record.State == TaskStateDeadLetter {
+			s.emitTimelineWithExtras(ctx, item.Record, item.Attempt, types.ActionStatusFailed, ReasonDeadLetter, map[string]any{
+				"task_priority":     normalizedPriority(item.Record.Task.Priority),
+				"dead_letter_code":  strings.TrimSpace(item.Record.DeadLetterCode),
+				"max_attempts":      item.Record.Task.MaxAttempts,
+				"dead_letter_state": string(TaskStateDeadLetter),
+				"retry_exhausted":   true,
+				"retry_attempts":    len(item.Record.Attempts),
+			})
+		}
+	}
+	if len(awaitingExpired) > 0 {
+		expired = append(expired, awaitingExpired...)
+	}
 	return expired, nil
+}
+
+func (s *Scheduler) MarkAwaitingReport(ctx context.Context, taskID, attemptID string) (TaskRecord, error) {
+	now := s.nowTime()
+	record, err := s.store.MarkAwaitingReport(ctx, taskID, attemptID, now, s.asyncAwait.ReportTimeout)
+	if err != nil {
+		return TaskRecord{}, err
+	}
+	attempt, _ := record.attemptByID(strings.TrimSpace(attemptID))
+	s.emitTimelineWithExtras(ctx, record, attempt, types.ActionStatusPending, ReasonAwaitingReport, map[string]any{
+		"report_timeout_ms": s.asyncAwait.ReportTimeout.Milliseconds(),
+	})
+	return record, nil
 }
 
 func (s *Scheduler) Requeue(ctx context.Context, taskID, reason string) (TaskRecord, error) {
@@ -258,6 +312,27 @@ func (s *Scheduler) Fail(ctx context.Context, commit TerminalCommit) (CommitResu
 	}
 	if !result.Duplicate {
 		attempt, _ := result.Record.attemptByID(commit.AttemptID)
+		s.emitTimeline(ctx, result.Record, attempt, types.ActionStatusFailed, ReasonJoin)
+	}
+	return result, nil
+}
+
+func (s *Scheduler) CommitAsyncReportTerminal(ctx context.Context, commit TerminalCommit) (CommitResult, error) {
+	result, err := s.store.CommitAsyncReportTerminal(ctx, commit)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if result.LateReport {
+		return result, nil
+	}
+	if result.Duplicate {
+		return result, nil
+	}
+	attempt, _ := result.Record.attemptByID(commit.AttemptID)
+	switch commit.Status {
+	case TaskStateSucceeded:
+		s.emitTimeline(ctx, result.Record, attempt, types.ActionStatusSucceeded, ReasonJoin)
+	case TaskStateFailed:
 		s.emitTimeline(ctx, result.Record, attempt, types.ActionStatusFailed, ReasonJoin)
 	}
 	return result, nil

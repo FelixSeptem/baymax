@@ -14,9 +14,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-20）：
-- 已归档并稳定：A4-A29。
-- A30（Unified Mailbox Coordination Contract）已完成（待归档）。
-- A31（Harden Async Subagent Lifecycle And Await Report Contract）进行中。
+- 已归档并稳定：A4-A31。
+- A32（Introduce Async Await Reconcile Poll Fallback Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -211,10 +210,7 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A31 `harden-async-subagent-lifecycle-and-await-report-contract-a31`：异步子代理 lifecycle 硬化（await-report 状态、timeout、late-report、幂等回放）。
-
-最新已完成待归档能力：
-- A30 `introduce-unified-mailbox-coordination-contract-a30`：统一 mailbox 协调契约（command/event/result + 查询 + 诊断 + gate 收口）。
+- A32 `introduce-async-await-reconcile-poll-fallback-contract-a32`：异步等待回报补偿收敛（poll fallback + reconcile）提案进行中。
 
 状态权威来源：
 - `openspec list --json`

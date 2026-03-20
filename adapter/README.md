@@ -4,8 +4,8 @@
 
 `adapter` 是 Baymax 外部接入契约域，负责“接入前声明 + 运行时协商 + 脚手架生成”的统一收敛：
 
-- `adapter/manifest`：manifest 解析、校验、运行时兼容激活（A26 已归档）
-- `adapter/capability`：能力协商与降级策略（A27 进行中）
+- `adapter/manifest`：manifest 解析、校验、运行时兼容激活
+- `adapter/capability`：能力协商与降级策略
 - `adapter/scaffold`：外部适配脚手架与契约测试骨架生成
 
 该域的目标是让外部 adapter 在 `MCP / Model / Tool` 三类接入上保持一致的 fail-fast 与 downgrade 语义，而不是把契约散落到业务代码。
@@ -45,7 +45,7 @@
 - manifest 必填字段：`type/name/version/baymax_compat/capabilities.required/capabilities.optional/conformance_profile`。
 - 协商默认策略：`fail_fast`（当 manifest 未显式配置 `negotiation.default_strategy` 时）。
 - 请求级策略覆盖：由 `manifest.negotiation.allow_request_override` 决定是否允许。
-- profile version/replay gate 属于 A28 在研范围；最终字段与默认窗口以落地代码与 OpenSpec 为准。
+- profile version/replay gate 的字段与兼容窗口以当前代码与 OpenSpec 为准。
 
 ## 可观测性与验证
 

@@ -9,12 +9,6 @@
 - 热更新监听、原子切换与失败回滚
 - 对外提供策略解析与脱敏辅助接口
 
-当前进度（2026-03-19）：
-- A16 已归档：`composer.collab.*` 配置已稳定。
-- A17 已归档：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 已进入稳定配置契约。
-- A18 已归档：统一诊断检索 API 已收口，沿用 diagnostics 标准能力入口。
-- A30 进行中：新增 `mailbox.*` 配置域与 fail-fast/hot-reload 回滚语义。
-
 ## 架构设计
 
 核心对象是 `Manager`：

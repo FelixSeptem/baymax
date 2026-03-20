@@ -1,6 +1,8 @@
 # Context Assembler Phased Plan
 
-更新时间：2026-03-16
+更新时间：2026-03-20
+
+> 说明：本文件保留为历史规划参考；当前主线状态以 `docs/development-roadmap.md` 与 `docs/runtime-config-diagnostics.md` 为准。
 
 ## 目标
 

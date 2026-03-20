@@ -53,6 +53,9 @@
   - `scheduler.heartbeat_interval` -> `BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL`
   - `scheduler.qos.mode` -> `BAYMAX_SCHEDULER_QOS_MODE`
   - `scheduler.qos.fairness.max_consecutive_claims_per_priority` -> `BAYMAX_SCHEDULER_QOS_FAIRNESS_MAX_CONSECUTIVE_CLAIMS_PER_PRIORITY`
+  - `scheduler.async_await.report_timeout` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_REPORT_TIMEOUT`
+  - `scheduler.async_await.late_report_policy` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_LATE_REPORT_POLICY`
+  - `scheduler.async_await.timeout_terminal` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_TIMEOUT_TERMINAL`
   - `scheduler.dlq.enabled` -> `BAYMAX_SCHEDULER_DLQ_ENABLED`
   - `scheduler.retry.backoff.enabled` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED`
   - `scheduler.retry.backoff.initial` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL`
@@ -215,6 +218,10 @@ scheduler:
     mode: fifo                    # fifo|priority（默认 fifo）
     fairness:
       max_consecutive_claims_per_priority: 3 # 必须 > 0
+  async_await:
+    report_timeout: 15m           # 必须 > 0
+    late_report_policy: drop_and_record # 当前仅支持 drop_and_record
+    timeout_terminal: failed      # failed|dead_letter（dead_letter 需配合 scheduler.dlq.enabled=true）
   dlq:
     enabled: false                # 默认 false
   retry:
@@ -575,10 +582,13 @@ scheduler/subagent baseline 校验语义：
 8. `scheduler.dlq.enabled` 为布尔值开关，默认 `false`。
 9. `scheduler.retry.backoff.enabled=false` 时不强制校验其余 backoff 参数范围。
 10. `scheduler.retry.backoff.enabled=true` 时：`initial>0`、`max>=initial`、`multiplier>1`、`jitter_ratio` 在 `[0,1]`。
-11. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
-12. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
-13. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
-14. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+11. `scheduler.async_await.report_timeout` 必须 `> 0`。
+12. `scheduler.async_await.late_report_policy` 当前仅支持 `drop_and_record`。
+13. `scheduler.async_await.timeout_terminal` 仅支持 `failed|dead_letter`。
+14. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
+15. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
+16. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+17. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 recovery boundary（A17）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
@@ -635,40 +645,49 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 ## 诊断 API（Library Only）
 
-- `Manager.RecentCalls(n)`：最近 N 次 MCP 调用摘要。
-- `Manager.RecentRuns(n)`：最近 N 次 run 摘要。
-- `Manager.RecentReloads(n)`：最近 N 次热更新结果。
-- `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
-- `Manager.QueryRuns(query)`：统一 run 诊断查询（A18，多维过滤 + 分页 + 排序 + 游标）。
-- `Scheduler.QueryTasks(ctx, query)`：scheduler 任务看板只读查询（A29，多维过滤 + 分页 + 排序 + opaque cursor）。
-- `Manager.TimelineTrends(query)`：跨 run Action Timeline 趋势聚合（窗口模式：`last_n_runs|time_window`）。
-- `Manager.CA2ExternalTrends(query)`：CA2 external retriever provider 维度趋势聚合（窗口模式：`time_window`）。
-- `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
-- `Manager.PrecheckStage2External(provider, external)`：CA2 external retriever 预检查（warning 可继续，error 需 fail-fast）。
+`runtime/config.Manager` 对外提供诊断读取与观测辅助接口（只读）：
 
-### Unified Query API（A18）
+- `RecentCalls(n)`
+- `RecentRuns(n)`
+- `RecentReloads(n)`
+- `RecentSkills(n)`
+- `RecentMailbox(n)`
+- `QueryRuns(query)`
+- `QueryMailbox(query)`
+- `MailboxAggregates(filter)`
+- `TimelineTrends(query)`
+- `CA2ExternalTrends(query)`
+- `EffectiveConfigSanitized()`
+- `PrecheckStage2External(provider, external)`
 
-统一查询请求支持以下过滤字段（多条件按 `AND` 语义组合）：
+`orchestration/scheduler.Scheduler` 额外提供任务看板只读查询：
+
+- `QueryTasks(ctx, query)`
+
+### Unified Query API（Run）
+
+过滤字段（多条件按 `AND` 组合）：
 - `run_id`
 - `team_id`
 - `workflow_id`
 - `task_id`
-- `status`
+- `status`（当前仅支持 `success|failed`）
 - `time_range`
 
-统一查询分页/排序语义：
-- 默认分页：`page_size=50`
-- 最大分页：`page_size<=200`（越界 fail-fast）
-- 默认排序：`time desc`
-- 游标：`opaque cursor`（不暴露内部 offset/index 结构）
+分页/排序语义：
+- 默认 `page_size=50`
+- 最大 `page_size<=200`（越界 fail-fast）
+- 默认排序 `time desc`（`sort.field` 当前仅支持 `time`）
+- 游标为 `opaque cursor`，且与查询边界绑定
 
 错误与空集语义：
-- 非法参数（如非法 `status`、无效 `time_range`、非法 `page_size`、不可解码 cursor）均 fail-fast。
-- 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
+- 非法参数（非法状态、非法排序、非法游标、非法时间区间）均 fail-fast。
+- 合法但无匹配时返回空集合，不返回错误。
+- 合法但无匹配时也可表述为 `empty result set`（与“返回空集合”语义等价）。
 
-### Task Board Query API（A29）
+### Task Board Query API（Scheduler）
 
-Task Board 查询请求支持以下 canonical filter 字段（多条件按 `AND` 语义组合）：
+过滤字段（多条件按 `AND` 组合）：
 - `task_id`
 - `run_id`
 - `workflow_id`
@@ -680,549 +699,154 @@ Task Board 查询请求支持以下 canonical filter 字段（多条件按 `AND`
 - `parent_run_id`
 - `time_range`
 
-Task Board 分页/排序语义：
-- 默认分页：`page_size=50`
-- 最大分页：`page_size<=200`（越界 fail-fast）
-- 默认排序：`updated_at desc`
-- 首版排序字段：`updated_at|created_at`
-- 游标：`opaque cursor`（与 query boundary 绑定，跨查询复用 fail-fast）
+分页/排序语义：
+- 默认 `page_size=50`
+- 最大 `page_size<=200`（越界 fail-fast）
+- 默认排序 `updated_at desc`
+- 支持排序字段：`updated_at|created_at`
+- 游标为 `opaque cursor`，且与查询边界绑定
 
-错误与空集语义：
-- 非法参数（如非法 `state`、无效 `time_range`、非法 `page_size`、不支持排序字段、无效 cursor）均 fail-fast。
-- 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
+范围约束：
+- 该接口为 scheduler 快照读路径，只读，不改变 enqueue/claim/heartbeat/requeue/commit 语义。
 
-状态口径：
-- 当前状态枚举为 `queued|running|succeeded|failed|dead_letter`。
+### Mailbox Query API
 
-范围与非目标：
-- 该接口为 scheduler 快照读路径，只读，不改变 enqueue/claim/heartbeat/requeue/commit 运行态。
-- 不提供任务写操作（`cancel/retry/reassign/priority mutate`）。
-- 不引入任务控制台、RBAC、多租户运维面。
+过滤字段（多条件按 `AND` 组合）：
+- `message_id`
+- `idempotency_key`
+- `correlation_id`
+- `kind`（`command|event|result`）
+- `state`（`queued|in_flight|acked|nacked|dead_letter|expired`）
+- `run_id`
+- `task_id`
+- `workflow_id`
+- `team_id`
+- `time_range`
 
-Skill trigger scoring（D2/D3/D4）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
-- `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。
-- `final_score`：最终触发分数。
-- `tokenizer_mode`：lexical 分词模式（当前 `mixed_cjk_en`；默认 redaction 不会将该观测字段误判为敏感信息）。
-- `candidate_pruned_count`：按预算模式裁剪的 semantic 候选数量（`fixed|adaptive`）。
-- `budget_mode`：预算模式（`fixed|adaptive`）。
-- `selected_semantic_count`：本次预算决策保留的 semantic 候选数。
-- `score_margin_top1_top2`：top1/top2 分差（候选不足 2 时为 `0`）。
-- `budget_decision_reason`：预算决策原因（如 `fixed.top_k|adaptive.clear_winner|adaptive.max_k_reached`）。
-- `embedding_score`：embedding 分数（仅 `lexical_plus_embedding` 路径）。
-- `fallback_reason`：embedding 回退原因（如 `embedding.scorer_missing|embedding.timeout|embedding.error|embedding.invalid_score`）。
+分页/排序语义：
+- 默认 `page_size=50`
+- 最大 `page_size<=200`（越界 fail-fast）
+- 默认排序 `time desc`（`sort.field` 当前仅支持 `time`）
+- 游标为 `opaque cursor`，且与查询边界绑定
 
-默认调试路径仍为 library-first；D1 补充了可选离线回放命令：`go run ./cmd/diagnostics-replay -input diagnostics.json`。
+`MailboxAggregates(filter)` 当前返回：
+- `total_records`
+- `total_messages`
+- `by_kind`
+- `by_state`
+- `retry_total`
+- `dead_letter_total`
+- `expired_total`
+- `reason_code_totals`
+
+### RunRecord 字段分组（当前实现）
+
+`runtime/diagnostics.RunRecord` 采用“按能力域分组”的 additive 模型（见 `runtime/diagnostics/store.go`）：
+
+- 基础运行摘要：`run_id/status/iterations/tool_calls/latency_ms/error_class`
+- Provider 与降级：`model_provider/fallback_* / required_capabilities`
+- Context Assembler：`prefix_hash`、`assemble_*`、`stage2_*`、`ca3_*`、`recap_status`
+- 编排聚合：`team_*`、`workflow_*`、`a2a_*`、`scheduler_*`、`subagent_*`、`collab_*`
+  - A31 additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
+- 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
+- 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
+- Timeline 聚合：`timeline_phases.<phase>.*`
+
+兼容约束保持：`additive + nullable + default`
+- 新增字段不得改变既有字段语义。
+- 缺失字段按约定默认值解释（`0`/`false`/空字符串）。
+- 未识别新增字段应被安全忽略。
+
+Compatibility Window (A12/A13)
+- 兼容窗口规则：`additive + nullable + default`
+- missing additive fields resolve to documented default values
+- unknown future additive fields are safely ignored
+- pre-existing field semantics remain unchanged
+
+Composed summary additive fields（contract markers）：
+- `composer_managed`
+- `scheduler_backend_fallback`
+- `scheduler_backend_fallback_reason`
+- `collab_handoff_total`
+- `collab_delegation_total`
+- `collab_aggregation_total`
+- `collab_aggregation_strategy`
+- `collab_fail_fast_total`
+- `team_remote_task_total`
+- `team_remote_task_failed`
+- `workflow_remote_step_total`
+- `workflow_remote_step_failed`
+- `scheduler_backend`
+- `scheduler_queue_total`
+- `scheduler_claim_total`
+- `scheduler_reclaim_total`
+- `scheduler_qos_mode`
+- `scheduler_priority_claim_total`
+- `scheduler_fairness_yield_total`
+- `scheduler_retry_backoff_total`
+- `scheduler_dead_letter_total`
+- `scheduler_delayed_task_total`
+- `scheduler_delayed_claim_total`
+- `scheduler_delayed_wait_ms_p95`
+- `subagent_child_total`
+- `subagent_child_failed`
+- `subagent_budget_reject_total`
+- `recovery_enabled`
+- `recovery_resume_boundary`
+- `recovery_inflight_policy`
+- `recovery_recovered`
+- `recovery_replay_total`
+- `recovery_timeout_reentry_total`
+- `recovery_timeout_reentry_exhausted_total`
+- `recovery_conflict`
+- `recovery_conflict_code`
+- `recovery_fallback_used`
+- `recovery_fallback_reason`
 
 ## 诊断回放（D1）
 
-- 输入：diagnostics JSON（`timeline_events` 或 `events`）。
-- 输出：精简 timeline 视图（`run_id/sequence/phase/status/reason/timestamp`）。
-- 目标：离线排障与契约回归，不依赖在线 runtime API。
+离线回放命令：
+
+```bash
+go run ./cmd/diagnostics-replay -input diagnostics.json
+```
+
+语义：
+- 输入：diagnostics JSON（`timeline_events` 或 `events`）
+- 输出：精简 timeline 视图（`run_id/sequence/phase/status/reason/timestamp`）
+- 目标：离线排障与契约回归，不依赖在线 runtime API
 
 详细使用说明见：`docs/diagnostics-replay.md`。
 
 ## CA3 Token Count 职责分工
 
-- `context/assembler`：只负责“何时计数”的策略决策（`sdk_preferred`、`small_delta_tokens`、`sdk_refresh_interval`），不直接依赖 provider SDK 细节。
-  - 预估路径：优先使用本地 `tiktoken` 进行估算；若本地 tokenizer 初始化失败（如离线环境未缓存词表），回退到轻量字符估算以保证主流程不中断。
-- `model/*`：负责“如何计数”的 provider 实现与官方 SDK 调用：
-  - `model/anthropic`：`Messages.CountTokens`。
-  - `model/gemini`：优先 `genai/tokenizer` 本地计数，失败时回退 `Models.CountTokens`。
-  - `model/openai`：当前适配层未提供官方可复用 token-count API，返回 unsupported 并由上层回退预估。
-- 语义要求：
-  - 小增量优先预估，降低高频计数调用成本。
-  - SDK 计数失败不阻断主流程，回退预估值继续执行。
-  - OpenAI 路径的 token 数用于 CA3/CA4 阈值策略控制，不承诺账单精度语义。
+- `context/assembler` 负责“何时计数”的策略决策（如 `sdk_preferred`、`small_delta_tokens`、`sdk_refresh_interval`）。
+- `model/*` 负责“如何计数”的 provider 具体实现与 SDK 对接。
+- 小增量优先预估；SDK 计数失败回退预估，不阻断主流程。
 
 ## Action Timeline 事件（默认启用）
 
 - 事件类型：`action.timeline`
-- 产出路径：由 `core/runner` 发射，经 `observability/event` 统一输出（logger/handler 可直接消费）。
+- 产出路径：`core/runner` 发射，`observability/event` 统一分发与记录
 - phase 枚举：`run|context_assembler|model|tool|mcp|skill|hitl`
 - status 枚举：`pending|running|succeeded|failed|skipped|canceled`
-- payload 最小字段：
-  - `phase`：动作阶段
-  - `status`：阶段状态
-  - `reason`：可选，失败/跳过/取消原因
-  - `sequence`：单 run 内递增序号（用于稳定排序）
-
-兼容性：该事件为增量新增，不替换既有 `run.* / model.* / tool.* / skill.*` 事件。
-
-### External Retriever 预检查语义
-
-- 预检查输出包含 findings（`warning`/`error`）与归一化配置快照。
-- `warning`：非阻断，可继续启动或热更新，但建议记录到观测并尽快修复。
-- `error`：阻断，启动或热更新必须 fail-fast，保留旧快照。
-
-### Run 诊断新增字段（能力探测/降级）
-
-- `model_provider`：最终执行 model step 的 provider。
-- `fallback_used`：本次 run 是否发生 provider 降级。
-- `fallback_initial`：候选链中的首选 provider。
-- `fallback_path`：最终命中的 provider 路径（`a->b->...`）。
-- `required_capabilities`：本次 preflight 的能力需求（逗号分隔）。
-- `fallback_reason`：降级/终止原因摘要（例如 `capability_preflight_failed`）。
-
-### Run 诊断新增字段（Context Assembler CA1）
-
-- `prefix_hash`：本次 run 最近一次 assemble 的 immutable prefix 哈希。
-- `assemble_latency_ms`：assemble 阶段耗时（毫秒）。
-- `assemble_status`：assemble 状态（`success|failed|bypass`）。
-- `guard_violation`：guard 命中摘要（失败时用于 fail-fast 诊断）。
-
-### Run 诊断新增字段（Context Assembler CA2）
-
-- `assemble_stage_status`：CA2 阶段结果（`stage1_only|stage2_used|degraded|bypass|failed`）。
-- `stage2_skip_reason`：Stage2 跳过或降级原因（规则未命中/provider 不可用等）。
-- `stage2_router_mode`：CA2 路由模式（`rules|agentic`）。
-- `stage2_router_decision`：CA2 路由决策（`run_stage2|skip_stage2`）。
-- `stage2_router_reason`：路由决策/回退原因（成功 reason 或 fallback 标记）。
-- `stage2_router_latency_ms`：agentic callback 决策耗时（毫秒，rules 模式通常为 0）。
-- `stage2_router_error`：agentic callback 归一化错误码（如 `agentic.callback_missing|agentic.callback_timeout|agentic.callback_error|agentic.invalid_decision`）。
-- `stage1_latency_ms`：Stage1 耗时（毫秒）。
-- `stage2_latency_ms`：Stage2 耗时（毫秒）。
-- `stage2_provider`：Stage2 使用的 provider（file/http/rag/db/elasticsearch）。
-- `stage2_profile`：Stage2 external profile（`http_generic|ragflow_like|graphrag_like|elasticsearch_like|file`）。
-- `stage2_template_profile`：Stage2 模板解析使用的 template profile（可与 `stage2_profile` 并存，增量兼容）。
-- `stage2_template_resolution_source`：模板解析来源（`profile_defaults_only|profile_defaults_then_explicit_overrides|explicit_only`）。
-- `stage2_hint_applied`：本次 Stage2 是否成功应用 capability hints。
-- `stage2_hint_mismatch_reason`：hint 不匹配原因（例如 `hint.unsupported`；仅观测，不自动动作）。
-- `stage2_hit_count`：Stage2 本次命中的 chunk 数量。
-- `stage2_source`：Stage2 数据源标识（provider 或响应映射字段）。
-- `stage2_reason`：Stage2 执行原因/结果摘要（如 `ok`/`empty`/`timeout`/`fetch_error`）。
-- `stage2_reason_code`：Stage2 机器可读原因码（如 `ok`/`timeout`/`http_status`/`upstream_error`）。
-- `stage2_error_layer`：Stage2 错误分层（`transport|protocol|semantic`，成功时为空）。
-- `recap_status`：tail recap 状态（`disabled|appended|truncated|failed`）。
-
-### CA2 E3 Template-Pack YAML 样例（精简）
-
-```yaml
-# graphrag_like
-context_assembler:
-  ca2:
-    stage2:
-      provider: http
-      external:
-        profile: graphrag_like
-        endpoint: https://retriever.example.com/graphrag/search
-        hints:
-          enabled: true
-          capabilities: [metadata_filter]
-```
-
-```yaml
-# ragflow_like
-context_assembler:
-  ca2:
-    stage2:
-      provider: rag
-      external:
-        profile: ragflow_like
-        endpoint: https://retriever.example.com/ragflow/query
-        hints:
-          enabled: true
-          capabilities: [metadata_filter, rerank_metadata]
-```
-
-```yaml
-# elasticsearch_like
-context_assembler:
-  ca2:
-    stage2:
-      provider: elasticsearch
-      external:
-        profile: elasticsearch_like
-        endpoint: https://retriever.example.com/es/search
-        hints:
-          enabled: true
-          capabilities: [dsl_query, metadata_filter]
-```
-
-### Run 诊断新增字段（Context Assembler CA3）
-
-- `ca3_pressure_zone`：CA3 当前压力分区（`safe|comfort|warning|danger|emergency`）。
-- `ca3_pressure_reason`：分区触发来源（`usage_percent_trigger|absolute_token_trigger`）。
-- `ca3_pressure_trigger`：本次最终触发分区（双触发冲突时记录被选中的更高压力分区）。
-- `ca3_zone_residency_ms`：各分区累计停留时长（毫秒）。
-- `ca3_trigger_counts`：各分区触发次数。
-- `ca3_compression_ratio`：本次装配压缩率（`0~1`）。
-- `ca3_spill_count`：本次 spill 计数。
-- `ca3_swap_back_count`：本次 swap-back 计数。
-- `ca3_compaction_mode`：本次 CA3 压缩模式（`truncate|semantic`）。
-- `ca3_compaction_fallback`：语义压缩失败后是否发生 `truncate` 回退（`best_effort` 下可能为 true）。
-- `ca3_compaction_fallback_reason`：语义回退原因（如 `quality_below_threshold`、`semantic_compaction_error`）。
-- `ca3_compaction_quality_score`：语义压缩质量分（`0~1`）。
-- `ca3_compaction_quality_reason`：质量判定原因（可多值，如 `quality_pass`、`coverage_low`）。
-- `ca3_compaction_embedding_provider`：embedding 评分选中的 provider（`openai|gemini|anthropic`）。
-- `ca3_compaction_embedding_similarity`：embedding cosine 相似度（归一化到 `0~1`）。
-- `ca3_compaction_embedding_contribution`：embedding 分量对最终 quality 分的贡献值。
-- `ca3_compaction_embedding_status`：embedding 评分状态（如 `used|fallback_rule_only|disabled`）。
-- `ca3_compaction_embedding_fallback_reason`：embedding 回退原因（如 `embedding_score_error|embedding_hook_not_bound`）。
-- `ca3_compaction_reranker_used`：是否执行了 reranker 阶段。
-- `ca3_compaction_reranker_provider`：reranker 使用的 provider。
-- `ca3_compaction_reranker_model`：reranker 使用的 model。
-- `ca3_compaction_reranker_threshold_source`：阈值来源（如 `provider_model_profile`）。
-- `ca3_compaction_reranker_threshold_hit`：是否命中 reranker 阈值（`score < threshold`）。
-- `ca3_compaction_reranker_fallback_reason`：reranker 回退原因（如 `reranker_error`）。
-- `ca3_compaction_reranker_profile_version`：治理阈值 profile 版本标签。
-- `ca3_compaction_reranker_rollout_hit`：是否命中 `provider:model` 灰度匹配。
-- `ca3_compaction_reranker_threshold_drift`：治理阈值与基础阈值的差值绝对值（用于漂移观测）。
-- `ca3_compaction_retained_evidence_count`：本次 prune 过程中被证据保留规则保护的消息数量。
-
-语义说明：
-- `semantic` 模式通过当前 model-step 选中的 model client 执行压缩。
-- quality gate 在 semantic 路径执行（coverage/compression/validity 规则评分）。
-- semantic prompt 由 runtime 模板渲染，模板变量受白名单约束。
-- embedding adapter 支持 `openai|gemini|anthropic`；当前相似度指标固定为 `cosine`。
-- reranker 支持 provider-specific 扩展注册（`assembler.WithSemanticReranker`），未注册时走内置默认实现。
-- 阈值治理模式支持 `enforce|dry_run`：`dry_run` 只评估治理阈值，不改变最终 gate 决策。
-- 允许使用独立 embedding 凭证（`embedding.auth.*`）并支持 provider 级覆盖（`embedding.provider_auth.*`）。
-- 若 stage policy 为 `best_effort`，语义压缩失败会回退 `truncate` 并记录 `ca3_compaction_fallback=true`。
-- 若 stage policy 为 `fail_fast`，语义压缩失败会立即终止当前装配流程。
-
-### Run 诊断新增字段（Action Timeline H1.5 聚合）
-
-- `timeline_phases.<phase>.count_total`：phase 终态计数（`succeeded|failed|canceled|skipped`）。
-- `timeline_phases.<phase>.failed_total`：phase 失败计数。
-- `timeline_phases.<phase>.canceled_total`：phase 取消计数。
-- `timeline_phases.<phase>.skipped_total`：phase 跳过计数。
-- `timeline_phases.<phase>.latency_ms`：phase 累计耗时（毫秒）。
-- `timeline_phases.<phase>.latency_p95_ms`：phase P95 耗时（毫秒）。
-
-说明：
-- 聚合维度为“单 run 内按 phase 聚合”。
-- 同一 run 的 timeline 重放按 `sequence+phase+status` 去重，不重复累计。
-
-### 诊断新增字段（Action Timeline H16 趋势聚合）
-
-`Manager.TimelineTrends(query)` 返回跨 run 趋势记录，最小字段：
-
-- `phase`：阶段维度（`run|context_assembler|model|tool|mcp|skill|hitl`）。
-- `status`：状态维度（`pending|running|succeeded|failed|skipped|canceled`）。
-- `count_total`：窗口内该 bucket 的终态计数。
-- `failed_total`：窗口内失败计数。
-- `canceled_total`：窗口内取消计数。
-- `skipped_total`：窗口内跳过计数。
-- `latency_avg_ms`：窗口内平均耗时（毫秒）。
-- `latency_p95_ms`：窗口内 P95 耗时（毫秒）。
-- `window_start`：查询窗口起始时间。
-- `window_end`：查询窗口结束时间。
-
-窗口模式：
-- `last_n_runs`：按最近 N 条 run 记录聚合（默认 `N=100`）。
-- `time_window`：按最近时间窗口聚合（默认 `15m`）。
-
-语义约束：
-- 趋势聚合默认启用，可通过 `diagnostics.timeline_trend.enabled` 关闭。
-- 空窗口返回空集合，不伪造统计。
-- 复用 single-writer + idempotency 口径，replay/duplicate 不重复累计。
-
-### 诊断新增字段（CA2 External Retriever E2 趋势聚合）
-
-`Manager.CA2ExternalTrends(query)` 返回 provider 维度趋势记录，最小字段：
-
-- `provider`：Stage2 provider 名称（如 `http|rag|db|elasticsearch|file`）。
-- `window_start`：窗口起始时间。
-- `window_end`：窗口结束时间。
-- `p95_latency_ms`：窗口内 provider 的 Stage2 P95 延迟（毫秒）。
-- `error_rate`：窗口内错误占比（按 `stage2_reason_code/stage2_error_layer` 判定）。
-- `hit_rate`：窗口内 `stage2_hit_count > 0` 的占比。
-
-扩展字段：
-- `threshold_hits`：命中的静态阈值列表（`p95_latency_ms|error_rate|hit_rate`）。
-- `error_layer_distribution`：错误层分布（基线 `transport|protocol|semantic`，允许新增枚举扩展）。
-
-语义约束：
-- 阈值命中仅输出观测信号，不触发自动降级/切换动作。
-- 保持 `fail_fast/best_effort` 既有行为不变。
-- Run/Stream 在等价负载下保持趋势统计语义一致。
-
-### Run 诊断新增字段（Action Gate H2）
-
-- `gate_checks`：本次 run 触发的 gate 检查次数（高风险规则命中计数）。
-- `gate_denied_count`：本次 run 被 gate 拒绝的次数（含 deny/timeout/resolver 错误拒绝）。
-- `gate_timeout_count`：本次 run 因确认超时导致拒绝的次数。
-
-Action Timeline reason code（gate 相关）：
-- `gate.rule_match`：命中参数规则（H4）。
-- `gate.require_confirm`：命中规则且进入确认流程。
-- `gate.denied`：被 gate 拒绝（含未配置 resolver 的 fail-fast 拒绝）。
-- `gate.timeout`：确认超时后拒绝（timeout-deny）。
-- `backpressure.block`：命中 block 背压排队路径（用于并发基线可观测）。
-- `backpressure.drop_low_priority`：命中 drop_low_priority 背压丢弃路径（`local|mcp|skill` 统一语义）。
-- `cancel.propagated`：父上下文取消已传播到当前执行分支（Run/Stream 对齐）。
-
-Action Timeline reason code（Teams 基线）：
-- `team.dispatch`：Teams coordinator/leader 分发任务。
-- `team.collect`：Teams 收集 worker 结果并写入任务终态。
-- `team.resolve`：Teams 在策略收敛阶段产出最终决策。
-- `team.dispatch_remote`：Teams 分发 remote worker（A2A 路径）。
-- `team.collect_remote`：Teams 收集 remote worker 结果并写入终态。
-- `team.handoff`：Teams 在角色切换中执行协作交接语义。
-- `team.delegation`：Teams 执行协作委派语义。
-- `team.aggregation`：Teams 执行协作聚合语义。
-
-Teams Timeline 关联字段（按可用性增量携带）：
-- `team_id`
-- `workflow_id`
-- `step_id`
-- `agent_id`
-- `task_id`
-- `peer_id`
-
-Action Timeline reason code（Workflow 基线）：
-- `workflow.schedule`：Workflow step 被调度执行或进入终态。
-- `workflow.retry`：Workflow step 在失败后进入下一次重试。
-- `workflow.resume`：Workflow 从 checkpoint 恢复并跳过已完成 step。
-- `workflow.dispatch_a2a`：Workflow 调度 A2A remote step。
-- `workflow.handoff`：Workflow step 使用协作交接语义。
-- `workflow.delegation`：Workflow step 使用协作委派语义。
-- `workflow.aggregation`：Workflow step 使用协作聚合语义。
-
-Workflow Timeline 关联字段（按可用性增量携带）：
-- `workflow_id`
-- `step_id`
-- `task_id`
-- `team_id`
-- `agent_id`
-- `peer_id`
-
-Action Timeline reason code（A2A 基线）：
-- `a2a.submit`：A2A 提交任务到对端并进入可查询生命周期。
-- `a2a.status_poll`：A2A 客户端轮询任务状态。
-- `a2a.sse_subscribe`：A2A 以 SSE 交付模式发起订阅。
-- `a2a.sse_reconnect`：A2A 在 SSE 订阅失败后执行有界重连。
-- `a2a.delivery_fallback`：A2A 交付模式从首选模式降级到 fallback 模式。
-- `a2a.version_mismatch`：A2A Agent Card 版本协商失败（strict major）。
-- `a2a.callback_retry`：A2A 结果回调在有界重试中再次投递。
-- `a2a.resolve`：A2A 任务进入终态并完成结果解析。
-- `a2a.async_submit`：A2A 异步提交成功并返回 accepted 句柄。
-- `a2a.async_report_deliver`：A2A 异步回报投递成功。
-- `a2a.async_report_retry`：A2A 异步回报在可重试失败后进入下一次投递。
-- `a2a.async_report_dedup`：A2A 异步回报命中幂等去重并收敛。
-- `a2a.async_report_drop`：A2A 异步回报在重试预算耗尽或不可重试时被丢弃。
-
-A2A Timeline 关联字段（按可用性增量携带）：
-- `workflow_id`
-- `team_id`
-- `step_id`
-- `task_id`
-- `agent_id`
-- `peer_id`
-- `delivery_mode`
-- `version_local`
-- `version_peer`
-
-Action Timeline reason code（Scheduler/Subagent 基线）：
-- `scheduler.enqueue`：调度任务入队。
-- `scheduler.delayed_enqueue`：任务带 `not_before` 入队并进入延后调度语义。
-- `scheduler.delayed_wait`：延后任务未到 `not_before` 边界，仍处于等待状态。
-- `scheduler.delayed_ready`：延后任务到达 `not_before` 边界并进入可领取状态。
-- `scheduler.claim`：worker 原子领取任务并创建 lease。
-- `scheduler.heartbeat`：worker 续租当前 lease。
-- `scheduler.lease_expired`：lease 超时失效，当前 attempt 进入过期态。
-- `scheduler.requeue`：任务重新进入可领取队列（接管路径）。
-- `scheduler.qos_claim`：priority 模式下按 QoS 规则完成 claim。
-- `scheduler.fairness_yield`：同优先级达到 fairness 连续窗口后让渡 claim。
-- `scheduler.retry_backoff`：任务重试被调度到 backoff 窗口（设置 next eligible 时间）。
-- `scheduler.dead_letter`：任务超过重试上限后进入 dead-letter 终态。
-- `subagent.spawn`：父 run 创建子任务（通过 guardrail 校验）。
-- `subagent.join`：子任务进入终态并回收聚合。
-- `subagent.budget_reject`：子任务创建被预算/阈值策略拒绝。
-- `recovery.restore`：composer 加载恢复快照并恢复 workflow/scheduler 状态。
-- `recovery.replay`：恢复后重放 in-flight/terminal 收敛路径。
-- `recovery.conflict`：恢复阶段检测到冲突并按策略终止（`fail_fast`）。
-
-Scheduler/Subagent Timeline 关联字段（按可用性增量携带）：
-- `run_id`
-- `workflow_id`
-- `team_id`
-- `step_id`
-- `task_id`
-- `attempt_id`
-- `agent_id`
-- `peer_id`
-
-Action Gate 规则优先级（H4）：
-1. `action_gate.parameter_rules`（参数规则，支持 AND/OR 复合条件）
-2. `action_gate.decision_by_tool` / `action_gate.decision_by_keyword`
-3. `action_gate.tool_names` / `action_gate.keywords` + 全局 `action_gate.policy`
-4. 默认 allow
-
-### Run 诊断新增字段（Action Gate H4）
-
-- `gate_rule_hit_count`：本次 run 命中的参数规则次数。
-- `gate_rule_last_id`：本次 run 最近一次命中的参数规则 ID（未命中为空字符串）。
-
-### Run 诊断新增字段（并发基线 R5）
-
-- `cancel_propagated_count`：本次 run 内取消传播生效次数（非负整数）。
-- `backpressure_drop_count`：本次 run 背压丢弃次数（`block` 策略下应为 `0`，`drop_low_priority` 可大于 `0`）。
-- `backpressure_drop_count_by_phase`：本次 run 背压丢弃分桶计数（`local|mcp|skill`）。
-- `inflight_peak`：本次 run 观测到的在途并发峰值（run 级）。
-
-### Run 诊断新增字段（Teams 基线 T1）
-
-- `team_id`：本次 Teams 协作执行标识。
-- `team_strategy`：本次 Teams 策略（`serial|parallel|vote`）。
-- `team_task_total`：本次 Teams 任务总数。
-- `team_task_failed`：本次 Teams 失败任务数。
-- `team_task_canceled`：本次 Teams 取消任务数。
-- `team_remote_task_total`：本次 Teams remote 任务总数。
-- `team_remote_task_failed`：本次 Teams remote 失败任务数。
-
-语义约束：
-- 字段为 additive 扩展，不影响既有 run 摘要消费者。
-- Teams 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
-
-### Run 诊断新增字段（Workflow 基线 W1）
-
-- `workflow_id`：本次 workflow 实例标识。
-- `workflow_status`：workflow 最终状态（如 `succeeded|failed`）。
-- `workflow_step_total`：workflow step 总数。
-- `workflow_step_failed`：workflow 失败 step 数。
-- `workflow_remote_step_total`：workflow 中 A2A remote step 总数。
-- `workflow_remote_step_failed`：workflow 中 A2A remote 失败 step 数。
-- `workflow_subgraph_expansion_total`：workflow 图编译阶段展开出的子图 step 总数（A15）。
-- `workflow_condition_template_total`：workflow 图编译阶段解析的 condition template 次数（A15）。
-- `workflow_graph_compile_failed`：workflow 图编译是否失败（A15，布尔值）。
-- `workflow_resume_count`：本次 run 的 workflow 恢复次数。
-
-语义约束：
-- 字段为 additive 扩展，不影响既有 run 摘要消费者。
-- Workflow 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
-
-### Run 诊断新增字段（A2A 基线 A2）
-
-- `a2a_task_total`：本次 run 的 A2A 任务总数。
-- `a2a_task_failed`：本次 run 的 A2A 失败任务数。
-- `peer_id`：本次 run 主要关联的对端 agent 标识。
-- `a2a_error_layer`：A2A 失败分层（`transport|protocol|semantic`）。
-- `a2a_delivery_mode`：本次 run 最终采用的 A2A 交付模式（`callback|sse`）。
-- `a2a_delivery_fallback_used`：是否发生交付模式回退。
-- `a2a_delivery_fallback_reason`：交付模式回退原因码（如 `a2a.delivery_unsupported`）。
-- `a2a_version_local`：本端 Agent Card 版本。
-- `a2a_version_peer`：对端 Agent Card 版本。
-- `a2a_version_negotiation_result`：版本协商结果（如 `compatible|mismatch`）。
-- `a2a_async_report_total`：本次 run 的异步回报总次数（按逻辑回报计数）。
-- `a2a_async_report_failed`：本次 run 的异步回报失败次数（最终 drop 口径）。
-- `a2a_async_report_retry_total`：本次 run 的异步回报重试总次数（不含首调）。
-- `a2a_async_report_dedup_total`：本次 run 的异步回报去重命中次数。
-
-语义约束：
-- 字段为 additive 扩展，不影响既有 run 摘要消费者。
-- A2A 聚合沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
-
-### Run 诊断新增字段（Scheduler/Subagent 基线 A6）
-
-- `scheduler_backend`：调度后端类型（`memory|file`）。
-- `scheduler_queue_total`：本次 run 的 scheduler 入队总数。
-- `scheduler_claim_total`：本次 run 的 scheduler claim 总数。
-- `scheduler_reclaim_total`：本次 run 的 lease 过期接管（requeue）总数。
-- `scheduler_qos_mode`：本次 run 生效的调度模式（`fifo|priority`）。
-- `scheduler_priority_claim_total`：本次 run 在 priority QoS 路径下的 claim 总数。
-- `scheduler_fairness_yield_total`：本次 run 触发 fairness 让渡的次数。
-- `scheduler_retry_backoff_total`：本次 run 触发 retry backoff 调度的次数。
-- `scheduler_dead_letter_total`：本次 run 进入 dead-letter 的任务次数。
-- `scheduler_delayed_task_total`：本次 run 带 `not_before` 且进入延后语义的任务总数。
-- `scheduler_delayed_claim_total`：本次 run 进入延后语义并最终被 claim 的任务总数。
-- `scheduler_delayed_wait_ms_p95`：本次 run 延后任务从入队到 claim 的等待时延 p95（毫秒）。
-- `subagent_child_total`：本次 run 创建的子任务总数。
-- `subagent_child_failed`：本次 run 子任务失败总数。
-- `subagent_budget_reject_total`：本次 run 因 guardrail/budget 被拒绝的子任务总数。
-
-语义约束：
-- 字段为 additive 扩展，不影响既有 run 摘要消费者。
-- Scheduler/Subagent 摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
-
-### Run 诊断新增字段（Composer A8）
-
-- `composer_managed`：是否由 `orchestration/composer` 统一组合入口托管执行。
-- `scheduler_backend_fallback`：scheduler 初始化是否发生了 fallback（例如 `file -> memory`）。
-- `scheduler_backend_fallback_reason`：scheduler fallback 原因码（例如 `scheduler.backend.file_init_failed`）。
-
-### Run 诊断新增字段（Collaboration Primitives A16）
-
-- `collab_handoff_total`：本次 run 中协作原语 `handoff` 的终态收敛计数。
-- `collab_delegation_total`：本次 run 中协作原语 `delegation` 的终态收敛计数。
-- `collab_aggregation_total`：本次 run 中协作原语 `aggregation` 的终态收敛计数。
-- `collab_aggregation_strategy`：本次 run 生效的聚合策略（`all_settled|first_success`）。
-- `collab_fail_fast_total`：本次 run 在 `fail_fast` 策略下触发的协作失败快停计数。
-
-语义约束：
-- 字段为 additive 扩展，不影响既有 run 摘要消费者。
-- 协作摘要沿用 single-writer + idempotency 口径，重复 replay 不重复膨胀计数。
-
-### Run 诊断新增字段（Recovery A9/A17）
-
-- `recovery_enabled`：本次 run 是否启用 recovery（配置快照口径）。
-- `recovery_resume_boundary`：本次 run 生效的恢复边界策略（当前固定 `next_attempt_only`）。
-- `recovery_inflight_policy`：本次 run 生效的 in-flight 恢复策略（当前固定 `no_rewind`）。
-- `recovery_recovered`：本次 run 是否发生跨会话恢复。
-- `recovery_replay_total`：恢复阶段执行的重放条目总数。
-- `recovery_timeout_reentry_total`：恢复边界下 timeout 重入总次数。
-- `recovery_timeout_reentry_exhausted_total`：恢复边界下 timeout 重入预算耗尽次数。
-- `recovery_conflict`：恢复阶段是否检测到冲突。
-- `recovery_conflict_code`：冲突归一化原因码（例如 `recovery.conflict.task_terminal_mismatch`）。
-- `recovery_fallback_used`：恢复路径是否触发降级（例如不可恢复时回退 fresh run）。
-- `recovery_fallback_reason`：恢复降级原因码（例如 `recovery.snapshot.not_found`）。
-
-热更新生效边界（A8）：
-- composer 消费 `teams.*` / `workflow.*` / `a2a.*` / `scheduler.*` / `subagent.*` 快照。
-- scheduler/subagent 变更采用 `next_attempt_only`：仅影响新 `enqueue/spawn/claim` 边界；in-flight attempt 不回溯修改已创建 lease 语义。
-
-### Adapter Capability Negotiation 诊断字段（A27）
-
-外部 adapter 激活协商会额外产出以下诊断字段（`adapter/capability.Diagnostics` 对应 JSON tag）：
-- `adapter_capability_strategy_applied`
-- `adapter_capability_strategy_override_applied`
-- `adapter_capability_missing_required`
-- `adapter_capability_missing_optional`
-- `adapter_capability_downgraded_optional`
-- `adapter_capability_reason_codes`
-
-reason taxonomy 固定为：
-- `adapter.capability.missing_required`
-- `adapter.capability.optional_downgraded`
-- `adapter.capability.strategy_override_applied`
-
-协商语义说明：
-- 默认策略为 `fail_fast`；当请求未携带 optional 时，optional 缺失不影响成功路径。
-- 请求显式 override 到 `best_effort` 且 manifest 允许时，optional 缺失走 deterministic downgrade。
-- Run 与 Stream 在同请求上下文下必须产出语义等价的 accept/reject/downgrade 与 reason taxonomy。
-
-### Compatibility Window (A12/A13)
-
-兼容窗口规则：`additive + nullable + default`
-
-| 字段族 | additive | nullable | default |
-| --- | --- | --- | --- |
-| A12 Async Reporting（`a2a_async_report_*`） | 新增字段不影响既有字段 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
-| A13 Delayed Dispatch（`scheduler_delayed_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
-| Scheduler/Subagent（`scheduler_*` / `subagent_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
-| A15 Workflow Graph Composability（`workflow_subgraph_expansion_total` / `workflow_condition_template_total` / `workflow_graph_compile_failed`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` / `false` 解析 |
-| Composer（`composer_managed` / `scheduler_backend_fallback_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` 或空字符串解析 |
-| A16 Collaboration Primitives（`collab_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `0` 或空字符串解析 |
-| A17 Recovery Boundary（`recovery_resume_boundary` / `recovery_inflight_policy` / `recovery_timeout_reentry_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按空字符串或 `0` 解析 |
-| Recovery（`recovery_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按 `false` / `0` 或空字符串解析 |
-| A27 Adapter Capability Negotiation（`adapter_capability_*`） | 新增字段不改变旧语义 | 缺省可不返回 | 缺省按空字符串 / `false` / 空数组解析 |
-
-legacy consumers 行为示例：
-- 仅解析 A11 及更早字段的消费者，可以忽略 `a2a_async_report_*` / `scheduler_delayed_*`，不会影响既有逻辑。
-- missing additive fields resolve to documented default values（缺失字段按 `0`、`false` 或空字符串回退）。
-- unknown future additive fields are safely ignored（未知新增字段默认忽略，不阻断解析）。
-- pre-existing field semantics remain unchanged（既有字段语义不变，禁止同名改语义）。
-
-### Run 诊断新增字段（HITL Clarification H3）
-
-- `await_count`：本次 run 进入 `await_user` 的次数。
-- `resume_count`：本次 run 成功恢复（`resumed`）的次数。
-- `cancel_by_user_count`：本次 run 因超时策略 `cancel_by_user` 取消的次数。
-
-Action Timeline reason code（H3 相关）：
-- `hitl.await_user`：进入澄清等待态。
-- `hitl.resumed`：收到澄清输入并恢复执行。
-- `hitl.canceled_by_user`：澄清等待超时，按策略取消当前 run。
+- payload 最小字段：`phase/status/sequence`，可选 `reason`
+
+reason code 命名保持按域稳定扩展：
+- gate / 背压：如 `gate.denied`、`gate.timeout`、`backpressure.block`
+- teams / workflow：如 `team.dispatch`、`workflow.schedule`
+- a2a / scheduler / recovery：如 `a2a.submit`、`scheduler.claim`、`scheduler.awaiting_report`、`scheduler.async_timeout`、`scheduler.async_late_report`、`recovery.restore`
+- hitl：如 `hitl.await_user`、`hitl.resumed`
+
+Composed reason contract markers（必须保持字面稳定）：
+- teams: `team.dispatch_remote`、`team.collect_remote`、`team.handoff`、`team.delegation`、`team.aggregation`
+- workflow: `workflow.dispatch_a2a`、`workflow.handoff`、`workflow.delegation`、`workflow.aggregation`
+- a2a async: `a2a.async_submit`、`a2a.async_report_deliver`、`a2a.async_report_retry`、`a2a.async_report_dedup`、`a2a.async_report_drop`
+- scheduler/subagent/recovery: `scheduler.enqueue`、`scheduler.delayed_enqueue`、`scheduler.delayed_wait`、`scheduler.delayed_ready`、`scheduler.claim`、`scheduler.heartbeat`、`scheduler.lease_expired`、`scheduler.requeue`、`scheduler.qos_claim`、`scheduler.fairness_yield`、`scheduler.retry_backoff`、`scheduler.dead_letter`、`subagent.spawn`、`subagent.join`、`subagent.budget_reject`、`recovery.restore`、`recovery.replay`、`recovery.conflict`
+
+兼容约束：
+- `action.timeline` 为增量事件，不替换既有 `run.* / model.* / tool.* / skill.*` 事件。
+- timeline 聚合沿用 single-writer + idempotency 口径，replay/duplicate 不重复累计。
 
 ## 诊断写入口径（Single Writer + Idempotency）
 
@@ -1403,3 +1027,4 @@ security:
 ```go
 mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: "runtime.yaml"})
 ```
+

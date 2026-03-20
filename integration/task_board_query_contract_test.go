@@ -76,6 +76,26 @@ func TestTaskBoardQueryContractSnapshotRestoreStability(t *testing.T) {
 	}
 }
 
+func TestTaskBoardQueryContractAwaitingReportStateFilter(t *testing.T) {
+	ctx := context.Background()
+	s := newTaskBoardContractScheduler(t, scheduler.NewMemoryStore())
+	seedTaskBoardContractFixture(t, s)
+
+	result, err := s.QueryTasks(ctx, scheduler.TaskBoardQueryRequest{
+		TeamID: "team-a",
+		State:  string(scheduler.TaskStateAwaitingReport),
+	})
+	if err != nil {
+		t.Fatalf("query awaiting_report failed: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("awaiting_report query items = %d, want 1", len(result.Items))
+	}
+	if result.Items[0].Task.TaskID != "task-int-running" || result.Items[0].State != scheduler.TaskStateAwaitingReport {
+		t.Fatalf("awaiting_report query mismatch: %#v", result.Items[0])
+	}
+}
+
 func newTaskBoardContractScheduler(t *testing.T, store scheduler.QueueStore) *scheduler.Scheduler {
 	t.Helper()
 	s, err := scheduler.New(
@@ -120,8 +140,12 @@ func seedTaskBoardContractFixture(t *testing.T, s *scheduler.Scheduler) {
 	}); err != nil {
 		t.Fatalf("enqueue running task: %v", err)
 	}
-	if _, ok, err := s.Claim(ctx, "worker-int-running"); err != nil || !ok {
+	claimedRunning, ok, err := s.Claim(ctx, "worker-int-running")
+	if err != nil || !ok {
 		t.Fatalf("claim running task failed: ok=%v err=%v", ok, err)
+	}
+	if _, err := s.MarkAwaitingReport(ctx, claimedRunning.Record.Task.TaskID, claimedRunning.Attempt.AttemptID); err != nil {
+		t.Fatalf("mark awaiting_report task failed: %v", err)
 	}
 
 	if _, err := s.Enqueue(ctx, scheduler.Task{

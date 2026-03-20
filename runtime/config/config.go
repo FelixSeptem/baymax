@@ -102,12 +102,15 @@ const (
 )
 
 const (
-	SchedulerBackendMemory = "memory"
-	SchedulerBackendFile   = "file"
-	SchedulerQoSModeFIFO   = "fifo"
-	SchedulerQoSModePrio   = "priority"
-	MailboxBackendMemory   = "memory"
-	MailboxBackendFile     = "file"
+	SchedulerBackendMemory             = "memory"
+	SchedulerBackendFile               = "file"
+	SchedulerQoSModeFIFO               = "fifo"
+	SchedulerQoSModePrio               = "priority"
+	AsyncLateReportPolicyDropAndRecord = "drop_and_record"
+	AsyncTimeoutTerminalFailed         = "failed"
+	AsyncTimeoutTerminalDeadLetter     = "dead_letter"
+	MailboxBackendMemory               = "memory"
+	MailboxBackendFile                 = "file"
 )
 
 const (
@@ -368,16 +371,17 @@ type MailboxQueryConfig struct {
 }
 
 type SchedulerConfig struct {
-	Enabled           bool                 `json:"enabled"`
-	Backend           string               `json:"backend"`
-	Path              string               `json:"path"`
-	LeaseTimeout      time.Duration        `json:"lease_timeout"`
-	HeartbeatInterval time.Duration        `json:"heartbeat_interval"`
-	QueueLimit        int                  `json:"queue_limit"`
-	RetryMaxAttempts  int                  `json:"retry_max_attempts"`
-	QoS               SchedulerQoSConfig   `json:"qos"`
-	DLQ               SchedulerDLQConfig   `json:"dlq"`
-	Retry             SchedulerRetryConfig `json:"retry"`
+	Enabled           bool                      `json:"enabled"`
+	Backend           string                    `json:"backend"`
+	Path              string                    `json:"path"`
+	LeaseTimeout      time.Duration             `json:"lease_timeout"`
+	HeartbeatInterval time.Duration             `json:"heartbeat_interval"`
+	QueueLimit        int                       `json:"queue_limit"`
+	RetryMaxAttempts  int                       `json:"retry_max_attempts"`
+	QoS               SchedulerQoSConfig        `json:"qos"`
+	AsyncAwait        SchedulerAsyncAwaitConfig `json:"async_await"`
+	DLQ               SchedulerDLQConfig        `json:"dlq"`
+	Retry             SchedulerRetryConfig      `json:"retry"`
 }
 
 type SchedulerQoSConfig struct {
@@ -391,6 +395,12 @@ type SchedulerFairnessConfig struct {
 
 type SchedulerDLQConfig struct {
 	Enabled bool `json:"enabled"`
+}
+
+type SchedulerAsyncAwaitConfig struct {
+	ReportTimeout    time.Duration `json:"report_timeout"`
+	LateReportPolicy string        `json:"late_report_policy"`
+	TimeoutTerminal  string        `json:"timeout_terminal"`
 }
 
 type SchedulerRetryConfig struct {
@@ -988,6 +998,11 @@ func DefaultConfig() Config {
 				Fairness: SchedulerFairnessConfig{
 					MaxConsecutiveClaimsPerPriority: 3,
 				},
+			},
+			AsyncAwait: SchedulerAsyncAwaitConfig{
+				ReportTimeout:    15 * time.Minute,
+				LateReportPolicy: AsyncLateReportPolicyDropAndRecord,
+				TimeoutTerminal:  AsyncTimeoutTerminalFailed,
 			},
 			DLQ: SchedulerDLQConfig{
 				Enabled: false,
@@ -1726,6 +1741,28 @@ func Validate(cfg Config) error {
 		if cfg.Scheduler.Retry.Backoff.JitterRatio < 0 || cfg.Scheduler.Retry.Backoff.JitterRatio > 1 {
 			return errors.New("scheduler.retry.backoff.jitter_ratio must be in [0,1]")
 		}
+	}
+	if cfg.Scheduler.AsyncAwait.ReportTimeout <= 0 {
+		return errors.New("scheduler.async_await.report_timeout must be > 0")
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Scheduler.AsyncAwait.LateReportPolicy)); policy {
+	case AsyncLateReportPolicyDropAndRecord:
+	default:
+		return fmt.Errorf(
+			"scheduler.async_await.late_report_policy must be one of [%s], got %q",
+			AsyncLateReportPolicyDropAndRecord,
+			cfg.Scheduler.AsyncAwait.LateReportPolicy,
+		)
+	}
+	switch terminal := strings.ToLower(strings.TrimSpace(cfg.Scheduler.AsyncAwait.TimeoutTerminal)); terminal {
+	case AsyncTimeoutTerminalFailed, AsyncTimeoutTerminalDeadLetter:
+	default:
+		return fmt.Errorf(
+			"scheduler.async_await.timeout_terminal must be one of [%s,%s], got %q",
+			AsyncTimeoutTerminalFailed,
+			AsyncTimeoutTerminalDeadLetter,
+			cfg.Scheduler.AsyncAwait.TimeoutTerminal,
+		)
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Recovery.Backend)); backend {
 	case RecoveryBackendMemory:
@@ -2769,6 +2806,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.retry_max_attempts", base.Scheduler.RetryMaxAttempts)
 	v.SetDefault("scheduler.qos.mode", base.Scheduler.QoS.Mode)
 	v.SetDefault("scheduler.qos.fairness.max_consecutive_claims_per_priority", base.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority)
+	v.SetDefault("scheduler.async_await.report_timeout", base.Scheduler.AsyncAwait.ReportTimeout)
+	v.SetDefault("scheduler.async_await.late_report_policy", base.Scheduler.AsyncAwait.LateReportPolicy)
+	v.SetDefault("scheduler.async_await.timeout_terminal", base.Scheduler.AsyncAwait.TimeoutTerminal)
 	v.SetDefault("scheduler.dlq.enabled", base.Scheduler.DLQ.Enabled)
 	v.SetDefault("scheduler.retry.backoff.enabled", base.Scheduler.Retry.Backoff.Enabled)
 	v.SetDefault("scheduler.retry.backoff.initial", base.Scheduler.Retry.Backoff.Initial)
@@ -3031,6 +3071,9 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Scheduler.RetryMaxAttempts = v.GetInt("scheduler.retry_max_attempts")
 	cfg.Scheduler.QoS.Mode = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.qos.mode")))
 	cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority = v.GetInt("scheduler.qos.fairness.max_consecutive_claims_per_priority")
+	cfg.Scheduler.AsyncAwait.ReportTimeout = v.GetDuration("scheduler.async_await.report_timeout")
+	cfg.Scheduler.AsyncAwait.LateReportPolicy = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.late_report_policy")))
+	cfg.Scheduler.AsyncAwait.TimeoutTerminal = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.timeout_terminal")))
 	cfg.Scheduler.DLQ.Enabled = v.GetBool("scheduler.dlq.enabled")
 	cfg.Scheduler.Retry.Backoff.Enabled = v.GetBool("scheduler.retry.backoff.enabled")
 	cfg.Scheduler.Retry.Backoff.Initial = v.GetDuration("scheduler.retry.backoff.initial")

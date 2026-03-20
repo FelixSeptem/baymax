@@ -29,6 +29,9 @@ go test ./integration -run '^TestSyncInvocationContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] async reporting suite"
 go test ./integration -run '^TestAsyncReportingContract' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] async-await lifecycle suite"
+go test ./integration -run '^TestAsyncReportingContractAwaitingLifecycle' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] delayed dispatch suite"
 go test ./integration -run '^TestDelayedDispatchContract' -count=1
 

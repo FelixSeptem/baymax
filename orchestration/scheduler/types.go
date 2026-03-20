@@ -12,39 +12,45 @@ import (
 )
 
 const (
-	ReasonEnqueue        = "scheduler.enqueue"
-	ReasonDelayedEnqueue = "scheduler.delayed_enqueue"
-	ReasonDelayedWait    = "scheduler.delayed_wait"
-	ReasonDelayedReady   = "scheduler.delayed_ready"
-	ReasonClaim          = "scheduler.claim"
-	ReasonHeartbeat      = "scheduler.heartbeat"
-	ReasonLeaseExpired   = "scheduler.lease_expired"
-	ReasonRequeue        = "scheduler.requeue"
-	ReasonQoSClaim       = "scheduler.qos_claim"
-	ReasonFairnessYield  = "scheduler.fairness_yield"
-	ReasonRetryBackoff   = "scheduler.retry_backoff"
-	ReasonDeadLetter     = "scheduler.dead_letter"
-	ReasonSpawn          = "subagent.spawn"
-	ReasonJoin           = "subagent.join"
-	ReasonBudgetReject   = "subagent.budget_reject"
+	ReasonEnqueue         = "scheduler.enqueue"
+	ReasonDelayedEnqueue  = "scheduler.delayed_enqueue"
+	ReasonDelayedWait     = "scheduler.delayed_wait"
+	ReasonDelayedReady    = "scheduler.delayed_ready"
+	ReasonClaim           = "scheduler.claim"
+	ReasonHeartbeat       = "scheduler.heartbeat"
+	ReasonLeaseExpired    = "scheduler.lease_expired"
+	ReasonAwaitingReport  = "scheduler.awaiting_report"
+	ReasonAsyncTimeout    = "scheduler.async_timeout"
+	ReasonAsyncLateReport = "scheduler.async_late_report"
+	ReasonRequeue         = "scheduler.requeue"
+	ReasonQoSClaim        = "scheduler.qos_claim"
+	ReasonFairnessYield   = "scheduler.fairness_yield"
+	ReasonRetryBackoff    = "scheduler.retry_backoff"
+	ReasonDeadLetter      = "scheduler.dead_letter"
+	ReasonSpawn           = "subagent.spawn"
+	ReasonJoin            = "subagent.join"
+	ReasonBudgetReject    = "subagent.budget_reject"
 )
 
 var canonicalReasonSet = map[string]struct{}{
-	ReasonEnqueue:        {},
-	ReasonDelayedEnqueue: {},
-	ReasonDelayedWait:    {},
-	ReasonDelayedReady:   {},
-	ReasonClaim:          {},
-	ReasonHeartbeat:      {},
-	ReasonLeaseExpired:   {},
-	ReasonRequeue:        {},
-	ReasonQoSClaim:       {},
-	ReasonFairnessYield:  {},
-	ReasonRetryBackoff:   {},
-	ReasonDeadLetter:     {},
-	ReasonSpawn:          {},
-	ReasonJoin:           {},
-	ReasonBudgetReject:   {},
+	ReasonEnqueue:         {},
+	ReasonDelayedEnqueue:  {},
+	ReasonDelayedWait:     {},
+	ReasonDelayedReady:    {},
+	ReasonClaim:           {},
+	ReasonHeartbeat:       {},
+	ReasonLeaseExpired:    {},
+	ReasonAwaitingReport:  {},
+	ReasonAsyncTimeout:    {},
+	ReasonAsyncLateReport: {},
+	ReasonRequeue:         {},
+	ReasonQoSClaim:        {},
+	ReasonFairnessYield:   {},
+	ReasonRetryBackoff:    {},
+	ReasonDeadLetter:      {},
+	ReasonSpawn:           {},
+	ReasonJoin:            {},
+	ReasonBudgetReject:    {},
 }
 
 func CanonicalReason(reason string) (string, bool) {
@@ -59,11 +65,12 @@ func CanonicalReason(reason string) (string, bool) {
 type TaskState string
 
 const (
-	TaskStateQueued     TaskState = "queued"
-	TaskStateRunning    TaskState = "running"
-	TaskStateSucceeded  TaskState = "succeeded"
-	TaskStateFailed     TaskState = "failed"
-	TaskStateDeadLetter TaskState = "dead_letter"
+	TaskStateQueued         TaskState = "queued"
+	TaskStateRunning        TaskState = "running"
+	TaskStateAwaitingReport TaskState = "awaiting_report"
+	TaskStateSucceeded      TaskState = "succeeded"
+	TaskStateFailed         TaskState = "failed"
+	TaskStateDeadLetter     TaskState = "dead_letter"
 )
 
 const (
@@ -145,18 +152,20 @@ type Attempt struct {
 }
 
 type TaskRecord struct {
-	Task           Task             `json:"task"`
-	State          TaskState        `json:"state"`
-	Attempts       []Attempt        `json:"attempts,omitempty"`
-	CurrentAttempt string           `json:"current_attempt_id,omitempty"`
-	NextEligibleAt time.Time        `json:"next_eligible_at,omitempty"`
-	DeadLetterCode string           `json:"dead_letter_code,omitempty"`
-	Result         map[string]any   `json:"result,omitempty"`
-	ErrorMessage   string           `json:"error_message,omitempty"`
-	ErrorClass     types.ErrorClass `json:"error_class,omitempty"`
-	ErrorLayer     string           `json:"error_layer,omitempty"`
-	CreatedAt      time.Time        `json:"created_at"`
-	UpdatedAt      time.Time        `json:"updated_at"`
+	Task                Task             `json:"task"`
+	State               TaskState        `json:"state"`
+	Attempts            []Attempt        `json:"attempts,omitempty"`
+	CurrentAttempt      string           `json:"current_attempt_id,omitempty"`
+	AwaitingReportSince time.Time        `json:"awaiting_report_since,omitempty"`
+	ReportTimeoutAt     time.Time        `json:"report_timeout_at,omitempty"`
+	NextEligibleAt      time.Time        `json:"next_eligible_at,omitempty"`
+	DeadLetterCode      string           `json:"dead_letter_code,omitempty"`
+	Result              map[string]any   `json:"result,omitempty"`
+	ErrorMessage        string           `json:"error_message,omitempty"`
+	ErrorClass          types.ErrorClass `json:"error_class,omitempty"`
+	ErrorLayer          string           `json:"error_layer,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at"`
 }
 
 func (r TaskRecord) attemptByID(attemptID string) (Attempt, bool) {
@@ -247,8 +256,9 @@ func defaultOutcomeKey(commit TerminalCommit) string {
 }
 
 type CommitResult struct {
-	Record    TaskRecord `json:"record"`
-	Duplicate bool       `json:"duplicate"`
+	Record     TaskRecord `json:"record"`
+	Duplicate  bool       `json:"duplicate"`
+	LateReport bool       `json:"late_report,omitempty"`
 }
 
 type Stats struct {
@@ -270,6 +280,18 @@ type Stats struct {
 	RecoveryTimeoutReentryTotal          int    `json:"recovery_timeout_reentry_total,omitempty"`
 	RecoveryTimeoutReentryExhaustedTotal int    `json:"recovery_timeout_reentry_exhausted_total,omitempty"`
 	DuplicateTerminalCommitTotal         int    `json:"duplicate_terminal_commit_total"`
+	AsyncAwaitTotal                      int    `json:"async_await_total,omitempty"`
+	AsyncTimeoutTotal                    int    `json:"async_timeout_total,omitempty"`
+}
+
+const (
+	AsyncLateReportPolicyDropAndRecord = "drop_and_record"
+)
+
+type AsyncAwaitConfig struct {
+	ReportTimeout    time.Duration `json:"report_timeout"`
+	LateReportPolicy string        `json:"late_report_policy,omitempty"`
+	TimeoutTerminal  TaskState     `json:"timeout_terminal,omitempty"`
 }
 
 const (
@@ -292,21 +314,25 @@ type QueueStore interface {
 	Claim(ctx context.Context, workerID string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, bool, error)
 	Heartbeat(ctx context.Context, taskID, attemptID, leaseToken string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, error)
 	ExpireLeases(ctx context.Context, now time.Time) ([]ClaimedTask, error)
+	ExpireAwaitingReports(ctx context.Context, now time.Time) ([]ClaimedTask, error)
+	MarkAwaitingReport(ctx context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error)
 	Requeue(ctx context.Context, taskID, reason string, now time.Time) (TaskRecord, error)
 	CommitTerminal(ctx context.Context, commit TerminalCommit) (CommitResult, error)
+	CommitAsyncReportTerminal(ctx context.Context, commit TerminalCommit) (CommitResult, error)
 	Get(ctx context.Context, taskID string) (TaskRecord, bool, error)
 	Stats(ctx context.Context) (Stats, error)
 }
 
 var (
-	ErrTaskNotFound       = errors.New("scheduler task not found")
-	ErrAttemptNotFound    = errors.New("scheduler attempt not found")
-	ErrLeaseTokenMismatch = errors.New("scheduler lease token mismatch")
-	ErrLeaseExpired       = errors.New("scheduler lease expired")
-	ErrTaskNotClaimable   = errors.New("scheduler task is not claimable")
-	ErrTaskNotRunning     = errors.New("scheduler task is not running")
-	ErrStaleAttempt       = errors.New("scheduler stale attempt commit")
-	ErrSnapshotCorrupt    = errors.New("scheduler snapshot is corrupt")
+	ErrTaskNotFound          = errors.New("scheduler task not found")
+	ErrAttemptNotFound       = errors.New("scheduler attempt not found")
+	ErrLeaseTokenMismatch    = errors.New("scheduler lease token mismatch")
+	ErrLeaseExpired          = errors.New("scheduler lease expired")
+	ErrTaskNotClaimable      = errors.New("scheduler task is not claimable")
+	ErrTaskNotRunning        = errors.New("scheduler task is not running")
+	ErrTaskNotAwaitingReport = errors.New("scheduler task is not awaiting report")
+	ErrStaleAttempt          = errors.New("scheduler stale attempt commit")
+	ErrSnapshotCorrupt       = errors.New("scheduler snapshot is corrupt")
 )
 
 type StoreSnapshot struct {

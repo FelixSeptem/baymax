@@ -1,6 +1,6 @@
 # Performance Regression Policy
 
-更新时间：2026-03-19
+更新时间：2026-03-20
 
 ## Scope
 

@@ -35,6 +35,17 @@ func TestTaskBoardQueryFilterDefaultsAndReadOnly(t *testing.T) {
 		t.Fatalf("AND filter result mismatch: %#v", result.Items)
 	}
 
+	awaiting, err := s.QueryTasks(ctx, TaskBoardQueryRequest{
+		TeamID: "team-a",
+		State:  string(TaskStateAwaitingReport),
+	})
+	if err != nil {
+		t.Fatalf("query awaiting_report failed: %v", err)
+	}
+	if len(awaiting.Items) != 1 || awaiting.Items[0].Task.TaskID != "task-running" {
+		t.Fatalf("awaiting_report filter mismatch: %#v", awaiting.Items)
+	}
+
 	empty, err := s.QueryTasks(ctx, TaskBoardQueryRequest{TaskID: "task-missing"})
 	if err != nil {
 		t.Fatalf("query missing task should not error: %v", err)
@@ -250,8 +261,12 @@ func seedTaskBoardQueryFixture(t *testing.T, s *Scheduler) {
 	}); err != nil {
 		t.Fatalf("enqueue running task: %v", err)
 	}
-	if _, ok, err := s.Claim(ctx, "worker-running"); err != nil || !ok {
+	claimedRunning, ok, err := s.Claim(ctx, "worker-running")
+	if err != nil || !ok {
 		t.Fatalf("claim running task failed: ok=%v err=%v", ok, err)
+	}
+	if _, err := s.MarkAwaitingReport(ctx, claimedRunning.Record.Task.TaskID, claimedRunning.Attempt.AttemptID); err != nil {
+		t.Fatalf("mark awaiting_report task failed: %v", err)
 	}
 
 	if _, err := s.Enqueue(ctx, Task{

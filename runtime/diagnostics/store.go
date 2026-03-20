@@ -143,6 +143,10 @@ type RunRecord struct {
 	A2AAsyncReportFailed                 int                               `json:"a2a_async_report_failed,omitempty"`
 	A2AAsyncReportRetryTotal             int                               `json:"a2a_async_report_retry_total,omitempty"`
 	A2AAsyncReportDedupTotal             int                               `json:"a2a_async_report_dedup_total,omitempty"`
+	AsyncAwaitTotal                      int                               `json:"async_await_total,omitempty"`
+	AsyncTimeoutTotal                    int                               `json:"async_timeout_total,omitempty"`
+	AsyncLateReportTotal                 int                               `json:"async_late_report_total,omitempty"`
+	AsyncReportDedupTotal                int                               `json:"async_report_dedup_total,omitempty"`
 	ComposerManaged                      bool                              `json:"composer_managed,omitempty"`
 	SchedulerBackend                     string                            `json:"scheduler_backend,omitempty"`
 	SchedulerQoSMode                     string                            `json:"scheduler_qos_mode,omitempty"`

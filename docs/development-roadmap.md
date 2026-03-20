@@ -16,11 +16,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-20：
-- 已归档并稳定：A4-A29（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract）。
-- 已完成待归档：
-  - `introduce-unified-mailbox-coordination-contract-a30`
+- 已归档并稳定：A4-A31（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口）。
 - 进行中：
-  - `harden-async-subagent-lifecycle-and-await-report-contract-a31`
+  - `introduce-async-await-reconcile-poll-fallback-contract-a32`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -53,6 +51,7 @@ Baymax 主线保持 `library-first + contract-first`：
 完成条件（A31）：
 - 在 `orchestration/scheduler` 引入异步等待态 `awaiting_report`，明确定义 async accepted 到终态回报之间的生命周期。
 - 固化 `report_timeout` 与 `late_report_policy=drop_and_record` 语义，保证终态收敛确定性与幂等回放稳定性。
+  默认值：`scheduler.async_await.report_timeout=15m`、`scheduler.async_await.late_report_policy=drop_and_record`、`scheduler.async_await.timeout_terminal=failed`。
 - 扩展 Task Board 查询状态过滤，纳入 `awaiting_report`，并保持既有分页/游标 fail-fast 契约不变。
 - 在 `runtime/config` 增加 `scheduler.async_await.*` 校验与热更新回滚保障（`env > file > default`）。
 - 在 `runtime/diagnostics` 增加 async-await 聚合字段，并保持 `additive + nullable + default` 兼容窗口。

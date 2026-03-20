@@ -1,6 +1,8 @@
 # Modular E2E Review Matrix
 
-更新时间：2026-03-13
+更新时间：2026-03-20
+
+> 说明：本文件为历史评审快照；当前测试覆盖与门禁映射请以 `docs/mainline-contract-test-index.md` 为准。
 
 ## 范围
 

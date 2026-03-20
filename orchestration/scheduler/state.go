@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 type schedulerState struct {
@@ -14,6 +16,7 @@ type schedulerState struct {
 	DelayedWaitMs    []int64                   `json:"delayed_wait_ms,omitempty"`
 	Stats            Stats                     `json:"stats"`
 	governance       GovernanceConfig
+	asyncAwait       AsyncAwaitConfig
 	recoveryBoundary RecoveryBoundaryConfig
 	lastPriority     string
 	lastConsecutive  int
@@ -31,8 +34,37 @@ func newSchedulerState(backend string) schedulerState {
 			QoSMode: string(cfg.QoS),
 		},
 		governance:       cfg,
+		asyncAwait:       defaultAsyncAwaitConfig(),
 		recoveryBoundary: defaultRecoveryBoundaryConfig(),
 	}
+}
+
+func defaultAsyncAwaitConfig() AsyncAwaitConfig {
+	return AsyncAwaitConfig{
+		ReportTimeout:    15 * time.Minute,
+		LateReportPolicy: AsyncLateReportPolicyDropAndRecord,
+		TimeoutTerminal:  TaskStateFailed,
+	}
+}
+
+func normalizeAsyncAwaitConfig(cfg AsyncAwaitConfig) AsyncAwaitConfig {
+	out := cfg
+	if out.ReportTimeout <= 0 {
+		out.ReportTimeout = 15 * time.Minute
+	}
+	out.LateReportPolicy = strings.ToLower(strings.TrimSpace(out.LateReportPolicy))
+	if out.LateReportPolicy == "" {
+		out.LateReportPolicy = AsyncLateReportPolicyDropAndRecord
+	}
+	if out.LateReportPolicy != AsyncLateReportPolicyDropAndRecord {
+		out.LateReportPolicy = AsyncLateReportPolicyDropAndRecord
+	}
+	switch out.TimeoutTerminal {
+	case TaskStateDeadLetter:
+	default:
+		out.TimeoutTerminal = TaskStateFailed
+	}
+	return out
 }
 
 func defaultGovernanceConfig() GovernanceConfig {
@@ -128,6 +160,13 @@ func (s *schedulerState) setRecoveryBoundary(cfg RecoveryBoundaryConfig) {
 		return
 	}
 	s.recoveryBoundary = normalizeRecoveryBoundaryConfig(cfg)
+}
+
+func (s *schedulerState) setAsyncAwait(cfg AsyncAwaitConfig) {
+	if s == nil {
+		return
+	}
+	s.asyncAwait = normalizeAsyncAwaitConfig(cfg)
 }
 
 func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
@@ -270,6 +309,52 @@ func (s *schedulerState) heartbeat(taskID, attemptID, leaseToken string, now tim
 	return ClaimedTask{Record: cloneTaskRecord(*record), Attempt: current}, nil
 }
 
+func (s *schedulerState) markAwaitingReport(taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+	taskID = strings.TrimSpace(taskID)
+	attemptID = strings.TrimSpace(attemptID)
+	if taskID == "" || attemptID == "" {
+		return TaskRecord{}, fmt.Errorf("task_id and attempt_id are required")
+	}
+	record := s.Tasks[taskID]
+	if record == nil {
+		return TaskRecord{}, ErrTaskNotFound
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if reportTimeout <= 0 {
+		reportTimeout = s.asyncAwait.ReportTimeout
+		if reportTimeout <= 0 {
+			reportTimeout = 15 * time.Minute
+		}
+	}
+	current, ok := record.currentAttempt()
+	if !ok || current.AttemptID != attemptID {
+		return TaskRecord{}, ErrAttemptNotFound
+	}
+	if record.State == TaskStateAwaitingReport {
+		return cloneTaskRecord(*record), nil
+	}
+	if record.State != TaskStateRunning {
+		return TaskRecord{}, ErrTaskNotRunning
+	}
+	current.LeaseExpiresAt = time.Time{}
+	current.HeartbeatAt = now
+	for i := range record.Attempts {
+		if record.Attempts[i].AttemptID == current.AttemptID {
+			record.Attempts[i] = current
+			break
+		}
+	}
+	record.State = TaskStateAwaitingReport
+	record.AwaitingReportSince = now
+	record.ReportTimeoutAt = now.Add(reportTimeout)
+	record.NextEligibleAt = time.Time{}
+	record.UpdatedAt = now
+	s.Stats.AsyncAwaitTotal++
+	return cloneTaskRecord(*record), nil
+}
+
 func (s *schedulerState) expireLeases(now time.Time) []ClaimedTask {
 	if now.IsZero() {
 		now = time.Now()
@@ -303,6 +388,82 @@ func (s *schedulerState) expireLeases(now time.Time) []ClaimedTask {
 		s.handleRetryTransition(taskID, record, current, now)
 		s.Stats.LeaseExpiredTotal++
 		out = append(out, ClaimedTask{Record: cloneTaskRecord(*record), Attempt: current})
+	}
+	return out
+}
+
+func (s *schedulerState) expireAwaitingReports(now time.Time) []ClaimedTask {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	expiredTaskIDs := make([]string, 0)
+	for taskID, record := range s.Tasks {
+		if record == nil || record.State != TaskStateAwaitingReport {
+			continue
+		}
+		if record.ReportTimeoutAt.IsZero() || record.ReportTimeoutAt.After(now) {
+			continue
+		}
+		expiredTaskIDs = append(expiredTaskIDs, taskID)
+	}
+	sort.Strings(expiredTaskIDs)
+
+	out := make([]ClaimedTask, 0, len(expiredTaskIDs))
+	for _, taskID := range expiredTaskIDs {
+		record := s.Tasks[taskID]
+		if record == nil || record.State != TaskStateAwaitingReport {
+			continue
+		}
+		current, ok := record.currentAttempt()
+		if !ok {
+			continue
+		}
+		terminalState := s.asyncAwait.TimeoutTerminal
+		if terminalState == TaskStateDeadLetter && !s.governance.DLQ.Enabled {
+			terminalState = TaskStateFailed
+		}
+		current.Status = AttemptStatusFailed
+		current.TerminalAt = now
+		for i := range record.Attempts {
+			if record.Attempts[i].AttemptID == current.AttemptID {
+				record.Attempts[i] = current
+				break
+			}
+		}
+		record.CurrentAttempt = ""
+		record.State = terminalState
+		record.AwaitingReportSince = time.Time{}
+		record.ReportTimeoutAt = time.Time{}
+		record.NextEligibleAt = time.Time{}
+		record.Result = map[string]any{}
+		record.ErrorMessage = "async report timeout exceeded"
+		record.ErrorClass = types.ErrPolicyTimeout
+		record.ErrorLayer = "scheduler.async_await"
+		record.DeadLetterCode = ""
+		if terminalState == TaskStateDeadLetter {
+			record.DeadLetterCode = "async_report_timeout"
+			s.Stats.DeadLetterTotal++
+		} else {
+			s.Stats.FailTotal++
+		}
+		record.UpdatedAt = now
+		s.Stats.AsyncTimeoutTotal++
+		key := terminalCommitKey(record.Task.TaskID, current.AttemptID)
+		if _, exists := s.TerminalCommits[key]; !exists {
+			s.TerminalCommits[key] = TerminalCommit{
+				TaskID:       record.Task.TaskID,
+				AttemptID:    current.AttemptID,
+				Status:       TaskStateFailed,
+				ErrorMessage: record.ErrorMessage,
+				ErrorClass:   record.ErrorClass,
+				ErrorLayer:   record.ErrorLayer,
+				CommittedAt:  now,
+			}
+		}
+		out = append(out, ClaimedTask{
+			Record:  cloneTaskRecord(*record),
+			Attempt: current,
+		})
 	}
 	return out
 }
@@ -543,6 +704,44 @@ func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, er
 	if record.State != TaskStateRunning {
 		return CommitResult{}, ErrTaskNotRunning
 	}
+	return s.applyTerminalCommit(record, normalized)
+}
+
+func (s *schedulerState) commitAsyncReportTerminal(commit TerminalCommit) (CommitResult, error) {
+	normalized, err := normalizeCommit(commit)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	record := s.Tasks[normalized.TaskID]
+	if record == nil {
+		return CommitResult{}, ErrTaskNotFound
+	}
+	key := terminalCommitKey(normalized.TaskID, normalized.AttemptID)
+	if existing, ok := s.TerminalCommits[key]; ok {
+		s.Stats.DuplicateTerminalCommitTotal++
+		return CommitResult{
+			Record:     cloneTaskRecord(*record),
+			Duplicate:  true,
+			LateReport: isTimeoutTerminalCommit(existing),
+		}, nil
+	}
+	if record.State == TaskStateRunning {
+		return CommitResult{}, ErrTaskNotAwaitingReport
+	}
+	if record.State != TaskStateAwaitingReport {
+		if s.asyncAwait.LateReportPolicy == AsyncLateReportPolicyDropAndRecord {
+			return CommitResult{
+				Record:     cloneTaskRecord(*record),
+				LateReport: true,
+			}, nil
+		}
+		return CommitResult{}, ErrTaskNotAwaitingReport
+	}
+	return s.applyTerminalCommit(record, normalized)
+}
+
+func (s *schedulerState) applyTerminalCommit(record *TaskRecord, normalized TerminalCommit) (CommitResult, error) {
+	key := terminalCommitKey(normalized.TaskID, normalized.AttemptID)
 	current, ok := record.currentAttempt()
 	if !ok {
 		return CommitResult{}, ErrAttemptNotFound
@@ -568,6 +767,8 @@ func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, er
 	}
 	record.CurrentAttempt = ""
 	record.State = normalized.Status
+	record.AwaitingReportSince = time.Time{}
+	record.ReportTimeoutAt = time.Time{}
 	record.NextEligibleAt = time.Time{}
 	record.DeadLetterCode = ""
 	record.UpdatedAt = normalized.CommittedAt
@@ -586,6 +787,11 @@ func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, er
 		s.Stats.FailTotal++
 	}
 	return CommitResult{Record: cloneTaskRecord(*record)}, nil
+}
+
+func isTimeoutTerminalCommit(commit TerminalCommit) bool {
+	return strings.EqualFold(strings.TrimSpace(commit.ErrorLayer), "scheduler.async_await") &&
+		strings.EqualFold(strings.TrimSpace(commit.ErrorMessage), "async report timeout exceeded")
 }
 
 func (s *schedulerState) get(taskID string) (TaskRecord, bool) {
@@ -704,10 +910,24 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 			if currentAttemptID == "" || !currentExists {
 				return fmt.Errorf("%w: running task %q requires current_attempt_id", ErrSnapshotCorrupt, taskID)
 			}
+			record.AwaitingReportSince = time.Time{}
+			record.ReportTimeoutAt = time.Time{}
+		case TaskStateAwaitingReport:
+			if currentAttemptID == "" || !currentExists {
+				return fmt.Errorf("%w: awaiting_report task %q requires current_attempt_id", ErrSnapshotCorrupt, taskID)
+			}
+			if record.ReportTimeoutAt.IsZero() {
+				return fmt.Errorf("%w: awaiting_report task %q requires report_timeout_at", ErrSnapshotCorrupt, taskID)
+			}
+			if record.AwaitingReportSince.IsZero() {
+				record.AwaitingReportSince = record.UpdatedAt
+			}
 		case TaskStateSucceeded, TaskStateFailed, TaskStateDeadLetter:
 			if currentAttemptID != "" {
 				return fmt.Errorf("%w: terminal task %q must not have current_attempt_id", ErrSnapshotCorrupt, taskID)
 			}
+			record.AwaitingReportSince = time.Time{}
+			record.ReportTimeoutAt = time.Time{}
 		default:
 			return fmt.Errorf("%w: unsupported task state %q for task %q", ErrSnapshotCorrupt, record.State, taskID)
 		}
@@ -720,10 +940,12 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 				}
 			}
 		}
-		if s.recoveryBoundary.Enabled && s.recoveryBoundary.ResumeBoundary == RecoveryResumeBoundaryNextAttemptOnly && record.State == TaskStateRunning {
+		if s.recoveryBoundary.Enabled &&
+			s.recoveryBoundary.ResumeBoundary == RecoveryResumeBoundaryNextAttemptOnly &&
+			(record.State == TaskStateRunning || record.State == TaskStateAwaitingReport) {
 			current, ok := record.currentAttempt()
 			if !ok || current.Status != AttemptStatusRunning {
-				return fmt.Errorf("%w: running task %q has invalid current attempt under next_attempt_only policy", ErrSnapshotCorrupt, taskID)
+				return fmt.Errorf("%w: inflight task %q has invalid current attempt under next_attempt_only policy", ErrSnapshotCorrupt, taskID)
 			}
 		}
 		record.ErrorMessage = strings.TrimSpace(record.ErrorMessage)
@@ -731,6 +953,10 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		record.DeadLetterCode = strings.TrimSpace(record.DeadLetterCode)
 		if record.State != TaskStateQueued {
 			record.NextEligibleAt = time.Time{}
+		}
+		if record.State != TaskStateAwaitingReport {
+			record.AwaitingReportSince = time.Time{}
+			record.ReportTimeoutAt = time.Time{}
 		}
 		record.Result = copyMap(record.Result)
 		tasks[taskID] = &record

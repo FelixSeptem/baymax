@@ -3,12 +3,14 @@ package integration
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -174,6 +176,9 @@ func TestAsyncReportingContractDedupAndReplayIdempotency(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("claim failed: ok=%v err=%v", ok, err)
 	}
+	if _, err := s.MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID); err != nil {
+		t.Fatalf("mark awaiting_report failed: %v", err)
+	}
 	report := a2a.AsyncReport{
 		ReportKey:  "async-dedup-key",
 		OutcomeKey: "succeeded|ok",
@@ -186,7 +191,7 @@ func TestAsyncReportingContractDedupAndReplayIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecutionFromAsyncReport failed: %v", err)
 	}
-	result1, err := s.Complete(ctx, first.Commit)
+	result1, err := s.CommitAsyncReportTerminal(ctx, first.Commit)
 	if err != nil {
 		t.Fatalf("first complete failed: %v", err)
 	}
@@ -198,7 +203,7 @@ func TestAsyncReportingContractDedupAndReplayIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecutionFromAsyncReport replay failed: %v", err)
 	}
-	result2, err := s.Complete(ctx, second.Commit)
+	result2, err := s.CommitAsyncReportTerminal(ctx, second.Commit)
 	if err != nil {
 		t.Fatalf("second complete failed: %v", err)
 	}
@@ -259,28 +264,19 @@ func TestAsyncReportingContractRunStreamEquivalence(t *testing.T) {
 		t.Fatalf("run/stream report status mismatch run=%q stream=%q", runReport.Status, streamReport.Status)
 	}
 
-	runReasons := map[string]int{}
-	streamReasons := map[string]int{}
-	for _, ev := range collector.snapshot() {
-		reason, _ := ev.Payload["reason"].(string)
-		switch ev.RunID {
-		case runAck.TaskID:
-			if strings.HasPrefix(reason, "a2a.async_") {
-				runReasons[reason]++
-			}
-		case streamAck.TaskID:
-			if strings.HasPrefix(reason, "a2a.async_") {
-				streamReasons[reason]++
-			}
+	var runReasons map[string]int
+	var streamReasons map[string]int
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runReasons = asyncReasonDistributionByRun(collector.snapshot(), runAck.TaskID)
+		streamReasons = asyncReasonDistributionByRun(collector.snapshot(), streamAck.TaskID)
+		if len(runReasons) > 0 && len(streamReasons) > 0 && equalReasonDistribution(runReasons, streamReasons) {
+			break
 		}
-	}
-	if len(runReasons) == 0 || len(streamReasons) == 0 {
-		t.Fatalf("missing async reason distributions run=%#v stream=%#v", runReasons, streamReasons)
-	}
-	for reason, runCount := range runReasons {
-		if streamReasons[reason] != runCount {
-			t.Fatalf("reason distribution mismatch for %q: run=%d stream=%d", reason, runCount, streamReasons[reason])
+		if time.Now().After(deadline) {
+			t.Fatalf("async reason distributions did not converge run=%#v stream=%#v", runReasons, streamReasons)
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -297,6 +293,9 @@ func TestAsyncReportingContractRecoveryReplayNoInflation(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("claim failed: ok=%v err=%v", ok, err)
 	}
+	if _, err := s1.MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID); err != nil {
+		t.Fatalf("mark awaiting_report failed: %v", err)
+	}
 	report := a2a.AsyncReport{
 		ReportKey:  "async-recovery-key",
 		OutcomeKey: "succeeded|ok",
@@ -309,7 +308,7 @@ func TestAsyncReportingContractRecoveryReplayNoInflation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecutionFromAsyncReport failed: %v", err)
 	}
-	if _, err := s1.Complete(ctx, execution.Commit); err != nil {
+	if _, err := s1.CommitAsyncReportTerminal(ctx, execution.Commit); err != nil {
 		t.Fatalf("complete failed: %v", err)
 	}
 	snapshot, err := s1.Snapshot(ctx)
@@ -332,7 +331,7 @@ func TestAsyncReportingContractRecoveryReplayNoInflation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecutionFromAsyncReport replay failed: %v", err)
 	}
-	if _, err := s2.Complete(ctx, replayExec.Commit); err != nil {
+	if _, err := s2.CommitAsyncReportTerminal(ctx, replayExec.Commit); err != nil {
 		t.Fatalf("replay complete failed: %v", err)
 	}
 	after, err := s2.Stats(ctx)
@@ -342,6 +341,143 @@ func TestAsyncReportingContractRecoveryReplayNoInflation(t *testing.T) {
 	if before.CompleteTotal != after.CompleteTotal {
 		t.Fatalf("recovery replay should not inflate complete_total before=%d after=%d", before.CompleteTotal, after.CompleteTotal)
 	}
+}
+
+type asyncAwaitLifecycleSummary struct {
+	awaitingObserved  bool
+	terminalState     scheduler.TaskState
+	lateReport        bool
+	duplicate         bool
+	asyncAwaitTotal   int
+	asyncTimeoutTotal int
+}
+
+func TestAsyncReportingContractAwaitingLifecycleRunStreamEquivalence(t *testing.T) {
+	exec := func(taskID string) (asyncAwaitLifecycleSummary, error) {
+		s, err := scheduler.New(
+			scheduler.NewMemoryStore(),
+			scheduler.WithLeaseTimeout(500*time.Millisecond),
+			scheduler.WithAsyncAwait(scheduler.AsyncAwaitConfig{
+				ReportTimeout:    20 * time.Millisecond,
+				LateReportPolicy: scheduler.AsyncLateReportPolicyDropAndRecord,
+				TimeoutTerminal:  scheduler.TaskStateFailed,
+			}),
+		)
+		if err != nil {
+			return asyncAwaitLifecycleSummary{}, err
+		}
+		return executeAsyncAwaitTimeoutFlow(s, taskID)
+	}
+
+	runSummary, err := exec("async-await-run")
+	if err != nil {
+		t.Fatalf("run flow failed: %v", err)
+	}
+	streamSummary, err := exec("async-await-stream")
+	if err != nil {
+		t.Fatalf("stream flow failed: %v", err)
+	}
+	if runSummary != streamSummary {
+		t.Fatalf("run/stream async-await summary mismatch: run=%#v stream=%#v", runSummary, streamSummary)
+	}
+}
+
+func TestAsyncReportingContractAwaitingLifecycleMemoryFileParity(t *testing.T) {
+	memoryScheduler, err := scheduler.New(
+		scheduler.NewMemoryStore(),
+		scheduler.WithLeaseTimeout(500*time.Millisecond),
+		scheduler.WithAsyncAwait(scheduler.AsyncAwaitConfig{
+			ReportTimeout:    20 * time.Millisecond,
+			LateReportPolicy: scheduler.AsyncLateReportPolicyDropAndRecord,
+			TimeoutTerminal:  scheduler.TaskStateFailed,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new memory scheduler failed: %v", err)
+	}
+	memorySummary, err := executeAsyncAwaitTimeoutFlow(memoryScheduler, "async-await-memory")
+	if err != nil {
+		t.Fatalf("memory flow failed: %v", err)
+	}
+
+	fileStore, err := scheduler.NewFileStore(filepath.Join(t.TempDir(), "scheduler-a31-state.json"))
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+	fileScheduler, err := scheduler.New(
+		fileStore,
+		scheduler.WithLeaseTimeout(500*time.Millisecond),
+		scheduler.WithAsyncAwait(scheduler.AsyncAwaitConfig{
+			ReportTimeout:    20 * time.Millisecond,
+			LateReportPolicy: scheduler.AsyncLateReportPolicyDropAndRecord,
+			TimeoutTerminal:  scheduler.TaskStateFailed,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new file scheduler failed: %v", err)
+	}
+	fileSummary, err := executeAsyncAwaitTimeoutFlow(fileScheduler, "async-await-file")
+	if err != nil {
+		t.Fatalf("file flow failed: %v", err)
+	}
+
+	if memorySummary != fileSummary {
+		t.Fatalf("memory/file async-await summary mismatch: memory=%#v file=%#v", memorySummary, fileSummary)
+	}
+}
+
+func executeAsyncAwaitTimeoutFlow(s *scheduler.Scheduler, taskID string) (asyncAwaitLifecycleSummary, error) {
+	ctx := context.Background()
+	if _, err := s.Enqueue(ctx, scheduler.Task{
+		TaskID: taskID,
+		RunID:  "run-" + taskID,
+	}); err != nil {
+		return asyncAwaitLifecycleSummary{}, err
+	}
+	claimed, ok, err := s.Claim(ctx, "worker-"+taskID)
+	if err != nil || !ok {
+		if err != nil {
+			return asyncAwaitLifecycleSummary{}, err
+		}
+		return asyncAwaitLifecycleSummary{}, errors.New("claim failed")
+	}
+	awaiting, err := s.MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID)
+	if err != nil {
+		return asyncAwaitLifecycleSummary{}, err
+	}
+	time.Sleep(40 * time.Millisecond)
+	if _, err := s.ExpireLeases(ctx); err != nil {
+		return asyncAwaitLifecycleSummary{}, err
+	}
+	lateCommit, err := s.CommitAsyncReportTerminal(ctx, scheduler.TerminalCommit{
+		TaskID:      claimed.Record.Task.TaskID,
+		AttemptID:   claimed.Attempt.AttemptID,
+		Status:      scheduler.TaskStateSucceeded,
+		Result:      map[string]any{"ok": true},
+		CommittedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return asyncAwaitLifecycleSummary{}, err
+	}
+	record, found, err := s.Get(ctx, claimed.Record.Task.TaskID)
+	if err != nil || !found {
+		if err != nil {
+			return asyncAwaitLifecycleSummary{}, err
+		}
+		return asyncAwaitLifecycleSummary{}, errors.New("get failed")
+	}
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		return asyncAwaitLifecycleSummary{}, err
+	}
+	return asyncAwaitLifecycleSummary{
+		awaitingObserved:  awaiting.State == scheduler.TaskStateAwaitingReport,
+		terminalState:     record.State,
+		lateReport:        lateCommit.LateReport,
+		duplicate:         lateCommit.Duplicate,
+		asyncAwaitTotal:   stats.AsyncAwaitTotal,
+		asyncTimeoutTotal: stats.AsyncTimeoutTotal,
+	}, nil
 }
 
 func waitForA2ATerminal(t *testing.T, server a2a.Server, taskID string) a2a.TaskRecord {
@@ -359,4 +495,30 @@ func waitForA2ATerminal(t *testing.T, server a2a.Server, taskID string) a2a.Task
 	}
 	t.Fatalf("task %s did not reach terminal status", taskID)
 	return a2a.TaskRecord{}
+}
+
+func asyncReasonDistributionByRun(events []types.Event, runID string) map[string]int {
+	out := map[string]int{}
+	for _, ev := range events {
+		if strings.TrimSpace(ev.RunID) != strings.TrimSpace(runID) {
+			continue
+		}
+		reason, _ := ev.Payload["reason"].(string)
+		if strings.HasPrefix(reason, "a2a.async_") {
+			out[reason]++
+		}
+	}
+	return out
+}
+
+func equalReasonDistribution(left map[string]int, right map[string]int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for reason, count := range left {
+		if right[reason] != count {
+			return false
+		}
+	}
+	return true
 }

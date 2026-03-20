@@ -1,6 +1,8 @@
 # CA2 External Retriever Evolution
 
-更新时间：2026-03-17
+更新时间：2026-03-20
+
+> 说明：本文件为演进背景说明；当前生效契约以 `docs/runtime-config-diagnostics.md` 与 OpenSpec 主线规格为准。
 
 ## 目标
 

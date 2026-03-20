@@ -2226,6 +2226,15 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 			cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority,
 		)
 	}
+	if cfg.Scheduler.AsyncAwait.ReportTimeout != 15*time.Minute {
+		t.Fatalf("scheduler.async_await.report_timeout = %v, want 15m", cfg.Scheduler.AsyncAwait.ReportTimeout)
+	}
+	if cfg.Scheduler.AsyncAwait.LateReportPolicy != AsyncLateReportPolicyDropAndRecord {
+		t.Fatalf("scheduler.async_await.late_report_policy = %q, want %q", cfg.Scheduler.AsyncAwait.LateReportPolicy, AsyncLateReportPolicyDropAndRecord)
+	}
+	if cfg.Scheduler.AsyncAwait.TimeoutTerminal != AsyncTimeoutTerminalFailed {
+		t.Fatalf("scheduler.async_await.timeout_terminal = %q, want %q", cfg.Scheduler.AsyncAwait.TimeoutTerminal, AsyncTimeoutTerminalFailed)
+	}
 	if cfg.Scheduler.DLQ.Enabled {
 		t.Fatal("scheduler.dlq.enabled = true, want false")
 	}
@@ -2272,6 +2281,9 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_MAX_ATTEMPTS", "5")
 	t.Setenv("BAYMAX_SCHEDULER_QOS_MODE", SchedulerQoSModePrio)
 	t.Setenv("BAYMAX_SCHEDULER_QOS_FAIRNESS_MAX_CONSECUTIVE_CLAIMS_PER_PRIORITY", "4")
+	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_REPORT_TIMEOUT", "25m")
+	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_LATE_REPORT_POLICY", AsyncLateReportPolicyDropAndRecord)
+	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_TIMEOUT_TERMINAL", AsyncTimeoutTerminalDeadLetter)
 	t.Setenv("BAYMAX_SCHEDULER_DLQ_ENABLED", "true")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED", "true")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL", "80ms")
@@ -2304,6 +2316,10 @@ scheduler:
     mode: fifo
     fairness:
       max_consecutive_claims_per_priority: 2
+  async_await:
+    report_timeout: 15m
+    late_report_policy: drop_and_record
+    timeout_terminal: failed
   dlq:
     enabled: false
   retry:
@@ -2349,6 +2365,11 @@ subagent:
 	if cfg.Scheduler.QoS.Mode != SchedulerQoSModePrio ||
 		cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority != 4 {
 		t.Fatalf("scheduler qos override mismatch: %#v", cfg.Scheduler.QoS)
+	}
+	if cfg.Scheduler.AsyncAwait.ReportTimeout != 25*time.Minute ||
+		cfg.Scheduler.AsyncAwait.LateReportPolicy != AsyncLateReportPolicyDropAndRecord ||
+		cfg.Scheduler.AsyncAwait.TimeoutTerminal != AsyncTimeoutTerminalDeadLetter {
+		t.Fatalf("scheduler async_await override mismatch: %#v", cfg.Scheduler.AsyncAwait)
 	}
 	if !cfg.Scheduler.DLQ.Enabled {
 		t.Fatalf("scheduler dlq override mismatch: %#v", cfg.Scheduler.DLQ)
@@ -2444,6 +2465,24 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Scheduler.Retry.Backoff.JitterRatio = 1.5
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for scheduler.retry.backoff.jitter_ratio")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.AsyncAwait.ReportTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.async_await.report_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.AsyncAwait.LateReportPolicy = "overwrite"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.async_await.late_report_policy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.AsyncAwait.TimeoutTerminal = "timeout"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.async_await.timeout_terminal")
 	}
 
 	cfg = DefaultConfig()

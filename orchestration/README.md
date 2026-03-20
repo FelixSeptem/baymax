@@ -12,11 +12,6 @@
 - `invoke`：A2A 调用桥接层（旧 direct sync/async 入口已标注 deprecated）
 - `collab`：协作原语（handoff/delegation/aggregation）统一抽象
 
-当前进度（2026-03-19）：
-- A16 协作原语能力已归档并收口到 `orchestration/collab`。
-- A17 长任务恢复边界已归档并稳定。
-- A30 进行中：sync/async/delayed 主路径向 mailbox 统一契约收敛。
-
 ## 架构设计
 
 设计原则是“组合优先，不吸收下层细节”：

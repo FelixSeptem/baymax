@@ -50,7 +50,11 @@ func ExecuteClaimWithA2A(
 		req.PeerID = "scheduler-peer"
 	}
 
-	outcome, err := invoke.InvokeSync(ctx, client, req)
+	bridge, err := invoke.NewInMemoryMailboxBridge()
+	if err != nil {
+		return failedExecutionFromA2AError(claimed, err), err
+	}
+	outcome, err := bridge.InvokeSync(ctx, client, req)
 	if err != nil {
 		return failedExecutionFromInvokeError(claimed, outcome, err), err
 	}

@@ -2495,3 +2495,141 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 		t.Fatal("expected validation error for subagent.max_depth")
 	}
 }
+
+func TestMailboxConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Mailbox.Enabled {
+		t.Fatal("mailbox.enabled = true, want false")
+	}
+	if cfg.Mailbox.Backend != MailboxBackendMemory {
+		t.Fatalf("mailbox.backend = %q, want %q", cfg.Mailbox.Backend, MailboxBackendMemory)
+	}
+	if cfg.Mailbox.Retry.MaxAttempts != 3 {
+		t.Fatalf("mailbox.retry.max_attempts = %d, want 3", cfg.Mailbox.Retry.MaxAttempts)
+	}
+	if cfg.Mailbox.Retry.BackoffInitial != 50*time.Millisecond {
+		t.Fatalf("mailbox.retry.backoff_initial = %v, want 50ms", cfg.Mailbox.Retry.BackoffInitial)
+	}
+	if cfg.Mailbox.Retry.BackoffMax != 500*time.Millisecond {
+		t.Fatalf("mailbox.retry.backoff_max = %v, want 500ms", cfg.Mailbox.Retry.BackoffMax)
+	}
+	if cfg.Mailbox.Retry.JitterRatio != 0.2 {
+		t.Fatalf("mailbox.retry.jitter_ratio = %v, want 0.2", cfg.Mailbox.Retry.JitterRatio)
+	}
+	if cfg.Mailbox.TTL != 15*time.Minute {
+		t.Fatalf("mailbox.ttl = %v, want 15m", cfg.Mailbox.TTL)
+	}
+	if cfg.Mailbox.Query.PageSizeDefault != 50 || cfg.Mailbox.Query.PageSizeMax != 200 {
+		t.Fatalf("mailbox.query defaults mismatch: %#v", cfg.Mailbox.Query)
+	}
+}
+
+func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_MAILBOX_ENABLED", "true")
+	t.Setenv("BAYMAX_MAILBOX_BACKEND", MailboxBackendFile)
+	t.Setenv("BAYMAX_MAILBOX_PATH", "/tmp/mailbox-override.json")
+	t.Setenv("BAYMAX_MAILBOX_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_MAILBOX_RETRY_BACKOFF_INITIAL", "80ms")
+	t.Setenv("BAYMAX_MAILBOX_RETRY_BACKOFF_MAX", "900ms")
+	t.Setenv("BAYMAX_MAILBOX_RETRY_JITTER_RATIO", "0.35")
+	t.Setenv("BAYMAX_MAILBOX_TTL", "20m")
+	t.Setenv("BAYMAX_MAILBOX_DLQ_ENABLED", "true")
+	t.Setenv("BAYMAX_MAILBOX_QUERY_PAGE_SIZE_DEFAULT", "40")
+	t.Setenv("BAYMAX_MAILBOX_QUERY_PAGE_SIZE_MAX", "180")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+mailbox:
+  enabled: false
+  backend: memory
+  path: /tmp/mailbox-file.json
+  retry:
+    max_attempts: 2
+    backoff_initial: 10ms
+    backoff_max: 120ms
+    jitter_ratio: 0.1
+  ttl: 5m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 20
+    page_size_max: 60
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Mailbox.Enabled {
+		t.Fatal("mailbox.enabled = false, want true from env")
+	}
+	if cfg.Mailbox.Backend != MailboxBackendFile || cfg.Mailbox.Path != "/tmp/mailbox-override.json" {
+		t.Fatalf("mailbox backend/path override mismatch: %#v", cfg.Mailbox)
+	}
+	if cfg.Mailbox.Retry.MaxAttempts != 5 ||
+		cfg.Mailbox.Retry.BackoffInitial != 80*time.Millisecond ||
+		cfg.Mailbox.Retry.BackoffMax != 900*time.Millisecond ||
+		cfg.Mailbox.Retry.JitterRatio != 0.35 {
+		t.Fatalf("mailbox.retry override mismatch: %#v", cfg.Mailbox.Retry)
+	}
+	if cfg.Mailbox.TTL != 20*time.Minute || !cfg.Mailbox.DLQ.Enabled {
+		t.Fatalf("mailbox ttl/dlq override mismatch: ttl=%v dlq=%v", cfg.Mailbox.TTL, cfg.Mailbox.DLQ.Enabled)
+	}
+	if cfg.Mailbox.Query.PageSizeDefault != 40 || cfg.Mailbox.Query.PageSizeMax != 180 {
+		t.Fatalf("mailbox.query override mismatch: %#v", cfg.Mailbox.Query)
+	}
+}
+
+func TestMailboxConfigValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mailbox.Backend = "db"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.backend")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Backend = MailboxBackendFile
+	cfg.Mailbox.Path = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Retry.MaxAttempts = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.retry.max_attempts")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Retry.BackoffInitial = 100 * time.Millisecond
+	cfg.Mailbox.Retry.BackoffMax = 50 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.retry.backoff_max")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Retry.JitterRatio = 1.2
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.retry.jitter_ratio")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.TTL = -1 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.ttl")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Query.PageSizeDefault = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.query.page_size_default")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Query.PageSizeMax = 250
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.query.page_size_max > 200")
+	}
+}

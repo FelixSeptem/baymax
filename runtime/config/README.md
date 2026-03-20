@@ -13,6 +13,7 @@
 - A16 已归档：`composer.collab.*` 配置已稳定。
 - A17 已归档：`recovery.resume_boundary/inflight_policy/timeout_reentry_*` 已进入稳定配置契约。
 - A18 已归档：统一诊断检索 API 已收口，沿用 diagnostics 标准能力入口。
+- A30 进行中：新增 `mailbox.*` 配置域与 fail-fast/hot-reload 回滚语义。
 
 ## 架构设计
 
@@ -32,6 +33,9 @@
 - `composer.collab.enabled=false`
 - `workflow.graph_composability.enabled=false`
 - `a2a.async_reporting.enabled=false`
+- `mailbox.backend=memory`
+- `mailbox.retry.max_attempts=3`
+- `mailbox.ttl=15m`
 - `scheduler.qos.mode=fifo`
 - `scheduler.dlq.enabled=false`
 - `recovery.enabled=false`

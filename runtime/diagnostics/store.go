@@ -192,6 +192,80 @@ type RunRecord struct {
 	TimelinePhases                       map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 
+type MailboxRecord struct {
+	Time           time.Time `json:"time"`
+	MessageID      string    `json:"message_id"`
+	IdempotencyKey string    `json:"idempotency_key,omitempty"`
+	CorrelationID  string    `json:"correlation_id,omitempty"`
+	Kind           string    `json:"kind,omitempty"`
+	State          string    `json:"state,omitempty"`
+	FromAgent      string    `json:"from_agent,omitempty"`
+	ToAgent        string    `json:"to_agent,omitempty"`
+	RunID          string    `json:"run_id,omitempty"`
+	TaskID         string    `json:"task_id,omitempty"`
+	WorkflowID     string    `json:"workflow_id,omitempty"`
+	TeamID         string    `json:"team_id,omitempty"`
+	Attempt        int       `json:"attempt,omitempty"`
+	ConsumerID     string    `json:"consumer_id,omitempty"`
+	ReasonCode     string    `json:"reason_code,omitempty"`
+	Backend        string    `json:"backend,omitempty"`
+}
+
+type MailboxQueryTimeRange struct {
+	Start time.Time `json:"start,omitempty"`
+	End   time.Time `json:"end,omitempty"`
+}
+
+type MailboxQuerySort struct {
+	Field string `json:"field,omitempty"`
+	Order string `json:"order,omitempty"`
+}
+
+type MailboxQueryRequest struct {
+	MessageID      string                 `json:"message_id,omitempty"`
+	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
+	CorrelationID  string                 `json:"correlation_id,omitempty"`
+	Kind           string                 `json:"kind,omitempty"`
+	State          string                 `json:"state,omitempty"`
+	RunID          string                 `json:"run_id,omitempty"`
+	TaskID         string                 `json:"task_id,omitempty"`
+	WorkflowID     string                 `json:"workflow_id,omitempty"`
+	TeamID         string                 `json:"team_id,omitempty"`
+	TimeRange      *MailboxQueryTimeRange `json:"time_range,omitempty"`
+	PageSize       *int                   `json:"page_size,omitempty"`
+	Sort           MailboxQuerySort       `json:"sort,omitempty"`
+	Cursor         string                 `json:"cursor,omitempty"`
+}
+
+type MailboxQueryResult struct {
+	Items      []MailboxRecord `json:"items"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+	PageSize   int             `json:"page_size"`
+	SortField  string          `json:"sort_field"`
+	SortOrder  string          `json:"sort_order"`
+}
+
+type MailboxAggregateRequest struct {
+	Kind       string                 `json:"kind,omitempty"`
+	State      string                 `json:"state,omitempty"`
+	RunID      string                 `json:"run_id,omitempty"`
+	TaskID     string                 `json:"task_id,omitempty"`
+	WorkflowID string                 `json:"workflow_id,omitempty"`
+	TeamID     string                 `json:"team_id,omitempty"`
+	TimeRange  *MailboxQueryTimeRange `json:"time_range,omitempty"`
+}
+
+type MailboxAggregate struct {
+	TotalRecords     int            `json:"total_records"`
+	TotalMessages    int            `json:"total_messages"`
+	ByKind           map[string]int `json:"by_kind,omitempty"`
+	ByState          map[string]int `json:"by_state,omitempty"`
+	RetryTotal       int            `json:"retry_total,omitempty"`
+	DeadLetterTotal  int            `json:"dead_letter_total,omitempty"`
+	ExpiredTotal     int            `json:"expired_total,omitempty"`
+	ReasonCodeTotals map[string]int `json:"reason_code_totals,omitempty"`
+}
+
 type TimelinePhaseAggregate struct {
 	CountTotal    int   `json:"count_total,omitempty"`
 	FailedTotal   int   `json:"failed_total,omitempty"`
@@ -254,9 +328,11 @@ type Store struct {
 
 	calls   []CallRecord
 	runs    []RunRecord
+	mailbox []MailboxRecord
 	reloads []ReloadRecord
 	skills  []SkillRecord
 	runKeys map[string]int
+	mbxKeys map[string]int
 	sklKeys map[string]int
 
 	timelineStates map[string]*timelineRunState
@@ -317,6 +393,8 @@ type CA2ExternalTrendRecord struct {
 const (
 	DefaultUnifiedQueryPageSize = 50
 	MaxUnifiedQueryPageSize     = 200
+	DefaultMailboxQueryPageSize = 50
+	MaxMailboxQueryPageSize     = 200
 )
 
 type UnifiedQueryTimeRange struct {
@@ -367,6 +445,28 @@ type unifiedRunQueryCursor struct {
 	QueryHash string `json:"query_hash"`
 }
 
+type normalizedMailboxQuery struct {
+	MessageID      string
+	IdempotencyKey string
+	CorrelationID  string
+	Kind           string
+	State          string
+	RunID          string
+	TaskID         string
+	WorkflowID     string
+	TeamID         string
+	TimeRange      *MailboxQueryTimeRange
+	PageSize       int
+	SortField      string
+	SortOrder      string
+	Cursor         string
+}
+
+type mailboxQueryCursor struct {
+	Offset    int    `json:"offset"`
+	QueryHash string `json:"query_hash"`
+}
+
 func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig, ca2 CA2ExternalTrendConfig) *Store {
 	if maxCalls <= 0 {
 		maxCalls = 200
@@ -405,9 +505,11 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 		maxSkillRecords: maxSkills,
 		calls:           make([]CallRecord, 0, maxCalls),
 		runs:            make([]RunRecord, 0, maxRuns),
+		mailbox:         make([]MailboxRecord, 0, maxRuns),
 		reloads:         make([]ReloadRecord, 0, maxReloads),
 		skills:          make([]SkillRecord, 0, maxSkills),
 		runKeys:         make(map[string]int, maxRuns),
+		mbxKeys:         make(map[string]int, maxRuns),
 		sklKeys:         make(map[string]int, maxSkills),
 		timelineStates:  make(map[string]*timelineRunState, maxRuns),
 		trendConfig:     trend,
@@ -425,7 +527,9 @@ func (d *Store) Resize(maxCalls, maxRuns, maxReloads, maxSkills int) {
 	if maxRuns > 0 {
 		d.maxRunRecords = maxRuns
 		d.runs = trimTail(d.runs, d.maxRunRecords)
+		d.mailbox = trimTail(d.mailbox, d.maxRunRecords)
 		d.rebuildRunKeys()
+		d.rebuildMailboxKeys()
 		d.pruneTimelineStates()
 	}
 	if maxReloads > 0 {
@@ -492,6 +596,20 @@ func (d *Store) AddRun(rec RunRecord) {
 	d.runs = trimTail(d.runs, d.maxRunRecords)
 	d.rebuildRunKeys()
 	d.pruneTimelineStates()
+}
+
+func (d *Store) AddMailbox(rec MailboxRecord) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rec = normalizeMailboxRecord(rec)
+	key := MailboxIdempotencyKey(rec)
+	if idx, ok := d.mbxKeys[key]; ok && idx >= 0 && idx < len(d.mailbox) {
+		d.mailbox[idx] = rec
+		return
+	}
+	d.mailbox = append(d.mailbox, rec)
+	d.mailbox = trimTail(d.mailbox, d.maxRunRecords)
+	d.rebuildMailboxKeys()
 }
 
 func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts time.Time) {
@@ -607,6 +725,131 @@ func (d *Store) RecentRuns(n int) []RunRecord {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return tailCopy(d.runs, n)
+}
+
+func (d *Store) RecentMailbox(n int) []MailboxRecord {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return tailCopy(d.mailbox, n)
+}
+
+func (d *Store) QueryMailbox(req MailboxQueryRequest) (MailboxQueryResult, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	q, err := normalizeMailboxQuery(req)
+	if err != nil {
+		return MailboxQueryResult{}, err
+	}
+	queryHash := mailboxQueryHash(q)
+	start, err := decodeMailboxCursor(q.Cursor, queryHash)
+	if err != nil {
+		return MailboxQueryResult{}, err
+	}
+
+	filtered := make([]MailboxRecord, 0, len(d.mailbox))
+	for i := range d.mailbox {
+		if matchesMailboxQuery(d.mailbox[i], q) {
+			filtered = append(filtered, d.mailbox[i])
+		}
+	}
+	sortMailboxQuery(filtered, q.SortOrder)
+
+	if start > len(filtered) {
+		return MailboxQueryResult{}, fmt.Errorf("invalid query cursor")
+	}
+	end := start + q.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	items := append([]MailboxRecord(nil), filtered[start:end]...)
+	nextCursor := ""
+	if end < len(filtered) {
+		nextCursor, err = encodeMailboxCursor(mailboxQueryCursor{
+			Offset:    end,
+			QueryHash: queryHash,
+		})
+		if err != nil {
+			return MailboxQueryResult{}, err
+		}
+	}
+	return MailboxQueryResult{
+		Items:      items,
+		NextCursor: nextCursor,
+		PageSize:   q.PageSize,
+		SortField:  q.SortField,
+		SortOrder:  q.SortOrder,
+	}, nil
+}
+
+func (d *Store) MailboxAggregates(req MailboxAggregateRequest) MailboxAggregate {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	q, err := normalizeMailboxQuery(MailboxQueryRequest{
+		Kind:       req.Kind,
+		State:      req.State,
+		RunID:      req.RunID,
+		TaskID:     req.TaskID,
+		WorkflowID: req.WorkflowID,
+		TeamID:     req.TeamID,
+		TimeRange:  req.TimeRange,
+	})
+	if err != nil {
+		return MailboxAggregate{
+			ByKind:           map[string]int{},
+			ByState:          map[string]int{},
+			ReasonCodeTotals: map[string]int{},
+		}
+	}
+
+	filtered := make([]MailboxRecord, 0, len(d.mailbox))
+	for i := range d.mailbox {
+		if matchesMailboxQuery(d.mailbox[i], q) {
+			filtered = append(filtered, d.mailbox[i])
+		}
+	}
+	latestByMessage := map[string]MailboxRecord{}
+	for i := range filtered {
+		rec := filtered[i]
+		key := strings.TrimSpace(rec.MessageID)
+		if key == "" {
+			key = MailboxIdempotencyKey(rec)
+		}
+		existing, ok := latestByMessage[key]
+		if !ok || rec.Time.After(existing.Time) || (rec.Time.Equal(existing.Time) && rec.Attempt > existing.Attempt) {
+			latestByMessage[key] = rec
+		}
+	}
+
+	out := MailboxAggregate{
+		TotalRecords:     len(filtered),
+		TotalMessages:    len(latestByMessage),
+		ByKind:           map[string]int{},
+		ByState:          map[string]int{},
+		ReasonCodeTotals: map[string]int{},
+	}
+	for _, rec := range latestByMessage {
+		if rec.Kind != "" {
+			out.ByKind[rec.Kind]++
+		}
+		if rec.State != "" {
+			out.ByState[rec.State]++
+		}
+		if rec.Attempt > 1 {
+			out.RetryTotal += rec.Attempt - 1
+		}
+		switch rec.State {
+		case "dead_letter":
+			out.DeadLetterTotal++
+		case "expired":
+			out.ExpiredTotal++
+		}
+		if rec.ReasonCode != "" {
+			out.ReasonCodeTotals[rec.ReasonCode]++
+		}
+	}
+	return out
 }
 
 func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, error) {
@@ -861,6 +1104,23 @@ func SkillIdempotencyKey(rec SkillRecord) string {
 	)
 }
 
+func MailboxIdempotencyKey(rec MailboxRecord) string {
+	messageID := strings.TrimSpace(rec.MessageID)
+	if messageID == "" {
+		messageID = strings.TrimSpace(rec.IdempotencyKey)
+	}
+	if messageID == "" {
+		messageID = strings.TrimSpace(rec.CorrelationID)
+	}
+	return fmt.Sprintf(
+		"mailbox:%s:%s:%d:%s",
+		messageID,
+		strings.ToLower(strings.TrimSpace(rec.State)),
+		rec.Attempt,
+		strings.TrimSpace(rec.ReasonCode),
+	)
+}
+
 func normalizeRunStatus(status, errorClass string) string {
 	s := strings.ToLower(strings.TrimSpace(status))
 	switch s {
@@ -881,6 +1141,32 @@ func normalizeSkillStatus(status string) string {
 	default:
 		return "warning"
 	}
+}
+
+func normalizeMailboxRecord(rec MailboxRecord) MailboxRecord {
+	rec.MessageID = strings.TrimSpace(rec.MessageID)
+	rec.IdempotencyKey = strings.TrimSpace(rec.IdempotencyKey)
+	rec.CorrelationID = strings.TrimSpace(rec.CorrelationID)
+	rec.Kind = strings.ToLower(strings.TrimSpace(rec.Kind))
+	rec.State = strings.ToLower(strings.TrimSpace(rec.State))
+	rec.FromAgent = strings.TrimSpace(rec.FromAgent)
+	rec.ToAgent = strings.TrimSpace(rec.ToAgent)
+	rec.RunID = strings.TrimSpace(rec.RunID)
+	rec.TaskID = strings.TrimSpace(rec.TaskID)
+	rec.WorkflowID = strings.TrimSpace(rec.WorkflowID)
+	rec.TeamID = strings.TrimSpace(rec.TeamID)
+	rec.ConsumerID = strings.TrimSpace(rec.ConsumerID)
+	rec.ReasonCode = strings.TrimSpace(rec.ReasonCode)
+	rec.Backend = strings.ToLower(strings.TrimSpace(rec.Backend))
+	if rec.Attempt < 0 {
+		rec.Attempt = 0
+	}
+	if rec.Time.IsZero() {
+		rec.Time = time.Now().UTC()
+	} else {
+		rec.Time = rec.Time.UTC()
+	}
+	return rec
 }
 
 func normalizeUnifiedRunQuery(req UnifiedRunQueryRequest) (normalizedUnifiedRunQuery, error) {
@@ -1037,6 +1323,189 @@ func sortUnifiedRunQuery(items []RunRecord, order string) {
 	})
 }
 
+func normalizeMailboxQuery(req MailboxQueryRequest) (normalizedMailboxQuery, error) {
+	pageSize := DefaultMailboxQueryPageSize
+	if req.PageSize != nil {
+		if *req.PageSize <= 0 || *req.PageSize > MaxMailboxQueryPageSize {
+			return normalizedMailboxQuery{}, fmt.Errorf("page_size must be within [1,%d]", MaxMailboxQueryPageSize)
+		}
+		pageSize = *req.PageSize
+	}
+	sortField := strings.ToLower(strings.TrimSpace(req.Sort.Field))
+	if sortField == "" {
+		sortField = "time"
+	}
+	if sortField != "time" {
+		return normalizedMailboxQuery{}, fmt.Errorf("unsupported sort.field %q", req.Sort.Field)
+	}
+	sortOrder := strings.ToLower(strings.TrimSpace(req.Sort.Order))
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		return normalizedMailboxQuery{}, fmt.Errorf("unsupported sort.order %q", req.Sort.Order)
+	}
+	kind := strings.ToLower(strings.TrimSpace(req.Kind))
+	if kind != "" {
+		switch kind {
+		case "command", "event", "result":
+		default:
+			return normalizedMailboxQuery{}, fmt.Errorf("unsupported kind filter %q", req.Kind)
+		}
+	}
+	state := strings.ToLower(strings.TrimSpace(req.State))
+	if state != "" {
+		switch state {
+		case "queued", "in_flight", "acked", "nacked", "dead_letter", "expired":
+		default:
+			return normalizedMailboxQuery{}, fmt.Errorf("unsupported state filter %q", req.State)
+		}
+	}
+	var tr *MailboxQueryTimeRange
+	if req.TimeRange != nil {
+		start := req.TimeRange.Start
+		end := req.TimeRange.End
+		if !start.IsZero() && !end.IsZero() && start.After(end) {
+			return normalizedMailboxQuery{}, fmt.Errorf("time_range.start must be <= time_range.end")
+		}
+		tr = &MailboxQueryTimeRange{Start: start, End: end}
+	}
+	return normalizedMailboxQuery{
+		MessageID:      strings.TrimSpace(req.MessageID),
+		IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
+		CorrelationID:  strings.TrimSpace(req.CorrelationID),
+		Kind:           kind,
+		State:          state,
+		RunID:          strings.TrimSpace(req.RunID),
+		TaskID:         strings.TrimSpace(req.TaskID),
+		WorkflowID:     strings.TrimSpace(req.WorkflowID),
+		TeamID:         strings.TrimSpace(req.TeamID),
+		TimeRange:      tr,
+		PageSize:       pageSize,
+		SortField:      sortField,
+		SortOrder:      sortOrder,
+		Cursor:         strings.TrimSpace(req.Cursor),
+	}, nil
+}
+
+func mailboxQueryHash(q normalizedMailboxQuery) string {
+	start := int64(0)
+	end := int64(0)
+	if q.TimeRange != nil {
+		if !q.TimeRange.Start.IsZero() {
+			start = q.TimeRange.Start.UnixNano()
+		}
+		if !q.TimeRange.End.IsZero() {
+			end = q.TimeRange.End.UnixNano()
+		}
+	}
+	raw := strings.Join([]string{
+		q.MessageID,
+		q.IdempotencyKey,
+		q.CorrelationID,
+		q.Kind,
+		q.State,
+		q.RunID,
+		q.TaskID,
+		q.WorkflowID,
+		q.TeamID,
+		fmt.Sprintf("%d", start),
+		fmt.Sprintf("%d", end),
+		q.SortField,
+		q.SortOrder,
+		fmt.Sprintf("%d", q.PageSize),
+	}, "|")
+	sum := sha1.Sum([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func encodeMailboxCursor(c mailboxQueryCursor) (string, error) {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return "", fmt.Errorf("encode query cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeMailboxCursor(cursor, expectedHash string) (int, error) {
+	if strings.TrimSpace(cursor) == "" {
+		return 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+	if err != nil {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	var decoded mailboxQueryCursor
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	if decoded.Offset < 0 || strings.TrimSpace(decoded.QueryHash) == "" {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	if strings.TrimSpace(decoded.QueryHash) != strings.TrimSpace(expectedHash) {
+		return 0, fmt.Errorf("invalid query cursor")
+	}
+	return decoded.Offset, nil
+}
+
+func matchesMailboxQuery(rec MailboxRecord, q normalizedMailboxQuery) bool {
+	if q.MessageID != "" && strings.TrimSpace(rec.MessageID) != q.MessageID {
+		return false
+	}
+	if q.IdempotencyKey != "" && strings.TrimSpace(rec.IdempotencyKey) != q.IdempotencyKey {
+		return false
+	}
+	if q.CorrelationID != "" && strings.TrimSpace(rec.CorrelationID) != q.CorrelationID {
+		return false
+	}
+	if q.Kind != "" && strings.ToLower(strings.TrimSpace(rec.Kind)) != q.Kind {
+		return false
+	}
+	if q.State != "" && strings.ToLower(strings.TrimSpace(rec.State)) != q.State {
+		return false
+	}
+	if q.RunID != "" && strings.TrimSpace(rec.RunID) != q.RunID {
+		return false
+	}
+	if q.TaskID != "" && strings.TrimSpace(rec.TaskID) != q.TaskID {
+		return false
+	}
+	if q.WorkflowID != "" && strings.TrimSpace(rec.WorkflowID) != q.WorkflowID {
+		return false
+	}
+	if q.TeamID != "" && strings.TrimSpace(rec.TeamID) != q.TeamID {
+		return false
+	}
+	if q.TimeRange != nil {
+		if !q.TimeRange.Start.IsZero() {
+			if rec.Time.IsZero() || rec.Time.Before(q.TimeRange.Start) {
+				return false
+			}
+		}
+		if !q.TimeRange.End.IsZero() {
+			if rec.Time.IsZero() || rec.Time.After(q.TimeRange.End) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func sortMailboxQuery(items []MailboxRecord, order string) {
+	desc := strings.TrimSpace(strings.ToLower(order)) != "asc"
+	sort.SliceStable(items, func(i, j int) bool {
+		left := items[i]
+		right := items[j]
+		if left.Time.Equal(right.Time) {
+			return strings.TrimSpace(left.MessageID) < strings.TrimSpace(right.MessageID)
+		}
+		if desc {
+			return left.Time.After(right.Time)
+		}
+		return left.Time.Before(right.Time)
+	})
+}
+
 func payloadDigest(payload map[string]any) string {
 	if len(payload) == 0 {
 		return ""
@@ -1087,6 +1556,13 @@ func (d *Store) rebuildRunKeys() {
 	d.runKeys = make(map[string]int, len(d.runs))
 	for i := range d.runs {
 		d.runKeys[RunIdempotencyKey(d.runs[i])] = i
+	}
+}
+
+func (d *Store) rebuildMailboxKeys() {
+	d.mbxKeys = make(map[string]int, len(d.mailbox))
+	for i := range d.mailbox {
+		d.mbxKeys[MailboxIdempotencyKey(d.mailbox[i])] = i
 	}
 }
 

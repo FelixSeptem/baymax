@@ -14,20 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-20）：
-- A17（长任务恢复边界）已归档并稳定。
-- A18（统一 run/team/workflow/task 诊断检索 API）已归档并稳定。
-- A19（多代理主链路性能基线门禁）已归档并稳定。
-- A20（全链路参考示例与 smoke gate）已归档并稳定。
-- A21（外部适配样板与迁移映射）已归档并稳定。
-- A22（外部适配一致性 harness 与 gate）已归档并稳定。
-- A23（外部适配脚手架生成与 bootstrap）已归档并稳定。
-- A24（pre-1 发布轨道治理与提案准入规则）已归档并稳定。
-- A25（状态口径对齐与核心模块 README 丰富度门禁）已归档并稳定。
-- A26（Adapter Manifest 与 Runtime Compatibility 契约）已归档并稳定。
-- A27（Adapter Capability Negotiation 与 Fallback Contract）已归档并稳定。
-- A28（Adapter Contract Profile Versioning 与 Replay Gate）已归档并稳定。
-- A29（Task Board Query Contract）已归档并稳定。
-- A30（Unified Mailbox Coordination Contract）进行中。
+- 已归档并稳定：A4-A29。
+- A30（Unified Mailbox Coordination Contract）已完成（待归档）。
+- A31（Harden Async Subagent Lifecycle And Await Report Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -175,369 +164,61 @@ res, err := comp.Run(ctx, types.RunRequest{
 _ = res
 ```
 
-### 5) A2A 异步提交与独立回报（A12）
+### 5) Mailbox Unified Coordination
 
 ```go
-sink := a2a.NewCallbackReportSink(func(ctx context.Context, report a2a.AsyncReport) error {
-	// report_key 可用于下游幂等收敛
-	fmt.Printf("async report task=%s status=%s key=%s\n", report.TaskID, report.Status, report.ReportKey)
-	return nil
-})
-
-ack, err := a2aClient.SubmitAsync(ctx, a2a.TaskRequest{
-	TaskID: "task-async-demo",
-	AgentID: "agent-parent",
-	PeerID: "agent-child",
-	Method: "delegate",
-}, sink)
+mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
 if err != nil {
 	panic(err)
 }
+bridge := invoke.NewMailboxBridge(mb)
 
-fmt.Printf("accepted task=%s at=%s\n", ack.TaskID, ack.AcceptedAt.Format(time.RFC3339Nano))
-```
-
-### 6) Scheduler 延后调度（A13）
-
-```go
-notBefore := time.Now().Add(30 * time.Second)
-record, err := comp.SpawnChild(ctx, composer.ChildDispatchRequest{
-	Task: scheduler.Task{
-		TaskID:    "task-delayed-demo",
-		RunID:     "run-delayed-demo",
-		NotBefore: notBefore,
-	},
+// sync command->result
+outcome, err := bridge.InvokeSync(ctx, a2aClient, invoke.Request{
+	TaskID:     "task-sync-demo",
+	WorkflowID: "wf-demo",
+	TeamID:     "team-demo",
+	AgentID:    "agent-parent",
+	PeerID:     "agent-child",
+	Method:     "delegate",
+	Payload:    map[string]any{"mode": "sync"},
 })
-if err != nil {
-	panic(err)
-}
-fmt.Printf("delayed task=%s not_before=%s\n", record.Task.TaskID, record.Task.NotBefore.Format(time.RFC3339Nano))
-```
+_ = outcome
+_ = err
 
-### 7) Workflow Graph Composability（A15，默认关闭）
-
-先在 runtime config 显式开启：
-
-```yaml
-workflow:
-  graph_composability:
-    enabled: true
-```
-
-最小 composable DSL 示例（`subgraphs + use_subgraph + condition_templates`）：
-
-```yaml
-workflow_id: wf-a15-demo
-condition_templates:
-  gate: "{{when}}"
-subgraphs:
-  prepare:
-    steps:
-      - step_id: fetch
-        kind: runner
-      - step_id: validate
-        kind: runner
-        depends_on: [fetch]
-steps:
-  - step_id: prep
-    use_subgraph: prepare
-    alias: prepare
-  - step_id: finalize
-    kind: runner
-    depends_on: [prep]
-    condition_template: gate
-    template_vars:
-      when: on_success
-```
-
-展开后稳定 step_id 形态为 `<subgraph_alias>/<step_id>`，例如 `prepare/fetch`、`prepare/validate`。
-
-### 8) Collaboration Primitives（A16，默认关闭）
-
-先在 runtime config 显式开启：
-
-```yaml
-composer:
-  collab:
-    enabled: true
-    default_aggregation: all_settled
-    failure_policy: fail_fast
-    retry:
-      enabled: false
-```
-
-库级原语入口位于 `orchestration/collab`，最小聚合示例：
-
-```go
-cfg := collab.DefaultConfig()
-cfg.Enabled = true
-
-res, err := collab.Execute(ctx, cfg, collab.Request{
-	Primitive: collab.PrimitiveAggregation,
-	Strategy:  collab.AggregationAllSettled,
-	Aggregation: []collab.Branch{
-		{
-			ID:       "delegate-a",
-			Required: true,
-			Execute: func(context.Context) (collab.Outcome, error) {
-				return collab.Outcome{Status: collab.StatusSucceeded}, nil
-			},
-		},
-	},
-})
-_ = res
+// delayed command
+_, err = bridge.PublishDelayedCommand(ctx, invoke.Request{
+	TaskID:     "task-delayed-demo",
+	WorkflowID: "wf-demo",
+	TeamID:     "team-demo",
+	AgentID:    "agent-parent",
+	PeerID:     "agent-child",
+	Method:     "delegate",
+}, time.Now().Add(30*time.Second), time.Now().Add(5*time.Minute))
 _ = err
 ```
 
-更多配置字段与诊断口径：`docs/runtime-config-diagnostics.md`
+### 6) Invocation 入口
 
-### 9) Long-Running Recovery Boundary（A17）
+主线调用入口统一为 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge`。
 
-恢复开启时，A17 默认启用以下边界策略：
+### 7) 能力状态
 
-- `resume_boundary=next_attempt_only`
-- `inflight_policy=no_rewind`
-- `timeout_reentry_policy=single_reentry_then_fail`
-- `timeout_reentry_max_per_task=1`
+稳定能力清单（已归档）：
+- Runtime 主干：Run/Stream、工具闭环、Context Assembler（CA1-CA4）、Security（S1-S4）。
+- 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
+- 质量门禁：shared multi-agent contracts、性能基线门禁、全链路 smoke gate、文档一致性 gate。
+- 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
-最小配置示例：
+当前进行中能力（最新）：
+- A31 `harden-async-subagent-lifecycle-and-await-report-contract-a31`：异步子代理 lifecycle 硬化（await-report 状态、timeout、late-report、幂等回放）。
 
-```yaml
-recovery:
-  enabled: true
-  backend: file
-  path: /tmp/baymax/recovery
-  conflict_policy: fail_fast
-  resume_boundary: next_attempt_only
-  inflight_policy: no_rewind
-  timeout_reentry_policy: single_reentry_then_fail
-  timeout_reentry_max_per_task: 1
-```
+最新已完成待归档能力：
+- A30 `introduce-unified-mailbox-coordination-contract-a30`：统一 mailbox 协调契约（command/event/result + 查询 + 诊断 + gate 收口）。
 
-run 摘要会新增 recovery-boundary 诊断字段：
-- `recovery_resume_boundary`
-- `recovery_inflight_policy`
-- `recovery_timeout_reentry_total`
-- `recovery_timeout_reentry_exhausted_total`
-
-### 10) Unified Diagnostics Query（A18）
-
-`runtime/config.Manager` 新增统一 run 诊断检索入口：
-- `QueryRuns(query)`
-
-查询能力：
-- 过滤字段：`run_id`、`team_id`、`workflow_id`、`task_id`、`status`、`time_range`
-- 多条件语义：`AND`
-- 分页默认：`page_size=50`，上限 `200`
-- 排序默认：`time desc`
-- 游标：opaque cursor（不暴露内部 offset/index）
-
-最小调用示例：
-
-```go
-pageSize := 20
-res, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{
-	TeamID:     "team-alpha",
-	WorkflowID: "wf-alpha",
-	Status:     "failed",
-	PageSize:   &pageSize,
-})
-if err != nil {
-	panic(err)
-}
-for _, item := range res.Items {
-	fmt.Printf("run=%s status=%s time=%s\n", item.RunID, item.Status, item.Time.Format(time.RFC3339Nano))
-}
-if res.NextCursor != "" {
-	next, err := mgr.QueryRuns(runtimediag.UnifiedRunQueryRequest{
-		TeamID:     "team-alpha",
-		WorkflowID: "wf-alpha",
-		Status:     "failed",
-		PageSize:   &pageSize,
-		Cursor:     res.NextCursor,
-	})
-	_ = next
-	_ = err
-}
-```
-
-兼容说明：
-- `RecentRuns/RecentCalls/RecentSkills` 与趋势查询接口保持兼容不变。
-- 对合法但无匹配的 `task_id`，返回空结果集而非错误。
-
-### 11) Multi-Agent Mainline Performance Gate（A19）
-
-A19 增加多代理主链路性能回归门禁，覆盖：
-- `BenchmarkMultiAgentMainlineSyncInvocation`
-- `BenchmarkMultiAgentMainlineAsyncReporting`
-- `BenchmarkMultiAgentMainlineDelayedDispatch`
-- `BenchmarkMultiAgentMainlineRecoveryReplay`
-
-回归检查命令（本地/CI 一致）：
-
-```bash
-bash scripts/check-multi-agent-performance-regression.sh
-```
-
-```powershell
-pwsh -File scripts/check-multi-agent-performance-regression.ps1
-```
-
-默认参数与阈值（可被环境变量覆盖）：
-- `benchtime=200ms`
-- `count=5`
-- `ns/op` 最大退化 `8%`
-- `p95-ns/op` 最大退化 `12%`
-- `allocs/op` 最大退化 `10%`
-
-### 12) Full-Chain Multi-Agent Reference Example（A20）
-
-A20 提供一个单入口示例，串联：
-- `teams + workflow + a2a + scheduler + recovery`
-- 默认 in-memory A2A（不依赖外部网络）
-- Run/Stream 双路径语义对照
-- async + delayed + recovery 检查点
-
-运行命令：
-
-```bash
-go run ./examples/09-multi-agent-full-chain-reference
-```
-
-示例 smoke（本地/CI 一致）：
-
-```bash
-bash scripts/check-full-chain-example-smoke.sh
-```
-
-```powershell
-pwsh -File scripts/check-full-chain-example-smoke.ps1
-```
-
-### 13) External Adapter Template + Migration Mapping（A21）
-
-A21 提供外部接入样板与迁移映射，覆盖：
-- 模板优先级：`MCP > Model > Tool`
-- 能力域 + 代码片段双维迁移映射
-- 常见错误与替代写法
-- 统一兼容边界：`additive + nullable + default + fail-fast`
-
-入口文档：
-- `docs/external-adapter-template-index.md`
-- `docs/adapter-migration-mapping.md`
-
-最小模板运行命令：
-
-```bash
-go run ./examples/templates/mcp-adapter-template
-go run ./examples/templates/model-adapter-template
-go run ./examples/templates/tool-adapter-template
-```
-
-### 14) External Adapter Conformance Harness（A22）
-
-A22 提供外部适配一致性验收入口，覆盖：
-- 最小矩阵：`MCP > Model > Tool`
-- 离线 deterministic fixture（无外部凭证依赖）
-- 语义检查：run/stream 等价、错误归一、降级语义、mandatory input fail-fast
-- gate 阻断：任一 case 失败即 non-zero
-
-执行命令：
-
-```bash
-bash scripts/check-adapter-conformance.sh
-```
-
-```powershell
-pwsh -File scripts/check-adapter-conformance.ps1
-```
-
-### 15) Adapter Scaffold Generator + Drift Gate（A23）
-
-A23 提供外部适配脚手架生成与漂移阻断，覆盖：
-- 统一命令入口：`mcp | model | tool`
-- 默认输出目录：`examples/adapters/<type>-<name>`
-- 默认 no-overwrite；冲突 fail-fast；`-force` 显式覆盖
-- 生成最小 onboarding 产物：`adapter.go`、`README.md`、`adapter_test.go`、`conformance_bootstrap_test.go`、`capability_negotiation_test.go`、`adapter-manifest.json`
-- conformance bootstrap 与 A22 最小矩阵映射（`mcp-normalization-fail-fast` / `model-run-stream-downgrade` / `tool-invoke-fail-fast`）
-
-生成命令：
-
-```bash
-go run ./cmd/adapter-scaffold -type mcp -name demo-mcp
-go run ./cmd/adapter-scaffold -type model -name demo-model
-go run ./cmd/adapter-scaffold -type tool -name demo-tool
-```
-
-漂移检查（阻断）：
-
-```bash
-bash scripts/check-adapter-scaffold-drift.sh
-```
-
-```powershell
-pwsh -File scripts/check-adapter-scaffold-drift.ps1
-```
-
-### 16) Adapter Manifest + Runtime Compatibility Contract（A26，已归档）
-
-A26 增加外部 adapter 的 manifest 合同与运行时兼容校验（A28 扩展了 profile 字段），覆盖：
-- manifest 必填字段：`type/name/version/contract_profile_version/baymax_compat/capabilities.required/capabilities.optional/conformance_profile`
-- `baymax_compat` semver range 校验（支持 `-rc` 预发布版本）
-- 接入边界 fail-fast：manifest 缺失/非法、版本不兼容、required capability 不满足
-- optional capability 缺失时 deterministic downgrade reason
-- scaffold/conformance 对齐：生成模板默认产出 `adapter-manifest.json`，并校验 profile 与 capability 断言一致
-
-manifest 合同校验命令（本地/CI 一致）：
-
-```bash
-bash scripts/check-adapter-manifest-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-adapter-manifest-contract.ps1
-```
-
-### 17) Adapter Capability Negotiation + Fallback Contract（A27，已归档）
-
-A27 已收敛外部 adapter 能力协商与回退契约，能力范围：
-- 协商策略：默认 `fail_fast`，可按请求显式覆盖到 `best_effort`（受 manifest `negotiation.allow_request_override` 约束）
-- 原因分类固定：`adapter.capability.missing_required`、`adapter.capability.optional_downgraded`、`adapter.capability.strategy_override_applied`
-- optional 缺失在 `best_effort` 下 deterministic downgrade，在 `fail_fast` 下拒绝
-- Run/Stream 在同输入下协商结果语义等价（accept/reject/downgrade + reason taxonomy）
-- scaffold 默认内置 `capability_negotiation_test.go` 作为协商基线测试骨架
-
-能力协商契约校验命令（本地/CI 一致）：
-
-```bash
-bash scripts/check-adapter-capability-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-adapter-capability-contract.ps1
-```
-
-### 18) Adapter Contract Profile Versioning + Replay Gate（A28，已归档并稳定）
-
-A28 已完成 adapter 合同 profile 版本化与回放门禁，能力包括：
-- 引入 `contract_profile_version`，统一 manifest / conformance / negotiation 三条链路的 profile 版本口径。
-- 增加 runtime 侧 profile 支持窗口校验（默认 `current + previous`），不命中 fail-fast。
-- 补齐 profile replay 基线（manifest/compat/negotiation/reason taxonomy）用于稳定回归。
-- replay gate 命令已并入质量门禁：
-  - `bash scripts/check-adapter-contract-replay.sh`
-  - `pwsh -File scripts/check-adapter-contract-replay.ps1`
-
-### 19) Task Board Query Contract（A29，已归档并稳定）
-
-A29 已完成 scheduler 任务看板只读查询契约，能力范围：
-- 在 `orchestration/scheduler` 提供 `QueryTasks`，支持 `task_id/run_id/workflow_id/team_id/state/priority/agent_id/peer_id/parent_run_id/time_range` 过滤。
-- 多条件按 `AND` 语义执行；合法无匹配返回空集，不报错。
-- 分页/排序固定基线：默认 `page_size=50`、上限 `200`、默认 `updated_at desc`、排序字段 `updated_at|created_at`。
-- 游标使用 `opaque cursor`，并与查询边界绑定；非法或边界不匹配 fail-fast。
-
-非目标（A29 首版不做）：
-- 任务写操作（`cancel/retry/reassign/priority mutate`）。
-- 平台化任务控制台、RBAC、多租户运维面。
+状态权威来源：
+- `openspec list --json`
+- `openspec/changes/archive/INDEX.md`
 
 ## 开发验证
 

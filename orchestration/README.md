@@ -8,12 +8,14 @@
 - `workflow`：DAG 工作流执行与 checkpoint/resume
 - `teams`：多角色协作（serial/parallel/vote）
 - `scheduler`：任务队列、lease、重试、QoS、DLQ、子任务护栏
-- `invoke`：统一 A2A 同步调用抽象
+- `mailbox`：统一消息协调契约（command/event/result + lifecycle/query）
+- `invoke`：A2A 调用桥接层（旧 direct sync/async 入口已标注 deprecated）
 - `collab`：协作原语（handoff/delegation/aggregation）统一抽象
 
 当前进度（2026-03-19）：
 - A16 协作原语能力已归档并收口到 `orchestration/collab`。
 - A17 长任务恢复边界已归档并稳定。
+- A30 进行中：sync/async/delayed 主路径向 mailbox 统一契约收敛。
 
 ## 架构设计
 
@@ -23,7 +25,8 @@
 - `workflow` 负责 step DSL 解析、校验、重试/超时/恢复语义
 - `teams` 负责本地/远程任务执行与结果收敛
 - `scheduler` 负责任务生命周期状态机与治理策略
-- `invoke` 负责 `submit + wait + normalize` 的 A2A 同步调用统一口径
+- `mailbox` 负责 command/event/result envelope、ack/retry/ttl/dlq 与查询语义
+- `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；旧 direct submit+wait/report-sink 路径仅保留过渡用途
 - `collab` 负责跨路径一致的 handoff/delegation/aggregation 语义
 
 所有编排路径通过标准 `action.timeline` / `run.finished` 事件暴露状态。
@@ -34,7 +37,9 @@
 - `workflow/engine.go`
 - `teams/engine.go`
 - `scheduler/scheduler.go`
+- `mailbox/mailbox.go`
 - `invoke/sync.go`
+- `invoke/mailbox_bridge.go`
 - `collab/primitives.go`
 
 ## 边界与依赖

@@ -27,6 +27,12 @@ go test ./integration -run '^TestAsyncReportingContract' -count=1
 echo "[multi-agent-shared-contract-gate] delayed dispatch suite"
 go test ./integration -run '^TestDelayedDispatchContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] mailbox convergence suite"
+go test ./integration -run '^TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence$' -count=1
+
+echo "[multi-agent-shared-contract-gate] mailbox backend parity suite"
+go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism$' -count=1
+
 echo "[multi-agent-shared-contract-gate] a14 closure matrix suite"
 go test ./integration -run '^TestTailGovernanceA14' -count=1
 

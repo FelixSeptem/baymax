@@ -6,7 +6,7 @@
 
 提供主干流程与契约测试用例的一一映射，作为质量门禁核对入口。
 
-A12/A13 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility window（`additive + nullable + default`）条款。
+A11/A12/A13 旧入口已进入 deprecated 路径；A30 起 mailbox 统一契约为主线（sync/async/delayed/query）。
 
 ## 索引
 
@@ -89,6 +89,10 @@ A12/A13 收口兼容语义参考：`docs/v1-acceptance.md` 中 compatibility win
 | Task Board Query A29 Filters + Defaults | `orchestration/scheduler/query_test.go::TestTaskBoardQueryFilterDefaultsAndReadOnly` | `orchestration/scheduler/query_test.go::TestTaskBoardQueryValidationAndCursorDeterminism` |
 | Task Board Query A29 Backend Parity + Restore | `integration/task_board_query_contract_test.go::TestTaskBoardQueryContractMemoryFileParity` | `integration/task_board_query_contract_test.go::TestTaskBoardQueryContractSnapshotRestoreStability` |
 | Task Board Query A29 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-multi-agent-shared-contract.ps1` |
+| Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
+| Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
+| Mailbox Contract A30 Backend Parity + Restore Determinism | `integration/mailbox_contract_test.go::TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism` | `orchestration/mailbox/mailbox_test.go::TestMailboxSnapshotRestoreMemoryFileParity` |
+| Mailbox Contract A30 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-multi-agent-shared-contract.ps1` |
 | Multi-Agent Mainline Performance A19 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkMultiAgentMainlineSyncInvocation`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineAsyncReporting`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineDelayedDispatch`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineRecoveryReplay` | `scripts/check-multi-agent-performance-regression.sh`、`scripts/check-multi-agent-performance-regression.ps1` |
 | Multi-Agent Mainline Performance A19 Gate Integration | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Full-Chain Reference Example A20 Smoke Gate | `scripts/check-full-chain-example-smoke.sh` | `scripts/check-full-chain-example-smoke.ps1` |

@@ -448,6 +448,170 @@ func TestStoreUnifiedRunQueryValidationAndPagingBounds(t *testing.T) {
 	}
 }
 
+func TestStoreMailboxReplayIsIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := MailboxRecord{
+		Time:      time.Now(),
+		MessageID: "msg-mailbox-1",
+		Kind:      "command",
+		State:     "queued",
+		RunID:     "run-mailbox-1",
+		TaskID:    "task-mailbox-1",
+	}
+	d.AddMailbox(rec)
+	d.AddMailbox(rec)
+
+	items := d.RecentMailbox(10)
+	if len(items) != 1 {
+		t.Fatalf("mailbox records = %d, want 1", len(items))
+	}
+}
+
+func TestStoreMailboxQueryAndAggregates(t *testing.T) {
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	base := time.Now().UTC()
+	d.AddMailbox(MailboxRecord{
+		Time:       base.Add(1 * time.Second),
+		MessageID:  "msg-a",
+		Kind:       "command",
+		State:      "queued",
+		RunID:      "run-a",
+		TaskID:     "task-a",
+		WorkflowID: "wf-a",
+		TeamID:     "team-a",
+	})
+	d.AddMailbox(MailboxRecord{
+		Time:       base.Add(2 * time.Second),
+		MessageID:  "msg-b",
+		Kind:       "result",
+		State:      "dead_letter",
+		RunID:      "run-a",
+		TaskID:     "task-a",
+		WorkflowID: "wf-a",
+		TeamID:     "team-a",
+		Attempt:    3,
+		ReasonCode: "retry_exhausted",
+	})
+
+	page, err := d.QueryMailbox(MailboxQueryRequest{RunID: "run-a"})
+	if err != nil {
+		t.Fatalf("QueryMailbox failed: %v", err)
+	}
+	if page.PageSize != DefaultMailboxQueryPageSize {
+		t.Fatalf("default mailbox page_size = %d, want %d", page.PageSize, DefaultMailboxQueryPageSize)
+	}
+	if page.SortField != "time" || page.SortOrder != "desc" {
+		t.Fatalf("default mailbox sort mismatch: %#v", page)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("mailbox query items len = %d, want 2", len(page.Items))
+	}
+	for _, rec := range page.Items {
+		if rec.RunID == "" || rec.TaskID == "" || rec.WorkflowID == "" || rec.TeamID == "" {
+			t.Fatalf("mailbox query should preserve correlation fields: %#v", rec)
+		}
+	}
+
+	agg := d.MailboxAggregates(MailboxAggregateRequest{RunID: "run-a"})
+	if agg.TotalMessages != 2 ||
+		agg.ByKind["command"] != 1 ||
+		agg.ByKind["result"] != 1 ||
+		agg.ByState["dead_letter"] != 1 ||
+		agg.ReasonCodeTotals["retry_exhausted"] != 1 ||
+		agg.RetryTotal != 2 {
+		t.Fatalf("mailbox aggregate mismatch: %#v", agg)
+	}
+}
+
+func TestStoreMailboxQueryValidationAndCursorDeterminism(t *testing.T) {
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	base := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		d.AddMailbox(MailboxRecord{
+			Time:      base.Add(time.Duration(i) * time.Second),
+			MessageID: "msg-mailbox-page-" + strconv.Itoa(i),
+			Kind:      "command",
+			State:     "queued",
+			RunID:     "run-mailbox-page",
+		})
+	}
+
+	pageSize := 1
+	first, err := d.QueryMailbox(MailboxQueryRequest{
+		RunID:    "run-mailbox-page",
+		PageSize: &pageSize,
+	})
+	if err != nil {
+		t.Fatalf("first mailbox query failed: %v", err)
+	}
+	if len(first.Items) != 1 || first.NextCursor == "" {
+		t.Fatalf("first mailbox page mismatch: %#v", first)
+	}
+	second, err := d.QueryMailbox(MailboxQueryRequest{
+		RunID:    "run-mailbox-page",
+		PageSize: &pageSize,
+		Cursor:   first.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("second mailbox query failed: %v", err)
+	}
+	secondReplay, err := d.QueryMailbox(MailboxQueryRequest{
+		RunID:    "run-mailbox-page",
+		PageSize: &pageSize,
+		Cursor:   first.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("second mailbox replay query failed: %v", err)
+	}
+	if len(second.Items) != 1 || len(secondReplay.Items) != 1 || second.Items[0].MessageID != secondReplay.Items[0].MessageID {
+		t.Fatalf("mailbox cursor determinism mismatch: second=%#v replay=%#v", second, secondReplay)
+	}
+
+	pageSizeTooLarge := 201
+	if _, err := d.QueryMailbox(MailboxQueryRequest{PageSize: &pageSizeTooLarge}); err == nil {
+		t.Fatal("expected fail-fast for mailbox page_size > 200")
+	}
+	pageSizeZero := 0
+	if _, err := d.QueryMailbox(MailboxQueryRequest{PageSize: &pageSizeZero}); err == nil {
+		t.Fatal("expected fail-fast for mailbox page_size <= 0")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{State: "running"}); err == nil {
+		t.Fatal("expected fail-fast for invalid mailbox state")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{
+		Sort: MailboxQuerySort{Field: "run_id", Order: "desc"},
+	}); err == nil {
+		t.Fatal("expected fail-fast for unsupported mailbox sort field")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{
+		Sort: MailboxQuerySort{Field: "time", Order: "down"},
+	}); err == nil {
+		t.Fatal("expected fail-fast for unsupported mailbox sort order")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{
+		TimeRange: &MailboxQueryTimeRange{
+			Start: time.Now().Add(2 * time.Minute),
+			End:   time.Now().Add(1 * time.Minute),
+		},
+	}); err == nil {
+		t.Fatal("expected fail-fast for invalid mailbox time range")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{
+		RunID:    "run-mailbox-page",
+		PageSize: &pageSize,
+		Cursor:   "not-a-valid-cursor",
+	}); err == nil {
+		t.Fatal("expected fail-fast for malformed mailbox cursor")
+	}
+	if _, err := d.QueryMailbox(MailboxQueryRequest{
+		RunID:    "run-other",
+		PageSize: &pageSize,
+		Cursor:   first.NextCursor,
+	}); err == nil {
+		t.Fatal("expected fail-fast for mailbox query boundary mismatch cursor")
+	}
+}
+
 func TestStoreUnifiedRunQueryCursorDeterministicAndFailFast(t *testing.T) {
 	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()

@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
+
+var generatedRemoteTaskCounter uint64
 
 type A2ARemoteRunnerOptions struct {
 	PollInterval    time.Duration
@@ -26,7 +29,12 @@ func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) R
 			taskID = strings.TrimSpace(opts.TaskIDGenerator(plan, task))
 		}
 		if taskID == "" {
-			taskID = fmt.Sprintf("%s-%d", strings.TrimSpace(task.TaskID), time.Now().UnixNano())
+			taskID = fmt.Sprintf(
+				"%s-%d-%d",
+				strings.TrimSpace(task.TaskID),
+				time.Now().UnixNano(),
+				atomic.AddUint64(&generatedRemoteTaskCounter, 1),
+			)
 		}
 		method := strings.TrimSpace(task.Remote.Method)
 		if method == "" {

@@ -36,6 +36,17 @@
   - `a2a.async_reporting.retry.max_attempts` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_MAX_ATTEMPTS`
   - `a2a.async_reporting.retry.backoff_initial` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_BACKOFF_INITIAL`
   - `a2a.async_reporting.retry.backoff_max` -> `BAYMAX_A2A_ASYNC_REPORTING_RETRY_BACKOFF_MAX`
+  - `mailbox.enabled` -> `BAYMAX_MAILBOX_ENABLED`
+  - `mailbox.backend` -> `BAYMAX_MAILBOX_BACKEND`
+  - `mailbox.path` -> `BAYMAX_MAILBOX_PATH`
+  - `mailbox.retry.max_attempts` -> `BAYMAX_MAILBOX_RETRY_MAX_ATTEMPTS`
+  - `mailbox.retry.backoff_initial` -> `BAYMAX_MAILBOX_RETRY_BACKOFF_INITIAL`
+  - `mailbox.retry.backoff_max` -> `BAYMAX_MAILBOX_RETRY_BACKOFF_MAX`
+  - `mailbox.retry.jitter_ratio` -> `BAYMAX_MAILBOX_RETRY_JITTER_RATIO`
+  - `mailbox.ttl` -> `BAYMAX_MAILBOX_TTL`
+  - `mailbox.dlq.enabled` -> `BAYMAX_MAILBOX_DLQ_ENABLED`
+  - `mailbox.query.page_size_default` -> `BAYMAX_MAILBOX_QUERY_PAGE_SIZE_DEFAULT`
+  - `mailbox.query.page_size_max` -> `BAYMAX_MAILBOX_QUERY_PAGE_SIZE_MAX`
   - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
@@ -175,6 +186,22 @@ a2a:
       max_attempts: 3             # 必须 > 0
       backoff_initial: 50ms       # 必须 >= 0
       backoff_max: 500ms          # 必须 >= backoff_initial
+
+mailbox:
+  enabled: false
+  backend: memory                 # memory|file
+  path: /tmp/baymax/mailbox-state.json # backend=file 时必填
+  retry:
+    max_attempts: 3               # 必须 > 0
+    backoff_initial: 50ms         # 必须 >= 0
+    backoff_max: 500ms            # 必须 >= backoff_initial
+    jitter_ratio: 0.2             # 必须在 [0,1]
+  ttl: 15m                        # 必须 >= 0（0 表示不启用 TTL）
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50         # 必须 > 0 且 <= page_size_max
+    page_size_max: 200            # 必须 > 0 且 <= 200
 
 scheduler:
   enabled: false
@@ -513,6 +540,23 @@ a2a baseline 校验语义：
 14. A2A 配置键必须保持在 `a2a.*` 域内，避免与 `teams.*`/`workflow.*` 命名重叠。
 15. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+mailbox baseline 校验语义：
+1. `mailbox.backend` 仅支持 `memory|file`。
+2. `mailbox.backend=file` 时，`mailbox.path` 必须非空。
+3. `mailbox.retry.max_attempts` 必须 `> 0`。
+4. `mailbox.retry.backoff_initial` 必须 `>= 0`。
+5. `mailbox.retry.backoff_max` 必须 `>= mailbox.retry.backoff_initial`。
+6. `mailbox.retry.jitter_ratio` 必须在 `[0,1]`。
+7. `mailbox.ttl` 必须 `>= 0`。
+8. `mailbox.query.page_size_default` 必须 `> 0` 且 `<= page_size_max`。
+9. `mailbox.query.page_size_max` 必须 `> 0` 且 `<= 200`。
+10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
+mailbox 诊断查询入口（A30）：
+1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。
+2. `runtime/config.Manager.MailboxAggregates(filter)`：返回聚合计数（`by_kind/by_state/retry_total/dead_letter_total/expired_total/reason_code_totals`），用于与 run/task 视图组合排障。
+3. mailbox 诊断记录保留关联键：`run_id/task_id/workflow_id/team_id`。
+
 a2a 同步调用契约（A11）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
 2. `poll_interval` 缺省使用兼容默认值 `20ms`，调用方可按路径覆盖。
@@ -646,6 +690,9 @@ Task Board 分页/排序语义：
 错误与空集语义：
 - 非法参数（如非法 `state`、无效 `time_range`、非法 `page_size`、不支持排序字段、无效 cursor）均 fail-fast。
 - 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
+
+状态口径：
+- 当前状态枚举为 `queued|running|succeeded|failed|dead_letter`。
 
 范围与非目标：
 - 该接口为 scheduler 快照读路径，只读，不改变 enqueue/claim/heartbeat/requeue/commit 运行态。

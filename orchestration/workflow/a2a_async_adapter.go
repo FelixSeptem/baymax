@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
@@ -36,7 +37,13 @@ func NewA2AAsyncStepAdapter(client invoke.AsyncClient, opts A2AAsyncStepAdapterO
 			if baseID == "" {
 				baseID = strings.TrimSpace(step.StepID)
 			}
-			taskID = fmt.Sprintf("%s-attempt-%d-%d", baseID, attempt, time.Now().UnixNano())
+			taskID = fmt.Sprintf(
+				"%s-attempt-%d-%d-%d",
+				baseID,
+				attempt,
+				time.Now().UnixNano(),
+				atomic.AddUint64(&generatedA2ATaskCounter, 1),
+			)
 		}
 		ack, err := collab.DelegateAsync(ctx, client, invoke.AsyncRequest{
 			TaskID:     taskID,

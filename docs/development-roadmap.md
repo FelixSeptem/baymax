@@ -17,8 +17,10 @@ Baymax 主线保持 `library-first + contract-first`：
 
 截至 2026-03-20：
 - 已归档并稳定：A4-A29（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract）。
-- 进行中：
+- 已完成待归档：
   - `introduce-unified-mailbox-coordination-contract-a30`
+- 进行中：
+  - `harden-async-subagent-lifecycle-and-await-report-contract-a31`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -46,46 +48,27 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 近期收口优先级（0.x）
 
-### P0：推进 A29 Task Board 查询契约（当前阶段）
+### P0：A31 收口（当前阶段）
 
-完成条件：
-- 在 `orchestration/scheduler` 落地只读 `QueryTasks` 查询面，覆盖 canonical filters（`task_id/run_id/workflow_id/team_id/state/priority/agent_id/peer_id/parent_run_id/time_range`）。
-- 固化分页/排序/游标语义：`page_size=50`（默认）/`<=200`（上限）、默认 `updated_at desc`、排序字段 `updated_at|created_at`、opaque cursor + query boundary 绑定。
-- unit + integration 覆盖：过滤 AND 语义、非法参数 fail-fast、cursor 确定性、memory/file parity、snapshot restore 前后语义稳定。
-- shared multi-agent gate 纳入 Task Board contract suites，shell/PowerShell 阻断一致。
-- README/runtime docs/mainline index 同步 A29 scope 与 non-goals，状态口径保持与 `openspec list --json` 一致。
+完成条件（A31）：
+- 在 `orchestration/scheduler` 引入异步等待态 `awaiting_report`，明确定义 async accepted 到终态回报之间的生命周期。
+- 固化 `report_timeout` 与 `late_report_policy=drop_and_record` 语义，保证终态收敛确定性与幂等回放稳定性。
+- 扩展 Task Board 查询状态过滤，纳入 `awaiting_report`，并保持既有分页/游标 fail-fast 契约不变。
+- 在 `runtime/config` 增加 `scheduler.async_await.*` 校验与热更新回滚保障（`env > file > default`）。
+- 在 `runtime/diagnostics` 增加 async-await 聚合字段，并保持 `additive + nullable + default` 兼容窗口。
+- shared multi-agent gate 纳入 async-await lifecycle contract suites（Run/Stream 等价 + memory/file parity）。
 
-A29 非目标（当前阶段不做）：
-- 任务写操作（cancel/retry/reassign/priority mutate）。
-- 平台化任务控制台、RBAC、多租户运维面板。
-- 引入外部数据库或全文检索引擎。
+当前阶段非目标（A31 不做）：
+- 引入外部 MQ（Kafka/NATS/RabbitMQ）适配。
+- 提供平台化消息控制面（UI/RBAC/多租户运维面板）。
+- 承诺 exactly-once 语义。
 
 ### P1：0.x 质量与治理持续收敛
 
-完成条件：
+执行要求：
 - 所有变更继续通过质量门禁（`check-quality-gate.*`）与契约索引追踪。
-- 允许新增能力按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
+- 继续按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
 - 对外发布继续以 `0.x` 说明风险与兼容预期。
-
-## 下一提案方向（lib-first 优先）
-
-在 A28 完成后，推荐进入“coding-agent 协作能力”的库级收敛，但保持非平台化边界：
-
-1. Task Board（推荐）
-- 以 `orchestration/scheduler + runtime/diagnostics` 提供只读任务看板查询接口（过滤、排序、分页、时间窗），不引入控制面 UI。
-
-2. Mailbox Contract（推荐）
-- 提供 agent 间消息 envelope（command/event/result）与 `ack/retry/ttl/dlq/idempotency-key` 契约，统一同步等待与异步回报语义。
-
-非目标（当前阶段不做）：
-- 平台化任务控制台与多租户运维面板。
-- 跨租户统一调度控制平面。
-
-## 当前主要缺失点清单（对齐本轮评审）
-
-1. A29 尚未形成稳定主干能力：scheduler 任务看板查询目前缺少统一 contract 与 gate 覆盖。
-2. 跨后端语义仍需持续守护：memory/file 在后续演进中仍有漂移风险，需依赖 contract suite 阻断。
-3. 传播层缺口：当前示例偏工程验证，缺少 session 化学习路径与多语内容结构（作为 DX 增强项进入后续提案，不影响 lib-first 主线）。
 
 ## 维护提示（状态快照更新）
 

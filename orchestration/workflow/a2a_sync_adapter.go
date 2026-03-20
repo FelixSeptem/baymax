@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
 )
+
+var generatedA2ATaskCounter uint64
 
 type A2AStepAdapterOptions struct {
 	PollInterval    time.Duration
@@ -35,7 +38,13 @@ func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(co
 			if baseID == "" {
 				baseID = strings.TrimSpace(step.StepID)
 			}
-			taskID = fmt.Sprintf("%s-attempt-%d-%d", baseID, attempt, time.Now().UnixNano())
+			taskID = fmt.Sprintf(
+				"%s-attempt-%d-%d-%d",
+				baseID,
+				attempt,
+				time.Now().UnixNano(),
+				atomic.AddUint64(&generatedA2ATaskCounter, 1),
+			)
 		}
 		outcome, err := collab.DelegateSync(ctx, client, invoke.Request{
 			TaskID:       taskID,

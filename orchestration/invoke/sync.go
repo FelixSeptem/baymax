@@ -52,6 +52,9 @@ type Outcome struct {
 	Error          *NormalizedError
 }
 
+// InvokeSync executes direct submit+wait invocation.
+//
+// Deprecated: Use MailboxBridge.InvokeSync as the canonical command->result path.
 func InvokeSync(ctx context.Context, client Client, req Request) (Outcome, error) {
 	if client == nil {
 		err := errors.New("a2a client is required")

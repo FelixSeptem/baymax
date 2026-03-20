@@ -106,6 +106,8 @@ const (
 	SchedulerBackendFile   = "file"
 	SchedulerQoSModeFIFO   = "fifo"
 	SchedulerQoSModePrio   = "priority"
+	MailboxBackendMemory   = "memory"
+	MailboxBackendFile     = "file"
 )
 
 const (
@@ -160,6 +162,7 @@ type Config struct {
 	Teams            TeamsConfig            `json:"teams"`
 	Workflow         WorkflowConfig         `json:"workflow"`
 	A2A              A2AConfig              `json:"a2a"`
+	Mailbox          MailboxConfig          `json:"mailbox"`
 	Scheduler        SchedulerConfig        `json:"scheduler"`
 	Recovery         RecoveryConfig         `json:"recovery"`
 	Subagent         SubagentConfig         `json:"subagent"`
@@ -336,6 +339,32 @@ type A2AAsyncReportingRetryConfig struct {
 	MaxAttempts    int           `json:"max_attempts"`
 	BackoffInitial time.Duration `json:"backoff_initial"`
 	BackoffMax     time.Duration `json:"backoff_max"`
+}
+
+type MailboxConfig struct {
+	Enabled bool               `json:"enabled"`
+	Backend string             `json:"backend"`
+	Path    string             `json:"path"`
+	Retry   MailboxRetryConfig `json:"retry"`
+	TTL     time.Duration      `json:"ttl"`
+	DLQ     MailboxDLQConfig   `json:"dlq"`
+	Query   MailboxQueryConfig `json:"query"`
+}
+
+type MailboxRetryConfig struct {
+	MaxAttempts    int           `json:"max_attempts"`
+	BackoffInitial time.Duration `json:"backoff_initial"`
+	BackoffMax     time.Duration `json:"backoff_max"`
+	JitterRatio    float64       `json:"jitter_ratio"`
+}
+
+type MailboxDLQConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MailboxQueryConfig struct {
+	PageSizeDefault int `json:"page_size_default"`
+	PageSizeMax     int `json:"page_size_max"`
 }
 
 type SchedulerConfig struct {
@@ -925,6 +954,25 @@ func DefaultConfig() Config {
 					BackoffInitial: 50 * time.Millisecond,
 					BackoffMax:     500 * time.Millisecond,
 				},
+			},
+		},
+		Mailbox: MailboxConfig{
+			Enabled: false,
+			Backend: MailboxBackendMemory,
+			Path:    filepath.Join(os.TempDir(), "baymax", "mailbox-state.json"),
+			Retry: MailboxRetryConfig{
+				MaxAttempts:    3,
+				BackoffInitial: 50 * time.Millisecond,
+				BackoffMax:     500 * time.Millisecond,
+				JitterRatio:    0.2,
+			},
+			TTL: 15 * time.Minute,
+			DLQ: MailboxDLQConfig{
+				Enabled: false,
+			},
+			Query: MailboxQueryConfig{
+				PageSizeDefault: 50,
+				PageSizeMax:     200,
 			},
 		},
 		Scheduler: SchedulerConfig{
@@ -1578,6 +1626,47 @@ func Validate(cfg Config) error {
 	}
 	if cfg.A2A.AsyncReporting.Retry.BackoffMax < cfg.A2A.AsyncReporting.Retry.BackoffInitial {
 		return errors.New("a2a.async_reporting.retry.backoff_max must be >= a2a.async_reporting.retry.backoff_initial")
+	}
+	switch backend := strings.ToLower(strings.TrimSpace(cfg.Mailbox.Backend)); backend {
+	case MailboxBackendMemory:
+	case MailboxBackendFile:
+		if strings.TrimSpace(cfg.Mailbox.Path) == "" {
+			return errors.New("mailbox.path is required when mailbox.backend=file")
+		}
+	default:
+		return fmt.Errorf(
+			"mailbox.backend must be one of [%s,%s], got %q",
+			MailboxBackendMemory,
+			MailboxBackendFile,
+			cfg.Mailbox.Backend,
+		)
+	}
+	if cfg.Mailbox.Retry.MaxAttempts <= 0 {
+		return errors.New("mailbox.retry.max_attempts must be > 0")
+	}
+	if cfg.Mailbox.Retry.BackoffInitial < 0 {
+		return errors.New("mailbox.retry.backoff_initial must be >= 0")
+	}
+	if cfg.Mailbox.Retry.BackoffMax < cfg.Mailbox.Retry.BackoffInitial {
+		return errors.New("mailbox.retry.backoff_max must be >= mailbox.retry.backoff_initial")
+	}
+	if cfg.Mailbox.Retry.JitterRatio < 0 || cfg.Mailbox.Retry.JitterRatio > 1 {
+		return errors.New("mailbox.retry.jitter_ratio must be in [0,1]")
+	}
+	if cfg.Mailbox.TTL < 0 {
+		return errors.New("mailbox.ttl must be >= 0")
+	}
+	if cfg.Mailbox.Query.PageSizeDefault <= 0 {
+		return errors.New("mailbox.query.page_size_default must be > 0")
+	}
+	if cfg.Mailbox.Query.PageSizeMax <= 0 {
+		return errors.New("mailbox.query.page_size_max must be > 0")
+	}
+	if cfg.Mailbox.Query.PageSizeDefault > cfg.Mailbox.Query.PageSizeMax {
+		return errors.New("mailbox.query.page_size_default must be <= mailbox.query.page_size_max")
+	}
+	if cfg.Mailbox.Query.PageSizeMax > 200 {
+		return errors.New("mailbox.query.page_size_max must be <= 200")
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Scheduler.Backend)); backend {
 	case SchedulerBackendMemory:
@@ -2660,6 +2749,17 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("a2a.async_reporting.retry.max_attempts", base.A2A.AsyncReporting.Retry.MaxAttempts)
 	v.SetDefault("a2a.async_reporting.retry.backoff_initial", base.A2A.AsyncReporting.Retry.BackoffInitial)
 	v.SetDefault("a2a.async_reporting.retry.backoff_max", base.A2A.AsyncReporting.Retry.BackoffMax)
+	v.SetDefault("mailbox.enabled", base.Mailbox.Enabled)
+	v.SetDefault("mailbox.backend", base.Mailbox.Backend)
+	v.SetDefault("mailbox.path", base.Mailbox.Path)
+	v.SetDefault("mailbox.retry.max_attempts", base.Mailbox.Retry.MaxAttempts)
+	v.SetDefault("mailbox.retry.backoff_initial", base.Mailbox.Retry.BackoffInitial)
+	v.SetDefault("mailbox.retry.backoff_max", base.Mailbox.Retry.BackoffMax)
+	v.SetDefault("mailbox.retry.jitter_ratio", base.Mailbox.Retry.JitterRatio)
+	v.SetDefault("mailbox.ttl", base.Mailbox.TTL)
+	v.SetDefault("mailbox.dlq.enabled", base.Mailbox.DLQ.Enabled)
+	v.SetDefault("mailbox.query.page_size_default", base.Mailbox.Query.PageSizeDefault)
+	v.SetDefault("mailbox.query.page_size_max", base.Mailbox.Query.PageSizeMax)
 	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
 	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
 	v.SetDefault("scheduler.path", base.Scheduler.Path)
@@ -2911,6 +3011,17 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.A2A.AsyncReporting.Retry.MaxAttempts = v.GetInt("a2a.async_reporting.retry.max_attempts")
 	cfg.A2A.AsyncReporting.Retry.BackoffInitial = v.GetDuration("a2a.async_reporting.retry.backoff_initial")
 	cfg.A2A.AsyncReporting.Retry.BackoffMax = v.GetDuration("a2a.async_reporting.retry.backoff_max")
+	cfg.Mailbox.Enabled = v.GetBool("mailbox.enabled")
+	cfg.Mailbox.Backend = strings.ToLower(strings.TrimSpace(v.GetString("mailbox.backend")))
+	cfg.Mailbox.Path = strings.TrimSpace(v.GetString("mailbox.path"))
+	cfg.Mailbox.Retry.MaxAttempts = v.GetInt("mailbox.retry.max_attempts")
+	cfg.Mailbox.Retry.BackoffInitial = v.GetDuration("mailbox.retry.backoff_initial")
+	cfg.Mailbox.Retry.BackoffMax = v.GetDuration("mailbox.retry.backoff_max")
+	cfg.Mailbox.Retry.JitterRatio = v.GetFloat64("mailbox.retry.jitter_ratio")
+	cfg.Mailbox.TTL = v.GetDuration("mailbox.ttl")
+	cfg.Mailbox.DLQ.Enabled = v.GetBool("mailbox.dlq.enabled")
+	cfg.Mailbox.Query.PageSizeDefault = v.GetInt("mailbox.query.page_size_default")
+	cfg.Mailbox.Query.PageSizeMax = v.GetInt("mailbox.query.page_size_max")
 	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
 	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
 	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))

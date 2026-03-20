@@ -12,6 +12,7 @@
 - A11：同步调用语义（已实施）
 - A12：异步回报语义（已归档）
 - A13：延后调度由 `orchestration/scheduler` 承载，A2A 负责任务互联字段透传
+- A30：主线调用面收敛到 `orchestration/mailbox`（A2A direct sync/async 入口进入 deprecated 路径）
 
 ## 架构设计
 
@@ -40,6 +41,7 @@
 - 只依赖 `core/types` 契约与事件接口，不直接写 `runtime/diagnostics`。
 - 观测通过 `types.EventHandler` 发射 `action.timeline` 事件，后续由 `observability/event.RuntimeRecorder` 收口。
 - A2A 语义不下沉到 `mcp/*` 传输层，保持协作语义与工具传输语义解耦。
+- 主线建议经 `orchestration/invoke/mailbox_bridge` 接入 A2A；直接 `Submit+WaitResult` / `SubmitAsync+ReportSink` 作为过渡兼容路径。
 
 ## 配置与默认值
 

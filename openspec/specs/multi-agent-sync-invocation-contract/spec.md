@@ -4,11 +4,17 @@
 TBD - created by archiving change unify-sync-agent-invocation-contract-a11. Update Purpose after archive.
 ## Requirements
 ### Requirement: Runtime SHALL provide a shared synchronous invocation contract
-The runtime MUST provide a shared synchronous invocation contract for A2A-based remote execution so orchestration modules can use one canonical `submit + wait + normalize` path.
+The runtime MUST provide a shared synchronous invocation contract for remote execution through mailbox command->result semantics so orchestration modules consume one canonical path.
 
-#### Scenario: Module uses shared synchronous invocation
-- **WHEN** workflow, teams, composer, or scheduler dispatches a remote task
-- **THEN** the module consumes the same shared synchronous invocation contract instead of module-local duplicated flow
+The canonical synchronous path MUST publish `command` envelope and wait for correlated terminal `result` envelope, instead of path-local direct `submit + wait` coupling.
+
+#### Scenario: Module uses mailbox-backed shared synchronous invocation
+- **WHEN** workflow, teams, composer, or scheduler dispatches a remote task synchronously
+- **THEN** the module uses mailbox command->result contract and receives terminal result or explicit error
+
+#### Scenario: Remote task remains non-terminal during polling
+- **WHEN** correlated mailbox result is not terminal yet
+- **THEN** invocation keeps waiting until terminal result or context termination
 
 ### Requirement: Shared synchronous invocation SHALL return terminal outcome only
 Shared synchronous invocation MUST return either a terminal task outcome or an explicit error, and MUST NOT expose non-terminal intermediate statuses as final return.
@@ -30,13 +36,6 @@ Shared synchronous invocation MUST expose normalized error taxonomy and retryabi
 #### Scenario: Remote call fails with transport-layer error
 - **WHEN** submit or wait path returns a transport-class failure
 - **THEN** invocation result includes normalized transport layer classification and retryable hint
-
-### Requirement: Shared synchronous invocation SHALL keep callback compatibility optional
-Shared synchronous invocation MUST keep callback hook optional for compatibility and MUST NOT require callback registration to complete synchronous call.
-
-#### Scenario: Invocation executes without callback
-- **WHEN** caller does not provide callback handler
-- **THEN** invocation still completes with terminal result or explicit error
 
 ### Requirement: Shared synchronous invocation SHALL preserve Run/Stream semantic equivalence
 For equivalent requests and effective configuration, shared synchronous invocation outcomes consumed by Run and Stream paths MUST remain semantically equivalent.

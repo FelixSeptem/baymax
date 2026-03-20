@@ -6,12 +6,16 @@
 
 - 调用记录：`CallRecord`
 - 运行摘要：`RunRecord`
+- mailbox 记录：`MailboxRecord`
 - 技能记录：`SkillRecord`
 - 热更新记录：`ReloadRecord`
 
 当前稳定查询接口：
 - `RecentCalls`
 - `RecentRuns`
+- `RecentMailbox`
+- `QueryMailbox`
+- `MailboxAggregates`
 - `RecentSkills`
 - `TimelineTrends`
 - `CA2ExternalTrends`
@@ -20,6 +24,7 @@
 - A16 协作原语 additive 字段已归档稳定。
 - A17 recovery boundary additive 字段已在模型中落位并持续收敛。
 - A18 统一 run/team/workflow/task 查询契约已归档，`QueryRuns` 为稳定入口之一。
+- A30 进行中：mailbox 查询与聚合入口已接入 diagnostics store。
 
 ## 架构设计
 

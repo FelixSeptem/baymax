@@ -1638,6 +1638,138 @@ reload:
 	}
 }
 
+func TestManagerMailboxDiagnosticsQueryAndAggregate(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	base := time.Now().UTC()
+	mgr.RecordMailbox(runtimediag.MailboxRecord{
+		Time:       base,
+		MessageID:  "msg-a",
+		Kind:       "command",
+		State:      "queued",
+		RunID:      "run-mailbox-1",
+		TaskID:     "task-mailbox-1",
+		WorkflowID: "wf-mailbox-1",
+		TeamID:     "team-mailbox-1",
+	})
+	mgr.RecordMailbox(runtimediag.MailboxRecord{
+		Time:       base.Add(10 * time.Millisecond),
+		MessageID:  "msg-b",
+		Kind:       "result",
+		State:      "dead_letter",
+		RunID:      "run-mailbox-1",
+		TaskID:     "task-mailbox-1",
+		WorkflowID: "wf-mailbox-1",
+		TeamID:     "team-mailbox-1",
+		ReasonCode: "retry_exhausted",
+		Attempt:    3,
+	})
+
+	page, err := mgr.QueryMailbox(runtimediag.MailboxQueryRequest{
+		RunID: "run-mailbox-1",
+	})
+	if err != nil {
+		t.Fatalf("QueryMailbox failed: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("query mailbox items len = %d, want 2", len(page.Items))
+	}
+	for _, rec := range page.Items {
+		if rec.RunID == "" || rec.TaskID == "" || rec.WorkflowID == "" || rec.TeamID == "" {
+			t.Fatalf("correlation fields must be preserved: %#v", rec)
+		}
+	}
+	agg := mgr.MailboxAggregates(runtimediag.MailboxAggregateRequest{
+		RunID: "run-mailbox-1",
+	})
+	if agg.TotalMessages != 2 || agg.ByState["dead_letter"] != 1 || agg.ReasonCodeTotals["retry_exhausted"] != 1 {
+		t.Fatalf("mailbox aggregate mismatch: %#v", agg)
+	}
+}
+
+func TestManagerMailboxInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Mailbox.Query.PageSizeMax
+	if before != 200 {
+		t.Fatalf("before mailbox.query.page_size_max = %d, want 200", before)
+	}
+
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 500
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Mailbox.Query.PageSizeMax
+	if after != before {
+		t.Fatalf("invalid mailbox reload should rollback, page_size_max = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

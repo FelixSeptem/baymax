@@ -36,7 +36,11 @@ func DelegateSync(ctx context.Context, client invoke.Client, req invoke.Request)
 		err := errors.New("a2a client is not configured")
 		return Outcome{Status: StatusFailed, Error: err.Error()}, err
 	}
-	outcome, err := invoke.InvokeSync(ctx, client, req)
+	bridge, err := invoke.NewInMemoryMailboxBridge()
+	if err != nil {
+		return Outcome{Status: StatusFailed, Error: err.Error()}, err
+	}
+	outcome, err := bridge.InvokeSync(ctx, client, req)
 	if err != nil {
 		return Outcome{
 			Status:    StatusFailed,
@@ -63,7 +67,11 @@ func DelegateSync(ctx context.Context, client invoke.Client, req invoke.Request)
 }
 
 func DelegateAsync(ctx context.Context, client invoke.AsyncClient, req invoke.AsyncRequest, sink a2a.ReportSink) (DelegationAsyncAck, error) {
-	ack, err := invoke.InvokeAsync(ctx, client, req, sink)
+	bridge, err := invoke.NewInMemoryMailboxBridge()
+	if err != nil {
+		return DelegationAsyncAck{}, err
+	}
+	ack, err := bridge.InvokeAsync(ctx, client, req, sink)
 	if err != nil {
 		return DelegationAsyncAck{}, err
 	}

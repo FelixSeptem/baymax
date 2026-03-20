@@ -24,6 +24,9 @@ type AsyncRequest struct {
 	Payload    map[string]any
 }
 
+// InvokeAsync executes direct async submit+report-sink invocation.
+//
+// Deprecated: Use MailboxBridge.InvokeAsync for canonical mailbox result delivery.
 func InvokeAsync(ctx context.Context, client AsyncClient, req AsyncRequest, sink a2a.ReportSink) (a2a.AsyncSubmitAck, error) {
 	if client == nil {
 		return a2a.AsyncSubmitAck{}, errors.New("a2a async client is required")

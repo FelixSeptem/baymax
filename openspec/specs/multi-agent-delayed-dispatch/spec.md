@@ -4,11 +4,17 @@
 TBD - created by archiving change introduce-delayed-dispatch-not-before-contract-a13. Update Purpose after archive.
 ## Requirements
 ### Requirement: Runtime SHALL support task-level delayed dispatch via not_before
-The runtime MUST support task-level delayed dispatch by an optional `not_before` field that controls earliest claim eligibility.
+The runtime MUST support task-level delayed dispatch through mailbox envelope timing fields.
 
-#### Scenario: Delayed task is submitted with future not_before
-- **WHEN** a task is enqueued with `not_before` greater than current scheduler time
-- **THEN** the task remains non-claimable until scheduler time reaches `not_before`
+`not_before` MUST control earliest consume/claim eligibility, and optional `expire_at` MUST define terminal expiration boundary.
+
+#### Scenario: Delayed message is published with future not_before
+- **WHEN** mailbox command envelope is published with `not_before` greater than current runtime time
+- **THEN** the message remains non-consumable until runtime time reaches `not_before`
+
+#### Scenario: Delayed message expires before becoming eligible
+- **WHEN** envelope defines `expire_at` and runtime time passes `expire_at` before successful consume
+- **THEN** message is handled by configured expiration policy (drop or dlq) with deterministic reason metadata
 
 ### Requirement: Delayed dispatch SHALL remain backward compatible by default
 Delayed dispatch support MUST be backward compatible, and tasks without `not_before` MUST keep existing immediate-claim behavior.

@@ -279,6 +279,26 @@ func (m *Manager) QueryRuns(req runtimediag.UnifiedRunQueryRequest) (runtimediag
 	return m.diag.QueryRuns(req)
 }
 
+// RecordMailbox appends a mailbox diagnostics record.
+func (m *Manager) RecordMailbox(rec runtimediag.MailboxRecord) {
+	m.diag.AddMailbox(rec)
+}
+
+// RecentMailbox returns recent mailbox diagnostics records.
+func (m *Manager) RecentMailbox(n int) []runtimediag.MailboxRecord {
+	return m.diag.RecentMailbox(n)
+}
+
+// QueryMailbox executes mailbox diagnostics query with filters/pagination/sort/cursor.
+func (m *Manager) QueryMailbox(req runtimediag.MailboxQueryRequest) (runtimediag.MailboxQueryResult, error) {
+	return m.diag.QueryMailbox(req)
+}
+
+// MailboxAggregates returns mailbox aggregate counters for observability composition.
+func (m *Manager) MailboxAggregates(req runtimediag.MailboxAggregateRequest) runtimediag.MailboxAggregate {
+	return m.diag.MailboxAggregates(req)
+}
+
 // TimelineTrends returns cross-run timeline trend aggregates.
 func (m *Manager) TimelineTrends(query runtimediag.TimelineTrendQuery) []runtimediag.TimelineTrendRecord {
 	return m.diag.TimelineTrends(query)

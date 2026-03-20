@@ -11,11 +11,13 @@ The runtime MUST provide an async submit contract that allows callers to submit 
 - **THEN** runtime returns an accepted task handle without waiting for terminal result
 
 ### Requirement: Runtime SHALL provide independent report sink contract
-The runtime MUST provide an independent report sink contract for terminal outcome delivery, decoupled from synchronous waiting APIs.
+The runtime MUST provide an independent mailbox result-delivery contract for terminal outcome delivery, decoupled from synchronous waiting APIs.
 
-#### Scenario: Terminal outcome is delivered through report sink
+Async terminal outcomes MUST be published as mailbox `result` envelopes with stable correlation and idempotency metadata.
+
+#### Scenario: Terminal outcome is delivered through mailbox result envelope
 - **WHEN** async task reaches terminal status
-- **THEN** runtime delivers a report event through configured sink even if caller never invokes wait API
+- **THEN** runtime publishes correlated mailbox `result` envelope even if caller never invokes wait API
 
 ### Requirement: Async reporting SHALL guarantee at-least-once delivery with idempotent convergence
 Async report delivery MUST provide at-least-once semantics and MUST expose idempotent convergence behavior by stable report keys.
@@ -37,4 +39,11 @@ Async report delivery MUST support bounded retries and use exponential backoff w
 #### Scenario: Report sink transient error triggers retry
 - **WHEN** report sink returns retryable delivery error
 - **THEN** runtime retries delivery using configured bounded exponential backoff and jitter
+
+### Requirement: Legacy direct report-sink API SHALL be deprecated
+Legacy direct report-sink contract from pre-mailbox async path MUST be marked deprecated and MUST NOT be the canonical contract surface.
+
+#### Scenario: Maintainer validates async contract entrypoint
+- **WHEN** maintainer reviews async reporting mainline contract
+- **THEN** mailbox result delivery is canonical and legacy direct report-sink path is documented as deprecated
 

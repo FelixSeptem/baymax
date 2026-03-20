@@ -1,0 +1,137 @@
+{
+  "profile_version": "v1alpha1",
+  "cases": [
+    {
+      "name": "best_effort_optional_downgrade",
+      "manifest": {
+        "type": "model",
+        "name": "replay-model",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "model.run_stream.semantic_equivalent",
+            "model.response.mandatory_fields"
+          ],
+          "optional": [
+            "model.capability.token_count"
+          ]
+        },
+        "negotiation": {
+          "default_strategy": "fail_fast",
+          "allow_request_override": true
+        },
+        "conformance_profile": "model-run-stream-downgrade"
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": [
+        "model.run_stream.semantic_equivalent",
+        "model.response.mandatory_fields"
+      ],
+      "request": {
+        "required": [
+          "model.run_stream.semantic_equivalent",
+          "model.response.mandatory_fields"
+        ],
+        "optional": [
+          "model.capability.token_count"
+        ],
+        "strategy_override": "best_effort"
+      },
+      "expected": {
+        "contract_profile_version": "v1alpha1",
+        "strategy_applied": "best_effort",
+        "strategy_override": true,
+        "reason_codes": [
+          "adapter.capability.optional_downgraded",
+          "adapter.capability.strategy_override_applied"
+        ],
+        "optional_downgrades": [
+          "model.capability.token_count"
+        ]
+      }
+    },
+    {
+      "name": "fail_fast_optional_requested_rejected",
+      "manifest": {
+        "type": "model",
+        "name": "replay-model",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "model.run_stream.semantic_equivalent",
+            "model.response.mandatory_fields"
+          ],
+          "optional": [
+            "model.capability.token_count"
+          ]
+        },
+        "negotiation": {
+          "default_strategy": "fail_fast",
+          "allow_request_override": true
+        },
+        "conformance_profile": "model-run-stream-downgrade"
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": [
+        "model.run_stream.semantic_equivalent",
+        "model.response.mandatory_fields"
+      ],
+      "request": {
+        "required": [
+          "model.run_stream.semantic_equivalent",
+          "model.response.mandatory_fields"
+        ],
+        "optional": [
+          "model.capability.token_count"
+        ]
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.required-capability-missing",
+        "activation_error_field": "capabilities.required"
+      }
+    },
+    {
+      "name": "missing_required_capability_rejected",
+      "manifest": {
+        "type": "model",
+        "name": "replay-model",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "model.run_stream.semantic_equivalent",
+            "model.response.mandatory_fields"
+          ],
+          "optional": [
+            "model.capability.token_count"
+          ]
+        },
+        "negotiation": {
+          "default_strategy": "fail_fast",
+          "allow_request_override": true
+        },
+        "conformance_profile": "model-run-stream-downgrade"
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": [
+        "model.run_stream.semantic_equivalent"
+      ],
+      "request": {
+        "required": [
+          "model.run_stream.semantic_equivalent",
+          "model.response.mandatory_fields"
+        ],
+        "optional": []
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.required-capability-missing",
+        "activation_error_field": "capabilities.required"
+      }
+    }
+  ]
+}

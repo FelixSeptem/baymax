@@ -1,0 +1,128 @@
+{
+  "profile_version": "v1alpha1",
+  "cases": [
+    {
+      "name": "activation_success_current_profile",
+      "manifest": {
+        "type": "model",
+        "name": "replay-model",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "model.run_stream.semantic_equivalent",
+            "model.response.mandatory_fields"
+          ],
+          "optional": [
+            "model.capability.token_count"
+          ]
+        },
+        "negotiation": {
+          "default_strategy": "fail_fast",
+          "allow_request_override": true
+        },
+        "conformance_profile": "model-run-stream-downgrade"
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": [
+        "model.run_stream.semantic_equivalent",
+        "model.response.mandatory_fields",
+        "model.capability.token_count"
+      ],
+      "request": {
+        "required": [
+          "model.run_stream.semantic_equivalent",
+          "model.response.mandatory_fields"
+        ],
+        "optional": []
+      },
+      "expected": {
+        "contract_profile_version": "v1alpha1",
+        "strategy_applied": "fail_fast",
+        "strategy_override": false,
+        "reason_codes": [],
+        "optional_downgrades": []
+      }
+    },
+    {
+      "name": "manifest_missing_contract_profile_version",
+      "manifest": {
+        "type": "tool",
+        "name": "replay-tool",
+        "version": "0.1.0",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "tool.invoke.required_input"
+          ],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast"
+      },
+      "expected": {
+        "parse_error_code": "adapter-manifest.missing-field",
+        "parse_error_field": "contract_profile_version"
+      }
+    },
+    {
+      "name": "manifest_unknown_contract_profile_version",
+      "manifest": {
+        "type": "tool",
+        "name": "replay-tool",
+        "version": "0.1.0",
+        "contract_profile_version": "v9alpha9",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "tool.invoke.required_input"
+          ],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast"
+      },
+      "expected": {
+        "parse_error_code": "adapter-manifest.unknown-contract-profile-version",
+        "parse_error_field": "contract_profile_version"
+      }
+    },
+    {
+      "name": "activation_profile_out_of_window",
+      "manifest": {
+        "type": "model",
+        "name": "replay-model",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": [
+            "model.run_stream.semantic_equivalent",
+            "model.response.mandatory_fields"
+          ],
+          "optional": []
+        },
+        "conformance_profile": "model-run-stream-downgrade"
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": [
+        "model.run_stream.semantic_equivalent",
+        "model.response.mandatory_fields"
+      ],
+      "request": {
+        "required": [
+          "model.run_stream.semantic_equivalent",
+          "model.response.mandatory_fields"
+        ],
+        "optional": []
+      },
+      "window": {
+        "current": "v1alpha0",
+        "allow_previous": true
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.contract-profile-out-of-window",
+        "activation_error_field": "contract_profile_version"
+      }
+    }
+  ]
+}

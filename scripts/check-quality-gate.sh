@@ -38,6 +38,12 @@ if ! bash scripts/check-adapter-capability-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] adapter contract replay"
+if ! bash scripts/check-adapter-contract-replay.sh; then
+  echo "[quality-gate][adapter-contract-replay] adapter contract replay check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

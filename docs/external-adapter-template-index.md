@@ -72,6 +72,7 @@
 - `type`
 - `name`
 - `version`
+- `contract_profile_version`
 - `baymax_compat`
 - `capabilities.required`
 - `capabilities.optional`
@@ -133,12 +134,19 @@ bash scripts/check-adapter-capability-contract.sh
 pwsh -File scripts/check-adapter-capability-contract.ps1
 ```
 
-## Profile Versioning & Replay Guidance（A28，进行中）
+## Profile Versioning & Replay Guidance（A28）
 
-A28 当前处于实施阶段，目标是补齐 profile version 与 replay gate：
+A28 在 adapter 合同链路补齐了 profile version 与 replay gate：
 - 在 manifest/conformance/negotiation 链路统一引入 `contract_profile_version`。
 - runtime 侧执行 profile 支持窗口校验（默认 `current + previous`，不命中 fail-fast）。
 - 增加 replay 基线用于识别契约语义漂移（manifest/compat/negotiation/reason taxonomy）。
 
-注意：
-- 该能力尚在进行中，最终字段名、脚本入口和阻断策略以实际代码与 OpenSpec 变更为准。
+回放 gate 命令：
+
+```bash
+bash scripts/check-adapter-contract-replay.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-contract-replay.ps1
+```

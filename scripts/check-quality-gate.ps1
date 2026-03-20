@@ -48,6 +48,14 @@ catch {
     throw "[quality-gate][adapter-capability-contract] adapter capability negotiation contract check failed: $($_.Exception.Message)"
 }
 
+Write-Host "[quality-gate] adapter contract replay"
+try {
+    pwsh -File scripts/check-adapter-contract-replay.ps1
+}
+catch {
+    throw "[quality-gate][adapter-contract-replay] adapter contract replay check failed: $($_.Exception.Message)"
+}
+
 Write-Host "[quality-gate] adapter scaffold drift"
 try {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1

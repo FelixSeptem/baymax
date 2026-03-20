@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	adapterprofile "github.com/FelixSeptem/baymax/adapter/profile"
 )
 
 const (
@@ -175,16 +177,17 @@ func IsConflictError(err error) bool {
 }
 
 type templateData struct {
-	AdapterName       string
-	AdapterTypeName   string
-	PackageName       string
-	Type              string
-	ConformanceID     string
-	ConformanceLabel  string
-	ConformanceCatRef string
-	BaymaxCompat      string
-	RequiredCaps      []string
-	OptionalCaps      []string
+	AdapterName            string
+	AdapterTypeName        string
+	PackageName            string
+	Type                   string
+	ContractProfileVersion string
+	ConformanceID          string
+	ConformanceLabel       string
+	ConformanceCatRef      string
+	BaymaxCompat           string
+	RequiredCaps           []string
+	OptionalCaps           []string
 }
 
 func renderTemplates(opts Options) (map[string]string, error) {
@@ -238,16 +241,17 @@ func buildTemplateData(opts Options) (templateData, error) {
 		optionalCaps = []string{"tool.schema.rich_validation"}
 	}
 	return templateData{
-		AdapterName:       opts.Name,
-		AdapterTypeName:   adapterTypeName,
-		PackageName:       packageName(opts.Name),
-		Type:              opts.Type,
-		ConformanceID:     conformanceID,
-		ConformanceLabel:  conformanceLabel,
-		ConformanceCatRef: conformanceCatRef,
-		BaymaxCompat:      ">=0.26.0-rc.1 <0.27.0",
-		RequiredCaps:      requiredCaps,
-		OptionalCaps:      optionalCaps,
+		AdapterName:            opts.Name,
+		AdapterTypeName:        adapterTypeName,
+		PackageName:            packageName(opts.Name),
+		Type:                   opts.Type,
+		ContractProfileVersion: adapterprofile.CurrentProfile,
+		ConformanceID:          conformanceID,
+		ConformanceLabel:       conformanceLabel,
+		ConformanceCatRef:      conformanceCatRef,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		RequiredCaps:           requiredCaps,
+		OptionalCaps:           optionalCaps,
 	}, nil
 }
 
@@ -551,6 +555,7 @@ func renderManifest(data templateData) string {
   "type": %q,
   "name": %q,
   "version": "0.1.0",
+  "contract_profile_version": %q,
   "baymax_compat": %q,
   "capabilities": {
     "required": [%s],
@@ -562,7 +567,7 @@ func renderManifest(data templateData) string {
   },
   "conformance_profile": %q
 }
-`, data.Type, data.AdapterName, data.BaymaxCompat, required, optional, data.ConformanceID)
+`, data.Type, data.AdapterName, data.ContractProfileVersion, data.BaymaxCompat, required, optional, data.ConformanceID)
 }
 
 func renderCapabilityNegotiationTest(data templateData) string {

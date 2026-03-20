@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
+	adapterprofile "github.com/FelixSeptem/baymax/adapter/profile"
 )
 
 func TestParseAndValidateManifestSuccess(t *testing.T) {
@@ -15,6 +16,7 @@ func TestParseAndValidateManifestSuccess(t *testing.T) {
   "type": "model",
   "name": "demo-model",
   "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
   "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
   "capabilities": {
     "required": ["model.generate", "model.stream"],
@@ -36,6 +38,7 @@ func TestParseManifestDetectsMissingFieldDeterministically(t *testing.T) {
   "type": "mcp",
   "name": "demo-mcp",
   "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
   "capabilities": {
     "required": ["mcp.invoke"],
     "optional": []
@@ -62,6 +65,7 @@ func TestParseManifestDetectsInvalidCompatExpression(t *testing.T) {
   "type": "tool",
   "name": "demo-tool",
   "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
   "baymax_compat": ">=0.26.x",
   "capabilities": {
     "required": ["tool.invoke.required_input"],
@@ -105,10 +109,11 @@ func TestEvaluateSemverRangeSupportsPreReleaseRC(t *testing.T) {
 
 func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 	manifest := Manifest{
-		Type:         "model",
-		Name:         "demo-model",
-		Version:      "0.1.0",
-		BaymaxCompat: ">=0.26.0-rc.1 <0.27.0",
+		Type:                   "model",
+		Name:                   "demo-model",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
 		Capabilities: Capabilities{
 			Required: []string{"model.generate", "model.stream"},
 			Optional: []string{"model.token_count", "model.safety_filter"},
@@ -136,6 +141,9 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 	}
 	if !outcome.StrategyOverride || outcome.StrategyApplied != adaptercap.StrategyBestEffort {
 		t.Fatalf("unexpected negotiation strategy info: %#v", outcome)
+	}
+	if outcome.ContractProfileVersion != adapterprofile.ProfileV1Alpha1 {
+		t.Fatalf("unexpected contract profile version: %#v", outcome.ContractProfileVersion)
 	}
 
 	_, err = Activate(manifest, "0.27.0", []string{"model.generate", "model.stream"})
@@ -167,10 +175,11 @@ func TestActivateManifestCompatibilityAndCapabilities(t *testing.T) {
 
 func TestValidateNegotiationConfigRejectsInvalidDefaultStrategy(t *testing.T) {
 	err := Validate(Manifest{
-		Type:         "tool",
-		Name:         "demo-tool",
-		Version:      "0.1.0",
-		BaymaxCompat: ">=0.26.0-rc.1 <0.27.0",
+		Type:                   "tool",
+		Name:                   "demo-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
 		Capabilities: Capabilities{
 			Required: []string{"tool.invoke.required_input"},
 			Optional: []string{},
@@ -186,6 +195,58 @@ func TestValidateNegotiationConfigRejectsInvalidDefaultStrategy(t *testing.T) {
 	ce := contractErr(t, err)
 	if ce.Code != CodeInvalidNegotiationConfig || ce.Field != "negotiation.default_strategy" {
 		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestParseManifestRejectsUnknownContractProfileVersion(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "demo-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v9alpha9",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast"
+}`)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected unknown contract profile version")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeUnknownContractProfile || ce.Field != "contract_profile_version" {
+		t.Fatalf("unexpected error classification: %#v", ce)
+	}
+}
+
+func TestActivateManifestRejectsProfileOutOfWindow(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "model",
+		Name:                   "demo-model",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"model.generate", "model.stream"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "model-run-stream-downgrade",
+	}
+	window, err := adapterprofile.NewWindow(adapterprofile.ProfileV1Alpha0, true)
+	if err != nil {
+		t.Fatalf("new profile window: %v", err)
+	}
+	_, err = ActivateWithRequestAndProfileWindow(manifest, "0.26.0-rc.3", []string{"model.generate", "model.stream"}, CapabilityRequest{
+		Required: []string{"model.generate", "model.stream"},
+	}, window)
+	if err == nil {
+		t.Fatal("expected out-of-window contract profile failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeContractProfileOutOfWindow || ce.Field != "contract_profile_version" {
+		t.Fatalf("unexpected error classification: %#v", ce)
 	}
 }
 
@@ -207,6 +268,7 @@ func TestLoadFileParsesManifest(t *testing.T) {
   "type": "tool",
   "name": "demo-tool",
   "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
   "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
   "capabilities": {
     "required": ["tool.invoke.required_input"],

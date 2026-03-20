@@ -159,6 +159,7 @@ Compatibility notes:
   "type": "model",
   "name": "demo-model",
   "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
   "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
   "capabilities": {
     "required": ["model.run_stream.semantic_equivalent", "model.response.mandatory_fields"],
@@ -174,6 +175,7 @@ Compatibility notes:
 
 兼容语义补充：
 - `baymax_compat` 不命中时，接入边界必须 fail-fast，不允许隐式继续。
+- `contract_profile_version` 必填，且必须是运行时识别的 profile 标签。
 - `capabilities.required` 缺失时必须 fail-fast，错误分类保持 deterministic。
 - `capabilities.optional` 缺失允许降级，并保留可回放的 downgrade reason code。
 - `negotiation.default_strategy` 默认建议 `fail_fast`；非法策略值必须在接入边界 fail-fast。
@@ -214,13 +216,23 @@ pwsh -File scripts/check-adapter-capability-contract.ps1
 - optional capability 降级行为是否仍 deterministic；
 - negotiation 默认策略与 override 开关是否与 conformance profile 对齐。
 
-## Profile Versioning Migration Notes（A28，进行中）
+## Profile Versioning Migration Notes（A28）
 
-A28 正在补齐 profile version 与 replay gate，迁移侧建议提前准备：
-- 在 adapter 合同元数据中预留 `contract_profile_version` 字段位置（语义以最终落地代码为准）。
+A28 已补齐 profile version 与 replay gate，迁移建议如下：
+- 在 adapter 合同元数据中显式维护 `contract_profile_version`（当前基线 `v1alpha1`）。
 - 将 profile 版本与 `conformance_profile` 一起纳入发布记录，避免“版本已升级但验收矩阵未切换”。
 - 为 manifest/negotiation/reason taxonomy 维护最小 replay fixture，升级后先跑回放再放量。
 
 约束提醒：
 - 若 profile 不在 runtime 支持窗口内，应 fail-fast，而不是隐式降级继续执行。
 - 回放基线出现漂移时优先修复契约差异，再更新 fixture，避免“用新基线覆盖旧问题”。
+
+回放 gate 命令：
+
+```bash
+bash scripts/check-adapter-contract-replay.sh
+```
+
+```powershell
+pwsh -File scripts/check-adapter-contract-replay.ps1
+```

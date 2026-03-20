@@ -10,17 +10,20 @@ import (
 	"strings"
 
 	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
+	adapterprofile "github.com/FelixSeptem/baymax/adapter/profile"
 )
 
 const (
-	CodeMissingFile               = "adapter-manifest.missing-file"
-	CodeInvalidJSON               = "adapter-manifest.invalid-json"
-	CodeMissingField              = "adapter-manifest.missing-field"
-	CodeInvalidField              = "adapter-manifest.invalid-field"
-	CodeInvalidCompatExpression   = "adapter-manifest.invalid-compat-expression"
-	CodeCompatibilityMismatch     = "adapter-manifest.compatibility-mismatch"
-	CodeRequiredCapabilityMissing = "adapter-manifest.required-capability-missing"
-	CodeInvalidNegotiationConfig  = "adapter-manifest.invalid-negotiation-config"
+	CodeMissingFile                = "adapter-manifest.missing-file"
+	CodeInvalidJSON                = "adapter-manifest.invalid-json"
+	CodeMissingField               = "adapter-manifest.missing-field"
+	CodeInvalidField               = "adapter-manifest.invalid-field"
+	CodeInvalidCompatExpression    = "adapter-manifest.invalid-compat-expression"
+	CodeCompatibilityMismatch      = "adapter-manifest.compatibility-mismatch"
+	CodeRequiredCapabilityMissing  = "adapter-manifest.required-capability-missing"
+	CodeInvalidNegotiationConfig   = "adapter-manifest.invalid-negotiation-config"
+	CodeUnknownContractProfile     = "adapter-manifest.unknown-contract-profile-version"
+	CodeContractProfileOutOfWindow = "adapter-manifest.contract-profile-out-of-window"
 )
 
 var (
@@ -34,13 +37,14 @@ type Capabilities struct {
 }
 
 type Manifest struct {
-	Type               string       `json:"type"`
-	Name               string       `json:"name"`
-	Version            string       `json:"version"`
-	BaymaxCompat       string       `json:"baymax_compat"`
-	Capabilities       Capabilities `json:"capabilities"`
-	Negotiation        Negotiation  `json:"negotiation,omitempty"`
-	ConformanceProfile string       `json:"conformance_profile"`
+	Type                   string       `json:"type"`
+	Name                   string       `json:"name"`
+	Version                string       `json:"version"`
+	ContractProfileVersion string       `json:"contract_profile_version"`
+	BaymaxCompat           string       `json:"baymax_compat"`
+	Capabilities           Capabilities `json:"capabilities"`
+	Negotiation            Negotiation  `json:"negotiation,omitempty"`
+	ConformanceProfile     string       `json:"conformance_profile"`
 }
 
 type Negotiation struct {
@@ -76,13 +80,14 @@ type CapabilityRequest struct {
 }
 
 type ActivationResult struct {
-	OptionalDowngrades []OptionalDowngrade
-	StrategyApplied    string
-	StrategyOverride   bool
-	MissingRequired    []string
-	MissingOptional    []string
-	ReasonCodes        []string
-	Diagnostics        adaptercap.Diagnostics
+	OptionalDowngrades     []OptionalDowngrade
+	ContractProfileVersion string
+	StrategyApplied        string
+	StrategyOverride       bool
+	MissingRequired        []string
+	MissingOptional        []string
+	ReasonCodes            []string
+	Diagnostics            adaptercap.Diagnostics
 }
 
 func LoadFile(path string) (Manifest, error) {
@@ -125,6 +130,7 @@ func Validate(manifest Manifest) error {
 		{value: normalized.Type, field: "type"},
 		{value: normalized.Name, field: "name"},
 		{value: normalized.Version, field: "version"},
+		{value: normalized.ContractProfileVersion, field: "contract_profile_version"},
 		{value: normalized.BaymaxCompat, field: "baymax_compat"},
 		{value: normalized.ConformanceProfile, field: "conformance_profile"},
 	}
@@ -203,6 +209,9 @@ func Validate(manifest Manifest) error {
 			Message: "invalid semver range expression",
 		}
 	}
+	if _, err := adapterprofile.Parse(normalized.ContractProfileVersion); err != nil {
+		return mapProfileError(err)
+	}
 	if strings.TrimSpace(normalized.Negotiation.DefaultStrategy) != "" && !adaptercap.IsStrategy(normalized.Negotiation.DefaultStrategy) {
 		return &ContractError{
 			Code:    CodeInvalidNegotiationConfig,
@@ -221,6 +230,10 @@ func Activate(manifest Manifest, runtimeVersion string, availableCapabilities []
 }
 
 func ActivateWithRequest(manifest Manifest, runtimeVersion string, availableCapabilities []string, request CapabilityRequest) (ActivationResult, error) {
+	return ActivateWithRequestAndProfileWindow(manifest, runtimeVersion, availableCapabilities, request, adapterprofile.DefaultWindow())
+}
+
+func ActivateWithRequestAndProfileWindow(manifest Manifest, runtimeVersion string, availableCapabilities []string, request CapabilityRequest, profileWindow adapterprofile.Window) (ActivationResult, error) {
 	normalized := normalize(manifest)
 	if err := Validate(normalized); err != nil {
 		return ActivationResult{}, err
@@ -239,6 +252,10 @@ func ActivateWithRequest(manifest Manifest, runtimeVersion string, availableCapa
 			Field:   "baymax_compat",
 			Message: "runtime version does not satisfy baymax_compat",
 		}
+	}
+	profileVersion, err := adapterprofile.ValidateCompatibility(normalized.ContractProfileVersion, profileWindow)
+	if err != nil {
+		return ActivationResult{}, mapProfileError(err)
 	}
 
 	available := make(map[string]struct{}, len(availableCapabilities))
@@ -299,13 +316,14 @@ func ActivateWithRequest(manifest Manifest, runtimeVersion string, availableCapa
 		return downgrades[i].Capability < downgrades[j].Capability
 	})
 	return ActivationResult{
-		OptionalDowngrades: downgrades,
-		StrategyApplied:    outcome.AppliedStrategy,
-		StrategyOverride:   outcome.StrategyOverrideApplied,
-		MissingRequired:    append([]string(nil), outcome.MissingRequired...),
-		MissingOptional:    append([]string(nil), outcome.MissingOptional...),
-		ReasonCodes:        append([]string(nil), outcome.Reasons...),
-		Diagnostics:        outcome.Diagnostics,
+		OptionalDowngrades:     downgrades,
+		ContractProfileVersion: profileVersion.String(),
+		StrategyApplied:        outcome.AppliedStrategy,
+		StrategyOverride:       outcome.StrategyOverrideApplied,
+		MissingRequired:        append([]string(nil), outcome.MissingRequired...),
+		MissingOptional:        append([]string(nil), outcome.MissingOptional...),
+		ReasonCodes:            append([]string(nil), outcome.Reasons...),
+		Diagnostics:            outcome.Diagnostics,
 	}, nil
 }
 
@@ -313,6 +331,7 @@ func normalize(manifest Manifest) Manifest {
 	manifest.Type = strings.ToLower(strings.TrimSpace(manifest.Type))
 	manifest.Name = strings.ToLower(strings.TrimSpace(manifest.Name))
 	manifest.Version = strings.TrimSpace(manifest.Version)
+	manifest.ContractProfileVersion = strings.ToLower(strings.TrimSpace(manifest.ContractProfileVersion))
 	manifest.BaymaxCompat = strings.TrimSpace(manifest.BaymaxCompat)
 	manifest.Negotiation.DefaultStrategy = strings.ToLower(strings.TrimSpace(manifest.Negotiation.DefaultStrategy))
 	manifest.ConformanceProfile = strings.ToLower(strings.TrimSpace(manifest.ConformanceProfile))
@@ -398,4 +417,34 @@ func reasonSegment(capability string) string {
 		return "unknown"
 	}
 	return out
+}
+
+func mapProfileError(err error) error {
+	if err == nil {
+		return nil
+	}
+	pe := &adapterprofile.Error{}
+	if !errors.As(err, &pe) {
+		return err
+	}
+	switch pe.Code {
+	case adapterprofile.CodeUnknownProfileVersion:
+		return &ContractError{
+			Code:    CodeUnknownContractProfile,
+			Field:   "contract_profile_version",
+			Message: pe.Message,
+		}
+	case adapterprofile.CodeProfileOutOfWindow:
+		return &ContractError{
+			Code:    CodeContractProfileOutOfWindow,
+			Field:   "contract_profile_version",
+			Message: pe.Message,
+		}
+	default:
+		return &ContractError{
+			Code:    CodeUnknownContractProfile,
+			Field:   "contract_profile_version",
+			Message: pe.Message,
+		}
+	}
 }

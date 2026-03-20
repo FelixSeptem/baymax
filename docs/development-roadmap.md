@@ -16,10 +16,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-20：
-- 已归档并稳定：A4-A26（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约）。
+- 已归档并稳定：A4-A28（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate）。
 - 进行中：
-  - `introduce-adapter-capability-negotiation-and-fallback-contract-a27`
-  - `introduce-adapter-contract-profile-versioning-and-replay-gate-a28`
+  - `introduce-task-board-query-contract-a29`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -47,19 +46,20 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 近期收口优先级（0.x）
 
-### P0：收口 A27 并推进 A28（当前阶段）
+### P0：收口 A28 并修复治理缺口（当前阶段）
 
 完成条件：
-- A27 收敛：adapter capability negotiation（`required/optional`）与 fallback 策略（`fail_fast|best_effort`）语义稳定，且 Run/Stream 协商结果等价。
-- A28 起步：引入 `contract_profile_version` 与 runtime 支持窗口校验（默认 `current + previous`），不兼容 fail-fast。
-- `check-adapter-capability-contract.*` 与 `check-adapter-contract-replay.*` 并入 `check-quality-gate.*`，shell/PowerShell 阻断一致。
-- A22 conformance 与 A23 scaffold 可覆盖 manifest + capability + profile/replay 组合路径。
+- A28 收敛：引入 `contract_profile_version` 与 runtime 支持窗口校验（默认 `current + previous`），不兼容 fail-fast。
+- 新增 `check-adapter-contract-replay.*` 并接入 `check-quality-gate.*`，shell/PowerShell 阻断一致。
+- A22 conformance 与 A23 scaffold 覆盖 manifest + capability + profile/replay 组合路径。
+- 状态口径治理收口：`openspec list --json`、archive index、README、roadmap 四者一致。
+- 修复 Windows docs gate 语义：`scripts/check-docs-consistency.ps1` 必须在 `go test` 失败时返回 non-zero（禁止“失败仍打印 passed”）。
 
-A27/A28 实施顺序（收敛变更域）：
-1. 收敛 A27 协商内核：requested-vs-declared 匹配、策略覆盖与 reason taxonomy。
-2. 将 A27 协商语义接入 A22 conformance 与 A23 scaffold，保证模板与验收口径一致。
-3. 引入 A28 profile version 与兼容窗口校验，并补齐 replay fixtures（manifest/negotiation/reason taxonomy）。
-4. 接入 `adapter-capability` 与 `adapter-contract-replay` gate 到质量门禁，更新主干索引与文档入口。
+A28 实施顺序（收敛变更域）：
+1. 在 manifest/negotiation 链路接入 `contract_profile_version` 与 deterministic 错误分类。
+2. 补齐 profile-versioned replay fixtures（manifest/negotiation/reason taxonomy）。
+3. 新增 replay gate 并接入 quality gate（shell + PowerShell 对齐）。
+4. 同步更新主干索引、roadmap/README 状态快照，并修复 docs gate 假阳性。
 
 ### P1：0.x 质量与治理持续收敛
 
@@ -67,6 +67,27 @@ A27/A28 实施顺序（收敛变更域）：
 - 所有变更继续通过质量门禁（`check-quality-gate.*`）与契约索引追踪。
 - 允许新增能力按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
 - 对外发布继续以 `0.x` 说明风险与兼容预期。
+
+## 下一提案方向（lib-first 优先）
+
+在 A28 完成后，推荐进入“coding-agent 协作能力”的库级收敛，但保持非平台化边界：
+
+1. Task Board（推荐）
+- 以 `orchestration/scheduler + runtime/diagnostics` 提供只读任务看板查询接口（过滤、排序、分页、时间窗），不引入控制面 UI。
+
+2. Mailbox Contract（推荐）
+- 提供 agent 间消息 envelope（command/event/result）与 `ack/retry/ttl/dlq/idempotency-key` 契约，统一同步等待与异步回报语义。
+
+非目标（当前阶段不做）：
+- 平台化任务控制台与多租户运维面板。
+- 跨租户统一调度控制平面。
+
+## 当前主要缺失点清单（对齐本轮评审）
+
+1. 状态口径漂移：A27 已归档，但 roadmap/README 快照仍存在“进行中”残留。
+2. A28 核心能力未收口：`contract_profile_version`、replay fixtures、replay gate 仍在实施中。
+3. docs gate 稳定性缺口：PowerShell 路径存在失败未阻断风险，需修复为 fail-fast。
+4. 传播层缺口：当前示例偏工程验证，缺少 session 化学习路径与多语内容结构（作为 DX 增强项进入后续提案，不影响 lib-first 主线）。
 
 ## 维护提示（状态快照更新）
 

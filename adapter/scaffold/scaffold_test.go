@@ -171,6 +171,9 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 			if !strings.Contains(manifest, `"baymax_compat": ">=0.26.0-rc.1 <0.27.0"`) {
 				t.Fatalf("manifest missing default baymax_compat range: %s", manifest)
 			}
+			if !strings.Contains(manifest, `"contract_profile_version": "v1alpha1"`) {
+				t.Fatalf("manifest missing default contract_profile_version: %s", manifest)
+			}
 			if !strings.Contains(manifest, `"conformance_profile": "`+tc.scenarioID+`"`) {
 				t.Fatalf("manifest missing conformance_profile %q", tc.scenarioID)
 			}

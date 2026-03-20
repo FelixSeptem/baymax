@@ -178,6 +178,9 @@ func TestAdapterConformanceManifestActivationSuccess(t *testing.T) {
 	if len(result.OptionalDowngrades) != 0 {
 		t.Fatalf("unexpected downgrades: %#v", result.OptionalDowngrades)
 	}
+	if result.ContractProfileVersion != "v1alpha1" {
+		t.Fatalf("unexpected contract profile version: %#v", result.ContractProfileVersion)
+	}
 }
 
 func TestAdapterConformanceManifestCompatibilityFailFast(t *testing.T) {
@@ -245,6 +248,9 @@ func TestAdapterConformanceManifestOptionalCapabilityDowngradeDeterministic(t *t
 	if !containsReason(res1.ReasonCodes, adaptercap.ReasonOptionalDowngraded) || !containsReason(res1.ReasonCodes, adaptercap.ReasonStrategyOverrideApply) {
 		t.Fatalf("unexpected negotiation reasons: %#v", res1.ReasonCodes)
 	}
+	if res1.ContractProfileVersion != "v1alpha1" {
+		t.Fatalf("unexpected contract profile version: %#v", res1.ContractProfileVersion)
+	}
 }
 
 func TestAdapterConformanceManifestProfileAlignmentForFixtures(t *testing.T) {
@@ -310,6 +316,9 @@ func TestAdapterConformanceManifestNegotiationRunStreamSemanticEquivalent(t *tes
 	}
 	if !reflect.DeepEqual(runAccepted.ReasonCodes, streamAccepted.ReasonCodes) {
 		t.Fatalf("accept reason mismatch run=%#v stream=%#v", runAccepted.ReasonCodes, streamAccepted.ReasonCodes)
+	}
+	if runAccepted.ContractProfileVersion != streamAccepted.ContractProfileVersion {
+		t.Fatalf("contract profile mismatch run=%s stream=%s", runAccepted.ContractProfileVersion, streamAccepted.ContractProfileVersion)
 	}
 
 	runRejectRes, runRejectErrRaw := ActivateAdapterManifestWithRequest(path, "0.26.0-rc.2", "model-run-stream-downgrade", []string{

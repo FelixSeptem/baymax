@@ -596,6 +596,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `Manager.RecentReloads(n)`：最近 N 次热更新结果。
 - `Manager.RecentSkills(n)`：最近 N 次 skill 生命周期摘要（discover/trigger/compile/failure）。
 - `Manager.QueryRuns(query)`：统一 run 诊断查询（A18，多维过滤 + 分页 + 排序 + 游标）。
+- `Scheduler.QueryTasks(ctx, query)`：scheduler 任务看板只读查询（A29，多维过滤 + 分页 + 排序 + opaque cursor）。
 - `Manager.TimelineTrends(query)`：跨 run Action Timeline 趋势聚合（窗口模式：`last_n_runs|time_window`）。
 - `Manager.CA2ExternalTrends(query)`：CA2 external retriever provider 维度趋势聚合（窗口模式：`time_window`）。
 - `Manager.EffectiveConfigSanitized()`：脱敏后的生效配置快照。
@@ -620,6 +621,36 @@ client := httpmcp.NewClient(httpmcp.Config{
 错误与空集语义：
 - 非法参数（如非法 `status`、无效 `time_range`、非法 `page_size`、不可解码 cursor）均 fail-fast。
 - 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
+
+### Task Board Query API（A29）
+
+Task Board 查询请求支持以下 canonical filter 字段（多条件按 `AND` 语义组合）：
+- `task_id`
+- `run_id`
+- `workflow_id`
+- `team_id`
+- `state`（`queued|running|succeeded|failed|dead_letter`）
+- `priority`
+- `agent_id`
+- `peer_id`
+- `parent_run_id`
+- `time_range`
+
+Task Board 分页/排序语义：
+- 默认分页：`page_size=50`
+- 最大分页：`page_size<=200`（越界 fail-fast）
+- 默认排序：`updated_at desc`
+- 首版排序字段：`updated_at|created_at`
+- 游标：`opaque cursor`（与 query boundary 绑定，跨查询复用 fail-fast）
+
+错误与空集语义：
+- 非法参数（如非法 `state`、无效 `time_range`、非法 `page_size`、不支持排序字段、无效 cursor）均 fail-fast。
+- 合法但无匹配（例如不存在的 `task_id`）返回 `empty result set`，不返回错误。
+
+范围与非目标：
+- 该接口为 scheduler 快照读路径，只读，不改变 enqueue/claim/heartbeat/requeue/commit 运行态。
+- 不提供任务写操作（`cancel/retry/reassign/priority mutate`）。
+- 不引入任务控制台、RBAC、多租户运维面。
 
 Skill trigger scoring（D2/D3/D4）新增 skill 观测字段（记录在 `RecentSkills` 的 `payload` 中）：
 - `strategy`：触发策略（如 `explicit|lexical_weighted_keywords|lexical_plus_embedding`）。

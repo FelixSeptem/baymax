@@ -26,7 +26,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - A26（Adapter Manifest 与 Runtime Compatibility 契约）已归档并稳定。
 - A27（Adapter Capability Negotiation 与 Fallback Contract）已归档并稳定。
 - A28（Adapter Contract Profile Versioning 与 Replay Gate）已归档并稳定。
-- A29（Task Board Query Contract）进行中。
+- A29（Task Board Query Contract）已归档并稳定。
+- A30（Unified Mailbox Coordination Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -525,6 +526,18 @@ A28 已完成 adapter 合同 profile 版本化与回放门禁，能力包括：
 - replay gate 命令已并入质量门禁：
   - `bash scripts/check-adapter-contract-replay.sh`
   - `pwsh -File scripts/check-adapter-contract-replay.ps1`
+
+### 19) Task Board Query Contract（A29，已归档并稳定）
+
+A29 已完成 scheduler 任务看板只读查询契约，能力范围：
+- 在 `orchestration/scheduler` 提供 `QueryTasks`，支持 `task_id/run_id/workflow_id/team_id/state/priority/agent_id/peer_id/parent_run_id/time_range` 过滤。
+- 多条件按 `AND` 语义执行；合法无匹配返回空集，不报错。
+- 分页/排序固定基线：默认 `page_size=50`、上限 `200`、默认 `updated_at desc`、排序字段 `updated_at|created_at`。
+- 游标使用 `opaque cursor`，并与查询边界绑定；非法或边界不匹配 fail-fast。
+
+非目标（A29 首版不做）：
+- 任务写操作（`cancel/retry/reassign/priority mutate`）。
+- 平台化任务控制台、RBAC、多租户运维面。
 
 ## 开发验证
 

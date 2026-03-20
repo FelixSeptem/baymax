@@ -42,6 +42,9 @@ go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
 echo "[multi-agent-shared-contract-gate] unified query suite"
 go test ./integration -run '^TestUnifiedQueryContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] task board query suite"
+go test ./integration -run '^TestTaskBoardQueryContract' -count=1
+
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

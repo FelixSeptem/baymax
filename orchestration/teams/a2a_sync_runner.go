@@ -17,6 +17,8 @@ var generatedRemoteTaskCounter uint64
 type A2ARemoteRunnerOptions struct {
 	PollInterval    time.Duration
 	TaskIDGenerator func(plan Plan, task Task) string
+	Retry           collab.RetryConfig
+	RetryObserver   collab.RetryObserver
 }
 
 func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) RemoteTaskRunnerFunc {
@@ -40,7 +42,7 @@ func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) R
 		if method == "" {
 			method = "team.dispatch"
 		}
-		outcome, err := collab.DelegateSync(ctx, client, invoke.Request{
+		outcome, err := collab.DelegateSyncWithRetry(ctx, client, invoke.Request{
 			TaskID:       taskID,
 			WorkflowID:   strings.TrimSpace(plan.WorkflowID),
 			TeamID:       strings.TrimSpace(plan.TeamID),
@@ -50,7 +52,7 @@ func NewA2ARemoteTaskRunner(client invoke.Client, opts A2ARemoteRunnerOptions) R
 			Method:       method,
 			Payload:      cloneRemotePayload(task.Remote.Payload),
 			PollInterval: opts.PollInterval,
-		})
+		}, opts.Retry, opts.RetryObserver)
 		if err != nil {
 			return TaskResult{}, err
 		}

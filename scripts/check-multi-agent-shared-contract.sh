@@ -48,6 +48,9 @@ go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1
 echo "[multi-agent-shared-contract-gate] collaboration primitives suite"
 go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1
 
+echo "[multi-agent-shared-contract-gate] collaboration retry suite"
+go test ./integration -run '^TestCollaborationRetryContract' -count=1
+
 echo "[multi-agent-shared-contract-gate] recovery boundary suite"
 go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
 

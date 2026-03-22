@@ -1230,6 +1230,66 @@ reload:
 	}
 }
 
+func TestManagerComposerCollabRetryInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+composer:
+  collab:
+    enabled: true
+    default_aggregation: all_settled
+    failure_policy: fail_fast
+    retry:
+      enabled: true
+      max_attempts: 3
+      backoff_initial: 100ms
+      backoff_max: 2s
+      multiplier: 2
+      jitter_ratio: 0.2
+      retry_on: transport_only
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Composer.Collab.Retry.MaxAttempts
+	if before != 3 {
+		t.Fatalf("before composer.collab.retry.max_attempts = %d, want 3", before)
+	}
+
+	writeConfig(t, file, `
+composer:
+  collab:
+    enabled: true
+    default_aggregation: all_settled
+    failure_policy: fail_fast
+    retry:
+      enabled: true
+      max_attempts: 3
+      backoff_initial: 100ms
+      backoff_max: 50ms
+      multiplier: 2
+      jitter_ratio: 0.2
+      retry_on: transport_only
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Composer.Collab.Retry.MaxAttempts
+	if after != before {
+		t.Fatalf("invalid collab retry reload should rollback, max_attempts = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerA2AVersionPolicyInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

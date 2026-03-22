@@ -19,6 +19,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档并稳定：A4-A32（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口）。
 - 进行中：
   - `enable-collaboration-primitive-bounded-retry-contract-a33`
+  - `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -86,6 +87,9 @@ A33 依赖关系：
 - 固化 retry 所有权：scheduler 管理路径避免与 primitive retry 叠加，防止双重重试。
 - 在 `runtime/diagnostics` 增加 collaboration retry additive 字段，并保持 `additive + nullable + default` 兼容窗口。
 - shared multi-agent gate 纳入 collaboration retry suites（策略边界、Run/Stream 等价、replay idempotency）。
+
+当前状态（A33）：
+- 进入实施阶段：配置域、协作原语重试执行、诊断字段与 shared gate 接入按同一 change 收口。
 
 当前阶段非目标（A33 不做）：
 - 引入平台化重试编排控制面或外部消息总线依赖。

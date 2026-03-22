@@ -17,6 +17,8 @@ type A2AAsyncStepAdapterOptions struct {
 	Method          string
 	TaskIDGenerator func(step Step, attempt int) string
 	ReportSink      a2a.ReportSink
+	Retry           collab.RetryConfig
+	RetryObserver   collab.RetryObserver
 }
 
 func NewA2AAsyncStepAdapter(client invoke.AsyncClient, opts A2AAsyncStepAdapterOptions) func(context.Context, string, Step, int) (StepOutput, error) {
@@ -45,7 +47,7 @@ func NewA2AAsyncStepAdapter(client invoke.AsyncClient, opts A2AAsyncStepAdapterO
 				atomic.AddUint64(&generatedA2ATaskCounter, 1),
 			)
 		}
-		ack, err := collab.DelegateAsync(ctx, client, invoke.AsyncRequest{
+		ack, err := collab.DelegateAsyncWithRetry(ctx, client, invoke.AsyncRequest{
 			TaskID:     taskID,
 			WorkflowID: strings.TrimSpace(workflowID),
 			TeamID:     strings.TrimSpace(step.TeamID),
@@ -55,7 +57,7 @@ func NewA2AAsyncStepAdapter(client invoke.AsyncClient, opts A2AAsyncStepAdapterO
 			PeerID:     strings.TrimSpace(step.PeerID),
 			Method:     method,
 			Payload:    clonePayload(step.Payload),
-		}, opts.ReportSink)
+		}, opts.ReportSink, opts.Retry, opts.RetryObserver)
 		if err != nil {
 			return StepOutput{}, err
 		}

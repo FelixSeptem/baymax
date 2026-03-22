@@ -18,6 +18,8 @@ type A2AStepAdapterOptions struct {
 	PollInterval    time.Duration
 	Method          string
 	TaskIDGenerator func(step Step, attempt int) string
+	Retry           collab.RetryConfig
+	RetryObserver   collab.RetryObserver
 }
 
 func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(context.Context, string, Step, int) (StepOutput, error) {
@@ -46,7 +48,7 @@ func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(co
 				atomic.AddUint64(&generatedA2ATaskCounter, 1),
 			)
 		}
-		outcome, err := collab.DelegateSync(ctx, client, invoke.Request{
+		outcome, err := collab.DelegateSyncWithRetry(ctx, client, invoke.Request{
 			TaskID:       taskID,
 			WorkflowID:   strings.TrimSpace(workflowID),
 			TeamID:       strings.TrimSpace(step.TeamID),
@@ -56,7 +58,7 @@ func NewA2AStepAdapter(client invoke.Client, opts A2AStepAdapterOptions) func(co
 			Method:       method,
 			Payload:      clonePayload(step.Payload),
 			PollInterval: opts.PollInterval,
-		})
+		}, opts.Retry, opts.RetryObserver)
 		if err != nil {
 			return StepOutput{}, err
 		}

@@ -309,6 +309,9 @@ func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
 		CollabAggregationTotal:    2,
 		CollabAggregationStrategy: "all_settled",
 		CollabFailFastTotal:       1,
+		CollabRetryTotal:          3,
+		CollabRetrySuccessTotal:   1,
+		CollabRetryExhaustedTotal: 1,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -321,7 +324,10 @@ func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
 		runs[0].CollabDelegationTotal != 2 ||
 		runs[0].CollabAggregationTotal != 2 ||
 		runs[0].CollabAggregationStrategy != "all_settled" ||
-		runs[0].CollabFailFastTotal != 1 {
+		runs[0].CollabFailFastTotal != 1 ||
+		runs[0].CollabRetryTotal != 3 ||
+		runs[0].CollabRetrySuccessTotal != 1 ||
+		runs[0].CollabRetryExhaustedTotal != 1 {
 		t.Fatalf("collab aggregate mismatch under replay, got %#v", runs[0])
 	}
 }

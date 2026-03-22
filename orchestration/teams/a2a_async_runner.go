@@ -16,6 +16,8 @@ import (
 type A2AAsyncRemoteRunnerOptions struct {
 	TaskIDGenerator func(plan Plan, task Task) string
 	ReportSink      a2a.ReportSink
+	Retry           collab.RetryConfig
+	RetryObserver   collab.RetryObserver
 }
 
 func NewA2AAsyncRemoteTaskRunner(client invoke.AsyncClient, opts A2AAsyncRemoteRunnerOptions) RemoteTaskRunnerFunc {
@@ -39,7 +41,7 @@ func NewA2AAsyncRemoteTaskRunner(client invoke.AsyncClient, opts A2AAsyncRemoteR
 		if method == "" {
 			method = "team.dispatch"
 		}
-		ack, err := collab.DelegateAsync(ctx, client, invoke.AsyncRequest{
+		ack, err := collab.DelegateAsyncWithRetry(ctx, client, invoke.AsyncRequest{
 			TaskID:     taskID,
 			WorkflowID: strings.TrimSpace(plan.WorkflowID),
 			TeamID:     strings.TrimSpace(plan.TeamID),
@@ -49,7 +51,7 @@ func NewA2AAsyncRemoteTaskRunner(client invoke.AsyncClient, opts A2AAsyncRemoteR
 			PeerID:     strings.TrimSpace(task.Remote.PeerID),
 			Method:     method,
 			Payload:    cloneRemotePayload(task.Remote.Payload),
-		}, opts.ReportSink)
+		}, opts.ReportSink, opts.Retry, opts.RetryObserver)
 		if err != nil {
 			return TaskResult{}, err
 		}

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-22 23:06:07
+Updated: 2026-03-23 00:05:31
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -82,3 +82,4 @@ Updated: 2026-03-22 23:06:07
 - 078 -> introduce-unified-mailbox-coordination-contract-a30
 - 079 -> harden-async-subagent-lifecycle-and-await-report-contract-a31
 - 080 -> introduce-async-await-reconcile-poll-fallback-contract-a32
+- 081 -> enable-collaboration-primitive-bounded-retry-contract-a33

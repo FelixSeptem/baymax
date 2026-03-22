@@ -174,6 +174,9 @@ type RunRecord struct {
 	CollabAggregationTotal               int                               `json:"collab_aggregation_total,omitempty"`
 	CollabAggregationStrategy            string                            `json:"collab_aggregation_strategy,omitempty"`
 	CollabFailFastTotal                  int                               `json:"collab_fail_fast_total,omitempty"`
+	CollabRetryTotal                     int                               `json:"collab_retry_total,omitempty"`
+	CollabRetrySuccessTotal              int                               `json:"collab_retry_success_total,omitempty"`
+	CollabRetryExhaustedTotal            int                               `json:"collab_retry_exhausted_total,omitempty"`
 	RecoveryEnabled                      bool                              `json:"recovery_enabled,omitempty"`
 	RecoveryResumeBoundary               string                            `json:"recovery_resume_boundary,omitempty"`
 	RecoveryInflightPolicy               string                            `json:"recovery_inflight_policy,omitempty"`

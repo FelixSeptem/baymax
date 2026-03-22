@@ -264,6 +264,9 @@ type runStat struct {
 	CollabAggregationTotal    int
 	CollabAggregationStrategy string
 	CollabFailFastTotal       int
+	CollabRetryTotal          int
+	CollabRetrySuccessTotal   int
+	CollabRetryExhaustedTotal int
 	A2AAsyncReportTotal       int
 	A2AAsyncReportFailed      int
 	A2AAsyncReportRetry       int
@@ -552,6 +555,8 @@ func (c *Composer) executeChild(
 		if pollInterval <= 0 {
 			pollInterval = c.childPollInterval
 		}
+		// Scheduler-managed child execution is the single retry owner (A33).
+		// Keep primitive-layer retry outside this path to avoid compounded retries.
 		return scheduler.ExecuteClaimWithA2A(ctx, c.a2aClient, claimed, pollInterval)
 	default:
 		err := fmt.Errorf("unsupported child target %q", req.Target)
@@ -755,6 +760,9 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		payload["collab_aggregation_strategy"] = strings.TrimSpace(stats.CollabAggregationStrategy)
 	}
 	payload["collab_fail_fast_total"] = stats.CollabFailFastTotal
+	payload["collab_retry_total"] = stats.CollabRetryTotal
+	payload["collab_retry_success_total"] = stats.CollabRetrySuccessTotal
+	payload["collab_retry_exhausted_total"] = stats.CollabRetryExhaustedTotal
 	payload["a2a_async_report_total"] = stats.A2AAsyncReportTotal
 	payload["a2a_async_report_failed"] = stats.A2AAsyncReportFailed
 	payload["a2a_async_report_retry_total"] = stats.A2AAsyncReportRetry

@@ -26,6 +26,12 @@
   - `composer.collab.default_aggregation` -> `BAYMAX_COMPOSER_COLLAB_DEFAULT_AGGREGATION`
   - `composer.collab.failure_policy` -> `BAYMAX_COMPOSER_COLLAB_FAILURE_POLICY`
   - `composer.collab.retry.enabled` -> `BAYMAX_COMPOSER_COLLAB_RETRY_ENABLED`
+  - `composer.collab.retry.max_attempts` -> `BAYMAX_COMPOSER_COLLAB_RETRY_MAX_ATTEMPTS`
+  - `composer.collab.retry.backoff_initial` -> `BAYMAX_COMPOSER_COLLAB_RETRY_BACKOFF_INITIAL`
+  - `composer.collab.retry.backoff_max` -> `BAYMAX_COMPOSER_COLLAB_RETRY_BACKOFF_MAX`
+  - `composer.collab.retry.multiplier` -> `BAYMAX_COMPOSER_COLLAB_RETRY_MULTIPLIER`
+  - `composer.collab.retry.jitter_ratio` -> `BAYMAX_COMPOSER_COLLAB_RETRY_JITTER_RATIO`
+  - `composer.collab.retry.retry_on` -> `BAYMAX_COMPOSER_COLLAB_RETRY_RETRY_ON`
   - `teams.remote.enabled` -> `BAYMAX_TEAMS_REMOTE_ENABLED`
   - `teams.remote.require_peer_id` -> `BAYMAX_TEAMS_REMOTE_REQUIRE_PEER_ID`
   - `workflow.graph_composability.enabled` -> `BAYMAX_WORKFLOW_GRAPH_COMPOSABILITY_ENABLED`
@@ -140,7 +146,13 @@ composer:
     default_aggregation: all_settled # all_settled|first_success
     failure_policy: fail_fast        # fail_fast|best_effort
     retry:
-      enabled: false                 # A16：协作原语层重试固定关闭
+      enabled: false                 # A33：默认关闭，显式开启后生效
+      max_attempts: 3                # 必须 > 0
+      backoff_initial: 100ms         # 必须 > 0
+      backoff_max: 2s                # 必须 >= backoff_initial
+      multiplier: 2.0                # 必须 > 1
+      jitter_ratio: 0.2              # 必须在 [0,1]
+      retry_on: transport_only       # 当前仅支持 transport_only
 
 teams:
   enabled: false
@@ -527,6 +539,15 @@ ca2 stage2 external hint/template 校验语义：
 3. `hints.capabilities[*]` 必须使用小写并满足字符集 `[a-z0-9._/-]`。
 4. 非法 hint/template 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+collaboration primitive retry（A33）校验语义：
+1. `composer.collab.retry.max_attempts` 必须 `> 0`。
+2. `composer.collab.retry.backoff_initial` 必须 `> 0`。
+3. `composer.collab.retry.backoff_max` 必须 `>= composer.collab.retry.backoff_initial`。
+4. `composer.collab.retry.multiplier` 必须 `> 1`。
+5. `composer.collab.retry.jitter_ratio` 必须在 `[0,1]`。
+6. `composer.collab.retry.retry_on` 当前仅支持 `transport_only`。
+7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 teams baseline 校验语义：
 1. `teams.default_strategy` 仅支持 `serial|parallel|vote`。
 2. `teams.task_timeout` 必须 `> 0`。
@@ -792,6 +813,9 @@ Composed summary additive fields（contract markers）：
 - `collab_aggregation_total`
 - `collab_aggregation_strategy`
 - `collab_fail_fast_total`
+- `collab_retry_total`
+- `collab_retry_success_total`
+- `collab_retry_exhausted_total`
 - `team_remote_task_total`
 - `team_remote_task_failed`
 - `workflow_remote_step_total`

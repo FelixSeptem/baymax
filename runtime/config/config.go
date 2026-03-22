@@ -128,6 +128,7 @@ const (
 	ComposerCollabAggregationFirstSuccess = "first_success"
 	ComposerCollabFailurePolicyFailFast   = "fail_fast"
 	ComposerCollabFailurePolicyBestEffort = "best_effort"
+	ComposerCollabRetryOnTransportOnly    = "transport_only"
 )
 
 const (
@@ -189,7 +190,13 @@ type ComposerCollabConfig struct {
 }
 
 type ComposerCollabRetryConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled        bool          `json:"enabled"`
+	MaxAttempts    int           `json:"max_attempts"`
+	BackoffInitial time.Duration `json:"backoff_initial"`
+	BackoffMax     time.Duration `json:"backoff_max"`
+	Multiplier     float64       `json:"multiplier"`
+	JitterRatio    float64       `json:"jitter_ratio"`
+	RetryOn        string        `json:"retry_on"`
 }
 
 type MCPConfig struct {
@@ -906,7 +913,13 @@ func DefaultConfig() Config {
 				DefaultAggregation: ComposerCollabAggregationAllSettled,
 				FailurePolicy:      ComposerCollabFailurePolicyFailFast,
 				Retry: ComposerCollabRetryConfig{
-					Enabled: false,
+					Enabled:        false,
+					MaxAttempts:    3,
+					BackoffInitial: 100 * time.Millisecond,
+					BackoffMax:     2 * time.Second,
+					Multiplier:     2.0,
+					JitterRatio:    0.2,
+					RetryOn:        ComposerCollabRetryOnTransportOnly,
 				},
 			},
 		},
@@ -1524,8 +1537,29 @@ func Validate(cfg Config) error {
 			cfg.Composer.Collab.FailurePolicy,
 		)
 	}
-	if cfg.Composer.Collab.Retry.Enabled {
-		return errors.New("composer.collab.retry.enabled must be false: primitive-layer retry is disabled")
+	if cfg.Composer.Collab.Retry.MaxAttempts <= 0 {
+		return errors.New("composer.collab.retry.max_attempts must be > 0")
+	}
+	if cfg.Composer.Collab.Retry.BackoffInitial <= 0 {
+		return errors.New("composer.collab.retry.backoff_initial must be > 0")
+	}
+	if cfg.Composer.Collab.Retry.BackoffMax < cfg.Composer.Collab.Retry.BackoffInitial {
+		return errors.New("composer.collab.retry.backoff_max must be >= composer.collab.retry.backoff_initial")
+	}
+	if cfg.Composer.Collab.Retry.Multiplier <= 1 {
+		return errors.New("composer.collab.retry.multiplier must be > 1")
+	}
+	if cfg.Composer.Collab.Retry.JitterRatio < 0 || cfg.Composer.Collab.Retry.JitterRatio > 1 {
+		return errors.New("composer.collab.retry.jitter_ratio must be in [0,1]")
+	}
+	switch retryOn := strings.ToLower(strings.TrimSpace(cfg.Composer.Collab.Retry.RetryOn)); retryOn {
+	case ComposerCollabRetryOnTransportOnly:
+	default:
+		return fmt.Errorf(
+			"composer.collab.retry.retry_on must be one of [%s], got %q",
+			ComposerCollabRetryOnTransportOnly,
+			cfg.Composer.Collab.Retry.RetryOn,
+		)
 	}
 	switch strategy := strings.ToLower(strings.TrimSpace(cfg.Teams.DefaultStrategy)); strategy {
 	case TeamsStrategySerial, TeamsStrategyParallel, TeamsStrategyVote:
@@ -2787,6 +2821,12 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("composer.collab.default_aggregation", base.Composer.Collab.DefaultAggregation)
 	v.SetDefault("composer.collab.failure_policy", base.Composer.Collab.FailurePolicy)
 	v.SetDefault("composer.collab.retry.enabled", base.Composer.Collab.Retry.Enabled)
+	v.SetDefault("composer.collab.retry.max_attempts", base.Composer.Collab.Retry.MaxAttempts)
+	v.SetDefault("composer.collab.retry.backoff_initial", base.Composer.Collab.Retry.BackoffInitial)
+	v.SetDefault("composer.collab.retry.backoff_max", base.Composer.Collab.Retry.BackoffMax)
+	v.SetDefault("composer.collab.retry.multiplier", base.Composer.Collab.Retry.Multiplier)
+	v.SetDefault("composer.collab.retry.jitter_ratio", base.Composer.Collab.Retry.JitterRatio)
+	v.SetDefault("composer.collab.retry.retry_on", base.Composer.Collab.Retry.RetryOn)
 	v.SetDefault("teams.enabled", base.Teams.Enabled)
 	v.SetDefault("teams.default_strategy", base.Teams.DefaultStrategy)
 	v.SetDefault("teams.task_timeout", base.Teams.TaskTimeout)
@@ -3057,6 +3097,12 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Composer.Collab.DefaultAggregation = strings.ToLower(strings.TrimSpace(v.GetString("composer.collab.default_aggregation")))
 	cfg.Composer.Collab.FailurePolicy = strings.ToLower(strings.TrimSpace(v.GetString("composer.collab.failure_policy")))
 	cfg.Composer.Collab.Retry.Enabled = v.GetBool("composer.collab.retry.enabled")
+	cfg.Composer.Collab.Retry.MaxAttempts = v.GetInt("composer.collab.retry.max_attempts")
+	cfg.Composer.Collab.Retry.BackoffInitial = v.GetDuration("composer.collab.retry.backoff_initial")
+	cfg.Composer.Collab.Retry.BackoffMax = v.GetDuration("composer.collab.retry.backoff_max")
+	cfg.Composer.Collab.Retry.Multiplier = v.GetFloat64("composer.collab.retry.multiplier")
+	cfg.Composer.Collab.Retry.JitterRatio = v.GetFloat64("composer.collab.retry.jitter_ratio")
+	cfg.Composer.Collab.Retry.RetryOn = strings.ToLower(strings.TrimSpace(v.GetString("composer.collab.retry.retry_on")))
 	cfg.Teams.Enabled = v.GetBool("teams.enabled")
 	cfg.Teams.DefaultStrategy = strings.ToLower(strings.TrimSpace(v.GetString("teams.default_strategy")))
 	cfg.Teams.TaskTimeout = v.GetDuration("teams.task_timeout")

@@ -246,6 +246,9 @@ mcp:
 			"collab_aggregation_total":                 2,
 			"collab_aggregation_strategy":              "all_settled",
 			"collab_fail_fast_total":                   1,
+			"collab_retry_total":                       3,
+			"collab_retry_success_total":               1,
+			"collab_retry_exhausted_total":             1,
 			"recovery_enabled":                         true,
 			"recovery_resume_boundary":                 "next_attempt_only",
 			"recovery_inflight_policy":                 "no_rewind",
@@ -436,7 +439,10 @@ mcp:
 		items[0].CollabDelegationTotal != 2 ||
 		items[0].CollabAggregationTotal != 2 ||
 		items[0].CollabAggregationStrategy != "all_settled" ||
-		items[0].CollabFailFastTotal != 1 {
+		items[0].CollabFailFastTotal != 1 ||
+		items[0].CollabRetryTotal != 3 ||
+		items[0].CollabRetrySuccessTotal != 1 ||
+		items[0].CollabRetryExhaustedTotal != 1 {
 		t.Fatalf("collab fields mismatch: %#v", items[0])
 	}
 	if !items[0].RecoveryEnabled || !items[0].RecoveryRecovered || items[0].RecoveryReplayTotal != 2 {
@@ -590,7 +596,10 @@ mcp:
 		got.CollabDelegationTotal != 0 ||
 		got.CollabAggregationTotal != 0 ||
 		got.CollabAggregationStrategy != "" ||
-		got.CollabFailFastTotal != 0 {
+		got.CollabFailFastTotal != 0 ||
+		got.CollabRetryTotal != 0 ||
+		got.CollabRetrySuccessTotal != 0 ||
+		got.CollabRetryExhaustedTotal != 0 {
 		t.Fatalf("missing A16 additive fields must resolve to documented defaults: %#v", got)
 	}
 }

@@ -319,13 +319,37 @@ func TestComposerCollabConfigDefaults(t *testing.T) {
 	if cfg.Composer.Collab.Retry.Enabled {
 		t.Fatal("composer.collab.retry.enabled = true, want false")
 	}
+	if cfg.Composer.Collab.Retry.MaxAttempts != 3 {
+		t.Fatalf("composer.collab.retry.max_attempts = %d, want 3", cfg.Composer.Collab.Retry.MaxAttempts)
+	}
+	if cfg.Composer.Collab.Retry.BackoffInitial != 100*time.Millisecond {
+		t.Fatalf("composer.collab.retry.backoff_initial = %v, want 100ms", cfg.Composer.Collab.Retry.BackoffInitial)
+	}
+	if cfg.Composer.Collab.Retry.BackoffMax != 2*time.Second {
+		t.Fatalf("composer.collab.retry.backoff_max = %v, want 2s", cfg.Composer.Collab.Retry.BackoffMax)
+	}
+	if cfg.Composer.Collab.Retry.Multiplier != 2 {
+		t.Fatalf("composer.collab.retry.multiplier = %v, want 2", cfg.Composer.Collab.Retry.Multiplier)
+	}
+	if cfg.Composer.Collab.Retry.JitterRatio != 0.2 {
+		t.Fatalf("composer.collab.retry.jitter_ratio = %v, want 0.2", cfg.Composer.Collab.Retry.JitterRatio)
+	}
+	if cfg.Composer.Collab.Retry.RetryOn != ComposerCollabRetryOnTransportOnly {
+		t.Fatalf("composer.collab.retry.retry_on = %q, want %q", cfg.Composer.Collab.Retry.RetryOn, ComposerCollabRetryOnTransportOnly)
+	}
 }
 
 func TestComposerCollabConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_COMPOSER_COLLAB_ENABLED", "true")
 	t.Setenv("BAYMAX_COMPOSER_COLLAB_DEFAULT_AGGREGATION", ComposerCollabAggregationFirstSuccess)
 	t.Setenv("BAYMAX_COMPOSER_COLLAB_FAILURE_POLICY", ComposerCollabFailurePolicyBestEffort)
-	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_ENABLED", "false")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_ENABLED", "true")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_MAX_ATTEMPTS", "5")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_BACKOFF_INITIAL", "250ms")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_BACKOFF_MAX", "3s")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_MULTIPLIER", "2.5")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_JITTER_RATIO", "0.35")
+	t.Setenv("BAYMAX_COMPOSER_COLLAB_RETRY_RETRY_ON", ComposerCollabRetryOnTransportOnly)
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -336,6 +360,12 @@ composer:
     failure_policy: fail_fast
     retry:
       enabled: false
+      max_attempts: 3
+      backoff_initial: 100ms
+      backoff_max: 2s
+      multiplier: 2.0
+      jitter_ratio: 0.2
+      retry_on: transport_only
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -353,6 +383,15 @@ composer:
 	if cfg.Composer.Collab.FailurePolicy != ComposerCollabFailurePolicyBestEffort {
 		t.Fatalf("composer.collab.failure_policy = %q, want %q", cfg.Composer.Collab.FailurePolicy, ComposerCollabFailurePolicyBestEffort)
 	}
+	if !cfg.Composer.Collab.Retry.Enabled ||
+		cfg.Composer.Collab.Retry.MaxAttempts != 5 ||
+		cfg.Composer.Collab.Retry.BackoffInitial != 250*time.Millisecond ||
+		cfg.Composer.Collab.Retry.BackoffMax != 3*time.Second ||
+		cfg.Composer.Collab.Retry.Multiplier != 2.5 ||
+		cfg.Composer.Collab.Retry.JitterRatio != 0.35 ||
+		cfg.Composer.Collab.Retry.RetryOn != ComposerCollabRetryOnTransportOnly {
+		t.Fatalf("composer.collab.retry env override mismatch: %#v", cfg.Composer.Collab.Retry)
+	}
 }
 
 func TestComposerCollabConfigValidationRejectsInvalidValues(t *testing.T) {
@@ -367,9 +406,34 @@ func TestComposerCollabConfigValidationRejectsInvalidValues(t *testing.T) {
 		t.Fatal("expected validation error for composer.collab.failure_policy")
 	}
 	cfg = DefaultConfig()
-	cfg.Composer.Collab.Retry.Enabled = true
+	cfg.Composer.Collab.Retry.MaxAttempts = 0
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for composer.collab.retry.enabled=true")
+		t.Fatal("expected validation error for composer.collab.retry.max_attempts")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.BackoffInitial = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.backoff_initial")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.BackoffMax = 50 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.backoff_max")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.Multiplier = 1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.multiplier")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.JitterRatio = 1.5
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.jitter_ratio")
+	}
+	cfg = DefaultConfig()
+	cfg.Composer.Collab.Retry.RetryOn = "all"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for composer.collab.retry.retry_on")
 	}
 }
 

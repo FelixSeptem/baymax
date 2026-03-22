@@ -56,6 +56,11 @@
   - `scheduler.async_await.report_timeout` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_REPORT_TIMEOUT`
   - `scheduler.async_await.late_report_policy` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_LATE_REPORT_POLICY`
   - `scheduler.async_await.timeout_terminal` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_TIMEOUT_TERMINAL`
+  - `scheduler.async_await.reconcile.enabled` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_ENABLED`
+  - `scheduler.async_await.reconcile.interval` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_INTERVAL`
+  - `scheduler.async_await.reconcile.batch_size` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_BATCH_SIZE`
+  - `scheduler.async_await.reconcile.jitter_ratio` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_JITTER_RATIO`
+  - `scheduler.async_await.reconcile.not_found_policy` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_NOT_FOUND_POLICY`
   - `scheduler.dlq.enabled` -> `BAYMAX_SCHEDULER_DLQ_ENABLED`
   - `scheduler.retry.backoff.enabled` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED`
   - `scheduler.retry.backoff.initial` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL`
@@ -222,6 +227,12 @@ scheduler:
     report_timeout: 15m           # 必须 > 0
     late_report_policy: drop_and_record # 当前仅支持 drop_and_record
     timeout_terminal: failed      # failed|dead_letter（dead_letter 需配合 scheduler.dlq.enabled=true）
+    reconcile:
+      enabled: false
+      interval: 5s                # 必须 > 0
+      batch_size: 64              # 必须 > 0
+      jitter_ratio: 0.2           # 必须在 [0,1]
+      not_found_policy: keep_until_timeout # 当前仅支持 keep_until_timeout
   dlq:
     enabled: false                # 默认 false
   retry:
@@ -585,10 +596,14 @@ scheduler/subagent baseline 校验语义：
 11. `scheduler.async_await.report_timeout` 必须 `> 0`。
 12. `scheduler.async_await.late_report_policy` 当前仅支持 `drop_and_record`。
 13. `scheduler.async_await.timeout_terminal` 仅支持 `failed|dead_letter`。
-14. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
-15. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
-16. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
-17. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+14. `scheduler.async_await.reconcile.interval` 必须 `> 0`。
+15. `scheduler.async_await.reconcile.batch_size` 必须 `> 0`。
+16. `scheduler.async_await.reconcile.jitter_ratio` 必须在 `[0,1]`。
+17. `scheduler.async_await.reconcile.not_found_policy` 当前仅支持 `keep_until_timeout`。
+18. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
+19. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
+20. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+21. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 recovery boundary（A17）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
@@ -692,7 +707,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `run_id`
 - `workflow_id`
 - `team_id`
-- `state`（`queued|running|succeeded|failed|dead_letter`）
+- `state`（`queued|running|awaiting_report|succeeded|failed|dead_letter`）
 - `priority`
 - `agent_id`
 - `peer_id`
@@ -708,6 +723,10 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 范围约束：
 - 该接口为 scheduler 快照读路径，只读，不改变 enqueue/claim/heartbeat/requeue/commit 语义。
+- async-await additive 观测字段：
+  - `resolution_source`（`callback|reconcile_poll|timeout`）
+  - `remote_task_id`
+  - `terminal_conflict_recorded`（可空）
 
 ### Mailbox Query API
 
@@ -748,6 +767,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - Context Assembler：`prefix_hash`、`assemble_*`、`stage2_*`、`ca3_*`、`recap_status`
 - 编排聚合：`team_*`、`workflow_*`、`a2a_*`、`scheduler_*`、`subagent_*`、`collab_*`
   - A31 additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
+  - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
@@ -788,6 +808,10 @@ Composed summary additive fields（contract markers）：
 - `scheduler_delayed_task_total`
 - `scheduler_delayed_claim_total`
 - `scheduler_delayed_wait_ms_p95`
+- `async_reconcile_poll_total`
+- `async_reconcile_terminal_by_poll_total`
+- `async_reconcile_error_total`
+- `async_terminal_conflict_total`
 - `subagent_child_total`
 - `subagent_child_failed`
 - `subagent_budget_reject_total`
@@ -835,7 +859,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
 reason code 命名保持按域稳定扩展：
 - gate / 背压：如 `gate.denied`、`gate.timeout`、`backpressure.block`
 - teams / workflow：如 `team.dispatch`、`workflow.schedule`
-- a2a / scheduler / recovery：如 `a2a.submit`、`scheduler.claim`、`scheduler.awaiting_report`、`scheduler.async_timeout`、`scheduler.async_late_report`、`recovery.restore`
+- a2a / scheduler / recovery：如 `a2a.submit`、`scheduler.claim`、`scheduler.awaiting_report`、`scheduler.async_reconcile`、`scheduler.async_timeout`、`scheduler.async_late_report`、`recovery.restore`
 - hitl：如 `hitl.await_user`、`hitl.resumed`
 
 Composed reason contract markers（必须保持字面稳定）：

@@ -14,8 +14,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-20）：
-- 已归档并稳定：A4-A31。
-- A32（Introduce Async Await Reconcile Poll Fallback Contract）进行中。
+- 已归档并稳定：A4-A32。
+- A33（Enable Collaboration Primitive Bounded Retry Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -210,7 +210,15 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A32 `introduce-async-await-reconcile-poll-fallback-contract-a32`：异步等待回报补偿收敛（poll fallback + reconcile）提案进行中。
+- A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语有界重试治理提案进行中。
+  - 目标语义：保持默认关闭前提下，补齐 `composer.collab.retry.*` 有界重试契约与共享门禁覆盖。
+  - 非目标：不引入平台化调度控制面，不与 scheduler/recovery 形成双重重试叠加。
+
+最近已归档能力：
+- A32 `introduce-async-await-reconcile-poll-fallback-contract-a32`：异步等待回报补偿收敛（poll fallback + reconcile）。
+  - 目标语义：`awaiting_report` 任务在 callback 丢失时可由 status/result 轮询收敛；
+    终态仲裁采用 `first_terminal_wins + record_conflict`；
+    `not_found` 仅保持等待，直至 `report_timeout`。
 
 状态权威来源：
 - `openspec list --json`
@@ -257,6 +265,7 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`
+- 核心模块语义映射：`docs/core-module-semantic-alignment.md`
 - 主干契约测试索引：`docs/mainline-contract-test-index.md`
 - V1 验收与限制：`docs/v1-acceptance.md`
 - 版本与兼容策略：`docs/versioning-and-compatibility.md`

@@ -13,6 +13,7 @@
 当前稳定查询接口：
 - `RecentCalls`
 - `RecentRuns`
+- `RecentReloads`
 - `RecentMailbox`
 - `QueryMailbox`
 - `MailboxAggregates`
@@ -30,6 +31,7 @@
 - 统一 run 查询（`QueryRuns`：多维过滤 + 分页 + 排序 + opaque cursor）
 - timeline 聚合（phase 统计、P95 延迟）
 - 趋势查询（`TimelineTrends`、`CA2ExternalTrends`）
+- 多代理 additive 摘要字段（含 `async_await_*`、`async_reconcile_*`、`collab_*`、`scheduler_*`、`mailbox_*`）
 
 该包只负责数据模型和聚合算法，不负责事件订阅。
 
@@ -47,6 +49,7 @@
 
 - Store 容量与趋势窗口默认值来自 `runtime/config` diagnostics 子域。
 - 未显式配置分页时 `QueryRuns` 默认 `page_size=50`，上限 `200`。
+- 未显式配置分页时 `QueryMailbox` 默认 `page_size=50`，上限 `200`。
 - 排序默认 `time desc`，游标为 opaque token。
 
 ## 可观测性与验证

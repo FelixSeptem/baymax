@@ -20,6 +20,8 @@
 - `workflow` 负责 step DSL 解析、校验、重试/超时/恢复语义
 - `teams` 负责本地/远程任务执行与结果收敛
 - `scheduler` 负责任务生命周期状态机与治理策略
+  - async-await 路径支持 `awaiting_report` + callback/poll 双来源终态收敛；
+    poll fallback 仅作为 callback 缺失时的补偿路径，仲裁规则固定 `first_terminal_wins + record_conflict`。
 - `mailbox` 负责 command/event/result envelope、ack/retry/ttl/dlq 与查询语义
 - `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；旧 direct submit+wait/report-sink 路径仅保留过渡用途
 - `collab` 负责跨路径一致的 handoff/delegation/aggregation 语义
@@ -47,7 +49,13 @@
 
 - 编排默认配置由 `runtime/config` 提供：如 collab 开关、scheduler QoS、recovery 边界。
 - `composer.collab.enabled=false`、`scheduler.dlq.enabled=false` 等保守默认保证 pre-1 行为稳定。
+- async-await reconcile 默认关闭（`scheduler.async_await.reconcile.enabled=false`），启用后按 `interval/batch_size/jitter_ratio` 节流对账。
 - workflow graph composability 默认关闭，需显式开启。
+
+## 当前非目标
+
+- 不在编排层引入 MQ/控制面能力（Kafka/NATS/RabbitMQ/UI/RBAC）。
+- 不承诺 exactly-once，仅保证 at-least-once 下的幂等收敛。
 
 ## 可观测性与验证
 

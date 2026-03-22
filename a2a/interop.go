@@ -852,6 +852,102 @@ func (c *Client) WaitResult(
 	}
 }
 
+func (c *Client) Status(ctx context.Context, taskID string) (TaskRecord, error) {
+	if c == nil || c.server == nil {
+		return TaskRecord{}, errors.New("a2a client server is not configured")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return TaskRecord{}, errors.New("task_id is required")
+	}
+	record, err := c.withTimeout(ctx, func(callCtx context.Context) (TaskRecord, error) {
+		return c.server.Status(callCtx, taskID)
+	})
+	if err != nil {
+		return TaskRecord{}, err
+	}
+	if pending, ok := c.loadPendingTask(taskID); ok {
+		if strings.TrimSpace(record.WorkflowID) == "" {
+			record.WorkflowID = pending.WorkflowID
+		}
+		if strings.TrimSpace(record.TeamID) == "" {
+			record.TeamID = pending.TeamID
+		}
+		if strings.TrimSpace(record.StepID) == "" {
+			record.StepID = pending.StepID
+		}
+		if strings.TrimSpace(record.AttemptID) == "" {
+			record.AttemptID = pending.AttemptID
+		}
+		if strings.TrimSpace(record.DeliveryMode) == "" {
+			record.DeliveryMode = pending.DeliveryMode
+		}
+		if strings.TrimSpace(record.VersionLocal) == "" {
+			record.VersionLocal = pending.VersionLocal
+		}
+		if strings.TrimSpace(record.VersionPeer) == "" {
+			record.VersionPeer = pending.VersionPeer
+		}
+		if strings.TrimSpace(record.VersionNegotiationResult) == "" {
+			record.VersionNegotiationResult = pending.VersionNegotiationResult
+		}
+		record.DeliveryFallbackUsed = record.DeliveryFallbackUsed || pending.DeliveryFallbackUsed
+		if strings.TrimSpace(record.DeliveryFallbackReason) == "" {
+			record.DeliveryFallbackReason = pending.DeliveryFallbackReason
+		}
+	}
+	c.pending.Store(taskID, record)
+	return record, nil
+}
+
+func (c *Client) Result(ctx context.Context, taskID string) (TaskRecord, error) {
+	if c == nil || c.server == nil {
+		return TaskRecord{}, errors.New("a2a client server is not configured")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return TaskRecord{}, errors.New("task_id is required")
+	}
+	record, err := c.withTimeout(ctx, func(callCtx context.Context) (TaskRecord, error) {
+		return c.server.Result(callCtx, taskID)
+	})
+	if err != nil {
+		return TaskRecord{}, err
+	}
+	if pending, ok := c.loadPendingTask(taskID); ok {
+		if strings.TrimSpace(record.WorkflowID) == "" {
+			record.WorkflowID = pending.WorkflowID
+		}
+		if strings.TrimSpace(record.TeamID) == "" {
+			record.TeamID = pending.TeamID
+		}
+		if strings.TrimSpace(record.StepID) == "" {
+			record.StepID = pending.StepID
+		}
+		if strings.TrimSpace(record.AttemptID) == "" {
+			record.AttemptID = pending.AttemptID
+		}
+		if strings.TrimSpace(record.DeliveryMode) == "" {
+			record.DeliveryMode = pending.DeliveryMode
+		}
+		if strings.TrimSpace(record.VersionLocal) == "" {
+			record.VersionLocal = pending.VersionLocal
+		}
+		if strings.TrimSpace(record.VersionPeer) == "" {
+			record.VersionPeer = pending.VersionPeer
+		}
+		if strings.TrimSpace(record.VersionNegotiationResult) == "" {
+			record.VersionNegotiationResult = pending.VersionNegotiationResult
+		}
+		record.DeliveryFallbackUsed = record.DeliveryFallbackUsed || pending.DeliveryFallbackUsed
+		if strings.TrimSpace(record.DeliveryFallbackReason) == "" {
+			record.DeliveryFallbackReason = pending.DeliveryFallbackReason
+		}
+	}
+	c.pending.Delete(taskID)
+	return record, nil
+}
+
 func (c *Client) loadPendingTask(taskID string) (TaskRecord, bool) {
 	if c == nil {
 		return TaskRecord{}, false

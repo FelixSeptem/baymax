@@ -16,9 +16,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-20：
-- 已归档并稳定：A4-A31（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口）。
+- 已归档并稳定：A4-A32（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口）。
 - 进行中：
-  - `introduce-async-await-reconcile-poll-fallback-contract-a32`
+  - `enable-collaboration-primitive-bounded-retry-contract-a33`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -46,21 +46,50 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 近期收口优先级（0.x）
 
-### P0：A31 收口（当前阶段）
+### P0：A32 收口（已归档）
 
-完成条件（A31）：
-- 在 `orchestration/scheduler` 引入异步等待态 `awaiting_report`，明确定义 async accepted 到终态回报之间的生命周期。
-- 固化 `report_timeout` 与 `late_report_policy=drop_and_record` 语义，保证终态收敛确定性与幂等回放稳定性。
-  默认值：`scheduler.async_await.report_timeout=15m`、`scheduler.async_await.late_report_policy=drop_and_record`、`scheduler.async_await.timeout_terminal=failed`。
-- 扩展 Task Board 查询状态过滤，纳入 `awaiting_report`，并保持既有分页/游标 fail-fast 契约不变。
-- 在 `runtime/config` 增加 `scheduler.async_await.*` 校验与热更新回滚保障（`env > file > default`）。
-- 在 `runtime/diagnostics` 增加 async-await 聚合字段，并保持 `additive + nullable + default` 兼容窗口。
-- shared multi-agent gate 纳入 async-await lifecycle contract suites（Run/Stream 等价 + memory/file parity）。
+A32 依赖关系：
+- A31 已提供 `awaiting_report + timeout + late_report_policy` 生命周期基线；
+- A32 在此基础上补齐 callback 之外的 poll reconcile fallback 契约。
 
-当前阶段非目标（A31 不做）：
+完成条件（A32）：
+- 为 `awaiting_report` 任务增加可配置 reconcile poll fallback：`interval/batch_size/jitter_ratio`。
+- 终态仲裁固定为 `first_terminal_wins + record_conflict`，后到冲突事件不覆写业务终态。
+- `not_found_policy=keep_until_timeout`：poll `not_found` 不直接终态，保持等待至 `report_timeout`。
+- 在 async accepted 路径持久化远端关联键（`remote_task_id`）并跨 snapshot/recovery 保持可对账。
+- Task Board 查询扩展 async additive 观测字段：`resolution_source`、`remote_task_id`、`terminal_conflict_recorded`。
+- `runtime/config` 新增 `scheduler.async_await.reconcile.*`（默认关闭）并纳入 fail-fast + 热更新回滚。
+- `runtime/diagnostics` 增加 reconcile additive 字段并保持 `additive + nullable + default` 兼容窗口。
+- shared multi-agent gate 纳入 async-await reconcile suites（callback-loss fallback、冲突仲裁、Run/Stream 等价、memory/file parity、replay idempotency）。
+
+当前阶段非目标（A32 不做）：
 - 引入外部 MQ（Kafka/NATS/RabbitMQ）适配。
 - 提供平台化消息控制面（UI/RBAC/多租户运维面板）。
 - 承诺 exactly-once 语义。
+
+### P0：A33 收口（当前阶段）
+
+A33 依赖关系：
+- A16 已收口协作原语（handoff/delegation/aggregation）基础语义；
+- A33 在此基础上补齐“默认关闭、可显式开启”的 bounded retry 契约。
+
+完成条件（A33）：
+- 扩展 `composer.collab.retry.*` 配置域并冻结推荐默认值：
+  - `enabled=false`
+  - `max_attempts=3`
+  - `backoff_initial=100ms`
+  - `backoff_max=2s`
+  - `multiplier=2.0`
+  - `jitter_ratio=0.2`
+  - `retry_on=transport_only`
+- 固化 retry 分类和范围：默认仅 transport 重试；覆盖 sync delegation 与 async submit 阶段，不覆盖 accepted 后 async-await 收敛阶段。
+- 固化 retry 所有权：scheduler 管理路径避免与 primitive retry 叠加，防止双重重试。
+- 在 `runtime/diagnostics` 增加 collaboration retry additive 字段，并保持 `additive + nullable + default` 兼容窗口。
+- shared multi-agent gate 纳入 collaboration retry suites（策略边界、Run/Stream 等价、replay idempotency）。
+
+当前阶段非目标（A33 不做）：
+- 引入平台化重试编排控制面或外部消息总线依赖。
+- 修改 A32 async-await 终态收敛主契约（callback/reconcile/timeout）。
 
 ### P1：0.x 质量与治理持续收敛
 

@@ -247,6 +247,10 @@ type Composer struct {
 	childWorkerID     string
 	childPollInterval time.Duration
 
+	reconcileMu     sync.Mutex
+	reconcileCancel context.CancelFunc
+	reconcileDone   chan struct{}
+
 	runMu   sync.Mutex
 	runStat map[string]*runStat
 }
@@ -643,7 +647,7 @@ func (c *Composer) executeA2AChildAsync(
 			Retryable: errorLayer == string(a2a.ErrorLayerTransport),
 		}, err
 	}
-	if _, markErr := c.Scheduler().MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID); markErr != nil {
+	if _, markErr := c.Scheduler().MarkAwaitingReport(ctx, claimed.Record.Task.TaskID, claimed.Attempt.AttemptID, strings.TrimSpace(ack.TaskID)); markErr != nil {
 		return scheduler.A2AExecution{
 			Commit: scheduler.TerminalCommit{
 				TaskID:       claimed.Record.Task.TaskID,
@@ -804,6 +808,10 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["scheduler_delayed_wait_ms_p95"] = summary.DelayedWaitMsP95
 			payload["async_await_total"] = summary.AsyncAwaitTotal
 			payload["async_timeout_total"] = summary.AsyncTimeoutTotal
+			payload["async_reconcile_poll_total"] = summary.AsyncReconcilePollTotal
+			payload["async_reconcile_terminal_by_poll_total"] = summary.AsyncReconcileTerminalByPollTotal
+			payload["async_reconcile_error_total"] = summary.AsyncReconcileErrorTotal
+			payload["async_terminal_conflict_total"] = summary.AsyncTerminalConflictTotal
 			payload["recovery_timeout_reentry_total"] = summary.RecoveryTimeoutReentryTotal
 			payload["recovery_timeout_reentry_exhausted_total"] = summary.RecoveryTimeoutReentryExhaustedTotal
 		}
@@ -1180,6 +1188,75 @@ func mapAsyncReportStatus(status a2a.TaskStatus) types.ActionStatus {
 	}
 }
 
+func (c *Composer) reconfigureAsyncAwaitReconcileWorker(cfg runtimeconfig.Config) {
+	if c == nil {
+		return
+	}
+
+	c.reconcileMu.Lock()
+	defer c.reconcileMu.Unlock()
+	c.stopAsyncAwaitReconcileWorkerLocked()
+
+	if !cfg.Scheduler.AsyncAwait.Reconcile.Enabled {
+		return
+	}
+	if c.a2aClient == nil {
+		return
+	}
+	pollClient, ok := c.a2aClient.(scheduler.A2AReconcilePollClient)
+	if !ok {
+		return
+	}
+	s := c.Scheduler()
+	if s == nil {
+		return
+	}
+
+	loopCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	c.reconcileCancel = cancel
+	c.reconcileDone = done
+	go c.runAsyncAwaitReconcileLoop(loopCtx, done, s, pollClient)
+}
+
+func (c *Composer) stopAsyncAwaitReconcileWorkerLocked() {
+	cancel := c.reconcileCancel
+	done := c.reconcileDone
+	c.reconcileCancel = nil
+	c.reconcileDone = nil
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+func (c *Composer) runAsyncAwaitReconcileLoop(
+	ctx context.Context,
+	done chan struct{},
+	s *scheduler.Scheduler,
+	pollClient scheduler.A2AReconcilePollClient,
+) {
+	defer close(done)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		_, _ = s.ReconcileAwaitingReports(ctx, pollClient)
+		delay := s.NextAsyncReconcileDelay()
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
 func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 	backend := strings.TrimSpace(strings.ToLower(cfg.Scheduler.Backend))
 	if backend == "" {
@@ -1242,6 +1319,7 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 	c.schedulerGuardrails = guardrails
 	c.schedulerSignature = c.schedulerConfigSignature(cfg)
 	c.schedulerMu.Unlock()
+	c.reconfigureAsyncAwaitReconcileWorker(cfg)
 	return nil
 }
 
@@ -1294,11 +1372,12 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 	c.schedulerGuardrails = guardrails
 	c.schedulerSignature = signature
 	c.schedulerMu.Unlock()
+	c.reconfigureAsyncAwaitReconcileWorker(cfg)
 }
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%s|%s|%s|%d",
+		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%d|%d|%.4f|%s|%t|%s|%s|%s|%d",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
@@ -1316,6 +1395,11 @@ func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Scheduler.AsyncAwait.ReportTimeout.Milliseconds(),
 		strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.LateReportPolicy)),
 		cfg.Scheduler.AsyncAwait.TimeoutTerminal,
+		cfg.Scheduler.AsyncAwait.Reconcile.Enabled,
+		cfg.Scheduler.AsyncAwait.Reconcile.Interval.Milliseconds(),
+		cfg.Scheduler.AsyncAwait.Reconcile.BatchSize,
+		cfg.Scheduler.AsyncAwait.Reconcile.JitterRatio,
+		strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy)),
 		cfg.Recovery.Enabled,
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
@@ -1362,6 +1446,13 @@ func (c *Composer) schedulerAsyncAwaitConfig(cfg runtimeconfig.Config) scheduler
 		ReportTimeout:    cfg.Scheduler.AsyncAwait.ReportTimeout,
 		LateReportPolicy: strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.LateReportPolicy)),
 		TimeoutTerminal:  scheduler.TaskState(strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.TimeoutTerminal))),
+		Reconcile: scheduler.AsyncAwaitReconcileConfig{
+			Enabled:        cfg.Scheduler.AsyncAwait.Reconcile.Enabled,
+			Interval:       cfg.Scheduler.AsyncAwait.Reconcile.Interval,
+			BatchSize:      cfg.Scheduler.AsyncAwait.Reconcile.BatchSize,
+			JitterRatio:    cfg.Scheduler.AsyncAwait.Reconcile.JitterRatio,
+			NotFoundPolicy: strings.TrimSpace(strings.ToLower(cfg.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy)),
+		},
 	}
 }
 

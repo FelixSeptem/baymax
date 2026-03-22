@@ -32,6 +32,9 @@ go test ./integration -run '^TestAsyncReportingContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] async-await lifecycle suite"
 go test ./integration -run '^TestAsyncReportingContractAwaitingLifecycle' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] async-await reconcile fallback suite"
+go test ./integration -run '^TestAsyncAwaitReconcileContract' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] delayed dispatch suite"
 go test ./integration -run '^TestDelayedDispatchContract' -count=1
 

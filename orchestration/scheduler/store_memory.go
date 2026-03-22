@@ -68,10 +68,23 @@ func (s *MemoryStore) ExpireAwaitingReports(_ context.Context, now time.Time) ([
 	return s.state.expireAwaitingReports(now), nil
 }
 
-func (s *MemoryStore) MarkAwaitingReport(_ context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+func (s *MemoryStore) MarkAwaitingReport(_ context.Context, taskID, attemptID, remoteTaskID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.markAwaitingReport(taskID, attemptID, now, reportTimeout)
+	return s.state.markAwaitingReport(taskID, attemptID, remoteTaskID, now, reportTimeout)
+}
+
+func (s *MemoryStore) ListAwaitingReport(_ context.Context, now time.Time, limit int) ([]TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.listAwaitingReport(now, limit), nil
+}
+
+func (s *MemoryStore) RecordAsyncReconcileStats(_ context.Context, pollTotal, errorTotal int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.recordAsyncReconcileStats(pollTotal, errorTotal)
+	return nil
 }
 
 func (s *MemoryStore) Requeue(_ context.Context, taskID, _ string, now time.Time) (TaskRecord, error) {

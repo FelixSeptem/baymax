@@ -62,6 +62,7 @@ type Scheduler struct {
 	timeline         types.EventHandler
 	now              func() time.Time
 	seq              atomic.Int64
+	reconcileSeq     atomic.Int64
 }
 
 func New(store QueueStore, opts ...Option) (*Scheduler, error) {
@@ -244,16 +245,24 @@ func (s *Scheduler) ExpireLeases(ctx context.Context) ([]ClaimedTask, error) {
 	return expired, nil
 }
 
-func (s *Scheduler) MarkAwaitingReport(ctx context.Context, taskID, attemptID string) (TaskRecord, error) {
+func (s *Scheduler) MarkAwaitingReport(ctx context.Context, taskID, attemptID string, remoteTaskID ...string) (TaskRecord, error) {
 	now := s.nowTime()
-	record, err := s.store.MarkAwaitingReport(ctx, taskID, attemptID, now, s.asyncAwait.ReportTimeout)
+	remote := ""
+	if len(remoteTaskID) > 0 {
+		remote = strings.TrimSpace(remoteTaskID[0])
+	}
+	record, err := s.store.MarkAwaitingReport(ctx, taskID, attemptID, remote, now, s.asyncAwait.ReportTimeout)
 	if err != nil {
 		return TaskRecord{}, err
 	}
 	attempt, _ := record.attemptByID(strings.TrimSpace(attemptID))
-	s.emitTimelineWithExtras(ctx, record, attempt, types.ActionStatusPending, ReasonAwaitingReport, map[string]any{
+	extras := map[string]any{
 		"report_timeout_ms": s.asyncAwait.ReportTimeout.Milliseconds(),
-	})
+	}
+	if strings.TrimSpace(record.RemoteTaskID) != "" {
+		extras["remote_task_id"] = strings.TrimSpace(record.RemoteTaskID)
+	}
+	s.emitTimelineWithExtras(ctx, record, attempt, types.ActionStatusPending, ReasonAwaitingReport, extras)
 	return record, nil
 }
 

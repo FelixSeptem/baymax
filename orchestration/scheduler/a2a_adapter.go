@@ -27,6 +27,11 @@ type A2AAsyncClient interface {
 	SubmitAsync(ctx context.Context, req a2a.TaskRequest, sink a2a.ReportSink) (a2a.AsyncSubmitAck, error)
 }
 
+type A2AReconcilePollClient interface {
+	Status(ctx context.Context, taskID string) (a2a.TaskRecord, error)
+	Result(ctx context.Context, taskID string) (a2a.TaskRecord, error)
+}
+
 type A2AExecution struct {
 	Commit        TerminalCommit
 	Retryable     bool
@@ -159,12 +164,14 @@ func ExecutionFromAsyncReport(claimed ClaimedTask, report a2a.AsyncReport) (A2AE
 	case a2a.StatusSucceeded:
 		return A2AExecution{
 			Commit: TerminalCommit{
-				TaskID:      claimed.Record.Task.TaskID,
-				AttemptID:   attemptID,
-				Status:      TaskStateSucceeded,
-				Result:      copyMap(report.Result),
-				OutcomeKey:  strings.TrimSpace(report.OutcomeKey),
-				CommittedAt: time.Now(),
+				TaskID:       claimed.Record.Task.TaskID,
+				AttemptID:    attemptID,
+				Status:       TaskStateSucceeded,
+				Source:       AsyncResolutionSourceCallback,
+				RemoteTaskID: strings.TrimSpace(report.TaskID),
+				Result:       copyMap(report.Result),
+				OutcomeKey:   strings.TrimSpace(report.OutcomeKey),
+				CommittedAt:  time.Now(),
 			},
 		}, nil
 	case a2a.StatusFailed, a2a.StatusCanceled:
@@ -185,6 +192,8 @@ func ExecutionFromAsyncReport(claimed ClaimedTask, report a2a.AsyncReport) (A2AE
 				TaskID:       claimed.Record.Task.TaskID,
 				AttemptID:    attemptID,
 				Status:       TaskStateFailed,
+				Source:       AsyncResolutionSourceCallback,
+				RemoteTaskID: strings.TrimSpace(report.TaskID),
 				ErrorMessage: message,
 				ErrorClass:   class,
 				ErrorLayer:   layer,
@@ -196,6 +205,108 @@ func ExecutionFromAsyncReport(claimed ClaimedTask, report a2a.AsyncReport) (A2AE
 	default:
 		err := fmt.Errorf("unsupported async report status %q", report.Status)
 		return failedExecutionFromA2AError(claimed, err), err
+	}
+}
+
+func ClassifyReconcilePoll(
+	ctx context.Context,
+	client A2AReconcilePollClient,
+	remoteTaskID string,
+) (ReconcilePollClassification, a2a.TaskRecord, error) {
+	if client == nil {
+		return ReconcilePollClassificationNonRetryableErr, a2a.TaskRecord{}, errors.New("a2a reconcile poll client is required")
+	}
+	remoteTaskID = strings.TrimSpace(remoteTaskID)
+	if remoteTaskID == "" {
+		return ReconcilePollClassificationNonRetryableErr, a2a.TaskRecord{}, errors.New("remote_task_id is required")
+	}
+	statusRecord, err := client.Status(ctx, remoteTaskID)
+	if err != nil {
+		return classifyReconcilePollError(err), a2a.TaskRecord{}, err
+	}
+	switch statusRecord.Status {
+	case a2a.StatusSucceeded, a2a.StatusFailed, a2a.StatusCanceled:
+		resultRecord, resultErr := client.Result(ctx, remoteTaskID)
+		if resultErr != nil {
+			return classifyReconcilePollError(resultErr), a2a.TaskRecord{}, resultErr
+		}
+		if strings.TrimSpace(resultRecord.TaskID) == "" {
+			resultRecord.TaskID = remoteTaskID
+		}
+		return ReconcilePollClassificationTerminal, resultRecord, nil
+	default:
+		return ReconcilePollClassificationPending, statusRecord, nil
+	}
+}
+
+func classifyReconcilePollError(err error) ReconcilePollClassification {
+	if err == nil {
+		return ReconcilePollClassificationPending
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	if strings.Contains(message, "not found") {
+		return ReconcilePollClassificationNotFound
+	}
+	_, layer, _ := a2a.ClassifyError(err)
+	if layer == a2a.ErrorLayerTransport {
+		return ReconcilePollClassificationRetryableError
+	}
+	return ReconcilePollClassificationNonRetryableErr
+}
+
+func ReconcileTerminalCommitFromRecord(
+	taskID string,
+	attemptID string,
+	remoteTaskID string,
+	record a2a.TaskRecord,
+	committedAt time.Time,
+) (TerminalCommit, error) {
+	taskID = strings.TrimSpace(taskID)
+	attemptID = strings.TrimSpace(attemptID)
+	remoteTaskID = strings.TrimSpace(remoteTaskID)
+	if taskID == "" || attemptID == "" {
+		return TerminalCommit{}, errors.New("task_id and attempt_id are required")
+	}
+	if committedAt.IsZero() {
+		committedAt = time.Now()
+	}
+	switch record.Status {
+	case a2a.StatusSucceeded:
+		return TerminalCommit{
+			TaskID:       taskID,
+			AttemptID:    attemptID,
+			Status:       TaskStateSucceeded,
+			Source:       AsyncResolutionSourceReconcilePoll,
+			RemoteTaskID: remoteTaskID,
+			Result:       copyMap(record.Result),
+			CommittedAt:  committedAt,
+		}, nil
+	case a2a.StatusFailed, a2a.StatusCanceled:
+		class := record.ErrorClass
+		if class == "" {
+			class = types.ErrMCP
+		}
+		layer := strings.TrimSpace(record.A2AErrorLayer)
+		if layer == "" {
+			layer = string(a2a.ErrorLayerProtocol)
+		}
+		message := strings.TrimSpace(record.ErrorMessage)
+		if message == "" {
+			message = fmt.Sprintf("a2a terminal status %q", record.Status)
+		}
+		return TerminalCommit{
+			TaskID:       taskID,
+			AttemptID:    attemptID,
+			Status:       TaskStateFailed,
+			Source:       AsyncResolutionSourceReconcilePoll,
+			RemoteTaskID: remoteTaskID,
+			ErrorMessage: message,
+			ErrorClass:   class,
+			ErrorLayer:   layer,
+			CommittedAt:  committedAt,
+		}, nil
+	default:
+		return TerminalCommit{}, fmt.Errorf("unsupported reconcile terminal status %q", record.Status)
 	}
 }
 

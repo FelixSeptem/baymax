@@ -119,10 +119,10 @@ func (s *FileStore) ExpireAwaitingReports(_ context.Context, now time.Time) ([]C
 	return expired, nil
 }
 
-func (s *FileStore) MarkAwaitingReport(_ context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+func (s *FileStore) MarkAwaitingReport(_ context.Context, taskID, attemptID, remoteTaskID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, err := s.state.markAwaitingReport(taskID, attemptID, now, reportTimeout)
+	record, err := s.state.markAwaitingReport(taskID, attemptID, remoteTaskID, now, reportTimeout)
 	if err != nil {
 		return TaskRecord{}, err
 	}
@@ -130,6 +130,22 @@ func (s *FileStore) MarkAwaitingReport(_ context.Context, taskID, attemptID stri
 		return TaskRecord{}, err
 	}
 	return record, nil
+}
+
+func (s *FileStore) ListAwaitingReport(_ context.Context, now time.Time, limit int) ([]TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.listAwaitingReport(now, limit), nil
+}
+
+func (s *FileStore) RecordAsyncReconcileStats(_ context.Context, pollTotal, errorTotal int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if pollTotal <= 0 && errorTotal <= 0 {
+		return nil
+	}
+	s.state.recordAsyncReconcileStats(pollTotal, errorTotal)
+	return s.persist()
 }
 
 func (s *FileStore) Requeue(_ context.Context, taskID, _ string, now time.Time) (TaskRecord, error) {
@@ -164,9 +180,6 @@ func (s *FileStore) CommitAsyncReportTerminal(_ context.Context, commit Terminal
 	result, err := s.state.commitAsyncReportTerminal(commit)
 	if err != nil {
 		return CommitResult{}, err
-	}
-	if result.Duplicate || result.LateReport {
-		return result, nil
 	}
 	if err := s.persist(); err != nil {
 		return CommitResult{}, err

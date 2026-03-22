@@ -3,3 +3,5 @@
 .golangci-cache
 .tmp
 *.go.[0-9]*
+.tmp-go-cache
+.tmp-golangci-cache

@@ -44,6 +44,13 @@ func defaultAsyncAwaitConfig() AsyncAwaitConfig {
 		ReportTimeout:    15 * time.Minute,
 		LateReportPolicy: AsyncLateReportPolicyDropAndRecord,
 		TimeoutTerminal:  TaskStateFailed,
+		Reconcile: AsyncAwaitReconcileConfig{
+			Enabled:        false,
+			Interval:       5 * time.Second,
+			BatchSize:      64,
+			JitterRatio:    0.2,
+			NotFoundPolicy: AsyncReconcileNotFoundKeepTimeout,
+		},
 	}
 }
 
@@ -63,6 +70,25 @@ func normalizeAsyncAwaitConfig(cfg AsyncAwaitConfig) AsyncAwaitConfig {
 	case TaskStateDeadLetter:
 	default:
 		out.TimeoutTerminal = TaskStateFailed
+	}
+	if out.Reconcile.Interval <= 0 {
+		out.Reconcile.Interval = 5 * time.Second
+	}
+	if out.Reconcile.BatchSize <= 0 {
+		out.Reconcile.BatchSize = 64
+	}
+	if out.Reconcile.JitterRatio < 0 {
+		out.Reconcile.JitterRatio = 0
+	}
+	if out.Reconcile.JitterRatio > 1 {
+		out.Reconcile.JitterRatio = 1
+	}
+	out.Reconcile.NotFoundPolicy = strings.ToLower(strings.TrimSpace(out.Reconcile.NotFoundPolicy))
+	if out.Reconcile.NotFoundPolicy == "" {
+		out.Reconcile.NotFoundPolicy = AsyncReconcileNotFoundKeepTimeout
+	}
+	if out.Reconcile.NotFoundPolicy != AsyncReconcileNotFoundKeepTimeout {
+		out.Reconcile.NotFoundPolicy = AsyncReconcileNotFoundKeepTimeout
 	}
 	return out
 }
@@ -309,9 +335,10 @@ func (s *schedulerState) heartbeat(taskID, attemptID, leaseToken string, now tim
 	return ClaimedTask{Record: cloneTaskRecord(*record), Attempt: current}, nil
 }
 
-func (s *schedulerState) markAwaitingReport(taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
+func (s *schedulerState) markAwaitingReport(taskID, attemptID, remoteTaskID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error) {
 	taskID = strings.TrimSpace(taskID)
 	attemptID = strings.TrimSpace(attemptID)
+	remoteTaskID = strings.TrimSpace(remoteTaskID)
 	if taskID == "" || attemptID == "" {
 		return TaskRecord{}, fmt.Errorf("task_id and attempt_id are required")
 	}
@@ -333,6 +360,9 @@ func (s *schedulerState) markAwaitingReport(taskID, attemptID string, now time.T
 		return TaskRecord{}, ErrAttemptNotFound
 	}
 	if record.State == TaskStateAwaitingReport {
+		if remoteTaskID != "" {
+			record.RemoteTaskID = remoteTaskID
+		}
 		return cloneTaskRecord(*record), nil
 	}
 	if record.State != TaskStateRunning {
@@ -349,6 +379,9 @@ func (s *schedulerState) markAwaitingReport(taskID, attemptID string, now time.T
 	record.State = TaskStateAwaitingReport
 	record.AwaitingReportSince = now
 	record.ReportTimeoutAt = now.Add(reportTimeout)
+	record.RemoteTaskID = remoteTaskID
+	record.ResolutionSource = ""
+	record.TerminalConflict = false
 	record.NextEligibleAt = time.Time{}
 	record.UpdatedAt = now
 	s.Stats.AsyncAwaitTotal++
@@ -434,6 +467,7 @@ func (s *schedulerState) expireAwaitingReports(now time.Time) []ClaimedTask {
 		record.State = terminalState
 		record.AwaitingReportSince = time.Time{}
 		record.ReportTimeoutAt = time.Time{}
+		record.ResolutionSource = AsyncResolutionSourceTimeout
 		record.NextEligibleAt = time.Time{}
 		record.Result = map[string]any{}
 		record.ErrorMessage = "async report timeout exceeded"
@@ -454,6 +488,8 @@ func (s *schedulerState) expireAwaitingReports(now time.Time) []ClaimedTask {
 				TaskID:       record.Task.TaskID,
 				AttemptID:    current.AttemptID,
 				Status:       TaskStateFailed,
+				Source:       AsyncResolutionSourceTimeout,
+				RemoteTaskID: record.RemoteTaskID,
 				ErrorMessage: record.ErrorMessage,
 				ErrorClass:   record.ErrorClass,
 				ErrorLayer:   record.ErrorLayer,
@@ -712,6 +748,9 @@ func (s *schedulerState) commitAsyncReportTerminal(commit TerminalCommit) (Commi
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if normalized.Source == "" {
+		normalized.Source = AsyncResolutionSourceCallback
+	}
 	record := s.Tasks[normalized.TaskID]
 	if record == nil {
 		return CommitResult{}, ErrTaskNotFound
@@ -719,10 +758,16 @@ func (s *schedulerState) commitAsyncReportTerminal(commit TerminalCommit) (Commi
 	key := terminalCommitKey(normalized.TaskID, normalized.AttemptID)
 	if existing, ok := s.TerminalCommits[key]; ok {
 		s.Stats.DuplicateTerminalCommitTotal++
+		conflict := terminalCommitConflict(existing, normalized)
+		if conflict && !record.TerminalConflict {
+			record.TerminalConflict = true
+			s.Stats.AsyncTerminalConflictTotal++
+		}
 		return CommitResult{
 			Record:     cloneTaskRecord(*record),
 			Duplicate:  true,
 			LateReport: isTimeoutTerminalCommit(existing),
+			Conflict:   conflict,
 		}, nil
 	}
 	if record.State == TaskStateRunning {
@@ -771,6 +816,12 @@ func (s *schedulerState) applyTerminalCommit(record *TaskRecord, normalized Term
 	record.ReportTimeoutAt = time.Time{}
 	record.NextEligibleAt = time.Time{}
 	record.DeadLetterCode = ""
+	if normalized.Source != "" {
+		record.ResolutionSource = normalized.Source
+	}
+	if normalized.RemoteTaskID != "" {
+		record.RemoteTaskID = normalized.RemoteTaskID
+	}
 	record.UpdatedAt = normalized.CommittedAt
 	record.ErrorMessage = normalized.ErrorMessage
 	record.ErrorClass = normalized.ErrorClass
@@ -781,6 +832,9 @@ func (s *schedulerState) applyTerminalCommit(record *TaskRecord, normalized Term
 		record.Result = map[string]any{}
 	}
 	s.TerminalCommits[key] = normalized
+	if normalized.Source == AsyncResolutionSourceReconcilePoll {
+		s.Stats.AsyncReconcileTerminalByPollTotal++
+	}
 	if normalized.Status == TaskStateSucceeded {
 		s.Stats.CompleteTotal++
 	} else {
@@ -792,6 +846,25 @@ func (s *schedulerState) applyTerminalCommit(record *TaskRecord, normalized Term
 func isTimeoutTerminalCommit(commit TerminalCommit) bool {
 	return strings.EqualFold(strings.TrimSpace(commit.ErrorLayer), "scheduler.async_await") &&
 		strings.EqualFold(strings.TrimSpace(commit.ErrorMessage), "async report timeout exceeded")
+}
+
+func terminalCommitConflict(existing, incoming TerminalCommit) bool {
+	if existing.Status != incoming.Status {
+		return true
+	}
+	if strings.TrimSpace(existing.OutcomeKey) != strings.TrimSpace(incoming.OutcomeKey) {
+		return true
+	}
+	if strings.TrimSpace(existing.ErrorMessage) != strings.TrimSpace(incoming.ErrorMessage) {
+		return true
+	}
+	if strings.TrimSpace(existing.ErrorLayer) != strings.TrimSpace(incoming.ErrorLayer) {
+		return true
+	}
+	if existing.ErrorClass != incoming.ErrorClass {
+		return true
+	}
+	return false
 }
 
 func (s *schedulerState) get(taskID string) (TaskRecord, bool) {
@@ -813,6 +886,47 @@ func cloneTaskRecord(in TaskRecord) TaskRecord {
 
 func terminalCommitKey(taskID, attemptID string) string {
 	return strings.TrimSpace(taskID) + "|" + strings.TrimSpace(attemptID)
+}
+
+func (s *schedulerState) listAwaitingReport(now time.Time, limit int) []TaskRecord {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if limit <= 0 {
+		limit = 64
+	}
+	taskIDs := make([]string, 0, len(s.Tasks))
+	for taskID, record := range s.Tasks {
+		if record == nil || record.State != TaskStateAwaitingReport {
+			continue
+		}
+		if record.ReportTimeoutAt.IsZero() || record.ReportTimeoutAt.Before(now) {
+			continue
+		}
+		taskIDs = append(taskIDs, taskID)
+	}
+	sort.Strings(taskIDs)
+	out := make([]TaskRecord, 0, min(limit, len(taskIDs)))
+	for _, taskID := range taskIDs {
+		if len(out) >= limit {
+			break
+		}
+		record := s.Tasks[taskID]
+		if record == nil || record.State != TaskStateAwaitingReport {
+			continue
+		}
+		out = append(out, cloneTaskRecord(*record))
+	}
+	return out
+}
+
+func (s *schedulerState) recordAsyncReconcileStats(pollTotal, errorTotal int) {
+	if pollTotal > 0 {
+		s.Stats.AsyncReconcilePollTotal += pollTotal
+	}
+	if errorTotal > 0 {
+		s.Stats.AsyncReconcileErrorTotal += errorTotal
+	}
 }
 
 func (s *schedulerState) snapshot() StoreSnapshot {
@@ -844,6 +958,8 @@ func (s *schedulerState) snapshot() StoreSnapshot {
 		normalized := commit
 		normalized.TaskID = strings.TrimSpace(normalized.TaskID)
 		normalized.AttemptID = strings.TrimSpace(normalized.AttemptID)
+		normalized.Source = strings.ToLower(strings.TrimSpace(normalized.Source))
+		normalized.RemoteTaskID = strings.TrimSpace(normalized.RemoteTaskID)
 		normalized.ErrorMessage = strings.TrimSpace(normalized.ErrorMessage)
 		normalized.ErrorLayer = strings.TrimSpace(normalized.ErrorLayer)
 		normalized.OutcomeKey = strings.TrimSpace(normalized.OutcomeKey)
@@ -951,12 +1067,18 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		record.ErrorMessage = strings.TrimSpace(record.ErrorMessage)
 		record.ErrorLayer = strings.TrimSpace(record.ErrorLayer)
 		record.DeadLetterCode = strings.TrimSpace(record.DeadLetterCode)
+		record.RemoteTaskID = strings.TrimSpace(record.RemoteTaskID)
+		record.ResolutionSource = strings.ToLower(strings.TrimSpace(record.ResolutionSource))
 		if record.State != TaskStateQueued {
 			record.NextEligibleAt = time.Time{}
 		}
 		if record.State != TaskStateAwaitingReport {
 			record.AwaitingReportSince = time.Time{}
 			record.ReportTimeoutAt = time.Time{}
+		}
+		if record.State != TaskStateSucceeded && record.State != TaskStateFailed && record.State != TaskStateDeadLetter {
+			record.ResolutionSource = ""
+			record.TerminalConflict = false
 		}
 		record.Result = copyMap(record.Result)
 		tasks[taskID] = &record
@@ -1003,6 +1125,8 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		normalized := commit
 		normalized.TaskID = taskID
 		normalized.AttemptID = attemptID
+		normalized.Source = strings.ToLower(strings.TrimSpace(normalized.Source))
+		normalized.RemoteTaskID = strings.TrimSpace(normalized.RemoteTaskID)
 		normalized.ErrorMessage = strings.TrimSpace(normalized.ErrorMessage)
 		normalized.ErrorLayer = strings.TrimSpace(normalized.ErrorLayer)
 		normalized.OutcomeKey = strings.TrimSpace(normalized.OutcomeKey)

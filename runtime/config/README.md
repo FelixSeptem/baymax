@@ -25,6 +25,7 @@
 
 关键默认值（多代理相关）：
 - `composer.collab.enabled=false`
+- `composer.collab.retry.enabled=false`（当前保持 primitive retry 默认关闭）
 - `workflow.graph_composability.enabled=false`
 - `a2a.async_reporting.enabled=false`
 - `mailbox.backend=memory`
@@ -32,6 +33,14 @@
 - `mailbox.ttl=15m`
 - `scheduler.qos.mode=fifo`
 - `scheduler.dlq.enabled=false`
+- `scheduler.async_await.report_timeout=15m`
+- `scheduler.async_await.late_report_policy=drop_and_record`
+- `scheduler.async_await.timeout_terminal=failed`
+- `scheduler.async_await.reconcile.enabled=false`
+- `scheduler.async_await.reconcile.interval=5s`
+- `scheduler.async_await.reconcile.batch_size=64`
+- `scheduler.async_await.reconcile.jitter_ratio=0.2`
+- `scheduler.async_await.reconcile.not_found_policy=keep_until_timeout`
 - `recovery.enabled=false`
 - `recovery.conflict_policy=fail_fast`
 

@@ -109,6 +109,7 @@ const (
 	AsyncLateReportPolicyDropAndRecord = "drop_and_record"
 	AsyncTimeoutTerminalFailed         = "failed"
 	AsyncTimeoutTerminalDeadLetter     = "dead_letter"
+	AsyncReconcileNotFoundKeepTimeout  = "keep_until_timeout"
 	MailboxBackendMemory               = "memory"
 	MailboxBackendFile                 = "file"
 )
@@ -398,9 +399,18 @@ type SchedulerDLQConfig struct {
 }
 
 type SchedulerAsyncAwaitConfig struct {
-	ReportTimeout    time.Duration `json:"report_timeout"`
-	LateReportPolicy string        `json:"late_report_policy"`
-	TimeoutTerminal  string        `json:"timeout_terminal"`
+	ReportTimeout    time.Duration                      `json:"report_timeout"`
+	LateReportPolicy string                             `json:"late_report_policy"`
+	TimeoutTerminal  string                             `json:"timeout_terminal"`
+	Reconcile        SchedulerAsyncAwaitReconcileConfig `json:"reconcile"`
+}
+
+type SchedulerAsyncAwaitReconcileConfig struct {
+	Enabled        bool          `json:"enabled"`
+	Interval       time.Duration `json:"interval"`
+	BatchSize      int           `json:"batch_size"`
+	JitterRatio    float64       `json:"jitter_ratio"`
+	NotFoundPolicy string        `json:"not_found_policy"`
 }
 
 type SchedulerRetryConfig struct {
@@ -1003,6 +1013,13 @@ func DefaultConfig() Config {
 				ReportTimeout:    15 * time.Minute,
 				LateReportPolicy: AsyncLateReportPolicyDropAndRecord,
 				TimeoutTerminal:  AsyncTimeoutTerminalFailed,
+				Reconcile: SchedulerAsyncAwaitReconcileConfig{
+					Enabled:        false,
+					Interval:       5 * time.Second,
+					BatchSize:      64,
+					JitterRatio:    0.2,
+					NotFoundPolicy: AsyncReconcileNotFoundKeepTimeout,
+				},
 			},
 			DLQ: SchedulerDLQConfig{
 				Enabled: false,
@@ -1762,6 +1779,24 @@ func Validate(cfg Config) error {
 			AsyncTimeoutTerminalFailed,
 			AsyncTimeoutTerminalDeadLetter,
 			cfg.Scheduler.AsyncAwait.TimeoutTerminal,
+		)
+	}
+	if cfg.Scheduler.AsyncAwait.Reconcile.Interval <= 0 {
+		return errors.New("scheduler.async_await.reconcile.interval must be > 0")
+	}
+	if cfg.Scheduler.AsyncAwait.Reconcile.BatchSize <= 0 {
+		return errors.New("scheduler.async_await.reconcile.batch_size must be > 0")
+	}
+	if cfg.Scheduler.AsyncAwait.Reconcile.JitterRatio < 0 || cfg.Scheduler.AsyncAwait.Reconcile.JitterRatio > 1 {
+		return errors.New("scheduler.async_await.reconcile.jitter_ratio must be in [0,1]")
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy)); policy {
+	case AsyncReconcileNotFoundKeepTimeout:
+	default:
+		return fmt.Errorf(
+			"scheduler.async_await.reconcile.not_found_policy must be one of [%s], got %q",
+			AsyncReconcileNotFoundKeepTimeout,
+			cfg.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy,
 		)
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Recovery.Backend)); backend {
@@ -2809,6 +2844,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.async_await.report_timeout", base.Scheduler.AsyncAwait.ReportTimeout)
 	v.SetDefault("scheduler.async_await.late_report_policy", base.Scheduler.AsyncAwait.LateReportPolicy)
 	v.SetDefault("scheduler.async_await.timeout_terminal", base.Scheduler.AsyncAwait.TimeoutTerminal)
+	v.SetDefault("scheduler.async_await.reconcile.enabled", base.Scheduler.AsyncAwait.Reconcile.Enabled)
+	v.SetDefault("scheduler.async_await.reconcile.interval", base.Scheduler.AsyncAwait.Reconcile.Interval)
+	v.SetDefault("scheduler.async_await.reconcile.batch_size", base.Scheduler.AsyncAwait.Reconcile.BatchSize)
+	v.SetDefault("scheduler.async_await.reconcile.jitter_ratio", base.Scheduler.AsyncAwait.Reconcile.JitterRatio)
+	v.SetDefault("scheduler.async_await.reconcile.not_found_policy", base.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy)
 	v.SetDefault("scheduler.dlq.enabled", base.Scheduler.DLQ.Enabled)
 	v.SetDefault("scheduler.retry.backoff.enabled", base.Scheduler.Retry.Backoff.Enabled)
 	v.SetDefault("scheduler.retry.backoff.initial", base.Scheduler.Retry.Backoff.Initial)
@@ -3074,6 +3114,11 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Scheduler.AsyncAwait.ReportTimeout = v.GetDuration("scheduler.async_await.report_timeout")
 	cfg.Scheduler.AsyncAwait.LateReportPolicy = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.late_report_policy")))
 	cfg.Scheduler.AsyncAwait.TimeoutTerminal = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.timeout_terminal")))
+	cfg.Scheduler.AsyncAwait.Reconcile.Enabled = v.GetBool("scheduler.async_await.reconcile.enabled")
+	cfg.Scheduler.AsyncAwait.Reconcile.Interval = v.GetDuration("scheduler.async_await.reconcile.interval")
+	cfg.Scheduler.AsyncAwait.Reconcile.BatchSize = v.GetInt("scheduler.async_await.reconcile.batch_size")
+	cfg.Scheduler.AsyncAwait.Reconcile.JitterRatio = v.GetFloat64("scheduler.async_await.reconcile.jitter_ratio")
+	cfg.Scheduler.AsyncAwait.Reconcile.NotFoundPolicy = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.reconcile.not_found_policy")))
 	cfg.Scheduler.DLQ.Enabled = v.GetBool("scheduler.dlq.enabled")
 	cfg.Scheduler.Retry.Backoff.Enabled = v.GetBool("scheduler.retry.backoff.enabled")
 	cfg.Scheduler.Retry.Backoff.Initial = v.GetDuration("scheduler.retry.backoff.initial")

@@ -22,6 +22,7 @@ const (
 	ReasonAwaitingReport  = "scheduler.awaiting_report"
 	ReasonAsyncTimeout    = "scheduler.async_timeout"
 	ReasonAsyncLateReport = "scheduler.async_late_report"
+	ReasonAsyncReconcile  = "scheduler.async_reconcile"
 	ReasonRequeue         = "scheduler.requeue"
 	ReasonQoSClaim        = "scheduler.qos_claim"
 	ReasonFairnessYield   = "scheduler.fairness_yield"
@@ -43,6 +44,7 @@ var canonicalReasonSet = map[string]struct{}{
 	ReasonAwaitingReport:  {},
 	ReasonAsyncTimeout:    {},
 	ReasonAsyncLateReport: {},
+	ReasonAsyncReconcile:  {},
 	ReasonRequeue:         {},
 	ReasonQoSClaim:        {},
 	ReasonFairnessYield:   {},
@@ -158,6 +160,9 @@ type TaskRecord struct {
 	CurrentAttempt      string           `json:"current_attempt_id,omitempty"`
 	AwaitingReportSince time.Time        `json:"awaiting_report_since,omitempty"`
 	ReportTimeoutAt     time.Time        `json:"report_timeout_at,omitempty"`
+	RemoteTaskID        string           `json:"remote_task_id,omitempty"`
+	ResolutionSource    string           `json:"resolution_source,omitempty"`
+	TerminalConflict    bool             `json:"terminal_conflict_recorded,omitempty"`
 	NextEligibleAt      time.Time        `json:"next_eligible_at,omitempty"`
 	DeadLetterCode      string           `json:"dead_letter_code,omitempty"`
 	Result              map[string]any   `json:"result,omitempty"`
@@ -196,6 +201,8 @@ type TerminalCommit struct {
 	TaskID       string           `json:"task_id"`
 	AttemptID    string           `json:"attempt_id"`
 	Status       TaskState        `json:"status"`
+	Source       string           `json:"source,omitempty"`
+	RemoteTaskID string           `json:"remote_task_id,omitempty"`
 	Result       map[string]any   `json:"result,omitempty"`
 	ErrorMessage string           `json:"error_message,omitempty"`
 	ErrorClass   types.ErrorClass `json:"error_class,omitempty"`
@@ -208,6 +215,8 @@ func normalizeCommit(in TerminalCommit) (TerminalCommit, error) {
 	out := in
 	out.TaskID = strings.TrimSpace(out.TaskID)
 	out.AttemptID = strings.TrimSpace(out.AttemptID)
+	out.Source = strings.ToLower(strings.TrimSpace(out.Source))
+	out.RemoteTaskID = strings.TrimSpace(out.RemoteTaskID)
 	out.ErrorMessage = strings.TrimSpace(out.ErrorMessage)
 	out.ErrorLayer = strings.TrimSpace(out.ErrorLayer)
 	out.OutcomeKey = strings.TrimSpace(out.OutcomeKey)
@@ -259,6 +268,7 @@ type CommitResult struct {
 	Record     TaskRecord `json:"record"`
 	Duplicate  bool       `json:"duplicate"`
 	LateReport bool       `json:"late_report,omitempty"`
+	Conflict   bool       `json:"conflict,omitempty"`
 }
 
 type Stats struct {
@@ -282,16 +292,55 @@ type Stats struct {
 	DuplicateTerminalCommitTotal         int    `json:"duplicate_terminal_commit_total"`
 	AsyncAwaitTotal                      int    `json:"async_await_total,omitempty"`
 	AsyncTimeoutTotal                    int    `json:"async_timeout_total,omitempty"`
+	AsyncReconcilePollTotal              int    `json:"async_reconcile_poll_total,omitempty"`
+	AsyncReconcileTerminalByPollTotal    int    `json:"async_reconcile_terminal_by_poll_total,omitempty"`
+	AsyncReconcileErrorTotal             int    `json:"async_reconcile_error_total,omitempty"`
+	AsyncTerminalConflictTotal           int    `json:"async_terminal_conflict_total,omitempty"`
 }
 
 const (
 	AsyncLateReportPolicyDropAndRecord = "drop_and_record"
+	AsyncResolutionSourceCallback      = "callback"
+	AsyncResolutionSourceReconcilePoll = "reconcile_poll"
+	AsyncResolutionSourceTimeout       = "timeout"
+	AsyncReconcileNotFoundKeepTimeout  = "keep_until_timeout"
 )
 
+type AsyncAwaitReconcileConfig struct {
+	Enabled        bool          `json:"enabled"`
+	Interval       time.Duration `json:"interval"`
+	BatchSize      int           `json:"batch_size"`
+	JitterRatio    float64       `json:"jitter_ratio"`
+	NotFoundPolicy string        `json:"not_found_policy,omitempty"`
+}
+
 type AsyncAwaitConfig struct {
-	ReportTimeout    time.Duration `json:"report_timeout"`
-	LateReportPolicy string        `json:"late_report_policy,omitempty"`
-	TimeoutTerminal  TaskState     `json:"timeout_terminal,omitempty"`
+	ReportTimeout    time.Duration             `json:"report_timeout"`
+	LateReportPolicy string                    `json:"late_report_policy,omitempty"`
+	TimeoutTerminal  TaskState                 `json:"timeout_terminal,omitempty"`
+	Reconcile        AsyncAwaitReconcileConfig `json:"reconcile"`
+}
+
+type ReconcilePollClassification string
+
+const (
+	ReconcilePollClassificationPending         ReconcilePollClassification = "pending"
+	ReconcilePollClassificationTerminal        ReconcilePollClassification = "terminal"
+	ReconcilePollClassificationNotFound        ReconcilePollClassification = "not_found"
+	ReconcilePollClassificationRetryableError  ReconcilePollClassification = "retryable_error"
+	ReconcilePollClassificationNonRetryableErr ReconcilePollClassification = "non_retryable_error"
+)
+
+type ReconcilePollResult struct {
+	Classification ReconcilePollClassification `json:"classification"`
+	Commit         TerminalCommit              `json:"commit,omitempty"`
+}
+
+type ReconcileCycleStats struct {
+	PollTotal          int `json:"poll_total,omitempty"`
+	TerminalByPoll     int `json:"terminal_by_poll,omitempty"`
+	ErrorTotal         int `json:"error_total,omitempty"`
+	ConflictTotalDelta int `json:"conflict_total_delta,omitempty"`
 }
 
 const (
@@ -315,7 +364,9 @@ type QueueStore interface {
 	Heartbeat(ctx context.Context, taskID, attemptID, leaseToken string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, error)
 	ExpireLeases(ctx context.Context, now time.Time) ([]ClaimedTask, error)
 	ExpireAwaitingReports(ctx context.Context, now time.Time) ([]ClaimedTask, error)
-	MarkAwaitingReport(ctx context.Context, taskID, attemptID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error)
+	MarkAwaitingReport(ctx context.Context, taskID, attemptID, remoteTaskID string, now time.Time, reportTimeout time.Duration) (TaskRecord, error)
+	ListAwaitingReport(ctx context.Context, now time.Time, limit int) ([]TaskRecord, error)
+	RecordAsyncReconcileStats(ctx context.Context, pollTotal, errorTotal int) error
 	Requeue(ctx context.Context, taskID, reason string, now time.Time) (TaskRecord, error)
 	CommitTerminal(ctx context.Context, commit TerminalCommit) (CommitResult, error)
 	CommitAsyncReportTerminal(ctx context.Context, commit TerminalCommit) (CommitResult, error)

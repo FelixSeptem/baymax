@@ -36,6 +36,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] canonical mailbox entrypoints" -C
     pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suites" -Command {
+    pwsh -File scripts/check-multi-agent-shared-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {
     go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }

@@ -14,9 +14,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-23）：
-- 已归档并稳定：A4-A37。
-- A38（Harden Mailbox Worker Lease Reclaim And Panic Recovery Contract）进行中。
+- 已归档并稳定：A4-A38。
 - A39（Introduce Task Board Control And Manual Recovery Contract）进行中。
+- A40（Introduce Runtime Readiness Preflight And Degradation Contract）进行中。
+- A41（Introduce Runtime Operation Profiles And Timeout Resolution Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,10 +226,12 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固进行中。
-- A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board 控制面与手工恢复契约提案进行中。
+- A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board control（`cancel|retry_terminal`）与 `operation_id` 幂等恢复契约进行中，补齐 `scheduler.manual_cancel|scheduler.manual_retry` reason taxonomy 以及 manual-control diagnostics 字段。
+- A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约进行中。
+- A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约进行中。
 
 最近已归档能力：
+- A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固已归档。
 - A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 strict-native fail-fast parity 与状态口径收敛已归档（`govulncheck warn` 保留为唯一治理例外）。
 - A36 `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`：mailbox lifecycle worker 与可观测性契约已归档。
 - A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理已归档。

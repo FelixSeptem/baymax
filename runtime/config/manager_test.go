@@ -1608,6 +1608,66 @@ reload:
 	}
 }
 
+func TestManagerSchedulerTaskBoardControlInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  task_board:
+    control:
+      enabled: true
+      max_manual_retry_per_task: 4
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Scheduler.TaskBoard.Control.MaxManualRetryPerTask
+	if before != 4 {
+		t.Fatalf("before scheduler.task_board.control.max_manual_retry_per_task = %d, want 4", before)
+	}
+
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+  task_board:
+    control:
+      enabled: true
+      max_manual_retry_per_task: 0
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Scheduler.TaskBoard.Control.MaxManualRetryPerTask
+	if after != before {
+		t.Fatalf(
+			"invalid scheduler task_board control reload should rollback, max_manual_retry_per_task = %d, want %d",
+			after,
+			before,
+		)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRecoveryInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

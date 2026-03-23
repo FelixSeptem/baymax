@@ -26,6 +26,12 @@ if ! bash scripts/check-canonical-mailbox-entrypoints.sh; then
   exit 1
 fi
 
+echo "[quality-gate] multi-agent shared contract suites"
+if ! bash scripts/check-multi-agent-shared-contract.sh; then
+  echo "[quality-gate][multi-agent-shared-contract] shared contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] mailbox runtime wiring regression"
 if ! go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1; then
   echo "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"

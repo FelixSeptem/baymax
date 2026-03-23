@@ -5,6 +5,7 @@
 *.go.[0-9]*
 .tmp-go-cache
 .tmp-golangci-cache
+.tmp-gocache
 
 # A23 scaffold offline temp outputs (generated during local tests)
 examples/adapters/_a23-offline-work/a23-offline-*/

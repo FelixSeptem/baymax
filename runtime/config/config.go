@@ -401,9 +401,19 @@ type SchedulerConfig struct {
 	QueueLimit        int                       `json:"queue_limit"`
 	RetryMaxAttempts  int                       `json:"retry_max_attempts"`
 	QoS               SchedulerQoSConfig        `json:"qos"`
+	TaskBoard         SchedulerTaskBoardConfig  `json:"task_board"`
 	AsyncAwait        SchedulerAsyncAwaitConfig `json:"async_await"`
 	DLQ               SchedulerDLQConfig        `json:"dlq"`
 	Retry             SchedulerRetryConfig      `json:"retry"`
+}
+
+type SchedulerTaskBoardConfig struct {
+	Control SchedulerTaskBoardControlConfig `json:"control"`
+}
+
+type SchedulerTaskBoardControlConfig struct {
+	Enabled               bool `json:"enabled"`
+	MaxManualRetryPerTask int  `json:"max_manual_retry_per_task"`
 }
 
 type SchedulerQoSConfig struct {
@@ -1043,6 +1053,12 @@ func DefaultConfig() Config {
 				Mode: SchedulerQoSModeFIFO,
 				Fairness: SchedulerFairnessConfig{
 					MaxConsecutiveClaimsPerPriority: 3,
+				},
+			},
+			TaskBoard: SchedulerTaskBoardConfig{
+				Control: SchedulerTaskBoardControlConfig{
+					Enabled:               false,
+					MaxManualRetryPerTask: 3,
 				},
 			},
 			AsyncAwait: SchedulerAsyncAwaitConfig{
@@ -1816,6 +1832,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Scheduler.RetryMaxAttempts <= 0 {
 		return errors.New("scheduler.retry_max_attempts must be > 0")
+	}
+	if cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask <= 0 {
+		return errors.New("scheduler.task_board.control.max_manual_retry_per_task must be > 0")
 	}
 	switch mode := strings.ToLower(strings.TrimSpace(cfg.Scheduler.QoS.Mode)); mode {
 	case SchedulerQoSModeFIFO, SchedulerQoSModePrio:
@@ -2942,6 +2961,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.retry_max_attempts", base.Scheduler.RetryMaxAttempts)
 	v.SetDefault("scheduler.qos.mode", base.Scheduler.QoS.Mode)
 	v.SetDefault("scheduler.qos.fairness.max_consecutive_claims_per_priority", base.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority)
+	v.SetDefault("scheduler.task_board.control.enabled", base.Scheduler.TaskBoard.Control.Enabled)
+	v.SetDefault("scheduler.task_board.control.max_manual_retry_per_task", base.Scheduler.TaskBoard.Control.MaxManualRetryPerTask)
 	v.SetDefault("scheduler.async_await.report_timeout", base.Scheduler.AsyncAwait.ReportTimeout)
 	v.SetDefault("scheduler.async_await.late_report_policy", base.Scheduler.AsyncAwait.LateReportPolicy)
 	v.SetDefault("scheduler.async_await.timeout_terminal", base.Scheduler.AsyncAwait.TimeoutTerminal)
@@ -3225,6 +3246,8 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Scheduler.RetryMaxAttempts = v.GetInt("scheduler.retry_max_attempts")
 	cfg.Scheduler.QoS.Mode = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.qos.mode")))
 	cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority = v.GetInt("scheduler.qos.fairness.max_consecutive_claims_per_priority")
+	cfg.Scheduler.TaskBoard.Control.Enabled = v.GetBool("scheduler.task_board.control.enabled")
+	cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask = v.GetInt("scheduler.task_board.control.max_manual_retry_per_task")
 	cfg.Scheduler.AsyncAwait.ReportTimeout = v.GetDuration("scheduler.async_await.report_timeout")
 	cfg.Scheduler.AsyncAwait.LateReportPolicy = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.late_report_policy")))
 	cfg.Scheduler.AsyncAwait.TimeoutTerminal = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.async_await.timeout_terminal")))

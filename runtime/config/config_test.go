@@ -2299,6 +2299,15 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Scheduler.AsyncAwait.TimeoutTerminal != AsyncTimeoutTerminalFailed {
 		t.Fatalf("scheduler.async_await.timeout_terminal = %q, want %q", cfg.Scheduler.AsyncAwait.TimeoutTerminal, AsyncTimeoutTerminalFailed)
 	}
+	if cfg.Scheduler.TaskBoard.Control.Enabled {
+		t.Fatal("scheduler.task_board.control.enabled = true, want false")
+	}
+	if cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask != 3 {
+		t.Fatalf(
+			"scheduler.task_board.control.max_manual_retry_per_task = %d, want 3",
+			cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask,
+		)
+	}
 	if cfg.Scheduler.DLQ.Enabled {
 		t.Fatal("scheduler.dlq.enabled = true, want false")
 	}
@@ -2348,6 +2357,8 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_REPORT_TIMEOUT", "25m")
 	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_LATE_REPORT_POLICY", AsyncLateReportPolicyDropAndRecord)
 	t.Setenv("BAYMAX_SCHEDULER_ASYNC_AWAIT_TIMEOUT_TERMINAL", AsyncTimeoutTerminalDeadLetter)
+	t.Setenv("BAYMAX_SCHEDULER_TASK_BOARD_CONTROL_ENABLED", "true")
+	t.Setenv("BAYMAX_SCHEDULER_TASK_BOARD_CONTROL_MAX_MANUAL_RETRY_PER_TASK", "6")
 	t.Setenv("BAYMAX_SCHEDULER_DLQ_ENABLED", "true")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED", "true")
 	t.Setenv("BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL", "80ms")
@@ -2384,6 +2395,10 @@ scheduler:
     report_timeout: 15m
     late_report_policy: drop_and_record
     timeout_terminal: failed
+  task_board:
+    control:
+      enabled: false
+      max_manual_retry_per_task: 2
   dlq:
     enabled: false
   retry:
@@ -2434,6 +2449,9 @@ subagent:
 		cfg.Scheduler.AsyncAwait.LateReportPolicy != AsyncLateReportPolicyDropAndRecord ||
 		cfg.Scheduler.AsyncAwait.TimeoutTerminal != AsyncTimeoutTerminalDeadLetter {
 		t.Fatalf("scheduler async_await override mismatch: %#v", cfg.Scheduler.AsyncAwait)
+	}
+	if !cfg.Scheduler.TaskBoard.Control.Enabled || cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask != 6 {
+		t.Fatalf("scheduler task_board control override mismatch: %#v", cfg.Scheduler.TaskBoard.Control)
 	}
 	if !cfg.Scheduler.DLQ.Enabled {
 		t.Fatalf("scheduler dlq override mismatch: %#v", cfg.Scheduler.DLQ)
@@ -2547,6 +2565,12 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Scheduler.AsyncAwait.TimeoutTerminal = "timeout"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for scheduler.async_await.timeout_terminal")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.task_board.control.max_manual_retry_per_task")
 	}
 
 	cfg = DefaultConfig()

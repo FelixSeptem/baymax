@@ -16,10 +16,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-23：
-- 已归档并稳定：A4-A37（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口）。
+- 已归档并稳定：A4-A38（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口）。
 - 进行中：
-  - `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`
   - `introduce-task-board-control-and-manual-recovery-contract-a39`
+  - `introduce-runtime-readiness-preflight-and-degradation-contract-a40`
+  - `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -119,27 +120,27 @@ A36 依赖关系：
 - 不引入外部 MQ、平台化控制面或托管任务面板。
 - 不改变 A32 async-await 终态仲裁语义。
 
-### P1：A38 worker lease reclaim + panic recover（进行中）
+### P1：A39 task board control + manual recovery（进行中）
 
-A38 依赖关系：
-- A36 已提供 mailbox lifecycle worker 基线（consume->handler->ack|nack|requeue）；
-- A37 已完成 Windows 门禁 strict fail-fast parity，A38 在该基线上补齐恢复语义。
+A39 依赖关系：
+- A29 已交付 Task Board query 只读契约；
+- A39 在保持 query 只读语义不变的前提下，补齐库级 control 路径与手工恢复契约。
 
-完成条件（A38）：
-- mailbox worker 增加 lease/reclaim/recover 契约：
-  - `inflight_timeout=30s`
-  - `heartbeat_interval=5s`
-  - `reclaim_on_consume=true`
-  - `panic_policy=follow_handler_error_policy`
-- stale `in_flight` 在 consume 路径支持 deterministic reclaim，canonical reason 使用 `lease_expired`。
-- handler panic recover 路径按既有 handler-error policy 收敛（`requeue|nack`），并保留 `panic_recovered` 可观测标记。
-- `runtime/config` 新增 `mailbox.worker.{inflight_timeout,heartbeat_interval,reclaim_on_consume,panic_policy}` 并纳入启动/热更新 fail-fast + 原子回滚。
-- mailbox diagnostics 增加 reclaim/recover additive 字段（`reclaimed`、`panic_recovered`），并保持 query/aggregate 兼容。
-- shared multi-agent gate 纳入 A38 recover/reclaim 套件并保持阻断。
+完成条件（A39）：
+- 新增 scheduler 控制入口，支持动作：
+  - `cancel`：仅允许 `queued|awaiting_report`，`running` fail-fast（不做强杀）。
+  - `retry_terminal`：仅允许 `failed|dead_letter -> queued`。
+- 引入 `operation_id` 幂等键：重复提交 dedup，不重复膨胀 counters。
+- 扩展 canonical reason taxonomy：
+  - `scheduler.manual_cancel`
+  - `scheduler.manual_retry`
+- `runtime/config` 增加 `scheduler.task_board.control.enabled=false` 与 `scheduler.task_board.control.max_manual_retry_per_task=3`，并纳入启动/热更新 fail-fast + 原子回滚。
+- `runtime/diagnostics` 增加 manual-control additive 字段（total/success/rejected/idempotent_dedup + action/reason breakdown）。
+- shared multi-agent gate 与 quality gate 纳入 task-board-control contract suites（memory/file parity、Run/Stream 等价、replay idempotency）。
 
-当前阶段非目标（A38 不做）：
-- 不引入独立后台 reclaim 控制线程或平台化任务控制面。
-- 不改变 A30/A34 mailbox canonical 调用面与 A32 async-await 仲裁语义。
+当前阶段非目标（A39 不做）：
+- 不引入平台化任务控制面（RBAC/UI/多租户运维）。
+- 不改变既有 enqueue/claim/heartbeat/requeue/commit 与 query 只读路径语义。
 
 ### P2：0.x 质量与治理持续收敛
 

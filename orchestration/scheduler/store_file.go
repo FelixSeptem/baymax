@@ -54,6 +54,12 @@ func (s *FileStore) SetAsyncAwait(cfg AsyncAwaitConfig) {
 	s.state.setAsyncAwait(cfg)
 }
 
+func (s *FileStore) SetTaskBoardControl(cfg TaskBoardControlConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setTaskBoardControl(cfg)
+}
+
 func (s *FileStore) Enqueue(_ context.Context, task Task, now time.Time) (TaskRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,6 +97,19 @@ func (s *FileStore) Heartbeat(_ context.Context, taskID, attemptID, leaseToken s
 		return ClaimedTask{}, err
 	}
 	return claimed, nil
+}
+
+func (s *FileStore) ControlTask(_ context.Context, req TaskBoardControlRequest, now time.Time) (TaskBoardControlResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.state.controlTask(req, now)
+	if err != nil {
+		return TaskBoardControlResult{}, err
+	}
+	if err := s.persist(); err != nil {
+		return TaskBoardControlResult{}, err
+	}
+	return result, nil
 }
 
 func (s *FileStore) ExpireLeases(_ context.Context, now time.Time) ([]ClaimedTask, error) {
@@ -197,7 +216,7 @@ func (s *FileStore) Get(_ context.Context, taskID string) (TaskRecord, bool, err
 func (s *FileStore) Stats(_ context.Context) (Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.Stats, nil
+	return s.state.snapshotStats(), nil
 }
 
 func (s *FileStore) Snapshot(_ context.Context) (StoreSnapshot, error) {

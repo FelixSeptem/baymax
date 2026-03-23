@@ -10,14 +10,16 @@ import (
 )
 
 type schedulerState struct {
-	Tasks            map[string]*TaskRecord    `json:"tasks"`
-	Queue            []string                  `json:"queue"`
-	TerminalCommits  map[string]TerminalCommit `json:"terminal_commits"`
-	DelayedWaitMs    []int64                   `json:"delayed_wait_ms,omitempty"`
-	Stats            Stats                     `json:"stats"`
+	Tasks            map[string]*TaskRecord            `json:"tasks"`
+	Queue            []string                          `json:"queue"`
+	TerminalCommits  map[string]TerminalCommit         `json:"terminal_commits"`
+	ControlOps       map[string]TaskBoardControlResult `json:"control_ops,omitempty"`
+	DelayedWaitMs    []int64                           `json:"delayed_wait_ms,omitempty"`
+	Stats            Stats                             `json:"stats"`
 	governance       GovernanceConfig
 	asyncAwait       AsyncAwaitConfig
 	recoveryBoundary RecoveryBoundaryConfig
+	taskBoardControl TaskBoardControlConfig
 	lastPriority     string
 	lastConsecutive  int
 }
@@ -28,6 +30,7 @@ func newSchedulerState(backend string) schedulerState {
 		Tasks:           map[string]*TaskRecord{},
 		Queue:           []string{},
 		TerminalCommits: map[string]TerminalCommit{},
+		ControlOps:      map[string]TaskBoardControlResult{},
 		DelayedWaitMs:   []int64{},
 		Stats: Stats{
 			Backend: strings.TrimSpace(backend),
@@ -36,7 +39,23 @@ func newSchedulerState(backend string) schedulerState {
 		governance:       cfg,
 		asyncAwait:       defaultAsyncAwaitConfig(),
 		recoveryBoundary: defaultRecoveryBoundaryConfig(),
+		taskBoardControl: defaultTaskBoardControlConfig(),
 	}
+}
+
+func defaultTaskBoardControlConfig() TaskBoardControlConfig {
+	return TaskBoardControlConfig{
+		Enabled:               false,
+		MaxManualRetryPerTask: 3,
+	}
+}
+
+func normalizeTaskBoardControlConfig(cfg TaskBoardControlConfig) TaskBoardControlConfig {
+	out := cfg
+	if out.MaxManualRetryPerTask <= 0 {
+		out.MaxManualRetryPerTask = 3
+	}
+	return out
 }
 
 func defaultAsyncAwaitConfig() AsyncAwaitConfig {
@@ -193,6 +212,13 @@ func (s *schedulerState) setAsyncAwait(cfg AsyncAwaitConfig) {
 		return
 	}
 	s.asyncAwait = normalizeAsyncAwaitConfig(cfg)
+}
+
+func (s *schedulerState) setTaskBoardControl(cfg TaskBoardControlConfig) {
+	if s == nil {
+		return
+	}
+	s.taskBoardControl = normalizeTaskBoardControlConfig(cfg)
 }
 
 func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
@@ -386,6 +412,183 @@ func (s *schedulerState) markAwaitingReport(taskID, attemptID, remoteTaskID stri
 	record.UpdatedAt = now
 	s.Stats.AsyncAwaitTotal++
 	return cloneTaskRecord(*record), nil
+}
+
+func normalizeTaskBoardControlAction(action string) (TaskBoardControlAction, error) {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case string(TaskBoardControlActionCancel):
+		return TaskBoardControlActionCancel, nil
+	case string(TaskBoardControlActionRetryTerminal):
+		return TaskBoardControlActionRetryTerminal, nil
+	default:
+		return "", ErrTaskBoardControlActionInvalid
+	}
+}
+
+func (s *schedulerState) controlTask(req TaskBoardControlRequest, now time.Time) (TaskBoardControlResult, error) {
+	if !s.taskBoardControl.Enabled {
+		return TaskBoardControlResult{}, ErrTaskBoardControlDisabled
+	}
+	taskID := strings.TrimSpace(req.TaskID)
+	operationID := strings.TrimSpace(req.OperationID)
+	if operationID == "" {
+		return TaskBoardControlResult{}, ErrTaskBoardControlOperationIDRequired
+	}
+	action, err := normalizeTaskBoardControlAction(req.Action)
+	if err != nil {
+		return TaskBoardControlResult{}, err
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.ControlOps == nil {
+		s.ControlOps = map[string]TaskBoardControlResult{}
+	}
+	if s.Stats.TaskBoardManualControlByAction == nil {
+		s.Stats.TaskBoardManualControlByAction = map[string]int{}
+	}
+	if s.Stats.TaskBoardManualControlByReason == nil {
+		s.Stats.TaskBoardManualControlByReason = map[string]int{}
+	}
+	if previous, ok := s.ControlOps[operationID]; ok {
+		if previous.TaskID != taskID || previous.Action != action {
+			s.Stats.TaskBoardManualControlRejectedTotal++
+			return TaskBoardControlResult{}, ErrTaskBoardControlOperationConflict
+		}
+		s.Stats.TaskBoardManualControlDedupTotal++
+		out := cloneTaskBoardControlResult(previous)
+		out.Deduplicated = true
+		return out, nil
+	}
+
+	record := s.Tasks[taskID]
+	if record == nil {
+		s.Stats.TaskBoardManualControlRejectedTotal++
+		return TaskBoardControlResult{}, ErrTaskNotFound
+	}
+	s.Stats.TaskBoardManualControlTotal++
+
+	switch action {
+	case TaskBoardControlActionCancel:
+		result, applyErr := s.applyManualCancel(record, operationID, now)
+		if applyErr != nil {
+			s.Stats.TaskBoardManualControlRejectedTotal++
+			return TaskBoardControlResult{}, applyErr
+		}
+		return result, nil
+	case TaskBoardControlActionRetryTerminal:
+		result, applyErr := s.applyManualRetry(record, operationID, now)
+		if applyErr != nil {
+			s.Stats.TaskBoardManualControlRejectedTotal++
+			return TaskBoardControlResult{}, applyErr
+		}
+		return result, nil
+	default:
+		s.Stats.TaskBoardManualControlRejectedTotal++
+		return TaskBoardControlResult{}, ErrTaskBoardControlActionInvalid
+	}
+}
+
+func (s *schedulerState) applyManualCancel(record *TaskRecord, operationID string, now time.Time) (TaskBoardControlResult, error) {
+	if record == nil {
+		return TaskBoardControlResult{}, ErrTaskNotFound
+	}
+	switch record.State {
+	case TaskStateQueued:
+		// queued cancellation does not alter attempt history.
+	case TaskStateAwaitingReport:
+		current, ok := record.currentAttempt()
+		if !ok {
+			return TaskBoardControlResult{}, ErrAttemptNotFound
+		}
+		current.Status = AttemptStatusFailed
+		current.TerminalAt = now
+		for i := range record.Attempts {
+			if record.Attempts[i].AttemptID == current.AttemptID {
+				record.Attempts[i] = current
+				break
+			}
+		}
+	default:
+		return TaskBoardControlResult{}, ErrTaskBoardControlStateConflict
+	}
+
+	record.State = TaskStateFailed
+	record.CurrentAttempt = ""
+	record.AwaitingReportSince = time.Time{}
+	record.ReportTimeoutAt = time.Time{}
+	record.NextEligibleAt = time.Time{}
+	record.Result = map[string]any{}
+	record.ErrorMessage = "manual cancel requested"
+	record.ErrorClass = types.ErrContext
+	record.ErrorLayer = "scheduler.task_board.control"
+	record.DeadLetterCode = ""
+	record.ResolutionSource = "manual_cancel"
+	record.TerminalConflict = false
+	record.UpdatedAt = now
+
+	s.Stats.FailTotal++
+	s.Stats.TaskBoardManualControlSuccessTotal++
+	s.Stats.TaskBoardManualControlByAction[string(TaskBoardControlActionCancel)]++
+	s.Stats.TaskBoardManualControlByReason[ReasonManualCancel]++
+
+	result := TaskBoardControlResult{
+		TaskID:      record.Task.TaskID,
+		Action:      TaskBoardControlActionCancel,
+		OperationID: operationID,
+		Applied:     true,
+		Reason:      ReasonManualCancel,
+		Record:      cloneTaskRecord(*record),
+	}
+	s.ControlOps[operationID] = cloneTaskBoardControlResult(result)
+	return result, nil
+}
+
+func (s *schedulerState) applyManualRetry(record *TaskRecord, operationID string, now time.Time) (TaskBoardControlResult, error) {
+	if record == nil {
+		return TaskBoardControlResult{}, ErrTaskNotFound
+	}
+	if record.State != TaskStateFailed && record.State != TaskStateDeadLetter {
+		return TaskBoardControlResult{}, ErrTaskBoardControlStateConflict
+	}
+	maxManualRetry := s.taskBoardControl.MaxManualRetryPerTask
+	if maxManualRetry <= 0 {
+		maxManualRetry = 3
+	}
+	if record.ManualRetryCount >= maxManualRetry {
+		return TaskBoardControlResult{}, ErrTaskBoardControlRetryBudgetExceeded
+	}
+
+	record.ManualRetryCount++
+	record.State = TaskStateQueued
+	record.CurrentAttempt = ""
+	record.AwaitingReportSince = time.Time{}
+	record.ReportTimeoutAt = time.Time{}
+	record.NextEligibleAt = time.Time{}
+	record.ResolutionSource = ""
+	record.TerminalConflict = false
+	record.Result = map[string]any{}
+	record.ErrorMessage = ""
+	record.ErrorClass = ""
+	record.ErrorLayer = ""
+	record.DeadLetterCode = ""
+	record.UpdatedAt = now
+	s.Queue = append(s.Queue, record.Task.TaskID)
+	s.Stats.ReclaimTotal++
+	s.Stats.TaskBoardManualControlSuccessTotal++
+	s.Stats.TaskBoardManualControlByAction[string(TaskBoardControlActionRetryTerminal)]++
+	s.Stats.TaskBoardManualControlByReason[ReasonManualRetry]++
+
+	result := TaskBoardControlResult{
+		TaskID:      record.Task.TaskID,
+		Action:      TaskBoardControlActionRetryTerminal,
+		OperationID: operationID,
+		Applied:     true,
+		Reason:      ReasonManualRetry,
+		Record:      cloneTaskRecord(*record),
+	}
+	s.ControlOps[operationID] = cloneTaskBoardControlResult(result)
+	return result, nil
 }
 
 func (s *schedulerState) expireLeases(now time.Time) []ClaimedTask {
@@ -884,6 +1087,23 @@ func cloneTaskRecord(in TaskRecord) TaskRecord {
 	return out
 }
 
+func cloneTaskBoardControlResult(in TaskBoardControlResult) TaskBoardControlResult {
+	out := in
+	out.Record = cloneTaskRecord(in.Record)
+	return out
+}
+
+func cloneStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func terminalCommitKey(taskID, attemptID string) string {
 	return strings.TrimSpace(taskID) + "|" + strings.TrimSpace(attemptID)
 }
@@ -972,9 +1192,38 @@ func (s *schedulerState) snapshot() StoreSnapshot {
 		Tasks:           tasks,
 		Queue:           append([]string(nil), s.Queue...),
 		TerminalCommits: commits,
+		ControlOps:      s.snapshotControlOps(),
 		DelayedWaitMs:   append([]int64(nil), s.DelayedWaitMs...),
-		Stats:           s.Stats,
+		Stats:           s.snapshotStats(),
 	}
+}
+
+func (s *schedulerState) snapshotControlOps() []TaskBoardControlResult {
+	if len(s.ControlOps) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(s.ControlOps))
+	for opID := range s.ControlOps {
+		keys = append(keys, opID)
+	}
+	sort.Strings(keys)
+	out := make([]TaskBoardControlResult, 0, len(keys))
+	for _, opID := range keys {
+		item := s.ControlOps[opID]
+		item.OperationID = strings.TrimSpace(item.OperationID)
+		item.TaskID = strings.TrimSpace(item.TaskID)
+		item.Reason = strings.TrimSpace(item.Reason)
+		item.Record = cloneTaskRecord(item.Record)
+		out = append(out, item)
+	}
+	return out
+}
+
+func (s *schedulerState) snapshotStats() Stats {
+	stats := s.Stats
+	stats.TaskBoardManualControlByAction = cloneStringIntMap(s.Stats.TaskBoardManualControlByAction)
+	stats.TaskBoardManualControlByReason = cloneStringIntMap(s.Stats.TaskBoardManualControlByReason)
+	return stats
 }
 
 func (s *schedulerState) restore(snapshot StoreSnapshot) error {
@@ -1134,6 +1383,32 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		terminalCommits[key] = normalized
 	}
 
+	controlOps := map[string]TaskBoardControlResult{}
+	for i := range snapshot.ControlOps {
+		item := snapshot.ControlOps[i]
+		opID := strings.TrimSpace(item.OperationID)
+		if opID == "" {
+			return fmt.Errorf("%w: control_ops[%d].operation_id is required", ErrSnapshotCorrupt, i)
+		}
+		if _, exists := controlOps[opID]; exists {
+			return fmt.Errorf("%w: duplicate control operation_id %q", ErrSnapshotCorrupt, opID)
+		}
+		taskID := strings.TrimSpace(item.TaskID)
+		if taskID == "" {
+			return fmt.Errorf("%w: control_ops[%d].task_id is required", ErrSnapshotCorrupt, i)
+		}
+		action, err := normalizeTaskBoardControlAction(string(item.Action))
+		if err != nil {
+			return fmt.Errorf("%w: control_ops[%d].action is invalid", ErrSnapshotCorrupt, i)
+		}
+		item.Action = action
+		item.OperationID = opID
+		item.TaskID = taskID
+		item.Reason = strings.TrimSpace(item.Reason)
+		item.Record = cloneTaskRecord(item.Record)
+		controlOps[opID] = item
+	}
+
 	backend := strings.TrimSpace(snapshot.Stats.Backend)
 	if backend == "" {
 		backend = strings.TrimSpace(snapshot.Backend)
@@ -1149,6 +1424,8 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 	if strings.TrimSpace(stats.QoSMode) == "" {
 		stats.QoSMode = string(s.governance.QoS)
 	}
+	stats.TaskBoardManualControlByAction = cloneStringIntMap(stats.TaskBoardManualControlByAction)
+	stats.TaskBoardManualControlByReason = cloneStringIntMap(stats.TaskBoardManualControlByReason)
 	delayedWaitMs := append([]int64(nil), snapshot.DelayedWaitMs...)
 	if len(delayedWaitMs) > 0 {
 		stats.DelayedWaitMsP95 = percentileP95Int64(delayedWaitMs)
@@ -1157,6 +1434,7 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 	s.Tasks = tasks
 	s.Queue = queue
 	s.TerminalCommits = terminalCommits
+	s.ControlOps = controlOps
 	s.DelayedWaitMs = delayedWaitMs
 	s.Stats = stats
 	s.lastPriority = ""

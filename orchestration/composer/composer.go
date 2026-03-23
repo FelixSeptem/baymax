@@ -843,6 +843,16 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["scheduler_delayed_task_total"] = summary.DelayedTaskTotal
 			payload["scheduler_delayed_claim_total"] = summary.DelayedClaimTotal
 			payload["scheduler_delayed_wait_ms_p95"] = summary.DelayedWaitMsP95
+			payload["task_board_manual_control_total"] = summary.TaskBoardManualControlTotal
+			payload["task_board_manual_control_success_total"] = summary.TaskBoardManualControlSuccessTotal
+			payload["task_board_manual_control_rejected_total"] = summary.TaskBoardManualControlRejectedTotal
+			payload["task_board_manual_control_idempotent_dedup_total"] = summary.TaskBoardManualControlDedupTotal
+			if len(summary.TaskBoardManualControlByAction) > 0 {
+				payload["task_board_manual_control_by_action"] = cloneIntMap(summary.TaskBoardManualControlByAction)
+			}
+			if len(summary.TaskBoardManualControlByReason) > 0 {
+				payload["task_board_manual_control_by_reason"] = cloneIntMap(summary.TaskBoardManualControlByReason)
+			}
 			payload["async_await_total"] = summary.AsyncAwaitTotal
 			payload["async_timeout_total"] = summary.AsyncTimeoutTotal
 			payload["async_reconcile_poll_total"] = summary.AsyncReconcilePollTotal
@@ -1337,6 +1347,7 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithTaskBoardControl(c.schedulerTaskBoardControlConfig(cfg)),
 		scheduler.WithAsyncAwait(c.schedulerAsyncAwaitConfig(cfg)),
 		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
@@ -1394,6 +1405,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 		scheduler.WithLeaseTimeout(leaseTimeout),
 		scheduler.WithGuardrails(guardrails),
 		scheduler.WithGovernance(governance),
+		scheduler.WithTaskBoardControl(c.schedulerTaskBoardControlConfig(cfg)),
 		scheduler.WithAsyncAwait(c.schedulerAsyncAwaitConfig(cfg)),
 		scheduler.WithRecoveryBoundary(c.schedulerRecoveryBoundaryConfig(cfg)),
 	)
@@ -1414,7 +1426,7 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%d|%d|%.4f|%s|%t|%s|%s|%s|%d",
+		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%d|%d|%.4f|%s|%t|%s|%s|%s|%d",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
@@ -1423,6 +1435,8 @@ func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Scheduler.RetryMaxAttempts,
 		strings.TrimSpace(strings.ToLower(cfg.Scheduler.QoS.Mode)),
 		cfg.Scheduler.QoS.Fairness.MaxConsecutiveClaimsPerPriority,
+		cfg.Scheduler.TaskBoard.Control.Enabled,
+		cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask,
 		cfg.Scheduler.DLQ.Enabled,
 		cfg.Scheduler.Retry.Backoff.Enabled,
 		cfg.Scheduler.Retry.Backoff.Initial.Milliseconds(),
@@ -1465,6 +1479,13 @@ func (c *Composer) schedulerGovernanceConfig(cfg runtimeconfig.Config) scheduler
 			Multiplier:  cfg.Scheduler.Retry.Backoff.Multiplier,
 			JitterRatio: cfg.Scheduler.Retry.Backoff.JitterRatio,
 		},
+	}
+}
+
+func (c *Composer) schedulerTaskBoardControlConfig(cfg runtimeconfig.Config) scheduler.TaskBoardControlConfig {
+	return scheduler.TaskBoardControlConfig{
+		Enabled:               cfg.Scheduler.TaskBoard.Control.Enabled,
+		MaxManualRetryPerTask: cfg.Scheduler.TaskBoard.Control.MaxManualRetryPerTask,
 	}
 }
 
@@ -1513,6 +1534,17 @@ func cloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v
+	}
+	return out
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }

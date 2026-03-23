@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-23 15:48:40
+Updated: 2026-03-23 23:15:34
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -88,3 +88,4 @@ Updated: 2026-03-23 15:48:40
 - 084 -> introduce-mailbox-lifecycle-worker-and-observability-contract-a36
 - 085 -> harden-windows-gate-fail-fast-parity-and-status-convergence-a37
 - 086 -> harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38
+- 087 -> introduce-task-board-control-and-manual-recovery-contract-a39

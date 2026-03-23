@@ -34,6 +34,12 @@ func (s *MemoryStore) SetAsyncAwait(cfg AsyncAwaitConfig) {
 	s.state.setAsyncAwait(cfg)
 }
 
+func (s *MemoryStore) SetTaskBoardControl(cfg TaskBoardControlConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setTaskBoardControl(cfg)
+}
+
 func (s *MemoryStore) Backend() string {
 	return "memory"
 }
@@ -54,6 +60,12 @@ func (s *MemoryStore) Heartbeat(_ context.Context, taskID, attemptID, leaseToken
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.heartbeat(taskID, attemptID, leaseToken, now, leaseTimeout)
+}
+
+func (s *MemoryStore) ControlTask(_ context.Context, req TaskBoardControlRequest, now time.Time) (TaskBoardControlResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.controlTask(req, now)
 }
 
 func (s *MemoryStore) ExpireLeases(_ context.Context, now time.Time) ([]ClaimedTask, error) {
@@ -115,7 +127,7 @@ func (s *MemoryStore) Get(_ context.Context, taskID string) (TaskRecord, bool, e
 func (s *MemoryStore) Stats(_ context.Context) (Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.Stats, nil
+	return s.state.snapshotStats(), nil
 }
 
 func (s *MemoryStore) Snapshot(_ context.Context) (StoreSnapshot, error) {

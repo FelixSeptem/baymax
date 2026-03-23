@@ -74,6 +74,8 @@
   - `scheduler.async_await.reconcile.batch_size` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_BATCH_SIZE`
   - `scheduler.async_await.reconcile.jitter_ratio` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_JITTER_RATIO`
   - `scheduler.async_await.reconcile.not_found_policy` -> `BAYMAX_SCHEDULER_ASYNC_AWAIT_RECONCILE_NOT_FOUND_POLICY`
+  - `scheduler.task_board.control.enabled` -> `BAYMAX_SCHEDULER_TASK_BOARD_CONTROL_ENABLED`
+  - `scheduler.task_board.control.max_manual_retry_per_task` -> `BAYMAX_SCHEDULER_TASK_BOARD_CONTROL_MAX_MANUAL_RETRY_PER_TASK`
   - `scheduler.dlq.enabled` -> `BAYMAX_SCHEDULER_DLQ_ENABLED`
   - `scheduler.retry.backoff.enabled` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_ENABLED`
   - `scheduler.retry.backoff.initial` -> `BAYMAX_SCHEDULER_RETRY_BACKOFF_INITIAL`
@@ -260,6 +262,10 @@ scheduler:
       batch_size: 64              # 必须 > 0
       jitter_ratio: 0.2           # 必须在 [0,1]
       not_found_policy: keep_until_timeout # 当前仅支持 keep_until_timeout
+  task_board:
+    control:
+      enabled: false              # 默认 false
+      max_manual_retry_per_task: 3 # 必须 > 0
   dlq:
     enabled: false                # 默认 false
   retry:
@@ -647,10 +653,11 @@ scheduler/subagent baseline 校验语义：
 15. `scheduler.async_await.reconcile.batch_size` 必须 `> 0`。
 16. `scheduler.async_await.reconcile.jitter_ratio` 必须在 `[0,1]`。
 17. `scheduler.async_await.reconcile.not_found_policy` 当前仅支持 `keep_until_timeout`。
-18. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
-19. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
-20. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
-21. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+18. `scheduler.task_board.control.max_manual_retry_per_task` 必须 `> 0`。
+19. `scheduler.task.not_before` 为可选字段；空值表示立即可领取，未来时间表示延后可领取，过去时间按立即可领取处理。
+20. claim 可领取条件为 delayed gate 与 retry gate 的组合：`not_before<=now` 且（若存在）`next_eligible_at<=now`。
+21. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
+22. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 recovery boundary（A17）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
@@ -824,6 +831,7 @@ Mailbox diagnostics additive 字段（A35）：
 - 编排聚合：`team_*`、`workflow_*`、`a2a_*`、`scheduler_*`、`subagent_*`、`collab_*`
   - A31 additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
   - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
+  - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
@@ -867,6 +875,12 @@ Composed summary additive fields（contract markers）：
 - `scheduler_delayed_task_total`
 - `scheduler_delayed_claim_total`
 - `scheduler_delayed_wait_ms_p95`
+- `task_board_manual_control_total`
+- `task_board_manual_control_success_total`
+- `task_board_manual_control_rejected_total`
+- `task_board_manual_control_idempotent_dedup_total`
+- `task_board_manual_control_by_action`
+- `task_board_manual_control_by_reason`
 - `async_reconcile_poll_total`
 - `async_reconcile_terminal_by_poll_total`
 - `async_reconcile_error_total`
@@ -925,7 +939,7 @@ Composed reason contract markers（必须保持字面稳定）：
 - teams: `team.dispatch_remote`、`team.collect_remote`、`team.handoff`、`team.delegation`、`team.aggregation`
 - workflow: `workflow.dispatch_a2a`、`workflow.handoff`、`workflow.delegation`、`workflow.aggregation`
 - a2a async: `a2a.async_submit`、`a2a.async_report_deliver`、`a2a.async_report_retry`、`a2a.async_report_dedup`、`a2a.async_report_drop`
-- scheduler/subagent/recovery: `scheduler.enqueue`、`scheduler.delayed_enqueue`、`scheduler.delayed_wait`、`scheduler.delayed_ready`、`scheduler.claim`、`scheduler.heartbeat`、`scheduler.lease_expired`、`scheduler.requeue`、`scheduler.qos_claim`、`scheduler.fairness_yield`、`scheduler.retry_backoff`、`scheduler.dead_letter`、`subagent.spawn`、`subagent.join`、`subagent.budget_reject`、`recovery.restore`、`recovery.replay`、`recovery.conflict`
+- scheduler/subagent/recovery: `scheduler.enqueue`、`scheduler.delayed_enqueue`、`scheduler.delayed_wait`、`scheduler.delayed_ready`、`scheduler.claim`、`scheduler.heartbeat`、`scheduler.lease_expired`、`scheduler.requeue`、`scheduler.qos_claim`、`scheduler.fairness_yield`、`scheduler.retry_backoff`、`scheduler.dead_letter`、`scheduler.manual_cancel`、`scheduler.manual_retry`、`subagent.spawn`、`subagent.join`、`subagent.budget_reject`、`recovery.restore`、`recovery.replay`、`recovery.conflict`
 
 兼容约束：
 - `action.timeline` 为增量事件，不替换既有 `run.* / model.* / tool.* / skill.*` 事件。

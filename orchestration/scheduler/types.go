@@ -19,6 +19,8 @@ const (
 	ReasonClaim           = "scheduler.claim"
 	ReasonHeartbeat       = "scheduler.heartbeat"
 	ReasonLeaseExpired    = "scheduler.lease_expired"
+	ReasonManualCancel    = "scheduler.manual_cancel"
+	ReasonManualRetry     = "scheduler.manual_retry"
 	ReasonAwaitingReport  = "scheduler.awaiting_report"
 	ReasonAsyncTimeout    = "scheduler.async_timeout"
 	ReasonAsyncLateReport = "scheduler.async_late_report"
@@ -41,6 +43,8 @@ var canonicalReasonSet = map[string]struct{}{
 	ReasonClaim:           {},
 	ReasonHeartbeat:       {},
 	ReasonLeaseExpired:    {},
+	ReasonManualCancel:    {},
+	ReasonManualRetry:     {},
 	ReasonAwaitingReport:  {},
 	ReasonAsyncTimeout:    {},
 	ReasonAsyncLateReport: {},
@@ -158,6 +162,7 @@ type TaskRecord struct {
 	State               TaskState        `json:"state"`
 	Attempts            []Attempt        `json:"attempts,omitempty"`
 	CurrentAttempt      string           `json:"current_attempt_id,omitempty"`
+	ManualRetryCount    int              `json:"manual_retry_count,omitempty"`
 	AwaitingReportSince time.Time        `json:"awaiting_report_since,omitempty"`
 	ReportTimeoutAt     time.Time        `json:"report_timeout_at,omitempty"`
 	RemoteTaskID        string           `json:"remote_task_id,omitempty"`
@@ -272,30 +277,66 @@ type CommitResult struct {
 }
 
 type Stats struct {
-	Backend                              string `json:"backend"`
-	QoSMode                              string `json:"qos_mode,omitempty"`
-	QueueTotal                           int    `json:"queue_total"`
-	ClaimTotal                           int    `json:"claim_total"`
-	ReclaimTotal                         int    `json:"reclaim_total"`
-	LeaseExpiredTotal                    int    `json:"lease_expired_total"`
-	CompleteTotal                        int    `json:"complete_total"`
-	FailTotal                            int    `json:"fail_total"`
-	PriorityClaimTotal                   int    `json:"priority_claim_total,omitempty"`
-	FairnessYieldTotal                   int    `json:"fairness_yield_total,omitempty"`
-	RetryBackoffTotal                    int    `json:"retry_backoff_total,omitempty"`
-	DeadLetterTotal                      int    `json:"dead_letter_total,omitempty"`
-	DelayedTaskTotal                     int    `json:"delayed_task_total,omitempty"`
-	DelayedClaimTotal                    int    `json:"delayed_claim_total,omitempty"`
-	DelayedWaitMsP95                     int64  `json:"delayed_wait_ms_p95,omitempty"`
-	RecoveryTimeoutReentryTotal          int    `json:"recovery_timeout_reentry_total,omitempty"`
-	RecoveryTimeoutReentryExhaustedTotal int    `json:"recovery_timeout_reentry_exhausted_total,omitempty"`
-	DuplicateTerminalCommitTotal         int    `json:"duplicate_terminal_commit_total"`
-	AsyncAwaitTotal                      int    `json:"async_await_total,omitempty"`
-	AsyncTimeoutTotal                    int    `json:"async_timeout_total,omitempty"`
-	AsyncReconcilePollTotal              int    `json:"async_reconcile_poll_total,omitempty"`
-	AsyncReconcileTerminalByPollTotal    int    `json:"async_reconcile_terminal_by_poll_total,omitempty"`
-	AsyncReconcileErrorTotal             int    `json:"async_reconcile_error_total,omitempty"`
-	AsyncTerminalConflictTotal           int    `json:"async_terminal_conflict_total,omitempty"`
+	Backend                              string         `json:"backend"`
+	QoSMode                              string         `json:"qos_mode,omitempty"`
+	QueueTotal                           int            `json:"queue_total"`
+	ClaimTotal                           int            `json:"claim_total"`
+	ReclaimTotal                         int            `json:"reclaim_total"`
+	LeaseExpiredTotal                    int            `json:"lease_expired_total"`
+	CompleteTotal                        int            `json:"complete_total"`
+	FailTotal                            int            `json:"fail_total"`
+	PriorityClaimTotal                   int            `json:"priority_claim_total,omitempty"`
+	FairnessYieldTotal                   int            `json:"fairness_yield_total,omitempty"`
+	RetryBackoffTotal                    int            `json:"retry_backoff_total,omitempty"`
+	DeadLetterTotal                      int            `json:"dead_letter_total,omitempty"`
+	DelayedTaskTotal                     int            `json:"delayed_task_total,omitempty"`
+	DelayedClaimTotal                    int            `json:"delayed_claim_total,omitempty"`
+	DelayedWaitMsP95                     int64          `json:"delayed_wait_ms_p95,omitempty"`
+	RecoveryTimeoutReentryTotal          int            `json:"recovery_timeout_reentry_total,omitempty"`
+	RecoveryTimeoutReentryExhaustedTotal int            `json:"recovery_timeout_reentry_exhausted_total,omitempty"`
+	DuplicateTerminalCommitTotal         int            `json:"duplicate_terminal_commit_total"`
+	AsyncAwaitTotal                      int            `json:"async_await_total,omitempty"`
+	AsyncTimeoutTotal                    int            `json:"async_timeout_total,omitempty"`
+	AsyncReconcilePollTotal              int            `json:"async_reconcile_poll_total,omitempty"`
+	AsyncReconcileTerminalByPollTotal    int            `json:"async_reconcile_terminal_by_poll_total,omitempty"`
+	AsyncReconcileErrorTotal             int            `json:"async_reconcile_error_total,omitempty"`
+	AsyncTerminalConflictTotal           int            `json:"async_terminal_conflict_total,omitempty"`
+	TaskBoardManualControlTotal          int            `json:"task_board_manual_control_total,omitempty"`
+	TaskBoardManualControlSuccessTotal   int            `json:"task_board_manual_control_success_total,omitempty"`
+	TaskBoardManualControlRejectedTotal  int            `json:"task_board_manual_control_rejected_total,omitempty"`
+	TaskBoardManualControlDedupTotal     int            `json:"task_board_manual_control_idempotent_dedup_total,omitempty"`
+	TaskBoardManualControlByAction       map[string]int `json:"task_board_manual_control_by_action,omitempty"`
+	TaskBoardManualControlByReason       map[string]int `json:"task_board_manual_control_by_reason,omitempty"`
+}
+
+type TaskBoardControlAction string
+
+const (
+	TaskBoardControlActionCancel        TaskBoardControlAction = "cancel"
+	TaskBoardControlActionRetryTerminal TaskBoardControlAction = "retry_terminal"
+)
+
+type TaskBoardControlRequest struct {
+	TaskID       string `json:"task_id"`
+	Action       string `json:"action"`
+	OperationID  string `json:"operation_id"`
+	RequestedBy  string `json:"requested_by,omitempty"`
+	ReasonDetail string `json:"reason_detail,omitempty"`
+}
+
+type TaskBoardControlResult struct {
+	TaskID       string                 `json:"task_id"`
+	Action       TaskBoardControlAction `json:"action"`
+	OperationID  string                 `json:"operation_id"`
+	Applied      bool                   `json:"applied"`
+	Deduplicated bool                   `json:"deduplicated,omitempty"`
+	Reason       string                 `json:"reason,omitempty"`
+	Record       TaskRecord             `json:"record"`
+}
+
+type TaskBoardControlConfig struct {
+	Enabled               bool `json:"enabled"`
+	MaxManualRetryPerTask int  `json:"max_manual_retry_per_task"`
 }
 
 const (
@@ -361,6 +402,7 @@ type QueueStore interface {
 	Backend() string
 	Enqueue(ctx context.Context, task Task, now time.Time) (TaskRecord, error)
 	Claim(ctx context.Context, workerID string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, bool, error)
+	ControlTask(ctx context.Context, req TaskBoardControlRequest, now time.Time) (TaskBoardControlResult, error)
 	Heartbeat(ctx context.Context, taskID, attemptID, leaseToken string, now time.Time, leaseTimeout time.Duration) (ClaimedTask, error)
 	ExpireLeases(ctx context.Context, now time.Time) ([]ClaimedTask, error)
 	ExpireAwaitingReports(ctx context.Context, now time.Time) ([]ClaimedTask, error)
@@ -375,24 +417,31 @@ type QueueStore interface {
 }
 
 var (
-	ErrTaskNotFound          = errors.New("scheduler task not found")
-	ErrAttemptNotFound       = errors.New("scheduler attempt not found")
-	ErrLeaseTokenMismatch    = errors.New("scheduler lease token mismatch")
-	ErrLeaseExpired          = errors.New("scheduler lease expired")
-	ErrTaskNotClaimable      = errors.New("scheduler task is not claimable")
-	ErrTaskNotRunning        = errors.New("scheduler task is not running")
-	ErrTaskNotAwaitingReport = errors.New("scheduler task is not awaiting report")
-	ErrStaleAttempt          = errors.New("scheduler stale attempt commit")
-	ErrSnapshotCorrupt       = errors.New("scheduler snapshot is corrupt")
+	ErrTaskNotFound                        = errors.New("scheduler task not found")
+	ErrAttemptNotFound                     = errors.New("scheduler attempt not found")
+	ErrLeaseTokenMismatch                  = errors.New("scheduler lease token mismatch")
+	ErrLeaseExpired                        = errors.New("scheduler lease expired")
+	ErrTaskNotClaimable                    = errors.New("scheduler task is not claimable")
+	ErrTaskNotRunning                      = errors.New("scheduler task is not running")
+	ErrTaskNotAwaitingReport               = errors.New("scheduler task is not awaiting report")
+	ErrStaleAttempt                        = errors.New("scheduler stale attempt commit")
+	ErrSnapshotCorrupt                     = errors.New("scheduler snapshot is corrupt")
+	ErrTaskBoardControlDisabled            = errors.New("scheduler task board control is disabled")
+	ErrTaskBoardControlActionInvalid       = errors.New("scheduler task board control action is invalid")
+	ErrTaskBoardControlOperationIDRequired = errors.New("scheduler task board control operation_id is required")
+	ErrTaskBoardControlStateConflict       = errors.New("scheduler task board control state conflict")
+	ErrTaskBoardControlOperationConflict   = errors.New("scheduler task board control operation_id conflict")
+	ErrTaskBoardControlRetryBudgetExceeded = errors.New("scheduler task board control manual retry budget exceeded")
 )
 
 type StoreSnapshot struct {
-	Backend         string           `json:"backend"`
-	Tasks           []TaskRecord     `json:"tasks,omitempty"`
-	Queue           []string         `json:"queue,omitempty"`
-	TerminalCommits []TerminalCommit `json:"terminal_commits,omitempty"`
-	DelayedWaitMs   []int64          `json:"delayed_wait_ms,omitempty"`
-	Stats           Stats            `json:"stats"`
+	Backend         string                   `json:"backend"`
+	Tasks           []TaskRecord             `json:"tasks,omitempty"`
+	Queue           []string                 `json:"queue,omitempty"`
+	TerminalCommits []TerminalCommit         `json:"terminal_commits,omitempty"`
+	ControlOps      []TaskBoardControlResult `json:"control_ops,omitempty"`
+	DelayedWaitMs   []int64                  `json:"delayed_wait_ms,omitempty"`
+	Stats           Stats                    `json:"stats"`
 }
 
 type Guardrails struct {

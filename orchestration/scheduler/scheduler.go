@@ -52,12 +52,19 @@ func WithAsyncAwait(cfg AsyncAwaitConfig) Option {
 	}
 }
 
+func WithTaskBoardControl(cfg TaskBoardControlConfig) Option {
+	return func(s *Scheduler) {
+		s.taskBoardControl = normalizeTaskBoardControlConfig(cfg)
+	}
+}
+
 type Scheduler struct {
 	store            QueueStore
 	leaseTimeout     time.Duration
 	guardrails       Guardrails
 	governance       GovernanceConfig
 	asyncAwait       AsyncAwaitConfig
+	taskBoardControl TaskBoardControlConfig
 	recoveryBoundary RecoveryBoundaryConfig
 	timeline         types.EventHandler
 	now              func() time.Time
@@ -74,6 +81,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		leaseTimeout:     2 * time.Second,
 		governance:       defaultGovernanceConfig(),
 		asyncAwait:       defaultAsyncAwaitConfig(),
+		taskBoardControl: defaultTaskBoardControlConfig(),
 		recoveryBoundary: defaultRecoveryBoundaryConfig(),
 		now:              time.Now,
 	}
@@ -87,6 +95,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 	}
 	s.governance = normalizeGovernanceConfig(s.governance)
 	s.asyncAwait = normalizeAsyncAwaitConfig(s.asyncAwait)
+	s.taskBoardControl = normalizeTaskBoardControlConfig(s.taskBoardControl)
 	if configurable, ok := store.(interface {
 		SetGovernance(GovernanceConfig)
 	}); ok {
@@ -101,6 +110,11 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		SetAsyncAwait(AsyncAwaitConfig)
 	}); ok {
 		configurable.SetAsyncAwait(s.asyncAwait)
+	}
+	if configurable, ok := store.(interface {
+		SetTaskBoardControl(TaskBoardControlConfig)
+	}); ok {
+		configurable.SetTaskBoardControl(s.taskBoardControl)
 	}
 	return s, nil
 }
@@ -294,6 +308,23 @@ func (s *Scheduler) Requeue(ctx context.Context, taskID, reason string) (TaskRec
 		})
 	}
 	return record, nil
+}
+
+func (s *Scheduler) ControlTask(ctx context.Context, req TaskBoardControlRequest) (TaskBoardControlResult, error) {
+	result, err := s.store.ControlTask(ctx, req, s.nowTime())
+	if err != nil {
+		return TaskBoardControlResult{}, err
+	}
+	if !result.Applied || result.Deduplicated {
+		return result, nil
+	}
+	switch result.Action {
+	case TaskBoardControlActionCancel:
+		s.emitTimeline(ctx, result.Record, latestAttempt(result.Record), types.ActionStatusCanceled, ReasonManualCancel)
+	case TaskBoardControlActionRetryTerminal:
+		s.emitTimeline(ctx, result.Record, latestAttempt(result.Record), types.ActionStatusPending, ReasonManualRetry)
+	}
+	return result, nil
 }
 
 func (s *Scheduler) Complete(ctx context.Context, commit TerminalCommit) (CommitResult, error) {

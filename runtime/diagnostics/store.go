@@ -166,6 +166,12 @@ type RunRecord struct {
 	SchedulerDelayedTaskTotal            int                               `json:"scheduler_delayed_task_total,omitempty"`
 	SchedulerDelayedClaimTotal           int                               `json:"scheduler_delayed_claim_total,omitempty"`
 	SchedulerDelayedWaitMsP95            int64                             `json:"scheduler_delayed_wait_ms_p95,omitempty"`
+	TaskBoardManualControlTotal          int                               `json:"task_board_manual_control_total,omitempty"`
+	TaskBoardManualControlSuccessTotal   int                               `json:"task_board_manual_control_success_total,omitempty"`
+	TaskBoardManualControlRejectedTotal  int                               `json:"task_board_manual_control_rejected_total,omitempty"`
+	TaskBoardManualControlDedupTotal     int                               `json:"task_board_manual_control_idempotent_dedup_total,omitempty"`
+	TaskBoardManualControlByAction       map[string]int                    `json:"task_board_manual_control_by_action,omitempty"`
+	TaskBoardManualControlByReason       map[string]int                    `json:"task_board_manual_control_by_reason,omitempty"`
 	SubagentChildTotal                   int                               `json:"subagent_child_total,omitempty"`
 	SubagentChildFailed                  int                               `json:"subagent_child_failed,omitempty"`
 	SubagentBudgetRejectTotal            int                               `json:"subagent_budget_reject_total,omitempty"`
@@ -601,6 +607,8 @@ func (d *Store) AddRun(rec RunRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
+	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
+	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}
@@ -1770,4 +1778,15 @@ func tailCopy[T any](src []T, n int) []T {
 	dst := make([]T, n)
 	copy(dst, src[len(src)-n:])
 	return dst
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }

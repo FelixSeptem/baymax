@@ -69,6 +69,9 @@ go test ./integration -run '^TestUnifiedQueryContract' -count=1
 echo "[multi-agent-shared-contract-gate] task board query suite"
 go test ./integration -run '^TestTaskBoardQueryContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] task board control suite"
+go test ./integration -run '^TestTaskBoardControlContract' -count=1
+
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

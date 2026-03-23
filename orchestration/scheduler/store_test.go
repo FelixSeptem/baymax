@@ -838,6 +838,8 @@ func TestCanonicalReasonMapper(t *testing.T) {
 		ReasonClaim,
 		ReasonHeartbeat,
 		ReasonLeaseExpired,
+		ReasonManualCancel,
+		ReasonManualRetry,
 		ReasonRequeue,
 		ReasonQoSClaim,
 		ReasonFairnessYield,

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-23 14:10:35
+Updated: 2026-03-23 14:59:17
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -86,3 +86,4 @@ Updated: 2026-03-23 14:10:35
 - 082 -> retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34
 - 083 -> activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35
 - 084 -> introduce-mailbox-lifecycle-worker-and-observability-contract-a36
+- 085 -> harden-windows-gate-fail-fast-parity-and-status-convergence-a37

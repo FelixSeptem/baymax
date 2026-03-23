@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
@@ -12,10 +13,9 @@ if (-not (Test-Path $env:GOCACHE)) {
 }
 
 function Invoke-GoTest {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
-    & go test @Args
-    if ($LASTEXITCODE -ne 0) {
-        throw "go test failed: go test $($Args -join ' ')"
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GoArgs)
+    Invoke-NativeStrict -Label ("go test " + ($GoArgs -join " ")) -Command {
+        & go test @GoArgs
     }
 }
 

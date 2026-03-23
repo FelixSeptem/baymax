@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
@@ -10,4 +11,6 @@ if (-not $eventPath) {
 }
 
 Write-Host "[contribution-template] validating pull request template completeness"
-go run ./cmd/contribution-template-check -event $eventPath
+Invoke-NativeStrict -Label "go run ./cmd/contribution-template-check -event $eventPath" -Command {
+    go run ./cmd/contribution-template-check -event $eventPath
+}

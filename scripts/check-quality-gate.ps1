@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
@@ -13,115 +14,111 @@ if (-not $env:CGO_ENABLED) {
     $env:CGO_ENABLED = "1"
 }
 
-Write-Host "[quality-gate] repo hygiene"
-pwsh -File scripts/check-repo-hygiene.ps1
+function Invoke-RequiredStep {
+    param(
+        [Parameter(Mandatory = $true)][string]$StepLabel,
+        [Parameter(Mandatory = $true)][scriptblock]$Command
+    )
 
-Write-Host "[quality-gate] docs consistency"
-try {
+    Write-Host $StepLabel
+    [void](Invoke-NativeStrict -Label $StepLabel -Command $Command)
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] repo hygiene" -Command {
+    pwsh -File scripts/check-repo-hygiene.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
 }
-catch {
-    throw "[quality-gate][docs-consistency] docs consistency failed (adapter mapping or pre1 governance drift): $($_.Exception.Message)"
+
+Invoke-RequiredStep -StepLabel "[quality-gate] canonical mailbox entrypoints" -Command {
+    pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
 }
 
-Write-Host "[quality-gate] canonical mailbox entrypoints"
-pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
-if ($LASTEXITCODE -ne 0) {
-    throw "[quality-gate][canonical-mailbox-entrypoints] canonical mailbox invoke guard failed"
+Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {
+    go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }
 
-Write-Host "[quality-gate] mailbox runtime wiring regression"
-go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
-if ($LASTEXITCODE -ne 0) {
-    throw "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"
-}
-
-Write-Host "[quality-gate] adapter conformance"
-try {
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }
-catch {
-    throw "[quality-gate][adapter-conformance] adapter conformance harness failed: $($_.Exception.Message)"
-}
 
-Write-Host "[quality-gate] adapter manifest contract"
-try {
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter manifest contract" -Command {
     pwsh -File scripts/check-adapter-manifest-contract.ps1
 }
-catch {
-    throw "[quality-gate][adapter-manifest-contract] adapter manifest contract check failed: $($_.Exception.Message)"
-}
 
-Write-Host "[quality-gate] adapter capability negotiation contract"
-try {
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter capability negotiation contract" -Command {
     pwsh -File scripts/check-adapter-capability-contract.ps1
 }
-catch {
-    throw "[quality-gate][adapter-capability-contract] adapter capability negotiation contract check failed: $($_.Exception.Message)"
-}
 
-Write-Host "[quality-gate] adapter contract replay"
-try {
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter contract replay" -Command {
     pwsh -File scripts/check-adapter-contract-replay.ps1
 }
-catch {
-    throw "[quality-gate][adapter-contract-replay] adapter contract replay check failed: $($_.Exception.Message)"
-}
 
-Write-Host "[quality-gate] adapter scaffold drift"
-try {
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter scaffold drift" -Command {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1
 }
-catch {
-    throw "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed: $($_.Exception.Message)"
+
+Invoke-RequiredStep -StepLabel "[quality-gate] go test ./..." -Command {
+    go test ./...
 }
 
-Write-Host "[quality-gate] go test ./..."
-go test ./...
-
-$cgoEnabled = (go env CGO_ENABLED).Trim()
+$cgoEnabled = ((Invoke-NativeCaptureStrict -Label "go env CGO_ENABLED" -Command {
+            go env CGO_ENABLED
+        }) | Select-Object -First 1).Trim()
 if ($cgoEnabled -ne "1") {
     throw "[quality-gate] go test -race requires CGO_ENABLED=1"
 }
 
-$pkgs = go list ./... | Where-Object { $_ -notmatch "/examples/" }
+$pkgs = (Invoke-NativeCaptureStrict -Label "go list ./..." -Command {
+        go list ./...
+    }) | Where-Object { $_ -notmatch "/examples/" }
 if (-not $pkgs -or $pkgs.Count -eq 0) {
     throw "[quality-gate] no packages found for race tests"
 }
 
-Write-Host "[quality-gate] go test -race (exclude examples packages)"
-go test -race @pkgs
+Invoke-RequiredStep -StepLabel "[quality-gate] go test -race (exclude examples packages)" -Command {
+    go test -race @pkgs
+}
 
 $lintConfig = ".golangci.yml"
-Write-Host "[quality-gate] golangci-lint --config $lintConfig"
-golangci-lint run --config $lintConfig
+Invoke-RequiredStep -StepLabel "[quality-gate] golangci-lint --config $lintConfig" -Command {
+    golangci-lint run --config $lintConfig
+}
 
-Write-Host "[quality-gate] CA4 benchmark regression"
-pwsh -File scripts/check-ca4-benchmark-regression.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] CA4 benchmark regression" -Command {
+    pwsh -File scripts/check-ca4-benchmark-regression.ps1
+}
 
-Write-Host "[quality-gate] multi-agent mainline benchmark regression"
-pwsh -File scripts/check-multi-agent-performance-regression.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent mainline benchmark regression" -Command {
+    pwsh -File scripts/check-multi-agent-performance-regression.ps1
+}
 
-Write-Host "[quality-gate] full-chain example smoke"
-pwsh -File scripts/check-full-chain-example-smoke.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] full-chain example smoke" -Command {
+    pwsh -File scripts/check-full-chain-example-smoke.ps1
+}
 
 $scanMode = if ($env:BAYMAX_SECURITY_SCAN_MODE) { $env:BAYMAX_SECURITY_SCAN_MODE.Trim().ToLowerInvariant() } else { "strict" }
 $govulncheckEnabled = if ($env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED) { $env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED.Trim().ToLowerInvariant() } else { "true" }
 if ($govulncheckEnabled -eq "true") {
     Write-Host "[quality-gate] govulncheck (mode=$scanMode)"
+
+    # The only governance exception path: warn mode allows vulnerability findings without unblocking other strict checks.
+    $allowWarn = ($scanMode -eq "warn")
     if (Get-Command govulncheck -ErrorAction SilentlyContinue) {
-        govulncheck ./...
+        $exitCode = Invoke-NativeStrict -Label "govulncheck ./..." -AllowFailure:$allowWarn -Command {
+            govulncheck ./...
+        }
     }
     else {
-        go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        $exitCode = Invoke-NativeStrict -Label "go run golang.org/x/vuln/cmd/govulncheck@latest ./..." -AllowFailure:$allowWarn -Command {
+            go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        }
     }
-    if ($LASTEXITCODE -ne 0) {
-        if ($scanMode -eq "warn") {
-            Write-Warning "[quality-gate] govulncheck found issues but mode=warn; continue"
-        }
-        else {
-            throw "[quality-gate] govulncheck found issues; mode=strict fails"
-        }
+
+    if ($allowWarn -and $exitCode -ne 0) {
+        Write-Warning "[quality-gate] govulncheck found issues but mode=warn; continue"
     }
 }
 else {

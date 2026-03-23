@@ -117,6 +117,9 @@ func TestMainlineContractIndexReferencesExistingTests(t *testing.T) {
 		"Status Parity Governance A25",
 		"Core Module README Richness A25",
 		"Status Parity + README Richness A25 Gate Path",
+		"PowerShell Gate Fail-Fast Governance A37 Strict Helper Guard",
+		"PowerShell Gate Fail-Fast Governance A37 Gate Path",
+		"Status Parity Convergence A37 Gate Path",
 	}
 	for _, row := range requiredRows {
 		if !strings.Contains(doc, row) {

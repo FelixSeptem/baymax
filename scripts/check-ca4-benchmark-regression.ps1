@@ -1,6 +1,22 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-Median {
+    param([Parameter(Mandatory = $true)][double[]]$Values)
+    if (-not $Values -or $Values.Count -eq 0) {
+        throw "[ca4-bench] no benchmark samples provided for median"
+    }
+    $sorted = $Values | Sort-Object
+    $count = $sorted.Count
+    if ($count % 2 -eq 1) {
+        $mid = [int][math]::Floor($count / 2)
+        return [double]$sorted[$mid]
+    }
+    $left = [double]$sorted[($count / 2) - 1]
+    $right = [double]$sorted[$count / 2]
+    return ($left + $right) / 2
+}
+
 $enabled = if ($env:BAYMAX_CA4_BENCH_ENABLED) { $env:BAYMAX_CA4_BENCH_ENABLED.Trim().ToLowerInvariant() } else { "true" }
 if ($enabled -ne "true") {
     Write-Host "[ca4-bench] skipped by BAYMAX_CA4_BENCH_ENABLED=$enabled"
@@ -40,26 +56,27 @@ $baselineP95 = [double]$baselineP95Raw
 Write-Host "[ca4-bench] running benchmark (benchtime=$benchtime, count=$count)"
 $output = & go test ./integration -run '^$' -bench '^BenchmarkCA4PressureEvaluation$' -benchmem "-benchtime=$benchtime" "-count=$count" 2>&1
 $output | ForEach-Object { Write-Host $_ }
-
-$line = $output | Where-Object { $_ -match "BenchmarkCA4PressureEvaluation" } | Select-Object -Last 1
-if (-not $line) {
+$outputText = ($output | Out-String)
+$nsMatches = [regex]::Matches($outputText, "BenchmarkCA4PressureEvaluation[^\r\n]*?([0-9]+(?:\.[0-9]+)?)\s+ns/op")
+$p95Matches = [regex]::Matches($outputText, "BenchmarkCA4PressureEvaluation[^\r\n]*?([0-9]+(?:\.[0-9]+)?)\s+p95-ns/op")
+if ($nsMatches.Count -eq 0 -or $p95Matches.Count -eq 0) {
     throw "[ca4-bench] benchmark output not found"
 }
 
-$tokens = $line -split "\s+"
-$candidateNs = $null
-$candidateP95 = $null
-for ($i = 0; $i -lt $tokens.Length; $i++) {
-    if ($tokens[$i] -eq "ns/op" -and $i -gt 0) {
-        $candidateNs = [double]$tokens[$i - 1]
-    }
-    if ($tokens[$i] -eq "p95-ns/op" -and $i -gt 0) {
-        $candidateP95 = [double]$tokens[$i - 1]
-    }
+$nsSamples = New-Object 'System.Collections.Generic.List[double]'
+$p95Samples = New-Object 'System.Collections.Generic.List[double]'
+foreach ($m in $nsMatches) {
+    $nsSamples.Add([double]$m.Groups[1].Value)
 }
-if ($null -eq $candidateNs -or $null -eq $candidateP95) {
-    throw "[ca4-bench] failed to parse ns/op or p95-ns/op from benchmark line: $line"
+foreach ($m in $p95Matches) {
+    $p95Samples.Add([double]$m.Groups[1].Value)
 }
+if ($nsSamples.Count -eq 0 -or $p95Samples.Count -eq 0 -or $nsSamples.Count -ne $p95Samples.Count) {
+    throw "[ca4-bench] failed to parse aligned ns/op and p95-ns/op samples"
+}
+
+$candidateNs = Get-Median -Values $nsSamples.ToArray()
+$candidateP95 = Get-Median -Values $p95Samples.ToArray()
 
 $degPct = (($candidateNs - $baselineNs) / $baselineNs) * 100
 $p95DegPct = (($candidateP95 - $baselineP95) / $baselineP95) * 100

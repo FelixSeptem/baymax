@@ -14,9 +14,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-23）：
-- 已归档并稳定：A4-A35。
-- A36（Introduce Mailbox Lifecycle Worker And Observability Contract）进行中。
-- A37（Harden Windows Gate Fail-Fast Parity And Status Convergence）进行中。
+- 已归档并稳定：A4-A37。
+- A38（Harden Mailbox Worker Lease Reclaim And Panic Recovery Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -220,10 +219,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A36 `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`：mailbox lifecycle worker 与可观测性契约进行中。
-- A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 fail-fast parity 与状态收敛进行中。
+- A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固进行中。
 
 最近已归档能力：
+- A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 strict-native fail-fast parity 与状态口径收敛已归档（`govulncheck warn` 保留为唯一治理例外）。
+- A36 `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`：mailbox lifecycle worker 与可观测性契约已归档。
 - A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理已归档。
 - A34 `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`：调用入口 canonical-only 收口已归档。
 - A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语 bounded retry 契约已归档。
@@ -253,6 +253,10 @@ Windows 质量门禁：
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
 ```
+
+PowerShell 门禁治理语义（A37）：
+- required native command 默认 strict fail-fast（非零即阻断）。
+- 唯一非阻断例外为 `govulncheck` 在 `BAYMAX_SECURITY_SCAN_MODE=warn` 时的告警放行。
 
 ## 示例
 

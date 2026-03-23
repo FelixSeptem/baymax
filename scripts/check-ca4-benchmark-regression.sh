@@ -32,16 +32,49 @@ echo "[ca4-bench] running benchmark (benchtime=${benchtime}, count=${count})"
 output="$(go test ./integration -run '^$' -bench '^BenchmarkCA4PressureEvaluation$' -benchmem -benchtime="${benchtime}" -count="${count}" 2>&1)"
 echo "${output}"
 
-line="$(echo "${output}" | grep 'BenchmarkCA4PressureEvaluation' | tail -n 1 || true)"
-if [[ -z "${line}" ]]; then
+mapfile -t lines < <(echo "${output}" | grep 'BenchmarkCA4PressureEvaluation' || true)
+if [[ "${#lines[@]}" -eq 0 ]]; then
   echo "[ca4-bench] benchmark output not found"
   exit 1
 fi
 
-candidate_ns="$(echo "${line}" | awk '{for(i=1;i<=NF;i++){if($(i+1)=="ns/op"){print $i; exit}}}')"
-candidate_p95_ns="$(echo "${line}" | awk '{for(i=1;i<=NF;i++){if($(i+1)=="p95-ns/op"){print $i; exit}}}')"
+median_of_values() {
+  if [[ "$#" -eq 0 ]]; then
+    return 1
+  fi
+  printf "%s\n" "$@" | sort -n | awk '
+    { values[NR] = $1 }
+    END {
+      if (NR == 0) {
+        exit 1
+      }
+      mid = int((NR + 1) / 2)
+      if (NR % 2 == 1) {
+        printf "%s", values[mid]
+        exit 0
+      }
+      printf "%.4f", (values[mid] + values[mid + 1]) / 2
+    }
+  '
+}
+
+ns_samples=()
+p95_samples=()
+for line in "${lines[@]}"; do
+  sample_ns="$(echo "${line}" | awk '{for(i=1;i<=NF;i++){if($(i+1)=="ns/op"){print $i; exit}}}')"
+  sample_p95_ns="$(echo "${line}" | awk '{for(i=1;i<=NF;i++){if($(i+1)=="p95-ns/op"){print $i; exit}}}')"
+  if [[ -z "${sample_ns}" || -z "${sample_p95_ns}" ]]; then
+    echo "[ca4-bench] failed to parse ns/op or p95-ns/op from benchmark line: ${line}"
+    exit 1
+  fi
+  ns_samples+=("${sample_ns}")
+  p95_samples+=("${sample_p95_ns}")
+done
+
+candidate_ns="$(median_of_values "${ns_samples[@]}" || true)"
+candidate_p95_ns="$(median_of_values "${p95_samples[@]}" || true)"
 if [[ -z "${candidate_ns}" || -z "${candidate_p95_ns}" ]]; then
-  echo "[ca4-bench] failed to parse ns/op or p95-ns/op from benchmark line: ${line}"
+  echo "[ca4-bench] failed to compute benchmark medians"
   exit 1
 fi
 

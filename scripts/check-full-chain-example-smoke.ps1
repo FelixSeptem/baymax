@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
@@ -8,10 +9,8 @@ if (-not $env:GOCACHE) {
 }
 
 Write-Host "[example-smoke] running full-chain example"
-$output = & go run ./examples/09-multi-agent-full-chain-reference 2>&1
-if ($LASTEXITCODE -ne 0) {
-    $output | ForEach-Object { Write-Host $_ }
-    throw "[example-smoke] full-chain example execution failed"
+$output = Invoke-NativeCaptureStrict -Label "go run ./examples/09-multi-agent-full-chain-reference" -Command {
+    go run ./examples/09-multi-agent-full-chain-reference 2>&1
 }
 $output | ForEach-Object { Write-Host $_ }
 

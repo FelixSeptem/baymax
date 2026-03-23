@@ -17,6 +17,21 @@ const (
 	KindResult  EnvelopeKind = "result"
 )
 
+const (
+	WorkerHandlerErrorPolicyRequeue = "requeue"
+	WorkerHandlerErrorPolicyNack    = "nack"
+	DefaultWorkerPollInterval       = 100 * time.Millisecond
+	DefaultWorkerConsumerID         = "mailbox-worker"
+)
+
+const (
+	LifecycleReasonRetryExhausted   = "retry_exhausted"
+	LifecycleReasonExpired          = "expired"
+	LifecycleReasonConsumerMismatch = "consumer_mismatch"
+	LifecycleReasonMessageNotFound  = "message_not_found"
+	LifecycleReasonHandlerError     = "handler_error"
+)
+
 type MessageState string
 
 const (
@@ -95,6 +110,32 @@ type PublishResult struct {
 	Record    Record `json:"record"`
 	Duplicate bool   `json:"duplicate"`
 }
+
+type WorkerConfig struct {
+	Enabled            bool          `json:"enabled"`
+	PollInterval       time.Duration `json:"poll_interval"`
+	HandlerErrorPolicy string        `json:"handler_error_policy"`
+}
+
+type LifecycleTransition string
+
+const (
+	TransitionConsume    LifecycleTransition = "consume"
+	TransitionAck        LifecycleTransition = "ack"
+	TransitionNack       LifecycleTransition = "nack"
+	TransitionRequeue    LifecycleTransition = "requeue"
+	TransitionDeadLetter LifecycleTransition = "dead_letter"
+	TransitionExpired    LifecycleTransition = "expired"
+)
+
+type LifecycleEvent struct {
+	Time       time.Time           `json:"time"`
+	Transition LifecycleTransition `json:"transition"`
+	Record     Record              `json:"record"`
+	ReasonCode string              `json:"reason_code,omitempty"`
+}
+
+type LifecycleObserver func(ctx context.Context, event LifecycleEvent)
 
 type Store interface {
 	Backend() string
@@ -175,6 +216,90 @@ func normalizePolicy(in Policy) Policy {
 		out.TTL = 0
 	}
 	return out
+}
+
+func NormalizeWorkerConfig(in WorkerConfig) (WorkerConfig, error) {
+	out := in
+	if out.PollInterval == 0 {
+		out.PollInterval = DefaultWorkerPollInterval
+	}
+	if out.PollInterval < 0 {
+		return WorkerConfig{}, errors.New("worker.poll_interval must be > 0")
+	}
+	if out.PollInterval <= 0 {
+		return WorkerConfig{}, errors.New("worker.poll_interval must be > 0")
+	}
+	out.HandlerErrorPolicy = strings.ToLower(strings.TrimSpace(out.HandlerErrorPolicy))
+	if out.HandlerErrorPolicy == "" {
+		out.HandlerErrorPolicy = WorkerHandlerErrorPolicyRequeue
+	}
+	switch out.HandlerErrorPolicy {
+	case WorkerHandlerErrorPolicyRequeue, WorkerHandlerErrorPolicyNack:
+	default:
+		return WorkerConfig{}, fmt.Errorf(
+			"worker.handler_error_policy must be one of [%s,%s], got %q",
+			WorkerHandlerErrorPolicyRequeue,
+			WorkerHandlerErrorPolicyNack,
+			in.HandlerErrorPolicy,
+		)
+	}
+	return out, nil
+}
+
+func LifecycleCanonicalReasons() []string {
+	return []string{
+		LifecycleReasonRetryExhausted,
+		LifecycleReasonExpired,
+		LifecycleReasonConsumerMismatch,
+		LifecycleReasonMessageNotFound,
+		LifecycleReasonHandlerError,
+	}
+}
+
+func NormalizeLifecycleReason(in string) string {
+	reason := strings.ToLower(strings.TrimSpace(in))
+	if reason == "" {
+		return ""
+	}
+	if cut := strings.Index(reason, ":"); cut >= 0 {
+		reason = strings.TrimSpace(reason[:cut])
+	}
+	return reason
+}
+
+func IsCanonicalLifecycleReason(in string) bool {
+	reason := NormalizeLifecycleReason(in)
+	switch reason {
+	case LifecycleReasonRetryExhausted,
+		LifecycleReasonExpired,
+		LifecycleReasonConsumerMismatch,
+		LifecycleReasonMessageNotFound,
+		LifecycleReasonHandlerError:
+		return true
+	default:
+		return false
+	}
+}
+
+func LifecycleReasonFromError(err error) string {
+	switch {
+	case errors.Is(err, ErrConsumerMismatch):
+		return LifecycleReasonConsumerMismatch
+	case errors.Is(err, ErrMessageNotFound):
+		return LifecycleReasonMessageNotFound
+	default:
+		return LifecycleReasonHandlerError
+	}
+}
+
+func CanonicalizeLifecycleReason(in, fallback string) string {
+	if reason := NormalizeLifecycleReason(in); IsCanonicalLifecycleReason(reason) {
+		return reason
+	}
+	if reason := NormalizeLifecycleReason(fallback); IsCanonicalLifecycleReason(reason) {
+		return reason
+	}
+	return LifecycleReasonHandlerError
 }
 
 func cloneRecord(in Record) Record {

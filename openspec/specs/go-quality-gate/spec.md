@@ -729,9 +729,9 @@ The mailbox suites MUST cover:
 - sync/async/delayed convergence through mailbox,
 - mailbox query pagination/cursor deterministic behavior,
 - memory/file backend parity,
-- runtime mailbox wiring activation from effective config,
-- file-backend init failure fallback-to-memory semantics with deterministic reason traceability,
-- mailbox diagnostics query/aggregate traceability for managed orchestration traffic.
+- mailbox worker lifecycle execution semantics,
+- mailbox worker default policy semantics (`enabled=false`, `poll_interval=100ms`, `handler_error_policy=requeue`),
+- mailbox lifecycle canonical reason taxonomy drift detection.
 
 #### Scenario: Contributor runs shared gate in shell
 - **WHEN** contributor executes `scripts/check-multi-agent-shared-contract.sh`
@@ -741,9 +741,9 @@ The mailbox suites MUST cover:
 - **WHEN** contributor executes `scripts/check-multi-agent-shared-contract.ps1`
 - **THEN** equivalent mailbox contract suites are executed as required blocking checks
 
-#### Scenario: Regression bypasses shared runtime mailbox wiring
-- **WHEN** change reintroduces per-call ephemeral mailbox bridge behavior on managed orchestration path
-- **THEN** shared mailbox contract suites fail and block merge
+#### Scenario: Regression introduces non-canonical mailbox lifecycle reason
+- **WHEN** contract suites detect mailbox lifecycle reason code outside canonical taxonomy without synchronized contract update
+- **THEN** shared quality gate fails and blocks merge
 
 ### Requirement: Quality gate SHALL track mailbox migration as canonical multi-agent path
 Quality gate and contract index mapping MUST treat mailbox path as canonical for sync/async/delayed coordination flows after migration.

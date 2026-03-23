@@ -34,8 +34,9 @@ func NewStoreWithFallback(backend, path string, policy Policy) (StoreInitResult,
 }
 
 type Mailbox struct {
-	store Store
-	now   func() time.Time
+	store     Store
+	now       func() time.Time
+	observers []LifecycleObserver
 }
 
 type Option func(*Mailbox)
@@ -48,18 +49,32 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+func WithLifecycleObserver(observer LifecycleObserver) Option {
+	return func(m *Mailbox) {
+		if observer != nil {
+			m.observers = append(m.observers, observer)
+		}
+	}
+}
+
 func New(store Store, opts ...Option) (*Mailbox, error) {
 	if store == nil {
 		return nil, errors.New("mailbox store is required")
 	}
 	m := &Mailbox{
-		store: store,
-		now:   time.Now,
+		store:     store,
+		now:       time.Now,
+		observers: []LifecycleObserver{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(m)
 		}
+	}
+	if configurable, ok := m.store.(interface {
+		SetLifecycleTracing(enabled bool)
+	}); ok {
+		configurable.SetLifecycleTracing(len(m.observers) > 0)
 	}
 	return m, nil
 }
@@ -69,19 +84,27 @@ func (m *Mailbox) Publish(ctx context.Context, envelope Envelope) (PublishResult
 }
 
 func (m *Mailbox) Consume(ctx context.Context, consumerID string) (Record, bool, error) {
-	return m.store.Consume(ctx, consumerID, m.nowTime())
+	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime())
+	m.emitLifecycle(ctx)
+	return record, ok, err
 }
 
 func (m *Mailbox) Ack(ctx context.Context, messageID, consumerID string) (Record, error) {
-	return m.store.Ack(ctx, messageID, consumerID, m.nowTime())
+	record, err := m.store.Ack(ctx, messageID, consumerID, m.nowTime())
+	m.emitLifecycle(ctx)
+	return record, err
 }
 
 func (m *Mailbox) Nack(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
-	return m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime())
+	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime())
+	m.emitLifecycle(ctx)
+	return record, err
 }
 
 func (m *Mailbox) Requeue(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
-	return m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime())
+	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime())
+	m.emitLifecycle(ctx)
+	return record, err
 }
 
 func (m *Mailbox) Stats(ctx context.Context) (Stats, error) {
@@ -163,4 +186,31 @@ func (m *Mailbox) nowTime() time.Time {
 		return time.Now().UTC()
 	}
 	return m.now().UTC()
+}
+
+func (m *Mailbox) emitLifecycle(ctx context.Context) {
+	if m == nil {
+		return
+	}
+	drain, ok := m.store.(interface {
+		DrainLifecycleEvents() []LifecycleEvent
+	})
+	if !ok {
+		return
+	}
+	events := drain.DrainLifecycleEvents()
+	if len(events) == 0 {
+		return
+	}
+	for _, event := range events {
+		ev := event
+		if ev.Time.IsZero() {
+			ev.Time = m.nowTime()
+		}
+		for _, observer := range m.observers {
+			if observer != nil {
+				observer(ctx, ev)
+			}
+		}
+	}
 }

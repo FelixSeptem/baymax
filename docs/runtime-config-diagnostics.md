@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-20
+更新时间：2026-03-23
 
 ## 目标
 
@@ -53,6 +53,9 @@
   - `mailbox.dlq.enabled` -> `BAYMAX_MAILBOX_DLQ_ENABLED`
   - `mailbox.query.page_size_default` -> `BAYMAX_MAILBOX_QUERY_PAGE_SIZE_DEFAULT`
   - `mailbox.query.page_size_max` -> `BAYMAX_MAILBOX_QUERY_PAGE_SIZE_MAX`
+  - `mailbox.worker.enabled` -> `BAYMAX_MAILBOX_WORKER_ENABLED`
+  - `mailbox.worker.poll_interval` -> `BAYMAX_MAILBOX_WORKER_POLL_INTERVAL`
+  - `mailbox.worker.handler_error_policy` -> `BAYMAX_MAILBOX_WORKER_HANDLER_ERROR_POLICY`
   - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
@@ -222,6 +225,10 @@ mailbox:
   query:
     page_size_default: 50         # 必须 > 0 且 <= page_size_max
     page_size_max: 200            # 必须 > 0 且 <= 200
+  worker:
+    enabled: false                # 默认关闭，保持现有行为不变
+    poll_interval: 100ms          # 必须 > 0
+    handler_error_policy: requeue # requeue|nack，默认 requeue
 
 scheduler:
   enabled: false
@@ -589,16 +596,19 @@ mailbox baseline 校验语义：
 7. `mailbox.ttl` 必须 `>= 0`。
 8. `mailbox.query.page_size_default` 必须 `> 0` 且 `<= page_size_max`。
 9. `mailbox.query.page_size_max` 必须 `> 0` 且 `<= 200`。
-10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
-11. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
-12. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
+10. `mailbox.worker.poll_interval` 必须 `> 0`。
+11. `mailbox.worker.handler_error_policy` 仅支持 `requeue|nack`，默认 `requeue`。
+12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+13. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
+14. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
 
 mailbox 诊断查询入口（A30）：
 1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。
 2. `runtime/config.Manager.MailboxAggregates(filter)`：返回聚合计数（`by_kind/by_state/retry_total/dead_letter_total/expired_total/reason_code_totals`），用于与 run/task 视图组合排障。
 3. mailbox 诊断记录保留关联键：`run_id/task_id/workflow_id/team_id`。
-4. managed 共享 wiring 下，mailbox publish 主路径（`command/result/delayed_command`）会写入 `RecordMailboxDiagnostic`，查询结果体现真实主链路流量。
+4. managed 共享 wiring 下，mailbox publish 主路径（`command/result/delayed_command`）与 lifecycle 主路径（`lifecycle.consume|lifecycle.ack|lifecycle.nack|lifecycle.requeue|lifecycle.dead_letter|lifecycle.expired`）会写入 `RecordMailboxDiagnostic`，查询结果体现真实主链路流量。
 5. fallback 观测字段为 additive：`configured_backend`、`backend_fallback`、`backend_fallback_reason`、`publish_path`。
+6. lifecycle reason taxonomy 采用 canonical 集合：`retry_exhausted`、`expired`、`consumer_mismatch`、`message_not_found`、`handler_error`。
 
 a2a 同步调用契约（A11）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
@@ -788,7 +798,7 @@ Mailbox diagnostics additive 字段（A35）：
 - `configured_backend`
 - `backend_fallback`
 - `backend_fallback_reason`
-- `publish_path`（`command|result|delayed_command`）
+- `publish_path`（`command|result|delayed_command|lifecycle.consume|lifecycle.ack|lifecycle.nack|lifecycle.requeue|lifecycle.dead_letter|lifecycle.expired`）
 
 ### RunRecord 字段分组（当前实现）
 

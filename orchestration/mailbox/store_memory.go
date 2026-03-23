@@ -37,7 +37,8 @@ func (s *MemoryStore) Publish(_ context.Context, envelope Envelope, now time.Tim
 func (s *MemoryStore) Consume(_ context.Context, consumerID string, now time.Time) (Record, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.consume(consumerID, now)
+	record, ok, _, err := s.state.consume(consumerID, now)
+	return record, ok, err
 }
 
 func (s *MemoryStore) Ack(_ context.Context, messageID, consumerID string, now time.Time) (Record, error) {
@@ -74,6 +75,18 @@ func (s *MemoryStore) Restore(_ context.Context, snapshot Snapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.restore(snapshot)
+}
+
+func (s *MemoryStore) DrainLifecycleEvents() []LifecycleEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.drainLifecycleEvents()
+}
+
+func (s *MemoryStore) SetLifecycleTracing(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setTraceEvents(enabled)
 }
 
 func newStoreWithFallback(backend, path string, policy Policy) (StoreInitResult, error) {

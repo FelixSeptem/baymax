@@ -112,6 +112,8 @@ const (
 	AsyncReconcileNotFoundKeepTimeout  = "keep_until_timeout"
 	MailboxBackendMemory               = "memory"
 	MailboxBackendFile                 = "file"
+	MailboxWorkerHandlerErrorRequeue   = "requeue"
+	MailboxWorkerHandlerErrorNack      = "nack"
 )
 
 const (
@@ -353,13 +355,14 @@ type A2AAsyncReportingRetryConfig struct {
 }
 
 type MailboxConfig struct {
-	Enabled bool               `json:"enabled"`
-	Backend string             `json:"backend"`
-	Path    string             `json:"path"`
-	Retry   MailboxRetryConfig `json:"retry"`
-	TTL     time.Duration      `json:"ttl"`
-	DLQ     MailboxDLQConfig   `json:"dlq"`
-	Query   MailboxQueryConfig `json:"query"`
+	Enabled bool                `json:"enabled"`
+	Backend string              `json:"backend"`
+	Path    string              `json:"path"`
+	Retry   MailboxRetryConfig  `json:"retry"`
+	TTL     time.Duration       `json:"ttl"`
+	DLQ     MailboxDLQConfig    `json:"dlq"`
+	Query   MailboxQueryConfig  `json:"query"`
+	Worker  MailboxWorkerConfig `json:"worker"`
 }
 
 type MailboxRetryConfig struct {
@@ -376,6 +379,12 @@ type MailboxDLQConfig struct {
 type MailboxQueryConfig struct {
 	PageSizeDefault int `json:"page_size_default"`
 	PageSizeMax     int `json:"page_size_max"`
+}
+
+type MailboxWorkerConfig struct {
+	Enabled            bool          `json:"enabled"`
+	PollInterval       time.Duration `json:"poll_interval"`
+	HandlerErrorPolicy string        `json:"handler_error_policy"`
 }
 
 type SchedulerConfig struct {
@@ -1006,6 +1015,11 @@ func DefaultConfig() Config {
 			Query: MailboxQueryConfig{
 				PageSizeDefault: 50,
 				PageSizeMax:     200,
+			},
+			Worker: MailboxWorkerConfig{
+				Enabled:            false,
+				PollInterval:       100 * time.Millisecond,
+				HandlerErrorPolicy: MailboxWorkerHandlerErrorRequeue,
 			},
 		},
 		Scheduler: SchedulerConfig{
@@ -1733,6 +1747,19 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Mailbox.Query.PageSizeMax > 200 {
 		return errors.New("mailbox.query.page_size_max must be <= 200")
+	}
+	if cfg.Mailbox.Worker.PollInterval <= 0 {
+		return errors.New("mailbox.worker.poll_interval must be > 0")
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Mailbox.Worker.HandlerErrorPolicy)); policy {
+	case MailboxWorkerHandlerErrorRequeue, MailboxWorkerHandlerErrorNack:
+	default:
+		return fmt.Errorf(
+			"mailbox.worker.handler_error_policy must be one of [%s,%s], got %q",
+			MailboxWorkerHandlerErrorRequeue,
+			MailboxWorkerHandlerErrorNack,
+			cfg.Mailbox.Worker.HandlerErrorPolicy,
+		)
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Scheduler.Backend)); backend {
 	case SchedulerBackendMemory:
@@ -2872,6 +2899,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("mailbox.dlq.enabled", base.Mailbox.DLQ.Enabled)
 	v.SetDefault("mailbox.query.page_size_default", base.Mailbox.Query.PageSizeDefault)
 	v.SetDefault("mailbox.query.page_size_max", base.Mailbox.Query.PageSizeMax)
+	v.SetDefault("mailbox.worker.enabled", base.Mailbox.Worker.Enabled)
+	v.SetDefault("mailbox.worker.poll_interval", base.Mailbox.Worker.PollInterval)
+	v.SetDefault("mailbox.worker.handler_error_policy", base.Mailbox.Worker.HandlerErrorPolicy)
 	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
 	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
 	v.SetDefault("scheduler.path", base.Scheduler.Path)
@@ -3148,6 +3178,9 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Mailbox.DLQ.Enabled = v.GetBool("mailbox.dlq.enabled")
 	cfg.Mailbox.Query.PageSizeDefault = v.GetInt("mailbox.query.page_size_default")
 	cfg.Mailbox.Query.PageSizeMax = v.GetInt("mailbox.query.page_size_max")
+	cfg.Mailbox.Worker.Enabled = v.GetBool("mailbox.worker.enabled")
+	cfg.Mailbox.Worker.PollInterval = v.GetDuration("mailbox.worker.poll_interval")
+	cfg.Mailbox.Worker.HandlerErrorPolicy = strings.ToLower(strings.TrimSpace(v.GetString("mailbox.worker.handler_error_policy")))
 	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
 	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
 	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))

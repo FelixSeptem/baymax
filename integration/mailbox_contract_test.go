@@ -2,8 +2,10 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,12 +144,136 @@ func TestMailboxContractCanonicalEntrypointConvergenceGuard(t *testing.T) {
 	}
 }
 
+func TestMailboxContractWorkerLifecycleRunStreamSemanticEquivalence(t *testing.T) {
+	runSummary := executeMailboxWorkerLifecycleFlow(t, "run", "memory")
+	streamSummary := executeMailboxWorkerLifecycleFlow(t, "stream", "memory")
+	if !reflect.DeepEqual(runSummary, streamSummary) {
+		t.Fatalf("worker lifecycle run/stream mismatch: run=%#v stream=%#v", runSummary, streamSummary)
+	}
+	if runSummary.ByTransition[string(mailbox.TransitionConsume)] < 2 ||
+		runSummary.ByTransition[string(mailbox.TransitionAck)] != 1 ||
+		runSummary.ByTransition[string(mailbox.TransitionRequeue)] != 1 {
+		t.Fatalf("worker lifecycle transition coverage mismatch: %#v", runSummary)
+	}
+}
+
+func TestMailboxContractWorkerLifecycleMemoryFileParity(t *testing.T) {
+	memSummary := executeMailboxWorkerLifecycleFlow(t, "parity", "memory")
+	fileSummary := executeMailboxWorkerLifecycleFlow(t, "parity", "file")
+	if !reflect.DeepEqual(memSummary, fileSummary) {
+		t.Fatalf("worker lifecycle memory/file parity mismatch: memory=%#v file=%#v", memSummary, fileSummary)
+	}
+}
+
+func TestMailboxContractWorkerDisabledNoopBaseline(t *testing.T) {
+	mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      "msg-worker-disabled",
+		IdempotencyKey: "idem-worker-disabled",
+		Kind:           mailbox.KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	worker, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{Enabled: false}, func(context.Context, mailbox.Record) error {
+		return nil
+	}, "worker-disabled")
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+	if err := worker.Run(ctx); err != nil {
+		t.Fatalf("disabled worker run failed: %v", err)
+	}
+	rec, ok, err := mb.Consume(ctx, "worker-disabled-check")
+	if err != nil || !ok {
+		t.Fatalf("message should remain queued when worker disabled: ok=%v err=%v", ok, err)
+	}
+	if rec.State != mailbox.StateInFlight {
+		t.Fatalf("disabled baseline claimed state=%q, want in_flight", rec.State)
+	}
+}
+
+func TestMailboxContractLifecycleReasonTaxonomyGuard(t *testing.T) {
+	required := []string{
+		mailbox.LifecycleReasonRetryExhausted,
+		mailbox.LifecycleReasonExpired,
+		mailbox.LifecycleReasonConsumerMismatch,
+		mailbox.LifecycleReasonMessageNotFound,
+		mailbox.LifecycleReasonHandlerError,
+	}
+	if got := mailbox.LifecycleCanonicalReasons(); !reflect.DeepEqual(got, required) {
+		t.Fatalf("canonical lifecycle reason set drift: got=%#v want=%#v", got, required)
+	}
+
+	ctx := context.Background()
+	var seen []mailbox.LifecycleEvent
+	mb, err := mailbox.New(
+		mailbox.NewMemoryStore(mailbox.Policy{
+			MaxAttempts:    2,
+			BackoffInitial: 1 * time.Millisecond,
+			BackoffMax:     1 * time.Millisecond,
+			JitterRatio:    0,
+		}),
+		mailbox.WithLifecycleObserver(func(_ context.Context, event mailbox.LifecycleEvent) {
+			seen = append(seen, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      "msg-taxonomy-guard",
+		IdempotencyKey: "idem-taxonomy-guard",
+		Kind:           mailbox.KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	worker, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{Enabled: true}, func(context.Context, mailbox.Record) error {
+		return errors.New("non-canonical-transient-error")
+	}, "worker-taxonomy")
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+	processed, err := worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("RunOnce failed: processed=%v err=%v", processed, err)
+	}
+	for _, event := range seen {
+		if strings.TrimSpace(event.ReasonCode) == "" {
+			continue
+		}
+		if !mailbox.IsCanonicalLifecycleReason(event.ReasonCode) {
+			t.Fatalf("non-canonical lifecycle reason detected: %#v", event)
+		}
+	}
+	foundHandlerError := false
+	for _, event := range seen {
+		if event.Transition == mailbox.TransitionRequeue && event.ReasonCode == mailbox.LifecycleReasonHandlerError {
+			foundHandlerError = true
+			break
+		}
+	}
+	if !foundHandlerError {
+		t.Fatalf("expected requeue reason mapped to handler_error, events=%#v", seen)
+	}
+}
+
 type mailboxConvergenceSummary struct {
 	CommandTotal      int
 	ResultTotal       int
 	DelayedBlocked    bool
 	DelayedReady      bool
 	CorrelationMapped bool
+}
+
+type mailboxWorkerLifecycleSummary struct {
+	ByTransition map[string]int
+	ByReason     map[string]int
+	FinalState   mailbox.MessageState
+	Attempts     int
 }
 
 func executeMailboxConvergenceFlow(t *testing.T, label string) mailboxConvergenceSummary {
@@ -266,6 +392,100 @@ func executeMailboxConvergenceFlow(t *testing.T, label string) mailboxConvergenc
 		}
 	}
 	summary.CorrelationMapped = correlationMapped
+	return summary
+}
+
+func executeMailboxWorkerLifecycleFlow(t *testing.T, label, backend string) mailboxWorkerLifecycleSummary {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	clock := now
+	events := make([]mailbox.LifecycleEvent, 0, 8)
+	policy := mailbox.Policy{
+		MaxAttempts:    3,
+		BackoffInitial: 10 * time.Millisecond,
+		BackoffMax:     10 * time.Millisecond,
+		JitterRatio:    0,
+		DLQEnabled:     true,
+	}
+	var store mailbox.Store
+	switch backend {
+	case "file":
+		fileStore, err := mailbox.NewFileStore(filepath.Join(t.TempDir(), "worker-mailbox.json"), policy)
+		if err != nil {
+			t.Fatalf("new file mailbox failed: %v", err)
+		}
+		store = fileStore
+	default:
+		store = mailbox.NewMemoryStore(policy)
+	}
+	mb, err := mailbox.New(
+		store,
+		mailbox.WithClock(func() time.Time { return clock }),
+		mailbox.WithLifecycleObserver(func(_ context.Context, event mailbox.LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      "msg-worker-" + label,
+		IdempotencyKey: "idem-worker-" + label,
+		Kind:           mailbox.KindCommand,
+		RunID:          "run-worker-" + label,
+		TaskID:         "task-worker-" + label,
+		WorkflowID:     "wf-worker-" + label,
+		TeamID:         "team-worker-" + label,
+	}); err != nil {
+		t.Fatalf("publish worker command failed: %v", err)
+	}
+	calls := 0
+	worker, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{Enabled: true}, func(context.Context, mailbox.Record) error {
+		calls++
+		if calls == 1 {
+			return errors.New("handler transient")
+		}
+		return nil
+	}, "worker-"+label)
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+	processed, err := worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("first RunOnce failed: processed=%v err=%v", processed, err)
+	}
+	clock = clock.Add(20 * time.Millisecond)
+	processed, err = worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("second RunOnce failed: processed=%v err=%v", processed, err)
+	}
+
+	page, err := mb.Query(ctx, mailbox.QueryRequest{
+		RunID: "run-worker-" + label,
+	})
+	if err != nil {
+		t.Fatalf("query worker records failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("worker query record count=%d, want 1", len(page.Items))
+	}
+	summary := mailboxWorkerLifecycleSummary{
+		ByTransition: map[string]int{},
+		ByReason:     map[string]int{},
+		FinalState:   page.Items[0].State,
+		Attempts:     page.Items[0].DeliveryAttempt,
+	}
+	for _, event := range events {
+		key := strings.TrimSpace(string(event.Transition))
+		if key != "" {
+			summary.ByTransition[key]++
+		}
+		reason := strings.TrimSpace(event.ReasonCode)
+		if reason != "" {
+			summary.ByReason[reason]++
+		}
+	}
 	return summary
 }
 

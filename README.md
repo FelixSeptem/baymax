@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-23）：
-- 已归档并稳定：A4-A34。
-- A35（Activate Shared Mailbox Runtime Wiring And Diagnostics Contract）进行中。
+- 已归档并稳定：A4-A35。
 - A36（Introduce Mailbox Lifecycle Worker And Observability Contract）进行中。
+- A37（Harden Windows Gate Fail-Fast Parity And Status Convergence）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -202,7 +202,16 @@ _ = err
 
 主线调用入口统一为 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge`。
 
-### 7) 能力状态
+### 7) Mailbox Lifecycle Worker（A36）
+
+- 默认值：
+  - `mailbox.worker.enabled=false`
+  - `mailbox.worker.poll_interval=100ms`
+  - `mailbox.worker.handler_error_policy=requeue`
+- handler 返回错误时默认按 `requeue` 收敛，原因码归一到 canonical taxonomy。
+- lifecycle 诊断覆盖：`consume/ack/nack/requeue/dead_letter/expired`。
+
+### 8) 能力状态
 
 稳定能力清单（已归档）：
 - Runtime 主干：Run/Stream、工具闭环、Context Assembler（CA1-CA4）、Security（S1-S4）。
@@ -211,10 +220,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理进行中。
 - A36 `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`：mailbox lifecycle worker 与可观测性契约进行中。
+- A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 fail-fast parity 与状态收敛进行中。
 
 最近已归档能力：
+- A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理已归档。
 - A34 `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`：调用入口 canonical-only 收口已归档。
 - A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语 bounded retry 契约已归档。
   - 目标语义：保持默认关闭前提下，补齐 `composer.collab.retry.*` 有界重试契约与共享门禁覆盖。

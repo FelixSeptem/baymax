@@ -58,14 +58,16 @@ func (s *FileStore) Publish(_ context.Context, envelope Envelope, now time.Time)
 func (s *FileStore) Consume(_ context.Context, consumerID string, now time.Time) (Record, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, ok, err := s.state.consume(consumerID, now)
-	if err != nil || !ok {
+	record, ok, mutated, err := s.state.consume(consumerID, now)
+	if err != nil {
 		return record, ok, err
 	}
-	if err := s.persist(); err != nil {
-		return Record{}, false, err
+	if ok || mutated {
+		if err := s.persist(); err != nil {
+			return Record{}, false, err
+		}
 	}
-	return record, true, nil
+	return record, ok, nil
 }
 
 func (s *FileStore) Ack(_ context.Context, messageID, consumerID string, now time.Time) (Record, error) {
@@ -126,6 +128,18 @@ func (s *FileStore) Restore(_ context.Context, snapshot Snapshot) error {
 		return err
 	}
 	return s.persist()
+}
+
+func (s *FileStore) DrainLifecycleEvents() []LifecycleEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.drainLifecycleEvents()
+}
+
+func (s *FileStore) SetLifecycleTracing(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.setTraceEvents(enabled)
 }
 
 func (s *FileStore) load() error {

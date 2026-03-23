@@ -2,8 +2,10 @@ package mailbox
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -260,6 +262,204 @@ func TestNewStoreWithFallbackToMemory(t *testing.T) {
 	}
 	if !stats.BackendFallback || stats.BackendFallbackReason == "" {
 		t.Fatalf("fallback marker missing: %#v", stats)
+	}
+}
+
+func TestLifecycleReasonTaxonomyFrozen(t *testing.T) {
+	expected := []string{
+		LifecycleReasonRetryExhausted,
+		LifecycleReasonExpired,
+		LifecycleReasonConsumerMismatch,
+		LifecycleReasonMessageNotFound,
+		LifecycleReasonHandlerError,
+	}
+	if got := LifecycleCanonicalReasons(); !reflect.DeepEqual(got, expected) {
+		t.Fatalf("canonical reasons mismatch: got=%#v want=%#v", got, expected)
+	}
+	for _, reason := range expected {
+		if !IsCanonicalLifecycleReason(reason) {
+			t.Fatalf("reason %q should be canonical", reason)
+		}
+	}
+	if IsCanonicalLifecycleReason("transient") {
+		t.Fatal("unexpected canonical reason: transient")
+	}
+}
+
+func TestNormalizeWorkerConfigDefaultsAndValidation(t *testing.T) {
+	cfg, err := NormalizeWorkerConfig(WorkerConfig{})
+	if err != nil {
+		t.Fatalf("NormalizeWorkerConfig default failed: %v", err)
+	}
+	if cfg.PollInterval != DefaultWorkerPollInterval {
+		t.Fatalf("default poll_interval=%v, want %v", cfg.PollInterval, DefaultWorkerPollInterval)
+	}
+	if cfg.HandlerErrorPolicy != WorkerHandlerErrorPolicyRequeue {
+		t.Fatalf("default handler_error_policy=%q, want %q", cfg.HandlerErrorPolicy, WorkerHandlerErrorPolicyRequeue)
+	}
+
+	if _, err := NormalizeWorkerConfig(WorkerConfig{PollInterval: 0}); err != nil {
+		t.Fatalf("zero poll_interval should resolve to default: %v", err)
+	}
+	if _, err := NormalizeWorkerConfig(WorkerConfig{PollInterval: -1 * time.Millisecond}); err == nil {
+		t.Fatal("expected validation error for poll_interval < 0")
+	}
+	if _, err := NormalizeWorkerConfig(WorkerConfig{PollInterval: 10 * time.Millisecond, HandlerErrorPolicy: "drop"}); err == nil {
+		t.Fatal("expected validation error for unsupported handler_error_policy")
+	}
+}
+
+func TestMailboxWorkerRunOnceDefaultRequeuePolicy(t *testing.T) {
+	now := time.Now().UTC()
+	clock := now
+	events := make([]LifecycleEvent, 0, 8)
+	mb, err := New(
+		NewMemoryStore(Policy{
+			MaxAttempts:    3,
+			BackoffInitial: 10 * time.Millisecond,
+			BackoffMax:     10 * time.Millisecond,
+			JitterRatio:    0,
+		}),
+		WithClock(func() time.Time { return clock }),
+		WithLifecycleObserver(func(_ context.Context, event LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, Envelope{
+		MessageID:      "msg-worker-default",
+		IdempotencyKey: "idem-worker-default",
+		Kind:           KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+
+	calls := 0
+	worker, err := NewWorker(mb, WorkerConfig{Enabled: true}, func(_ context.Context, _ Record) error {
+		calls++
+		if calls == 1 {
+			return errors.New("temporary")
+		}
+		return nil
+	}, "worker-default")
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+	processed, err := worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("first RunOnce failed: processed=%v err=%v", processed, err)
+	}
+	clock = clock.Add(20 * time.Millisecond)
+	processed, err = worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("second RunOnce failed: processed=%v err=%v", processed, err)
+	}
+
+	snapshot, err := mb.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	rec := snapshot.Records[0]
+	if rec.State != StateAcked {
+		t.Fatalf("worker terminal state=%q, want acked", rec.State)
+	}
+
+	got := make([]LifecycleTransition, 0, len(events))
+	for _, event := range events {
+		got = append(got, event.Transition)
+		if strings.TrimSpace(event.ReasonCode) != "" && !IsCanonicalLifecycleReason(event.ReasonCode) {
+			t.Fatalf("event reason must be canonical: %#v", event)
+		}
+	}
+	want := []LifecycleTransition{
+		TransitionConsume,
+		TransitionNack,
+		TransitionRequeue,
+		TransitionConsume,
+		TransitionAck,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("worker lifecycle transitions mismatch: got=%#v want=%#v", got, want)
+	}
+}
+
+func TestMailboxWorkerDisabledNoop(t *testing.T) {
+	mb := newTestMailbox(t, Policy{})
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, Envelope{
+		MessageID:      "msg-worker-disabled",
+		IdempotencyKey: "idem-worker-disabled",
+		Kind:           KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	worker, err := NewWorker(mb, WorkerConfig{Enabled: false}, func(context.Context, Record) error {
+		return nil
+	}, "worker-disabled")
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+	if err := worker.Run(ctx); err != nil {
+		t.Fatalf("disabled worker run failed: %v", err)
+	}
+	claimed, ok, err := mb.Consume(ctx, "worker-disabled-check")
+	if err != nil || !ok {
+		t.Fatalf("message should remain queued when worker disabled: ok=%v err=%v", ok, err)
+	}
+	if claimed.State != StateInFlight {
+		t.Fatalf("claimed state=%q, want in_flight", claimed.State)
+	}
+}
+
+func TestMailboxLifecycleObserverExpiredAndDeadLetter(t *testing.T) {
+	now := time.Now().UTC()
+	clock := now
+	events := make([]LifecycleEvent, 0, 4)
+	mb, err := New(
+		NewMemoryStore(Policy{
+			MaxAttempts: 3,
+			DLQEnabled:  true,
+		}),
+		WithClock(func() time.Time { return clock }),
+		WithLifecycleObserver(func(_ context.Context, event LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, Envelope{
+		MessageID:      "msg-expire-dlq",
+		IdempotencyKey: "idem-expire-dlq",
+		Kind:           KindCommand,
+		NotBefore:      now.Add(300 * time.Millisecond),
+		ExpireAt:       now.Add(80 * time.Millisecond),
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	clock = clock.Add(120 * time.Millisecond)
+	if _, ok, err := mb.Consume(ctx, "worker-expire"); err != nil || ok {
+		t.Fatalf("consume should not return expired message: ok=%v err=%v", ok, err)
+	}
+
+	if len(events) < 2 {
+		t.Fatalf("lifecycle observer should emit expired/dead_letter events, got=%#v", events)
+	}
+	transitions := []LifecycleTransition{events[0].Transition, events[1].Transition}
+	want := []LifecycleTransition{TransitionDeadLetter, TransitionExpired}
+	if !reflect.DeepEqual(transitions, want) {
+		t.Fatalf("expiry transitions mismatch: got=%#v want=%#v", transitions, want)
+	}
+	for _, event := range events {
+		if event.Transition == TransitionDeadLetter || event.Transition == TransitionExpired {
+			if event.ReasonCode != LifecycleReasonExpired {
+				t.Fatalf("expiry reason_code=%q, want %q", event.ReasonCode, LifecycleReasonExpired)
+			}
+		}
 	}
 }
 

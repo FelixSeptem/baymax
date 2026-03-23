@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-23：
-- 已归档并稳定：A4-A34（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口）。
+- 已归档并稳定：A4-A35（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口）。
 - 进行中：
-  - `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`
   - `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`
+  - `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -84,7 +84,7 @@ A34 依赖关系：
 - 不引入平台化控制面或外部消息总线。
 - 不改 A32 async-await 收敛仲裁语义。
 
-### P1：A35 接线（当前阶段）
+### P1：A35 接线（已归档）
 
 A35 依赖关系：
 - A34 收口 canonical 调用入口后，进一步把 mailbox 配置与运行时主链路接线闭环。
@@ -99,6 +99,25 @@ A35 依赖关系：
 当前阶段非目标（A35 不做）：
 - 不引入 MQ 平台化能力或控制平面。
 - 不替代 A34 的 API 收口目标。
+
+### P1：A36 lifecycle worker 与可观测性（当前阶段）
+
+A36 依赖关系：
+- A35 已完成 mailbox runtime wiring 与 publish 诊断闭环；
+- A36 在此基础上补齐 mailbox lifecycle worker 原语与 reason taxonomy 治理。
+
+完成条件（A36）：
+- 新增库级 mailbox worker 原语（默认关闭）：`consume -> handler -> ack|nack|requeue`。
+- 固化 worker 默认值：`enabled=false`、`poll_interval=100ms`、`handler_error_policy=requeue`。
+- `runtime/config` 增加 `mailbox.worker.*` 配置域并纳入启动/热更新 fail-fast + 原子回滚。
+- mailbox lifecycle diagnostics 覆盖 `consume/ack/nack/requeue/dead_letter/expired`。
+- lifecycle reason taxonomy 冻结为 canonical 集合：
+  `retry_exhausted`、`expired`、`consumer_mismatch`、`message_not_found`、`handler_error`。
+- shared multi-agent gate 纳入 worker lifecycle 套件（enabled/disabled、Run/Stream 等价、memory/file parity、taxonomy drift guard）。
+
+当前阶段非目标（A36 不做）：
+- 不引入外部 MQ、平台化控制面或托管任务面板。
+- 不改变 A32 async-await 终态仲裁语义。
 
 ### P2：0.x 质量与治理持续收敛
 

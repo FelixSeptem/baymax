@@ -2625,6 +2625,19 @@ func TestMailboxConfigDefaults(t *testing.T) {
 	if cfg.Mailbox.Query.PageSizeDefault != 50 || cfg.Mailbox.Query.PageSizeMax != 200 {
 		t.Fatalf("mailbox.query defaults mismatch: %#v", cfg.Mailbox.Query)
 	}
+	if cfg.Mailbox.Worker.Enabled {
+		t.Fatal("mailbox.worker.enabled = true, want false")
+	}
+	if cfg.Mailbox.Worker.PollInterval != 100*time.Millisecond {
+		t.Fatalf("mailbox.worker.poll_interval = %v, want 100ms", cfg.Mailbox.Worker.PollInterval)
+	}
+	if cfg.Mailbox.Worker.HandlerErrorPolicy != MailboxWorkerHandlerErrorRequeue {
+		t.Fatalf(
+			"mailbox.worker.handler_error_policy = %q, want %q",
+			cfg.Mailbox.Worker.HandlerErrorPolicy,
+			MailboxWorkerHandlerErrorRequeue,
+		)
+	}
 }
 
 func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
@@ -2639,6 +2652,9 @@ func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_MAILBOX_DLQ_ENABLED", "true")
 	t.Setenv("BAYMAX_MAILBOX_QUERY_PAGE_SIZE_DEFAULT", "40")
 	t.Setenv("BAYMAX_MAILBOX_QUERY_PAGE_SIZE_MAX", "180")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_ENABLED", "true")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_POLL_INTERVAL", "150ms")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_HANDLER_ERROR_POLICY", MailboxWorkerHandlerErrorNack)
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -2657,6 +2673,10 @@ mailbox:
   query:
     page_size_default: 20
     page_size_max: 60
+  worker:
+    enabled: false
+    poll_interval: 40ms
+    handler_error_policy: requeue
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -2682,6 +2702,19 @@ mailbox:
 	}
 	if cfg.Mailbox.Query.PageSizeDefault != 40 || cfg.Mailbox.Query.PageSizeMax != 180 {
 		t.Fatalf("mailbox.query override mismatch: %#v", cfg.Mailbox.Query)
+	}
+	if !cfg.Mailbox.Worker.Enabled {
+		t.Fatal("mailbox.worker.enabled = false, want true from env")
+	}
+	if cfg.Mailbox.Worker.PollInterval != 150*time.Millisecond {
+		t.Fatalf("mailbox.worker.poll_interval = %v, want 150ms", cfg.Mailbox.Worker.PollInterval)
+	}
+	if cfg.Mailbox.Worker.HandlerErrorPolicy != MailboxWorkerHandlerErrorNack {
+		t.Fatalf(
+			"mailbox.worker.handler_error_policy = %q, want %q",
+			cfg.Mailbox.Worker.HandlerErrorPolicy,
+			MailboxWorkerHandlerErrorNack,
+		)
 	}
 }
 
@@ -2734,5 +2767,17 @@ func TestMailboxConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Mailbox.Query.PageSizeMax = 250
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for mailbox.query.page_size_max > 200")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.PollInterval = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.worker.poll_interval")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.HandlerErrorPolicy = "drop"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.worker.handler_error_policy")
 	}
 }

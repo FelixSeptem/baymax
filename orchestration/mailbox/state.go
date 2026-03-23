@@ -14,6 +14,8 @@ type mailboxState struct {
 	Stats       Stats               `json:"stats"`
 	Policy      Policy              `json:"policy"`
 	sequence    map[string]struct{} `json:"-"`
+	events      []LifecycleEvent    `json:"-"`
+	traceEvents bool                `json:"-"`
 }
 
 func newMailboxState(backend string, policy Policy) mailboxState {
@@ -24,8 +26,10 @@ func newMailboxState(backend string, policy Policy) mailboxState {
 		Stats: Stats{
 			Backend: strings.TrimSpace(backend),
 		},
-		Policy:   normalizePolicy(policy),
-		sequence: map[string]struct{}{},
+		Policy:      normalizePolicy(policy),
+		sequence:    map[string]struct{}{},
+		events:      []LifecycleEvent{},
+		traceEvents: false,
 	}
 }
 
@@ -71,13 +75,13 @@ func (s *mailboxState) publish(envelope Envelope, now time.Time) (PublishResult,
 	return PublishResult{Record: cloneRecord(rec)}, nil
 }
 
-func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, error) {
+func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, bool, error) {
 	consumerID = strings.TrimSpace(consumerID)
 	if consumerID == "" {
-		return Record{}, false, fmt.Errorf("consumer_id is required")
+		return Record{}, false, false, fmt.Errorf("consumer_id is required")
 	}
 	now = normalizeNow(now)
-	s.expireQueued(now)
+	mutated := s.expireQueued(now)
 
 	selected := -1
 	for i := range s.Queue {
@@ -99,14 +103,14 @@ func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, 
 		break
 	}
 	if selected < 0 {
-		return Record{}, false, nil
+		return Record{}, false, mutated, nil
 	}
 
 	messageID := strings.TrimSpace(s.Queue[selected])
 	s.Queue = append(s.Queue[:selected], s.Queue[selected+1:]...)
 	rec := s.Records[messageID]
 	if rec == nil {
-		return Record{}, false, nil
+		return Record{}, false, mutated, nil
 	}
 	rec.State = StateInFlight
 	rec.ConsumerID = consumerID
@@ -118,7 +122,8 @@ func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, 
 	s.Stats.QueueTotal = maxInt(0, s.Stats.QueueTotal-1)
 	s.Stats.InFlightTotal++
 	s.Stats.ConsumedTotal++
-	return cloneRecord(*rec), true, nil
+	s.emitLifecycleEvent(TransitionConsume, *rec, "")
+	return cloneRecord(*rec), true, true, nil
 }
 
 func (s *mailboxState) ack(messageID, consumerID string, now time.Time) (Record, error) {
@@ -133,6 +138,7 @@ func (s *mailboxState) ack(messageID, consumerID string, now time.Time) (Record,
 	rec.UpdatedAt = normalizeNow(now)
 	s.Stats.AckTotal++
 	s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
+	s.emitLifecycleEvent(TransitionAck, *rec, "")
 	return cloneRecord(*rec), nil
 }
 
@@ -144,15 +150,18 @@ func (s *mailboxState) nack(messageID, consumerID, reason string, now time.Time)
 		}
 		return Record{}, err
 	}
+	reasonCode := CanonicalizeLifecycleReason(reason, LifecycleReasonHandlerError)
 	rec.State = StateNacked
-	rec.LastError = strings.TrimSpace(reason)
+	rec.LastError = reasonCode
 	rec.UpdatedAt = normalizeNow(now)
 	s.Stats.NackTotal++
 	s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
+	s.emitLifecycleEvent(TransitionNack, *rec, reasonCode)
 	if rec.DeliveryAttempt >= s.Policy.MaxAttempts && s.Policy.DLQEnabled {
 		rec.State = StateDeadLetter
-		rec.DeadLetterReason = deadLetterReason("retry_exhausted", reason)
+		rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 		s.Stats.DeadLetterTotal++
+		s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted)
 	}
 	return cloneRecord(*rec), nil
 }
@@ -164,15 +173,17 @@ func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Ti
 	if rec == nil {
 		return Record{}, ErrMessageNotFound
 	}
+	reasonCode := CanonicalizeLifecycleReason(reason, LifecycleReasonHandlerError)
 	switch rec.State {
 	case StateInFlight:
 		if consumerID != "" && rec.ConsumerID != consumerID {
 			return Record{}, ErrConsumerMismatch
 		}
 		rec.State = StateNacked
-		rec.LastError = strings.TrimSpace(reason)
+		rec.LastError = reasonCode
 		s.Stats.NackTotal++
 		s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
+		s.emitLifecycleEvent(TransitionNack, *rec, reasonCode)
 	case StateNacked:
 	default:
 		return Record{}, ErrMessageNotInflight
@@ -180,15 +191,17 @@ func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Ti
 	if rec.DeliveryAttempt >= s.Policy.MaxAttempts {
 		if s.Policy.DLQEnabled {
 			rec.State = StateDeadLetter
-			rec.DeadLetterReason = deadLetterReason("retry_exhausted", reason)
+			rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 			rec.UpdatedAt = normalizeNow(now)
 			s.Stats.DeadLetterTotal++
+			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted)
 			return cloneRecord(*rec), nil
 		}
 		rec.State = StateExpired
-		rec.DeadLetterReason = deadLetterReason("retry_exhausted", reason)
+		rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 		rec.UpdatedAt = normalizeNow(now)
 		s.Stats.ExpiredTotal++
+		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonRetryExhausted)
 		return cloneRecord(*rec), nil
 	}
 	rec.State = StateQueued
@@ -198,6 +211,7 @@ func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Ti
 	s.Queue = append(s.Queue, rec.Envelope.MessageID)
 	s.Stats.QueueTotal++
 	s.Stats.RequeueTotal++
+	s.emitLifecycleEvent(TransitionRequeue, *rec, reasonCode)
 	return cloneRecord(*rec), nil
 }
 
@@ -255,10 +269,11 @@ func (s *mailboxState) retryDelay(messageID string, attempt int) time.Duration {
 	return time.Duration(shifted)
 }
 
-func (s *mailboxState) expireQueued(now time.Time) {
+func (s *mailboxState) expireQueued(now time.Time) bool {
 	if len(s.Queue) == 0 {
-		return
+		return false
 	}
+	mutated := false
 	filtered := make([]string, 0, len(s.Queue))
 	for i := range s.Queue {
 		id := strings.TrimSpace(s.Queue[i])
@@ -273,18 +288,22 @@ func (s *mailboxState) expireQueued(now time.Time) {
 			filtered = append(filtered, id)
 			continue
 		}
+		mutated = true
 		rec.UpdatedAt = now
 		s.Stats.QueueTotal = maxInt(0, s.Stats.QueueTotal-1)
 		s.Stats.ExpiredTotal++
 		if s.Policy.DLQEnabled {
 			rec.State = StateDeadLetter
-			rec.DeadLetterReason = deadLetterReason("expired", "")
+			rec.DeadLetterReason = deadLetterReason(LifecycleReasonExpired, "")
 			s.Stats.DeadLetterTotal++
+			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonExpired)
 		} else {
 			rec.State = StateExpired
 		}
+		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonExpired)
 	}
 	s.Queue = filtered
+	return mutated
 }
 
 func (s *mailboxState) snapshot() Snapshot {
@@ -356,6 +375,51 @@ func deadLetterReason(code, reason string) string {
 		return trimmedCode
 	}
 	return trimmedCode + ":" + trimmedReason
+}
+
+func (s *mailboxState) emitLifecycleEvent(transition LifecycleTransition, rec Record, reason string) {
+	if s == nil {
+		return
+	}
+	if !s.traceEvents {
+		return
+	}
+	event := LifecycleEvent{
+		Time:       normalizeNow(rec.UpdatedAt),
+		Transition: transition,
+		Record:     cloneRecord(rec),
+	}
+	switch transition {
+	case TransitionNack, TransitionRequeue, TransitionDeadLetter, TransitionExpired:
+		event.ReasonCode = CanonicalizeLifecycleReason(reason, LifecycleReasonHandlerError)
+	}
+	if transition == TransitionDeadLetter && strings.TrimSpace(event.ReasonCode) == "" {
+		event.ReasonCode = LifecycleReasonRetryExhausted
+	}
+	if transition == TransitionExpired && strings.TrimSpace(event.ReasonCode) == "" {
+		event.ReasonCode = LifecycleReasonExpired
+	}
+	s.events = append(s.events, event)
+}
+
+func (s *mailboxState) drainLifecycleEvents() []LifecycleEvent {
+	if s == nil || len(s.events) == 0 {
+		return nil
+	}
+	out := make([]LifecycleEvent, len(s.events))
+	copy(out, s.events)
+	s.events = s.events[:0]
+	return out
+}
+
+func (s *mailboxState) setTraceEvents(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.traceEvents = enabled
+	if !enabled {
+		s.events = s.events[:0]
+	}
 }
 
 func isRecordExpired(record Record, now time.Time) bool {

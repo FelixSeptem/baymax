@@ -47,6 +47,9 @@ go test ./integration -run '^TestDelayedDispatchContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] mailbox convergence suite"
 go test ./integration -run '^TestMailboxContract' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] mailbox worker lifecycle suite"
+go test ./integration -run '^TestMailboxContractWorker|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] mailbox backend parity suite"
 go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism$' -count=1
 

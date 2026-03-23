@@ -17,6 +17,7 @@ const (
 	mailboxConfiguredDisabled     = "disabled"
 	mailboxReasonDelayedPublish   = "mailbox.publish.delayed"
 	mailboxReasonDuplicatePublish = "mailbox.publish.duplicate"
+	mailboxLifecyclePathPrefix    = "lifecycle."
 )
 
 type schedulerManagedMailbox struct {
@@ -53,7 +54,11 @@ func (c *Composer) initMailbox(cfg runtimeconfig.Config) error {
 		storeInit.FallbackReason = ""
 		storeInit.Requested = mailboxConfiguredDisabled
 	}
-	mailboxRuntime, err := mailbox.New(storeInit.Store)
+	opts := make([]mailbox.Option, 0, 1)
+	if cfg.Mailbox.Worker.Enabled {
+		opts = append(opts, mailbox.WithLifecycleObserver(c.recordMailboxLifecycle))
+	}
+	mailboxRuntime, err := mailbox.New(storeInit.Store, opts...)
 	if err != nil {
 		return err
 	}
@@ -99,7 +104,7 @@ func (c *Composer) refreshMailboxForNextAttempt() {
 
 func (c *Composer) mailboxConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%t|%s|%s|%d|%d|%.4f|%d|%t|%d|%d",
+		"%t|%s|%s|%d|%d|%.4f|%d|%t|%d|%d|%t|%d|%s",
 		cfg.Mailbox.Enabled,
 		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Backend)),
 		strings.TrimSpace(cfg.Mailbox.Path),
@@ -110,6 +115,9 @@ func (c *Composer) mailboxConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Mailbox.DLQ.Enabled,
 		cfg.Mailbox.Query.PageSizeDefault,
 		cfg.Mailbox.Query.PageSizeMax,
+		cfg.Mailbox.Worker.Enabled,
+		cfg.Mailbox.Worker.PollInterval.Milliseconds(),
+		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Worker.HandlerErrorPolicy)),
 	)
 }
 
@@ -171,6 +179,53 @@ func (c *Composer) recordMailboxPublish(
 		BackendFallback:       fallback,
 		BackendFallbackReason: strings.TrimSpace(fallbackReason),
 		PublishPath:           string(path),
+	})
+}
+
+func (c *Composer) recordMailboxLifecycle(_ context.Context, event mailbox.LifecycleEvent) {
+	if c == nil || c.runtimeMgr == nil {
+		return
+	}
+	record := event.Record
+	envelope := record.Envelope
+	configuredBackend, backend, fallback, fallbackReason := c.mailboxDiagnosticsMeta()
+	attempt := envelope.Attempt
+	if attempt <= 0 {
+		attempt = max(record.DeliveryAttempt, 1)
+	}
+	reasonCode := strings.TrimSpace(event.ReasonCode)
+	if reasonCode != "" {
+		reasonCode = mailbox.CanonicalizeLifecycleReason(reasonCode, mailbox.LifecycleReasonHandlerError)
+	}
+	if reasonCode == "" {
+		switch event.Transition {
+		case mailbox.TransitionDeadLetter:
+			reasonCode = mailbox.LifecycleReasonRetryExhausted
+		case mailbox.TransitionExpired:
+			reasonCode = mailbox.LifecycleReasonExpired
+		}
+	}
+	c.runtimeMgr.RecordMailboxDiagnostic(runtimeconfig.MailboxDiagnosticRecord{
+		Time:                  nonZeroMailboxRecordTime(c.now, event.Time),
+		MessageID:             strings.TrimSpace(envelope.MessageID),
+		IdempotencyKey:        strings.TrimSpace(envelope.IdempotencyKey),
+		CorrelationID:         strings.TrimSpace(envelope.CorrelationID),
+		Kind:                  string(envelope.Kind),
+		State:                 string(record.State),
+		FromAgent:             strings.TrimSpace(envelope.FromAgent),
+		ToAgent:               strings.TrimSpace(envelope.ToAgent),
+		RunID:                 strings.TrimSpace(envelope.RunID),
+		TaskID:                strings.TrimSpace(envelope.TaskID),
+		WorkflowID:            strings.TrimSpace(envelope.WorkflowID),
+		TeamID:                strings.TrimSpace(envelope.TeamID),
+		Attempt:               attempt,
+		ConsumerID:            strings.TrimSpace(record.ConsumerID),
+		ReasonCode:            reasonCode,
+		Backend:               strings.TrimSpace(backend),
+		ConfiguredBackend:     strings.TrimSpace(configuredBackend),
+		BackendFallback:       fallback,
+		BackendFallbackReason: strings.TrimSpace(fallbackReason),
+		PublishPath:           mailboxLifecyclePathPrefix + strings.TrimSpace(string(event.Transition)),
 	})
 }
 

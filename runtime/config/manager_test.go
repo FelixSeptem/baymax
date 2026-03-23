@@ -1886,6 +1886,76 @@ reload:
 	}
 }
 
+func TestManagerMailboxWorkerInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+  worker:
+    enabled: false
+    poll_interval: 100ms
+    handler_error_policy: requeue
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Mailbox.Worker.PollInterval
+	if before != 100*time.Millisecond {
+		t.Fatalf("before mailbox.worker.poll_interval = %v, want 100ms", before)
+	}
+
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+  worker:
+    enabled: true
+    poll_interval: 0s
+    handler_error_policy: drop
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Mailbox.Worker.PollInterval
+	if after != before {
+		t.Fatalf("invalid mailbox.worker reload should rollback, poll_interval = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

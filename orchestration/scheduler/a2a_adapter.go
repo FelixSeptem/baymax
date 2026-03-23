@@ -39,11 +39,29 @@ type A2AExecution struct {
 	AsyncTaskID   string
 }
 
+type MailboxBridgeProvider func() (*invoke.MailboxBridge, error)
+
+type A2AInvokeOption func(*a2aInvokeOptions)
+
+type a2aInvokeOptions struct {
+	bridgeProvider MailboxBridgeProvider
+}
+
+func WithMailboxBridgeProvider(provider MailboxBridgeProvider) A2AInvokeOption {
+	return func(opts *a2aInvokeOptions) {
+		if opts == nil {
+			return
+		}
+		opts.bridgeProvider = provider
+	}
+}
+
 func ExecuteClaimWithA2A(
 	ctx context.Context,
 	client A2AClient,
 	claimed ClaimedTask,
 	pollInterval time.Duration,
+	opts ...A2AInvokeOption,
 ) (A2AExecution, error) {
 	task := claimed.Record.Task
 	attempt := claimed.Attempt
@@ -55,7 +73,8 @@ func ExecuteClaimWithA2A(
 		req.PeerID = "scheduler-peer"
 	}
 
-	bridge, err := invoke.NewInMemoryMailboxBridge()
+	cfg := resolveA2AInvokeOptions(opts...)
+	bridge, err := cfg.resolveMailboxBridge()
 	if err != nil {
 		return failedExecutionFromA2AError(claimed, err), err
 	}
@@ -127,6 +146,7 @@ func SubmitClaimWithA2AAsync(
 	client A2AAsyncClient,
 	claimed ClaimedTask,
 	sink a2a.ReportSink,
+	opts ...A2AInvokeOption,
 ) (a2a.AsyncSubmitAck, error) {
 	if client == nil {
 		return a2a.AsyncSubmitAck{}, errors.New("a2a async client is required")
@@ -142,7 +162,22 @@ func SubmitClaimWithA2AAsync(
 		req.Payload = map[string]any{}
 	}
 	req.Payload["attempt_id"] = strings.TrimSpace(claimed.Attempt.AttemptID)
-	ack, err := client.SubmitAsync(ctx, req, sink)
+	cfg := resolveA2AInvokeOptions(opts...)
+	bridge, err := cfg.resolveMailboxBridge()
+	if err != nil {
+		return a2a.AsyncSubmitAck{}, err
+	}
+	ack, err := bridge.InvokeAsync(ctx, client, invoke.AsyncRequest{
+		TaskID:     req.TaskID,
+		WorkflowID: req.WorkflowID,
+		TeamID:     req.TeamID,
+		StepID:     req.StepID,
+		AttemptID:  req.AttemptID,
+		AgentID:    req.AgentID,
+		PeerID:     req.PeerID,
+		Method:     req.Method,
+		Payload:    copyMap(req.Payload),
+	}, sink)
 	if err != nil {
 		return a2a.AsyncSubmitAck{}, err
 	}
@@ -392,4 +427,21 @@ func buildTaskRequest(claimed ClaimedTask) a2a.TaskRequest {
 		Method:     strings.TrimSpace(req.Method),
 		Payload:    copyMap(req.Payload),
 	}
+}
+
+func resolveA2AInvokeOptions(opts ...A2AInvokeOption) a2aInvokeOptions {
+	resolved := a2aInvokeOptions{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&resolved)
+		}
+	}
+	return resolved
+}
+
+func (opts a2aInvokeOptions) resolveMailboxBridge() (*invoke.MailboxBridge, error) {
+	if opts.bridgeProvider != nil {
+		return opts.bridgeProvider()
+	}
+	return invoke.NewInMemoryMailboxBridge()
 }

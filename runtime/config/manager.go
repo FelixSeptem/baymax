@@ -48,6 +48,31 @@ type Manager struct {
 	stopCh       chan struct{}
 }
 
+// MailboxDiagnosticRecord is a runtime/config-level projection used by orchestration modules
+// to avoid direct dependency on runtime/diagnostics internals.
+type MailboxDiagnosticRecord struct {
+	Time                  time.Time
+	MessageID             string
+	IdempotencyKey        string
+	CorrelationID         string
+	Kind                  string
+	State                 string
+	FromAgent             string
+	ToAgent               string
+	RunID                 string
+	TaskID                string
+	WorkflowID            string
+	TeamID                string
+	Attempt               int
+	ConsumerID            string
+	ReasonCode            string
+	Backend               string
+	ConfiguredBackend     string
+	BackendFallback       bool
+	BackendFallbackReason string
+	PublishPath           string
+}
+
 // NewManager builds a runtime config manager with env/file/default precedence and optional hot reload.
 func NewManager(opts ManagerOptions) (*Manager, error) {
 	loadOpts := LoadOptions{FilePath: opts.FilePath, EnvPrefix: opts.EnvPrefix}
@@ -282,6 +307,32 @@ func (m *Manager) QueryRuns(req runtimediag.UnifiedRunQueryRequest) (runtimediag
 // RecordMailbox appends a mailbox diagnostics record.
 func (m *Manager) RecordMailbox(rec runtimediag.MailboxRecord) {
 	m.diag.AddMailbox(rec)
+}
+
+// RecordMailboxDiagnostic appends a mailbox diagnostics record using runtime/config-level DTO.
+func (m *Manager) RecordMailboxDiagnostic(rec MailboxDiagnosticRecord) {
+	m.diag.AddMailbox(runtimediag.MailboxRecord{
+		Time:                  rec.Time,
+		MessageID:             rec.MessageID,
+		IdempotencyKey:        rec.IdempotencyKey,
+		CorrelationID:         rec.CorrelationID,
+		Kind:                  rec.Kind,
+		State:                 rec.State,
+		FromAgent:             rec.FromAgent,
+		ToAgent:               rec.ToAgent,
+		RunID:                 rec.RunID,
+		TaskID:                rec.TaskID,
+		WorkflowID:            rec.WorkflowID,
+		TeamID:                rec.TeamID,
+		Attempt:               rec.Attempt,
+		ConsumerID:            rec.ConsumerID,
+		ReasonCode:            rec.ReasonCode,
+		Backend:               rec.Backend,
+		ConfiguredBackend:     rec.ConfiguredBackend,
+		BackendFallback:       rec.BackendFallback,
+		BackendFallbackReason: rec.BackendFallbackReason,
+		PublishPath:           rec.PublishPath,
+	})
 }
 
 // RecentMailbox returns recent mailbox diagnostics records.

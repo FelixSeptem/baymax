@@ -204,22 +204,26 @@ type RunRecord struct {
 }
 
 type MailboxRecord struct {
-	Time           time.Time `json:"time"`
-	MessageID      string    `json:"message_id"`
-	IdempotencyKey string    `json:"idempotency_key,omitempty"`
-	CorrelationID  string    `json:"correlation_id,omitempty"`
-	Kind           string    `json:"kind,omitempty"`
-	State          string    `json:"state,omitempty"`
-	FromAgent      string    `json:"from_agent,omitempty"`
-	ToAgent        string    `json:"to_agent,omitempty"`
-	RunID          string    `json:"run_id,omitempty"`
-	TaskID         string    `json:"task_id,omitempty"`
-	WorkflowID     string    `json:"workflow_id,omitempty"`
-	TeamID         string    `json:"team_id,omitempty"`
-	Attempt        int       `json:"attempt,omitempty"`
-	ConsumerID     string    `json:"consumer_id,omitempty"`
-	ReasonCode     string    `json:"reason_code,omitempty"`
-	Backend        string    `json:"backend,omitempty"`
+	Time                  time.Time `json:"time"`
+	MessageID             string    `json:"message_id"`
+	IdempotencyKey        string    `json:"idempotency_key,omitempty"`
+	CorrelationID         string    `json:"correlation_id,omitempty"`
+	Kind                  string    `json:"kind,omitempty"`
+	State                 string    `json:"state,omitempty"`
+	FromAgent             string    `json:"from_agent,omitempty"`
+	ToAgent               string    `json:"to_agent,omitempty"`
+	RunID                 string    `json:"run_id,omitempty"`
+	TaskID                string    `json:"task_id,omitempty"`
+	WorkflowID            string    `json:"workflow_id,omitempty"`
+	TeamID                string    `json:"team_id,omitempty"`
+	Attempt               int       `json:"attempt,omitempty"`
+	ConsumerID            string    `json:"consumer_id,omitempty"`
+	ReasonCode            string    `json:"reason_code,omitempty"`
+	Backend               string    `json:"backend,omitempty"`
+	ConfiguredBackend     string    `json:"configured_backend,omitempty"`
+	BackendFallback       bool      `json:"backend_fallback,omitempty"`
+	BackendFallbackReason string    `json:"backend_fallback_reason,omitempty"`
+	PublishPath           string    `json:"publish_path,omitempty"`
 }
 
 type MailboxQueryTimeRange struct {
@@ -1169,6 +1173,9 @@ func normalizeMailboxRecord(rec MailboxRecord) MailboxRecord {
 	rec.ConsumerID = strings.TrimSpace(rec.ConsumerID)
 	rec.ReasonCode = strings.TrimSpace(rec.ReasonCode)
 	rec.Backend = strings.ToLower(strings.TrimSpace(rec.Backend))
+	rec.ConfiguredBackend = strings.ToLower(strings.TrimSpace(rec.ConfiguredBackend))
+	rec.BackendFallbackReason = strings.TrimSpace(rec.BackendFallbackReason)
+	rec.PublishPath = strings.ToLower(strings.TrimSpace(rec.PublishPath))
 	if rec.Attempt < 0 {
 		rec.Attempt = 0
 	}

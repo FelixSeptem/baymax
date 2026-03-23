@@ -42,7 +42,8 @@
 ## 边界与依赖
 
 - 编排层不承载 provider 协议或 MCP transport 细节。
-- 编排层不直接写 `runtime/diagnostics`，必须经 `observability/event.RuntimeRecorder` 收口。
+- 编排层不直接依赖 `runtime/diagnostics` 包；run/timeline 汇总仍经 `observability/event.RuntimeRecorder` 单写收口。
+- mailbox publish 诊断（A35）通过 `runtime/config.Manager.RecordMailboxDiagnostic` 写入，保持配置域边界与可查询性。
 - reason namespace（如 `team.*`、`workflow.*`、`scheduler.*`、`subagent.*`）需保持稳定以支持契约测试。
 
 ## 配置与默认值

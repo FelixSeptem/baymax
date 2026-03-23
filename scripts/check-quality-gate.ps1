@@ -30,6 +30,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "[quality-gate][canonical-mailbox-entrypoints] canonical mailbox invoke guard failed"
 }
 
+Write-Host "[quality-gate] mailbox runtime wiring regression"
+go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
+if ($LASTEXITCODE -ne 0) {
+    throw "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"
+}
+
 Write-Host "[quality-gate] adapter conformance"
 try {
     pwsh -File scripts/check-adapter-conformance.ps1

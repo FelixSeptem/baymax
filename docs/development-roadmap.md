@@ -16,11 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-23：
-- 已归档并稳定：A4-A33（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口）。
-- 已完成待归档：
-  - `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`
+- 已归档并稳定：A4-A34（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口）。
 - 进行中：
   - `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`
+  - `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -69,7 +68,7 @@ A32 依赖关系：
 - 提供平台化消息控制面（UI/RBAC/多租户运维面板）。
 - 承诺 exactly-once 语义。
 
-### P0：A34 收口（已完成待归档）
+### P0：A34 收口（已归档）
 
 A34 依赖关系：
 - A30 已确立 mailbox 统一协调主契约。

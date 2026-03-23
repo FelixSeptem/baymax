@@ -9,6 +9,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/orchestration/invoke"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 )
 
 type fakeSyncClient struct {
@@ -232,5 +233,38 @@ func TestDelegateAsyncWithRetrySkipsProtocolFailures(t *testing.T) {
 	}
 	if submits.Load() != 1 {
 		t.Fatalf("protocol submit attempts=%d, want 1", submits.Load())
+	}
+}
+
+func TestDelegateSyncWithRetryUsesInjectedMailboxBridgeProvider(t *testing.T) {
+	mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	bridge := invoke.NewMailboxBridge(mb)
+	providerCalls := 0
+	_, err = DelegateSyncWithRetry(
+		context.Background(),
+		fakeSyncClient{},
+		invoke.Request{TaskID: "task-provider", WorkflowID: "wf-provider", TeamID: "team-provider"},
+		RetryConfig{Enabled: false},
+		nil,
+		WithMailboxBridgeProvider(func() (*invoke.MailboxBridge, error) {
+			providerCalls++
+			return bridge, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("DelegateSyncWithRetry failed: %v", err)
+	}
+	if providerCalls != 1 {
+		t.Fatalf("provider calls=%d, want 1", providerCalls)
+	}
+	page, err := mb.Query(context.Background(), mailbox.QueryRequest{TaskID: "task-provider"})
+	if err != nil {
+		t.Fatalf("mailbox query failed: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("mailbox records len=%d, want 2", len(page.Items))
 	}
 }

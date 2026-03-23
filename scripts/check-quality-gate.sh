@@ -26,6 +26,12 @@ if ! bash scripts/check-canonical-mailbox-entrypoints.sh; then
   exit 1
 fi
 
+echo "[quality-gate] mailbox runtime wiring regression"
+if ! go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1; then
+  echo "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

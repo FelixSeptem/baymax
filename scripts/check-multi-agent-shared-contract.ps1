@@ -50,6 +50,9 @@ go test ./integration -run '^TestMailboxContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] mailbox backend parity suite"
 go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism$' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] mailbox runtime wiring suite"
+go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
+
 Write-Host "[multi-agent-shared-contract-gate] a14 closure matrix suite"
 go test ./integration -run '^TestTailGovernanceA14' -count=1
 

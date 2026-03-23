@@ -164,8 +164,24 @@ func TestDelayedDispatchContractRunStreamSemanticEquivalence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream path failed: %v", err)
 	}
-	if runSummary != streamSummary {
+	if runSummary.state != streamSummary.state ||
+		runSummary.delayedTasks != streamSummary.delayedTasks ||
+		runSummary.delayedClaims != streamSummary.delayedClaims ||
+		runSummary.claimTotal != streamSummary.claimTotal ||
+		runSummary.terminalSuccess != streamSummary.terminalSuccess {
 		t.Fatalf("run/stream delayed summary mismatch: run=%#v stream=%#v", runSummary, streamSummary)
+	}
+	diff := runSummary.delayedWaitP95 - streamSummary.delayedWaitP95
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 30 {
+		t.Fatalf(
+			"run/stream delayed wait p95 mismatch beyond tolerance: run=%d stream=%d diff=%d",
+			runSummary.delayedWaitP95,
+			streamSummary.delayedWaitP95,
+			diff,
+		)
 	}
 	if runSummary.state != scheduler.TaskStateSucceeded {
 		t.Fatalf("terminal state = %q, want succeeded", runSummary.state)

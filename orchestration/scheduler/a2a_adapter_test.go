@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/orchestration/invoke"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 )
 
 type fakeA2AClient struct {
@@ -235,6 +237,60 @@ func TestSubmitClaimWithA2AAsyncPreservesAttemptCorrelation(t *testing.T) {
 	}
 	if got, _ := client.lastAsyncReq.Payload["attempt_id"].(string); got != claimed.Attempt.AttemptID {
 		t.Fatalf("payload attempt_id = %q, want %q", got, claimed.Attempt.AttemptID)
+	}
+}
+
+func TestExecuteClaimWithA2AUsesInjectedMailboxBridgeProvider(t *testing.T) {
+	mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	bridge := invoke.NewMailboxBridge(mb)
+	providerCalls := 0
+
+	claimed := ClaimedTask{
+		Record: TaskRecord{
+			Task: Task{
+				TaskID:     "task-a2a-provider",
+				RunID:      "run-a2a-provider",
+				WorkflowID: "wf-a2a-provider",
+				TeamID:     "team-a2a-provider",
+				StepID:     "step-a2a-provider",
+				AgentID:    "agent-main",
+				PeerID:     "peer-main",
+			},
+		},
+		Attempt: Attempt{AttemptID: "task-a2a-provider-attempt-1"},
+	}
+	_, err = ExecuteClaimWithA2A(
+		context.Background(),
+		fakeA2AClient{
+			record: a2a.TaskRecord{
+				TaskID:    "task-a2a-provider",
+				Status:    a2a.StatusSucceeded,
+				Result:    map[string]any{"ok": true},
+				UpdatedAt: time.Now(),
+			},
+		},
+		claimed,
+		5*time.Millisecond,
+		WithMailboxBridgeProvider(func() (*invoke.MailboxBridge, error) {
+			providerCalls++
+			return bridge, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ExecuteClaimWithA2A failed: %v", err)
+	}
+	if providerCalls != 1 {
+		t.Fatalf("provider calls=%d, want 1", providerCalls)
+	}
+	page, err := mb.Query(context.Background(), mailbox.QueryRequest{})
+	if err != nil {
+		t.Fatalf("mailbox query failed: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("mailbox publish count=%d, want 2", len(page.Items))
 	}
 }
 

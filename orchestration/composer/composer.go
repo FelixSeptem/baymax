@@ -229,6 +229,16 @@ type Composer struct {
 	schedulerRetryMaxAttempts  int
 	schedulerGuardrails        scheduler.Guardrails
 
+	managedMailbox           bool
+	mailbox                  *schedulerManagedMailbox
+	mailboxSignature         string
+	mailboxConfiguredBackend string
+	mailboxBackend           string
+	mailboxFallback          bool
+	mailboxFallbackReason    string
+	mailboxPath              string
+	mailboxEnabled           bool
+
 	managedRecoveryStore             bool
 	recoverySignature                string
 	recoveryConfiguredBackend        string
@@ -300,6 +310,7 @@ func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 		childWorkerID:        defaultChildWorkerID,
 		childPollInterval:    defaultChildPollTimeout,
 		managedScheduler:     true,
+		managedMailbox:       true,
 		managedRecoveryStore: true,
 		runStat:              map[string]*runStat{},
 	}
@@ -353,18 +364,23 @@ func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 	if err := c.initRecovery(c.effectiveConfig()); err != nil {
 		return nil, err
 	}
+	if err := c.initMailbox(c.effectiveConfig()); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
 
 func (c *Composer) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	c.refreshSchedulerForNextAttempt()
+	c.refreshMailboxForNextAttempt()
 	c.refreshRecoveryForNextAttempt()
 	return c.runner.Run(ctx, req, c.bridgeHandler(h))
 }
 
 func (c *Composer) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	c.refreshSchedulerForNextAttempt()
+	c.refreshMailboxForNextAttempt()
 	c.refreshRecoveryForNextAttempt()
 	return c.runner.Stream(ctx, req, c.bridgeHandler(h))
 }
@@ -427,6 +443,7 @@ func (c *Composer) SpawnChild(ctx context.Context, req ChildDispatchRequest) (sc
 }
 
 func (c *Composer) DispatchChild(ctx context.Context, req ChildDispatchRequest) (ChildDispatchResult, error) {
+	c.refreshMailboxForNextAttempt()
 	record, err := c.SpawnChild(ctx, req)
 	if err != nil {
 		return ChildDispatchResult{}, err
@@ -557,7 +574,13 @@ func (c *Composer) executeChild(
 		}
 		// Scheduler-managed child execution is the single retry owner (A33).
 		// Keep primitive-layer retry outside this path to avoid compounded retries.
-		return scheduler.ExecuteClaimWithA2A(ctx, c.a2aClient, claimed, pollInterval)
+		return scheduler.ExecuteClaimWithA2A(
+			ctx,
+			c.a2aClient,
+			claimed,
+			pollInterval,
+			scheduler.WithMailboxBridgeProvider(c.mailboxBridgeProvider),
+		)
 	default:
 		err := fmt.Errorf("unsupported child target %q", req.Target)
 		return scheduler.A2AExecution{
@@ -629,7 +652,13 @@ func (c *Composer) executeA2AChildAsync(
 		}
 		return nil
 	})
-	ack, err := scheduler.SubmitClaimWithA2AAsync(ctx, asyncClient, claimed, sink)
+	ack, err := scheduler.SubmitClaimWithA2AAsync(
+		ctx,
+		asyncClient,
+		claimed,
+		sink,
+		scheduler.WithMailboxBridgeProvider(c.mailboxBridgeProvider),
+	)
 	if err != nil {
 		class, layer, _ := a2a.ClassifyError(err)
 		if class == "" {

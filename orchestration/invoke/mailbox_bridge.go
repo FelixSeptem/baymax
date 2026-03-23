@@ -12,11 +12,39 @@ import (
 )
 
 type MailboxBridge struct {
-	Mailbox *mailbox.Mailbox
+	Mailbox         *mailbox.Mailbox
+	publishObserver MailboxPublishObserver
 }
 
-func NewMailboxBridge(mb *mailbox.Mailbox) *MailboxBridge {
-	return &MailboxBridge{Mailbox: mb}
+type MailboxPublishPath string
+
+const (
+	PublishPathCommand        MailboxPublishPath = "command"
+	PublishPathResult         MailboxPublishPath = "result"
+	PublishPathDelayedCommand MailboxPublishPath = "delayed_command"
+)
+
+type MailboxPublishObserver func(ctx context.Context, path MailboxPublishPath, result mailbox.PublishResult)
+
+type MailboxBridgeOption func(*MailboxBridge)
+
+func WithPublishObserver(observer MailboxPublishObserver) MailboxBridgeOption {
+	return func(b *MailboxBridge) {
+		if b == nil {
+			return
+		}
+		b.publishObserver = observer
+	}
+}
+
+func NewMailboxBridge(mb *mailbox.Mailbox, opts ...MailboxBridgeOption) *MailboxBridge {
+	bridge := &MailboxBridge{Mailbox: mb}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(bridge)
+		}
+	}
+	return bridge
 }
 
 func NewInMemoryMailboxBridge() (*MailboxBridge, error) {
@@ -46,7 +74,12 @@ func (b *MailboxBridge) PublishDelayedCommand(
 		notBefore,
 		expireAt,
 	)
-	return b.Mailbox.PublishCommand(ctx, command)
+	published, err := b.Mailbox.PublishCommand(ctx, command)
+	if err != nil {
+		return mailbox.PublishResult{}, err
+	}
+	b.observePublish(ctx, PublishPathDelayedCommand, published)
+	return published, nil
 }
 
 func (b *MailboxBridge) InvokeSync(ctx context.Context, client Client, req Request) (Outcome, error) {
@@ -63,9 +96,11 @@ func (b *MailboxBridge) InvokeSync(ctx context.Context, client Client, req Reque
 		time.Time{},
 		time.Time{},
 	)
-	if _, err := b.Mailbox.PublishCommand(ctx, command); err != nil {
+	commandPublished, err := b.Mailbox.PublishCommand(ctx, command)
+	if err != nil {
 		return Outcome{}, err
 	}
+	b.observePublish(ctx, PublishPathCommand, commandPublished)
 
 	outcome, invokeErr := invokeSync(ctx, client, req)
 	resultEnvelope := mailbox.NewResultEnvelope(
@@ -74,12 +109,14 @@ func (b *MailboxBridge) InvokeSync(ctx context.Context, client Client, req Reque
 		resultIdempotencyKey(req),
 		buildResultPayload(outcome),
 	)
-	if _, err := b.Mailbox.PublishResult(ctx, resultEnvelope); err != nil {
+	resultPublished, err := b.Mailbox.PublishResult(ctx, resultEnvelope)
+	if err != nil {
 		if invokeErr != nil {
 			return outcome, fmt.Errorf("%w; publish result envelope failed: %v", invokeErr, err)
 		}
 		return outcome, err
 	}
+	b.observePublish(ctx, PublishPathResult, resultPublished)
 	return outcome, invokeErr
 }
 
@@ -107,9 +144,11 @@ func (b *MailboxBridge) InvokeAsync(
 		time.Time{},
 		time.Time{},
 	)
-	if _, err := b.Mailbox.PublishCommand(ctx, command); err != nil {
+	commandPublished, err := b.Mailbox.PublishCommand(ctx, command)
+	if err != nil {
 		return a2a.AsyncSubmitAck{}, err
 	}
+	b.observePublish(ctx, PublishPathCommand, commandPublished)
 
 	wrapped := a2a.ReportSinkFunc(func(cbCtx context.Context, report a2a.AsyncReport) error {
 		result, err := mailbox.NewAsyncResultEnvelope(mailbox.AsyncReport{
@@ -137,9 +176,11 @@ func (b *MailboxBridge) InvokeAsync(
 		if err != nil {
 			return err
 		}
-		if _, err := b.Mailbox.PublishResult(cbCtx, result); err != nil {
+		published, err := b.Mailbox.PublishResult(cbCtx, result)
+		if err != nil {
 			return err
 		}
+		b.observePublish(cbCtx, PublishPathResult, published)
 		if sink != nil {
 			return sink.Deliver(cbCtx, report)
 		}
@@ -222,4 +263,11 @@ func commandIdempotencyKeyFromAsync(req AsyncRequest) string {
 		taskID = strings.TrimSpace(req.WorkflowID) + "|" + strings.TrimSpace(req.TeamID)
 	}
 	return strings.TrimSpace(taskID + "|async|command")
+}
+
+func (b *MailboxBridge) observePublish(ctx context.Context, path MailboxPublishPath, result mailbox.PublishResult) {
+	if b == nil || b.publishObserver == nil {
+		return
+	}
+	b.publishObserver(ctx, path, result)
 }

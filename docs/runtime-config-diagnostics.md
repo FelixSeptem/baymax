@@ -590,11 +590,15 @@ mailbox baseline 校验语义：
 8. `mailbox.query.page_size_default` 必须 `> 0` 且 `<= page_size_max`。
 9. `mailbox.query.page_size_max` 必须 `> 0` 且 `<= 200`。
 10. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+11. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
+12. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
 
 mailbox 诊断查询入口（A30）：
 1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。
 2. `runtime/config.Manager.MailboxAggregates(filter)`：返回聚合计数（`by_kind/by_state/retry_total/dead_letter_total/expired_total/reason_code_totals`），用于与 run/task 视图组合排障。
 3. mailbox 诊断记录保留关联键：`run_id/task_id/workflow_id/team_id`。
+4. managed 共享 wiring 下，mailbox publish 主路径（`command/result/delayed_command`）会写入 `RecordMailboxDiagnostic`，查询结果体现真实主链路流量。
+5. fallback 观测字段为 additive：`configured_backend`、`backend_fallback`、`backend_fallback_reason`、`publish_path`。
 
 a2a 同步调用契约（A11）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
@@ -778,6 +782,13 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `dead_letter_total`
 - `expired_total`
 - `reason_code_totals`
+
+Mailbox diagnostics additive 字段（A35）：
+- `backend`
+- `configured_backend`
+- `backend_fallback`
+- `backend_fallback_reason`
+- `publish_path`（`command|result|delayed_command`）
 
 ### RunRecord 字段分组（当前实现）
 

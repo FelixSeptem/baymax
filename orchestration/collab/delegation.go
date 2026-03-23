@@ -31,6 +31,23 @@ type DelegationAsyncAck struct {
 	PeerID     string
 }
 
+type MailboxBridgeProvider func() (*invoke.MailboxBridge, error)
+
+type DelegationOption func(*delegationOptions)
+
+type delegationOptions struct {
+	bridgeProvider MailboxBridgeProvider
+}
+
+func WithMailboxBridgeProvider(provider MailboxBridgeProvider) DelegationOption {
+	return func(opts *delegationOptions) {
+		if opts == nil {
+			return
+		}
+		opts.bridgeProvider = provider
+	}
+}
+
 func DelegateSync(ctx context.Context, client invoke.Client, req invoke.Request) (Outcome, error) {
 	return DelegateSyncWithRetry(ctx, client, req, RetryConfig{Enabled: false}, nil)
 }
@@ -41,15 +58,17 @@ func DelegateSyncWithRetry(
 	req invoke.Request,
 	retry RetryConfig,
 	observer RetryObserver,
+	opts ...DelegationOption,
 ) (Outcome, error) {
 	policy, err := resolveRetryConfig(DefaultConfig().Retry, retry)
 	if err != nil {
 		return Outcome{Status: StatusFailed, Error: err.Error()}, err
 	}
+	resolved := resolveDelegationOptions(opts...)
 	attempt := 1
 	retryCount := 0
 	for {
-		outcome, callErr := delegateSyncOnce(ctx, client, req)
+		outcome, callErr := delegateSyncOnce(ctx, client, req, resolved)
 		if !shouldRetryOutcome(policy, outcome) {
 			if retryCount > 0 && outcome.Status == StatusSucceeded {
 				emitRetryEvent(observer, RetryEvent{
@@ -99,12 +118,12 @@ func DelegateSyncWithRetry(
 	}
 }
 
-func delegateSyncOnce(ctx context.Context, client invoke.Client, req invoke.Request) (Outcome, error) {
+func delegateSyncOnce(ctx context.Context, client invoke.Client, req invoke.Request, opts delegationOptions) (Outcome, error) {
 	if client == nil {
 		err := errors.New("a2a client is not configured")
 		return Outcome{Status: StatusFailed, Error: err.Error()}, err
 	}
-	bridge, err := invoke.NewInMemoryMailboxBridge()
+	bridge, err := opts.resolveMailboxBridge()
 	if err != nil {
 		return Outcome{Status: StatusFailed, Error: err.Error()}, err
 	}
@@ -145,14 +164,16 @@ func DelegateAsyncWithRetry(
 	sink a2a.ReportSink,
 	retry RetryConfig,
 	observer RetryObserver,
+	opts ...DelegationOption,
 ) (DelegationAsyncAck, error) {
 	policy, err := resolveRetryConfig(DefaultConfig().Retry, retry)
 	if err != nil {
 		return DelegationAsyncAck{}, err
 	}
+	resolved := resolveDelegationOptions(opts...)
 	attempt := 1
 	for {
-		ack, submitErr := delegateAsyncOnce(ctx, client, req, sink)
+		ack, submitErr := delegateAsyncOnce(ctx, client, req, sink, resolved)
 		if submitErr == nil {
 			if attempt > 1 {
 				emitRetryEvent(observer, RetryEvent{
@@ -204,8 +225,14 @@ func DelegateAsyncWithRetry(
 	}
 }
 
-func delegateAsyncOnce(ctx context.Context, client invoke.AsyncClient, req invoke.AsyncRequest, sink a2a.ReportSink) (DelegationAsyncAck, error) {
-	bridge, err := invoke.NewInMemoryMailboxBridge()
+func delegateAsyncOnce(
+	ctx context.Context,
+	client invoke.AsyncClient,
+	req invoke.AsyncRequest,
+	sink a2a.ReportSink,
+	opts delegationOptions,
+) (DelegationAsyncAck, error) {
+	bridge, err := opts.resolveMailboxBridge()
 	if err != nil {
 		return DelegationAsyncAck{}, err
 	}
@@ -248,4 +275,21 @@ func normalizeDelegationError(err error, outcome invoke.Outcome) string {
 		return strings.TrimSpace(outcome.Error.Message)
 	}
 	return ""
+}
+
+func resolveDelegationOptions(opts ...DelegationOption) delegationOptions {
+	resolved := delegationOptions{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&resolved)
+		}
+	}
+	return resolved
+}
+
+func (opts delegationOptions) resolveMailboxBridge() (*invoke.MailboxBridge, error) {
+	if opts.bridgeProvider != nil {
+		return opts.bridgeProvider()
+	}
+	return invoke.NewInMemoryMailboxBridge()
 }

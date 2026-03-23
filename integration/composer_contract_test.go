@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	"github.com/FelixSeptem/baymax/observability/event"
@@ -35,6 +38,36 @@ func (h dispatcherHandler) OnEvent(ctx context.Context, ev types.Event) {
 		return
 	}
 	h.dispatcher.Emit(ctx, ev)
+}
+
+type composerMailboxA2AClient struct{}
+
+func (composerMailboxA2AClient) Submit(_ context.Context, req a2a.TaskRequest) (a2a.TaskRecord, error) {
+	return a2a.TaskRecord{
+		TaskID:     req.TaskID,
+		WorkflowID: req.WorkflowID,
+		TeamID:     req.TeamID,
+		StepID:     req.StepID,
+		AttemptID:  req.AttemptID,
+		AgentID:    req.AgentID,
+		PeerID:     req.PeerID,
+		Status:     a2a.StatusSubmitted,
+		UpdatedAt:  time.Now(),
+	}, nil
+}
+
+func (composerMailboxA2AClient) WaitResult(
+	_ context.Context,
+	taskID string,
+	_ time.Duration,
+	_ func(context.Context, a2a.TaskRecord) error,
+) (a2a.TaskRecord, error) {
+	return a2a.TaskRecord{
+		TaskID:    taskID,
+		Status:    a2a.StatusSucceeded,
+		Result:    map[string]any{"ok": true},
+		UpdatedAt: time.Now(),
+	}, nil
 }
 
 func TestComposerContractRunStreamSemanticEquivalence(t *testing.T) {
@@ -343,6 +376,293 @@ func TestComposerContractTakeoverReplayIdempotency(t *testing.T) {
 	record := findRunRecord(t, mgr.RecentRuns(10), out.Record.Task.RunID)
 	if record.SubagentChildTotal != 1 || record.SubagentChildFailed != 0 {
 		t.Fatalf("subagent aggregate should not inflate under replay: %#v", record)
+	}
+}
+
+func TestComposerContractMailboxRuntimeWiringEnabledMatrix(t *testing.T) {
+	tmp := t.TempDir()
+	disabledCfg := filepath.Join(tmp, "runtime-disabled.yaml")
+	disabledBlocked := filepath.Join(tmp, "mailbox-disabled-blocked")
+	if err := os.WriteFile(disabledBlocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write disabled blocked marker: %v", err)
+	}
+	writeComposerMailboxRuntimeConfig(
+		t,
+		disabledCfg,
+		false,
+		"file",
+		filepath.ToSlash(filepath.Join(disabledBlocked, "mailbox-state.json")),
+	)
+	disabledRunID := "run-a35-mailbox-disabled"
+	disabledRecords, _ := executeComposerMailboxRuntimeWiring(t, disabledCfg, false, disabledRunID, "task-a35-mailbox-disabled")
+	assertMailboxBackendState(t, disabledRecords, "memory", "disabled", false, "")
+
+	enabledCfg := filepath.Join(tmp, "runtime-enabled-memory.yaml")
+	writeComposerMailboxRuntimeConfig(t, enabledCfg, true, "memory", filepath.ToSlash(filepath.Join(tmp, "mailbox-memory-state.json")))
+	enabledRunID := "run-a35-mailbox-enabled-memory"
+	enabledRecords, _ := executeComposerMailboxRuntimeWiring(t, enabledCfg, false, enabledRunID, "task-a35-mailbox-enabled-memory")
+	assertMailboxBackendState(t, enabledRecords, "memory", "memory", false, "")
+}
+
+func TestComposerContractMailboxRuntimeWiringFileFallbackAndDiagnostics(t *testing.T) {
+	tmp := t.TempDir()
+	blocked := filepath.Join(tmp, "mailbox-blocked")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocked marker: %v", err)
+	}
+	cfgPath := filepath.Join(tmp, "runtime-fallback.yaml")
+	writeComposerMailboxRuntimeConfig(
+		t,
+		cfgPath,
+		true,
+		"file",
+		filepath.ToSlash(filepath.Join(blocked, "mailbox-state.json")),
+	)
+
+	records, agg := executeComposerMailboxRuntimeWiring(
+		t,
+		cfgPath,
+		false,
+		"run-a35-mailbox-file-fallback",
+		"task-a35-mailbox-file-fallback",
+	)
+	assertMailboxBackendState(
+		t,
+		records,
+		"memory",
+		"file",
+		true,
+		"mailbox.backend.file_init_failed",
+	)
+	if got := agg.ReasonCodeTotals["mailbox.backend.file_init_failed"]; got == 0 {
+		t.Fatalf("fallback reason aggregate missing, got=%d agg=%#v", got, agg)
+	}
+}
+
+func TestComposerContractMailboxRuntimeWiringRunStreamMemoryFileParity(t *testing.T) {
+	tmp := t.TempDir()
+	memoryCfg := filepath.Join(tmp, "runtime-memory.yaml")
+	fileCfg := filepath.Join(tmp, "runtime-file.yaml")
+	writeComposerMailboxRuntimeConfig(t, memoryCfg, true, "memory", filepath.ToSlash(filepath.Join(tmp, "mailbox-memory.json")))
+	writeComposerMailboxRuntimeConfig(t, fileCfg, true, "file", filepath.ToSlash(filepath.Join(tmp, "mailbox-file.json")))
+
+	memoryRunRecords, memoryRunAgg := executeComposerMailboxRuntimeWiring(
+		t,
+		memoryCfg,
+		false,
+		"run-a35-mailbox-memory-run",
+		"task-a35-mailbox-memory-run",
+	)
+	memoryStreamRecords, memoryStreamAgg := executeComposerMailboxRuntimeWiring(
+		t,
+		memoryCfg,
+		true,
+		"run-a35-mailbox-memory-stream",
+		"task-a35-mailbox-memory-stream",
+	)
+	fileRunRecords, fileRunAgg := executeComposerMailboxRuntimeWiring(
+		t,
+		fileCfg,
+		false,
+		"run-a35-mailbox-file-run",
+		"task-a35-mailbox-file-run",
+	)
+	fileStreamRecords, fileStreamAgg := executeComposerMailboxRuntimeWiring(
+		t,
+		fileCfg,
+		true,
+		"run-a35-mailbox-file-stream",
+		"task-a35-mailbox-file-stream",
+	)
+
+	assertMailboxBackendState(t, memoryRunRecords, "memory", "memory", false, "")
+	assertMailboxBackendState(t, memoryStreamRecords, "memory", "memory", false, "")
+	assertMailboxBackendState(t, fileRunRecords, "file", "file", false, "")
+	assertMailboxBackendState(t, fileStreamRecords, "file", "file", false, "")
+
+	assertMailboxAggregateShapeEqual(t, memoryRunAgg, memoryStreamAgg, "memory run/stream")
+	assertMailboxAggregateShapeEqual(t, fileRunAgg, fileStreamAgg, "file run/stream")
+	assertMailboxAggregateShapeEqual(t, memoryRunAgg, fileRunAgg, "memory/file parity")
+}
+
+func executeComposerMailboxRuntimeWiring(
+	t *testing.T,
+	cfgPath string,
+	stream bool,
+	runID string,
+	taskID string,
+) ([]runtimediag.MailboxRecord, runtimediag.MailboxAggregate) {
+	t.Helper()
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A35_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	model.SetStream([]types.ModelEvent{{Type: types.ModelEventTypeFinalAnswer, TextDelta: "ok"}}, nil)
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := composer.NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+		WithA2AClient(composerMailboxA2AClient{}).
+		Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	if stream {
+		if _, err := comp.Stream(context.Background(), types.RunRequest{
+			RunID: runID,
+			Input: "mailbox-stream",
+		}, nil); err != nil {
+			t.Fatalf("composer stream failed: %v", err)
+		}
+	} else {
+		if _, err := comp.Run(context.Background(), types.RunRequest{
+			RunID: runID,
+			Input: "mailbox-run",
+		}, nil); err != nil {
+			t.Fatalf("composer run failed: %v", err)
+		}
+	}
+
+	out, err := comp.DispatchChild(context.Background(), composer.ChildDispatchRequest{
+		Task: scheduler.Task{
+			TaskID:     taskID,
+			RunID:      runID,
+			WorkflowID: runID,
+			TeamID:     "team-a35",
+			StepID:     "step-a35",
+			AgentID:    "agent-a35",
+			PeerID:     "peer-a35",
+			Payload:    map[string]any{"mode": "a35"},
+		},
+		Target:       composer.ChildTargetA2A,
+		ChildTimeout: 500 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("dispatch child failed: %v", err)
+	}
+	if out.Commit.Status != scheduler.TaskStateSucceeded {
+		t.Fatalf("dispatch commit status=%q, want succeeded", out.Commit.Status)
+	}
+
+	page, err := mgr.QueryMailbox(runtimediag.MailboxQueryRequest{
+		RunID: runID,
+	})
+	if err != nil {
+		t.Fatalf("QueryMailbox failed: %v", err)
+	}
+	if len(page.Items) < 2 {
+		t.Fatalf("mailbox records len=%d, want >=2", len(page.Items))
+	}
+	agg := mgr.MailboxAggregates(runtimediag.MailboxAggregateRequest{
+		RunID: runID,
+	})
+	if agg.TotalRecords < 2 || agg.TotalMessages < 2 {
+		t.Fatalf("mailbox aggregate mismatch: %#v", agg)
+	}
+	return page.Items, agg
+}
+
+func assertMailboxBackendState(
+	t *testing.T,
+	records []runtimediag.MailboxRecord,
+	expectedBackend string,
+	expectedConfigured string,
+	expectedFallback bool,
+	expectedFallbackReason string,
+) {
+	t.Helper()
+	for _, rec := range records {
+		if rec.Backend != expectedBackend {
+			t.Fatalf("mailbox backend=%q, want %q, rec=%#v", rec.Backend, expectedBackend, rec)
+		}
+		if rec.ConfiguredBackend != expectedConfigured {
+			t.Fatalf("mailbox configured_backend=%q, want %q, rec=%#v", rec.ConfiguredBackend, expectedConfigured, rec)
+		}
+		if rec.BackendFallback != expectedFallback {
+			t.Fatalf("mailbox backend_fallback=%v, want %v, rec=%#v", rec.BackendFallback, expectedFallback, rec)
+		}
+		if strings.TrimSpace(rec.BackendFallbackReason) != strings.TrimSpace(expectedFallbackReason) {
+			t.Fatalf(
+				"mailbox backend_fallback_reason=%q, want %q, rec=%#v",
+				rec.BackendFallbackReason,
+				expectedFallbackReason,
+				rec,
+			)
+		}
+	}
+}
+
+func assertMailboxAggregateShapeEqual(
+	t *testing.T,
+	left runtimediag.MailboxAggregate,
+	right runtimediag.MailboxAggregate,
+	label string,
+) {
+	t.Helper()
+	if left.TotalRecords != right.TotalRecords || left.TotalMessages != right.TotalMessages {
+		t.Fatalf("%s mailbox totals mismatch: left=%#v right=%#v", label, left, right)
+	}
+	if !reflect.DeepEqual(left.ByKind, right.ByKind) {
+		t.Fatalf("%s mailbox by_kind mismatch: left=%#v right=%#v", label, left.ByKind, right.ByKind)
+	}
+	if !reflect.DeepEqual(left.ByState, right.ByState) {
+		t.Fatalf("%s mailbox by_state mismatch: left=%#v right=%#v", label, left.ByState, right.ByState)
+	}
+	if left.RetryTotal != right.RetryTotal ||
+		left.DeadLetterTotal != right.DeadLetterTotal ||
+		left.ExpiredTotal != right.ExpiredTotal {
+		t.Fatalf("%s mailbox aggregate counters mismatch: left=%#v right=%#v", label, left, right)
+	}
+}
+
+func writeComposerMailboxRuntimeConfig(
+	t *testing.T,
+	path string,
+	enabled bool,
+	backend string,
+	mailboxPath string,
+) {
+	t.Helper()
+	content := strings.Join([]string{
+		"reload:",
+		"  enabled: false",
+		"scheduler:",
+		"  enabled: true",
+		"  backend: memory",
+		"  lease_timeout: 500ms",
+		"  heartbeat_interval: 100ms",
+		"  queue_limit: 64",
+		"  retry_max_attempts: 3",
+		"mailbox:",
+		"  enabled: " + strings.ToLower(strconv.FormatBool(enabled)),
+		"  backend: " + backend,
+		"  path: " + mailboxPath,
+		"  retry:",
+		"    max_attempts: 3",
+		"    backoff_initial: 50ms",
+		"    backoff_max: 500ms",
+		"    jitter_ratio: 0.2",
+		"  ttl: 15m",
+		"  dlq:",
+		"    enabled: false",
+		"  query:",
+		"    page_size_default: 50",
+		"    page_size_max: 200",
+		"subagent:",
+		"  max_depth: 4",
+		"  max_active_children: 8",
+		"  child_timeout_budget: 3s",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write mailbox runtime config: %v", err)
 	}
 }
 

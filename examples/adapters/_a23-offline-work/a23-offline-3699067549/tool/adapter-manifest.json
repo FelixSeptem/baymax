@@ -1,0 +1,16 @@
+{
+  "type": "tool",
+  "name": "offline",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": ["tool.schema.rich_validation"]
+  },
+  "negotiation": {
+    "default_strategy": "fail_fast",
+    "allow_request_override": true
+  },
+  "conformance_profile": "tool-invoke-fail-fast"
+}

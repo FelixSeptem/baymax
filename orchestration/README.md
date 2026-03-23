@@ -9,7 +9,7 @@
 - `teams`：多角色协作（serial/parallel/vote）
 - `scheduler`：任务队列、lease、重试、QoS、DLQ、子任务护栏
 - `mailbox`：统一消息协调契约（command/event/result + lifecycle/query）
-- `invoke`：A2A 调用桥接层（旧 direct sync/async 入口已标注 deprecated）
+- `invoke`：A2A 调用桥接层（仅保留 mailbox bridge 作为公开 canonical 入口）
 - `collab`：协作原语（handoff/delegation/aggregation）统一抽象
 
 ## 架构设计
@@ -23,7 +23,7 @@
   - async-await 路径支持 `awaiting_report` + callback/poll 双来源终态收敛；
     poll fallback 仅作为 callback 缺失时的补偿路径，仲裁规则固定 `first_terminal_wins + record_conflict`。
 - `mailbox` 负责 command/event/result envelope、ack/retry/ttl/dlq 与查询语义
-- `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；旧 direct submit+wait/report-sink 路径仅保留过渡用途
+- `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；公开入口固定为 `MailboxBridge`
 - `collab` 负责跨路径一致的 handoff/delegation/aggregation 语义
   - A33：支持默认关闭、可显式开启的有界 primitive retry（sync delegation + async submit）
 
@@ -36,7 +36,6 @@
 - `teams/engine.go`
 - `scheduler/scheduler.go`
 - `mailbox/mailbox.go`
-- `invoke/sync.go`
 - `invoke/mailbox_bridge.go`
 - `collab/primitives.go`
 

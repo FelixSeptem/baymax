@@ -41,7 +41,7 @@ func (f *fakeClient) WaitResult(
 
 func TestInvokeSyncSuccessUsesDefaultPollInterval(t *testing.T) {
 	client := &fakeClient{}
-	out, err := InvokeSync(context.Background(), client, Request{
+	out, err := invokeSync(context.Background(), client, Request{
 		TaskID: "task-1",
 		Method: "workflow.dispatch",
 	})
@@ -68,7 +68,7 @@ func TestInvokeSyncContextTimeoutHasPriority(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	out, err := InvokeSync(ctx, client, Request{TaskID: "task-timeout"})
+	out, err := invokeSync(ctx, client, Request{TaskID: "task-timeout"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected deadline exceeded, got %v", err)
 	}
@@ -92,7 +92,7 @@ func TestInvokeSyncContextCanceledHasPriority(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := InvokeSync(ctx, client, Request{TaskID: "task-cancel"})
+	_, err := invokeSync(ctx, client, Request{TaskID: "task-cancel"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled, got %v", err)
 	}
@@ -105,7 +105,7 @@ func TestInvokeSyncNormalizesTransportProtocolSemanticErrors(t *testing.T) {
 				return a2a.TaskRecord{}, context.DeadlineExceeded
 			},
 		}
-		out, err := InvokeSync(context.Background(), client, Request{TaskID: "task-transport"})
+		out, err := invokeSync(context.Background(), client, Request{TaskID: "task-transport"})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -120,7 +120,7 @@ func TestInvokeSyncNormalizesTransportProtocolSemanticErrors(t *testing.T) {
 				return a2a.TaskRecord{}, errors.New("unsupported method")
 			},
 		}
-		out, err := InvokeSync(context.Background(), client, Request{TaskID: "task-protocol"})
+		out, err := invokeSync(context.Background(), client, Request{TaskID: "task-protocol"})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -139,7 +139,7 @@ func TestInvokeSyncNormalizesTransportProtocolSemanticErrors(t *testing.T) {
 				}, nil
 			},
 		}
-		out, err := InvokeSync(context.Background(), client, Request{TaskID: "task-semantic"})
+		out, err := invokeSync(context.Background(), client, Request{TaskID: "task-semantic"})
 		if err != nil {
 			t.Fatalf("failed terminal should not return invocation error: %v", err)
 		}

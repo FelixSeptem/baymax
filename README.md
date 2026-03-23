@@ -13,10 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-20）：
-- 已归档并稳定：A4-A32。
-- A33（Enable Collaboration Primitive Bounded Retry Contract）进行中。
-- A34（Retire Legacy Direct Invoke And Enforce Mailbox Canonical Entrypoints）进行中。
+当前里程碑快照（2026-03-23）：
+- 已归档并稳定：A4-A33。
+- A34（Retire Legacy Direct Invoke And Enforce Mailbox Canonical Entrypoints）已完成待归档。
+- A35（Activate Shared Mailbox Runtime Wiring And Diagnostics Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -211,12 +211,12 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语有界重试治理实施中。
-  - 目标语义：保持默认关闭前提下，补齐 `composer.collab.retry.*` 有界重试契约与共享门禁覆盖。
-  - 非目标：不引入平台化调度控制面，不与 scheduler/recovery 形成双重重试叠加。
-- A34 `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`：调用入口收口治理进行中。
+- A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理进行中。
 
 最近已归档能力：
+- A34 `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`：调用入口 canonical-only 收口已完成，待归档。
+- A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语 bounded retry 契约已归档。
+  - 目标语义：保持默认关闭前提下，补齐 `composer.collab.retry.*` 有界重试契约与共享门禁覆盖。
 - A32 `introduce-async-await-reconcile-poll-fallback-contract-a32`：异步等待回报补偿收敛（poll fallback + reconcile）。
   - 目标语义：`awaiting_report` 任务在 callback 丢失时可由 status/result 轮询收敛；
     终态仲裁采用 `first_terminal_wins + record_conflict`；

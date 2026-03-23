@@ -67,7 +67,7 @@ func (b *MailboxBridge) InvokeSync(ctx context.Context, client Client, req Reque
 		return Outcome{}, err
 	}
 
-	outcome, invokeErr := InvokeSync(ctx, client, req)
+	outcome, invokeErr := invokeSync(ctx, client, req)
 	resultEnvelope := mailbox.NewResultEnvelope(
 		command,
 		resultMessageID(req),
@@ -146,7 +146,7 @@ func (b *MailboxBridge) InvokeAsync(
 		return nil
 	})
 
-	return InvokeAsync(ctx, client, req, wrapped)
+	return invokeAsync(ctx, client, req, wrapped)
 }
 
 func buildResultPayload(outcome Outcome) map[string]any {

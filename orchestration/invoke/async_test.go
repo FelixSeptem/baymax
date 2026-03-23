@@ -41,7 +41,7 @@ func TestInvokeAsyncSuccess(t *testing.T) {
 		},
 	}
 
-	ack, err := InvokeAsync(context.Background(), client, AsyncRequest{
+	ack, err := invokeAsync(context.Background(), client, AsyncRequest{
 		TaskID:     "task-async",
 		WorkflowID: "wf-async",
 		TeamID:     "team-async",
@@ -64,14 +64,14 @@ func TestInvokeAsyncSuccess(t *testing.T) {
 }
 
 func TestInvokeAsyncValidationAndErrorPropagation(t *testing.T) {
-	if _, err := InvokeAsync(context.Background(), nil, AsyncRequest{TaskID: "x"}, nil); err == nil {
+	if _, err := invokeAsync(context.Background(), nil, AsyncRequest{TaskID: "x"}, nil); err == nil {
 		t.Fatal("expected error when client is nil")
 	}
-	if _, err := InvokeAsync(context.Background(), fakeAsyncClient{}, AsyncRequest{}, nil); err == nil {
+	if _, err := invokeAsync(context.Background(), fakeAsyncClient{}, AsyncRequest{}, nil); err == nil {
 		t.Fatal("expected error for missing task_id")
 	}
 	expected := errors.New("submit async failed")
-	_, err := InvokeAsync(context.Background(), fakeAsyncClient{
+	_, err := invokeAsync(context.Background(), fakeAsyncClient{
 		submitAsyncFn: func(context.Context, a2a.TaskRequest, a2a.ReportSink) (a2a.AsyncSubmitAck, error) {
 			return a2a.AsyncSubmitAck{}, expected
 		},

@@ -2,6 +2,8 @@ package integration
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -303,5 +305,17 @@ func TestSyncInvocationContractSchedulerCanceledTerminalMappingAndRetryable(t *t
 	}
 	if exec.Retryable {
 		t.Fatalf("protocol canceled terminal should not be retryable: %#v", exec)
+	}
+}
+
+func TestSyncInvocationContractCanonicalMailboxOnlyPublicEntrypoints(t *testing.T) {
+	root := integrationRepoRoot(t)
+	syncSource := mustReadIntegrationFile(t, filepath.Join(root, "orchestration", "invoke", "sync.go"))
+	if strings.Contains(syncSource, "func InvokeSync(") {
+		t.Fatal("legacy direct public invoke.InvokeSync entrypoint must not be reintroduced")
+	}
+	legacyUsages := findLegacyInvokeQualifiedUsages(t, root)
+	if len(legacyUsages) > 0 {
+		t.Fatalf("legacy direct invoke usage detected outside canonical mailbox path: %#v", legacyUsages)
 	}
 }

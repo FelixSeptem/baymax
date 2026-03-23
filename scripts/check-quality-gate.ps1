@@ -24,6 +24,12 @@ catch {
     throw "[quality-gate][docs-consistency] docs consistency failed (adapter mapping or pre1 governance drift): $($_.Exception.Message)"
 }
 
+Write-Host "[quality-gate] canonical mailbox entrypoints"
+pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
+if ($LASTEXITCODE -ne 0) {
+    throw "[quality-gate][canonical-mailbox-entrypoints] canonical mailbox invoke guard failed"
+}
+
 Write-Host "[quality-gate] adapter conformance"
 try {
     pwsh -File scripts/check-adapter-conformance.ps1

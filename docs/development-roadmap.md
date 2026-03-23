@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-20
+更新时间：2026-03-23
 
 ## 定位
 
@@ -15,11 +15,12 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-20：
-- 已归档并稳定：A4-A32（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口）。
-- 进行中：
-  - `enable-collaboration-primitive-bounded-retry-contract-a33`
+截至 2026-03-23：
+- 已归档并稳定：A4-A33（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口）。
+- 已完成待归档：
   - `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`
+- 进行中：
+  - `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -68,34 +69,39 @@ A32 依赖关系：
 - 提供平台化消息控制面（UI/RBAC/多租户运维面板）。
 - 承诺 exactly-once 语义。
 
-### P0：A33 收口（当前阶段）
+### P0：A34 收口（已完成待归档）
 
-A33 依赖关系：
-- A16 已收口协作原语（handoff/delegation/aggregation）基础语义；
-- A33 在此基础上补齐“默认关闭、可显式开启”的 bounded retry 契约。
+A34 依赖关系：
+- A30 已确立 mailbox 统一协调主契约。
+- A33 已归档，协作原语重试语义可作为稳定基线。
 
-完成条件（A33）：
-- 扩展 `composer.collab.retry.*` 配置域并冻结推荐默认值：
-  - `enabled=false`
-  - `max_attempts=3`
-  - `backoff_initial=100ms`
-  - `backoff_max=2s`
-  - `multiplier=2.0`
-  - `jitter_ratio=0.2`
-  - `retry_on=transport_only`
-- 固化 retry 分类和范围：默认仅 transport 重试；覆盖 sync delegation 与 async submit 阶段，不覆盖 accepted 后 async-await 收敛阶段。
-- 固化 retry 所有权：scheduler 管理路径避免与 primitive retry 叠加，防止双重重试。
-- 在 `runtime/diagnostics` 增加 collaboration retry additive 字段，并保持 `additive + nullable + default` 兼容窗口。
-- shared multi-agent gate 纳入 collaboration retry suites（策略边界、Run/Stream 等价、replay idempotency）。
+完成条件（A34）：
+- 退场 legacy direct invoke 公共入口（`InvokeSync` / `InvokeAsync`）并固定 mailbox 为 canonical 调用面。
+- `MailboxBridge` 内部不再依赖 deprecated direct invoke 导出路径。
+- shared multi-agent gate 与 quality gate 增加 canonical-only 阻断，防止 legacy 入口回流。
+- README / roadmap / mainline index / orchestration 模块文档移除“deprecated 但仍主路径依赖”的中间态描述。
 
-当前状态（A33）：
-- 进入实施阶段：配置域、协作原语重试执行、诊断字段与 shared gate 接入按同一 change 收口。
+当前阶段非目标（A34 不做）：
+- 不引入平台化控制面或外部消息总线。
+- 不改 A32 async-await 收敛仲裁语义。
 
-当前阶段非目标（A33 不做）：
-- 引入平台化重试编排控制面或外部消息总线依赖。
-- 修改 A32 async-await 终态收敛主契约（callback/reconcile/timeout）。
+### P1：A35 接线（当前阶段）
 
-### P1：0.x 质量与治理持续收敛
+A35 依赖关系：
+- A34 收口 canonical 调用入口后，进一步把 mailbox 配置与运行时主链路接线闭环。
+
+完成条件（A35）：
+- managed 编排路径接入共享 mailbox runtime wiring，避免 per-call `NewInMemoryMailboxBridge()` 中间态。
+- `mailbox.enabled=false` 时使用共享 memory mailbox；`mailbox.enabled=true` 按 resolved backend 初始化。
+- `mailbox.backend=file` 初始化失败回退到 memory，并记录 deterministic fallback reason。
+- mailbox publish 主路径接入 diagnostics 写入，使 `QueryMailbox` / `MailboxAggregates` 反映真实主链路数据。
+- shared multi-agent gate 纳入 mailbox runtime wiring 套件（配置接线、fallback、Run/Stream 等价、memory/file parity）。
+
+当前阶段非目标（A35 不做）：
+- 不引入 MQ 平台化能力或控制平面。
+- 不替代 A34 的 API 收口目标。
+
+### P2：0.x 质量与治理持续收敛
 
 执行要求：
 - 所有变更继续通过质量门禁（`check-quality-gate.*`）与契约索引追踪。

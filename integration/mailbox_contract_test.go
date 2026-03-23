@@ -134,6 +134,14 @@ func TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism(t *testing.T
 	}
 }
 
+func TestMailboxContractCanonicalEntrypointConvergenceGuard(t *testing.T) {
+	root := integrationRepoRoot(t)
+	legacyUsages := findLegacyInvokeQualifiedUsages(t, root)
+	if len(legacyUsages) > 0 {
+		t.Fatalf("legacy direct invoke usage detected outside canonical mailbox path: %#v", legacyUsages)
+	}
+}
+
 type mailboxConvergenceSummary struct {
 	CommandTotal      int
 	ResultTotal       int

@@ -522,3 +522,15 @@ func equalReasonDistribution(left map[string]int, right map[string]int) bool {
 	}
 	return true
 }
+
+func TestAsyncReportingContractLegacyDirectAsyncEntrypointNotSupportedPublicly(t *testing.T) {
+	root := integrationRepoRoot(t)
+	asyncSource := mustReadIntegrationFile(t, filepath.Join(root, "orchestration", "invoke", "async.go"))
+	if strings.Contains(asyncSource, "func InvokeAsync(") {
+		t.Fatal("legacy direct public invoke.InvokeAsync entrypoint must not be reintroduced")
+	}
+	legacyUsages := findLegacyInvokeQualifiedUsages(t, root)
+	if len(legacyUsages) > 0 {
+		t.Fatalf("legacy direct async invoke usage detected outside canonical mailbox path: %#v", legacyUsages)
+	}
+}

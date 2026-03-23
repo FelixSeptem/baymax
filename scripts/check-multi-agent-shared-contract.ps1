@@ -29,6 +29,12 @@ go test ./integration -run '^TestSyncInvocationContract' -count=1
 Write-Host "[multi-agent-shared-contract-gate] async reporting suite"
 go test ./integration -run '^TestAsyncReportingContract' -count=1
 
+Write-Host "[multi-agent-shared-contract-gate] canonical mailbox entrypoint guard suite"
+pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
+if ($LASTEXITCODE -ne 0) {
+    throw "[multi-agent-shared-contract-gate] canonical mailbox entrypoint guard suite failed"
+}
+
 Write-Host "[multi-agent-shared-contract-gate] async-await lifecycle suite"
 go test ./integration -run '^TestAsyncReportingContractAwaitingLifecycle' -count=1
 
@@ -39,7 +45,7 @@ Write-Host "[multi-agent-shared-contract-gate] delayed dispatch suite"
 go test ./integration -run '^TestDelayedDispatchContract' -count=1
 
 Write-Host "[multi-agent-shared-contract-gate] mailbox convergence suite"
-go test ./integration -run '^TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence$' -count=1
+go test ./integration -run '^TestMailboxContract' -count=1
 
 Write-Host "[multi-agent-shared-contract-gate] mailbox backend parity suite"
 go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism$' -count=1

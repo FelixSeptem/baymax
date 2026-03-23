@@ -56,6 +56,10 @@
   - `mailbox.worker.enabled` -> `BAYMAX_MAILBOX_WORKER_ENABLED`
   - `mailbox.worker.poll_interval` -> `BAYMAX_MAILBOX_WORKER_POLL_INTERVAL`
   - `mailbox.worker.handler_error_policy` -> `BAYMAX_MAILBOX_WORKER_HANDLER_ERROR_POLICY`
+  - `mailbox.worker.inflight_timeout` -> `BAYMAX_MAILBOX_WORKER_INFLIGHT_TIMEOUT`
+  - `mailbox.worker.heartbeat_interval` -> `BAYMAX_MAILBOX_WORKER_HEARTBEAT_INTERVAL`
+  - `mailbox.worker.reclaim_on_consume` -> `BAYMAX_MAILBOX_WORKER_RECLAIM_ON_CONSUME`
+  - `mailbox.worker.panic_policy` -> `BAYMAX_MAILBOX_WORKER_PANIC_POLICY`
   - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
@@ -229,6 +233,10 @@ mailbox:
     enabled: false                # 默认关闭，保持现有行为不变
     poll_interval: 100ms          # 必须 > 0
     handler_error_policy: requeue # requeue|nack，默认 requeue
+    inflight_timeout: 30s         # 必须 > 0
+    heartbeat_interval: 5s        # 必须 > 0 且 < inflight_timeout
+    reclaim_on_consume: true      # 默认 true，consume 路径触发 stale in-flight reclaim
+    panic_policy: follow_handler_error_policy # 当前仅支持 follow_handler_error_policy
 
 scheduler:
   enabled: false
@@ -598,9 +606,12 @@ mailbox baseline 校验语义：
 9. `mailbox.query.page_size_max` 必须 `> 0` 且 `<= 200`。
 10. `mailbox.worker.poll_interval` 必须 `> 0`。
 11. `mailbox.worker.handler_error_policy` 仅支持 `requeue|nack`，默认 `requeue`。
-12. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
-13. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
-14. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
+12. `mailbox.worker.inflight_timeout` 必须 `> 0`。
+13. `mailbox.worker.heartbeat_interval` 必须 `> 0` 且 `< mailbox.worker.inflight_timeout`。
+14. `mailbox.worker.panic_policy` 当前仅支持 `follow_handler_error_policy`。
+15. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+16. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
+17. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
 
 mailbox 诊断查询入口（A30）：
 1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。
@@ -608,7 +619,8 @@ mailbox 诊断查询入口（A30）：
 3. mailbox 诊断记录保留关联键：`run_id/task_id/workflow_id/team_id`。
 4. managed 共享 wiring 下，mailbox publish 主路径（`command/result/delayed_command`）与 lifecycle 主路径（`lifecycle.consume|lifecycle.ack|lifecycle.nack|lifecycle.requeue|lifecycle.dead_letter|lifecycle.expired`）会写入 `RecordMailboxDiagnostic`，查询结果体现真实主链路流量。
 5. fallback 观测字段为 additive：`configured_backend`、`backend_fallback`、`backend_fallback_reason`、`publish_path`。
-6. lifecycle reason taxonomy 采用 canonical 集合：`retry_exhausted`、`expired`、`consumer_mismatch`、`message_not_found`、`handler_error`。
+6. lifecycle reason taxonomy 采用 canonical 集合：`retry_exhausted`、`expired`、`consumer_mismatch`、`message_not_found`、`handler_error`、`lease_expired`。
+7. reclaim/panic-recover 观测为 additive 字段：`reclaimed`、`panic_recovered`；用于区分 lease reclaim 与 panic recover 路径。
 
 a2a 同步调用契约（A11）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
@@ -799,6 +811,8 @@ Mailbox diagnostics additive 字段（A35）：
 - `backend_fallback`
 - `backend_fallback_reason`
 - `publish_path`（`command|result|delayed_command|lifecycle.consume|lifecycle.ack|lifecycle.nack|lifecycle.requeue|lifecycle.dead_letter|lifecycle.expired`）
+- `reclaimed`
+- `panic_recovered`
 
 ### RunRecord 字段分组（当前实现）
 

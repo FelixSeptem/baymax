@@ -20,8 +20,12 @@ const (
 const (
 	WorkerHandlerErrorPolicyRequeue = "requeue"
 	WorkerHandlerErrorPolicyNack    = "nack"
+	WorkerPanicPolicyFollowHandler  = "follow_handler_error_policy"
 	DefaultWorkerPollInterval       = 100 * time.Millisecond
 	DefaultWorkerConsumerID         = "mailbox-worker"
+	DefaultWorkerInflightTimeout    = 30 * time.Second
+	DefaultWorkerHeartbeatInterval  = 5 * time.Second
+	DefaultWorkerReclaimOnConsume   = true
 )
 
 const (
@@ -30,6 +34,7 @@ const (
 	LifecycleReasonConsumerMismatch = "consumer_mismatch"
 	LifecycleReasonMessageNotFound  = "message_not_found"
 	LifecycleReasonHandlerError     = "handler_error"
+	LifecycleReasonLeaseExpired     = "lease_expired"
 )
 
 type MessageState string
@@ -65,6 +70,9 @@ type Record struct {
 	State            MessageState `json:"state"`
 	ConsumerID       string       `json:"consumer_id,omitempty"`
 	DeliveryAttempt  int          `json:"delivery_attempt,omitempty"`
+	InFlightSince    time.Time    `json:"inflight_since,omitempty"`
+	LastHeartbeatAt  time.Time    `json:"last_heartbeat_at,omitempty"`
+	LeaseExpiresAt   time.Time    `json:"lease_expires_at,omitempty"`
 	NextEligibleAt   time.Time    `json:"next_eligible_at,omitempty"`
 	LastError        string       `json:"last_error,omitempty"`
 	DeadLetterReason string       `json:"dead_letter_reason,omitempty"`
@@ -115,6 +123,10 @@ type WorkerConfig struct {
 	Enabled            bool          `json:"enabled"`
 	PollInterval       time.Duration `json:"poll_interval"`
 	HandlerErrorPolicy string        `json:"handler_error_policy"`
+	InflightTimeout    time.Duration `json:"inflight_timeout"`
+	HeartbeatInterval  time.Duration `json:"heartbeat_interval"`
+	ReclaimOnConsume   bool          `json:"reclaim_on_consume"`
+	PanicPolicy        string        `json:"panic_policy"`
 }
 
 type LifecycleTransition string
@@ -129,21 +141,29 @@ const (
 )
 
 type LifecycleEvent struct {
-	Time       time.Time           `json:"time"`
-	Transition LifecycleTransition `json:"transition"`
-	Record     Record              `json:"record"`
-	ReasonCode string              `json:"reason_code,omitempty"`
+	Time           time.Time           `json:"time"`
+	Transition     LifecycleTransition `json:"transition"`
+	Record         Record              `json:"record"`
+	ReasonCode     string              `json:"reason_code,omitempty"`
+	Reclaimed      bool                `json:"reclaimed,omitempty"`
+	PanicRecovered bool                `json:"panic_recovered,omitempty"`
 }
 
 type LifecycleObserver func(ctx context.Context, event LifecycleEvent)
 
+type ActionOptions struct {
+	Reclaimed      bool `json:"reclaimed,omitempty"`
+	PanicRecovered bool `json:"panic_recovered,omitempty"`
+}
+
 type Store interface {
 	Backend() string
 	Publish(ctx context.Context, envelope Envelope, now time.Time) (PublishResult, error)
-	Consume(ctx context.Context, consumerID string, now time.Time) (Record, bool, error)
+	Consume(ctx context.Context, consumerID string, now time.Time, inflightTimeout time.Duration, reclaimOnConsume bool) (Record, bool, error)
+	Heartbeat(ctx context.Context, messageID, consumerID string, now time.Time, inflightTimeout time.Duration) (Record, error)
 	Ack(ctx context.Context, messageID, consumerID string, now time.Time) (Record, error)
-	Nack(ctx context.Context, messageID, consumerID, reason string, now time.Time) (Record, error)
-	Requeue(ctx context.Context, messageID, consumerID, reason string, now time.Time) (Record, error)
+	Nack(ctx context.Context, messageID, consumerID, reason string, now time.Time, opts ActionOptions) (Record, error)
+	Requeue(ctx context.Context, messageID, consumerID, reason string, now time.Time, opts ActionOptions) (Record, error)
 	Stats(ctx context.Context) (Stats, error)
 	Snapshot(ctx context.Context) (Snapshot, error)
 	Restore(ctx context.Context, snapshot Snapshot) error
@@ -243,6 +263,42 @@ func NormalizeWorkerConfig(in WorkerConfig) (WorkerConfig, error) {
 			in.HandlerErrorPolicy,
 		)
 	}
+	if out.InflightTimeout == 0 {
+		out.InflightTimeout = DefaultWorkerInflightTimeout
+	}
+	if out.InflightTimeout <= 0 {
+		return WorkerConfig{}, errors.New("worker.inflight_timeout must be > 0")
+	}
+	if out.HeartbeatInterval == 0 {
+		out.HeartbeatInterval = DefaultWorkerHeartbeatInterval
+	}
+	if out.HeartbeatInterval <= 0 {
+		return WorkerConfig{}, errors.New("worker.heartbeat_interval must be > 0")
+	}
+	if out.HeartbeatInterval >= out.InflightTimeout {
+		return WorkerConfig{}, errors.New("worker.heartbeat_interval must be < worker.inflight_timeout")
+	}
+	out.PanicPolicy = strings.ToLower(strings.TrimSpace(out.PanicPolicy))
+	if out.PanicPolicy == "" {
+		out.PanicPolicy = WorkerPanicPolicyFollowHandler
+	}
+	if out.PanicPolicy != WorkerPanicPolicyFollowHandler {
+		return WorkerConfig{}, fmt.Errorf(
+			"worker.panic_policy must be %q, got %q",
+			WorkerPanicPolicyFollowHandler,
+			in.PanicPolicy,
+		)
+	}
+	if in.ReclaimOnConsume {
+		out.ReclaimOnConsume = true
+	} else {
+		out.ReclaimOnConsume = false
+		if in.InflightTimeout == 0 &&
+			in.HeartbeatInterval == 0 &&
+			strings.TrimSpace(in.PanicPolicy) == "" {
+			out.ReclaimOnConsume = DefaultWorkerReclaimOnConsume
+		}
+	}
 	return out, nil
 }
 
@@ -253,6 +309,7 @@ func LifecycleCanonicalReasons() []string {
 		LifecycleReasonConsumerMismatch,
 		LifecycleReasonMessageNotFound,
 		LifecycleReasonHandlerError,
+		LifecycleReasonLeaseExpired,
 	}
 }
 
@@ -274,7 +331,8 @@ func IsCanonicalLifecycleReason(in string) bool {
 		LifecycleReasonExpired,
 		LifecycleReasonConsumerMismatch,
 		LifecycleReasonMessageNotFound,
-		LifecycleReasonHandlerError:
+		LifecycleReasonHandlerError,
+		LifecycleReasonLeaseExpired:
 		return true
 	default:
 		return false
@@ -335,6 +393,9 @@ func normalizeSnapshot(in Snapshot, fallbackBackend string) (Snapshot, error) {
 		rec.ConsumerID = strings.TrimSpace(rec.ConsumerID)
 		rec.LastError = strings.TrimSpace(rec.LastError)
 		rec.DeadLetterReason = strings.TrimSpace(rec.DeadLetterReason)
+		rec.InFlightSince = rec.InFlightSince.UTC()
+		rec.LastHeartbeatAt = rec.LastHeartbeatAt.UTC()
+		rec.LeaseExpiresAt = rec.LeaseExpiresAt.UTC()
 		switch rec.State {
 		case StateQueued, StateInFlight, StateAcked, StateNacked, StateDeadLetter, StateExpired:
 		default:

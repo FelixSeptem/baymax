@@ -743,7 +743,8 @@ The mailbox suites MUST cover:
 - memory/file backend parity,
 - mailbox worker lifecycle execution semantics,
 - mailbox worker default policy semantics (`enabled=false`, `poll_interval=100ms`, `handler_error_policy=requeue`),
-- mailbox lifecycle canonical reason taxonomy drift detection.
+- mailbox worker lease/reclaim semantics (`inflight_timeout=30s`, `heartbeat_interval=5s`, `reclaim_on_consume=true`, `panic_policy=follow_handler_error_policy`),
+- mailbox lifecycle canonical reason taxonomy drift detection (including `lease_expired`).
 
 #### Scenario: Contributor runs shared gate in shell
 - **WHEN** contributor executes `scripts/check-multi-agent-shared-contract.sh`
@@ -752,6 +753,10 @@ The mailbox suites MUST cover:
 #### Scenario: Contributor runs shared gate in PowerShell
 - **WHEN** contributor executes `scripts/check-multi-agent-shared-contract.ps1`
 - **THEN** equivalent mailbox contract suites are executed as required blocking checks
+
+#### Scenario: Worker crash or panic recovery semantics regress
+- **WHEN** contract suites detect stale in-flight reclaim or panic-recover behavior drift from contract
+- **THEN** shared quality gate fails and blocks merge
 
 #### Scenario: Regression introduces non-canonical mailbox lifecycle reason
 - **WHEN** contract suites detect mailbox lifecycle reason code outside canonical taxonomy without synchronized contract update

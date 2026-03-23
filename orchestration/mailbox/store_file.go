@@ -55,10 +55,16 @@ func (s *FileStore) Publish(_ context.Context, envelope Envelope, now time.Time)
 	return result, nil
 }
 
-func (s *FileStore) Consume(_ context.Context, consumerID string, now time.Time) (Record, bool, error) {
+func (s *FileStore) Consume(
+	_ context.Context,
+	consumerID string,
+	now time.Time,
+	inflightTimeout time.Duration,
+	reclaimOnConsume bool,
+) (Record, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, ok, mutated, err := s.state.consume(consumerID, now)
+	record, ok, mutated, err := s.state.consume(consumerID, now, inflightTimeout, reclaimOnConsume)
 	if err != nil {
 		return record, ok, err
 	}
@@ -68,6 +74,24 @@ func (s *FileStore) Consume(_ context.Context, consumerID string, now time.Time)
 		}
 	}
 	return record, ok, nil
+}
+
+func (s *FileStore) Heartbeat(
+	_ context.Context,
+	messageID, consumerID string,
+	now time.Time,
+	inflightTimeout time.Duration,
+) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, err := s.state.heartbeat(messageID, consumerID, now, inflightTimeout)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := s.persist(); err != nil {
+		return Record{}, err
+	}
+	return record, nil
 }
 
 func (s *FileStore) Ack(_ context.Context, messageID, consumerID string, now time.Time) (Record, error) {
@@ -83,10 +107,15 @@ func (s *FileStore) Ack(_ context.Context, messageID, consumerID string, now tim
 	return record, nil
 }
 
-func (s *FileStore) Nack(_ context.Context, messageID, consumerID, reason string, now time.Time) (Record, error) {
+func (s *FileStore) Nack(
+	_ context.Context,
+	messageID, consumerID, reason string,
+	now time.Time,
+	opts ActionOptions,
+) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, err := s.state.nack(messageID, consumerID, reason, now)
+	record, err := s.state.nack(messageID, consumerID, reason, now, opts)
 	if err != nil {
 		return Record{}, err
 	}
@@ -96,10 +125,15 @@ func (s *FileStore) Nack(_ context.Context, messageID, consumerID, reason string
 	return record, nil
 }
 
-func (s *FileStore) Requeue(_ context.Context, messageID, consumerID, reason string, now time.Time) (Record, error) {
+func (s *FileStore) Requeue(
+	_ context.Context,
+	messageID, consumerID, reason string,
+	now time.Time,
+	opts ActionOptions,
+) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, err := s.state.requeue(messageID, consumerID, reason, now)
+	record, err := s.state.requeue(messageID, consumerID, reason, now, opts)
 	if err != nil {
 		return Record{}, err
 	}

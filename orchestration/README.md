@@ -52,7 +52,8 @@
 - 编排默认配置由 `runtime/config` 提供：如 collab 开关、scheduler QoS、recovery 边界。
 - `composer.collab.enabled=false`、`scheduler.dlq.enabled=false` 等保守默认保证 pre-1 行为稳定。
 - `composer.collab.retry.enabled=false`；默认治理参数为 `max_attempts=3`、`backoff_initial=100ms`、`backoff_max=2s`、`multiplier=2.0`、`jitter_ratio=0.2`、`retry_on=transport_only`。
-- mailbox worker 默认关闭：`mailbox.worker.enabled=false`，默认轮询 `100ms`，默认错误策略 `requeue`。
+- mailbox worker 默认关闭：`mailbox.worker.enabled=false`，默认轮询 `100ms`，默认错误策略 `requeue`；
+  lease/recover 默认值为 `inflight_timeout=30s`、`heartbeat_interval=5s`、`reclaim_on_consume=true`、`panic_policy=follow_handler_error_policy`。
 - scheduler 托管路径保持单一重试 owner；不叠加 primitive retry，避免 compounded retries。
 - async-await reconcile 默认关闭（`scheduler.async_await.reconcile.enabled=false`），启用后按 `interval/batch_size/jitter_ratio` 节流对账。
 - workflow graph composability 默认关闭，需显式开启。

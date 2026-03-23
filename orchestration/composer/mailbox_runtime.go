@@ -104,7 +104,7 @@ func (c *Composer) refreshMailboxForNextAttempt() {
 
 func (c *Composer) mailboxConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%t|%s|%s|%d|%d|%.4f|%d|%t|%d|%d|%t|%d|%s",
+		"%t|%s|%s|%d|%d|%.4f|%d|%t|%d|%d|%t|%d|%s|%d|%d|%t|%s",
 		cfg.Mailbox.Enabled,
 		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Backend)),
 		strings.TrimSpace(cfg.Mailbox.Path),
@@ -118,6 +118,10 @@ func (c *Composer) mailboxConfigSignature(cfg runtimeconfig.Config) string {
 		cfg.Mailbox.Worker.Enabled,
 		cfg.Mailbox.Worker.PollInterval.Milliseconds(),
 		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Worker.HandlerErrorPolicy)),
+		cfg.Mailbox.Worker.InflightTimeout.Milliseconds(),
+		cfg.Mailbox.Worker.HeartbeatInterval.Milliseconds(),
+		cfg.Mailbox.Worker.ReclaimOnConsume,
+		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Worker.PanicPolicy)),
 	)
 }
 
@@ -226,6 +230,8 @@ func (c *Composer) recordMailboxLifecycle(_ context.Context, event mailbox.Lifec
 		BackendFallback:       fallback,
 		BackendFallbackReason: strings.TrimSpace(fallbackReason),
 		PublishPath:           mailboxLifecyclePathPrefix + strings.TrimSpace(string(event.Transition)),
+		Reclaimed:             event.Reclaimed,
+		PanicRecovered:        event.PanicRecovered,
 	})
 }
 

@@ -16,6 +16,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 当前里程碑快照（2026-03-23）：
 - 已归档并稳定：A4-A37。
 - A38（Harden Mailbox Worker Lease Reclaim And Panic Recovery Contract）进行中。
+- A39（Introduce Task Board Control And Manual Recovery Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -207,8 +208,13 @@ _ = err
   - `mailbox.worker.enabled=false`
   - `mailbox.worker.poll_interval=100ms`
   - `mailbox.worker.handler_error_policy=requeue`
-- handler 返回错误时默认按 `requeue` 收敛，原因码归一到 canonical taxonomy。
-- lifecycle 诊断覆盖：`consume/ack/nack/requeue/dead_letter/expired`。
+  - `mailbox.worker.inflight_timeout=30s`
+  - `mailbox.worker.heartbeat_interval=5s`
+  - `mailbox.worker.reclaim_on_consume=true`
+  - `mailbox.worker.panic_policy=follow_handler_error_policy`
+- worker handler 返回错误时默认按 `requeue` 收敛；panic recover 路径复用同一 policy（`requeue|nack`）。
+- stale `in_flight` reclaim 默认在 consume 路径开启；reclaim reason canonical 为 `lease_expired`。
+- lifecycle 诊断覆盖：`consume/ack/nack/requeue/dead_letter/expired`，并追加 `reclaimed/panic_recovered` additive 观测标记。
 
 ### 8) 能力状态
 
@@ -220,6 +226,7 @@ _ = err
 
 当前进行中能力（最新）：
 - A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固进行中。
+- A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board 控制面与手工恢复契约提案进行中。
 
 最近已归档能力：
 - A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 strict-native fail-fast parity 与状态口径收敛已归档（`govulncheck warn` 保留为唯一治理例外）。

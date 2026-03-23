@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -272,6 +273,7 @@ func TestLifecycleReasonTaxonomyFrozen(t *testing.T) {
 		LifecycleReasonConsumerMismatch,
 		LifecycleReasonMessageNotFound,
 		LifecycleReasonHandlerError,
+		LifecycleReasonLeaseExpired,
 	}
 	if got := LifecycleCanonicalReasons(); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("canonical reasons mismatch: got=%#v want=%#v", got, expected)
@@ -297,6 +299,18 @@ func TestNormalizeWorkerConfigDefaultsAndValidation(t *testing.T) {
 	if cfg.HandlerErrorPolicy != WorkerHandlerErrorPolicyRequeue {
 		t.Fatalf("default handler_error_policy=%q, want %q", cfg.HandlerErrorPolicy, WorkerHandlerErrorPolicyRequeue)
 	}
+	if cfg.InflightTimeout != DefaultWorkerInflightTimeout {
+		t.Fatalf("default inflight_timeout=%v, want %v", cfg.InflightTimeout, DefaultWorkerInflightTimeout)
+	}
+	if cfg.HeartbeatInterval != DefaultWorkerHeartbeatInterval {
+		t.Fatalf("default heartbeat_interval=%v, want %v", cfg.HeartbeatInterval, DefaultWorkerHeartbeatInterval)
+	}
+	if !cfg.ReclaimOnConsume {
+		t.Fatal("default reclaim_on_consume=false, want true")
+	}
+	if cfg.PanicPolicy != WorkerPanicPolicyFollowHandler {
+		t.Fatalf("default panic_policy=%q, want %q", cfg.PanicPolicy, WorkerPanicPolicyFollowHandler)
+	}
 
 	if _, err := NormalizeWorkerConfig(WorkerConfig{PollInterval: 0}); err != nil {
 		t.Fatalf("zero poll_interval should resolve to default: %v", err)
@@ -306,6 +320,12 @@ func TestNormalizeWorkerConfigDefaultsAndValidation(t *testing.T) {
 	}
 	if _, err := NormalizeWorkerConfig(WorkerConfig{PollInterval: 10 * time.Millisecond, HandlerErrorPolicy: "drop"}); err == nil {
 		t.Fatal("expected validation error for unsupported handler_error_policy")
+	}
+	if _, err := NormalizeWorkerConfig(WorkerConfig{HeartbeatInterval: 30 * time.Second, InflightTimeout: 30 * time.Second}); err == nil {
+		t.Fatal("expected validation error for heartbeat_interval >= inflight_timeout")
+	}
+	if _, err := NormalizeWorkerConfig(WorkerConfig{PanicPolicy: "abort"}); err == nil {
+		t.Fatal("expected validation error for unsupported panic_policy")
 	}
 }
 
@@ -411,6 +431,250 @@ func TestMailboxWorkerDisabledNoop(t *testing.T) {
 	}
 	if claimed.State != StateInFlight {
 		t.Fatalf("claimed state=%q, want in_flight", claimed.State)
+	}
+}
+
+func TestMailboxWorkerReclaimsStaleInflightOnConsume(t *testing.T) {
+	now := time.Now().UTC()
+	clock := now
+	events := make([]LifecycleEvent, 0, 12)
+	mb, err := New(
+		NewMemoryStore(Policy{
+			MaxAttempts:    3,
+			BackoffInitial: 1 * time.Millisecond,
+			BackoffMax:     1 * time.Millisecond,
+			JitterRatio:    0,
+		}),
+		WithClock(func() time.Time { return clock }),
+		WithLifecycleObserver(func(_ context.Context, event LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, Envelope{
+		MessageID:      "msg-reclaim",
+		IdempotencyKey: "idem-reclaim",
+		Kind:           KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+
+	// Simulate crashed worker that consumed but never acked/nacked.
+	if _, ok, err := mb.ConsumeWithLease(ctx, "worker-crash", 30*time.Millisecond, true); err != nil || !ok {
+		t.Fatalf("consume by crashed worker failed: ok=%v err=%v", ok, err)
+	}
+	clock = clock.Add(40 * time.Millisecond)
+
+	worker, err := NewWorker(mb, WorkerConfig{Enabled: true}, func(context.Context, Record) error {
+		return nil
+	}, "worker-recover")
+	if err != nil {
+		t.Fatalf("new recovery worker failed: %v", err)
+	}
+	processed, err := worker.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("RunOnce reclaim pass #1 failed: %v", err)
+	}
+	if processed {
+		t.Fatalf("RunOnce reclaim pass #1 should perform reclaim without immediate consume, processed=%v", processed)
+	}
+	clock = clock.Add(80 * time.Millisecond)
+	processed, err = worker.RunOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("RunOnce reclaim pass #2 failed: processed=%v err=%v", processed, err)
+	}
+
+	var reclaimedReasonSeen bool
+	var reclaimedFlagSeen bool
+	for _, event := range events {
+		if event.ReasonCode == LifecycleReasonLeaseExpired {
+			reclaimedReasonSeen = true
+		}
+		if event.Reclaimed {
+			reclaimedFlagSeen = true
+		}
+	}
+	if !reclaimedReasonSeen {
+		t.Fatalf("expected lifecycle reason %q in events=%#v", LifecycleReasonLeaseExpired, events)
+	}
+	if !reclaimedFlagSeen {
+		t.Fatalf("expected reclaimed lifecycle flag in events=%#v", events)
+	}
+}
+
+func TestMailboxWorkerHeartbeatPreventsPrematureReclaim(t *testing.T) {
+	base := time.Now().UTC()
+	var mu sync.Mutex
+	clock := base
+	events := make([]LifecycleEvent, 0, 32)
+	mb, err := New(
+		NewMemoryStore(Policy{
+			MaxAttempts:    3,
+			BackoffInitial: 1 * time.Millisecond,
+			BackoffMax:     1 * time.Millisecond,
+			JitterRatio:    0,
+		}),
+		WithClock(func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			return clock
+		}),
+		WithLifecycleObserver(func(_ context.Context, event LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := mb.Publish(ctx, Envelope{
+		MessageID:      "msg-heartbeat",
+		IdempotencyKey: "idem-heartbeat",
+		Kind:           KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+
+	block := make(chan struct{})
+	started := make(chan struct{})
+	workerA, err := NewWorker(mb, WorkerConfig{
+		Enabled:           true,
+		InflightTimeout:   120 * time.Millisecond,
+		HeartbeatInterval: 20 * time.Millisecond,
+	}, func(context.Context, Record) error {
+		close(started)
+		<-block
+		return nil
+	}, "worker-heartbeat-a")
+	if err != nil {
+		t.Fatalf("new workerA failed: %v", err)
+	}
+
+	runDone := make(chan error, 1)
+	go func() {
+		_, runErr := workerA.RunOnce(ctx)
+		runDone <- runErr
+	}()
+	<-started
+
+	advanceDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		defer close(advanceDone)
+		for i := 0; i < 20; i++ {
+			<-ticker.C
+			mu.Lock()
+			clock = clock.Add(10 * time.Millisecond)
+			mu.Unlock()
+		}
+	}()
+	time.Sleep(170 * time.Millisecond)
+
+	workerB, err := NewWorker(mb, WorkerConfig{
+		Enabled:           true,
+		InflightTimeout:   120 * time.Millisecond,
+		HeartbeatInterval: 20 * time.Millisecond,
+	}, func(context.Context, Record) error {
+		return nil
+	}, "worker-heartbeat-b")
+	if err != nil {
+		t.Fatalf("new workerB failed: %v", err)
+	}
+	processed, err := workerB.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("workerB RunOnce failed: %v", err)
+	}
+	if processed {
+		t.Fatalf("workerB should not reclaim active in-flight message while heartbeat alive, events=%#v", events)
+	}
+
+	close(block)
+	if runErr := <-runDone; runErr != nil {
+		t.Fatalf("workerA RunOnce failed: %v", runErr)
+	}
+	<-advanceDone
+}
+
+func TestMailboxWorkerPanicRecoveryPolicyMapping(t *testing.T) {
+	tests := []struct {
+		name        string
+		policy      string
+		wantRequeue bool
+	}{
+		{name: "default-requeue", policy: WorkerHandlerErrorPolicyRequeue, wantRequeue: true},
+		{name: "nack", policy: WorkerHandlerErrorPolicyNack, wantRequeue: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events := make([]LifecycleEvent, 0, 8)
+			mb, err := New(
+				NewMemoryStore(Policy{
+					MaxAttempts:    3,
+					BackoffInitial: 1 * time.Millisecond,
+					BackoffMax:     1 * time.Millisecond,
+					JitterRatio:    0,
+					DLQEnabled:     false,
+				}),
+				WithLifecycleObserver(func(_ context.Context, event LifecycleEvent) {
+					events = append(events, event)
+				}),
+			)
+			if err != nil {
+				t.Fatalf("new mailbox failed: %v", err)
+			}
+			ctx := context.Background()
+			if _, err := mb.Publish(ctx, Envelope{
+				MessageID:      "msg-panic-" + tc.name,
+				IdempotencyKey: "idem-panic-" + tc.name,
+				Kind:           KindCommand,
+			}); err != nil {
+				t.Fatalf("publish failed: %v", err)
+			}
+			worker, err := NewWorker(mb, WorkerConfig{
+				Enabled:            true,
+				HandlerErrorPolicy: tc.policy,
+			}, func(context.Context, Record) error {
+				panic("boom")
+			}, "worker-panic-"+tc.name)
+			if err != nil {
+				t.Fatalf("new worker failed: %v", err)
+			}
+			processed, err := worker.RunOnce(ctx)
+			if err != nil || !processed {
+				t.Fatalf("RunOnce panic path failed: processed=%v err=%v", processed, err)
+			}
+
+			seenPanicRecovered := false
+			seenRequeue := false
+			seenNack := false
+			for _, event := range events {
+				if event.PanicRecovered {
+					seenPanicRecovered = true
+				}
+				if event.Transition == TransitionRequeue {
+					seenRequeue = true
+				}
+				if event.Transition == TransitionNack {
+					seenNack = true
+					if event.ReasonCode != LifecycleReasonHandlerError {
+						t.Fatalf("panic path reason_code=%q, want %q", event.ReasonCode, LifecycleReasonHandlerError)
+					}
+				}
+			}
+			if !seenPanicRecovered {
+				t.Fatalf("panic_recovered lifecycle flag missing in events=%#v", events)
+			}
+			if tc.wantRequeue && !seenRequeue {
+				t.Fatalf("expected requeue transition for policy=%q events=%#v", tc.policy, events)
+			}
+			if !tc.wantRequeue && !seenNack {
+				t.Fatalf("expected nack transition for policy=%q events=%#v", tc.policy, events)
+			}
+		})
 	}
 }
 

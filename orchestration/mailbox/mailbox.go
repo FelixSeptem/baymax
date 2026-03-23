@@ -84,7 +84,18 @@ func (m *Mailbox) Publish(ctx context.Context, envelope Envelope) (PublishResult
 }
 
 func (m *Mailbox) Consume(ctx context.Context, consumerID string) (Record, bool, error) {
-	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime())
+	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime(), 0, false)
+	m.emitLifecycle(ctx)
+	return record, ok, err
+}
+
+func (m *Mailbox) ConsumeWithLease(
+	ctx context.Context,
+	consumerID string,
+	inflightTimeout time.Duration,
+	reclaimOnConsume bool,
+) (Record, bool, error) {
+	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime(), inflightTimeout, reclaimOnConsume)
 	m.emitLifecycle(ctx)
 	return record, ok, err
 }
@@ -96,13 +107,43 @@ func (m *Mailbox) Ack(ctx context.Context, messageID, consumerID string) (Record
 }
 
 func (m *Mailbox) Nack(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
-	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime())
+	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime(), ActionOptions{})
+	m.emitLifecycle(ctx)
+	return record, err
+}
+
+func (m *Mailbox) NackWithOptions(
+	ctx context.Context,
+	messageID, consumerID, reason string,
+	opts ActionOptions,
+) (Record, error) {
+	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime(), opts)
 	m.emitLifecycle(ctx)
 	return record, err
 }
 
 func (m *Mailbox) Requeue(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
-	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime())
+	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime(), ActionOptions{})
+	m.emitLifecycle(ctx)
+	return record, err
+}
+
+func (m *Mailbox) RequeueWithOptions(
+	ctx context.Context,
+	messageID, consumerID, reason string,
+	opts ActionOptions,
+) (Record, error) {
+	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime(), opts)
+	m.emitLifecycle(ctx)
+	return record, err
+}
+
+func (m *Mailbox) Heartbeat(
+	ctx context.Context,
+	messageID, consumerID string,
+	inflightTimeout time.Duration,
+) (Record, error) {
+	record, err := m.store.Heartbeat(ctx, messageID, consumerID, m.nowTime(), inflightTimeout)
 	m.emitLifecycle(ctx)
 	return record, err
 }

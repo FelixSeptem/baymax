@@ -1801,6 +1801,20 @@ mailbox:
 		ReasonCode: "retry_exhausted",
 		Attempt:    3,
 	})
+	mgr.RecordMailboxDiagnostic(MailboxDiagnosticRecord{
+		Time:           base.Add(20 * time.Millisecond),
+		MessageID:      "msg-c",
+		Kind:           "command",
+		State:          "queued",
+		RunID:          "run-mailbox-1",
+		TaskID:         "task-mailbox-1",
+		WorkflowID:     "wf-mailbox-1",
+		TeamID:         "team-mailbox-1",
+		ReasonCode:     "lease_expired",
+		Attempt:        2,
+		Reclaimed:      true,
+		PanicRecovered: true,
+	})
 
 	page, err := mgr.QueryMailbox(runtimediag.MailboxQueryRequest{
 		RunID: "run-mailbox-1",
@@ -1808,18 +1822,32 @@ mailbox:
 	if err != nil {
 		t.Fatalf("QueryMailbox failed: %v", err)
 	}
-	if len(page.Items) != 2 {
-		t.Fatalf("query mailbox items len = %d, want 2", len(page.Items))
+	if len(page.Items) != 3 {
+		t.Fatalf("query mailbox items len = %d, want 3", len(page.Items))
 	}
+	var reclaimSeen bool
+	var panicSeen bool
 	for _, rec := range page.Items {
 		if rec.RunID == "" || rec.TaskID == "" || rec.WorkflowID == "" || rec.TeamID == "" {
 			t.Fatalf("correlation fields must be preserved: %#v", rec)
 		}
+		if rec.Reclaimed {
+			reclaimSeen = true
+		}
+		if rec.PanicRecovered {
+			panicSeen = true
+		}
+	}
+	if !reclaimSeen || !panicSeen {
+		t.Fatalf("mailbox reclaim/panic recovered flags missing: %#v", page.Items)
 	}
 	agg := mgr.MailboxAggregates(runtimediag.MailboxAggregateRequest{
 		RunID: "run-mailbox-1",
 	})
-	if agg.TotalMessages != 2 || agg.ByState["dead_letter"] != 1 || agg.ReasonCodeTotals["retry_exhausted"] != 1 {
+	if agg.TotalMessages != 3 ||
+		agg.ByState["dead_letter"] != 1 ||
+		agg.ReasonCodeTotals["retry_exhausted"] != 1 ||
+		agg.ReasonCodeTotals["lease_expired"] != 1 {
 		t.Fatalf("mailbox aggregate mismatch: %#v", agg)
 	}
 }
@@ -1907,6 +1935,10 @@ mailbox:
     enabled: false
     poll_interval: 100ms
     handler_error_policy: requeue
+    inflight_timeout: 30s
+    heartbeat_interval: 5s
+    reclaim_on_consume: true
+    panic_policy: follow_handler_error_policy
 reload:
   enabled: true
   debounce: 20ms
@@ -1917,9 +1949,9 @@ reload:
 	}
 	defer func() { _ = mgr.Close() }()
 
-	before := mgr.EffectiveConfig().Mailbox.Worker.PollInterval
-	if before != 100*time.Millisecond {
-		t.Fatalf("before mailbox.worker.poll_interval = %v, want 100ms", before)
+	before := mgr.EffectiveConfig().Mailbox.Worker.HeartbeatInterval
+	if before != 5*time.Second {
+		t.Fatalf("before mailbox.worker.heartbeat_interval = %v, want 5s", before)
 	}
 
 	writeConfig(t, file, `
@@ -1939,16 +1971,20 @@ mailbox:
     page_size_max: 200
   worker:
     enabled: true
-    poll_interval: 0s
-    handler_error_policy: drop
+    poll_interval: 100ms
+    handler_error_policy: requeue
+    inflight_timeout: 8s
+    heartbeat_interval: 8s
+    reclaim_on_consume: true
+    panic_policy: follow_handler_error_policy
 reload:
   enabled: true
   debounce: 20ms
 `)
 	time.Sleep(250 * time.Millisecond)
-	after := mgr.EffectiveConfig().Mailbox.Worker.PollInterval
+	after := mgr.EffectiveConfig().Mailbox.Worker.HeartbeatInterval
 	if after != before {
-		t.Fatalf("invalid mailbox.worker reload should rollback, poll_interval = %v, want %v", after, before)
+		t.Fatalf("invalid mailbox.worker reload should rollback, heartbeat_interval = %v, want %v", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

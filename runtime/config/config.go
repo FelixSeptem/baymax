@@ -114,6 +114,7 @@ const (
 	MailboxBackendFile                 = "file"
 	MailboxWorkerHandlerErrorRequeue   = "requeue"
 	MailboxWorkerHandlerErrorNack      = "nack"
+	MailboxWorkerPanicPolicyFollow     = "follow_handler_error_policy"
 )
 
 const (
@@ -385,6 +386,10 @@ type MailboxWorkerConfig struct {
 	Enabled            bool          `json:"enabled"`
 	PollInterval       time.Duration `json:"poll_interval"`
 	HandlerErrorPolicy string        `json:"handler_error_policy"`
+	InflightTimeout    time.Duration `json:"inflight_timeout"`
+	HeartbeatInterval  time.Duration `json:"heartbeat_interval"`
+	ReclaimOnConsume   bool          `json:"reclaim_on_consume"`
+	PanicPolicy        string        `json:"panic_policy"`
 }
 
 type SchedulerConfig struct {
@@ -1020,6 +1025,10 @@ func DefaultConfig() Config {
 				Enabled:            false,
 				PollInterval:       100 * time.Millisecond,
 				HandlerErrorPolicy: MailboxWorkerHandlerErrorRequeue,
+				InflightTimeout:    30 * time.Second,
+				HeartbeatInterval:  5 * time.Second,
+				ReclaimOnConsume:   true,
+				PanicPolicy:        MailboxWorkerPanicPolicyFollow,
 			},
 		},
 		Scheduler: SchedulerConfig{
@@ -1751,6 +1760,15 @@ func Validate(cfg Config) error {
 	if cfg.Mailbox.Worker.PollInterval <= 0 {
 		return errors.New("mailbox.worker.poll_interval must be > 0")
 	}
+	if cfg.Mailbox.Worker.InflightTimeout <= 0 {
+		return errors.New("mailbox.worker.inflight_timeout must be > 0")
+	}
+	if cfg.Mailbox.Worker.HeartbeatInterval <= 0 {
+		return errors.New("mailbox.worker.heartbeat_interval must be > 0")
+	}
+	if cfg.Mailbox.Worker.HeartbeatInterval >= cfg.Mailbox.Worker.InflightTimeout {
+		return errors.New("mailbox.worker.heartbeat_interval must be < mailbox.worker.inflight_timeout")
+	}
 	switch policy := strings.ToLower(strings.TrimSpace(cfg.Mailbox.Worker.HandlerErrorPolicy)); policy {
 	case MailboxWorkerHandlerErrorRequeue, MailboxWorkerHandlerErrorNack:
 	default:
@@ -1759,6 +1777,15 @@ func Validate(cfg Config) error {
 			MailboxWorkerHandlerErrorRequeue,
 			MailboxWorkerHandlerErrorNack,
 			cfg.Mailbox.Worker.HandlerErrorPolicy,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.Mailbox.Worker.PanicPolicy)); policy {
+	case MailboxWorkerPanicPolicyFollow:
+	default:
+		return fmt.Errorf(
+			"mailbox.worker.panic_policy must be %q, got %q",
+			MailboxWorkerPanicPolicyFollow,
+			cfg.Mailbox.Worker.PanicPolicy,
 		)
 	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Scheduler.Backend)); backend {
@@ -2902,6 +2929,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("mailbox.worker.enabled", base.Mailbox.Worker.Enabled)
 	v.SetDefault("mailbox.worker.poll_interval", base.Mailbox.Worker.PollInterval)
 	v.SetDefault("mailbox.worker.handler_error_policy", base.Mailbox.Worker.HandlerErrorPolicy)
+	v.SetDefault("mailbox.worker.inflight_timeout", base.Mailbox.Worker.InflightTimeout)
+	v.SetDefault("mailbox.worker.heartbeat_interval", base.Mailbox.Worker.HeartbeatInterval)
+	v.SetDefault("mailbox.worker.reclaim_on_consume", base.Mailbox.Worker.ReclaimOnConsume)
+	v.SetDefault("mailbox.worker.panic_policy", base.Mailbox.Worker.PanicPolicy)
 	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
 	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
 	v.SetDefault("scheduler.path", base.Scheduler.Path)
@@ -3181,6 +3212,10 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Mailbox.Worker.Enabled = v.GetBool("mailbox.worker.enabled")
 	cfg.Mailbox.Worker.PollInterval = v.GetDuration("mailbox.worker.poll_interval")
 	cfg.Mailbox.Worker.HandlerErrorPolicy = strings.ToLower(strings.TrimSpace(v.GetString("mailbox.worker.handler_error_policy")))
+	cfg.Mailbox.Worker.InflightTimeout = v.GetDuration("mailbox.worker.inflight_timeout")
+	cfg.Mailbox.Worker.HeartbeatInterval = v.GetDuration("mailbox.worker.heartbeat_interval")
+	cfg.Mailbox.Worker.ReclaimOnConsume = v.GetBool("mailbox.worker.reclaim_on_consume")
+	cfg.Mailbox.Worker.PanicPolicy = strings.ToLower(strings.TrimSpace(v.GetString("mailbox.worker.panic_policy")))
 	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
 	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
 	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))

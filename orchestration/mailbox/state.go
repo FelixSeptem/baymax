@@ -3,6 +3,7 @@ package mailbox
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -75,13 +76,23 @@ func (s *mailboxState) publish(envelope Envelope, now time.Time) (PublishResult,
 	return PublishResult{Record: cloneRecord(rec)}, nil
 }
 
-func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, bool, error) {
+func (s *mailboxState) consume(
+	consumerID string,
+	now time.Time,
+	inflightTimeout time.Duration,
+	reclaimOnConsume bool,
+) (Record, bool, bool, error) {
 	consumerID = strings.TrimSpace(consumerID)
 	if consumerID == "" {
 		return Record{}, false, false, fmt.Errorf("consumer_id is required")
 	}
 	now = normalizeNow(now)
 	mutated := s.expireQueued(now)
+	if reclaimOnConsume {
+		if s.reclaimStaleInFlight(now, inflightTimeout) {
+			mutated = true
+		}
+	}
 
 	selected := -1
 	for i := range s.Queue {
@@ -116,14 +127,38 @@ func (s *mailboxState) consume(consumerID string, now time.Time) (Record, bool, 
 	rec.ConsumerID = consumerID
 	rec.DeliveryAttempt++
 	rec.Envelope.Attempt = rec.DeliveryAttempt
+	rec.InFlightSince = now
+	rec.LastHeartbeatAt = now
+	if inflightTimeout > 0 {
+		rec.LeaseExpiresAt = now.Add(inflightTimeout)
+	} else {
+		rec.LeaseExpiresAt = time.Time{}
+	}
 	rec.NextEligibleAt = time.Time{}
 	rec.UpdatedAt = now
 
 	s.Stats.QueueTotal = maxInt(0, s.Stats.QueueTotal-1)
 	s.Stats.InFlightTotal++
 	s.Stats.ConsumedTotal++
-	s.emitLifecycleEvent(TransitionConsume, *rec, "")
+	s.emitLifecycleEvent(TransitionConsume, *rec, "", ActionOptions{})
 	return cloneRecord(*rec), true, true, nil
+}
+
+func (s *mailboxState) heartbeat(messageID, consumerID string, now time.Time, inflightTimeout time.Duration) (Record, error) {
+	rec, err := s.requireInflightRecord(messageID, consumerID)
+	if err != nil {
+		return Record{}, err
+	}
+	now = normalizeNow(now)
+	rec.LastHeartbeatAt = now
+	if rec.InFlightSince.IsZero() {
+		rec.InFlightSince = now
+	}
+	if inflightTimeout > 0 {
+		rec.LeaseExpiresAt = now.Add(inflightTimeout)
+	}
+	rec.UpdatedAt = now
+	return cloneRecord(*rec), nil
 }
 
 func (s *mailboxState) ack(messageID, consumerID string, now time.Time) (Record, error) {
@@ -135,14 +170,15 @@ func (s *mailboxState) ack(messageID, consumerID string, now time.Time) (Record,
 		return Record{}, err
 	}
 	rec.State = StateAcked
+	clearLease(rec)
 	rec.UpdatedAt = normalizeNow(now)
 	s.Stats.AckTotal++
 	s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
-	s.emitLifecycleEvent(TransitionAck, *rec, "")
+	s.emitLifecycleEvent(TransitionAck, *rec, "", ActionOptions{})
 	return cloneRecord(*rec), nil
 }
 
-func (s *mailboxState) nack(messageID, consumerID, reason string, now time.Time) (Record, error) {
+func (s *mailboxState) nack(messageID, consumerID, reason string, now time.Time, opts ActionOptions) (Record, error) {
 	rec, err := s.requireInflightRecord(messageID, consumerID)
 	if err != nil {
 		if rec != nil && (rec.State == StateNacked || rec.State == StateDeadLetter || rec.State == StateExpired) {
@@ -152,21 +188,22 @@ func (s *mailboxState) nack(messageID, consumerID, reason string, now time.Time)
 	}
 	reasonCode := CanonicalizeLifecycleReason(reason, LifecycleReasonHandlerError)
 	rec.State = StateNacked
+	clearLease(rec)
 	rec.LastError = reasonCode
 	rec.UpdatedAt = normalizeNow(now)
 	s.Stats.NackTotal++
 	s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
-	s.emitLifecycleEvent(TransitionNack, *rec, reasonCode)
+	s.emitLifecycleEvent(TransitionNack, *rec, reasonCode, opts)
 	if rec.DeliveryAttempt >= s.Policy.MaxAttempts && s.Policy.DLQEnabled {
 		rec.State = StateDeadLetter
 		rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 		s.Stats.DeadLetterTotal++
-		s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted)
+		s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted, opts)
 	}
 	return cloneRecord(*rec), nil
 }
 
-func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Time) (Record, error) {
+func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Time, opts ActionOptions) (Record, error) {
 	messageID = strings.TrimSpace(messageID)
 	consumerID = strings.TrimSpace(consumerID)
 	rec := s.Records[messageID]
@@ -183,7 +220,8 @@ func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Ti
 		rec.LastError = reasonCode
 		s.Stats.NackTotal++
 		s.Stats.InFlightTotal = maxInt(0, s.Stats.InFlightTotal-1)
-		s.emitLifecycleEvent(TransitionNack, *rec, reasonCode)
+		clearLease(rec)
+		s.emitLifecycleEvent(TransitionNack, *rec, reasonCode, opts)
 	case StateNacked:
 	default:
 		return Record{}, ErrMessageNotInflight
@@ -194,24 +232,25 @@ func (s *mailboxState) requeue(messageID, consumerID, reason string, now time.Ti
 			rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 			rec.UpdatedAt = normalizeNow(now)
 			s.Stats.DeadLetterTotal++
-			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted)
+			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonRetryExhausted, opts)
 			return cloneRecord(*rec), nil
 		}
 		rec.State = StateExpired
 		rec.DeadLetterReason = deadLetterReason(LifecycleReasonRetryExhausted, reasonCode)
 		rec.UpdatedAt = normalizeNow(now)
 		s.Stats.ExpiredTotal++
-		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonRetryExhausted)
+		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonRetryExhausted, opts)
 		return cloneRecord(*rec), nil
 	}
 	rec.State = StateQueued
+	clearLease(rec)
 	rec.NextEligibleAt = normalizeNow(now).Add(s.retryDelay(rec.Envelope.MessageID, rec.DeliveryAttempt))
 	rec.ConsumerID = ""
 	rec.UpdatedAt = normalizeNow(now)
 	s.Queue = append(s.Queue, rec.Envelope.MessageID)
 	s.Stats.QueueTotal++
 	s.Stats.RequeueTotal++
-	s.emitLifecycleEvent(TransitionRequeue, *rec, reasonCode)
+	s.emitLifecycleEvent(TransitionRequeue, *rec, reasonCode, opts)
 	return cloneRecord(*rec), nil
 }
 
@@ -296,13 +335,41 @@ func (s *mailboxState) expireQueued(now time.Time) bool {
 			rec.State = StateDeadLetter
 			rec.DeadLetterReason = deadLetterReason(LifecycleReasonExpired, "")
 			s.Stats.DeadLetterTotal++
-			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonExpired)
+			s.emitLifecycleEvent(TransitionDeadLetter, *rec, LifecycleReasonExpired, ActionOptions{})
 		} else {
 			rec.State = StateExpired
 		}
-		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonExpired)
+		clearLease(rec)
+		s.emitLifecycleEvent(TransitionExpired, *rec, LifecycleReasonExpired, ActionOptions{})
 	}
 	s.Queue = filtered
+	return mutated
+}
+
+func (s *mailboxState) reclaimStaleInFlight(now time.Time, inflightTimeout time.Duration) bool {
+	if inflightTimeout <= 0 {
+		return false
+	}
+	ids := make([]string, 0, len(s.Records))
+	for id, rec := range s.Records {
+		if rec == nil || rec.State != StateInFlight {
+			continue
+		}
+		if !leaseExpired(*rec, now, inflightTimeout) {
+			continue
+		}
+		ids = append(ids, strings.TrimSpace(id))
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	sort.Strings(ids)
+	mutated := false
+	for _, id := range ids {
+		if _, err := s.requeue(id, "", LifecycleReasonLeaseExpired, now, ActionOptions{Reclaimed: true}); err == nil {
+			mutated = true
+		}
+	}
 	return mutated
 }
 
@@ -377,7 +444,12 @@ func deadLetterReason(code, reason string) string {
 	return trimmedCode + ":" + trimmedReason
 }
 
-func (s *mailboxState) emitLifecycleEvent(transition LifecycleTransition, rec Record, reason string) {
+func (s *mailboxState) emitLifecycleEvent(
+	transition LifecycleTransition,
+	rec Record,
+	reason string,
+	opts ActionOptions,
+) {
 	if s == nil {
 		return
 	}
@@ -385,9 +457,11 @@ func (s *mailboxState) emitLifecycleEvent(transition LifecycleTransition, rec Re
 		return
 	}
 	event := LifecycleEvent{
-		Time:       normalizeNow(rec.UpdatedAt),
-		Transition: transition,
-		Record:     cloneRecord(rec),
+		Time:           normalizeNow(rec.UpdatedAt),
+		Transition:     transition,
+		Record:         cloneRecord(rec),
+		Reclaimed:      opts.Reclaimed,
+		PanicRecovered: opts.PanicRecovered,
 	}
 	switch transition {
 	case TransitionNack, TransitionRequeue, TransitionDeadLetter, TransitionExpired:
@@ -427,6 +501,36 @@ func isRecordExpired(record Record, now time.Time) bool {
 		return false
 	}
 	return !record.Envelope.ExpireAt.After(now)
+}
+
+func leaseExpired(record Record, now time.Time, inflightTimeout time.Duration) bool {
+	if record.State != StateInFlight {
+		return false
+	}
+	deadline := record.LeaseExpiresAt
+	if deadline.IsZero() {
+		base := record.LastHeartbeatAt
+		if base.IsZero() {
+			base = record.InFlightSince
+		}
+		if base.IsZero() {
+			base = record.UpdatedAt
+		}
+		if base.IsZero() {
+			return false
+		}
+		deadline = normalizeNow(base).Add(inflightTimeout)
+	}
+	return !deadline.After(now)
+}
+
+func clearLease(rec *Record) {
+	if rec == nil {
+		return
+	}
+	rec.InFlightSince = time.Time{}
+	rec.LastHeartbeatAt = time.Time{}
+	rec.LeaseExpiresAt = time.Time{}
 }
 
 func normalizeNow(now time.Time) time.Time {

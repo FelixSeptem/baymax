@@ -39,8 +39,8 @@ go test ./integration -run '^TestDelayedDispatchContract' -count=1
 echo "[multi-agent-shared-contract-gate] mailbox convergence suite"
 go test ./integration -run '^TestMailboxContract' -count=1
 
-echo "[multi-agent-shared-contract-gate] mailbox worker lifecycle suite"
-go test ./integration -run '^TestMailboxContractWorker|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1
+echo "[multi-agent-shared-contract-gate] mailbox worker lifecycle/recover/reclaim suite"
+go test ./integration -run '^TestMailboxContractWorker(Lifecycle|RecoverReclaim|PanicNackPolicy|Heartbeat)|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1
 
 echo "[multi-agent-shared-contract-gate] mailbox backend parity suite"
 go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism$' -count=1

@@ -71,6 +71,8 @@ type MailboxDiagnosticRecord struct {
 	BackendFallback       bool
 	BackendFallbackReason string
 	PublishPath           string
+	Reclaimed             bool
+	PanicRecovered        bool
 }
 
 // NewManager builds a runtime config manager with env/file/default precedence and optional hot reload.
@@ -332,6 +334,8 @@ func (m *Manager) RecordMailboxDiagnostic(rec MailboxDiagnosticRecord) {
 		BackendFallback:       rec.BackendFallback,
 		BackendFallbackReason: rec.BackendFallbackReason,
 		PublishPath:           rec.PublishPath,
+		Reclaimed:             rec.Reclaimed,
+		PanicRecovered:        rec.PanicRecovered,
 	})
 }
 

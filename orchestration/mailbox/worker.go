@@ -3,6 +3,7 @@ package mailbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -80,18 +81,67 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	if w == nil {
 		return false, errors.New("worker is nil")
 	}
-	claimed, ok, err := w.mailbox.Consume(ctx, w.consumerID)
+	claimed, ok, err := w.mailbox.ConsumeWithLease(
+		ctx,
+		w.consumerID,
+		w.config.InflightTimeout,
+		w.config.ReclaimOnConsume,
+	)
 	if err != nil || !ok {
 		return false, err
 	}
-	if err := w.handler(ctx, claimed); err != nil {
-		reason := CanonicalizeLifecycleReason(err.Error(), LifecycleReasonHandlerError)
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	heartbeatErrCh := make(chan error, 1)
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(w.config.HeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				if _, hbErr := w.mailbox.Heartbeat(
+					heartbeatCtx,
+					claimed.Envelope.MessageID,
+					w.consumerID,
+					w.config.InflightTimeout,
+				); hbErr != nil {
+					select {
+					case heartbeatErrCh <- hbErr:
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	panicRecovered, handlerErr := invokeWorkerHandler(ctx, w.handler, claimed)
+	stopHeartbeat()
+	<-heartbeatDone
+	select {
+	case hbErr := <-heartbeatErrCh:
+		if handlerErr == nil {
+			handlerErr = hbErr
+		}
+	default:
+	}
+
+	if handlerErr != nil {
+		reason := CanonicalizeLifecycleReason(handlerErr.Error(), LifecycleReasonHandlerError)
+		opts := ActionOptions{}
+		if panicRecovered {
+			reason = LifecycleReasonHandlerError
+			opts.PanicRecovered = true
+		}
 		switch w.config.HandlerErrorPolicy {
 		case WorkerHandlerErrorPolicyNack:
-			_, handleErr := w.mailbox.Nack(ctx, claimed.Envelope.MessageID, w.consumerID, reason)
+			_, handleErr := w.mailbox.NackWithOptions(ctx, claimed.Envelope.MessageID, w.consumerID, reason, opts)
 			return true, handleErr
 		default:
-			_, handleErr := w.mailbox.Requeue(ctx, claimed.Envelope.MessageID, w.consumerID, reason)
+			_, handleErr := w.mailbox.RequeueWithOptions(ctx, claimed.Envelope.MessageID, w.consumerID, reason, opts)
 			return true, handleErr
 		}
 	}
@@ -100,4 +150,14 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	return true, nil
+}
+
+func invokeWorkerHandler(ctx context.Context, handler WorkerHandler, claimed Record) (panicRecovered bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			panicRecovered = true
+			err = fmt.Errorf("worker handler panic recovered: %v", r)
+		}
+	}()
+	return false, handler(ctx, claimed)
 }

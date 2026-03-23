@@ -2638,6 +2638,18 @@ func TestMailboxConfigDefaults(t *testing.T) {
 			MailboxWorkerHandlerErrorRequeue,
 		)
 	}
+	if cfg.Mailbox.Worker.InflightTimeout != 30*time.Second {
+		t.Fatalf("mailbox.worker.inflight_timeout = %v, want 30s", cfg.Mailbox.Worker.InflightTimeout)
+	}
+	if cfg.Mailbox.Worker.HeartbeatInterval != 5*time.Second {
+		t.Fatalf("mailbox.worker.heartbeat_interval = %v, want 5s", cfg.Mailbox.Worker.HeartbeatInterval)
+	}
+	if !cfg.Mailbox.Worker.ReclaimOnConsume {
+		t.Fatal("mailbox.worker.reclaim_on_consume = false, want true")
+	}
+	if cfg.Mailbox.Worker.PanicPolicy != MailboxWorkerPanicPolicyFollow {
+		t.Fatalf("mailbox.worker.panic_policy = %q, want %q", cfg.Mailbox.Worker.PanicPolicy, MailboxWorkerPanicPolicyFollow)
+	}
 }
 
 func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
@@ -2655,6 +2667,10 @@ func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_MAILBOX_WORKER_ENABLED", "true")
 	t.Setenv("BAYMAX_MAILBOX_WORKER_POLL_INTERVAL", "150ms")
 	t.Setenv("BAYMAX_MAILBOX_WORKER_HANDLER_ERROR_POLICY", MailboxWorkerHandlerErrorNack)
+	t.Setenv("BAYMAX_MAILBOX_WORKER_INFLIGHT_TIMEOUT", "45s")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_HEARTBEAT_INTERVAL", "4s")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_RECLAIM_ON_CONSUME", "false")
+	t.Setenv("BAYMAX_MAILBOX_WORKER_PANIC_POLICY", MailboxWorkerPanicPolicyFollow)
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -2677,6 +2693,10 @@ mailbox:
     enabled: false
     poll_interval: 40ms
     handler_error_policy: requeue
+    inflight_timeout: 30s
+    heartbeat_interval: 5s
+    reclaim_on_consume: true
+    panic_policy: follow_handler_error_policy
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -2715,6 +2735,18 @@ mailbox:
 			cfg.Mailbox.Worker.HandlerErrorPolicy,
 			MailboxWorkerHandlerErrorNack,
 		)
+	}
+	if cfg.Mailbox.Worker.InflightTimeout != 45*time.Second {
+		t.Fatalf("mailbox.worker.inflight_timeout = %v, want 45s", cfg.Mailbox.Worker.InflightTimeout)
+	}
+	if cfg.Mailbox.Worker.HeartbeatInterval != 4*time.Second {
+		t.Fatalf("mailbox.worker.heartbeat_interval = %v, want 4s", cfg.Mailbox.Worker.HeartbeatInterval)
+	}
+	if cfg.Mailbox.Worker.ReclaimOnConsume {
+		t.Fatal("mailbox.worker.reclaim_on_consume = true, want false from env")
+	}
+	if cfg.Mailbox.Worker.PanicPolicy != MailboxWorkerPanicPolicyFollow {
+		t.Fatalf("mailbox.worker.panic_policy = %q, want %q", cfg.Mailbox.Worker.PanicPolicy, MailboxWorkerPanicPolicyFollow)
 	}
 }
 
@@ -2779,5 +2811,29 @@ func TestMailboxConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Mailbox.Worker.HandlerErrorPolicy = "drop"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for mailbox.worker.handler_error_policy")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.InflightTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.worker.inflight_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.HeartbeatInterval = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.worker.heartbeat_interval")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.HeartbeatInterval = cfg.Mailbox.Worker.InflightTimeout
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error when mailbox.worker.heartbeat_interval >= mailbox.worker.inflight_timeout")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Worker.PanicPolicy = "abort"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.worker.panic_policy")
 	}
 }

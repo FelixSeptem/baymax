@@ -224,6 +224,8 @@ type MailboxRecord struct {
 	BackendFallback       bool      `json:"backend_fallback,omitempty"`
 	BackendFallbackReason string    `json:"backend_fallback_reason,omitempty"`
 	PublishPath           string    `json:"publish_path,omitempty"`
+	Reclaimed             bool      `json:"reclaimed,omitempty"`
+	PanicRecovered        bool      `json:"panic_recovered,omitempty"`
 }
 
 type MailboxQueryTimeRange struct {
@@ -1128,11 +1130,13 @@ func MailboxIdempotencyKey(rec MailboxRecord) string {
 		messageID = strings.TrimSpace(rec.CorrelationID)
 	}
 	return fmt.Sprintf(
-		"mailbox:%s:%s:%d:%s",
+		"mailbox:%s:%s:%d:%s:%t:%t",
 		messageID,
 		strings.ToLower(strings.TrimSpace(rec.State)),
 		rec.Attempt,
 		strings.TrimSpace(rec.ReasonCode),
+		rec.Reclaimed,
+		rec.PanicRecovered,
 	)
 }
 

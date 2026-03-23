@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -165,6 +166,127 @@ func TestMailboxContractWorkerLifecycleMemoryFileParity(t *testing.T) {
 	}
 }
 
+func TestMailboxContractWorkerRecoverReclaimRunStreamSemanticEquivalence(t *testing.T) {
+	runSummary := executeMailboxWorkerRecoverFlow(t, "run", "memory", mailbox.WorkerHandlerErrorPolicyRequeue)
+	streamSummary := executeMailboxWorkerRecoverFlow(t, "stream", "memory", mailbox.WorkerHandlerErrorPolicyRequeue)
+	if !reflect.DeepEqual(runSummary, streamSummary) {
+		t.Fatalf("worker recover/reclaim run/stream mismatch: run=%#v stream=%#v", runSummary, streamSummary)
+	}
+	if runSummary.ReclaimedTotal == 0 ||
+		runSummary.PanicRecoveredTotal == 0 ||
+		runSummary.ByReason[mailbox.LifecycleReasonLeaseExpired] == 0 ||
+		runSummary.ByReason[mailbox.LifecycleReasonHandlerError] == 0 {
+		t.Fatalf("worker recover/reclaim coverage mismatch: %#v", runSummary)
+	}
+}
+
+func TestMailboxContractWorkerRecoverReclaimMemoryFileParity(t *testing.T) {
+	memSummary := executeMailboxWorkerRecoverFlow(t, "parity", "memory", mailbox.WorkerHandlerErrorPolicyRequeue)
+	fileSummary := executeMailboxWorkerRecoverFlow(t, "parity", "file", mailbox.WorkerHandlerErrorPolicyRequeue)
+	if !reflect.DeepEqual(memSummary, fileSummary) {
+		t.Fatalf("worker recover/reclaim memory/file parity mismatch: memory=%#v file=%#v", memSummary, fileSummary)
+	}
+}
+
+func TestMailboxContractWorkerPanicNackPolicyDeterministic(t *testing.T) {
+	summary := executeMailboxWorkerRecoverFlow(t, "nack", "memory", mailbox.WorkerHandlerErrorPolicyNack)
+	if summary.ByTransition[string(mailbox.TransitionNack)] == 0 {
+		t.Fatalf("expected panic path nack transition, got %#v", summary)
+	}
+	if summary.FinalStateByMessage["msg-worker-panic"] != mailbox.StateNacked {
+		t.Fatalf("panic message final state=%q, want %q; summary=%#v", summary.FinalStateByMessage["msg-worker-panic"], mailbox.StateNacked, summary)
+	}
+}
+
+func TestMailboxContractWorkerHeartbeatNoPrematureReclaim(t *testing.T) {
+	ctx := context.Background()
+	base := time.Now().UTC()
+	var mu sync.Mutex
+	clock := base
+	events := make([]mailbox.LifecycleEvent, 0, 32)
+	mb, err := mailbox.New(
+		mailbox.NewMemoryStore(mailbox.Policy{
+			MaxAttempts:    3,
+			BackoffInitial: 1 * time.Millisecond,
+			BackoffMax:     1 * time.Millisecond,
+			JitterRatio:    0,
+		}),
+		mailbox.WithClock(func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			return clock
+		}),
+		mailbox.WithLifecycleObserver(func(_ context.Context, event mailbox.LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      "msg-heartbeat-contract",
+		IdempotencyKey: "idem-heartbeat-contract",
+		Kind:           mailbox.KindCommand,
+	}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+
+	release := make(chan struct{})
+	started := make(chan struct{})
+	workerA, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{
+		Enabled:           true,
+		InflightTimeout:   120 * time.Millisecond,
+		HeartbeatInterval: 20 * time.Millisecond,
+	}, func(context.Context, mailbox.Record) error {
+		close(started)
+		<-release
+		return nil
+	}, "worker-heartbeat-a")
+	if err != nil {
+		t.Fatalf("new workerA failed: %v", err)
+	}
+	runDone := make(chan error, 1)
+	go func() {
+		_, runErr := workerA.RunOnce(ctx)
+		runDone <- runErr
+	}()
+	<-started
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for i := 0; i < 20; i++ {
+			<-ticker.C
+			mu.Lock()
+			clock = clock.Add(10 * time.Millisecond)
+			mu.Unlock()
+		}
+	}()
+	time.Sleep(170 * time.Millisecond)
+
+	workerB, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{
+		Enabled:           true,
+		InflightTimeout:   120 * time.Millisecond,
+		HeartbeatInterval: 20 * time.Millisecond,
+	}, func(context.Context, mailbox.Record) error {
+		return nil
+	}, "worker-heartbeat-b")
+	if err != nil {
+		t.Fatalf("new workerB failed: %v", err)
+	}
+	processed, err := workerB.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("workerB RunOnce failed: %v", err)
+	}
+	if processed {
+		t.Fatalf("workerB should not reclaim active in-flight message, events=%#v", events)
+	}
+	close(release)
+	if runErr := <-runDone; runErr != nil {
+		t.Fatalf("workerA RunOnce failed: %v", runErr)
+	}
+}
+
 func TestMailboxContractWorkerDisabledNoopBaseline(t *testing.T) {
 	mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
 	if err != nil {
@@ -203,6 +325,7 @@ func TestMailboxContractLifecycleReasonTaxonomyGuard(t *testing.T) {
 		mailbox.LifecycleReasonConsumerMismatch,
 		mailbox.LifecycleReasonMessageNotFound,
 		mailbox.LifecycleReasonHandlerError,
+		mailbox.LifecycleReasonLeaseExpired,
 	}
 	if got := mailbox.LifecycleCanonicalReasons(); !reflect.DeepEqual(got, required) {
 		t.Fatalf("canonical lifecycle reason set drift: got=%#v want=%#v", got, required)
@@ -274,6 +397,14 @@ type mailboxWorkerLifecycleSummary struct {
 	ByReason     map[string]int
 	FinalState   mailbox.MessageState
 	Attempts     int
+}
+
+type mailboxWorkerRecoverSummary struct {
+	ByTransition        map[string]int
+	ByReason            map[string]int
+	FinalStateByMessage map[string]mailbox.MessageState
+	ReclaimedTotal      int
+	PanicRecoveredTotal int
 }
 
 func executeMailboxConvergenceFlow(t *testing.T, label string) mailboxConvergenceSummary {
@@ -484,6 +615,131 @@ func executeMailboxWorkerLifecycleFlow(t *testing.T, label, backend string) mail
 		reason := strings.TrimSpace(event.ReasonCode)
 		if reason != "" {
 			summary.ByReason[reason]++
+		}
+	}
+	return summary
+}
+
+func executeMailboxWorkerRecoverFlow(
+	t *testing.T,
+	label, backend, handlerPolicy string,
+) mailboxWorkerRecoverSummary {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	clock := now
+	events := make([]mailbox.LifecycleEvent, 0, 32)
+	policy := mailbox.Policy{
+		MaxAttempts:    3,
+		BackoffInitial: 10 * time.Millisecond,
+		BackoffMax:     10 * time.Millisecond,
+		JitterRatio:    0,
+		DLQEnabled:     false,
+	}
+	var store mailbox.Store
+	switch backend {
+	case "file":
+		fileStore, err := mailbox.NewFileStore(filepath.Join(t.TempDir(), "worker-recover-mailbox.json"), policy)
+		if err != nil {
+			t.Fatalf("new file mailbox failed: %v", err)
+		}
+		store = fileStore
+	default:
+		store = mailbox.NewMemoryStore(policy)
+	}
+	mb, err := mailbox.New(
+		store,
+		mailbox.WithClock(func() time.Time { return clock }),
+		mailbox.WithLifecycleObserver(func(_ context.Context, event mailbox.LifecycleEvent) {
+			events = append(events, event)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new mailbox failed: %v", err)
+	}
+
+	reclaimID := "msg-worker-reclaim"
+	panicID := "msg-worker-panic"
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      reclaimID,
+		IdempotencyKey: "idem-worker-reclaim-" + label,
+		Kind:           mailbox.KindCommand,
+		RunID:          "run-worker-recover-" + label,
+		TaskID:         "task-worker-recover-" + label,
+		WorkflowID:     "wf-worker-recover-" + label,
+		TeamID:         "team-worker-recover-" + label,
+	}); err != nil {
+		t.Fatalf("publish reclaim command failed: %v", err)
+	}
+	if _, err := mb.Publish(ctx, mailbox.Envelope{
+		MessageID:      panicID,
+		IdempotencyKey: "idem-worker-panic-" + label,
+		Kind:           mailbox.KindCommand,
+		RunID:          "run-worker-recover-" + label,
+		TaskID:         "task-worker-recover-" + label,
+		WorkflowID:     "wf-worker-recover-" + label,
+		TeamID:         "team-worker-recover-" + label,
+	}); err != nil {
+		t.Fatalf("publish panic command failed: %v", err)
+	}
+	if _, ok, err := mb.ConsumeWithLease(ctx, "worker-crash-"+label, 30*time.Millisecond, true); err != nil || !ok {
+		t.Fatalf("consume for crash simulation failed: ok=%v err=%v", ok, err)
+	}
+
+	clock = clock.Add(40 * time.Millisecond)
+	panicConsumed := false
+	worker, err := mailbox.NewWorker(mb, mailbox.WorkerConfig{
+		Enabled:            true,
+		HandlerErrorPolicy: handlerPolicy,
+		InflightTimeout:    30 * time.Millisecond,
+		HeartbeatInterval:  5 * time.Millisecond,
+		ReclaimOnConsume:   true,
+		PanicPolicy:        mailbox.WorkerPanicPolicyFollowHandler,
+	}, func(_ context.Context, rec mailbox.Record) error {
+		if rec.Envelope.MessageID == panicID && !panicConsumed {
+			panicConsumed = true
+			panic("panic contract")
+		}
+		return nil
+	}, "worker-recover-"+label)
+	if err != nil {
+		t.Fatalf("new worker failed: %v", err)
+	}
+
+	for i := 0; i < 8; i++ {
+		_, runErr := worker.RunOnce(ctx)
+		if runErr != nil {
+			t.Fatalf("RunOnce #%d failed: %v", i+1, runErr)
+		}
+		clock = clock.Add(20 * time.Millisecond)
+	}
+
+	page, err := mb.Query(ctx, mailbox.QueryRequest{RunID: "run-worker-recover-" + label})
+	if err != nil {
+		t.Fatalf("query worker recover records failed: %v", err)
+	}
+	summary := mailboxWorkerRecoverSummary{
+		ByTransition:        map[string]int{},
+		ByReason:            map[string]int{},
+		FinalStateByMessage: map[string]mailbox.MessageState{},
+	}
+	for _, item := range page.Items {
+		summary.FinalStateByMessage[item.Envelope.MessageID] = item.State
+	}
+	for _, event := range events {
+		key := strings.TrimSpace(string(event.Transition))
+		if key != "" {
+			summary.ByTransition[key]++
+		}
+		reason := strings.TrimSpace(event.ReasonCode)
+		if reason != "" {
+			summary.ByReason[reason]++
+		}
+		if event.Reclaimed {
+			summary.ReclaimedTotal++
+		}
+		if event.PanicRecovered {
+			summary.PanicRecoveredTotal++
 		}
 	}
 	return summary

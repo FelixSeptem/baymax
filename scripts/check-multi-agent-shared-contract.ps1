@@ -67,9 +67,9 @@ Invoke-NativeStrict -Label "go test ./integration -run '^TestMailboxContract' -c
     go test ./integration -run '^TestMailboxContract' -count=1
 }
 
-Write-Host "[multi-agent-shared-contract-gate] mailbox worker lifecycle suite"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestMailboxContractWorker|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1" -Command {
-    go test ./integration -run '^TestMailboxContractWorker|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1
+Write-Host "[multi-agent-shared-contract-gate] mailbox worker lifecycle/recover/reclaim suite"
+Invoke-NativeStrict -Label "go test ./integration -run '^TestMailboxContractWorker(Lifecycle|RecoverReclaim|PanicNackPolicy|Heartbeat)|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1" -Command {
+    go test ./integration -run '^TestMailboxContractWorker(Lifecycle|RecoverReclaim|PanicNackPolicy|Heartbeat)|^TestMailboxContractLifecycleReasonTaxonomyGuard$' -count=1
 }
 
 Write-Host "[multi-agent-shared-contract-gate] mailbox backend parity suite"

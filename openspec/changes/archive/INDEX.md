@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-24 16:10:11
+Updated: 2026-03-24 17:52:20
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -91,3 +91,4 @@ Updated: 2026-03-24 16:10:11
 - 087 -> introduce-task-board-control-and-manual-recovery-contract-a39
 - 088 -> introduce-runtime-readiness-preflight-and-degradation-contract-a40
 - 089 -> introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41
+- 090 -> introduce-diagnostics-query-performance-baseline-and-regression-gate-a42

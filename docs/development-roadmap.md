@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-24：
-- 已归档并稳定：A4-A40（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口）。
+- 已归档并稳定：A4-A41（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口）。
 - 进行中：
-  - `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`
   - `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`
+  - `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -38,6 +38,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 3. 质量与可回归稳定：
 - A19 性能回归门禁（基线 + 相对阈值）。
+- A42 diagnostics query 性能回归门禁（`BenchmarkDiagnosticsQueryRuns|QueryMailbox|MailboxAggregates`，默认阈值 `12/15/12%`，进行中）。
 - A20 全链路示例 smoke 阻断门禁。
 
 4. 外部接入稳定：
@@ -160,7 +161,7 @@ A40 依赖关系：
 - 不引入平台化控制面/远程运维探针系统。
 - 不改变 scheduler/task lifecycle 语义，不引入额外终态。
 
-### P1：A41 operation profile + timeout resolution contract（进行中）
+### P1：A41 operation profile + timeout resolution contract（已归档）
 
 A41 依赖关系：
 - A40 readiness 契约已归档，运行时配置与诊断路径具备稳定扩展点；
@@ -182,7 +183,9 @@ A41 依赖关系：
 
 A42 目标：
 - 为 unified diagnostics query 建立可复现实验基线（延迟、分页、聚合开销）。
-- 在质量门禁接入回归阈值校验，防止查询路径性能漂移。
+- 新增独立 gate 脚本：`scripts/check-diagnostics-query-performance-regression.sh` 与 `scripts/check-diagnostics-query-performance-regression.ps1`。
+- 固化默认执行参数：`benchtime=200ms`、`count=5`。
+- 在质量门禁接入回归阈值校验（默认：`ns/op 12%`、`p95-ns/op 15%`、`allocs/op 12%`），防止查询路径性能漂移。
 
 ### P2：0.x 质量与治理持续收敛
 

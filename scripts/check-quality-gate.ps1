@@ -107,6 +107,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent mainline benchmark re
     pwsh -File scripts/check-multi-agent-performance-regression.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics query benchmark regression" -Command {
+    pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] full-chain example smoke" -Command {
     pwsh -File scripts/check-full-chain-example-smoke.ps1
 }

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -809,6 +810,252 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 			if item.LatencyP95Ms < 0 {
 				b.Fatalf("invalid latency_p95_ms: %#v", item)
 			}
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+type diagnosticsQueryBenchmarkFixture struct {
+	store               *runtimediag.Store
+	runsRequest         runtimediag.UnifiedRunQueryRequest
+	mailboxRequest      runtimediag.MailboxQueryRequest
+	aggregateRequest    runtimediag.MailboxAggregateRequest
+	expectedRunsPage    int
+	expectedMailboxPage int
+}
+
+var (
+	diagnosticsQueryBenchFixtureOnce sync.Once
+	diagnosticsQueryBenchFixture     diagnosticsQueryBenchmarkFixture
+)
+
+func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
+	const (
+		diagnosticsBenchRunTotal     = 1200
+		diagnosticsBenchMailboxTotal = 4800
+	)
+	base := time.Date(2026, time.January, 2, 12, 0, 0, 0, time.UTC)
+	store := runtimediag.NewStore(64, diagnosticsBenchMailboxTotal+500, 16, 32, runtimediag.TimelineTrendConfig{
+		Enabled:    true,
+		LastNRuns:  100,
+		TimeWindow: 15 * time.Minute,
+	}, runtimediag.CA2ExternalTrendConfig{
+		Enabled: true,
+		Window:  15 * time.Minute,
+	})
+
+	teams := []string{"team-a", "team-b", "team-c", "team-d"}
+	workflows := []string{"wf-alpha", "wf-beta", "wf-gamma"}
+	statuses := []string{"success", "success", "success", "success", "success", "success", "failed"}
+
+	for i := 0; i < diagnosticsBenchRunTotal; i++ {
+		teamID := teams[i%len(teams)]
+		workflowID := workflows[i%len(workflows)]
+		store.AddRun(runtimediag.RunRecord{
+			Time:       base.Add(time.Duration(i) * time.Millisecond),
+			RunID:      fmt.Sprintf("diag-run-%05d", i),
+			Status:     statuses[i%len(statuses)],
+			Iterations: (i % 5) + 1,
+			ToolCalls:  (i % 9) + 1,
+			LatencyMs:  int64((i%30)+10) * 3,
+			TeamID:     teamID,
+			WorkflowID: workflowID,
+			TaskID:     fmt.Sprintf("task-%03d", i%360),
+		})
+	}
+
+	kinds := []string{"command", "event", "result"}
+	states := []string{"queued", "in_flight", "acked", "nacked", "dead_letter", "expired"}
+	reasons := []string{"retry_exhausted", "handler_error", "consumer_mismatch", "message_not_found", "timeout", "expired"}
+	for i := 0; i < diagnosticsBenchMailboxTotal; i++ {
+		runIdx := i % diagnosticsBenchRunTotal
+		teamID := teams[runIdx%len(teams)]
+		workflowID := workflows[runIdx%len(workflows)]
+		store.AddMailbox(runtimediag.MailboxRecord{
+			Time:                  base.Add(20*time.Millisecond + time.Duration(i)*500*time.Microsecond),
+			MessageID:             fmt.Sprintf("mailbox-msg-%05d", i%8000),
+			IdempotencyKey:        fmt.Sprintf("mailbox-key-%05d", i%12000),
+			CorrelationID:         fmt.Sprintf("corr-%03d", runIdx%400),
+			Kind:                  kinds[i%len(kinds)],
+			State:                 states[i%len(states)],
+			FromAgent:             fmt.Sprintf("agent-%d", i%17),
+			ToAgent:               fmt.Sprintf("agent-%d", (i+3)%17),
+			RunID:                 fmt.Sprintf("diag-run-%05d", runIdx),
+			TaskID:                fmt.Sprintf("task-%03d", runIdx%360),
+			WorkflowID:            workflowID,
+			TeamID:                teamID,
+			Attempt:               (i % 3) + 1,
+			ConsumerID:            fmt.Sprintf("consumer-%d", i%7),
+			ReasonCode:            reasons[(i/2)%len(reasons)],
+			Backend:               "memory",
+			ConfiguredBackend:     "memory",
+			BackendFallback:       false,
+			BackendFallbackReason: "",
+			PublishPath:           "runtime",
+			Reclaimed:             i%11 == 0,
+			PanicRecovered:        i%97 == 0,
+		})
+	}
+
+	runPageSize := 40
+	mailboxPageSize := 30
+	return diagnosticsQueryBenchmarkFixture{
+		store: store,
+		runsRequest: runtimediag.UnifiedRunQueryRequest{
+			TeamID:     "team-b",
+			WorkflowID: "wf-beta",
+			Status:     "success",
+			TimeRange: &runtimediag.UnifiedQueryTimeRange{
+				Start: base.Add(500 * time.Millisecond),
+				End:   base.Add(4500 * time.Millisecond),
+			},
+			PageSize: &runPageSize,
+			Sort:     runtimediag.UnifiedQuerySort{Field: "time", Order: "asc"},
+		},
+		mailboxRequest: runtimediag.MailboxQueryRequest{
+			Kind:       "command",
+			State:      "queued",
+			TeamID:     "team-c",
+			WorkflowID: "wf-alpha",
+			TimeRange: &runtimediag.MailboxQueryTimeRange{
+				Start: base.Add(1 * time.Second),
+				End:   base.Add(10 * time.Second),
+			},
+			PageSize: &mailboxPageSize,
+			Sort:     runtimediag.MailboxQuerySort{Field: "time", Order: "desc"},
+		},
+		aggregateRequest: runtimediag.MailboxAggregateRequest{
+			TeamID:     "team-c",
+			WorkflowID: "wf-alpha",
+			TimeRange: &runtimediag.MailboxQueryTimeRange{
+				Start: base.Add(1 * time.Second),
+				End:   base.Add(10 * time.Second),
+			},
+		},
+		expectedRunsPage:    runPageSize,
+		expectedMailboxPage: mailboxPageSize,
+	}
+}
+
+func diagnosticsQueryBenchmarkFixtureSnapshot() diagnosticsQueryBenchmarkFixture {
+	diagnosticsQueryBenchFixtureOnce.Do(func() {
+		diagnosticsQueryBenchFixture = newDiagnosticsQueryBenchmarkFixture()
+	})
+	return diagnosticsQueryBenchFixture
+}
+
+func BenchmarkDiagnosticsQueryRuns(b *testing.B) {
+	fixture := diagnosticsQueryBenchmarkFixtureSnapshot()
+	store := fixture.store
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		first, err := store.QueryRuns(fixture.runsRequest)
+		if err != nil {
+			b.Fatalf("query runs first page failed: %v", err)
+		}
+		if len(first.Items) != fixture.expectedRunsPage {
+			b.Fatalf("query runs first page size mismatch: want=%d got=%d", fixture.expectedRunsPage, len(first.Items))
+		}
+		if first.NextCursor == "" {
+			b.Fatalf("query runs first page should include next cursor")
+		}
+		if first.SortOrder != "asc" {
+			b.Fatalf("query runs sort order mismatch: %s", first.SortOrder)
+		}
+		if first.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query runs first page not sorted ascending")
+		}
+		nextReq := fixture.runsRequest
+		nextReq.Cursor = first.NextCursor
+		second, err := store.QueryRuns(nextReq)
+		if err != nil {
+			b.Fatalf("query runs second page failed: %v", err)
+		}
+		if len(second.Items) == 0 {
+			b.Fatalf("query runs second page should not be empty")
+		}
+		if !second.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query runs second page should advance cursor window")
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkDiagnosticsQueryMailbox(b *testing.B) {
+	fixture := diagnosticsQueryBenchmarkFixtureSnapshot()
+	store := fixture.store
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		first, err := store.QueryMailbox(fixture.mailboxRequest)
+		if err != nil {
+			b.Fatalf("query mailbox first page failed: %v", err)
+		}
+		if len(first.Items) != fixture.expectedMailboxPage {
+			b.Fatalf("query mailbox first page size mismatch: want=%d got=%d", fixture.expectedMailboxPage, len(first.Items))
+		}
+		if first.NextCursor == "" {
+			b.Fatalf("query mailbox first page should include next cursor")
+		}
+		if first.SortOrder != "desc" {
+			b.Fatalf("query mailbox sort order mismatch: %s", first.SortOrder)
+		}
+		if first.Items[0].Time.Before(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query mailbox first page not sorted descending")
+		}
+		nextReq := fixture.mailboxRequest
+		nextReq.Cursor = first.NextCursor
+		second, err := store.QueryMailbox(nextReq)
+		if err != nil {
+			b.Fatalf("query mailbox second page failed: %v", err)
+		}
+		if len(second.Items) == 0 {
+			b.Fatalf("query mailbox second page should not be empty")
+		}
+		if second.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query mailbox second page should advance cursor window")
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkDiagnosticsMailboxAggregates(b *testing.B) {
+	fixture := diagnosticsQueryBenchmarkFixtureSnapshot()
+	store := fixture.store
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		agg := store.MailboxAggregates(fixture.aggregateRequest)
+		if agg.TotalRecords == 0 {
+			b.Fatalf("mailbox aggregate should include records")
+		}
+		if agg.TotalMessages == 0 {
+			b.Fatalf("mailbox aggregate should include messages")
+		}
+		if len(agg.ByKind) == 0 || len(agg.ByState) == 0 {
+			b.Fatalf("mailbox aggregate should include kind/state distributions")
+		}
+		if len(agg.ReasonCodeTotals) == 0 {
+			b.Fatalf("mailbox aggregate should include reason code totals")
 		}
 		durations = append(durations, time.Since(start).Nanoseconds())
 	}

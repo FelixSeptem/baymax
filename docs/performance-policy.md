@@ -1,10 +1,10 @@
 # Performance Regression Policy
 
-更新时间：2026-03-20
+更新时间：2026-03-24
 
 ## Scope
 
-本策略用于评估运行时性能回归风险，覆盖 runner/tool/mcp 与 multi-agent 主链路关键路径。
+本策略用于评估运行时性能回归风险，覆盖 runner/tool/mcp、multi-agent 主链路与 diagnostics query 查询路径关键路径。
 
 ## Baseline
 
@@ -33,6 +33,9 @@
 - `BenchmarkMultiAgentMainlineAsyncReporting`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkMultiAgentMainlineDelayedDispatch`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkMultiAgentMainlineRecoveryReplay`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkDiagnosticsQueryRuns`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkDiagnosticsQueryMailbox`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
+- `BenchmarkDiagnosticsMailboxAggregates`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkCA4PressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - `BenchmarkCA3SemanticCompactionLatency`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - `BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`（需同时关注 `ns/op` 与 `p95-ns/op`）
@@ -56,6 +59,30 @@ pwsh -File scripts/check-multi-agent-performance-regression.ps1
 - `BAYMAX_MULTI_AGENT_BENCH_MAX_NS_DEGRADATION_PCT=8`
 - `BAYMAX_MULTI_AGENT_BENCH_MAX_P95_DEGRADATION_PCT=12`
 - `BAYMAX_MULTI_AGENT_BENCH_MAX_ALLOCS_DEGRADATION_PCT=10`
+
+Diagnostics query 回归门禁（本地/CI 一致）：
+
+```bash
+bash scripts/check-diagnostics-query-performance-regression.sh
+```
+
+```powershell
+pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
+```
+
+默认参数（可通过环境变量覆盖）：
+- `BAYMAX_DIAGNOSTICS_QUERY_BENCH_BENCHTIME=200ms`
+- `BAYMAX_DIAGNOSTICS_QUERY_BENCH_COUNT=5`
+
+默认阈值（可通过环境变量覆盖）：
+- `BAYMAX_DIAGNOSTICS_QUERY_BENCH_MAX_NS_DEGRADATION_PCT=12`
+- `BAYMAX_DIAGNOSTICS_QUERY_BENCH_MAX_P95_DEGRADATION_PCT=15`
+- `BAYMAX_DIAGNOSTICS_QUERY_BENCH_MAX_ALLOCS_DEGRADATION_PCT=12`
+
+失败语义（阻断）：
+- baseline 缺失或非数值
+- 阈值参数非法（空值、非数值、非正数）
+- benchmark 输出缺少 `ns/op`、`p95-ns/op`、`allocs/op` 任一指标
 
 CA4 回归门禁（本地/CI 一致）：
 

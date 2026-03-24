@@ -110,6 +110,12 @@ bash scripts/check-ca4-benchmark-regression.sh
 echo "[quality-gate] multi-agent mainline benchmark regression"
 bash scripts/check-multi-agent-performance-regression.sh
 
+echo "[quality-gate] diagnostics query benchmark regression"
+if ! bash scripts/check-diagnostics-query-performance-regression.sh; then
+  echo "[quality-gate][diagnostics-query-bench] diagnostics query benchmark regression failed"
+  exit 1
+fi
+
 echo "[quality-gate] full-chain example smoke"
 bash scripts/check-full-chain-example-smoke.sh
 

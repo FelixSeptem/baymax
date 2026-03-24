@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-24）：
-- 已归档并稳定：A4-A40。
-- A41（Introduce Runtime Operation Profiles And Timeout Resolution Contract）进行中。
+- 已归档并稳定：A4-A41。
 - A42（Introduce Diagnostics Query Performance Baseline And Regression Gate）进行中。
+- A43（Introduce Adapter Runtime Health Probe And Readiness Integration Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -221,14 +221,15 @@ _ = err
 稳定能力清单（已归档）：
 - Runtime 主干：Run/Stream、工具闭环、Context Assembler（CA1-CA4）、Security（S1-S4）。
 - 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
-- 质量门禁：shared multi-agent contracts、性能基线门禁、全链路 smoke gate、文档一致性 gate。
+- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、全链路 smoke gate、文档一致性 gate。
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约进行中。
-- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics 查询性能基线与回归门禁进行中。
+- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics 查询性能基线与回归门禁进行中（`QueryRuns|QueryMailbox|MailboxAggregates`，默认阈值 `12/15/12%`）。
+- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约进行中。
 
 最近已归档能力：
+- A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约已归档。
 - A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约已归档。
 - A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board control + manual recovery 契约已归档。
 - A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固已归档。
@@ -255,6 +256,7 @@ _ = err
 go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
+bash scripts/check-diagnostics-query-performance-regression.sh
 ```
 
 Windows 质量门禁：
@@ -262,6 +264,7 @@ Windows 质量门禁：
 ```powershell
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
+pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```
 
 PowerShell 门禁治理语义（A37）：

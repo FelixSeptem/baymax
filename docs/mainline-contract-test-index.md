@@ -134,6 +134,8 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Mailbox Worker Lease/Panic A38 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-multi-agent-shared-contract.ps1` |
 | Multi-Agent Mainline Performance A19 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkMultiAgentMainlineSyncInvocation`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineAsyncReporting`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineDelayedDispatch`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineRecoveryReplay` | `scripts/check-multi-agent-performance-regression.sh`、`scripts/check-multi-agent-performance-regression.ps1` |
 | Multi-Agent Mainline Performance A19 Gate Integration | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Diagnostics Query Performance A42 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkDiagnosticsQueryRuns`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryMailbox`、`integration/benchmark_test.go::BenchmarkDiagnosticsMailboxAggregates` | `scripts/check-diagnostics-query-performance-regression.sh`、`scripts/check-diagnostics-query-performance-regression.ps1` |
+| Diagnostics Query Performance A42 Gate Integration | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Full-Chain Reference Example A20 Smoke Gate | `scripts/check-full-chain-example-smoke.sh` | `scripts/check-full-chain-example-smoke.ps1` |
 | Full-Chain Reference Example A20 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | External Adapter Template A21 Docs Consistency | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |

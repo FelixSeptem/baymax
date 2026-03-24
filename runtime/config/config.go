@@ -128,6 +128,13 @@ const (
 )
 
 const (
+	OperationProfileLegacy      = "legacy"
+	OperationProfileInteractive = "interactive"
+	OperationProfileBackground  = "background"
+	OperationProfileBatch       = "batch"
+)
+
+const (
 	ComposerCollabAggregationAllSettled   = "all_settled"
 	ComposerCollabAggregationFirstSuccess = "first_success"
 	ComposerCollabFailurePolicyFailFast   = "fail_fast"
@@ -184,13 +191,26 @@ type Config struct {
 }
 
 type RuntimeDomainConfig struct {
-	Readiness RuntimeReadinessConfig `json:"readiness"`
+	Readiness         RuntimeReadinessConfig         `json:"readiness"`
+	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
 }
 
 type RuntimeReadinessConfig struct {
 	Enabled            bool `json:"enabled"`
 	Strict             bool `json:"strict"`
 	RemoteProbeEnabled bool `json:"remote_probe_enabled"`
+}
+
+type RuntimeOperationProfilesConfig struct {
+	DefaultProfile string                       `json:"default_profile"`
+	Legacy         RuntimeOperationProfileEntry `json:"legacy"`
+	Interactive    RuntimeOperationProfileEntry `json:"interactive"`
+	Background     RuntimeOperationProfileEntry `json:"background"`
+	Batch          RuntimeOperationProfileEntry `json:"batch"`
+}
+
+type RuntimeOperationProfileEntry struct {
+	Timeout time.Duration `json:"timeout"`
 }
 
 type ComposerConfig struct {
@@ -939,6 +959,21 @@ func DefaultConfig() Config {
 				Strict:             false,
 				RemoteProbeEnabled: false,
 			},
+			OperationProfiles: RuntimeOperationProfilesConfig{
+				DefaultProfile: OperationProfileLegacy,
+				Legacy: RuntimeOperationProfileEntry{
+					Timeout: 3 * time.Second,
+				},
+				Interactive: RuntimeOperationProfileEntry{
+					Timeout: 10 * time.Second,
+				},
+				Background: RuntimeOperationProfileEntry{
+					Timeout: 30 * time.Second,
+				},
+				Batch: RuntimeOperationProfileEntry{
+					Timeout: 2 * time.Minute,
+				},
+			},
 		},
 		Reload: ReloadConfig{
 			Enabled:  false,
@@ -1568,6 +1603,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate > 1 {
 		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
+	}
+	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
+		return err
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -2874,6 +2912,35 @@ func validateCA3StageOverride(field string, thresholds ContextAssemblerCA3Thresh
 	return validateCA3Thresholds(field, thresholds, min, max)
 }
 
+func validateRuntimeOperationProfiles(cfg RuntimeOperationProfilesConfig) error {
+	defaultProfile := strings.ToLower(strings.TrimSpace(cfg.DefaultProfile))
+	switch defaultProfile {
+	case OperationProfileLegacy, OperationProfileInteractive, OperationProfileBackground, OperationProfileBatch:
+	default:
+		return fmt.Errorf(
+			"runtime.operation_profiles.default_profile must be one of [%s,%s,%s,%s], got %q",
+			OperationProfileLegacy,
+			OperationProfileInteractive,
+			OperationProfileBackground,
+			OperationProfileBatch,
+			cfg.DefaultProfile,
+		)
+	}
+	if cfg.Legacy.Timeout <= 0 {
+		return errors.New("runtime.operation_profiles.legacy.timeout must be > 0")
+	}
+	if cfg.Interactive.Timeout <= 0 {
+		return errors.New("runtime.operation_profiles.interactive.timeout must be > 0")
+	}
+	if cfg.Background.Timeout <= 0 {
+		return errors.New("runtime.operation_profiles.background.timeout must be > 0")
+	}
+	if cfg.Batch.Timeout <= 0 {
+		return errors.New("runtime.operation_profiles.batch.timeout must be > 0")
+	}
+	return nil
+}
+
 func applyDefaults(v *viper.Viper) {
 	base := DefaultConfig()
 	v.SetDefault("mcp.active_profile", base.MCP.ActiveProfile)
@@ -2909,6 +2976,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
+	v.SetDefault("runtime.operation_profiles.default_profile", base.Runtime.OperationProfiles.DefaultProfile)
+	v.SetDefault("runtime.operation_profiles.legacy.timeout", base.Runtime.OperationProfiles.Legacy.Timeout)
+	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
+	v.SetDefault("runtime.operation_profiles.background.timeout", base.Runtime.OperationProfiles.Background.Timeout)
+	v.SetDefault("runtime.operation_profiles.batch.timeout", base.Runtime.OperationProfiles.Batch.Timeout)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -3209,6 +3281,11 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Readiness.Enabled = readinessEnabled
 	cfg.Runtime.Readiness.Strict = readinessStrict
 	cfg.Runtime.Readiness.RemoteProbeEnabled = remoteProbeEnabled
+	cfg.Runtime.OperationProfiles.DefaultProfile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.operation_profiles.default_profile")))
+	cfg.Runtime.OperationProfiles.Legacy.Timeout = v.GetDuration("runtime.operation_profiles.legacy.timeout")
+	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")
+	cfg.Runtime.OperationProfiles.Background.Timeout = v.GetDuration("runtime.operation_profiles.background.timeout")
+	cfg.Runtime.OperationProfiles.Batch.Timeout = v.GetDuration("runtime.operation_profiles.batch.timeout")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")

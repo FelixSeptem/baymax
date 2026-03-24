@@ -32,6 +32,12 @@
 - timeline 聚合（phase 统计、P95 延迟）
 - 趋势查询（`TimelineTrends`、`CA2ExternalTrends`）
 - 多代理 additive 摘要字段（含 `async_await_*`、`async_reconcile_*`、`collab_*`、`scheduler_*`、`mailbox_*`）
+- A41 timeout-resolution additive 字段：
+  - `effective_operation_profile`
+  - `timeout_resolution_source`
+  - `timeout_resolution_trace`
+  - `timeout_parent_budget_clamp_total`
+  - `timeout_parent_budget_reject_total`
 
 该包只负责数据模型和聚合算法，不负责事件订阅。
 
@@ -56,6 +62,7 @@
 
 - 关键验证：`go test ./runtime/diagnostics -count=1`。
 - 回归重点：幂等写入、重复事件收敛、趋势聚合确定性。
+- A41 回归重点：timeout-resolution 字段在 replay/重复写入下保持逻辑幂等，不膨胀聚合计数。
 - 与 integration 契约共同验证 run/team/workflow/task 查询语义。
 
 ## 扩展点与常见误用

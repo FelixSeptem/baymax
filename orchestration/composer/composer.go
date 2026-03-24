@@ -41,15 +41,18 @@ func (f LocalChildRunnerFunc) RunChild(ctx context.Context, task scheduler.Task)
 }
 
 type ChildDispatchRequest struct {
-	Task                 scheduler.Task
-	Target               ChildTarget
-	Async                bool
-	ParentDepth          int
-	ParentActiveChildren int
-	ChildTimeout         time.Duration
-	WorkerID             string
-	PollInterval         time.Duration
-	LocalRunner          LocalChildRunner
+	Task                  scheduler.Task
+	Target                ChildTarget
+	Async                 bool
+	OperationProfile      string
+	RequestTimeout        time.Duration
+	ParentDepth           int
+	ParentActiveChildren  int
+	ParentRemainingBudget time.Duration
+	ChildTimeout          time.Duration
+	WorkerID              string
+	PollInterval          time.Duration
+	LocalRunner           LocalChildRunner
 }
 
 type ChildDispatchResult struct {
@@ -269,6 +272,11 @@ type runStat struct {
 	ChildTotal                int
 	ChildFailed               int
 	BudgetReject              int
+	TimeoutParentBudgetClamp  int
+	TimeoutParentBudgetReject int
+	EffectiveOperationProfile string
+	TimeoutResolutionSource   string
+	TimeoutResolutionTrace    string
 	CollabHandoffTotal        int
 	CollabDelegationTotal     int
 	CollabAggregationTotal    int
@@ -302,6 +310,8 @@ type runStat struct {
 	asyncReportDedupSeen      map[string]struct{}
 	asyncLateReportSeen       map[string]struct{}
 	asyncAwaitSeen            map[string]struct{}
+	timeoutResolutionSeen     map[string]struct{}
+	timeoutClampSeen          map[string]struct{}
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
@@ -413,6 +423,7 @@ func (c *Composer) SpawnChild(ctx context.Context, req ChildDispatchRequest) (sc
 	if s == nil {
 		return scheduler.TaskRecord{}, errors.New("scheduler is not initialized")
 	}
+	cfg := c.effectiveConfig()
 
 	task := req.Task
 	if task.MaxAttempts <= 0 && c.schedulerRetryMaxAttempts > 0 {
@@ -425,19 +436,48 @@ func (c *Composer) SpawnChild(ctx context.Context, req ChildDispatchRequest) (sc
 		}
 	}
 
+	requestTimeout := req.RequestTimeout
+	if requestTimeout <= 0 {
+		requestTimeout = req.ChildTimeout
+	}
+	resolvedTimeout, err := runtimeconfig.ResolveOperationTimeout(cfg, runtimeconfig.TimeoutResolutionInput{
+		RequestedProfile: req.OperationProfile,
+		DomainTimeout:    cfg.Subagent.ChildTimeoutBudget,
+		RequestTimeout:   requestTimeout,
+	})
+	if err != nil {
+		return scheduler.TaskRecord{}, err
+	}
+	parentRemainingBudget := req.ParentRemainingBudget
+	if parentRemainingBudget <= 0 {
+		// Compatibility fallback: when parent budget is not explicitly provided, preserve old behavior.
+		parentRemainingBudget = resolvedTimeout.EffectiveTimeout
+	}
+
 	record, err := s.SpawnChild(ctx, scheduler.SpawnRequest{
-		Task:                 task,
-		ParentDepth:          req.ParentDepth,
-		ParentActiveChildren: req.ParentActiveChildren,
-		ChildTimeout:         req.ChildTimeout,
+		Task:                  task,
+		ParentDepth:           req.ParentDepth,
+		ParentActiveChildren:  req.ParentActiveChildren,
+		ParentRemainingBudget: parentRemainingBudget,
+		ChildTimeout:          resolvedTimeout.EffectiveTimeout,
+		TimeoutResolution: scheduler.TimeoutResolutionMetadata{
+			EffectiveOperationProfile: resolvedTimeout.EffectiveProfile,
+			Source:                    resolvedTimeout.Source,
+			Trace:                     resolvedTimeout.Trace,
+			ResolvedTimeout:           resolvedTimeout.EffectiveTimeout,
+		},
 	})
 	if err != nil {
 		var budgetErr *scheduler.BudgetError
 		if errors.As(err, &budgetErr) {
 			c.addBudgetReject(strings.TrimSpace(req.Task.RunID))
+			if budgetErr.Code == scheduler.BudgetRejectParentBudgetExhausted {
+				c.addTimeoutParentBudgetReject(strings.TrimSpace(req.Task.RunID))
+			}
 		}
 		return scheduler.TaskRecord{}, err
 	}
+	c.recordTimeoutResolution(strings.TrimSpace(record.Task.RunID), strings.TrimSpace(record.Task.TaskID), record.Task.TimeoutResolution)
 	c.maybePersistRecoverySnapshot(ctx, strings.TrimSpace(record.Task.RunID))
 	return record, nil
 }
@@ -782,6 +822,17 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	payload["subagent_child_total"] = stats.ChildTotal
 	payload["subagent_child_failed"] = stats.ChildFailed
 	payload["subagent_budget_reject_total"] = stats.BudgetReject
+	payload["timeout_parent_budget_clamp_total"] = stats.TimeoutParentBudgetClamp
+	payload["timeout_parent_budget_reject_total"] = stats.TimeoutParentBudgetReject
+	if strings.TrimSpace(stats.EffectiveOperationProfile) != "" {
+		payload["effective_operation_profile"] = strings.TrimSpace(stats.EffectiveOperationProfile)
+	}
+	if strings.TrimSpace(stats.TimeoutResolutionSource) != "" {
+		payload["timeout_resolution_source"] = strings.TrimSpace(stats.TimeoutResolutionSource)
+	}
+	if strings.TrimSpace(stats.TimeoutResolutionTrace) != "" {
+		payload["timeout_resolution_trace"] = strings.TrimSpace(stats.TimeoutResolutionTrace)
+	}
 	payload["collab_handoff_total"] = stats.CollabHandoffTotal
 	payload["collab_delegation_total"] = stats.CollabDelegationTotal
 	payload["collab_aggregation_total"] = stats.CollabAggregationTotal
@@ -926,6 +977,52 @@ func (c *Composer) addBudgetReject(runID string) {
 	defer c.runMu.Unlock()
 	stat := c.ensureRunStat(runID)
 	stat.BudgetReject++
+}
+
+func (c *Composer) addTimeoutParentBudgetReject(runID string) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	stat.TimeoutParentBudgetReject++
+}
+
+func (c *Composer) recordTimeoutResolution(runID, taskID string, meta scheduler.TimeoutResolutionMetadata) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	key := strings.TrimSpace(taskID)
+	if key == "" {
+		key = strings.TrimSpace(meta.Trace)
+	}
+	if key == "" {
+		key = strings.TrimSpace(meta.EffectiveOperationProfile) + "|" + strings.TrimSpace(meta.Source)
+	}
+	if stat.timeoutResolutionSeen == nil {
+		stat.timeoutResolutionSeen = map[string]struct{}{}
+	}
+	if stat.timeoutClampSeen == nil {
+		stat.timeoutClampSeen = map[string]struct{}{}
+	}
+	if _, ok := stat.timeoutResolutionSeen[key]; !ok {
+		stat.timeoutResolutionSeen[key] = struct{}{}
+		stat.EffectiveOperationProfile = strings.TrimSpace(meta.EffectiveOperationProfile)
+		stat.TimeoutResolutionSource = strings.TrimSpace(meta.Source)
+		stat.TimeoutResolutionTrace = strings.TrimSpace(meta.Trace)
+	}
+	if meta.ParentBudgetClamped {
+		if _, ok := stat.timeoutClampSeen[key]; !ok {
+			stat.timeoutClampSeen[key] = struct{}{}
+			stat.TimeoutParentBudgetClamp++
+		}
+	}
 }
 
 func (c *Composer) addCollabOutcome(task scheduler.Task, failed bool) {
@@ -1225,6 +1322,8 @@ func (c *Composer) ensureRunStat(runID string) *runStat {
 		asyncReportDedupSeen:   map[string]struct{}{},
 		asyncLateReportSeen:    map[string]struct{}{},
 		asyncAwaitSeen:         map[string]struct{}{},
+		timeoutResolutionSeen:  map[string]struct{}{},
+		timeoutClampSeen:       map[string]struct{}{},
 	}
 	c.runStat[runID] = stat
 	return stat

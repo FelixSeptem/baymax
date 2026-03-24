@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-23
+更新时间：2026-03-24
 
 ## 目标
 
@@ -96,6 +96,12 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Runtime Readiness A40 Determinism + Composer Parity | `integration/runtime_readiness_contract_test.go::TestRuntimeReadinessContractDeterministicAndComposerParity` | `orchestration/composer/composer_test.go::TestComposerReadinessPreflightPassthroughAndReadOnly` |
 | Runtime Readiness A40 Diagnostics Additive + Replay | `runtime/diagnostics/store_test.go::TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault` |
 | Runtime Readiness A40 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Operation Profiles A41 Config Validation + Reload Rollback | `runtime/config/config_test.go::TestRuntimeOperationProfilesValidationRejectsInvalidValues` | `runtime/config/manager_test.go::TestManagerRuntimeOperationProfilesInvalidReloadRollsBack` |
+| Timeout Resolution A41 Precedence + Clamp + Query Surface | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractValidationPrecedenceClampAndTaskBoard` | `orchestration/composer/composer_test.go::TestComposerSpawnChildTimeoutResolutionPrecedenceAndSummary` |
+| Timeout Resolution A41 Parent Budget Exhausted Reject | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractParentBudgetExhaustedRejectClassification` | `orchestration/scheduler/store_test.go::TestSchedulerSpawnChildRejectsExhaustedParentBudget` |
+| Timeout Resolution A41 Run/Stream + Memory/File Parity | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractRunStreamAndMemoryFileParity` | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractRunStreamAndMemoryFileParity` |
+| Timeout Resolution A41 Replay Idempotency + Parser Compatibility | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractReplayIdempotency` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA41ParserCompatibilityAdditiveNullableDefault` |
+| Timeout Resolution A41 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-quality-gate.sh` |
 | Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
 | Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
 | Mailbox Contract A30 Backend Parity + Restore Determinism | `integration/mailbox_contract_test.go::TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism` | `orchestration/mailbox/mailbox_test.go::TestMailboxSnapshotRestoreMemoryFileParity` |

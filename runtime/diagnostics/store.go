@@ -199,6 +199,11 @@ type RunRecord struct {
 	RuntimeReadinessBlockingTotal        int                               `json:"runtime_readiness_blocking_total,omitempty"`
 	RuntimeReadinessDegradedTotal        int                               `json:"runtime_readiness_degraded_total,omitempty"`
 	RuntimeReadinessPrimaryCode          string                            `json:"runtime_readiness_primary_code,omitempty"`
+	EffectiveOperationProfile            string                            `json:"effective_operation_profile,omitempty"`
+	TimeoutResolutionSource              string                            `json:"timeout_resolution_source,omitempty"`
+	TimeoutResolutionTrace               string                            `json:"timeout_resolution_trace,omitempty"`
+	TimeoutParentBudgetClampTotal        int                               `json:"timeout_parent_budget_clamp_total,omitempty"`
+	TimeoutParentBudgetRejectTotal       int                               `json:"timeout_parent_budget_reject_total,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

@@ -95,18 +95,19 @@ const (
 )
 
 type Task struct {
-	TaskID      string         `json:"task_id"`
-	RunID       string         `json:"run_id,omitempty"`
-	WorkflowID  string         `json:"workflow_id,omitempty"`
-	TeamID      string         `json:"team_id,omitempty"`
-	StepID      string         `json:"step_id,omitempty"`
-	AgentID     string         `json:"agent_id,omitempty"`
-	PeerID      string         `json:"peer_id,omitempty"`
-	ParentRunID string         `json:"parent_run_id,omitempty"`
-	Priority    string         `json:"priority,omitempty"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	MaxAttempts int            `json:"max_attempts,omitempty"`
-	NotBefore   time.Time      `json:"not_before,omitempty"`
+	TaskID            string                    `json:"task_id"`
+	RunID             string                    `json:"run_id,omitempty"`
+	WorkflowID        string                    `json:"workflow_id,omitempty"`
+	TeamID            string                    `json:"team_id,omitempty"`
+	StepID            string                    `json:"step_id,omitempty"`
+	AgentID           string                    `json:"agent_id,omitempty"`
+	PeerID            string                    `json:"peer_id,omitempty"`
+	ParentRunID       string                    `json:"parent_run_id,omitempty"`
+	Priority          string                    `json:"priority,omitempty"`
+	Payload           map[string]any            `json:"payload,omitempty"`
+	MaxAttempts       int                       `json:"max_attempts,omitempty"`
+	NotBefore         time.Time                 `json:"not_before,omitempty"`
+	TimeoutResolution TimeoutResolutionMetadata `json:"timeout_resolution,omitempty"`
 }
 
 func normalizeTask(in Task) (Task, error) {
@@ -120,6 +121,9 @@ func normalizeTask(in Task) (Task, error) {
 	out.PeerID = strings.TrimSpace(out.PeerID)
 	out.ParentRunID = strings.TrimSpace(out.ParentRunID)
 	out.Priority = strings.ToLower(strings.TrimSpace(out.Priority))
+	out.TimeoutResolution.EffectiveOperationProfile = strings.ToLower(strings.TrimSpace(out.TimeoutResolution.EffectiveOperationProfile))
+	out.TimeoutResolution.Source = strings.ToLower(strings.TrimSpace(out.TimeoutResolution.Source))
+	out.TimeoutResolution.Trace = strings.TrimSpace(out.TimeoutResolution.Trace)
 	if out.TaskID == "" {
 		return Task{}, errors.New("task_id is required")
 	}
@@ -481,19 +485,30 @@ type GovernanceConfig struct {
 }
 
 type SpawnRequest struct {
-	Task                 Task          `json:"task"`
-	ParentDepth          int           `json:"parent_depth"`
-	ParentActiveChildren int           `json:"parent_active_children"`
-	ChildTimeout         time.Duration `json:"child_timeout"`
+	Task                  Task                      `json:"task"`
+	ParentDepth           int                       `json:"parent_depth"`
+	ParentActiveChildren  int                       `json:"parent_active_children"`
+	ParentRemainingBudget time.Duration             `json:"parent_remaining_budget,omitempty"`
+	ChildTimeout          time.Duration             `json:"child_timeout"`
+	TimeoutResolution     TimeoutResolutionMetadata `json:"timeout_resolution,omitempty"`
 }
 
 type BudgetRejectCode string
 
 const (
-	BudgetRejectDepth       BudgetRejectCode = "max_depth_exceeded"
-	BudgetRejectActiveChild BudgetRejectCode = "max_active_children_exceeded"
-	BudgetRejectTimeout     BudgetRejectCode = "child_timeout_budget_exceeded"
+	BudgetRejectDepth                 BudgetRejectCode = "max_depth_exceeded"
+	BudgetRejectActiveChild           BudgetRejectCode = "max_active_children_exceeded"
+	BudgetRejectTimeout               BudgetRejectCode = "child_timeout_budget_exceeded"
+	BudgetRejectParentBudgetExhausted BudgetRejectCode = "parent_budget_exhausted"
 )
+
+type TimeoutResolutionMetadata struct {
+	EffectiveOperationProfile string        `json:"effective_operation_profile,omitempty"`
+	Source                    string        `json:"timeout_resolution_source,omitempty"`
+	Trace                     string        `json:"timeout_resolution_trace,omitempty"`
+	ResolvedTimeout           time.Duration `json:"resolved_timeout,omitempty"`
+	ParentBudgetClamped       bool          `json:"parent_budget_clamped,omitempty"`
+}
 
 type BudgetError struct {
 	Code    BudgetRejectCode
@@ -518,12 +533,6 @@ func (g Guardrails) ValidateSpawn(req SpawnRequest) error {
 		return &BudgetError{
 			Code:    BudgetRejectActiveChild,
 			Message: fmt.Sprintf("active children %d exceeds max_active_children %d", req.ParentActiveChildren, g.MaxActiveChildren),
-		}
-	}
-	if g.ChildTimeoutBudget > 0 && req.ChildTimeout > g.ChildTimeoutBudget {
-		return &BudgetError{
-			Code:    BudgetRejectTimeout,
-			Message: fmt.Sprintf("child timeout %s exceeds child_timeout_budget %s", req.ChildTimeout, g.ChildTimeoutBudget),
 		}
 	}
 	return nil

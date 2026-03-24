@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-23
+更新时间：2026-03-24
 
 ## 目标
 
@@ -96,6 +96,11 @@
   - `runtime.readiness.enabled` -> `BAYMAX_RUNTIME_READINESS_ENABLED`
   - `runtime.readiness.strict` -> `BAYMAX_RUNTIME_READINESS_STRICT`
   - `runtime.readiness.remote_probe_enabled` -> `BAYMAX_RUNTIME_READINESS_REMOTE_PROBE_ENABLED`
+  - `runtime.operation_profiles.default_profile` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_DEFAULT_PROFILE`
+  - `runtime.operation_profiles.legacy.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_LEGACY_TIMEOUT`
+  - `runtime.operation_profiles.interactive.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_INTERACTIVE_TIMEOUT`
+  - `runtime.operation_profiles.background.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_BACKGROUND_TIMEOUT`
+  - `runtime.operation_profiles.batch.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_BATCH_TIMEOUT`
 
 ## YAML Schema（核心字段）
 
@@ -147,6 +152,16 @@ runtime:
     enabled: true               # A40 默认开启
     strict: false               # A40 默认不升级 degraded
     remote_probe_enabled: false # A40 默认关闭远程探测（离线友好）
+  operation_profiles:
+    default_profile: legacy     # A41 默认 legacy
+    legacy:
+      timeout: 3s               # 必须 > 0
+    interactive:
+      timeout: 10s              # 必须 > 0
+    background:
+      timeout: 30s              # 必须 > 0
+    batch:
+      timeout: 2m               # 必须 > 0
 
 reload:
   enabled: true
@@ -672,6 +687,14 @@ runtime readiness（A40）校验语义：
 1. `runtime.readiness.enabled|strict|remote_probe_enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. 启动加载与热更新都遵循 fail-fast，非法布尔表达会拒绝生效并保留上一有效快照。
 
+operation profiles 与 timeout 解析（A41）校验语义：
+1. `runtime.operation_profiles.default_profile` 仅允许 `legacy|interactive|background|batch`。
+2. `runtime.operation_profiles.{legacy|interactive|background|batch}.timeout` 必须 `> 0`。
+3. timeout 解析优先级固定：`profile baseline -> domain override -> request override`。
+4. 子任务预算收敛固定为：`min(parent_remaining_budget, child_resolved_timeout)`。
+5. `parent_remaining_budget <= 0` 时必须以 canonical 分类拒绝：`parent_budget_exhausted`。
+6. 启动加载与热更新均遵循 fail-fast，非法 profile/timeout 更新会拒绝生效并保留上一有效快照。
+
 recovery boundary（A17）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
 2. `recovery.resume_boundary` 当前仅支持 `next_attempt_only`。
@@ -795,6 +818,12 @@ client := httpmcp.NewClient(httpmcp.Config{
   - `resolution_source`（`callback|reconcile_poll|timeout`）
   - `remote_task_id`
   - `terminal_conflict_recorded`（可空）
+- A41 timeout-resolution additive 观测字段（`task.timeout_resolution.*`）：
+  - `effective_operation_profile`
+  - `timeout_resolution_source`
+  - `timeout_resolution_trace`
+  - `resolved_timeout`
+  - `parent_budget_clamped`
 
 ### Mailbox Query API
 
@@ -846,6 +875,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A31 additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
   - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
   - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
+  - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
@@ -903,6 +933,11 @@ Composed summary additive fields（contract markers）：
 - `subagent_child_total`
 - `subagent_child_failed`
 - `subagent_budget_reject_total`
+- `effective_operation_profile`
+- `timeout_resolution_source`
+- `timeout_resolution_trace`
+- `timeout_parent_budget_clamp_total`
+- `timeout_parent_budget_reject_total`
 - `recovery_enabled`
 - `recovery_resume_boundary`
 - `recovery_inflight_policy`

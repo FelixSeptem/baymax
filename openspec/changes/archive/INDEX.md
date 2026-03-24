@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-24 15:16:56
+Updated: 2026-03-24 16:10:11
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -90,3 +90,4 @@ Updated: 2026-03-24 15:16:56
 - 086 -> harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38
 - 087 -> introduce-task-board-control-and-manual-recovery-contract-a39
 - 088 -> introduce-runtime-readiness-preflight-and-degradation-contract-a40
+- 089 -> introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41

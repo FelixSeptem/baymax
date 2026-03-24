@@ -122,6 +122,11 @@ Invoke-NativeStrict -Label "go test ./integration -run '^TestTaskBoardControlCon
     go test ./integration -run '^TestTaskBoardControlContract' -count=1
 }
 
+Write-Host "[multi-agent-shared-contract-gate] timeout resolution contract suite"
+Invoke-NativeStrict -Label "go test ./integration -run '^TestTimeoutResolutionContract' -count=1" -Command {
+    go test ./integration -run '^TestTimeoutResolutionContract' -count=1
+}
+
 Write-Host "[multi-agent-shared-contract-gate] composer closure suite"
 Invoke-NativeStrict -Label "go test ./integration -run '^TestComposerContract' -count=1" -Command {
     go test ./integration -run '^TestComposerContract' -count=1

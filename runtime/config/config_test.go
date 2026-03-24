@@ -302,6 +302,91 @@ func TestRuntimeReadinessConfigInvalidBoolFailsFast(t *testing.T) {
 	}
 }
 
+func TestRuntimeOperationProfilesDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Runtime.OperationProfiles.DefaultProfile != OperationProfileLegacy {
+		t.Fatalf(
+			"runtime.operation_profiles.default_profile = %q, want %q",
+			cfg.Runtime.OperationProfiles.DefaultProfile,
+			OperationProfileLegacy,
+		)
+	}
+	if cfg.Runtime.OperationProfiles.Legacy.Timeout <= 0 {
+		t.Fatalf("runtime.operation_profiles.legacy.timeout = %v, want > 0", cfg.Runtime.OperationProfiles.Legacy.Timeout)
+	}
+	if cfg.Runtime.OperationProfiles.Interactive.Timeout <= 0 {
+		t.Fatalf("runtime.operation_profiles.interactive.timeout = %v, want > 0", cfg.Runtime.OperationProfiles.Interactive.Timeout)
+	}
+	if cfg.Runtime.OperationProfiles.Background.Timeout <= 0 {
+		t.Fatalf("runtime.operation_profiles.background.timeout = %v, want > 0", cfg.Runtime.OperationProfiles.Background.Timeout)
+	}
+	if cfg.Runtime.OperationProfiles.Batch.Timeout <= 0 {
+		t.Fatalf("runtime.operation_profiles.batch.timeout = %v, want > 0", cfg.Runtime.OperationProfiles.Batch.Timeout)
+	}
+}
+
+func TestRuntimeOperationProfilesEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_OPERATION_PROFILES_DEFAULT_PROFILE", "interactive")
+	t.Setenv("BAYMAX_RUNTIME_OPERATION_PROFILES_INTERACTIVE_TIMEOUT", "15s")
+	t.Setenv("BAYMAX_RUNTIME_OPERATION_PROFILES_BACKGROUND_TIMEOUT", "45s")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+runtime:
+  operation_profiles:
+    default_profile: legacy
+    legacy:
+      timeout: 3s
+    interactive:
+      timeout: 8s
+    background:
+      timeout: 30s
+    batch:
+      timeout: 2m
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Runtime.OperationProfiles.DefaultProfile != OperationProfileInteractive {
+		t.Fatalf(
+			"runtime.operation_profiles.default_profile = %q, want %q",
+			cfg.Runtime.OperationProfiles.DefaultProfile,
+			OperationProfileInteractive,
+		)
+	}
+	if cfg.Runtime.OperationProfiles.Interactive.Timeout != 15*time.Second {
+		t.Fatalf(
+			"runtime.operation_profiles.interactive.timeout = %v, want 15s",
+			cfg.Runtime.OperationProfiles.Interactive.Timeout,
+		)
+	}
+	if cfg.Runtime.OperationProfiles.Background.Timeout != 45*time.Second {
+		t.Fatalf(
+			"runtime.operation_profiles.background.timeout = %v, want 45s",
+			cfg.Runtime.OperationProfiles.Background.Timeout,
+		)
+	}
+}
+
+func TestRuntimeOperationProfilesValidationRejectsInvalidValues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Runtime.OperationProfiles.DefaultProfile = "realtime"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for runtime.operation_profiles.default_profile")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.OperationProfiles.Batch.Timeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for runtime.operation_profiles.batch.timeout")
+	}
+}
+
 func TestValidateFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	p := cfg.MCP.Profiles[ProfileDefault]

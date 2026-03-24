@@ -182,6 +182,166 @@ func TestComposerGuardrailFailFastEmitsBudgetRejectAndSummary(t *testing.T) {
 	}
 }
 
+func TestComposerSpawnChildRejectsUnsupportedOperationProfile(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A41_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	taskID := "task-a41-invalid-profile"
+	_, err = comp.SpawnChild(context.Background(), ChildDispatchRequest{
+		Task: scheduler.Task{
+			TaskID: taskID,
+			RunID:  "run-a41-invalid-profile",
+		},
+		OperationProfile: "realtime",
+	})
+	if err == nil {
+		t.Fatal("spawn should fail for unsupported operation profile")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "operation profile must be one of") {
+		t.Fatalf("unsupported operation profile error mismatch: %v", err)
+	}
+	if _, found, getErr := comp.Scheduler().Get(context.Background(), taskID); getErr != nil {
+		t.Fatalf("get task failed: %v", getErr)
+	} else if found {
+		t.Fatalf("unsupported profile should not enqueue task %q", taskID)
+	}
+}
+
+func TestComposerSpawnChildTimeoutResolutionPrecedenceAndSummary(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a41.yaml")
+	writeComposerA41RuntimeConfig(t, cfgPath)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A41_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+		Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	runID := "run-a41-timeout-resolution"
+	domainRecord, err := comp.SpawnChild(context.Background(), ChildDispatchRequest{
+		Task: scheduler.Task{
+			TaskID: "task-a41-domain-override",
+			RunID:  runID,
+		},
+		OperationProfile:      runtimeconfig.OperationProfileInteractive,
+		ParentRemainingBudget: 8 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("spawn with domain override failed: %v", err)
+	}
+	domainMeta := domainRecord.Task.TimeoutResolution
+	if domainMeta.Source != runtimeconfig.TimeoutResolutionSourceDomain {
+		t.Fatalf("domain override source = %q, want %q", domainMeta.Source, runtimeconfig.TimeoutResolutionSourceDomain)
+	}
+	if domainMeta.ResolvedTimeout != 6*time.Second {
+		t.Fatalf("domain override resolved timeout = %s, want 6s", domainMeta.ResolvedTimeout)
+	}
+	if domainMeta.ParentBudgetClamped {
+		t.Fatalf("domain override should not be clamped: %#v", domainMeta)
+	}
+
+	requestRecord, err := comp.SpawnChild(context.Background(), ChildDispatchRequest{
+		Task: scheduler.Task{
+			TaskID: "task-a41-request-override",
+			RunID:  runID,
+		},
+		OperationProfile:      runtimeconfig.OperationProfileInteractive,
+		RequestTimeout:        1500 * time.Millisecond,
+		ParentRemainingBudget: 1200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("spawn with request override failed: %v", err)
+	}
+	requestMeta := requestRecord.Task.TimeoutResolution
+	if requestMeta.EffectiveOperationProfile != runtimeconfig.OperationProfileInteractive {
+		t.Fatalf(
+			"effective operation profile = %q, want %q",
+			requestMeta.EffectiveOperationProfile,
+			runtimeconfig.OperationProfileInteractive,
+		)
+	}
+	if requestMeta.Source != runtimeconfig.TimeoutResolutionSourceRequest {
+		t.Fatalf("request override source = %q, want %q", requestMeta.Source, runtimeconfig.TimeoutResolutionSourceRequest)
+	}
+	if requestMeta.ResolvedTimeout != 1200*time.Millisecond {
+		t.Fatalf("request override resolved timeout = %s, want 1200ms", requestMeta.ResolvedTimeout)
+	}
+	if !requestMeta.ParentBudgetClamped {
+		t.Fatalf("request override should be parent-budget clamped: %#v", requestMeta)
+	}
+	if strings.TrimSpace(requestMeta.Trace) == "" {
+		t.Fatalf("request override trace should not be empty: %#v", requestMeta)
+	}
+
+	page, err := comp.Scheduler().QueryTasks(context.Background(), scheduler.TaskBoardQueryRequest{
+		TaskID: "task-a41-request-override",
+	})
+	if err != nil {
+		t.Fatalf("query task board failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("task board items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].Task.TimeoutResolution.Source != runtimeconfig.TimeoutResolutionSourceRequest {
+		t.Fatalf("task board timeout resolution source mismatch: %#v", page.Items[0].Task.TimeoutResolution)
+	}
+
+	if _, err := comp.Run(context.Background(), types.RunRequest{
+		RunID: runID,
+		Input: "emit-finished",
+	}, nil); err != nil {
+		t.Fatalf("composer run failed: %v", err)
+	}
+	runs := mgr.RecentRuns(10)
+	found := false
+	for _, rec := range runs {
+		if strings.TrimSpace(rec.RunID) != runID {
+			continue
+		}
+		found = true
+		if rec.EffectiveOperationProfile != runtimeconfig.OperationProfileInteractive {
+			t.Fatalf("effective_operation_profile = %q, want %q", rec.EffectiveOperationProfile, runtimeconfig.OperationProfileInteractive)
+		}
+		if rec.TimeoutResolutionSource != runtimeconfig.TimeoutResolutionSourceRequest {
+			t.Fatalf("timeout_resolution_source = %q, want %q", rec.TimeoutResolutionSource, runtimeconfig.TimeoutResolutionSourceRequest)
+		}
+		if strings.TrimSpace(rec.TimeoutResolutionTrace) == "" {
+			t.Fatalf("timeout_resolution_trace should not be empty: %#v", rec)
+		}
+		if rec.TimeoutParentBudgetClampTotal != 1 {
+			t.Fatalf("timeout_parent_budget_clamp_total = %d, want 1", rec.TimeoutParentBudgetClampTotal)
+		}
+		if rec.TimeoutParentBudgetRejectTotal != 0 {
+			t.Fatalf("timeout_parent_budget_reject_total = %d, want 0", rec.TimeoutParentBudgetRejectTotal)
+		}
+	}
+	if !found {
+		t.Fatalf("run summary for %q not found in %#v", runID, runs)
+	}
+}
+
 func TestComposerSpawnChildPassesNotBeforeThrough(t *testing.T) {
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A13_TEST"})
 	if err != nil {
@@ -294,6 +454,40 @@ func writeComposerRuntimeConfig(t *testing.T, path string, leaseTimeout time.Dur
 		"  max_depth: 4",
 		"  max_active_children: 8",
 		"  child_timeout_budget: 3s",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config %q: %v", path, err)
+	}
+}
+
+func writeComposerA41RuntimeConfig(t *testing.T, path string) {
+	t.Helper()
+	cfg := strings.Join([]string{
+		"reload:",
+		"  enabled: false",
+		"scheduler:",
+		"  enabled: true",
+		"  backend: memory",
+		"  lease_timeout: 300ms",
+		"  heartbeat_interval: 100ms",
+		"  queue_limit: 64",
+		"  retry_max_attempts: 3",
+		"subagent:",
+		"  max_depth: 4",
+		"  max_active_children: 8",
+		"  child_timeout_budget: 6s",
+		"runtime:",
+		"  operation_profiles:",
+		"    default_profile: legacy",
+		"    legacy:",
+		"      timeout: 3s",
+		"    interactive:",
+		"      timeout: 9s",
+		"    background:",
+		"      timeout: 30s",
+		"    batch:",
+		"      timeout: 2m",
 		"",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {

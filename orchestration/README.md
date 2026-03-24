@@ -22,6 +22,7 @@
 - `scheduler` 负责任务生命周期状态机与治理策略
   - async-await 路径支持 `awaiting_report` + callback/poll 双来源终态收敛；
     poll fallback 仅作为 callback 缺失时的补偿路径，仲裁规则固定 `first_terminal_wins + record_conflict`。
+  - A41 子任务路径统一遵循 timeout resolver（`profile -> domain -> request`），并执行父子预算收敛 `min(parent_remaining, child_resolved)`。
 - `mailbox` 负责 command/event/result envelope、ack/retry/ttl/dlq 与查询语义，
   并提供可选 lifecycle worker 原语（`consume -> handler -> ack|nack|requeue`）
 - `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；公开入口固定为 `MailboxBridge`
@@ -55,6 +56,7 @@
 - mailbox worker 默认关闭：`mailbox.worker.enabled=false`，默认轮询 `100ms`，默认错误策略 `requeue`；
   lease/recover 默认值为 `inflight_timeout=30s`、`heartbeat_interval=5s`、`reclaim_on_consume=true`、`panic_policy=follow_handler_error_policy`。
 - scheduler 托管路径保持单一重试 owner；不叠加 primitive retry，避免 compounded retries。
+- composer/scheduler 子任务 dispatch 支持 operation profile 透传与 timeout-resolution metadata（用于 QueryRuns/Task Board 解释最终生效预算来源）。
 - async-await reconcile 默认关闭（`scheduler.async_await.reconcile.enabled=false`），启用后按 `interval/batch_size/jitter_ratio` 节流对账。
 - workflow graph composability 默认关闭，需显式开启。
 

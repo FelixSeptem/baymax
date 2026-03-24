@@ -72,6 +72,9 @@ go test ./integration -run '^TestTaskBoardQueryContract' -count=1
 echo "[multi-agent-shared-contract-gate] task board control suite"
 go test ./integration -run '^TestTaskBoardControlContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] timeout resolution contract suite"
+go test ./integration -run '^TestTimeoutResolutionContract' -count=1
+
 echo "[multi-agent-shared-contract-gate] composer closure suite"
 go test ./integration -run '^TestComposerContract' -count=1
 

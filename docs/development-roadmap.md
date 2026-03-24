@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-23
+更新时间：2026-03-24
 
 ## 定位
 
@@ -15,11 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-23：
-- 已归档并稳定：A4-A39（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口）。
+截至 2026-03-24：
+- 已归档并稳定：A4-A40（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口）。
 - 进行中：
-  - `introduce-runtime-readiness-preflight-and-degradation-contract-a40`
   - `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`
+  - `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -141,7 +141,7 @@ A39 依赖关系：
 - 不引入平台化任务控制面（RBAC/UI/多租户运维）。
 - 不改变既有 enqueue/claim/heartbeat/requeue/commit 与 query 只读路径语义。
 
-### P1：A40 runtime readiness preflight + degradation contract（进行中）
+### P1：A40 runtime readiness preflight + degradation contract（已归档）
 
 A40 依赖关系：
 - A35/A36 已将 scheduler/mailbox/recovery fallback 状态统一回流到 runtime 诊断路径；
@@ -159,6 +159,30 @@ A40 依赖关系：
 当前阶段非目标（A40 不做）：
 - 不引入平台化控制面/远程运维探针系统。
 - 不改变 scheduler/task lifecycle 语义，不引入额外终态。
+
+### P1：A41 operation profile + timeout resolution contract（进行中）
+
+A41 依赖关系：
+- A40 readiness 契约已归档，运行时配置与诊断路径具备稳定扩展点；
+- A41 在既有 scheduler/composer 多代理主链路上，补齐跨域 timeout 解析与父子预算收敛。
+
+完成条件（A41）：
+- `runtime.operation_profiles.*` 配置域落地，并保持 `env > file > default` 与 fail-fast/回滚语义。
+- 共享 timeout resolver 固化 `profile -> domain -> request` 优先级，并输出来源标签与可追踪 trace。
+- scheduler/composer 子任务路径统一接入 resolver；父子预算收敛固定为 `min(parent_remaining, child_resolved)`。
+- timeout-resolution 元数据在 snapshot/recovery/replay 下保持稳定，且 replay 不膨胀逻辑聚合。
+- diagnostics 与 QueryRuns/Task Board 补齐 A41 additive 字段，并保持 `additive + nullable + default` 兼容语义。
+- shared contract gate 与 quality gate 纳入 A41 阻断套件（校验/优先级/夹紧与拒绝/Run-Stream 等价/memory-file parity/replay idempotency）。
+
+当前阶段非目标（A41 不做）：
+- 不引入平台化控制面与外部 MQ 依赖。
+- 不改变既有 async-await/recovery 终态仲裁契约。
+
+### P1：A42 diagnostics query performance baseline + regression gate（进行中）
+
+A42 目标：
+- 为 unified diagnostics query 建立可复现实验基线（延迟、分页、聚合开销）。
+- 在质量门禁接入回归阈值校验，防止查询路径性能漂移。
 
 ### P2：0.x 质量与治理持续收敛
 

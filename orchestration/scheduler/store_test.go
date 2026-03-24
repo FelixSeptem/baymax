@@ -355,10 +355,11 @@ func TestSchedulerGuardrailBudgetRejectAndTimelineReasons(t *testing.T) {
 	}
 
 	_, err = s.SpawnChild(context.Background(), SpawnRequest{
-		Task:                 Task{TaskID: "task-budget", RunID: "run-budget"},
-		ParentDepth:          1,
-		ParentActiveChildren: 1,
-		ChildTimeout:         1200 * time.Millisecond,
+		Task:                  Task{TaskID: "task-budget", RunID: "run-budget"},
+		ParentDepth:           1,
+		ParentActiveChildren:  1,
+		ParentRemainingBudget: 2 * time.Second,
+		ChildTimeout:          1200 * time.Millisecond,
 	})
 	if err == nil {
 		t.Fatal("expected budget reject")
@@ -378,6 +379,126 @@ func TestSchedulerGuardrailBudgetRejectAndTimelineReasons(t *testing.T) {
 	}
 	if !reasons[ReasonBudgetReject] {
 		t.Fatalf("missing reason %q in timeline %#v", ReasonBudgetReject, reasons)
+	}
+}
+
+func TestSchedulerSpawnChildAppliesParentBudgetClampAndStoresTimeoutMetadata(t *testing.T) {
+	s, err := New(NewMemoryStore(), WithLeaseTimeout(1*time.Second))
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+
+	record, err := s.SpawnChild(context.Background(), SpawnRequest{
+		Task:                  Task{TaskID: "task-a41-clamp", RunID: "run-a41-clamp"},
+		ParentDepth:           0,
+		ParentActiveChildren:  0,
+		ParentRemainingBudget: 1200 * time.Millisecond,
+		ChildTimeout:          2 * time.Second,
+		TimeoutResolution: TimeoutResolutionMetadata{
+			EffectiveOperationProfile: "interactive",
+			Source:                    "request",
+			Trace:                     `{"version":"v1","selected_source":"request"}`,
+			ResolvedTimeout:           2 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("spawn child failed: %v", err)
+	}
+	meta := record.Task.TimeoutResolution
+	if !meta.ParentBudgetClamped {
+		t.Fatalf("parent budget clamp marker = %v, want true", meta.ParentBudgetClamped)
+	}
+	if meta.ResolvedTimeout != 1200*time.Millisecond {
+		t.Fatalf("resolved timeout = %s, want 1200ms", meta.ResolvedTimeout)
+	}
+	if meta.EffectiveOperationProfile != "interactive" || meta.Source != "request" {
+		t.Fatalf("timeout resolution profile/source mismatch: %#v", meta)
+	}
+	if strings.TrimSpace(meta.Trace) == "" {
+		t.Fatalf("timeout resolution trace should not be empty: %#v", meta)
+	}
+}
+
+func TestSchedulerSpawnChildRejectsExhaustedParentBudget(t *testing.T) {
+	s, err := New(NewMemoryStore(), WithLeaseTimeout(1*time.Second))
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+
+	_, err = s.SpawnChild(context.Background(), SpawnRequest{
+		Task:                  Task{TaskID: "task-a41-parent-exhausted", RunID: "run-a41-parent-exhausted"},
+		ParentDepth:           0,
+		ParentActiveChildren:  0,
+		ParentRemainingBudget: 0,
+		ChildTimeout:          500 * time.Millisecond,
+	})
+	if err == nil {
+		t.Fatal("expected parent budget exhausted reject")
+	}
+	var budgetErr *BudgetError
+	if !errors.As(err, &budgetErr) {
+		t.Fatalf("budget reject error type mismatch: %v", err)
+	}
+	if budgetErr.Code != BudgetRejectParentBudgetExhausted {
+		t.Fatalf("budget reject code = %q, want %q", budgetErr.Code, BudgetRejectParentBudgetExhausted)
+	}
+}
+
+func TestSchedulerSpawnChildTimeoutResolutionMetadataSnapshotRestoreStable(t *testing.T) {
+	ctx := context.Background()
+	s, err := New(NewMemoryStore(), WithLeaseTimeout(1*time.Second))
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+
+	_, err = s.SpawnChild(ctx, SpawnRequest{
+		Task:                  Task{TaskID: "task-a41-restore", RunID: "run-a41-restore"},
+		ParentDepth:           0,
+		ParentActiveChildren:  0,
+		ParentRemainingBudget: 900 * time.Millisecond,
+		ChildTimeout:          1500 * time.Millisecond,
+		TimeoutResolution: TimeoutResolutionMetadata{
+			EffectiveOperationProfile: "batch",
+			Source:                    "domain",
+			Trace:                     `{"version":"v1","selected_source":"domain"}`,
+			ResolvedTimeout:           1500 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("spawn child failed: %v", err)
+	}
+
+	snapshot, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	restored, err := New(NewMemoryStore(), WithLeaseTimeout(1*time.Second))
+	if err != nil {
+		t.Fatalf("new restored scheduler: %v", err)
+	}
+	if err := restored.Restore(ctx, snapshot); err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+
+	page, err := restored.QueryTasks(ctx, TaskBoardQueryRequest{TaskID: "task-a41-restore"})
+	if err != nil {
+		t.Fatalf("query tasks failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query result len = %d, want 1", len(page.Items))
+	}
+	meta := page.Items[0].Task.TimeoutResolution
+	if meta.EffectiveOperationProfile != "batch" || meta.Source != "domain" {
+		t.Fatalf("restored timeout resolution profile/source mismatch: %#v", meta)
+	}
+	if !meta.ParentBudgetClamped {
+		t.Fatalf("restored parent budget clamp marker = %v, want true", meta.ParentBudgetClamped)
+	}
+	if meta.ResolvedTimeout != 900*time.Millisecond {
+		t.Fatalf("restored resolved timeout = %s, want 900ms", meta.ResolvedTimeout)
+	}
+	if strings.TrimSpace(meta.Trace) == "" {
+		t.Fatalf("restored timeout resolution trace should not be empty: %#v", meta)
 	}
 }
 

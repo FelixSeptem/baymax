@@ -272,19 +272,24 @@ func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
 func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                       time.Now(),
-		RunID:                      "run-scheduler-1",
-		Status:                     "success",
-		SchedulerBackend:           "file",
-		SchedulerQueueTotal:        3,
-		SchedulerClaimTotal:        4,
-		SchedulerReclaimTotal:      1,
-		SchedulerDelayedTaskTotal:  2,
-		SchedulerDelayedClaimTotal: 2,
-		SchedulerDelayedWaitMsP95:  180,
-		SubagentChildTotal:         2,
-		SubagentChildFailed:        1,
-		SubagentBudgetRejectTotal:  1,
+		Time:                           time.Now(),
+		RunID:                          "run-scheduler-1",
+		Status:                         "success",
+		SchedulerBackend:               "file",
+		SchedulerQueueTotal:            3,
+		SchedulerClaimTotal:            4,
+		SchedulerReclaimTotal:          1,
+		SchedulerDelayedTaskTotal:      2,
+		SchedulerDelayedClaimTotal:     2,
+		SchedulerDelayedWaitMsP95:      180,
+		SubagentChildTotal:             2,
+		SubagentChildFailed:            1,
+		SubagentBudgetRejectTotal:      1,
+		EffectiveOperationProfile:      "interactive",
+		TimeoutResolutionSource:        "request",
+		TimeoutResolutionTrace:         `{"version":"v1","selected_source":"request"}`,
+		TimeoutParentBudgetClampTotal:  1,
+		TimeoutParentBudgetRejectTotal: 0,
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -302,8 +307,45 @@ func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 		runs[0].SchedulerDelayedWaitMsP95 != 180 ||
 		runs[0].SubagentChildTotal != 2 ||
 		runs[0].SubagentChildFailed != 1 ||
-		runs[0].SubagentBudgetRejectTotal != 1 {
+		runs[0].SubagentBudgetRejectTotal != 1 ||
+		runs[0].EffectiveOperationProfile != "interactive" ||
+		runs[0].TimeoutResolutionSource != "request" ||
+		runs[0].TimeoutResolutionTrace == "" ||
+		runs[0].TimeoutParentBudgetClampTotal != 1 ||
+		runs[0].TimeoutParentBudgetRejectTotal != 0 {
 		t.Fatalf("scheduler/subagent fields mismatch under replay, got %#v", runs[0])
+	}
+}
+
+func TestStoreRunTimeoutResolutionFieldsQueryCompatibility(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                           time.Now(),
+		RunID:                          "run-a41-query",
+		Status:                         "success",
+		EffectiveOperationProfile:      "background",
+		TimeoutResolutionSource:        "domain",
+		TimeoutResolutionTrace:         `{"version":"v1","selected_source":"domain"}`,
+		TimeoutParentBudgetClampTotal:  2,
+		TimeoutParentBudgetRejectTotal: 1,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a41-query"})
+	if err != nil {
+		t.Fatalf("query runs failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len = %d, want 1", len(page.Items))
+	}
+	got := page.Items[0]
+	if got.EffectiveOperationProfile != "background" ||
+		got.TimeoutResolutionSource != "domain" ||
+		got.TimeoutResolutionTrace == "" ||
+		got.TimeoutParentBudgetClampTotal != 2 ||
+		got.TimeoutParentBudgetRejectTotal != 1 {
+		t.Fatalf("timeout resolution query fields mismatch: %#v", got)
 	}
 }
 

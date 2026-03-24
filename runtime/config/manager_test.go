@@ -2096,6 +2096,66 @@ reload:
 	}
 }
 
+func TestManagerRuntimeOperationProfilesInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  operation_profiles:
+    default_profile: legacy
+    legacy:
+      timeout: 3s
+    interactive:
+      timeout: 10s
+    background:
+      timeout: 30s
+    batch:
+      timeout: 2m
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.OperationProfiles.DefaultProfile
+	if before != OperationProfileLegacy {
+		t.Fatalf("before runtime.operation_profiles.default_profile = %q, want %q", before, OperationProfileLegacy)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  operation_profiles:
+    default_profile: realtime
+    legacy:
+      timeout: 3s
+    interactive:
+      timeout: 10s
+    background:
+      timeout: 30s
+    batch:
+      timeout: 2m
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.OperationProfiles.DefaultProfile
+	if after != before {
+		t.Fatalf(
+			"invalid runtime.operation_profiles reload should rollback, default_profile = %q, want %q",
+			after,
+			before,
+		)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

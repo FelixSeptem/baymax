@@ -144,6 +144,32 @@ func (s *Scheduler) Enqueue(ctx context.Context, task Task) (TaskRecord, error) 
 }
 
 func (s *Scheduler) SpawnChild(ctx context.Context, req SpawnRequest) (TaskRecord, error) {
+	if req.ParentRemainingBudget <= 0 {
+		record := TaskRecord{Task: req.Task}
+		s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusFailed, ReasonBudgetReject)
+		return TaskRecord{}, &BudgetError{
+			Code:    BudgetRejectParentBudgetExhausted,
+			Message: fmt.Sprintf("parent remaining budget %s must be > 0", req.ParentRemainingBudget),
+		}
+	}
+	if req.ChildTimeout <= 0 {
+		record := TaskRecord{Task: req.Task}
+		s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusFailed, ReasonBudgetReject)
+		return TaskRecord{}, &BudgetError{
+			Code:    BudgetRejectTimeout,
+			Message: fmt.Sprintf("child timeout %s must be > 0", req.ChildTimeout),
+		}
+	}
+	if req.ChildTimeout > req.ParentRemainingBudget {
+		req.ChildTimeout = req.ParentRemainingBudget
+		req.TimeoutResolution.ParentBudgetClamped = true
+	}
+	req.TimeoutResolution.EffectiveOperationProfile = strings.TrimSpace(req.TimeoutResolution.EffectiveOperationProfile)
+	req.TimeoutResolution.Source = strings.TrimSpace(req.TimeoutResolution.Source)
+	req.TimeoutResolution.Trace = strings.TrimSpace(req.TimeoutResolution.Trace)
+	req.TimeoutResolution.ResolvedTimeout = req.ChildTimeout
+	req.Task.TimeoutResolution = req.TimeoutResolution
+
 	if err := s.guardrails.ValidateSpawn(req); err != nil {
 		record := TaskRecord{Task: req.Task}
 		s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusFailed, ReasonBudgetReject)

@@ -48,6 +48,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression
     go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] timeout resolution contract suites" -Command {
+    go test ./integration -run '^TestTimeoutResolutionContract' -count=1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

@@ -54,12 +54,20 @@
 - `runtime/config` 不依赖 `mcp/http` 或 `mcp/stdio` 传输实现。
 - 非法配置和非法热更新必须 fail-fast，并保持旧快照可回滚。
 - 配置字段变更需要同步更新 `docs/runtime-config-diagnostics.md` 与契约测试。
+- A41 新增 operation profile 配置域：`runtime.operation_profiles.default_profile` 与四个 profile timeout（`legacy|interactive|background|batch`）。
+- A41 timeout 解析器固定三层优先级：`profile -> domain -> request`，并输出来源标签与 trace（`v1`）。
 
 ## 配置与默认值
 
 - 默认值入口：`DefaultConfig`。
 - 优先级固定：`env > file > default`，并在 `EffectiveConfig` 中体现最终快照。
 - 热更新默认允许监听，但非法更新会阻断并回滚到上一个有效快照。
+- operation profile 默认值：
+  - `default_profile=legacy`
+  - `legacy.timeout=3s`
+  - `interactive.timeout=10s`
+  - `background.timeout=30s`
+  - `batch.timeout=2m`
 
 ## 可观测性与验证
 

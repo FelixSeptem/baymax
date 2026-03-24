@@ -13,10 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-23）：
-- 已归档并稳定：A4-A39。
-- A40（Introduce Runtime Readiness Preflight And Degradation Contract）进行中。
+当前里程碑快照（2026-03-24）：
+- 已归档并稳定：A4-A40。
 - A41（Introduce Runtime Operation Profiles And Timeout Resolution Contract）进行中。
+- A42（Introduce Diagnostics Query Performance Baseline And Regression Gate）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,13 +225,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约进行中。
-  - 新增 `runtime.readiness.*` 配置域：`enabled|strict|remote_probe_enabled`（`env > file > default`，启动/热更新 fail-fast + 回滚）。
-  - 新增库级 `ReadinessPreflight()`：统一返回 `ready|degraded|blocked` 与 canonical findings。
-  - diagnostics 增量字段：`runtime_readiness_status`、finding/blocking/degraded 计数、`runtime_readiness_primary_code`。
 - A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约进行中。
+- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics 查询性能基线与回归门禁进行中。
 
 最近已归档能力：
+- A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约已归档。
 - A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board control + manual recovery 契约已归档。
 - A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固已归档。
 - A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 strict-native fail-fast parity 与状态口径收敛已归档（`govulncheck warn` 保留为唯一治理例外）。

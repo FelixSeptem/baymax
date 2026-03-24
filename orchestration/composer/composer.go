@@ -825,6 +825,16 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if stats.RecoveryFallbackReason != "" {
 		payload["recovery_fallback_reason"] = stats.RecoveryFallbackReason
 	}
+	if readiness, err := c.ReadinessPreflight(); err == nil {
+		summary := readiness.Summary()
+		payload["runtime_readiness_status"] = summary.Status
+		payload["runtime_readiness_finding_total"] = summary.FindingTotal
+		payload["runtime_readiness_blocking_total"] = summary.BlockingTotal
+		payload["runtime_readiness_degraded_total"] = summary.DegradedTotal
+		if summary.PrimaryCode != "" {
+			payload["runtime_readiness_primary_code"] = summary.PrimaryCode
+		}
+	}
 
 	if s := c.Scheduler(); s != nil {
 		summary, err := s.Stats(context.Background())
@@ -1368,6 +1378,7 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 	c.schedulerSignature = c.schedulerConfigSignature(cfg)
 	c.schedulerMu.Unlock()
 	c.reconfigureAsyncAwaitReconcileWorker(cfg)
+	c.publishRuntimeReadinessSnapshot()
 	return nil
 }
 
@@ -1416,12 +1427,14 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 	c.schedulerMu.Lock()
 	c.scheduler = updated
 	c.schedulerConfiguredBackend = strings.TrimSpace(strings.ToLower(cfg.Scheduler.Backend))
+	c.schedulerBackend = strings.TrimSpace(strings.ToLower(cfg.Scheduler.Backend))
 	c.schedulerQueueLimit = cfg.Scheduler.QueueLimit
 	c.schedulerRetryMaxAttempts = cfg.Scheduler.RetryMaxAttempts
 	c.schedulerGuardrails = guardrails
 	c.schedulerSignature = signature
 	c.schedulerMu.Unlock()
 	c.reconfigureAsyncAwaitReconcileWorker(cfg)
+	c.publishRuntimeReadinessSnapshot()
 }
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {

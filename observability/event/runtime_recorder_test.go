@@ -260,6 +260,11 @@ mcp:
 			"recovery_conflict_code":                   "",
 			"recovery_fallback_used":                   true,
 			"recovery_fallback_reason":                 "recovery.backend.file_init_failed",
+			"runtime_readiness_status":                 "degraded",
+			"runtime_readiness_finding_total":          2,
+			"runtime_readiness_blocking_total":         0,
+			"runtime_readiness_degraded_total":         2,
+			"runtime_readiness_primary_code":           "scheduler.backend.fallback",
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -456,6 +461,13 @@ mcp:
 	}
 	if !items[0].RecoveryFallbackUsed || items[0].RecoveryFallbackReason != "recovery.backend.file_init_failed" {
 		t.Fatalf("recovery fallback fields mismatch: %#v", items[0])
+	}
+	if items[0].RuntimeReadinessStatus != "degraded" ||
+		items[0].RuntimeReadinessFindingTotal != 2 ||
+		items[0].RuntimeReadinessBlockingTotal != 0 ||
+		items[0].RuntimeReadinessDegradedTotal != 2 ||
+		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" {
+		t.Fatalf("runtime readiness fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
 		t.Fatalf("action gate metrics mismatch: %#v", items[0])
@@ -654,6 +666,60 @@ mcp:
 		got.RecoveryTimeoutReentryTotal != 0 ||
 		got.RecoveryTimeoutReentryExhaustedTotal != 0 {
 		t.Fatalf("missing A17 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a40-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(14),
+			"a40_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 14 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.RuntimeReadinessStatus != "" ||
+		got.RuntimeReadinessFindingTotal != 0 ||
+		got.RuntimeReadinessBlockingTotal != 0 ||
+		got.RuntimeReadinessDegradedTotal != 0 ||
+		got.RuntimeReadinessPrimaryCode != "" {
+		t.Fatalf("missing A40 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

@@ -43,6 +43,9 @@ type Manager struct {
 	snap atomic.Value // *Snapshot
 	diag *runtimediag.Store
 
+	readinessMu         sync.RWMutex
+	readinessComponents RuntimeReadinessComponentSnapshot
+
 	watchStarted atomic.Bool
 	stopOnce     sync.Once
 	stopCh       chan struct{}

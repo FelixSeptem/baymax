@@ -32,6 +32,12 @@ if ! bash scripts/check-multi-agent-shared-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] runtime readiness contract suites"
+if ! go test ./runtime/config ./runtime/diagnostics ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|StoreRunReadiness|ComposerReadiness)' -count=1; then
+  echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] mailbox runtime wiring regression"
 if ! go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1; then
   echo "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"

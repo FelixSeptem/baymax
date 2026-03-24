@@ -93,6 +93,9 @@
   - `recovery.inflight_policy` -> `BAYMAX_RECOVERY_INFLIGHT_POLICY`
   - `recovery.timeout_reentry_policy` -> `BAYMAX_RECOVERY_TIMEOUT_REENTRY_POLICY`
   - `recovery.timeout_reentry_max_per_task` -> `BAYMAX_RECOVERY_TIMEOUT_REENTRY_MAX_PER_TASK`
+  - `runtime.readiness.enabled` -> `BAYMAX_RUNTIME_READINESS_ENABLED`
+  - `runtime.readiness.strict` -> `BAYMAX_RUNTIME_READINESS_STRICT`
+  - `runtime.readiness.remote_probe_enabled` -> `BAYMAX_RUNTIME_READINESS_REMOTE_PROBE_ENABLED`
 
 ## YAML Schema（核心字段）
 
@@ -138,6 +141,12 @@ diagnostics:
       p95_latency_ms: 1500
       error_rate: 0.10
       hit_rate: 0.20
+
+runtime:
+  readiness:
+    enabled: true               # A40 默认开启
+    strict: false               # A40 默认不升级 degraded
+    remote_probe_enabled: false # A40 默认关闭远程探测（离线友好）
 
 reload:
   enabled: true
@@ -659,6 +668,10 @@ scheduler/subagent baseline 校验语义：
 21. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
 22. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+runtime readiness（A40）校验语义：
+1. `runtime.readiness.enabled|strict|remote_probe_enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
+2. 启动加载与热更新都遵循 fail-fast，非法布尔表达会拒绝生效并保留上一有效快照。
+
 recovery boundary（A17）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
 2. `recovery.resume_boundary` 当前仅支持 `next_attempt_only`。
@@ -728,6 +741,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `CA2ExternalTrends(query)`
 - `EffectiveConfigSanitized()`
 - `PrecheckStage2External(provider, external)`
+- `ReadinessPreflight()`（A40：返回 `ready|degraded|blocked` + canonical findings）
 
 `orchestration/scheduler.Scheduler` 额外提供任务看板只读查询：
 
@@ -833,6 +847,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
   - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
+- Runtime Readiness（A40）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
 

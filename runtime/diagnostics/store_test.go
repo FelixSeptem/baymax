@@ -85,6 +85,53 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                          time.Now(),
+		RunID:                         "run-a40-readiness",
+		Status:                        "success",
+		RuntimeReadinessStatus:        "degraded",
+		RuntimeReadinessFindingTotal:  2,
+		RuntimeReadinessBlockingTotal: 0,
+		RuntimeReadinessDegradedTotal: 2,
+		RuntimeReadinessPrimaryCode:   "scheduler.backend.fallback",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].RuntimeReadinessStatus != "degraded" ||
+		items[0].RuntimeReadinessFindingTotal != 2 ||
+		items[0].RuntimeReadinessBlockingTotal != 0 ||
+		items[0].RuntimeReadinessDegradedTotal != 2 ||
+		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" {
+		t.Fatalf("readiness fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.RuntimeReadinessStatus = "blocked"
+	rec.RuntimeReadinessFindingTotal = 3
+	rec.RuntimeReadinessBlockingTotal = 2
+	rec.RuntimeReadinessDegradedTotal = 1
+	rec.RuntimeReadinessPrimaryCode = "runtime.readiness.strict_escalated"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay update, want 1", len(items))
+	}
+	if items[0].RuntimeReadinessStatus != "blocked" ||
+		items[0].RuntimeReadinessFindingTotal != 3 ||
+		items[0].RuntimeReadinessBlockingTotal != 2 ||
+		items[0].RuntimeReadinessDegradedTotal != 1 ||
+		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" {
+		t.Fatalf("readiness fields mismatch after replay replacement: %#v", items[0])
+	}
+}
+
 func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

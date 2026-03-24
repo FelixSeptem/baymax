@@ -102,6 +102,7 @@ func (c *Composer) initRecovery(cfg runtimeconfig.Config) error {
 	c.recoveryTimeoutReentryMaxPerTask = timeoutReentryMaxPerTask
 	c.recoverySignature = c.recoveryConfigSignature(cfg)
 	c.schedulerMu.Unlock()
+	c.publishRuntimeReadinessSnapshot()
 	return nil
 }
 

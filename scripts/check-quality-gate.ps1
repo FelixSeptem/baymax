@@ -40,6 +40,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
     pwsh -File scripts/check-multi-agent-shared-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness contract suites" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|StoreRunReadiness|ComposerReadiness)' -count=1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {
     go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }

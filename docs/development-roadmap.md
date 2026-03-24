@@ -16,9 +16,8 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-23：
-- 已归档并稳定：A4-A38（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口）。
+- 已归档并稳定：A4-A39（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口）。
 - 进行中：
-  - `introduce-task-board-control-and-manual-recovery-contract-a39`
   - `introduce-runtime-readiness-preflight-and-degradation-contract-a40`
   - `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`
 
@@ -120,7 +119,7 @@ A36 依赖关系：
 - 不引入外部 MQ、平台化控制面或托管任务面板。
 - 不改变 A32 async-await 终态仲裁语义。
 
-### P1：A39 task board control + manual recovery（进行中）
+### P1：A39 task board control + manual recovery（已归档）
 
 A39 依赖关系：
 - A29 已交付 Task Board query 只读契约；
@@ -141,6 +140,25 @@ A39 依赖关系：
 当前阶段非目标（A39 不做）：
 - 不引入平台化任务控制面（RBAC/UI/多租户运维）。
 - 不改变既有 enqueue/claim/heartbeat/requeue/commit 与 query 只读路径语义。
+
+### P1：A40 runtime readiness preflight + degradation contract（进行中）
+
+A40 依赖关系：
+- A35/A36 已将 scheduler/mailbox/recovery fallback 状态统一回流到 runtime 诊断路径；
+- A40 在保持 lib-first 边界下新增启动前 readiness 预检契约，不改变既有 Run/Stream 终态裁决。
+
+完成条件（A40）：
+- `runtime/config.Manager` 提供库级 `ReadinessPreflight()`，输出 `ready|degraded|blocked` 与 canonical findings（`code/domain/severity/message/metadata`）。
+- 新增 `runtime.readiness.*` 配置域并纳入 `env > file > default`、启动 fail-fast、热更新原子回滚。
+- 预检覆盖本地配置有效性与 scheduler/mailbox/recovery backend/fallback 可见性。
+- `strict=true` 时把 `degraded` 升级为 `blocked`，`strict=false` 保持可运行且可观测。
+- run diagnostics 增量字段落地：`runtime_readiness_status`、计数字段、`runtime_readiness_primary_code`。
+- composer 暴露 runtime readiness 透传入口，且查询路径保持只读，不引入新状态 taxonomy。
+- quality gate 接入 readiness suites（classification、strict escalation、schema stability、diagnostics replay idempotency、composer parity）。
+
+当前阶段非目标（A40 不做）：
+- 不引入平台化控制面/远程运维探针系统。
+- 不改变 scheduler/task lifecycle 语义，不引入额外终态。
 
 ### P2：0.x 质量与治理持续收敛
 

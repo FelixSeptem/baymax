@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -217,6 +218,65 @@ func TestComposerSpawnChildPassesNotBeforeThrough(t *testing.T) {
 	}
 }
 
+func TestComposerReadinessPreflightRequiresRuntimeManager(t *testing.T) {
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	if _, err := comp.ReadinessPreflight(); err == nil {
+		t.Fatal("ReadinessPreflight should fail when runtime manager is not configured")
+	}
+}
+
+func TestComposerReadinessPreflightPassthroughAndReadOnly(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A40_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	mgr.SetReadinessComponentSnapshot(runtimeconfig.RuntimeReadinessComponentSnapshot{
+		Scheduler: runtimeconfig.RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			Fallback:          true,
+			FallbackReason:    "scheduler.backend.file_init_failed",
+		},
+	})
+
+	before, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("SchedulerStats before readiness failed: %v", err)
+	}
+	runtimeResult := mgr.ReadinessPreflight()
+	composerResult, err := comp.ReadinessPreflight()
+	if err != nil {
+		t.Fatalf("composer readiness failed: %v", err)
+	}
+	after, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("SchedulerStats after readiness failed: %v", err)
+	}
+
+	if runtimeResult.Status != composerResult.Status {
+		t.Fatalf("status mismatch runtime=%q composer=%q", runtimeResult.Status, composerResult.Status)
+	}
+	if readinessFingerprint(runtimeResult) != readinessFingerprint(composerResult) {
+		t.Fatalf("readiness semantics mismatch runtime=%s composer=%s", readinessFingerprint(runtimeResult), readinessFingerprint(composerResult))
+	}
+	if before.QueueTotal != after.QueueTotal || before.ClaimTotal != after.ClaimTotal || before.ReclaimTotal != after.ReclaimTotal {
+		t.Fatalf("readiness query should be read-only, before=%#v after=%#v", before, after)
+	}
+}
+
 func writeComposerRuntimeConfig(t *testing.T, path string, leaseTimeout time.Duration) {
 	t.Helper()
 	cfg := strings.Join([]string{
@@ -262,4 +322,16 @@ func mustFindAttempt(t *testing.T, record scheduler.TaskRecord, attemptID string
 	}
 	t.Fatalf("attempt %q not found in %#v", attemptID, record.Attempts)
 	return scheduler.Attempt{}
+}
+
+func readinessFingerprint(result runtimeconfig.ReadinessResult) string {
+	payload := struct {
+		Status   runtimeconfig.ReadinessStatus    `json:"status"`
+		Findings []runtimeconfig.ReadinessFinding `json:"findings"`
+	}{
+		Status:   result.Status,
+		Findings: result.Findings,
+	}
+	blob, _ := json.Marshal(payload)
+	return string(blob)
 }

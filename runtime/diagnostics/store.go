@@ -194,6 +194,11 @@ type RunRecord struct {
 	RecoveryConflictCode                 string                            `json:"recovery_conflict_code,omitempty"`
 	RecoveryFallbackUsed                 bool                              `json:"recovery_fallback_used,omitempty"`
 	RecoveryFallbackReason               string                            `json:"recovery_fallback_reason,omitempty"`
+	RuntimeReadinessStatus               string                            `json:"runtime_readiness_status,omitempty"`
+	RuntimeReadinessFindingTotal         int                               `json:"runtime_readiness_finding_total,omitempty"`
+	RuntimeReadinessBlockingTotal        int                               `json:"runtime_readiness_blocking_total,omitempty"`
+	RuntimeReadinessDegradedTotal        int                               `json:"runtime_readiness_degraded_total,omitempty"`
+	RuntimeReadinessPrimaryCode          string                            `json:"runtime_readiness_primary_code,omitempty"`
 	GateChecks                           int                               `json:"gate_checks,omitempty"`
 	GateDeniedCount                      int                               `json:"gate_denied_count,omitempty"`
 	GateTimeoutCount                     int                               `json:"gate_timeout_count,omitempty"`

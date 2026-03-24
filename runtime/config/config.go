@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,6 +165,7 @@ type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
+	Runtime          RuntimeDomainConfig    `json:"runtime"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	Composer         ComposerConfig         `json:"composer"`
@@ -179,6 +181,16 @@ type Config struct {
 	Clarification    ClarificationConfig    `json:"clarification"`
 	ContextAssembler ContextAssemblerConfig `json:"context_assembler"`
 	Security         SecurityConfig         `json:"security"`
+}
+
+type RuntimeDomainConfig struct {
+	Readiness RuntimeReadinessConfig `json:"readiness"`
+}
+
+type RuntimeReadinessConfig struct {
+	Enabled            bool `json:"enabled"`
+	Strict             bool `json:"strict"`
+	RemoteProbeEnabled bool `json:"remote_probe_enabled"`
 }
 
 type ComposerConfig struct {
@@ -921,6 +933,13 @@ func DefaultConfig() Config {
 				},
 			},
 		},
+		Runtime: RuntimeDomainConfig{
+			Readiness: RuntimeReadinessConfig{
+				Enabled:            true,
+				Strict:             false,
+				RemoteProbeEnabled: false,
+			},
+		},
 		Reload: ReloadConfig{
 			Enabled:  false,
 			Debounce: 200 * time.Millisecond,
@@ -1434,7 +1453,10 @@ func loadWithSnapshot(opts LoadOptions) (Config, map[string]any, error) {
 		}
 	}
 
-	cfg := buildConfig(v)
+	cfg, err := buildConfig(v)
+	if err != nil {
+		return Config{}, nil, err
+	}
 	if err := Validate(cfg); err != nil {
 		return Config{}, nil, err
 	}
@@ -2884,6 +2906,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.p95_latency_ms", base.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.error_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate)
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.hit_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.HitRate)
+	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
+	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
+	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -3147,7 +3172,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.security_event.severity.by_reason_code", base.Security.SecurityEvent.Severity.ByReasonCode)
 }
 
-func buildConfig(v *viper.Viper) Config {
+func buildConfig(v *viper.Viper) (Config, error) {
 	cfg := DefaultConfig()
 	cfg.MCP.ActiveProfile = strings.TrimSpace(v.GetString("mcp.active_profile"))
 	cfg.Concurrency.LocalMaxWorkers = v.GetInt("concurrency.local_max_workers")
@@ -3169,6 +3194,21 @@ func buildConfig(v *viper.Viper) Config {
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs = v.GetInt64("diagnostics.ca2_external_trend.thresholds.p95_latency_ms")
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.error_rate")
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.hit_rate")
+	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	readinessStrict, err := strictBoolConfigValue(v, "runtime.readiness.strict")
+	if err != nil {
+		return Config{}, err
+	}
+	remoteProbeEnabled, err := strictBoolConfigValue(v, "runtime.readiness.remote_probe_enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Readiness.Enabled = readinessEnabled
+	cfg.Runtime.Readiness.Strict = readinessStrict
+	cfg.Runtime.Readiness.RemoteProbeEnabled = remoteProbeEnabled
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")
@@ -3460,7 +3500,30 @@ func buildConfig(v *viper.Viper) Config {
 		}
 		cfg.MCP.Profiles[name] = p
 	}
-	return cfg
+	return cfg, nil
+}
+
+func strictBoolConfigValue(v *viper.Viper, key string) (bool, error) {
+	raw := v.Get(key)
+	if raw == nil {
+		return v.GetBool(key), nil
+	}
+	switch value := raw.(type) {
+	case bool:
+		return value, nil
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return false, fmt.Errorf("%s must be a boolean, got %q", key, value)
+		}
+		return parsed, nil
+	default:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(fmt.Sprint(raw)))
+		if err != nil {
+			return false, fmt.Errorf("%s must be a boolean, got %v", key, raw)
+		}
+		return parsed, nil
+	}
 }
 
 func buildStage2ExternalConfig(v *viper.Viper, base ContextAssemblerCA2ExternalConfig) ContextAssemblerCA2ExternalConfig {

@@ -247,6 +247,61 @@ func TestDiagnosticsCA2ExternalTrendValidationRejectsInvalidValue(t *testing.T) 
 	}
 }
 
+func TestRuntimeReadinessConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Runtime.Readiness.Enabled {
+		t.Fatal("runtime.readiness.enabled = false, want true")
+	}
+	if cfg.Runtime.Readiness.Strict {
+		t.Fatal("runtime.readiness.strict = true, want false")
+	}
+	if cfg.Runtime.Readiness.RemoteProbeEnabled {
+		t.Fatal("runtime.readiness.remote_probe_enabled = true, want false")
+	}
+}
+
+func TestRuntimeReadinessConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_READINESS_STRICT", "true")
+	t.Setenv("BAYMAX_RUNTIME_READINESS_REMOTE_PROBE_ENABLED", "true")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Runtime.Readiness.Enabled {
+		t.Fatal("runtime.readiness.enabled = true, want false from env")
+	}
+	if !cfg.Runtime.Readiness.Strict {
+		t.Fatal("runtime.readiness.strict = false, want true from env")
+	}
+	if !cfg.Runtime.Readiness.RemoteProbeEnabled {
+		t.Fatal("runtime.readiness.remote_probe_enabled = false, want true from env")
+	}
+}
+
+func TestRuntimeReadinessConfigInvalidBoolFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_READINESS_STRICT", "definitely-not-bool")
+	_, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err == nil {
+		t.Fatal("expected runtime.readiness.strict invalid bool error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "runtime.readiness.strict") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateFailFast(t *testing.T) {
 	cfg := DefaultConfig()
 	p := cfg.MCP.Profiles[ProfileDefault]

@@ -83,6 +83,7 @@ func (c *Composer) initMailbox(cfg runtimeconfig.Config) error {
 	}
 	c.mailboxSignature = c.mailboxConfigSignature(cfg)
 	c.schedulerMu.Unlock()
+	c.publishRuntimeReadinessSnapshot()
 	return nil
 }
 

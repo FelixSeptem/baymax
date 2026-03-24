@@ -2052,6 +2052,50 @@ reload:
 	}
 }
 
+func TestManagerRuntimeReadinessInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.Readiness.Strict
+	if before {
+		t.Fatal("before runtime.readiness.strict = true, want false")
+	}
+
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: absolutely-no
+    remote_probe_enabled: false
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Readiness.Strict
+	if after != before {
+		t.Fatalf("invalid readiness reload should rollback, strict = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func writeConfig(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

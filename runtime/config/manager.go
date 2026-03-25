@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/runtime/security/redaction"
@@ -43,8 +44,11 @@ type Manager struct {
 	snap atomic.Value // *Snapshot
 	diag *runtimediag.Store
 
-	readinessMu         sync.RWMutex
-	readinessComponents RuntimeReadinessComponentSnapshot
+	readinessMu          sync.RWMutex
+	readinessComponents  RuntimeReadinessComponentSnapshot
+	adapterHealthMu      sync.RWMutex
+	adapterHealthTargets map[string]AdapterHealthTarget
+	adapterHealthRunner  *adapterhealth.Runner
 
 	watchStarted atomic.Bool
 	stopOnce     sync.Once
@@ -109,6 +113,11 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 				},
 			},
 		),
+		adapterHealthTargets: map[string]AdapterHealthTarget{},
+		adapterHealthRunner: adapterhealth.NewRunner(adapterhealth.RunnerOptions{
+			ProbeTimeout: cfg.Adapter.Health.ProbeTimeout,
+			CacheTTL:     cfg.Adapter.Health.CacheTTL,
+		}, nil),
 		stopCh: make(chan struct{}),
 	}
 	if m.envPrefix == "" {
@@ -226,6 +235,7 @@ func (m *Manager) reload() {
 			HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
 		},
 	})
+	m.updateAdapterHealthRunnerOptions(cfg.Adapter.Health)
 	m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: true})
 }
 

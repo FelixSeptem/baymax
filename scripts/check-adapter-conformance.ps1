@@ -9,6 +9,12 @@ if (-not $env:GOCACHE) {
 }
 
 Write-Host "[adapter-conformance] running offline deterministic harness"
+Invoke-NativeStrict -Label "go test ./integration/adapterconformance -run '^TestAdapterConformanceHealthMatrix' -count=1" -Command {
+    go test ./integration/adapterconformance -run '^TestAdapterConformanceHealthMatrix' -count=1
+}
+Write-Host "[adapter-conformance] adapter-health matrix passed"
+
+Write-Host "[adapter-conformance] running full conformance harness"
 Invoke-NativeStrict -Label "go test ./integration/adapterconformance -count=1" -Command {
     go test ./integration/adapterconformance -count=1
 }

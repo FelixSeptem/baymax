@@ -885,6 +885,15 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		if summary.PrimaryCode != "" {
 			payload["runtime_readiness_primary_code"] = summary.PrimaryCode
 		}
+		if summary.AdapterHealthStatus != "" {
+			payload["adapter_health_status"] = summary.AdapterHealthStatus
+		}
+		payload["adapter_health_probe_total"] = summary.AdapterHealthProbeTotal
+		payload["adapter_health_degraded_total"] = summary.AdapterHealthDegradedTotal
+		payload["adapter_health_unavailable_total"] = summary.AdapterHealthUnavailableTotal
+		if summary.AdapterHealthPrimaryCode != "" {
+			payload["adapter_health_primary_code"] = summary.AdapterHealthPrimaryCode
+		}
 	}
 
 	if s := c.Scheduler(); s != nil {

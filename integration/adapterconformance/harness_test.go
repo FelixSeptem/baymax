@@ -2,6 +2,7 @@ package adapterconformance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,8 +12,10 @@ import (
 	"testing"
 
 	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
+	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 func TestAdapterConformanceMinimumMatrixCoverage(t *testing.T) {
@@ -383,6 +386,111 @@ func TestAdapterConformanceManifestNegotiationInvalidStrategy(t *testing.T) {
 	}
 }
 
+func TestAdapterConformanceHealthMatrixRequiredUnavailable(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a43.yaml")
+	writeAdapterHealthConfig(t, cfgPath, true)
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A43_CONFORMANCE"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "required-adapter",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status:  adapterhealth.StatusUnavailable,
+					Code:    adapterhealth.CodeProbeFailed,
+					Message: "fixture unavailable",
+				}, nil
+			}),
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != runtimeconfig.ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, runtimeconfig.ReadinessCodeAdapterRequiredUnavailable)
+	if err := ValidateReasonCode(runtimeconfig.ReadinessCodeAdapterRequiredUnavailable); err != nil {
+		t.Fatalf("required unavailable reason taxonomy invalid: %v", err)
+	}
+}
+
+func TestAdapterConformanceHealthMatrixOptionalUnavailableDowngradeDeterministic(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a43.yaml")
+	writeAdapterHealthConfig(t, cfgPath, false)
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A43_CONFORMANCE"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "optional-adapter",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status:  adapterhealth.StatusUnavailable,
+					Code:    adapterhealth.CodeProbeFailed,
+					Message: "fixture unavailable optional",
+				}, nil
+			}),
+		},
+	})
+
+	first := mgr.ReadinessPreflight()
+	second := mgr.ReadinessPreflight()
+	if first.Status != runtimeconfig.ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", first.Status)
+	}
+	assertReadinessFindingCode(t, first.Findings, runtimeconfig.ReadinessCodeAdapterOptionalUnavailable)
+	if readinessFingerprint(first) != readinessFingerprint(second) {
+		t.Fatalf("optional unavailable downgrade must be deterministic")
+	}
+}
+
+func TestAdapterConformanceHealthMatrixDegradedVisibility(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a43.yaml")
+	writeAdapterHealthConfig(t, cfgPath, false)
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A43_CONFORMANCE"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "degraded-adapter",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status:  adapterhealth.StatusDegraded,
+					Code:    adapterhealth.CodeDegraded,
+					Message: "fixture degraded",
+				}, nil
+			}),
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != runtimeconfig.ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, runtimeconfig.ReadinessCodeAdapterDegraded)
+	summary := result.Summary()
+	if summary.AdapterHealthStatus != string(adapterhealth.StatusDegraded) ||
+		summary.AdapterHealthProbeTotal != 1 ||
+		summary.AdapterHealthDegradedTotal != 1 ||
+		summary.AdapterHealthUnavailableTotal != 0 ||
+		summary.AdapterHealthPrimaryCode != adapterhealth.CodeDegraded {
+		t.Fatalf("adapter health visibility mismatch: %#v", summary)
+	}
+}
+
 func contractErr(t *testing.T, err error) *adaptermanifest.ContractError {
 	t.Helper()
 	ce := &adaptermanifest.ContractError{}
@@ -407,6 +515,41 @@ func containsReason(reasons []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func assertReadinessFindingCode(t *testing.T, findings []runtimeconfig.ReadinessFinding, code string) {
+	t.Helper()
+	for i := range findings {
+		if strings.TrimSpace(findings[i].Code) == strings.TrimSpace(code) {
+			return
+		}
+	}
+	t.Fatalf("expected readiness code=%q, findings=%#v", code, findings)
+}
+
+func readinessFingerprint(result runtimeconfig.ReadinessResult) string {
+	payload := struct {
+		Status        runtimeconfig.ReadinessStatus           `json:"status"`
+		Findings      []runtimeconfig.ReadinessFinding        `json:"findings"`
+		AdapterHealth []runtimeconfig.AdapterHealthEvaluation `json:"adapter_health"`
+	}{
+		Status:        result.Status,
+		Findings:      result.Findings,
+		AdapterHealth: result.AdapterHealth,
+	}
+	blob, _ := json.Marshal(payload)
+	return string(blob)
+}
+
+func writeAdapterHealthConfig(t *testing.T, path string, readinessStrict bool) {
+	t.Helper()
+	content := "runtime:\n  readiness:\n    enabled: true\n    strict: false\n    remote_probe_enabled: false\nadapter:\n  health:\n    enabled: true\n    strict: false\n    probe_timeout: 500ms\n    cache_ttl: 30s\n"
+	if readinessStrict {
+		content = strings.Replace(content, "strict: false", "strict: true", 1)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 }
 
 func mustRead(t *testing.T, path string) string {

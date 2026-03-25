@@ -1,10 +1,13 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+
+	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 )
 
 type ReadinessStatus string
@@ -21,6 +24,7 @@ const (
 	ReadinessDomainScheduler = "scheduler"
 	ReadinessDomainMailbox   = "mailbox"
 	ReadinessDomainRecovery  = "recovery"
+	ReadinessDomainAdapter   = "adapter"
 )
 
 const (
@@ -30,15 +34,18 @@ const (
 )
 
 const (
-	ReadinessCodeConfigInvalid             = "runtime.config.invalid"
-	ReadinessCodeStrictEscalated           = "runtime.readiness.strict_escalated"
-	ReadinessCodeSchedulerFallback         = "scheduler.backend.fallback"
-	ReadinessCodeSchedulerActivationError  = "scheduler.backend.activation_failed"
-	ReadinessCodeMailboxFallback           = "mailbox.backend.fallback"
-	ReadinessCodeMailboxActivationError    = "mailbox.backend.activation_failed"
-	ReadinessCodeRecoveryFallback          = "recovery.backend.fallback"
-	ReadinessCodeRecoveryActivationError   = "recovery.backend.activation_failed"
-	ReadinessCodeRuntimeManagerUnavailable = "runtime.manager.unavailable"
+	ReadinessCodeConfigInvalid              = "runtime.config.invalid"
+	ReadinessCodeStrictEscalated            = "runtime.readiness.strict_escalated"
+	ReadinessCodeSchedulerFallback          = "scheduler.backend.fallback"
+	ReadinessCodeSchedulerActivationError   = "scheduler.backend.activation_failed"
+	ReadinessCodeMailboxFallback            = "mailbox.backend.fallback"
+	ReadinessCodeMailboxActivationError     = "mailbox.backend.activation_failed"
+	ReadinessCodeRecoveryFallback           = "recovery.backend.fallback"
+	ReadinessCodeRecoveryActivationError    = "recovery.backend.activation_failed"
+	ReadinessCodeRuntimeManagerUnavailable  = "runtime.manager.unavailable"
+	ReadinessCodeAdapterRequiredUnavailable = "adapter.health.required_unavailable"
+	ReadinessCodeAdapterOptionalUnavailable = "adapter.health.optional_unavailable"
+	ReadinessCodeAdapterDegraded            = "adapter.health.degraded"
 )
 
 type ReadinessFinding struct {
@@ -50,17 +57,40 @@ type ReadinessFinding struct {
 }
 
 type ReadinessResult struct {
-	Status      ReadinessStatus    `json:"status"`
-	Findings    []ReadinessFinding `json:"findings"`
-	EvaluatedAt time.Time          `json:"evaluated_at"`
+	Status        ReadinessStatus           `json:"status"`
+	Findings      []ReadinessFinding        `json:"findings"`
+	AdapterHealth []AdapterHealthEvaluation `json:"adapter_health,omitempty"`
+	EvaluatedAt   time.Time                 `json:"evaluated_at"`
 }
 
 type ReadinessSummary struct {
-	Status        string `json:"runtime_readiness_status"`
-	FindingTotal  int    `json:"runtime_readiness_finding_total"`
-	BlockingTotal int    `json:"runtime_readiness_blocking_total"`
-	DegradedTotal int    `json:"runtime_readiness_degraded_total"`
-	PrimaryCode   string `json:"runtime_readiness_primary_code"`
+	Status                        string `json:"runtime_readiness_status"`
+	FindingTotal                  int    `json:"runtime_readiness_finding_total"`
+	BlockingTotal                 int    `json:"runtime_readiness_blocking_total"`
+	DegradedTotal                 int    `json:"runtime_readiness_degraded_total"`
+	PrimaryCode                   string `json:"runtime_readiness_primary_code"`
+	AdapterHealthStatus           string `json:"adapter_health_status,omitempty"`
+	AdapterHealthProbeTotal       int    `json:"adapter_health_probe_total,omitempty"`
+	AdapterHealthDegradedTotal    int    `json:"adapter_health_degraded_total,omitempty"`
+	AdapterHealthUnavailableTotal int    `json:"adapter_health_unavailable_total,omitempty"`
+	AdapterHealthPrimaryCode      string `json:"adapter_health_primary_code,omitempty"`
+}
+
+type AdapterHealthTarget struct {
+	Name     string              `json:"name"`
+	Required bool                `json:"required"`
+	Probe    adapterhealth.Probe `json:"-"`
+	Metadata map[string]any      `json:"metadata,omitempty"`
+}
+
+type AdapterHealthEvaluation struct {
+	Name      string         `json:"name"`
+	Required  bool           `json:"required"`
+	Status    string         `json:"status"`
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	Metadata  map[string]any `json:"metadata"`
+	CheckedAt time.Time      `json:"checked_at"`
 }
 
 type RuntimeReadinessComponentState struct {
@@ -97,6 +127,72 @@ func (m *Manager) ReadinessComponentSnapshot() RuntimeReadinessComponentSnapshot
 	return cloneReadinessComponentSnapshot(m.readinessComponents)
 }
 
+func (m *Manager) SetAdapterHealthTargets(targets []AdapterHealthTarget) {
+	if m == nil {
+		return
+	}
+	m.adapterHealthMu.Lock()
+	defer m.adapterHealthMu.Unlock()
+	m.adapterHealthTargets = normalizeAdapterHealthTargets(targets)
+}
+
+func (m *Manager) RegisterAdapterHealthTarget(target AdapterHealthTarget) error {
+	if m == nil {
+		return nil
+	}
+	name := strings.ToLower(strings.TrimSpace(target.Name))
+	if name == "" {
+		return fmt.Errorf("adapter health target name is required")
+	}
+	if target.Probe == nil {
+		return fmt.Errorf("adapter health target %q probe is required", name)
+	}
+	normalized := target
+	normalized.Name = name
+	normalized.Metadata = cloneAnyMap(target.Metadata)
+	m.adapterHealthMu.Lock()
+	defer m.adapterHealthMu.Unlock()
+	if m.adapterHealthTargets == nil {
+		m.adapterHealthTargets = map[string]AdapterHealthTarget{}
+	}
+	m.adapterHealthTargets[name] = normalized
+	return nil
+}
+
+func (m *Manager) RemoveAdapterHealthTarget(name string) {
+	if m == nil {
+		return
+	}
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	if normalized == "" {
+		return
+	}
+	m.adapterHealthMu.Lock()
+	defer m.adapterHealthMu.Unlock()
+	delete(m.adapterHealthTargets, normalized)
+}
+
+func (m *Manager) AdapterHealthTargets() []AdapterHealthTarget {
+	if m == nil {
+		return nil
+	}
+	m.adapterHealthMu.RLock()
+	defer m.adapterHealthMu.RUnlock()
+	if len(m.adapterHealthTargets) == 0 {
+		return nil
+	}
+	out := make([]AdapterHealthTarget, 0, len(m.adapterHealthTargets))
+	for _, target := range m.adapterHealthTargets {
+		item := target
+		item.Metadata = cloneAnyMap(target.Metadata)
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
 func (m *Manager) ReadinessPreflight() ReadinessResult {
 	evaluatedAt := time.Now().UTC()
 	if m == nil {
@@ -125,6 +221,7 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 	}
 
 	findings := make([]ReadinessFinding, 0, 6)
+	var adapterResults []AdapterHealthEvaluation
 	if err := Validate(cfg); err != nil {
 		findings = append(findings, ReadinessFinding{
 			Code:     ReadinessCodeConfigInvalid,
@@ -139,6 +236,8 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 	findings = append(findings, componentReadinessFindings("scheduler", componentSnapshot.Scheduler)...)
 	findings = append(findings, componentReadinessFindings("mailbox", componentSnapshot.Mailbox)...)
 	findings = append(findings, componentReadinessFindings("recovery", componentSnapshot.Recovery)...)
+	adapterResults, adapterFindings := m.adapterHealthReadinessFindings(cfg)
+	findings = append(findings, adapterFindings...)
 	findings = canonicalizeReadinessFindings(findings)
 
 	status := classifyReadinessStatus(findings)
@@ -155,9 +254,10 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 	}
 
 	return ReadinessResult{
-		Status:      status,
-		Findings:    findings,
-		EvaluatedAt: evaluatedAt,
+		Status:        status,
+		Findings:      findings,
+		AdapterHealth: adapterResults,
+		EvaluatedAt:   evaluatedAt,
 	}
 }
 
@@ -183,6 +283,35 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 	}
 	if strings.TrimSpace(summary.Status) == "" {
 		summary.Status = string(ReadinessStatusReady)
+	}
+	if len(r.AdapterHealth) > 0 {
+		adapterStatus := string(adapterhealth.StatusHealthy)
+		primaryRank := -1
+		for i := range r.AdapterHealth {
+			item := r.AdapterHealth[i]
+			status := normalizeAdapterHealthStatus(item.Status)
+			summary.AdapterHealthProbeTotal++
+			switch status {
+			case adapterhealth.StatusUnavailable:
+				summary.AdapterHealthUnavailableTotal++
+				if primaryRank < 2 && strings.TrimSpace(item.Code) != "" {
+					summary.AdapterHealthPrimaryCode = strings.TrimSpace(item.Code)
+					primaryRank = 2
+				}
+				adapterStatus = string(adapterhealth.StatusUnavailable)
+			case adapterhealth.StatusDegraded:
+				summary.AdapterHealthDegradedTotal++
+				if primaryRank < 1 && strings.TrimSpace(item.Code) != "" {
+					summary.AdapterHealthPrimaryCode = strings.TrimSpace(item.Code)
+					primaryRank = 1
+				}
+				if adapterStatus != string(adapterhealth.StatusUnavailable) {
+					adapterStatus = string(adapterhealth.StatusDegraded)
+				}
+			default:
+			}
+		}
+		summary.AdapterHealthStatus = adapterStatus
 	}
 	return summary
 }
@@ -258,6 +387,113 @@ func readinessActivationCode(component string) string {
 	}
 }
 
+func (m *Manager) adapterHealthReadinessFindings(cfg Config) ([]AdapterHealthEvaluation, []ReadinessFinding) {
+	if m == nil || !cfg.Adapter.Health.Enabled {
+		return nil, nil
+	}
+	targets := m.AdapterHealthTargets()
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	m.updateAdapterHealthRunnerOptions(cfg.Adapter.Health)
+	runner := m.adapterHealthRunnerSnapshot()
+	if runner == nil {
+		return nil, nil
+	}
+
+	results := make([]AdapterHealthEvaluation, 0, len(targets))
+	findings := make([]ReadinessFinding, 0, len(targets))
+	for i := range targets {
+		target := targets[i]
+		probeResult := runner.Probe(context.Background(), target.Name, target.Probe)
+		eval := AdapterHealthEvaluation{
+			Name:      strings.ToLower(strings.TrimSpace(target.Name)),
+			Required:  target.Required,
+			Status:    string(normalizeAdapterHealthStatus(string(probeResult.Status))),
+			Code:      strings.TrimSpace(probeResult.Code),
+			Message:   strings.TrimSpace(probeResult.Message),
+			Metadata:  cloneAnyMap(probeResult.Metadata),
+			CheckedAt: probeResult.CheckedAt.UTC(),
+		}
+		if eval.Metadata == nil {
+			eval.Metadata = map[string]any{}
+		}
+		delete(eval.Metadata, "cache_hit")
+		results = append(results, eval)
+
+		finding, ok := adapterHealthReadinessFinding(target, probeResult, cfg.Adapter.Health.Strict, cfg.Runtime.Readiness.Strict)
+		if ok {
+			findings = append(findings, finding)
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Name != results[j].Name {
+			return results[i].Name < results[j].Name
+		}
+		if results[i].Required != results[j].Required {
+			return results[i].Required && !results[j].Required
+		}
+		return results[i].Code < results[j].Code
+	})
+	return results, findings
+}
+
+func adapterHealthReadinessFinding(target AdapterHealthTarget, probeResult adapterhealth.Result, adapterStrict bool, runtimeStrict bool) (ReadinessFinding, bool) {
+	name := strings.ToLower(strings.TrimSpace(target.Name))
+	if name == "" {
+		return ReadinessFinding{}, false
+	}
+	metadata := cloneAnyMap(target.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["adapter"] = name
+	metadata["required"] = target.Required
+	metadata["health_status"] = string(normalizeAdapterHealthStatus(string(probeResult.Status)))
+	metadata["health_code"] = strings.TrimSpace(probeResult.Code)
+	if !probeResult.CheckedAt.IsZero() {
+		metadata["checked_at"] = probeResult.CheckedAt.UTC().Format(time.RFC3339Nano)
+	}
+	for key, value := range probeResult.Metadata {
+		if key == "cache_hit" {
+			continue
+		}
+		metadata[key] = value
+	}
+
+	status := normalizeAdapterHealthStatus(string(probeResult.Status))
+	switch status {
+	case adapterhealth.StatusHealthy:
+		return ReadinessFinding{}, false
+	case adapterhealth.StatusDegraded:
+		return ReadinessFinding{
+			Code:     ReadinessCodeAdapterDegraded,
+			Domain:   ReadinessDomainAdapter,
+			Severity: ReadinessSeverityWarning,
+			Message:  fmt.Sprintf("adapter %s is degraded", name),
+			Metadata: metadata,
+		}, true
+	default:
+		severity := ReadinessSeverityWarning
+		code := ReadinessCodeAdapterOptionalUnavailable
+		message := fmt.Sprintf("optional adapter %s is unavailable", name)
+		if target.Required {
+			code = ReadinessCodeAdapterRequiredUnavailable
+			message = fmt.Sprintf("required adapter %s is unavailable", name)
+			if adapterStrict || runtimeStrict {
+				severity = ReadinessSeverityError
+			}
+		}
+		return ReadinessFinding{
+			Code:     code,
+			Domain:   ReadinessDomainAdapter,
+			Severity: severity,
+			Message:  message,
+			Metadata: metadata,
+		}, true
+	}
+}
+
 func classifyReadinessStatus(findings []ReadinessFinding) ReadinessStatus {
 	status := ReadinessStatusReady
 	for i := range findings {
@@ -329,6 +565,63 @@ func readinessSeverityRank(severity string) int {
 		return 2
 	default:
 		return 1
+	}
+}
+
+func (m *Manager) updateAdapterHealthRunnerOptions(cfg AdapterHealthConfig) {
+	if m == nil {
+		return
+	}
+	m.adapterHealthMu.Lock()
+	defer m.adapterHealthMu.Unlock()
+	if m.adapterHealthRunner == nil {
+		m.adapterHealthRunner = adapterhealth.NewRunner(adapterhealth.RunnerOptions{
+			ProbeTimeout: cfg.ProbeTimeout,
+			CacheTTL:     cfg.CacheTTL,
+		}, nil)
+		return
+	}
+	m.adapterHealthRunner.UpdateOptions(adapterhealth.RunnerOptions{
+		ProbeTimeout: cfg.ProbeTimeout,
+		CacheTTL:     cfg.CacheTTL,
+	})
+}
+
+func (m *Manager) adapterHealthRunnerSnapshot() *adapterhealth.Runner {
+	if m == nil {
+		return nil
+	}
+	m.adapterHealthMu.RLock()
+	defer m.adapterHealthMu.RUnlock()
+	return m.adapterHealthRunner
+}
+
+func normalizeAdapterHealthTargets(targets []AdapterHealthTarget) map[string]AdapterHealthTarget {
+	if len(targets) == 0 {
+		return map[string]AdapterHealthTarget{}
+	}
+	out := make(map[string]AdapterHealthTarget, len(targets))
+	for i := range targets {
+		item := targets[i]
+		name := strings.ToLower(strings.TrimSpace(item.Name))
+		if name == "" || item.Probe == nil {
+			continue
+		}
+		item.Name = name
+		item.Metadata = cloneAnyMap(item.Metadata)
+		out[name] = item
+	}
+	return out
+}
+
+func normalizeAdapterHealthStatus(in string) adapterhealth.Status {
+	switch adapterhealth.Status(strings.ToLower(strings.TrimSpace(in))) {
+	case adapterhealth.StatusHealthy:
+		return adapterhealth.StatusHealthy
+	case adapterhealth.StatusDegraded:
+		return adapterhealth.StatusDegraded
+	default:
+		return adapterhealth.StatusUnavailable
 	}
 }
 

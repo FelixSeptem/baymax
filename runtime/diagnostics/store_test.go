@@ -96,6 +96,11 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		RuntimeReadinessBlockingTotal: 0,
 		RuntimeReadinessDegradedTotal: 2,
 		RuntimeReadinessPrimaryCode:   "scheduler.backend.fallback",
+		AdapterHealthStatus:           "unavailable",
+		AdapterHealthProbeTotal:       3,
+		AdapterHealthDegradedTotal:    1,
+		AdapterHealthUnavailableTotal: 2,
+		AdapterHealthPrimaryCode:      "adapter.health.required_unavailable",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -108,7 +113,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessFindingTotal != 2 ||
 		items[0].RuntimeReadinessBlockingTotal != 0 ||
 		items[0].RuntimeReadinessDegradedTotal != 2 ||
-		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" {
+		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
+		items[0].AdapterHealthStatus != "unavailable" ||
+		items[0].AdapterHealthProbeTotal != 3 ||
+		items[0].AdapterHealthDegradedTotal != 1 ||
+		items[0].AdapterHealthUnavailableTotal != 2 ||
+		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" {
 		t.Fatalf("readiness fields mismatch after dedup: %#v", items[0])
 	}
 
@@ -117,6 +127,11 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	rec.RuntimeReadinessBlockingTotal = 2
 	rec.RuntimeReadinessDegradedTotal = 1
 	rec.RuntimeReadinessPrimaryCode = "runtime.readiness.strict_escalated"
+	rec.AdapterHealthStatus = "degraded"
+	rec.AdapterHealthProbeTotal = 2
+	rec.AdapterHealthDegradedTotal = 2
+	rec.AdapterHealthUnavailableTotal = 0
+	rec.AdapterHealthPrimaryCode = "adapter.health.degraded"
 	d.AddRun(rec)
 
 	items = d.RecentRuns(10)
@@ -127,7 +142,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessFindingTotal != 3 ||
 		items[0].RuntimeReadinessBlockingTotal != 2 ||
 		items[0].RuntimeReadinessDegradedTotal != 1 ||
-		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" {
+		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" ||
+		items[0].AdapterHealthStatus != "degraded" ||
+		items[0].AdapterHealthProbeTotal != 2 ||
+		items[0].AdapterHealthDegradedTotal != 2 ||
+		items[0].AdapterHealthUnavailableTotal != 0 ||
+		items[0].AdapterHealthPrimaryCode != "adapter.health.degraded" {
 		t.Fatalf("readiness fields mismatch after replay replacement: %#v", items[0])
 	}
 }

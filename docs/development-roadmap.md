@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-24
+更新时间：2026-03-25
 
 ## 定位
 
@@ -15,11 +15,12 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-24：
-- 已归档并稳定：A4-A41（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口）。
+截至 2026-03-25：
+- 已归档并稳定：A4-A42（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口）。
 - 进行中：
-  - `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`
   - `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`
+  - `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`
+  - `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -38,7 +39,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 3. 质量与可回归稳定：
 - A19 性能回归门禁（基线 + 相对阈值）。
-- A42 diagnostics query 性能回归门禁（`BenchmarkDiagnosticsQueryRuns|QueryMailbox|MailboxAggregates`，默认阈值 `12/15/12%`，进行中）。
+- A42 diagnostics query 性能回归门禁（`BenchmarkDiagnosticsQueryRuns|QueryMailbox|MailboxAggregates`，默认阈值 `12/15/12%`，已归档）。
 - A20 全链路示例 smoke 阻断门禁。
 
 4. 外部接入稳定：
@@ -179,13 +180,57 @@ A41 依赖关系：
 - 不引入平台化控制面与外部 MQ 依赖。
 - 不改变既有 async-await/recovery 终态仲裁契约。
 
-### P1：A42 diagnostics query performance baseline + regression gate（进行中）
+### P1：A42 diagnostics query performance baseline + regression gate（已归档）
 
 A42 目标：
 - 为 unified diagnostics query 建立可复现实验基线（延迟、分页、聚合开销）。
 - 新增独立 gate 脚本：`scripts/check-diagnostics-query-performance-regression.sh` 与 `scripts/check-diagnostics-query-performance-regression.ps1`。
 - 固化默认执行参数：`benchtime=200ms`、`count=5`。
 - 在质量门禁接入回归阈值校验（默认：`ns/op 12%`、`p95-ns/op 15%`、`allocs/op 12%`），防止查询路径性能漂移。
+
+### P1：A43 adapter runtime health probe + readiness integration（进行中）
+
+A43 目标：
+- 新增 `adapter/health` 运行期探测契约，固化 `healthy|degraded|unavailable` 三态与 canonical reason taxonomy。
+- 新增 `adapter.health.*` 配置域（`enabled/strict/probe_timeout/cache_ttl`），并纳入 `env > file > default`、启动 fail-fast、热更新回滚。
+- 将 adapter health 接入 `ReadinessPreflight()`：
+  - required unavailable 在 strict 语义下阻断；
+  - optional unavailable 在 non-strict 路径降级并保持可观测。
+- 在 diagnostics 增加 adapter-health additive 字段（`status/probe_total/degraded_total/unavailable_total/primary_code`），保证 replay idempotency。
+- 在 `integration/adapterconformance` 增加 adapter-health matrix，并接入 `check-adapter-conformance.*` 与 `check-quality-gate.*` 阻断步骤（shell/PowerShell parity）。
+
+### P1：A44 readiness admission guard + degradation policy（进行中）
+
+A44 目标：
+- 在 managed Run/Stream 入口引入统一 readiness admission guard，形成执行前准入护栏。
+- 新增 `runtime.readiness.admission.*` 配置域并保持 `env > file > default`、启动 fail-fast、热更新回滚语义。
+- 固化 `blocked` 拒绝执行与 `degraded` 策略化处理（allow_and_record / fail_fast）规则。
+- 增加 admission additive 诊断字段并纳入 replay idempotency 契约。
+- 将 admission suites 纳入 quality gate 阻断路径并保持 shell/PowerShell parity。
+
+### P1：A45 diagnostics cardinality budget + truncation governance（进行中）
+
+A45 目标：
+- 为新增 additive 字段建立高基数预算与截断治理，避免查询成本漂移。
+- 固化 map/list/string 字段的 bounded-cardinality 与稳定序列化语义。
+- 新增 `diagnostics.cardinality.*` 配置域，默认 `overflow_policy=truncate_and_record`，并支持 `fail_fast`。
+- 将 cardinality drift 检查纳入质量门禁与回放契约验证。
+
+### P1：A46-A47 候选提案池（待 A45 后排期）
+
+#### A46：adapter health backoff + circuit governance（候选）
+
+目标：
+- 在 A43 健康探测语义上增加指数退避 + 抖动 + 半开探测治理。
+- 防止外部 adapter 不可用时的探测风暴与瞬时抖动放大。
+- 通过 conformance + quality gate 固化故障恢复和抖动抑制语义。
+
+#### A47：readiness-timeout-health replay fixture gate（候选）
+
+目标：
+- 固化 `readiness + timeout resolution + adapter health` 交叉语义回放夹具。
+- 防止跨提案演进造成 finding taxonomy 与阻断策略漂移。
+- 为后续 0.x 收敛阶段提供稳定的语义回归基线。
 
 ### P2：0.x 质量与治理持续收敛
 

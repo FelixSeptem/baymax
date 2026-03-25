@@ -173,6 +173,7 @@ type Config struct {
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
 	Diagnostics      DiagnosticsConfig      `json:"diagnostics"`
 	Runtime          RuntimeDomainConfig    `json:"runtime"`
+	Adapter          AdapterConfig          `json:"adapter"`
 	Reload           ReloadConfig           `json:"reload"`
 	ProviderFallback ProviderFallbackConfig `json:"provider_fallback"`
 	Composer         ComposerConfig         `json:"composer"`
@@ -193,6 +194,17 @@ type Config struct {
 type RuntimeDomainConfig struct {
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
+}
+
+type AdapterConfig struct {
+	Health AdapterHealthConfig `json:"health"`
+}
+
+type AdapterHealthConfig struct {
+	Enabled      bool          `json:"enabled"`
+	Strict       bool          `json:"strict"`
+	ProbeTimeout time.Duration `json:"probe_timeout"`
+	CacheTTL     time.Duration `json:"cache_ttl"`
 }
 
 type RuntimeReadinessConfig struct {
@@ -975,6 +987,14 @@ func DefaultConfig() Config {
 				},
 			},
 		},
+		Adapter: AdapterConfig{
+			Health: AdapterHealthConfig{
+				Enabled:      false,
+				Strict:       false,
+				ProbeTimeout: 500 * time.Millisecond,
+				CacheTTL:     30 * time.Second,
+			},
+		},
 		Reload: ReloadConfig{
 			Enabled:  false,
 			Debounce: 200 * time.Millisecond,
@@ -1606,6 +1626,12 @@ func Validate(cfg Config) error {
 	}
 	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
 		return err
+	}
+	if cfg.Adapter.Health.ProbeTimeout <= 0 {
+		return errors.New("adapter.health.probe_timeout must be > 0")
+	}
+	if cfg.Adapter.Health.CacheTTL <= 0 {
+		return errors.New("adapter.health.cache_ttl must be > 0")
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -2981,6 +3007,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
 	v.SetDefault("runtime.operation_profiles.background.timeout", base.Runtime.OperationProfiles.Background.Timeout)
 	v.SetDefault("runtime.operation_profiles.batch.timeout", base.Runtime.OperationProfiles.Batch.Timeout)
+	v.SetDefault("adapter.health.enabled", base.Adapter.Health.Enabled)
+	v.SetDefault("adapter.health.strict", base.Adapter.Health.Strict)
+	v.SetDefault("adapter.health.probe_timeout", base.Adapter.Health.ProbeTimeout)
+	v.SetDefault("adapter.health.cache_ttl", base.Adapter.Health.CacheTTL)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -3286,6 +3316,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")
 	cfg.Runtime.OperationProfiles.Background.Timeout = v.GetDuration("runtime.operation_profiles.background.timeout")
 	cfg.Runtime.OperationProfiles.Batch.Timeout = v.GetDuration("runtime.operation_profiles.batch.timeout")
+	adapterHealthEnabled, err := strictBoolConfigValue(v, "adapter.health.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	adapterHealthStrict, err := strictBoolConfigValue(v, "adapter.health.strict")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Adapter.Health.Enabled = adapterHealthEnabled
+	cfg.Adapter.Health.Strict = adapterHealthStrict
+	cfg.Adapter.Health.ProbeTimeout = v.GetDuration("adapter.health.probe_timeout")
+	cfg.Adapter.Health.CacheTTL = v.GetDuration("adapter.health.cache_ttl")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")

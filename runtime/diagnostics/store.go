@@ -199,6 +199,11 @@ type RunRecord struct {
 	RuntimeReadinessBlockingTotal        int                               `json:"runtime_readiness_blocking_total,omitempty"`
 	RuntimeReadinessDegradedTotal        int                               `json:"runtime_readiness_degraded_total,omitempty"`
 	RuntimeReadinessPrimaryCode          string                            `json:"runtime_readiness_primary_code,omitempty"`
+	AdapterHealthStatus                  string                            `json:"adapter_health_status,omitempty"`
+	AdapterHealthProbeTotal              int                               `json:"adapter_health_probe_total,omitempty"`
+	AdapterHealthDegradedTotal           int                               `json:"adapter_health_degraded_total,omitempty"`
+	AdapterHealthUnavailableTotal        int                               `json:"adapter_health_unavailable_total,omitempty"`
+	AdapterHealthPrimaryCode             string                            `json:"adapter_health_primary_code,omitempty"`
 	EffectiveOperationProfile            string                            `json:"effective_operation_profile,omitempty"`
 	TimeoutResolutionSource              string                            `json:"timeout_resolution_source,omitempty"`
 	TimeoutResolutionTrace               string                            `json:"timeout_resolution_trace,omitempty"`

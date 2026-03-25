@@ -38,6 +38,12 @@ if ! go test ./runtime/config ./runtime/diagnostics ./orchestration/composer ./i
   exit 1
 fi
 
+echo "[quality-gate] adapter-health contract suites"
+if ! go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealthMatrix)' -count=1; then
+  echo "[quality-gate][adapter-health] adapter-health contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] mailbox runtime wiring regression"
 if ! go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1; then
   echo "[quality-gate][mailbox-runtime-wiring] mailbox runtime wiring regression detected"

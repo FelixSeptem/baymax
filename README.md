@@ -13,10 +13,11 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-24）：
-- 已归档并稳定：A4-A41。
-- A42（Introduce Diagnostics Query Performance Baseline And Regression Gate）进行中。
+当前里程碑快照（2026-03-25）：
+- 已归档并稳定：A4-A42。
 - A43（Introduce Adapter Runtime Health Probe And Readiness Integration Contract）进行中。
+- A44（Introduce Runtime Readiness Admission Guard And Degradation Policy Contract）进行中。
+- A45（Introduce Diagnostics Cardinality Budget And Truncation Governance Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,10 +226,12 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics 查询性能基线与回归门禁进行中（`QueryRuns|QueryMailbox|MailboxAggregates`，默认阈值 `12/15/12%`）。
-- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约进行中。
+- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约进行中（`adapter.health.*` + readiness/diagnostics/conformance/gate 一体化收敛）。
+- A44 `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`：managed Run/Stream readiness admission guard 与 degraded policy 契约进行中。
+- A45 `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`：diagnostics cardinality budget 与 deterministic truncation 治理契约进行中（`diagnostics.cardinality.*` + replay/idempotency + quality gate 阻断映射）。
 
 最近已归档能力：
+- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics query 基线与回归门禁已归档（默认阈值 `12/15/12%`）。
 - A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约已归档。
 - A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约已归档。
 - A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board control + manual recovery 契约已归档。

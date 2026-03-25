@@ -1,10 +1,13 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 )
 
 func TestManagerReadinessPreflightClassificationMatrix(t *testing.T) {
@@ -126,6 +129,156 @@ func TestManagerReadinessPreflightDeterministicForEquivalentSnapshot(t *testing.
 	}
 	if readinessSemanticFingerprint(first) != readinessSemanticFingerprint(second) {
 		t.Fatalf("semantics changed across equivalent snapshots\nfirst=%s\nsecond=%s", readinessSemanticFingerprint(first), readinessSemanticFingerprint(second))
+	}
+}
+
+func TestManagerReadinessPreflightAdapterHealthRequiredOptionalMapping(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "required-x",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusUnavailable, Code: "non_canonical.required"}, nil
+			}),
+		},
+		{
+			Name:     "optional-y",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusUnavailable, Code: "non_canonical.optional"}, nil
+			}),
+		},
+		{
+			Name:     "optional-z",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusDegraded, Code: "non_canonical.degraded"}, nil
+			}),
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusDegraded {
+		t.Fatalf("status = %q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterRequiredUnavailable)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterOptionalUnavailable)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterDegraded)
+	assertReadinessCanonicalFields(t, result.Findings)
+
+	summary := result.Summary()
+	if summary.AdapterHealthStatus != string(adapterhealth.StatusUnavailable) {
+		t.Fatalf("adapter_health_status = %q, want unavailable", summary.AdapterHealthStatus)
+	}
+	if summary.AdapterHealthProbeTotal != 3 || summary.AdapterHealthDegradedTotal != 1 || summary.AdapterHealthUnavailableTotal != 2 {
+		t.Fatalf("adapter health summary mismatch: %#v", summary)
+	}
+}
+
+func TestManagerReadinessPreflightAdapterHealthStrictRequiredUnavailableBlocked(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "required-x",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusUnavailable, Code: adapterhealth.CodeProbeFailed}, nil
+			}),
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status = %q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterRequiredUnavailable)
+	for _, finding := range result.Findings {
+		if finding.Code == ReadinessCodeAdapterRequiredUnavailable && finding.Severity != ReadinessSeverityError {
+			t.Fatalf("required unavailable must be blocking under strict policy: %#v", finding)
+		}
+	}
+}
+
+func TestManagerReadinessPreflightAdapterHealthDeterministicForEquivalentSnapshot(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "adapter-a",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusDegraded, Code: adapterhealth.CodeDegraded}, nil
+			}),
+		},
+	})
+
+	first := mgr.ReadinessPreflight()
+	second := mgr.ReadinessPreflight()
+	if first.Status != second.Status {
+		t.Fatalf("status mismatch first=%q second=%q", first.Status, second.Status)
+	}
+	if readinessSemanticFingerprint(first) != readinessSemanticFingerprint(second) {
+		t.Fatalf("semantic fingerprint drift first=%s second=%s", readinessSemanticFingerprint(first), readinessSemanticFingerprint(second))
+	}
+	if first.Summary().AdapterHealthPrimaryCode != second.Summary().AdapterHealthPrimaryCode {
+		t.Fatalf("adapter primary code drift first=%q second=%q", first.Summary().AdapterHealthPrimaryCode, second.Summary().AdapterHealthPrimaryCode)
 	}
 }
 

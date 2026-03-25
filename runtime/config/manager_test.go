@@ -2096,6 +2096,52 @@ reload:
 	}
 }
 
+func TestManagerAdapterHealthInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Adapter.Health.ProbeTimeout
+	if before != 500*time.Millisecond {
+		t.Fatalf("before adapter.health.probe_timeout = %v, want 500ms", before)
+	}
+
+	writeConfig(t, file, `
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 0s
+    cache_ttl: 30s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Adapter.Health.ProbeTimeout
+	if after != before {
+		t.Fatalf("invalid adapter health reload should rollback, probe_timeout = %v, want %v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRuntimeOperationProfilesInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

@@ -96,6 +96,10 @@
   - `runtime.readiness.enabled` -> `BAYMAX_RUNTIME_READINESS_ENABLED`
   - `runtime.readiness.strict` -> `BAYMAX_RUNTIME_READINESS_STRICT`
   - `runtime.readiness.remote_probe_enabled` -> `BAYMAX_RUNTIME_READINESS_REMOTE_PROBE_ENABLED`
+  - `adapter.health.enabled` -> `BAYMAX_ADAPTER_HEALTH_ENABLED`
+  - `adapter.health.strict` -> `BAYMAX_ADAPTER_HEALTH_STRICT`
+  - `adapter.health.probe_timeout` -> `BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT`
+  - `adapter.health.cache_ttl` -> `BAYMAX_ADAPTER_HEALTH_CACHE_TTL`
   - `runtime.operation_profiles.default_profile` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_DEFAULT_PROFILE`
   - `runtime.operation_profiles.legacy.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_LEGACY_TIMEOUT`
   - `runtime.operation_profiles.interactive.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_INTERACTIVE_TIMEOUT`
@@ -162,6 +166,13 @@ runtime:
       timeout: 30s              # 必须 > 0
     batch:
       timeout: 2m               # 必须 > 0
+
+adapter:
+  health:
+    enabled: false              # A43 默认关闭，逐步启用
+    strict: false               # A43 默认不强制 required unavailable 直接阻断
+    probe_timeout: 500ms        # 必须 > 0
+    cache_ttl: 30s              # 必须 > 0（TTL 内复用探测结果）
 
 reload:
   enabled: true
@@ -687,6 +698,11 @@ runtime readiness（A40）校验语义：
 1. `runtime.readiness.enabled|strict|remote_probe_enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. 启动加载与热更新都遵循 fail-fast，非法布尔表达会拒绝生效并保留上一有效快照。
 
+adapter health（A43）校验语义：
+1. `adapter.health.enabled|strict` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
+2. `adapter.health.probe_timeout` 与 `adapter.health.cache_ttl` 必须 `> 0`。
+3. 启动加载与热更新均遵循 fail-fast；非法布尔/非法 duration 会拒绝生效并保留上一有效快照。
+
 operation profiles 与 timeout 解析（A41）校验语义：
 1. `runtime.operation_profiles.default_profile` 仅允许 `legacy|interactive|background|batch`。
 2. `runtime.operation_profiles.{legacy|interactive|background|batch}.timeout` 必须 `> 0`。
@@ -765,6 +781,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `EffectiveConfigSanitized()`
 - `PrecheckStage2External(provider, external)`
 - `ReadinessPreflight()`（A40：返回 `ready|degraded|blocked` + canonical findings）
+- `SetAdapterHealthTargets(targets)` / `RegisterAdapterHealthTarget(target)` / `RemoveAdapterHealthTarget(name)`（A43：注册 runtime adapter health probe 目标）
 
 `orchestration/scheduler.Scheduler` 额外提供任务看板只读查询：
 
@@ -878,6 +895,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`
+- Adapter Health（A43）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
 

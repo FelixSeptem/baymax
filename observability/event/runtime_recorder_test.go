@@ -270,6 +270,11 @@ mcp:
 			"runtime_readiness_blocking_total":         0,
 			"runtime_readiness_degraded_total":         2,
 			"runtime_readiness_primary_code":           "scheduler.backend.fallback",
+			"adapter_health_status":                    "unavailable",
+			"adapter_health_probe_total":               3,
+			"adapter_health_degraded_total":            1,
+			"adapter_health_unavailable_total":         2,
+			"adapter_health_primary_code":              "adapter.health.required_unavailable",
 			"gate_checks":                              4,
 			"gate_denied_count":                        2,
 			"gate_timeout_count":                       1,
@@ -478,7 +483,12 @@ mcp:
 		items[0].RuntimeReadinessFindingTotal != 2 ||
 		items[0].RuntimeReadinessBlockingTotal != 0 ||
 		items[0].RuntimeReadinessDegradedTotal != 2 ||
-		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" {
+		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
+		items[0].AdapterHealthStatus != "unavailable" ||
+		items[0].AdapterHealthProbeTotal != 3 ||
+		items[0].AdapterHealthDegradedTotal != 1 ||
+		items[0].AdapterHealthUnavailableTotal != 2 ||
+		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" {
 		t.Fatalf("runtime readiness fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
@@ -730,7 +740,12 @@ mcp:
 		got.RuntimeReadinessFindingTotal != 0 ||
 		got.RuntimeReadinessBlockingTotal != 0 ||
 		got.RuntimeReadinessDegradedTotal != 0 ||
-		got.RuntimeReadinessPrimaryCode != "" {
+		got.RuntimeReadinessPrimaryCode != "" ||
+		got.AdapterHealthStatus != "" ||
+		got.AdapterHealthProbeTotal != 0 ||
+		got.AdapterHealthDegradedTotal != 0 ||
+		got.AdapterHealthUnavailableTotal != 0 ||
+		got.AdapterHealthPrimaryCode != "" {
 		t.Fatalf("missing A40 additive fields must resolve to documented defaults: %#v", got)
 	}
 }

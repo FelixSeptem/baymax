@@ -44,6 +44,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness contract suites
     go test ./runtime/config ./runtime/diagnostics ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|StoreRunReadiness|ComposerReadiness)' -count=1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {
+    go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealthMatrix)' -count=1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {
     go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }

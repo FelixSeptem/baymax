@@ -302,6 +302,78 @@ func TestRuntimeReadinessConfigInvalidBoolFailsFast(t *testing.T) {
 	}
 }
 
+func TestAdapterHealthConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Adapter.Health.Enabled {
+		t.Fatal("adapter.health.enabled = true, want false")
+	}
+	if cfg.Adapter.Health.Strict {
+		t.Fatal("adapter.health.strict = true, want false")
+	}
+	if cfg.Adapter.Health.ProbeTimeout != 500*time.Millisecond {
+		t.Fatalf("adapter.health.probe_timeout = %v, want 500ms", cfg.Adapter.Health.ProbeTimeout)
+	}
+	if cfg.Adapter.Health.CacheTTL != 30*time.Second {
+		t.Fatalf("adapter.health.cache_ttl = %v, want 30s", cfg.Adapter.Health.CacheTTL)
+	}
+}
+
+func TestAdapterHealthConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_ENABLED", "true")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_STRICT", "true")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT", "750ms")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CACHE_TTL", "45s")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+adapter:
+  health:
+    enabled: false
+    strict: false
+    probe_timeout: 200ms
+    cache_ttl: 5s
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Adapter.Health.Enabled || !cfg.Adapter.Health.Strict {
+		t.Fatalf("adapter.health bool env override mismatch: %#v", cfg.Adapter.Health)
+	}
+	if cfg.Adapter.Health.ProbeTimeout != 750*time.Millisecond {
+		t.Fatalf("adapter.health.probe_timeout = %v, want 750ms", cfg.Adapter.Health.ProbeTimeout)
+	}
+	if cfg.Adapter.Health.CacheTTL != 45*time.Second {
+		t.Fatalf("adapter.health.cache_ttl = %v, want 45s", cfg.Adapter.Health.CacheTTL)
+	}
+}
+
+func TestAdapterHealthConfigInvalidBoolFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_STRICT", "definitely-not-bool")
+	_, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err == nil {
+		t.Fatal("expected adapter.health.strict invalid bool error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "adapter.health.strict") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAdapterHealthConfigValidationRejectsInvalidDurations(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Adapter.Health.ProbeTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for adapter.health.probe_timeout")
+	}
+	cfg = DefaultConfig()
+	cfg.Adapter.Health.CacheTTL = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for adapter.health.cache_ttl")
+	}
+}
+
 func TestRuntimeOperationProfilesDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Runtime.OperationProfiles.DefaultProfile != OperationProfileLegacy {

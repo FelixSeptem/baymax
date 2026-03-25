@@ -14,9 +14,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-25）：
-- 已归档并稳定：A4-A42。
-- A43（Introduce Adapter Runtime Health Probe And Readiness Integration Contract）进行中。
-- A44（Introduce Runtime Readiness Admission Guard And Degradation Policy Contract）进行中。
+- 已归档并稳定：A4-A44。
 - A45（Introduce Diagnostics Cardinality Budget And Truncation Governance Contract）进行中。
 
 版本阶段快照：
@@ -226,11 +224,24 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约进行中（`adapter.health.*` + readiness/diagnostics/conformance/gate 一体化收敛）。
-- A44 `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`：managed Run/Stream readiness admission guard 与 degraded policy 契约进行中。
 - A45 `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`：diagnostics cardinality budget 与 deterministic truncation 治理契约进行中（`diagnostics.cardinality.*` + replay/idempotency + quality gate 阻断映射）。
 
+### 9) Runtime Readiness Admission（A44）
+
+默认值（保持历史行为不变）：
+- `runtime.readiness.admission.enabled=false`
+- `runtime.readiness.admission.mode=fail_fast`
+- `runtime.readiness.admission.block_on=blocked_only`
+- `runtime.readiness.admission.degraded_policy=allow_and_record`
+
+启用后，managed `Composer.Run/Stream` 在执行前统一做 admission 判定：
+- `blocked`：拒绝执行（fail-fast）。
+- `degraded`：按 `degraded_policy` 决定 `allow_and_record` 或 `fail_fast`。
+- 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
+
 最近已归档能力：
+- A44 `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`：managed Run/Stream readiness admission guard 与 degraded policy 契约已归档（admission config/policy、Run/Stream guard、deny side-effect-free、diagnostics additive、quality gate 覆盖）。
+- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约已归档（`adapter.health.*` + readiness/diagnostics/conformance/gate 一体化收敛）。
 - A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics query 基线与回归门禁已归档（默认阈值 `12/15/12%`）。
 - A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约已归档。
 - A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约已归档。

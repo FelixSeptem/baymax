@@ -282,6 +282,178 @@ adapter:
 	}
 }
 
+func TestManagerReadinessAdmissionBlockedDeny(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A44_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetReadinessComponentSnapshot(RuntimeReadinessComponentSnapshot{
+		Recovery: RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			ActivationError:   "permission denied",
+		},
+	})
+	first := mgr.EvaluateReadinessAdmission()
+	second := mgr.EvaluateReadinessAdmission()
+
+	if first.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("admission outcome = %q, want %q", first.Outcome, ReadinessAdmissionOutcomeDeny)
+	}
+	if first.ReasonCode != ReadinessAdmissionCodeBlocked {
+		t.Fatalf("admission reason_code = %q, want %q", first.ReasonCode, ReadinessAdmissionCodeBlocked)
+	}
+	if first.ReadinessStatus != ReadinessStatusBlocked {
+		t.Fatalf("readiness_status = %q, want %q", first.ReadinessStatus, ReadinessStatusBlocked)
+	}
+	if first.ReadinessPrimaryCode != ReadinessCodeRecoveryActivationError {
+		t.Fatalf("readiness_primary_code = %q, want %q", first.ReadinessPrimaryCode, ReadinessCodeRecoveryActivationError)
+	}
+	if readinessAdmissionFingerprint(first) != readinessAdmissionFingerprint(second) {
+		t.Fatalf("admission decision should be deterministic first=%s second=%s", readinessAdmissionFingerprint(first), readinessAdmissionFingerprint(second))
+	}
+}
+
+func TestManagerReadinessAdmissionReadyAllowAndDegradedPolicyMapping(t *testing.T) {
+	readyFile := filepath.Join(t.TempDir(), "runtime-ready.yaml")
+	writeConfig(t, readyFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+`)
+	readyMgr, err := NewManager(ManagerOptions{FilePath: readyFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = readyMgr.Close() }()
+
+	readyDecision := readyMgr.EvaluateReadinessAdmission()
+	if readyDecision.Outcome != ReadinessAdmissionOutcomeAllow {
+		t.Fatalf("ready admission outcome = %q, want allow", readyDecision.Outcome)
+	}
+	if readyDecision.ReasonCode != ReadinessAdmissionCodeReady {
+		t.Fatalf("ready admission reason_code = %q, want %q", readyDecision.ReasonCode, ReadinessAdmissionCodeReady)
+	}
+
+	allowFile := filepath.Join(t.TempDir(), "runtime-degraded-allow.yaml")
+	writeConfig(t, allowFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+`)
+	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = allowMgr.Close() }()
+	allowMgr.SetReadinessComponentSnapshot(RuntimeReadinessComponentSnapshot{
+		Scheduler: RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			Fallback:          true,
+			FallbackReason:    "scheduler.backend.file_init_failed",
+		},
+	})
+	allowDecision := allowMgr.EvaluateReadinessAdmission()
+	if allowDecision.Outcome != ReadinessAdmissionOutcomeAllow {
+		t.Fatalf("degraded allow outcome = %q, want allow", allowDecision.Outcome)
+	}
+	if allowDecision.ReasonCode != ReadinessAdmissionCodeDegradedAllow {
+		t.Fatalf("degraded allow reason_code = %q, want %q", allowDecision.ReasonCode, ReadinessAdmissionCodeDegradedAllow)
+	}
+	if allowDecision.ReadinessPrimaryCode != ReadinessCodeSchedulerFallback {
+		t.Fatalf("degraded allow primary_code = %q, want %q", allowDecision.ReadinessPrimaryCode, ReadinessCodeSchedulerFallback)
+	}
+
+	denyFile := filepath.Join(t.TempDir(), "runtime-degraded-deny.yaml")
+	writeConfig(t, denyFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: fail_fast
+`)
+	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = denyMgr.Close() }()
+	denyMgr.SetReadinessComponentSnapshot(RuntimeReadinessComponentSnapshot{
+		Scheduler: RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			Fallback:          true,
+			FallbackReason:    "scheduler.backend.file_init_failed",
+		},
+	})
+	denyDecision := denyMgr.EvaluateReadinessAdmission()
+	if denyDecision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("degraded fail_fast outcome = %q, want deny", denyDecision.Outcome)
+	}
+	if denyDecision.ReasonCode != ReadinessAdmissionCodeDegradedDeny {
+		t.Fatalf("degraded fail_fast reason_code = %q, want %q", denyDecision.ReasonCode, ReadinessAdmissionCodeDegradedDeny)
+	}
+	if denyDecision.ReadinessPrimaryCode != ReadinessCodeSchedulerFallback {
+		t.Fatalf("degraded fail_fast primary_code = %q, want %q", denyDecision.ReadinessPrimaryCode, ReadinessCodeSchedulerFallback)
+	}
+}
+
+func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A44_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	decision := mgr.EvaluateReadinessAdmission()
+	if !decision.Bypass {
+		t.Fatalf("admission bypass = false, want true: %#v", decision)
+	}
+	if decision.Outcome != ReadinessAdmissionOutcomeAllow {
+		t.Fatalf("admission outcome = %q, want allow", decision.Outcome)
+	}
+	if decision.ReasonCode != ReadinessAdmissionCodeBypassDisabled {
+		t.Fatalf("admission reason_code = %q, want %q", decision.ReasonCode, ReadinessAdmissionCodeBypassDisabled)
+	}
+}
+
 func assertReadinessFindingCode(t *testing.T, findings []ReadinessFinding, code string) {
 	t.Helper()
 	for i := range findings {
@@ -323,5 +495,10 @@ func readinessSemanticFingerprint(result ReadinessResult) string {
 		Findings: result.Findings,
 	}
 	blob, _ := json.Marshal(payload)
+	return string(blob)
+}
+
+func readinessAdmissionFingerprint(decision ReadinessAdmissionDecision) string {
+	blob, _ := json.Marshal(decision)
 	return string(blob)
 }

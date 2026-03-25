@@ -41,7 +41,7 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness contract suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|StoreRunReadiness|ComposerReadiness)' -count=1
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {

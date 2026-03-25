@@ -16,10 +16,8 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-25：
-- 已归档并稳定：A4-A42（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口）。
+- 已归档并稳定：A4-A44（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口）。
 - 进行中：
-  - `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`
-  - `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`
   - `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`
 
 ## 版本阶段口径（延续 0.x）
@@ -188,7 +186,7 @@ A42 目标：
 - 固化默认执行参数：`benchtime=200ms`、`count=5`。
 - 在质量门禁接入回归阈值校验（默认：`ns/op 12%`、`p95-ns/op 15%`、`allocs/op 12%`），防止查询路径性能漂移。
 
-### P1：A43 adapter runtime health probe + readiness integration（进行中）
+### P1：A43 adapter runtime health probe + readiness integration（已归档）
 
 A43 目标：
 - 新增 `adapter/health` 运行期探测契约，固化 `healthy|degraded|unavailable` 三态与 canonical reason taxonomy。
@@ -199,7 +197,7 @@ A43 目标：
 - 在 diagnostics 增加 adapter-health additive 字段（`status/probe_total/degraded_total/unavailable_total/primary_code`），保证 replay idempotency。
 - 在 `integration/adapterconformance` 增加 adapter-health matrix，并接入 `check-adapter-conformance.*` 与 `check-quality-gate.*` 阻断步骤（shell/PowerShell parity）。
 
-### P1：A44 readiness admission guard + degradation policy（进行中）
+### P1：A44 readiness admission guard + degradation policy（已归档）
 
 A44 目标：
 - 在 managed Run/Stream 入口引入统一 readiness admission guard，形成执行前准入护栏。

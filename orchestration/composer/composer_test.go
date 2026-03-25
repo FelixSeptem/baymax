@@ -437,6 +437,170 @@ func TestComposerReadinessPreflightPassthroughAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestComposerReadinessAdmissionBlockedDenyRunAndStreamNoSideEffects(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a44.yaml")
+	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A44_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	mgr.SetReadinessComponentSnapshot(runtimeconfig.RuntimeReadinessComponentSnapshot{
+		Recovery: runtimeconfig.RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			ActivationError:   "permission denied",
+		},
+	})
+
+	before, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats before deny failed: %v", err)
+	}
+	mailboxBefore := len(mgr.RecentMailbox(10))
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a44-blocked-run",
+		Input: "blocked-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied by readiness admission")
+	}
+	assertAdmissionDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+	afterRun, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after run deny failed: %v", err)
+	}
+	assertSchedulerStatsUnchanged(t, before, afterRun)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a44-blocked-stream",
+		Input: "blocked-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied by readiness admission")
+	}
+	assertAdmissionDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+	afterStream, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after stream deny failed: %v", err)
+	}
+	assertSchedulerStatsUnchanged(t, before, afterStream)
+
+	if len(mgr.RecentMailbox(10)) != mailboxBefore {
+		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
+	}
+}
+
+func TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-allow.yaml")
+	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A44_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	mgr.SetReadinessComponentSnapshot(runtimeconfig.RuntimeReadinessComponentSnapshot{
+		Scheduler: runtimeconfig.RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			Fallback:          true,
+			FallbackReason:    "scheduler.backend.file_init_failed",
+		},
+	})
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a44-degraded-allow-run",
+		Input: "allow-run",
+	}, nil)
+	if runErr != nil {
+		t.Fatalf("run should be allowed under degraded allow policy, err=%v result=%#v", runErr, runRes)
+	}
+	if runRes.Error != nil {
+		t.Fatalf("run result should not contain error under degraded allow policy: %#v", runRes.Error)
+	}
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a44-degraded-allow-stream",
+		Input: "allow-stream",
+	}, nil)
+	if streamErr != nil {
+		t.Fatalf("stream should be allowed under degraded allow policy, err=%v result=%#v", streamErr, streamRes)
+	}
+	if streamRes.Error != nil {
+		t.Fatalf("stream result should not contain error under degraded allow policy: %#v", streamRes.Error)
+	}
+}
+
+func TestComposerReadinessAdmissionDegradedFailFastDeny(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-deny.yaml")
+	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyFailFast)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A44_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	mgr.SetReadinessComponentSnapshot(runtimeconfig.RuntimeReadinessComponentSnapshot{
+		Scheduler: runtimeconfig.RuntimeReadinessComponentState{
+			Enabled:           true,
+			ConfiguredBackend: "file",
+			EffectiveBackend:  "memory",
+			Fallback:          true,
+			FallbackReason:    "scheduler.backend.file_init_failed",
+		},
+	})
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a44-degraded-deny-run",
+		Input: "deny-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied under degraded fail_fast policy")
+	}
+	assertAdmissionDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeDegradedDeny)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a44-degraded-deny-stream",
+		Input: "deny-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied under degraded fail_fast policy")
+	}
+	assertAdmissionDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeDegradedDeny)
+}
+
 func writeComposerRuntimeConfig(t *testing.T, path string, leaseTimeout time.Duration) {
 	t.Helper()
 	cfg := strings.Join([]string{
@@ -495,6 +659,29 @@ func writeComposerA41RuntimeConfig(t *testing.T, path string) {
 	}
 }
 
+func writeComposerA44RuntimeConfig(t *testing.T, path, degradedPolicy string) {
+	t.Helper()
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: " + strings.TrimSpace(degradedPolicy),
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config %q: %v", path, err)
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -528,4 +715,27 @@ func readinessFingerprint(result runtimeconfig.ReadinessResult) string {
 	}
 	blob, _ := json.Marshal(payload)
 	return string(blob)
+}
+
+func assertAdmissionDeniedResult(t *testing.T, result types.RunResult, wantReasonCode string) {
+	t.Helper()
+	if result.Error == nil {
+		t.Fatalf("run result error = nil, want denied classified error; result=%#v", result)
+	}
+	if result.Error.Class != types.ErrContext {
+		t.Fatalf("error class = %q, want %q", result.Error.Class, types.ErrContext)
+	}
+	gotReasonCode, _ := result.Error.Details["reason_code"].(string)
+	if strings.TrimSpace(gotReasonCode) != strings.TrimSpace(wantReasonCode) {
+		t.Fatalf("reason_code = %q, want %q (details=%#v)", gotReasonCode, wantReasonCode, result.Error.Details)
+	}
+}
+
+func assertSchedulerStatsUnchanged(t *testing.T, before, after scheduler.Stats) {
+	t.Helper()
+	if before.QueueTotal != after.QueueTotal ||
+		before.ClaimTotal != after.ClaimTotal ||
+		before.ReclaimTotal != after.ReclaimTotal {
+		t.Fatalf("scheduler stats changed on deny path: before=%#v after=%#v", before, after)
+	}
 }

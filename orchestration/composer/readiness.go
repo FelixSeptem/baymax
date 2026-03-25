@@ -1,10 +1,13 @@
 package composer
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
@@ -18,6 +21,99 @@ func (c *Composer) ReadinessPreflight() (runtimeconfig.ReadinessResult, error) {
 		return runtimeconfig.ReadinessResult{}, errors.New("runtime manager is not initialized")
 	}
 	return c.runtimeMgr.ReadinessPreflight(), nil
+}
+
+func (c *Composer) guardReadinessAdmission(
+	ctx context.Context,
+	req types.RunRequest,
+	h types.EventHandler,
+) (types.RunRequest, *types.RunResult, error) {
+	if c == nil || c.runtimeMgr == nil {
+		return req, nil, nil
+	}
+	runID := strings.TrimSpace(req.RunID)
+	if runID == "" {
+		runID = fmt.Sprintf("run-%d", resolveReadinessSnapshotTime(c.now).UnixNano())
+		req.RunID = runID
+	}
+	decision := c.runtimeMgr.EvaluateReadinessAdmission()
+	c.recordReadinessAdmission(runID, decision)
+	if decision.Outcome != runtimeconfig.ReadinessAdmissionOutcomeDeny {
+		return req, nil, nil
+	}
+
+	msg := fmt.Sprintf("runtime readiness admission denied: %s", strings.TrimSpace(decision.ReasonCode))
+	result := &types.RunResult{
+		RunID:       runID,
+		Iterations:  0,
+		ToolCalls:   nil,
+		LatencyMs:   0,
+		FinalAnswer: "",
+		Warnings:    nil,
+		Error: &types.ClassifiedError{
+			Class:     types.ErrContext,
+			Message:   msg,
+			Retryable: false,
+			Details: map[string]any{
+				"reason_code":            strings.TrimSpace(decision.ReasonCode),
+				"runtime_readiness":      string(decision.ReadinessStatus),
+				"readiness_primary_code": strings.TrimSpace(decision.ReadinessPrimaryCode),
+				"admission_mode":         strings.TrimSpace(decision.Mode),
+			},
+		},
+	}
+	c.emitAdmissionDeniedEvent(ctx, runID, h, result)
+	return req, result, errors.New(msg)
+}
+
+func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig.ReadinessAdmissionDecision) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
+	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	if decision.Bypass {
+		stat.ReadinessAdmissionBypassTotal++
+		return
+	}
+	stat.ReadinessAdmissionTotal++
+	switch decision.ReadinessStatus {
+	case runtimeconfig.ReadinessStatusBlocked:
+		stat.ReadinessAdmissionBlockedTotal++
+	case runtimeconfig.ReadinessStatusDegraded:
+		if decision.Outcome == runtimeconfig.ReadinessAdmissionOutcomeAllow {
+			stat.ReadinessAdmissionDegradedAllowTotal++
+		}
+	}
+}
+
+func (c *Composer) emitAdmissionDeniedEvent(ctx context.Context, runID string, h types.EventHandler, result *types.RunResult) {
+	if c == nil {
+		return
+	}
+	handler := c.bridgeHandler(h)
+	if handler == nil || result == nil {
+		return
+	}
+	payload := map[string]any{
+		"status":      "failed",
+		"iterations":  result.Iterations,
+		"tool_calls":  0,
+		"latency_ms":  result.LatencyMs,
+		"error_class": string(types.ErrContext),
+		"error":       result.Error.Message,
+	}
+	handler.OnEvent(ctx, types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   runID,
+		Time:    resolveReadinessSnapshotTime(c.now),
+		Payload: payload,
+	})
 }
 
 func (c *Composer) publishRuntimeReadinessSnapshot() {

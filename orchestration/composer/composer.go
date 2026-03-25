@@ -269,49 +269,55 @@ type Composer struct {
 }
 
 type runStat struct {
-	ChildTotal                int
-	ChildFailed               int
-	BudgetReject              int
-	TimeoutParentBudgetClamp  int
-	TimeoutParentBudgetReject int
-	EffectiveOperationProfile string
-	TimeoutResolutionSource   string
-	TimeoutResolutionTrace    string
-	CollabHandoffTotal        int
-	CollabDelegationTotal     int
-	CollabAggregationTotal    int
-	CollabAggregationStrategy string
-	CollabFailFastTotal       int
-	CollabRetryTotal          int
-	CollabRetrySuccessTotal   int
-	CollabRetryExhaustedTotal int
-	A2AAsyncReportTotal       int
-	A2AAsyncReportFailed      int
-	A2AAsyncReportRetry       int
-	A2AAsyncReportDedup       int
-	AsyncAwaitTotal           int
-	AsyncTimeoutTotal         int
-	AsyncLateReportTotal      int
-	AsyncReportDedupTotal     int
-	Backend                   string
-	BackendFallback           bool
-	FallbackReason            string
-	ComposerManaged           bool
-	RecoveryEnabled           bool
-	RecoveryRecovered         bool
-	RecoveryReplayTotal       int
-	RecoveryConflict          bool
-	RecoveryConflictCode      string
-	RecoveryResumeBoundary    string
-	RecoveryInflightPolicy    string
-	RecoveryFallback          bool
-	RecoveryFallbackReason    string
-	asyncReportSeen           map[string]struct{}
-	asyncReportDedupSeen      map[string]struct{}
-	asyncLateReportSeen       map[string]struct{}
-	asyncAwaitSeen            map[string]struct{}
-	timeoutResolutionSeen     map[string]struct{}
-	timeoutClampSeen          map[string]struct{}
+	ChildTotal                           int
+	ChildFailed                          int
+	BudgetReject                         int
+	TimeoutParentBudgetClamp             int
+	TimeoutParentBudgetReject            int
+	ReadinessAdmissionTotal              int
+	ReadinessAdmissionBlockedTotal       int
+	ReadinessAdmissionDegradedAllowTotal int
+	ReadinessAdmissionBypassTotal        int
+	ReadinessAdmissionMode               string
+	ReadinessAdmissionPrimaryCode        string
+	EffectiveOperationProfile            string
+	TimeoutResolutionSource              string
+	TimeoutResolutionTrace               string
+	CollabHandoffTotal                   int
+	CollabDelegationTotal                int
+	CollabAggregationTotal               int
+	CollabAggregationStrategy            string
+	CollabFailFastTotal                  int
+	CollabRetryTotal                     int
+	CollabRetrySuccessTotal              int
+	CollabRetryExhaustedTotal            int
+	A2AAsyncReportTotal                  int
+	A2AAsyncReportFailed                 int
+	A2AAsyncReportRetry                  int
+	A2AAsyncReportDedup                  int
+	AsyncAwaitTotal                      int
+	AsyncTimeoutTotal                    int
+	AsyncLateReportTotal                 int
+	AsyncReportDedupTotal                int
+	Backend                              string
+	BackendFallback                      bool
+	FallbackReason                       string
+	ComposerManaged                      bool
+	RecoveryEnabled                      bool
+	RecoveryRecovered                    bool
+	RecoveryReplayTotal                  int
+	RecoveryConflict                     bool
+	RecoveryConflictCode                 string
+	RecoveryResumeBoundary               string
+	RecoveryInflightPolicy               string
+	RecoveryFallback                     bool
+	RecoveryFallbackReason               string
+	asyncReportSeen                      map[string]struct{}
+	asyncReportDedupSeen                 map[string]struct{}
+	asyncLateReportSeen                  map[string]struct{}
+	asyncAwaitSeen                       map[string]struct{}
+	timeoutResolutionSeen                map[string]struct{}
+	timeoutClampSeen                     map[string]struct{}
 }
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
@@ -385,6 +391,13 @@ func (c *Composer) Run(ctx context.Context, req types.RunRequest, h types.EventH
 	c.refreshSchedulerForNextAttempt()
 	c.refreshMailboxForNextAttempt()
 	c.refreshRecoveryForNextAttempt()
+	req, denied, err := c.guardReadinessAdmission(ctx, req, h)
+	if denied != nil || err != nil {
+		if denied == nil {
+			return types.RunResult{}, err
+		}
+		return *denied, err
+	}
 	return c.runner.Run(ctx, req, c.bridgeHandler(h))
 }
 
@@ -392,6 +405,13 @@ func (c *Composer) Stream(ctx context.Context, req types.RunRequest, h types.Eve
 	c.refreshSchedulerForNextAttempt()
 	c.refreshMailboxForNextAttempt()
 	c.refreshRecoveryForNextAttempt()
+	req, denied, err := c.guardReadinessAdmission(ctx, req, h)
+	if denied != nil || err != nil {
+		if denied == nil {
+			return types.RunResult{}, err
+		}
+		return *denied, err
+	}
 	return c.runner.Stream(ctx, req, c.bridgeHandler(h))
 }
 
@@ -894,6 +914,16 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		if summary.AdapterHealthPrimaryCode != "" {
 			payload["adapter_health_primary_code"] = summary.AdapterHealthPrimaryCode
 		}
+	}
+	payload["runtime_readiness_admission_total"] = stats.ReadinessAdmissionTotal
+	payload["runtime_readiness_admission_blocked_total"] = stats.ReadinessAdmissionBlockedTotal
+	payload["runtime_readiness_admission_degraded_allow_total"] = stats.ReadinessAdmissionDegradedAllowTotal
+	payload["runtime_readiness_admission_bypass_total"] = stats.ReadinessAdmissionBypassTotal
+	if strings.TrimSpace(stats.ReadinessAdmissionMode) != "" {
+		payload["runtime_readiness_admission_mode"] = strings.TrimSpace(stats.ReadinessAdmissionMode)
+	}
+	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
+		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
 	}
 
 	if s := c.Scheduler(); s != nil {

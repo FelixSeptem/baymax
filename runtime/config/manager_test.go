@@ -2096,6 +2096,64 @@ reload:
 	}
 }
 
+func TestManagerRuntimeReadinessAdmissionInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.Readiness.Admission.DegradedPolicy
+	if before != ReadinessAdmissionDegradedPolicyAllowAndRecord {
+		t.Fatalf(
+			"before runtime.readiness.admission.degraded_policy = %q, want %q",
+			before,
+			ReadinessAdmissionDegradedPolicyAllowAndRecord,
+		)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: shadow_deny
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Readiness.Admission.DegradedPolicy
+	if after != before {
+		t.Fatalf("invalid readiness admission reload should rollback, degraded_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerAdapterHealthInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

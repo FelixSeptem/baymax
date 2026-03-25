@@ -302,6 +302,102 @@ func TestRuntimeReadinessConfigInvalidBoolFailsFast(t *testing.T) {
 	}
 }
 
+func TestRuntimeReadinessAdmissionConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Runtime.Readiness.Admission.Enabled {
+		t.Fatal("runtime.readiness.admission.enabled = true, want false")
+	}
+	if cfg.Runtime.Readiness.Admission.Mode != ReadinessAdmissionModeFailFast {
+		t.Fatalf(
+			"runtime.readiness.admission.mode = %q, want %q",
+			cfg.Runtime.Readiness.Admission.Mode,
+			ReadinessAdmissionModeFailFast,
+		)
+	}
+	if cfg.Runtime.Readiness.Admission.BlockOn != ReadinessAdmissionBlockOnBlockedOnly {
+		t.Fatalf(
+			"runtime.readiness.admission.block_on = %q, want %q",
+			cfg.Runtime.Readiness.Admission.BlockOn,
+			ReadinessAdmissionBlockOnBlockedOnly,
+		)
+	}
+	if cfg.Runtime.Readiness.Admission.DegradedPolicy != ReadinessAdmissionDegradedPolicyAllowAndRecord {
+		t.Fatalf(
+			"runtime.readiness.admission.degraded_policy = %q, want %q",
+			cfg.Runtime.Readiness.Admission.DegradedPolicy,
+			ReadinessAdmissionDegradedPolicyAllowAndRecord,
+		)
+	}
+}
+
+func TestRuntimeReadinessAdmissionConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ADMISSION_ENABLED", "true")
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ADMISSION_MODE", "fail_fast")
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ADMISSION_BLOCK_ON", "blocked_only")
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ADMISSION_DEGRADED_POLICY", "fail_fast")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+runtime:
+  readiness:
+    admission:
+      enabled: false
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Runtime.Readiness.Admission.Enabled {
+		t.Fatal("runtime.readiness.admission.enabled = false, want true from env")
+	}
+	if cfg.Runtime.Readiness.Admission.Mode != ReadinessAdmissionModeFailFast {
+		t.Fatalf("runtime.readiness.admission.mode = %q, want fail_fast", cfg.Runtime.Readiness.Admission.Mode)
+	}
+	if cfg.Runtime.Readiness.Admission.BlockOn != ReadinessAdmissionBlockOnBlockedOnly {
+		t.Fatalf("runtime.readiness.admission.block_on = %q, want blocked_only", cfg.Runtime.Readiness.Admission.BlockOn)
+	}
+	if cfg.Runtime.Readiness.Admission.DegradedPolicy != ReadinessAdmissionDegradedPolicyFailFast {
+		t.Fatalf("runtime.readiness.admission.degraded_policy = %q, want fail_fast", cfg.Runtime.Readiness.Admission.DegradedPolicy)
+	}
+}
+
+func TestRuntimeReadinessAdmissionConfigInvalidBoolFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_READINESS_ADMISSION_ENABLED", "definitely-not-bool")
+	_, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err == nil {
+		t.Fatal("expected runtime.readiness.admission.enabled invalid bool error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "runtime.readiness.admission.enabled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRuntimeReadinessAdmissionConfigValidationRejectsInvalidEnum(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Runtime.Readiness.Admission.Mode = "warn"
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.readiness.admission.mode") {
+		t.Fatalf("expected validation error for runtime.readiness.admission.mode, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Readiness.Admission.BlockOn = "degraded_or_blocked"
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.readiness.admission.block_on") {
+		t.Fatalf("expected validation error for runtime.readiness.admission.block_on, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Readiness.Admission.DegradedPolicy = "shadow_deny"
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.readiness.admission.degraded_policy") {
+		t.Fatalf("expected validation error for runtime.readiness.admission.degraded_policy, got %v", err)
+	}
+}
+
 func TestAdapterHealthConfigDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Adapter.Health.Enabled {

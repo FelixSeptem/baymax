@@ -88,19 +88,25 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                          time.Now(),
-		RunID:                         "run-a40-readiness",
-		Status:                        "success",
-		RuntimeReadinessStatus:        "degraded",
-		RuntimeReadinessFindingTotal:  2,
-		RuntimeReadinessBlockingTotal: 0,
-		RuntimeReadinessDegradedTotal: 2,
-		RuntimeReadinessPrimaryCode:   "scheduler.backend.fallback",
-		AdapterHealthStatus:           "unavailable",
-		AdapterHealthProbeTotal:       3,
-		AdapterHealthDegradedTotal:    1,
-		AdapterHealthUnavailableTotal: 2,
-		AdapterHealthPrimaryCode:      "adapter.health.required_unavailable",
+		Time:                                  time.Now(),
+		RunID:                                 "run-a40-readiness",
+		Status:                                "success",
+		RuntimeReadinessStatus:                "degraded",
+		RuntimeReadinessFindingTotal:          2,
+		RuntimeReadinessBlockingTotal:         0,
+		RuntimeReadinessDegradedTotal:         2,
+		RuntimeReadinessPrimaryCode:           "scheduler.backend.fallback",
+		RuntimeReadinessAdmissionTotal:        1,
+		RuntimeReadinessAdmissionBlockedTotal: 0,
+		RuntimeReadinessAdmissionDegradedAllowTotal: 1,
+		RuntimeReadinessAdmissionBypassTotal:        0,
+		RuntimeReadinessAdmissionMode:               "fail_fast",
+		RuntimeReadinessAdmissionPrimaryCode:        "scheduler.backend.fallback",
+		AdapterHealthStatus:                         "unavailable",
+		AdapterHealthProbeTotal:                     3,
+		AdapterHealthDegradedTotal:                  1,
+		AdapterHealthUnavailableTotal:               2,
+		AdapterHealthPrimaryCode:                    "adapter.health.required_unavailable",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -114,6 +120,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessBlockingTotal != 0 ||
 		items[0].RuntimeReadinessDegradedTotal != 2 ||
 		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
+		items[0].RuntimeReadinessAdmissionTotal != 1 ||
+		items[0].RuntimeReadinessAdmissionBlockedTotal != 0 ||
+		items[0].RuntimeReadinessAdmissionDegradedAllowTotal != 1 ||
+		items[0].RuntimeReadinessAdmissionBypassTotal != 0 ||
+		items[0].RuntimeReadinessAdmissionMode != "fail_fast" ||
+		items[0].RuntimeReadinessAdmissionPrimaryCode != "scheduler.backend.fallback" ||
 		items[0].AdapterHealthStatus != "unavailable" ||
 		items[0].AdapterHealthProbeTotal != 3 ||
 		items[0].AdapterHealthDegradedTotal != 1 ||
@@ -127,6 +139,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	rec.RuntimeReadinessBlockingTotal = 2
 	rec.RuntimeReadinessDegradedTotal = 1
 	rec.RuntimeReadinessPrimaryCode = "runtime.readiness.strict_escalated"
+	rec.RuntimeReadinessAdmissionTotal = 1
+	rec.RuntimeReadinessAdmissionBlockedTotal = 1
+	rec.RuntimeReadinessAdmissionDegradedAllowTotal = 0
+	rec.RuntimeReadinessAdmissionBypassTotal = 0
+	rec.RuntimeReadinessAdmissionMode = "fail_fast"
+	rec.RuntimeReadinessAdmissionPrimaryCode = "runtime.readiness.strict_escalated"
 	rec.AdapterHealthStatus = "degraded"
 	rec.AdapterHealthProbeTotal = 2
 	rec.AdapterHealthDegradedTotal = 2
@@ -143,6 +161,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessBlockingTotal != 2 ||
 		items[0].RuntimeReadinessDegradedTotal != 1 ||
 		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" ||
+		items[0].RuntimeReadinessAdmissionTotal != 1 ||
+		items[0].RuntimeReadinessAdmissionBlockedTotal != 1 ||
+		items[0].RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
+		items[0].RuntimeReadinessAdmissionBypassTotal != 0 ||
+		items[0].RuntimeReadinessAdmissionMode != "fail_fast" ||
+		items[0].RuntimeReadinessAdmissionPrimaryCode != "runtime.readiness.strict_escalated" ||
 		items[0].AdapterHealthStatus != "degraded" ||
 		items[0].AdapterHealthProbeTotal != 2 ||
 		items[0].AdapterHealthDegradedTotal != 2 ||

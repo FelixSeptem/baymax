@@ -27,3 +27,4 @@
 - [ ] 5.1 更新 `docs/runtime-config-diagnostics.md`，补齐 `diagnostics.cardinality.*` 字段、默认值、校验规则与诊断字段说明。
 - [ ] 5.2 更新 `docs/mainline-contract-test-index.md`、`docs/development-roadmap.md` 与 `README.md` 的 A45 状态和门禁映射。
 - [ ] 5.3 执行并记录最小验收命令：`go test ./...`、`go test -race ./...`、`pwsh -File scripts/check-docs-consistency.ps1`、`pwsh -File scripts/check-quality-gate.ps1`。
+- [ ] 5.4 修复并验证 `strict` 模式下 `govulncheck` 可用性（漏洞源可达、代理配置正确）与 Go module cache 写权限，确保 `pwsh -File scripts/check-quality-gate.ps1` 在 strict 模式全绿。

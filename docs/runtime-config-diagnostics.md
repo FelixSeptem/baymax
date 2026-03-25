@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-24
+更新时间：2026-03-25
 
 ## 目标
 
@@ -96,6 +96,10 @@
   - `runtime.readiness.enabled` -> `BAYMAX_RUNTIME_READINESS_ENABLED`
   - `runtime.readiness.strict` -> `BAYMAX_RUNTIME_READINESS_STRICT`
   - `runtime.readiness.remote_probe_enabled` -> `BAYMAX_RUNTIME_READINESS_REMOTE_PROBE_ENABLED`
+  - `runtime.readiness.admission.enabled` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_ENABLED`
+  - `runtime.readiness.admission.mode` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_MODE`
+  - `runtime.readiness.admission.block_on` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_BLOCK_ON`
+  - `runtime.readiness.admission.degraded_policy` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_DEGRADED_POLICY`
   - `adapter.health.enabled` -> `BAYMAX_ADAPTER_HEALTH_ENABLED`
   - `adapter.health.strict` -> `BAYMAX_ADAPTER_HEALTH_STRICT`
   - `adapter.health.probe_timeout` -> `BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT`
@@ -156,6 +160,11 @@ runtime:
     enabled: true               # A40 默认开启
     strict: false               # A40 默认不升级 degraded
     remote_probe_enabled: false # A40 默认关闭远程探测（离线友好）
+    admission:
+      enabled: false            # A44 默认关闭，保持历史执行路径
+      mode: fail_fast           # 当前仅支持 fail_fast
+      block_on: blocked_only    # 当前仅支持 blocked_only
+      degraded_policy: allow_and_record # allow_and_record|fail_fast
   operation_profiles:
     default_profile: legacy     # A41 默认 legacy
     legacy:
@@ -781,6 +790,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `EffectiveConfigSanitized()`
 - `PrecheckStage2External(provider, external)`
 - `ReadinessPreflight()`（A40：返回 `ready|degraded|blocked` + canonical findings）
+- `EvaluateReadinessAdmission()`（A44：返回 `allow|deny` 决策、reason code 与 primary code 摘要）
 - `SetAdapterHealthTargets(targets)` / `RegisterAdapterHealthTarget(target)` / `RemoveAdapterHealthTarget(name)`（A43：注册 runtime adapter health probe 目标）
 
 `orchestration/scheduler.Scheduler` 额外提供任务看板只读查询：
@@ -894,7 +904,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
   - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
-- Runtime Readiness（A40）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`
+- Runtime Readiness（A40/A44）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - Adapter Health（A43）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
@@ -967,6 +977,12 @@ Composed summary additive fields（contract markers）：
 - `recovery_conflict_code`
 - `recovery_fallback_used`
 - `recovery_fallback_reason`
+- `runtime_readiness_admission_total`
+- `runtime_readiness_admission_blocked_total`
+- `runtime_readiness_admission_degraded_allow_total`
+- `runtime_readiness_admission_bypass_total`
+- `runtime_readiness_admission_mode`
+- `runtime_readiness_admission_primary_code`
 
 ## 诊断回放（D1）
 

@@ -135,6 +135,13 @@ const (
 )
 
 const (
+	ReadinessAdmissionModeFailFast                 = "fail_fast"
+	ReadinessAdmissionBlockOnBlockedOnly           = "blocked_only"
+	ReadinessAdmissionDegradedPolicyAllowAndRecord = "allow_and_record"
+	ReadinessAdmissionDegradedPolicyFailFast       = "fail_fast"
+)
+
+const (
 	ComposerCollabAggregationAllSettled   = "all_settled"
 	ComposerCollabAggregationFirstSuccess = "first_success"
 	ComposerCollabFailurePolicyFailFast   = "fail_fast"
@@ -208,9 +215,17 @@ type AdapterHealthConfig struct {
 }
 
 type RuntimeReadinessConfig struct {
-	Enabled            bool `json:"enabled"`
-	Strict             bool `json:"strict"`
-	RemoteProbeEnabled bool `json:"remote_probe_enabled"`
+	Enabled            bool                            `json:"enabled"`
+	Strict             bool                            `json:"strict"`
+	RemoteProbeEnabled bool                            `json:"remote_probe_enabled"`
+	Admission          RuntimeReadinessAdmissionConfig `json:"admission"`
+}
+
+type RuntimeReadinessAdmissionConfig struct {
+	Enabled        bool   `json:"enabled"`
+	Mode           string `json:"mode"`
+	BlockOn        string `json:"block_on"`
+	DegradedPolicy string `json:"degraded_policy"`
 }
 
 type RuntimeOperationProfilesConfig struct {
@@ -970,6 +985,12 @@ func DefaultConfig() Config {
 				Enabled:            true,
 				Strict:             false,
 				RemoteProbeEnabled: false,
+				Admission: RuntimeReadinessAdmissionConfig{
+					Enabled:        false,
+					Mode:           ReadinessAdmissionModeFailFast,
+					BlockOn:        ReadinessAdmissionBlockOnBlockedOnly,
+					DegradedPolicy: ReadinessAdmissionDegradedPolicyAllowAndRecord,
+				},
 			},
 			OperationProfiles: RuntimeOperationProfilesConfig{
 				DefaultProfile: OperationProfileLegacy,
@@ -1625,6 +1646,9 @@ func Validate(cfg Config) error {
 		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
 	}
 	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
+		return err
+	}
+	if err := validateRuntimeReadinessAdmission(cfg.Runtime.Readiness.Admission); err != nil {
 		return err
 	}
 	if cfg.Adapter.Health.ProbeTimeout <= 0 {
@@ -2967,6 +2991,38 @@ func validateRuntimeOperationProfiles(cfg RuntimeOperationProfilesConfig) error 
 	return nil
 }
 
+func validateRuntimeReadinessAdmission(cfg RuntimeReadinessAdmissionConfig) error {
+	switch mode := strings.ToLower(strings.TrimSpace(cfg.Mode)); mode {
+	case ReadinessAdmissionModeFailFast:
+	default:
+		return fmt.Errorf(
+			"runtime.readiness.admission.mode must be one of [%s], got %q",
+			ReadinessAdmissionModeFailFast,
+			cfg.Mode,
+		)
+	}
+	switch blockOn := strings.ToLower(strings.TrimSpace(cfg.BlockOn)); blockOn {
+	case ReadinessAdmissionBlockOnBlockedOnly:
+	default:
+		return fmt.Errorf(
+			"runtime.readiness.admission.block_on must be one of [%s], got %q",
+			ReadinessAdmissionBlockOnBlockedOnly,
+			cfg.BlockOn,
+		)
+	}
+	switch policy := strings.ToLower(strings.TrimSpace(cfg.DegradedPolicy)); policy {
+	case ReadinessAdmissionDegradedPolicyAllowAndRecord, ReadinessAdmissionDegradedPolicyFailFast:
+	default:
+		return fmt.Errorf(
+			"runtime.readiness.admission.degraded_policy must be one of [%s,%s], got %q",
+			ReadinessAdmissionDegradedPolicyAllowAndRecord,
+			ReadinessAdmissionDegradedPolicyFailFast,
+			cfg.DegradedPolicy,
+		)
+	}
+	return nil
+}
+
 func applyDefaults(v *viper.Viper) {
 	base := DefaultConfig()
 	v.SetDefault("mcp.active_profile", base.MCP.ActiveProfile)
@@ -3002,6 +3058,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
+	v.SetDefault("runtime.readiness.admission.enabled", base.Runtime.Readiness.Admission.Enabled)
+	v.SetDefault("runtime.readiness.admission.mode", base.Runtime.Readiness.Admission.Mode)
+	v.SetDefault("runtime.readiness.admission.block_on", base.Runtime.Readiness.Admission.BlockOn)
+	v.SetDefault("runtime.readiness.admission.degraded_policy", base.Runtime.Readiness.Admission.DegradedPolicy)
 	v.SetDefault("runtime.operation_profiles.default_profile", base.Runtime.OperationProfiles.DefaultProfile)
 	v.SetDefault("runtime.operation_profiles.legacy.timeout", base.Runtime.OperationProfiles.Legacy.Timeout)
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
@@ -3308,9 +3368,17 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	admissionEnabled, err := strictBoolConfigValue(v, "runtime.readiness.admission.enabled")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.Readiness.Enabled = readinessEnabled
 	cfg.Runtime.Readiness.Strict = readinessStrict
 	cfg.Runtime.Readiness.RemoteProbeEnabled = remoteProbeEnabled
+	cfg.Runtime.Readiness.Admission.Enabled = admissionEnabled
+	cfg.Runtime.Readiness.Admission.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.mode")))
+	cfg.Runtime.Readiness.Admission.BlockOn = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.block_on")))
+	cfg.Runtime.Readiness.Admission.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.degraded_policy")))
 	cfg.Runtime.OperationProfiles.DefaultProfile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.operation_profiles.default_profile")))
 	cfg.Runtime.OperationProfiles.Legacy.Timeout = v.GetDuration("runtime.operation_profiles.legacy.timeout")
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")

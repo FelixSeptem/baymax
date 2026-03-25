@@ -48,6 +48,23 @@ const (
 	ReadinessCodeAdapterDegraded            = "adapter.health.degraded"
 )
 
+type ReadinessAdmissionOutcome string
+
+const (
+	ReadinessAdmissionOutcomeAllow ReadinessAdmissionOutcome = "allow"
+	ReadinessAdmissionOutcomeDeny  ReadinessAdmissionOutcome = "deny"
+)
+
+const (
+	ReadinessAdmissionCodeBypassDisabled  = "runtime.readiness.admission.disabled"
+	ReadinessAdmissionCodeReady           = "runtime.readiness.admission.ready"
+	ReadinessAdmissionCodeBlocked         = "runtime.readiness.admission.blocked"
+	ReadinessAdmissionCodeDegradedAllow   = "runtime.readiness.admission.degraded_allow"
+	ReadinessAdmissionCodeDegradedDeny    = "runtime.readiness.admission.degraded_fail_fast"
+	ReadinessAdmissionCodeUnknownStatus   = "runtime.readiness.admission.unknown_status"
+	ReadinessAdmissionCodeManagerNotReady = "runtime.readiness.admission.manager_unavailable"
+)
+
 type ReadinessFinding struct {
 	Code     string         `json:"code"`
 	Domain   string         `json:"domain"`
@@ -74,6 +91,18 @@ type ReadinessSummary struct {
 	AdapterHealthDegradedTotal    int    `json:"adapter_health_degraded_total,omitempty"`
 	AdapterHealthUnavailableTotal int    `json:"adapter_health_unavailable_total,omitempty"`
 	AdapterHealthPrimaryCode      string `json:"adapter_health_primary_code,omitempty"`
+}
+
+type ReadinessAdmissionDecision struct {
+	Enabled              bool                      `json:"enabled"`
+	Mode                 string                    `json:"mode"`
+	BlockOn              string                    `json:"block_on"`
+	DegradedPolicy       string                    `json:"degraded_policy"`
+	Outcome              ReadinessAdmissionOutcome `json:"outcome"`
+	ReasonCode           string                    `json:"reason_code"`
+	ReadinessStatus      ReadinessStatus           `json:"readiness_status"`
+	ReadinessPrimaryCode string                    `json:"readiness_primary_code,omitempty"`
+	Bypass               bool                      `json:"bypass"`
 }
 
 type AdapterHealthTarget struct {
@@ -259,6 +288,65 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 		AdapterHealth: adapterResults,
 		EvaluatedAt:   evaluatedAt,
 	}
+}
+
+func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
+	if m == nil {
+		return ReadinessAdmissionDecision{
+			Enabled:         false,
+			Mode:            ReadinessAdmissionModeFailFast,
+			BlockOn:         ReadinessAdmissionBlockOnBlockedOnly,
+			DegradedPolicy:  ReadinessAdmissionDegradedPolicyAllowAndRecord,
+			Outcome:         ReadinessAdmissionOutcomeAllow,
+			ReasonCode:      ReadinessAdmissionCodeManagerNotReady,
+			ReadinessStatus: ReadinessStatusBlocked,
+			Bypass:          true,
+		}
+	}
+
+	cfg := m.EffectiveConfig().Runtime.Readiness.Admission
+	decision := ReadinessAdmissionDecision{
+		Enabled:         cfg.Enabled,
+		Mode:            normalizeReadinessAdmissionMode(cfg.Mode),
+		BlockOn:         normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
+		DegradedPolicy:  normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
+		Outcome:         ReadinessAdmissionOutcomeAllow,
+		ReasonCode:      ReadinessAdmissionCodeBypassDisabled,
+		ReadinessStatus: ReadinessStatusReady,
+		Bypass:          true,
+	}
+	if !decision.Enabled {
+		return decision
+	}
+
+	preflight := m.ReadinessPreflight()
+	summary := preflight.Summary()
+	decision.Bypass = false
+	decision.ReadinessStatus = preflight.Status
+	decision.ReadinessPrimaryCode = strings.TrimSpace(summary.PrimaryCode)
+	switch preflight.Status {
+	case ReadinessStatusReady:
+		decision.Outcome = ReadinessAdmissionOutcomeAllow
+		decision.ReasonCode = ReadinessAdmissionCodeReady
+	case ReadinessStatusBlocked:
+		decision.Outcome = ReadinessAdmissionOutcomeDeny
+		decision.ReasonCode = ReadinessAdmissionCodeBlocked
+	case ReadinessStatusDegraded:
+		if decision.DegradedPolicy == ReadinessAdmissionDegradedPolicyFailFast {
+			decision.Outcome = ReadinessAdmissionOutcomeDeny
+			decision.ReasonCode = ReadinessAdmissionCodeDegradedDeny
+		} else {
+			decision.Outcome = ReadinessAdmissionOutcomeAllow
+			decision.ReasonCode = ReadinessAdmissionCodeDegradedAllow
+		}
+	default:
+		decision.Outcome = ReadinessAdmissionOutcomeDeny
+		decision.ReasonCode = ReadinessAdmissionCodeUnknownStatus
+	}
+	if decision.ReadinessPrimaryCode == "" {
+		decision.ReadinessPrimaryCode = decision.ReasonCode
+	}
+	return decision
 }
 
 func (r ReadinessResult) Summary() ReadinessSummary {
@@ -622,6 +710,31 @@ func normalizeAdapterHealthStatus(in string) adapterhealth.Status {
 		return adapterhealth.StatusDegraded
 	default:
 		return adapterhealth.StatusUnavailable
+	}
+}
+
+func normalizeReadinessAdmissionMode(in string) string {
+	if strings.ToLower(strings.TrimSpace(in)) == ReadinessAdmissionModeFailFast {
+		return ReadinessAdmissionModeFailFast
+	}
+	return ReadinessAdmissionModeFailFast
+}
+
+func normalizeReadinessAdmissionBlockOn(in string) string {
+	if strings.ToLower(strings.TrimSpace(in)) == ReadinessAdmissionBlockOnBlockedOnly {
+		return ReadinessAdmissionBlockOnBlockedOnly
+	}
+	return ReadinessAdmissionBlockOnBlockedOnly
+}
+
+func normalizeReadinessAdmissionDegradedPolicy(in string) string {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case ReadinessAdmissionDegradedPolicyFailFast:
+		return ReadinessAdmissionDegradedPolicyFailFast
+	case ReadinessAdmissionDegradedPolicyAllowAndRecord:
+		return ReadinessAdmissionDegradedPolicyAllowAndRecord
+	default:
+		return ReadinessAdmissionDegradedPolicyAllowAndRecord
 	}
 }
 

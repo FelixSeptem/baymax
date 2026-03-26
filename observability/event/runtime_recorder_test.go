@@ -822,6 +822,60 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a45-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(16),
+			"a45_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 16 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.DiagnosticsCardinalityBudgetHitTotal != 0 ||
+		got.DiagnosticsCardinalityTruncatedTotal != 0 ||
+		got.DiagnosticsCardinalityFailFastRejectTotal != 0 ||
+		got.DiagnosticsCardinalityOverflowPolicy != "truncate_and_record" ||
+		got.DiagnosticsCardinalityTruncatedFieldSummary != "" {
+		t.Fatalf("missing A45 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderRedactsSensitivePayload(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

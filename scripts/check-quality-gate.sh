@@ -7,6 +7,15 @@ fi
 if [[ -z "${GOLANGCI_LINT_CACHE:-}" ]]; then
   export GOLANGCI_LINT_CACHE="$(pwd)/.gocache/golangci-lint"
 fi
+if [[ -z "${GOPROXY:-}" ]]; then
+  export GOPROXY="https://proxy.golang.org,direct"
+fi
+if [[ -z "${GOSUMDB:-}" ]]; then
+  export GOSUMDB="sum.golang.org"
+fi
+if [[ -z "${GOVULNDB:-}" ]]; then
+  export GOVULNDB="https://vuln.go.dev"
+fi
 if [[ -z "${CGO_ENABLED:-}" ]]; then
   export CGO_ENABLED=1
 fi
@@ -35,6 +44,12 @@ fi
 echo "[quality-gate] runtime readiness contract suites"
 if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1; then
   echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"
+  exit 1
+fi
+
+echo "[quality-gate] diagnostics cardinality contract suites"
+if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1; then
+  echo "[quality-gate][diagnostics-cardinality] diagnostics cardinality contract suites failed"
   exit 1
 fi
 
@@ -129,11 +144,26 @@ scan_mode="${BAYMAX_SECURITY_SCAN_MODE:-strict}"
 govulncheck_enabled="${BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED:-true}"
 if [[ "${govulncheck_enabled}" == "true" ]]; then
   echo "[quality-gate] govulncheck (mode=${scan_mode})"
+  should_bypass_proxy_for_govulncheck() {
+    local proxy_value
+    proxy_value="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${proxy_value}" == *"127.0.0.1:9"* || "${proxy_value}" == *"localhost:9"* || "${proxy_value}" == *"[::1]:9"* ]]
+  }
+  govuln_env_prefix=()
+  if should_bypass_proxy_for_govulncheck "${HTTP_PROXY:-}" ||
+    should_bypass_proxy_for_govulncheck "${HTTPS_PROXY:-}" ||
+    should_bypass_proxy_for_govulncheck "${ALL_PROXY:-}" ||
+    should_bypass_proxy_for_govulncheck "${http_proxy:-}" ||
+    should_bypass_proxy_for_govulncheck "${https_proxy:-}" ||
+    should_bypass_proxy_for_govulncheck "${all_proxy:-}"; then
+    echo "[quality-gate] detected placeholder proxy for govulncheck; run with direct connection"
+    govuln_env_prefix=(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u GIT_HTTP_PROXY -u GIT_HTTPS_PROXY)
+  fi
   govuln_cmd=(govulncheck ./...)
   if ! command -v govulncheck >/dev/null 2>&1; then
     govuln_cmd=(go run golang.org/x/vuln/cmd/govulncheck@latest ./...)
   fi
-  if ! "${govuln_cmd[@]}"; then
+  if ! "${govuln_env_prefix[@]}" "${govuln_cmd[@]}"; then
     if [[ "${scan_mode}" == "warn" ]]; then
       echo "[quality-gate] govulncheck found issues but mode=warn; continue"
     else

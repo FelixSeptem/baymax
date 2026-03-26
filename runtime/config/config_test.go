@@ -247,6 +247,97 @@ func TestDiagnosticsCA2ExternalTrendValidationRejectsInvalidValue(t *testing.T) 
 	}
 }
 
+func TestDiagnosticsCardinalityDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Diagnostics.Cardinality.Enabled {
+		t.Fatal("diagnostics.cardinality.enabled = false, want true")
+	}
+	if cfg.Diagnostics.Cardinality.MaxMapEntries != 64 {
+		t.Fatalf("diagnostics.cardinality.max_map_entries = %d, want 64", cfg.Diagnostics.Cardinality.MaxMapEntries)
+	}
+	if cfg.Diagnostics.Cardinality.MaxListEntries != 64 {
+		t.Fatalf("diagnostics.cardinality.max_list_entries = %d, want 64", cfg.Diagnostics.Cardinality.MaxListEntries)
+	}
+	if cfg.Diagnostics.Cardinality.MaxStringBytes != 2048 {
+		t.Fatalf("diagnostics.cardinality.max_string_bytes = %d, want 2048", cfg.Diagnostics.Cardinality.MaxStringBytes)
+	}
+	if cfg.Diagnostics.Cardinality.OverflowPolicy != DiagnosticsCardinalityOverflowTruncateAndRecord {
+		t.Fatalf(
+			"diagnostics.cardinality.overflow_policy = %q, want %q",
+			cfg.Diagnostics.Cardinality.OverflowPolicy,
+			DiagnosticsCardinalityOverflowTruncateAndRecord,
+		)
+	}
+}
+
+func TestDiagnosticsCardinalityEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_MAP_ENTRIES", "23")
+	t.Setenv("BAYMAX_DIAGNOSTICS_CARDINALITY_OVERFLOW_POLICY", "fail_fast")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 9
+    max_list_entries: 10
+    max_string_bytes: 128
+    overflow_policy: truncate_and_record
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Diagnostics.Cardinality.MaxMapEntries != 23 {
+		t.Fatalf("diagnostics.cardinality.max_map_entries = %d, want 23", cfg.Diagnostics.Cardinality.MaxMapEntries)
+	}
+	if cfg.Diagnostics.Cardinality.MaxListEntries != 10 {
+		t.Fatalf("diagnostics.cardinality.max_list_entries = %d, want 10", cfg.Diagnostics.Cardinality.MaxListEntries)
+	}
+	if cfg.Diagnostics.Cardinality.MaxStringBytes != 128 {
+		t.Fatalf("diagnostics.cardinality.max_string_bytes = %d, want 128", cfg.Diagnostics.Cardinality.MaxStringBytes)
+	}
+	if cfg.Diagnostics.Cardinality.OverflowPolicy != DiagnosticsCardinalityOverflowFailFast {
+		t.Fatalf(
+			"diagnostics.cardinality.overflow_policy = %q, want %q",
+			cfg.Diagnostics.Cardinality.OverflowPolicy,
+			DiagnosticsCardinalityOverflowFailFast,
+		)
+	}
+}
+
+func TestDiagnosticsCardinalityValidationRejectsInvalidValue(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Diagnostics.Cardinality.MaxMapEntries = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.cardinality.max_map_entries")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.Cardinality.MaxListEntries = -1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.cardinality.max_list_entries")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.Cardinality.MaxStringBytes = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for diagnostics.cardinality.max_string_bytes")
+	}
+	cfg = DefaultConfig()
+	cfg.Diagnostics.Cardinality.OverflowPolicy = "drop_new"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "diagnostics.cardinality.overflow_policy") {
+		t.Fatalf("expected diagnostics.cardinality.overflow_policy validation error, got %v", err)
+	}
+}
+
+func TestDiagnosticsCardinalityEnabledRejectsMalformedBoolean(t *testing.T) {
+	t.Setenv("BAYMAX_DIAGNOSTICS_CARDINALITY_ENABLED", "definitely")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "diagnostics.cardinality.enabled") {
+		t.Fatalf("expected strict bool parse error for diagnostics.cardinality.enabled, got %v", err)
+	}
+}
+
 func TestRuntimeReadinessConfigDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Runtime.Readiness.Enabled {

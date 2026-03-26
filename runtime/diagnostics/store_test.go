@@ -2,9 +2,11 @@ package diagnostics
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestStoreConcurrentAccess(t *testing.T) {
@@ -82,6 +84,172 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 	}
 	if runs[0].LatencyMs != 99 {
 		t.Fatalf("run record should be replaced on duplicate key, got %#v", runs[0])
+	}
+}
+
+func TestStoreRunCardinalityTruncateAndRecordDeterministic(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  2,
+		MaxListEntries: 2,
+		MaxStringBytes: 8,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:                   time.Now(),
+		RunID:                  "run-a45-truncate",
+		Status:                 "success",
+		TimeoutResolutionTrace: "你好world你好",
+		TaskBoardManualControlByReason: map[string]int{
+			"gamma": 3,
+			"alpha": 1,
+			"beta":  2,
+		},
+		TimelinePhases: map[string]TimelinePhaseAggregate{
+			"gamma": {CountTotal: 3},
+			"alpha": {CountTotal: 1},
+			"beta":  {CountTotal: 2},
+		},
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(runs))
+	}
+	got := runs[0]
+	if got.DiagnosticsCardinalityOverflowPolicy != CardinalityOverflowTruncateAndRecord {
+		t.Fatalf("overflow policy = %q, want %q", got.DiagnosticsCardinalityOverflowPolicy, CardinalityOverflowTruncateAndRecord)
+	}
+	if got.DiagnosticsCardinalityBudgetHitTotal < 2 || got.DiagnosticsCardinalityTruncatedTotal < 2 {
+		t.Fatalf("expected budget/truncation counters >0, got %#v", got)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "task_board_manual_control_by_reason") {
+		t.Fatalf("summary must include task_board_manual_control_by_reason, got %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "timeout_resolution_trace") {
+		t.Fatalf("summary must include timeout_resolution_trace, got %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+	if len(got.TaskBoardManualControlByReason) != 2 {
+		t.Fatalf("map should be truncated to 2 entries, got %#v", got.TaskBoardManualControlByReason)
+	}
+	if _, ok := got.TaskBoardManualControlByReason["alpha"]; !ok {
+		t.Fatalf("sorted key alpha should be retained after truncation, got %#v", got.TaskBoardManualControlByReason)
+	}
+	if _, ok := got.TaskBoardManualControlByReason["beta"]; !ok {
+		t.Fatalf("sorted key beta should be retained after truncation, got %#v", got.TaskBoardManualControlByReason)
+	}
+	if _, ok := got.TaskBoardManualControlByReason["gamma"]; ok {
+		t.Fatalf("sorted key gamma should be truncated, got %#v", got.TaskBoardManualControlByReason)
+	}
+	if len(got.TimelinePhases) != 2 {
+		t.Fatalf("timeline_phases should be truncated to 2 entries, got %#v", got.TimelinePhases)
+	}
+	if len([]byte(got.TimeoutResolutionTrace)) > 8 || !utf8.ValidString(got.TimeoutResolutionTrace) {
+		t.Fatalf("timeout_resolution_trace must be utf8-safe truncated to 8 bytes, got %q", got.TimeoutResolutionTrace)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a45-truncate"})
+	if err != nil {
+		t.Fatalf("query runs failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].DiagnosticsCardinalityTruncatedFieldSummary != got.DiagnosticsCardinalityTruncatedFieldSummary {
+		t.Fatalf("query mapping mismatch: query=%#v store=%#v", page.Items[0], got)
+	}
+}
+
+func TestStoreRunCardinalityFailFastRejectsOverflowPayload(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  2,
+		MaxListEntries: 2,
+		MaxStringBytes: 4,
+		OverflowPolicy: CardinalityOverflowFailFast,
+	})
+	rec := RunRecord{
+		Time:                   time.Now(),
+		RunID:                  "run-a45-fail-fast",
+		Status:                 "failed",
+		TimeoutResolutionTrace: "abcdefg",
+		TaskBoardManualControlByReason: map[string]int{
+			"gamma": 3,
+			"alpha": 1,
+			"beta":  2,
+		},
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	runs := d.RecentRuns(10)
+	if len(runs) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(runs))
+	}
+	got := runs[0]
+	if got.DiagnosticsCardinalityOverflowPolicy != CardinalityOverflowFailFast {
+		t.Fatalf("overflow policy = %q, want %q", got.DiagnosticsCardinalityOverflowPolicy, CardinalityOverflowFailFast)
+	}
+	if got.DiagnosticsCardinalityFailFastRejectTotal != 1 {
+		t.Fatalf("fail-fast reject total = %d, want 1", got.DiagnosticsCardinalityFailFastRejectTotal)
+	}
+	if got.DiagnosticsCardinalityBudgetHitTotal <= 0 {
+		t.Fatalf("budget_hit_total should be > 0, got %#v", got)
+	}
+	if got.DiagnosticsCardinalityTruncatedTotal != 0 {
+		t.Fatalf("truncated_total should stay 0 under fail_fast, got %#v", got)
+	}
+	if got.TimeoutResolutionTrace != "" {
+		t.Fatalf("overflowing string should be removed under fail_fast, got %q", got.TimeoutResolutionTrace)
+	}
+	if got.TaskBoardManualControlByReason != nil {
+		t.Fatalf("overflowing map should be removed under fail_fast, got %#v", got.TaskBoardManualControlByReason)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "task_board_manual_control_by_reason") {
+		t.Fatalf("summary should include rejected field names, got %q", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+}
+
+func TestCardinalityListGovernanceDeterministic(t *testing.T) {
+	cfg := normalizeCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  3,
+		MaxListEntries: 2,
+		MaxStringBytes: 16,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	stats := &cardinalityGovernanceStats{
+		budgetHitFields: map[string]struct{}{},
+		truncatedFields: map[string]struct{}{},
+	}
+	out, overflow := governCardinalityValue([]any{"a", "b", "c"}, "field_list", cfg, stats, true)
+	if !overflow {
+		t.Fatal("list overflow expected for truncate_and_record")
+	}
+	trimmed, _ := out.([]any)
+	if len(trimmed) != 2 || trimmed[0] != "a" || trimmed[1] != "b" {
+		t.Fatalf("list truncation should keep first N order, got %#v", out)
+	}
+
+	failFastCfg := cfg
+	failFastCfg.OverflowPolicy = CardinalityOverflowFailFast
+	stats = &cardinalityGovernanceStats{
+		budgetHitFields: map[string]struct{}{},
+		truncatedFields: map[string]struct{}{},
+	}
+	out, overflow = governCardinalityValue([]any{"a", "b", "c"}, "field_list", failFastCfg, stats, true)
+	if !overflow {
+		t.Fatal("list overflow expected for fail_fast")
+	}
+	if out != nil {
+		t.Fatalf("fail_fast should reject overflowing list payload, got %#v", out)
+	}
+	if len(stats.truncatedFields) != 0 {
+		t.Fatalf("fail_fast should not report truncation, got %#v", stats.truncatedFields)
 	}
 }
 

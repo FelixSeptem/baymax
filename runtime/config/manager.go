@@ -120,6 +120,13 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 		}, nil),
 		stopCh: make(chan struct{}),
 	}
+	m.diag.SetCardinalityConfig(runtimediag.CardinalityConfig{
+		Enabled:        cfg.Diagnostics.Cardinality.Enabled,
+		MaxMapEntries:  cfg.Diagnostics.Cardinality.MaxMapEntries,
+		MaxListEntries: cfg.Diagnostics.Cardinality.MaxListEntries,
+		MaxStringBytes: cfg.Diagnostics.Cardinality.MaxStringBytes,
+		OverflowPolicy: cfg.Diagnostics.Cardinality.OverflowPolicy,
+	})
 	if m.envPrefix == "" {
 		m.envPrefix = DefaultEnvPrefix
 	}
@@ -234,6 +241,13 @@ func (m *Manager) reload() {
 			ErrorRate:    cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate,
 			HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
 		},
+	})
+	m.diag.SetCardinalityConfig(runtimediag.CardinalityConfig{
+		Enabled:        cfg.Diagnostics.Cardinality.Enabled,
+		MaxMapEntries:  cfg.Diagnostics.Cardinality.MaxMapEntries,
+		MaxListEntries: cfg.Diagnostics.Cardinality.MaxListEntries,
+		MaxStringBytes: cfg.Diagnostics.Cardinality.MaxStringBytes,
+		OverflowPolicy: cfg.Diagnostics.Cardinality.OverflowPolicy,
 	})
 	m.updateAdapterHealthRunnerOptions(cfg.Adapter.Health)
 	m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: true})

@@ -16,9 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-25：
-- 已归档并稳定：A4-A44（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口）。
+- 已归档并稳定：A4-A45（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口）。
 - 进行中：
-  - `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`
+  - `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`
+  - `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -206,7 +207,7 @@ A44 目标：
 - 增加 admission additive 诊断字段并纳入 replay idempotency 契约。
 - 将 admission suites 纳入 quality gate 阻断路径并保持 shell/PowerShell parity。
 
-### P1：A45 diagnostics cardinality budget + truncation governance（进行中）
+### P1：A45 diagnostics cardinality budget + truncation governance（已归档）
 
 A45 目标：
 - 为新增 additive 字段建立高基数预算与截断治理，避免查询成本漂移。
@@ -214,14 +215,14 @@ A45 目标：
 - 新增 `diagnostics.cardinality.*` 配置域，默认 `overflow_policy=truncate_and_record`，并支持 `fail_fast`。
 - 将 cardinality drift 检查纳入质量门禁与回放契约验证。
 
-### P1：A46-A47 候选提案池（待 A45 后排期）
+### P1：A46 adapter health backoff + circuit governance（进行中）
 
-#### A46：adapter health backoff + circuit governance（候选）
-
-目标：
+A46 目标：
 - 在 A43 健康探测语义上增加指数退避 + 抖动 + 半开探测治理。
 - 防止外部 adapter 不可用时的探测风暴与瞬时抖动放大。
 - 通过 conformance + quality gate 固化故障恢复和抖动抑制语义。
+
+### P1：A47 候选提案池（待 A46 后排期）
 
 #### A47：readiness-timeout-health replay fixture gate（候选）
 

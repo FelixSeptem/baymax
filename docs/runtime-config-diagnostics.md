@@ -109,6 +109,11 @@
   - `runtime.operation_profiles.interactive.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_INTERACTIVE_TIMEOUT`
   - `runtime.operation_profiles.background.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_BACKGROUND_TIMEOUT`
   - `runtime.operation_profiles.batch.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_BATCH_TIMEOUT`
+  - `diagnostics.cardinality.enabled` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_ENABLED`
+  - `diagnostics.cardinality.max_map_entries` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_MAP_ENTRIES`
+  - `diagnostics.cardinality.max_list_entries` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_LIST_ENTRIES`
+  - `diagnostics.cardinality.max_string_bytes` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_STRING_BYTES`
+  - `diagnostics.cardinality.overflow_policy` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_OVERFLOW_POLICY`
 
 ## YAML Schema（核心字段）
 
@@ -143,6 +148,12 @@ diagnostics:
   max_run_records: 200
   max_reload_errors: 100
   max_skill_records: 200
+  cardinality:
+    enabled: true
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: truncate_and_record # truncate_and_record|fail_fast
   timeline_trend:
     enabled: true
     last_n_runs: 100
@@ -598,6 +609,14 @@ ca2_external_trend 校验语义：
 4. `diagnostics.ca2_external_trend.thresholds.hit_rate` 必须在 `[0,1]`。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
+diagnostics cardinality（A45）校验语义：
+1. `diagnostics.cardinality.max_map_entries` 必须 `> 0`。
+2. `diagnostics.cardinality.max_list_entries` 必须 `> 0`。
+3. `diagnostics.cardinality.max_string_bytes` 必须 `> 0`。
+4. `diagnostics.cardinality.overflow_policy` 仅支持 `truncate_and_record|fail_fast`。
+5. `diagnostics.cardinality.enabled` 使用严格布尔解析，非法值在启动与热更新阶段 fail-fast。
+6. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
+
 ca2 stage2 external hint/template 校验语义：
 1. `context_assembler.ca2.stage2.external.profile` 仅支持 `http_generic|ragflow_like|graphrag_like|elasticsearch_like|explicit_only`。
 2. `context_assembler.ca2.stage2.external.hints.enabled=true` 时，`hints.capabilities` 必须非空。
@@ -903,6 +922,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
   - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
   - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
+  - A45 additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - Adapter Health（A43）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`
@@ -966,6 +986,11 @@ Composed summary additive fields（contract markers）：
 - `timeout_resolution_trace`
 - `timeout_parent_budget_clamp_total`
 - `timeout_parent_budget_reject_total`
+- `diagnostics_cardinality_budget_hit_total`
+- `diagnostics_cardinality_truncated_total`
+- `diagnostics_cardinality_fail_fast_reject_total`
+- `diagnostics_cardinality_overflow_policy`
+- `diagnostics_cardinality_truncated_field_summary`
 - `recovery_enabled`
 - `recovery_resume_boundary`
 - `recovery_inflight_policy`

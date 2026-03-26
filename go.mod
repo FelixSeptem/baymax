@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/modelcontextprotocol/go-sdk v1.4.0
+	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/openai/openai-go v1.12.0
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/spf13/viper v1.20.1

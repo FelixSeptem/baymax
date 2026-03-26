@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/FelixSeptem/baymax/runtime/security/redaction"
 )
@@ -227,6 +229,11 @@ type RunRecord struct {
 	BackpressureDrop                            int                               `json:"backpressure_drop_count,omitempty"`
 	BackpressureDropByPhase                     map[string]int                    `json:"backpressure_drop_count_by_phase,omitempty"`
 	InflightPeak                                int                               `json:"inflight_peak,omitempty"`
+	DiagnosticsCardinalityBudgetHitTotal        int                               `json:"diagnostics_cardinality_budget_hit_total,omitempty"`
+	DiagnosticsCardinalityTruncatedTotal        int                               `json:"diagnostics_cardinality_truncated_total,omitempty"`
+	DiagnosticsCardinalityFailFastRejectTotal   int                               `json:"diagnostics_cardinality_fail_fast_reject_total,omitempty"`
+	DiagnosticsCardinalityOverflowPolicy        string                            `json:"diagnostics_cardinality_overflow_policy,omitempty"`
+	DiagnosticsCardinalityTruncatedFieldSummary string                            `json:"diagnostics_cardinality_truncated_field_summary,omitempty"`
 	TimelinePhases                              map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
 
@@ -382,6 +389,7 @@ type Store struct {
 	timelineStates map[string]*timelineRunState
 	trendConfig    TimelineTrendConfig
 	ca2TrendConfig CA2ExternalTrendConfig
+	cardinality    CardinalityConfig
 }
 
 type timelineRunState struct {
@@ -419,6 +427,14 @@ type CA2ExternalThresholds struct {
 	HitRate      float64
 }
 
+type CardinalityConfig struct {
+	Enabled        bool
+	MaxMapEntries  int
+	MaxListEntries int
+	MaxStringBytes int
+	OverflowPolicy string
+}
+
 type CA2ExternalTrendQuery struct {
 	Window time.Duration
 }
@@ -439,6 +455,15 @@ const (
 	MaxUnifiedQueryPageSize     = 200
 	DefaultMailboxQueryPageSize = 50
 	MaxMailboxQueryPageSize     = 200
+
+	DefaultCardinalityEnabled        = true
+	DefaultCardinalityMaxMapEntries  = 64
+	DefaultCardinalityMaxListEntries = 64
+	DefaultCardinalityMaxStringBytes = 2048
+
+	CardinalityOverflowTruncateAndRecord = "truncate_and_record"
+	CardinalityOverflowFailFast          = "fail_fast"
+	maxCardinalitySummaryFields          = 16
 )
 
 type UnifiedQueryTimeRange struct {
@@ -558,6 +583,7 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 		timelineStates:  make(map[string]*timelineRunState, maxRuns),
 		trendConfig:     trend,
 		ca2TrendConfig:  ca2,
+		cardinality:     normalizeCardinalityConfig(CardinalityConfig{}),
 	}
 }
 
@@ -617,6 +643,12 @@ func (d *Store) SetCA2ExternalTrendConfig(cfg CA2ExternalTrendConfig) {
 	d.ca2TrendConfig = cfg
 }
 
+func (d *Store) SetCardinalityConfig(cfg CardinalityConfig) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.cardinality = normalizeCardinalityConfig(cfg)
+}
+
 func (d *Store) AddCall(rec CallRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -633,6 +665,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}
+	rec = applyCardinalityGovernance(rec, d.cardinality)
 	key := RunIdempotencyKey(rec)
 	if idx, ok := d.runKeys[key]; ok && idx >= 0 && idx < len(d.runs) {
 		d.runs[idx] = rec
@@ -759,6 +792,302 @@ func (d *Store) AddSkill(rec SkillRecord) {
 	d.skills = append(d.skills, rec)
 	d.skills = trimTail(d.skills, d.maxSkillRecords)
 	d.rebuildSkillKeys()
+}
+
+type cardinalityGovernanceStats struct {
+	budgetHitFields map[string]struct{}
+	truncatedFields map[string]struct{}
+}
+
+func applyCardinalityGovernance(rec RunRecord, cfg CardinalityConfig) RunRecord {
+	cfg = normalizeCardinalityConfig(cfg)
+	rec.DiagnosticsCardinalityBudgetHitTotal = 0
+	rec.DiagnosticsCardinalityTruncatedTotal = 0
+	rec.DiagnosticsCardinalityFailFastRejectTotal = 0
+	rec.DiagnosticsCardinalityOverflowPolicy = cfg.OverflowPolicy
+	rec.DiagnosticsCardinalityTruncatedFieldSummary = ""
+	if !cfg.Enabled {
+		return rec
+	}
+	stats := cardinalityGovernanceStats{
+		budgetHitFields: map[string]struct{}{},
+		truncatedFields: map[string]struct{}{},
+	}
+	rv := reflect.ValueOf(&rec).Elem()
+	rt := rv.Type()
+	for i := 0; i < rv.NumField(); i++ {
+		field := rv.Field(i)
+		structField := rt.Field(i)
+		jsonName := jsonFieldName(structField)
+		if jsonName == "" || strings.HasPrefix(jsonName, "diagnostics_cardinality_") {
+			continue
+		}
+		switch field.Kind() {
+		case reflect.String:
+			if isCardinalityStringExemptField(jsonName) {
+				continue
+			}
+			value := field.String()
+			if len([]byte(value)) <= cfg.MaxStringBytes {
+				continue
+			}
+			recordCardinalityBudgetHit(&stats, jsonName)
+			if cfg.OverflowPolicy == CardinalityOverflowTruncateAndRecord {
+				field.SetString(truncateUTF8ByBytes(value, cfg.MaxStringBytes))
+				recordCardinalityTruncated(&stats, jsonName)
+				continue
+			}
+			field.SetString("")
+		case reflect.Map:
+			if field.IsNil() {
+				continue
+			}
+			keys := field.MapKeys()
+			if len(keys) <= cfg.MaxMapEntries {
+				continue
+			}
+			recordCardinalityBudgetHit(&stats, jsonName)
+			if cfg.OverflowPolicy == CardinalityOverflowFailFast {
+				field.Set(reflect.Zero(field.Type()))
+				continue
+			}
+			sort.Slice(keys, func(i, j int) bool {
+				return keys[i].String() < keys[j].String()
+			})
+			limit := cfg.MaxMapEntries
+			if limit > len(keys) {
+				limit = len(keys)
+			}
+			out := reflect.MakeMapWithSize(field.Type(), limit)
+			for idx := 0; idx < limit; idx++ {
+				key := keys[idx]
+				out.SetMapIndex(key, field.MapIndex(key))
+			}
+			field.Set(out)
+			recordCardinalityTruncated(&stats, jsonName)
+		case reflect.Slice:
+			if field.IsNil() || field.Len() <= cfg.MaxListEntries {
+				continue
+			}
+			recordCardinalityBudgetHit(&stats, jsonName)
+			if cfg.OverflowPolicy == CardinalityOverflowFailFast {
+				field.Set(reflect.Zero(field.Type()))
+				continue
+			}
+			limit := cfg.MaxListEntries
+			if limit > field.Len() {
+				limit = field.Len()
+			}
+			out := reflect.MakeSlice(field.Type(), limit, limit)
+			reflect.Copy(out, field.Slice(0, limit))
+			field.Set(out)
+			recordCardinalityTruncated(&stats, jsonName)
+		}
+	}
+
+	rec.DiagnosticsCardinalityBudgetHitTotal = len(stats.budgetHitFields)
+	rec.DiagnosticsCardinalityTruncatedTotal = len(stats.truncatedFields)
+	rec.DiagnosticsCardinalityOverflowPolicy = cfg.OverflowPolicy
+	if cfg.OverflowPolicy == CardinalityOverflowFailFast && rec.DiagnosticsCardinalityBudgetHitTotal > 0 {
+		rec.DiagnosticsCardinalityFailFastRejectTotal = 1
+		rec.DiagnosticsCardinalityTruncatedFieldSummary = boundedCardinalitySummary(stats.budgetHitFields)
+		return rec
+	}
+	rec.DiagnosticsCardinalityTruncatedFieldSummary = boundedCardinalitySummary(stats.truncatedFields)
+	return rec
+}
+
+func governCardinalityValue(
+	value any,
+	path string,
+	cfg CardinalityConfig,
+	stats *cardinalityGovernanceStats,
+	enforceMapBudget bool,
+) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		overflow := enforceMapBudget && len(keys) > cfg.MaxMapEntries
+		if overflow {
+			recordCardinalityBudgetHit(stats, path)
+		}
+
+		limit := len(keys)
+		if overflow {
+			limit = cfg.MaxMapEntries
+		}
+		out := make(map[string]any, limit)
+		for i := 0; i < limit; i++ {
+			key := keys[i]
+			nextPath := key
+			if path != "" {
+				nextPath = path + "." + key
+			}
+			nextValue, _ := governCardinalityValue(typed[key], nextPath, cfg, stats, true)
+			out[key] = nextValue
+		}
+		if overflow {
+			if cfg.OverflowPolicy == CardinalityOverflowTruncateAndRecord {
+				recordCardinalityTruncated(stats, path)
+				return out, true
+			}
+			return nil, true
+		}
+		return out, false
+	case []any:
+		overflow := len(typed) > cfg.MaxListEntries
+		if overflow {
+			recordCardinalityBudgetHit(stats, path)
+		}
+		limit := len(typed)
+		if overflow {
+			limit = cfg.MaxListEntries
+		}
+		out := make([]any, 0, limit)
+		for i := 0; i < limit; i++ {
+			nextPath := path
+			if nextPath == "" {
+				nextPath = "list"
+			}
+			nextValue, _ := governCardinalityValue(typed[i], nextPath, cfg, stats, true)
+			out = append(out, nextValue)
+		}
+		if overflow {
+			if cfg.OverflowPolicy == CardinalityOverflowTruncateAndRecord {
+				recordCardinalityTruncated(stats, path)
+				return out, true
+			}
+			return nil, true
+		}
+		return out, false
+	case string:
+		if len([]byte(typed)) <= cfg.MaxStringBytes {
+			return typed, false
+		}
+		recordCardinalityBudgetHit(stats, path)
+		if cfg.OverflowPolicy == CardinalityOverflowTruncateAndRecord {
+			recordCardinalityTruncated(stats, path)
+			return truncateUTF8ByBytes(typed, cfg.MaxStringBytes), true
+		}
+		return "", true
+	default:
+		return value, false
+	}
+}
+
+func normalizeCardinalityConfig(cfg CardinalityConfig) CardinalityConfig {
+	if !cfg.Enabled && cfg.MaxMapEntries == 0 && cfg.MaxListEntries == 0 && cfg.MaxStringBytes == 0 && strings.TrimSpace(cfg.OverflowPolicy) == "" {
+		cfg.Enabled = DefaultCardinalityEnabled
+	}
+	if cfg.MaxMapEntries <= 0 {
+		cfg.MaxMapEntries = DefaultCardinalityMaxMapEntries
+	}
+	if cfg.MaxListEntries <= 0 {
+		cfg.MaxListEntries = DefaultCardinalityMaxListEntries
+	}
+	if cfg.MaxStringBytes <= 0 {
+		cfg.MaxStringBytes = DefaultCardinalityMaxStringBytes
+	}
+	policy := strings.ToLower(strings.TrimSpace(cfg.OverflowPolicy))
+	switch policy {
+	case CardinalityOverflowTruncateAndRecord, CardinalityOverflowFailFast:
+	default:
+		policy = CardinalityOverflowTruncateAndRecord
+	}
+	cfg.OverflowPolicy = policy
+	return cfg
+}
+
+func recordCardinalityBudgetHit(stats *cardinalityGovernanceStats, path string) {
+	if stats == nil {
+		return
+	}
+	if stats.budgetHitFields == nil {
+		stats.budgetHitFields = map[string]struct{}{}
+	}
+	stats.budgetHitFields[cardinalitySummaryField(path)] = struct{}{}
+}
+
+func recordCardinalityTruncated(stats *cardinalityGovernanceStats, path string) {
+	if stats == nil {
+		return
+	}
+	if stats.truncatedFields == nil {
+		stats.truncatedFields = map[string]struct{}{}
+	}
+	stats.truncatedFields[cardinalitySummaryField(path)] = struct{}{}
+}
+
+func cardinalitySummaryField(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "_root"
+	}
+	if idx := strings.Index(path, "."); idx > 0 {
+		return path[:idx]
+	}
+	return path
+}
+
+func boundedCardinalitySummary(fields map[string]struct{}) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	items := make([]string, 0, len(fields))
+	for field := range fields {
+		items = append(items, field)
+	}
+	sort.Strings(items)
+	if len(items) > maxCardinalitySummaryFields {
+		items = items[:maxCardinalitySummaryFields]
+	}
+	return strings.Join(items, ",")
+}
+
+func jsonFieldName(field reflect.StructField) string {
+	tag := strings.TrimSpace(field.Tag.Get("json"))
+	if tag == "" {
+		return ""
+	}
+	name := strings.SplitN(tag, ",", 2)[0]
+	if name == "-" {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+func isCardinalityStringExemptField(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return true
+	}
+	switch name {
+	case "status", "error_class":
+		return true
+	}
+	return strings.HasSuffix(name, "_id")
+}
+
+func truncateUTF8ByBytes(in string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	raw := []byte(in)
+	if len(raw) <= maxBytes {
+		return in
+	}
+	end := maxBytes
+	for end > 0 && !utf8.Valid(raw[:end]) {
+		end--
+	}
+	if end <= 0 {
+		return ""
+	}
+	return string(raw[:end])
 }
 
 func (d *Store) RecentCalls(n int) []CallRecord {

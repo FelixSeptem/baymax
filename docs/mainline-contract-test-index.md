@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-24
+更新时间：2026-03-25
 
 ## 目标
 
@@ -105,6 +105,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Runtime Readiness Admission A44 Run/Stream + No-Side-Effects | `orchestration/composer/composer_test.go::TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent` | `integration/runtime_readiness_admission_contract_test.go::TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSideEffects` |
 | Runtime Readiness Admission A44 Diagnostics Additive + Replay | `runtime/diagnostics/store_test.go::TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault` |
 | Runtime Readiness Admission A44 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Diagnostics Cardinality Governance A45 Config + Reload Rollback | `runtime/config/config_test.go::TestDiagnosticsCardinalityEnvOverridePrecedence`、`runtime/config/config_test.go::TestDiagnosticsCardinalityEnabledRejectsMalformedBoolean` | `runtime/config/manager_test.go::TestManagerDiagnosticsCardinalityInvalidReloadRollsBack` |
+| Diagnostics Cardinality Governance A45 Overflow Policy + Deterministic Truncation | `runtime/diagnostics/store_test.go::TestStoreRunCardinalityTruncateAndRecordDeterministic` | `runtime/diagnostics/store_test.go::TestStoreRunCardinalityFailFastRejectsOverflowPayload` |
+| Diagnostics Cardinality Governance A45 Run/Stream + Replay + Parity | `integration/diagnostics_cardinality_contract_test.go::TestDiagnosticsCardinalityContractDeterministicTruncationRunStreamEquivalent` | `integration/diagnostics_cardinality_contract_test.go::TestDiagnosticsCardinalityContractReplayIdempotentAggregates` |
+| Diagnostics Cardinality Governance A45 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Operation Profiles A41 Config Validation + Reload Rollback | `runtime/config/config_test.go::TestRuntimeOperationProfilesValidationRejectsInvalidValues` | `runtime/config/manager_test.go::TestManagerRuntimeOperationProfilesInvalidReloadRollsBack` |
 | Timeout Resolution A41 Precedence + Clamp + Query Surface | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractValidationPrecedenceClampAndTaskBoard` | `orchestration/composer/composer_test.go::TestComposerSpawnChildTimeoutResolutionPrecedenceAndSummary` |
 | Timeout Resolution A41 Parent Budget Exhausted Reject | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractParentBudgetExhaustedRejectClassification` | `orchestration/scheduler/store_test.go::TestSchedulerSpawnChildRejectsExhaustedParentBudget` |

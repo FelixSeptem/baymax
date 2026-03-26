@@ -10,6 +10,15 @@ if (-not $env:GOCACHE) {
 if (-not $env:GOLANGCI_LINT_CACHE) {
     $env:GOLANGCI_LINT_CACHE = Join-Path $repoRoot ".gocache/golangci-lint"
 }
+if (-not $env:GOPROXY) {
+    $env:GOPROXY = "https://proxy.golang.org,direct"
+}
+if (-not $env:GOSUMDB) {
+    $env:GOSUMDB = "sum.golang.org"
+}
+if (-not $env:GOVULNDB) {
+    $env:GOVULNDB = "https://vuln.go.dev"
+}
 if (-not $env:CGO_ENABLED) {
     $env:CGO_ENABLED = "1"
 }
@@ -42,6 +51,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
 
 Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness contract suites" -Command {
     go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics cardinality contract suites" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {
@@ -124,21 +137,51 @@ $govulncheckEnabled = if ($env:BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED) { $env:
 if ($govulncheckEnabled -eq "true") {
     Write-Host "[quality-gate] govulncheck (mode=$scanMode)"
 
-    # The only governance exception path: warn mode allows vulnerability findings without unblocking other strict checks.
-    $allowWarn = ($scanMode -eq "warn")
-    if (Get-Command govulncheck -ErrorAction SilentlyContinue) {
-        $exitCode = Invoke-NativeStrict -Label "govulncheck ./..." -AllowFailure:$allowWarn -Command {
-            govulncheck ./...
+    $proxyVars = @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY")
+    $savedProxy = @{}
+    $needsDirect = $false
+    foreach ($name in $proxyVars) {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            continue
+        }
+        $savedProxy[$name] = $value
+        $lower = $value.Trim().ToLowerInvariant()
+        if ($lower.Contains("127.0.0.1:9") -or $lower.Contains("localhost:9") -or $lower.Contains("[::1]:9")) {
+            $needsDirect = $true
         }
     }
-    else {
-        $exitCode = Invoke-NativeStrict -Label "go run golang.org/x/vuln/cmd/govulncheck@latest ./..." -AllowFailure:$allowWarn -Command {
-            go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    if ($needsDirect) {
+        Write-Host "[quality-gate] detected placeholder proxy for govulncheck; run with direct connection"
+        foreach ($name in $proxyVars) {
+            Remove-Item -Path ("Env:" + $name) -ErrorAction SilentlyContinue
         }
     }
 
-    if ($allowWarn -and $exitCode -ne 0) {
-        Write-Warning "[quality-gate] govulncheck found issues but mode=warn; continue"
+    # The only governance exception path: warn mode allows vulnerability findings without unblocking other strict checks.
+    $allowWarn = ($scanMode -eq "warn")
+    try {
+        if (Get-Command govulncheck -ErrorAction SilentlyContinue) {
+            $exitCode = Invoke-NativeStrict -Label "govulncheck ./..." -AllowFailure:$allowWarn -Command {
+                govulncheck ./...
+            }
+        }
+        else {
+            $exitCode = Invoke-NativeStrict -Label "go run golang.org/x/vuln/cmd/govulncheck@latest ./..." -AllowFailure:$allowWarn -Command {
+                go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+            }
+        }
+
+        if ($allowWarn -and $exitCode -ne 0) {
+            Write-Warning "[quality-gate] govulncheck found issues but mode=warn; continue"
+        }
+    }
+    finally {
+        if ($needsDirect) {
+            foreach ($name in $savedProxy.Keys) {
+                Set-Item -Path ("Env:" + $name) -Value $savedProxy[$name]
+            }
+        }
     }
 }
 else {

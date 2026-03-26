@@ -175,6 +175,11 @@ const (
 	SecurityEventSeverityHigh            = "high"
 )
 
+const (
+	DiagnosticsCardinalityOverflowTruncateAndRecord = "truncate_and_record"
+	DiagnosticsCardinalityOverflowFailFast          = "fail_fast"
+)
+
 type Config struct {
 	MCP              MCPConfig              `json:"mcp"`
 	Concurrency      ConcurrencyConfig      `json:"concurrency"`
@@ -285,8 +290,17 @@ type DiagnosticsConfig struct {
 	MaxRunRecords    int                               `json:"max_run_records"`
 	MaxReloadErrors  int                               `json:"max_reload_errors"`
 	MaxSkillRecords  int                               `json:"max_skill_records"`
+	Cardinality      DiagnosticsCardinalityConfig      `json:"cardinality"`
 	TimelineTrend    DiagnosticsTimelineTrendConfig    `json:"timeline_trend"`
 	CA2ExternalTrend DiagnosticsCA2ExternalTrendConfig `json:"ca2_external_trend"`
+}
+
+type DiagnosticsCardinalityConfig struct {
+	Enabled        bool   `json:"enabled"`
+	MaxMapEntries  int    `json:"max_map_entries"`
+	MaxListEntries int    `json:"max_list_entries"`
+	MaxStringBytes int    `json:"max_string_bytes"`
+	OverflowPolicy string `json:"overflow_policy"`
 }
 
 type DiagnosticsTimelineTrendConfig struct {
@@ -965,6 +979,13 @@ func DefaultConfig() Config {
 			MaxRunRecords:   200,
 			MaxReloadErrors: 100,
 			MaxSkillRecords: 200,
+			Cardinality: DiagnosticsCardinalityConfig{
+				Enabled:        true,
+				MaxMapEntries:  64,
+				MaxListEntries: 64,
+				MaxStringBytes: 2048,
+				OverflowPolicy: DiagnosticsCardinalityOverflowTruncateAndRecord,
+			},
 			TimelineTrend: DiagnosticsTimelineTrendConfig{
 				Enabled:    true,
 				LastNRuns:  100,
@@ -1626,6 +1647,25 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Diagnostics.MaxSkillRecords <= 0 {
 		return errors.New("diagnostics.max_skill_records must be > 0")
+	}
+	if cfg.Diagnostics.Cardinality.MaxMapEntries <= 0 {
+		return errors.New("diagnostics.cardinality.max_map_entries must be > 0")
+	}
+	if cfg.Diagnostics.Cardinality.MaxListEntries <= 0 {
+		return errors.New("diagnostics.cardinality.max_list_entries must be > 0")
+	}
+	if cfg.Diagnostics.Cardinality.MaxStringBytes <= 0 {
+		return errors.New("diagnostics.cardinality.max_string_bytes must be > 0")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Diagnostics.Cardinality.OverflowPolicy)) {
+	case DiagnosticsCardinalityOverflowTruncateAndRecord, DiagnosticsCardinalityOverflowFailFast:
+	default:
+		return fmt.Errorf(
+			"diagnostics.cardinality.overflow_policy must be one of [%s,%s], got %q",
+			DiagnosticsCardinalityOverflowTruncateAndRecord,
+			DiagnosticsCardinalityOverflowFailFast,
+			cfg.Diagnostics.Cardinality.OverflowPolicy,
+		)
 	}
 	if cfg.Diagnostics.TimelineTrend.LastNRuns <= 0 {
 		return errors.New("diagnostics.timeline_trend.last_n_runs must be > 0")
@@ -3047,6 +3087,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.max_run_records", base.Diagnostics.MaxRunRecords)
 	v.SetDefault("diagnostics.max_reload_errors", base.Diagnostics.MaxReloadErrors)
 	v.SetDefault("diagnostics.max_skill_records", base.Diagnostics.MaxSkillRecords)
+	v.SetDefault("diagnostics.cardinality.enabled", base.Diagnostics.Cardinality.Enabled)
+	v.SetDefault("diagnostics.cardinality.max_map_entries", base.Diagnostics.Cardinality.MaxMapEntries)
+	v.SetDefault("diagnostics.cardinality.max_list_entries", base.Diagnostics.Cardinality.MaxListEntries)
+	v.SetDefault("diagnostics.cardinality.max_string_bytes", base.Diagnostics.Cardinality.MaxStringBytes)
+	v.SetDefault("diagnostics.cardinality.overflow_policy", base.Diagnostics.Cardinality.OverflowPolicy)
 	v.SetDefault("diagnostics.timeline_trend.enabled", base.Diagnostics.TimelineTrend.Enabled)
 	v.SetDefault("diagnostics.timeline_trend.last_n_runs", base.Diagnostics.TimelineTrend.LastNRuns)
 	v.SetDefault("diagnostics.timeline_trend.time_window", base.Diagnostics.TimelineTrend.TimeWindow)
@@ -3348,6 +3393,15 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Diagnostics.MaxRunRecords = v.GetInt("diagnostics.max_run_records")
 	cfg.Diagnostics.MaxReloadErrors = v.GetInt("diagnostics.max_reload_errors")
 	cfg.Diagnostics.MaxSkillRecords = v.GetInt("diagnostics.max_skill_records")
+	cardinalityEnabled, err := strictBoolConfigValue(v, "diagnostics.cardinality.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Diagnostics.Cardinality.Enabled = cardinalityEnabled
+	cfg.Diagnostics.Cardinality.MaxMapEntries = v.GetInt("diagnostics.cardinality.max_map_entries")
+	cfg.Diagnostics.Cardinality.MaxListEntries = v.GetInt("diagnostics.cardinality.max_list_entries")
+	cfg.Diagnostics.Cardinality.MaxStringBytes = v.GetInt("diagnostics.cardinality.max_string_bytes")
+	cfg.Diagnostics.Cardinality.OverflowPolicy = strings.ToLower(strings.TrimSpace(v.GetString("diagnostics.cardinality.overflow_policy")))
 	cfg.Diagnostics.TimelineTrend.Enabled = v.GetBool("diagnostics.timeline_trend.enabled")
 	cfg.Diagnostics.TimelineTrend.LastNRuns = v.GetInt("diagnostics.timeline_trend.last_n_runs")
 	cfg.Diagnostics.TimelineTrend.TimeWindow = v.GetDuration("diagnostics.timeline_trend.time_window")

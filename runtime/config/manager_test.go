@@ -405,6 +405,97 @@ reload:
 	}
 }
 
+func TestManagerDiagnosticsCardinalityInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: truncate_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Diagnostics.Cardinality
+	if before.OverflowPolicy != DiagnosticsCardinalityOverflowTruncateAndRecord {
+		t.Fatalf("before diagnostics.cardinality.overflow_policy = %q, want truncate_and_record", before.OverflowPolicy)
+	}
+
+	writeConfig(t, file, `
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: drop_new
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	afterEnum := mgr.EffectiveConfig().Diagnostics.Cardinality
+	if afterEnum.OverflowPolicy != before.OverflowPolicy {
+		t.Fatalf("invalid overflow_policy reload should rollback, got %#v want %#v", afterEnum, before)
+	}
+
+	writeConfig(t, file, `
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 0
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: truncate_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	afterThreshold := mgr.EffectiveConfig().Diagnostics.Cardinality
+	if afterThreshold.MaxMapEntries != before.MaxMapEntries {
+		t.Fatalf("invalid max_map_entries reload should rollback, got %#v want %#v", afterThreshold, before)
+	}
+
+	writeConfig(t, file, `
+diagnostics:
+  cardinality:
+    enabled: definitely
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: truncate_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	afterBool := mgr.EffectiveConfig().Diagnostics.Cardinality
+	if afterBool.Enabled != before.Enabled {
+		t.Fatalf("invalid enabled boolean reload should rollback, got %#v want %#v", afterBool, before)
+	}
+
+	reloads := mgr.RecentReloads(10)
+	failed := 0
+	for _, rec := range reloads {
+		if !rec.Success {
+			failed++
+		}
+	}
+	if failed < 3 {
+		t.Fatalf("expected at least 3 failed reload records, got %#v", reloads)
+	}
+}
+
 func TestManagerUnifiedRunQueryAPIAndCompatibility(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

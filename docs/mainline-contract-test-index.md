@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-25
+更新时间：2026-03-26
 
 ## 目标
 
@@ -120,6 +120,9 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Timeout Resolution A41 Run/Stream + Memory/File Parity | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractRunStreamAndMemoryFileParity` | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractRunStreamAndMemoryFileParity` |
 | Timeout Resolution A41 Replay Idempotency + Parser Compatibility | `integration/timeout_resolution_contract_test.go::TestTimeoutResolutionContractReplayIdempotency` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA41ParserCompatibilityAdditiveNullableDefault` |
 | Timeout Resolution A41 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-quality-gate.sh` |
+| Readiness-Timeout-Health Replay Fixture A47 Composite Matrix + Parity | `integration/readiness_timeout_health_replay_contract_test.go::TestReadinessTimeoutHealthReplayContractCompositeFixtureSuite` | `tool/diagnosticsreplay/composite_test.go::TestReplayContractCompositeFixtureSuccessAndDeterministicNormalizedOutput` |
+| Readiness-Timeout-Health Replay Fixture A47 Drift Guard | `integration/readiness_timeout_health_replay_contract_test.go::TestReadinessTimeoutHealthReplayContractDriftGuardFailFast` | `tool/diagnosticsreplay/composite_test.go::TestReplayContractCompositeFixtureMissingAxisSchemaMismatch`、`tool/diagnosticsreplay/composite_test.go::TestReplayContractCompositeFixtureSemanticDrift` |
+| Readiness-Timeout-Health Replay Fixture A47 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
 | Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
 | Mailbox Contract A30 Backend Parity + Restore Determinism | `integration/mailbox_contract_test.go::TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism` | `orchestration/mailbox/mailbox_test.go::TestMailboxSnapshotRestoreMemoryFileParity` |

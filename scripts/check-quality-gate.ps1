@@ -69,6 +69,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] timeout resolution contract suite
     go test ./integration -run '^TestTimeoutResolutionContract' -count=1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] readiness-timeout-health replay fixture suites" -Command {
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

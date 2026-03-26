@@ -71,6 +71,12 @@ if ! go test ./integration -run '^TestTimeoutResolutionContract' -count=1; then
   exit 1
 fi
 
+echo "[quality-gate] readiness-timeout-health replay fixture suites"
+if ! go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1; then
+  echo "[quality-gate][readiness-timeout-health-replay] replay fixture suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

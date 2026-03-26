@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-25
+更新时间：2026-03-26
 
 ## 目标
 
@@ -1021,7 +1021,7 @@ Composed summary additive fields（contract markers）：
 - `runtime_readiness_admission_mode`
 - `runtime_readiness_admission_primary_code`
 
-## 诊断回放（D1）
+## 诊断回放（D1 + A47）
 
 离线回放命令：
 
@@ -1029,10 +1029,25 @@ Composed summary additive fields（contract markers）：
 go run ./cmd/diagnostics-replay -input diagnostics.json
 ```
 
-语义：
+语义（精简模式 D1）：
 - 输入：diagnostics JSON（`timeline_events` 或 `events`）
 - 输出：精简 timeline 视图（`run_id/sequence/phase/status/reason/timestamp`）
 - 目标：离线排障与契约回归，不依赖在线 runtime API
+
+语义（A47 组合模式）：
+- 输入：版本化 fixture（`version=a47.v1`），场景维度覆盖 readiness/timeout/adapter-health
+- 输出：deterministic normalized semantic output（按 case name 稳定排序）
+- 强约束字段：
+  - readiness: `status/strict/primary_code/reason_taxonomy`
+  - timeout: `source/budget_outcome/trace`
+  - adapter health: `status/required/circuit_state/primary_code/governance_primary_code/reason_taxonomy`
+- replay idempotency：
+  - `first_logical_ingest_total == replay_logical_ingest_total`
+  - 不满足时按 `semantic_drift` fail-fast
+- drift 分类：
+  - `schema_mismatch`（fixture 版本/结构/矩阵覆盖缺失）
+  - `semantic_drift`（taxonomy/source/state/idempotency 漂移）
+  - `ordering_drift`（ordering 非确定性漂移）
 
 详细使用说明见：`docs/diagnostics-replay.md`。
 

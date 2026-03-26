@@ -1,6 +1,6 @@
-# Diagnostics JSON Replay（精简模式）
+# Diagnostics JSON Replay（精简 + A47 组合模式）
 
-更新时间：2026-03-17
+更新时间：2026-03-26
 
 ## 适用场景
 
@@ -9,6 +9,8 @@
 - 回归校验（固定输入/输出契约）。
 
 ## 输入契约
+
+### 1) 精简模式（D1）
 
 当前仅支持 JSON 输入，支持两种形态：
 
@@ -22,7 +24,22 @@
 - `status`
 - `timestamp`（或 `time`，RFC3339）
 
+### 2) A47 组合模式（readiness-timeout-health）
+
+组合模式用于跨域语义回放门禁（quality-gate blocking check），输入为版本化 fixture：
+
+- `version`：当前固定 `a47.v1`
+- `cases[]`：场景矩阵项，必须覆盖最小轴：
+  - readiness：`ready|degraded|blocked` + `readiness_strict=true|false`
+  - timeout：`profile|domain|request` + `none|clamped|rejected`
+  - adapter health：`healthy|degraded|unavailable` + `closed|open|half_open` + `adapter_required=true|false`
+- 每个 case 包含：`run`、`stream`、`expected`、`idempotency`
+  - `run/stream/expected` 强约束字段：`status/primary_code/reason_taxonomy/timeout source + budget outcome + trace/circuit_state`
+  - `idempotency`：`first_logical_ingest_total` 与 `replay_logical_ingest_total` 必须保持稳定
+
 ## 使用方式
+
+### 精简模式 CLI
 
 ```bash
 go run ./cmd/diagnostics-replay -input diagnostics.json
@@ -36,6 +53,17 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
 - `reason`（可选）
 - `timestamp`
 
+### 组合模式（Go API）
+
+```go
+raw, _ := os.ReadFile("integration/testdata/diagnostics-replay/a47/v1/composite-success.json")
+out, err := diagnosticsreplay.EvaluateCompositeFixtureJSON(raw)
+if err != nil {
+    // err.(*diagnosticsreplay.ValidationError).Code
+}
+_ = out // deterministic normalized output
+```
+
 ## 稳定错误码
 
 - `invalid_json`
@@ -44,6 +72,9 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
 - `missing_required_field`
 - `invalid_field_type`
 - `invalid_timestamp`
+- `schema_mismatch`（fixture 结构/版本/矩阵覆盖缺失）
+- `semantic_drift`（taxonomy/source/state/idempotency 漂移）
+- `ordering_drift`（ordering 非确定性漂移）
 
 这些错误码用于 CI 契约回归和脚本自动判定，除非显式版本化，不应随意变更。
 
@@ -51,5 +82,8 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
 
 - Linux: `bash scripts/check-diagnostics-replay-contract.sh`
 - PowerShell: `pwsh -File scripts/check-diagnostics-replay-contract.ps1`
+- A47 组合回放（blocking）：
+  - Linux/PowerShell 统一由 `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1` 执行
+  - 目标套件：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1`
 
 建议在分支保护中将 `diagnostics-replay-gate` 设置为 required status check。

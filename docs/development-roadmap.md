@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-26：
-- 已归档并稳定：A4-A45（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口）。
+- 已归档并稳定：A4-A46（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口）。
 - 进行中：
-  - `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`
   - `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`
+  - `introduce-cross-domain-primary-reason-arbitration-contract-a48`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -215,7 +215,7 @@ A45 目标：
 - 新增 `diagnostics.cardinality.*` 配置域，默认 `overflow_policy=truncate_and_record`，并支持 `fail_fast`。
 - 将 cardinality drift 检查纳入质量门禁与回放契约验证。
 
-### P1：A46 adapter health backoff + circuit governance（进行中，实施完成待归档）
+### P1：A46 adapter health backoff + circuit governance（已归档）
 
 A46 目标：
 - 在 A43 健康探测语义上增加指数退避 + 抖动 + 半开探测治理。
@@ -230,12 +230,26 @@ A46 当前落地（实现已完成）：
 - `integration/adapterconformance` 新增 governance matrix suites（状态转移确定性、半开恢复、taxonomy drift guard、replay idempotency）。
 - `scripts/check-adapter-conformance.*` 与 `scripts/check-quality-gate.*` 已纳入 A46 suites 并保持 shell/PowerShell parity。
 
-### P1：A47 readiness-timeout-health replay fixture gate（进行中）
+### P1：A47 readiness-timeout-health replay fixture gate（进行中，实施完成待归档）
 
 A47 目标：
 - 固化 `readiness + timeout resolution + adapter health` 交叉语义回放夹具。
 - 防止跨提案演进造成 finding taxonomy 与阻断策略漂移。
 - 为后续 0.x 收敛阶段提供稳定的语义回归基线。
+
+A47 当前落地（实现已完成）：
+- `tool/diagnosticsreplay` 新增 A47 组合 fixture schema（`version=a47.v1`）、loader、canonical normalization 与 deterministic assertion pipeline。
+- 错误分类补齐 `schema_mismatch|semantic_drift|ordering_drift`，并对 taxonomy/source/state 漂移执行 fail-fast。
+- 新增 `integration/readiness_timeout_health_replay_contract_test.go` 与 `integration/testdata/diagnostics-replay/a47/v1/*`（success + taxonomy/source/state drift fixtures）。
+- quality gate 接入 A47 阻断步骤：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1`，shell/PowerShell parity 保持一致。
+- 主干索引与 diagnostics 文档已补齐 A47 fixture suite 与 gate 映射。
+
+### P1：A48 cross-domain primary reason arbitration（进行中）
+
+A48 目标：
+- 固化 timeout/readiness/adapter-health 冲突场景下的 primary reason 裁决优先级与 tie-break 规则。
+- 统一 `runtime_primary_domain|code|source` 解释链路，保持 Run/Stream/replay 语义一致。
+- 将 arbitration drift 检测纳入 replay + quality gate 阻断，防止跨提案演进产生 reclassification drift。
 
 ### P2：0.x 质量与治理持续收敛
 

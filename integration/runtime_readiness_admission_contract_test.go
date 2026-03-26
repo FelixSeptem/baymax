@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	"github.com/FelixSeptem/baymax/observability/event"
@@ -194,6 +195,103 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimeReadinessAdmissionBypassTotal != 1 ||
 			rec.RuntimeReadinessAdmissionMode != runtimeconfig.ReadinessAdmissionModeFailFast {
 			t.Fatalf("bypass run record mismatch: %#v", rec)
+		}
+	})
+}
+
+func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a46-circuit-open.yaml")
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: true",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: " + runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord,
+		"adapter:",
+		"  health:",
+		"    enabled: true",
+		"    strict: false",
+		"    probe_timeout: 500ms",
+		"    cache_ttl: 30s",
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config: %v", err)
+	}
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A46_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := composer.NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+		Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "required-adapter",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status: adapterhealth.StatusUnavailable,
+					Code:   adapterhealth.CodeCircuitOpen,
+					Governance: adapterhealth.GovernanceSnapshot{
+						CircuitState: string(adapterhealth.CircuitStateOpen),
+					},
+				}, nil
+			}),
+		},
+	})
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a46-admission-circuit-open-run",
+		Input: "blocked-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied when required adapter circuit remains open")
+	}
+	assertAdmissionContractDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a46-admission-circuit-open-stream",
+		Input: "blocked-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied when required adapter circuit remains open")
+	}
+	assertAdmissionContractDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-run", func(rec mapRunRecord) {
+		if rec.RuntimeReadinessAdmissionTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 {
+			t.Fatalf("run admission record mismatch: %#v", rec)
+		}
+	})
+	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-stream", func(rec mapRunRecord) {
+		if rec.RuntimeReadinessAdmissionTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 {
+			t.Fatalf("stream admission record mismatch: %#v", rec)
 		}
 	})
 }

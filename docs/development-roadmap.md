@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-25
+更新时间：2026-03-26
 
 ## 定位
 
@@ -15,11 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-25：
+截至 2026-03-26：
 - 已归档并稳定：A4-A45（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口）。
 - 进行中：
   - `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`
-  - `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`
+  - `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -215,18 +215,24 @@ A45 目标：
 - 新增 `diagnostics.cardinality.*` 配置域，默认 `overflow_policy=truncate_and_record`，并支持 `fail_fast`。
 - 将 cardinality drift 检查纳入质量门禁与回放契约验证。
 
-### P1：A46 adapter health backoff + circuit governance（进行中）
+### P1：A46 adapter health backoff + circuit governance（进行中，实施完成待归档）
 
 A46 目标：
 - 在 A43 健康探测语义上增加指数退避 + 抖动 + 半开探测治理。
 - 防止外部 adapter 不可用时的探测风暴与瞬时抖动放大。
 - 通过 conformance + quality gate 固化故障恢复和抖动抑制语义。
 
-### P1：A47 候选提案池（待 A46 后排期）
+A46 当前落地（实现已完成）：
+- `runtime/config` 新增 `adapter.health.backoff.*` 与 `adapter.health.circuit.*`（default/env/file、startup 校验、hot reload 非法更新回滚）。
+- `adapter/health` 落地 `closed|open|half_open` 状态机、指数退避 + 抖动、half-open 探测预算与恢复判定。
+- `runtime/config/readiness` 增加 circuit-open / half-open degraded / governance recovered 的 canonical `adapter.health.*` finding 映射，并保持 strict/non-strict 分类稳定。
+- `runtime/diagnostics` 与 `RuntimeRecorder` 新增 A46 additive 字段：`adapter_health_backoff_applied_total`、`adapter_health_circuit_*`、`adapter_health_governance_primary_code`。
+- `integration/adapterconformance` 新增 governance matrix suites（状态转移确定性、半开恢复、taxonomy drift guard、replay idempotency）。
+- `scripts/check-adapter-conformance.*` 与 `scripts/check-quality-gate.*` 已纳入 A46 suites 并保持 shell/PowerShell parity。
 
-#### A47：readiness-timeout-health replay fixture gate（候选）
+### P1：A47 readiness-timeout-health replay fixture gate（进行中）
 
-目标：
+A47 目标：
 - 固化 `readiness + timeout resolution + adapter health` 交叉语义回放夹具。
 - 防止跨提案演进造成 finding taxonomy 与阻断策略漂移。
 - 为后续 0.x 收敛阶段提供稳定的语义回归基线。

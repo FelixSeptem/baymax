@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 )
@@ -279,6 +280,180 @@ adapter:
 	}
 	if first.Summary().AdapterHealthPrimaryCode != second.Summary().AdapterHealthPrimaryCode {
 		t.Fatalf("adapter primary code drift first=%q second=%q", first.Summary().AdapterHealthPrimaryCode, second.Summary().AdapterHealthPrimaryCode)
+	}
+}
+
+func TestManagerReadinessPreflightAdapterHealthCircuitOpenStrictAndNonStrictMapping(t *testing.T) {
+	strictFile := filepath.Join(t.TempDir(), "runtime-strict.yaml")
+	writeConfig(t, strictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 1ms
+    backoff:
+      enabled: false
+      initial: 200ms
+      max: 5s
+      multiplier: 2
+      jitter_ratio: 0.2
+    circuit:
+      enabled: true
+      failure_threshold: 1
+      open_duration: 30s
+      half_open_max_probe: 1
+      half_open_success_threshold: 2
+`)
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A46_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager strict failed: %v", err)
+	}
+	defer func() { _ = strictMgr.Close() }()
+	strictMgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "required-a46",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status: adapterhealth.StatusUnavailable,
+					Code:   adapterhealth.CodeProbeFailed,
+				}, nil
+			}),
+		},
+	})
+	_ = strictMgr.ReadinessPreflight()
+	strictResult := strictMgr.ReadinessPreflight()
+	if strictResult.Status != ReadinessStatusBlocked {
+		t.Fatalf("strict status=%q, want blocked", strictResult.Status)
+	}
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeAdapterRequiredCircuitOpen)
+
+	nonStrictFile := filepath.Join(t.TempDir(), "runtime-nonstrict.yaml")
+	writeConfig(t, nonStrictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 1ms
+    backoff:
+      enabled: false
+      initial: 200ms
+      max: 5s
+      multiplier: 2
+      jitter_ratio: 0.2
+    circuit:
+      enabled: true
+      failure_threshold: 1
+      open_duration: 30s
+      half_open_max_probe: 1
+      half_open_success_threshold: 2
+`)
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A46_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager non-strict failed: %v", err)
+	}
+	defer func() { _ = nonStrictMgr.Close() }()
+	nonStrictMgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "optional-a46",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status: adapterhealth.StatusUnavailable,
+					Code:   adapterhealth.CodeProbeFailed,
+				}, nil
+			}),
+		},
+	})
+	_ = nonStrictMgr.ReadinessPreflight()
+	nonStrictResult := nonStrictMgr.ReadinessPreflight()
+	if nonStrictResult.Status != ReadinessStatusDegraded {
+		t.Fatalf("non-strict status=%q, want degraded", nonStrictResult.Status)
+	}
+	assertReadinessFindingCode(t, nonStrictResult.Findings, ReadinessCodeAdapterOptionalCircuitOpen)
+}
+
+func TestManagerReadinessPreflightAdapterHealthHalfOpenDegradedAndGovernanceSummary(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 1ms
+    backoff:
+      enabled: false
+      initial: 200ms
+      max: 5s
+      multiplier: 2
+      jitter_ratio: 0.2
+    circuit:
+      enabled: true
+      failure_threshold: 1
+      open_duration: 20ms
+      half_open_max_probe: 1
+      half_open_success_threshold: 2
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A46_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	var calls int
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "half-open-a46",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(_ context.Context) (adapterhealth.Result, error) {
+				calls++
+				if calls == 1 {
+					return adapterhealth.Result{
+						Status: adapterhealth.StatusUnavailable,
+						Code:   adapterhealth.CodeProbeFailed,
+					}, nil
+				}
+				return adapterhealth.Result{
+					Status: adapterhealth.StatusDegraded,
+					Code:   adapterhealth.CodeDegraded,
+				}, nil
+			}),
+		},
+	})
+
+	_ = mgr.ReadinessPreflight()
+	time.Sleep(25 * time.Millisecond)
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterHalfOpenDegraded)
+	summary := result.Summary()
+	if summary.AdapterHealthBackoffAppliedTotal != 0 ||
+		summary.AdapterHealthCircuitOpenTotal != 1 ||
+		summary.AdapterHealthCircuitHalfOpenTotal != 1 ||
+		summary.AdapterHealthCircuitRecoverTotal != 0 ||
+		summary.AdapterHealthCircuitState != string(adapterhealth.CircuitStateHalfOpen) ||
+		summary.AdapterHealthGovernancePrimaryCode != adapterhealth.CodeCircuitHalfOpen {
+		t.Fatalf("governance summary mismatch: %#v", summary)
 	}
 }
 

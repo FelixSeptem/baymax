@@ -914,6 +914,16 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		if summary.AdapterHealthPrimaryCode != "" {
 			payload["adapter_health_primary_code"] = summary.AdapterHealthPrimaryCode
 		}
+		payload["adapter_health_backoff_applied_total"] = summary.AdapterHealthBackoffAppliedTotal
+		payload["adapter_health_circuit_open_total"] = summary.AdapterHealthCircuitOpenTotal
+		payload["adapter_health_circuit_half_open_total"] = summary.AdapterHealthCircuitHalfOpenTotal
+		payload["adapter_health_circuit_recover_total"] = summary.AdapterHealthCircuitRecoverTotal
+		if summary.AdapterHealthCircuitState != "" {
+			payload["adapter_health_circuit_state"] = summary.AdapterHealthCircuitState
+		}
+		if summary.AdapterHealthGovernancePrimaryCode != "" {
+			payload["adapter_health_governance_primary_code"] = summary.AdapterHealthGovernancePrimaryCode
+		}
 	}
 	payload["runtime_readiness_admission_total"] = stats.ReadinessAdmissionTotal
 	payload["runtime_readiness_admission_blocked_total"] = stats.ReadinessAdmissionBlockedTotal

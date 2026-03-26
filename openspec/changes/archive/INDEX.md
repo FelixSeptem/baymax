@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-26 14:42:17
+Updated: 2026-03-26 16:16:14
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -95,3 +95,4 @@ Updated: 2026-03-26 14:42:17
 - 091 -> introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43
 - 092 -> introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44
 - 093 -> introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45
+- 094 -> introduce-adapter-health-backoff-and-circuit-governance-contract-a46

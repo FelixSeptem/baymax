@@ -281,6 +281,12 @@ mcp:
 			"adapter_health_degraded_total":                    1,
 			"adapter_health_unavailable_total":                 2,
 			"adapter_health_primary_code":                      "adapter.health.required_unavailable",
+			"adapter_health_backoff_applied_total":             4,
+			"adapter_health_circuit_open_total":                2,
+			"adapter_health_circuit_half_open_total":           1,
+			"adapter_health_circuit_recover_total":             1,
+			"adapter_health_circuit_state":                     "open",
+			"adapter_health_governance_primary_code":           "adapter.health.circuit_open",
 			"gate_checks":                                      4,
 			"gate_denied_count":                                2,
 			"gate_timeout_count":                               1,
@@ -500,7 +506,13 @@ mcp:
 		items[0].AdapterHealthProbeTotal != 3 ||
 		items[0].AdapterHealthDegradedTotal != 1 ||
 		items[0].AdapterHealthUnavailableTotal != 2 ||
-		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" {
+		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" ||
+		items[0].AdapterHealthBackoffAppliedTotal != 4 ||
+		items[0].AdapterHealthCircuitOpenTotal != 2 ||
+		items[0].AdapterHealthCircuitHalfOpenTotal != 1 ||
+		items[0].AdapterHealthCircuitRecoverTotal != 1 ||
+		items[0].AdapterHealthCircuitState != "open" ||
+		items[0].AdapterHealthGovernancePrimaryCode != "adapter.health.circuit_open" {
 		t.Fatalf("runtime readiness fields mismatch: %#v", items[0])
 	}
 	if items[0].GateChecks != 4 || items[0].GateDeniedCount != 2 || items[0].GateTimeoutCount != 1 {
@@ -763,7 +775,13 @@ mcp:
 		got.AdapterHealthProbeTotal != 0 ||
 		got.AdapterHealthDegradedTotal != 0 ||
 		got.AdapterHealthUnavailableTotal != 0 ||
-		got.AdapterHealthPrimaryCode != "" {
+		got.AdapterHealthPrimaryCode != "" ||
+		got.AdapterHealthBackoffAppliedTotal != 0 ||
+		got.AdapterHealthCircuitOpenTotal != 0 ||
+		got.AdapterHealthCircuitHalfOpenTotal != 0 ||
+		got.AdapterHealthCircuitRecoverTotal != 0 ||
+		got.AdapterHealthCircuitState != "" ||
+		got.AdapterHealthGovernancePrimaryCode != "" {
 		t.Fatalf("missing A40 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
@@ -873,6 +891,61 @@ mcp:
 		got.DiagnosticsCardinalityOverflowPolicy != "truncate_and_record" ||
 		got.DiagnosticsCardinalityTruncatedFieldSummary != "" {
 		t.Fatalf("missing A45 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA46ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a46-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(17),
+			"a46_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 17 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.AdapterHealthBackoffAppliedTotal != 0 ||
+		got.AdapterHealthCircuitOpenTotal != 0 ||
+		got.AdapterHealthCircuitHalfOpenTotal != 0 ||
+		got.AdapterHealthCircuitRecoverTotal != 0 ||
+		got.AdapterHealthCircuitState != "" ||
+		got.AdapterHealthGovernancePrimaryCode != "" {
+		t.Fatalf("missing A46 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

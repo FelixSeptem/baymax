@@ -117,6 +117,20 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 		adapterHealthRunner: adapterhealth.NewRunner(adapterhealth.RunnerOptions{
 			ProbeTimeout: cfg.Adapter.Health.ProbeTimeout,
 			CacheTTL:     cfg.Adapter.Health.CacheTTL,
+			Backoff: adapterhealth.BackoffOptions{
+				Enabled:     cfg.Adapter.Health.Backoff.Enabled,
+				Initial:     cfg.Adapter.Health.Backoff.Initial,
+				Max:         cfg.Adapter.Health.Backoff.Max,
+				Multiplier:  cfg.Adapter.Health.Backoff.Multiplier,
+				JitterRatio: cfg.Adapter.Health.Backoff.JitterRatio,
+			},
+			Circuit: adapterhealth.CircuitOptions{
+				Enabled:                  cfg.Adapter.Health.Circuit.Enabled,
+				FailureThreshold:         cfg.Adapter.Health.Circuit.FailureThreshold,
+				OpenDuration:             cfg.Adapter.Health.Circuit.OpenDuration,
+				HalfOpenMaxProbe:         cfg.Adapter.Health.Circuit.HalfOpenMaxProbe,
+				HalfOpenSuccessThreshold: cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold,
+			},
 		}, nil),
 		stopCh: make(chan struct{}),
 	}

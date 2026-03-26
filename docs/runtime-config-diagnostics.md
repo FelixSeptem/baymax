@@ -104,6 +104,16 @@
   - `adapter.health.strict` -> `BAYMAX_ADAPTER_HEALTH_STRICT`
   - `adapter.health.probe_timeout` -> `BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT`
   - `adapter.health.cache_ttl` -> `BAYMAX_ADAPTER_HEALTH_CACHE_TTL`
+  - `adapter.health.backoff.enabled` -> `BAYMAX_ADAPTER_HEALTH_BACKOFF_ENABLED`
+  - `adapter.health.backoff.initial` -> `BAYMAX_ADAPTER_HEALTH_BACKOFF_INITIAL`
+  - `adapter.health.backoff.max` -> `BAYMAX_ADAPTER_HEALTH_BACKOFF_MAX`
+  - `adapter.health.backoff.multiplier` -> `BAYMAX_ADAPTER_HEALTH_BACKOFF_MULTIPLIER`
+  - `adapter.health.backoff.jitter_ratio` -> `BAYMAX_ADAPTER_HEALTH_BACKOFF_JITTER_RATIO`
+  - `adapter.health.circuit.enabled` -> `BAYMAX_ADAPTER_HEALTH_CIRCUIT_ENABLED`
+  - `adapter.health.circuit.failure_threshold` -> `BAYMAX_ADAPTER_HEALTH_CIRCUIT_FAILURE_THRESHOLD`
+  - `adapter.health.circuit.open_duration` -> `BAYMAX_ADAPTER_HEALTH_CIRCUIT_OPEN_DURATION`
+  - `adapter.health.circuit.half_open_max_probe` -> `BAYMAX_ADAPTER_HEALTH_CIRCUIT_HALF_OPEN_MAX_PROBE`
+  - `adapter.health.circuit.half_open_success_threshold` -> `BAYMAX_ADAPTER_HEALTH_CIRCUIT_HALF_OPEN_SUCCESS_THRESHOLD`
   - `runtime.operation_profiles.default_profile` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_DEFAULT_PROFILE`
   - `runtime.operation_profiles.legacy.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_LEGACY_TIMEOUT`
   - `runtime.operation_profiles.interactive.timeout` -> `BAYMAX_RUNTIME_OPERATION_PROFILES_INTERACTIVE_TIMEOUT`
@@ -726,10 +736,12 @@ runtime readiness（A40）校验语义：
 1. `runtime.readiness.enabled|strict|remote_probe_enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. 启动加载与热更新都遵循 fail-fast，非法布尔表达会拒绝生效并保留上一有效快照。
 
-adapter health（A43）校验语义：
-1. `adapter.health.enabled|strict` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
+adapter health（A43/A46）校验语义：
+1. `adapter.health.enabled|strict|backoff.enabled|circuit.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `adapter.health.probe_timeout` 与 `adapter.health.cache_ttl` 必须 `> 0`。
-3. 启动加载与热更新均遵循 fail-fast；非法布尔/非法 duration 会拒绝生效并保留上一有效快照。
+3. `adapter.health.backoff.initial` 必须 `> 0`，`adapter.health.backoff.max` 必须 `>= initial`，`adapter.health.backoff.multiplier` 必须 `> 1`，`adapter.health.backoff.jitter_ratio` 必须在 `[0,1]`。
+4. `adapter.health.circuit.failure_threshold`、`adapter.health.circuit.half_open_max_probe`、`adapter.health.circuit.half_open_success_threshold` 必须 `> 0`；`adapter.health.circuit.open_duration` 必须 `> 0`。
+5. 启动加载与热更新均遵循 fail-fast；非法布尔/非法阈值会拒绝生效并保留上一有效快照。
 
 operation profiles 与 timeout 解析（A41）校验语义：
 1. `runtime.operation_profiles.default_profile` 仅允许 `legacy|interactive|background|batch`。
@@ -925,7 +937,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A45 additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
-- Adapter Health（A43）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`
+- Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
 

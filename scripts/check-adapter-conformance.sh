@@ -7,7 +7,7 @@ fi
 
 echo "[adapter-conformance] running offline deterministic harness"
 echo "[adapter-conformance] adapter-health matrix"
-go test ./integration/adapterconformance -run '^TestAdapterConformanceHealthMatrix' -count=1
+go test ./integration/adapterconformance -run '^TestAdapterConformanceHealth' -count=1
 echo "[adapter-conformance] adapter-health matrix passed"
 
 echo "[adapter-conformance] running full conformance harness"

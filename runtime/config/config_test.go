@@ -503,6 +503,20 @@ func TestAdapterHealthConfigDefaults(t *testing.T) {
 	if cfg.Adapter.Health.CacheTTL != 30*time.Second {
 		t.Fatalf("adapter.health.cache_ttl = %v, want 30s", cfg.Adapter.Health.CacheTTL)
 	}
+	if !cfg.Adapter.Health.Backoff.Enabled ||
+		cfg.Adapter.Health.Backoff.Initial != 200*time.Millisecond ||
+		cfg.Adapter.Health.Backoff.Max != 5*time.Second ||
+		cfg.Adapter.Health.Backoff.Multiplier != 2.0 ||
+		cfg.Adapter.Health.Backoff.JitterRatio != 0.2 {
+		t.Fatalf("adapter.health.backoff defaults mismatch: %#v", cfg.Adapter.Health.Backoff)
+	}
+	if !cfg.Adapter.Health.Circuit.Enabled ||
+		cfg.Adapter.Health.Circuit.FailureThreshold != 3 ||
+		cfg.Adapter.Health.Circuit.OpenDuration != 30*time.Second ||
+		cfg.Adapter.Health.Circuit.HalfOpenMaxProbe != 1 ||
+		cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold != 2 {
+		t.Fatalf("adapter.health.circuit defaults mismatch: %#v", cfg.Adapter.Health.Circuit)
+	}
 }
 
 func TestAdapterHealthConfigEnvOverridePrecedence(t *testing.T) {
@@ -510,6 +524,16 @@ func TestAdapterHealthConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_ADAPTER_HEALTH_STRICT", "true")
 	t.Setenv("BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT", "750ms")
 	t.Setenv("BAYMAX_ADAPTER_HEALTH_CACHE_TTL", "45s")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_ENABLED", "false")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_INITIAL", "250ms")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_MAX", "2s")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_MULTIPLIER", "2.5")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_JITTER_RATIO", "0.1")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CIRCUIT_ENABLED", "true")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CIRCUIT_FAILURE_THRESHOLD", "5")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CIRCUIT_OPEN_DURATION", "15s")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CIRCUIT_HALF_OPEN_MAX_PROBE", "2")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_CIRCUIT_HALF_OPEN_SUCCESS_THRESHOLD", "3")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 adapter:
@@ -518,6 +542,18 @@ adapter:
     strict: false
     probe_timeout: 200ms
     cache_ttl: 5s
+    backoff:
+      enabled: true
+      initial: 100ms
+      max: 1s
+      multiplier: 2
+      jitter_ratio: 0.2
+    circuit:
+      enabled: false
+      failure_threshold: 2
+      open_duration: 3s
+      half_open_max_probe: 1
+      half_open_success_threshold: 1
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -535,15 +571,31 @@ adapter:
 	if cfg.Adapter.Health.CacheTTL != 45*time.Second {
 		t.Fatalf("adapter.health.cache_ttl = %v, want 45s", cfg.Adapter.Health.CacheTTL)
 	}
+	if cfg.Adapter.Health.Backoff.Enabled {
+		t.Fatalf("adapter.health.backoff.enabled = true, want false")
+	}
+	if cfg.Adapter.Health.Backoff.Initial != 250*time.Millisecond ||
+		cfg.Adapter.Health.Backoff.Max != 2*time.Second ||
+		cfg.Adapter.Health.Backoff.Multiplier != 2.5 ||
+		cfg.Adapter.Health.Backoff.JitterRatio != 0.1 {
+		t.Fatalf("adapter.health.backoff env override mismatch: %#v", cfg.Adapter.Health.Backoff)
+	}
+	if !cfg.Adapter.Health.Circuit.Enabled ||
+		cfg.Adapter.Health.Circuit.FailureThreshold != 5 ||
+		cfg.Adapter.Health.Circuit.OpenDuration != 15*time.Second ||
+		cfg.Adapter.Health.Circuit.HalfOpenMaxProbe != 2 ||
+		cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold != 3 {
+		t.Fatalf("adapter.health.circuit env override mismatch: %#v", cfg.Adapter.Health.Circuit)
+	}
 }
 
 func TestAdapterHealthConfigInvalidBoolFailsFast(t *testing.T) {
-	t.Setenv("BAYMAX_ADAPTER_HEALTH_STRICT", "definitely-not-bool")
+	t.Setenv("BAYMAX_ADAPTER_HEALTH_BACKOFF_ENABLED", "definitely-not-bool")
 	_, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
 	if err == nil {
-		t.Fatal("expected adapter.health.strict invalid bool error")
+		t.Fatal("expected adapter.health.backoff.enabled invalid bool error")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "adapter.health.strict") {
+	if !strings.Contains(strings.ToLower(err.Error()), "adapter.health.backoff.enabled") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -558,6 +610,27 @@ func TestAdapterHealthConfigValidationRejectsInvalidDurations(t *testing.T) {
 	cfg.Adapter.Health.CacheTTL = 0
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for adapter.health.cache_ttl")
+	}
+	cfg = DefaultConfig()
+	cfg.Adapter.Health.Backoff.Max = 100 * time.Millisecond
+	cfg.Adapter.Health.Backoff.Initial = 200 * time.Millisecond
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.health.backoff.max") {
+		t.Fatalf("expected validation error for adapter.health.backoff.max, got %v", err)
+	}
+	cfg = DefaultConfig()
+	cfg.Adapter.Health.Backoff.Multiplier = 1.0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.health.backoff.multiplier") {
+		t.Fatalf("expected validation error for adapter.health.backoff.multiplier, got %v", err)
+	}
+	cfg = DefaultConfig()
+	cfg.Adapter.Health.Circuit.FailureThreshold = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.health.circuit.failure_threshold") {
+		t.Fatalf("expected validation error for adapter.health.circuit.failure_threshold, got %v", err)
+	}
+	cfg = DefaultConfig()
+	cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.health.circuit.half_open_success_threshold") {
+		t.Fatalf("expected validation error for adapter.health.circuit.half_open_success_threshold, got %v", err)
 	}
 }
 

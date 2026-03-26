@@ -213,10 +213,28 @@ type AdapterConfig struct {
 }
 
 type AdapterHealthConfig struct {
-	Enabled      bool          `json:"enabled"`
-	Strict       bool          `json:"strict"`
-	ProbeTimeout time.Duration `json:"probe_timeout"`
-	CacheTTL     time.Duration `json:"cache_ttl"`
+	Enabled      bool                       `json:"enabled"`
+	Strict       bool                       `json:"strict"`
+	ProbeTimeout time.Duration              `json:"probe_timeout"`
+	CacheTTL     time.Duration              `json:"cache_ttl"`
+	Backoff      AdapterHealthBackoffConfig `json:"backoff"`
+	Circuit      AdapterHealthCircuitConfig `json:"circuit"`
+}
+
+type AdapterHealthBackoffConfig struct {
+	Enabled     bool          `json:"enabled"`
+	Initial     time.Duration `json:"initial"`
+	Max         time.Duration `json:"max"`
+	Multiplier  float64       `json:"multiplier"`
+	JitterRatio float64       `json:"jitter_ratio"`
+}
+
+type AdapterHealthCircuitConfig struct {
+	Enabled                  bool          `json:"enabled"`
+	FailureThreshold         int           `json:"failure_threshold"`
+	OpenDuration             time.Duration `json:"open_duration"`
+	HalfOpenMaxProbe         int           `json:"half_open_max_probe"`
+	HalfOpenSuccessThreshold int           `json:"half_open_success_threshold"`
 }
 
 type RuntimeReadinessConfig struct {
@@ -1035,6 +1053,20 @@ func DefaultConfig() Config {
 				Strict:       false,
 				ProbeTimeout: 500 * time.Millisecond,
 				CacheTTL:     30 * time.Second,
+				Backoff: AdapterHealthBackoffConfig{
+					Enabled:     true,
+					Initial:     200 * time.Millisecond,
+					Max:         5 * time.Second,
+					Multiplier:  2.0,
+					JitterRatio: 0.2,
+				},
+				Circuit: AdapterHealthCircuitConfig{
+					Enabled:                  true,
+					FailureThreshold:         3,
+					OpenDuration:             30 * time.Second,
+					HalfOpenMaxProbe:         1,
+					HalfOpenSuccessThreshold: 2,
+				},
 			},
 		},
 		Reload: ReloadConfig{
@@ -1696,6 +1728,30 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Adapter.Health.CacheTTL <= 0 {
 		return errors.New("adapter.health.cache_ttl must be > 0")
+	}
+	if cfg.Adapter.Health.Backoff.Initial <= 0 {
+		return errors.New("adapter.health.backoff.initial must be > 0")
+	}
+	if cfg.Adapter.Health.Backoff.Max < cfg.Adapter.Health.Backoff.Initial {
+		return errors.New("adapter.health.backoff.max must be >= adapter.health.backoff.initial")
+	}
+	if cfg.Adapter.Health.Backoff.Multiplier <= 1 {
+		return errors.New("adapter.health.backoff.multiplier must be > 1")
+	}
+	if cfg.Adapter.Health.Backoff.JitterRatio < 0 || cfg.Adapter.Health.Backoff.JitterRatio > 1 {
+		return errors.New("adapter.health.backoff.jitter_ratio must be in [0,1]")
+	}
+	if cfg.Adapter.Health.Circuit.FailureThreshold <= 0 {
+		return errors.New("adapter.health.circuit.failure_threshold must be > 0")
+	}
+	if cfg.Adapter.Health.Circuit.OpenDuration <= 0 {
+		return errors.New("adapter.health.circuit.open_duration must be > 0")
+	}
+	if cfg.Adapter.Health.Circuit.HalfOpenMaxProbe <= 0 {
+		return errors.New("adapter.health.circuit.half_open_max_probe must be > 0")
+	}
+	if cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold <= 0 {
+		return errors.New("adapter.health.circuit.half_open_success_threshold must be > 0")
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -3116,6 +3172,16 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("adapter.health.strict", base.Adapter.Health.Strict)
 	v.SetDefault("adapter.health.probe_timeout", base.Adapter.Health.ProbeTimeout)
 	v.SetDefault("adapter.health.cache_ttl", base.Adapter.Health.CacheTTL)
+	v.SetDefault("adapter.health.backoff.enabled", base.Adapter.Health.Backoff.Enabled)
+	v.SetDefault("adapter.health.backoff.initial", base.Adapter.Health.Backoff.Initial)
+	v.SetDefault("adapter.health.backoff.max", base.Adapter.Health.Backoff.Max)
+	v.SetDefault("adapter.health.backoff.multiplier", base.Adapter.Health.Backoff.Multiplier)
+	v.SetDefault("adapter.health.backoff.jitter_ratio", base.Adapter.Health.Backoff.JitterRatio)
+	v.SetDefault("adapter.health.circuit.enabled", base.Adapter.Health.Circuit.Enabled)
+	v.SetDefault("adapter.health.circuit.failure_threshold", base.Adapter.Health.Circuit.FailureThreshold)
+	v.SetDefault("adapter.health.circuit.open_duration", base.Adapter.Health.Circuit.OpenDuration)
+	v.SetDefault("adapter.health.circuit.half_open_max_probe", base.Adapter.Health.Circuit.HalfOpenMaxProbe)
+	v.SetDefault("adapter.health.circuit.half_open_success_threshold", base.Adapter.Health.Circuit.HalfOpenSuccessThreshold)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -3446,10 +3512,28 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	adapterHealthBackoffEnabled, err := strictBoolConfigValue(v, "adapter.health.backoff.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	adapterHealthCircuitEnabled, err := strictBoolConfigValue(v, "adapter.health.circuit.enabled")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Adapter.Health.Enabled = adapterHealthEnabled
 	cfg.Adapter.Health.Strict = adapterHealthStrict
 	cfg.Adapter.Health.ProbeTimeout = v.GetDuration("adapter.health.probe_timeout")
 	cfg.Adapter.Health.CacheTTL = v.GetDuration("adapter.health.cache_ttl")
+	cfg.Adapter.Health.Backoff.Enabled = adapterHealthBackoffEnabled
+	cfg.Adapter.Health.Backoff.Initial = v.GetDuration("adapter.health.backoff.initial")
+	cfg.Adapter.Health.Backoff.Max = v.GetDuration("adapter.health.backoff.max")
+	cfg.Adapter.Health.Backoff.Multiplier = v.GetFloat64("adapter.health.backoff.multiplier")
+	cfg.Adapter.Health.Backoff.JitterRatio = v.GetFloat64("adapter.health.backoff.jitter_ratio")
+	cfg.Adapter.Health.Circuit.Enabled = adapterHealthCircuitEnabled
+	cfg.Adapter.Health.Circuit.FailureThreshold = v.GetInt("adapter.health.circuit.failure_threshold")
+	cfg.Adapter.Health.Circuit.OpenDuration = v.GetDuration("adapter.health.circuit.open_duration")
+	cfg.Adapter.Health.Circuit.HalfOpenMaxProbe = v.GetInt("adapter.health.circuit.half_open_max_probe")
+	cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold = v.GetInt("adapter.health.circuit.half_open_success_threshold")
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")

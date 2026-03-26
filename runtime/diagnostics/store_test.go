@@ -275,6 +275,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		AdapterHealthDegradedTotal:                  1,
 		AdapterHealthUnavailableTotal:               2,
 		AdapterHealthPrimaryCode:                    "adapter.health.required_unavailable",
+		AdapterHealthBackoffAppliedTotal:            4,
+		AdapterHealthCircuitOpenTotal:               2,
+		AdapterHealthCircuitHalfOpenTotal:           1,
+		AdapterHealthCircuitRecoverTotal:            1,
+		AdapterHealthCircuitState:                   "open",
+		AdapterHealthGovernancePrimaryCode:          "adapter.health.circuit_open",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -298,7 +304,13 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].AdapterHealthProbeTotal != 3 ||
 		items[0].AdapterHealthDegradedTotal != 1 ||
 		items[0].AdapterHealthUnavailableTotal != 2 ||
-		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" {
+		items[0].AdapterHealthPrimaryCode != "adapter.health.required_unavailable" ||
+		items[0].AdapterHealthBackoffAppliedTotal != 4 ||
+		items[0].AdapterHealthCircuitOpenTotal != 2 ||
+		items[0].AdapterHealthCircuitHalfOpenTotal != 1 ||
+		items[0].AdapterHealthCircuitRecoverTotal != 1 ||
+		items[0].AdapterHealthCircuitState != "open" ||
+		items[0].AdapterHealthGovernancePrimaryCode != "adapter.health.circuit_open" {
 		t.Fatalf("readiness fields mismatch after dedup: %#v", items[0])
 	}
 
@@ -318,6 +330,12 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	rec.AdapterHealthDegradedTotal = 2
 	rec.AdapterHealthUnavailableTotal = 0
 	rec.AdapterHealthPrimaryCode = "adapter.health.degraded"
+	rec.AdapterHealthBackoffAppliedTotal = 1
+	rec.AdapterHealthCircuitOpenTotal = 1
+	rec.AdapterHealthCircuitHalfOpenTotal = 1
+	rec.AdapterHealthCircuitRecoverTotal = 1
+	rec.AdapterHealthCircuitState = "half_open"
+	rec.AdapterHealthGovernancePrimaryCode = "adapter.health.circuit_half_open"
 	d.AddRun(rec)
 
 	items = d.RecentRuns(10)
@@ -339,7 +357,13 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].AdapterHealthProbeTotal != 2 ||
 		items[0].AdapterHealthDegradedTotal != 2 ||
 		items[0].AdapterHealthUnavailableTotal != 0 ||
-		items[0].AdapterHealthPrimaryCode != "adapter.health.degraded" {
+		items[0].AdapterHealthPrimaryCode != "adapter.health.degraded" ||
+		items[0].AdapterHealthBackoffAppliedTotal != 1 ||
+		items[0].AdapterHealthCircuitOpenTotal != 1 ||
+		items[0].AdapterHealthCircuitHalfOpenTotal != 1 ||
+		items[0].AdapterHealthCircuitRecoverTotal != 1 ||
+		items[0].AdapterHealthCircuitState != "half_open" ||
+		items[0].AdapterHealthGovernancePrimaryCode != "adapter.health.circuit_half_open" {
 		t.Fatalf("readiness fields mismatch after replay replacement: %#v", items[0])
 	}
 }

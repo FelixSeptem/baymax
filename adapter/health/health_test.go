@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -135,5 +136,194 @@ func TestRunnerProbeCanonicalUnknownUnavailableAndDegradedBranches(t *testing.T)
 func fixedNow() func() time.Time {
 	return func() time.Time {
 		return time.Date(2026, time.March, 24, 12, 0, 0, 0, time.UTC)
+	}
+}
+
+func TestRunnerProbeGovernanceBackoffCircuitTransitionAndRecovery(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 9, 0, 0, 0, time.UTC)
+	current := base
+	var calls int32
+	runner := NewRunner(RunnerOptions{
+		ProbeTimeout: 100 * time.Millisecond,
+		CacheTTL:     time.Millisecond,
+		Backoff: BackoffOptions{
+			Enabled:     true,
+			Initial:     100 * time.Millisecond,
+			Max:         500 * time.Millisecond,
+			Multiplier:  2.0,
+			JitterRatio: 0,
+		},
+		Circuit: CircuitOptions{
+			Enabled:                  true,
+			FailureThreshold:         2,
+			OpenDuration:             time.Second,
+			HalfOpenMaxProbe:         1,
+			HalfOpenSuccessThreshold: 2,
+		},
+	}, func() time.Time { return current })
+
+	probe := ProbeFunc(func(context.Context) (Result, error) {
+		n := atomic.AddInt32(&calls, 1)
+		if n <= 2 {
+			return Result{Status: StatusUnavailable, Code: CodeProbeFailed, Message: "fixture unavailable"}, nil
+		}
+		return Result{Status: StatusHealthy, Code: CodeHealthy, Message: "fixture recovered"}, nil
+	})
+
+	first := runner.Probe(context.Background(), "adapter-a46", probe)
+	if first.Governance.CircuitState != string(CircuitStateClosed) {
+		t.Fatalf("first circuit state=%q, want closed", first.Governance.CircuitState)
+	}
+
+	current = current.Add(150 * time.Millisecond)
+	second := runner.Probe(context.Background(), "adapter-a46", probe)
+	if second.Governance.CircuitState != string(CircuitStateOpen) {
+		t.Fatalf("second circuit state=%q, want open", second.Governance.CircuitState)
+	}
+	if second.Governance.CircuitOpenTotal != 1 {
+		t.Fatalf("second open total=%d, want 1", second.Governance.CircuitOpenTotal)
+	}
+
+	third := runner.Probe(context.Background(), "adapter-a46", probe)
+	if third.Code != CodeCircuitOpen {
+		t.Fatalf("third code=%q, want %q", third.Code, CodeCircuitOpen)
+	}
+	if atomic.LoadInt32(&calls) != 2 {
+		t.Fatalf("open circuit should short-circuit probe, calls=%d", calls)
+	}
+
+	current = current.Add(1100 * time.Millisecond)
+	fourth := runner.Probe(context.Background(), "adapter-a46", probe)
+	if fourth.Governance.CircuitState != string(CircuitStateHalfOpen) {
+		t.Fatalf("fourth circuit state=%q, want half_open", fourth.Governance.CircuitState)
+	}
+
+	current = current.Add(150 * time.Millisecond)
+	fifth := runner.Probe(context.Background(), "adapter-a46", probe)
+	if fifth.Governance.CircuitState != string(CircuitStateClosed) {
+		t.Fatalf("fifth circuit state=%q, want closed", fifth.Governance.CircuitState)
+	}
+	if fifth.Governance.CircuitRecoverTotal != 1 {
+		t.Fatalf("fifth recover total=%d, want 1", fifth.Governance.CircuitRecoverTotal)
+	}
+	if fifth.Governance.PrimaryCode != CodeCircuitRecover {
+		t.Fatalf("fifth primary code=%q, want %q", fifth.Governance.PrimaryCode, CodeCircuitRecover)
+	}
+}
+
+func TestRunnerProbeGovernanceHalfOpenFailureReopensCircuit(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 9, 0, 0, 0, time.UTC)
+	current := base
+	var calls int32
+	runner := NewRunner(RunnerOptions{
+		ProbeTimeout: 100 * time.Millisecond,
+		CacheTTL:     time.Millisecond,
+		Circuit: CircuitOptions{
+			Enabled:                  true,
+			FailureThreshold:         1,
+			OpenDuration:             time.Second,
+			HalfOpenMaxProbe:         1,
+			HalfOpenSuccessThreshold: 2,
+		},
+	}, func() time.Time { return current })
+
+	probe := ProbeFunc(func(context.Context) (Result, error) {
+		atomic.AddInt32(&calls, 1)
+		return Result{Status: StatusUnavailable, Code: CodeProbeFailed, Message: "still unavailable"}, nil
+	})
+
+	first := runner.Probe(context.Background(), "adapter-half-open", probe)
+	if first.Governance.CircuitState != string(CircuitStateOpen) {
+		t.Fatalf("first circuit state=%q, want open", first.Governance.CircuitState)
+	}
+
+	second := runner.Probe(context.Background(), "adapter-half-open", probe)
+	if second.Code != CodeCircuitOpen {
+		t.Fatalf("second code=%q, want %q", second.Code, CodeCircuitOpen)
+	}
+
+	current = current.Add(1100 * time.Millisecond)
+	third := runner.Probe(context.Background(), "adapter-half-open", probe)
+	if third.Governance.CircuitState != string(CircuitStateOpen) {
+		t.Fatalf("third circuit state=%q, want open (half-open probe failed)", third.Governance.CircuitState)
+	}
+	if third.Governance.CircuitOpenTotal < 2 {
+		t.Fatalf("open total=%d, want >=2 after half-open failure", third.Governance.CircuitOpenTotal)
+	}
+}
+
+func TestRunnerProbeGovernanceDeterministicForEquivalentSequence(t *testing.T) {
+	run := func() []string {
+		base := time.Date(2026, time.March, 24, 9, 0, 0, 0, time.UTC)
+		current := base
+		var calls int32
+		r := NewRunner(RunnerOptions{
+			ProbeTimeout: 50 * time.Millisecond,
+			CacheTTL:     time.Millisecond,
+			Backoff: BackoffOptions{
+				Enabled:     true,
+				Initial:     100 * time.Millisecond,
+				Max:         300 * time.Millisecond,
+				Multiplier:  2,
+				JitterRatio: 0.2,
+			},
+			Circuit: CircuitOptions{
+				Enabled:                  true,
+				FailureThreshold:         2,
+				OpenDuration:             500 * time.Millisecond,
+				HalfOpenMaxProbe:         1,
+				HalfOpenSuccessThreshold: 2,
+			},
+		}, func() time.Time { return current })
+		probe := ProbeFunc(func(context.Context) (Result, error) {
+			n := atomic.AddInt32(&calls, 1)
+			switch n {
+			case 1, 2:
+				return Result{Status: StatusUnavailable, Code: CodeProbeFailed, Message: "failed"}, nil
+			default:
+				return Result{Status: StatusHealthy, Code: CodeHealthy, Message: "ok"}, nil
+			}
+		})
+		sequence := make([]string, 0, 5)
+		capture := func(res Result) {
+			payload := struct {
+				Code      string `json:"code"`
+				State     string `json:"state"`
+				OpenTotal int    `json:"open_total"`
+				Recover   int    `json:"recover_total"`
+				Backoff   int    `json:"backoff_total"`
+				Primary   string `json:"primary"`
+			}{
+				Code:      res.Code,
+				State:     res.Governance.CircuitState,
+				OpenTotal: res.Governance.CircuitOpenTotal,
+				Recover:   res.Governance.CircuitRecoverTotal,
+				Backoff:   res.Governance.BackoffAppliedTotal,
+				Primary:   res.Governance.PrimaryCode,
+			}
+			blob, _ := json.Marshal(payload)
+			sequence = append(sequence, string(blob))
+		}
+
+		capture(r.Probe(context.Background(), "adapter-deterministic", probe))
+		current = current.Add(150 * time.Millisecond)
+		capture(r.Probe(context.Background(), "adapter-deterministic", probe))
+		capture(r.Probe(context.Background(), "adapter-deterministic", probe))
+		current = current.Add(600 * time.Millisecond)
+		capture(r.Probe(context.Background(), "adapter-deterministic", probe))
+		current = current.Add(150 * time.Millisecond)
+		capture(r.Probe(context.Background(), "adapter-deterministic", probe))
+		return sequence
+	}
+
+	first := run()
+	second := run()
+	if len(first) != len(second) {
+		t.Fatalf("sequence length mismatch: first=%d second=%d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("governance sequence mismatch at step=%d first=%s second=%s", i, first[i], second[i])
+		}
 	}
 }

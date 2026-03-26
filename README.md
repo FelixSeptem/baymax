@@ -13,10 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-25）：
+当前里程碑快照（2026-03-26）：
 - 已归档并稳定：A4-A45。
 - A46（Introduce Adapter Health Backoff And Circuit Governance Contract）进行中。
-- A46（Introduce Adapter Health Backoff And Circuit Governance Contract）进行中。
+- A47（Introduce Readiness Timeout Health Replay Fixture Gate Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,8 +225,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health backoff + circuit governance 契约进行中。
-- A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health 的 backoff + circuit 治理契约进行中（指数退避/抖动、half-open 探测、readiness 与 gate 收敛）。
+- A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health 的 backoff + circuit 治理契约已完成实现，待归档（指数退避/抖动、half-open 探测、readiness/diagnostics/conformance/gate 收敛）。
+- A47 `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`：readiness + timeout + adapter-health 交叉 replay fixture gate 契约进行中（taxonomy drift guard、Run/Stream parity、replay idempotency 阻断）。
 
 ### 9) Runtime Readiness Admission（A44）
 

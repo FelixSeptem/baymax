@@ -46,6 +46,10 @@ const (
 	ReadinessCodeAdapterRequiredUnavailable = "adapter.health.required_unavailable"
 	ReadinessCodeAdapterOptionalUnavailable = "adapter.health.optional_unavailable"
 	ReadinessCodeAdapterDegraded            = "adapter.health.degraded"
+	ReadinessCodeAdapterRequiredCircuitOpen = "adapter.health.required_circuit_open"
+	ReadinessCodeAdapterOptionalCircuitOpen = "adapter.health.optional_circuit_open"
+	ReadinessCodeAdapterHalfOpenDegraded    = "adapter.health.half_open_degraded"
+	ReadinessCodeAdapterGovernanceRecovered = "adapter.health.governance_recovered"
 )
 
 type ReadinessAdmissionOutcome string
@@ -81,16 +85,22 @@ type ReadinessResult struct {
 }
 
 type ReadinessSummary struct {
-	Status                        string `json:"runtime_readiness_status"`
-	FindingTotal                  int    `json:"runtime_readiness_finding_total"`
-	BlockingTotal                 int    `json:"runtime_readiness_blocking_total"`
-	DegradedTotal                 int    `json:"runtime_readiness_degraded_total"`
-	PrimaryCode                   string `json:"runtime_readiness_primary_code"`
-	AdapterHealthStatus           string `json:"adapter_health_status,omitempty"`
-	AdapterHealthProbeTotal       int    `json:"adapter_health_probe_total,omitempty"`
-	AdapterHealthDegradedTotal    int    `json:"adapter_health_degraded_total,omitempty"`
-	AdapterHealthUnavailableTotal int    `json:"adapter_health_unavailable_total,omitempty"`
-	AdapterHealthPrimaryCode      string `json:"adapter_health_primary_code,omitempty"`
+	Status                             string `json:"runtime_readiness_status"`
+	FindingTotal                       int    `json:"runtime_readiness_finding_total"`
+	BlockingTotal                      int    `json:"runtime_readiness_blocking_total"`
+	DegradedTotal                      int    `json:"runtime_readiness_degraded_total"`
+	PrimaryCode                        string `json:"runtime_readiness_primary_code"`
+	AdapterHealthStatus                string `json:"adapter_health_status,omitempty"`
+	AdapterHealthProbeTotal            int    `json:"adapter_health_probe_total,omitempty"`
+	AdapterHealthDegradedTotal         int    `json:"adapter_health_degraded_total,omitempty"`
+	AdapterHealthUnavailableTotal      int    `json:"adapter_health_unavailable_total,omitempty"`
+	AdapterHealthPrimaryCode           string `json:"adapter_health_primary_code,omitempty"`
+	AdapterHealthBackoffAppliedTotal   int    `json:"adapter_health_backoff_applied_total,omitempty"`
+	AdapterHealthCircuitOpenTotal      int    `json:"adapter_health_circuit_open_total,omitempty"`
+	AdapterHealthCircuitHalfOpenTotal  int    `json:"adapter_health_circuit_half_open_total,omitempty"`
+	AdapterHealthCircuitRecoverTotal   int    `json:"adapter_health_circuit_recover_total,omitempty"`
+	AdapterHealthCircuitState          string `json:"adapter_health_circuit_state,omitempty"`
+	AdapterHealthGovernancePrimaryCode string `json:"adapter_health_governance_primary_code,omitempty"`
 }
 
 type ReadinessAdmissionDecision struct {
@@ -113,13 +123,19 @@ type AdapterHealthTarget struct {
 }
 
 type AdapterHealthEvaluation struct {
-	Name      string         `json:"name"`
-	Required  bool           `json:"required"`
-	Status    string         `json:"status"`
-	Code      string         `json:"code"`
-	Message   string         `json:"message"`
-	Metadata  map[string]any `json:"metadata"`
-	CheckedAt time.Time      `json:"checked_at"`
+	Name                  string         `json:"name"`
+	Required              bool           `json:"required"`
+	Status                string         `json:"status"`
+	Code                  string         `json:"code"`
+	Message               string         `json:"message"`
+	Metadata              map[string]any `json:"metadata"`
+	BackoffAppliedTotal   int            `json:"backoff_applied_total,omitempty"`
+	CircuitOpenTotal      int            `json:"circuit_open_total,omitempty"`
+	CircuitHalfOpenTotal  int            `json:"circuit_half_open_total,omitempty"`
+	CircuitRecoverTotal   int            `json:"circuit_recover_total,omitempty"`
+	CircuitState          string         `json:"circuit_state,omitempty"`
+	GovernancePrimaryCode string         `json:"governance_primary_code,omitempty"`
+	CheckedAt             time.Time      `json:"checked_at"`
 }
 
 type RuntimeReadinessComponentState struct {
@@ -375,10 +391,46 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 	if len(r.AdapterHealth) > 0 {
 		adapterStatus := string(adapterhealth.StatusHealthy)
 		primaryRank := -1
+		circuitRank := -1
+		governanceRank := -1
 		for i := range r.AdapterHealth {
 			item := r.AdapterHealth[i]
 			status := normalizeAdapterHealthStatus(item.Status)
 			summary.AdapterHealthProbeTotal++
+			summary.AdapterHealthBackoffAppliedTotal += item.BackoffAppliedTotal
+			summary.AdapterHealthCircuitOpenTotal += item.CircuitOpenTotal
+			summary.AdapterHealthCircuitHalfOpenTotal += item.CircuitHalfOpenTotal
+			summary.AdapterHealthCircuitRecoverTotal += item.CircuitRecoverTotal
+			switch strings.ToLower(strings.TrimSpace(item.CircuitState)) {
+			case string(adapterhealth.CircuitStateOpen):
+				if circuitRank < 2 {
+					summary.AdapterHealthCircuitState = string(adapterhealth.CircuitStateOpen)
+					circuitRank = 2
+				}
+			case string(adapterhealth.CircuitStateHalfOpen):
+				if circuitRank < 1 {
+					summary.AdapterHealthCircuitState = string(adapterhealth.CircuitStateHalfOpen)
+					circuitRank = 1
+				}
+			case string(adapterhealth.CircuitStateClosed):
+				if circuitRank < 0 {
+					summary.AdapterHealthCircuitState = string(adapterhealth.CircuitStateClosed)
+					circuitRank = 0
+				}
+			}
+			if code := strings.TrimSpace(item.GovernancePrimaryCode); code != "" {
+				rank := 0
+				switch strings.ToLower(strings.TrimSpace(item.CircuitState)) {
+				case string(adapterhealth.CircuitStateOpen):
+					rank = 2
+				case string(adapterhealth.CircuitStateHalfOpen):
+					rank = 1
+				}
+				if rank >= governanceRank {
+					summary.AdapterHealthGovernancePrimaryCode = code
+					governanceRank = rank
+				}
+			}
 			switch status {
 			case adapterhealth.StatusUnavailable:
 				summary.AdapterHealthUnavailableTotal++
@@ -495,13 +547,19 @@ func (m *Manager) adapterHealthReadinessFindings(cfg Config) ([]AdapterHealthEva
 		target := targets[i]
 		probeResult := runner.Probe(context.Background(), target.Name, target.Probe)
 		eval := AdapterHealthEvaluation{
-			Name:      strings.ToLower(strings.TrimSpace(target.Name)),
-			Required:  target.Required,
-			Status:    string(normalizeAdapterHealthStatus(string(probeResult.Status))),
-			Code:      strings.TrimSpace(probeResult.Code),
-			Message:   strings.TrimSpace(probeResult.Message),
-			Metadata:  cloneAnyMap(probeResult.Metadata),
-			CheckedAt: probeResult.CheckedAt.UTC(),
+			Name:                  strings.ToLower(strings.TrimSpace(target.Name)),
+			Required:              target.Required,
+			Status:                string(normalizeAdapterHealthStatus(string(probeResult.Status))),
+			Code:                  strings.TrimSpace(probeResult.Code),
+			Message:               strings.TrimSpace(probeResult.Message),
+			Metadata:              cloneAnyMap(probeResult.Metadata),
+			BackoffAppliedTotal:   probeResult.Governance.BackoffAppliedTotal,
+			CircuitOpenTotal:      probeResult.Governance.CircuitOpenTotal,
+			CircuitHalfOpenTotal:  probeResult.Governance.CircuitHalfOpenTotal,
+			CircuitRecoverTotal:   probeResult.Governance.CircuitRecoverTotal,
+			CircuitState:          strings.ToLower(strings.TrimSpace(probeResult.Governance.CircuitState)),
+			GovernancePrimaryCode: strings.TrimSpace(probeResult.Governance.PrimaryCode),
+			CheckedAt:             probeResult.CheckedAt.UTC(),
 		}
 		if eval.Metadata == nil {
 			eval.Metadata = map[string]any{}
@@ -539,6 +597,24 @@ func adapterHealthReadinessFinding(target AdapterHealthTarget, probeResult adapt
 	metadata["required"] = target.Required
 	metadata["health_status"] = string(normalizeAdapterHealthStatus(string(probeResult.Status)))
 	metadata["health_code"] = strings.TrimSpace(probeResult.Code)
+	if backoff := probeResult.Governance.BackoffAppliedTotal; backoff > 0 {
+		metadata["governance_backoff_applied_total"] = backoff
+	}
+	if openTotal := probeResult.Governance.CircuitOpenTotal; openTotal > 0 {
+		metadata["governance_circuit_open_total"] = openTotal
+	}
+	if halfOpenTotal := probeResult.Governance.CircuitHalfOpenTotal; halfOpenTotal > 0 {
+		metadata["governance_circuit_half_open_total"] = halfOpenTotal
+	}
+	if recoverTotal := probeResult.Governance.CircuitRecoverTotal; recoverTotal > 0 {
+		metadata["governance_circuit_recover_total"] = recoverTotal
+	}
+	if circuitState := strings.ToLower(strings.TrimSpace(probeResult.Governance.CircuitState)); circuitState != "" {
+		metadata["governance_circuit_state"] = circuitState
+	}
+	if code := strings.TrimSpace(probeResult.Governance.PrimaryCode); code != "" {
+		metadata["governance_primary_code"] = code
+	}
 	if !probeResult.CheckedAt.IsZero() {
 		metadata["checked_at"] = probeResult.CheckedAt.UTC().Format(time.RFC3339Nano)
 	}
@@ -550,24 +626,48 @@ func adapterHealthReadinessFinding(target AdapterHealthTarget, probeResult adapt
 	}
 
 	status := normalizeAdapterHealthStatus(string(probeResult.Status))
+	circuitState := strings.ToLower(strings.TrimSpace(probeResult.Governance.CircuitState))
 	switch status {
 	case adapterhealth.StatusHealthy:
+		if strings.TrimSpace(probeResult.Governance.PrimaryCode) == adapterhealth.CodeCircuitRecover {
+			return ReadinessFinding{
+				Code:     ReadinessCodeAdapterGovernanceRecovered,
+				Domain:   ReadinessDomainAdapter,
+				Severity: ReadinessSeverityInfo,
+				Message:  fmt.Sprintf("adapter %s recovered after governance half-open probes", name),
+				Metadata: metadata,
+			}, true
+		}
 		return ReadinessFinding{}, false
 	case adapterhealth.StatusDegraded:
+		code := ReadinessCodeAdapterDegraded
+		message := fmt.Sprintf("adapter %s is degraded", name)
+		if circuitState == string(adapterhealth.CircuitStateHalfOpen) {
+			code = ReadinessCodeAdapterHalfOpenDegraded
+			message = fmt.Sprintf("adapter %s half-open probe is degraded", name)
+		}
 		return ReadinessFinding{
-			Code:     ReadinessCodeAdapterDegraded,
+			Code:     code,
 			Domain:   ReadinessDomainAdapter,
 			Severity: ReadinessSeverityWarning,
-			Message:  fmt.Sprintf("adapter %s is degraded", name),
+			Message:  message,
 			Metadata: metadata,
 		}, true
 	default:
 		severity := ReadinessSeverityWarning
 		code := ReadinessCodeAdapterOptionalUnavailable
 		message := fmt.Sprintf("optional adapter %s is unavailable", name)
+		if circuitState == string(adapterhealth.CircuitStateOpen) {
+			code = ReadinessCodeAdapterOptionalCircuitOpen
+			message = fmt.Sprintf("optional adapter %s is unavailable while circuit is open", name)
+		}
 		if target.Required {
 			code = ReadinessCodeAdapterRequiredUnavailable
 			message = fmt.Sprintf("required adapter %s is unavailable", name)
+			if circuitState == string(adapterhealth.CircuitStateOpen) {
+				code = ReadinessCodeAdapterRequiredCircuitOpen
+				message = fmt.Sprintf("required adapter %s is unavailable while circuit is open", name)
+			}
 			if adapterStrict || runtimeStrict {
 				severity = ReadinessSeverityError
 			}
@@ -666,12 +766,40 @@ func (m *Manager) updateAdapterHealthRunnerOptions(cfg AdapterHealthConfig) {
 		m.adapterHealthRunner = adapterhealth.NewRunner(adapterhealth.RunnerOptions{
 			ProbeTimeout: cfg.ProbeTimeout,
 			CacheTTL:     cfg.CacheTTL,
+			Backoff: adapterhealth.BackoffOptions{
+				Enabled:     cfg.Backoff.Enabled,
+				Initial:     cfg.Backoff.Initial,
+				Max:         cfg.Backoff.Max,
+				Multiplier:  cfg.Backoff.Multiplier,
+				JitterRatio: cfg.Backoff.JitterRatio,
+			},
+			Circuit: adapterhealth.CircuitOptions{
+				Enabled:                  cfg.Circuit.Enabled,
+				FailureThreshold:         cfg.Circuit.FailureThreshold,
+				OpenDuration:             cfg.Circuit.OpenDuration,
+				HalfOpenMaxProbe:         cfg.Circuit.HalfOpenMaxProbe,
+				HalfOpenSuccessThreshold: cfg.Circuit.HalfOpenSuccessThreshold,
+			},
 		}, nil)
 		return
 	}
 	m.adapterHealthRunner.UpdateOptions(adapterhealth.RunnerOptions{
 		ProbeTimeout: cfg.ProbeTimeout,
 		CacheTTL:     cfg.CacheTTL,
+		Backoff: adapterhealth.BackoffOptions{
+			Enabled:     cfg.Backoff.Enabled,
+			Initial:     cfg.Backoff.Initial,
+			Max:         cfg.Backoff.Max,
+			Multiplier:  cfg.Backoff.Multiplier,
+			JitterRatio: cfg.Backoff.JitterRatio,
+		},
+		Circuit: adapterhealth.CircuitOptions{
+			Enabled:                  cfg.Circuit.Enabled,
+			FailureThreshold:         cfg.Circuit.FailureThreshold,
+			OpenDuration:             cfg.Circuit.OpenDuration,
+			HalfOpenMaxProbe:         cfg.Circuit.HalfOpenMaxProbe,
+			HalfOpenSuccessThreshold: cfg.Circuit.HalfOpenSuccessThreshold,
+		},
 	})
 }
 

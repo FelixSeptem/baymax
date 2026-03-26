@@ -10,12 +10,14 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 )
 
 func TestAdapterConformanceMinimumMatrixCoverage(t *testing.T) {
@@ -491,6 +493,191 @@ func TestAdapterConformanceHealthMatrixDegradedVisibility(t *testing.T) {
 	}
 }
 
+func TestAdapterConformanceHealthGovernanceMatrixStateTransitionDeterministic(t *testing.T) {
+	run := func() []string {
+		cfgPath := filepath.Join(t.TempDir(), "runtime-a46-state-transition.yaml")
+		writeAdapterHealthGovernanceConfig(t, cfgPath, false)
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A46_CONFORMANCE"})
+		if err != nil {
+			t.Fatalf("new runtime manager: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+
+		var calls int
+		mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+			{
+				Name:     "required-adapter",
+				Required: true,
+				Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+					calls++
+					if calls <= 2 {
+						return adapterhealth.Result{
+							Status:  adapterhealth.StatusUnavailable,
+							Code:    adapterhealth.CodeProbeFailed,
+							Message: "fixture unavailable",
+						}, nil
+					}
+					return adapterhealth.Result{
+						Status:  adapterhealth.StatusHealthy,
+						Code:    adapterhealth.CodeHealthy,
+						Message: "fixture recovered",
+					}, nil
+				}),
+			},
+		})
+
+		out := make([]string, 0, 5)
+		capture := func(res runtimeconfig.ReadinessResult) {
+			summary := res.Summary()
+			payload := struct {
+				Status       runtimeconfig.ReadinessStatus `json:"status"`
+				PrimaryCode  string                        `json:"primary_code"`
+				CircuitState string                        `json:"circuit_state"`
+				OpenTotal    int                           `json:"open_total"`
+				RecoverTotal int                           `json:"recover_total"`
+			}{
+				Status:       res.Status,
+				PrimaryCode:  summary.PrimaryCode,
+				CircuitState: summary.AdapterHealthCircuitState,
+				OpenTotal:    summary.AdapterHealthCircuitOpenTotal,
+				RecoverTotal: summary.AdapterHealthCircuitRecoverTotal,
+			}
+			blob, _ := json.Marshal(payload)
+			out = append(out, string(blob))
+		}
+
+		capture(mgr.ReadinessPreflight())
+		time.Sleep(3 * time.Millisecond)
+		capture(mgr.ReadinessPreflight())
+		capture(mgr.ReadinessPreflight())
+		time.Sleep(35 * time.Millisecond)
+		capture(mgr.ReadinessPreflight())
+		time.Sleep(3 * time.Millisecond)
+		capture(mgr.ReadinessPreflight())
+		return out
+	}
+
+	first := run()
+	second := run()
+	if len(first) != len(second) {
+		t.Fatalf("state transition sequence length mismatch first=%d second=%d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("state transition determinism drift at step=%d first=%s second=%s", i, first[i], second[i])
+		}
+	}
+}
+
+func TestAdapterConformanceHealthGovernanceMatrixHalfOpenRecovery(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a46-half-open.yaml")
+	writeAdapterHealthGovernanceConfig(t, cfgPath, false)
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A46_CONFORMANCE"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	var calls int
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "optional-adapter",
+			Required: false,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				calls++
+				switch calls {
+				case 1, 2:
+					return adapterhealth.Result{
+						Status:  adapterhealth.StatusUnavailable,
+						Code:    adapterhealth.CodeProbeFailed,
+						Message: "fixture unavailable",
+					}, nil
+				case 3:
+					return adapterhealth.Result{
+						Status:  adapterhealth.StatusDegraded,
+						Code:    adapterhealth.CodeDegraded,
+						Message: "fixture half-open degraded",
+					}, nil
+				default:
+					return adapterhealth.Result{
+						Status:  adapterhealth.StatusHealthy,
+						Code:    adapterhealth.CodeHealthy,
+						Message: "fixture recovered",
+					}, nil
+				}
+			}),
+		},
+	})
+
+	_ = mgr.ReadinessPreflight()
+	time.Sleep(3 * time.Millisecond)
+	_ = mgr.ReadinessPreflight()
+	openWindow := mgr.ReadinessPreflight()
+	assertReadinessFindingCode(t, openWindow.Findings, runtimeconfig.ReadinessCodeAdapterOptionalCircuitOpen)
+
+	time.Sleep(35 * time.Millisecond)
+	halfOpenDegraded := mgr.ReadinessPreflight()
+	assertReadinessFindingCode(t, halfOpenDegraded.Findings, runtimeconfig.ReadinessCodeAdapterHalfOpenDegraded)
+	summary := halfOpenDegraded.Summary()
+	if summary.AdapterHealthCircuitState != string(adapterhealth.CircuitStateHalfOpen) {
+		t.Fatalf("half-open state mismatch: %#v", summary)
+	}
+}
+
+func TestAdapterConformanceHealthGovernanceTaxonomyDriftGuard(t *testing.T) {
+	codes := []string{
+		runtimeconfig.ReadinessCodeAdapterRequiredUnavailable,
+		runtimeconfig.ReadinessCodeAdapterOptionalUnavailable,
+		runtimeconfig.ReadinessCodeAdapterDegraded,
+		runtimeconfig.ReadinessCodeAdapterRequiredCircuitOpen,
+		runtimeconfig.ReadinessCodeAdapterOptionalCircuitOpen,
+		runtimeconfig.ReadinessCodeAdapterHalfOpenDegraded,
+		runtimeconfig.ReadinessCodeAdapterGovernanceRecovered,
+	}
+	for _, code := range codes {
+		if !strings.HasPrefix(code, "adapter.health.") {
+			t.Fatalf("taxonomy drift: code must stay in adapter.health.* namespace, got %q", code)
+		}
+		if err := ValidateReasonCode(code); err != nil {
+			t.Fatalf("taxonomy drift: invalid reason code %q: %v", code, err)
+		}
+	}
+}
+
+func TestAdapterConformanceHealthGovernanceDiagnosticsReplayIdempotent(t *testing.T) {
+	store := runtimediag.NewStore(16, 16, 8, 8, runtimediag.TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, runtimediag.CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := runtimediag.RunRecord{
+		Time:                               time.Now().UTC(),
+		RunID:                              "run-a46-governance-replay",
+		Status:                             "success",
+		AdapterHealthBackoffAppliedTotal:   4,
+		AdapterHealthCircuitOpenTotal:      2,
+		AdapterHealthCircuitHalfOpenTotal:  1,
+		AdapterHealthCircuitRecoverTotal:   1,
+		AdapterHealthCircuitState:          "half_open",
+		AdapterHealthGovernancePrimaryCode: "adapter.health.circuit_half_open",
+	}
+	store.AddRun(rec)
+	store.AddRun(rec)
+
+	page, err := store.QueryRuns(runtimediag.UnifiedRunQueryRequest{RunID: rec.RunID})
+	if err != nil {
+		t.Fatalf("query governance replay failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("replay idempotency mismatch: %#v", page.Items)
+	}
+	got := page.Items[0]
+	if got.AdapterHealthBackoffAppliedTotal != 4 ||
+		got.AdapterHealthCircuitOpenTotal != 2 ||
+		got.AdapterHealthCircuitHalfOpenTotal != 1 ||
+		got.AdapterHealthCircuitRecoverTotal != 1 ||
+		got.AdapterHealthCircuitState != "half_open" ||
+		got.AdapterHealthGovernancePrimaryCode != "adapter.health.circuit_half_open" {
+		t.Fatalf("governance replay payload mismatch: %#v", got)
+	}
+}
+
 func contractErr(t *testing.T, err error) *adaptermanifest.ContractError {
 	t.Helper()
 	ce := &adaptermanifest.ContractError{}
@@ -539,6 +726,42 @@ func readinessFingerprint(result runtimeconfig.ReadinessResult) string {
 	}
 	blob, _ := json.Marshal(payload)
 	return string(blob)
+}
+
+func writeAdapterHealthGovernanceConfig(t *testing.T, path string, readinessStrict bool) {
+	t.Helper()
+	content := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"adapter:",
+		"  health:",
+		"    enabled: true",
+		"    strict: false",
+		"    probe_timeout: 500ms",
+		"    cache_ttl: 1ms",
+		"    backoff:",
+		"      enabled: true",
+		"      initial: 2ms",
+		"      max: 10ms",
+		"      multiplier: 2",
+		"      jitter_ratio: 0",
+		"    circuit:",
+		"      enabled: true",
+		"      failure_threshold: 2",
+		"      open_duration: 30ms",
+		"      half_open_max_probe: 1",
+		"      half_open_success_threshold: 2",
+		"",
+	}, "\n")
+	if readinessStrict {
+		content = strings.Replace(content, "strict: false", "strict: true", 1)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 }
 
 func writeAdapterHealthConfig(t *testing.T, path string, readinessStrict bool) {

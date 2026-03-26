@@ -212,6 +212,12 @@ type RunRecord struct {
 	AdapterHealthDegradedTotal                  int                               `json:"adapter_health_degraded_total,omitempty"`
 	AdapterHealthUnavailableTotal               int                               `json:"adapter_health_unavailable_total,omitempty"`
 	AdapterHealthPrimaryCode                    string                            `json:"adapter_health_primary_code,omitempty"`
+	AdapterHealthBackoffAppliedTotal            int                               `json:"adapter_health_backoff_applied_total,omitempty"`
+	AdapterHealthCircuitOpenTotal               int                               `json:"adapter_health_circuit_open_total,omitempty"`
+	AdapterHealthCircuitHalfOpenTotal           int                               `json:"adapter_health_circuit_half_open_total,omitempty"`
+	AdapterHealthCircuitRecoverTotal            int                               `json:"adapter_health_circuit_recover_total,omitempty"`
+	AdapterHealthCircuitState                   string                            `json:"adapter_health_circuit_state,omitempty"`
+	AdapterHealthGovernancePrimaryCode          string                            `json:"adapter_health_governance_primary_code,omitempty"`
 	EffectiveOperationProfile                   string                            `json:"effective_operation_profile,omitempty"`
 	TimeoutResolutionSource                     string                            `json:"timeout_resolution_source,omitempty"`
 	TimeoutResolutionTrace                      string                            `json:"timeout_resolution_trace,omitempty"`

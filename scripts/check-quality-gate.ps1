@@ -58,7 +58,7 @@ Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics cardinality contract 
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {
-    go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealthMatrix)' -count=1
+    go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA46ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {

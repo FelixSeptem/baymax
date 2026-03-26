@@ -2291,6 +2291,76 @@ reload:
 	}
 }
 
+func TestManagerAdapterHealthGovernanceInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+    backoff:
+      enabled: true
+      initial: 200ms
+      max: 5s
+      multiplier: 2
+      jitter_ratio: 0.2
+    circuit:
+      enabled: true
+      failure_threshold: 3
+      open_duration: 30s
+      half_open_max_probe: 1
+      half_open_success_threshold: 2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Adapter.Health.Backoff.Multiplier
+	if before != 2 {
+		t.Fatalf("before adapter.health.backoff.multiplier = %v, want 2", before)
+	}
+
+	writeConfig(t, file, `
+adapter:
+  health:
+    enabled: true
+    strict: false
+    probe_timeout: 500ms
+    cache_ttl: 30s
+    backoff:
+      enabled: true
+      initial: 200ms
+      max: 5s
+      multiplier: 1
+      jitter_ratio: 0.2
+    circuit:
+      enabled: true
+      failure_threshold: 3
+      open_duration: 30s
+      half_open_max_probe: 1
+      half_open_success_threshold: 2
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Adapter.Health.Backoff.Multiplier
+	if after != before {
+		t.Fatalf("invalid adapter health governance reload should rollback, multiplier=%v want=%v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRuntimeOperationProfilesInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

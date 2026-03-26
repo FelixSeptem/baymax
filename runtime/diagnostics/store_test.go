@@ -256,16 +256,20 @@ func TestCardinalityListGovernanceDeterministic(t *testing.T) {
 func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                                  time.Now(),
-		RunID:                                 "run-a40-readiness",
-		Status:                                "success",
-		RuntimeReadinessStatus:                "degraded",
-		RuntimeReadinessFindingTotal:          2,
-		RuntimeReadinessBlockingTotal:         0,
-		RuntimeReadinessDegradedTotal:         2,
-		RuntimeReadinessPrimaryCode:           "scheduler.backend.fallback",
-		RuntimeReadinessAdmissionTotal:        1,
-		RuntimeReadinessAdmissionBlockedTotal: 0,
+		Time:                                        time.Now(),
+		RunID:                                       "run-a40-readiness",
+		Status:                                      "success",
+		RuntimeReadinessStatus:                      "degraded",
+		RuntimeReadinessFindingTotal:                2,
+		RuntimeReadinessBlockingTotal:               0,
+		RuntimeReadinessDegradedTotal:               2,
+		RuntimePrimaryDomain:                        "scheduler",
+		RuntimePrimaryCode:                          "scheduler.backend.fallback",
+		RuntimePrimarySource:                        "runtime.readiness",
+		RuntimePrimaryConflictTotal:                 0,
+		RuntimeReadinessPrimaryCode:                 "scheduler.backend.fallback",
+		RuntimeReadinessAdmissionTotal:              1,
+		RuntimeReadinessAdmissionBlockedTotal:       0,
 		RuntimeReadinessAdmissionDegradedAllowTotal: 1,
 		RuntimeReadinessAdmissionBypassTotal:        0,
 		RuntimeReadinessAdmissionMode:               "fail_fast",
@@ -293,6 +297,10 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessFindingTotal != 2 ||
 		items[0].RuntimeReadinessBlockingTotal != 0 ||
 		items[0].RuntimeReadinessDegradedTotal != 2 ||
+		items[0].RuntimePrimaryDomain != "scheduler" ||
+		items[0].RuntimePrimaryCode != "scheduler.backend.fallback" ||
+		items[0].RuntimePrimarySource != "runtime.readiness" ||
+		items[0].RuntimePrimaryConflictTotal != 0 ||
 		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 0 ||
@@ -318,6 +326,10 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	rec.RuntimeReadinessFindingTotal = 3
 	rec.RuntimeReadinessBlockingTotal = 2
 	rec.RuntimeReadinessDegradedTotal = 1
+	rec.RuntimePrimaryDomain = "timeout"
+	rec.RuntimePrimaryCode = "runtime.timeout.parent_budget_rejected"
+	rec.RuntimePrimarySource = "timeout.resolution.request"
+	rec.RuntimePrimaryConflictTotal = 1
 	rec.RuntimeReadinessPrimaryCode = "runtime.readiness.strict_escalated"
 	rec.RuntimeReadinessAdmissionTotal = 1
 	rec.RuntimeReadinessAdmissionBlockedTotal = 1
@@ -346,6 +358,10 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimeReadinessFindingTotal != 3 ||
 		items[0].RuntimeReadinessBlockingTotal != 2 ||
 		items[0].RuntimeReadinessDegradedTotal != 1 ||
+		items[0].RuntimePrimaryDomain != "timeout" ||
+		items[0].RuntimePrimaryCode != "runtime.timeout.parent_budget_rejected" ||
+		items[0].RuntimePrimarySource != "timeout.resolution.request" ||
+		items[0].RuntimePrimaryConflictTotal != 1 ||
 		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 1 ||

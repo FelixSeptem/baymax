@@ -97,6 +97,12 @@ runtime:
 	if summary.FindingTotal < 2 || summary.BlockingTotal < 1 || summary.DegradedTotal < 1 {
 		t.Fatalf("summary counts mismatch: %#v", summary)
 	}
+	if summary.PrimaryDomain != ReadinessDomainRuntime ||
+		summary.PrimaryCode != ReadinessCodeStrictEscalated ||
+		summary.PrimarySource != RuntimePrimarySourceReadiness ||
+		summary.PrimaryConflictTotal != 0 {
+		t.Fatalf("summary primary arbitration mismatch: %#v", summary)
+	}
 }
 
 func TestManagerReadinessPreflightDeterministicForEquivalentSnapshot(t *testing.T) {
@@ -193,6 +199,11 @@ adapter:
 	}
 	if summary.AdapterHealthProbeTotal != 3 || summary.AdapterHealthDegradedTotal != 1 || summary.AdapterHealthUnavailableTotal != 2 {
 		t.Fatalf("adapter health summary mismatch: %#v", summary)
+	}
+	if summary.PrimaryDomain != ReadinessDomainAdapter ||
+		summary.PrimaryCode != ReadinessCodeAdapterRequiredUnavailable ||
+		summary.PrimarySource != RuntimePrimarySourceAdapter {
+		t.Fatalf("adapter arbitration summary mismatch: %#v", summary)
 	}
 }
 
@@ -497,8 +508,14 @@ runtime:
 	if first.ReadinessStatus != ReadinessStatusBlocked {
 		t.Fatalf("readiness_status = %q, want %q", first.ReadinessStatus, ReadinessStatusBlocked)
 	}
+	if first.ReadinessPrimaryDomain != ReadinessDomainRecovery {
+		t.Fatalf("readiness_primary_domain = %q, want %q", first.ReadinessPrimaryDomain, ReadinessDomainRecovery)
+	}
 	if first.ReadinessPrimaryCode != ReadinessCodeRecoveryActivationError {
 		t.Fatalf("readiness_primary_code = %q, want %q", first.ReadinessPrimaryCode, ReadinessCodeRecoveryActivationError)
+	}
+	if first.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
+		t.Fatalf("readiness_primary_source = %q, want %q", first.ReadinessPrimarySource, RuntimePrimarySourceReadiness)
 	}
 	if readinessAdmissionFingerprint(first) != readinessAdmissionFingerprint(second) {
 		t.Fatalf("admission decision should be deterministic first=%s second=%s", readinessAdmissionFingerprint(first), readinessAdmissionFingerprint(second))
@@ -570,6 +587,10 @@ runtime:
 	if allowDecision.ReadinessPrimaryCode != ReadinessCodeSchedulerFallback {
 		t.Fatalf("degraded allow primary_code = %q, want %q", allowDecision.ReadinessPrimaryCode, ReadinessCodeSchedulerFallback)
 	}
+	if allowDecision.ReadinessPrimaryDomain != ReadinessDomainScheduler ||
+		allowDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
+		t.Fatalf("degraded allow primary metadata mismatch: %#v", allowDecision)
+	}
 
 	denyFile := filepath.Join(t.TempDir(), "runtime-degraded-deny.yaml")
 	writeConfig(t, denyFile, `
@@ -608,6 +629,10 @@ runtime:
 	if denyDecision.ReadinessPrimaryCode != ReadinessCodeSchedulerFallback {
 		t.Fatalf("degraded fail_fast primary_code = %q, want %q", denyDecision.ReadinessPrimaryCode, ReadinessCodeSchedulerFallback)
 	}
+	if denyDecision.ReadinessPrimaryDomain != ReadinessDomainScheduler ||
+		denyDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
+		t.Fatalf("degraded fail_fast primary metadata mismatch: %#v", denyDecision)
+	}
 }
 
 func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
@@ -626,6 +651,11 @@ func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
 	}
 	if decision.ReasonCode != ReadinessAdmissionCodeBypassDisabled {
 		t.Fatalf("admission reason_code = %q, want %q", decision.ReasonCode, ReadinessAdmissionCodeBypassDisabled)
+	}
+	if decision.ReadinessPrimaryDomain != ReadinessDomainRuntime ||
+		decision.ReadinessPrimaryCode != ReadinessAdmissionCodeBypassDisabled ||
+		decision.ReadinessPrimarySource != RuntimePrimarySourceAdmission {
+		t.Fatalf("disabled bypass decision primary metadata mismatch: %#v", decision)
 	}
 }
 

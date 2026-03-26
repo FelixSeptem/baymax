@@ -896,7 +896,9 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if stats.RecoveryFallbackReason != "" {
 		payload["recovery_fallback_reason"] = stats.RecoveryFallbackReason
 	}
+	var readinessFindings []runtimeconfig.ReadinessFinding
 	if readiness, err := c.ReadinessPreflight(); err == nil {
+		readinessFindings = append([]runtimeconfig.ReadinessFinding(nil), readiness.Findings...)
 		summary := readiness.Summary()
 		payload["runtime_readiness_status"] = summary.Status
 		payload["runtime_readiness_finding_total"] = summary.FindingTotal
@@ -925,6 +927,23 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["adapter_health_governance_primary_code"] = summary.AdapterHealthGovernancePrimaryCode
 		}
 	}
+	primary := runtimeconfig.ArbitratePrimaryReason(runtimeconfig.PrimaryReasonArbitrationInput{
+		TimeoutParentBudgetRejectTotal: stats.TimeoutParentBudgetReject,
+		TimeoutParentBudgetClampTotal:  stats.TimeoutParentBudgetClamp,
+		TimeoutExhaustedTotal:          stats.AsyncTimeoutTotal,
+		TimeoutResolutionSource:        stats.TimeoutResolutionSource,
+		ReadinessFindings:              readinessFindings,
+	})
+	if strings.TrimSpace(primary.Domain) != "" {
+		payload["runtime_primary_domain"] = strings.TrimSpace(primary.Domain)
+	}
+	if strings.TrimSpace(primary.Code) != "" {
+		payload["runtime_primary_code"] = strings.TrimSpace(primary.Code)
+	}
+	if strings.TrimSpace(primary.Source) != "" {
+		payload["runtime_primary_source"] = strings.TrimSpace(primary.Source)
+	}
+	payload["runtime_primary_conflict_total"] = primary.ConflictTotal
 	payload["runtime_readiness_admission_total"] = stats.ReadinessAdmissionTotal
 	payload["runtime_readiness_admission_blocked_total"] = stats.ReadinessAdmissionBlockedTotal
 	payload["runtime_readiness_admission_degraded_allow_total"] = stats.ReadinessAdmissionDegradedAllowTotal

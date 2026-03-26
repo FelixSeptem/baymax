@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-26：
-- 已归档并稳定：A4-A46（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口）。
+- 已归档并稳定：A4-A47（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口）。
 - 进行中：
-  - `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`
   - `introduce-cross-domain-primary-reason-arbitration-contract-a48`
+  - `introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -230,7 +230,7 @@ A46 当前落地（实现已完成）：
 - `integration/adapterconformance` 新增 governance matrix suites（状态转移确定性、半开恢复、taxonomy drift guard、replay idempotency）。
 - `scripts/check-adapter-conformance.*` 与 `scripts/check-quality-gate.*` 已纳入 A46 suites 并保持 shell/PowerShell parity。
 
-### P1：A47 readiness-timeout-health replay fixture gate（进行中，实施完成待归档）
+### P1：A47 readiness-timeout-health replay fixture gate（已归档）
 
 A47 目标：
 - 固化 `readiness + timeout resolution + adapter health` 交叉语义回放夹具。
@@ -250,6 +250,21 @@ A48 目标：
 - 固化 timeout/readiness/adapter-health 冲突场景下的 primary reason 裁决优先级与 tie-break 规则。
 - 统一 `runtime_primary_domain|code|source` 解释链路，保持 Run/Stream/replay 语义一致。
 - 将 arbitration drift 检测纳入 replay + quality gate 阻断，防止跨提案演进产生 reclassification drift。
+
+A48 当前落地（实现已完成，待归档）：
+- `runtime/config` 新增 cross-domain arbitration helper，固定 precedence（timeout reject/exhausted > readiness blocked > adapter required unavailable > degraded/optional > warning/info）并支持 lexical tie-break 与 conflict_total。
+- `runtime/config/readiness` 与 admission guard 统一消费 arbitration 输出，解释字段对齐 `primary domain/code/source`，Run/Stream 保持语义等价。
+- `runtime/diagnostics` 与 `observability/event.RuntimeRecorder` 增加 A48 additive 字段：`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`，并保持 replay idempotency。
+- `tool/diagnosticsreplay` 新增 A48 fixture schema（`version=a48.v1`）与 drift 分类：`precedence_drift`、`tie_break_drift`、`taxonomy_drift`。
+- 新增 `integration/primary_reason_arbitration_replay_contract_test.go` 与 `integration/testdata/diagnostics-replay/a48/v1/*`，覆盖 replay parity + drift guard。
+- quality gate 阻断步骤扩展为：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1`（shell/PowerShell parity 保持一致）。
+
+### P1：A49 arbitration explainability + secondary reason（进行中）
+
+A49 目标：
+- 固化 secondary reasons 的有界输出契约（上限、去重、稳定排序）并输出 rule version。
+- 统一 remediation hint taxonomy，补齐 machine-readable explainability 字段。
+- 将 explainability drift（secondary order/count、hint taxonomy、rule version）纳入 replay + quality gate 阻断。
 
 ### P2：0.x 质量与治理持续收敛
 

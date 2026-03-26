@@ -89,7 +89,10 @@ type ReadinessSummary struct {
 	FindingTotal                       int    `json:"runtime_readiness_finding_total"`
 	BlockingTotal                      int    `json:"runtime_readiness_blocking_total"`
 	DegradedTotal                      int    `json:"runtime_readiness_degraded_total"`
+	PrimaryDomain                      string `json:"runtime_primary_domain,omitempty"`
 	PrimaryCode                        string `json:"runtime_readiness_primary_code"`
+	PrimarySource                      string `json:"runtime_primary_source,omitempty"`
+	PrimaryConflictTotal               int    `json:"runtime_primary_conflict_total,omitempty"`
 	AdapterHealthStatus                string `json:"adapter_health_status,omitempty"`
 	AdapterHealthProbeTotal            int    `json:"adapter_health_probe_total,omitempty"`
 	AdapterHealthDegradedTotal         int    `json:"adapter_health_degraded_total,omitempty"`
@@ -104,15 +107,17 @@ type ReadinessSummary struct {
 }
 
 type ReadinessAdmissionDecision struct {
-	Enabled              bool                      `json:"enabled"`
-	Mode                 string                    `json:"mode"`
-	BlockOn              string                    `json:"block_on"`
-	DegradedPolicy       string                    `json:"degraded_policy"`
-	Outcome              ReadinessAdmissionOutcome `json:"outcome"`
-	ReasonCode           string                    `json:"reason_code"`
-	ReadinessStatus      ReadinessStatus           `json:"readiness_status"`
-	ReadinessPrimaryCode string                    `json:"readiness_primary_code,omitempty"`
-	Bypass               bool                      `json:"bypass"`
+	Enabled                bool                      `json:"enabled"`
+	Mode                   string                    `json:"mode"`
+	BlockOn                string                    `json:"block_on"`
+	DegradedPolicy         string                    `json:"degraded_policy"`
+	Outcome                ReadinessAdmissionOutcome `json:"outcome"`
+	ReasonCode             string                    `json:"reason_code"`
+	ReadinessStatus        ReadinessStatus           `json:"readiness_status"`
+	ReadinessPrimaryDomain string                    `json:"readiness_primary_domain,omitempty"`
+	ReadinessPrimaryCode   string                    `json:"readiness_primary_code,omitempty"`
+	ReadinessPrimarySource string                    `json:"readiness_primary_source,omitempty"`
+	Bypass                 bool                      `json:"bypass"`
 }
 
 type AdapterHealthTarget struct {
@@ -309,27 +314,33 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	if m == nil {
 		return ReadinessAdmissionDecision{
-			Enabled:         false,
-			Mode:            ReadinessAdmissionModeFailFast,
-			BlockOn:         ReadinessAdmissionBlockOnBlockedOnly,
-			DegradedPolicy:  ReadinessAdmissionDegradedPolicyAllowAndRecord,
-			Outcome:         ReadinessAdmissionOutcomeAllow,
-			ReasonCode:      ReadinessAdmissionCodeManagerNotReady,
-			ReadinessStatus: ReadinessStatusBlocked,
-			Bypass:          true,
+			Enabled:                false,
+			Mode:                   ReadinessAdmissionModeFailFast,
+			BlockOn:                ReadinessAdmissionBlockOnBlockedOnly,
+			DegradedPolicy:         ReadinessAdmissionDegradedPolicyAllowAndRecord,
+			Outcome:                ReadinessAdmissionOutcomeAllow,
+			ReasonCode:             ReadinessAdmissionCodeManagerNotReady,
+			ReadinessStatus:        ReadinessStatusBlocked,
+			ReadinessPrimaryDomain: ReadinessDomainRuntime,
+			ReadinessPrimaryCode:   ReadinessAdmissionCodeManagerNotReady,
+			ReadinessPrimarySource: RuntimePrimarySourceAdmission,
+			Bypass:                 true,
 		}
 	}
 
 	cfg := m.EffectiveConfig().Runtime.Readiness.Admission
 	decision := ReadinessAdmissionDecision{
-		Enabled:         cfg.Enabled,
-		Mode:            normalizeReadinessAdmissionMode(cfg.Mode),
-		BlockOn:         normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
-		DegradedPolicy:  normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
-		Outcome:         ReadinessAdmissionOutcomeAllow,
-		ReasonCode:      ReadinessAdmissionCodeBypassDisabled,
-		ReadinessStatus: ReadinessStatusReady,
-		Bypass:          true,
+		Enabled:                cfg.Enabled,
+		Mode:                   normalizeReadinessAdmissionMode(cfg.Mode),
+		BlockOn:                normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
+		DegradedPolicy:         normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
+		Outcome:                ReadinessAdmissionOutcomeAllow,
+		ReasonCode:             ReadinessAdmissionCodeBypassDisabled,
+		ReadinessStatus:        ReadinessStatusReady,
+		ReadinessPrimaryDomain: ReadinessDomainRuntime,
+		ReadinessPrimaryCode:   ReadinessAdmissionCodeBypassDisabled,
+		ReadinessPrimarySource: RuntimePrimarySourceAdmission,
+		Bypass:                 true,
 	}
 	if !decision.Enabled {
 		return decision
@@ -339,7 +350,9 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	summary := preflight.Summary()
 	decision.Bypass = false
 	decision.ReadinessStatus = preflight.Status
+	decision.ReadinessPrimaryDomain = strings.TrimSpace(summary.PrimaryDomain)
 	decision.ReadinessPrimaryCode = strings.TrimSpace(summary.PrimaryCode)
+	decision.ReadinessPrimarySource = strings.TrimSpace(summary.PrimarySource)
 	switch preflight.Status {
 	case ReadinessStatusReady:
 		decision.Outcome = ReadinessAdmissionOutcomeAllow
@@ -362,6 +375,12 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	if decision.ReadinessPrimaryCode == "" {
 		decision.ReadinessPrimaryCode = decision.ReasonCode
 	}
+	if decision.ReadinessPrimaryDomain == "" {
+		decision.ReadinessPrimaryDomain = ReadinessDomainRuntime
+	}
+	if decision.ReadinessPrimarySource == "" {
+		decision.ReadinessPrimarySource = RuntimePrimarySourceAdmission
+	}
 	return decision
 }
 
@@ -375,16 +394,15 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 		switch strings.ToLower(strings.TrimSpace(finding.Severity)) {
 		case ReadinessSeverityError:
 			summary.BlockingTotal++
-			if summary.PrimaryCode == "" {
-				summary.PrimaryCode = strings.TrimSpace(finding.Code)
-			}
 		case ReadinessSeverityWarning:
 			summary.DegradedTotal++
-			if summary.PrimaryCode == "" {
-				summary.PrimaryCode = strings.TrimSpace(finding.Code)
-			}
 		}
 	}
+	primary := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{ReadinessFindings: r.Findings})
+	summary.PrimaryDomain = strings.TrimSpace(primary.Domain)
+	summary.PrimaryCode = strings.TrimSpace(primary.Code)
+	summary.PrimarySource = strings.TrimSpace(primary.Source)
+	summary.PrimaryConflictTotal = primary.ConflictTotal
 	if strings.TrimSpace(summary.Status) == "" {
 		summary.Status = string(ReadinessStatusReady)
 	}

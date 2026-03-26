@@ -72,7 +72,7 @@ if ! go test ./integration -run '^TestTimeoutResolutionContract' -count=1; then
 fi
 
 echo "[quality-gate] readiness-timeout-health replay fixture suites"
-if ! go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1; then
+if ! go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1; then
   echo "[quality-gate][readiness-timeout-health-replay] replay fixture suites failed"
   exit 1
 fi

@@ -55,10 +55,12 @@ func (c *Composer) guardReadinessAdmission(
 			Message:   msg,
 			Retryable: false,
 			Details: map[string]any{
-				"reason_code":            strings.TrimSpace(decision.ReasonCode),
-				"runtime_readiness":      string(decision.ReadinessStatus),
-				"readiness_primary_code": strings.TrimSpace(decision.ReadinessPrimaryCode),
-				"admission_mode":         strings.TrimSpace(decision.Mode),
+				"reason_code":              strings.TrimSpace(decision.ReasonCode),
+				"runtime_readiness":        string(decision.ReadinessStatus),
+				"readiness_primary_domain": strings.TrimSpace(decision.ReadinessPrimaryDomain),
+				"readiness_primary_code":   strings.TrimSpace(decision.ReadinessPrimaryCode),
+				"readiness_primary_source": strings.TrimSpace(decision.ReadinessPrimarySource),
+				"admission_mode":           strings.TrimSpace(decision.Mode),
 			},
 		},
 	}

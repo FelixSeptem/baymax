@@ -200,6 +200,10 @@ type RunRecord struct {
 	RuntimeReadinessFindingTotal                int                               `json:"runtime_readiness_finding_total,omitempty"`
 	RuntimeReadinessBlockingTotal               int                               `json:"runtime_readiness_blocking_total,omitempty"`
 	RuntimeReadinessDegradedTotal               int                               `json:"runtime_readiness_degraded_total,omitempty"`
+	RuntimePrimaryDomain                        string                            `json:"runtime_primary_domain,omitempty"`
+	RuntimePrimaryCode                          string                            `json:"runtime_primary_code,omitempty"`
+	RuntimePrimarySource                        string                            `json:"runtime_primary_source,omitempty"`
+	RuntimePrimaryConflictTotal                 int                               `json:"runtime_primary_conflict_total,omitempty"`
 	RuntimeReadinessPrimaryCode                 string                            `json:"runtime_readiness_primary_code,omitempty"`
 	RuntimeReadinessAdmissionTotal              int                               `json:"runtime_readiness_admission_total,omitempty"`
 	RuntimeReadinessAdmissionBlockedTotal       int                               `json:"runtime_readiness_admission_blocked_total,omitempty"`

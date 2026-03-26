@@ -1,0 +1,30 @@
+{
+  "version": "a48.v1",
+  "cases": [
+    {
+      "name": "tie-break-drift",
+      "run": {
+        "runtime_primary_domain": "scheduler",
+        "runtime_primary_code": "scheduler.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1
+      },
+      "stream": {
+        "runtime_primary_domain": "scheduler",
+        "runtime_primary_code": "scheduler.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1
+      },
+      "expected": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -87,7 +87,11 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
 			rec.RuntimeReadinessAdmissionMode != runtimeconfig.ReadinessAdmissionModeFailFast ||
-			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError {
+			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRecovery ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("blocked admission run record mismatch: %#v", rec)
 		}
 	})
@@ -97,7 +101,11 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
 			rec.RuntimeReadinessAdmissionMode != runtimeconfig.ReadinessAdmissionModeFailFast ||
-			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError {
+			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRecovery ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("blocked stream admission run record mismatch: %#v", rec)
 		}
 	})
@@ -149,7 +157,11 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
-			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback {
+			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainScheduler ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("degraded allow run record mismatch: %#v", rec)
 		}
 	})
@@ -158,7 +170,11 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
-			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback {
+			rec.RuntimeReadinessAdmissionPrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainScheduler ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("degraded allow stream run record mismatch: %#v", rec)
 		}
 	})
@@ -193,7 +209,11 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 1 ||
-			rec.RuntimeReadinessAdmissionMode != runtimeconfig.ReadinessAdmissionModeFailFast {
+			rec.RuntimeReadinessAdmissionMode != runtimeconfig.ReadinessAdmissionModeFailFast ||
+			rec.RuntimePrimaryDomain != "" ||
+			rec.RuntimePrimaryCode != "" ||
+			rec.RuntimePrimarySource != "" ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("bypass run record mismatch: %#v", rec)
 		}
 	})
@@ -283,14 +303,22 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
-			rec.RuntimeReadinessAdmissionBypassTotal != 0 {
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterRequiredUnavailable ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("run admission record mismatch: %#v", rec)
 		}
 	})
 	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-stream", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
-			rec.RuntimeReadinessAdmissionBypassTotal != 0 {
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterRequiredUnavailable ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
+			rec.RuntimePrimaryConflictTotal != 0 {
 			t.Fatalf("stream admission record mismatch: %#v", rec)
 		}
 	})
@@ -298,6 +326,10 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 
 type mapRunRecord struct {
 	RunID                                       string
+	RuntimePrimaryDomain                        string
+	RuntimePrimaryCode                          string
+	RuntimePrimarySource                        string
+	RuntimePrimaryConflictTotal                 int
 	RuntimeReadinessAdmissionTotal              int
 	RuntimeReadinessAdmissionBlockedTotal       int
 	RuntimeReadinessAdmissionDegradedAllowTotal int
@@ -315,6 +347,10 @@ func assertAdmissionRunRecord(t *testing.T, mgr *runtimeconfig.Manager, runID st
 		}
 		rec := mapRunRecord{
 			RunID:                                       items[i].RunID,
+			RuntimePrimaryDomain:                        items[i].RuntimePrimaryDomain,
+			RuntimePrimaryCode:                          items[i].RuntimePrimaryCode,
+			RuntimePrimarySource:                        items[i].RuntimePrimarySource,
+			RuntimePrimaryConflictTotal:                 items[i].RuntimePrimaryConflictTotal,
 			RuntimeReadinessAdmissionTotal:              items[i].RuntimeReadinessAdmissionTotal,
 			RuntimeReadinessAdmissionBlockedTotal:       items[i].RuntimeReadinessAdmissionBlockedTotal,
 			RuntimeReadinessAdmissionDegradedAllowTotal: items[i].RuntimeReadinessAdmissionDegradedAllowTotal,

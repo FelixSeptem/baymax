@@ -269,6 +269,10 @@ mcp:
 			"runtime_readiness_finding_total":                  2,
 			"runtime_readiness_blocking_total":                 0,
 			"runtime_readiness_degraded_total":                 2,
+			"runtime_primary_domain":                           "timeout",
+			"runtime_primary_code":                             "runtime.timeout.parent_budget_rejected",
+			"runtime_primary_source":                           "timeout.resolution.request",
+			"runtime_primary_conflict_total":                   1,
 			"runtime_readiness_primary_code":                   "scheduler.backend.fallback",
 			"runtime_readiness_admission_total":                1,
 			"runtime_readiness_admission_blocked_total":        0,
@@ -495,6 +499,10 @@ mcp:
 		items[0].RuntimeReadinessFindingTotal != 2 ||
 		items[0].RuntimeReadinessBlockingTotal != 0 ||
 		items[0].RuntimeReadinessDegradedTotal != 2 ||
+		items[0].RuntimePrimaryDomain != "timeout" ||
+		items[0].RuntimePrimaryCode != "runtime.timeout.parent_budget_rejected" ||
+		items[0].RuntimePrimarySource != "timeout.resolution.request" ||
+		items[0].RuntimePrimaryConflictTotal != 1 ||
 		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 0 ||
@@ -764,6 +772,10 @@ mcp:
 		got.RuntimeReadinessFindingTotal != 0 ||
 		got.RuntimeReadinessBlockingTotal != 0 ||
 		got.RuntimeReadinessDegradedTotal != 0 ||
+		got.RuntimePrimaryDomain != "" ||
+		got.RuntimePrimaryCode != "" ||
+		got.RuntimePrimarySource != "" ||
+		got.RuntimePrimaryConflictTotal != 0 ||
 		got.RuntimeReadinessPrimaryCode != "" ||
 		got.RuntimeReadinessAdmissionTotal != 0 ||
 		got.RuntimeReadinessAdmissionBlockedTotal != 0 ||

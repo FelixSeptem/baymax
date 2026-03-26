@@ -70,7 +70,7 @@ Invoke-RequiredStep -StepLabel "[quality-gate] timeout resolution contract suite
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] readiness-timeout-health replay fixture suites" -Command {
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {

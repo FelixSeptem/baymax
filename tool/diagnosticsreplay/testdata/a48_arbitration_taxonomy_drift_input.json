@@ -1,0 +1,30 @@
+{
+  "version": "a48.v1",
+  "cases": [
+    {
+      "name": "taxonomy-drift",
+      "run": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.unknown_reason",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0
+      },
+      "stream": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.unknown_reason",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0
+      },
+      "expected": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.parent_budget_rejected",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

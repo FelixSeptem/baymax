@@ -907,6 +907,19 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		if summary.PrimaryCode != "" {
 			payload["runtime_readiness_primary_code"] = summary.PrimaryCode
 		}
+		if len(summary.SecondaryReasonCodes) > 0 {
+			payload["runtime_secondary_reason_codes"] = append([]string(nil), summary.SecondaryReasonCodes...)
+		}
+		payload["runtime_secondary_reason_count"] = summary.SecondaryReasonCount
+		if summary.ArbitrationRuleVersion != "" {
+			payload["runtime_arbitration_rule_version"] = summary.ArbitrationRuleVersion
+		}
+		if summary.RemediationHintCode != "" {
+			payload["runtime_remediation_hint_code"] = summary.RemediationHintCode
+		}
+		if summary.RemediationHintDomain != "" {
+			payload["runtime_remediation_hint_domain"] = summary.RemediationHintDomain
+		}
 		if summary.AdapterHealthStatus != "" {
 			payload["adapter_health_status"] = summary.AdapterHealthStatus
 		}
@@ -944,6 +957,19 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		payload["runtime_primary_source"] = strings.TrimSpace(primary.Source)
 	}
 	payload["runtime_primary_conflict_total"] = primary.ConflictTotal
+	if len(primary.SecondaryCodes) > 0 {
+		payload["runtime_secondary_reason_codes"] = append([]string(nil), primary.SecondaryCodes...)
+	}
+	payload["runtime_secondary_reason_count"] = primary.SecondaryCount
+	if strings.TrimSpace(primary.RuleVersion) != "" {
+		payload["runtime_arbitration_rule_version"] = strings.TrimSpace(primary.RuleVersion)
+	}
+	if strings.TrimSpace(primary.RemediationHintCode) != "" {
+		payload["runtime_remediation_hint_code"] = strings.TrimSpace(primary.RemediationHintCode)
+	}
+	if strings.TrimSpace(primary.RemediationHintDomain) != "" {
+		payload["runtime_remediation_hint_domain"] = strings.TrimSpace(primary.RemediationHintDomain)
+	}
 	payload["runtime_readiness_admission_total"] = stats.ReadinessAdmissionTotal
 	payload["runtime_readiness_admission_blocked_total"] = stats.ReadinessAdmissionBlockedTotal
 	payload["runtime_readiness_admission_degraded_allow_total"] = stats.ReadinessAdmissionDegradedAllowTotal

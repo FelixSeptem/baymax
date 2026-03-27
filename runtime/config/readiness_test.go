@@ -100,7 +100,13 @@ runtime:
 	if summary.PrimaryDomain != ReadinessDomainRuntime ||
 		summary.PrimaryCode != ReadinessCodeStrictEscalated ||
 		summary.PrimarySource != RuntimePrimarySourceReadiness ||
-		summary.PrimaryConflictTotal != 0 {
+		summary.PrimaryConflictTotal != 0 ||
+		summary.SecondaryReasonCount != 1 ||
+		len(summary.SecondaryReasonCodes) != 1 ||
+		summary.SecondaryReasonCodes[0] != ReadinessCodeSchedulerFallback ||
+		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		summary.RemediationHintCode != "runtime.relax_strict_mode" ||
+		summary.RemediationHintDomain != ReadinessDomainRuntime {
 		t.Fatalf("summary primary arbitration mismatch: %#v", summary)
 	}
 }
@@ -202,7 +208,14 @@ adapter:
 	}
 	if summary.PrimaryDomain != ReadinessDomainAdapter ||
 		summary.PrimaryCode != ReadinessCodeAdapterRequiredUnavailable ||
-		summary.PrimarySource != RuntimePrimarySourceAdapter {
+		summary.PrimarySource != RuntimePrimarySourceAdapter ||
+		summary.SecondaryReasonCount != 2 ||
+		len(summary.SecondaryReasonCodes) != 2 ||
+		summary.SecondaryReasonCodes[0] != ReadinessCodeAdapterDegraded ||
+		summary.SecondaryReasonCodes[1] != ReadinessCodeAdapterOptionalUnavailable ||
+		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		summary.RemediationHintCode != "adapter.restore_required" ||
+		summary.RemediationHintDomain != ReadinessDomainAdapter {
 		t.Fatalf("adapter arbitration summary mismatch: %#v", summary)
 	}
 }
@@ -517,6 +530,15 @@ runtime:
 	if first.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
 		t.Fatalf("readiness_primary_source = %q, want %q", first.ReadinessPrimarySource, RuntimePrimarySourceReadiness)
 	}
+	if first.ReadinessSecondaryReasonCount != 0 || len(first.ReadinessSecondaryReasonCodes) != 0 {
+		t.Fatalf("blocked admission should have empty secondary reasons, got %#v", first)
+	}
+	if first.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 {
+		t.Fatalf("readiness_arbitration_rule_version = %q, want %q", first.ReadinessArbitrationRuleVersion, RuntimeArbitrationRuleVersionA49V1)
+	}
+	if first.ReadinessRemediationHintCode != "recovery.fix_activation" || first.ReadinessRemediationHintDomain != ReadinessDomainRecovery {
+		t.Fatalf("readiness remediation hint mismatch: %#v", first)
+	}
 	if readinessAdmissionFingerprint(first) != readinessAdmissionFingerprint(second) {
 		t.Fatalf("admission decision should be deterministic first=%s second=%s", readinessAdmissionFingerprint(first), readinessAdmissionFingerprint(second))
 	}
@@ -591,6 +613,11 @@ runtime:
 		allowDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
 		t.Fatalf("degraded allow primary metadata mismatch: %#v", allowDecision)
 	}
+	if allowDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		allowDecision.ReadinessRemediationHintCode != "scheduler.recover_backend" ||
+		allowDecision.ReadinessRemediationHintDomain != ReadinessDomainScheduler {
+		t.Fatalf("degraded allow explainability mismatch: %#v", allowDecision)
+	}
 
 	denyFile := filepath.Join(t.TempDir(), "runtime-degraded-deny.yaml")
 	writeConfig(t, denyFile, `
@@ -633,6 +660,11 @@ runtime:
 		denyDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
 		t.Fatalf("degraded fail_fast primary metadata mismatch: %#v", denyDecision)
 	}
+	if denyDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		denyDecision.ReadinessRemediationHintCode != "scheduler.recover_backend" ||
+		denyDecision.ReadinessRemediationHintDomain != ReadinessDomainScheduler {
+		t.Fatalf("degraded deny explainability mismatch: %#v", denyDecision)
+	}
 }
 
 func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
@@ -656,6 +688,11 @@ func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
 		decision.ReadinessPrimaryCode != ReadinessAdmissionCodeBypassDisabled ||
 		decision.ReadinessPrimarySource != RuntimePrimarySourceAdmission {
 		t.Fatalf("disabled bypass decision primary metadata mismatch: %#v", decision)
+	}
+	if decision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		decision.ReadinessRemediationHintCode != "readiness.admission_enable_if_required" ||
+		decision.ReadinessRemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("disabled bypass explainability mismatch: %#v", decision)
 	}
 }
 

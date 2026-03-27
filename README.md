@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-26）：
-- 已归档并稳定：A4-A47。
-- A48（Introduce Cross-Domain Primary Reason Arbitration Contract）进行中（实现完成待归档）。
+- 已归档并稳定：A4-A48。
 - A49（Introduce Cross-Domain Arbitration Explainability And Secondary Reason Contract）进行中。
+- A50（Introduce Arbitration Rule Version Governance And Compatibility Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,8 +225,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A48 `introduce-cross-domain-primary-reason-arbitration-contract-a48`：cross-domain primary reason 裁决契约已完成实现、待归档（fixed precedence、deterministic tie-break、`runtime_primary_*` additive 字段、A48 replay drift 分类与 gate 阻断接线）。
-- A49 `introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49`：cross-domain arbitration explainability 契约进行中（bounded secondary reasons、rule version、remediation hint taxonomy、replay/gate drift guard）。
+- A49 `introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49`：cross-domain arbitration explainability 契约进行中（`runtime_secondary_reason_codes/count`、`runtime_arbitration_rule_version`、`runtime_remediation_hint_*`、A49 replay drift 分类与 quality-gate 阻断接线）。
+- A50 `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`：arbitration rule version 治理契约进行中（requested/effective/source、compatibility window、unsupported/mismatch fail-fast、cross-version replay drift guard）。
 
 ### 9) Runtime Readiness Admission（A44）
 
@@ -242,6 +242,7 @@ _ = err
 - 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
 
 最近已归档能力：
+- A48 `introduce-cross-domain-primary-reason-arbitration-contract-a48`：cross-domain primary reason 裁决契约已归档（fixed precedence、deterministic tie-break、`runtime_primary_*` additive 字段、A48 replay drift 分类与 gate 阻断接线）。
 - A47 `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`：readiness + timeout + adapter-health 交叉 replay fixture gate 契约已归档（`a47.v1` fixture、drift 分类、Run/Stream parity、quality gate 阻断接线）。
 - A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health backoff + circuit governance 契约已归档（指数退避/抖动、half-open 探测、readiness/diagnostics/conformance/gate 收敛）。
 - A45 `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`：diagnostics cardinality budget + deterministic truncation 治理契约已归档（`diagnostics.cardinality.*` 配置域、overflow policy、bounded summary、Run/Stream/replay/parity 合同测试、quality gate 阻断映射）。

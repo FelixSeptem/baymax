@@ -267,6 +267,11 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		RuntimePrimaryCode:                          "scheduler.backend.fallback",
 		RuntimePrimarySource:                        "runtime.readiness",
 		RuntimePrimaryConflictTotal:                 0,
+		RuntimeSecondaryReasonCodes:                 []string{"mailbox.backend.fallback", "recovery.backend.fallback"},
+		RuntimeSecondaryReasonCount:                 2,
+		RuntimeArbitrationRuleVersion:               "a49.v1",
+		RuntimeRemediationHintCode:                  "scheduler.recover_backend",
+		RuntimeRemediationHintDomain:                "scheduler",
 		RuntimeReadinessPrimaryCode:                 "scheduler.backend.fallback",
 		RuntimeReadinessAdmissionTotal:              1,
 		RuntimeReadinessAdmissionBlockedTotal:       0,
@@ -301,6 +306,13 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimePrimaryCode != "scheduler.backend.fallback" ||
 		items[0].RuntimePrimarySource != "runtime.readiness" ||
 		items[0].RuntimePrimaryConflictTotal != 0 ||
+		len(items[0].RuntimeSecondaryReasonCodes) != 2 ||
+		items[0].RuntimeSecondaryReasonCodes[0] != "mailbox.backend.fallback" ||
+		items[0].RuntimeSecondaryReasonCodes[1] != "recovery.backend.fallback" ||
+		items[0].RuntimeSecondaryReasonCount != 2 ||
+		items[0].RuntimeArbitrationRuleVersion != "a49.v1" ||
+		items[0].RuntimeRemediationHintCode != "scheduler.recover_backend" ||
+		items[0].RuntimeRemediationHintDomain != "scheduler" ||
 		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 0 ||
@@ -330,6 +342,11 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	rec.RuntimePrimaryCode = "runtime.timeout.parent_budget_rejected"
 	rec.RuntimePrimarySource = "timeout.resolution.request"
 	rec.RuntimePrimaryConflictTotal = 1
+	rec.RuntimeSecondaryReasonCodes = []string{"runtime.timeout.exhausted", "runtime.timeout.parent_budget_clamped"}
+	rec.RuntimeSecondaryReasonCount = 2
+	rec.RuntimeArbitrationRuleVersion = "a49.v1"
+	rec.RuntimeRemediationHintCode = "timeout.adjust_parent_budget"
+	rec.RuntimeRemediationHintDomain = "timeout"
 	rec.RuntimeReadinessPrimaryCode = "runtime.readiness.strict_escalated"
 	rec.RuntimeReadinessAdmissionTotal = 1
 	rec.RuntimeReadinessAdmissionBlockedTotal = 1
@@ -362,6 +379,13 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 		items[0].RuntimePrimaryCode != "runtime.timeout.parent_budget_rejected" ||
 		items[0].RuntimePrimarySource != "timeout.resolution.request" ||
 		items[0].RuntimePrimaryConflictTotal != 1 ||
+		len(items[0].RuntimeSecondaryReasonCodes) != 2 ||
+		items[0].RuntimeSecondaryReasonCodes[0] != "runtime.timeout.exhausted" ||
+		items[0].RuntimeSecondaryReasonCodes[1] != "runtime.timeout.parent_budget_clamped" ||
+		items[0].RuntimeSecondaryReasonCount != 2 ||
+		items[0].RuntimeArbitrationRuleVersion != "a49.v1" ||
+		items[0].RuntimeRemediationHintCode != "timeout.adjust_parent_budget" ||
+		items[0].RuntimeRemediationHintDomain != "timeout" ||
 		items[0].RuntimeReadinessPrimaryCode != "runtime.readiness.strict_escalated" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 1 ||

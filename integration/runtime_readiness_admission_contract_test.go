@@ -91,7 +91,12 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRecovery ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "recovery.fix_activation" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRecovery {
 			t.Fatalf("blocked admission run record mismatch: %#v", rec)
 		}
 	})
@@ -105,7 +110,12 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRecovery ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeRecoveryActivationError ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "recovery.fix_activation" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRecovery {
 			t.Fatalf("blocked stream admission run record mismatch: %#v", rec)
 		}
 	})
@@ -161,7 +171,12 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainScheduler ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "scheduler.recover_backend" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainScheduler {
 			t.Fatalf("degraded allow run record mismatch: %#v", rec)
 		}
 	})
@@ -174,7 +189,12 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainScheduler ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeSchedulerFallback ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "scheduler.recover_backend" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainScheduler {
 			t.Fatalf("degraded allow stream run record mismatch: %#v", rec)
 		}
 	})
@@ -213,7 +233,12 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryDomain != "" ||
 			rec.RuntimePrimaryCode != "" ||
 			rec.RuntimePrimarySource != "" ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "" ||
+			rec.RuntimeRemediationHintDomain != "" {
 			t.Fatalf("bypass run record mismatch: %#v", rec)
 		}
 	})
@@ -307,7 +332,12 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterRequiredUnavailable ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "adapter.restore_required" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("run admission record mismatch: %#v", rec)
 		}
 	})
@@ -318,7 +348,12 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterRequiredUnavailable ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
-			rec.RuntimePrimaryConflictTotal != 0 {
+			rec.RuntimePrimaryConflictTotal != 0 ||
+			rec.RuntimeSecondaryReasonCount != 0 ||
+			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "adapter.restore_required" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("stream admission record mismatch: %#v", rec)
 		}
 	})
@@ -330,6 +365,11 @@ type mapRunRecord struct {
 	RuntimePrimaryCode                          string
 	RuntimePrimarySource                        string
 	RuntimePrimaryConflictTotal                 int
+	RuntimeSecondaryReasonCodes                 []string
+	RuntimeSecondaryReasonCount                 int
+	RuntimeArbitrationRuleVersion               string
+	RuntimeRemediationHintCode                  string
+	RuntimeRemediationHintDomain                string
 	RuntimeReadinessAdmissionTotal              int
 	RuntimeReadinessAdmissionBlockedTotal       int
 	RuntimeReadinessAdmissionDegradedAllowTotal int
@@ -351,6 +391,11 @@ func assertAdmissionRunRecord(t *testing.T, mgr *runtimeconfig.Manager, runID st
 			RuntimePrimaryCode:                          items[i].RuntimePrimaryCode,
 			RuntimePrimarySource:                        items[i].RuntimePrimarySource,
 			RuntimePrimaryConflictTotal:                 items[i].RuntimePrimaryConflictTotal,
+			RuntimeSecondaryReasonCodes:                 append([]string(nil), items[i].RuntimeSecondaryReasonCodes...),
+			RuntimeSecondaryReasonCount:                 items[i].RuntimeSecondaryReasonCount,
+			RuntimeArbitrationRuleVersion:               items[i].RuntimeArbitrationRuleVersion,
+			RuntimeRemediationHintCode:                  items[i].RuntimeRemediationHintCode,
+			RuntimeRemediationHintDomain:                items[i].RuntimeRemediationHintDomain,
 			RuntimeReadinessAdmissionTotal:              items[i].RuntimeReadinessAdmissionTotal,
 			RuntimeReadinessAdmissionBlockedTotal:       items[i].RuntimeReadinessAdmissionBlockedTotal,
 			RuntimeReadinessAdmissionDegradedAllowTotal: items[i].RuntimeReadinessAdmissionDegradedAllowTotal,
@@ -375,6 +420,21 @@ func assertAdmissionContractDeniedResult(t *testing.T, result types.RunResult, w
 	gotReasonCode, _ := result.Error.Details["reason_code"].(string)
 	if strings.TrimSpace(gotReasonCode) != strings.TrimSpace(wantReasonCode) {
 		t.Fatalf("reason_code = %q, want %q, details=%#v", gotReasonCode, wantReasonCode, result.Error.Details)
+	}
+	if _, ok := result.Error.Details["readiness_secondary_reason_codes"]; !ok {
+		t.Fatalf("deny details missing readiness_secondary_reason_codes: %#v", result.Error.Details)
+	}
+	if _, ok := result.Error.Details["readiness_secondary_reason_count"]; !ok {
+		t.Fatalf("deny details missing readiness_secondary_reason_count: %#v", result.Error.Details)
+	}
+	version, _ := result.Error.Details["readiness_arbitration_rule_version"].(string)
+	if strings.TrimSpace(version) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
+		t.Fatalf("deny details readiness_arbitration_rule_version = %q, want %q", version, runtimeconfig.RuntimeArbitrationRuleVersionA49V1)
+	}
+	hintCode, _ := result.Error.Details["readiness_remediation_hint_code"].(string)
+	hintDomain, _ := result.Error.Details["readiness_remediation_hint_domain"].(string)
+	if strings.TrimSpace(hintCode) == "" || strings.TrimSpace(hintDomain) == "" {
+		t.Fatalf("deny details missing remediation hint: %#v", result.Error.Details)
 	}
 }
 

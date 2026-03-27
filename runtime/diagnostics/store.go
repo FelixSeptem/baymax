@@ -204,6 +204,11 @@ type RunRecord struct {
 	RuntimePrimaryCode                          string                            `json:"runtime_primary_code,omitempty"`
 	RuntimePrimarySource                        string                            `json:"runtime_primary_source,omitempty"`
 	RuntimePrimaryConflictTotal                 int                               `json:"runtime_primary_conflict_total,omitempty"`
+	RuntimeSecondaryReasonCodes                 []string                          `json:"runtime_secondary_reason_codes,omitempty"`
+	RuntimeSecondaryReasonCount                 int                               `json:"runtime_secondary_reason_count,omitempty"`
+	RuntimeArbitrationRuleVersion               string                            `json:"runtime_arbitration_rule_version,omitempty"`
+	RuntimeRemediationHintCode                  string                            `json:"runtime_remediation_hint_code,omitempty"`
+	RuntimeRemediationHintDomain                string                            `json:"runtime_remediation_hint_domain,omitempty"`
 	RuntimeReadinessPrimaryCode                 string                            `json:"runtime_readiness_primary_code,omitempty"`
 	RuntimeReadinessAdmissionTotal              int                               `json:"runtime_readiness_admission_total,omitempty"`
 	RuntimeReadinessAdmissionBlockedTotal       int                               `json:"runtime_readiness_admission_blocked_total,omitempty"`
@@ -672,6 +677,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
 	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
 	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
+	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}
@@ -2147,6 +2153,24 @@ func cloneIntMap(in map[string]int) map[string]int {
 	out := make(map[string]int, len(in))
 	for key, value := range in {
 		out[key] = value
+	}
+	return out
+}
+
+func cloneStringSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for i := range in {
+		item := strings.TrimSpace(in[i])
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

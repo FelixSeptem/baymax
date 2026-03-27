@@ -85,39 +85,49 @@ type ReadinessResult struct {
 }
 
 type ReadinessSummary struct {
-	Status                             string `json:"runtime_readiness_status"`
-	FindingTotal                       int    `json:"runtime_readiness_finding_total"`
-	BlockingTotal                      int    `json:"runtime_readiness_blocking_total"`
-	DegradedTotal                      int    `json:"runtime_readiness_degraded_total"`
-	PrimaryDomain                      string `json:"runtime_primary_domain,omitempty"`
-	PrimaryCode                        string `json:"runtime_readiness_primary_code"`
-	PrimarySource                      string `json:"runtime_primary_source,omitempty"`
-	PrimaryConflictTotal               int    `json:"runtime_primary_conflict_total,omitempty"`
-	AdapterHealthStatus                string `json:"adapter_health_status,omitempty"`
-	AdapterHealthProbeTotal            int    `json:"adapter_health_probe_total,omitempty"`
-	AdapterHealthDegradedTotal         int    `json:"adapter_health_degraded_total,omitempty"`
-	AdapterHealthUnavailableTotal      int    `json:"adapter_health_unavailable_total,omitempty"`
-	AdapterHealthPrimaryCode           string `json:"adapter_health_primary_code,omitempty"`
-	AdapterHealthBackoffAppliedTotal   int    `json:"adapter_health_backoff_applied_total,omitempty"`
-	AdapterHealthCircuitOpenTotal      int    `json:"adapter_health_circuit_open_total,omitempty"`
-	AdapterHealthCircuitHalfOpenTotal  int    `json:"adapter_health_circuit_half_open_total,omitempty"`
-	AdapterHealthCircuitRecoverTotal   int    `json:"adapter_health_circuit_recover_total,omitempty"`
-	AdapterHealthCircuitState          string `json:"adapter_health_circuit_state,omitempty"`
-	AdapterHealthGovernancePrimaryCode string `json:"adapter_health_governance_primary_code,omitempty"`
+	Status                             string   `json:"runtime_readiness_status"`
+	FindingTotal                       int      `json:"runtime_readiness_finding_total"`
+	BlockingTotal                      int      `json:"runtime_readiness_blocking_total"`
+	DegradedTotal                      int      `json:"runtime_readiness_degraded_total"`
+	PrimaryDomain                      string   `json:"runtime_primary_domain,omitempty"`
+	PrimaryCode                        string   `json:"runtime_readiness_primary_code"`
+	PrimarySource                      string   `json:"runtime_primary_source,omitempty"`
+	PrimaryConflictTotal               int      `json:"runtime_primary_conflict_total,omitempty"`
+	SecondaryReasonCodes               []string `json:"runtime_secondary_reason_codes,omitempty"`
+	SecondaryReasonCount               int      `json:"runtime_secondary_reason_count,omitempty"`
+	ArbitrationRuleVersion             string   `json:"runtime_arbitration_rule_version,omitempty"`
+	RemediationHintCode                string   `json:"runtime_remediation_hint_code,omitempty"`
+	RemediationHintDomain              string   `json:"runtime_remediation_hint_domain,omitempty"`
+	AdapterHealthStatus                string   `json:"adapter_health_status,omitempty"`
+	AdapterHealthProbeTotal            int      `json:"adapter_health_probe_total,omitempty"`
+	AdapterHealthDegradedTotal         int      `json:"adapter_health_degraded_total,omitempty"`
+	AdapterHealthUnavailableTotal      int      `json:"adapter_health_unavailable_total,omitempty"`
+	AdapterHealthPrimaryCode           string   `json:"adapter_health_primary_code,omitempty"`
+	AdapterHealthBackoffAppliedTotal   int      `json:"adapter_health_backoff_applied_total,omitempty"`
+	AdapterHealthCircuitOpenTotal      int      `json:"adapter_health_circuit_open_total,omitempty"`
+	AdapterHealthCircuitHalfOpenTotal  int      `json:"adapter_health_circuit_half_open_total,omitempty"`
+	AdapterHealthCircuitRecoverTotal   int      `json:"adapter_health_circuit_recover_total,omitempty"`
+	AdapterHealthCircuitState          string   `json:"adapter_health_circuit_state,omitempty"`
+	AdapterHealthGovernancePrimaryCode string   `json:"adapter_health_governance_primary_code,omitempty"`
 }
 
 type ReadinessAdmissionDecision struct {
-	Enabled                bool                      `json:"enabled"`
-	Mode                   string                    `json:"mode"`
-	BlockOn                string                    `json:"block_on"`
-	DegradedPolicy         string                    `json:"degraded_policy"`
-	Outcome                ReadinessAdmissionOutcome `json:"outcome"`
-	ReasonCode             string                    `json:"reason_code"`
-	ReadinessStatus        ReadinessStatus           `json:"readiness_status"`
-	ReadinessPrimaryDomain string                    `json:"readiness_primary_domain,omitempty"`
-	ReadinessPrimaryCode   string                    `json:"readiness_primary_code,omitempty"`
-	ReadinessPrimarySource string                    `json:"readiness_primary_source,omitempty"`
-	Bypass                 bool                      `json:"bypass"`
+	Enabled                         bool                      `json:"enabled"`
+	Mode                            string                    `json:"mode"`
+	BlockOn                         string                    `json:"block_on"`
+	DegradedPolicy                  string                    `json:"degraded_policy"`
+	Outcome                         ReadinessAdmissionOutcome `json:"outcome"`
+	ReasonCode                      string                    `json:"reason_code"`
+	ReadinessStatus                 ReadinessStatus           `json:"readiness_status"`
+	ReadinessPrimaryDomain          string                    `json:"readiness_primary_domain,omitempty"`
+	ReadinessPrimaryCode            string                    `json:"readiness_primary_code,omitempty"`
+	ReadinessPrimarySource          string                    `json:"readiness_primary_source,omitempty"`
+	ReadinessSecondaryReasonCodes   []string                  `json:"readiness_secondary_reason_codes,omitempty"`
+	ReadinessSecondaryReasonCount   int                       `json:"readiness_secondary_reason_count,omitempty"`
+	ReadinessArbitrationRuleVersion string                    `json:"readiness_arbitration_rule_version,omitempty"`
+	ReadinessRemediationHintCode    string                    `json:"readiness_remediation_hint_code,omitempty"`
+	ReadinessRemediationHintDomain  string                    `json:"readiness_remediation_hint_domain,omitempty"`
+	Bypass                          bool                      `json:"bypass"`
 }
 
 type AdapterHealthTarget struct {
@@ -313,34 +323,42 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 
 func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	if m == nil {
+		hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeManagerNotReady)
 		return ReadinessAdmissionDecision{
-			Enabled:                false,
-			Mode:                   ReadinessAdmissionModeFailFast,
-			BlockOn:                ReadinessAdmissionBlockOnBlockedOnly,
-			DegradedPolicy:         ReadinessAdmissionDegradedPolicyAllowAndRecord,
-			Outcome:                ReadinessAdmissionOutcomeAllow,
-			ReasonCode:             ReadinessAdmissionCodeManagerNotReady,
-			ReadinessStatus:        ReadinessStatusBlocked,
-			ReadinessPrimaryDomain: ReadinessDomainRuntime,
-			ReadinessPrimaryCode:   ReadinessAdmissionCodeManagerNotReady,
-			ReadinessPrimarySource: RuntimePrimarySourceAdmission,
-			Bypass:                 true,
+			Enabled:                         false,
+			Mode:                            ReadinessAdmissionModeFailFast,
+			BlockOn:                         ReadinessAdmissionBlockOnBlockedOnly,
+			DegradedPolicy:                  ReadinessAdmissionDegradedPolicyAllowAndRecord,
+			Outcome:                         ReadinessAdmissionOutcomeAllow,
+			ReasonCode:                      ReadinessAdmissionCodeManagerNotReady,
+			ReadinessStatus:                 ReadinessStatusBlocked,
+			ReadinessPrimaryDomain:          ReadinessDomainRuntime,
+			ReadinessPrimaryCode:            ReadinessAdmissionCodeManagerNotReady,
+			ReadinessPrimarySource:          RuntimePrimarySourceAdmission,
+			ReadinessArbitrationRuleVersion: RuntimeArbitrationRuleVersionA49V1,
+			ReadinessRemediationHintCode:    hintCode,
+			ReadinessRemediationHintDomain:  hintDomain,
+			Bypass:                          true,
 		}
 	}
 
 	cfg := m.EffectiveConfig().Runtime.Readiness.Admission
+	hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeBypassDisabled)
 	decision := ReadinessAdmissionDecision{
-		Enabled:                cfg.Enabled,
-		Mode:                   normalizeReadinessAdmissionMode(cfg.Mode),
-		BlockOn:                normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
-		DegradedPolicy:         normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
-		Outcome:                ReadinessAdmissionOutcomeAllow,
-		ReasonCode:             ReadinessAdmissionCodeBypassDisabled,
-		ReadinessStatus:        ReadinessStatusReady,
-		ReadinessPrimaryDomain: ReadinessDomainRuntime,
-		ReadinessPrimaryCode:   ReadinessAdmissionCodeBypassDisabled,
-		ReadinessPrimarySource: RuntimePrimarySourceAdmission,
-		Bypass:                 true,
+		Enabled:                         cfg.Enabled,
+		Mode:                            normalizeReadinessAdmissionMode(cfg.Mode),
+		BlockOn:                         normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
+		DegradedPolicy:                  normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
+		Outcome:                         ReadinessAdmissionOutcomeAllow,
+		ReasonCode:                      ReadinessAdmissionCodeBypassDisabled,
+		ReadinessStatus:                 ReadinessStatusReady,
+		ReadinessPrimaryDomain:          ReadinessDomainRuntime,
+		ReadinessPrimaryCode:            ReadinessAdmissionCodeBypassDisabled,
+		ReadinessPrimarySource:          RuntimePrimarySourceAdmission,
+		ReadinessArbitrationRuleVersion: RuntimeArbitrationRuleVersionA49V1,
+		ReadinessRemediationHintCode:    hintCode,
+		ReadinessRemediationHintDomain:  hintDomain,
+		Bypass:                          true,
 	}
 	if !decision.Enabled {
 		return decision
@@ -353,6 +371,11 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	decision.ReadinessPrimaryDomain = strings.TrimSpace(summary.PrimaryDomain)
 	decision.ReadinessPrimaryCode = strings.TrimSpace(summary.PrimaryCode)
 	decision.ReadinessPrimarySource = strings.TrimSpace(summary.PrimarySource)
+	decision.ReadinessSecondaryReasonCodes = cloneStringSlice(summary.SecondaryReasonCodes)
+	decision.ReadinessSecondaryReasonCount = summary.SecondaryReasonCount
+	decision.ReadinessArbitrationRuleVersion = strings.TrimSpace(summary.ArbitrationRuleVersion)
+	decision.ReadinessRemediationHintCode = strings.TrimSpace(summary.RemediationHintCode)
+	decision.ReadinessRemediationHintDomain = strings.TrimSpace(summary.RemediationHintDomain)
 	switch preflight.Status {
 	case ReadinessStatusReady:
 		decision.Outcome = ReadinessAdmissionOutcomeAllow
@@ -381,6 +404,14 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	if decision.ReadinessPrimarySource == "" {
 		decision.ReadinessPrimarySource = RuntimePrimarySourceAdmission
 	}
+	if decision.ReadinessArbitrationRuleVersion == "" {
+		decision.ReadinessArbitrationRuleVersion = RuntimeArbitrationRuleVersionA49V1
+	}
+	if decision.ReadinessRemediationHintCode == "" && decision.ReadinessPrimaryCode != "" {
+		hintCode, hintDomain := mustRemediationHintForPrimaryCode(decision.ReadinessPrimaryCode)
+		decision.ReadinessRemediationHintCode = hintCode
+		decision.ReadinessRemediationHintDomain = hintDomain
+	}
 	return decision
 }
 
@@ -403,6 +434,11 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 	summary.PrimaryCode = strings.TrimSpace(primary.Code)
 	summary.PrimarySource = strings.TrimSpace(primary.Source)
 	summary.PrimaryConflictTotal = primary.ConflictTotal
+	summary.SecondaryReasonCodes = cloneStringSlice(primary.SecondaryCodes)
+	summary.SecondaryReasonCount = primary.SecondaryCount
+	summary.ArbitrationRuleVersion = strings.TrimSpace(primary.RuleVersion)
+	summary.RemediationHintCode = strings.TrimSpace(primary.RemediationHintCode)
+	summary.RemediationHintDomain = strings.TrimSpace(primary.RemediationHintDomain)
 	if strings.TrimSpace(summary.Status) == "" {
 		summary.Status = string(ReadinessStatusReady)
 	}
@@ -910,6 +946,24 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {
 		out[key] = value
+	}
+	return out
+}
+
+func cloneStringSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for i := range in {
+		item := strings.TrimSpace(in[i])
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

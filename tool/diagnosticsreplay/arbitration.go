@@ -12,9 +12,15 @@ import (
 
 const (
 	ArbitrationFixtureVersionA48V1 = "a48.v1"
-	ReasonCodePrecedenceDrift      = "precedence_drift"
-	ReasonCodeTieBreakDrift        = "tie_break_drift"
-	ReasonCodeTaxonomyDrift        = "taxonomy_drift"
+	ArbitrationFixtureVersionA49V1 = "a49.v1"
+
+	ReasonCodePrecedenceDrift     = "precedence_drift"
+	ReasonCodeTieBreakDrift       = "tie_break_drift"
+	ReasonCodeTaxonomyDrift       = "taxonomy_drift"
+	ReasonCodeSecondaryOrderDrift = "secondary_order_drift"
+	ReasonCodeSecondaryCountDrift = "secondary_count_drift"
+	ReasonCodeHintTaxonomyDrift   = "hint_taxonomy_drift"
+	ReasonCodeRuleVersionDrift    = "rule_version_drift"
 )
 
 type ArbitrationFixture struct {
@@ -32,10 +38,15 @@ type ArbitrationFixtureCase struct {
 }
 
 type ArbitrationObservation struct {
-	RuntimePrimaryDomain        string `json:"runtime_primary_domain"`
-	RuntimePrimaryCode          string `json:"runtime_primary_code"`
-	RuntimePrimarySource        string `json:"runtime_primary_source"`
-	RuntimePrimaryConflictTotal int    `json:"runtime_primary_conflict_total"`
+	RuntimePrimaryDomain          string   `json:"runtime_primary_domain"`
+	RuntimePrimaryCode            string   `json:"runtime_primary_code"`
+	RuntimePrimarySource          string   `json:"runtime_primary_source"`
+	RuntimePrimaryConflictTotal   int      `json:"runtime_primary_conflict_total"`
+	RuntimeSecondaryReasonCodes   []string `json:"runtime_secondary_reason_codes,omitempty"`
+	RuntimeSecondaryReasonCount   int      `json:"runtime_secondary_reason_count,omitempty"`
+	RuntimeArbitrationRuleVersion string   `json:"runtime_arbitration_rule_version,omitempty"`
+	RuntimeRemediationHintCode    string   `json:"runtime_remediation_hint_code,omitempty"`
+	RuntimeRemediationHintDomain  string   `json:"runtime_remediation_hint_domain,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -56,10 +67,11 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 	if err := dec.Decode(&fixture); err != nil {
 		return ArbitrationFixture{}, &ValidationError{Code: ReasonCodeInvalidJSON, Message: err.Error()}
 	}
-	if strings.TrimSpace(fixture.Version) == "" {
+	version := strings.TrimSpace(fixture.Version)
+	if version == "" {
 		return ArbitrationFixture{}, &ValidationError{Code: ReasonCodeSchemaMismatch, Message: "version is required"}
 	}
-	if strings.TrimSpace(fixture.Version) != ArbitrationFixtureVersionA48V1 {
+	if version != ArbitrationFixtureVersionA48V1 && version != ArbitrationFixtureVersionA49V1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -85,6 +97,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		}
 		seen[name] = struct{}{}
 	}
+	fixture.Version = version
 	return fixture, nil
 }
 
@@ -97,12 +110,13 @@ func EvaluateArbitrationFixtureJSON(raw []byte) (ArbitrationReplayOutput, error)
 }
 
 func EvaluateArbitrationFixture(fixture ArbitrationFixture) (ArbitrationReplayOutput, error) {
+	version := strings.TrimSpace(fixture.Version)
 	cases := append([]ArbitrationFixtureCase(nil), fixture.Cases...)
 	sort.Slice(cases, func(i, j int) bool {
 		return strings.TrimSpace(cases[i].Name) < strings.TrimSpace(cases[j].Name)
 	})
 	out := ArbitrationReplayOutput{
-		Version: fixture.Version,
+		Version: version,
 		Cases:   make([]ArbitrationNormalizedOutput, 0, len(cases)),
 	}
 	for _, tc := range cases {
@@ -110,22 +124,22 @@ func EvaluateArbitrationFixture(fixture ArbitrationFixture) (ArbitrationReplayOu
 		expected := canonicalizeArbitrationObservation(tc.Expected)
 		run := canonicalizeArbitrationObservation(tc.Run)
 		stream := canonicalizeArbitrationObservation(tc.Stream)
-		if err := validateArbitrationObservation(name, "expected", expected); err != nil {
+		if err := validateArbitrationObservation(version, name, "expected", expected); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
-		if err := validateArbitrationObservation(name, "run", run); err != nil {
+		if err := validateArbitrationObservation(version, name, "run", run); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
-		if err := validateArbitrationObservation(name, "stream", stream); err != nil {
+		if err := validateArbitrationObservation(version, name, "stream", stream); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
-		if err := assertArbitrationEquivalent(name, expected, run, "run"); err != nil {
+		if err := assertArbitrationEquivalent(version, name, expected, run, "run"); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
-		if err := assertArbitrationEquivalent(name, expected, stream, "stream"); err != nil {
+		if err := assertArbitrationEquivalent(version, name, expected, stream, "stream"); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
-		if err := assertArbitrationEquivalent(name, run, stream, "run/stream"); err != nil {
+		if err := assertArbitrationEquivalent(version, name, run, stream, "run/stream"); err != nil {
 			return ArbitrationReplayOutput{}, err
 		}
 		if tc.Idempotency.FirstLogicalIngestTotal <= 0 {
@@ -156,18 +170,35 @@ func EvaluateArbitrationFixture(fixture ArbitrationFixture) (ArbitrationReplayOu
 
 func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationObservation {
 	out := ArbitrationObservation{
-		RuntimePrimaryDomain:        strings.ToLower(strings.TrimSpace(in.RuntimePrimaryDomain)),
-		RuntimePrimaryCode:          strings.TrimSpace(in.RuntimePrimaryCode),
-		RuntimePrimarySource:        strings.ToLower(strings.TrimSpace(in.RuntimePrimarySource)),
-		RuntimePrimaryConflictTotal: in.RuntimePrimaryConflictTotal,
+		RuntimePrimaryDomain:          strings.ToLower(strings.TrimSpace(in.RuntimePrimaryDomain)),
+		RuntimePrimaryCode:            strings.TrimSpace(in.RuntimePrimaryCode),
+		RuntimePrimarySource:          strings.ToLower(strings.TrimSpace(in.RuntimePrimarySource)),
+		RuntimePrimaryConflictTotal:   in.RuntimePrimaryConflictTotal,
+		RuntimeSecondaryReasonCount:   in.RuntimeSecondaryReasonCount,
+		RuntimeArbitrationRuleVersion: strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleVersion)),
+		RuntimeRemediationHintCode:    strings.TrimSpace(in.RuntimeRemediationHintCode),
+		RuntimeRemediationHintDomain:  strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
 	}
+	if out.RuntimeSecondaryReasonCount < 0 {
+		out.RuntimeSecondaryReasonCount = 0
+	}
+	for i := range in.RuntimeSecondaryReasonCodes {
+		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
+		if code == "" {
+			continue
+		}
+		out.RuntimeSecondaryReasonCodes = append(out.RuntimeSecondaryReasonCodes, code)
+	}
+	if len(out.RuntimeSecondaryReasonCodes) == 0 {
+		out.RuntimeSecondaryReasonCodes = nil
+	}
 	return out
 }
 
-func validateArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+func validateArbitrationObservation(version, caseName, lane string, obs ArbitrationObservation) error {
 	if strings.TrimSpace(obs.RuntimePrimaryDomain) == "" {
 		return &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
@@ -186,11 +217,80 @@ func validateArbitrationObservation(caseName, lane string, obs ArbitrationObserv
 			Message: fmt.Sprintf("case %q %s non-canonical primary code %q", caseName, lane, obs.RuntimePrimaryCode),
 		}
 	}
+	if version != ArbitrationFixtureVersionA49V1 {
+		return nil
+	}
+	if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s.runtime_arbitration_rule_version is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
+		return &ValidationError{
+			Code:    ReasonCodeRuleVersionDrift,
+			Message: fmt.Sprintf("case %q %s rule version drift want=%q got=%q", caseName, lane, runtimeconfig.RuntimeArbitrationRuleVersionA49V1, obs.RuntimeArbitrationRuleVersion),
+		}
+	}
+	if len(obs.RuntimeSecondaryReasonCodes) > runtimeconfig.RuntimeArbitrationMaxSecondary {
+		return &ValidationError{
+			Code:    ReasonCodeSecondaryCountDrift,
+			Message: fmt.Sprintf("case %q %s runtime_secondary_reason_codes exceeds max=%d", caseName, lane, runtimeconfig.RuntimeArbitrationMaxSecondary),
+		}
+	}
+	if obs.RuntimeSecondaryReasonCount < len(obs.RuntimeSecondaryReasonCodes) {
+		return &ValidationError{
+			Code:    ReasonCodeSecondaryCountDrift,
+			Message: fmt.Sprintf("case %q %s runtime_secondary_reason_count=%d < len(codes)=%d", caseName, lane, obs.RuntimeSecondaryReasonCount, len(obs.RuntimeSecondaryReasonCodes)),
+		}
+	}
+	seenSecondary := map[string]struct{}{}
+	for i := range obs.RuntimeSecondaryReasonCodes {
+		secondary := strings.TrimSpace(obs.RuntimeSecondaryReasonCodes[i])
+		if !isCanonicalArbitrationCode(secondary) {
+			return &ValidationError{
+				Code:    ReasonCodeTaxonomyDrift,
+				Message: fmt.Sprintf("case %q %s non-canonical secondary code %q", caseName, lane, secondary),
+			}
+		}
+		if secondary == obs.RuntimePrimaryCode {
+			return &ValidationError{
+				Code:    ReasonCodeSecondaryOrderDrift,
+				Message: fmt.Sprintf("case %q %s secondary code repeats primary %q", caseName, lane, secondary),
+			}
+		}
+		if _, ok := seenSecondary[secondary]; ok {
+			return &ValidationError{
+				Code:    ReasonCodeSecondaryOrderDrift,
+				Message: fmt.Sprintf("case %q %s duplicate secondary code %q", caseName, lane, secondary),
+			}
+		}
+		seenSecondary[secondary] = struct{}{}
+	}
+	hintCode, hintDomain, ok := runtimeconfig.RemediationHintForPrimaryCode(obs.RuntimePrimaryCode)
+	if !ok {
+		return &ValidationError{
+			Code:    ReasonCodeHintTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s unsupported primary for hint taxonomy %q", caseName, lane, obs.RuntimePrimaryCode),
+		}
+	}
+	if strings.TrimSpace(obs.RuntimeRemediationHintCode) == "" || strings.TrimSpace(obs.RuntimeRemediationHintDomain) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s remediation hint fields are required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.RuntimeRemediationHintCode) != hintCode || strings.TrimSpace(obs.RuntimeRemediationHintDomain) != hintDomain {
+		return &ValidationError{
+			Code:    ReasonCodeHintTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s hint taxonomy drift want=%s/%s got=%s/%s", caseName, lane, hintDomain, hintCode, obs.RuntimeRemediationHintDomain, obs.RuntimeRemediationHintCode),
+		}
+	}
 	return nil
 }
 
-func assertArbitrationEquivalent(caseName string, expected, actual ArbitrationObservation, lane string) error {
-	if expected == actual {
+func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
+	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
 	}
 	if precedenceForArbitrationCode(expected.RuntimePrimaryCode) != precedenceForArbitrationCode(actual.RuntimePrimaryCode) {
@@ -203,6 +303,44 @@ func assertArbitrationEquivalent(caseName string, expected, actual ArbitrationOb
 				expected.RuntimePrimaryCode,
 				actual.RuntimePrimaryCode,
 			),
+		}
+	}
+	if version == ArbitrationFixtureVersionA49V1 {
+		if expected.RuntimeArbitrationRuleVersion != actual.RuntimeArbitrationRuleVersion {
+			return &ValidationError{
+				Code: ReasonCodeRuleVersionDrift,
+				Message: fmt.Sprintf(
+					"case %q %s rule version drift expected=%q actual=%q",
+					caseName,
+					lane,
+					expected.RuntimeArbitrationRuleVersion,
+					actual.RuntimeArbitrationRuleVersion,
+				),
+			}
+		}
+		if expected.RuntimeSecondaryReasonCount != actual.RuntimeSecondaryReasonCount {
+			return &ValidationError{
+				Code: ReasonCodeSecondaryCountDrift,
+				Message: fmt.Sprintf(
+					"case %q %s secondary count drift expected=%d actual=%d",
+					caseName,
+					lane,
+					expected.RuntimeSecondaryReasonCount,
+					actual.RuntimeSecondaryReasonCount,
+				),
+			}
+		}
+		if !equalStringSlice(expected.RuntimeSecondaryReasonCodes, actual.RuntimeSecondaryReasonCodes) {
+			return &ValidationError{
+				Code: ReasonCodeSecondaryOrderDrift,
+				Message: fmt.Sprintf(
+					"case %q %s secondary order drift expected=%#v actual=%#v",
+					caseName,
+					lane,
+					expected.RuntimeSecondaryReasonCodes,
+					actual.RuntimeSecondaryReasonCodes,
+				),
+			}
 		}
 	}
 	if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode ||
@@ -218,6 +356,22 @@ func assertArbitrationEquivalent(caseName string, expected, actual ArbitrationOb
 			),
 		}
 	}
+	if version == ArbitrationFixtureVersionA49V1 &&
+		(expected.RuntimeRemediationHintCode != actual.RuntimeRemediationHintCode ||
+			expected.RuntimeRemediationHintDomain != actual.RuntimeRemediationHintDomain) {
+		return &ValidationError{
+			Code: ReasonCodeHintTaxonomyDrift,
+			Message: fmt.Sprintf(
+				"case %q %s hint taxonomy drift expected=%s/%s actual=%s/%s",
+				caseName,
+				lane,
+				expected.RuntimeRemediationHintDomain,
+				expected.RuntimeRemediationHintCode,
+				actual.RuntimeRemediationHintDomain,
+				actual.RuntimeRemediationHintCode,
+			),
+		}
+	}
 	return &ValidationError{
 		Code: ReasonCodeTaxonomyDrift,
 		Message: fmt.Sprintf(
@@ -228,6 +382,37 @@ func assertArbitrationEquivalent(caseName string, expected, actual ArbitrationOb
 			actual,
 		),
 	}
+}
+
+func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
+	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
+		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
+		left.RuntimePrimarySource != right.RuntimePrimarySource ||
+		left.RuntimePrimaryConflictTotal != right.RuntimePrimaryConflictTotal {
+		return false
+	}
+	if version != ArbitrationFixtureVersionA49V1 {
+		return true
+	}
+	if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
+		left.RuntimeArbitrationRuleVersion != right.RuntimeArbitrationRuleVersion ||
+		left.RuntimeRemediationHintCode != right.RuntimeRemediationHintCode ||
+		left.RuntimeRemediationHintDomain != right.RuntimeRemediationHintDomain {
+		return false
+	}
+	return equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes)
+}
+
+func equalStringSlice(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func isCanonicalArbitrationCode(code string) bool {

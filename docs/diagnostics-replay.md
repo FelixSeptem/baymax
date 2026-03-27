@@ -1,4 +1,4 @@
-# Diagnostics JSON Replay（精简 + A47/A48 组合模式）
+# Diagnostics JSON Replay（精简 + A47/A48/A49 组合模式）
 
 更新时间：2026-03-26
 
@@ -37,17 +37,23 @@
   - `run/stream/expected` 强约束字段：`status/primary_code/reason_taxonomy/timeout source + budget outcome + trace/circuit_state`
   - `idempotency`：`first_logical_ingest_total` 与 `replay_logical_ingest_total` 必须保持稳定
 
-### 3) A48 组合模式（cross-domain primary reason arbitration）
+### 3) A48/A49 组合模式（cross-domain arbitration）
 
-跨域 primary reason 模式用于验证 timeout/readiness/adapter-health 竞争下的固定裁决语义。
+跨域 arbitration 模式用于验证 timeout/readiness/adapter-health 竞争下的固定裁决与 explainability 语义。
 
-- `version`：当前固定 `a48.v1`
+- `version`：支持 `a48.v1`（primary only）与 `a49.v1`（primary + explainability）
 - `cases[]`：每个 case 必须包含 `run`、`stream`、`expected`、`idempotency`
-- 强约束字段：
+- A48 强约束字段：
   - `runtime_primary_domain`
   - `runtime_primary_code`
   - `runtime_primary_source`
   - `runtime_primary_conflict_total`
+- A49 额外强约束字段：
+  - `runtime_secondary_reason_codes`（有界，最多 3 条，顺序稳定）
+  - `runtime_secondary_reason_count`（保留截断前规模）
+  - `runtime_arbitration_rule_version`
+  - `runtime_remediation_hint_code`
+  - `runtime_remediation_hint_domain`
 - `idempotency`：`first_logical_ingest_total == replay_logical_ingest_total`
 
 ## 使用方式
@@ -78,7 +84,7 @@ _ = out // deterministic normalized output
 ```
 
 ```go
-raw, _ := os.ReadFile("integration/testdata/diagnostics-replay/a48/v1/success.json")
+raw, _ := os.ReadFile("integration/testdata/diagnostics-replay/a49/v1/success.json")
 out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
 if err != nil {
     // err.(*diagnosticsreplay.ValidationError).Code
@@ -100,6 +106,10 @@ _ = out // deterministic normalized output
 - `precedence_drift`（A48：timeout/reject 与 blocked/required/degraded 层级漂移）
 - `tie_break_drift`（A48：同层 lexical tie-break 或 conflict_total 漂移）
 - `taxonomy_drift`（A48：primary code/source/domain taxonomy 漂移）
+- `secondary_order_drift`（A49：secondary reason 排序/去重语义漂移）
+- `secondary_count_drift`（A49：secondary reason 规模语义漂移）
+- `hint_taxonomy_drift`（A49：remediation hint taxonomy 漂移）
+- `rule_version_drift`（A49：arbitration rule version 漂移）
 
 这些错误码用于 CI 契约回归和脚本自动判定，除非显式版本化，不应随意变更。
 

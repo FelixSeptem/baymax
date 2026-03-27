@@ -226,6 +226,11 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			RuntimePrimaryCode:                          payloadString(payload, "runtime_primary_code"),
 			RuntimePrimarySource:                        payloadString(payload, "runtime_primary_source"),
 			RuntimePrimaryConflictTotal:                 payloadInt(payload, "runtime_primary_conflict_total"),
+			RuntimeSecondaryReasonCodes:                 payloadStringSlice(payload, "runtime_secondary_reason_codes"),
+			RuntimeSecondaryReasonCount:                 payloadInt(payload, "runtime_secondary_reason_count"),
+			RuntimeArbitrationRuleVersion:               payloadString(payload, "runtime_arbitration_rule_version"),
+			RuntimeRemediationHintCode:                  payloadString(payload, "runtime_remediation_hint_code"),
+			RuntimeRemediationHintDomain:                payloadString(payload, "runtime_remediation_hint_domain"),
 			RuntimeReadinessPrimaryCode:                 payloadString(payload, "runtime_readiness_primary_code"),
 			RuntimeReadinessAdmissionTotal:              payloadInt(payload, "runtime_readiness_admission_total"),
 			RuntimeReadinessAdmissionBlockedTotal:       payloadInt(payload, "runtime_readiness_admission_blocked_total"),
@@ -416,6 +421,45 @@ func payloadIntMap(m map[string]any, key string) map[string]int {
 	out := make(map[string]int, len(in))
 	for k, v := range in {
 		out[k] = int(v)
+	}
+	return out
+}
+
+func payloadStringSlice(m map[string]any, key string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, ok := m[key]
+	if !ok {
+		return nil
+	}
+	out := []string{}
+	switch src := raw.(type) {
+	case []string:
+		for i := range src {
+			item := strings.TrimSpace(src[i])
+			if item == "" {
+				continue
+			}
+			out = append(out, item)
+		}
+	case []any:
+		for i := range src {
+			item, ok := src[i].(string)
+			if !ok {
+				continue
+			}
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			out = append(out, item)
+		}
+	default:
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

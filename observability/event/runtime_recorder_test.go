@@ -273,6 +273,11 @@ mcp:
 			"runtime_primary_code":                             "runtime.timeout.parent_budget_rejected",
 			"runtime_primary_source":                           "timeout.resolution.request",
 			"runtime_primary_conflict_total":                   1,
+			"runtime_secondary_reason_codes":                   []any{"runtime.timeout.exhausted", "runtime.timeout.parent_budget_clamped"},
+			"runtime_secondary_reason_count":                   2,
+			"runtime_arbitration_rule_version":                 "a49.v1",
+			"runtime_remediation_hint_code":                    "timeout.adjust_parent_budget",
+			"runtime_remediation_hint_domain":                  "timeout",
 			"runtime_readiness_primary_code":                   "scheduler.backend.fallback",
 			"runtime_readiness_admission_total":                1,
 			"runtime_readiness_admission_blocked_total":        0,
@@ -503,6 +508,13 @@ mcp:
 		items[0].RuntimePrimaryCode != "runtime.timeout.parent_budget_rejected" ||
 		items[0].RuntimePrimarySource != "timeout.resolution.request" ||
 		items[0].RuntimePrimaryConflictTotal != 1 ||
+		len(items[0].RuntimeSecondaryReasonCodes) != 2 ||
+		items[0].RuntimeSecondaryReasonCodes[0] != "runtime.timeout.exhausted" ||
+		items[0].RuntimeSecondaryReasonCodes[1] != "runtime.timeout.parent_budget_clamped" ||
+		items[0].RuntimeSecondaryReasonCount != 2 ||
+		items[0].RuntimeArbitrationRuleVersion != "a49.v1" ||
+		items[0].RuntimeRemediationHintCode != "timeout.adjust_parent_budget" ||
+		items[0].RuntimeRemediationHintDomain != "timeout" ||
 		items[0].RuntimeReadinessPrimaryCode != "scheduler.backend.fallback" ||
 		items[0].RuntimeReadinessAdmissionTotal != 1 ||
 		items[0].RuntimeReadinessAdmissionBlockedTotal != 0 ||
@@ -776,6 +788,11 @@ mcp:
 		got.RuntimePrimaryCode != "" ||
 		got.RuntimePrimarySource != "" ||
 		got.RuntimePrimaryConflictTotal != 0 ||
+		len(got.RuntimeSecondaryReasonCodes) != 0 ||
+		got.RuntimeSecondaryReasonCount != 0 ||
+		got.RuntimeArbitrationRuleVersion != "" ||
+		got.RuntimeRemediationHintCode != "" ||
+		got.RuntimeRemediationHintDomain != "" ||
 		got.RuntimeReadinessPrimaryCode != "" ||
 		got.RuntimeReadinessAdmissionTotal != 0 ||
 		got.RuntimeReadinessAdmissionBlockedTotal != 0 ||
@@ -795,6 +812,60 @@ mcp:
 		got.AdapterHealthCircuitState != "" ||
 		got.AdapterHealthGovernancePrimaryCode != "" {
 		t.Fatalf("missing A40 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a49-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(49),
+			"a49_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 49 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if len(got.RuntimeSecondaryReasonCodes) != 0 ||
+		got.RuntimeSecondaryReasonCount != 0 ||
+		got.RuntimeArbitrationRuleVersion != "" ||
+		got.RuntimeRemediationHintCode != "" ||
+		got.RuntimeRemediationHintDomain != "" {
+		t.Fatalf("missing A49 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

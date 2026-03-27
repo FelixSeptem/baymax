@@ -19,6 +19,11 @@ const (
 	RuntimePrimaryCodeTimeoutClamped   = "runtime.timeout.parent_budget_clamped"
 )
 
+const (
+	RuntimeArbitrationRuleVersionA49V1 = "a49.v1"
+	RuntimeArbitrationMaxSecondary     = 3
+)
+
 type PrimaryReasonArbitrationInput struct {
 	TimeoutParentBudgetRejectTotal int
 	TimeoutParentBudgetClampTotal  int
@@ -28,10 +33,15 @@ type PrimaryReasonArbitrationInput struct {
 }
 
 type PrimaryReasonArbitrationResult struct {
-	Domain        string
-	Code          string
-	Source        string
-	ConflictTotal int
+	Domain                string
+	Code                  string
+	Source                string
+	ConflictTotal         int
+	SecondaryCodes        []string
+	SecondaryCount        int
+	RuleVersion           string
+	RemediationHintCode   string
+	RemediationHintDomain string
 }
 
 type primaryReasonCandidate struct {
@@ -44,7 +54,9 @@ type primaryReasonCandidate struct {
 func ArbitratePrimaryReason(in PrimaryReasonArbitrationInput) PrimaryReasonArbitrationResult {
 	candidates := buildPrimaryReasonCandidates(in)
 	if len(candidates) == 0 {
-		return PrimaryReasonArbitrationResult{}
+		return PrimaryReasonArbitrationResult{
+			RuleVersion: RuntimeArbitrationRuleVersionA49V1,
+		}
 	}
 
 	highest := candidates[0].Precedence
@@ -74,12 +86,117 @@ func ArbitratePrimaryReason(in PrimaryReasonArbitrationInput) PrimaryReasonArbit
 	if len(top) > 1 {
 		conflict = len(top) - 1
 	}
+	secondary, secondaryTotal := buildSecondaryReasons(candidates, top[0])
+	hintCode, hintDomain := mustRemediationHintForPrimaryCode(top[0].Code)
 	return PrimaryReasonArbitrationResult{
-		Domain:        top[0].Domain,
-		Code:          top[0].Code,
-		Source:        top[0].Source,
-		ConflictTotal: conflict,
+		Domain:                top[0].Domain,
+		Code:                  top[0].Code,
+		Source:                top[0].Source,
+		ConflictTotal:         conflict,
+		SecondaryCodes:        secondary,
+		SecondaryCount:        secondaryTotal,
+		RuleVersion:           RuntimeArbitrationRuleVersionA49V1,
+		RemediationHintCode:   hintCode,
+		RemediationHintDomain: hintDomain,
 	}
+}
+
+func buildSecondaryReasons(candidates []primaryReasonCandidate, primary primaryReasonCandidate) ([]string, int) {
+	if len(candidates) == 0 {
+		return nil, 0
+	}
+	ordered := append([]primaryReasonCandidate(nil), candidates...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Precedence != ordered[j].Precedence {
+			return ordered[i].Precedence < ordered[j].Precedence
+		}
+		if ordered[i].Code != ordered[j].Code {
+			return ordered[i].Code < ordered[j].Code
+		}
+		if ordered[i].Domain != ordered[j].Domain {
+			return ordered[i].Domain < ordered[j].Domain
+		}
+		return ordered[i].Source < ordered[j].Source
+	})
+
+	seen := map[string]struct{}{}
+	all := make([]string, 0, len(ordered))
+	for i := range ordered {
+		code := strings.TrimSpace(ordered[i].Code)
+		if code == "" || code == primary.Code {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		all = append(all, code)
+	}
+	if len(all) == 0 {
+		return nil, 0
+	}
+	total := len(all)
+	if len(all) > RuntimeArbitrationMaxSecondary {
+		all = all[:RuntimeArbitrationMaxSecondary]
+	}
+	return all, total
+}
+
+type remediationHint struct {
+	Code   string
+	Domain string
+}
+
+var remediationHintByPrimaryCode = map[string]remediationHint{
+	RuntimePrimaryCodeTimeoutRejected:  {Code: "timeout.adjust_parent_budget", Domain: "timeout"},
+	RuntimePrimaryCodeTimeoutExhausted: {Code: "timeout.increase_effective_budget", Domain: "timeout"},
+	RuntimePrimaryCodeTimeoutClamped:   {Code: "timeout.adjust_parent_budget", Domain: "timeout"},
+
+	ReadinessCodeConfigInvalid:             {Code: "runtime.validate_config", Domain: "config"},
+	ReadinessCodeStrictEscalated:           {Code: "runtime.relax_strict_mode", Domain: "runtime"},
+	ReadinessCodeSchedulerFallback:         {Code: "scheduler.recover_backend", Domain: ReadinessDomainScheduler},
+	ReadinessCodeSchedulerActivationError:  {Code: "scheduler.fix_activation", Domain: ReadinessDomainScheduler},
+	ReadinessCodeMailboxFallback:           {Code: "mailbox.recover_backend", Domain: ReadinessDomainMailbox},
+	ReadinessCodeMailboxActivationError:    {Code: "mailbox.fix_activation", Domain: ReadinessDomainMailbox},
+	ReadinessCodeRecoveryFallback:          {Code: "recovery.recover_backend", Domain: ReadinessDomainRecovery},
+	ReadinessCodeRecoveryActivationError:   {Code: "recovery.fix_activation", Domain: ReadinessDomainRecovery},
+	ReadinessCodeRuntimeManagerUnavailable: {Code: "runtime.restart_manager", Domain: "runtime"},
+
+	ReadinessCodeAdapterRequiredUnavailable: {Code: "adapter.restore_required", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterOptionalUnavailable: {Code: "adapter.restore_optional", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterDegraded:            {Code: "adapter.investigate_degraded", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterRequiredCircuitOpen: {Code: "adapter.reset_required_circuit", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterOptionalCircuitOpen: {Code: "adapter.reset_optional_circuit", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterHalfOpenDegraded:    {Code: "adapter.investigate_half_open", Domain: ReadinessDomainAdapter},
+	ReadinessCodeAdapterGovernanceRecovered: {Code: "adapter.monitor_recovery", Domain: ReadinessDomainAdapter},
+
+	ReadinessAdmissionCodeBypassDisabled:  {Code: "readiness.admission_enable_if_required", Domain: "runtime"},
+	ReadinessAdmissionCodeReady:           {Code: "readiness.no_action", Domain: "runtime"},
+	ReadinessAdmissionCodeBlocked:         {Code: "readiness.resolve_blocking_findings", Domain: "runtime"},
+	ReadinessAdmissionCodeDegradedAllow:   {Code: "readiness.monitor_degraded", Domain: "runtime"},
+	ReadinessAdmissionCodeDegradedDeny:    {Code: "readiness.resolve_degraded_findings", Domain: "runtime"},
+	ReadinessAdmissionCodeUnknownStatus:   {Code: "readiness.check_status_mapping", Domain: "runtime"},
+	ReadinessAdmissionCodeManagerNotReady: {Code: "runtime.restart_manager", Domain: "runtime"},
+}
+
+func RemediationHintForPrimaryCode(primaryCode string) (string, string, bool) {
+	code := strings.TrimSpace(primaryCode)
+	if code == "" {
+		return "", "", false
+	}
+	hint, ok := remediationHintByPrimaryCode[code]
+	if !ok {
+		return "", "", false
+	}
+	return hint.Code, hint.Domain, true
+}
+
+func mustRemediationHintForPrimaryCode(primaryCode string) (string, string) {
+	hintCode, hintDomain, ok := RemediationHintForPrimaryCode(primaryCode)
+	if ok {
+		return hintCode, hintDomain
+	}
+	panic(fmt.Sprintf("unsupported primary reason code for remediation hint taxonomy: %q", strings.TrimSpace(primaryCode)))
 }
 
 func buildPrimaryReasonCandidates(in PrimaryReasonArbitrationInput) []primaryReasonCandidate {

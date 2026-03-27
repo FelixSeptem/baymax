@@ -936,7 +936,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
   - A45 additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
-- Runtime Readiness（A40/A44/A48）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
+- Runtime Readiness（A40/A44/A48/A49）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
@@ -1024,8 +1024,18 @@ Composed summary additive fields（contract markers）：
 - `runtime_primary_code`
 - `runtime_primary_source`
 - `runtime_primary_conflict_total`
+- `runtime_secondary_reason_codes`
+- `runtime_secondary_reason_count`
+- `runtime_arbitration_rule_version`
+- `runtime_remediation_hint_code`
+- `runtime_remediation_hint_domain`
+- `runtime_secondary_reason_codes`
+- `runtime_secondary_reason_count`
+- `runtime_arbitration_rule_version`
+- `runtime_remediation_hint_code`
+- `runtime_remediation_hint_domain`
 
-## 诊断回放（D1 + A47 + A48）
+## 诊断回放（D1 + A47 + A48 + A49）
 
 离线回放命令：
 
@@ -1053,17 +1063,27 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `semantic_drift`（taxonomy/source/state/idempotency 漂移）
   - `ordering_drift`（ordering 非确定性漂移）
 
-语义（A48 primary-reason arbitration 模式）：
-- 输入：版本化 fixture（`version=a48.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+语义（A48/A49 arbitration 模式）：
+- 输入：版本化 fixture（`version=a48.v1|a49.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `runtime_primary_domain`
   - `runtime_primary_code`
   - `runtime_primary_source`
   - `runtime_primary_conflict_total`
+- A49 explainability 额外字段：
+  - `runtime_secondary_reason_codes`
+  - `runtime_secondary_reason_count`
+  - `runtime_arbitration_rule_version`
+  - `runtime_remediation_hint_code`
+  - `runtime_remediation_hint_domain`
 - 输出：按 case name 排序后的 canonical arbitration 输出。
-- drift 分类（A48 blocking）：
+- drift 分类（A48/A49 blocking）：
   - `precedence_drift`：timeout/reject 与 blocked/required/degraded 层级被破坏。
   - `tie_break_drift`：同层候选 lexical tie-break 或 conflict_total 漂移。
   - `taxonomy_drift`：primary code/source/domain 非 canonical 或语义不一致。
+  - `secondary_order_drift`：secondary reasons 顺序或去重语义漂移。
+  - `secondary_count_drift`：secondary count 或上限语义漂移。
+  - `hint_taxonomy_drift`：remediation hint taxonomy 漂移。
+  - `rule_version_drift`：arbitration rule version 漂移。
 
 详细使用说明见：`docs/diagnostics-replay.md`。
 

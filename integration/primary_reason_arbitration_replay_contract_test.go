@@ -12,13 +12,13 @@ import (
 )
 
 func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
-	raw := mustReadA48ReplayFixture(t, "success.json")
+	raw := mustReadA49ReplayFixture(t, "success.json")
 	out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
 	if err != nil {
 		t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
 	}
-	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionA48V1 {
-		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionA48V1)
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionA49V1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionA49V1)
 	}
 	if len(out.Cases) < 2 {
 		t.Fatalf("normalized cases len=%d, want >= 2", len(out.Cases))
@@ -58,11 +58,35 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeTaxonomyDrift,
 			messageHas: "non-canonical primary code",
 		},
+		{
+			name:       "secondary-order",
+			fixture:    "drift-secondary-order.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSecondaryOrderDrift,
+			messageHas: "secondary order drift",
+		},
+		{
+			name:       "secondary-count",
+			fixture:    "drift-secondary-count.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSecondaryCountDrift,
+			messageHas: "secondary count drift",
+		},
+		{
+			name:       "hint-taxonomy",
+			fixture:    "drift-hint-taxonomy.json",
+			wantCode:   diagnosticsreplay.ReasonCodeHintTaxonomyDrift,
+			messageHas: "hint taxonomy drift",
+		},
+		{
+			name:       "rule-version",
+			fixture:    "drift-rule-version.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRuleVersionDrift,
+			messageHas: "rule version drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(mustReadA48ReplayFixture(t, tc.fixture))
+			_, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(mustReadA49ReplayFixture(t, tc.fixture))
 			if err == nil {
 				t.Fatalf("fixture %q should fail", tc.fixture)
 			}
@@ -80,9 +104,9 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 	}
 }
 
-func mustReadA48ReplayFixture(t *testing.T, name string) []byte {
+func mustReadA49ReplayFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join(repoRootForA48Replay(t), "integration", "testdata", "diagnostics-replay", "a48", "v1", name)
+	path := filepath.Join(repoRootForArbitrationReplay(t), "integration", "testdata", "diagnostics-replay", "a49", "v1", name)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)
@@ -90,7 +114,7 @@ func mustReadA48ReplayFixture(t *testing.T, name string) []byte {
 	return raw
 }
 
-func repoRootForA48Replay(t *testing.T) string {
+func repoRootForArbitrationReplay(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

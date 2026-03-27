@@ -49,8 +49,8 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
     pwsh -File scripts/check-multi-agent-shared-contract.ps1
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness contract suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1
+Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness + explainability contract suites" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics cardinality contract suites" -Command {

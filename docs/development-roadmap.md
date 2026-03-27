@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-26
+更新时间：2026-03-27
 
 ## 定位
 
@@ -15,11 +15,12 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-26：
-- 已归档并稳定：A4-A47（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口）。
-- 进行中：
-  - `introduce-cross-domain-primary-reason-arbitration-contract-a48`
+截至 2026-03-27：
+- 已归档并稳定：A4-A48（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口、A48 cross-domain primary reason arbitration 收口）。
+- 已完成待归档：
   - `introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49`
+- 进行中：
+  - `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -244,14 +245,14 @@ A47 当前落地（实现已完成）：
 - quality gate 接入 A47 阻断步骤：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReadinessTimeoutHealthReplayContract)' -count=1`，shell/PowerShell parity 保持一致。
 - 主干索引与 diagnostics 文档已补齐 A47 fixture suite 与 gate 映射。
 
-### P1：A48 cross-domain primary reason arbitration（进行中）
+### P1：A48 cross-domain primary reason arbitration（已归档）
 
 A48 目标：
 - 固化 timeout/readiness/adapter-health 冲突场景下的 primary reason 裁决优先级与 tie-break 规则。
 - 统一 `runtime_primary_domain|code|source` 解释链路，保持 Run/Stream/replay 语义一致。
 - 将 arbitration drift 检测纳入 replay + quality gate 阻断，防止跨提案演进产生 reclassification drift。
 
-A48 当前落地（实现已完成，待归档）：
+A48 当前落地（已归档）：
 - `runtime/config` 新增 cross-domain arbitration helper，固定 precedence（timeout reject/exhausted > readiness blocked > adapter required unavailable > degraded/optional > warning/info）并支持 lexical tie-break 与 conflict_total。
 - `runtime/config/readiness` 与 admission guard 统一消费 arbitration 输出，解释字段对齐 `primary domain/code/source`，Run/Stream 保持语义等价。
 - `runtime/diagnostics` 与 `observability/event.RuntimeRecorder` 增加 A48 additive 字段：`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`，并保持 replay idempotency。
@@ -259,12 +260,77 @@ A48 当前落地（实现已完成，待归档）：
 - 新增 `integration/primary_reason_arbitration_replay_contract_test.go` 与 `integration/testdata/diagnostics-replay/a48/v1/*`，覆盖 replay parity + drift guard。
 - quality gate 阻断步骤扩展为：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1`（shell/PowerShell parity 保持一致）。
 
-### P1：A49 arbitration explainability + secondary reason（进行中）
+### P1：A49 arbitration explainability + secondary reason（已完成待归档）
 
 A49 目标：
 - 固化 secondary reasons 的有界输出契约（上限、去重、稳定排序）并输出 rule version。
 - 统一 remediation hint taxonomy，补齐 machine-readable explainability 字段。
 - 将 explainability drift（secondary order/count、hint taxonomy、rule version）纳入 replay + quality gate 阻断。
+
+A49 当前落地（实施中）：
+- `runtime/config` 已扩展 arbitration explainability 输出：`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`，并固定 `max_secondary_reasons=3`。
+- `runtime/config/readiness` 与 admission guard 已贯通 explainability 字段透传（primary + secondary + hint + rule version），deny details 保持 machine-readable 字段对齐。
+- `runtime/diagnostics` 与 `observability/event.RuntimeRecorder` 已接入 A49 additive 字段并补齐 replay idempotency 断言。
+- `tool/diagnosticsreplay` arbitration fixture 已升级支持 `version=a49.v1`，新增 drift 分类：`secondary_order_drift`、`secondary_count_drift`、`hint_taxonomy_drift`、`rule_version_drift`。
+- quality gate readiness 套件已纳入 A49 parser-compatibility 回归（shell/PowerShell parity）。
+
+### P1：A50 arbitration version governance + compatibility（进行中）
+
+A50 目标：
+- 固化 arbitration rule version 解析与 compatibility window 契约（requested/default/effective/source）。
+- 统一 unsupported/mismatch 策略（默认 fail-fast），并贯通 readiness preflight 与 admission guard。
+- 将 cross-version drift（`version_mismatch`、`unsupported_version`、`cross_version_semantic_drift`）纳入 replay + quality gate 阻断。
+
+### P1：A51 sandbox execution isolation contract（候选，待 OpenSpec 立项）
+
+A51 Why now：
+- 当前 S2-S4 已覆盖权限/限流/IO 过滤与 deny 告警投递，但本地工具执行仍以 in-process 为主，缺少“执行隔离”契约层。
+- 对高风险工具（如 shell/file-system/process 访问）仅靠策略 deny/confirm 不足以满足更高隔离要求，需要可审计的 sandbox 运行面。
+- 在保持 lib-first 边界前提下，需要提供“宿主可注入隔离执行器 + 运行时统一治理/诊断”的标准接缝，避免业务侧散装实现。
+
+A51 依赖关系：
+- 复用 S2/S3/S4 既有 taxonomy 与事件投递治理，不新增平行安全事件体系。
+- 复用 A44 readiness admission；当 `sandbox.required=true` 且执行器不可用时，准入层可 fail-fast 阻断。
+- 复用 A45 additive/cardinality 治理，保证 sandbox 诊断字段新增不破坏查询性能与兼容窗口。
+- 复用 A49/A50 explainability 与 rule-version 口径，确保 sandbox deny 在 Run/Stream/replay 下可解释且稳定。
+
+A51 完成条件（提案落地后）：
+- 新增 `security.sandbox.*` 配置域并纳入 `env > file > default`、启动 fail-fast、热更新原子回滚：
+  - `enabled`（默认 `false`）、`mode`（`observe|enforce`）、`required`（默认 `false`）。
+  - `default_action`（`host|sandbox|deny`）与 `by_tool`（`namespace+tool` 选择器，沿用 S2 格式）。
+  - `fallback_action`（`allow_and_record|deny`）、`launch_timeout`、`exec_timeout`、`max_concurrency`。
+  - `profile`（资源约束档位）与 `profiles.*`（如 cpu/memory/network/filesystem 限额，具体枚举由提案冻结）。
+- 新增宿主注入式隔离执行 SPI（库不内置容器编排），并在以下路径统一接入：
+  - `tool/local` 高风险工具调用路径支持按策略切换 `host`/`sandbox` 执行。
+  - `mcp/stdio` 命令启动路径支持 sandbox 启动器接管（保持 transport 语义不变）。
+- 固化 sandbox 决策与错误 taxonomy（示例）：`security.sandbox_policy_denied`、`security.sandbox_executor_missing`、`security.sandbox_launch_failed`、`security.sandbox_timeout`。
+- `runtime/diagnostics` 增加 sandbox additive 字段并保持 `additive + nullable + default`：
+  - 建议字段：`sandbox_mode`、`sandbox_profile`、`sandbox_decision`、`sandbox_reason_code`、`sandbox_fallback_used`、`sandbox_fallback_reason`、`sandbox_violation_total`、`sandbox_timeout_total`、`sandbox_launch_failed_total`。
+- Run/Stream 语义等价：
+  - 同输入同配置下，sandbox allow/deny/fallback 的终态、reason code、diagnostics 字段保持等价。
+  - deny 路径保持 side-effect free（不触发调度/发布副作用），与 A44 admission 语义一致。
+- 回放与门禁：
+  - diagnostics replay 增加 sandbox fixture（建议 `a51.v1`）与 drift 分类（taxonomy/order/idempotency）。
+  - quality gate 新增 `check-security-sandbox-contract.sh/.ps1` 并纳入 `check-quality-gate.*`。
+
+A51 当前阶段非目标（不做）：
+- 不内置 Docker/Kubernetes/VM 控制面，不引入平台化多租户治理能力。
+- 不承诺跨主机/跨内核强隔离（隔离强度由宿主注入执行器能力决定）。
+- 不改变 provider fallback、A2A/workflow/scheduler 既有主链路语义。
+
+A51 风险与回滚点：
+- 主要风险：策略误配导致误拒绝、sandbox 启动开销导致时延抖动、跨平台执行器行为漂移。
+- 缓解策略：先 `mode=observe` 灰度，稳定后切换 `mode=enforce`；高风险工具先小范围 `by_tool` 启用。
+- 回滚点：`security.sandbox.enabled=false` 或 `mode=observe`；非法热更新一律回滚到上一有效快照。
+
+A51 验证命令（提案实施期最小集合）：
+- `go test ./tool/local ./core/runner ./mcp/stdio -count=1`
+- `go test ./integration -run 'TestSandbox|TestSecuritySandbox|TestRunStreamSandboxParity' -count=1`
+- `go test -race ./...`
+- `golangci-lint run --config .golangci.yml`
+- `pwsh -File scripts/check-security-sandbox-contract.ps1`
+- `pwsh -File scripts/check-quality-gate.ps1`
+- `pwsh -File scripts/check-docs-consistency.ps1`
 
 ### P2：0.x 质量与治理持续收敛
 

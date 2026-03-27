@@ -41,8 +41,8 @@ if ! bash scripts/check-multi-agent-shared-contract.sh; then
   exit 1
 fi
 
-echo "[quality-gate] runtime readiness contract suites"
-if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1; then
+echo "[quality-gate] runtime readiness + explainability contract suites"
+if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1; then
   echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"
   exit 1
 fi

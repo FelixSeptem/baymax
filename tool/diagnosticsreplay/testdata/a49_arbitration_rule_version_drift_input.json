@@ -1,0 +1,51 @@
+{
+  "version": "a49.v1",
+  "cases": [
+    {
+      "name": "rule_version_drift_case",
+      "run": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1,
+        "runtime_secondary_reason_codes": [
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 1,
+        "runtime_arbitration_rule_version": "a49.v2",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "stream": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1,
+        "runtime_secondary_reason_codes": [
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 1,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "expected": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 1,
+        "runtime_secondary_reason_codes": [
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 1,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

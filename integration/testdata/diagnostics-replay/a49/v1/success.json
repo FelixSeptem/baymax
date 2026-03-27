@@ -1,0 +1,103 @@
+{
+  "version": "a49.v1",
+  "cases": [
+    {
+      "name": "timeout_reject_with_secondary",
+      "run": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.parent_budget_rejected",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [
+          "runtime.readiness.strict_escalated",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "timeout.adjust_parent_budget",
+        "runtime_remediation_hint_domain": "timeout"
+      },
+      "stream": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.parent_budget_rejected",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [
+          "runtime.readiness.strict_escalated",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "timeout.adjust_parent_budget",
+        "runtime_remediation_hint_domain": "timeout"
+      },
+      "expected": {
+        "runtime_primary_domain": "timeout",
+        "runtime_primary_code": "runtime.timeout.parent_budget_rejected",
+        "runtime_primary_source": "timeout.resolution.request",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [
+          "runtime.readiness.strict_escalated",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "timeout.adjust_parent_budget",
+        "runtime_remediation_hint_domain": "timeout"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    },
+    {
+      "name": "degraded_tie_break_with_secondary",
+      "run": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 2,
+        "runtime_secondary_reason_codes": [
+          "recovery.backend.fallback",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "stream": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 2,
+        "runtime_secondary_reason_codes": [
+          "recovery.backend.fallback",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "expected": {
+        "runtime_primary_domain": "mailbox",
+        "runtime_primary_code": "mailbox.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 2,
+        "runtime_secondary_reason_codes": [
+          "recovery.backend.fallback",
+          "scheduler.backend.fallback"
+        ],
+        "runtime_secondary_reason_count": 2,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_remediation_hint_code": "mailbox.recover_backend",
+        "runtime_remediation_hint_domain": "mailbox"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

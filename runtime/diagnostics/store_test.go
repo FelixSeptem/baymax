@@ -408,6 +408,60 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	}
 }
 
+func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                                   time.Now(),
+		RunID:                                  "run-a50-governance",
+		Status:                                 "failed",
+		RuntimePrimaryDomain:                   "runtime",
+		RuntimePrimaryCode:                     "runtime.arbitration.version.unsupported",
+		RuntimePrimarySource:                   "runtime.arbitration.version",
+		RuntimeArbitrationRuleVersion:          "",
+		RuntimeArbitrationRuleRequestedVersion: "a77.v9",
+		RuntimeArbitrationRuleEffectiveVersion: "",
+		RuntimeArbitrationRuleVersionSource:    "requested",
+		RuntimeArbitrationRulePolicyAction:     "fail_fast_unsupported_version",
+		RuntimeArbitrationRuleUnsupportedTotal: 1,
+		RuntimeArbitrationRuleMismatchTotal:    0,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].RuntimeArbitrationRuleRequestedVersion != "a77.v9" ||
+		items[0].RuntimeArbitrationRuleEffectiveVersion != "" ||
+		items[0].RuntimeArbitrationRuleVersionSource != "requested" ||
+		items[0].RuntimeArbitrationRulePolicyAction != "fail_fast_unsupported_version" ||
+		items[0].RuntimeArbitrationRuleUnsupportedTotal != 1 ||
+		items[0].RuntimeArbitrationRuleMismatchTotal != 0 {
+		t.Fatalf("a50 governance fields mismatch after replay dedup: %#v", items[0])
+	}
+
+	rec.RuntimePrimaryCode = "runtime.arbitration.version.compatibility_mismatch"
+	rec.RuntimeArbitrationRuleRequestedVersion = "a48.v1"
+	rec.RuntimeArbitrationRuleVersionSource = "requested"
+	rec.RuntimeArbitrationRulePolicyAction = "fail_fast_version_mismatch"
+	rec.RuntimeArbitrationRuleUnsupportedTotal = 0
+	rec.RuntimeArbitrationRuleMismatchTotal = 1
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].RuntimePrimaryCode != "runtime.arbitration.version.compatibility_mismatch" ||
+		items[0].RuntimeArbitrationRuleRequestedVersion != "a48.v1" ||
+		items[0].RuntimeArbitrationRulePolicyAction != "fail_fast_version_mismatch" ||
+		items[0].RuntimeArbitrationRuleUnsupportedTotal != 0 ||
+		items[0].RuntimeArbitrationRuleMismatchTotal != 1 {
+		t.Fatalf("a50 governance fields mismatch after replay replacement: %#v", items[0])
+	}
+}
+
 func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

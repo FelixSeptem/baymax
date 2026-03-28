@@ -13,14 +13,18 @@ import (
 const (
 	ArbitrationFixtureVersionA48V1 = "a48.v1"
 	ArbitrationFixtureVersionA49V1 = "a49.v1"
+	ArbitrationFixtureVersionA50V1 = "a50.v1"
 
-	ReasonCodePrecedenceDrift     = "precedence_drift"
-	ReasonCodeTieBreakDrift       = "tie_break_drift"
-	ReasonCodeTaxonomyDrift       = "taxonomy_drift"
-	ReasonCodeSecondaryOrderDrift = "secondary_order_drift"
-	ReasonCodeSecondaryCountDrift = "secondary_count_drift"
-	ReasonCodeHintTaxonomyDrift   = "hint_taxonomy_drift"
-	ReasonCodeRuleVersionDrift    = "rule_version_drift"
+	ReasonCodePrecedenceDrift           = "precedence_drift"
+	ReasonCodeTieBreakDrift             = "tie_break_drift"
+	ReasonCodeTaxonomyDrift             = "taxonomy_drift"
+	ReasonCodeSecondaryOrderDrift       = "secondary_order_drift"
+	ReasonCodeSecondaryCountDrift       = "secondary_count_drift"
+	ReasonCodeHintTaxonomyDrift         = "hint_taxonomy_drift"
+	ReasonCodeRuleVersionDrift          = "rule_version_drift"
+	ReasonCodeVersionMismatch           = "version_mismatch"
+	ReasonCodeUnsupportedVersion        = "unsupported_version"
+	ReasonCodeCrossVersionSemanticDrift = "cross_version_semantic_drift"
 )
 
 type ArbitrationFixture struct {
@@ -38,15 +42,21 @@ type ArbitrationFixtureCase struct {
 }
 
 type ArbitrationObservation struct {
-	RuntimePrimaryDomain          string   `json:"runtime_primary_domain"`
-	RuntimePrimaryCode            string   `json:"runtime_primary_code"`
-	RuntimePrimarySource          string   `json:"runtime_primary_source"`
-	RuntimePrimaryConflictTotal   int      `json:"runtime_primary_conflict_total"`
-	RuntimeSecondaryReasonCodes   []string `json:"runtime_secondary_reason_codes,omitempty"`
-	RuntimeSecondaryReasonCount   int      `json:"runtime_secondary_reason_count,omitempty"`
-	RuntimeArbitrationRuleVersion string   `json:"runtime_arbitration_rule_version,omitempty"`
-	RuntimeRemediationHintCode    string   `json:"runtime_remediation_hint_code,omitempty"`
-	RuntimeRemediationHintDomain  string   `json:"runtime_remediation_hint_domain,omitempty"`
+	RuntimePrimaryDomain                   string   `json:"runtime_primary_domain"`
+	RuntimePrimaryCode                     string   `json:"runtime_primary_code"`
+	RuntimePrimarySource                   string   `json:"runtime_primary_source"`
+	RuntimePrimaryConflictTotal            int      `json:"runtime_primary_conflict_total"`
+	RuntimeSecondaryReasonCodes            []string `json:"runtime_secondary_reason_codes,omitempty"`
+	RuntimeSecondaryReasonCount            int      `json:"runtime_secondary_reason_count,omitempty"`
+	RuntimeArbitrationRuleVersion          string   `json:"runtime_arbitration_rule_version,omitempty"`
+	RuntimeArbitrationRuleRequestedVersion string   `json:"runtime_arbitration_rule_requested_version,omitempty"`
+	RuntimeArbitrationRuleEffectiveVersion string   `json:"runtime_arbitration_rule_effective_version,omitempty"`
+	RuntimeArbitrationRuleVersionSource    string   `json:"runtime_arbitration_rule_version_source,omitempty"`
+	RuntimeArbitrationRulePolicyAction     string   `json:"runtime_arbitration_rule_policy_action,omitempty"`
+	RuntimeArbitrationRuleUnsupportedTotal int      `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
+	RuntimeArbitrationRuleMismatchTotal    int      `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
+	RuntimeRemediationHintCode             string   `json:"runtime_remediation_hint_code,omitempty"`
+	RuntimeRemediationHintDomain           string   `json:"runtime_remediation_hint_domain,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -71,7 +81,9 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 	if version == "" {
 		return ArbitrationFixture{}, &ValidationError{Code: ReasonCodeSchemaMismatch, Message: "version is required"}
 	}
-	if version != ArbitrationFixtureVersionA48V1 && version != ArbitrationFixtureVersionA49V1 {
+	if version != ArbitrationFixtureVersionA48V1 &&
+		version != ArbitrationFixtureVersionA49V1 &&
+		version != ArbitrationFixtureVersionA50V1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -170,20 +182,32 @@ func EvaluateArbitrationFixture(fixture ArbitrationFixture) (ArbitrationReplayOu
 
 func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationObservation {
 	out := ArbitrationObservation{
-		RuntimePrimaryDomain:          strings.ToLower(strings.TrimSpace(in.RuntimePrimaryDomain)),
-		RuntimePrimaryCode:            strings.TrimSpace(in.RuntimePrimaryCode),
-		RuntimePrimarySource:          strings.ToLower(strings.TrimSpace(in.RuntimePrimarySource)),
-		RuntimePrimaryConflictTotal:   in.RuntimePrimaryConflictTotal,
-		RuntimeSecondaryReasonCount:   in.RuntimeSecondaryReasonCount,
-		RuntimeArbitrationRuleVersion: strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleVersion)),
-		RuntimeRemediationHintCode:    strings.TrimSpace(in.RuntimeRemediationHintCode),
-		RuntimeRemediationHintDomain:  strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
+		RuntimePrimaryDomain:                   strings.ToLower(strings.TrimSpace(in.RuntimePrimaryDomain)),
+		RuntimePrimaryCode:                     strings.TrimSpace(in.RuntimePrimaryCode),
+		RuntimePrimarySource:                   strings.ToLower(strings.TrimSpace(in.RuntimePrimarySource)),
+		RuntimePrimaryConflictTotal:            in.RuntimePrimaryConflictTotal,
+		RuntimeSecondaryReasonCount:            in.RuntimeSecondaryReasonCount,
+		RuntimeArbitrationRuleVersion:          strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleVersion)),
+		RuntimeArbitrationRuleRequestedVersion: strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleRequestedVersion)),
+		RuntimeArbitrationRuleEffectiveVersion: strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleEffectiveVersion)),
+		RuntimeArbitrationRuleVersionSource:    strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRuleVersionSource)),
+		RuntimeArbitrationRulePolicyAction:     strings.ToLower(strings.TrimSpace(in.RuntimeArbitrationRulePolicyAction)),
+		RuntimeArbitrationRuleUnsupportedTotal: in.RuntimeArbitrationRuleUnsupportedTotal,
+		RuntimeArbitrationRuleMismatchTotal:    in.RuntimeArbitrationRuleMismatchTotal,
+		RuntimeRemediationHintCode:             strings.TrimSpace(in.RuntimeRemediationHintCode),
+		RuntimeRemediationHintDomain:           strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
 	}
 	if out.RuntimeSecondaryReasonCount < 0 {
 		out.RuntimeSecondaryReasonCount = 0
+	}
+	if out.RuntimeArbitrationRuleUnsupportedTotal < 0 {
+		out.RuntimeArbitrationRuleUnsupportedTotal = 0
+	}
+	if out.RuntimeArbitrationRuleMismatchTotal < 0 {
+		out.RuntimeArbitrationRuleMismatchTotal = 0
 	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
@@ -217,19 +241,21 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s non-canonical primary code %q", caseName, lane, obs.RuntimePrimaryCode),
 		}
 	}
-	if version != ArbitrationFixtureVersionA49V1 {
+	if version == ArbitrationFixtureVersionA48V1 {
 		return nil
 	}
-	if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) == "" {
-		return &ValidationError{
-			Code:    ReasonCodeSchemaMismatch,
-			Message: fmt.Sprintf("case %q %s.runtime_arbitration_rule_version is required", caseName, lane),
+	if version == ArbitrationFixtureVersionA49V1 {
+		if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) == "" {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s.runtime_arbitration_rule_version is required", caseName, lane),
+			}
 		}
-	}
-	if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
-		return &ValidationError{
-			Code:    ReasonCodeRuleVersionDrift,
-			Message: fmt.Sprintf("case %q %s rule version drift want=%q got=%q", caseName, lane, runtimeconfig.RuntimeArbitrationRuleVersionA49V1, obs.RuntimeArbitrationRuleVersion),
+		if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
+			return &ValidationError{
+				Code:    ReasonCodeRuleVersionDrift,
+				Message: fmt.Sprintf("case %q %s rule version drift want=%q got=%q", caseName, lane, runtimeconfig.RuntimeArbitrationRuleVersionA49V1, obs.RuntimeArbitrationRuleVersion),
+			}
 		}
 	}
 	if len(obs.RuntimeSecondaryReasonCodes) > runtimeconfig.RuntimeArbitrationMaxSecondary {
@@ -286,12 +312,166 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s hint taxonomy drift want=%s/%s got=%s/%s", caseName, lane, hintDomain, hintCode, obs.RuntimeRemediationHintDomain, obs.RuntimeRemediationHintCode),
 		}
 	}
+	if version != ArbitrationFixtureVersionA50V1 {
+		return nil
+	}
+	if obs.RuntimeArbitrationRuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceDefault &&
+		obs.RuntimeArbitrationRuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceRequested {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_version_source must be default|requested", caseName, lane),
+		}
+	}
+	switch obs.RuntimeArbitrationRulePolicyAction {
+	case runtimeconfig.RuntimeArbitrationPolicyActionNone,
+		runtimeconfig.RuntimeArbitrationPolicyActionDisabled,
+		runtimeconfig.RuntimeArbitrationPolicyActionFailFastUnsupported,
+		runtimeconfig.RuntimeArbitrationPolicyActionFailFastMismatch:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_policy_action is invalid", caseName, lane),
+		}
+	}
+	if effective := strings.TrimSpace(obs.RuntimeArbitrationRuleEffectiveVersion); effective != "" && !isSupportedA50Version(effective) {
+		return &ValidationError{
+			Code:    ReasonCodeRuleVersionDrift,
+			Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_effective_version=%q is not registered", caseName, lane, effective),
+		}
+	}
+	if ruleVersion := strings.TrimSpace(obs.RuntimeArbitrationRuleVersion); ruleVersion != "" {
+		if !isSupportedA50Version(ruleVersion) {
+			return &ValidationError{
+				Code:    ReasonCodeRuleVersionDrift,
+				Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_version=%q is not registered", caseName, lane, ruleVersion),
+			}
+		}
+		if effective := strings.TrimSpace(obs.RuntimeArbitrationRuleEffectiveVersion); effective != "" && effective != ruleVersion {
+			return &ValidationError{
+				Code:    ReasonCodeCrossVersionSemanticDrift,
+				Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_version=%q mismatches effective=%q", caseName, lane, ruleVersion, effective),
+			}
+		}
+	}
+	if requested := strings.TrimSpace(obs.RuntimeArbitrationRuleRequestedVersion); requested != "" &&
+		!isSupportedA50Version(requested) &&
+		obs.RuntimePrimaryCode != runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
+		return &ValidationError{
+			Code:    ReasonCodeUnsupportedVersion,
+			Message: fmt.Sprintf("case %q %s requested version %q must produce unsupported classification", caseName, lane, requested),
+		}
+	}
+	switch strings.TrimSpace(obs.RuntimePrimaryCode) {
+	case runtimeconfig.ReadinessCodeArbitrationVersionUnsupported:
+		if obs.RuntimeArbitrationRulePolicyAction != runtimeconfig.RuntimeArbitrationPolicyActionFailFastUnsupported ||
+			obs.RuntimeArbitrationRuleUnsupportedTotal <= 0 {
+			return &ValidationError{
+				Code:    ReasonCodeUnsupportedVersion,
+				Message: fmt.Sprintf("case %q %s unsupported version must set fail_fast_unsupported_version and unsupported_total>0", caseName, lane),
+			}
+		}
+	case runtimeconfig.ReadinessCodeArbitrationVersionMismatch:
+		if obs.RuntimeArbitrationRulePolicyAction != runtimeconfig.RuntimeArbitrationPolicyActionFailFastMismatch ||
+			obs.RuntimeArbitrationRuleMismatchTotal <= 0 {
+			return &ValidationError{
+				Code:    ReasonCodeVersionMismatch,
+				Message: fmt.Sprintf("case %q %s version mismatch must set fail_fast_version_mismatch and mismatch_total>0", caseName, lane),
+			}
+		}
+	default:
+		if obs.RuntimeArbitrationRuleUnsupportedTotal > 0 || obs.RuntimeArbitrationRuleMismatchTotal > 0 {
+			return &ValidationError{
+				Code:    ReasonCodeCrossVersionSemanticDrift,
+				Message: fmt.Sprintf("case %q %s non-version-failure code has unsupported/mismatch counters", caseName, lane),
+			}
+		}
+		if strings.TrimSpace(obs.RuntimeArbitrationRuleEffectiveVersion) == "" {
+			return &ValidationError{
+				Code:    ReasonCodeCrossVersionSemanticDrift,
+				Message: fmt.Sprintf("case %q %s effective version is required for non-version-failure paths", caseName, lane),
+			}
+		}
+	}
 	return nil
 }
 
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionA50V1 {
+		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
+			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
+				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
+				return &ValidationError{
+					Code: ReasonCodeUnsupportedVersion,
+					Message: fmt.Sprintf(
+						"case %q %s unsupported version classification drift expected=%q actual=%q",
+						caseName,
+						lane,
+						expected.RuntimePrimaryCode,
+						actual.RuntimePrimaryCode,
+					),
+				}
+			}
+			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionMismatch ||
+				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionMismatch {
+				return &ValidationError{
+					Code: ReasonCodeVersionMismatch,
+					Message: fmt.Sprintf(
+						"case %q %s version mismatch classification drift expected=%q actual=%q",
+						caseName,
+						lane,
+						expected.RuntimePrimaryCode,
+						actual.RuntimePrimaryCode,
+					),
+				}
+			}
+		}
+		if expected.RuntimeArbitrationRuleVersion != actual.RuntimeArbitrationRuleVersion ||
+			expected.RuntimeArbitrationRuleRequestedVersion != actual.RuntimeArbitrationRuleRequestedVersion ||
+			expected.RuntimeArbitrationRuleEffectiveVersion != actual.RuntimeArbitrationRuleEffectiveVersion ||
+			expected.RuntimeArbitrationRuleVersionSource != actual.RuntimeArbitrationRuleVersionSource ||
+			expected.RuntimeArbitrationRulePolicyAction != actual.RuntimeArbitrationRulePolicyAction ||
+			expected.RuntimeArbitrationRuleUnsupportedTotal != actual.RuntimeArbitrationRuleUnsupportedTotal ||
+			expected.RuntimeArbitrationRuleMismatchTotal != actual.RuntimeArbitrationRuleMismatchTotal {
+			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
+				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
+				return &ValidationError{
+					Code: ReasonCodeUnsupportedVersion,
+					Message: fmt.Sprintf(
+						"case %q %s unsupported version governance drift expected=%#v actual=%#v",
+						caseName,
+						lane,
+						expected,
+						actual,
+					),
+				}
+			}
+			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionMismatch ||
+				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionMismatch {
+				return &ValidationError{
+					Code: ReasonCodeVersionMismatch,
+					Message: fmt.Sprintf(
+						"case %q %s version mismatch governance drift expected=%#v actual=%#v",
+						caseName,
+						lane,
+						expected,
+						actual,
+					),
+				}
+			}
+			return &ValidationError{
+				Code: ReasonCodeCrossVersionSemanticDrift,
+				Message: fmt.Sprintf(
+					"case %q %s cross-version semantic drift expected=%#v actual=%#v",
+					caseName,
+					lane,
+					expected,
+					actual,
+				),
+			}
+		}
 	}
 	if precedenceForArbitrationCode(expected.RuntimePrimaryCode) != precedenceForArbitrationCode(actual.RuntimePrimaryCode) {
 		return &ValidationError{
@@ -343,6 +523,32 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
+	if version == ArbitrationFixtureVersionA50V1 {
+		if expected.RuntimeSecondaryReasonCount != actual.RuntimeSecondaryReasonCount {
+			return &ValidationError{
+				Code: ReasonCodeSecondaryCountDrift,
+				Message: fmt.Sprintf(
+					"case %q %s secondary count drift expected=%d actual=%d",
+					caseName,
+					lane,
+					expected.RuntimeSecondaryReasonCount,
+					actual.RuntimeSecondaryReasonCount,
+				),
+			}
+		}
+		if !equalStringSlice(expected.RuntimeSecondaryReasonCodes, actual.RuntimeSecondaryReasonCodes) {
+			return &ValidationError{
+				Code: ReasonCodeSecondaryOrderDrift,
+				Message: fmt.Sprintf(
+					"case %q %s secondary order drift expected=%#v actual=%#v",
+					caseName,
+					lane,
+					expected.RuntimeSecondaryReasonCodes,
+					actual.RuntimeSecondaryReasonCodes,
+				),
+			}
+		}
+	}
 	if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode ||
 		expected.RuntimePrimaryConflictTotal != actual.RuntimePrimaryConflictTotal {
 		return &ValidationError{
@@ -356,7 +562,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			),
 		}
 	}
-	if version == ArbitrationFixtureVersionA49V1 &&
+	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1) &&
 		(expected.RuntimeRemediationHintCode != actual.RuntimeRemediationHintCode ||
 			expected.RuntimeRemediationHintDomain != actual.RuntimeRemediationHintDomain) {
 		return &ValidationError{
@@ -392,6 +598,21 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		return false
 	}
 	if version != ArbitrationFixtureVersionA49V1 {
+		if version == ArbitrationFixtureVersionA50V1 {
+			if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
+				left.RuntimeArbitrationRuleVersion != right.RuntimeArbitrationRuleVersion ||
+				left.RuntimeArbitrationRuleRequestedVersion != right.RuntimeArbitrationRuleRequestedVersion ||
+				left.RuntimeArbitrationRuleEffectiveVersion != right.RuntimeArbitrationRuleEffectiveVersion ||
+				left.RuntimeArbitrationRuleVersionSource != right.RuntimeArbitrationRuleVersionSource ||
+				left.RuntimeArbitrationRulePolicyAction != right.RuntimeArbitrationRulePolicyAction ||
+				left.RuntimeArbitrationRuleUnsupportedTotal != right.RuntimeArbitrationRuleUnsupportedTotal ||
+				left.RuntimeArbitrationRuleMismatchTotal != right.RuntimeArbitrationRuleMismatchTotal ||
+				left.RuntimeRemediationHintCode != right.RuntimeRemediationHintCode ||
+				left.RuntimeRemediationHintDomain != right.RuntimeRemediationHintDomain {
+				return false
+			}
+			return equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes)
+		}
 		return true
 	}
 	if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
@@ -438,6 +659,8 @@ func precedenceForArbitrationCode(code string) int {
 	switch strings.TrimSpace(code) {
 	case runtimeconfig.RuntimePrimaryCodeTimeoutRejected, runtimeconfig.RuntimePrimaryCodeTimeoutExhausted:
 		return 1
+	case runtimeconfig.ReadinessCodeArbitrationVersionUnsupported, runtimeconfig.ReadinessCodeArbitrationVersionMismatch:
+		return 1
 	case runtimeconfig.ReadinessCodeConfigInvalid,
 		runtimeconfig.ReadinessCodeStrictEscalated,
 		runtimeconfig.ReadinessCodeSchedulerActivationError,
@@ -458,4 +681,17 @@ func precedenceForArbitrationCode(code string) int {
 	default:
 		return 5
 	}
+}
+
+func isSupportedA50Version(version string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(version))
+	if normalized == "" {
+		return false
+	}
+	for _, item := range runtimeconfig.RegisteredRuntimeArbitrationRuleVersions() {
+		if normalized == strings.ToLower(strings.TrimSpace(item)) {
+			return true
+		}
+	}
+	return false
 }

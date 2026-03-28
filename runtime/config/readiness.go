@@ -34,22 +34,24 @@ const (
 )
 
 const (
-	ReadinessCodeConfigInvalid              = "runtime.config.invalid"
-	ReadinessCodeStrictEscalated            = "runtime.readiness.strict_escalated"
-	ReadinessCodeSchedulerFallback          = "scheduler.backend.fallback"
-	ReadinessCodeSchedulerActivationError   = "scheduler.backend.activation_failed"
-	ReadinessCodeMailboxFallback            = "mailbox.backend.fallback"
-	ReadinessCodeMailboxActivationError     = "mailbox.backend.activation_failed"
-	ReadinessCodeRecoveryFallback           = "recovery.backend.fallback"
-	ReadinessCodeRecoveryActivationError    = "recovery.backend.activation_failed"
-	ReadinessCodeRuntimeManagerUnavailable  = "runtime.manager.unavailable"
-	ReadinessCodeAdapterRequiredUnavailable = "adapter.health.required_unavailable"
-	ReadinessCodeAdapterOptionalUnavailable = "adapter.health.optional_unavailable"
-	ReadinessCodeAdapterDegraded            = "adapter.health.degraded"
-	ReadinessCodeAdapterRequiredCircuitOpen = "adapter.health.required_circuit_open"
-	ReadinessCodeAdapterOptionalCircuitOpen = "adapter.health.optional_circuit_open"
-	ReadinessCodeAdapterHalfOpenDegraded    = "adapter.health.half_open_degraded"
-	ReadinessCodeAdapterGovernanceRecovered = "adapter.health.governance_recovered"
+	ReadinessCodeConfigInvalid                 = "runtime.config.invalid"
+	ReadinessCodeStrictEscalated               = "runtime.readiness.strict_escalated"
+	ReadinessCodeArbitrationVersionUnsupported = "runtime.arbitration.version.unsupported"
+	ReadinessCodeArbitrationVersionMismatch    = "runtime.arbitration.version.compatibility_mismatch"
+	ReadinessCodeSchedulerFallback             = "scheduler.backend.fallback"
+	ReadinessCodeSchedulerActivationError      = "scheduler.backend.activation_failed"
+	ReadinessCodeMailboxFallback               = "mailbox.backend.fallback"
+	ReadinessCodeMailboxActivationError        = "mailbox.backend.activation_failed"
+	ReadinessCodeRecoveryFallback              = "recovery.backend.fallback"
+	ReadinessCodeRecoveryActivationError       = "recovery.backend.activation_failed"
+	ReadinessCodeRuntimeManagerUnavailable     = "runtime.manager.unavailable"
+	ReadinessCodeAdapterRequiredUnavailable    = "adapter.health.required_unavailable"
+	ReadinessCodeAdapterOptionalUnavailable    = "adapter.health.optional_unavailable"
+	ReadinessCodeAdapterDegraded               = "adapter.health.degraded"
+	ReadinessCodeAdapterRequiredCircuitOpen    = "adapter.health.required_circuit_open"
+	ReadinessCodeAdapterOptionalCircuitOpen    = "adapter.health.optional_circuit_open"
+	ReadinessCodeAdapterHalfOpenDegraded       = "adapter.health.half_open_degraded"
+	ReadinessCodeAdapterGovernanceRecovered    = "adapter.health.governance_recovered"
 )
 
 type ReadinessAdmissionOutcome string
@@ -78,10 +80,17 @@ type ReadinessFinding struct {
 }
 
 type ReadinessResult struct {
-	Status        ReadinessStatus           `json:"status"`
-	Findings      []ReadinessFinding        `json:"findings"`
-	AdapterHealth []AdapterHealthEvaluation `json:"adapter_health,omitempty"`
-	EvaluatedAt   time.Time                 `json:"evaluated_at"`
+	Status                          ReadinessStatus                 `json:"status"`
+	Findings                        []ReadinessFinding              `json:"findings"`
+	AdapterHealth                   []AdapterHealthEvaluation       `json:"adapter_health,omitempty"`
+	EvaluatedAt                     time.Time                       `json:"evaluated_at"`
+	ArbitrationRuleRequestedVersion string                          `json:"runtime_arbitration_rule_requested_version,omitempty"`
+	ArbitrationRuleEffectiveVersion string                          `json:"runtime_arbitration_rule_effective_version,omitempty"`
+	ArbitrationRuleVersionSource    string                          `json:"runtime_arbitration_rule_version_source,omitempty"`
+	ArbitrationRulePolicyAction     string                          `json:"runtime_arbitration_rule_policy_action,omitempty"`
+	ArbitrationRuleUnsupportedTotal int                             `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
+	ArbitrationRuleMismatchTotal    int                             `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
+	arbitrationVersionConfig        RuntimeArbitrationVersionConfig `json:"-"`
 }
 
 type ReadinessSummary struct {
@@ -96,6 +105,12 @@ type ReadinessSummary struct {
 	SecondaryReasonCodes               []string `json:"runtime_secondary_reason_codes,omitempty"`
 	SecondaryReasonCount               int      `json:"runtime_secondary_reason_count,omitempty"`
 	ArbitrationRuleVersion             string   `json:"runtime_arbitration_rule_version,omitempty"`
+	ArbitrationRuleRequestedVersion    string   `json:"runtime_arbitration_rule_requested_version,omitempty"`
+	ArbitrationRuleEffectiveVersion    string   `json:"runtime_arbitration_rule_effective_version,omitempty"`
+	ArbitrationRuleVersionSource       string   `json:"runtime_arbitration_rule_version_source,omitempty"`
+	ArbitrationRulePolicyAction        string   `json:"runtime_arbitration_rule_policy_action,omitempty"`
+	ArbitrationRuleUnsupportedTotal    int      `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
+	ArbitrationRuleMismatchTotal       int      `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
 	RemediationHintCode                string   `json:"runtime_remediation_hint_code,omitempty"`
 	RemediationHintDomain              string   `json:"runtime_remediation_hint_domain,omitempty"`
 	AdapterHealthStatus                string   `json:"adapter_health_status,omitempty"`
@@ -112,22 +127,28 @@ type ReadinessSummary struct {
 }
 
 type ReadinessAdmissionDecision struct {
-	Enabled                         bool                      `json:"enabled"`
-	Mode                            string                    `json:"mode"`
-	BlockOn                         string                    `json:"block_on"`
-	DegradedPolicy                  string                    `json:"degraded_policy"`
-	Outcome                         ReadinessAdmissionOutcome `json:"outcome"`
-	ReasonCode                      string                    `json:"reason_code"`
-	ReadinessStatus                 ReadinessStatus           `json:"readiness_status"`
-	ReadinessPrimaryDomain          string                    `json:"readiness_primary_domain,omitempty"`
-	ReadinessPrimaryCode            string                    `json:"readiness_primary_code,omitempty"`
-	ReadinessPrimarySource          string                    `json:"readiness_primary_source,omitempty"`
-	ReadinessSecondaryReasonCodes   []string                  `json:"readiness_secondary_reason_codes,omitempty"`
-	ReadinessSecondaryReasonCount   int                       `json:"readiness_secondary_reason_count,omitempty"`
-	ReadinessArbitrationRuleVersion string                    `json:"readiness_arbitration_rule_version,omitempty"`
-	ReadinessRemediationHintCode    string                    `json:"readiness_remediation_hint_code,omitempty"`
-	ReadinessRemediationHintDomain  string                    `json:"readiness_remediation_hint_domain,omitempty"`
-	Bypass                          bool                      `json:"bypass"`
+	Enabled                                  bool                      `json:"enabled"`
+	Mode                                     string                    `json:"mode"`
+	BlockOn                                  string                    `json:"block_on"`
+	DegradedPolicy                           string                    `json:"degraded_policy"`
+	Outcome                                  ReadinessAdmissionOutcome `json:"outcome"`
+	ReasonCode                               string                    `json:"reason_code"`
+	ReadinessStatus                          ReadinessStatus           `json:"readiness_status"`
+	ReadinessPrimaryDomain                   string                    `json:"readiness_primary_domain,omitempty"`
+	ReadinessPrimaryCode                     string                    `json:"readiness_primary_code,omitempty"`
+	ReadinessPrimarySource                   string                    `json:"readiness_primary_source,omitempty"`
+	ReadinessSecondaryReasonCodes            []string                  `json:"readiness_secondary_reason_codes,omitempty"`
+	ReadinessSecondaryReasonCount            int                       `json:"readiness_secondary_reason_count,omitempty"`
+	ReadinessArbitrationRuleVersion          string                    `json:"readiness_arbitration_rule_version,omitempty"`
+	ReadinessArbitrationRuleRequestedVersion string                    `json:"readiness_arbitration_rule_requested_version,omitempty"`
+	ReadinessArbitrationRuleEffectiveVersion string                    `json:"readiness_arbitration_rule_effective_version,omitempty"`
+	ReadinessArbitrationRuleVersionSource    string                    `json:"readiness_arbitration_rule_version_source,omitempty"`
+	ReadinessArbitrationRulePolicyAction     string                    `json:"readiness_arbitration_rule_policy_action,omitempty"`
+	ReadinessArbitrationRuleUnsupportedTotal int                       `json:"readiness_arbitration_rule_unsupported_total,omitempty"`
+	ReadinessArbitrationRuleMismatchTotal    int                       `json:"readiness_arbitration_rule_mismatch_total,omitempty"`
+	ReadinessRemediationHintCode             string                    `json:"readiness_remediation_hint_code,omitempty"`
+	ReadinessRemediationHintDomain           string                    `json:"readiness_remediation_hint_domain,omitempty"`
+	Bypass                                   bool                      `json:"bypass"`
 }
 
 type AdapterHealthTarget struct {
@@ -254,9 +275,14 @@ func (m *Manager) AdapterHealthTargets() []AdapterHealthTarget {
 }
 
 func (m *Manager) ReadinessPreflight() ReadinessResult {
+	return m.ReadinessPreflightWithRequest("")
+}
+
+func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) ReadinessResult {
 	evaluatedAt := time.Now().UTC()
+	resolvedVersion, versionErr := ResolveArbitrationRuleVersion(DefaultConfig().Runtime.Arbitration.Version, requestedRuleVersion)
 	if m == nil {
-		return ReadinessResult{
+		result := ReadinessResult{
 			Status: ReadinessStatusBlocked,
 			Findings: []ReadinessFinding{
 				{
@@ -269,14 +295,35 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 			},
 			EvaluatedAt: evaluatedAt,
 		}
+		result.ArbitrationRuleRequestedVersion = strings.TrimSpace(resolvedVersion.RequestedVersion)
+		result.ArbitrationRuleEffectiveVersion = strings.TrimSpace(resolvedVersion.EffectiveVersion)
+		result.ArbitrationRuleVersionSource = strings.TrimSpace(resolvedVersion.VersionSource)
+		result.ArbitrationRulePolicyAction = strings.TrimSpace(resolvedVersion.PolicyAction)
+		result.ArbitrationRuleUnsupportedTotal = resolvedVersion.UnsupportedTotal
+		result.ArbitrationRuleMismatchTotal = resolvedVersion.MismatchTotal
+		if versionErr != nil {
+			if finding, ok := readinessFindingForArbitrationVersionError(versionErr, resolvedVersion); ok {
+				result.Findings = append(result.Findings, finding)
+				result.Findings = canonicalizeReadinessFindings(result.Findings)
+			}
+		}
+		return result
 	}
 
 	cfg := m.EffectiveConfig()
+	resolvedVersion, versionErr = ResolveArbitrationRuleVersion(cfg.Runtime.Arbitration.Version, requestedRuleVersion)
 	if !cfg.Runtime.Readiness.Enabled {
 		return ReadinessResult{
-			Status:      ReadinessStatusReady,
-			Findings:    nil,
-			EvaluatedAt: evaluatedAt,
+			Status:                          ReadinessStatusReady,
+			Findings:                        nil,
+			EvaluatedAt:                     evaluatedAt,
+			ArbitrationRuleRequestedVersion: strings.TrimSpace(resolvedVersion.RequestedVersion),
+			ArbitrationRuleEffectiveVersion: strings.TrimSpace(resolvedVersion.EffectiveVersion),
+			ArbitrationRuleVersionSource:    strings.TrimSpace(resolvedVersion.VersionSource),
+			ArbitrationRulePolicyAction:     strings.TrimSpace(resolvedVersion.PolicyAction),
+			ArbitrationRuleUnsupportedTotal: resolvedVersion.UnsupportedTotal,
+			ArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
+			arbitrationVersionConfig:        cfg.Runtime.Arbitration.Version,
 		}
 	}
 
@@ -290,6 +337,11 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 			Message:  "effective runtime config is invalid",
 			Metadata: map[string]any{"error": strings.TrimSpace(err.Error())},
 		})
+	}
+	if versionErr != nil {
+		if finding, ok := readinessFindingForArbitrationVersionError(versionErr, resolvedVersion); ok {
+			findings = append(findings, finding)
+		}
 	}
 
 	componentSnapshot := m.ReadinessComponentSnapshot()
@@ -314,57 +366,83 @@ func (m *Manager) ReadinessPreflight() ReadinessResult {
 	}
 
 	return ReadinessResult{
-		Status:        status,
-		Findings:      findings,
-		AdapterHealth: adapterResults,
-		EvaluatedAt:   evaluatedAt,
+		Status:                          status,
+		Findings:                        findings,
+		AdapterHealth:                   adapterResults,
+		EvaluatedAt:                     evaluatedAt,
+		ArbitrationRuleRequestedVersion: strings.TrimSpace(resolvedVersion.RequestedVersion),
+		ArbitrationRuleEffectiveVersion: strings.TrimSpace(resolvedVersion.EffectiveVersion),
+		ArbitrationRuleVersionSource:    strings.TrimSpace(resolvedVersion.VersionSource),
+		ArbitrationRulePolicyAction:     strings.TrimSpace(resolvedVersion.PolicyAction),
+		ArbitrationRuleUnsupportedTotal: resolvedVersion.UnsupportedTotal,
+		ArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
+		arbitrationVersionConfig:        cfg.Runtime.Arbitration.Version,
 	}
 }
 
 func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
+	return m.EvaluateReadinessAdmissionWithRequest("")
+}
+
+func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion string) ReadinessAdmissionDecision {
+	defaultResolved, _ := ResolveArbitrationRuleVersion(DefaultConfig().Runtime.Arbitration.Version, requestedRuleVersion)
 	if m == nil {
 		hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeManagerNotReady)
 		return ReadinessAdmissionDecision{
-			Enabled:                         false,
-			Mode:                            ReadinessAdmissionModeFailFast,
-			BlockOn:                         ReadinessAdmissionBlockOnBlockedOnly,
-			DegradedPolicy:                  ReadinessAdmissionDegradedPolicyAllowAndRecord,
-			Outcome:                         ReadinessAdmissionOutcomeAllow,
-			ReasonCode:                      ReadinessAdmissionCodeManagerNotReady,
-			ReadinessStatus:                 ReadinessStatusBlocked,
-			ReadinessPrimaryDomain:          ReadinessDomainRuntime,
-			ReadinessPrimaryCode:            ReadinessAdmissionCodeManagerNotReady,
-			ReadinessPrimarySource:          RuntimePrimarySourceAdmission,
-			ReadinessArbitrationRuleVersion: RuntimeArbitrationRuleVersionA49V1,
-			ReadinessRemediationHintCode:    hintCode,
-			ReadinessRemediationHintDomain:  hintDomain,
-			Bypass:                          true,
+			Enabled:                                  false,
+			Mode:                                     ReadinessAdmissionModeFailFast,
+			BlockOn:                                  ReadinessAdmissionBlockOnBlockedOnly,
+			DegradedPolicy:                           ReadinessAdmissionDegradedPolicyAllowAndRecord,
+			Outcome:                                  ReadinessAdmissionOutcomeAllow,
+			ReasonCode:                               ReadinessAdmissionCodeManagerNotReady,
+			ReadinessStatus:                          ReadinessStatusBlocked,
+			ReadinessPrimaryDomain:                   ReadinessDomainRuntime,
+			ReadinessPrimaryCode:                     ReadinessAdmissionCodeManagerNotReady,
+			ReadinessPrimarySource:                   RuntimePrimarySourceAdmission,
+			ReadinessArbitrationRuleVersion:          strings.TrimSpace(defaultResolved.EffectiveVersion),
+			ReadinessArbitrationRuleRequestedVersion: strings.TrimSpace(defaultResolved.RequestedVersion),
+			ReadinessArbitrationRuleEffectiveVersion: strings.TrimSpace(defaultResolved.EffectiveVersion),
+			ReadinessArbitrationRuleVersionSource:    strings.TrimSpace(defaultResolved.VersionSource),
+			ReadinessArbitrationRulePolicyAction:     strings.TrimSpace(defaultResolved.PolicyAction),
+			ReadinessArbitrationRuleUnsupportedTotal: defaultResolved.UnsupportedTotal,
+			ReadinessArbitrationRuleMismatchTotal:    defaultResolved.MismatchTotal,
+			ReadinessRemediationHintCode:             hintCode,
+			ReadinessRemediationHintDomain:           hintDomain,
+			Bypass:                                   true,
 		}
 	}
 
-	cfg := m.EffectiveConfig().Runtime.Readiness.Admission
+	runtimeCfg := m.EffectiveConfig().Runtime
+	resolvedVersion, _ := ResolveArbitrationRuleVersion(runtimeCfg.Arbitration.Version, requestedRuleVersion)
+	cfg := runtimeCfg.Readiness.Admission
 	hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeBypassDisabled)
 	decision := ReadinessAdmissionDecision{
-		Enabled:                         cfg.Enabled,
-		Mode:                            normalizeReadinessAdmissionMode(cfg.Mode),
-		BlockOn:                         normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
-		DegradedPolicy:                  normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
-		Outcome:                         ReadinessAdmissionOutcomeAllow,
-		ReasonCode:                      ReadinessAdmissionCodeBypassDisabled,
-		ReadinessStatus:                 ReadinessStatusReady,
-		ReadinessPrimaryDomain:          ReadinessDomainRuntime,
-		ReadinessPrimaryCode:            ReadinessAdmissionCodeBypassDisabled,
-		ReadinessPrimarySource:          RuntimePrimarySourceAdmission,
-		ReadinessArbitrationRuleVersion: RuntimeArbitrationRuleVersionA49V1,
-		ReadinessRemediationHintCode:    hintCode,
-		ReadinessRemediationHintDomain:  hintDomain,
-		Bypass:                          true,
+		Enabled:                                  cfg.Enabled,
+		Mode:                                     normalizeReadinessAdmissionMode(cfg.Mode),
+		BlockOn:                                  normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
+		DegradedPolicy:                           normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
+		Outcome:                                  ReadinessAdmissionOutcomeAllow,
+		ReasonCode:                               ReadinessAdmissionCodeBypassDisabled,
+		ReadinessStatus:                          ReadinessStatusReady,
+		ReadinessPrimaryDomain:                   ReadinessDomainRuntime,
+		ReadinessPrimaryCode:                     ReadinessAdmissionCodeBypassDisabled,
+		ReadinessPrimarySource:                   RuntimePrimarySourceAdmission,
+		ReadinessArbitrationRuleVersion:          strings.TrimSpace(resolvedVersion.EffectiveVersion),
+		ReadinessArbitrationRuleRequestedVersion: strings.TrimSpace(resolvedVersion.RequestedVersion),
+		ReadinessArbitrationRuleEffectiveVersion: strings.TrimSpace(resolvedVersion.EffectiveVersion),
+		ReadinessArbitrationRuleVersionSource:    strings.TrimSpace(resolvedVersion.VersionSource),
+		ReadinessArbitrationRulePolicyAction:     strings.TrimSpace(resolvedVersion.PolicyAction),
+		ReadinessArbitrationRuleUnsupportedTotal: resolvedVersion.UnsupportedTotal,
+		ReadinessArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
+		ReadinessRemediationHintCode:             hintCode,
+		ReadinessRemediationHintDomain:           hintDomain,
+		Bypass:                                   true,
 	}
 	if !decision.Enabled {
 		return decision
 	}
 
-	preflight := m.ReadinessPreflight()
+	preflight := m.ReadinessPreflightWithRequest(requestedRuleVersion)
 	summary := preflight.Summary()
 	decision.Bypass = false
 	decision.ReadinessStatus = preflight.Status
@@ -374,6 +452,12 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 	decision.ReadinessSecondaryReasonCodes = cloneStringSlice(summary.SecondaryReasonCodes)
 	decision.ReadinessSecondaryReasonCount = summary.SecondaryReasonCount
 	decision.ReadinessArbitrationRuleVersion = strings.TrimSpace(summary.ArbitrationRuleVersion)
+	decision.ReadinessArbitrationRuleRequestedVersion = strings.TrimSpace(summary.ArbitrationRuleRequestedVersion)
+	decision.ReadinessArbitrationRuleEffectiveVersion = strings.TrimSpace(summary.ArbitrationRuleEffectiveVersion)
+	decision.ReadinessArbitrationRuleVersionSource = strings.TrimSpace(summary.ArbitrationRuleVersionSource)
+	decision.ReadinessArbitrationRulePolicyAction = strings.TrimSpace(summary.ArbitrationRulePolicyAction)
+	decision.ReadinessArbitrationRuleUnsupportedTotal = summary.ArbitrationRuleUnsupportedTotal
+	decision.ReadinessArbitrationRuleMismatchTotal = summary.ArbitrationRuleMismatchTotal
 	decision.ReadinessRemediationHintCode = strings.TrimSpace(summary.RemediationHintCode)
 	decision.ReadinessRemediationHintDomain = strings.TrimSpace(summary.RemediationHintDomain)
 	switch preflight.Status {
@@ -405,7 +489,16 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 		decision.ReadinessPrimarySource = RuntimePrimarySourceAdmission
 	}
 	if decision.ReadinessArbitrationRuleVersion == "" {
-		decision.ReadinessArbitrationRuleVersion = RuntimeArbitrationRuleVersionA49V1
+		decision.ReadinessArbitrationRuleVersion = strings.TrimSpace(resolvedVersion.EffectiveVersion)
+	}
+	if decision.ReadinessArbitrationRuleEffectiveVersion == "" {
+		decision.ReadinessArbitrationRuleEffectiveVersion = strings.TrimSpace(decision.ReadinessArbitrationRuleVersion)
+	}
+	if decision.ReadinessArbitrationRulePolicyAction == "" {
+		decision.ReadinessArbitrationRulePolicyAction = RuntimeArbitrationPolicyActionNone
+	}
+	if decision.Outcome == ReadinessAdmissionOutcomeDeny && isArbitrationVersionFindingCode(decision.ReadinessPrimaryCode) {
+		decision.ReasonCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
 	}
 	if decision.ReadinessRemediationHintCode == "" && decision.ReadinessPrimaryCode != "" {
 		hintCode, hintDomain := mustRemediationHintForPrimaryCode(decision.ReadinessPrimaryCode)
@@ -429,7 +522,11 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 			summary.DegradedTotal++
 		}
 	}
-	primary := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{ReadinessFindings: r.Findings})
+	primary := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings:    r.Findings,
+		RequestedRuleVersion: r.ArbitrationRuleRequestedVersion,
+		VersionConfig:        r.arbitrationVersionConfig,
+	})
 	summary.PrimaryDomain = strings.TrimSpace(primary.Domain)
 	summary.PrimaryCode = strings.TrimSpace(primary.Code)
 	summary.PrimarySource = strings.TrimSpace(primary.Source)
@@ -437,8 +534,35 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 	summary.SecondaryReasonCodes = cloneStringSlice(primary.SecondaryCodes)
 	summary.SecondaryReasonCount = primary.SecondaryCount
 	summary.ArbitrationRuleVersion = strings.TrimSpace(primary.RuleVersion)
+	summary.ArbitrationRuleRequestedVersion = strings.TrimSpace(primary.RuleRequestedVersion)
+	summary.ArbitrationRuleEffectiveVersion = strings.TrimSpace(primary.RuleEffectiveVersion)
+	summary.ArbitrationRuleVersionSource = strings.TrimSpace(primary.RuleVersionSource)
+	summary.ArbitrationRulePolicyAction = strings.TrimSpace(primary.RulePolicyAction)
+	summary.ArbitrationRuleUnsupportedTotal = primary.RuleUnsupportedTotal
+	summary.ArbitrationRuleMismatchTotal = primary.RuleMismatchTotal
 	summary.RemediationHintCode = strings.TrimSpace(primary.RemediationHintCode)
 	summary.RemediationHintDomain = strings.TrimSpace(primary.RemediationHintDomain)
+	if summary.ArbitrationRuleVersion == "" {
+		summary.ArbitrationRuleVersion = strings.TrimSpace(r.ArbitrationRuleEffectiveVersion)
+	}
+	if summary.ArbitrationRuleRequestedVersion == "" {
+		summary.ArbitrationRuleRequestedVersion = strings.TrimSpace(r.ArbitrationRuleRequestedVersion)
+	}
+	if summary.ArbitrationRuleEffectiveVersion == "" {
+		summary.ArbitrationRuleEffectiveVersion = strings.TrimSpace(r.ArbitrationRuleEffectiveVersion)
+	}
+	if summary.ArbitrationRuleVersionSource == "" {
+		summary.ArbitrationRuleVersionSource = strings.TrimSpace(r.ArbitrationRuleVersionSource)
+	}
+	if summary.ArbitrationRulePolicyAction == "" {
+		summary.ArbitrationRulePolicyAction = strings.TrimSpace(r.ArbitrationRulePolicyAction)
+	}
+	if summary.ArbitrationRuleUnsupportedTotal == 0 {
+		summary.ArbitrationRuleUnsupportedTotal = r.ArbitrationRuleUnsupportedTotal
+	}
+	if summary.ArbitrationRuleMismatchTotal == 0 {
+		summary.ArbitrationRuleMismatchTotal = r.ArbitrationRuleMismatchTotal
+	}
 	if strings.TrimSpace(summary.Status) == "" {
 		summary.Status = string(ReadinessStatusReady)
 	}
@@ -733,6 +857,46 @@ func adapterHealthReadinessFinding(target AdapterHealthTarget, probeResult adapt
 			Message:  message,
 			Metadata: metadata,
 		}, true
+	}
+}
+
+func readinessFindingForArbitrationVersionError(err error, resolved ArbitrationRuleVersionResolution) (ReadinessFinding, bool) {
+	typed, ok := err.(*ArbitrationRuleVersionError)
+	if !ok {
+		return ReadinessFinding{}, false
+	}
+	code := ReadinessCodeArbitrationVersionUnsupported
+	message := "requested arbitration rule version is unsupported"
+	if typed.Code == ArbitrationRuleVersionErrorMismatch {
+		code = ReadinessCodeArbitrationVersionMismatch
+		message = "requested arbitration rule version mismatches compatibility window"
+	}
+	if detail := strings.TrimSpace(typed.Message); detail != "" {
+		message = detail
+	}
+	metadata := map[string]any{
+		"runtime_arbitration_rule_requested_version": strings.TrimSpace(resolved.RequestedVersion),
+		"runtime_arbitration_rule_effective_version": strings.TrimSpace(resolved.EffectiveVersion),
+		"runtime_arbitration_rule_version_source":    strings.TrimSpace(resolved.VersionSource),
+		"runtime_arbitration_rule_policy_action":     strings.TrimSpace(resolved.PolicyAction),
+		"runtime_arbitration_rule_unsupported_total": resolved.UnsupportedTotal,
+		"runtime_arbitration_rule_mismatch_total":    resolved.MismatchTotal,
+	}
+	return ReadinessFinding{
+		Code:     code,
+		Domain:   ReadinessDomainRuntime,
+		Severity: ReadinessSeverityError,
+		Message:  message,
+		Metadata: metadata,
+	}, true
+}
+
+func isArbitrationVersionFindingCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case ReadinessCodeArbitrationVersionUnsupported, ReadinessCodeArbitrationVersionMismatch:
+		return true
+	default:
+		return false
 	}
 }
 

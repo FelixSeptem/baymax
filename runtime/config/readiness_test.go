@@ -696,6 +696,80 @@ func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
 	}
 }
 
+func TestManagerReadinessPreflightWithRequestArbitrationVersionUnsupported(t *testing.T) {
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A50_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	result := mgr.ReadinessPreflightWithRequest("a77.v9")
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeArbitrationVersionUnsupported)
+	summary := result.Summary()
+	if summary.PrimaryDomain != ReadinessDomainRuntime ||
+		summary.PrimaryCode != ReadinessCodeArbitrationVersionUnsupported ||
+		summary.PrimarySource != RuntimePrimarySourceArbitration ||
+		summary.ArbitrationRuleVersion != "" ||
+		summary.ArbitrationRuleRequestedVersion != "a77.v9" ||
+		summary.ArbitrationRuleEffectiveVersion != "" ||
+		summary.ArbitrationRuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
+		summary.ArbitrationRulePolicyAction != RuntimeArbitrationPolicyActionFailFastUnsupported ||
+		summary.ArbitrationRuleUnsupportedTotal != 1 ||
+		summary.ArbitrationRuleMismatchTotal != 0 {
+		t.Fatalf("a50 preflight summary mismatch: %#v", summary)
+	}
+}
+
+func TestManagerReadinessAdmissionWithRequestArbitrationVersionMismatchDeny(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a50.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+  arbitration:
+    version:
+      enabled: true
+      default: a49.v1
+      compat_window: 0
+      on_unsupported: fail_fast
+      on_mismatch: fail_fast
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A50_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	decision := mgr.EvaluateReadinessAdmissionWithRequest(RuntimeArbitrationRuleVersionA48V1)
+	if decision.Outcome != ReadinessAdmissionOutcomeDeny ||
+		decision.ReasonCode != ReadinessCodeArbitrationVersionMismatch ||
+		decision.ReadinessStatus != ReadinessStatusBlocked ||
+		decision.ReadinessPrimaryDomain != ReadinessDomainRuntime ||
+		decision.ReadinessPrimaryCode != ReadinessCodeArbitrationVersionMismatch ||
+		decision.ReadinessPrimarySource != RuntimePrimarySourceArbitration ||
+		decision.ReadinessArbitrationRuleVersion != "" ||
+		decision.ReadinessArbitrationRuleRequestedVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		decision.ReadinessArbitrationRuleEffectiveVersion != "" ||
+		decision.ReadinessArbitrationRuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
+		decision.ReadinessArbitrationRulePolicyAction != RuntimeArbitrationPolicyActionFailFastMismatch ||
+		decision.ReadinessArbitrationRuleUnsupportedTotal != 0 ||
+		decision.ReadinessArbitrationRuleMismatchTotal != 1 ||
+		decision.ReadinessRemediationHintCode != "runtime.align_arbitration_compat_window" ||
+		decision.ReadinessRemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("a50 admission mismatch deny decision: %#v", decision)
+	}
+}
+
 func assertReadinessFindingCode(t *testing.T, findings []ReadinessFinding, code string) {
 	t.Helper()
 	for i := range findings {

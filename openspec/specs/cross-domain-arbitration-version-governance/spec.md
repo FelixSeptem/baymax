@@ -1,5 +1,8 @@
-## ADDED Requirements
+# cross-domain-arbitration-version-governance Specification
 
+## Purpose
+TBD - created by archiving change introduce-arbitration-rule-version-governance-and-compatibility-contract-a50. Update Purpose after archive.
+## Requirements
 ### Requirement: Runtime SHALL resolve arbitration rule version deterministically
 Runtime MUST resolve arbitration rule version deterministically for each decision window and MUST expose requested/effective/source version metadata.
 
@@ -38,3 +41,4 @@ For equivalent inputs, equivalent effective configuration, and equivalent versio
 #### Scenario: Equivalent version-governance events are replayed
 - **WHEN** recorder replays duplicate version-governance arbitration events for one run
 - **THEN** logical version-governance aggregates remain stable after first ingestion
+

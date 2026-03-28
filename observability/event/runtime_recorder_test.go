@@ -869,6 +869,117 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a50-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(50),
+			"a50_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 50 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.RuntimeArbitrationRuleRequestedVersion != "" ||
+		got.RuntimeArbitrationRuleEffectiveVersion != "" ||
+		got.RuntimeArbitrationRuleVersionSource != "" ||
+		got.RuntimeArbitrationRulePolicyAction != "" ||
+		got.RuntimeArbitrationRuleUnsupportedTotal != 0 ||
+		got.RuntimeArbitrationRuleMismatchTotal != 0 {
+		t.Fatalf("missing A50 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderParsesA50ArbitrationVersionGovernanceFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a50-governance",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status": "failed",
+			"runtime_arbitration_rule_requested_version": "a77.v9",
+			"runtime_arbitration_rule_effective_version": "",
+			"runtime_arbitration_rule_version_source":    "requested",
+			"runtime_arbitration_rule_policy_action":     "fail_fast_unsupported_version",
+			"runtime_arbitration_rule_unsupported_total": 1,
+			"runtime_arbitration_rule_mismatch_total":    0,
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.RuntimeArbitrationRuleRequestedVersion != "a77.v9" ||
+		got.RuntimeArbitrationRuleEffectiveVersion != "" ||
+		got.RuntimeArbitrationRuleVersionSource != "requested" ||
+		got.RuntimeArbitrationRulePolicyAction != "fail_fast_unsupported_version" ||
+		got.RuntimeArbitrationRuleUnsupportedTotal != 1 ||
+		got.RuntimeArbitrationRuleMismatchTotal != 0 {
+		t.Fatalf("A50 governance parsing mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA41ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

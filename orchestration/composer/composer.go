@@ -280,6 +280,12 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	ArbitrationRuleRequestedVersion      string
+	ArbitrationRuleEffectiveVersion      string
+	ArbitrationRuleVersionSource         string
+	ArbitrationRulePolicyAction          string
+	ArbitrationRuleUnsupportedTotal      int
+	ArbitrationRuleMismatchTotal         int
 	EffectiveOperationProfile            string
 	TimeoutResolutionSource              string
 	TimeoutResolutionTrace               string
@@ -914,6 +920,20 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 		if summary.ArbitrationRuleVersion != "" {
 			payload["runtime_arbitration_rule_version"] = summary.ArbitrationRuleVersion
 		}
+		if summary.ArbitrationRuleRequestedVersion != "" {
+			payload["runtime_arbitration_rule_requested_version"] = summary.ArbitrationRuleRequestedVersion
+		}
+		if summary.ArbitrationRuleEffectiveVersion != "" {
+			payload["runtime_arbitration_rule_effective_version"] = summary.ArbitrationRuleEffectiveVersion
+		}
+		if summary.ArbitrationRuleVersionSource != "" {
+			payload["runtime_arbitration_rule_version_source"] = summary.ArbitrationRuleVersionSource
+		}
+		if summary.ArbitrationRulePolicyAction != "" {
+			payload["runtime_arbitration_rule_policy_action"] = summary.ArbitrationRulePolicyAction
+		}
+		payload["runtime_arbitration_rule_unsupported_total"] = summary.ArbitrationRuleUnsupportedTotal
+		payload["runtime_arbitration_rule_mismatch_total"] = summary.ArbitrationRuleMismatchTotal
 		if summary.RemediationHintCode != "" {
 			payload["runtime_remediation_hint_code"] = summary.RemediationHintCode
 		}
@@ -940,12 +960,29 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["adapter_health_governance_primary_code"] = summary.AdapterHealthGovernancePrimaryCode
 		}
 	}
+	if strings.TrimSpace(stats.ArbitrationRuleRequestedVersion) != "" {
+		payload["runtime_arbitration_rule_requested_version"] = strings.TrimSpace(stats.ArbitrationRuleRequestedVersion)
+	}
+	if strings.TrimSpace(stats.ArbitrationRuleEffectiveVersion) != "" {
+		payload["runtime_arbitration_rule_effective_version"] = strings.TrimSpace(stats.ArbitrationRuleEffectiveVersion)
+	}
+	if strings.TrimSpace(stats.ArbitrationRuleVersionSource) != "" {
+		payload["runtime_arbitration_rule_version_source"] = strings.TrimSpace(stats.ArbitrationRuleVersionSource)
+	}
+	if strings.TrimSpace(stats.ArbitrationRulePolicyAction) != "" {
+		payload["runtime_arbitration_rule_policy_action"] = strings.TrimSpace(stats.ArbitrationRulePolicyAction)
+	}
+	payload["runtime_arbitration_rule_unsupported_total"] = stats.ArbitrationRuleUnsupportedTotal
+	payload["runtime_arbitration_rule_mismatch_total"] = stats.ArbitrationRuleMismatchTotal
+	cfg := c.effectiveConfig()
 	primary := runtimeconfig.ArbitratePrimaryReason(runtimeconfig.PrimaryReasonArbitrationInput{
 		TimeoutParentBudgetRejectTotal: stats.TimeoutParentBudgetReject,
 		TimeoutParentBudgetClampTotal:  stats.TimeoutParentBudgetClamp,
 		TimeoutExhaustedTotal:          stats.AsyncTimeoutTotal,
 		TimeoutResolutionSource:        stats.TimeoutResolutionSource,
 		ReadinessFindings:              readinessFindings,
+		RequestedRuleVersion:           strings.TrimSpace(stats.ArbitrationRuleRequestedVersion),
+		VersionConfig:                  cfg.Runtime.Arbitration.Version,
 	})
 	if strings.TrimSpace(primary.Domain) != "" {
 		payload["runtime_primary_domain"] = strings.TrimSpace(primary.Domain)
@@ -964,6 +1001,20 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if strings.TrimSpace(primary.RuleVersion) != "" {
 		payload["runtime_arbitration_rule_version"] = strings.TrimSpace(primary.RuleVersion)
 	}
+	if strings.TrimSpace(primary.RuleRequestedVersion) != "" {
+		payload["runtime_arbitration_rule_requested_version"] = strings.TrimSpace(primary.RuleRequestedVersion)
+	}
+	if strings.TrimSpace(primary.RuleEffectiveVersion) != "" {
+		payload["runtime_arbitration_rule_effective_version"] = strings.TrimSpace(primary.RuleEffectiveVersion)
+	}
+	if strings.TrimSpace(primary.RuleVersionSource) != "" {
+		payload["runtime_arbitration_rule_version_source"] = strings.TrimSpace(primary.RuleVersionSource)
+	}
+	if strings.TrimSpace(primary.RulePolicyAction) != "" {
+		payload["runtime_arbitration_rule_policy_action"] = strings.TrimSpace(primary.RulePolicyAction)
+	}
+	payload["runtime_arbitration_rule_unsupported_total"] = primary.RuleUnsupportedTotal
+	payload["runtime_arbitration_rule_mismatch_total"] = primary.RuleMismatchTotal
 	if strings.TrimSpace(primary.RemediationHintCode) != "" {
 		payload["runtime_remediation_hint_code"] = strings.TrimSpace(primary.RemediationHintCode)
 	}

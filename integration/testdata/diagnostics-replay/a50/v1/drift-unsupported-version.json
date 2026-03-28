@@ -1,0 +1,63 @@
+{
+  "version": "a50.v1",
+  "cases": [
+    {
+      "name": "unsupported_version_drift_case",
+      "run": {
+        "runtime_primary_domain": "scheduler",
+        "runtime_primary_code": "scheduler.backend.fallback",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [],
+        "runtime_secondary_reason_count": 0,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_arbitration_rule_requested_version": "",
+        "runtime_arbitration_rule_effective_version": "a49.v1",
+        "runtime_arbitration_rule_version_source": "default",
+        "runtime_arbitration_rule_policy_action": "none",
+        "runtime_arbitration_rule_unsupported_total": 0,
+        "runtime_arbitration_rule_mismatch_total": 0,
+        "runtime_remediation_hint_code": "scheduler.recover_backend",
+        "runtime_remediation_hint_domain": "scheduler"
+      },
+      "stream": {
+        "runtime_primary_domain": "runtime",
+        "runtime_primary_code": "runtime.arbitration.version.unsupported",
+        "runtime_primary_source": "runtime.arbitration.version",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [],
+        "runtime_secondary_reason_count": 0,
+        "runtime_arbitration_rule_version": "",
+        "runtime_arbitration_rule_requested_version": "a77.v9",
+        "runtime_arbitration_rule_effective_version": "",
+        "runtime_arbitration_rule_version_source": "requested",
+        "runtime_arbitration_rule_policy_action": "fail_fast_unsupported_version",
+        "runtime_arbitration_rule_unsupported_total": 1,
+        "runtime_arbitration_rule_mismatch_total": 0,
+        "runtime_remediation_hint_code": "runtime.select_supported_arbitration_version",
+        "runtime_remediation_hint_domain": "runtime"
+      },
+      "expected": {
+        "runtime_primary_domain": "runtime",
+        "runtime_primary_code": "runtime.arbitration.version.unsupported",
+        "runtime_primary_source": "runtime.arbitration.version",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_codes": [],
+        "runtime_secondary_reason_count": 0,
+        "runtime_arbitration_rule_version": "",
+        "runtime_arbitration_rule_requested_version": "a77.v9",
+        "runtime_arbitration_rule_effective_version": "",
+        "runtime_arbitration_rule_version_source": "requested",
+        "runtime_arbitration_rule_policy_action": "fail_fast_unsupported_version",
+        "runtime_arbitration_rule_unsupported_total": 1,
+        "runtime_arbitration_rule_mismatch_total": 0,
+        "runtime_remediation_hint_code": "runtime.select_supported_arbitration_version",
+        "runtime_remediation_hint_domain": "runtime"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -2245,6 +2245,56 @@ reload:
 	}
 }
 
+func TestManagerRuntimeArbitrationVersionInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  arbitration:
+    version:
+      enabled: true
+      default: a49.v1
+      compat_window: 1
+      on_unsupported: fail_fast
+      on_mismatch: fail_fast
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.Arbitration.Version.OnMismatch
+	if before != RuntimeArbitrationVersionMismatchPolicyFailFast {
+		t.Fatalf("before runtime.arbitration.version.on_mismatch = %q, want %q", before, RuntimeArbitrationVersionMismatchPolicyFailFast)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  arbitration:
+    version:
+      enabled: true
+      default: a49.v1
+      compat_window: 1
+      on_unsupported: fail_fast
+      on_mismatch: best_effort
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Arbitration.Version.OnMismatch
+	if after != before {
+		t.Fatalf("invalid arbitration version reload should rollback, on_mismatch = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerAdapterHealthInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

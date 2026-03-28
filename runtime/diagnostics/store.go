@@ -207,6 +207,12 @@ type RunRecord struct {
 	RuntimeSecondaryReasonCodes                 []string                          `json:"runtime_secondary_reason_codes,omitempty"`
 	RuntimeSecondaryReasonCount                 int                               `json:"runtime_secondary_reason_count,omitempty"`
 	RuntimeArbitrationRuleVersion               string                            `json:"runtime_arbitration_rule_version,omitempty"`
+	RuntimeArbitrationRuleRequestedVersion      string                            `json:"runtime_arbitration_rule_requested_version,omitempty"`
+	RuntimeArbitrationRuleEffectiveVersion      string                            `json:"runtime_arbitration_rule_effective_version,omitempty"`
+	RuntimeArbitrationRuleVersionSource         string                            `json:"runtime_arbitration_rule_version_source,omitempty"`
+	RuntimeArbitrationRulePolicyAction          string                            `json:"runtime_arbitration_rule_policy_action,omitempty"`
+	RuntimeArbitrationRuleUnsupportedTotal      int                               `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
+	RuntimeArbitrationRuleMismatchTotal         int                               `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
 	RuntimeRemediationHintCode                  string                            `json:"runtime_remediation_hint_code,omitempty"`
 	RuntimeRemediationHintDomain                string                            `json:"runtime_remediation_hint_domain,omitempty"`
 	RuntimeReadinessPrimaryCode                 string                            `json:"runtime_readiness_primary_code,omitempty"`

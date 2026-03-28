@@ -19,8 +19,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档并稳定：A4-A48（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口、A48 cross-domain primary reason arbitration 收口）。
 - 已完成待归档：
   - `introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49`
-- 进行中：
   - `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`
+- 进行中：
+  - `introduce-sandbox-execution-isolation-contract-a51`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -274,14 +275,21 @@ A49 当前落地（实施中）：
 - `tool/diagnosticsreplay` arbitration fixture 已升级支持 `version=a49.v1`，新增 drift 分类：`secondary_order_drift`、`secondary_count_drift`、`hint_taxonomy_drift`、`rule_version_drift`。
 - quality gate readiness 套件已纳入 A49 parser-compatibility 回归（shell/PowerShell parity）。
 
-### P1：A50 arbitration version governance + compatibility（进行中）
+### P1：A50 arbitration version governance + compatibility（已完成待归档）
 
 A50 目标：
 - 固化 arbitration rule version 解析与 compatibility window 契约（requested/default/effective/source）。
 - 统一 unsupported/mismatch 策略（默认 fail-fast），并贯通 readiness preflight 与 admission guard。
 - 将 cross-version drift（`version_mismatch`、`unsupported_version`、`cross_version_semantic_drift`）纳入 replay + quality gate 阻断。
 
-### P1：A51 sandbox execution isolation contract（候选，待 OpenSpec 立项）
+A50 当前落地（已完成）：
+- `runtime/config` 已新增 `runtime.arbitration.version.*` 配置域（`enabled/default/compat_window/on_unsupported/on_mismatch`），并接入 `env > file > default`、启动 fail-fast 校验、热更新非法回滚。
+- cross-domain arbitration/readiness/admission 已接入 version resolver，unsupported/mismatch 在 fail-fast 策略下保持 deterministic deny 与 explainability 透传（requested/effective/source/policy/counters）。
+- `runtime/diagnostics` 与 `observability/event.RuntimeRecorder` 已接入 A50 additive 字段：`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`。
+- `tool/diagnosticsreplay` arbitration fixture 已升级支持 `version=a50.v1`，并新增 drift 分类：`version_mismatch`、`unsupported_version`、`cross_version_semantic_drift`，同时保持 `a48/a49` 向后兼容。
+- 新增 A50 integration suites（Run/Stream parity、memory/file parity、replay parity），并已纳入 `check-quality-gate.sh/.ps1` 阻断步骤。
+
+### P1：A51 sandbox execution isolation contract（进行中）
 
 A51 Why now：
 - 当前 S2-S4 已覆盖权限/限流/IO 过滤与 deny 告警投递，但本地工具执行仍以 in-process 为主，缺少“执行隔离”契约层。

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-27 10:12:12
+Updated: 2026-03-28 11:28:37
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -99,3 +99,4 @@ Updated: 2026-03-27 10:12:12
 - 095 -> introduce-readiness-timeout-health-replay-fixture-gate-contract-a47
 - 096 -> introduce-cross-domain-primary-reason-arbitration-contract-a48
 - 097 -> introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49
+- 098 -> introduce-arbitration-rule-version-governance-and-compatibility-contract-a50

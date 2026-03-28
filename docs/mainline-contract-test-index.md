@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-26
+更新时间：2026-03-27
 
 ## 目标
 
@@ -94,7 +94,7 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Task Board Manual Control A39 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-multi-agent-shared-contract.ps1` |
 | Runtime Readiness Preflight A40 Classification + Strict | `runtime/config/readiness_test.go::TestManagerReadinessPreflightClassificationMatrix` | `runtime/config/readiness_test.go::TestManagerReadinessPreflightStrictEscalation` |
 | Runtime Readiness A40 Determinism + Composer Parity | `integration/runtime_readiness_contract_test.go::TestRuntimeReadinessContractDeterministicAndComposerParity` | `orchestration/composer/composer_test.go::TestComposerReadinessPreflightPassthroughAndReadOnly` |
-| Runtime Readiness A40/A49 Diagnostics Additive + Replay | `runtime/diagnostics/store_test.go::TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault`、`observability/event/runtime_recorder_test.go::TestRuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault` |
+| Runtime Readiness A40/A49/A50 Diagnostics Additive + Replay | `runtime/diagnostics/store_test.go::TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent`、`runtime/diagnostics/store_test.go::TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault`、`observability/event/runtime_recorder_test.go::TestRuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault`、`observability/event/runtime_recorder_test.go::TestRuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault` |
 | Runtime Readiness A40 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Adapter Health Probe A43 Core Taxonomy + Timeout/Cache | `adapter/health/health_test.go::TestRunnerProbeCacheReuseWithinTTL` | `adapter/health/health_test.go::TestRunnerProbeTimeoutClassification` |
 | Adapter Health A43 Runtime Config + Readiness Mapping | `runtime/config/config_test.go::TestAdapterHealthConfigEnvOverridePrecedence`、`runtime/config/readiness_test.go::TestManagerReadinessPreflightAdapterHealthRequiredOptionalMapping` | `runtime/config/manager_test.go::TestManagerAdapterHealthInvalidReloadRollsBack`、`runtime/config/readiness_test.go::TestManagerReadinessPreflightAdapterHealthStrictRequiredUnavailableBlocked` |
@@ -127,6 +127,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Cross-Domain Arbitration Explainability A49 Run/Stream Admission Parity | `integration/runtime_readiness_admission_contract_test.go::TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSideEffects` | `integration/runtime_readiness_admission_contract_test.go::TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity` |
 | Cross-Domain Arbitration Explainability A49 Replay Drift Guard | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | Cross-Domain Arbitration Explainability A49 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Arbitration Version Governance A50 Resolver + Fail-Fast Mapping | `runtime/config/primary_reason_arbitration_test.go::TestArbitratePrimaryReasonIncludesVersionGovernanceTraceability`、`runtime/config/readiness_test.go::TestManagerReadinessPreflightWithRequestArbitrationVersionUnsupported` | `runtime/config/primary_reason_arbitration_test.go::TestArbitratePrimaryReasonUnsupportedVersionFailFast`、`runtime/config/primary_reason_arbitration_test.go::TestArbitratePrimaryReasonCompatibilityMismatchFailFast` |
+| Arbitration Version Governance A50 Run/Stream + Memory/File Parity | `integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractRunStreamParitySupportedRequested`、`integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractMemoryFileParity` | `integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast` |
+| Arbitration Version Governance A50 Replay Drift Guard | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| Arbitration Version Governance A50 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
 | Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
 | Mailbox Contract A30 Backend Parity + Restore Determinism | `integration/mailbox_contract_test.go::TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism` | `orchestration/mailbox/mailbox_test.go::TestMailboxSnapshotRestoreMemoryFileParity` |

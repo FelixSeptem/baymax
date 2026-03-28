@@ -1,12 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${GOCACHE:-}" ]]; then
-  export GOCACHE="$(pwd)/.gocache"
-fi
-if [[ -z "${GOLANGCI_LINT_CACHE:-}" ]]; then
-  export GOLANGCI_LINT_CACHE="$(pwd)/.gocache/golangci-lint"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+is_writable_dir() {
+  local path="${1:-}"
+  [[ -n "${path}" ]] || return 1
+  mkdir -p "${path}" 2>/dev/null || return 1
+  local probe="${path}/._write_probe_$$"
+  : > "${probe}" 2>/dev/null || return 1
+  rm -f "${probe}" 2>/dev/null || true
+  return 0
+}
+
+ensure_writable_cache_env() {
+  local env_name="$1"
+  local fallback_path="$2"
+  local current="${!env_name:-}"
+  if is_writable_dir "${current}"; then
+    return 0
+  fi
+  if ! is_writable_dir "${fallback_path}"; then
+    echo "[quality-gate] unable to prepare writable cache directory for ${env_name} at ${fallback_path}" >&2
+    exit 1
+  fi
+  export "${env_name}=${fallback_path}"
+}
+
+ensure_writable_cache_env "GOCACHE" "${REPO_ROOT}/.gocache"
+ensure_writable_cache_env "GOLANGCI_LINT_CACHE" "${REPO_ROOT}/.gocache/golangci-lint"
+
 if [[ -z "${GOPROXY:-}" ]]; then
   export GOPROXY="https://proxy.golang.org,direct"
 fi
@@ -41,8 +66,8 @@ if ! bash scripts/check-multi-agent-shared-contract.sh; then
   exit 1
 fi
 
-echo "[quality-gate] runtime readiness + explainability contract suites"
-if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1; then
+echo "[quality-gate] runtime readiness + explainability + version governance contract suites"
+if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1; then
   echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"
   exit 1
 fi

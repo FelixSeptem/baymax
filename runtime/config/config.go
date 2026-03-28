@@ -142,6 +142,11 @@ const (
 )
 
 const (
+	RuntimeArbitrationVersionUnsupportedPolicyFailFast = "fail_fast"
+	RuntimeArbitrationVersionMismatchPolicyFailFast    = "fail_fast"
+)
+
+const (
 	ComposerCollabAggregationAllSettled   = "all_settled"
 	ComposerCollabAggregationFirstSuccess = "first_success"
 	ComposerCollabFailurePolicyFailFast   = "fail_fast"
@@ -205,6 +210,7 @@ type Config struct {
 
 type RuntimeDomainConfig struct {
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
+	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
 }
 
@@ -1031,6 +1037,15 @@ func DefaultConfig() Config {
 					DegradedPolicy: ReadinessAdmissionDegradedPolicyAllowAndRecord,
 				},
 			},
+			Arbitration: RuntimeArbitrationConfig{
+				Version: RuntimeArbitrationVersionConfig{
+					Enabled:       true,
+					Default:       RuntimeArbitrationRuleVersionA49V1,
+					CompatWindow:  1,
+					OnUnsupported: RuntimeArbitrationVersionUnsupportedPolicyFailFast,
+					OnMismatch:    RuntimeArbitrationVersionMismatchPolicyFailFast,
+				},
+			},
 			OperationProfiles: RuntimeOperationProfilesConfig{
 				DefaultProfile: OperationProfileLegacy,
 				Legacy: RuntimeOperationProfileEntry{
@@ -1721,6 +1736,9 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeReadinessAdmission(cfg.Runtime.Readiness.Admission); err != nil {
+		return err
+	}
+	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
 		return err
 	}
 	if cfg.Adapter.Health.ProbeTimeout <= 0 {
@@ -3119,6 +3137,10 @@ func validateRuntimeReadinessAdmission(cfg RuntimeReadinessAdmissionConfig) erro
 	return nil
 }
 
+func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) error {
+	return ValidateRuntimeArbitrationVersionConfig(cfg)
+}
+
 func applyDefaults(v *viper.Viper) {
 	base := DefaultConfig()
 	v.SetDefault("mcp.active_profile", base.MCP.ActiveProfile)
@@ -3163,6 +3185,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.readiness.admission.mode", base.Runtime.Readiness.Admission.Mode)
 	v.SetDefault("runtime.readiness.admission.block_on", base.Runtime.Readiness.Admission.BlockOn)
 	v.SetDefault("runtime.readiness.admission.degraded_policy", base.Runtime.Readiness.Admission.DegradedPolicy)
+	v.SetDefault("runtime.arbitration.version.enabled", base.Runtime.Arbitration.Version.Enabled)
+	v.SetDefault("runtime.arbitration.version.default", base.Runtime.Arbitration.Version.Default)
+	v.SetDefault("runtime.arbitration.version.compat_window", base.Runtime.Arbitration.Version.CompatWindow)
+	v.SetDefault("runtime.arbitration.version.on_unsupported", base.Runtime.Arbitration.Version.OnUnsupported)
+	v.SetDefault("runtime.arbitration.version.on_mismatch", base.Runtime.Arbitration.Version.OnMismatch)
 	v.SetDefault("runtime.operation_profiles.default_profile", base.Runtime.OperationProfiles.DefaultProfile)
 	v.SetDefault("runtime.operation_profiles.legacy.timeout", base.Runtime.OperationProfiles.Legacy.Timeout)
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
@@ -3499,6 +3526,15 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Readiness.Admission.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.mode")))
 	cfg.Runtime.Readiness.Admission.BlockOn = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.block_on")))
 	cfg.Runtime.Readiness.Admission.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.degraded_policy")))
+	arbitrationVersionEnabled, err := strictBoolConfigValue(v, "runtime.arbitration.version.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Arbitration.Version.Enabled = arbitrationVersionEnabled
+	cfg.Runtime.Arbitration.Version.Default = strings.ToLower(strings.TrimSpace(v.GetString("runtime.arbitration.version.default")))
+	cfg.Runtime.Arbitration.Version.CompatWindow = v.GetInt("runtime.arbitration.version.compat_window")
+	cfg.Runtime.Arbitration.Version.OnUnsupported = strings.ToLower(strings.TrimSpace(v.GetString("runtime.arbitration.version.on_unsupported")))
+	cfg.Runtime.Arbitration.Version.OnMismatch = strings.ToLower(strings.TrimSpace(v.GetString("runtime.arbitration.version.on_mismatch")))
 	cfg.Runtime.OperationProfiles.DefaultProfile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.operation_profiles.default_profile")))
 	cfg.Runtime.OperationProfiles.Legacy.Timeout = v.GetDuration("runtime.operation_profiles.legacy.timeout")
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")

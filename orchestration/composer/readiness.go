@@ -36,7 +36,7 @@ func (c *Composer) guardReadinessAdmission(
 		runID = fmt.Sprintf("run-%d", resolveReadinessSnapshotTime(c.now).UnixNano())
 		req.RunID = runID
 	}
-	decision := c.runtimeMgr.EvaluateReadinessAdmission()
+	decision := c.runtimeMgr.EvaluateReadinessAdmissionWithRequest(strings.TrimSpace(req.ArbitrationRuleVersion))
 	c.recordReadinessAdmission(runID, decision)
 	if decision.Outcome != runtimeconfig.ReadinessAdmissionOutcomeDeny {
 		return req, nil, nil
@@ -55,17 +55,23 @@ func (c *Composer) guardReadinessAdmission(
 			Message:   msg,
 			Retryable: false,
 			Details: map[string]any{
-				"reason_code":                        strings.TrimSpace(decision.ReasonCode),
-				"runtime_readiness":                  string(decision.ReadinessStatus),
-				"readiness_primary_domain":           strings.TrimSpace(decision.ReadinessPrimaryDomain),
-				"readiness_primary_code":             strings.TrimSpace(decision.ReadinessPrimaryCode),
-				"readiness_primary_source":           strings.TrimSpace(decision.ReadinessPrimarySource),
-				"readiness_secondary_reason_codes":   append([]string(nil), decision.ReadinessSecondaryReasonCodes...),
-				"readiness_secondary_reason_count":   decision.ReadinessSecondaryReasonCount,
-				"readiness_arbitration_rule_version": strings.TrimSpace(decision.ReadinessArbitrationRuleVersion),
-				"readiness_remediation_hint_code":    strings.TrimSpace(decision.ReadinessRemediationHintCode),
-				"readiness_remediation_hint_domain":  strings.TrimSpace(decision.ReadinessRemediationHintDomain),
-				"admission_mode":                     strings.TrimSpace(decision.Mode),
+				"reason_code":                                  strings.TrimSpace(decision.ReasonCode),
+				"runtime_readiness":                            string(decision.ReadinessStatus),
+				"readiness_primary_domain":                     strings.TrimSpace(decision.ReadinessPrimaryDomain),
+				"readiness_primary_code":                       strings.TrimSpace(decision.ReadinessPrimaryCode),
+				"readiness_primary_source":                     strings.TrimSpace(decision.ReadinessPrimarySource),
+				"readiness_secondary_reason_codes":             append([]string(nil), decision.ReadinessSecondaryReasonCodes...),
+				"readiness_secondary_reason_count":             decision.ReadinessSecondaryReasonCount,
+				"readiness_arbitration_rule_version":           strings.TrimSpace(decision.ReadinessArbitrationRuleVersion),
+				"readiness_arbitration_rule_requested_version": strings.TrimSpace(decision.ReadinessArbitrationRuleRequestedVersion),
+				"readiness_arbitration_rule_effective_version": strings.TrimSpace(decision.ReadinessArbitrationRuleEffectiveVersion),
+				"readiness_arbitration_rule_version_source":    strings.TrimSpace(decision.ReadinessArbitrationRuleVersionSource),
+				"readiness_arbitration_rule_policy_action":     strings.TrimSpace(decision.ReadinessArbitrationRulePolicyAction),
+				"readiness_arbitration_rule_unsupported_total": decision.ReadinessArbitrationRuleUnsupportedTotal,
+				"readiness_arbitration_rule_mismatch_total":    decision.ReadinessArbitrationRuleMismatchTotal,
+				"readiness_remediation_hint_code":              strings.TrimSpace(decision.ReadinessRemediationHintCode),
+				"readiness_remediation_hint_domain":            strings.TrimSpace(decision.ReadinessRemediationHintDomain),
+				"admission_mode":                               strings.TrimSpace(decision.Mode),
 			},
 		},
 	}
@@ -83,6 +89,12 @@ func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig
 	stat := c.ensureRunStat(runID)
 	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
 	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	stat.ArbitrationRuleRequestedVersion = strings.TrimSpace(decision.ReadinessArbitrationRuleRequestedVersion)
+	stat.ArbitrationRuleEffectiveVersion = strings.TrimSpace(decision.ReadinessArbitrationRuleEffectiveVersion)
+	stat.ArbitrationRuleVersionSource = strings.TrimSpace(decision.ReadinessArbitrationRuleVersionSource)
+	stat.ArbitrationRulePolicyAction = strings.TrimSpace(decision.ReadinessArbitrationRulePolicyAction)
+	stat.ArbitrationRuleUnsupportedTotal = decision.ReadinessArbitrationRuleUnsupportedTotal
+	stat.ArbitrationRuleMismatchTotal = decision.ReadinessArbitrationRuleMismatchTotal
 	if decision.Bypass {
 		stat.ReadinessAdmissionBypassTotal++
 		return

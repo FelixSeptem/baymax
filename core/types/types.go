@@ -307,12 +307,13 @@ func DefaultMCPRuntimePolicy() MCPRuntimePolicy {
 }
 
 type RunRequest struct {
-	RunID        string                 `json:"run_id,omitempty"`
-	SessionID    string                 `json:"session_id,omitempty"`
-	Input        string                 `json:"input"`
-	Messages     []Message              `json:"messages,omitempty"`
-	Policy       *LoopPolicy            `json:"policy,omitempty"`
-	Capabilities CapabilityRequirements `json:"capabilities,omitempty"`
+	RunID                  string                 `json:"run_id,omitempty"`
+	SessionID              string                 `json:"session_id,omitempty"`
+	Input                  string                 `json:"input"`
+	Messages               []Message              `json:"messages,omitempty"`
+	Policy                 *LoopPolicy            `json:"policy,omitempty"`
+	Capabilities           CapabilityRequirements `json:"capabilities,omitempty"`
+	ArbitrationRuleVersion string                 `json:"arbitration_rule_version,omitempty"`
 }
 
 type RunResult struct {

@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	RuntimePrimarySourceReadiness = "runtime.readiness"
-	RuntimePrimarySourceAdapter   = "adapter.health"
-	RuntimePrimarySourceTimeout   = "timeout.resolution"
-	RuntimePrimarySourceAdmission = "runtime.readiness.admission"
+	RuntimePrimarySourceReadiness   = "runtime.readiness"
+	RuntimePrimarySourceAdapter     = "adapter.health"
+	RuntimePrimarySourceTimeout     = "timeout.resolution"
+	RuntimePrimarySourceAdmission   = "runtime.readiness.admission"
+	RuntimePrimarySourceArbitration = "runtime.arbitration.version"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 )
 
 const (
+	RuntimeArbitrationRuleVersionA48V1 = "a48.v1"
 	RuntimeArbitrationRuleVersionA49V1 = "a49.v1"
 	RuntimeArbitrationMaxSecondary     = 3
 )
@@ -30,6 +32,8 @@ type PrimaryReasonArbitrationInput struct {
 	TimeoutExhaustedTotal          int
 	TimeoutResolutionSource        string
 	ReadinessFindings              []ReadinessFinding
+	RequestedRuleVersion           string
+	VersionConfig                  RuntimeArbitrationVersionConfig
 }
 
 type PrimaryReasonArbitrationResult struct {
@@ -40,6 +44,12 @@ type PrimaryReasonArbitrationResult struct {
 	SecondaryCodes        []string
 	SecondaryCount        int
 	RuleVersion           string
+	RuleRequestedVersion  string
+	RuleEffectiveVersion  string
+	RuleVersionSource     string
+	RulePolicyAction      string
+	RuleUnsupportedTotal  int
+	RuleMismatchTotal     int
 	RemediationHintCode   string
 	RemediationHintDomain string
 }
@@ -52,10 +62,39 @@ type primaryReasonCandidate struct {
 }
 
 func ArbitratePrimaryReason(in PrimaryReasonArbitrationInput) PrimaryReasonArbitrationResult {
+	resolvedVersion, versionErr := ResolveArbitrationRuleVersion(in.VersionConfig, in.RequestedRuleVersion)
+	if versionErr != nil {
+		primaryCode := ReadinessCodeArbitrationVersionUnsupported
+		if typedErr, ok := versionErr.(*ArbitrationRuleVersionError); ok && typedErr.Code == ArbitrationRuleVersionErrorMismatch {
+			primaryCode = ReadinessCodeArbitrationVersionMismatch
+		}
+		hintCode, hintDomain := mustRemediationHintForPrimaryCode(primaryCode)
+		return PrimaryReasonArbitrationResult{
+			Domain:                ReadinessDomainRuntime,
+			Code:                  primaryCode,
+			Source:                RuntimePrimarySourceArbitration,
+			RuleVersion:           strings.TrimSpace(resolvedVersion.EffectiveVersion),
+			RuleRequestedVersion:  strings.TrimSpace(resolvedVersion.RequestedVersion),
+			RuleEffectiveVersion:  strings.TrimSpace(resolvedVersion.EffectiveVersion),
+			RuleVersionSource:     strings.TrimSpace(resolvedVersion.VersionSource),
+			RulePolicyAction:      strings.TrimSpace(resolvedVersion.PolicyAction),
+			RuleUnsupportedTotal:  resolvedVersion.UnsupportedTotal,
+			RuleMismatchTotal:     resolvedVersion.MismatchTotal,
+			RemediationHintCode:   hintCode,
+			RemediationHintDomain: hintDomain,
+		}
+	}
+
 	candidates := buildPrimaryReasonCandidates(in)
 	if len(candidates) == 0 {
 		return PrimaryReasonArbitrationResult{
-			RuleVersion: RuntimeArbitrationRuleVersionA49V1,
+			RuleVersion:          strings.TrimSpace(resolvedVersion.EffectiveVersion),
+			RuleRequestedVersion: strings.TrimSpace(resolvedVersion.RequestedVersion),
+			RuleEffectiveVersion: strings.TrimSpace(resolvedVersion.EffectiveVersion),
+			RuleVersionSource:    strings.TrimSpace(resolvedVersion.VersionSource),
+			RulePolicyAction:     strings.TrimSpace(resolvedVersion.PolicyAction),
+			RuleUnsupportedTotal: resolvedVersion.UnsupportedTotal,
+			RuleMismatchTotal:    resolvedVersion.MismatchTotal,
 		}
 	}
 
@@ -95,7 +134,13 @@ func ArbitratePrimaryReason(in PrimaryReasonArbitrationInput) PrimaryReasonArbit
 		ConflictTotal:         conflict,
 		SecondaryCodes:        secondary,
 		SecondaryCount:        secondaryTotal,
-		RuleVersion:           RuntimeArbitrationRuleVersionA49V1,
+		RuleVersion:           strings.TrimSpace(resolvedVersion.EffectiveVersion),
+		RuleRequestedVersion:  strings.TrimSpace(resolvedVersion.RequestedVersion),
+		RuleEffectiveVersion:  strings.TrimSpace(resolvedVersion.EffectiveVersion),
+		RuleVersionSource:     strings.TrimSpace(resolvedVersion.VersionSource),
+		RulePolicyAction:      strings.TrimSpace(resolvedVersion.PolicyAction),
+		RuleUnsupportedTotal:  resolvedVersion.UnsupportedTotal,
+		RuleMismatchTotal:     resolvedVersion.MismatchTotal,
 		RemediationHintCode:   hintCode,
 		RemediationHintDomain: hintDomain,
 	}
@@ -152,15 +197,17 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	RuntimePrimaryCodeTimeoutExhausted: {Code: "timeout.increase_effective_budget", Domain: "timeout"},
 	RuntimePrimaryCodeTimeoutClamped:   {Code: "timeout.adjust_parent_budget", Domain: "timeout"},
 
-	ReadinessCodeConfigInvalid:             {Code: "runtime.validate_config", Domain: "config"},
-	ReadinessCodeStrictEscalated:           {Code: "runtime.relax_strict_mode", Domain: "runtime"},
-	ReadinessCodeSchedulerFallback:         {Code: "scheduler.recover_backend", Domain: ReadinessDomainScheduler},
-	ReadinessCodeSchedulerActivationError:  {Code: "scheduler.fix_activation", Domain: ReadinessDomainScheduler},
-	ReadinessCodeMailboxFallback:           {Code: "mailbox.recover_backend", Domain: ReadinessDomainMailbox},
-	ReadinessCodeMailboxActivationError:    {Code: "mailbox.fix_activation", Domain: ReadinessDomainMailbox},
-	ReadinessCodeRecoveryFallback:          {Code: "recovery.recover_backend", Domain: ReadinessDomainRecovery},
-	ReadinessCodeRecoveryActivationError:   {Code: "recovery.fix_activation", Domain: ReadinessDomainRecovery},
-	ReadinessCodeRuntimeManagerUnavailable: {Code: "runtime.restart_manager", Domain: "runtime"},
+	ReadinessCodeConfigInvalid:                 {Code: "runtime.validate_config", Domain: "config"},
+	ReadinessCodeStrictEscalated:               {Code: "runtime.relax_strict_mode", Domain: "runtime"},
+	ReadinessCodeSchedulerFallback:             {Code: "scheduler.recover_backend", Domain: ReadinessDomainScheduler},
+	ReadinessCodeSchedulerActivationError:      {Code: "scheduler.fix_activation", Domain: ReadinessDomainScheduler},
+	ReadinessCodeMailboxFallback:               {Code: "mailbox.recover_backend", Domain: ReadinessDomainMailbox},
+	ReadinessCodeMailboxActivationError:        {Code: "mailbox.fix_activation", Domain: ReadinessDomainMailbox},
+	ReadinessCodeRecoveryFallback:              {Code: "recovery.recover_backend", Domain: ReadinessDomainRecovery},
+	ReadinessCodeRecoveryActivationError:       {Code: "recovery.fix_activation", Domain: ReadinessDomainRecovery},
+	ReadinessCodeRuntimeManagerUnavailable:     {Code: "runtime.restart_manager", Domain: "runtime"},
+	ReadinessCodeArbitrationVersionUnsupported: {Code: "runtime.select_supported_arbitration_version", Domain: "runtime"},
+	ReadinessCodeArbitrationVersionMismatch:    {Code: "runtime.align_arbitration_compat_window", Domain: "runtime"},
 
 	ReadinessCodeAdapterRequiredUnavailable: {Code: "adapter.restore_required", Domain: ReadinessDomainAdapter},
 	ReadinessCodeAdapterOptionalUnavailable: {Code: "adapter.restore_optional", Domain: ReadinessDomainAdapter},
@@ -284,6 +331,8 @@ func buildPrimaryReasonCandidates(in PrimaryReasonArbitrationInput) []primaryRea
 func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 	code := strings.TrimSpace(finding.Code)
 	switch code {
+	case ReadinessCodeArbitrationVersionUnsupported, ReadinessCodeArbitrationVersionMismatch:
+		return 1
 	case ReadinessCodeAdapterRequiredUnavailable, ReadinessCodeAdapterRequiredCircuitOpen:
 		return 3
 	case ReadinessCodeAdapterOptionalUnavailable, ReadinessCodeAdapterOptionalCircuitOpen, ReadinessCodeAdapterDegraded, ReadinessCodeAdapterHalfOpenDegraded:

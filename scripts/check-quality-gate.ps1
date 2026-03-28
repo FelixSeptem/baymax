@@ -4,12 +4,46 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
-if (-not $env:GOCACHE) {
-    $env:GOCACHE = Join-Path $repoRoot ".gocache"
+
+function Test-WritableDirectory {
+    param(
+        [Parameter(Mandatory = $false)][string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        }
+        $probe = Join-Path $Path ("._write_probe_" + [Guid]::NewGuid().ToString("N"))
+        [System.IO.File]::WriteAllText($probe, "ok")
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+        return $true
+    }
+    catch {
+        return $false
+    }
 }
-if (-not $env:GOLANGCI_LINT_CACHE) {
-    $env:GOLANGCI_LINT_CACHE = Join-Path $repoRoot ".gocache/golangci-lint"
+
+function Ensure-WritableCacheEnv {
+    param(
+        [Parameter(Mandatory = $true)][string]$EnvName,
+        [Parameter(Mandatory = $true)][string]$FallbackPath
+    )
+    $current = [Environment]::GetEnvironmentVariable($EnvName)
+    if (Test-WritableDirectory -Path $current) {
+        return
+    }
+    if (-not (Test-WritableDirectory -Path $FallbackPath)) {
+        throw "[quality-gate] unable to prepare writable cache directory for $EnvName at $FallbackPath"
+    }
+    Set-Item -Path ("Env:" + $EnvName) -Value $FallbackPath
 }
+
+Ensure-WritableCacheEnv -EnvName "GOCACHE" -FallbackPath (Join-Path $repoRoot ".gocache")
+Ensure-WritableCacheEnv -EnvName "GOLANGCI_LINT_CACHE" -FallbackPath (Join-Path $repoRoot ".gocache/golangci-lint")
+
 if (-not $env:GOPROXY) {
     $env:GOPROXY = "https://proxy.golang.org,direct"
 }
@@ -49,8 +83,8 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
     pwsh -File scripts/check-multi-agent-shared-contract.ps1
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness + explainability contract suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|StoreRunReadiness|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|ComposerReadiness)' -count=1
+Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness + explainability + version governance contract suites" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics cardinality contract suites" -Command {

@@ -201,6 +201,89 @@ func TestArbitratePrimaryReasonSecondaryCountPreservesTruncatedTotal(t *testing.
 	}
 }
 
+func TestArbitratePrimaryReasonIncludesVersionGovernanceTraceability(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeSchedulerFallback,
+				Domain:   ReadinessDomainScheduler,
+				Severity: ReadinessSeverityWarning,
+			},
+		},
+		RequestedRuleVersion: RuntimeArbitrationRuleVersionA48V1,
+		VersionConfig: RuntimeArbitrationVersionConfig{
+			Enabled:       true,
+			Default:       RuntimeArbitrationRuleVersionA49V1,
+			CompatWindow:  1,
+			OnUnsupported: RuntimeArbitrationVersionPolicyFailFast,
+			OnMismatch:    RuntimeArbitrationVersionPolicyFailFast,
+		},
+	})
+	if got.Code != ReadinessCodeSchedulerFallback ||
+		got.Source != RuntimePrimarySourceReadiness ||
+		got.RuleVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		got.RuleRequestedVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		got.RuleEffectiveVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		got.RuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
+		got.RulePolicyAction != RuntimeArbitrationPolicyActionNone ||
+		got.RuleUnsupportedTotal != 0 ||
+		got.RuleMismatchTotal != 0 {
+		t.Fatalf("version governance traceability mismatch: %#v", got)
+	}
+}
+
+func TestArbitratePrimaryReasonUnsupportedVersionFailFast(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		RequestedRuleVersion: "a77.v9",
+		VersionConfig: RuntimeArbitrationVersionConfig{
+			Enabled:       true,
+			Default:       RuntimeArbitrationRuleVersionA49V1,
+			CompatWindow:  1,
+			OnUnsupported: RuntimeArbitrationVersionPolicyFailFast,
+			OnMismatch:    RuntimeArbitrationVersionPolicyFailFast,
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeArbitrationVersionUnsupported ||
+		got.Source != RuntimePrimarySourceArbitration ||
+		got.RuleRequestedVersion != "a77.v9" ||
+		got.RuleEffectiveVersion != "" ||
+		got.RuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
+		got.RulePolicyAction != RuntimeArbitrationPolicyActionFailFastUnsupported ||
+		got.RuleUnsupportedTotal != 1 ||
+		got.RuleMismatchTotal != 0 ||
+		got.RemediationHintCode != "runtime.select_supported_arbitration_version" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("unsupported version fail-fast mismatch: %#v", got)
+	}
+}
+
+func TestArbitratePrimaryReasonCompatibilityMismatchFailFast(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		RequestedRuleVersion: RuntimeArbitrationRuleVersionA48V1,
+		VersionConfig: RuntimeArbitrationVersionConfig{
+			Enabled:       true,
+			Default:       RuntimeArbitrationRuleVersionA49V1,
+			CompatWindow:  0,
+			OnUnsupported: RuntimeArbitrationVersionPolicyFailFast,
+			OnMismatch:    RuntimeArbitrationVersionPolicyFailFast,
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeArbitrationVersionMismatch ||
+		got.Source != RuntimePrimarySourceArbitration ||
+		got.RuleRequestedVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		got.RuleEffectiveVersion != "" ||
+		got.RuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
+		got.RulePolicyAction != RuntimeArbitrationPolicyActionFailFastMismatch ||
+		got.RuleUnsupportedTotal != 0 ||
+		got.RuleMismatchTotal != 1 ||
+		got.RemediationHintCode != "runtime.align_arbitration_compat_window" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("version mismatch fail-fast mismatch: %#v", got)
+	}
+}
+
 func TestArbitratePrimaryReasonUnknownPrimaryCodeFailFast(t *testing.T) {
 	defer func() {
 		if recovered := recover(); recovered == nil {

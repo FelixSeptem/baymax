@@ -107,6 +107,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] readiness-timeout-health replay f
     go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] security sandbox contract suites" -Command {
+    pwsh -File scripts/check-security-sandbox-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

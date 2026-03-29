@@ -822,9 +822,11 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 type diagnosticsQueryBenchmarkFixture struct {
 	store               *runtimediag.Store
 	runsRequest         runtimediag.UnifiedRunQueryRequest
+	sandboxRunsRequest  runtimediag.UnifiedRunQueryRequest
 	mailboxRequest      runtimediag.MailboxQueryRequest
 	aggregateRequest    runtimediag.MailboxAggregateRequest
 	expectedRunsPage    int
+	expectedSandboxPage int
 	expectedMailboxPage int
 }
 
@@ -836,6 +838,7 @@ var (
 func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 	const (
 		diagnosticsBenchRunTotal     = 1200
+		diagnosticsBenchSandboxTotal = 900
 		diagnosticsBenchMailboxTotal = 4800
 	)
 	base := time.Date(2026, time.January, 2, 12, 0, 0, 0, time.UTC)
@@ -865,6 +868,61 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 			TeamID:     teamID,
 			WorkflowID: workflowID,
 			TaskID:     fmt.Sprintf("task-%03d", i%360),
+		})
+	}
+
+	sandboxDecisions := []string{"deny", "sandbox", "sandbox", "sandbox", "deny"}
+	sandboxReasons := []string{"sandbox.timeout", "sandbox.runtime_launch_failed", "sandbox.capability_mismatch"}
+	for i := 0; i < diagnosticsBenchSandboxTotal; i++ {
+		status := "success"
+		decision := sandboxDecisions[i%len(sandboxDecisions)]
+		reason := sandboxReasons[i%len(sandboxReasons)]
+		if decision == "deny" {
+			status = "failed"
+		}
+		store.AddRun(runtimediag.RunRecord{
+			Time:                              base.Add(20*time.Second + time.Duration(i)*2*time.Millisecond),
+			RunID:                             fmt.Sprintf("diag-sandbox-run-%05d", i),
+			Status:                            status,
+			Iterations:                        (i % 4) + 1,
+			ToolCalls:                         (i % 6) + 1,
+			LatencyMs:                         int64((i%45)+20) * 2,
+			TeamID:                            "team-sandbox",
+			WorkflowID:                        "wf-sandbox",
+			TaskID:                            fmt.Sprintf("sandbox-task-%03d", i%400),
+			PolicyKind:                        "sandbox",
+			Decision:                          "deny",
+			ReasonCode:                        reason,
+			AlertDispatchStatus:               "succeeded",
+			AlertDeliveryMode:                 "sync",
+			AlertRetryCount:                   0,
+			AlertCircuitState:                 "closed",
+			SandboxMode:                       "enforce",
+			SandboxBackend:                    "windows_job",
+			SandboxProfile:                    "default",
+			SandboxSessionMode:                "per_call",
+			SandboxRequiredCapabilities:       []string{"stdout_stderr_capture", "network_off"},
+			SandboxDecision:                   decision,
+			SandboxReasonCode:                 reason,
+			SandboxFallbackUsed:               i%11 == 0,
+			SandboxTimeoutTotal:               i % 2,
+			SandboxLaunchFailedTotal:          i % 3,
+			SandboxCapabilityMismatchTotal:    i % 4,
+			SandboxQueueWaitMsP95:             int64((i % 17) + 1),
+			SandboxExecLatencyMsP95:           int64((i % 23) + 3),
+			SandboxExitCodeLast:               124,
+			SandboxOOMTotal:                   i % 2,
+			SandboxResourceCPUMsTotal:         int64((i % 57) + 20),
+			SandboxResourceMemoryPeakBytesP95: int64((i%4096)+2048) * 4,
+			RuntimePrimaryDomain:              "scheduler",
+			RuntimePrimaryCode:                "scheduler.backend.fallback",
+			RuntimePrimarySource:              "runtime.readiness",
+			RuntimePrimaryConflictTotal:       0,
+			RuntimeSecondaryReasonCodes:       []string{},
+			RuntimeSecondaryReasonCount:       0,
+			RuntimeArbitrationRuleVersion:     runtimeconfig.RuntimeArbitrationRuleVersionA49V1,
+			RuntimeRemediationHintCode:        "scheduler.recover_backend",
+			RuntimeRemediationHintDomain:      "scheduler",
 		})
 	}
 
@@ -902,6 +960,7 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 	}
 
 	runPageSize := 40
+	sandboxPageSize := 32
 	mailboxPageSize := 30
 	return diagnosticsQueryBenchmarkFixture{
 		store: store,
@@ -914,6 +973,17 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 				End:   base.Add(4500 * time.Millisecond),
 			},
 			PageSize: &runPageSize,
+			Sort:     runtimediag.UnifiedQuerySort{Field: "time", Order: "asc"},
+		},
+		sandboxRunsRequest: runtimediag.UnifiedRunQueryRequest{
+			TeamID:     "team-sandbox",
+			WorkflowID: "wf-sandbox",
+			Status:     "failed",
+			TimeRange: &runtimediag.UnifiedQueryTimeRange{
+				Start: base.Add(20*time.Second + 10*time.Millisecond),
+				End:   base.Add(22*time.Second + 500*time.Millisecond),
+			},
+			PageSize: &sandboxPageSize,
 			Sort:     runtimediag.UnifiedQuerySort{Field: "time", Order: "asc"},
 		},
 		mailboxRequest: runtimediag.MailboxQueryRequest{
@@ -937,6 +1007,7 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 			},
 		},
 		expectedRunsPage:    runPageSize,
+		expectedSandboxPage: sandboxPageSize,
 		expectedMailboxPage: mailboxPageSize,
 	}
 }
@@ -983,6 +1054,52 @@ func BenchmarkDiagnosticsQueryRuns(b *testing.B) {
 		}
 		if !second.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
 			b.Fatalf("query runs second page should advance cursor window")
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkDiagnosticsQueryRunsSandboxEnriched(b *testing.B) {
+	fixture := diagnosticsQueryBenchmarkFixtureSnapshot()
+	store := fixture.store
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		first, err := store.QueryRuns(fixture.sandboxRunsRequest)
+		if err != nil {
+			b.Fatalf("query sandbox runs first page failed: %v", err)
+		}
+		if len(first.Items) != fixture.expectedSandboxPage {
+			b.Fatalf("query sandbox runs first page size mismatch: want=%d got=%d", fixture.expectedSandboxPage, len(first.Items))
+		}
+		if first.NextCursor == "" {
+			b.Fatalf("query sandbox runs first page should include next cursor")
+		}
+		if first.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query sandbox runs first page not sorted ascending")
+		}
+		for _, item := range first.Items {
+			if item.PolicyKind != "sandbox" || item.SandboxMode != "enforce" || len(item.SandboxRequiredCapabilities) == 0 {
+				b.Fatalf("sandbox-enriched record missing mandatory fields: %#v", item)
+			}
+		}
+		nextReq := fixture.sandboxRunsRequest
+		nextReq.Cursor = first.NextCursor
+		second, err := store.QueryRuns(nextReq)
+		if err != nil {
+			b.Fatalf("query sandbox runs second page failed: %v", err)
+		}
+		if len(second.Items) == 0 {
+			b.Fatalf("query sandbox runs second page should not be empty")
+		}
+		if !second.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
+			b.Fatalf("query sandbox runs second page should advance cursor window")
 		}
 		durations = append(durations, time.Since(start).Nanoseconds())
 	}

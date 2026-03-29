@@ -16,13 +16,15 @@ const (
 	securityPolicyKindPermission = "permission"
 	securityPolicyKindRateLimit  = "rate_limit"
 	securityPolicyKindIOFilter   = "io_filter"
+	securityPolicyKindSandbox    = "sandbox"
 
-	securityReasonPermissionDenied = "security.permission_denied"
-	securityReasonRateLimitDenied  = "security.rate_limit_exceeded"
-	securityReasonIOFilterMatch    = "security.io_filter_match"
-	securityReasonIOFilterDenied   = "security.io_filter_denied"
-	securityReasonIOFilterError    = "security.io_filter_error"
-	securityReasonIOFilterMissing  = "security.io_filter_missing"
+	securityReasonPermissionDenied  = "security.permission_denied"
+	securityReasonRateLimitDenied   = "security.rate_limit_exceeded"
+	securityReasonIOFilterMatch     = "security.io_filter_match"
+	securityReasonIOFilterDenied    = "security.io_filter_denied"
+	securityReasonIOFilterError     = "security.io_filter_error"
+	securityReasonIOFilterMissing   = "security.io_filter_missing"
+	securityReasonSandboxPolicyDeny = "sandbox.policy_deny"
 
 	securityAlertDispatchDisabled     = "disabled"
 	securityAlertDispatchNotTriggered = "not_triggered"
@@ -124,6 +126,13 @@ func (e *Engine) securityToolGovernanceConfig() runtimeconfig.SecurityToolGovern
 	return e.runtimeMgr.EffectiveConfig().Security.ToolGovernance
 }
 
+func (e *Engine) securitySandboxConfig() runtimeconfig.SecuritySandboxConfig {
+	if e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig().Security.Sandbox
+	}
+	return e.runtimeMgr.EffectiveConfig().Security.Sandbox
+}
+
 func (e *Engine) securityModelIOFilteringConfig() runtimeconfig.SecurityModelIOFilteringConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.ModelIOFiltering
@@ -147,13 +156,39 @@ func (e *Engine) enforceToolSecurityForCalls(
 	calls []types.ToolCall,
 ) (*securityDecision, *types.ClassifiedError, error) {
 	cfg := e.securityToolGovernanceConfig()
-	if !cfg.Enabled || len(calls) == 0 {
+	sandboxCfg := e.securitySandboxConfig()
+	if len(calls) == 0 {
 		return nil, nil, nil
 	}
 	for _, call := range calls {
 		namespaceTool, ok := namespaceToolKey(call.Name)
 		if !ok {
 			namespaceTool = "local+unknown"
+		}
+		sandboxMode := strings.ToLower(strings.TrimSpace(sandboxCfg.Mode))
+		if sandboxCfg.Enabled && sandboxMode == runtimeconfig.SecuritySandboxModeEnforce {
+			action := runtimeconfig.ResolveSandboxAction(sandboxCfg, namespaceTool)
+			if action == runtimeconfig.SecuritySandboxActionDeny {
+				decision := e.finalizeSecurityDecision(ctx, runID, iteration, securityDecision{
+					PolicyKind:    securityPolicyKindSandbox,
+					NamespaceTool: namespaceTool,
+					Decision:      string(types.SecurityFilterDecisionDeny),
+					ReasonCode:    securityReasonSandboxPolicyDeny,
+				})
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, decision.ReasonCode)
+				msg := fmt.Sprintf("tool call denied by sandbox policy: %s", namespaceTool)
+				return &decision, securityDeniedError(msg, decision, map[string]any{
+					"call_id":          strings.TrimSpace(call.CallID),
+					"tool":             strings.TrimSpace(call.Name),
+					"sandbox_mode":     sandboxMode,
+					"sandbox_action":   action,
+					"sandbox_profile":  runtimeconfig.ResolveSandboxProfile(sandboxCfg, namespaceTool),
+					"sandbox_fallback": runtimeconfig.ResolveSandboxFallbackAction(sandboxCfg, namespaceTool),
+				}), errors.New(msg)
+			}
+		}
+		if !cfg.Enabled {
+			continue
 		}
 		policy := resolvePermissionPolicy(cfg.Permission, namespaceTool)
 		if policy == runtimeconfig.SecurityToolPolicyDeny {

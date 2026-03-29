@@ -14,17 +14,24 @@ const (
 	ArbitrationFixtureVersionA48V1 = "a48.v1"
 	ArbitrationFixtureVersionA49V1 = "a49.v1"
 	ArbitrationFixtureVersionA50V1 = "a50.v1"
+	ArbitrationFixtureVersionA51V1 = "a51.v1"
 
-	ReasonCodePrecedenceDrift           = "precedence_drift"
-	ReasonCodeTieBreakDrift             = "tie_break_drift"
-	ReasonCodeTaxonomyDrift             = "taxonomy_drift"
-	ReasonCodeSecondaryOrderDrift       = "secondary_order_drift"
-	ReasonCodeSecondaryCountDrift       = "secondary_count_drift"
-	ReasonCodeHintTaxonomyDrift         = "hint_taxonomy_drift"
-	ReasonCodeRuleVersionDrift          = "rule_version_drift"
-	ReasonCodeVersionMismatch           = "version_mismatch"
-	ReasonCodeUnsupportedVersion        = "unsupported_version"
-	ReasonCodeCrossVersionSemanticDrift = "cross_version_semantic_drift"
+	ReasonCodePrecedenceDrift              = "precedence_drift"
+	ReasonCodeTieBreakDrift                = "tie_break_drift"
+	ReasonCodeTaxonomyDrift                = "taxonomy_drift"
+	ReasonCodeSecondaryOrderDrift          = "secondary_order_drift"
+	ReasonCodeSecondaryCountDrift          = "secondary_count_drift"
+	ReasonCodeHintTaxonomyDrift            = "hint_taxonomy_drift"
+	ReasonCodeRuleVersionDrift             = "rule_version_drift"
+	ReasonCodeVersionMismatch              = "version_mismatch"
+	ReasonCodeUnsupportedVersion           = "unsupported_version"
+	ReasonCodeCrossVersionSemanticDrift    = "cross_version_semantic_drift"
+	ReasonCodeSandboxPolicyDrift           = "sandbox_policy_drift"
+	ReasonCodeSandboxFallbackDrift         = "sandbox_fallback_drift"
+	ReasonCodeSandboxTimeoutDrift          = "sandbox_timeout_drift"
+	ReasonCodeSandboxCapabilityDrift       = "sandbox_capability_drift"
+	ReasonCodeSandboxResourcePolicyDrift   = "sandbox_resource_policy_drift"
+	ReasonCodeSandboxSessionLifecycleDrift = "sandbox_session_lifecycle_drift"
 )
 
 type ArbitrationFixture struct {
@@ -57,6 +64,24 @@ type ArbitrationObservation struct {
 	RuntimeArbitrationRuleMismatchTotal    int      `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
 	RuntimeRemediationHintCode             string   `json:"runtime_remediation_hint_code,omitempty"`
 	RuntimeRemediationHintDomain           string   `json:"runtime_remediation_hint_domain,omitempty"`
+	SandboxMode                            string   `json:"sandbox_mode,omitempty"`
+	SandboxBackend                         string   `json:"sandbox_backend,omitempty"`
+	SandboxProfile                         string   `json:"sandbox_profile,omitempty"`
+	SandboxSessionMode                     string   `json:"sandbox_session_mode,omitempty"`
+	SandboxRequiredCapabilities            []string `json:"sandbox_required_capabilities,omitempty"`
+	SandboxDecision                        string   `json:"sandbox_decision,omitempty"`
+	SandboxReasonCode                      string   `json:"sandbox_reason_code,omitempty"`
+	SandboxFallbackUsed                    bool     `json:"sandbox_fallback_used,omitempty"`
+	SandboxFallbackReason                  string   `json:"sandbox_fallback_reason,omitempty"`
+	SandboxTimeoutTotal                    int      `json:"sandbox_timeout_total,omitempty"`
+	SandboxLaunchFailedTotal               int      `json:"sandbox_launch_failed_total,omitempty"`
+	SandboxCapabilityMismatchTotal         int      `json:"sandbox_capability_mismatch_total,omitempty"`
+	SandboxQueueWaitMsP95                  int64    `json:"sandbox_queue_wait_ms_p95,omitempty"`
+	SandboxExecLatencyMsP95                int64    `json:"sandbox_exec_latency_ms_p95,omitempty"`
+	SandboxExitCodeLast                    int      `json:"sandbox_exit_code_last,omitempty"`
+	SandboxOOMTotal                        int      `json:"sandbox_oom_total,omitempty"`
+	SandboxResourceCPUMsTotal              int64    `json:"sandbox_resource_cpu_ms_total,omitempty"`
+	SandboxResourceMemoryPeakBytesP95      int64    `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -83,7 +108,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 	}
 	if version != ArbitrationFixtureVersionA48V1 &&
 		version != ArbitrationFixtureVersionA49V1 &&
-		version != ArbitrationFixtureVersionA50V1 {
+		version != ArbitrationFixtureVersionA50V1 &&
+		version != ArbitrationFixtureVersionA51V1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -196,6 +222,23 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		RuntimeArbitrationRuleMismatchTotal:    in.RuntimeArbitrationRuleMismatchTotal,
 		RuntimeRemediationHintCode:             strings.TrimSpace(in.RuntimeRemediationHintCode),
 		RuntimeRemediationHintDomain:           strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
+		SandboxMode:                            strings.ToLower(strings.TrimSpace(in.SandboxMode)),
+		SandboxBackend:                         strings.ToLower(strings.TrimSpace(in.SandboxBackend)),
+		SandboxProfile:                         strings.ToLower(strings.TrimSpace(in.SandboxProfile)),
+		SandboxSessionMode:                     strings.ToLower(strings.TrimSpace(in.SandboxSessionMode)),
+		SandboxDecision:                        strings.ToLower(strings.TrimSpace(in.SandboxDecision)),
+		SandboxReasonCode:                      strings.ToLower(strings.TrimSpace(in.SandboxReasonCode)),
+		SandboxFallbackUsed:                    in.SandboxFallbackUsed,
+		SandboxFallbackReason:                  strings.ToLower(strings.TrimSpace(in.SandboxFallbackReason)),
+		SandboxTimeoutTotal:                    in.SandboxTimeoutTotal,
+		SandboxLaunchFailedTotal:               in.SandboxLaunchFailedTotal,
+		SandboxCapabilityMismatchTotal:         in.SandboxCapabilityMismatchTotal,
+		SandboxQueueWaitMsP95:                  in.SandboxQueueWaitMsP95,
+		SandboxExecLatencyMsP95:                in.SandboxExecLatencyMsP95,
+		SandboxExitCodeLast:                    in.SandboxExitCodeLast,
+		SandboxOOMTotal:                        in.SandboxOOMTotal,
+		SandboxResourceCPUMsTotal:              in.SandboxResourceCPUMsTotal,
+		SandboxResourceMemoryPeakBytesP95:      in.SandboxResourceMemoryPeakBytesP95,
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -209,6 +252,30 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.RuntimeArbitrationRuleMismatchTotal < 0 {
 		out.RuntimeArbitrationRuleMismatchTotal = 0
 	}
+	if out.SandboxTimeoutTotal < 0 {
+		out.SandboxTimeoutTotal = 0
+	}
+	if out.SandboxLaunchFailedTotal < 0 {
+		out.SandboxLaunchFailedTotal = 0
+	}
+	if out.SandboxCapabilityMismatchTotal < 0 {
+		out.SandboxCapabilityMismatchTotal = 0
+	}
+	if out.SandboxQueueWaitMsP95 < 0 {
+		out.SandboxQueueWaitMsP95 = 0
+	}
+	if out.SandboxExecLatencyMsP95 < 0 {
+		out.SandboxExecLatencyMsP95 = 0
+	}
+	if out.SandboxOOMTotal < 0 {
+		out.SandboxOOMTotal = 0
+	}
+	if out.SandboxResourceCPUMsTotal < 0 {
+		out.SandboxResourceCPUMsTotal = 0
+	}
+	if out.SandboxResourceMemoryPeakBytesP95 < 0 {
+		out.SandboxResourceMemoryPeakBytesP95 = 0
+	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
 		if code == "" {
@@ -218,6 +285,16 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if len(out.RuntimeSecondaryReasonCodes) == 0 {
 		out.RuntimeSecondaryReasonCodes = nil
+	}
+	for i := range in.SandboxRequiredCapabilities {
+		item := strings.ToLower(strings.TrimSpace(in.SandboxRequiredCapabilities[i]))
+		if item == "" {
+			continue
+		}
+		out.SandboxRequiredCapabilities = append(out.SandboxRequiredCapabilities, item)
+	}
+	if len(out.SandboxRequiredCapabilities) == 0 {
+		out.SandboxRequiredCapabilities = nil
 	}
 	return out
 }
@@ -312,7 +389,7 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s hint taxonomy drift want=%s/%s got=%s/%s", caseName, lane, hintDomain, hintCode, obs.RuntimeRemediationHintDomain, obs.RuntimeRemediationHintCode),
 		}
 	}
-	if version != ArbitrationFixtureVersionA50V1 {
+	if version != ArbitrationFixtureVersionA50V1 && version != ArbitrationFixtureVersionA51V1 {
 		return nil
 	}
 	if obs.RuntimeArbitrationRuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceDefault &&
@@ -392,6 +469,11 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			}
 		}
 	}
+	if version == ArbitrationFixtureVersionA51V1 {
+		if err := validateSandboxArbitrationObservation(caseName, lane, obs); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -399,7 +481,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
 	}
-	if version == ArbitrationFixtureVersionA50V1 {
+	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
 			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
 				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
@@ -473,6 +555,11 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
+	if version == ArbitrationFixtureVersionA51V1 {
+		if err := assertSandboxArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+			return err
+		}
+	}
 	if precedenceForArbitrationCode(expected.RuntimePrimaryCode) != precedenceForArbitrationCode(actual.RuntimePrimaryCode) {
 		return &ValidationError{
 			Code: ReasonCodePrecedenceDrift,
@@ -523,7 +610,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA50V1 {
+	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 {
 		if expected.RuntimeSecondaryReasonCount != actual.RuntimeSecondaryReasonCount {
 			return &ValidationError{
 				Code: ReasonCodeSecondaryCountDrift,
@@ -562,7 +649,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			),
 		}
 	}
-	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1) &&
+	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1) &&
 		(expected.RuntimeRemediationHintCode != actual.RuntimeRemediationHintCode ||
 			expected.RuntimeRemediationHintDomain != actual.RuntimeRemediationHintDomain) {
 		return &ValidationError{
@@ -590,6 +677,104 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 }
 
+func validateSandboxArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	switch strings.TrimSpace(obs.SandboxMode) {
+	case runtimeconfig.SecuritySandboxModeObserve, runtimeconfig.SecuritySandboxModeEnforce:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxPolicyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_mode must be observe|enforce", caseName, lane),
+		}
+	}
+	switch strings.TrimSpace(obs.SandboxDecision) {
+	case runtimeconfig.SecuritySandboxActionHost, runtimeconfig.SecuritySandboxActionSandbox, runtimeconfig.SecuritySandboxActionDeny:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxPolicyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_decision must be host|sandbox|deny", caseName, lane),
+		}
+	}
+	if !strings.HasPrefix(strings.TrimSpace(obs.SandboxReasonCode), "sandbox.") {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxPolicyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_reason_code must be sandbox.* canonical code", caseName, lane),
+		}
+	}
+	switch strings.TrimSpace(obs.SandboxSessionMode) {
+	case runtimeconfig.SecuritySandboxSessionModePerCall, runtimeconfig.SecuritySandboxSessionModePerSession:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxSessionLifecycleDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_session_mode must be per_call|per_session", caseName, lane),
+		}
+	}
+	if obs.SandboxFallbackUsed && strings.TrimSpace(obs.SandboxFallbackReason) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFallbackDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_fallback_reason is required when fallback_used=true", caseName, lane),
+		}
+	}
+	if !obs.SandboxFallbackUsed && strings.TrimSpace(obs.SandboxFallbackReason) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFallbackDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_fallback_reason must be empty when fallback_used=false", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertSandboxArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.SandboxMode != actual.SandboxMode ||
+		expected.SandboxBackend != actual.SandboxBackend ||
+		expected.SandboxProfile != actual.SandboxProfile ||
+		expected.SandboxDecision != actual.SandboxDecision ||
+		expected.SandboxReasonCode != actual.SandboxReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxPolicyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox policy drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.SandboxFallbackUsed != actual.SandboxFallbackUsed ||
+		expected.SandboxFallbackReason != actual.SandboxFallbackReason ||
+		expected.SandboxLaunchFailedTotal != actual.SandboxLaunchFailedTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFallbackDrift,
+			Message: fmt.Sprintf("case %q %s sandbox fallback drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.SandboxTimeoutTotal != actual.SandboxTimeoutTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxTimeoutDrift,
+			Message: fmt.Sprintf("case %q %s sandbox timeout drift expected=%d actual=%d", caseName, lane, expected.SandboxTimeoutTotal, actual.SandboxTimeoutTotal),
+		}
+	}
+	if !equalStringSlice(expected.SandboxRequiredCapabilities, actual.SandboxRequiredCapabilities) ||
+		expected.SandboxCapabilityMismatchTotal != actual.SandboxCapabilityMismatchTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxCapabilityDrift,
+			Message: fmt.Sprintf("case %q %s sandbox capability drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.SandboxSessionMode != actual.SandboxSessionMode ||
+		expected.SandboxQueueWaitMsP95 != actual.SandboxQueueWaitMsP95 ||
+		expected.SandboxExecLatencyMsP95 != actual.SandboxExecLatencyMsP95 {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxSessionLifecycleDrift,
+			Message: fmt.Sprintf("case %q %s sandbox session lifecycle drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.SandboxExitCodeLast != actual.SandboxExitCodeLast ||
+		expected.SandboxOOMTotal != actual.SandboxOOMTotal ||
+		expected.SandboxResourceCPUMsTotal != actual.SandboxResourceCPUMsTotal ||
+		expected.SandboxResourceMemoryPeakBytesP95 != actual.SandboxResourceMemoryPeakBytesP95 {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxResourcePolicyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox resource policy drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
+}
+
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
 	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
 		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
@@ -597,22 +782,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.RuntimePrimaryConflictTotal != right.RuntimePrimaryConflictTotal {
 		return false
 	}
-	if version != ArbitrationFixtureVersionA49V1 {
-		if version == ArbitrationFixtureVersionA50V1 {
-			if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
-				left.RuntimeArbitrationRuleVersion != right.RuntimeArbitrationRuleVersion ||
-				left.RuntimeArbitrationRuleRequestedVersion != right.RuntimeArbitrationRuleRequestedVersion ||
-				left.RuntimeArbitrationRuleEffectiveVersion != right.RuntimeArbitrationRuleEffectiveVersion ||
-				left.RuntimeArbitrationRuleVersionSource != right.RuntimeArbitrationRuleVersionSource ||
-				left.RuntimeArbitrationRulePolicyAction != right.RuntimeArbitrationRulePolicyAction ||
-				left.RuntimeArbitrationRuleUnsupportedTotal != right.RuntimeArbitrationRuleUnsupportedTotal ||
-				left.RuntimeArbitrationRuleMismatchTotal != right.RuntimeArbitrationRuleMismatchTotal ||
-				left.RuntimeRemediationHintCode != right.RuntimeRemediationHintCode ||
-				left.RuntimeRemediationHintDomain != right.RuntimeRemediationHintDomain {
-				return false
-			}
-			return equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes)
-		}
+	if version == ArbitrationFixtureVersionA48V1 {
 		return true
 	}
 	if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
@@ -621,7 +791,44 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.RuntimeRemediationHintDomain != right.RuntimeRemediationHintDomain {
 		return false
 	}
-	return equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes)
+	if !equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes) {
+		return false
+	}
+	if version == ArbitrationFixtureVersionA49V1 {
+		return true
+	}
+	if left.RuntimeArbitrationRuleRequestedVersion != right.RuntimeArbitrationRuleRequestedVersion ||
+		left.RuntimeArbitrationRuleEffectiveVersion != right.RuntimeArbitrationRuleEffectiveVersion ||
+		left.RuntimeArbitrationRuleVersionSource != right.RuntimeArbitrationRuleVersionSource ||
+		left.RuntimeArbitrationRulePolicyAction != right.RuntimeArbitrationRulePolicyAction ||
+		left.RuntimeArbitrationRuleUnsupportedTotal != right.RuntimeArbitrationRuleUnsupportedTotal ||
+		left.RuntimeArbitrationRuleMismatchTotal != right.RuntimeArbitrationRuleMismatchTotal {
+		return false
+	}
+	if version == ArbitrationFixtureVersionA50V1 {
+		return true
+	}
+	if left.SandboxMode != right.SandboxMode ||
+		left.SandboxBackend != right.SandboxBackend ||
+		left.SandboxProfile != right.SandboxProfile ||
+		left.SandboxSessionMode != right.SandboxSessionMode ||
+		!equalStringSlice(left.SandboxRequiredCapabilities, right.SandboxRequiredCapabilities) ||
+		left.SandboxDecision != right.SandboxDecision ||
+		left.SandboxReasonCode != right.SandboxReasonCode ||
+		left.SandboxFallbackUsed != right.SandboxFallbackUsed ||
+		left.SandboxFallbackReason != right.SandboxFallbackReason ||
+		left.SandboxTimeoutTotal != right.SandboxTimeoutTotal ||
+		left.SandboxLaunchFailedTotal != right.SandboxLaunchFailedTotal ||
+		left.SandboxCapabilityMismatchTotal != right.SandboxCapabilityMismatchTotal ||
+		left.SandboxQueueWaitMsP95 != right.SandboxQueueWaitMsP95 ||
+		left.SandboxExecLatencyMsP95 != right.SandboxExecLatencyMsP95 ||
+		left.SandboxExitCodeLast != right.SandboxExitCodeLast ||
+		left.SandboxOOMTotal != right.SandboxOOMTotal ||
+		left.SandboxResourceCPUMsTotal != right.SandboxResourceCPUMsTotal ||
+		left.SandboxResourceMemoryPeakBytesP95 != right.SandboxResourceMemoryPeakBytesP95 {
+		return false
+	}
+	return true
 }
 
 func equalStringSlice(left, right []string) bool {

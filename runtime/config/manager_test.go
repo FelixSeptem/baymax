@@ -997,6 +997,94 @@ reload:
 	}
 }
 
+func TestSecuritySandboxContractInvalidSandboxReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    mode: observe
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: allow_and_record
+      fallback_action_by_tool:
+        local+shell: deny
+    executor:
+      backend: windows_job
+      session_mode: per_call
+      required_capabilities: [stdout_stderr_capture]
+    profiles:
+      default:
+        network:
+          mode: network_off
+        filesystem:
+          readonly_root: true
+        mounts: []
+        resource_limits:
+          cpu_milli: 1000
+          memory_bytes: 536870912
+          pid_limit: 64
+        timeouts:
+          launch_timeout: 1s
+          exec_timeout: 5s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.Sandbox.Executor.Backend
+	if before != SecuritySandboxBackendWindowsJob {
+		t.Fatalf("before sandbox backend = %q, want %q", before, SecuritySandboxBackendWindowsJob)
+	}
+
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    mode: observe
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: allow_and_record
+    executor:
+      backend: sandboxie
+      session_mode: per_call
+      required_capabilities: [stdout_stderr_capture]
+    profiles:
+      default:
+        network:
+          mode: network_off
+        filesystem:
+          readonly_root: true
+        mounts: []
+        resource_limits:
+          cpu_milli: 1000
+          memory_bytes: 536870912
+          pid_limit: 64
+        timeouts:
+          launch_timeout: 1s
+          exec_timeout: 5s
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.Sandbox.Executor.Backend
+	if after != before {
+		t.Fatalf("invalid sandbox reload should rollback, backend = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerTeamsInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

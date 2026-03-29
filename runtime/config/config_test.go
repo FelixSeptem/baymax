@@ -1972,6 +1972,119 @@ security:
 	}
 }
 
+func TestSecuritySandboxDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Security.Sandbox.Mode != SecuritySandboxModeObserve {
+		t.Fatalf("security.sandbox.mode = %q, want %q", cfg.Security.Sandbox.Mode, SecuritySandboxModeObserve)
+	}
+	if cfg.Security.Sandbox.Policy.DefaultAction != SecuritySandboxActionHost {
+		t.Fatalf("security.sandbox.policy.default_action = %q, want %q", cfg.Security.Sandbox.Policy.DefaultAction, SecuritySandboxActionHost)
+	}
+	if cfg.Security.Sandbox.Policy.Profile != SecuritySandboxDefaultProfile {
+		t.Fatalf("security.sandbox.policy.profile = %q, want %q", cfg.Security.Sandbox.Policy.Profile, SecuritySandboxDefaultProfile)
+	}
+	if resolveSandboxFallbackPolicy(cfg.Security.Sandbox, SecuritySandboxSelectorLocalShell) != SecuritySandboxFallbackDeny {
+		t.Fatalf("high-risk selector fallback = %q, want %q", resolveSandboxFallbackPolicy(cfg.Security.Sandbox, SecuritySandboxSelectorLocalShell), SecuritySandboxFallbackDeny)
+	}
+	if _, ok := cfg.Security.Sandbox.Profiles[SecuritySandboxDefaultProfile]; !ok {
+		t.Fatalf("missing default sandbox profile: %#v", cfg.Security.Sandbox.Profiles)
+	}
+}
+
+func TestSecuritySandboxEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_MODE", "enforce")
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_EXECUTOR_BACKEND", SecuritySandboxBackendLinuxBwrap)
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_POLICY_DEFAULT_ACTION", SecuritySandboxActionSandbox)
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  sandbox:
+    mode: observe
+    executor:
+      backend: windows_job
+    policy:
+      default_action: host
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.Sandbox.Mode != SecuritySandboxModeEnforce {
+		t.Fatalf("security.sandbox.mode = %q, want %q", cfg.Security.Sandbox.Mode, SecuritySandboxModeEnforce)
+	}
+	if cfg.Security.Sandbox.Executor.Backend != SecuritySandboxBackendLinuxBwrap {
+		t.Fatalf("security.sandbox.executor.backend = %q, want %q", cfg.Security.Sandbox.Executor.Backend, SecuritySandboxBackendLinuxBwrap)
+	}
+	if cfg.Security.Sandbox.Policy.DefaultAction != SecuritySandboxActionSandbox {
+		t.Fatalf("security.sandbox.policy.default_action = %q, want %q", cfg.Security.Sandbox.Policy.DefaultAction, SecuritySandboxActionSandbox)
+	}
+}
+
+func TestValidateRejectsInvalidSandboxEnums(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Sandbox.Mode = "strict"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.mode") {
+		t.Fatalf("expected sandbox mode validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Executor.Backend = "sandboxie"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.executor.backend") {
+		t.Fatalf("expected sandbox backend validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Executor.SessionMode = "session"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.executor.session_mode") {
+		t.Fatalf("expected sandbox session_mode validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidSandboxSelectorAndProfile(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Sandbox.Policy.ByTool = map[string]string{
+		"local.shell": SecuritySandboxActionSandbox,
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "namespace+tool") {
+		t.Fatalf("expected namespace+tool validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Policy.ProfileByTool = map[string]string{
+		SecuritySandboxSelectorLocalShell: "unknown",
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown profile") {
+		t.Fatalf("expected unknown profile validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidSandboxCapabilityAndBounds(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Sandbox.Executor.RequiredCapabilities = []string{"non_canonical"}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "required_capabilities") {
+		t.Fatalf("expected sandbox capability validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	profile := cfg.Security.Sandbox.Profiles[SecuritySandboxDefaultProfile]
+	profile.ResourceLimits.CPUMilli = 0
+	cfg.Security.Sandbox.Profiles[SecuritySandboxDefaultProfile] = profile
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "cpu_milli") {
+		t.Fatalf("expected sandbox cpu bound validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	profile = cfg.Security.Sandbox.Profiles[SecuritySandboxDefaultProfile]
+	profile.Timeouts.ExecTimeout = 0
+	cfg.Security.Sandbox.Profiles[SecuritySandboxDefaultProfile] = profile
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "exec_timeout") {
+		t.Fatalf("expected sandbox timeout validation error, got %v", err)
+	}
+}
+
 func TestSecurityEventS3Defaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Security.SecurityEvent.Enabled {

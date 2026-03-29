@@ -23,6 +23,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a50_arbitration_success_input.json",
 			expected: "a50_arbitration_success_expected.json",
 		},
+		{
+			name:     "a51",
+			input:    "a51_sandbox_success_input.json",
+			expected: "a51_sandbox_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -117,6 +122,42 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			fixture:    "a50_arbitration_cross_version_semantic_drift_input.json",
 			wantCode:   ReasonCodeCrossVersionSemanticDrift,
 			wantInText: "cross-version semantic drift",
+		},
+		{
+			name:       "a51-sandbox-policy-drift",
+			fixture:    "a51_sandbox_policy_drift_input.json",
+			wantCode:   ReasonCodeSandboxPolicyDrift,
+			wantInText: "sandbox policy drift",
+		},
+		{
+			name:       "a51-sandbox-fallback-drift",
+			fixture:    "a51_sandbox_fallback_drift_input.json",
+			wantCode:   ReasonCodeSandboxFallbackDrift,
+			wantInText: "sandbox fallback drift",
+		},
+		{
+			name:       "a51-sandbox-timeout-drift",
+			fixture:    "a51_sandbox_timeout_drift_input.json",
+			wantCode:   ReasonCodeSandboxTimeoutDrift,
+			wantInText: "sandbox timeout drift",
+		},
+		{
+			name:       "a51-sandbox-capability-drift",
+			fixture:    "a51_sandbox_capability_drift_input.json",
+			wantCode:   ReasonCodeSandboxCapabilityDrift,
+			wantInText: "sandbox capability drift",
+		},
+		{
+			name:       "a51-sandbox-resource-policy-drift",
+			fixture:    "a51_sandbox_resource_policy_drift_input.json",
+			wantCode:   ReasonCodeSandboxResourcePolicyDrift,
+			wantInText: "sandbox resource policy drift",
+		},
+		{
+			name:       "a51-sandbox-session-lifecycle-drift",
+			fixture:    "a51_sandbox_session_lifecycle_drift_input.json",
+			wantCode:   ReasonCodeSandboxSessionLifecycleDrift,
+			wantInText: "sandbox session lifecycle drift",
 		},
 	}
 

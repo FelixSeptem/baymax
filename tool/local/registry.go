@@ -19,8 +19,35 @@ import (
 
 const namespace = "local."
 
+const (
+	sandboxReasonPolicyDeny             = "sandbox.policy_deny"
+	sandboxReasonLaunchFailed           = "sandbox.launch_failed"
+	sandboxReasonFallbackAllowRecord    = "sandbox.fallback_allow_and_record"
+	sandboxReasonCapabilityMismatch     = "sandbox.capability_mismatch"
+	sandboxReasonToolNotAdapted         = "sandbox.tool_not_adapted"
+	sandboxReasonSessionModeUnsupported = "sandbox.session_mode_unsupported"
+)
+
 type WriteAwareTool interface {
 	IsWrite() bool
+}
+
+type SandboxAdapterTool interface {
+	BuildSandboxExecSpec(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error)
+	HandleSandboxExecResult(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error)
+}
+
+type sandboxExecutionError struct {
+	reason  string
+	message string
+	details map[string]any
+}
+
+func (e *sandboxExecutionError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.message)
 }
 
 type Registry struct {
@@ -427,6 +454,13 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		d.recordToolDiag(call, start, outcomes[i].Result.Error)
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
+
+	hostMarker := ""
+	if handled, err := d.trySandboxInvoke(ctx, tool, call, outcomes, i, &hostMarker); handled {
+		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		return err
+	}
+
 	attempts := retry + 1
 	if attempts < 1 {
 		attempts = 1
@@ -435,6 +469,9 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 	for attempt := 0; attempt < attempts; attempt++ {
 		result, err := tool.Invoke(ctx, call.Args)
 		if err == nil {
+			if hostMarker != "" {
+				result.Structured = annotateSandboxStructured(result.Structured, hostMarker)
+			}
 			outcomes[i] = types.ToolCallOutcome{CallID: call.CallID, Name: call.Name, Result: result}
 			if outcomes[i].Result.Error != nil {
 				outcomes[i].Result.Error.Details = mergeDetails(outcomes[i].Result.Error.Details, map[string]any{"retry_count": attempt})
@@ -450,6 +487,301 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 	outcomes[i] = failedOutcome(call, types.ErrTool, lastErr.Error(), false, map[string]any{"retry_count": attempts - 1})
 	d.recordToolDiag(call, start, outcomes[i].Result.Error)
 	return lastErr
+}
+
+func (d *Dispatcher) trySandboxInvoke(
+	ctx context.Context,
+	tool types.Tool,
+	call types.ToolCall,
+	outcomes []types.ToolCallOutcome,
+	i int,
+	hostMarker *string,
+) (bool, error) {
+	if d == nil || d.runtimeMgr == nil {
+		return false, nil
+	}
+	cfg := d.runtimeMgr.EffectiveConfig().Security.Sandbox
+	if !cfg.Enabled {
+		return false, nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	namespaceTool, _ := sandboxNamespaceToolKey(call.Name)
+	action := runtimeconfig.ResolveSandboxAction(cfg, namespaceTool)
+	fallback := runtimeconfig.ResolveSandboxFallbackAction(cfg, namespaceTool)
+
+	if mode != runtimeconfig.SecuritySandboxModeEnforce {
+		if action == runtimeconfig.SecuritySandboxActionSandbox {
+			if _, ok := tool.(SandboxAdapterTool); !ok && hostMarker != nil {
+				*hostMarker = sandboxReasonToolNotAdapted
+			}
+		}
+		return false, nil
+	}
+
+	if action == runtimeconfig.SecuritySandboxActionDeny {
+		outcomes[i] = failedOutcome(call, types.ErrSecurity, "tool call denied by sandbox policy", false, map[string]any{
+			"reason_code":      sandboxReasonPolicyDeny,
+			"namespace_tool":   namespaceTool,
+			"sandbox_action":   action,
+			"sandbox_mode":     mode,
+			"sandbox_fallback": fallback,
+		})
+		return true, errors.New(outcomes[i].Result.Error.Message)
+	}
+	if action != runtimeconfig.SecuritySandboxActionSandbox {
+		return false, nil
+	}
+
+	adapter, ok := tool.(SandboxAdapterTool)
+	if !ok {
+		if fallback == runtimeconfig.SecuritySandboxFallbackAllowAndRecord {
+			if hostMarker != nil {
+				*hostMarker = sandboxReasonFallbackAllowRecord
+			}
+			return false, nil
+		}
+		outcomes[i] = failedOutcome(call, types.ErrSecurity, "tool denied because sandbox adapter is not available", false, map[string]any{
+			"reason_code":      sandboxReasonToolNotAdapted,
+			"namespace_tool":   namespaceTool,
+			"sandbox_action":   action,
+			"sandbox_mode":     mode,
+			"sandbox_fallback": fallback,
+		})
+		return true, errors.New(outcomes[i].Result.Error.Message)
+	}
+
+	result, err := d.invokeSandboxAdapter(ctx, adapter, call, namespaceTool, mode, action, fallback, cfg)
+	if err == nil {
+		outcomes[i] = types.ToolCallOutcome{CallID: call.CallID, Name: call.Name, Result: result}
+		return true, nil
+	}
+	var sandboxErr *sandboxExecutionError
+	if errors.As(err, &sandboxErr) {
+		if fallback == runtimeconfig.SecuritySandboxFallbackAllowAndRecord {
+			if hostMarker != nil {
+				*hostMarker = sandboxReasonFallbackAllowRecord
+			}
+			return false, nil
+		}
+		details := map[string]any{
+			"reason_code":      strings.ToLower(strings.TrimSpace(sandboxErr.reason)),
+			"namespace_tool":   namespaceTool,
+			"sandbox_action":   action,
+			"sandbox_mode":     mode,
+			"sandbox_fallback": fallback,
+		}
+		for key, value := range sandboxErr.details {
+			details[key] = value
+		}
+		outcomes[i] = failedOutcome(call, types.ErrSecurity, sandboxErr.Error(), false, details)
+		return true, err
+	}
+	outcomes[i] = failedOutcome(call, types.ErrSecurity, err.Error(), false, map[string]any{
+		"reason_code":      sandboxReasonLaunchFailed,
+		"namespace_tool":   namespaceTool,
+		"sandbox_action":   action,
+		"sandbox_mode":     mode,
+		"sandbox_fallback": fallback,
+	})
+	return true, err
+}
+
+func (d *Dispatcher) invokeSandboxAdapter(
+	ctx context.Context,
+	adapter SandboxAdapterTool,
+	call types.ToolCall,
+	namespaceTool string,
+	mode string,
+	action string,
+	fallback string,
+	sandboxCfg runtimeconfig.SecuritySandboxConfig,
+) (types.ToolResult, error) {
+	executor := d.runtimeMgr.SandboxExecutor()
+	baseDetails := func(profileName string, probeBackend string, sessionMode types.SandboxSessionMode) map[string]any {
+		details := map[string]any{
+			"namespace_tool": namespaceTool,
+		}
+		if normalized := strings.ToLower(strings.TrimSpace(mode)); normalized != "" {
+			details["sandbox_mode"] = normalized
+		}
+		if normalized := strings.ToLower(strings.TrimSpace(action)); normalized != "" {
+			details["sandbox_action"] = normalized
+		}
+		if normalized := strings.ToLower(strings.TrimSpace(fallback)); normalized != "" {
+			details["sandbox_fallback"] = normalized
+		}
+		backend := strings.ToLower(strings.TrimSpace(probeBackend))
+		if backend == "" {
+			backend = strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend))
+		}
+		if backend != "" {
+			details["sandbox_backend"] = backend
+		}
+		profile := strings.ToLower(strings.TrimSpace(profileName))
+		if profile == "" {
+			profile = strings.ToLower(strings.TrimSpace(runtimeconfig.ResolveSandboxProfile(sandboxCfg, namespaceTool)))
+		}
+		if profile != "" {
+			details["sandbox_profile"] = profile
+		}
+		session := strings.ToLower(strings.TrimSpace(string(sessionMode)))
+		if session == "" {
+			session = strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode))
+		}
+		if session != "" {
+			details["sandbox_session_mode"] = session
+		}
+		required := append([]string(nil), sandboxCfg.Executor.RequiredCapabilities...)
+		if len(required) > 0 {
+			details["sandbox_required_capabilities"] = required
+		}
+		return details
+	}
+	if executor == nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: "sandbox executor is unavailable",
+			details: baseDetails("", "", ""),
+		}
+	}
+	probe, err := executor.Probe(ctx)
+	if err != nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: fmt.Sprintf("sandbox executor probe failed: %v", err),
+			details: baseDetails("", "", ""),
+		}
+	}
+	missing := make([]string, 0)
+	for i := range sandboxCfg.Executor.RequiredCapabilities {
+		capability := strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.RequiredCapabilities[i]))
+		if capability == "" {
+			continue
+		}
+		if !probe.Supports(capability) {
+			missing = append(missing, capability)
+		}
+	}
+	if len(missing) > 0 {
+		details := baseDetails("", probe.Backend, "")
+		details["missing_capabilities"] = append([]string(nil), missing...)
+		details["required_capabilities"] = append([]string(nil), sandboxCfg.Executor.RequiredCapabilities...)
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonCapabilityMismatch,
+			message: "sandbox executor capability mismatch",
+			details: details,
+		}
+	}
+	sessionMode := types.SandboxSessionMode(strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)))
+	if sessionMode != "" && !probe.SupportsSessionMode(sessionMode) {
+		details := baseDetails("", probe.Backend, sessionMode)
+		details["configured_session_mode"] = string(sessionMode)
+		details["supported_session_modes"] = append([]string(nil), probe.SupportedModes...)
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonSessionModeUnsupported,
+			message: "sandbox executor does not support configured session mode",
+			details: details,
+		}
+	}
+
+	spec, err := adapter.BuildSandboxExecSpec(ctx, call.Args)
+	if err != nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonToolNotAdapted,
+			message: fmt.Sprintf("sandbox adapter build spec failed: %v", err),
+			details: baseDetails("", probe.Backend, sessionMode),
+		}
+	}
+	spec.NamespaceTool = namespaceTool
+	spec.SessionMode = sessionMode
+	profileName := runtimeconfig.ResolveSandboxProfile(sandboxCfg, namespaceTool)
+	if profile, ok := sandboxCfg.Profiles[profileName]; ok {
+		if strings.TrimSpace(spec.Network.Mode) == "" {
+			spec.Network.Mode = strings.ToLower(strings.TrimSpace(profile.Network.Mode))
+		}
+		if len(spec.Network.EgressAllowlist) == 0 && len(profile.Network.EgressAllowlist) > 0 {
+			spec.Network.EgressAllowlist = append([]string(nil), profile.Network.EgressAllowlist...)
+		}
+		if len(spec.Mounts) == 0 && len(profile.Mounts) > 0 {
+			spec.Mounts = make([]types.SandboxMount, 0, len(profile.Mounts))
+			for i := range profile.Mounts {
+				spec.Mounts = append(spec.Mounts, types.SandboxMount{
+					Source:   strings.TrimSpace(profile.Mounts[i].Source),
+					Target:   strings.TrimSpace(profile.Mounts[i].Target),
+					ReadOnly: profile.Mounts[i].ReadOnly,
+				})
+			}
+		}
+		if spec.ResourceLimits.CPUMilli <= 0 {
+			spec.ResourceLimits.CPUMilli = profile.ResourceLimits.CPUMilli
+		}
+		if spec.ResourceLimits.MemoryBytes <= 0 {
+			spec.ResourceLimits.MemoryBytes = profile.ResourceLimits.MemoryBytes
+		}
+		if spec.ResourceLimits.PIDLimit <= 0 {
+			spec.ResourceLimits.PIDLimit = profile.ResourceLimits.PIDLimit
+		}
+		if spec.LaunchTimeout <= 0 {
+			spec.LaunchTimeout = profile.Timeouts.LaunchTimeout
+		}
+		if spec.ExecTimeout <= 0 {
+			spec.ExecTimeout = profile.Timeouts.ExecTimeout
+		}
+	}
+	spec, err = types.NormalizeSandboxExecSpec(spec)
+	if err != nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: fmt.Sprintf("sandbox spec normalization failed: %v", err),
+			details: baseDetails(profileName, probe.Backend, sessionMode),
+		}
+	}
+	execStartedAt := time.Now()
+	execResult, err := executor.Execute(ctx, spec)
+	execLatencyMs := time.Since(execStartedAt).Milliseconds()
+	if execLatencyMs < 0 {
+		execLatencyMs = 0
+	}
+	if err != nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: fmt.Sprintf("sandbox execution failed: %v", err),
+			details: baseDetails(profileName, probe.Backend, sessionMode),
+		}
+	}
+	if execResult.TimedOut {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  types.SandboxViolationTimeout,
+			message: "sandbox execution timed out",
+			details: baseDetails(profileName, probe.Backend, sessionMode),
+		}
+	}
+	if execResult.LaunchFailed {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: "sandbox runtime launch failed",
+			details: baseDetails(profileName, probe.Backend, sessionMode),
+		}
+	}
+	result, err := adapter.HandleSandboxExecResult(ctx, execResult)
+	if err != nil {
+		return types.ToolResult{}, &sandboxExecutionError{
+			reason:  sandboxReasonLaunchFailed,
+			message: fmt.Sprintf("sandbox adapter result handling failed: %v", err),
+			details: baseDetails(profileName, probe.Backend, sessionMode),
+		}
+	}
+	result.Structured = annotateSandboxExecStructured(
+		result.Structured,
+		mode,
+		probe.Backend,
+		profileName,
+		string(sessionMode),
+		sandboxCfg.Executor.RequiredCapabilities,
+		execLatencyMs,
+		execResult,
+	)
+	return result, nil
 }
 
 func shouldRetryToolError(result types.ToolResult, err error, attempt int, attempts int) bool {
@@ -473,6 +805,90 @@ func mergeDetails(base map[string]any, extra map[string]any) map[string]any {
 		base[k] = v
 	}
 	return base
+}
+
+func annotateSandboxStructured(base map[string]any, reason string) map[string]any {
+	out := map[string]any{}
+	for key, value := range base {
+		out[key] = value
+	}
+	out["sandbox_fallback_reason"] = strings.ToLower(strings.TrimSpace(reason))
+	out["sandbox_fallback"] = true
+	out["sandbox_fallback_used"] = true
+	out["sandbox_decision"] = runtimeconfig.SecuritySandboxActionHost
+	out["sandbox_reason_code"] = strings.ToLower(strings.TrimSpace(reason))
+	return out
+}
+
+func annotateSandboxExecStructured(
+	base map[string]any,
+	mode string,
+	backend string,
+	profile string,
+	sessionMode string,
+	requiredCapabilities []string,
+	execLatencyMs int64,
+	execResult types.SandboxExecResult,
+) map[string]any {
+	out := map[string]any{}
+	for key, value := range base {
+		out[key] = value
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(mode)); normalized != "" {
+		out["sandbox_mode"] = normalized
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(backend)); normalized != "" {
+		out["sandbox_backend"] = normalized
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(profile)); normalized != "" {
+		out["sandbox_profile"] = normalized
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(sessionMode)); normalized != "" {
+		out["sandbox_session_mode"] = normalized
+	}
+	if len(requiredCapabilities) > 0 {
+		out["sandbox_required_capabilities"] = append([]string(nil), requiredCapabilities...)
+	}
+	out["sandbox_decision"] = runtimeconfig.SecuritySandboxActionSandbox
+	out["sandbox_exec_latency_ms"] = execLatencyMs
+	out["sandbox_exit_code"] = execResult.ExitCode
+	if execResult.OOMKilled {
+		out["sandbox_oom"] = true
+	}
+	if execResult.ResourceUsage.CPUTimeMs > 0 {
+		out["sandbox_resource_cpu_ms"] = execResult.ResourceUsage.CPUTimeMs
+	}
+	if execResult.ResourceUsage.MemoryPeakBytes > 0 {
+		out["sandbox_resource_memory_peak_bytes"] = execResult.ResourceUsage.MemoryPeakBytes
+	}
+	if len(execResult.ViolationCodes) > 0 {
+		out["sandbox_violation_codes"] = append([]string(nil), execResult.ViolationCodes...)
+	}
+	return out
+}
+
+func sandboxNamespaceToolKey(toolName string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(toolName))
+	if normalized == "" {
+		return "", false
+	}
+	if strings.Contains(normalized, "+") {
+		parts := strings.Split(normalized, "+")
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return "", false
+		}
+		return normalized, true
+	}
+	namespace := "local"
+	tool := normalized
+	if idx := strings.Index(normalized, "."); idx >= 0 {
+		namespace = strings.TrimSpace(normalized[:idx])
+		tool = strings.TrimSpace(normalized[idx+1:])
+	}
+	if namespace == "" || tool == "" {
+		return "", false
+	}
+	return namespace + "+" + tool, true
 }
 
 func oteltraceAttrs(name string) []attribute.KeyValue {

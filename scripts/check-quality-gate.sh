@@ -102,6 +102,12 @@ if ! go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCom
   exit 1
 fi
 
+echo "[quality-gate] security sandbox contract suites"
+if ! bash scripts/check-security-sandbox-contract.sh; then
+  echo "[quality-gate][security-sandbox-contract] security sandbox contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

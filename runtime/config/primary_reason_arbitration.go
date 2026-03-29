@@ -216,6 +216,14 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	ReadinessCodeAdapterOptionalCircuitOpen: {Code: "adapter.reset_optional_circuit", Domain: ReadinessDomainAdapter},
 	ReadinessCodeAdapterHalfOpenDegraded:    {Code: "adapter.investigate_half_open", Domain: ReadinessDomainAdapter},
 	ReadinessCodeAdapterGovernanceRecovered: {Code: "adapter.monitor_recovery", Domain: ReadinessDomainAdapter},
+	ReadinessCodeSandboxRequiredUnavailable: {Code: "sandbox.restore_required_executor", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxOptionalUnavailable: {Code: "sandbox.restore_optional_executor", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxProfileInvalid:      {Code: "sandbox.fix_profile", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxCapabilityMismatch:  {Code: "sandbox.align_capabilities", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxSessionModeUnsupported: {
+		Code:   "sandbox.adjust_session_mode",
+		Domain: ReadinessDomainRuntime,
+	},
 
 	ReadinessAdmissionCodeBypassDisabled:  {Code: "readiness.admission_enable_if_required", Domain: "runtime"},
 	ReadinessAdmissionCodeReady:           {Code: "readiness.no_action", Domain: "runtime"},
@@ -335,7 +343,11 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 		return 1
 	case ReadinessCodeAdapterRequiredUnavailable, ReadinessCodeAdapterRequiredCircuitOpen:
 		return 3
+	case ReadinessCodeSandboxRequiredUnavailable, ReadinessCodeSandboxProfileInvalid, ReadinessCodeSandboxCapabilityMismatch, ReadinessCodeSandboxSessionModeUnsupported:
+		return 3
 	case ReadinessCodeAdapterOptionalUnavailable, ReadinessCodeAdapterOptionalCircuitOpen, ReadinessCodeAdapterDegraded, ReadinessCodeAdapterHalfOpenDegraded:
+		return 4
+	case ReadinessCodeSandboxOptionalUnavailable:
 		return 4
 	}
 

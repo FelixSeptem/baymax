@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,6 +94,45 @@ func (t *fakeTool) Invoke(ctx context.Context, args map[string]any) (types.ToolR
 		return t.invoke(ctx, args)
 	}
 	return types.ToolResult{}, nil
+}
+
+type fakeSandboxAdapterRunnerTool struct {
+	*fakeTool
+	build  func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error)
+	handle func(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error)
+}
+
+func (t *fakeSandboxAdapterRunnerTool) BuildSandboxExecSpec(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error) {
+	if t != nil && t.build != nil {
+		return t.build(ctx, args)
+	}
+	return types.SandboxExecSpec{}, nil
+}
+
+func (t *fakeSandboxAdapterRunnerTool) HandleSandboxExecResult(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error) {
+	if t != nil && t.handle != nil {
+		return t.handle(ctx, result)
+	}
+	return types.ToolResult{}, nil
+}
+
+type fakeSandboxExecutor struct {
+	probe   func(ctx context.Context) (types.SandboxCapabilityProbe, error)
+	execute func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error)
+}
+
+func (f *fakeSandboxExecutor) Probe(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+	if f != nil && f.probe != nil {
+		return f.probe(ctx)
+	}
+	return types.SandboxCapabilityProbe{}, nil
+}
+
+func (f *fakeSandboxExecutor) Execute(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+	if f != nil && f.execute != nil {
+		return f.execute(ctx, spec)
+	}
+	return types.SandboxExecResult{}, nil
 }
 
 type fakeGateResolver struct {
@@ -580,6 +620,38 @@ mcp:
 	}
 }
 
+func TestWithSandboxExecutorBindsIntoRuntimeManagerRegardlessOfOptionOrder(t *testing.T) {
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	t.Run("runtime-manager-then-sandbox", func(t *testing.T) {
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A51_RUNNER_TEST"})
+		if err != nil {
+			t.Fatalf("NewManager failed: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+		executor := &fakeSandboxExecutor{}
+		_ = New(model, WithRuntimeManager(mgr), WithSandboxExecutor(executor))
+		if mgr.SandboxExecutor() != executor {
+			t.Fatalf("runtime manager sandbox executor not wired, got=%T", mgr.SandboxExecutor())
+		}
+	})
+	t.Run("sandbox-then-runtime-manager", func(t *testing.T) {
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A51_RUNNER_TEST"})
+		if err != nil {
+			t.Fatalf("NewManager failed: %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+		executor := &fakeSandboxExecutor{}
+		_ = New(model, WithSandboxExecutor(executor), WithRuntimeManager(mgr))
+		if mgr.SandboxExecutor() != executor {
+			t.Fatalf("runtime manager sandbox executor not wired in reverse order, got=%T", mgr.SandboxExecutor())
+		}
+	})
+}
+
 func TestRunRecordsFailedDiagnosticsWithRuntimeRecorder(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
@@ -622,6 +694,868 @@ mcp:
 	}
 	if runs[0].Status != "failed" || runs[0].ErrorClass != string(types.ErrModel) {
 		t.Fatalf("unexpected failed run diagnostics: %#v", runs[0])
+	}
+}
+
+func TestRunSandboxDispatcherDenyMappedToSecurityReason(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-deny.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: deny
+      profile: default
+      fallback_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "search",
+		schema: map[string]any{
+			"type": "object",
+		},
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "host"}, nil
+		},
+	})
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{
+					{CallID: "call-sandbox-deny", Name: "local.search", Args: map[string]any{}},
+				},
+			}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "trigger sandbox deny"}, collector)
+	if runErr == nil {
+		t.Fatalf("expected sandbox deny run error, got nil result=%#v", res)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("run error class mismatch: %#v", res.Error)
+	}
+	if res.Error.Details["reason_code"] != "sandbox.policy_deny" {
+		t.Fatalf("run reason_code=%#v, want sandbox.policy_deny", res.Error.Details["reason_code"])
+	}
+
+	var finished types.Event
+	finishedFound := false
+	for _, ev := range collector.evs {
+		if ev.Type == "run.finished" {
+			finished = ev
+			finishedFound = true
+		}
+	}
+	if !finishedFound {
+		t.Fatal("missing run.finished event")
+	}
+	if finished.Payload["error_class"] != string(types.ErrSecurity) {
+		t.Fatalf("run.finished error_class=%#v, want %q", finished.Payload["error_class"], types.ErrSecurity)
+	}
+	if finished.Payload["reason_code"] != "sandbox.policy_deny" {
+		t.Fatalf("run.finished reason_code=%#v, want sandbox.policy_deny", finished.Payload["reason_code"])
+	}
+	if finished.Payload["policy_kind"] != "sandbox" {
+		t.Fatalf("run.finished policy_kind=%#v, want sandbox", finished.Payload["policy_kind"])
+	}
+	if finished.Payload["decision"] != "deny" {
+		t.Fatalf("run.finished decision=%#v, want deny", finished.Payload["decision"])
+	}
+
+	var sawSandboxTimelineReason bool
+	for _, ev := range collector.timelineEvents() {
+		if reason, ok := ev.Payload["reason"].(string); ok && reason == "sandbox.policy_deny" {
+			sawSandboxTimelineReason = true
+			break
+		}
+	}
+	if !sawSandboxTimelineReason {
+		t.Fatalf("expected timeline reason sandbox.policy_deny, got %#v", collector.timelineEvents())
+	}
+}
+
+func TestRunSandboxFallbackAllowRecordsTimelineReason(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-fallback-allow.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: false
+    policy:
+      default_action: host
+      by_tool:
+        local+exec: sandbox
+      profile: default
+      fallback_action: allow_and_record
+      fallback_action_by_tool:
+        local+exec: allow_and_record
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+			_ = ctx
+			return types.SandboxCapabilityProbe{
+				Backend:        runtimeconfig.SecuritySandboxBackendWindowsJob,
+				Capabilities:   []string{runtimeconfig.SecuritySandboxCapabilityStdoutStderrCapture},
+				SupportedModes: []string{runtimeconfig.SecuritySandboxSessionModePerCall},
+			}, nil
+		},
+		execute: func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+			_ = ctx
+			_ = spec
+			return types.SandboxExecResult{}, errors.New("sandbox launch failed")
+		},
+	})
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeSandboxAdapterRunnerTool{
+		fakeTool: &fakeTool{
+			name: "exec",
+			invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+				_ = ctx
+				_ = args
+				return types.ToolResult{Content: "host-fallback"}, nil
+			},
+		},
+		build: func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error) {
+			_ = ctx
+			_ = args
+			return types.SandboxExecSpec{Command: "cmd.exe", Args: []string{"/c", "echo test"}}, nil
+		},
+		handle: func(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error) {
+			_ = ctx
+			_ = result
+			return types.ToolResult{Content: "sandbox"}, nil
+		},
+	})
+
+	var modelCalls int32
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			if atomic.AddInt32(&modelCalls, 1) == 1 {
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-1", Name: "local.exec"}}}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "trigger sandbox fallback"}, collector)
+	if runErr != nil {
+		t.Fatalf("Run should succeed with fallback allow, err=%v result=%#v", runErr, res)
+	}
+	if res.FinalAnswer != "ok" {
+		t.Fatalf("final answer=%q, want ok", res.FinalAnswer)
+	}
+	var finished types.Event
+	var finishedFound bool
+	for _, ev := range collector.evs {
+		if ev.Type != "run.finished" {
+			continue
+		}
+		finished = ev
+		finishedFound = true
+	}
+	if !finishedFound {
+		t.Fatal("missing run.finished event")
+	}
+	if finished.Payload["sandbox_decision"] != runtimeconfig.SecuritySandboxActionHost ||
+		finished.Payload["sandbox_fallback_reason"] != "sandbox.fallback_allow_and_record" ||
+		finished.Payload["sandbox_reason_code"] != "sandbox.fallback_allow_and_record" {
+		t.Fatalf("sandbox fallback payload mismatch: %#v", finished.Payload)
+	}
+	if used, ok := finished.Payload["sandbox_fallback_used"].(bool); !ok || !used {
+		t.Fatalf("sandbox_fallback_used=%#v, want true", finished.Payload["sandbox_fallback_used"])
+	}
+	if finished.Payload["sandbox_mode"] != runtimeconfig.SecuritySandboxModeEnforce {
+		t.Fatalf("sandbox_mode=%#v, want %q", finished.Payload["sandbox_mode"], runtimeconfig.SecuritySandboxModeEnforce)
+	}
+	if finished.Payload["sandbox_backend"] != runtimeconfig.SecuritySandboxBackendWindowsJob {
+		t.Fatalf("sandbox_backend=%#v, want %q", finished.Payload["sandbox_backend"], runtimeconfig.SecuritySandboxBackendWindowsJob)
+	}
+
+	var sawFallbackReason bool
+	for _, ev := range collector.timelineEvents() {
+		if reason, _ := ev.Payload["reason"].(string); reason == "sandbox.fallback_allow_and_record" {
+			sawFallbackReason = true
+			break
+		}
+	}
+	if !sawFallbackReason {
+		t.Fatalf("expected timeline reason sandbox.fallback_allow_and_record, got %#v", collector.timelineEvents())
+	}
+}
+
+func TestRunSandboxTimeoutDenyEmitsCanonicalTimelineReason(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-timeout-deny.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: host
+      by_tool:
+        local+exec: sandbox
+      profile: default
+      fallback_action: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+			_ = ctx
+			return types.SandboxCapabilityProbe{
+				Backend:        runtimeconfig.SecuritySandboxBackendWindowsJob,
+				Capabilities:   []string{runtimeconfig.SecuritySandboxCapabilityStdoutStderrCapture},
+				SupportedModes: []string{runtimeconfig.SecuritySandboxSessionModePerCall},
+			}, nil
+		},
+		execute: func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+			_ = ctx
+			_ = spec
+			return types.SandboxExecResult{TimedOut: true}, nil
+		},
+	})
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeSandboxAdapterRunnerTool{
+		fakeTool: &fakeTool{name: "exec"},
+		build: func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error) {
+			_ = ctx
+			_ = args
+			return types.SandboxExecSpec{Command: "cmd.exe", Args: []string{"/c", "timeout"}}, nil
+		},
+		handle: func(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error) {
+			_ = ctx
+			_ = result
+			return types.ToolResult{Content: "unexpected"}, nil
+		},
+	})
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-timeout", Name: "local.exec"}}}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "timeout"}, collector)
+	if runErr == nil {
+		t.Fatalf("expected timeout deny run error, got result=%#v", res)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("run error class mismatch: %#v", res.Error)
+	}
+	if res.Error.Details["reason_code"] != types.SandboxViolationTimeout {
+		t.Fatalf("run reason_code=%#v, want %q", res.Error.Details["reason_code"], types.SandboxViolationTimeout)
+	}
+	var finished types.Event
+	var finishedFound bool
+	for _, ev := range collector.evs {
+		if ev.Type != "run.finished" {
+			continue
+		}
+		finished = ev
+		finishedFound = true
+	}
+	if !finishedFound {
+		t.Fatal("missing run.finished event")
+	}
+	if finished.Payload["sandbox_reason_code"] != types.SandboxViolationTimeout ||
+		finished.Payload["sandbox_decision"] != runtimeconfig.SecuritySandboxActionSandbox {
+		t.Fatalf("sandbox timeout payload mismatch: %#v", finished.Payload)
+	}
+	if finished.Payload["sandbox_timeout_total"] != 1 {
+		t.Fatalf("sandbox_timeout_total=%#v, want 1", finished.Payload["sandbox_timeout_total"])
+	}
+	if finished.Payload["sandbox_mode"] != runtimeconfig.SecuritySandboxModeEnforce ||
+		finished.Payload["sandbox_backend"] != runtimeconfig.SecuritySandboxBackendWindowsJob {
+		t.Fatalf("sandbox mode/backend mismatch: %#v", finished.Payload)
+	}
+	var sawTimeoutReason bool
+	for _, ev := range collector.timelineEvents() {
+		if reason, _ := ev.Payload["reason"].(string); reason == types.SandboxViolationTimeout {
+			sawTimeoutReason = true
+			break
+		}
+	}
+	if !sawTimeoutReason {
+		t.Fatalf("expected timeline reason %q, got %#v", types.SandboxViolationTimeout, collector.timelineEvents())
+	}
+}
+
+func TestSecurityEventContractSandboxPolicyDenyRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-policy-deny-security-event.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: false
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: deny
+      profile: default
+      fallback_action: deny
+    executor:
+      required_capabilities:
+        - network_off
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search"})
+
+	runEvents := make([]types.SecurityEvent, 0, 1)
+	streamEvents := make([]types.SecurityEvent, 0, 1)
+	runEngine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				_ = ctx
+				_ = req
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.search"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			runEvents = append(runEvents, event)
+			return nil
+		}),
+	)
+	streamEngine := New(
+		&fakeModel{
+			stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+				_ = ctx
+				_ = req
+				return onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "c1",
+						Name:   "local.search",
+					},
+				})
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			streamEvents = append(streamEvents, event)
+			return nil
+		}),
+	)
+
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "sandbox deny"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "sandbox deny"}, streamCollector)
+	if runErr == nil || runRes.Error == nil || runRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected run sandbox deny error, got err=%v result=%#v", runErr, runRes.Error)
+	}
+	if streamErr == nil || streamRes.Error == nil || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected stream sandbox deny error, got err=%v result=%#v", streamErr, streamRes.Error)
+	}
+	if len(runEvents) != 1 || len(streamEvents) != 1 {
+		t.Fatalf("sandbox callback count mismatch run=%d stream=%d", len(runEvents), len(streamEvents))
+	}
+	if runEvents[0].PolicyKind != "sandbox" ||
+		runEvents[0].Decision != "deny" ||
+		runEvents[0].ReasonCode != "sandbox.policy_deny" {
+		t.Fatalf("run sandbox callback taxonomy mismatch: %#v", runEvents[0])
+	}
+	if streamEvents[0].PolicyKind != "sandbox" ||
+		streamEvents[0].Decision != "deny" ||
+		streamEvents[0].ReasonCode != "sandbox.policy_deny" {
+		t.Fatalf("stream sandbox callback taxonomy mismatch: %#v", streamEvents[0])
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	for _, key := range []string{
+		"policy_kind",
+		"decision",
+		"reason_code",
+		"alert_dispatch_status",
+		"alert_delivery_mode",
+		"alert_retry_count",
+		"alert_circuit_state",
+	} {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("sandbox run/stream payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
+}
+
+func TestSecurityEventContractSandboxLaunchFailureDenyTriggersCallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-launch-failure-security-event.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: host
+      by_tool:
+        local+exec: sandbox
+      profile: default
+      fallback_action: deny
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+			_ = ctx
+			return types.SandboxCapabilityProbe{
+				Backend:        runtimeconfig.SecuritySandboxBackendWindowsJob,
+				Capabilities:   []string{runtimeconfig.SecuritySandboxCapabilityStdoutStderrCapture},
+				SupportedModes: []string{runtimeconfig.SecuritySandboxSessionModePerCall},
+			}, nil
+		},
+		execute: func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+			_ = ctx
+			_ = spec
+			return types.SandboxExecResult{}, errors.New("sandbox launch failed")
+		},
+	})
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeSandboxAdapterRunnerTool{
+		fakeTool: &fakeTool{name: "exec"},
+		build: func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error) {
+			_ = ctx
+			_ = args
+			return types.SandboxExecSpec{Command: "cmd.exe", Args: []string{"/c", "echo a51"}}, nil
+		},
+		handle: func(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error) {
+			_ = ctx
+			_ = result
+			return types.ToolResult{Content: "unexpected"}, nil
+		},
+	})
+	events := make([]types.SecurityEvent, 0, 1)
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				_ = ctx
+				_ = req
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.exec"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			events = append(events, event)
+			return nil
+		}),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "sandbox launch fail"}, collector)
+	if runErr == nil || res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected security deny, got err=%v result=%#v", runErr, res.Error)
+	}
+	if res.Error.Details["reason_code"] != "sandbox.launch_failed" {
+		t.Fatalf("run reason_code=%#v, want sandbox.launch_failed", res.Error.Details["reason_code"])
+	}
+	if res.Error.Details["alert_dispatch_status"] != "succeeded" {
+		t.Fatalf("alert_dispatch_status=%#v, want succeeded", res.Error.Details["alert_dispatch_status"])
+	}
+	if len(events) != 1 {
+		t.Fatalf("callback events len=%d, want 1", len(events))
+	}
+	if events[0].PolicyKind != "sandbox" || events[0].Decision != "deny" || events[0].ReasonCode != "sandbox.launch_failed" {
+		t.Fatalf("sandbox callback taxonomy mismatch: %#v", events[0])
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["alert_dispatch_status"] != "succeeded" ||
+		finished.Payload["policy_kind"] != "sandbox" ||
+		finished.Payload["reason_code"] != "sandbox.launch_failed" {
+		t.Fatalf("run.finished sandbox alert payload mismatch: %#v", finished.Payload)
+	}
+}
+
+func TestSecurityEventContractSandboxCapabilityMismatchDenyTriggersCallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-capability-mismatch-security-event.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: host
+      by_tool:
+        local+exec: sandbox
+      profile: default
+      fallback_action: deny
+    executor:
+      required_capabilities:
+        - network_off
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 200ms
+      retry:
+        max_attempts: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+			_ = ctx
+			return types.SandboxCapabilityProbe{
+				Backend:        runtimeconfig.SecuritySandboxBackendWindowsJob,
+				Capabilities:   []string{runtimeconfig.SecuritySandboxCapabilityStdoutStderrCapture},
+				SupportedModes: []string{runtimeconfig.SecuritySandboxSessionModePerCall},
+			}, nil
+		},
+		execute: func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+			_ = ctx
+			_ = spec
+			return types.SandboxExecResult{ExitCode: 0}, nil
+		},
+	})
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeSandboxAdapterRunnerTool{
+		fakeTool: &fakeTool{name: "exec"},
+		build: func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error) {
+			_ = ctx
+			_ = args
+			return types.SandboxExecSpec{Command: "cmd.exe", Args: []string{"/c", "echo a51"}}, nil
+		},
+		handle: func(ctx context.Context, result types.SandboxExecResult) (types.ToolResult, error) {
+			_ = ctx
+			_ = result
+			return types.ToolResult{Content: "unexpected"}, nil
+		},
+	})
+	events := make([]types.SecurityEvent, 0, 1)
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				_ = ctx
+				_ = req
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.exec"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			events = append(events, event)
+			return nil
+		}),
+	)
+	collector := &eventCollector{}
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "sandbox capability mismatch"}, collector)
+	if runErr == nil || res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected security deny, got err=%v result=%#v", runErr, res.Error)
+	}
+	if res.Error.Details["reason_code"] != "sandbox.capability_mismatch" {
+		t.Fatalf("run reason_code=%#v, want sandbox.capability_mismatch", res.Error.Details["reason_code"])
+	}
+	if len(events) != 1 {
+		t.Fatalf("callback events len=%d, want 1", len(events))
+	}
+	if events[0].PolicyKind != "sandbox" || events[0].Decision != "deny" || events[0].ReasonCode != "sandbox.capability_mismatch" {
+		t.Fatalf("sandbox callback taxonomy mismatch: %#v", events[0])
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run.finished")
+	}
+	if finished.Payload["alert_dispatch_status"] != "succeeded" ||
+		finished.Payload["policy_kind"] != "sandbox" ||
+		finished.Payload["reason_code"] != "sandbox.capability_mismatch" {
+		t.Fatalf("run.finished sandbox capability payload mismatch: %#v", finished.Payload)
+	}
+}
+
+func TestSecurityDeliveryContractSandboxDenyAsyncQueueAndDropSemantics(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-async-queue.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: false
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: deny
+      profile: default
+      fallback_action: deny
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: async
+      queue:
+        size: 1
+        overflow_policy: drop_old
+      timeout: 1s
+      retry:
+        max_attempts: 1
+        backoff_initial: 1ms
+        backoff_max: 1ms
+      circuit_breaker:
+        failure_threshold: 10
+        open_window: 1s
+        half_open_probes: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search"})
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				_ = ctx
+				_ = req
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.search"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			_ = event
+			select {
+			case started <- struct{}{}:
+				<-release
+			default:
+			}
+			return nil
+		}),
+	)
+
+	collector1 := &eventCollector{}
+	res1, err1 := engine.Run(context.Background(), types.RunRequest{Input: "sandbox deny #1"}, collector1)
+	if err1 == nil || res1.Error == nil || res1.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected first sandbox deny, got err=%v result=%#v", err1, res1.Error)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first sandbox async callback did not start")
+	}
+
+	collector2 := &eventCollector{}
+	res2, err2 := engine.Run(context.Background(), types.RunRequest{Input: "sandbox deny #2"}, collector2)
+	if err2 == nil || res2.Error == nil || res2.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected second sandbox deny, got err=%v result=%#v", err2, res2.Error)
+	}
+
+	collector3 := &eventCollector{}
+	res3, err3 := engine.Run(context.Background(), types.RunRequest{Input: "sandbox deny #3"}, collector3)
+	close(release)
+	if err3 == nil || res3.Error == nil || res3.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected third sandbox deny, got err=%v result=%#v", err3, res3.Error)
+	}
+	finished3, ok := collector3.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing third run.finished")
+	}
+	if finished3.Payload["alert_delivery_mode"] != runtimeconfig.SecurityEventDeliveryModeAsync ||
+		finished3.Payload["alert_dispatch_status"] != "queued" ||
+		finished3.Payload["alert_queue_dropped"] != true ||
+		finished3.Payload["alert_queue_drop_count"] != 1 {
+		t.Fatalf("sandbox async queue diagnostics mismatch: %#v", finished3.Payload)
+	}
+}
+
+func TestSecurityDeliveryContractSandboxDenyCircuitOpenSemantics(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-circuit-open.yaml")
+	cfg := `
+security:
+  tool_governance:
+    enabled: false
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: deny
+      profile: default
+      fallback_action: deny
+  security_event:
+    enabled: true
+    alert:
+      trigger_policy: deny_only
+      sink: callback
+      callback:
+        require_registered: true
+    delivery:
+      mode: sync
+      timeout: 40ms
+      retry:
+        max_attempts: 1
+      circuit_breaker:
+        failure_threshold: 1
+        open_window: 1s
+        half_open_probes: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search"})
+
+	engine := New(
+		&fakeModel{
+			generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+				_ = ctx
+				_ = req
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.search"}}}, nil
+			},
+		},
+		WithRuntimeManager(mgr),
+		WithLocalRegistry(reg),
+		WithSecurityAlertCallback(func(ctx context.Context, event types.SecurityEvent) error {
+			_ = ctx
+			_ = event
+			return errors.New("sandbox callback failed")
+		}),
+	)
+
+	collector1 := &eventCollector{}
+	res1, err1 := engine.Run(context.Background(), types.RunRequest{Input: "sandbox deny #1"}, collector1)
+	if err1 == nil || res1.Error == nil || res1.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected first sandbox deny, got err=%v result=%#v", err1, res1.Error)
+	}
+	finished1, ok := collector1.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing first run.finished")
+	}
+	if finished1.Payload["alert_dispatch_status"] != "failed" ||
+		finished1.Payload["alert_dispatch_failure_reason"] != "alert.retry_exhausted" {
+		t.Fatalf("first sandbox circuit diagnostics mismatch: %#v", finished1.Payload)
+	}
+
+	collector2 := &eventCollector{}
+	res2, err2 := engine.Run(context.Background(), types.RunRequest{Input: "sandbox deny #2"}, collector2)
+	if err2 == nil || res2.Error == nil || res2.Error.Class != types.ErrSecurity {
+		t.Fatalf("expected second sandbox deny, got err=%v result=%#v", err2, res2.Error)
+	}
+	finished2, ok := collector2.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing second run.finished")
+	}
+	if finished2.Payload["alert_dispatch_status"] != "failed" ||
+		finished2.Payload["alert_dispatch_failure_reason"] != "alert.circuit_open" ||
+		finished2.Payload["policy_kind"] != "sandbox" ||
+		finished2.Payload["reason_code"] != "sandbox.policy_deny" {
+		t.Fatalf("second sandbox circuit-open diagnostics mismatch: %#v", finished2.Payload)
 	}
 }
 

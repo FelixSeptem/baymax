@@ -462,6 +462,98 @@ func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *t
 	}
 }
 
+func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                              time.Now(),
+		RunID:                             "run-a51-sandbox",
+		Status:                            "failed",
+		SandboxMode:                       "enforce",
+		SandboxBackend:                    "windows_job",
+		SandboxProfile:                    "default",
+		SandboxSessionMode:                "per_call",
+		SandboxRequiredCapabilities:       []string{"stdout_stderr_capture", "oom_signal"},
+		SandboxDecision:                   "deny",
+		SandboxReasonCode:                 "sandbox.timeout",
+		SandboxFallbackUsed:               true,
+		SandboxFallbackReason:             "sandbox.fallback_allow_and_record",
+		SandboxTimeoutTotal:               1,
+		SandboxLaunchFailedTotal:          2,
+		SandboxCapabilityMismatchTotal:    3,
+		SandboxQueueWaitMsP95:             5,
+		SandboxExecLatencyMsP95:           7,
+		SandboxExitCodeLast:               137,
+		SandboxOOMTotal:                   1,
+		SandboxResourceCPUMsTotal:         250,
+		SandboxResourceMemoryPeakBytesP95: 2048,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.SandboxMode != "enforce" ||
+		got.SandboxBackend != "windows_job" ||
+		got.SandboxProfile != "default" ||
+		got.SandboxSessionMode != "per_call" ||
+		len(got.SandboxRequiredCapabilities) != 2 ||
+		got.SandboxRequiredCapabilities[0] != "stdout_stderr_capture" ||
+		got.SandboxRequiredCapabilities[1] != "oom_signal" ||
+		got.SandboxDecision != "deny" ||
+		got.SandboxReasonCode != "sandbox.timeout" ||
+		!got.SandboxFallbackUsed ||
+		got.SandboxFallbackReason != "sandbox.fallback_allow_and_record" ||
+		got.SandboxTimeoutTotal != 1 ||
+		got.SandboxLaunchFailedTotal != 2 ||
+		got.SandboxCapabilityMismatchTotal != 3 ||
+		got.SandboxQueueWaitMsP95 != 5 ||
+		got.SandboxExecLatencyMsP95 != 7 ||
+		got.SandboxExitCodeLast != 137 ||
+		got.SandboxOOMTotal != 1 ||
+		got.SandboxResourceCPUMsTotal != 250 ||
+		got.SandboxResourceMemoryPeakBytesP95 != 2048 {
+		t.Fatalf("sandbox fields mismatch after replay dedup: %#v", got)
+	}
+
+	rec.SandboxDecision = "sandbox"
+	rec.SandboxReasonCode = "sandbox.launch_failed"
+	rec.SandboxFallbackUsed = false
+	rec.SandboxFallbackReason = ""
+	rec.SandboxTimeoutTotal = 0
+	rec.SandboxLaunchFailedTotal = 4
+	rec.SandboxCapabilityMismatchTotal = 1
+	rec.SandboxExecLatencyMsP95 = 9
+	rec.SandboxResourceCPUMsTotal = 420
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.SandboxDecision != "sandbox" ||
+		got.SandboxReasonCode != "sandbox.launch_failed" ||
+		got.SandboxFallbackUsed ||
+		got.SandboxTimeoutTotal != 0 ||
+		got.SandboxLaunchFailedTotal != 4 ||
+		got.SandboxCapabilityMismatchTotal != 1 ||
+		got.SandboxExecLatencyMsP95 != 9 ||
+		got.SandboxResourceCPUMsTotal != 420 {
+		t.Fatalf("sandbox fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a51-sandbox"})
+	if err != nil {
+		t.Fatalf("query runs failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].SandboxReasonCode != "sandbox.launch_failed" {
+		t.Fatalf("sandbox query mapping mismatch: %#v", page.Items)
+	}
+}
+
 func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

@@ -52,11 +52,12 @@ function Get-Median {
     param(
         [Parameter(Mandatory = $true)][double[]]$Values
     )
-    if (-not $Values -or $Values.Count -eq 0) {
+    $samples = @($Values)
+    if (-not $samples -or $samples.Length -eq 0) {
         throw "[diagnostics-query-bench] parse-failure reason=empty_samples"
     }
-    $sorted = $Values | Sort-Object
-    $count = $sorted.Count
+    $sorted = @($samples | Sort-Object)
+    $count = $sorted.Length
     if ($count % 2 -eq 1) {
         $mid = [int][math]::Floor($count / 2)
         return [double]$sorted[$mid]
@@ -115,6 +116,7 @@ $maxAllocsDegPct = Parse-PositiveDouble -Name "BAYMAX_DIAGNOSTICS_QUERY_BENCH_MA
 
 $benchmarks = @(
     @{ Name = "BenchmarkDiagnosticsQueryRuns"; Key = "QUERY_RUNS" },
+    @{ Name = "BenchmarkDiagnosticsQueryRunsSandboxEnriched"; Key = "QUERY_RUNS_SANDBOX_ENRICHED" },
     @{ Name = "BenchmarkDiagnosticsQueryMailbox"; Key = "QUERY_MAILBOX" },
     @{ Name = "BenchmarkDiagnosticsMailboxAggregates"; Key = "MAILBOX_AGGREGATES" }
 )
@@ -128,12 +130,12 @@ foreach ($bench in $benchmarks) {
 }
 
 Write-Host "[diagnostics-query-bench] running benchmarks (benchtime=$benchtime, count=$count)"
-$output = & go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryMailbox|MailboxAggregates)$' -benchmem "-benchtime=$benchtime" "-count=$count" 2>&1
+$output = & go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryRunsSandboxEnriched|QueryMailbox|MailboxAggregates)$' -benchmem "-benchtime=$benchtime" "-count=$count" 2>&1
 $output | ForEach-Object { Write-Host $_ }
 
 $failed = $false
 foreach ($bench in $benchmarks) {
-    $lines = $output | Where-Object { $_ -match [regex]::Escape($bench.Name) }
+    $lines = @($output | Where-Object { $_ -match [regex]::Escape($bench.Name) })
     if (-not $lines -or $lines.Count -eq 0) {
         throw "[diagnostics-query-bench] parse-failure benchmark=$($bench.Name) reason=missing_output_line"
     }

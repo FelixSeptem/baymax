@@ -15,23 +15,32 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 	tests := []struct {
 		name          string
 		versionFolder string
+		fixture       string
 		expected      string
 	}{
 		{
 			name:          "a49",
 			versionFolder: "a49",
+			fixture:       "success.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionA49V1,
 		},
 		{
 			name:          "a50",
 			versionFolder: "a50",
+			fixture:       "success.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionA50V1,
+		},
+		{
+			name:          "a51",
+			versionFolder: "tool",
+			fixture:       "a51_sandbox_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionA51V1,
 		},
 	}
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			raw := mustReadArbitrationReplayFixture(t, tc.versionFolder, "success.json")
+			raw := mustReadArbitrationReplayFixture(t, tc.versionFolder, tc.fixture)
 			out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
 			if err != nil {
 				t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
@@ -131,6 +140,48 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeCrossVersionSemanticDrift,
 			messageHas: "cross-version semantic drift",
 		},
+		{
+			name:       "a51-sandbox-policy-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_policy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxPolicyDrift,
+			messageHas: "sandbox policy drift",
+		},
+		{
+			name:       "a51-sandbox-fallback-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_fallback_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxFallbackDrift,
+			messageHas: "sandbox fallback drift",
+		},
+		{
+			name:       "a51-sandbox-timeout-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_timeout_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxTimeoutDrift,
+			messageHas: "sandbox timeout drift",
+		},
+		{
+			name:       "a51-sandbox-capability-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_capability_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxCapabilityDrift,
+			messageHas: "sandbox capability drift",
+		},
+		{
+			name:       "a51-sandbox-resource-policy-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_resource_policy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxResourcePolicyDrift,
+			messageHas: "sandbox resource policy drift",
+		},
+		{
+			name:       "a51-sandbox-session-lifecycle-drift",
+			versionDir: "tool",
+			fixture:    "a51_sandbox_session_lifecycle_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxSessionLifecycleDrift,
+			messageHas: "sandbox session lifecycle drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -157,15 +208,27 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 
 func mustReadArbitrationReplayFixture(t *testing.T, versionDir, name string) []byte {
 	t.Helper()
-	path := filepath.Join(
-		repoRootForArbitrationReplay(t),
-		"integration",
-		"testdata",
-		"diagnostics-replay",
-		versionDir,
-		"v1",
-		name,
-	)
+	root := repoRootForArbitrationReplay(t)
+	path := ""
+	if strings.EqualFold(strings.TrimSpace(versionDir), "tool") {
+		path = filepath.Join(
+			root,
+			"tool",
+			"diagnosticsreplay",
+			"testdata",
+			name,
+		)
+	} else {
+		path = filepath.Join(
+			root,
+			"integration",
+			"testdata",
+			"diagnostics-replay",
+			versionDir,
+			"v1",
+			name,
+		)
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)

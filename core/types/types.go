@@ -2,6 +2,10 @@ package types
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -73,6 +77,157 @@ type SecurityEvent struct {
 }
 
 type SecurityAlertCallback func(ctx context.Context, event SecurityEvent) error
+
+type SandboxSessionMode string
+
+const (
+	SandboxSessionModePerCall    SandboxSessionMode = "per_call"
+	SandboxSessionModePerSession SandboxSessionMode = "per_session"
+)
+
+const (
+	SandboxViolationTimeout            = "sandbox.timeout"
+	SandboxViolationOOM                = "sandbox.oom"
+	SandboxViolationNetwork            = "sandbox.network_violation"
+	SandboxViolationMount              = "sandbox.mount_violation"
+	SandboxViolationCapabilityMismatch = "sandbox.capability_mismatch"
+	SandboxViolationLaunchFailed       = "sandbox.runtime_launch_failed"
+)
+
+type SandboxMount struct {
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target,omitempty"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+type SandboxResourceLimits struct {
+	CPUMilli    int64 `json:"cpu_milli,omitempty"`
+	MemoryBytes int64 `json:"memory_bytes,omitempty"`
+	PIDLimit    int   `json:"pid_limit,omitempty"`
+}
+
+type SandboxNetworkPolicy struct {
+	Mode            string   `json:"mode,omitempty"`
+	EgressAllowlist []string `json:"egress_allowlist,omitempty"`
+}
+
+type SandboxExecSpec struct {
+	NamespaceTool  string                `json:"namespace_tool,omitempty"`
+	Command        string                `json:"command,omitempty"`
+	Args           []string              `json:"args,omitempty"`
+	Env            map[string]string     `json:"env,omitempty"`
+	Workdir        string                `json:"workdir,omitempty"`
+	Mounts         []SandboxMount        `json:"mounts,omitempty"`
+	Network        SandboxNetworkPolicy  `json:"network"`
+	ResourceLimits SandboxResourceLimits `json:"resource_limits"`
+	SessionMode    SandboxSessionMode    `json:"session_mode,omitempty"`
+	LaunchTimeout  time.Duration         `json:"launch_timeout,omitempty"`
+	ExecTimeout    time.Duration         `json:"exec_timeout,omitempty"`
+}
+
+type SandboxResourceUsage struct {
+	CPUTimeMs       int64 `json:"cpu_time_ms,omitempty"`
+	MemoryPeakBytes int64 `json:"memory_peak_bytes,omitempty"`
+}
+
+type SandboxExecResult struct {
+	ExitCode       int                  `json:"exit_code"`
+	Stdout         string               `json:"stdout,omitempty"`
+	Stderr         string               `json:"stderr,omitempty"`
+	TimedOut       bool                 `json:"timed_out,omitempty"`
+	OOMKilled      bool                 `json:"oom_killed,omitempty"`
+	LaunchFailed   bool                 `json:"launch_failed,omitempty"`
+	ViolationCodes []string             `json:"violation_codes,omitempty"`
+	ResourceUsage  SandboxResourceUsage `json:"resource_usage"`
+}
+
+type SandboxCapabilityProbe struct {
+	Backend        string   `json:"backend,omitempty"`
+	Capabilities   []string `json:"capabilities,omitempty"`
+	SupportedModes []string `json:"supported_modes,omitempty"`
+}
+
+func (p SandboxCapabilityProbe) Supports(capability string) bool {
+	needle := strings.ToLower(strings.TrimSpace(capability))
+	for i := range p.Capabilities {
+		if strings.ToLower(strings.TrimSpace(p.Capabilities[i])) == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func (p SandboxCapabilityProbe) SupportsSessionMode(mode SandboxSessionMode) bool {
+	needle := strings.ToLower(strings.TrimSpace(string(mode)))
+	for i := range p.SupportedModes {
+		if strings.ToLower(strings.TrimSpace(p.SupportedModes[i])) == needle {
+			return true
+		}
+	}
+	return false
+}
+
+type SandboxExecutor interface {
+	Probe(ctx context.Context) (SandboxCapabilityProbe, error)
+	Execute(ctx context.Context, spec SandboxExecSpec) (SandboxExecResult, error)
+}
+
+func NormalizeSandboxExecSpec(in SandboxExecSpec) (SandboxExecSpec, error) {
+	out := in
+	out.NamespaceTool = strings.ToLower(strings.TrimSpace(out.NamespaceTool))
+	out.Command = strings.TrimSpace(out.Command)
+	if out.Command == "" {
+		return SandboxExecSpec{}, fmt.Errorf("sandbox exec command is required")
+	}
+	out.Workdir = strings.TrimSpace(out.Workdir)
+	if out.Workdir != "" {
+		abs, err := filepath.Abs(out.Workdir)
+		if err != nil {
+			return SandboxExecSpec{}, fmt.Errorf("sandbox exec workdir must be absolute or resolvable: %w", err)
+		}
+		out.Workdir = abs
+	}
+	if out.SessionMode == "" {
+		out.SessionMode = SandboxSessionModePerCall
+	}
+	sanitizedEnv := map[string]string{}
+	for key, value := range out.Env {
+		name := strings.TrimSpace(key)
+		if name == "" {
+			continue
+		}
+		val := strings.TrimSpace(value)
+		if val == "" {
+			continue
+		}
+		sanitizedEnv[name] = val
+	}
+	if len(sanitizedEnv) == 0 {
+		out.Env = nil
+	} else {
+		out.Env = sanitizedEnv
+	}
+	if len(out.Mounts) > 0 {
+		mounts := make([]SandboxMount, 0, len(out.Mounts))
+		for i := range out.Mounts {
+			mount := out.Mounts[i]
+			mount.Source = strings.TrimSpace(mount.Source)
+			mount.Target = strings.TrimSpace(mount.Target)
+			if mount.Source == "" || mount.Target == "" {
+				return SandboxExecSpec{}, fmt.Errorf("sandbox mount[%d] source/target must not be empty", i)
+			}
+			mounts = append(mounts, mount)
+		}
+		sort.SliceStable(mounts, func(i, j int) bool {
+			if mounts[i].Target != mounts[j].Target {
+				return mounts[i].Target < mounts[j].Target
+			}
+			return mounts[i].Source < mounts[j].Source
+		})
+		out.Mounts = mounts
+	}
+	return out, nil
+}
 
 type ModelInputSecurityFilter interface {
 	FilterModelInput(ctx context.Context, req ModelRequest) (ModelRequest, SecurityFilterResult, error)

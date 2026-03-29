@@ -94,12 +94,14 @@ require_positive_number "BAYMAX_DIAGNOSTICS_QUERY_BENCH_MAX_ALLOCS_DEGRADATION_P
 
 declare -A benchmark_alias=(
   [BenchmarkDiagnosticsQueryRuns]="QUERY_RUNS"
+  [BenchmarkDiagnosticsQueryRunsSandboxEnriched]="QUERY_RUNS_SANDBOX_ENRICHED"
   [BenchmarkDiagnosticsQueryMailbox]="QUERY_MAILBOX"
   [BenchmarkDiagnosticsMailboxAggregates]="MAILBOX_AGGREGATES"
 )
 
 benchmarks=(
   "BenchmarkDiagnosticsQueryRuns"
+  "BenchmarkDiagnosticsQueryRunsSandboxEnriched"
   "BenchmarkDiagnosticsQueryMailbox"
   "BenchmarkDiagnosticsMailboxAggregates"
 )
@@ -152,7 +154,7 @@ median_of_values() {
 }
 
 echo "[diagnostics-query-bench] running benchmarks (benchtime=${benchtime}, count=${count})"
-output="$(go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryMailbox|MailboxAggregates)$' -benchmem -benchtime="${benchtime}" -count="${count}" 2>&1)"
+output="$(go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryRunsSandboxEnriched|QueryMailbox|MailboxAggregates)$' -benchmem -benchtime="${benchtime}" -count="${count}" 2>&1)"
 echo "${output}"
 
 failed=0

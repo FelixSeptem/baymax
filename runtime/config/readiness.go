@@ -8,6 +8,7 @@ import (
 	"time"
 
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 type ReadinessStatus string
@@ -52,6 +53,11 @@ const (
 	ReadinessCodeAdapterOptionalCircuitOpen    = "adapter.health.optional_circuit_open"
 	ReadinessCodeAdapterHalfOpenDegraded       = "adapter.health.half_open_degraded"
 	ReadinessCodeAdapterGovernanceRecovered    = "adapter.health.governance_recovered"
+	ReadinessCodeSandboxRequiredUnavailable    = "sandbox.required_unavailable"
+	ReadinessCodeSandboxOptionalUnavailable    = "sandbox.optional_unavailable"
+	ReadinessCodeSandboxProfileInvalid         = "sandbox.profile_invalid"
+	ReadinessCodeSandboxCapabilityMismatch     = "sandbox.capability_mismatch"
+	ReadinessCodeSandboxSessionModeUnsupported = "sandbox.session_mode_unsupported"
 )
 
 type ReadinessAdmissionOutcome string
@@ -348,6 +354,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 	findings = append(findings, componentReadinessFindings("scheduler", componentSnapshot.Scheduler)...)
 	findings = append(findings, componentReadinessFindings("mailbox", componentSnapshot.Mailbox)...)
 	findings = append(findings, componentReadinessFindings("recovery", componentSnapshot.Recovery)...)
+	findings = append(findings, m.sandboxReadinessFindings(cfg)...)
 	adapterResults, adapterFindings := m.adapterHealthReadinessFindings(cfg)
 	findings = append(findings, adapterFindings...)
 	findings = canonicalizeReadinessFindings(findings)
@@ -632,6 +639,129 @@ func (r ReadinessResult) Summary() ReadinessSummary {
 		summary.AdapterHealthStatus = adapterStatus
 	}
 	return summary
+}
+
+func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
+	if m == nil || !cfg.Security.Sandbox.Enabled {
+		return nil
+	}
+	sandboxCfg := cfg.Security.Sandbox
+	severity := ReadinessSeverityWarning
+	if sandboxCfg.Required {
+		severity = ReadinessSeverityError
+	}
+	metadataBase := map[string]any{
+		"sandbox_enabled":      true,
+		"sandbox_required":     sandboxCfg.Required,
+		"sandbox_mode":         strings.ToLower(strings.TrimSpace(sandboxCfg.Mode)),
+		"sandbox_backend":      strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend)),
+		"sandbox_session_mode": strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)),
+	}
+	selectedProfile := ResolveSandboxProfile(sandboxCfg, "")
+	metadataBase["sandbox_profile"] = selectedProfile
+	findings := make([]ReadinessFinding, 0, 3)
+
+	profile, ok := sandboxCfg.Profiles[selectedProfile]
+	if !ok {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxProfileInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  fmt.Sprintf("sandbox profile %q is not configured", selectedProfile),
+			Metadata: metadataBase,
+		})
+		return findings
+	}
+
+	executor := m.SandboxExecutor()
+	if executor == nil {
+		code := ReadinessCodeSandboxOptionalUnavailable
+		message := "sandbox executor is unavailable but sandbox is optional"
+		if sandboxCfg.Required {
+			code = ReadinessCodeSandboxRequiredUnavailable
+			message = "sandbox executor is unavailable while required=true"
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     code,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  message,
+			Metadata: metadataBase,
+		})
+		return findings
+	}
+
+	probeTimeout := profile.Timeouts.LaunchTimeout
+	if probeTimeout <= 0 {
+		probeTimeout = 1500 * time.Millisecond
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	probe, err := executor.Probe(probeCtx)
+	cancel()
+	if err != nil {
+		metadata := cloneAnyMap(metadataBase)
+		metadata["probe_error"] = strings.TrimSpace(err.Error())
+		metadata["probe_timeout_ms"] = probeTimeout.Milliseconds()
+		code := ReadinessCodeSandboxOptionalUnavailable
+		message := "sandbox executor probe failed but sandbox is optional"
+		if sandboxCfg.Required {
+			code = ReadinessCodeSandboxRequiredUnavailable
+			message = "sandbox executor probe failed while required=true"
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     code,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  message,
+			Metadata: metadata,
+		})
+		return findings
+	}
+
+	probeBackend := strings.ToLower(strings.TrimSpace(probe.Backend))
+	missingCapabilities := make([]string, 0)
+	for i := range sandboxCfg.Executor.RequiredCapabilities {
+		capability := strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.RequiredCapabilities[i]))
+		if capability == "" {
+			continue
+		}
+		if !probe.Supports(capability) {
+			missingCapabilities = append(missingCapabilities, capability)
+		}
+	}
+	if len(missingCapabilities) > 0 {
+		metadata := cloneAnyMap(metadataBase)
+		metadata["required_capabilities"] = append([]string(nil), sandboxCfg.Executor.RequiredCapabilities...)
+		metadata["missing_capabilities"] = append([]string(nil), missingCapabilities...)
+		if probeBackend != "" {
+			metadata["probe_backend"] = probeBackend
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxCapabilityMismatch,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  "sandbox executor capabilities do not satisfy required_capabilities",
+			Metadata: metadata,
+		})
+	}
+
+	sessionMode := types.SandboxSessionMode(strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)))
+	if sessionMode != "" && !probe.SupportsSessionMode(sessionMode) {
+		metadata := cloneAnyMap(metadataBase)
+		metadata["supported_session_modes"] = append([]string(nil), probe.SupportedModes...)
+		if probeBackend != "" {
+			metadata["probe_backend"] = probeBackend
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxSessionModeUnsupported,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  "sandbox executor does not support configured session_mode",
+			Metadata: metadata,
+		})
+	}
+
+	return findings
 }
 
 func componentReadinessFindings(component string, state RuntimeReadinessComponentState) []ReadinessFinding {

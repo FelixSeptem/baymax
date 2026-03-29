@@ -60,6 +60,24 @@ type RunRecord struct {
 	FallbackPath                                string                            `json:"fallback_path,omitempty"`
 	RequiredCapabilities                        string                            `json:"required_capabilities,omitempty"`
 	FallbackReason                              string                            `json:"fallback_reason,omitempty"`
+	SandboxMode                                 string                            `json:"sandbox_mode,omitempty"`
+	SandboxBackend                              string                            `json:"sandbox_backend,omitempty"`
+	SandboxProfile                              string                            `json:"sandbox_profile,omitempty"`
+	SandboxSessionMode                          string                            `json:"sandbox_session_mode,omitempty"`
+	SandboxRequiredCapabilities                 []string                          `json:"sandbox_required_capabilities,omitempty"`
+	SandboxDecision                             string                            `json:"sandbox_decision,omitempty"`
+	SandboxReasonCode                           string                            `json:"sandbox_reason_code,omitempty"`
+	SandboxFallbackUsed                         bool                              `json:"sandbox_fallback_used,omitempty"`
+	SandboxFallbackReason                       string                            `json:"sandbox_fallback_reason,omitempty"`
+	SandboxTimeoutTotal                         int                               `json:"sandbox_timeout_total,omitempty"`
+	SandboxLaunchFailedTotal                    int                               `json:"sandbox_launch_failed_total,omitempty"`
+	SandboxCapabilityMismatchTotal              int                               `json:"sandbox_capability_mismatch_total,omitempty"`
+	SandboxQueueWaitMsP95                       int64                             `json:"sandbox_queue_wait_ms_p95,omitempty"`
+	SandboxExecLatencyMsP95                     int64                             `json:"sandbox_exec_latency_ms_p95,omitempty"`
+	SandboxExitCodeLast                         int                               `json:"sandbox_exit_code_last,omitempty"`
+	SandboxOOMTotal                             int                               `json:"sandbox_oom_total,omitempty"`
+	SandboxResourceCPUMsTotal                   int64                             `json:"sandbox_resource_cpu_ms_total,omitempty"`
+	SandboxResourceMemoryPeakBytesP95           int64                             `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
 	PrefixHash                                  string                            `json:"prefix_hash,omitempty"`
 	AssembleLatencyMs                           int64                             `json:"assemble_latency_ms,omitempty"`
 	AssembleStatus                              string                            `json:"assemble_status,omitempty"`
@@ -684,6 +702,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
 	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
 	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
+	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}

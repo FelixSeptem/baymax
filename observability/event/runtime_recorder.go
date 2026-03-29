@@ -82,6 +82,24 @@ func (r *RuntimeRecorder) OnEvent(_ context.Context, ev types.Event) {
 			FallbackPath:                                payloadString(payload, "fallback_path"),
 			RequiredCapabilities:                        payloadString(payload, "required_capabilities"),
 			FallbackReason:                              payloadString(payload, "fallback_reason"),
+			SandboxMode:                                 payloadString(payload, "sandbox_mode"),
+			SandboxBackend:                              payloadString(payload, "sandbox_backend"),
+			SandboxProfile:                              payloadString(payload, "sandbox_profile"),
+			SandboxSessionMode:                          payloadString(payload, "sandbox_session_mode"),
+			SandboxRequiredCapabilities:                 payloadStringSliceCSV(payload, "sandbox_required_capabilities"),
+			SandboxDecision:                             payloadString(payload, "sandbox_decision"),
+			SandboxReasonCode:                           payloadString(payload, "sandbox_reason_code"),
+			SandboxFallbackUsed:                         payloadBool(payload, "sandbox_fallback_used"),
+			SandboxFallbackReason:                       payloadString(payload, "sandbox_fallback_reason"),
+			SandboxTimeoutTotal:                         payloadInt(payload, "sandbox_timeout_total"),
+			SandboxLaunchFailedTotal:                    payloadInt(payload, "sandbox_launch_failed_total"),
+			SandboxCapabilityMismatchTotal:              payloadInt(payload, "sandbox_capability_mismatch_total"),
+			SandboxQueueWaitMsP95:                       payloadInt64(payload, "sandbox_queue_wait_ms_p95"),
+			SandboxExecLatencyMsP95:                     payloadInt64(payload, "sandbox_exec_latency_ms_p95"),
+			SandboxExitCodeLast:                         payloadInt(payload, "sandbox_exit_code_last"),
+			SandboxOOMTotal:                             payloadInt(payload, "sandbox_oom_total"),
+			SandboxResourceCPUMsTotal:                   payloadInt64(payload, "sandbox_resource_cpu_ms_total"),
+			SandboxResourceMemoryPeakBytesP95:           payloadInt64(payload, "sandbox_resource_memory_peak_bytes_p95"),
 			PrefixHash:                                  payloadString(payload, "prefix_hash"),
 			AssembleLatencyMs:                           payloadInt64(payload, "assemble_latency_ms"),
 			AssembleStatus:                              payloadString(payload, "assemble_status"),
@@ -468,6 +486,34 @@ func payloadStringSlice(m map[string]any, key string) []string {
 		return nil
 	}
 	return out
+}
+
+func payloadStringSliceCSV(m map[string]any, key string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, ok := m[key]
+	if !ok {
+		return nil
+	}
+	switch src := raw.(type) {
+	case string:
+		parts := strings.Split(src, ",")
+		out := make([]string, 0, len(parts))
+		for i := range parts {
+			item := strings.TrimSpace(parts[i])
+			if item == "" {
+				continue
+			}
+			out = append(out, item)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return payloadStringSlice(m, key)
+	}
 }
 
 func payloadOrDefault(m map[string]any, key, fallback string) string {

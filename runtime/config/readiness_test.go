@@ -9,7 +9,27 @@ import (
 	"time"
 
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
+	"github.com/FelixSeptem/baymax/core/types"
 )
+
+type fakeSandboxExecutor struct {
+	probe   func(ctx context.Context) (types.SandboxCapabilityProbe, error)
+	execute func(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error)
+}
+
+func (f *fakeSandboxExecutor) Probe(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+	if f != nil && f.probe != nil {
+		return f.probe(ctx)
+	}
+	return types.SandboxCapabilityProbe{}, nil
+}
+
+func (f *fakeSandboxExecutor) Execute(ctx context.Context, spec types.SandboxExecSpec) (types.SandboxExecResult, error) {
+	if f != nil && f.execute != nil {
+		return f.execute(ctx, spec)
+	}
+	return types.SandboxExecResult{}, nil
+}
 
 func TestManagerReadinessPreflightClassificationMatrix(t *testing.T) {
 	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A40_TEST"})
@@ -478,6 +498,216 @@ adapter:
 		summary.AdapterHealthCircuitState != string(adapterhealth.CircuitStateHalfOpen) ||
 		summary.AdapterHealthGovernancePrimaryCode != adapterhealth.CodeCircuitHalfOpen {
 		t.Fatalf("governance summary mismatch: %#v", summary)
+	}
+}
+
+func TestManagerReadinessPreflightSandboxRequiredUnavailableBlocked(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a51-required.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: true
+    mode: enforce
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: deny
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxRequiredUnavailable)
+	for _, finding := range result.Findings {
+		if finding.Code == ReadinessCodeSandboxRequiredUnavailable && finding.Severity != ReadinessSeverityError {
+			t.Fatalf("required sandbox unavailable must be blocking, got %#v", finding)
+		}
+	}
+	summary := result.Summary()
+	if summary.PrimaryCode != ReadinessCodeSandboxRequiredUnavailable ||
+		summary.PrimarySource != RuntimePrimarySourceReadiness ||
+		summary.RemediationHintCode != "sandbox.restore_required_executor" ||
+		summary.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("sandbox required unavailable summary mismatch: %#v", summary)
+	}
+}
+
+func TestManagerReadinessPreflightSandboxOptionalUnavailableStrictEscalation(t *testing.T) {
+	nonStrictFile := filepath.Join(t.TempDir(), "runtime-a51-optional.yaml")
+	writeConfig(t, nonStrictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: allow_and_record
+`)
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager non-strict failed: %v", err)
+	}
+	defer func() { _ = nonStrictMgr.Close() }()
+	nonStrictResult := nonStrictMgr.ReadinessPreflight()
+	if nonStrictResult.Status != ReadinessStatusDegraded {
+		t.Fatalf("non-strict status=%q, want degraded", nonStrictResult.Status)
+	}
+	assertReadinessFindingCode(t, nonStrictResult.Findings, ReadinessCodeSandboxOptionalUnavailable)
+	for _, finding := range nonStrictResult.Findings {
+		if finding.Code == ReadinessCodeSandboxOptionalUnavailable && finding.Severity != ReadinessSeverityWarning {
+			t.Fatalf("optional sandbox unavailable must be degraded warning, got %#v", finding)
+		}
+	}
+
+	strictFile := filepath.Join(t.TempDir(), "runtime-a51-optional-strict.yaml")
+	writeConfig(t, strictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: allow_and_record
+`)
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager strict failed: %v", err)
+	}
+	defer func() { _ = strictMgr.Close() }()
+	strictResult := strictMgr.ReadinessPreflight()
+	if strictResult.Status != ReadinessStatusBlocked {
+		t.Fatalf("strict status=%q, want blocked", strictResult.Status)
+	}
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeSandboxOptionalUnavailable)
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeStrictEscalated)
+}
+
+func TestManagerReadinessPreflightSandboxCapabilityMismatchAndSessionUnsupported(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a51-capability.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: true
+    mode: enforce
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: deny
+    executor:
+      backend: windows_job
+      session_mode: per_session
+      required_capabilities: [network_off, stdout_stderr_capture]
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
+			_ = ctx
+			return types.SandboxCapabilityProbe{
+				Backend:        SecuritySandboxBackendWindowsJob,
+				Capabilities:   []string{SecuritySandboxCapabilityStdoutStderrCapture},
+				SupportedModes: []string{SecuritySandboxSessionModePerCall},
+			}, nil
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxCapabilityMismatch)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxSessionModeUnsupported)
+
+	summary := result.Summary()
+	if summary.PrimaryCode != ReadinessCodeSandboxCapabilityMismatch ||
+		summary.PrimarySource != RuntimePrimarySourceReadiness ||
+		summary.RemediationHintCode != "sandbox.align_capabilities" ||
+		summary.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("sandbox capability mismatch summary mismatch: %#v", summary)
+	}
+}
+
+func TestManagerReadinessAdmissionSandboxRequiredDenyExplainability(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a51-admission.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+security:
+  sandbox:
+    enabled: true
+    required: true
+    mode: enforce
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: deny
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	first := mgr.EvaluateReadinessAdmission()
+	second := mgr.EvaluateReadinessAdmission()
+	if first.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("admission outcome=%q, want deny", first.Outcome)
+	}
+	if first.ReasonCode != ReadinessAdmissionCodeBlocked {
+		t.Fatalf("admission reason_code=%q, want %q", first.ReasonCode, ReadinessAdmissionCodeBlocked)
+	}
+	if first.ReadinessPrimaryCode != ReadinessCodeSandboxRequiredUnavailable ||
+		first.ReadinessPrimaryDomain != ReadinessDomainRuntime ||
+		first.ReadinessPrimarySource != RuntimePrimarySourceReadiness ||
+		first.ReadinessRemediationHintCode != "sandbox.restore_required_executor" ||
+		first.ReadinessRemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("sandbox admission explainability mismatch: %#v", first)
+	}
+	if readinessAdmissionFingerprint(first) != readinessAdmissionFingerprint(second) {
+		t.Fatalf("sandbox admission must be deterministic first=%s second=%s", readinessAdmissionFingerprint(first), readinessAdmissionFingerprint(second))
 	}
 }
 

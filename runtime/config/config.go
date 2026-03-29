@@ -181,6 +181,43 @@ const (
 )
 
 const (
+	SecuritySandboxModeObserve = "observe"
+	SecuritySandboxModeEnforce = "enforce"
+
+	SecuritySandboxActionHost    = "host"
+	SecuritySandboxActionSandbox = "sandbox"
+	SecuritySandboxActionDeny    = "deny"
+
+	SecuritySandboxFallbackAllowAndRecord = "allow_and_record"
+	SecuritySandboxFallbackDeny           = "deny"
+
+	SecuritySandboxSessionModePerCall    = "per_call"
+	SecuritySandboxSessionModePerSession = "per_session"
+
+	SecuritySandboxBackendLinuxNSJail = "linux_nsjail"
+	SecuritySandboxBackendLinuxBwrap  = "linux_bwrap"
+	SecuritySandboxBackendOCIRuntime  = "oci_runtime"
+	SecuritySandboxBackendWindowsJob  = "windows_job"
+
+	SecuritySandboxCapabilityNetworkOff          = "network_off"
+	SecuritySandboxCapabilityNetworkEgressAllow  = "network_egress_allowlist"
+	SecuritySandboxCapabilityReadonlyRoot        = "readonly_root"
+	SecuritySandboxCapabilityMountRWAllow        = "mount_rw_allowlist"
+	SecuritySandboxCapabilityCPULimit            = "cpu_limit"
+	SecuritySandboxCapabilityMemoryLimit         = "memory_limit"
+	SecuritySandboxCapabilityPIDLimit            = "pid_limit"
+	SecuritySandboxCapabilitySessionPerCall      = "session_per_call"
+	SecuritySandboxCapabilitySessionPerSession   = "session_per_session"
+	SecuritySandboxCapabilityStdoutStderrCapture = "stdout_stderr_capture"
+	SecuritySandboxCapabilityOOMSignal           = "oom_signal"
+	SecuritySandboxSelectorLocalShell            = "local+shell"
+	SecuritySandboxSelectorLocalProcessExec      = "local+process_exec"
+	SecuritySandboxSelectorLocalFSWrite          = "local+fs_write"
+	SecuritySandboxSelectorMCPStdioCommand       = "mcp+stdio_command"
+	SecuritySandboxDefaultProfile                = "default"
+)
+
+const (
 	DiagnosticsCardinalityOverflowTruncateAndRecord = "truncate_and_record"
 	DiagnosticsCardinalityOverflowFailFast          = "fail_fast"
 )
@@ -875,6 +912,7 @@ type SecurityConfig struct {
 	Redaction        SecurityRedactionConfig        `json:"redaction"`
 	ToolGovernance   SecurityToolGovernanceConfig   `json:"tool_governance"`
 	ModelIOFiltering SecurityModelIOFilteringConfig `json:"model_io_filtering"`
+	Sandbox          SecuritySandboxConfig          `json:"sandbox"`
 	SecurityEvent    SecurityEventConfig            `json:"security_event"`
 }
 
@@ -928,6 +966,64 @@ type SecurityEventConfig struct {
 	Alert    SecurityEventAlertConfig    `json:"alert"`
 	Delivery SecurityEventDeliveryConfig `json:"delivery"`
 	Severity SecuritySeverityConfig      `json:"severity"`
+}
+
+type SecuritySandboxConfig struct {
+	Enabled  bool                                    `json:"enabled"`
+	Mode     string                                  `json:"mode"`
+	Required bool                                    `json:"required"`
+	Policy   SecuritySandboxPolicyConfig             `json:"policy"`
+	Executor SecuritySandboxExecutorConfig           `json:"executor"`
+	Profiles map[string]SecuritySandboxProfileConfig `json:"profiles"`
+}
+
+type SecuritySandboxPolicyConfig struct {
+	DefaultAction        string            `json:"default_action"`
+	ByTool               map[string]string `json:"by_tool"`
+	Profile              string            `json:"profile"`
+	ProfileByTool        map[string]string `json:"profile_by_tool"`
+	FallbackAction       string            `json:"fallback_action"`
+	FallbackActionByTool map[string]string `json:"fallback_action_by_tool"`
+}
+
+type SecuritySandboxExecutorConfig struct {
+	Backend              string   `json:"backend"`
+	SessionMode          string   `json:"session_mode"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+}
+
+type SecuritySandboxProfileConfig struct {
+	Network        SecuritySandboxNetworkPolicyConfig    `json:"network"`
+	Filesystem     SecuritySandboxFilesystemPolicyConfig `json:"filesystem"`
+	Mounts         []SecuritySandboxMountConfig          `json:"mounts"`
+	ResourceLimits SecuritySandboxResourceLimitsConfig   `json:"resource_limits"`
+	Timeouts       SecuritySandboxTimeoutsConfig         `json:"timeouts"`
+}
+
+type SecuritySandboxNetworkPolicyConfig struct {
+	Mode            string   `json:"mode"`
+	EgressAllowlist []string `json:"egress_allowlist"`
+}
+
+type SecuritySandboxFilesystemPolicyConfig struct {
+	ReadonlyRoot bool `json:"readonly_root"`
+}
+
+type SecuritySandboxMountConfig struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"read_only"`
+}
+
+type SecuritySandboxResourceLimitsConfig struct {
+	CPUMilli    int64 `json:"cpu_milli"`
+	MemoryBytes int64 `json:"memory_bytes"`
+	PIDLimit    int   `json:"pid_limit"`
+}
+
+type SecuritySandboxTimeoutsConfig struct {
+	LaunchTimeout time.Duration `json:"launch_timeout"`
+	ExecTimeout   time.Duration `json:"exec_timeout"`
 }
 
 type SecurityEventAlertConfig struct {
@@ -1523,6 +1619,50 @@ func DefaultConfig() Config {
 				Output: SecurityModelIOFilterStageConfig{
 					Enabled:     true,
 					BlockAction: SecurityModelIOFilterBlockActionDeny,
+				},
+			},
+			Sandbox: SecuritySandboxConfig{
+				Enabled:  false,
+				Mode:     SecuritySandboxModeObserve,
+				Required: false,
+				Policy: SecuritySandboxPolicyConfig{
+					DefaultAction:  SecuritySandboxActionHost,
+					ByTool:         map[string]string{},
+					Profile:        SecuritySandboxDefaultProfile,
+					ProfileByTool:  map[string]string{},
+					FallbackAction: SecuritySandboxFallbackAllowAndRecord,
+					FallbackActionByTool: map[string]string{
+						SecuritySandboxSelectorLocalShell:       SecuritySandboxFallbackDeny,
+						SecuritySandboxSelectorLocalProcessExec: SecuritySandboxFallbackDeny,
+						SecuritySandboxSelectorLocalFSWrite:     SecuritySandboxFallbackDeny,
+						SecuritySandboxSelectorMCPStdioCommand:  SecuritySandboxFallbackDeny,
+					},
+				},
+				Executor: SecuritySandboxExecutorConfig{
+					Backend:              SecuritySandboxBackendWindowsJob,
+					SessionMode:          SecuritySandboxSessionModePerCall,
+					RequiredCapabilities: []string{SecuritySandboxCapabilityStdoutStderrCapture},
+				},
+				Profiles: map[string]SecuritySandboxProfileConfig{
+					SecuritySandboxDefaultProfile: {
+						Network: SecuritySandboxNetworkPolicyConfig{
+							Mode:            SecuritySandboxCapabilityNetworkOff,
+							EgressAllowlist: []string{},
+						},
+						Filesystem: SecuritySandboxFilesystemPolicyConfig{
+							ReadonlyRoot: true,
+						},
+						Mounts: []SecuritySandboxMountConfig{},
+						ResourceLimits: SecuritySandboxResourceLimitsConfig{
+							CPUMilli:    1000,
+							MemoryBytes: 512 * 1024 * 1024,
+							PIDLimit:    256,
+						},
+						Timeouts: SecuritySandboxTimeoutsConfig{
+							LaunchTimeout: 2 * time.Second,
+							ExecTimeout:   30 * time.Second,
+						},
+					},
 				},
 			},
 			SecurityEvent: SecurityEventConfig{
@@ -2447,6 +2587,9 @@ func Validate(cfg Config) error {
 	if err := validateSecurityModelIOFiltering(cfg.Security.ModelIOFiltering); err != nil {
 		return err
 	}
+	if err := validateSecuritySandboxConfig(cfg.Security.Sandbox); err != nil {
+		return err
+	}
 	return validateSecurityEventConfig(cfg.Security.SecurityEvent)
 }
 
@@ -2612,6 +2755,170 @@ func validateSecurityModelIOFiltering(cfg SecurityModelIOFilteringConfig) error 
 func validateSecurityModelIOFilterStage(cfg SecurityModelIOFilterStageConfig, stage string) error {
 	field := fmt.Sprintf("security.model_io_filtering.%s.block_action", stage)
 	return validateSecurityPolicyValue(cfg.BlockAction, field, []string{SecurityModelIOFilterBlockActionDeny})
+}
+
+func validateSecuritySandboxConfig(cfg SecuritySandboxConfig) error {
+	if err := validateSecurityPolicyValue(cfg.Mode, "security.sandbox.mode", []string{SecuritySandboxModeObserve, SecuritySandboxModeEnforce}); err != nil {
+		return err
+	}
+	if err := validateSecurityPolicyValue(cfg.Policy.DefaultAction, "security.sandbox.policy.default_action", []string{
+		SecuritySandboxActionHost, SecuritySandboxActionSandbox, SecuritySandboxActionDeny,
+	}); err != nil {
+		return err
+	}
+	for key, action := range cfg.Policy.ByTool {
+		if err := validateNamespaceToolKey(key, fmt.Sprintf("security.sandbox.policy.by_tool.%s", key)); err != nil {
+			return err
+		}
+		if err := validateSecurityPolicyValue(action, fmt.Sprintf("security.sandbox.policy.by_tool.%s", key), []string{
+			SecuritySandboxActionHost, SecuritySandboxActionSandbox, SecuritySandboxActionDeny,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := validateSecurityPolicyValue(cfg.Policy.FallbackAction, "security.sandbox.policy.fallback_action", []string{
+		SecuritySandboxFallbackAllowAndRecord, SecuritySandboxFallbackDeny,
+	}); err != nil {
+		return err
+	}
+	for key, action := range cfg.Policy.FallbackActionByTool {
+		if err := validateNamespaceToolKey(key, fmt.Sprintf("security.sandbox.policy.fallback_action_by_tool.%s", key)); err != nil {
+			return err
+		}
+		if err := validateSecurityPolicyValue(action, fmt.Sprintf("security.sandbox.policy.fallback_action_by_tool.%s", key), []string{
+			SecuritySandboxFallbackAllowAndRecord, SecuritySandboxFallbackDeny,
+		}); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(cfg.Policy.Profile) == "" {
+		return errors.New("security.sandbox.policy.profile must not be empty")
+	}
+	if err := validateSecurityPolicyValue(cfg.Executor.Backend, "security.sandbox.executor.backend", []string{
+		SecuritySandboxBackendLinuxNSJail,
+		SecuritySandboxBackendLinuxBwrap,
+		SecuritySandboxBackendOCIRuntime,
+		SecuritySandboxBackendWindowsJob,
+	}); err != nil {
+		return err
+	}
+	if err := validateSecurityPolicyValue(cfg.Executor.SessionMode, "security.sandbox.executor.session_mode", []string{
+		SecuritySandboxSessionModePerCall,
+		SecuritySandboxSessionModePerSession,
+	}); err != nil {
+		return err
+	}
+	validCaps := map[string]struct{}{
+		SecuritySandboxCapabilityNetworkOff:          {},
+		SecuritySandboxCapabilityNetworkEgressAllow:  {},
+		SecuritySandboxCapabilityReadonlyRoot:        {},
+		SecuritySandboxCapabilityMountRWAllow:        {},
+		SecuritySandboxCapabilityCPULimit:            {},
+		SecuritySandboxCapabilityMemoryLimit:         {},
+		SecuritySandboxCapabilityPIDLimit:            {},
+		SecuritySandboxCapabilitySessionPerCall:      {},
+		SecuritySandboxCapabilitySessionPerSession:   {},
+		SecuritySandboxCapabilityStdoutStderrCapture: {},
+		SecuritySandboxCapabilityOOMSignal:           {},
+	}
+	for _, cap := range cfg.Executor.RequiredCapabilities {
+		if _, ok := validCaps[cap]; !ok {
+			return fmt.Errorf("security.sandbox.executor.required_capabilities contains unsupported capability %q", cap)
+		}
+	}
+	if len(cfg.Profiles) == 0 {
+		return errors.New("security.sandbox.profiles must not be empty")
+	}
+	for name, profile := range cfg.Profiles {
+		profileName := strings.ToLower(strings.TrimSpace(name))
+		if profileName == "" {
+			return errors.New("security.sandbox.profiles contains empty profile name")
+		}
+		if profile.ResourceLimits.CPUMilli <= 0 {
+			return fmt.Errorf("security.sandbox.profiles.%s.resource_limits.cpu_milli must be > 0", profileName)
+		}
+		if profile.ResourceLimits.MemoryBytes <= 0 {
+			return fmt.Errorf("security.sandbox.profiles.%s.resource_limits.memory_bytes must be > 0", profileName)
+		}
+		if profile.ResourceLimits.PIDLimit <= 0 {
+			return fmt.Errorf("security.sandbox.profiles.%s.resource_limits.pid_limit must be > 0", profileName)
+		}
+		if profile.Timeouts.LaunchTimeout <= 0 {
+			return fmt.Errorf("security.sandbox.profiles.%s.timeouts.launch_timeout must be > 0", profileName)
+		}
+		if profile.Timeouts.ExecTimeout <= 0 {
+			return fmt.Errorf("security.sandbox.profiles.%s.timeouts.exec_timeout must be > 0", profileName)
+		}
+		for i := range profile.Mounts {
+			mount := profile.Mounts[i]
+			if strings.TrimSpace(mount.Source) == "" || strings.TrimSpace(mount.Target) == "" {
+				return fmt.Errorf("security.sandbox.profiles.%s.mounts[%d].source/target must not be empty", profileName, i)
+			}
+		}
+	}
+	if _, ok := cfg.Profiles[strings.ToLower(strings.TrimSpace(cfg.Policy.Profile))]; !ok {
+		return fmt.Errorf("security.sandbox.policy.profile=%q not found in security.sandbox.profiles", cfg.Policy.Profile)
+	}
+	for selector, profileName := range cfg.Policy.ProfileByTool {
+		if err := validateNamespaceToolKey(selector, fmt.Sprintf("security.sandbox.policy.profile_by_tool.%s", selector)); err != nil {
+			return err
+		}
+		if _, ok := cfg.Profiles[strings.ToLower(strings.TrimSpace(profileName))]; !ok {
+			return fmt.Errorf("security.sandbox.policy.profile_by_tool.%s references unknown profile %q", selector, profileName)
+		}
+	}
+	return nil
+}
+
+func resolveSandboxActionPolicy(cfg SecuritySandboxConfig, namespaceTool string) string {
+	key := strings.ToLower(strings.TrimSpace(namespaceTool))
+	if action, ok := cfg.Policy.ByTool[key]; ok {
+		return strings.ToLower(strings.TrimSpace(action))
+	}
+	action := strings.ToLower(strings.TrimSpace(cfg.Policy.DefaultAction))
+	if action == "" {
+		return SecuritySandboxActionHost
+	}
+	return action
+}
+
+func resolveSandboxFallbackPolicy(cfg SecuritySandboxConfig, namespaceTool string) string {
+	key := strings.ToLower(strings.TrimSpace(namespaceTool))
+	if action, ok := cfg.Policy.FallbackActionByTool[key]; ok {
+		return strings.ToLower(strings.TrimSpace(action))
+	}
+	if isHighRiskSandboxSelector(key) {
+		return SecuritySandboxFallbackDeny
+	}
+	action := strings.ToLower(strings.TrimSpace(cfg.Policy.FallbackAction))
+	if action == "" {
+		return SecuritySandboxFallbackAllowAndRecord
+	}
+	return action
+}
+
+func resolveSandboxProfile(cfg SecuritySandboxConfig, namespaceTool string) string {
+	key := strings.ToLower(strings.TrimSpace(namespaceTool))
+	if profile, ok := cfg.Policy.ProfileByTool[key]; ok {
+		return strings.ToLower(strings.TrimSpace(profile))
+	}
+	profile := strings.ToLower(strings.TrimSpace(cfg.Policy.Profile))
+	if profile == "" {
+		return SecuritySandboxDefaultProfile
+	}
+	return profile
+}
+
+func isHighRiskSandboxSelector(selector string) bool {
+	switch strings.ToLower(strings.TrimSpace(selector)) {
+	case SecuritySandboxSelectorLocalShell,
+		SecuritySandboxSelectorLocalProcessExec,
+		SecuritySandboxSelectorLocalFSWrite,
+		SecuritySandboxSelectorMCPStdioCommand:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateSecurityEventConfig(cfg SecurityEventConfig) error {
@@ -3453,6 +3760,31 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.model_io_filtering.input.block_action", base.Security.ModelIOFiltering.Input.BlockAction)
 	v.SetDefault("security.model_io_filtering.output.enabled", base.Security.ModelIOFiltering.Output.Enabled)
 	v.SetDefault("security.model_io_filtering.output.block_action", base.Security.ModelIOFiltering.Output.BlockAction)
+	v.SetDefault("security.sandbox.enabled", base.Security.Sandbox.Enabled)
+	v.SetDefault("security.sandbox.mode", base.Security.Sandbox.Mode)
+	v.SetDefault("security.sandbox.required", base.Security.Sandbox.Required)
+	v.SetDefault("security.sandbox.policy.default_action", base.Security.Sandbox.Policy.DefaultAction)
+	v.SetDefault("security.sandbox.policy.by_tool", base.Security.Sandbox.Policy.ByTool)
+	v.SetDefault("security.sandbox.policy.profile", base.Security.Sandbox.Policy.Profile)
+	v.SetDefault("security.sandbox.policy.profile_by_tool", base.Security.Sandbox.Policy.ProfileByTool)
+	v.SetDefault("security.sandbox.policy.fallback_action", base.Security.Sandbox.Policy.FallbackAction)
+	v.SetDefault("security.sandbox.policy.fallback_action_by_tool", base.Security.Sandbox.Policy.FallbackActionByTool)
+	v.SetDefault("security.sandbox.executor.backend", base.Security.Sandbox.Executor.Backend)
+	v.SetDefault("security.sandbox.executor.session_mode", base.Security.Sandbox.Executor.SessionMode)
+	v.SetDefault("security.sandbox.executor.required_capabilities", base.Security.Sandbox.Executor.RequiredCapabilities)
+	v.SetDefault("security.sandbox.profiles", base.Security.Sandbox.Profiles)
+	for profile, profileCfg := range base.Security.Sandbox.Profiles {
+		prefix := "security.sandbox.profiles." + strings.ToLower(strings.TrimSpace(profile)) + "."
+		v.SetDefault(prefix+"network.mode", profileCfg.Network.Mode)
+		v.SetDefault(prefix+"network.egress_allowlist", profileCfg.Network.EgressAllowlist)
+		v.SetDefault(prefix+"filesystem.readonly_root", profileCfg.Filesystem.ReadonlyRoot)
+		v.SetDefault(prefix+"mounts", profileCfg.Mounts)
+		v.SetDefault(prefix+"resource_limits.cpu_milli", profileCfg.ResourceLimits.CPUMilli)
+		v.SetDefault(prefix+"resource_limits.memory_bytes", profileCfg.ResourceLimits.MemoryBytes)
+		v.SetDefault(prefix+"resource_limits.pid_limit", profileCfg.ResourceLimits.PIDLimit)
+		v.SetDefault(prefix+"timeouts.launch_timeout", profileCfg.Timeouts.LaunchTimeout)
+		v.SetDefault(prefix+"timeouts.exec_timeout", profileCfg.Timeouts.ExecTimeout)
+	}
 	v.SetDefault("security.security_event.enabled", base.Security.SecurityEvent.Enabled)
 	v.SetDefault("security.security_event.alert.trigger_policy", base.Security.SecurityEvent.Alert.TriggerPolicy)
 	v.SetDefault("security.security_event.alert.sink", base.Security.SecurityEvent.Alert.Sink)
@@ -3810,6 +4142,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Security.ModelIOFiltering.Input.BlockAction = strings.ToLower(strings.TrimSpace(v.GetString("security.model_io_filtering.input.block_action")))
 	cfg.Security.ModelIOFiltering.Output.Enabled = v.GetBool("security.model_io_filtering.output.enabled")
 	cfg.Security.ModelIOFiltering.Output.BlockAction = strings.ToLower(strings.TrimSpace(v.GetString("security.model_io_filtering.output.block_action")))
+	cfg.Security.Sandbox.Enabled = v.GetBool("security.sandbox.enabled")
+	cfg.Security.Sandbox.Mode = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.mode")))
+	cfg.Security.Sandbox.Required = v.GetBool("security.sandbox.required")
+	cfg.Security.Sandbox.Policy.DefaultAction = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.policy.default_action")))
+	cfg.Security.Sandbox.Policy.ByTool = normalizeNamespaceToolPolicyMap(v.GetStringMapString("security.sandbox.policy.by_tool"))
+	cfg.Security.Sandbox.Policy.Profile = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.policy.profile")))
+	cfg.Security.Sandbox.Policy.ProfileByTool = normalizeNamespaceToolPolicyMap(v.GetStringMapString("security.sandbox.policy.profile_by_tool"))
+	cfg.Security.Sandbox.Policy.FallbackAction = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.policy.fallback_action")))
+	cfg.Security.Sandbox.Policy.FallbackActionByTool = normalizeNamespaceToolPolicyMap(v.GetStringMapString("security.sandbox.policy.fallback_action_by_tool"))
+	cfg.Security.Sandbox.Executor.Backend = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.backend")))
+	cfg.Security.Sandbox.Executor.SessionMode = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.session_mode")))
+	cfg.Security.Sandbox.Executor.RequiredCapabilities = normalizeKeywords(v.GetStringSlice("security.sandbox.executor.required_capabilities"))
 	cfg.Security.SecurityEvent.Enabled = v.GetBool("security.security_event.enabled")
 	cfg.Security.SecurityEvent.Alert.TriggerPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.trigger_policy")))
 	cfg.Security.SecurityEvent.Alert.Sink = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.sink")))
@@ -3827,6 +4171,34 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Security.SecurityEvent.Severity.Default = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.severity.default")))
 	cfg.Security.SecurityEvent.Severity.ByPolicyKind = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_policy_kind"))
 	cfg.Security.SecurityEvent.Severity.ByReasonCode = normalizeStringToPolicyMap(v.GetStringMapString("security.security_event.severity.by_reason_code"))
+
+	sandboxProfiles := map[string]SecuritySandboxProfileConfig{}
+	for name, profile := range cfg.Security.Sandbox.Profiles {
+		normalizedName := strings.ToLower(strings.TrimSpace(name))
+		if normalizedName == "" {
+			continue
+		}
+		sandboxProfiles[normalizedName] = profile
+	}
+	for name := range v.GetStringMap("security.sandbox.profiles") {
+		normalizedName := strings.ToLower(strings.TrimSpace(name))
+		if normalizedName == "" {
+			continue
+		}
+		profile := sandboxProfiles[normalizedName]
+		prefix := "security.sandbox.profiles." + normalizedName + "."
+		profile.Network.Mode = strings.ToLower(strings.TrimSpace(v.GetString(prefix + "network.mode")))
+		profile.Network.EgressAllowlist = normalizeKeywords(v.GetStringSlice(prefix + "network.egress_allowlist"))
+		profile.Filesystem.ReadonlyRoot = v.GetBool(prefix + "filesystem.readonly_root")
+		profile.Mounts = normalizeSandboxMounts(v.Get(prefix + "mounts"))
+		profile.ResourceLimits.CPUMilli = v.GetInt64(prefix + "resource_limits.cpu_milli")
+		profile.ResourceLimits.MemoryBytes = v.GetInt64(prefix + "resource_limits.memory_bytes")
+		profile.ResourceLimits.PIDLimit = v.GetInt(prefix + "resource_limits.pid_limit")
+		profile.Timeouts.LaunchTimeout = v.GetDuration(prefix + "timeouts.launch_timeout")
+		profile.Timeouts.ExecTimeout = v.GetDuration(prefix + "timeouts.exec_timeout")
+		sandboxProfiles[normalizedName] = profile
+	}
+	cfg.Security.Sandbox.Profiles = sandboxProfiles
 
 	names := map[string]struct{}{}
 	for name := range cfg.MCP.Profiles {
@@ -4072,6 +4444,53 @@ func normalizeNamespaceToolPolicyMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func normalizeSandboxMounts(raw any) []SecuritySandboxMountConfig {
+	if raw == nil {
+		return nil
+	}
+	decode := func(src any) []SecuritySandboxMountConfig {
+		b, err := json.Marshal(src)
+		if err != nil {
+			return nil
+		}
+		out := make([]SecuritySandboxMountConfig, 0)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil
+		}
+		for i := range out {
+			out[i].Source = strings.TrimSpace(out[i].Source)
+			out[i].Target = strings.TrimSpace(out[i].Target)
+		}
+		return out
+	}
+	switch tv := raw.(type) {
+	case string:
+		trimmed := strings.TrimSpace(tv)
+		if trimmed == "" {
+			return nil
+		}
+		return decode(json.RawMessage(trimmed))
+	default:
+		return decode(raw)
+	}
+}
+
+func ResolveSandboxAction(cfg SecuritySandboxConfig, namespaceTool string) string {
+	return resolveSandboxActionPolicy(cfg, namespaceTool)
+}
+
+func ResolveSandboxFallbackAction(cfg SecuritySandboxConfig, namespaceTool string) string {
+	return resolveSandboxFallbackPolicy(cfg, namespaceTool)
+}
+
+func ResolveSandboxProfile(cfg SecuritySandboxConfig, namespaceTool string) string {
+	return resolveSandboxProfile(cfg, namespaceTool)
+}
+
+func IsHighRiskSandboxSelector(selector string) bool {
+	return isHighRiskSandboxSelector(selector)
 }
 
 func normalizeNamespaceToolIntMap(in map[string]any) map[string]int {

@@ -49,6 +49,8 @@ type Manager struct {
 	adapterHealthMu      sync.RWMutex
 	adapterHealthTargets map[string]AdapterHealthTarget
 	adapterHealthRunner  *adapterhealth.Runner
+	sandboxMu            sync.RWMutex
+	sandboxExecutor      types.SandboxExecutor
 
 	watchStarted atomic.Bool
 	stopOnce     sync.Once
@@ -422,6 +424,24 @@ func (m *Manager) snapshot() *Snapshot {
 	}
 	s, _ := v.(*Snapshot)
 	return s
+}
+
+func (m *Manager) SetSandboxExecutor(executor types.SandboxExecutor) {
+	if m == nil {
+		return
+	}
+	m.sandboxMu.Lock()
+	m.sandboxExecutor = executor
+	m.sandboxMu.Unlock()
+}
+
+func (m *Manager) SandboxExecutor() types.SandboxExecutor {
+	if m == nil {
+		return nil
+	}
+	m.sandboxMu.RLock()
+	defer m.sandboxMu.RUnlock()
+	return m.sandboxExecutor
 }
 
 // RedactPayload applies configured redaction to generic payload maps.

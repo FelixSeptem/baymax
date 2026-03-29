@@ -13,11 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-27）：
-- 已归档并稳定：A4-A48。
-- A49（Introduce Cross-Domain Arbitration Explainability And Secondary Reason Contract）已完成待归档。
-- A50（Introduce Arbitration Rule Version Governance And Compatibility Contract）已完成待归档。
-- A51（Introduce Sandbox Execution Isolation Contract）进行中。
+当前里程碑快照（2026-03-29）：
+- 已归档并稳定：A4-A50。
+- A51（Introduce Sandbox Execution Isolation Contract）已完成待归档。
+- A52（Introduce Sandbox Runtime Health Rollout And Capacity Governance Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -226,7 +225,10 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A51 `introduce-sandbox-execution-isolation-contract-a51`：sandbox execution isolation 契约进行中（`host|sandbox|deny` 动作决策、`security.sandbox.*` 配置域、readiness/admission 集成、timeline/security-event/delivery/diagnostics/replay/gate 一体化观测与阻断语义）。
+- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：sandbox rollout + 健康/容量治理契约进行中（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture 与 rollout governance gate）。
+
+已完成待归档能力：
+- A51 `introduce-sandbox-execution-isolation-contract-a51`：sandbox execution isolation 契约已完成（`host|sandbox|deny` 动作决策、`security.sandbox.*` 配置域、readiness/admission 集成、timeline/security-event/delivery/diagnostics/replay/gate 一体化观测与阻断语义；已接入 backend compatibility smoke、offline sandbox executor conformance harness、`security-sandbox-gate` 独立 required-check 候选）。
 
 ### 9) Runtime Readiness Admission（A44）
 
@@ -242,7 +244,7 @@ _ = err
 - 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
 
 最近已归档能力：
-- A50 `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`：arbitration rule version 治理契约已完成待归档（`runtime.arbitration.version.*`、requested/effective/source/policy additive 字段、unsupported/mismatch fail-fast、cross-version replay drift 分类）。
+- A50 `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`：arbitration rule version 治理契约已归档（`runtime.arbitration.version.*`、requested/effective/source/policy additive 字段、unsupported/mismatch fail-fast、cross-version replay drift 分类）。
 - A48 `introduce-cross-domain-primary-reason-arbitration-contract-a48`：cross-domain primary reason 裁决契约已归档（fixed precedence、deterministic tie-break、`runtime_primary_*` additive 字段、A48 replay drift 分类与 gate 阻断接线）。
 - A47 `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`：readiness + timeout + adapter-health 交叉 replay fixture gate 契约已归档（`a47.v1` fixture、drift 分类、Run/Stream parity、quality gate 阻断接线）。
 - A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health backoff + circuit governance 契约已归档（指数退避/抖动、half-open 探测、readiness/diagnostics/conformance/gate 收敛）。

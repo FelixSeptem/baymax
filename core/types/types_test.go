@@ -2,6 +2,8 @@ package types
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,5 +147,68 @@ func TestProviderCapabilitiesMissing(t *testing.T) {
 	missing := caps.Missing([]ModelCapability{ModelCapabilityStreaming, ModelCapabilityToolCall})
 	if len(missing) != 1 || missing[0] != ModelCapabilityToolCall {
 		t.Fatalf("missing = %#v, want [tool_call]", missing)
+	}
+}
+
+func TestNormalizeSandboxExecSpecDefaultsAndSanitization(t *testing.T) {
+	spec, err := NormalizeSandboxExecSpec(SandboxExecSpec{
+		NamespaceTool: " Local+Shell ",
+		Command:       " powershell ",
+		Workdir:       ".",
+		Env: map[string]string{
+			"":        "skip",
+			" EMPTY ": "   ",
+			" PATH ":  " C:\\Windows ",
+		},
+		Mounts: []SandboxMount{
+			{Source: "C:\\b", Target: "/b", ReadOnly: true},
+			{Source: " C:\\a ", Target: " /a "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NormalizeSandboxExecSpec failed: %v", err)
+	}
+	if spec.NamespaceTool != "local+shell" {
+		t.Fatalf("namespace_tool=%q, want local+shell", spec.NamespaceTool)
+	}
+	if spec.Command != "powershell" {
+		t.Fatalf("command=%q, want powershell", spec.Command)
+	}
+	if spec.SessionMode != SandboxSessionModePerCall {
+		t.Fatalf("session_mode=%q, want %q", spec.SessionMode, SandboxSessionModePerCall)
+	}
+	if !filepath.IsAbs(spec.Workdir) {
+		t.Fatalf("workdir must be absolute, got %q", spec.Workdir)
+	}
+	if len(spec.Env) != 1 || spec.Env["PATH"] != "C:\\Windows" {
+		t.Fatalf("env sanitization mismatch: %#v", spec.Env)
+	}
+	if len(spec.Mounts) != 2 {
+		t.Fatalf("mounts len=%d, want 2", len(spec.Mounts))
+	}
+	if spec.Mounts[0].Target != "/a" || spec.Mounts[0].Source != "C:\\a" {
+		t.Fatalf("mounts[0] should be normalized and sorted, got %#v", spec.Mounts[0])
+	}
+	if spec.Mounts[1].Target != "/b" {
+		t.Fatalf("mounts[1] target=%q, want /b", spec.Mounts[1].Target)
+	}
+}
+
+func TestNormalizeSandboxExecSpecRejectsInvalidSpec(t *testing.T) {
+	_, err := NormalizeSandboxExecSpec(SandboxExecSpec{
+		Command: "",
+	})
+	if err == nil || !strings.Contains(err.Error(), "sandbox exec command is required") {
+		t.Fatalf("expected required command error, got %v", err)
+	}
+
+	_, err = NormalizeSandboxExecSpec(SandboxExecSpec{
+		Command: "cmd",
+		Mounts: []SandboxMount{
+			{Source: "C:\\ok", Target: ""},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "source/target must not be empty") {
+		t.Fatalf("expected invalid mount error, got %v", err)
 	}
 }

@@ -83,6 +83,35 @@ func TestArbitratePrimaryReasonRequiredUnavailableOutranksDegradedAndOptional(t 
 	}
 }
 
+func TestArbitratePrimaryReasonSandboxRequiredOutranksOptional(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeSandboxOptionalUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+			},
+			{
+				Code:     ReadinessCodeSandboxRequiredUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+			},
+			{
+				Code:     ReadinessCodeSchedulerFallback,
+				Domain:   ReadinessDomainScheduler,
+				Severity: ReadinessSeverityWarning,
+			},
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeSandboxRequiredUnavailable ||
+		got.Source != RuntimePrimarySourceReadiness ||
+		got.RemediationHintCode != "sandbox.restore_required_executor" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("sandbox required unavailable must outrank optional/degraded, got %#v", got)
+	}
+}
+
 func TestArbitratePrimaryReasonTieBreakByLexicalCodeAndConflictCount(t *testing.T) {
 	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
 		ReadinessFindings: []ReadinessFinding{

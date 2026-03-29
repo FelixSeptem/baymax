@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-27
+更新时间：2026-03-29
 
 ## 目标
 
@@ -131,6 +131,9 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Arbitration Version Governance A50 Run/Stream + Memory/File Parity | `integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractRunStreamParitySupportedRequested`、`integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractMemoryFileParity` | `integration/arbitration_version_governance_contract_test.go::TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast` |
 | Arbitration Version Governance A50 Replay Drift Guard | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | Arbitration Version Governance A50 Gate Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Sandbox Execution Isolation A51 Run/Stream + Capability Negotiation | `integration/sandbox_execution_isolation_contract_test.go::TestSandboxExecutionIsolationContractRunStreamSecurityDeliveryParity`、`integration/sandbox_execution_isolation_contract_test.go::TestSandboxExecutionIsolationContractCapabilityNegotiationDeny` | `core/runner/runner_test.go::TestRunSandboxTimeoutDenyEmitsCanonicalTimelineReason`、`core/runner/runner_test.go::TestSecurityEventContractSandboxCapabilityMismatchDenyTriggersCallback` |
+| Sandbox Execution Isolation A51 Backend Compatibility + Conformance Harness | `integration/sandbox_execution_isolation_contract_test.go::TestSandboxExecutionIsolationContractBackendCompatibilityMatrixSmoke`、`integration/sandboxconformance/harness_test.go::TestSandboxExecutorConformanceCanonicalExecSpecInteroperability` | `integration/sandboxconformance/harness_test.go::TestSandboxExecutorConformanceCapabilityNegotiationDriftDeterministic` |
+| Sandbox Execution Isolation A51 Gate Path | `scripts/check-security-sandbox-contract.sh` | `scripts/check-security-sandbox-contract.ps1` |
 | Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
 | Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
 | Mailbox Contract A30 Backend Parity + Restore Determinism | `integration/mailbox_contract_test.go::TestMailboxContractMemoryFileParityAndRestoreReplayDeterminism` | `orchestration/mailbox/mailbox_test.go::TestMailboxSnapshotRestoreMemoryFileParity` |
@@ -163,7 +166,7 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Mailbox Worker Lease/Panic A38 Gate Path | `scripts/check-multi-agent-shared-contract.sh` | `scripts/check-multi-agent-shared-contract.ps1` |
 | Multi-Agent Mainline Performance A19 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkMultiAgentMainlineSyncInvocation`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineAsyncReporting`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineDelayedDispatch`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineRecoveryReplay` | `scripts/check-multi-agent-performance-regression.sh`、`scripts/check-multi-agent-performance-regression.ps1` |
 | Multi-Agent Mainline Performance A19 Gate Integration | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
-| Diagnostics Query Performance A42 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkDiagnosticsQueryRuns`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryMailbox`、`integration/benchmark_test.go::BenchmarkDiagnosticsMailboxAggregates` | `scripts/check-diagnostics-query-performance-regression.sh`、`scripts/check-diagnostics-query-performance-regression.ps1` |
+| Diagnostics Query Performance A42 Benchmark Matrix | `integration/benchmark_test.go::BenchmarkDiagnosticsQueryRuns`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryRunsSandboxEnriched`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryMailbox`、`integration/benchmark_test.go::BenchmarkDiagnosticsMailboxAggregates` | `scripts/check-diagnostics-query-performance-regression.sh`、`scripts/check-diagnostics-query-performance-regression.ps1` |
 | Diagnostics Query Performance A42 Gate Integration | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Full-Chain Reference Example A20 Smoke Gate | `scripts/check-full-chain-example-smoke.sh` | `scripts/check-full-chain-example-smoke.ps1` |
 | Full-Chain Reference Example A20 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

@@ -503,6 +503,78 @@ func TestComposerReadinessAdmissionBlockedDenyRunAndStreamNoSideEffects(t *testi
 	}
 }
 
+func TestComposerReadinessAdmissionSandboxRequiredDenyRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a51-blocked.yaml")
+	writeComposerA51RuntimeConfig(t, cfgPath)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A51_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	before, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats before deny failed: %v", err)
+	}
+	mailboxBefore := len(mgr.RecentMailbox(10))
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a51-blocked-run",
+		Input: "blocked-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied by sandbox-required readiness admission")
+	}
+	assertAdmissionDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a51-blocked-stream",
+		Input: "blocked-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied by sandbox-required readiness admission")
+	}
+	assertAdmissionDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	runPrimaryCode, _ := runRes.Error.Details["readiness_primary_code"].(string)
+	streamPrimaryCode, _ := streamRes.Error.Details["readiness_primary_code"].(string)
+	if runPrimaryCode != runtimeconfig.ReadinessCodeSandboxRequiredUnavailable ||
+		streamPrimaryCode != runtimeconfig.ReadinessCodeSandboxRequiredUnavailable {
+		t.Fatalf("sandbox primary_code mismatch run=%q stream=%q", runPrimaryCode, streamPrimaryCode)
+	}
+	runPrimaryDomain, _ := runRes.Error.Details["readiness_primary_domain"].(string)
+	streamPrimaryDomain, _ := streamRes.Error.Details["readiness_primary_domain"].(string)
+	if runPrimaryDomain != runtimeconfig.ReadinessDomainRuntime ||
+		streamPrimaryDomain != runtimeconfig.ReadinessDomainRuntime {
+		t.Fatalf("sandbox primary_domain mismatch run=%q stream=%q", runPrimaryDomain, streamPrimaryDomain)
+	}
+	runPrimarySource, _ := runRes.Error.Details["readiness_primary_source"].(string)
+	streamPrimarySource, _ := streamRes.Error.Details["readiness_primary_source"].(string)
+	if runPrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
+		streamPrimarySource != runtimeconfig.RuntimePrimarySourceReadiness {
+		t.Fatalf("sandbox primary_source mismatch run=%q stream=%q", runPrimarySource, streamPrimarySource)
+	}
+
+	after, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after deny failed: %v", err)
+	}
+	assertSchedulerStatsUnchanged(t, before, after)
+	if len(mgr.RecentMailbox(10)) != mailboxBefore {
+		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
+	}
+}
+
 func TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-allow.yaml")
 	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
@@ -672,6 +744,38 @@ func writeComposerA44RuntimeConfig(t *testing.T, path, degradedPolicy string) {
 		"      mode: fail_fast",
 		"      block_on: blocked_only",
 		"      degraded_policy: " + strings.TrimSpace(degradedPolicy),
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config %q: %v", path, err)
+	}
+}
+
+func writeComposerA51RuntimeConfig(t *testing.T, path string) {
+	t.Helper()
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: allow_and_record",
+		"security:",
+		"  sandbox:",
+		"    enabled: true",
+		"    required: true",
+		"    mode: enforce",
+		"    policy:",
+		"      default_action: sandbox",
+		"      profile: default",
+		"      fallback_action: deny",
 		"reload:",
 		"  enabled: false",
 		"  debounce: 20ms",

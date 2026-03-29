@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,7 @@ type Engine struct {
 	securityAlert      types.SecurityAlertCallback
 	securityDeliveryMu sync.Mutex
 	securityDelivery   *securityAlertDeliveryExecutor
+	sandboxExecutor    types.SandboxExecutor
 	now                func() time.Time
 	newRunID           func() string
 	capCacheMu         sync.RWMutex
@@ -134,8 +136,21 @@ func WithTraceManager(tracer *obsTrace.Manager) Option {
 func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	return func(e *Engine) {
 		e.runtimeMgr = mgr
+		if e.runtimeMgr != nil && e.sandboxExecutor != nil {
+			e.runtimeMgr.SetSandboxExecutor(e.sandboxExecutor)
+		}
 		if e.dispatcher != nil {
 			e.dispatcher.SetRuntimeManager(mgr)
+		}
+	}
+}
+
+// WithSandboxExecutor injects host-provided sandbox executor and bridges it into runtime manager when available.
+func WithSandboxExecutor(executor types.SandboxExecutor) Option {
+	return func(e *Engine) {
+		e.sandboxExecutor = executor
+		if e.runtimeMgr != nil {
+			e.runtimeMgr.SetSandboxExecutor(executor)
 		}
 	}
 }
@@ -230,6 +245,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
+	sandboxRuntime := e.sandboxRuntimeSnapshot()
+	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -525,9 +542,30 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					warnings = append(warnings, o.Result.Error.Message)
 				}
 			}
+			sandboxAggregate.observeOutcomes(outcomes)
 			if err != nil {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, "dispatch_error")
+				primaryErr := primaryToolOutcomeError(outcomes)
+				reason := "dispatch_error"
 				terminal = classified(types.ErrTool, err.Error(), false)
+				if primaryErr != nil {
+					if timelineReason := toolDispatchTimelineReason(primaryErr); timelineReason != "" {
+						reason = timelineReason
+					}
+					terminal = &types.ClassifiedError{
+						Class:     primaryErr.Class,
+						Message:   strings.TrimSpace(primaryErr.Message),
+						Retryable: false,
+						Details:   cloneDetailsMap(primaryErr.Details),
+					}
+					if terminal.Message == "" {
+						terminal.Message = err.Error()
+					}
+					if decision, ok := securityDecisionFromToolError(primaryErr); ok {
+						lastSecurity = e.finalizeSecurityDecision(ctx, runID, iteration, decision)
+						terminal = securityDeniedError(terminal.Message, lastSecurity, cloneDetailsMap(terminal.Details))
+					}
+				}
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, reason)
 				runErr = err
 				state = StateAbort
 				continue
@@ -551,7 +589,16 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					"backpressure": dispatchCfg.Backpressure,
 				},
 			})
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSucceeded, "")
+			e.emitTimeline(
+				ctx,
+				h,
+				runID,
+				iteration,
+				&timelineSeq,
+				types.ActionPhaseTool,
+				types.ActionStatusSucceeded,
+				toolDispatchObservedSandboxReason(outcomes),
+			)
 			pendingOutcomes = outcomes
 			state = StateModelStep
 		case StateFinalize:
@@ -604,6 +651,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, nil
@@ -662,6 +710,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, runErr
@@ -1461,6 +1510,7 @@ type runFinishMeta struct {
 	AlertQueueDropCount int
 	AlertCircuitState   string
 	AlertCircuitReason  string
+	Sandbox             sandboxRunDiagnostics
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -1697,6 +1747,44 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.AlertCircuitReason != "" {
 		payload["alert_circuit_open_reason"] = meta.AlertCircuitReason
 	}
+	if meta.Sandbox.Observed {
+		if meta.Sandbox.Mode != "" {
+			payload["sandbox_mode"] = meta.Sandbox.Mode
+		}
+		if meta.Sandbox.Backend != "" {
+			payload["sandbox_backend"] = meta.Sandbox.Backend
+		}
+		if meta.Sandbox.Profile != "" {
+			payload["sandbox_profile"] = meta.Sandbox.Profile
+		}
+		if meta.Sandbox.SessionMode != "" {
+			payload["sandbox_session_mode"] = meta.Sandbox.SessionMode
+		}
+		if len(meta.Sandbox.RequiredCapabilities) > 0 {
+			payload["sandbox_required_capabilities"] = append([]string(nil), meta.Sandbox.RequiredCapabilities...)
+		}
+		if meta.Sandbox.Decision != "" {
+			payload["sandbox_decision"] = meta.Sandbox.Decision
+		}
+		if meta.Sandbox.ReasonCode != "" {
+			payload["sandbox_reason_code"] = meta.Sandbox.ReasonCode
+		}
+		payload["sandbox_fallback_used"] = meta.Sandbox.FallbackUsed
+		if meta.Sandbox.FallbackReason != "" {
+			payload["sandbox_fallback_reason"] = meta.Sandbox.FallbackReason
+		}
+		payload["sandbox_timeout_total"] = meta.Sandbox.TimeoutTotal
+		payload["sandbox_launch_failed_total"] = meta.Sandbox.LaunchFailedTotal
+		payload["sandbox_capability_mismatch_total"] = meta.Sandbox.CapabilityMismatchTotal
+		payload["sandbox_queue_wait_ms_p95"] = meta.Sandbox.QueueWaitMsP95
+		payload["sandbox_exec_latency_ms_p95"] = meta.Sandbox.ExecLatencyMsP95
+		if meta.Sandbox.HasExitCode {
+			payload["sandbox_exit_code_last"] = meta.Sandbox.ExitCodeLast
+		}
+		payload["sandbox_oom_total"] = meta.Sandbox.OOMTotal
+		payload["sandbox_resource_cpu_ms_total"] = meta.Sandbox.ResourceCPUMsTotal
+		payload["sandbox_resource_memory_peak_bytes_p95"] = meta.Sandbox.ResourceMemoryPeakBytesP95
+	}
 	return payload
 }
 
@@ -1712,6 +1800,439 @@ func (e *Engine) contextAssemblerEnabled() bool {
 		return false
 	}
 	return e.runtimeMgr.EffectiveConfig().ContextAssembler.Enabled
+}
+
+type sandboxRuntimeSnapshot struct {
+	Enabled              bool
+	Mode                 string
+	Backend              string
+	Profile              string
+	SessionMode          string
+	RequiredCapabilities []string
+}
+
+type sandboxRunDiagnostics struct {
+	Observed                   bool
+	Mode                       string
+	Backend                    string
+	Profile                    string
+	SessionMode                string
+	RequiredCapabilities       []string
+	Decision                   string
+	ReasonCode                 string
+	FallbackUsed               bool
+	FallbackReason             string
+	TimeoutTotal               int
+	LaunchFailedTotal          int
+	CapabilityMismatchTotal    int
+	QueueWaitMsP95             int64
+	ExecLatencyMsP95           int64
+	ExitCodeLast               int
+	HasExitCode                bool
+	OOMTotal                   int
+	ResourceCPUMsTotal         int64
+	ResourceMemoryPeakBytesP95 int64
+}
+
+type sandboxRunDiagnosticsAccumulator struct {
+	observed                bool
+	mode                    string
+	backend                 string
+	profile                 string
+	sessionMode             string
+	requiredCapabilities    []string
+	decision                string
+	reasonCode              string
+	fallbackUsed            bool
+	fallbackReason          string
+	timeoutTotal            int
+	launchFailedTotal       int
+	capabilityMismatchTotal int
+	queueWaitSamples        []int64
+	execLatencySamples      []int64
+	exitCodeLast            int
+	hasExitCode             bool
+	oomTotal                int
+	resourceCPUMsTotal      int64
+	memoryPeakSamples       []int64
+}
+
+func (e *Engine) sandboxRuntimeSnapshot() sandboxRuntimeSnapshot {
+	if e == nil || e.runtimeMgr == nil {
+		return sandboxRuntimeSnapshot{}
+	}
+	cfg := e.runtimeMgr.EffectiveConfig().Security.Sandbox
+	return sandboxRuntimeSnapshot{
+		Enabled:              cfg.Enabled,
+		Mode:                 strings.ToLower(strings.TrimSpace(cfg.Mode)),
+		Backend:              strings.ToLower(strings.TrimSpace(cfg.Executor.Backend)),
+		Profile:              strings.ToLower(strings.TrimSpace(cfg.Policy.Profile)),
+		SessionMode:          strings.ToLower(strings.TrimSpace(cfg.Executor.SessionMode)),
+		RequiredCapabilities: cloneNormalizedStringSlice(cfg.Executor.RequiredCapabilities),
+	}
+}
+
+func (a *sandboxRunDiagnosticsAccumulator) observeOutcomes(outcomes []types.ToolCallOutcome) {
+	if a == nil || len(outcomes) == 0 {
+		return
+	}
+	for i := range outcomes {
+		outcome := outcomes[i]
+		if outcome.Result.Error != nil {
+			a.observeDetailFields(outcome.Result.Error.Details)
+		}
+		a.observeStructuredFields(outcome.Result.Structured)
+	}
+}
+
+func (a *sandboxRunDiagnosticsAccumulator) observeDetailFields(details map[string]any) {
+	if a == nil || len(details) == 0 {
+		return
+	}
+	if mode := normalizeSandboxMode(sandboxMapString(details, "sandbox_mode")); mode != "" {
+		a.mode = mode
+		a.observed = true
+	}
+	if backend := strings.ToLower(strings.TrimSpace(sandboxMapString(details, "sandbox_backend"))); backend != "" {
+		a.backend = backend
+		a.observed = true
+	}
+	if profile := strings.ToLower(strings.TrimSpace(sandboxMapString(details, "sandbox_profile"))); profile != "" {
+		a.profile = profile
+		a.observed = true
+	}
+	if session := normalizeSandboxSessionMode(sandboxMapString(details, "sandbox_session_mode")); session != "" {
+		a.sessionMode = session
+		a.observed = true
+	}
+	required := sandboxMapStringSlice(details, "sandbox_required_capabilities")
+	if len(required) == 0 {
+		required = sandboxMapStringSlice(details, "required_capabilities")
+	}
+	if len(required) > 0 {
+		a.requiredCapabilities = required
+		a.observed = true
+	}
+	if decision := normalizeSandboxDecision(sandboxMapString(details, "sandbox_action")); decision != "" {
+		a.decision = decision
+		a.observed = true
+	}
+	if fallbackAction := strings.ToLower(strings.TrimSpace(sandboxMapString(details, "sandbox_fallback"))); fallbackAction == runtimeconfig.SecuritySandboxFallbackAllowAndRecord {
+		a.fallbackUsed = true
+		if a.decision == "" {
+			a.decision = runtimeconfig.SecuritySandboxActionHost
+		}
+		a.observed = true
+	}
+	a.observeReason(sandboxMapString(details, "reason_code"))
+}
+
+func (a *sandboxRunDiagnosticsAccumulator) observeStructuredFields(structured map[string]any) {
+	if a == nil || len(structured) == 0 {
+		return
+	}
+	if mode := normalizeSandboxMode(sandboxMapString(structured, "sandbox_mode")); mode != "" {
+		a.mode = mode
+		a.observed = true
+	}
+	if backend := strings.ToLower(strings.TrimSpace(sandboxMapString(structured, "sandbox_backend"))); backend != "" {
+		a.backend = backend
+		a.observed = true
+	}
+	if profile := strings.ToLower(strings.TrimSpace(sandboxMapString(structured, "sandbox_profile"))); profile != "" {
+		a.profile = profile
+		a.observed = true
+	}
+	if session := normalizeSandboxSessionMode(sandboxMapString(structured, "sandbox_session_mode")); session != "" {
+		a.sessionMode = session
+		a.observed = true
+	}
+	if required := sandboxMapStringSlice(structured, "sandbox_required_capabilities"); len(required) > 0 {
+		a.requiredCapabilities = required
+		a.observed = true
+	}
+	if decision := normalizeSandboxDecision(sandboxMapString(structured, "sandbox_decision")); decision != "" {
+		a.decision = decision
+		a.observed = true
+	}
+	if sandboxMapBool(structured, "sandbox_fallback") || sandboxMapBool(structured, "sandbox_fallback_used") {
+		a.fallbackUsed = true
+		if a.decision == "" {
+			a.decision = runtimeconfig.SecuritySandboxActionHost
+		}
+		a.observed = true
+	}
+	if reason := strings.ToLower(strings.TrimSpace(sandboxMapString(structured, "sandbox_fallback_reason"))); reason != "" {
+		a.fallbackReason = reason
+		a.observeReason(reason)
+	}
+	a.observeReason(sandboxMapString(structured, "sandbox_reason_code"))
+
+	if queueWait, ok := sandboxMapInt64(structured, "sandbox_queue_wait_ms"); ok && queueWait >= 0 {
+		a.queueWaitSamples = append(a.queueWaitSamples, queueWait)
+		a.observed = true
+	}
+	if execLatency, ok := sandboxMapInt64(structured, "sandbox_exec_latency_ms"); ok && execLatency >= 0 {
+		a.execLatencySamples = append(a.execLatencySamples, execLatency)
+		a.observed = true
+	}
+	if exitCode, ok := sandboxMapInt(structured, "sandbox_exit_code"); ok {
+		a.exitCodeLast = exitCode
+		a.hasExitCode = true
+		a.observed = true
+	}
+	if sandboxMapBool(structured, "sandbox_oom") {
+		a.oomTotal++
+		a.observed = true
+	}
+	if cpuMs, ok := sandboxMapInt64(structured, "sandbox_resource_cpu_ms"); ok && cpuMs >= 0 {
+		a.resourceCPUMsTotal += cpuMs
+		a.observed = true
+	}
+	if memoryPeak, ok := sandboxMapInt64(structured, "sandbox_resource_memory_peak_bytes"); ok && memoryPeak >= 0 {
+		a.memoryPeakSamples = append(a.memoryPeakSamples, memoryPeak)
+		a.observed = true
+	}
+}
+
+func (a *sandboxRunDiagnosticsAccumulator) observeReason(reason string) {
+	if a == nil {
+		return
+	}
+	normalized := strings.ToLower(strings.TrimSpace(reason))
+	if !strings.HasPrefix(normalized, "sandbox.") {
+		return
+	}
+	a.reasonCode = normalized
+	a.observed = true
+	switch normalized {
+	case types.SandboxViolationTimeout:
+		a.timeoutTotal++
+	case "sandbox.launch_failed", types.SandboxViolationLaunchFailed:
+		a.launchFailedTotal++
+	case types.SandboxViolationCapabilityMismatch:
+		a.capabilityMismatchTotal++
+	case types.SandboxViolationOOM:
+		a.oomTotal++
+	case "sandbox.fallback_allow_and_record":
+		a.fallbackUsed = true
+		if a.fallbackReason == "" {
+			a.fallbackReason = normalized
+		}
+		if a.decision == "" {
+			a.decision = runtimeconfig.SecuritySandboxActionHost
+		}
+	}
+	if a.decision == "" {
+		a.decision = runtimeconfig.SecuritySandboxActionDeny
+	}
+}
+
+func (a sandboxRunDiagnosticsAccumulator) snapshot(runtime sandboxRuntimeSnapshot) sandboxRunDiagnostics {
+	out := sandboxRunDiagnostics{
+		Observed:                   a.observed,
+		Mode:                       a.mode,
+		Backend:                    a.backend,
+		Profile:                    a.profile,
+		SessionMode:                a.sessionMode,
+		RequiredCapabilities:       cloneNormalizedStringSlice(a.requiredCapabilities),
+		Decision:                   a.decision,
+		ReasonCode:                 a.reasonCode,
+		FallbackUsed:               a.fallbackUsed,
+		FallbackReason:             a.fallbackReason,
+		TimeoutTotal:               a.timeoutTotal,
+		LaunchFailedTotal:          a.launchFailedTotal,
+		CapabilityMismatchTotal:    a.capabilityMismatchTotal,
+		QueueWaitMsP95:             percentileP95Int64(a.queueWaitSamples),
+		ExecLatencyMsP95:           percentileP95Int64(a.execLatencySamples),
+		ExitCodeLast:               a.exitCodeLast,
+		HasExitCode:                a.hasExitCode,
+		OOMTotal:                   a.oomTotal,
+		ResourceCPUMsTotal:         a.resourceCPUMsTotal,
+		ResourceMemoryPeakBytesP95: percentileP95Int64(a.memoryPeakSamples),
+	}
+	if !out.Observed {
+		return out
+	}
+	if out.Mode == "" {
+		out.Mode = runtime.Mode
+	}
+	if out.Backend == "" {
+		out.Backend = runtime.Backend
+	}
+	if out.Profile == "" {
+		out.Profile = runtime.Profile
+	}
+	if out.SessionMode == "" {
+		out.SessionMode = runtime.SessionMode
+	}
+	if len(out.RequiredCapabilities) == 0 {
+		out.RequiredCapabilities = cloneNormalizedStringSlice(runtime.RequiredCapabilities)
+	}
+	if out.Decision == "" && out.FallbackUsed {
+		out.Decision = runtimeconfig.SecuritySandboxActionHost
+	}
+	if out.Decision == "" && out.ReasonCode != "" {
+		out.Decision = runtimeconfig.SecuritySandboxActionDeny
+	}
+	if out.FallbackReason == "" && out.FallbackUsed {
+		out.FallbackReason = "sandbox.fallback_allow_and_record"
+	}
+	if out.ReasonCode == "" && out.FallbackReason != "" {
+		out.ReasonCode = out.FallbackReason
+	}
+	return out
+}
+
+func normalizeSandboxMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case runtimeconfig.SecuritySandboxModeObserve:
+		return runtimeconfig.SecuritySandboxModeObserve
+	case runtimeconfig.SecuritySandboxModeEnforce:
+		return runtimeconfig.SecuritySandboxModeEnforce
+	default:
+		return ""
+	}
+}
+
+func normalizeSandboxSessionMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case runtimeconfig.SecuritySandboxSessionModePerCall:
+		return runtimeconfig.SecuritySandboxSessionModePerCall
+	case runtimeconfig.SecuritySandboxSessionModePerSession:
+		return runtimeconfig.SecuritySandboxSessionModePerSession
+	default:
+		return ""
+	}
+}
+
+func normalizeSandboxDecision(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case runtimeconfig.SecuritySandboxActionHost:
+		return runtimeconfig.SecuritySandboxActionHost
+	case runtimeconfig.SecuritySandboxActionSandbox:
+		return runtimeconfig.SecuritySandboxActionSandbox
+	case runtimeconfig.SecuritySandboxActionDeny:
+		return runtimeconfig.SecuritySandboxActionDeny
+	default:
+		return ""
+	}
+}
+
+func cloneNormalizedStringSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for i := range in {
+		item := strings.ToLower(strings.TrimSpace(in[i]))
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func percentileP95Int64(samples []int64) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	if len(samples) == 1 {
+		return samples[0]
+	}
+	cp := make([]int64, len(samples))
+	copy(cp, samples)
+	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	index := int(math.Ceil(0.95*float64(len(cp)))) - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(cp) {
+		index = len(cp) - 1
+	}
+	return cp[index]
+}
+
+func sandboxMapString(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw, ok := values[key]
+	if !ok {
+		return ""
+	}
+	typed, _ := raw.(string)
+	return strings.TrimSpace(typed)
+}
+
+func sandboxMapStringSlice(values map[string]any, key string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	raw, ok := values[key]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []string:
+		return cloneNormalizedStringSlice(typed)
+	case []any:
+		items := make([]string, 0, len(typed))
+		for i := range typed {
+			item, ok := typed[i].(string)
+			if !ok {
+				continue
+			}
+			items = append(items, item)
+		}
+		return cloneNormalizedStringSlice(items)
+	case string:
+		parts := strings.Split(typed, ",")
+		return cloneNormalizedStringSlice(parts)
+	default:
+		return nil
+	}
+}
+
+func sandboxMapBool(values map[string]any, key string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	raw, ok := values[key]
+	if !ok {
+		return false
+	}
+	typed, _ := raw.(bool)
+	return typed
+}
+
+func sandboxMapInt64(values map[string]any, key string) (int64, bool) {
+	if len(values) == 0 {
+		return 0, false
+	}
+	raw, ok := values[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := raw.(type) {
+	case int64:
+		return typed, true
+	case int:
+		return int64(typed), true
+	case float64:
+		return int64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func sandboxMapInt(values map[string]any, key string) (int, bool) {
+	v, ok := sandboxMapInt64(values, key)
+	return int(v), ok
 }
 
 func classifyRunTerminal(terminal *types.ClassifiedError, runErr error) (types.ActionStatus, string) {
@@ -1774,6 +2295,111 @@ func classifyClassifiedTimelineError(err *types.ClassifiedError) (types.ActionSt
 	default:
 		return types.ActionStatusFailed, "failed"
 	}
+}
+
+func primaryToolOutcomeError(outcomes []types.ToolCallOutcome) *types.ClassifiedError {
+	var first *types.ClassifiedError
+	for i := range outcomes {
+		candidate := outcomes[i].Result.Error
+		if candidate == nil {
+			continue
+		}
+		if first == nil {
+			first = candidate
+		}
+		if candidate.Class == types.ErrSecurity {
+			return candidate
+		}
+	}
+	return first
+}
+
+func toolDispatchTimelineReason(err *types.ClassifiedError) string {
+	if err == nil {
+		return "dispatch_error"
+	}
+	if err.Details != nil {
+		if reason, ok := err.Details["reason_code"].(string); ok {
+			reason = strings.ToLower(strings.TrimSpace(reason))
+			if strings.HasPrefix(reason, "sandbox.") {
+				return reason
+			}
+		}
+	}
+	if err.Class == types.ErrSecurity {
+		return "security_error"
+	}
+	return "dispatch_error"
+}
+
+func toolDispatchObservedSandboxReason(outcomes []types.ToolCallOutcome) string {
+	for i := range outcomes {
+		outcome := outcomes[i]
+		if outcome.Result.Error != nil && outcome.Result.Error.Details != nil {
+			if reason, ok := outcome.Result.Error.Details["reason_code"].(string); ok {
+				normalized := strings.ToLower(strings.TrimSpace(reason))
+				if strings.HasPrefix(normalized, "sandbox.") {
+					return normalized
+				}
+			}
+		}
+		if outcome.Result.Structured != nil {
+			if reason, ok := outcome.Result.Structured["sandbox_fallback_reason"].(string); ok {
+				normalized := strings.ToLower(strings.TrimSpace(reason))
+				if strings.HasPrefix(normalized, "sandbox.") {
+					return normalized
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func securityDecisionFromToolError(err *types.ClassifiedError) (securityDecision, bool) {
+	if err == nil || err.Class != types.ErrSecurity {
+		return securityDecision{}, false
+	}
+	reason := ""
+	namespaceTool := ""
+	policyKind := ""
+	decisionValue := "deny"
+	if err.Details != nil {
+		if value, ok := err.Details["reason_code"].(string); ok {
+			reason = strings.ToLower(strings.TrimSpace(value))
+		}
+		if value, ok := err.Details["namespace_tool"].(string); ok {
+			namespaceTool = strings.ToLower(strings.TrimSpace(value))
+		}
+		if value, ok := err.Details["policy_kind"].(string); ok {
+			policyKind = strings.ToLower(strings.TrimSpace(value))
+		}
+		if value, ok := err.Details["decision"].(string); ok && strings.TrimSpace(value) != "" {
+			decisionValue = strings.ToLower(strings.TrimSpace(value))
+		}
+	}
+	if !strings.HasPrefix(reason, "sandbox.") {
+		return securityDecision{}, false
+	}
+	if policyKind == "" {
+		policyKind = "sandbox"
+	}
+	return securityDecision{
+		PolicyKind:    policyKind,
+		NamespaceTool: namespaceTool,
+		Decision:      decisionValue,
+		ReasonCode:    reason,
+	}, true
+}
+
+func cloneDetailsMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 type actionGateStats struct {

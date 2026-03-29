@@ -106,6 +106,25 @@ jobs:
       - name: Security Delivery Gate
         run: bash scripts/check-security-delivery-contract.sh
 
+  security-sandbox-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Security Sandbox Gate
+        run: bash scripts/check-security-sandbox-contract.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

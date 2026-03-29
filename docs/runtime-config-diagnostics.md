@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-27
+更新时间：2026-03-29
 
 ## 目标
 
@@ -1296,6 +1296,46 @@ security:
 - Linux/macOS: `bash scripts/check-security-delivery-contract.sh`
 - Windows: `pwsh -File scripts/check-security-delivery-contract.ps1`
 - CI Job: `security-delivery-gate`（仅 PR 触发）
+
+## 安全执行隔离（A51）
+
+A51 在 S2/S3/S4 基础上新增 sandbox execution isolation 契约：统一 `host|sandbox|deny` 动作决策、capability negotiation、session lifecycle 与 fallback 语义，并在 Run/Stream、diagnostics、replay、gate 侧保持一致。
+
+```yaml
+security:
+  sandbox:
+    enabled: true
+    mode: enforce                  # observe|enforce
+    required: true
+    policy:
+      default_action: host         # host|sandbox|deny
+      by_tool:
+        local+exec: sandbox
+      profile: default
+      fallback_action: deny        # allow_and_record|deny
+    executor:
+      backend: windows_job         # linux_nsjail|linux_bwrap|oci_runtime|windows_job
+      session_mode: per_call       # per_call|per_session
+      required_capabilities:
+        - stdout_stderr_capture
+```
+
+新增 sandbox run diagnostics 字段（additive + nullable + default）：
+
+- 决策与配置：`sandbox_mode`、`sandbox_backend`、`sandbox_profile`、`sandbox_session_mode`、`sandbox_required_capabilities`、`sandbox_decision`、`sandbox_reason_code`
+- fallback 与失败计数：`sandbox_fallback_used`、`sandbox_fallback_reason`、`sandbox_timeout_total`、`sandbox_launch_failed_total`、`sandbox_capability_mismatch_total`
+- 资源与时延：`sandbox_exec_latency_ms_p95`、`sandbox_exit_code_last`、`sandbox_oom_total`、`sandbox_resource_cpu_ms_total`、`sandbox_resource_memory_peak_bytes_p95`
+
+A51 门禁与 required-check 暴露：
+
+- sandbox contract gate：
+  - Linux/macOS: `bash scripts/check-security-sandbox-contract.sh`
+  - Windows: `pwsh -File scripts/check-security-sandbox-contract.ps1`
+- sandbox executor offline conformance harness：
+  - Linux/macOS: `bash scripts/check-sandbox-executor-conformance.sh`
+  - Windows: `pwsh -File scripts/check-sandbox-executor-conformance.ps1`
+- CI Job: `security-sandbox-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-security-sandbox-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

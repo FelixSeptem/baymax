@@ -136,6 +136,24 @@ mcp:
 			"alert_queue_drop_count":                           1,
 			"alert_circuit_state":                              "open",
 			"alert_circuit_open_reason":                        "alert.callback_error",
+			"sandbox_mode":                                     "enforce",
+			"sandbox_backend":                                  "windows_job",
+			"sandbox_profile":                                  "default",
+			"sandbox_session_mode":                             "per_call",
+			"sandbox_required_capabilities":                    []any{"stdout_stderr_capture", "oom_signal"},
+			"sandbox_decision":                                 "sandbox",
+			"sandbox_reason_code":                              "sandbox.timeout",
+			"sandbox_fallback_used":                            true,
+			"sandbox_fallback_reason":                          "sandbox.fallback_allow_and_record",
+			"sandbox_timeout_total":                            1,
+			"sandbox_launch_failed_total":                      2,
+			"sandbox_capability_mismatch_total":                3,
+			"sandbox_queue_wait_ms_p95":                        int64(9),
+			"sandbox_exec_latency_ms_p95":                      int64(11),
+			"sandbox_exit_code_last":                           137,
+			"sandbox_oom_total":                                4,
+			"sandbox_resource_cpu_ms_total":                    int64(321),
+			"sandbox_resource_memory_peak_bytes_p95":           int64(2048),
 			"prefix_hash":                                      "abc123",
 			"assemble_latency_ms":                              int64(8),
 			"assemble_status":                                  "success",
@@ -333,6 +351,28 @@ mcp:
 	}
 	if items[0].AlertCircuitState != "open" || items[0].AlertCircuitOpenReason != "alert.callback_error" {
 		t.Fatalf("security circuit fields mismatch: %#v", items[0])
+	}
+	if items[0].SandboxMode != "enforce" ||
+		items[0].SandboxBackend != "windows_job" ||
+		items[0].SandboxProfile != "default" ||
+		items[0].SandboxSessionMode != "per_call" ||
+		len(items[0].SandboxRequiredCapabilities) != 2 ||
+		items[0].SandboxRequiredCapabilities[0] != "stdout_stderr_capture" ||
+		items[0].SandboxRequiredCapabilities[1] != "oom_signal" ||
+		items[0].SandboxDecision != "sandbox" ||
+		items[0].SandboxReasonCode != "sandbox.timeout" ||
+		!items[0].SandboxFallbackUsed ||
+		items[0].SandboxFallbackReason != "sandbox.fallback_allow_and_record" ||
+		items[0].SandboxTimeoutTotal != 1 ||
+		items[0].SandboxLaunchFailedTotal != 2 ||
+		items[0].SandboxCapabilityMismatchTotal != 3 ||
+		items[0].SandboxQueueWaitMsP95 != 9 ||
+		items[0].SandboxExecLatencyMsP95 != 11 ||
+		items[0].SandboxExitCodeLast != 137 ||
+		items[0].SandboxOOMTotal != 4 ||
+		items[0].SandboxResourceCPUMsTotal != 321 ||
+		items[0].SandboxResourceMemoryPeakBytesP95 != 2048 {
+		t.Fatalf("sandbox fields mismatch: %#v", items[0])
 	}
 	if items[0].PrefixHash != "abc123" || items[0].AssembleLatencyMs != 8 || items[0].AssembleStatus != "success" {
 		t.Fatalf("assembler fields mismatch: %#v", items[0])
@@ -921,6 +961,73 @@ mcp:
 		got.RuntimeArbitrationRuleUnsupportedTotal != 0 ||
 		got.RuntimeArbitrationRuleMismatchTotal != 0 {
 		t.Fatalf("missing A50 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA51ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a51-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(51),
+			"a51_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 51 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.SandboxMode != "" ||
+		got.SandboxBackend != "" ||
+		got.SandboxProfile != "" ||
+		got.SandboxSessionMode != "" ||
+		len(got.SandboxRequiredCapabilities) != 0 ||
+		got.SandboxDecision != "" ||
+		got.SandboxReasonCode != "" ||
+		got.SandboxFallbackUsed ||
+		got.SandboxFallbackReason != "" ||
+		got.SandboxTimeoutTotal != 0 ||
+		got.SandboxLaunchFailedTotal != 0 ||
+		got.SandboxCapabilityMismatchTotal != 0 ||
+		got.SandboxQueueWaitMsP95 != 0 ||
+		got.SandboxExecLatencyMsP95 != 0 ||
+		got.SandboxExitCodeLast != 0 ||
+		got.SandboxOOMTotal != 0 ||
+		got.SandboxResourceCPUMsTotal != 0 ||
+		got.SandboxResourceMemoryPeakBytesP95 != 0 {
+		t.Fatalf("missing A51 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

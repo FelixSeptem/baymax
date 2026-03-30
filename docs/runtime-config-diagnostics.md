@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-29
+更新时间：2026-03-30
 
 ## 目标
 

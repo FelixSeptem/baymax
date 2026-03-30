@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -35,33 +36,37 @@ const (
 )
 
 const (
-	ReadinessCodeConfigInvalid                 = "runtime.config.invalid"
-	ReadinessCodeStrictEscalated               = "runtime.readiness.strict_escalated"
-	ReadinessCodeArbitrationVersionUnsupported = "runtime.arbitration.version.unsupported"
-	ReadinessCodeArbitrationVersionMismatch    = "runtime.arbitration.version.compatibility_mismatch"
-	ReadinessCodeSchedulerFallback             = "scheduler.backend.fallback"
-	ReadinessCodeSchedulerActivationError      = "scheduler.backend.activation_failed"
-	ReadinessCodeMailboxFallback               = "mailbox.backend.fallback"
-	ReadinessCodeMailboxActivationError        = "mailbox.backend.activation_failed"
-	ReadinessCodeRecoveryFallback              = "recovery.backend.fallback"
-	ReadinessCodeRecoveryActivationError       = "recovery.backend.activation_failed"
-	ReadinessCodeRuntimeManagerUnavailable     = "runtime.manager.unavailable"
-	ReadinessCodeAdapterRequiredUnavailable    = "adapter.health.required_unavailable"
-	ReadinessCodeAdapterOptionalUnavailable    = "adapter.health.optional_unavailable"
-	ReadinessCodeAdapterDegraded               = "adapter.health.degraded"
-	ReadinessCodeAdapterRequiredCircuitOpen    = "adapter.health.required_circuit_open"
-	ReadinessCodeAdapterOptionalCircuitOpen    = "adapter.health.optional_circuit_open"
-	ReadinessCodeAdapterHalfOpenDegraded       = "adapter.health.half_open_degraded"
-	ReadinessCodeAdapterGovernanceRecovered    = "adapter.health.governance_recovered"
-	ReadinessCodeSandboxRequiredUnavailable    = "sandbox.required_unavailable"
-	ReadinessCodeSandboxOptionalUnavailable    = "sandbox.optional_unavailable"
-	ReadinessCodeSandboxProfileInvalid         = "sandbox.profile_invalid"
-	ReadinessCodeSandboxCapabilityMismatch     = "sandbox.capability_mismatch"
-	ReadinessCodeSandboxSessionModeUnsupported = "sandbox.session_mode_unsupported"
-	ReadinessCodeSandboxRolloutPhaseInvalid    = "sandbox.rollout.phase_invalid"
-	ReadinessCodeSandboxRolloutHealthBreached  = "sandbox.rollout.health_budget_breached"
-	ReadinessCodeSandboxRolloutFrozen          = "sandbox.rollout.frozen"
-	ReadinessCodeSandboxRolloutCapacityBlocked = "sandbox.rollout.capacity_unavailable"
+	ReadinessCodeConfigInvalid                        = "runtime.config.invalid"
+	ReadinessCodeStrictEscalated                      = "runtime.readiness.strict_escalated"
+	ReadinessCodeArbitrationVersionUnsupported        = "runtime.arbitration.version.unsupported"
+	ReadinessCodeArbitrationVersionMismatch           = "runtime.arbitration.version.compatibility_mismatch"
+	ReadinessCodeSchedulerFallback                    = "scheduler.backend.fallback"
+	ReadinessCodeSchedulerActivationError             = "scheduler.backend.activation_failed"
+	ReadinessCodeMailboxFallback                      = "mailbox.backend.fallback"
+	ReadinessCodeMailboxActivationError               = "mailbox.backend.activation_failed"
+	ReadinessCodeRecoveryFallback                     = "recovery.backend.fallback"
+	ReadinessCodeRecoveryActivationError              = "recovery.backend.activation_failed"
+	ReadinessCodeRuntimeManagerUnavailable            = "runtime.manager.unavailable"
+	ReadinessCodeAdapterRequiredUnavailable           = "adapter.health.required_unavailable"
+	ReadinessCodeAdapterOptionalUnavailable           = "adapter.health.optional_unavailable"
+	ReadinessCodeAdapterDegraded                      = "adapter.health.degraded"
+	ReadinessCodeAdapterRequiredCircuitOpen           = "adapter.health.required_circuit_open"
+	ReadinessCodeAdapterOptionalCircuitOpen           = "adapter.health.optional_circuit_open"
+	ReadinessCodeAdapterHalfOpenDegraded              = "adapter.health.half_open_degraded"
+	ReadinessCodeAdapterGovernanceRecovered           = "adapter.health.governance_recovered"
+	ReadinessCodeSandboxRequiredUnavailable           = "sandbox.required_unavailable"
+	ReadinessCodeSandboxOptionalUnavailable           = "sandbox.optional_unavailable"
+	ReadinessCodeSandboxProfileInvalid                = "sandbox.profile_invalid"
+	ReadinessCodeSandboxCapabilityMismatch            = "sandbox.capability_mismatch"
+	ReadinessCodeSandboxSessionModeUnsupported        = "sandbox.session_mode_unsupported"
+	ReadinessCodeSandboxAdapterProfileMissing         = "sandbox.adapter.profile_missing"
+	ReadinessCodeSandboxAdapterBackendNotSupported    = "sandbox.adapter.backend_not_supported"
+	ReadinessCodeSandboxAdapterHostMismatch           = "sandbox.adapter.host_mismatch"
+	ReadinessCodeSandboxAdapterSessionModeUnsupported = "sandbox.adapter.session_mode_unsupported"
+	ReadinessCodeSandboxRolloutPhaseInvalid           = "sandbox.rollout.phase_invalid"
+	ReadinessCodeSandboxRolloutHealthBreached         = "sandbox.rollout.health_budget_breached"
+	ReadinessCodeSandboxRolloutFrozen                 = "sandbox.rollout.frozen"
+	ReadinessCodeSandboxRolloutCapacityBlocked        = "sandbox.rollout.capacity_unavailable"
 )
 
 type ReadinessAdmissionOutcome string
@@ -769,6 +774,37 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	selectedProfile := ResolveSandboxProfile(sandboxCfg, "")
 	metadataBase["sandbox_profile"] = selectedProfile
 	findings := make([]ReadinessFinding, 0, 6)
+	configuredBackend := strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend))
+	hostOS := strings.ToLower(strings.TrimSpace(runtime.GOOS))
+	hostArch := strings.ToLower(strings.TrimSpace(runtime.GOARCH))
+	metadataBase["runtime_host_os"] = hostOS
+	metadataBase["runtime_host_arch"] = hostArch
+
+	if !containsNormalizedString(sandboxAdapterSupportedBackends(hostOS), configuredBackend) {
+		metadata := cloneAnyMap(metadataBase)
+		metadata["host_supported_backends"] = sandboxAdapterSupportedBackends(hostOS)
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxAdapterBackendNotSupported,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  "sandbox backend is not supported on current host",
+			Metadata: metadata,
+		})
+	}
+	if expectedHostOS, expectedHostArch, ok := sandboxAdapterHostConstraint(configuredBackend); ok {
+		if hostOS != expectedHostOS || hostArch != expectedHostArch {
+			metadata := cloneAnyMap(metadataBase)
+			metadata["expected_host_os"] = expectedHostOS
+			metadata["expected_host_arch"] = expectedHostArch
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeSandboxAdapterHostMismatch,
+				Domain:   ReadinessDomainRuntime,
+				Severity: severity,
+				Message:  "sandbox backend host constraint mismatches runtime host",
+				Metadata: metadata,
+			})
+		}
+	}
 
 	if !isSandboxRolloutPhase(rolloutPhase) {
 		findings = append(findings, ReadinessFinding{
@@ -822,7 +858,7 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	profile, ok := sandboxCfg.Profiles[selectedProfile]
 	if !ok {
 		findings = append(findings, ReadinessFinding{
-			Code:     ReadinessCodeSandboxProfileInvalid,
+			Code:     ReadinessCodeSandboxAdapterProfileMissing,
 			Domain:   ReadinessDomainRuntime,
 			Severity: severity,
 			Message:  fmt.Sprintf("sandbox profile %q is not configured", selectedProfile),
@@ -877,6 +913,17 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	}
 
 	probeBackend := strings.ToLower(strings.TrimSpace(probe.Backend))
+	if probeBackend != "" && probeBackend != configuredBackend {
+		metadata := cloneAnyMap(metadataBase)
+		metadata["probe_backend"] = probeBackend
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxAdapterHostMismatch,
+			Domain:   ReadinessDomainRuntime,
+			Severity: severity,
+			Message:  "sandbox executor probe backend mismatches configured backend",
+			Metadata: metadata,
+		})
+	}
 	missingCapabilities := make([]string, 0)
 	for i := range sandboxCfg.Executor.RequiredCapabilities {
 		capability := strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.RequiredCapabilities[i]))
@@ -911,7 +958,7 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 			metadata["probe_backend"] = probeBackend
 		}
 		findings = append(findings, ReadinessFinding{
-			Code:     ReadinessCodeSandboxSessionModeUnsupported,
+			Code:     ReadinessCodeSandboxAdapterSessionModeUnsupported,
 			Domain:   ReadinessDomainRuntime,
 			Severity: severity,
 			Message:  "sandbox executor does not support configured session_mode",
@@ -1463,6 +1510,45 @@ func sandboxCapacityActionFromFindings(findings []ReadinessFinding) string {
 		}
 	}
 	return ""
+}
+
+func sandboxAdapterSupportedBackends(hostOS string) []string {
+	switch strings.ToLower(strings.TrimSpace(hostOS)) {
+	case "windows":
+		return []string{SecuritySandboxBackendWindowsJob}
+	case "linux":
+		return []string{
+			SecuritySandboxBackendLinuxNSJail,
+			SecuritySandboxBackendLinuxBwrap,
+			SecuritySandboxBackendOCIRuntime,
+		}
+	default:
+		return nil
+	}
+}
+
+func sandboxAdapterHostConstraint(backend string) (string, string, bool) {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case SecuritySandboxBackendLinuxNSJail, SecuritySandboxBackendLinuxBwrap, SecuritySandboxBackendOCIRuntime:
+		return "linux", "amd64", true
+	case SecuritySandboxBackendWindowsJob:
+		return "windows", "amd64", true
+	default:
+		return "", "", false
+	}
+}
+
+func containsNormalizedString(items []string, target string) bool {
+	needle := strings.ToLower(strings.TrimSpace(target))
+	if needle == "" {
+		return false
+	}
+	for _, item := range items {
+		if strings.ToLower(strings.TrimSpace(item)) == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneReadinessComponentSnapshot(in RuntimeReadinessComponentSnapshot) RuntimeReadinessComponentSnapshot {

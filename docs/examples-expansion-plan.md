@@ -1,6 +1,6 @@
 # Examples Expansion Plan
 
-更新时间：2026-03-20
+更新时间：2026-03-30
 
 > 说明：本文件为样例扩展历史规划；当前样例清单与运行方式以 `README.md` 和 `examples/*` 实际代码为准。
 
@@ -39,7 +39,10 @@ R2 重点覆盖 Pattern：
 
 每个示例目录包含：
 - `main.go`: 可运行最小实现
-- `TODO.md`: 优化机会、已知限制、后续增强点
+- `README.md`: 运行方式、预期行为与边界说明
+
+示例增强 backlog 统一收敛在：
+- `docs/development-roadmap.md` 的 `Examples Backlog（从 examples TODO 收敛）` 小节
 
 ## Phase R3 Batch (Advanced + Concurrency Patterns)
 

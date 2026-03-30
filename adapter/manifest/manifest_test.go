@@ -287,6 +287,189 @@ func TestLoadFileParsesManifest(t *testing.T) {
 	}
 }
 
+func TestParseSandboxManifestCompleteMetadata(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "sandbox-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "sandbox_backend": "linux_nsjail",
+  "sandbox_profile_id": "linux_nsjail",
+  "host_os": "linux",
+  "host_arch": "amd64",
+  "session_modes_supported": ["per_call", "per_session"]
+}`)
+	got, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse sandbox manifest: %v", err)
+	}
+	if got.SandboxBackend != "linux_nsjail" ||
+		got.SandboxProfileID != "linux_nsjail" ||
+		got.HostOS != "linux" ||
+		got.HostArch != "amd64" {
+		t.Fatalf("unexpected sandbox metadata normalization: %#v", got)
+	}
+}
+
+func TestParseSandboxManifestMissingBackendFailFast(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "sandbox-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "sandbox_profile_id": "linux_nsjail",
+  "host_os": "linux",
+  "host_arch": "amd64",
+  "session_modes_supported": ["per_call"]
+}`)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected missing sandbox backend field")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMissingField || ce.Field != "sandbox_backend" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestParseSandboxManifestUnknownProfileFailFast(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "sandbox-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "sandbox_backend": "linux_nsjail",
+  "sandbox_profile_id": "missing-profile",
+  "host_os": "linux",
+  "host_arch": "amd64",
+  "session_modes_supported": ["per_call"]
+}`)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected unknown sandbox profile id failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeSandboxProfileUnknown || ce.Field != "sandbox_profile_id" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateSandboxManifestHostMismatchFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "sandbox-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile:    "tool-invoke-fail-fast",
+		SandboxBackend:        SandboxBackendLinuxNSJail,
+		SandboxProfileID:      SandboxBackendLinuxNSJail,
+		HostOS:                "linux",
+		HostArch:              "amd64",
+		SessionModesSupported: []string{SandboxSessionModePerCall, SandboxSessionModePerSession},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{HostOS: "windows", HostArch: "amd64", RequestedSession: SandboxSessionModePerCall},
+	)
+	if err == nil {
+		t.Fatal("expected host mismatch fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeSandboxHostMismatch || ce.Field != "host_os" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateSandboxManifestSessionModeUnsupportedFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "sandbox-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile:    "tool-invoke-fail-fast",
+		SandboxBackend:        SandboxBackendLinuxNSJail,
+		SandboxProfileID:      SandboxBackendLinuxNSJail,
+		HostOS:                "linux",
+		HostArch:              "amd64",
+		SessionModesSupported: []string{SandboxSessionModePerCall},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{HostOS: "linux", HostArch: "amd64", RequestedSession: SandboxSessionModePerSession},
+	)
+	if err == nil {
+		t.Fatal("expected unsupported session mode fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeSandboxSessionUnsupported || ce.Field != "session_modes_supported" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateSandboxManifestMissingProfileFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "sandbox-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile:    "tool-invoke-fail-fast",
+		SandboxBackend:        SandboxBackendLinuxNSJail,
+		SandboxProfileID:      "missing-profile",
+		HostOS:                "linux",
+		HostArch:              "amd64",
+		SessionModesSupported: []string{SandboxSessionModePerCall},
+	}
+	_, err := Activate(manifest, "0.26.0-rc.2", []string{"tool.invoke.required_input"})
+	if err == nil {
+		t.Fatal("expected missing profile fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeSandboxProfileUnknown || ce.Field != "sandbox_profile_id" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
 func contractErr(t *testing.T, err error) *ContractError {
 	t.Helper()
 	ce := &ContractError{}

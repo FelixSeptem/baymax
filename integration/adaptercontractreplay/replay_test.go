@@ -7,10 +7,26 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	adaptermanifest "github.com/FelixSeptem/baymax/adapter/manifest"
 	adapterprofile "github.com/FelixSeptem/baymax/adapter/profile"
+)
+
+const (
+	replayTrackLegacyV1Alpha1 = "v1alpha1"
+	replayTrackSandboxV1      = "sandbox.v1"
+)
+
+const (
+	ReplayDriftSandboxBackendProfile = "sandbox_backend_profile_drift"
+	ReplayDriftSandboxManifestCompat = "sandbox_manifest_compat_drift"
+	ReplayDriftSandboxSessionMode    = "sandbox_session_mode_drift"
+)
+
+const (
+	replayCodeUnknownProfileVersion = "adapter-contract-replay.unknown-profile-version"
 )
 
 type replayFixture struct {
@@ -19,13 +35,14 @@ type replayFixture struct {
 }
 
 type replayCase struct {
-	Name                  string          `json:"name"`
-	Manifest              json.RawMessage `json:"manifest"`
-	RuntimeVersion        string          `json:"runtime_version"`
-	AvailableCapabilities []string        `json:"available_capabilities"`
-	Request               replayRequest   `json:"request"`
-	Window                *replayWindow   `json:"window,omitempty"`
-	Expected              replayExpected  `json:"expected"`
+	Name                  string                   `json:"name"`
+	Manifest              json.RawMessage          `json:"manifest"`
+	RuntimeVersion        string                   `json:"runtime_version"`
+	AvailableCapabilities []string                 `json:"available_capabilities"`
+	Request               replayRequest            `json:"request"`
+	Window                *replayWindow            `json:"window,omitempty"`
+	ActivationContext     *replayActivationContext `json:"activation_context,omitempty"`
+	Expected              replayExpected           `json:"expected"`
 }
 
 type replayRequest struct {
@@ -39,6 +56,13 @@ type replayWindow struct {
 	AllowPrevious bool   `json:"allow_previous"`
 }
 
+type replayActivationContext struct {
+	HostOS            string   `json:"host_os,omitempty"`
+	HostArch          string   `json:"host_arch,omitempty"`
+	RequestedSession  string   `json:"requested_session,omitempty"`
+	SupportedBackends []string `json:"supported_backends,omitempty"`
+}
+
 type replayExpected struct {
 	ParseErrorCode         string   `json:"parse_error_code"`
 	ParseErrorField        string   `json:"parse_error_field"`
@@ -49,13 +73,11 @@ type replayExpected struct {
 	StrategyOverride       bool     `json:"strategy_override"`
 	ReasonCodes            []string `json:"reason_codes"`
 	OptionalDowngrades     []string `json:"optional_downgrades"`
+	DriftClass             string   `json:"drift_class,omitempty"`
 }
 
 func TestReplayContractManifestCompatibility(t *testing.T) {
-	fixture := loadFixture(t, "manifest-compatibility.json")
-	if fixture.ProfileVersion != adapterprofile.CurrentProfile {
-		t.Fatalf("unexpected fixture profile version: %s", fixture.ProfileVersion)
-	}
+	fixture := loadFixture(t, replayTrackLegacyV1Alpha1, "manifest-compatibility.json")
 	for _, tc := range fixture.Cases {
 		tc := tc
 		t.Run(tc.Name, func(t *testing.T) {
@@ -69,10 +91,7 @@ func TestReplayContractManifestCompatibility(t *testing.T) {
 }
 
 func TestReplayContractNegotiationTaxonomy(t *testing.T) {
-	fixture := loadFixture(t, "negotiation-outcomes.json")
-	if fixture.ProfileVersion != adapterprofile.CurrentProfile {
-		t.Fatalf("unexpected fixture profile version: %s", fixture.ProfileVersion)
-	}
+	fixture := loadFixture(t, replayTrackLegacyV1Alpha1, "negotiation-outcomes.json")
 	for _, tc := range fixture.Cases {
 		tc := tc
 		t.Run(tc.Name, func(t *testing.T) {
@@ -82,6 +101,54 @@ func TestReplayContractNegotiationTaxonomy(t *testing.T) {
 				t.Fatalf("run/stream replay mismatch: run=%#v stream=%#v", runResult, streamResult)
 			}
 		})
+	}
+}
+
+func TestReplayContractSandboxProfilePackTrack(t *testing.T) {
+	fixture := loadFixture(t, replayTrackSandboxV1, "manifest-compatibility.json")
+	for _, tc := range fixture.Cases {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			runResult := executeCase(t, tc)
+			streamResult := executeCase(t, tc)
+			if !reflect.DeepEqual(runResult, streamResult) {
+				t.Fatalf("sandbox run/stream replay mismatch: run=%#v stream=%#v", runResult, streamResult)
+			}
+		})
+	}
+}
+
+func TestReplayContractMixedTracksBackwardCompatible(t *testing.T) {
+	legacy := loadFixture(t, replayTrackLegacyV1Alpha1, "manifest-compatibility.json")
+	sandbox := loadFixture(t, replayTrackSandboxV1, "manifest-compatibility.json")
+	all := append([]replayCase{}, legacy.Cases...)
+	all = append(all, sandbox.Cases...)
+	for _, tc := range all {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			runResult := executeCase(t, tc)
+			streamResult := executeCase(t, tc)
+			if !reflect.DeepEqual(runResult, streamResult) {
+				t.Fatalf("mixed-track run/stream replay mismatch: run=%#v stream=%#v", runResult, streamResult)
+			}
+		})
+	}
+}
+
+func TestReplayContractProfileVersionValidation(t *testing.T) {
+	if err := validateReplayProfileVersion(replayTrackLegacyV1Alpha1); err != nil {
+		t.Fatalf("legacy profile track should be accepted: %v", err)
+	}
+	if err := validateReplayProfileVersion(replayTrackSandboxV1); err != nil {
+		t.Fatalf("sandbox profile track should be accepted: %v", err)
+	}
+	err := validateReplayProfileVersion("sandbox.v99")
+	if err == nil {
+		t.Fatal("unknown profile track must fail fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != replayCodeUnknownProfileVersion || ce.Field != "profile_version" {
+		t.Fatalf("unexpected profile version error classification: %#v", ce)
 	}
 }
 
@@ -123,15 +190,30 @@ func executeCase(t *testing.T, tc replayCase) replayResult {
 		}
 	}
 
-	result, err := adaptermanifest.ActivateWithRequestAndProfileWindow(manifest, tc.RuntimeVersion, tc.AvailableCapabilities, adaptermanifest.CapabilityRequest{
+	activationCtx := adaptermanifest.ActivationContext{}
+	if tc.ActivationContext != nil {
+		activationCtx = adaptermanifest.ActivationContext{
+			HostOS:            strings.ToLower(strings.TrimSpace(tc.ActivationContext.HostOS)),
+			HostArch:          strings.ToLower(strings.TrimSpace(tc.ActivationContext.HostArch)),
+			RequestedSession:  strings.ToLower(strings.TrimSpace(tc.ActivationContext.RequestedSession)),
+			SupportedBackends: append([]string(nil), tc.ActivationContext.SupportedBackends...),
+		}
+	}
+	result, err := adaptermanifest.ActivateWithRequestAndProfileWindowWithContext(manifest, tc.RuntimeVersion, tc.AvailableCapabilities, adaptermanifest.CapabilityRequest{
 		Required:         append([]string(nil), tc.Request.Required...),
 		Optional:         append([]string(nil), tc.Request.Optional...),
 		StrategyOverride: tc.Request.StrategyOverride,
-	}, window)
+	}, window, activationCtx)
 	if tc.Expected.ActivationErrorCode != "" {
 		ce := contractErr(t, err)
 		if ce.Code != tc.Expected.ActivationErrorCode || ce.Field != tc.Expected.ActivationErrorField {
 			t.Fatalf("unexpected activation error: %#v", ce)
+		}
+		if tc.Expected.DriftClass != "" {
+			drift := classifySandboxReplayDrift(ce.Code)
+			if drift != tc.Expected.DriftClass {
+				t.Fatalf("unexpected drift class: got=%q want=%q for code=%q", drift, tc.Expected.DriftClass, ce.Code)
+			}
 		}
 		return replayResult{
 			ActivationErrorCode:  ce.Code,
@@ -182,9 +264,9 @@ func equalStringSlices(a, b []string) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func loadFixture(t *testing.T, name string) replayFixture {
+func loadFixture(t *testing.T, track string, name string) replayFixture {
 	t.Helper()
-	path := filepath.Join(repoRoot(t), "integration", "testdata", "adapter-contract-replay", adapterprofile.CurrentProfile, name)
+	path := filepath.Join(repoRoot(t), "integration", "testdata", "adapter-contract-replay", track, name)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)
@@ -196,10 +278,41 @@ func loadFixture(t *testing.T, name string) replayFixture {
 	if fixture.ProfileVersion == "" {
 		t.Fatalf("fixture %s missing profile_version", path)
 	}
+	if err := validateReplayProfileVersion(fixture.ProfileVersion); err != nil {
+		ce := contractErr(t, err)
+		t.Fatalf("fixture %s has unsupported profile version %q (%s)", path, fixture.ProfileVersion, ce.Code)
+	}
 	if len(fixture.Cases) == 0 {
 		t.Fatalf("fixture %s has no cases", path)
 	}
 	return fixture
+}
+
+func validateReplayProfileVersion(version string) error {
+	normalized := strings.ToLower(strings.TrimSpace(version))
+	switch normalized {
+	case replayTrackLegacyV1Alpha1, replayTrackSandboxV1:
+		return nil
+	default:
+		return &adaptermanifest.ContractError{
+			Code:    replayCodeUnknownProfileVersion,
+			Field:   "profile_version",
+			Message: "profile version is not recognized in replay track",
+		}
+	}
+}
+
+func classifySandboxReplayDrift(code string) string {
+	switch strings.TrimSpace(code) {
+	case adaptermanifest.CodeSandboxProfileUnknown, adaptermanifest.CodeSandboxBackendUnsupported:
+		return ReplayDriftSandboxBackendProfile
+	case adaptermanifest.CodeSandboxHostMismatch, adaptermanifest.CodeCompatibilityMismatch:
+		return ReplayDriftSandboxManifestCompat
+	case adaptermanifest.CodeSandboxSessionUnsupported:
+		return ReplayDriftSandboxSessionMode
+	default:
+		return ""
+	}
 }
 
 func repoRoot(t *testing.T) string {

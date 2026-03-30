@@ -1,0 +1,156 @@
+{
+  "profile_version": "sandbox.v1",
+  "cases": [
+    {
+      "name": "activation_success_sandbox_v1",
+      "manifest": {
+        "type": "tool",
+        "name": "sandbox-replay-tool",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": ["tool.invoke.required_input"],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast",
+        "sandbox_backend": "windows_job",
+        "sandbox_profile_id": "windows_job",
+        "host_os": "windows",
+        "host_arch": "amd64",
+        "session_modes_supported": ["per_call", "per_session"]
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": ["tool.invoke.required_input"],
+      "request": {
+        "required": ["tool.invoke.required_input"],
+        "optional": []
+      },
+      "activation_context": {
+        "host_os": "windows",
+        "host_arch": "amd64",
+        "requested_session": "per_call",
+        "supported_backends": ["windows_job"]
+      },
+      "expected": {
+        "contract_profile_version": "v1alpha1",
+        "strategy_applied": "fail_fast",
+        "strategy_override": false,
+        "reason_codes": [],
+        "optional_downgrades": []
+      }
+    },
+    {
+      "name": "backend_profile_drift",
+      "manifest": {
+        "type": "tool",
+        "name": "sandbox-replay-tool",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": ["tool.invoke.required_input"],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast",
+        "sandbox_backend": "windows_job",
+        "sandbox_profile_id": "windows_job",
+        "host_os": "windows",
+        "host_arch": "amd64",
+        "session_modes_supported": ["per_call"]
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": ["tool.invoke.required_input"],
+      "request": {
+        "required": ["tool.invoke.required_input"],
+        "optional": []
+      },
+      "activation_context": {
+        "host_os": "windows",
+        "host_arch": "amd64",
+        "requested_session": "per_call",
+        "supported_backends": ["linux_nsjail"]
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.sandbox-backend-unsupported",
+        "activation_error_field": "sandbox_backend",
+        "drift_class": "sandbox_backend_profile_drift"
+      }
+    },
+    {
+      "name": "manifest_compat_drift",
+      "manifest": {
+        "type": "tool",
+        "name": "sandbox-replay-tool",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": ["tool.invoke.required_input"],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast",
+        "sandbox_backend": "linux_nsjail",
+        "sandbox_profile_id": "linux_nsjail",
+        "host_os": "linux",
+        "host_arch": "amd64",
+        "session_modes_supported": ["per_call"]
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": ["tool.invoke.required_input"],
+      "request": {
+        "required": ["tool.invoke.required_input"],
+        "optional": []
+      },
+      "activation_context": {
+        "host_os": "windows",
+        "host_arch": "amd64",
+        "requested_session": "per_call",
+        "supported_backends": ["linux_nsjail"]
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.sandbox-host-mismatch",
+        "activation_error_field": "host_os",
+        "drift_class": "sandbox_manifest_compat_drift"
+      }
+    },
+    {
+      "name": "session_mode_drift",
+      "manifest": {
+        "type": "tool",
+        "name": "sandbox-replay-tool",
+        "version": "0.1.0",
+        "contract_profile_version": "v1alpha1",
+        "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+        "capabilities": {
+          "required": ["tool.invoke.required_input"],
+          "optional": []
+        },
+        "conformance_profile": "tool-invoke-fail-fast",
+        "sandbox_backend": "linux_nsjail",
+        "sandbox_profile_id": "linux_nsjail",
+        "host_os": "linux",
+        "host_arch": "amd64",
+        "session_modes_supported": ["per_call"]
+      },
+      "runtime_version": "0.26.0-rc.2",
+      "available_capabilities": ["tool.invoke.required_input"],
+      "request": {
+        "required": ["tool.invoke.required_input"],
+        "optional": []
+      },
+      "activation_context": {
+        "host_os": "linux",
+        "host_arch": "amd64",
+        "requested_session": "per_session",
+        "supported_backends": ["linux_nsjail"]
+      },
+      "expected": {
+        "activation_error_code": "adapter-manifest.sandbox-session-mode-unsupported",
+        "activation_error_field": "session_modes_supported",
+        "drift_class": "sandbox_session_mode_drift"
+      }
+    }
+  ]
+}
+

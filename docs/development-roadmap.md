@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-29
+更新时间：2026-03-30
 
 ## 定位
 
@@ -15,13 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-29：
-- 已归档并稳定：A4-A50（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口、A48 cross-domain primary reason arbitration 收口、A49 arbitration explainability + secondary reason 收口、A50 arbitration version governance + compatibility 收口）。
-- 已完成待归档：
-  - `introduce-sandbox-execution-isolation-contract-a51`
-  - `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`
+截至 2026-03-30：
+- 已归档并稳定：A4-A52（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
   - `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`
+  - `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -289,7 +287,7 @@ A50 当前落地（已归档）：
 - `tool/diagnosticsreplay` arbitration fixture 已升级支持 `version=a50.v1`，并新增 drift 分类：`version_mismatch`、`unsupported_version`、`cross_version_semantic_drift`，同时保持 `a48/a49` 向后兼容。
 - 新增 A50 integration suites（Run/Stream parity、memory/file parity、replay parity），并已纳入 `check-quality-gate.sh/.ps1` 阻断步骤。
 
-### P1：A51 sandbox execution isolation contract（已完成待归档）
+### P1：A51 sandbox execution isolation contract（已归档）
 
 A51 Why now：
 - 当前 S2-S4 已覆盖权限/限流/IO 过滤与 deny 告警投递，但本地工具执行仍以 in-process 为主，缺少“执行隔离”契约层。
@@ -323,7 +321,7 @@ A51 完成条件（提案落地后）：
   - 增加 offline deterministic `sandbox executor conformance harness`（`check-sandbox-executor-conformance.sh/.ps1`）并接入 sandbox gate。
   - CI 暴露独立 required-check 候选 `security-sandbox-gate`。
 
-A51 当前落地（实施推进中）：
+A51 当前落地（已归档）：
 - `integration/sandbox_execution_isolation_contract_test.go` 已覆盖 Run/Stream parity、capability negotiation deny、backend compatibility matrix smoke（Linux + Windows job）。
 - `integration/sandboxconformance` 已落地 offline deterministic conformance harness（canonical ExecSpec/ExecResult、capability negotiation drift、session lifecycle、fallback 语义）。
 - `scripts/check-security-sandbox-contract.sh/.ps1` 已接入 conformance harness，并由 `scripts/check-quality-gate.sh/.ps1` 阻断执行。
@@ -350,7 +348,7 @@ A51 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A52 sandbox runtime rollout + health/capacity governance（已完成，待归档）
+### P1：A52 sandbox runtime rollout + health/capacity governance（已归档）
 
 A52 Why now：
 - A51 已冻结 sandbox 接入与隔离语义，但“如何安全放量上线”仍缺统一 contract，当前容易落回业务侧脚本治理。
@@ -398,12 +396,12 @@ A52 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A53 mainstream sandbox adapter conformance + migration pack（进行中，提案阶段）
+### P1：A53 mainstream sandbox adapter conformance + migration pack（进行中，实施推进中）
 
 A53 Why now：
-- A52 正在收敛 sandbox 运行治理，但主流后端（nsjail/bwrap/OCI/windows-job）接入仍依赖分散脚本与非标准 glue code。
+- A52 已归档并冻结 sandbox rollout/health/capacity 治理基线，但主流后端（nsjail/bwrap/OCI/windows-job）接入仍依赖分散脚本与非标准 glue code。
 - 若不统一 adapter manifest + conformance + migration mapping，后端切换成本高，且语义漂移很难被 gate 前置阻断。
-- 需要在 A52 并行阶段提前冻结接入 contract，避免后续重复提出“同类 sandbox 接入治理”提案。
+- 需要在 A52 后续阶段收敛接入 contract，避免后续重复提出“同类 sandbox 接入治理”提案。
 
 A53 依赖关系：
 - 复用 A51 的 sandbox 执行隔离语义与 canonical backend/capability taxonomy，不重定义执行 contract。
@@ -433,6 +431,13 @@ A53 当前阶段非目标（不做）：
 - 不引入平台化控制面或跨租户编排能力。
 - 不承诺后端底层实现一致，仅要求 canonical 合同输出一致。
 
+A53 已落地增量（当前分支）：
+- `adapter/manifest` 已补齐 sandbox metadata/profile-pack 契约（`sandbox_backend`、`sandbox_profile_id`、`host_os`、`host_arch`、`session_modes_supported`）与 fail-fast 校验。
+- `integration/adapterconformance` 已增加 mainstream backend matrix、capability negotiation、session lifecycle（`per_call|per_session`、crash/reconnect、close idempotent）与 canonical drift class 断言。
+- `integration/adaptercontractreplay` 已增加 `sandbox.v1` 回放轨道与 mixed-track 回放，补齐 drift 分类断言（`sandbox_backend_profile_drift`、`sandbox_manifest_compat_drift`、`sandbox_session_mode_drift`）。
+- `runtime/config/readiness` 已增加 `sandbox.adapter.*` finding（`profile_missing`、`backend_not_supported`、`host_mismatch`、`session_mode_unsupported`）与 strict/non-strict 测试映射。
+- 已新增 `scripts/check-sandbox-adapter-conformance-contract.sh/.ps1` 并接入 `check-quality-gate.*`，CI 暴露独立 job `sandbox-adapter-conformance-gate`。
+
 A53 风险与回滚点：
 - 主要风险：profile pack 过重导致接入门槛上升、不同 runner 的 backend 可用性差异引发误报、模板与实现漂移。
 - 缓解策略：最小必填 schema、平台条件化 matrix + skip reason 审计、模板绑定 conformance case 持续校验。
@@ -447,19 +452,97 @@ A53 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1/P2：A53 后续备选提案池（全局视角）
+### P1：A54 memory provider SPI + builtin filesystem engine（进行中，提案已完成，待实施）
 
-备选 A54：`introduce-cross-channel-data-egress-and-secret-governance-contract-a54`
-- 目标：补齐 model/tool/mcp 全链路数据外泄与 secret 传播治理，强化 S1-S4 统一口径。
-- 启动条件：合规或客户审计需求提升，需要可审计 egress contract。
+A54 Why now：
+- 当前 memory 接入仍依赖 CA2 file/external retriever 分散路径，缺少统一 memory SPI 与 profile 契约。
+- 主流 memory 框架（`mem0|zep|openviking`）接入成本高，且 provider-specific 分支容易渗透主流程并造成语义漂移。
+- 需要一次性冻结 memory 的 config/readiness/diagnostics/replay/conformance/gate 契约，避免后续在 memory 主题上重复拆提案。
 
-备选 A55：`introduce-runtime-cost-latency-budget-and-admission-contract-a55`
-- 目标：统一 token/tool/sandbox 成本与时延预算，建立 admission 侧 fail-fast 与降级策略。
+A54 依赖关系：
+- 复用既有 runtime config 热更新治理（`env > file > default`、fail-fast、原子回滚）与 RuntimeRecorder single-writer 约束。
+- 复用 A21/A22/A26/A28 的 template/conformance/manifest/profile-replay 治理链路，扩展到 memory 维度。
+- 复用 A42/A45 的 diagnostics query/perf/cardinality 治理边界，确保 memory additive 字段不破坏查询与兼容窗口。
+- 复用 A44 readiness strict/non-strict 映射语义，新增 `memory.*` findings 而不引入平行判定体系。
+
+A54 完成条件（提案落地后）：
+- 新增 `runtime-memory-engine-spi-and-filesystem-builtin` capability，冻结 canonical memory SPI（`Query/Upsert/Delete`）与错误 taxonomy。
+- 新增 `runtime.memory.mode=external_spi|builtin_filesystem`，支持启动/热更新原子切换与失败回滚。
+- 内置文件系统 memory 引擎契约收敛（append-only WAL + 原子 compaction/index + crash-safe recovery）。
+- 新增主流 profile pack：`mem0`、`zep`、`openviking`、`generic`，并固定 required/optional capability 语义。
+- CA2 Stage2 memory 路径统一经 memory facade，保持 Run/Stream 与 `fail_fast|best_effort` 语义等价。
+- readiness/preflight 增加 `memory.*` findings；diagnostics 增加 memory additive 字段并保持 bounded-cardinality。
+- replay 新增 `memory.v1` fixture 与 drift 分类；quality gate 新增 memory contract gate 并保持 shell/PowerShell parity。
+- adapter manifest/template/migration/conformance 一体化扩展，覆盖 external SPI 与 builtin filesystem 双路径接入。
+
+A54 当前阶段非目标（不做）：
+- 不引入平台化 memory 控制面或跨租户调度系统。
+- 不改 A51/A52 sandbox contract 语义，只复用其治理框架。
+- 不承诺外部 provider 底层实现一致，仅要求 canonical 合同输出一致。
+
+A54 风险与回滚点：
+- 主要风险：外部 provider 能力差异导致 profile 语义不一致、模式切换误配导致运行抖动、文件系统 compaction 恢复窗口处理不当。
+- 缓解策略：required/optional capability 分层、切换前 preflight 校验、WAL + 原子替换 + crash-recovery 合同测试。
+- 回滚点：切换回 `builtin_filesystem` 或 `external_spi` 上一稳定配置快照；热更新失败一律原子回滚。
+
+A54 验证命令（提案实施期最小集合）：
+- `go test ./context/... ./runtime/config ./runtime/diagnostics -count=1`
+- `go test ./integration -run 'TestMemoryProviderSPI|TestMemoryModeSwitch|TestMemoryRunStreamParity' -count=1`
+- `go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractMemoryFixture' -count=1`
+- `go test -race ./...`
+- `golangci-lint run --config .golangci.yml`
+- `pwsh -File scripts/check-memory-contract-conformance.ps1`
+- `pwsh -File scripts/check-quality-gate.ps1`
+- `pwsh -File scripts/check-docs-consistency.ps1`
+
+### P1/P2：A55+ 借鉴整合提案池（全局视角）
+
+前提约束（冻结）：
+- 不调整 A53/A54 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
+- 新提案必须复用既有治理主链路：`runtime/config`（`env > file > default` + fail-fast/回滚）+ `RuntimeRecorder` 单写 + diagnostics replay + quality gate。
+
+与在研项目的先后顺序（强依赖）：
+1. A53（进行中）：mainstream sandbox adapter conformance + migration pack。
+2. A54（进行中）：memory provider SPI + builtin filesystem engine。
+3. A55（下一优先级，P1）：可观测出口与诊断包导出 contract。
+4. A56（次优先级，P1）：sandbox egress 治理与 adapter allowlist contract。
+5. A57（中期，P1/P2）：memory scope 与注入预算治理 contract。
+6. A58（后续，P2）：runtime 成本/时延预算与 admission contract。
+
+备选项目说明（避免“单一路线”误解）：
+- A55/A56/A57/A58 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- 前置切换规则（示例）：
+  - 若线上排障成本高或跨环境定位慢：A55 可前置为首个落地项。
+  - 若合规审计或外部 adapter 引入加速：A56 可前置并优先实施。
+  - 若 A54 落地后出现 memory 注入成本漂移：A57 可前置到 A56 之前。
+- 无论是否前置切换，均不得改写 A53/A54 已冻结范围，只允许在其完成后做增量扩展。
+
+备选 A55：`introduce-observability-export-and-diagnostics-bundle-contract-a55`
+- 目标：在不改变 `RuntimeRecorder` 单写入口的前提下，补齐标准观测出口（如 OTLP/Langfuse profile）与 diagnostics bundle 导出 contract。
+- 范围：`observability.export.*` 配置、bundle schema、redaction 规则、replay hint 索引、独立 gate（shell/PowerShell parity）。
+- 依赖：A53/A54 的新增字段需纳入 bundle 与 export 映射，避免后续重复补丁。
+- 启动条件：A53/A54 进入稳定阶段后，需提升跨环境排障与外部观测集成效率。
+
+备选 A56：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a56`
+- 目标：补齐 sandbox 网络外呼治理（egress policy）与 adapter 供应链 allowlist 契约，形成“执行隔离 + 出口治理 + 激活准入”闭环。
+- 范围：`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission finding、taxonomy、replay drift 与 conformance matrix。
+- 依赖：复用 A51/A52/A53 sandbox taxonomy 与 adapter manifest 激活边界，不新增平行安全语义。
+- 启动条件：存在合规审计或外部 adapter 引入规模上升，需要可审计可阻断的 egress/allowlist 治理。
+
+备选 A57：`introduce-memory-scope-and-injection-budget-governance-contract-a57`
+- 目标：在 A54 SPI 基线之上补齐 `session|project|global` scope、注入预算与检索策略治理，抑制上下文膨胀与成本漂移。
+- 范围：`runtime.memory.scope.*`、`runtime.memory.injection_budget.*`、QueryRuns additive 字段、mixed replay fixture、gate 阈值回归。
+- 依赖：A54 memory facade/profile pack/readiness 字段稳定后再扩展，避免与 A54 实施交叉改动。
+- 启动条件：A54 上线后出现上下文成本抖动、memory 注入不可解释或跨 provider 行为漂移。
+
+备选 A58：`introduce-runtime-cost-latency-budget-and-admission-contract-a58`
+- 目标：统一 token/tool/sandbox/memory 成本与时延预算，建立 admission 侧 fail-fast 与降级策略。
 - 启动条件：成本或 P95 抖动成为主线瓶颈。
 
-备选 A56：`introduce-incident-forensics-replay-package-contract-a56`
-- 目标：建立标准化事故取证包（timeline + diagnostics + replay fixture），缩短 MTTR。
-- 启动条件：线上 incident 频率上升，需要统一复盘与定位流程。
+整合与重排说明：
+- 原备选 `A57 incident-forensics-replay-package` 并入 A55（diagnostics bundle + replay hint 一体化）。
+- 原备选 `A55 cross-channel-data-egress-and-secret-governance` 收敛并聚焦为 A56（优先 sandbox egress + adapter allowlist 闭环）。
+- 原备选 `A56 runtime-cost-latency-budget` 顺延为 A58，避免与 A55/A56/A57 的阶段目标重叠。
 
 ### P2：0.x 质量与治理持续收敛
 
@@ -468,6 +551,46 @@ A53 验证命令（提案实施期最小集合）：
 - shell 与 PowerShell 门禁 required checks 维持语义等价：native command 非零即 fail-fast；仅 `govulncheck + warn` 允许告警放行。
 - 继续按“小步提案 + 契约测试 + 文档同步”推进，不引入平台化控制面范围。
 - 对外发布继续以 `0.x` 说明风险与兼容预期。
+
+### P2：Examples Backlog（从 examples TODO 收敛）
+
+说明：
+- 原 `examples/01-08/TODO.md` 已收敛到本节，避免分散维护。
+- 示例运行态与使用方式以 `examples/*/README.md` 为准；增强项排期以本 roadmap 为准。
+
+当前 backlog（按示例编号）：
+- `01-chat-minimal`：
+  - OpenAI 实网变体（基于环境变量加载 key）。
+  - 单轮延迟 benchmark 片段。
+  - 进阶 prompt 状态交接示例。
+- `02-tool-loop-basic`：
+  - 可重试工具失败模拟（用于 backoff 调优）。
+  - 背压模式对比（`reject` vs `block`）。
+  - 多工具 fanout 变体与诊断输出。
+- `03-mcp-mixed-call`：
+  - fake MCP proxy 替换为真实 stdio/http runtime 接线。
+  - reconnect/failover 演示与结构化指标。
+  - async MCP 批量调用示例。
+- `04-streaming-interrupt`：
+  - 中断流 partial-result flush 策略。
+  - 终端 UI delta 渲染。
+  - cancel-storm 压测脚本。
+- `05-parallel-tools-fanout`：
+  - 可配置并发度与背压模式演示（`block`/`reject`）。
+  - 慢工具+失败工具混合场景可视化输出。
+  - 串行 vs 并行基准对比。
+- `06-async-job-progress`：
+  - 失败重试与 dead-letter 样例。
+  - 取消传播与超时控制样例。
+  - batch size 可配置与吞吐观测。
+- `07-multi-agent-async-channel`：
+  - 多 worker 并发与任务重分配策略。
+  - 失败任务补偿与重试上限。
+  - coordinator 背压与队列上限展示。
+- `08-multi-agent-network-bridge`：
+  - JSON-RPC batch 请求演示。
+  - 标准错误码覆盖（invalid params/internal error）。
+  - 客户端超时与重试策略样例。
 
 ## 维护提示（状态快照更新）
 

@@ -1,12 +1,16 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-29
+更新时间：2026-03-30
 
 ## 目标
 
 提供主干流程与契约测试用例的一一映射，作为质量门禁核对入口。
 
 A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口后仅保留 mailbox canonical 调用入口。
+
+状态口径说明：
+- 本索引仅收录已接入主线质量门禁的 contract suites。
+- 在研提案（当前 A53/A54）在完成实现并接入 gate 前不进入本索引，状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
 
 ## 索引
 
@@ -193,6 +197,11 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Adapter Contract Profile Versioning A28 Manifest Integration | `adapter/manifest/manifest_test.go::TestActivateManifestCompatibilityAndCapabilities` | `adapter/manifest/manifest_test.go::TestActivateManifestRejectsProfileOutOfWindow` |
 | Adapter Contract Replay A28 Fixtures | `integration/adaptercontractreplay/replay_test.go::TestReplayContractManifestCompatibility` | `integration/adaptercontractreplay/replay_test.go::TestReplayContractNegotiationTaxonomy` |
 | Adapter Contract Replay A28 Gate Path | `scripts/check-adapter-contract-replay.sh` | `scripts/check-adapter-contract-replay.ps1` |
+| Sandbox Adapter Manifest/Profile-Pack A53 Core Validation | `adapter/manifest/manifest_test.go::TestParseSandboxManifestCompleteMetadata` | `adapter/manifest/manifest_test.go::TestActivateSandboxManifestSessionModeUnsupportedFailFast` |
+| Sandbox Adapter Conformance A53 Backend/Capability/Session Matrix | `integration/adapterconformance/sandbox_matrix_test.go::TestSandboxAdapterConformanceMainstreamBackendMatrixLinux` | `integration/adapterconformance/sandbox_matrix_test.go::TestSandboxAdapterConformanceSessionLifecycle` |
+| Sandbox Adapter Replay A53 Sandbox Track + Mixed Compatibility | `integration/adaptercontractreplay/replay_test.go::TestReplayContractSandboxProfilePackTrack` | `integration/adaptercontractreplay/replay_test.go::TestReplayContractMixedTracksBackwardCompatible` |
+| Sandbox Adapter Readiness A53 Finding Mapping | `runtime/config/readiness_test.go::TestManagerReadinessPreflightSandboxAdapterProfileMissingStrictMapping` | `runtime/config/readiness_test.go::TestManagerReadinessPreflightSandboxAdapterBackendUnsupportedAndHostMismatch` |
+| Sandbox Adapter Conformance A53 Gate Path | `scripts/check-sandbox-adapter-conformance-contract.sh` | `scripts/check-sandbox-adapter-conformance-contract.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

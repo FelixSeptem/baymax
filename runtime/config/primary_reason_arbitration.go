@@ -219,6 +219,18 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	ReadinessCodeSandboxRequiredUnavailable: {Code: "sandbox.restore_required_executor", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxOptionalUnavailable: {Code: "sandbox.restore_optional_executor", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxProfileInvalid:      {Code: "sandbox.fix_profile", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxAdapterProfileMissing: {
+		Code:   "sandbox.adapter.restore_profile_pack_entry",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxAdapterBackendNotSupported: {
+		Code:   "sandbox.adapter.select_supported_backend",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxAdapterHostMismatch: {
+		Code:   "sandbox.adapter.align_host_constraints",
+		Domain: ReadinessDomainRuntime,
+	},
 	ReadinessCodeSandboxCapabilityMismatch:  {Code: "sandbox.align_capabilities", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxRolloutPhaseInvalid: {Code: "sandbox.rollout.fix_phase", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxRolloutHealthBreached: {
@@ -232,6 +244,10 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	},
 	ReadinessCodeSandboxSessionModeUnsupported: {
 		Code:   "sandbox.adjust_session_mode",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxAdapterSessionModeUnsupported: {
+		Code:   "sandbox.adapter.adjust_session_mode",
 		Domain: ReadinessDomainRuntime,
 	},
 

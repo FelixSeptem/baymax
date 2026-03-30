@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -24,6 +25,10 @@ const (
 	CodeInvalidNegotiationConfig   = "adapter-manifest.invalid-negotiation-config"
 	CodeUnknownContractProfile     = "adapter-manifest.unknown-contract-profile-version"
 	CodeContractProfileOutOfWindow = "adapter-manifest.contract-profile-out-of-window"
+	CodeSandboxProfileUnknown      = "adapter-manifest.sandbox-profile-unknown"
+	CodeSandboxBackendUnsupported  = "adapter-manifest.sandbox-backend-unsupported"
+	CodeSandboxHostMismatch        = "adapter-manifest.sandbox-host-mismatch"
+	CodeSandboxSessionUnsupported  = "adapter-manifest.sandbox-session-mode-unsupported"
 )
 
 var (
@@ -45,6 +50,11 @@ type Manifest struct {
 	Capabilities           Capabilities `json:"capabilities"`
 	Negotiation            Negotiation  `json:"negotiation,omitempty"`
 	ConformanceProfile     string       `json:"conformance_profile"`
+	SandboxBackend         string       `json:"sandbox_backend,omitempty"`
+	SandboxProfileID       string       `json:"sandbox_profile_id,omitempty"`
+	HostOS                 string       `json:"host_os,omitempty"`
+	HostArch               string       `json:"host_arch,omitempty"`
+	SessionModesSupported  []string     `json:"session_modes_supported,omitempty"`
 }
 
 type Negotiation struct {
@@ -77,6 +87,13 @@ type CapabilityRequest struct {
 	Required         []string
 	Optional         []string
 	StrategyOverride string
+}
+
+type ActivationContext struct {
+	HostOS            string
+	HostArch          string
+	RequestedSession  string
+	SupportedBackends []string
 }
 
 type ActivationResult struct {
@@ -219,7 +236,7 @@ func Validate(manifest Manifest) error {
 			Message: "default_strategy must be one of [fail_fast,best_effort]",
 		}
 	}
-	return nil
+	return validateSandboxMetadata(normalized)
 }
 
 func Activate(manifest Manifest, runtimeVersion string, availableCapabilities []string) (ActivationResult, error) {
@@ -234,6 +251,10 @@ func ActivateWithRequest(manifest Manifest, runtimeVersion string, availableCapa
 }
 
 func ActivateWithRequestAndProfileWindow(manifest Manifest, runtimeVersion string, availableCapabilities []string, request CapabilityRequest, profileWindow adapterprofile.Window) (ActivationResult, error) {
+	return ActivateWithRequestAndProfileWindowWithContext(manifest, runtimeVersion, availableCapabilities, request, profileWindow, ActivationContext{})
+}
+
+func ActivateWithRequestAndProfileWindowWithContext(manifest Manifest, runtimeVersion string, availableCapabilities []string, request CapabilityRequest, profileWindow adapterprofile.Window, activationCtx ActivationContext) (ActivationResult, error) {
 	normalized := normalize(manifest)
 	if err := Validate(normalized); err != nil {
 		return ActivationResult{}, err
@@ -256,6 +277,9 @@ func ActivateWithRequestAndProfileWindow(manifest Manifest, runtimeVersion strin
 	profileVersion, err := adapterprofile.ValidateCompatibility(normalized.ContractProfileVersion, profileWindow)
 	if err != nil {
 		return ActivationResult{}, mapProfileError(err)
+	}
+	if err := validateSandboxActivationCompatibility(normalized, activationCtx); err != nil {
+		return ActivationResult{}, err
 	}
 
 	available := make(map[string]struct{}, len(availableCapabilities))
@@ -335,6 +359,11 @@ func normalize(manifest Manifest) Manifest {
 	manifest.BaymaxCompat = strings.TrimSpace(manifest.BaymaxCompat)
 	manifest.Negotiation.DefaultStrategy = strings.ToLower(strings.TrimSpace(manifest.Negotiation.DefaultStrategy))
 	manifest.ConformanceProfile = strings.ToLower(strings.TrimSpace(manifest.ConformanceProfile))
+	manifest.SandboxBackend = strings.ToLower(strings.TrimSpace(manifest.SandboxBackend))
+	manifest.SandboxProfileID = strings.ToLower(strings.TrimSpace(manifest.SandboxProfileID))
+	manifest.HostOS = strings.ToLower(strings.TrimSpace(manifest.HostOS))
+	manifest.HostArch = strings.ToLower(strings.TrimSpace(manifest.HostArch))
+	manifest.SessionModesSupported = normalizeSessionModes(manifest.SessionModesSupported)
 	manifest.Capabilities.Required = normalizeCapabilities(manifest.Capabilities.Required)
 	manifest.Capabilities.Optional = normalizeCapabilities(manifest.Capabilities.Optional)
 	return manifest
@@ -415,6 +444,207 @@ func reasonSegment(capability string) string {
 	out := strings.Trim(builder.String(), "_")
 	if out == "" {
 		return "unknown"
+	}
+	return out
+}
+
+func validateSandboxMetadata(manifest Manifest) error {
+	if !isSandboxManifest(manifest) {
+		return nil
+	}
+
+	requiredChecks := []struct {
+		field string
+		value string
+	}{
+		{field: "sandbox_backend", value: manifest.SandboxBackend},
+		{field: "sandbox_profile_id", value: manifest.SandboxProfileID},
+		{field: "host_os", value: manifest.HostOS},
+		{field: "host_arch", value: manifest.HostArch},
+	}
+	for _, check := range requiredChecks {
+		if strings.TrimSpace(check.value) == "" {
+			return &ContractError{
+				Code:    CodeMissingField,
+				Field:   check.field,
+				Message: "required field is missing",
+			}
+		}
+	}
+	if len(manifest.SessionModesSupported) == 0 {
+		return &ContractError{
+			Code:    CodeMissingField,
+			Field:   "session_modes_supported",
+			Message: "required field is missing",
+		}
+	}
+	if !IsSupportedSandboxBackend(manifest.SandboxBackend) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "sandbox_backend",
+			Message: "sandbox_backend must be one of: linux_nsjail|linux_bwrap|oci_runtime|windows_job",
+		}
+	}
+	profile, ok := SandboxProfileByID(manifest.SandboxProfileID)
+	if !ok {
+		return &ContractError{
+			Code:    CodeSandboxProfileUnknown,
+			Field:   "sandbox_profile_id",
+			Message: "sandbox_profile_id is not recognized in profile-pack",
+		}
+	}
+	if profile.Backend != manifest.SandboxBackend {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "sandbox_backend",
+			Message: "sandbox_backend does not match profile-pack backend mapping",
+		}
+	}
+	if profile.HostOS != manifest.HostOS {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "host_os",
+			Message: "host_os does not match profile-pack host constraint",
+		}
+	}
+	if profile.HostArch != manifest.HostArch {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "host_arch",
+			Message: "host_arch does not match profile-pack host constraint",
+		}
+	}
+	supportedSessionModes := toStringSet(profile.SessionModesSupported)
+	for _, mode := range manifest.SessionModesSupported {
+		if _, ok := supportedSessionModes[mode]; ok {
+			continue
+		}
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "session_modes_supported",
+			Message: "session_modes_supported contains mode not covered by profile-pack",
+		}
+	}
+	return nil
+}
+
+func isSandboxManifest(manifest Manifest) bool {
+	return strings.TrimSpace(manifest.SandboxBackend) != "" ||
+		strings.TrimSpace(manifest.SandboxProfileID) != "" ||
+		strings.TrimSpace(manifest.HostOS) != "" ||
+		strings.TrimSpace(manifest.HostArch) != "" ||
+		len(manifest.SessionModesSupported) > 0
+}
+
+func normalizeSessionModes(items []string) []string {
+	if items == nil {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, raw := range items {
+		mode := strings.ToLower(strings.TrimSpace(raw))
+		if mode == "" {
+			out = append(out, "")
+			continue
+		}
+		switch mode {
+		case SandboxSessionModePerCall, SandboxSessionModePerSession:
+		default:
+			out = append(out, mode)
+			continue
+		}
+		if _, ok := seen[mode]; ok {
+			continue
+		}
+		seen[mode] = struct{}{}
+		out = append(out, mode)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func validateSandboxActivationCompatibility(manifest Manifest, in ActivationContext) error {
+	if !isSandboxManifest(manifest) {
+		return nil
+	}
+	profile, ok := SandboxProfileByID(manifest.SandboxProfileID)
+	if !ok {
+		return &ContractError{
+			Code:    CodeSandboxProfileUnknown,
+			Field:   "sandbox_profile_id",
+			Message: "sandbox_profile_id is not recognized in profile-pack",
+		}
+	}
+	ctx := normalizeActivationContext(in)
+	if len(ctx.SupportedBackends) > 0 {
+		backends := toStringSet(ctx.SupportedBackends)
+		if _, ok := backends[manifest.SandboxBackend]; !ok {
+			return &ContractError{
+				Code:    CodeSandboxBackendUnsupported,
+				Field:   "sandbox_backend",
+				Message: "runtime does not support manifest sandbox_backend",
+			}
+		}
+	}
+	if manifest.HostOS != "" && manifest.HostOS != ctx.HostOS {
+		return &ContractError{
+			Code:    CodeSandboxHostMismatch,
+			Field:   "host_os",
+			Message: "host_os does not match current host",
+		}
+	}
+	if manifest.HostArch != "" && manifest.HostArch != ctx.HostArch {
+		return &ContractError{
+			Code:    CodeSandboxHostMismatch,
+			Field:   "host_arch",
+			Message: "host_arch does not match current host",
+		}
+	}
+	requested := strings.TrimSpace(ctx.RequestedSession)
+	if requested != "" {
+		allowed := toStringSet(manifest.SessionModesSupported)
+		if _, ok := allowed[requested]; !ok {
+			return &ContractError{
+				Code:    CodeSandboxSessionUnsupported,
+				Field:   "session_modes_supported",
+				Message: "requested session mode is unsupported by manifest",
+			}
+		}
+		if _, ok := toStringSet(profile.SessionModesSupported)[requested]; !ok {
+			return &ContractError{
+				Code:    CodeSandboxSessionUnsupported,
+				Field:   "session_modes_supported",
+				Message: "requested session mode is unsupported by profile-pack",
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeActivationContext(in ActivationContext) ActivationContext {
+	out := in
+	out.HostOS = strings.ToLower(strings.TrimSpace(out.HostOS))
+	out.HostArch = strings.ToLower(strings.TrimSpace(out.HostArch))
+	if out.HostOS == "" {
+		out.HostOS = strings.ToLower(strings.TrimSpace(runtime.GOOS))
+	}
+	if out.HostArch == "" {
+		out.HostArch = strings.ToLower(strings.TrimSpace(runtime.GOARCH))
+	}
+	out.RequestedSession = strings.ToLower(strings.TrimSpace(out.RequestedSession))
+	out.SupportedBackends = normalizeCapabilities(out.SupportedBackends)
+	return out
+}
+
+func toStringSet(items []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, raw := range items {
+		item := strings.ToLower(strings.TrimSpace(raw))
+		if item == "" {
+			continue
+		}
+		out[item] = struct{}{}
 	}
 	return out
 }

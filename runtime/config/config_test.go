@@ -2149,8 +2149,8 @@ func TestValidateRejectsInvalidSandboxSelectorAndProfile(t *testing.T) {
 	cfg.Security.Sandbox.Policy.ProfileByTool = map[string]string{
 		SecuritySandboxSelectorLocalShell: "unknown",
 	}
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown profile") {
-		t.Fatalf("expected unknown profile validation error, got %v", err)
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unknown profile should be deferred to readiness profile-missing finding, got %v", err)
 	}
 }
 

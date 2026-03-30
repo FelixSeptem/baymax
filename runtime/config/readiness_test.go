@@ -3,7 +3,9 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -608,9 +610,105 @@ security:
 	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeStrictEscalated)
 }
 
+func TestManagerReadinessPreflightSandboxAdapterProfileMissingStrictMapping(t *testing.T) {
+	nonStrictFile := filepath.Join(t.TempDir(), "runtime-a53-profile-missing-nonstrict.yaml")
+	writeConfig(t, nonStrictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: missing-profile
+      fallback_action: allow_and_record
+`)
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A53_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager non-strict failed: %v", err)
+	}
+	defer func() { _ = nonStrictMgr.Close() }()
+	nonStrictResult := nonStrictMgr.ReadinessPreflight()
+	if nonStrictResult.Status != ReadinessStatusDegraded {
+		t.Fatalf("non-strict status=%q, want degraded", nonStrictResult.Status)
+	}
+	assertReadinessFindingCode(t, nonStrictResult.Findings, ReadinessCodeSandboxAdapterProfileMissing)
+
+	strictFile := filepath.Join(t.TempDir(), "runtime-a53-profile-missing-strict.yaml")
+	writeConfig(t, strictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: missing-profile
+      fallback_action: allow_and_record
+`)
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A53_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager strict failed: %v", err)
+	}
+	defer func() { _ = strictMgr.Close() }()
+	strictResult := strictMgr.ReadinessPreflight()
+	if strictResult.Status != ReadinessStatusBlocked {
+		t.Fatalf("strict status=%q, want blocked", strictResult.Status)
+	}
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeSandboxAdapterProfileMissing)
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeStrictEscalated)
+}
+
+func TestManagerReadinessPreflightSandboxAdapterBackendUnsupportedAndHostMismatch(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a53-backend-host.yaml")
+	unsupportedBackend := sandboxUnsupportedBackendForCurrentHost()
+	writeConfig(t, file, fmt.Sprintf(`
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: allow_and_record
+    executor:
+      backend: %s
+      session_mode: per_call
+`, unsupportedBackend))
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A53_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxAdapterBackendNotSupported)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxAdapterHostMismatch)
+}
+
 func TestManagerReadinessPreflightSandboxCapabilityMismatchAndSessionUnsupported(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime-a51-capability.yaml")
-	writeConfig(t, file, `
+	backend := sandboxBackendForCurrentHost()
+	writeConfig(t, file, fmt.Sprintf(`
 runtime:
   readiness:
     enabled: true
@@ -626,10 +724,10 @@ security:
       profile: default
       fallback_action: deny
     executor:
-      backend: windows_job
+      backend: %s
       session_mode: per_session
       required_capabilities: [network_off, stdout_stderr_capture]
-`)
+`, backend))
 	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -639,7 +737,7 @@ security:
 		probe: func(ctx context.Context) (types.SandboxCapabilityProbe, error) {
 			_ = ctx
 			return types.SandboxCapabilityProbe{
-				Backend:        SecuritySandboxBackendWindowsJob,
+				Backend:        backend,
 				Capabilities:   []string{SecuritySandboxCapabilityStdoutStderrCapture},
 				SupportedModes: []string{SecuritySandboxSessionModePerCall},
 			}, nil
@@ -651,12 +749,12 @@ security:
 		t.Fatalf("status=%q, want blocked", result.Status)
 	}
 	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxCapabilityMismatch)
-	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxSessionModeUnsupported)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxAdapterSessionModeUnsupported)
 
 	summary := result.Summary()
-	if summary.PrimaryCode != ReadinessCodeSandboxCapabilityMismatch ||
+	if summary.PrimaryCode != ReadinessCodeSandboxAdapterSessionModeUnsupported ||
 		summary.PrimarySource != RuntimePrimarySourceReadiness ||
-		summary.RemediationHintCode != "sandbox.align_capabilities" ||
+		summary.RemediationHintCode != "sandbox.adapter.adjust_session_mode" ||
 		summary.RemediationHintDomain != ReadinessDomainRuntime {
 		t.Fatalf("sandbox capability mismatch summary mismatch: %#v", summary)
 	}
@@ -1223,6 +1321,20 @@ runtime:
 		decision.ReadinessRemediationHintDomain != ReadinessDomainRuntime {
 		t.Fatalf("a50 admission mismatch deny decision: %#v", decision)
 	}
+}
+
+func sandboxBackendForCurrentHost() string {
+	if strings.EqualFold(runtime.GOOS, "windows") {
+		return SecuritySandboxBackendWindowsJob
+	}
+	return SecuritySandboxBackendLinuxNSJail
+}
+
+func sandboxUnsupportedBackendForCurrentHost() string {
+	if strings.EqualFold(runtime.GOOS, "windows") {
+		return SecuritySandboxBackendLinuxNSJail
+	}
+	return SecuritySandboxBackendWindowsJob
 }
 
 func assertReadinessFindingCode(t *testing.T, findings []ReadinessFinding, code string) {

@@ -107,20 +107,20 @@ for marker in "MCP adapter template" "Model provider adapter template" "Tool ada
 done
 
 template_index="$(cat docs/external-adapter-template-index.md)"
-for marker in "MCP adapter template" "Model provider adapter template" "Tool adapter template" "onboarding skeleton" "check-adapter-conformance.ps1" "check-adapter-conformance.sh"; do
+for marker in "MCP adapter template" "Model provider adapter template" "Tool adapter template" "linux_nsjail" "linux_bwrap" "oci_runtime" "windows_job" "onboarding skeleton" "check-adapter-conformance.ps1" "check-adapter-conformance.sh" "check-sandbox-adapter-conformance-contract.ps1" "check-sandbox-adapter-conformance-contract.sh"; do
   if [[ "${template_index}" != *"${marker}"* ]]; then
     adapter_issues+=("docs/external-adapter-template-index.md missing marker: ${marker}")
   fi
 done
 
 mapping_doc="$(cat docs/adapter-migration-mapping.md)"
-for marker in "capability-domain" "code-snippet" "previous pattern" "recommended pattern" "compatibility notes" "additive + nullable + default + fail-fast" "check-adapter-conformance.ps1" "check-adapter-conformance.sh"; do
+for marker in "capability-domain" "code-snippet" "previous pattern" "recommended pattern" "compatibility notes" "rollback notes" "conformance suite id" "additive + nullable + default + fail-fast" "check-adapter-conformance.ps1" "check-adapter-conformance.sh" "check-sandbox-adapter-conformance-contract.ps1" "check-sandbox-adapter-conformance-contract.sh"; do
   if [[ "${mapping_doc}" != *"${marker}"* ]]; then
     adapter_issues+=("docs/adapter-migration-mapping.md missing marker: ${marker}")
   fi
 done
 
-for path in "scripts/check-adapter-conformance.sh" "scripts/check-adapter-conformance.ps1"; do
+for path in "scripts/check-adapter-conformance.sh" "scripts/check-adapter-conformance.ps1" "scripts/check-sandbox-adapter-conformance-contract.sh" "scripts/check-sandbox-adapter-conformance-contract.ps1"; do
   if [[ ! -f "${path}" ]]; then
     adapter_issues+=("missing adapter conformance script: ${path}")
   fi

@@ -48,9 +48,15 @@ func TestAdapterOnboardingDocsConsistency(t *testing.T) {
 		"MCP adapter template",
 		"Model provider adapter template",
 		"Tool adapter template",
+		"linux_nsjail",
+		"linux_bwrap",
+		"oci_runtime",
+		"windows_job",
 		"onboarding skeleton",
 		"check-adapter-conformance.ps1",
 		"check-adapter-conformance.sh",
+		"check-sandbox-adapter-conformance-contract.ps1",
+		"check-sandbox-adapter-conformance-contract.sh",
 	} {
 		if !strings.Contains(templateIndex, marker) {
 			t.Fatalf("[adapter-docs] docs/external-adapter-template-index.md missing marker: %s", marker)
@@ -64,9 +70,13 @@ func TestAdapterOnboardingDocsConsistency(t *testing.T) {
 		"previous pattern",
 		"recommended pattern",
 		"compatibility notes",
+		"rollback notes",
+		"conformance suite id",
 		"additive + nullable + default + fail-fast",
 		"check-adapter-conformance.ps1",
 		"check-adapter-conformance.sh",
+		"check-sandbox-adapter-conformance-contract.ps1",
+		"check-sandbox-adapter-conformance-contract.sh",
 	} {
 		if !strings.Contains(mappingDoc, marker) {
 			t.Fatalf("[adapter-docs] docs/adapter-migration-mapping.md missing marker: %s", marker)
@@ -76,6 +86,8 @@ func TestAdapterOnboardingDocsConsistency(t *testing.T) {
 	for _, rel := range []string{
 		"scripts/check-adapter-conformance.sh",
 		"scripts/check-adapter-conformance.ps1",
+		"scripts/check-sandbox-adapter-conformance-contract.sh",
+		"scripts/check-sandbox-adapter-conformance-contract.ps1",
 	} {
 		path := filepath.Join(root, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {

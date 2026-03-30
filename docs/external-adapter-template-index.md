@@ -1,10 +1,11 @@
-# External Adapter Template Index (A21)
+# External Adapter Template Index (A21/A53)
 
-更新时间：2026-03-20
+更新时间：2026-03-30
 
 ## 目标
 
 提供外部接入的最小模板入口，降低新接入方在 `MCP / Model / Tool` 三类适配上的理解与迁移成本。
+同时提供主流 sandbox backend 的 profile-pack onboarding 模板，保证接入命令与 conformance 套件可直接执行。
 
 优先级（固定）：
 1. MCP adapter template
@@ -24,6 +25,55 @@
 | P1 | MCP adapter template | `examples/templates/mcp-adapter-template/main.go` | `go run ./examples/templates/mcp-adapter-template` |
 | P2 | Model provider adapter template | `examples/templates/model-adapter-template/main.go` | `go run ./examples/templates/model-adapter-template` |
 | P3 | Tool adapter template | `examples/templates/tool-adapter-template/main.go` | `go run ./examples/templates/tool-adapter-template` |
+
+## Mainstream Sandbox Backend Onboarding Templates（A53）
+
+适用 backend（固定）：
+- `linux_nsjail`
+- `linux_bwrap`
+- `oci_runtime`
+- `windows_job`
+
+模板字段索引（profile-pack adapter manifest）：
+
+| 字段 | 类型 | 默认值（模板） | 说明 |
+| --- | --- | --- | --- |
+| `sandbox_backend` | string | 无（必填） | 必须是 `linux_nsjail|linux_bwrap|oci_runtime|windows_job` 之一 |
+| `sandbox_profile_id` | string | 与 `sandbox_backend` 相同 | 绑定 profile-pack 条目 |
+| `host_os` | string | 由 profile-pack 决定（Linux 或 Windows） | 激活边界 host 兼容校验 |
+| `host_arch` | string | `amd64` | 激活边界 host 兼容校验 |
+| `session_modes_supported` | []string | `["per_call","per_session"]` | adapter 声明支持的 session 模式 |
+
+后端模板映射（onboarding skeleton）：
+
+| backend | profile-pack id | conformance suite id | Linux/macOS | Windows |
+| --- | --- | --- | --- | --- |
+| `linux_nsjail` | `linux_nsjail` | `sandbox-linux-nsjail-matrix` | `bash scripts/check-sandbox-adapter-conformance-contract.sh` | `pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1` |
+| `linux_bwrap` | `linux_bwrap` | `sandbox-linux-bwrap-matrix` | `bash scripts/check-sandbox-adapter-conformance-contract.sh` | `pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1` |
+| `oci_runtime` | `oci_runtime` | `sandbox-oci-runtime-matrix` | `bash scripts/check-sandbox-adapter-conformance-contract.sh` | `pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1` |
+| `windows_job` | `windows_job` | `sandbox-windows-job-matrix` | `bash scripts/check-sandbox-adapter-conformance-contract.sh` | `pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1` |
+
+manifest 片段（profile declaration + manifest snippet）：
+
+```json
+{
+  "type": "tool",
+  "name": "sandbox-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "sandbox_backend": "linux_nsjail",
+  "sandbox_profile_id": "linux_nsjail",
+  "host_os": "linux",
+  "host_arch": "amd64",
+  "session_modes_supported": ["per_call", "per_session"]
+}
+```
 
 ## MCP Adapter Template（P1）
 
@@ -149,4 +199,14 @@ bash scripts/check-adapter-contract-replay.sh
 
 ```powershell
 pwsh -File scripts/check-adapter-contract-replay.ps1
+```
+
+Sandbox adapter conformance gate（A53）：
+
+```bash
+bash scripts/check-sandbox-adapter-conformance-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 ```

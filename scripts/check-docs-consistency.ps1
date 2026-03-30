@@ -136,9 +136,15 @@ if (Test-Path "docs/external-adapter-template-index.md") {
         "MCP adapter template",
         "Model provider adapter template",
         "Tool adapter template",
+        "linux_nsjail",
+        "linux_bwrap",
+        "oci_runtime",
+        "windows_job",
         "onboarding skeleton",
         "check-adapter-conformance.ps1",
-        "check-adapter-conformance.sh"
+        "check-adapter-conformance.sh",
+        "check-sandbox-adapter-conformance-contract.ps1",
+        "check-sandbox-adapter-conformance-contract.sh"
     )) {
         if ($templateIndex -notmatch [regex]::Escape($marker)) {
             $adapterIssues += "docs/external-adapter-template-index.md missing marker: $marker"
@@ -154,9 +160,13 @@ if (Test-Path "docs/adapter-migration-mapping.md") {
         "previous pattern",
         "recommended pattern",
         "compatibility notes",
+        "rollback notes",
+        "conformance suite id",
         "additive + nullable + default + fail-fast",
         "check-adapter-conformance.ps1",
-        "check-adapter-conformance.sh"
+        "check-adapter-conformance.sh",
+        "check-sandbox-adapter-conformance-contract.ps1",
+        "check-sandbox-adapter-conformance-contract.sh"
     )) {
         if ($mappingDoc -notmatch [regex]::Escape($marker)) {
             $adapterIssues += "docs/adapter-migration-mapping.md missing marker: $marker"
@@ -166,7 +176,9 @@ if (Test-Path "docs/adapter-migration-mapping.md") {
 
 foreach ($path in @(
     "scripts/check-adapter-conformance.sh",
-    "scripts/check-adapter-conformance.ps1"
+    "scripts/check-adapter-conformance.ps1",
+    "scripts/check-sandbox-adapter-conformance-contract.sh",
+    "scripts/check-sandbox-adapter-conformance-contract.ps1"
 )) {
     if (-not (Test-Path $path)) {
         $adapterIssues += "missing adapter conformance script: $path"

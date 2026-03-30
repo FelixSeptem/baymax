@@ -131,6 +131,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] adapter contract replay" -Command
     pwsh -File scripts/check-adapter-contract-replay.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] sandbox adapter conformance contract" -Command {
+    pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter scaffold drift" -Command {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1
 }

@@ -1,6 +1,6 @@
 # Core Module Semantic Alignment
 
-更新时间：2026-03-20
+更新时间：2026-03-30
 
 ## 目标
 
@@ -12,7 +12,7 @@
 
 状态口径说明：
 - 活跃变更：以 `openspec list --json` 为准。
-- 当前在研变更：A33（A32 已完成待归档）。
+- 当前在研变更：以 `openspec list --json` 输出为准（本文件不写死提案编号）。
 - 本文件不宣称 in-progress 提案已归档完成，仅做“代码现状可核对性”映射。
 
 ## 模块映射表
@@ -36,9 +36,10 @@
 
 ## 本轮发现与修正
 
-1. 状态口径漂移已修复：README 与 roadmap 已更新为“A33 在研、A32 完成待归档”，并与 `openspec list --json` 对齐。
+1. 状态口径已收敛为权威源引用：README 与 roadmap 以 `openspec list --json` + `openspec/changes/archive/INDEX.md` 为准，不在本文件维护易漂移编号快照。
 2. `runtime/config` README 已补齐 async-await/reconcile 关键默认值，避免“代码有默认值、文档缺省”的信息缺口。
 3. `runtime/diagnostics` README 已补齐 `RecentReloads`、`QueryMailbox` 默认分页和 A32 相关 additive 字段族说明。
+4. 2026-03-30 核心组件 README 巡检：`a2a/adapter/context/core/runner/core/types/mcp/model/observability/orchestration/runtime/*/skill/tool` 共 14 个组件 README 均包含完整章节模板；关键入口引用路径可解析且存在；未发现“在研/待归档”状态漂移表述。
 
 ## 维护建议
 

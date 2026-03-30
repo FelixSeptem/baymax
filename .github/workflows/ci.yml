@@ -144,6 +144,25 @@ jobs:
       - name: Sandbox Rollout Governance Gate
         run: bash scripts/check-sandbox-rollout-governance-contract.sh
 
+  sandbox-adapter-conformance-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Sandbox Adapter Conformance Gate
+        run: bash scripts/check-sandbox-adapter-conformance-contract.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

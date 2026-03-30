@@ -2901,16 +2901,11 @@ func validateSecuritySandboxConfig(cfg SecuritySandboxConfig) error {
 			}
 		}
 	}
-	if _, ok := cfg.Profiles[strings.ToLower(strings.TrimSpace(cfg.Policy.Profile))]; !ok {
-		return fmt.Errorf("security.sandbox.policy.profile=%q not found in security.sandbox.profiles", cfg.Policy.Profile)
-	}
 	for selector, profileName := range cfg.Policy.ProfileByTool {
 		if err := validateNamespaceToolKey(selector, fmt.Sprintf("security.sandbox.policy.profile_by_tool.%s", selector)); err != nil {
 			return err
 		}
-		if _, ok := cfg.Profiles[strings.ToLower(strings.TrimSpace(profileName))]; !ok {
-			return fmt.Errorf("security.sandbox.policy.profile_by_tool.%s references unknown profile %q", selector, profileName)
-		}
+		_ = profileName
 	}
 	if err := validateSecuritySandboxRolloutConfig(cfg.Rollout); err != nil {
 		return err

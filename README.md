@@ -13,11 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-03-29）：
-- 已归档并稳定：A4-A50。
-- A51（Introduce Sandbox Execution Isolation Contract）已完成待归档。
-- A52（Introduce Sandbox Runtime Health Rollout And Capacity Governance Contract）已完成待归档。
+当前里程碑快照（2026-03-30）：
+- 已归档并稳定：A4-A52。
 - A53（Introduce Mainstream Sandbox Adapter Conformance And Migration Pack）进行中。
+- A54（Introduce Memory Provider SPI And Builtin Filesystem Engine Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -227,10 +226,11 @@ _ = err
 
 当前进行中能力（最新）：
 - A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：mainstream sandbox adapter 接入契约进行中（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
+- A54 `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`：memory provider SPI + builtin filesystem engine 提案进行中（统一 `Query/Upsert/Delete` SPI、`external_spi|builtin_filesystem` 模式切换、mem0/zep/openviking profile pack、readiness/diagnostics/replay/conformance/gate 一体化契约）。
 
-已完成待归档能力：
-- A51 `introduce-sandbox-execution-isolation-contract-a51`：sandbox execution isolation 契约已完成（`host|sandbox|deny` 动作决策、`security.sandbox.*` 配置域、readiness/admission 集成、timeline/security-event/delivery/diagnostics/replay/gate 一体化观测与阻断语义；已接入 backend compatibility smoke、offline sandbox executor conformance harness、`security-sandbox-gate` 独立 required-check 候选）。
-- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：sandbox rollout + 健康/容量治理契约已完成（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture、rollout governance gate 与 CI 独立 required-check 候选）。
+近期已归档能力（摘要）：
+- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：已归档并稳定（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture、rollout governance gate）。
+- A51 `introduce-sandbox-execution-isolation-contract-a51`：已归档并稳定（`host|sandbox|deny` 决策、`security.sandbox.*` 配置域、readiness/admission 与 replay/gate 收敛）。
 
 ### 9) Runtime Readiness Admission（A44）
 
@@ -245,29 +245,9 @@ _ = err
 - `degraded`：按 `degraded_policy` 决定 `allow_and_record` 或 `fail_fast`。
 - 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
 
-最近已归档能力：
-- A50 `introduce-arbitration-rule-version-governance-and-compatibility-contract-a50`：arbitration rule version 治理契约已归档（`runtime.arbitration.version.*`、requested/effective/source/policy additive 字段、unsupported/mismatch fail-fast、cross-version replay drift 分类）。
-- A48 `introduce-cross-domain-primary-reason-arbitration-contract-a48`：cross-domain primary reason 裁决契约已归档（fixed precedence、deterministic tie-break、`runtime_primary_*` additive 字段、A48 replay drift 分类与 gate 阻断接线）。
-- A47 `introduce-readiness-timeout-health-replay-fixture-gate-contract-a47`：readiness + timeout + adapter-health 交叉 replay fixture gate 契约已归档（`a47.v1` fixture、drift 分类、Run/Stream parity、quality gate 阻断接线）。
-- A46 `introduce-adapter-health-backoff-and-circuit-governance-contract-a46`：adapter health backoff + circuit governance 契约已归档（指数退避/抖动、half-open 探测、readiness/diagnostics/conformance/gate 收敛）。
-- A45 `introduce-diagnostics-cardinality-budget-and-truncation-governance-contract-a45`：diagnostics cardinality budget + deterministic truncation 治理契约已归档（`diagnostics.cardinality.*` 配置域、overflow policy、bounded summary、Run/Stream/replay/parity 合同测试、quality gate 阻断映射）。
-- A44 `introduce-runtime-readiness-admission-guard-and-degradation-policy-contract-a44`：managed Run/Stream readiness admission guard 与 degraded policy 契约已归档（admission config/policy、Run/Stream guard、deny side-effect-free、diagnostics additive、quality gate 覆盖）。
-- A43 `introduce-adapter-runtime-health-probe-and-readiness-integration-contract-a43`：adapter runtime 健康探针与 readiness 集成契约已归档（`adapter.health.*` + readiness/diagnostics/conformance/gate 一体化收敛）。
-- A42 `introduce-diagnostics-query-performance-baseline-and-regression-gate-a42`：diagnostics query 基线与回归门禁已归档（默认阈值 `12/15/12%`）。
-- A41 `introduce-runtime-operation-profiles-and-timeout-resolution-contract-a41`：operation profile 与 timeout 解析收敛契约已归档。
-- A40 `introduce-runtime-readiness-preflight-and-degradation-contract-a40`：runtime 启动就绪预检与降级策略契约已归档。
-- A39 `introduce-task-board-control-and-manual-recovery-contract-a39`：task board control + manual recovery 契约已归档。
-- A38 `harden-mailbox-worker-lease-reclaim-and-panic-recovery-contract-a38`：mailbox worker lease reclaim 与 panic recovery 契约加固已归档。
-- A37 `harden-windows-gate-fail-fast-parity-and-status-convergence-a37`：Windows 门禁 strict-native fail-fast parity 与状态口径收敛已归档（`govulncheck warn` 保留为唯一治理例外）。
-- A36 `introduce-mailbox-lifecycle-worker-and-observability-contract-a36`：mailbox lifecycle worker 与可观测性契约已归档。
-- A35 `activate-shared-mailbox-runtime-wiring-and-diagnostics-contract-a35`：共享 mailbox runtime 接线与诊断闭环治理已归档。
-- A34 `retire-legacy-direct-invoke-and-enforce-mailbox-canonical-entrypoints-a34`：调用入口 canonical-only 收口已归档。
-- A33 `enable-collaboration-primitive-bounded-retry-contract-a33`：协作原语 bounded retry 契约已归档。
-  - 目标语义：保持默认关闭前提下，补齐 `composer.collab.retry.*` 有界重试契约与共享门禁覆盖。
-- A32 `introduce-async-await-reconcile-poll-fallback-contract-a32`：异步等待回报补偿收敛（poll fallback + reconcile）。
-  - 目标语义：`awaiting_report` 任务在 callback 丢失时可由 status/result 轮询收敛；
-    终态仲裁采用 `first_terminal_wins + record_conflict`；
-    `not_found` 仅保持等待，直至 `report_timeout`。
+历史已归档里程碑：
+- A4-A52 的归档明细与能力范围请以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为准。
+- 主线契约测试映射请查看 `docs/mainline-contract-test-index.md`。
 
 状态权威来源：
 - `openspec list --json`
@@ -319,6 +299,7 @@ PowerShell 门禁治理语义（A37）：
 - 适配 manifest 合同校验：`scripts/check-adapter-manifest-contract.sh` / `scripts/check-adapter-manifest-contract.ps1`
 - 适配能力协商合同校验：`scripts/check-adapter-capability-contract.sh` / `scripts/check-adapter-capability-contract.ps1`
 - 适配合同回放校验：`scripts/check-adapter-contract-replay.sh` / `scripts/check-adapter-contract-replay.ps1`
+- sandbox adapter conformance 校验：`scripts/check-sandbox-adapter-conformance-contract.sh` / `scripts/check-sandbox-adapter-conformance-contract.ps1`
 - 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`

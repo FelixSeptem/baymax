@@ -138,6 +138,12 @@ if ! bash scripts/check-adapter-contract-replay.sh; then
   exit 1
 fi
 
+echo "[quality-gate] sandbox adapter conformance contract"
+if ! bash scripts/check-sandbox-adapter-conformance-contract.sh; then
+  echo "[quality-gate][sandbox-adapter-conformance-contract] sandbox adapter conformance contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

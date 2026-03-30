@@ -1977,6 +1977,19 @@ func TestSecuritySandboxDefaults(t *testing.T) {
 	if cfg.Security.Sandbox.Mode != SecuritySandboxModeObserve {
 		t.Fatalf("security.sandbox.mode = %q, want %q", cfg.Security.Sandbox.Mode, SecuritySandboxModeObserve)
 	}
+	if cfg.Security.Sandbox.Rollout.Phase != SecuritySandboxRolloutPhaseObserve {
+		t.Fatalf("security.sandbox.rollout.phase = %q, want %q", cfg.Security.Sandbox.Rollout.Phase, SecuritySandboxRolloutPhaseObserve)
+	}
+	if cfg.Security.Sandbox.Rollout.TrafficRatio != 0 {
+		t.Fatalf("security.sandbox.rollout.traffic_ratio = %v, want 0", cfg.Security.Sandbox.Rollout.TrafficRatio)
+	}
+	if cfg.Security.Sandbox.Capacity.DegradedPolicy != SecuritySandboxCapacityDegradedPolicyAllowAndRecord {
+		t.Fatalf(
+			"security.sandbox.capacity.degraded_policy = %q, want %q",
+			cfg.Security.Sandbox.Capacity.DegradedPolicy,
+			SecuritySandboxCapacityDegradedPolicyAllowAndRecord,
+		)
+	}
 	if cfg.Security.Sandbox.Policy.DefaultAction != SecuritySandboxActionHost {
 		t.Fatalf("security.sandbox.policy.default_action = %q, want %q", cfg.Security.Sandbox.Policy.DefaultAction, SecuritySandboxActionHost)
 	}
@@ -1995,6 +2008,8 @@ func TestSecuritySandboxEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SECURITY_SANDBOX_MODE", "enforce")
 	t.Setenv("BAYMAX_SECURITY_SANDBOX_EXECUTOR_BACKEND", SecuritySandboxBackendLinuxBwrap)
 	t.Setenv("BAYMAX_SECURITY_SANDBOX_POLICY_DEFAULT_ACTION", SecuritySandboxActionSandbox)
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_ROLLOUT_PHASE", SecuritySandboxRolloutPhaseCanary)
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_CAPACITY_MAX_QUEUE", "142")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 security:
@@ -2004,6 +2019,10 @@ security:
       backend: windows_job
     policy:
       default_action: host
+    rollout:
+      phase: observe
+    capacity:
+      max_queue: 16
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -2020,6 +2039,12 @@ security:
 	}
 	if cfg.Security.Sandbox.Policy.DefaultAction != SecuritySandboxActionSandbox {
 		t.Fatalf("security.sandbox.policy.default_action = %q, want %q", cfg.Security.Sandbox.Policy.DefaultAction, SecuritySandboxActionSandbox)
+	}
+	if cfg.Security.Sandbox.Rollout.Phase != SecuritySandboxRolloutPhaseCanary {
+		t.Fatalf("security.sandbox.rollout.phase = %q, want %q", cfg.Security.Sandbox.Rollout.Phase, SecuritySandboxRolloutPhaseCanary)
+	}
+	if cfg.Security.Sandbox.Capacity.MaxQueue != 142 {
+		t.Fatalf("security.sandbox.capacity.max_queue = %d, want 142", cfg.Security.Sandbox.Capacity.MaxQueue)
 	}
 }
 
@@ -2040,6 +2065,74 @@ func TestValidateRejectsInvalidSandboxEnums(t *testing.T) {
 	cfg.Security.Sandbox.Executor.SessionMode = "session"
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.executor.session_mode") {
 		t.Fatalf("expected sandbox session_mode validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Rollout.Phase = "preview"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.rollout.phase") {
+		t.Fatalf("expected sandbox rollout phase validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Capacity.DegradedPolicy = "shadow_deny"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.capacity.degraded_policy") {
+		t.Fatalf("expected sandbox capacity degraded_policy validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidSandboxRolloutAndCapacityBounds(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Sandbox.Rollout.TrafficRatio = 1.2
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.rollout.traffic_ratio") {
+		t.Fatalf("expected sandbox rollout traffic_ratio validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Rollout.ErrorBudget = -0.1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.rollout.error_budget") {
+		t.Fatalf("expected sandbox rollout error_budget validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Capacity.ThrottleThreshold = 121
+	cfg.Security.Sandbox.Capacity.DenyThreshold = 120
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.capacity.throttle_threshold") {
+		t.Fatalf("expected sandbox capacity threshold ordering validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Capacity.DenyThreshold = cfg.Security.Sandbox.Capacity.MaxQueue + 1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.capacity.deny_threshold") {
+		t.Fatalf("expected sandbox capacity max_queue validation error, got %v", err)
+	}
+}
+
+func TestSandboxRolloutPhaseTransitionValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr bool
+	}{
+		{name: "observe to canary", from: SecuritySandboxRolloutPhaseObserve, to: SecuritySandboxRolloutPhaseCanary},
+		{name: "canary to baseline", from: SecuritySandboxRolloutPhaseCanary, to: SecuritySandboxRolloutPhaseBaseline},
+		{name: "baseline to full", from: SecuritySandboxRolloutPhaseBaseline, to: SecuritySandboxRolloutPhaseFull},
+		{name: "full to frozen", from: SecuritySandboxRolloutPhaseFull, to: SecuritySandboxRolloutPhaseFrozen},
+		{name: "frozen to observe", from: SecuritySandboxRolloutPhaseFrozen, to: SecuritySandboxRolloutPhaseObserve},
+		{name: "full to observe invalid", from: SecuritySandboxRolloutPhaseFull, to: SecuritySandboxRolloutPhaseObserve, wantErr: true},
+		{name: "observe to frozen invalid", from: SecuritySandboxRolloutPhaseObserve, to: SecuritySandboxRolloutPhaseFrozen, wantErr: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSandboxRolloutPhaseTransition(tc.from, tc.to)
+			if tc.wantErr && err == nil {
+				t.Fatalf("validateSandboxRolloutPhaseTransition(%q,%q) expected error", tc.from, tc.to)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validateSandboxRolloutPhaseTransition(%q,%q) unexpected error: %v", tc.from, tc.to, err)
+			}
+		})
 	}
 }
 

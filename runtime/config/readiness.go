@@ -58,6 +58,10 @@ const (
 	ReadinessCodeSandboxProfileInvalid         = "sandbox.profile_invalid"
 	ReadinessCodeSandboxCapabilityMismatch     = "sandbox.capability_mismatch"
 	ReadinessCodeSandboxSessionModeUnsupported = "sandbox.session_mode_unsupported"
+	ReadinessCodeSandboxRolloutPhaseInvalid    = "sandbox.rollout.phase_invalid"
+	ReadinessCodeSandboxRolloutHealthBreached  = "sandbox.rollout.health_budget_breached"
+	ReadinessCodeSandboxRolloutFrozen          = "sandbox.rollout.frozen"
+	ReadinessCodeSandboxRolloutCapacityBlocked = "sandbox.rollout.capacity_unavailable"
 )
 
 type ReadinessAdmissionOutcome string
@@ -68,13 +72,29 @@ const (
 )
 
 const (
-	ReadinessAdmissionCodeBypassDisabled  = "runtime.readiness.admission.disabled"
-	ReadinessAdmissionCodeReady           = "runtime.readiness.admission.ready"
-	ReadinessAdmissionCodeBlocked         = "runtime.readiness.admission.blocked"
-	ReadinessAdmissionCodeDegradedAllow   = "runtime.readiness.admission.degraded_allow"
-	ReadinessAdmissionCodeDegradedDeny    = "runtime.readiness.admission.degraded_fail_fast"
-	ReadinessAdmissionCodeUnknownStatus   = "runtime.readiness.admission.unknown_status"
-	ReadinessAdmissionCodeManagerNotReady = "runtime.readiness.admission.manager_unavailable"
+	ReadinessAdmissionCodeBypassDisabled       = "runtime.readiness.admission.disabled"
+	ReadinessAdmissionCodeReady                = "runtime.readiness.admission.ready"
+	ReadinessAdmissionCodeBlocked              = "runtime.readiness.admission.blocked"
+	ReadinessAdmissionCodeDegradedAllow        = "runtime.readiness.admission.degraded_allow"
+	ReadinessAdmissionCodeDegradedDeny         = "runtime.readiness.admission.degraded_fail_fast"
+	ReadinessAdmissionCodeSandboxFrozen        = "runtime.readiness.admission.sandbox_rollout_frozen"
+	ReadinessAdmissionCodeSandboxThrottle      = "runtime.readiness.admission.sandbox_capacity_throttle_allow"
+	ReadinessAdmissionCodeSandboxThrottledDeny = "runtime.readiness.admission.sandbox_capacity_throttle_fail_fast"
+	ReadinessAdmissionCodeSandboxCapacityDeny  = "runtime.readiness.admission.sandbox_capacity_deny"
+	ReadinessAdmissionCodeUnknownStatus        = "runtime.readiness.admission.unknown_status"
+	ReadinessAdmissionCodeManagerNotReady      = "runtime.readiness.admission.manager_unavailable"
+)
+
+const (
+	SandboxHealthBudgetWithinBudget = "within_budget"
+	SandboxHealthBudgetNearBudget   = "near_budget"
+	SandboxHealthBudgetBreached     = "breached"
+)
+
+const (
+	SandboxCapacityActionAllow    = "allow"
+	SandboxCapacityActionThrottle = "throttle"
+	SandboxCapacityActionDeny     = "deny"
 )
 
 type ReadinessFinding struct {
@@ -137,6 +157,9 @@ type ReadinessAdmissionDecision struct {
 	Mode                                     string                    `json:"mode"`
 	BlockOn                                  string                    `json:"block_on"`
 	DegradedPolicy                           string                    `json:"degraded_policy"`
+	SandboxRolloutPhase                      string                    `json:"sandbox_rollout_phase,omitempty"`
+	SandboxCapacityAction                    string                    `json:"sandbox_capacity_action,omitempty"`
+	SandboxCapacityDegradedPolicy            string                    `json:"sandbox_capacity_degraded_policy,omitempty"`
 	Outcome                                  ReadinessAdmissionOutcome `json:"outcome"`
 	ReasonCode                               string                    `json:"reason_code"`
 	ReadinessStatus                          ReadinessStatus           `json:"readiness_status"`
@@ -196,6 +219,17 @@ type RuntimeReadinessComponentSnapshot struct {
 	UpdatedAt time.Time                      `json:"updated_at,omitempty"`
 }
 
+type SandboxRolloutRuntimeState struct {
+	HealthBudgetStatus      string    `json:"health_budget_status,omitempty"`
+	HealthBudgetBreachTotal int       `json:"health_budget_breach_total,omitempty"`
+	FreezeState             bool      `json:"freeze_state,omitempty"`
+	FreezeReasonCode        string    `json:"freeze_reason_code,omitempty"`
+	CapacityQueueDepth      int       `json:"capacity_queue_depth,omitempty"`
+	CapacityInflight        int       `json:"capacity_inflight,omitempty"`
+	CapacityAction          string    `json:"capacity_action,omitempty"`
+	UpdatedAt               time.Time `json:"updated_at,omitempty"`
+}
+
 func (m *Manager) SetReadinessComponentSnapshot(snapshot RuntimeReadinessComponentSnapshot) {
 	if m == nil {
 		return
@@ -212,6 +246,24 @@ func (m *Manager) ReadinessComponentSnapshot() RuntimeReadinessComponentSnapshot
 	m.readinessMu.RLock()
 	defer m.readinessMu.RUnlock()
 	return cloneReadinessComponentSnapshot(m.readinessComponents)
+}
+
+func (m *Manager) SetSandboxRolloutRuntimeState(state SandboxRolloutRuntimeState) {
+	if m == nil {
+		return
+	}
+	m.sandboxRolloutMu.Lock()
+	m.sandboxRolloutState = cloneSandboxRolloutRuntimeState(state)
+	m.sandboxRolloutMu.Unlock()
+}
+
+func (m *Manager) SandboxRolloutRuntimeState() SandboxRolloutRuntimeState {
+	if m == nil {
+		return SandboxRolloutRuntimeState{}
+	}
+	m.sandboxRolloutMu.RLock()
+	defer m.sandboxRolloutMu.RUnlock()
+	return cloneSandboxRolloutRuntimeState(m.sandboxRolloutState)
 }
 
 func (m *Manager) SetAdapterHealthTargets(targets []AdapterHealthTarget) {
@@ -419,15 +471,20 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 		}
 	}
 
-	runtimeCfg := m.EffectiveConfig().Runtime
+	effectiveCfg := m.EffectiveConfig()
+	runtimeCfg := effectiveCfg.Runtime
 	resolvedVersion, _ := ResolveArbitrationRuleVersion(runtimeCfg.Arbitration.Version, requestedRuleVersion)
 	cfg := runtimeCfg.Readiness.Admission
+	capacityDegradedPolicy := normalizeSandboxCapacityDegradedPolicy(effectiveCfg.Security.Sandbox.Capacity.DegradedPolicy)
 	hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeBypassDisabled)
 	decision := ReadinessAdmissionDecision{
 		Enabled:                                  cfg.Enabled,
 		Mode:                                     normalizeReadinessAdmissionMode(cfg.Mode),
 		BlockOn:                                  normalizeReadinessAdmissionBlockOn(cfg.BlockOn),
 		DegradedPolicy:                           normalizeReadinessAdmissionDegradedPolicy(cfg.DegradedPolicy),
+		SandboxRolloutPhase:                      strings.ToLower(strings.TrimSpace(effectiveCfg.Security.Sandbox.Rollout.Phase)),
+		SandboxCapacityAction:                    SandboxCapacityActionAllow,
+		SandboxCapacityDegradedPolicy:            capacityDegradedPolicy,
 		Outcome:                                  ReadinessAdmissionOutcomeAllow,
 		ReasonCode:                               ReadinessAdmissionCodeBypassDisabled,
 		ReadinessStatus:                          ReadinessStatusReady,
@@ -467,6 +524,30 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 	decision.ReadinessArbitrationRuleMismatchTotal = summary.ArbitrationRuleMismatchTotal
 	decision.ReadinessRemediationHintCode = strings.TrimSpace(summary.RemediationHintCode)
 	decision.ReadinessRemediationHintDomain = strings.TrimSpace(summary.RemediationHintDomain)
+	decision.SandboxCapacityAction = sandboxCapacityActionFromFindings(preflight.Findings)
+	if decision.SandboxCapacityAction == "" {
+		decision.SandboxCapacityAction = SandboxCapacityActionAllow
+	}
+	if sandboxRolloutFrozenFromFindings(preflight.Findings) {
+		decision.Outcome = ReadinessAdmissionOutcomeDeny
+		decision.ReasonCode = ReadinessAdmissionCodeSandboxFrozen
+		return decision
+	}
+	switch decision.SandboxCapacityAction {
+	case SandboxCapacityActionDeny:
+		decision.Outcome = ReadinessAdmissionOutcomeDeny
+		decision.ReasonCode = ReadinessAdmissionCodeSandboxCapacityDeny
+		return decision
+	case SandboxCapacityActionThrottle:
+		if decision.SandboxCapacityDegradedPolicy == SecuritySandboxCapacityDegradedPolicyFailFast {
+			decision.Outcome = ReadinessAdmissionOutcomeDeny
+			decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottledDeny
+		} else {
+			decision.Outcome = ReadinessAdmissionOutcomeAllow
+			decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottle
+		}
+		return decision
+	}
 	switch preflight.Status {
 	case ReadinessStatusReady:
 		decision.Outcome = ReadinessAdmissionOutcomeAllow
@@ -650,16 +731,93 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	if sandboxCfg.Required {
 		severity = ReadinessSeverityError
 	}
+	rolloutPhase := strings.ToLower(strings.TrimSpace(sandboxCfg.Rollout.Phase))
+	rolloutState := m.SandboxRolloutRuntimeState()
+	healthBudgetStatus := normalizeSandboxHealthBudgetStatus(rolloutState.HealthBudgetStatus)
+	capacityAction := normalizeSandboxCapacityAction(rolloutState.CapacityAction)
+	capacityQueueDepth := rolloutState.CapacityQueueDepth
+	capacityInflight := rolloutState.CapacityInflight
+	if capacityQueueDepth < 0 {
+		capacityQueueDepth = 0
+	}
+	if capacityInflight < 0 {
+		capacityInflight = 0
+	}
+	if capacityAction == "" {
+		capacityAction = evaluateSandboxCapacityAction(sandboxCfg.Capacity, capacityQueueDepth, capacityInflight)
+	}
+	freezeState := rolloutState.FreezeState || rolloutPhase == SecuritySandboxRolloutPhaseFrozen
+	capacityDegradedPolicy := normalizeSandboxCapacityDegradedPolicy(sandboxCfg.Capacity.DegradedPolicy)
 	metadataBase := map[string]any{
-		"sandbox_enabled":      true,
-		"sandbox_required":     sandboxCfg.Required,
-		"sandbox_mode":         strings.ToLower(strings.TrimSpace(sandboxCfg.Mode)),
-		"sandbox_backend":      strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend)),
-		"sandbox_session_mode": strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)),
+		"sandbox_enabled":                true,
+		"sandbox_required":               sandboxCfg.Required,
+		"sandbox_mode":                   strings.ToLower(strings.TrimSpace(sandboxCfg.Mode)),
+		"sandbox_backend":                strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend)),
+		"sandbox_session_mode":           strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)),
+		"sandbox_rollout_phase":          rolloutPhase,
+		"sandbox_capacity_action":        capacityAction,
+		"sandbox_capacity_queue_depth":   capacityQueueDepth,
+		"sandbox_capacity_inflight":      capacityInflight,
+		"sandbox_capacity_policy":        capacityDegradedPolicy,
+		"sandbox_health_budget_status":   healthBudgetStatus,
+		"sandbox_health_budget_breaches": rolloutState.HealthBudgetBreachTotal,
+		"sandbox_freeze_state":           freezeState,
+	}
+	if reason := strings.TrimSpace(rolloutState.FreezeReasonCode); reason != "" {
+		metadataBase["sandbox_freeze_reason_code"] = reason
 	}
 	selectedProfile := ResolveSandboxProfile(sandboxCfg, "")
 	metadataBase["sandbox_profile"] = selectedProfile
-	findings := make([]ReadinessFinding, 0, 3)
+	findings := make([]ReadinessFinding, 0, 6)
+
+	if !isSandboxRolloutPhase(rolloutPhase) {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxRolloutPhaseInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "sandbox rollout phase is invalid",
+			Metadata: cloneAnyMap(metadataBase),
+		})
+	}
+
+	if healthBudgetStatus == SandboxHealthBudgetBreached {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxRolloutHealthBreached,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "sandbox rollout health budget is breached",
+			Metadata: cloneAnyMap(metadataBase),
+		})
+	}
+
+	if freezeState {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxRolloutFrozen,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "sandbox rollout is frozen",
+			Metadata: cloneAnyMap(metadataBase),
+		})
+	}
+
+	switch capacityAction {
+	case SandboxCapacityActionThrottle:
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxRolloutCapacityBlocked,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "sandbox rollout capacity is throttled",
+			Metadata: cloneAnyMap(metadataBase),
+		})
+	case SandboxCapacityActionDeny:
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxRolloutCapacityBlocked,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "sandbox rollout capacity is unavailable",
+			Metadata: cloneAnyMap(metadataBase),
+		})
+	}
 
 	profile, ok := sandboxCfg.Profiles[selectedProfile]
 	if !ok {
@@ -1214,6 +1372,99 @@ func normalizeReadinessAdmissionDegradedPolicy(in string) string {
 	}
 }
 
+func normalizeSandboxHealthBudgetStatus(in string) string {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case SandboxHealthBudgetNearBudget:
+		return SandboxHealthBudgetNearBudget
+	case SandboxHealthBudgetBreached:
+		return SandboxHealthBudgetBreached
+	default:
+		return SandboxHealthBudgetWithinBudget
+	}
+}
+
+func normalizeSandboxCapacityAction(in string) string {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case SandboxCapacityActionThrottle:
+		return SandboxCapacityActionThrottle
+	case SandboxCapacityActionDeny:
+		return SandboxCapacityActionDeny
+	case SandboxCapacityActionAllow:
+		return SandboxCapacityActionAllow
+	default:
+		return ""
+	}
+}
+
+func normalizeSandboxCapacityDegradedPolicy(in string) string {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case SecuritySandboxCapacityDegradedPolicyFailFast:
+		return SecuritySandboxCapacityDegradedPolicyFailFast
+	case SecuritySandboxCapacityDegradedPolicyAllowAndRecord:
+		return SecuritySandboxCapacityDegradedPolicyAllowAndRecord
+	default:
+		return SecuritySandboxCapacityDegradedPolicyAllowAndRecord
+	}
+}
+
+func isSandboxRolloutPhase(phase string) bool {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case SecuritySandboxRolloutPhaseObserve,
+		SecuritySandboxRolloutPhaseCanary,
+		SecuritySandboxRolloutPhaseBaseline,
+		SecuritySandboxRolloutPhaseFull,
+		SecuritySandboxRolloutPhaseFrozen:
+		return true
+	default:
+		return false
+	}
+}
+
+func evaluateSandboxCapacityAction(cfg SecuritySandboxCapacityConfig, queueDepth, inflight int) string {
+	if queueDepth < 0 {
+		queueDepth = 0
+	}
+	if inflight < 0 {
+		inflight = 0
+	}
+	if inflight >= cfg.MaxInflight || queueDepth >= cfg.DenyThreshold {
+		return SandboxCapacityActionDeny
+	}
+	if queueDepth >= cfg.ThrottleThreshold {
+		return SandboxCapacityActionThrottle
+	}
+	return SandboxCapacityActionAllow
+}
+
+func sandboxRolloutFrozenFromFindings(findings []ReadinessFinding) bool {
+	for i := range findings {
+		if strings.TrimSpace(findings[i].Code) == ReadinessCodeSandboxRolloutFrozen {
+			return true
+		}
+	}
+	return false
+}
+
+func sandboxCapacityActionFromFindings(findings []ReadinessFinding) string {
+	for i := range findings {
+		if strings.TrimSpace(findings[i].Code) != ReadinessCodeSandboxRolloutCapacityBlocked {
+			continue
+		}
+		if findings[i].Metadata == nil {
+			continue
+		}
+		raw, ok := findings[i].Metadata["sandbox_capacity_action"]
+		if !ok {
+			continue
+		}
+		action := normalizeSandboxCapacityAction(fmt.Sprint(raw))
+		if action != "" {
+			return action
+		}
+	}
+	return ""
+}
+
 func cloneReadinessComponentSnapshot(in RuntimeReadinessComponentSnapshot) RuntimeReadinessComponentSnapshot {
 	out := in
 	out.Scheduler = cloneReadinessComponentState(in.Scheduler)
@@ -1230,6 +1481,19 @@ func cloneReadinessComponentState(in RuntimeReadinessComponentState) RuntimeRead
 		Fallback:          in.Fallback,
 		FallbackReason:    strings.TrimSpace(in.FallbackReason),
 		ActivationError:   strings.TrimSpace(in.ActivationError),
+	}
+}
+
+func cloneSandboxRolloutRuntimeState(in SandboxRolloutRuntimeState) SandboxRolloutRuntimeState {
+	return SandboxRolloutRuntimeState{
+		HealthBudgetStatus:      normalizeSandboxHealthBudgetStatus(in.HealthBudgetStatus),
+		HealthBudgetBreachTotal: in.HealthBudgetBreachTotal,
+		FreezeState:             in.FreezeState,
+		FreezeReasonCode:        strings.TrimSpace(in.FreezeReasonCode),
+		CapacityQueueDepth:      in.CapacityQueueDepth,
+		CapacityInflight:        in.CapacityInflight,
+		CapacityAction:          normalizeSandboxCapacityAction(in.CapacityAction),
+		UpdatedAt:               in.UpdatedAt.UTC(),
 	}
 }
 

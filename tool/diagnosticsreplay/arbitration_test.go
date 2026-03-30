@@ -28,6 +28,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a51_sandbox_success_input.json",
 			expected: "a51_sandbox_success_expected.json",
 		},
+		{
+			name:     "a52",
+			input:    "a52_sandbox_rollout_success_input.json",
+			expected: "a52_sandbox_rollout_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -159,6 +164,30 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeSandboxSessionLifecycleDrift,
 			wantInText: "sandbox session lifecycle drift",
 		},
+		{
+			name:       "a52-sandbox-rollout-phase-drift",
+			fixture:    "a52_sandbox_rollout_phase_drift_input.json",
+			wantCode:   ReasonCodeSandboxRolloutPhaseDrift,
+			wantInText: "sandbox rollout phase drift",
+		},
+		{
+			name:       "a52-sandbox-health-budget-drift",
+			fixture:    "a52_sandbox_health_budget_drift_input.json",
+			wantCode:   ReasonCodeSandboxHealthBudgetDrift,
+			wantInText: "sandbox health budget drift",
+		},
+		{
+			name:       "a52-sandbox-capacity-action-drift",
+			fixture:    "a52_sandbox_capacity_action_drift_input.json",
+			wantCode:   ReasonCodeSandboxCapacityActionDrift,
+			wantInText: "sandbox capacity action drift",
+		},
+		{
+			name:       "a52-sandbox-freeze-state-drift",
+			fixture:    "a52_sandbox_freeze_state_drift_input.json",
+			wantCode:   ReasonCodeSandboxFreezeStateDrift,
+			wantInText: "sandbox freeze state drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -177,6 +206,21 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			}
 			if tc.wantInText != "" && !strings.Contains(strings.ToLower(vErr.Message), strings.ToLower(tc.wantInText)) {
 				t.Fatalf("error message=%q, want contains %q", vErr.Message, tc.wantInText)
+			}
+		})
+	}
+}
+
+func TestReplayContractArbitrationMixedA51A52Compatibility(t *testing.T) {
+	fixtures := []string{
+		"a51_sandbox_success_input.json",
+		"a52_sandbox_rollout_success_input.json",
+	}
+	for _, name := range fixtures {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, name)); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
 			}
 		})
 	}

@@ -575,6 +575,231 @@ func TestComposerReadinessAdmissionSandboxRequiredDenyRunAndStreamEquivalent(t *
 	}
 }
 
+func TestComposerReadinessAdmissionSandboxRolloutFrozenRunAndStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a52-frozen.yaml")
+	writeComposerA52RuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A52_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	before, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats before deny failed: %v", err)
+	}
+	mailboxBefore := len(mgr.RecentMailbox(10))
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a52-frozen-run",
+		Input: "frozen-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied by sandbox rollout frozen admission")
+	}
+	assertAdmissionDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeSandboxFrozen)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a52-frozen-stream",
+		Input: "frozen-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied by sandbox rollout frozen admission")
+	}
+	assertAdmissionDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeSandboxFrozen)
+
+	runPrimaryCode, _ := runRes.Error.Details["readiness_primary_code"].(string)
+	streamPrimaryCode, _ := streamRes.Error.Details["readiness_primary_code"].(string)
+	if runPrimaryCode != runtimeconfig.ReadinessCodeSandboxRolloutFrozen ||
+		streamPrimaryCode != runtimeconfig.ReadinessCodeSandboxRolloutFrozen {
+		t.Fatalf("sandbox rollout frozen primary_code mismatch run=%q stream=%q", runPrimaryCode, streamPrimaryCode)
+	}
+
+	after, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after deny failed: %v", err)
+	}
+	assertSchedulerStatsUnchanged(t, before, after)
+	if len(mgr.RecentMailbox(10)) != mailboxBefore {
+		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
+	}
+}
+
+func TestComposerReadinessAdmissionSandboxCapacityThrottlePolicyParity(t *testing.T) {
+	allowCfg := filepath.Join(t.TempDir(), "runtime-a52-throttle-allow.yaml")
+	writeComposerA52RuntimeConfig(t, allowCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	allowMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  allowCfg,
+		EnvPrefix: "BAYMAX_A52_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = allowMgr.Close() }()
+	allowMgr.SetSandboxRolloutRuntimeState(runtimeconfig.SandboxRolloutRuntimeState{CapacityAction: runtimeconfig.SandboxCapacityActionThrottle})
+
+	allowModel := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	allowComp, err := NewBuilder(allowModel).WithRuntimeManager(allowMgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	allowRunRes, allowRunErr := allowComp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a52-throttle-allow-run",
+		Input: "allow-run",
+	}, nil)
+	if allowRunErr != nil || allowRunRes.Error != nil {
+		t.Fatalf("run should be allowed under throttle allow policy, err=%v result=%#v", allowRunErr, allowRunRes.Error)
+	}
+	allowStreamRes, allowStreamErr := allowComp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a52-throttle-allow-stream",
+		Input: "allow-stream",
+	}, nil)
+	if allowStreamErr != nil || allowStreamRes.Error != nil {
+		t.Fatalf("stream should be allowed under throttle allow policy, err=%v result=%#v", allowStreamErr, allowStreamRes.Error)
+	}
+
+	denyCfg := filepath.Join(t.TempDir(), "runtime-a52-throttle-deny.yaml")
+	writeComposerA52RuntimeConfig(t, denyCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyFailFast)
+	denyMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  denyCfg,
+		EnvPrefix: "BAYMAX_A52_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = denyMgr.Close() }()
+	denyMgr.SetSandboxRolloutRuntimeState(runtimeconfig.SandboxRolloutRuntimeState{CapacityAction: runtimeconfig.SandboxCapacityActionThrottle})
+
+	denyModel := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	denyComp, err := NewBuilder(denyModel).WithRuntimeManager(denyMgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	before, err := denyComp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats before deny failed: %v", err)
+	}
+	mailboxBefore := len(denyMgr.RecentMailbox(10))
+
+	denyRunRes, denyRunErr := denyComp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a52-throttle-deny-run",
+		Input: "deny-run",
+	}, nil)
+	if denyRunErr == nil {
+		t.Fatal("run should be denied under throttle fail_fast policy")
+	}
+	assertAdmissionDeniedResult(t, denyRunRes, runtimeconfig.ReadinessAdmissionCodeSandboxThrottledDeny)
+
+	denyStreamRes, denyStreamErr := denyComp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a52-throttle-deny-stream",
+		Input: "deny-stream",
+	}, nil)
+	if denyStreamErr == nil {
+		t.Fatal("stream should be denied under throttle fail_fast policy")
+	}
+	assertAdmissionDeniedResult(t, denyStreamRes, runtimeconfig.ReadinessAdmissionCodeSandboxThrottledDeny)
+
+	after, err := denyComp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after deny failed: %v", err)
+	}
+	assertSchedulerStatsUnchanged(t, before, after)
+	if len(denyMgr.RecentMailbox(10)) != mailboxBefore {
+		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(denyMgr.RecentMailbox(10)))
+	}
+}
+
+func TestComposerReadinessAdmissionSandboxRolloutTimelineReasonParity(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a52-timeline-frozen.yaml")
+	writeComposerA52RuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A52_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	runCollector := &timelineCollector{}
+	streamCollector := &timelineCollector{}
+
+	_, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a52-timeline-frozen-run",
+		Input: "frozen-run",
+	}, runCollector)
+	if runErr == nil {
+		t.Fatal("run should be denied under frozen rollout")
+	}
+	_, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a52-timeline-frozen-stream",
+		Input: "frozen-stream",
+	}, streamCollector)
+	if streamErr == nil {
+		t.Fatal("stream should be denied under frozen rollout")
+	}
+	if !hasTimelineReason(runCollector.events, "sandbox.rollout.phase_frozen") {
+		t.Fatalf("run timeline missing reason sandbox.rollout.phase_frozen: %#v", runCollector.events)
+	}
+	if !hasTimelineReason(streamCollector.events, "sandbox.rollout.phase_frozen") {
+		t.Fatalf("stream timeline missing reason sandbox.rollout.phase_frozen: %#v", streamCollector.events)
+	}
+
+	throttleCfg := filepath.Join(t.TempDir(), "runtime-a52-timeline-throttle.yaml")
+	writeComposerA52RuntimeConfig(t, throttleCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	throttleMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  throttleCfg,
+		EnvPrefix: "BAYMAX_A52_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = throttleMgr.Close() }()
+	throttleMgr.SetSandboxRolloutRuntimeState(runtimeconfig.SandboxRolloutRuntimeState{CapacityAction: runtimeconfig.SandboxCapacityActionThrottle})
+
+	throttleModel := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	throttleComp, err := NewBuilder(throttleModel).WithRuntimeManager(throttleMgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	throttleRunCollector := &timelineCollector{}
+	throttleStreamCollector := &timelineCollector{}
+	if _, err := throttleComp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a52-timeline-throttle-run",
+		Input: "throttle-run",
+	}, throttleRunCollector); err != nil {
+		t.Fatalf("run should be allowed under throttle allow policy: %v", err)
+	}
+	if _, err := throttleComp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a52-timeline-throttle-stream",
+		Input: "throttle-stream",
+	}, throttleStreamCollector); err != nil {
+		t.Fatalf("stream should be allowed under throttle allow policy: %v", err)
+	}
+	if !hasTimelineReason(throttleRunCollector.events, "sandbox.rollout.capacity_throttle") {
+		t.Fatalf("run timeline missing reason sandbox.rollout.capacity_throttle: %#v", throttleRunCollector.events)
+	}
+	if !hasTimelineReason(throttleStreamCollector.events, "sandbox.rollout.capacity_throttle") {
+		t.Fatalf("stream timeline missing reason sandbox.rollout.capacity_throttle: %#v", throttleStreamCollector.events)
+	}
+}
+
 func TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-allow.yaml")
 	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
@@ -786,6 +1011,42 @@ func writeComposerA51RuntimeConfig(t *testing.T, path string) {
 	}
 }
 
+func writeComposerA52RuntimeConfig(t *testing.T, path, phase, degradedPolicy string) {
+	t.Helper()
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: allow_and_record",
+		"security:",
+		"  sandbox:",
+		"    enabled: true",
+		"    required: false",
+		"    mode: observe",
+		"    policy:",
+		"      default_action: host",
+		"      profile: default",
+		"      fallback_action: allow_and_record",
+		"    rollout:",
+		"      phase: " + strings.TrimSpace(phase),
+		"    capacity:",
+		"      degraded_policy: " + strings.TrimSpace(degradedPolicy),
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config %q: %v", path, err)
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -842,4 +1103,22 @@ func assertSchedulerStatsUnchanged(t *testing.T, before, after scheduler.Stats) 
 		before.ReclaimTotal != after.ReclaimTotal {
 		t.Fatalf("scheduler stats changed on deny path: before=%#v after=%#v", before, after)
 	}
+}
+
+func hasTimelineReason(events []types.Event, reason string) bool {
+	want := strings.TrimSpace(reason)
+	if want == "" {
+		return false
+	}
+	for i := range events {
+		ev := events[i]
+		if ev.Type != types.EventTypeActionTimeline {
+			continue
+		}
+		got, _ := ev.Payload["reason"].(string)
+		if strings.TrimSpace(got) == want {
+			return true
+		}
+	}
+	return false
 }

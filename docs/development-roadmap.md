@@ -19,8 +19,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档并稳定：A4-A50（含 A19 性能门禁、A20 全链路示例、A21 外部适配模板与迁移映射、A22 外部适配 conformance harness、A23 脚手架与 drift gate、A24 pre-1 轨道治理收口、A25 状态口径与模块 README 门禁、A26 manifest + runtime compatibility 契约、A27 capability negotiation + fallback 契约、A28 contract profile versioning + replay gate、A29 task board query contract、A30 mailbox 统一协调契约、A31 async-await lifecycle 收口、A32 async-await reconcile fallback 收口、A33 collaboration bounded retry 收口、A34 canonical invoke 入口收口、A35 mailbox runtime wiring 收口、A36 mailbox lifecycle worker 收口、A37 Windows gate fail-fast parity 收口、A38 mailbox worker lease reclaim + panic recovery 收口、A39 task board control + manual recovery 收口、A40 runtime readiness preflight 收口、A41 operation profile + timeout resolution 收口、A42 diagnostics query performance baseline 收口、A43 adapter runtime health probe + readiness integration 收口、A44 readiness admission guard + degradation policy 收口、A45 diagnostics cardinality budget + truncation governance 收口、A46 adapter health backoff + circuit governance 收口、A47 readiness-timeout-health replay fixture gate 收口、A48 cross-domain primary reason arbitration 收口、A49 arbitration explainability + secondary reason 收口、A50 arbitration version governance + compatibility 收口）。
 - 已完成待归档：
   - `introduce-sandbox-execution-isolation-contract-a51`
-- 进行中：
   - `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`
+- 进行中：
+  - `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -349,7 +350,7 @@ A51 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A52 sandbox runtime rollout + health/capacity governance（进行中，提案阶段）
+### P1：A52 sandbox runtime rollout + health/capacity governance（已完成，待归档）
 
 A52 Why now：
 - A51 已冻结 sandbox 接入与隔离语义，但“如何安全放量上线”仍缺统一 contract，当前容易落回业务侧脚本治理。
@@ -397,11 +398,56 @@ A52 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1/P2：A52 后续备选提案池（全局视角）
+### P1：A53 mainstream sandbox adapter conformance + migration pack（进行中，提案阶段）
 
-备选 A53：`introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`
-- 目标：把 nsjail/bwrap/OCI/windows-job 的接入模板、迁移映射、conformance 套件一次性产品化。
-- 启动条件：A52 完成并稳定后，进入“生态接入效率”优化窗口。
+A53 Why now：
+- A52 正在收敛 sandbox 运行治理，但主流后端（nsjail/bwrap/OCI/windows-job）接入仍依赖分散脚本与非标准 glue code。
+- 若不统一 adapter manifest + conformance + migration mapping，后端切换成本高，且语义漂移很难被 gate 前置阻断。
+- 需要在 A52 并行阶段提前冻结接入 contract，避免后续重复提出“同类 sandbox 接入治理”提案。
+
+A53 依赖关系：
+- 复用 A51 的 sandbox 执行隔离语义与 canonical backend/capability taxonomy，不重定义执行 contract。
+- 复用 A52 rollout/health/capacity 治理语义，仅关注“外部接入 DX + conformance + migration”层。
+- 复用 A21/A22/A26/A28 的 adapter template/conformance/manifest/profile-replay 治理链路，做 sandbox 维度扩展。
+
+A53 完成条件（提案落地后）：
+- 新增主流 sandbox profile pack（`linux_nsjail`、`linux_bwrap`、`oci_runtime`、`windows_job`）并冻结 profile 字段语义。
+- 扩展 adapter manifest compatibility：
+  - 新增 `sandbox_backend`、`sandbox_profile_id`、`host_os`、`host_arch`、`session_modes_supported` 字段契约。
+  - 激活边界 fail-fast 校验 host/backend/session 兼容性。
+- 扩展 conformance harness：
+  - 新增 backend matrix suites（平台可用性条件化执行）。
+  - 覆盖 capability negotiation + session lifecycle（crash/reconnect/close idempotent）。
+  - 固化 drift 分类（backend/profile/manifest/session/taxonomy）。
+- 扩展 template + migration mapping：
+  - 提供四类 backend onboarding 模板与 legacy wrapper -> profile-pack adapter 迁移映射。
+  - 模板与迁移条目必须绑定 conformance case id。
+- 扩展 profile replay + quality gate：
+  - 新增 `sandbox.v1` replay fixtures，保持既有 profile fixture 向后兼容。
+  - 新增 `check-sandbox-adapter-conformance-contract.sh/.ps1` 并接入 `check-quality-gate.*`，暴露独立 required-check 候选。
+- 扩展 readiness preflight：
+  - 新增 `sandbox.adapter.*` finding（profile missing/backend unsupported/host mismatch/session unsupported）并保持 strict/non-strict 映射。
+
+A53 当前阶段非目标（不做）：
+- 不改 A51/A52 的 sandbox 执行与运行治理语义。
+- 不引入平台化控制面或跨租户编排能力。
+- 不承诺后端底层实现一致，仅要求 canonical 合同输出一致。
+
+A53 风险与回滚点：
+- 主要风险：profile pack 过重导致接入门槛上升、不同 runner 的 backend 可用性差异引发误报、模板与实现漂移。
+- 缓解策略：最小必填 schema、平台条件化 matrix + skip reason 审计、模板绑定 conformance case 持续校验。
+- 回滚点：暂时下线新增 sandbox adapter gate required-check；保留现有 adapter conformance 主路径与旧模板文档。
+
+A53 验证命令（提案实施期最小集合）：
+- `go test ./adapter/... ./tool/... -count=1`
+- `go test ./integration -run 'TestSandboxAdapterConformance|TestSandboxAdapterManifestCompatibility|TestSandboxAdapterProfileReplay' -count=1`
+- `go test -race ./...`
+- `golangci-lint run --config .golangci.yml`
+- `pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1`
+- `pwsh -File scripts/check-quality-gate.ps1`
+- `pwsh -File scripts/check-docs-consistency.ps1`
+
+### P1/P2：A53 后续备选提案池（全局视角）
 
 备选 A54：`introduce-cross-channel-data-egress-and-secret-governance-contract-a54`
 - 目标：补齐 model/tool/mcp 全链路数据外泄与 secret 传播治理，强化 S1-S4 统一口径。

@@ -16,7 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 当前里程碑快照（2026-03-29）：
 - 已归档并稳定：A4-A50。
 - A51（Introduce Sandbox Execution Isolation Contract）已完成待归档。
-- A52（Introduce Sandbox Runtime Health Rollout And Capacity Governance Contract）进行中。
+- A52（Introduce Sandbox Runtime Health Rollout And Capacity Governance Contract）已完成待归档。
+- A53（Introduce Mainstream Sandbox Adapter Conformance And Migration Pack）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -221,14 +222,15 @@ _ = err
 稳定能力清单（已归档）：
 - Runtime 主干：Run/Stream、工具闭环、Context Assembler（CA1-CA4）、Security（S1-S4）。
 - 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
-- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、全链路 smoke gate、文档一致性 gate。
+- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、全链路 smoke gate、文档一致性 gate。
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：sandbox rollout + 健康/容量治理契约进行中（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture 与 rollout governance gate）。
+- A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：mainstream sandbox adapter 接入契约进行中（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
 
 已完成待归档能力：
 - A51 `introduce-sandbox-execution-isolation-contract-a51`：sandbox execution isolation 契约已完成（`host|sandbox|deny` 动作决策、`security.sandbox.*` 配置域、readiness/admission 集成、timeline/security-event/delivery/diagnostics/replay/gate 一体化观测与阻断语义；已接入 backend compatibility smoke、offline sandbox executor conformance harness、`security-sandbox-gate` 独立 required-check 候选）。
+- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：sandbox rollout + 健康/容量治理契约已完成（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture、rollout governance gate 与 CI 独立 required-check 候选）。
 
 ### 9) Runtime Readiness Admission（A44）
 
@@ -279,6 +281,7 @@ _ = err
 go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
+bash scripts/check-sandbox-rollout-governance-contract.sh
 bash scripts/check-diagnostics-query-performance-regression.sh
 ```
 
@@ -287,6 +290,7 @@ Windows 质量门禁：
 ```powershell
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
+pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```
 

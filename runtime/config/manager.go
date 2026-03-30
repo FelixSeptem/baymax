@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -51,6 +52,8 @@ type Manager struct {
 	adapterHealthRunner  *adapterhealth.Runner
 	sandboxMu            sync.RWMutex
 	sandboxExecutor      types.SandboxExecutor
+	sandboxRolloutMu     sync.RWMutex
+	sandboxRolloutState  SandboxRolloutRuntimeState
 
 	watchStarted atomic.Bool
 	stopOnce     sync.Once
@@ -230,6 +233,20 @@ func (m *Manager) reload() {
 		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
 		return
 	}
+	current := m.EffectiveConfig()
+	if err := validateSandboxRolloutPhaseTransition(current.Security.Sandbox.Rollout.Phase, cfg.Security.Sandbox.Rollout.Phase); err != nil {
+		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
+		return
+	}
+	if err := validateSandboxRolloutUnfreezeTransition(
+		current.Security.Sandbox,
+		cfg.Security.Sandbox,
+		m.SandboxRolloutRuntimeState(),
+		time.Now().UTC(),
+	); err != nil {
+		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
+		return
+	}
 	m.snap.Store(&Snapshot{
 		Config:   cfg,
 		LoadedAt: time.Now(),
@@ -314,6 +331,7 @@ func (m *Manager) RecordCall(rec runtimediag.CallRecord) {
 // RecordRun appends a run diagnostics record.
 func (m *Manager) RecordRun(rec runtimediag.RunRecord) {
 	m.diag.AddRun(rec)
+	m.updateSandboxRolloutGovernanceFromRun(rec)
 }
 
 // RecordRunTimelineEvent appends a normalized timeline event sample for run aggregation.
@@ -442,6 +460,118 @@ func (m *Manager) SandboxExecutor() types.SandboxExecutor {
 	m.sandboxMu.RLock()
 	defer m.sandboxMu.RUnlock()
 	return m.sandboxExecutor
+}
+
+func (m *Manager) updateSandboxRolloutGovernanceFromRun(rec runtimediag.RunRecord) {
+	if m == nil {
+		return
+	}
+	sandboxCfg := m.EffectiveConfig().Security.Sandbox
+	if !sandboxCfg.Enabled {
+		return
+	}
+
+	m.sandboxRolloutMu.Lock()
+	defer m.sandboxRolloutMu.Unlock()
+
+	state := cloneSandboxRolloutRuntimeState(m.sandboxRolloutState)
+	if rec.SchedulerQueueTotal > 0 {
+		state.CapacityQueueDepth = rec.SchedulerQueueTotal
+	}
+	if rec.InflightPeak > 0 {
+		state.CapacityInflight = rec.InflightPeak
+	}
+	state.CapacityAction = evaluateSandboxCapacityAction(sandboxCfg.Capacity, state.CapacityQueueDepth, state.CapacityInflight)
+	state.HealthBudgetStatus = evaluateSandboxHealthBudgetStatus(sandboxCfg.Rollout, rec)
+	if state.HealthBudgetStatus == SandboxHealthBudgetBreached {
+		state.HealthBudgetBreachTotal++
+		if sandboxCfg.Rollout.FreezeOnBreach {
+			if !state.FreezeState {
+				state.UpdatedAt = time.Now().UTC()
+			}
+			state.FreezeState = true
+			state.FreezeReasonCode = ReadinessCodeSandboxRolloutHealthBreached
+			state.CapacityAction = SandboxCapacityActionDeny
+		}
+	}
+	if state.HealthBudgetStatus == SandboxHealthBudgetWithinBudget && state.HealthBudgetBreachTotal > 0 {
+		state.HealthBudgetBreachTotal--
+	}
+	if strings.ToLower(strings.TrimSpace(sandboxCfg.Rollout.Phase)) == SecuritySandboxRolloutPhaseFrozen {
+		state.FreezeState = true
+		if strings.TrimSpace(state.FreezeReasonCode) == "" {
+			state.FreezeReasonCode = ReadinessCodeSandboxRolloutFrozen
+		}
+		state.CapacityAction = SandboxCapacityActionDeny
+	}
+	if state.UpdatedAt.IsZero() {
+		state.UpdatedAt = time.Now().UTC()
+	}
+	m.sandboxRolloutState = state
+}
+
+func evaluateSandboxHealthBudgetStatus(cfg SecuritySandboxRolloutConfig, rec runtimediag.RunRecord) string {
+	if cfg.ErrorBudget <= 0 {
+		return SandboxHealthBudgetWithinBudget
+	}
+	launchFailure := rec.SandboxLaunchFailedTotal > 0
+	timeoutBreach := rec.SandboxTimeoutTotal > 0
+	violation := rec.SandboxCapabilityMismatchTotal > 0
+	admissionDeny := rec.RuntimeReadinessAdmissionBlockedTotal > 0
+	if code := strings.ToLower(strings.TrimSpace(rec.RuntimeReadinessAdmissionPrimaryCode)); code == ReadinessCodeSandboxRolloutFrozen || code == ReadinessCodeSandboxRolloutCapacityBlocked {
+		admissionDeny = true
+	}
+
+	p95LatencyDelta := false
+	if rec.SandboxExecLatencyMsP95 > 0 && rec.LatencyMs > 0 && rec.SandboxExecLatencyMsP95 > rec.LatencyMs {
+		delta := float64(rec.SandboxExecLatencyMsP95-rec.LatencyMs) / float64(rec.LatencyMs)
+		p95LatencyDelta = delta > cfg.ErrorBudget
+	}
+
+	breaches := 0
+	for _, hit := range []bool{launchFailure, timeoutBreach, violation, p95LatencyDelta, admissionDeny} {
+		if hit {
+			breaches++
+		}
+	}
+	if breaches == 0 {
+		return SandboxHealthBudgetWithinBudget
+	}
+	rate := float64(breaches) / 5.0
+	if rate > cfg.ErrorBudget {
+		return SandboxHealthBudgetBreached
+	}
+	if rate >= cfg.ErrorBudget*0.8 {
+		return SandboxHealthBudgetNearBudget
+	}
+	return SandboxHealthBudgetWithinBudget
+}
+
+func validateSandboxRolloutUnfreezeTransition(
+	current SecuritySandboxConfig,
+	next SecuritySandboxConfig,
+	state SandboxRolloutRuntimeState,
+	now time.Time,
+) error {
+	from := strings.ToLower(strings.TrimSpace(current.Rollout.Phase))
+	to := strings.ToLower(strings.TrimSpace(next.Rollout.Phase))
+	if from != SecuritySandboxRolloutPhaseFrozen || to == SecuritySandboxRolloutPhaseFrozen {
+		return nil
+	}
+	if cooldown := next.Rollout.Cooldown; cooldown > 0 && !state.UpdatedAt.IsZero() {
+		if now.Before(state.UpdatedAt.Add(cooldown)) {
+			return fmt.Errorf(
+				"security.sandbox.rollout transition from frozen requires cooldown completion, remaining=%s",
+				state.UpdatedAt.Add(cooldown).Sub(now),
+			)
+		}
+	}
+	expectedToken := strings.TrimSpace(current.Rollout.ManualUnfreezeToken)
+	providedToken := strings.TrimSpace(next.Rollout.ManualUnfreezeToken)
+	if expectedToken == "" || providedToken == "" || expectedToken != providedToken {
+		return errors.New("security.sandbox.rollout transition from frozen requires matching manual_unfreeze_token")
+	}
+	return nil
 }
 
 // RedactPayload applies configured redaction to generic payload maps.

@@ -711,6 +711,231 @@ security:
 	}
 }
 
+func TestManagerReadinessPreflightSandboxRolloutFrozenFinding(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-frozen.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    mode: observe
+    rollout:
+      phase: frozen
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxRolloutFrozen)
+}
+
+func TestManagerReadinessPreflightSandboxRolloutHealthBudgetBreachedFinding(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-health.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{
+		HealthBudgetStatus:      SandboxHealthBudgetBreached,
+		HealthBudgetBreachTotal: 3,
+		FreezeState:             false,
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxRolloutHealthBreached)
+}
+
+func TestManagerReadinessPreflightSandboxCapacityStrictMapping(t *testing.T) {
+	nonStrictFile := filepath.Join(t.TempDir(), "runtime-a52-capacity-nonstrict.yaml")
+	writeConfig(t, nonStrictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+`)
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = nonStrictMgr.Close() }()
+	nonStrictMgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{CapacityAction: SandboxCapacityActionThrottle})
+
+	nonStrictResult := nonStrictMgr.ReadinessPreflight()
+	if nonStrictResult.Status != ReadinessStatusDegraded {
+		t.Fatalf("non-strict status=%q, want degraded", nonStrictResult.Status)
+	}
+	assertReadinessFindingCode(t, nonStrictResult.Findings, ReadinessCodeSandboxRolloutCapacityBlocked)
+
+	strictFile := filepath.Join(t.TempDir(), "runtime-a52-capacity-strict.yaml")
+	writeConfig(t, strictFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+`)
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = strictMgr.Close() }()
+	strictMgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{CapacityAction: SandboxCapacityActionThrottle})
+
+	strictResult := strictMgr.ReadinessPreflight()
+	if strictResult.Status != ReadinessStatusBlocked {
+		t.Fatalf("strict status=%q, want blocked", strictResult.Status)
+	}
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeSandboxRolloutCapacityBlocked)
+	assertReadinessFindingCode(t, strictResult.Findings, ReadinessCodeStrictEscalated)
+}
+
+func TestManagerReadinessAdmissionSandboxRolloutFrozenDeny(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-admission-frozen.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: frozen
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	decision := mgr.EvaluateReadinessAdmission()
+	if decision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("outcome=%q, want deny", decision.Outcome)
+	}
+	if decision.ReasonCode != ReadinessAdmissionCodeSandboxFrozen {
+		t.Fatalf("reason_code=%q, want %q", decision.ReasonCode, ReadinessAdmissionCodeSandboxFrozen)
+	}
+}
+
+func TestManagerReadinessAdmissionSandboxCapacityPolicyMapping(t *testing.T) {
+	allowFile := filepath.Join(t.TempDir(), "runtime-a52-capacity-allow.yaml")
+	writeConfig(t, allowFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+security:
+  sandbox:
+    enabled: true
+    capacity:
+      degraded_policy: allow_and_record
+`)
+	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = allowMgr.Close() }()
+	allowMgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{CapacityAction: SandboxCapacityActionThrottle})
+
+	allowDecision := allowMgr.EvaluateReadinessAdmission()
+	if allowDecision.Outcome != ReadinessAdmissionOutcomeAllow {
+		t.Fatalf("allow policy outcome=%q, want allow", allowDecision.Outcome)
+	}
+	if allowDecision.ReasonCode != ReadinessAdmissionCodeSandboxThrottle {
+		t.Fatalf("allow policy reason_code=%q, want %q", allowDecision.ReasonCode, ReadinessAdmissionCodeSandboxThrottle)
+	}
+
+	denyFile := filepath.Join(t.TempDir(), "runtime-a52-capacity-deny.yaml")
+	writeConfig(t, denyFile, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+security:
+  sandbox:
+    enabled: true
+    capacity:
+      degraded_policy: fail_fast
+`)
+	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = denyMgr.Close() }()
+	denyMgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{CapacityAction: SandboxCapacityActionThrottle})
+
+	denyDecision := denyMgr.EvaluateReadinessAdmission()
+	if denyDecision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("fail_fast policy outcome=%q, want deny", denyDecision.Outcome)
+	}
+	if denyDecision.ReasonCode != ReadinessAdmissionCodeSandboxThrottledDeny {
+		t.Fatalf("fail_fast policy reason_code=%q, want %q", denyDecision.ReasonCode, ReadinessAdmissionCodeSandboxThrottledDeny)
+	}
+
+	capacityDenyMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = capacityDenyMgr.Close() }()
+	capacityDenyMgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{CapacityAction: SandboxCapacityActionDeny})
+	capacityDenyDecision := capacityDenyMgr.EvaluateReadinessAdmission()
+	if capacityDenyDecision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("capacity deny outcome=%q, want deny", capacityDenyDecision.Outcome)
+	}
+	if capacityDenyDecision.ReasonCode != ReadinessAdmissionCodeSandboxCapacityDeny {
+		t.Fatalf("capacity deny reason_code=%q, want %q", capacityDenyDecision.ReasonCode, ReadinessAdmissionCodeSandboxCapacityDeny)
+	}
+}
+
 func TestManagerReadinessAdmissionBlockedDeny(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

@@ -215,6 +215,15 @@ const (
 	SecuritySandboxSelectorLocalFSWrite          = "local+fs_write"
 	SecuritySandboxSelectorMCPStdioCommand       = "mcp+stdio_command"
 	SecuritySandboxDefaultProfile                = "default"
+
+	SecuritySandboxRolloutPhaseObserve  = "observe"
+	SecuritySandboxRolloutPhaseCanary   = "canary"
+	SecuritySandboxRolloutPhaseBaseline = "baseline"
+	SecuritySandboxRolloutPhaseFull     = "full"
+	SecuritySandboxRolloutPhaseFrozen   = "frozen"
+
+	SecuritySandboxCapacityDegradedPolicyAllowAndRecord = "allow_and_record"
+	SecuritySandboxCapacityDegradedPolicyFailFast       = "fail_fast"
 )
 
 const (
@@ -975,6 +984,8 @@ type SecuritySandboxConfig struct {
 	Policy   SecuritySandboxPolicyConfig             `json:"policy"`
 	Executor SecuritySandboxExecutorConfig           `json:"executor"`
 	Profiles map[string]SecuritySandboxProfileConfig `json:"profiles"`
+	Rollout  SecuritySandboxRolloutConfig            `json:"rollout"`
+	Capacity SecuritySandboxCapacityConfig           `json:"capacity"`
 }
 
 type SecuritySandboxPolicyConfig struct {
@@ -1024,6 +1035,24 @@ type SecuritySandboxResourceLimitsConfig struct {
 type SecuritySandboxTimeoutsConfig struct {
 	LaunchTimeout time.Duration `json:"launch_timeout"`
 	ExecTimeout   time.Duration `json:"exec_timeout"`
+}
+
+type SecuritySandboxRolloutConfig struct {
+	Phase               string        `json:"phase"`
+	TrafficRatio        float64       `json:"traffic_ratio"`
+	HealthWindow        time.Duration `json:"health_window"`
+	ErrorBudget         float64       `json:"error_budget"`
+	FreezeOnBreach      bool          `json:"freeze_on_breach"`
+	Cooldown            time.Duration `json:"cooldown"`
+	ManualUnfreezeToken string        `json:"manual_unfreeze_token"`
+}
+
+type SecuritySandboxCapacityConfig struct {
+	MaxInflight       int    `json:"max_inflight"`
+	MaxQueue          int    `json:"max_queue"`
+	ThrottleThreshold int    `json:"throttle_threshold"`
+	DenyThreshold     int    `json:"deny_threshold"`
+	DegradedPolicy    string `json:"degraded_policy"`
 }
 
 type SecurityEventAlertConfig struct {
@@ -1663,6 +1692,22 @@ func DefaultConfig() Config {
 							ExecTimeout:   30 * time.Second,
 						},
 					},
+				},
+				Rollout: SecuritySandboxRolloutConfig{
+					Phase:               SecuritySandboxRolloutPhaseObserve,
+					TrafficRatio:        0,
+					HealthWindow:        5 * time.Minute,
+					ErrorBudget:         0.05,
+					FreezeOnBreach:      true,
+					Cooldown:            10 * time.Minute,
+					ManualUnfreezeToken: "",
+				},
+				Capacity: SecuritySandboxCapacityConfig{
+					MaxInflight:       32,
+					MaxQueue:          128,
+					ThrottleThreshold: 96,
+					DenyThreshold:     120,
+					DegradedPolicy:    SecuritySandboxCapacityDegradedPolicyAllowAndRecord,
 				},
 			},
 			SecurityEvent: SecurityEventConfig{
@@ -2867,7 +2912,99 @@ func validateSecuritySandboxConfig(cfg SecuritySandboxConfig) error {
 			return fmt.Errorf("security.sandbox.policy.profile_by_tool.%s references unknown profile %q", selector, profileName)
 		}
 	}
+	if err := validateSecuritySandboxRolloutConfig(cfg.Rollout); err != nil {
+		return err
+	}
+	return validateSecuritySandboxCapacityConfig(cfg.Capacity)
+}
+
+func validateSecuritySandboxRolloutConfig(cfg SecuritySandboxRolloutConfig) error {
+	if err := validateSecurityPolicyValue(cfg.Phase, "security.sandbox.rollout.phase", []string{
+		SecuritySandboxRolloutPhaseObserve,
+		SecuritySandboxRolloutPhaseCanary,
+		SecuritySandboxRolloutPhaseBaseline,
+		SecuritySandboxRolloutPhaseFull,
+		SecuritySandboxRolloutPhaseFrozen,
+	}); err != nil {
+		return err
+	}
+	if cfg.TrafficRatio < 0 || cfg.TrafficRatio > 1 {
+		return errors.New("security.sandbox.rollout.traffic_ratio must be in [0,1]")
+	}
+	if cfg.HealthWindow <= 0 {
+		return errors.New("security.sandbox.rollout.health_window must be > 0")
+	}
+	if cfg.ErrorBudget < 0 || cfg.ErrorBudget > 1 {
+		return errors.New("security.sandbox.rollout.error_budget must be in [0,1]")
+	}
+	if cfg.Cooldown < 0 {
+		return errors.New("security.sandbox.rollout.cooldown must be >= 0")
+	}
 	return nil
+}
+
+func validateSecuritySandboxCapacityConfig(cfg SecuritySandboxCapacityConfig) error {
+	if cfg.MaxInflight <= 0 {
+		return errors.New("security.sandbox.capacity.max_inflight must be > 0")
+	}
+	if cfg.MaxQueue <= 0 {
+		return errors.New("security.sandbox.capacity.max_queue must be > 0")
+	}
+	if cfg.ThrottleThreshold < 0 {
+		return errors.New("security.sandbox.capacity.throttle_threshold must be >= 0")
+	}
+	if cfg.DenyThreshold < 0 {
+		return errors.New("security.sandbox.capacity.deny_threshold must be >= 0")
+	}
+	if cfg.ThrottleThreshold > cfg.DenyThreshold {
+		return errors.New("security.sandbox.capacity.throttle_threshold must be <= security.sandbox.capacity.deny_threshold")
+	}
+	if cfg.ThrottleThreshold > cfg.MaxQueue {
+		return errors.New("security.sandbox.capacity.throttle_threshold must be <= security.sandbox.capacity.max_queue")
+	}
+	if cfg.DenyThreshold > cfg.MaxQueue {
+		return errors.New("security.sandbox.capacity.deny_threshold must be <= security.sandbox.capacity.max_queue")
+	}
+	return validateSecurityPolicyValue(cfg.DegradedPolicy, "security.sandbox.capacity.degraded_policy", []string{
+		SecuritySandboxCapacityDegradedPolicyAllowAndRecord,
+		SecuritySandboxCapacityDegradedPolicyFailFast,
+	})
+}
+
+func validateSandboxRolloutPhaseTransition(fromPhase, toPhase string) error {
+	from := strings.ToLower(strings.TrimSpace(fromPhase))
+	to := strings.ToLower(strings.TrimSpace(toPhase))
+	if to == "" {
+		return errors.New("security.sandbox.rollout.phase must not be empty")
+	}
+	if from == "" || from == to {
+		return nil
+	}
+
+	switch from {
+	case SecuritySandboxRolloutPhaseObserve:
+		if to == SecuritySandboxRolloutPhaseCanary {
+			return nil
+		}
+	case SecuritySandboxRolloutPhaseCanary:
+		if to == SecuritySandboxRolloutPhaseBaseline || to == SecuritySandboxRolloutPhaseFrozen {
+			return nil
+		}
+	case SecuritySandboxRolloutPhaseBaseline:
+		if to == SecuritySandboxRolloutPhaseFull || to == SecuritySandboxRolloutPhaseFrozen {
+			return nil
+		}
+	case SecuritySandboxRolloutPhaseFull:
+		if to == SecuritySandboxRolloutPhaseFrozen {
+			return nil
+		}
+	case SecuritySandboxRolloutPhaseFrozen:
+		if to == SecuritySandboxRolloutPhaseCanary || to == SecuritySandboxRolloutPhaseObserve {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("security.sandbox.rollout.phase transition %q -> %q is invalid", from, to)
 }
 
 func resolveSandboxActionPolicy(cfg SecuritySandboxConfig, namespaceTool string) string {
@@ -3773,6 +3910,18 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.sandbox.executor.session_mode", base.Security.Sandbox.Executor.SessionMode)
 	v.SetDefault("security.sandbox.executor.required_capabilities", base.Security.Sandbox.Executor.RequiredCapabilities)
 	v.SetDefault("security.sandbox.profiles", base.Security.Sandbox.Profiles)
+	v.SetDefault("security.sandbox.rollout.phase", base.Security.Sandbox.Rollout.Phase)
+	v.SetDefault("security.sandbox.rollout.traffic_ratio", base.Security.Sandbox.Rollout.TrafficRatio)
+	v.SetDefault("security.sandbox.rollout.health_window", base.Security.Sandbox.Rollout.HealthWindow)
+	v.SetDefault("security.sandbox.rollout.error_budget", base.Security.Sandbox.Rollout.ErrorBudget)
+	v.SetDefault("security.sandbox.rollout.freeze_on_breach", base.Security.Sandbox.Rollout.FreezeOnBreach)
+	v.SetDefault("security.sandbox.rollout.cooldown", base.Security.Sandbox.Rollout.Cooldown)
+	v.SetDefault("security.sandbox.rollout.manual_unfreeze_token", base.Security.Sandbox.Rollout.ManualUnfreezeToken)
+	v.SetDefault("security.sandbox.capacity.max_inflight", base.Security.Sandbox.Capacity.MaxInflight)
+	v.SetDefault("security.sandbox.capacity.max_queue", base.Security.Sandbox.Capacity.MaxQueue)
+	v.SetDefault("security.sandbox.capacity.throttle_threshold", base.Security.Sandbox.Capacity.ThrottleThreshold)
+	v.SetDefault("security.sandbox.capacity.deny_threshold", base.Security.Sandbox.Capacity.DenyThreshold)
+	v.SetDefault("security.sandbox.capacity.degraded_policy", base.Security.Sandbox.Capacity.DegradedPolicy)
 	for profile, profileCfg := range base.Security.Sandbox.Profiles {
 		prefix := "security.sandbox.profiles." + strings.ToLower(strings.TrimSpace(profile)) + "."
 		v.SetDefault(prefix+"network.mode", profileCfg.Network.Mode)
@@ -4154,6 +4303,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Security.Sandbox.Executor.Backend = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.backend")))
 	cfg.Security.Sandbox.Executor.SessionMode = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.session_mode")))
 	cfg.Security.Sandbox.Executor.RequiredCapabilities = normalizeKeywords(v.GetStringSlice("security.sandbox.executor.required_capabilities"))
+	cfg.Security.Sandbox.Rollout.Phase = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.rollout.phase")))
+	cfg.Security.Sandbox.Rollout.TrafficRatio = v.GetFloat64("security.sandbox.rollout.traffic_ratio")
+	cfg.Security.Sandbox.Rollout.HealthWindow = v.GetDuration("security.sandbox.rollout.health_window")
+	cfg.Security.Sandbox.Rollout.ErrorBudget = v.GetFloat64("security.sandbox.rollout.error_budget")
+	cfg.Security.Sandbox.Rollout.FreezeOnBreach = v.GetBool("security.sandbox.rollout.freeze_on_breach")
+	cfg.Security.Sandbox.Rollout.Cooldown = v.GetDuration("security.sandbox.rollout.cooldown")
+	cfg.Security.Sandbox.Rollout.ManualUnfreezeToken = strings.TrimSpace(v.GetString("security.sandbox.rollout.manual_unfreeze_token"))
+	cfg.Security.Sandbox.Capacity.MaxInflight = v.GetInt("security.sandbox.capacity.max_inflight")
+	cfg.Security.Sandbox.Capacity.MaxQueue = v.GetInt("security.sandbox.capacity.max_queue")
+	cfg.Security.Sandbox.Capacity.ThrottleThreshold = v.GetInt("security.sandbox.capacity.throttle_threshold")
+	cfg.Security.Sandbox.Capacity.DenyThreshold = v.GetInt("security.sandbox.capacity.deny_threshold")
+	cfg.Security.Sandbox.Capacity.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.capacity.degraded_policy")))
 	cfg.Security.SecurityEvent.Enabled = v.GetBool("security.security_event.enabled")
 	cfg.Security.SecurityEvent.Alert.TriggerPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.trigger_policy")))
 	cfg.Security.SecurityEvent.Alert.Sink = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.sink")))

@@ -15,6 +15,7 @@ const (
 	ArbitrationFixtureVersionA49V1 = "a49.v1"
 	ArbitrationFixtureVersionA50V1 = "a50.v1"
 	ArbitrationFixtureVersionA51V1 = "a51.v1"
+	ArbitrationFixtureVersionA52V1 = "a52.v1"
 
 	ReasonCodePrecedenceDrift              = "precedence_drift"
 	ReasonCodeTieBreakDrift                = "tie_break_drift"
@@ -32,6 +33,10 @@ const (
 	ReasonCodeSandboxCapabilityDrift       = "sandbox_capability_drift"
 	ReasonCodeSandboxResourcePolicyDrift   = "sandbox_resource_policy_drift"
 	ReasonCodeSandboxSessionLifecycleDrift = "sandbox_session_lifecycle_drift"
+	ReasonCodeSandboxRolloutPhaseDrift     = "sandbox_rollout_phase_drift"
+	ReasonCodeSandboxHealthBudgetDrift     = "sandbox_health_budget_drift"
+	ReasonCodeSandboxCapacityActionDrift   = "sandbox_capacity_action_drift"
+	ReasonCodeSandboxFreezeStateDrift      = "sandbox_freeze_state_drift"
 )
 
 type ArbitrationFixture struct {
@@ -82,6 +87,11 @@ type ArbitrationObservation struct {
 	SandboxOOMTotal                        int      `json:"sandbox_oom_total,omitempty"`
 	SandboxResourceCPUMsTotal              int64    `json:"sandbox_resource_cpu_ms_total,omitempty"`
 	SandboxResourceMemoryPeakBytesP95      int64    `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
+	SandboxRolloutPhase                    string   `json:"sandbox_rollout_phase,omitempty"`
+	SandboxHealthBudgetStatus              string   `json:"sandbox_health_budget_status,omitempty"`
+	SandboxCapacityAction                  string   `json:"sandbox_capacity_action,omitempty"`
+	SandboxFreezeState                     bool     `json:"sandbox_freeze_state,omitempty"`
+	SandboxFreezeReasonCode                string   `json:"sandbox_freeze_reason_code,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -109,7 +119,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 	if version != ArbitrationFixtureVersionA48V1 &&
 		version != ArbitrationFixtureVersionA49V1 &&
 		version != ArbitrationFixtureVersionA50V1 &&
-		version != ArbitrationFixtureVersionA51V1 {
+		version != ArbitrationFixtureVersionA51V1 &&
+		version != ArbitrationFixtureVersionA52V1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -239,6 +250,11 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		SandboxOOMTotal:                        in.SandboxOOMTotal,
 		SandboxResourceCPUMsTotal:              in.SandboxResourceCPUMsTotal,
 		SandboxResourceMemoryPeakBytesP95:      in.SandboxResourceMemoryPeakBytesP95,
+		SandboxRolloutPhase:                    strings.ToLower(strings.TrimSpace(in.SandboxRolloutPhase)),
+		SandboxHealthBudgetStatus:              strings.ToLower(strings.TrimSpace(in.SandboxHealthBudgetStatus)),
+		SandboxCapacityAction:                  strings.ToLower(strings.TrimSpace(in.SandboxCapacityAction)),
+		SandboxFreezeState:                     in.SandboxFreezeState,
+		SandboxFreezeReasonCode:                strings.ToLower(strings.TrimSpace(in.SandboxFreezeReasonCode)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -389,7 +405,7 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s hint taxonomy drift want=%s/%s got=%s/%s", caseName, lane, hintDomain, hintCode, obs.RuntimeRemediationHintDomain, obs.RuntimeRemediationHintCode),
 		}
 	}
-	if version != ArbitrationFixtureVersionA50V1 && version != ArbitrationFixtureVersionA51V1 {
+	if version != ArbitrationFixtureVersionA50V1 && version != ArbitrationFixtureVersionA51V1 && version != ArbitrationFixtureVersionA52V1 {
 		return nil
 	}
 	if obs.RuntimeArbitrationRuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceDefault &&
@@ -469,8 +485,13 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA51V1 {
+	if version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if err := validateSandboxArbitrationObservation(caseName, lane, obs); err != nil {
+			return err
+		}
+	}
+	if version == ArbitrationFixtureVersionA52V1 {
+		if err := validateSandboxRolloutArbitrationObservation(caseName, lane, obs); err != nil {
 			return err
 		}
 	}
@@ -481,7 +502,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
 	}
-	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 {
+	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
 			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
 				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
@@ -555,8 +576,13 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA51V1 {
+	if version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if err := assertSandboxArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+			return err
+		}
+	}
+	if version == ArbitrationFixtureVersionA52V1 {
+		if err := assertSandboxRolloutArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
 			return err
 		}
 	}
@@ -610,7 +636,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 {
+	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if expected.RuntimeSecondaryReasonCount != actual.RuntimeSecondaryReasonCount {
 			return &ValidationError{
 				Code: ReasonCodeSecondaryCountDrift,
@@ -649,7 +675,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			),
 		}
 	}
-	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1) &&
+	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1) &&
 		(expected.RuntimeRemediationHintCode != actual.RuntimeRemediationHintCode ||
 			expected.RuntimeRemediationHintDomain != actual.RuntimeRemediationHintDomain) {
 		return &ValidationError{
@@ -723,6 +749,54 @@ func validateSandboxArbitrationObservation(caseName, lane string, obs Arbitratio
 	return nil
 }
 
+func validateSandboxRolloutArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	switch strings.TrimSpace(obs.SandboxRolloutPhase) {
+	case runtimeconfig.SecuritySandboxRolloutPhaseObserve,
+		runtimeconfig.SecuritySandboxRolloutPhaseCanary,
+		runtimeconfig.SecuritySandboxRolloutPhaseBaseline,
+		runtimeconfig.SecuritySandboxRolloutPhaseFull,
+		runtimeconfig.SecuritySandboxRolloutPhaseFrozen:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxRolloutPhaseDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_rollout_phase must be observe|canary|baseline|full|frozen", caseName, lane),
+		}
+	}
+	switch strings.TrimSpace(obs.SandboxHealthBudgetStatus) {
+	case runtimeconfig.SandboxHealthBudgetWithinBudget,
+		runtimeconfig.SandboxHealthBudgetNearBudget,
+		runtimeconfig.SandboxHealthBudgetBreached:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxHealthBudgetDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_health_budget_status must be within_budget|near_budget|breached", caseName, lane),
+		}
+	}
+	switch strings.TrimSpace(obs.SandboxCapacityAction) {
+	case runtimeconfig.SandboxCapacityActionAllow,
+		runtimeconfig.SandboxCapacityActionThrottle,
+		runtimeconfig.SandboxCapacityActionDeny:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSandboxCapacityActionDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_capacity_action must be allow|throttle|deny", caseName, lane),
+		}
+	}
+	if obs.SandboxFreezeState && strings.TrimSpace(obs.SandboxFreezeReasonCode) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFreezeStateDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_freeze_reason_code is required when sandbox_freeze_state=true", caseName, lane),
+		}
+	}
+	if !obs.SandboxFreezeState && strings.TrimSpace(obs.SandboxFreezeReasonCode) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFreezeStateDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_freeze_reason_code must be empty when sandbox_freeze_state=false", caseName, lane),
+		}
+	}
+	return nil
+}
+
 func assertSandboxArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
 	if expected.SandboxMode != actual.SandboxMode ||
 		expected.SandboxBackend != actual.SandboxBackend ||
@@ -770,6 +844,35 @@ func assertSandboxArbitrationEquivalent(caseName, lane string, expected, actual 
 		return &ValidationError{
 			Code:    ReasonCodeSandboxResourcePolicyDrift,
 			Message: fmt.Sprintf("case %q %s sandbox resource policy drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
+}
+
+func assertSandboxRolloutArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.SandboxRolloutPhase != actual.SandboxRolloutPhase {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxRolloutPhaseDrift,
+			Message: fmt.Sprintf("case %q %s sandbox rollout phase drift expected=%q actual=%q", caseName, lane, expected.SandboxRolloutPhase, actual.SandboxRolloutPhase),
+		}
+	}
+	if expected.SandboxHealthBudgetStatus != actual.SandboxHealthBudgetStatus {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxHealthBudgetDrift,
+			Message: fmt.Sprintf("case %q %s sandbox health budget drift expected=%q actual=%q", caseName, lane, expected.SandboxHealthBudgetStatus, actual.SandboxHealthBudgetStatus),
+		}
+	}
+	if expected.SandboxCapacityAction != actual.SandboxCapacityAction {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxCapacityActionDrift,
+			Message: fmt.Sprintf("case %q %s sandbox capacity action drift expected=%q actual=%q", caseName, lane, expected.SandboxCapacityAction, actual.SandboxCapacityAction),
+		}
+	}
+	if expected.SandboxFreezeState != actual.SandboxFreezeState ||
+		expected.SandboxFreezeReasonCode != actual.SandboxFreezeReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxFreezeStateDrift,
+			Message: fmt.Sprintf("case %q %s sandbox freeze state drift expected=%#v actual=%#v", caseName, lane, expected, actual),
 		}
 	}
 	return nil
@@ -828,6 +931,16 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.SandboxResourceMemoryPeakBytesP95 != right.SandboxResourceMemoryPeakBytesP95 {
 		return false
 	}
+	if version == ArbitrationFixtureVersionA51V1 {
+		return true
+	}
+	if left.SandboxRolloutPhase != right.SandboxRolloutPhase ||
+		left.SandboxHealthBudgetStatus != right.SandboxHealthBudgetStatus ||
+		left.SandboxCapacityAction != right.SandboxCapacityAction ||
+		left.SandboxFreezeState != right.SandboxFreezeState ||
+		left.SandboxFreezeReasonCode != right.SandboxFreezeReasonCode {
+		return false
+	}
 	return true
 }
 
@@ -873,7 +986,9 @@ func precedenceForArbitrationCode(code string) int {
 		runtimeconfig.ReadinessCodeSchedulerActivationError,
 		runtimeconfig.ReadinessCodeMailboxActivationError,
 		runtimeconfig.ReadinessCodeRecoveryActivationError,
-		runtimeconfig.ReadinessCodeRuntimeManagerUnavailable:
+		runtimeconfig.ReadinessCodeRuntimeManagerUnavailable,
+		runtimeconfig.ReadinessCodeSandboxRolloutPhaseInvalid,
+		runtimeconfig.ReadinessCodeSandboxRolloutFrozen:
 		return 2
 	case runtimeconfig.ReadinessCodeAdapterRequiredUnavailable, runtimeconfig.ReadinessCodeAdapterRequiredCircuitOpen:
 		return 3
@@ -883,7 +998,9 @@ func precedenceForArbitrationCode(code string) int {
 		runtimeconfig.ReadinessCodeAdapterOptionalUnavailable,
 		runtimeconfig.ReadinessCodeAdapterOptionalCircuitOpen,
 		runtimeconfig.ReadinessCodeAdapterDegraded,
-		runtimeconfig.ReadinessCodeAdapterHalfOpenDegraded:
+		runtimeconfig.ReadinessCodeAdapterHalfOpenDegraded,
+		runtimeconfig.ReadinessCodeSandboxRolloutHealthBreached,
+		runtimeconfig.ReadinessCodeSandboxRolloutCapacityBlocked:
 		return 4
 	default:
 		return 5

@@ -111,6 +111,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] security sandbox contract suites"
     pwsh -File scripts/check-security-sandbox-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] sandbox rollout governance contract suites" -Command {
+    pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

@@ -38,6 +38,7 @@ func (c *Composer) guardReadinessAdmission(
 	}
 	decision := c.runtimeMgr.EvaluateReadinessAdmissionWithRequest(strings.TrimSpace(req.ArbitrationRuleVersion))
 	c.recordReadinessAdmission(runID, decision)
+	c.emitRolloutGovernanceTimeline(ctx, runID, h, decision)
 	if decision.Outcome != runtimeconfig.ReadinessAdmissionOutcomeDeny {
 		return req, nil, nil
 	}
@@ -71,6 +72,9 @@ func (c *Composer) guardReadinessAdmission(
 				"readiness_arbitration_rule_mismatch_total":    decision.ReadinessArbitrationRuleMismatchTotal,
 				"readiness_remediation_hint_code":              strings.TrimSpace(decision.ReadinessRemediationHintCode),
 				"readiness_remediation_hint_domain":            strings.TrimSpace(decision.ReadinessRemediationHintDomain),
+				"sandbox_rollout_phase":                        strings.TrimSpace(decision.SandboxRolloutPhase),
+				"sandbox_capacity_action":                      strings.TrimSpace(decision.SandboxCapacityAction),
+				"sandbox_capacity_degraded_policy":             strings.TrimSpace(decision.SandboxCapacityDegradedPolicy),
 				"admission_mode":                               strings.TrimSpace(decision.Mode),
 			},
 		},
@@ -89,6 +93,9 @@ func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig
 	stat := c.ensureRunStat(runID)
 	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
 	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	stat.SandboxRolloutPhase = strings.TrimSpace(decision.SandboxRolloutPhase)
+	stat.SandboxCapacityAction = strings.TrimSpace(decision.SandboxCapacityAction)
+	stat.SandboxCapacityDegradedPolicy = strings.TrimSpace(decision.SandboxCapacityDegradedPolicy)
 	stat.ArbitrationRuleRequestedVersion = strings.TrimSpace(decision.ReadinessArbitrationRuleRequestedVersion)
 	stat.ArbitrationRuleEffectiveVersion = strings.TrimSpace(decision.ReadinessArbitrationRuleEffectiveVersion)
 	stat.ArbitrationRuleVersionSource = strings.TrimSpace(decision.ReadinessArbitrationRuleVersionSource)
@@ -133,6 +140,60 @@ func (c *Composer) emitAdmissionDeniedEvent(ctx context.Context, runID string, h
 		Time:    resolveReadinessSnapshotTime(c.now),
 		Payload: payload,
 	})
+}
+
+func (c *Composer) emitRolloutGovernanceTimeline(
+	ctx context.Context,
+	runID string,
+	h types.EventHandler,
+	decision runtimeconfig.ReadinessAdmissionDecision,
+) {
+	if c == nil {
+		return
+	}
+	reason := rolloutGovernanceTimelineReason(decision)
+	if reason == "" {
+		return
+	}
+	handler := c.bridgeHandler(h)
+	if handler == nil {
+		return
+	}
+	status := types.ActionStatusRunning
+	if decision.Outcome == runtimeconfig.ReadinessAdmissionOutcomeDeny {
+		status = types.ActionStatusFailed
+	}
+	payload := map[string]any{
+		"phase":    string(types.ActionPhaseRun),
+		"status":   string(status),
+		"reason":   reason,
+		"sequence": resolveReadinessSnapshotTime(c.now).UnixNano(),
+	}
+	handler.OnEvent(ctx, types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		RunID:   strings.TrimSpace(runID),
+		Time:    resolveReadinessSnapshotTime(c.now),
+		Payload: payload,
+	})
+}
+
+func rolloutGovernanceTimelineReason(decision runtimeconfig.ReadinessAdmissionDecision) string {
+	switch strings.TrimSpace(decision.ReasonCode) {
+	case runtimeconfig.ReadinessAdmissionCodeSandboxFrozen:
+		return "sandbox.rollout.phase_frozen"
+	case runtimeconfig.ReadinessAdmissionCodeSandboxCapacityDeny:
+		return "sandbox.rollout.capacity_denied"
+	case runtimeconfig.ReadinessAdmissionCodeSandboxThrottledDeny, runtimeconfig.ReadinessAdmissionCodeSandboxThrottle:
+		return "sandbox.rollout.capacity_throttle"
+	}
+	if strings.TrimSpace(decision.ReadinessPrimaryCode) == runtimeconfig.ReadinessCodeSandboxRolloutHealthBreached {
+		return "sandbox.rollout.health_budget_breached"
+	}
+	if strings.TrimSpace(decision.SandboxRolloutPhase) == runtimeconfig.SecuritySandboxRolloutPhaseCanary {
+		return "sandbox.rollout.phase_canary"
+	}
+	return ""
 }
 
 func (c *Composer) publishRuntimeReadinessSnapshot() {

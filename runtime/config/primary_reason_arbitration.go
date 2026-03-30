@@ -220,6 +220,16 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	ReadinessCodeSandboxOptionalUnavailable: {Code: "sandbox.restore_optional_executor", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxProfileInvalid:      {Code: "sandbox.fix_profile", Domain: ReadinessDomainRuntime},
 	ReadinessCodeSandboxCapabilityMismatch:  {Code: "sandbox.align_capabilities", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxRolloutPhaseInvalid: {Code: "sandbox.rollout.fix_phase", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxRolloutHealthBreached: {
+		Code:   "sandbox.rollout.reduce_error_budget_pressure",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxRolloutFrozen: {Code: "sandbox.rollout.unfreeze_after_cooldown", Domain: ReadinessDomainRuntime},
+	ReadinessCodeSandboxRolloutCapacityBlocked: {
+		Code:   "sandbox.rollout.relieve_capacity_pressure",
+		Domain: ReadinessDomainRuntime,
+	},
 	ReadinessCodeSandboxSessionModeUnsupported: {
 		Code:   "sandbox.adjust_session_mode",
 		Domain: ReadinessDomainRuntime,
@@ -230,6 +240,16 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	ReadinessAdmissionCodeBlocked:         {Code: "readiness.resolve_blocking_findings", Domain: "runtime"},
 	ReadinessAdmissionCodeDegradedAllow:   {Code: "readiness.monitor_degraded", Domain: "runtime"},
 	ReadinessAdmissionCodeDegradedDeny:    {Code: "readiness.resolve_degraded_findings", Domain: "runtime"},
+	ReadinessAdmissionCodeSandboxFrozen:   {Code: "sandbox.rollout.unfreeze_after_cooldown", Domain: "runtime"},
+	ReadinessAdmissionCodeSandboxThrottle: {Code: "sandbox.rollout.monitor_capacity_throttle", Domain: "runtime"},
+	ReadinessAdmissionCodeSandboxThrottledDeny: {
+		Code:   "sandbox.rollout.raise_capacity_or_relax_policy",
+		Domain: "runtime",
+	},
+	ReadinessAdmissionCodeSandboxCapacityDeny: {
+		Code:   "sandbox.rollout.raise_capacity_budget",
+		Domain: "runtime",
+	},
 	ReadinessAdmissionCodeUnknownStatus:   {Code: "readiness.check_status_mapping", Domain: "runtime"},
 	ReadinessAdmissionCodeManagerNotReady: {Code: "runtime.restart_manager", Domain: "runtime"},
 }

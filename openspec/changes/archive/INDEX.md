@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-29 13:17:17
+Updated: 2026-03-30 10:43:38
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -101,3 +101,4 @@ Updated: 2026-03-29 13:17:17
 - 097 -> introduce-cross-domain-arbitration-explainability-and-secondary-reason-contract-a49
 - 098 -> introduce-arbitration-rule-version-governance-and-compatibility-contract-a50
 - 099 -> introduce-sandbox-execution-isolation-contract-a51
+- 100 -> introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52

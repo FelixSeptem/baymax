@@ -1031,6 +1031,109 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderA52ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a52-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(52),
+			"a52_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 52 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.SandboxRolloutPhase != "" ||
+		got.SandboxRolloutEffectiveRatio != 0 ||
+		got.SandboxHealthBudgetStatus != "" ||
+		got.SandboxHealthBudgetBreachTotal != 0 ||
+		got.SandboxFreezeState ||
+		got.SandboxFreezeReasonCode != "" ||
+		got.SandboxCapacityAction != "" ||
+		got.SandboxCapacityQueueDepth != 0 ||
+		got.SandboxCapacityInflight != 0 {
+		t.Fatalf("missing A52 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderParsesA52RolloutGovernanceFields(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a52-rollout-governance",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                             "failed",
+			"sandbox_rollout_phase":              "frozen",
+			"sandbox_rollout_effective_ratio":    0.25,
+			"sandbox_health_budget_status":       "breached",
+			"sandbox_health_budget_breach_total": 3,
+			"sandbox_freeze_state":               true,
+			"sandbox_freeze_reason_code":         "sandbox.rollout.health_budget_breached",
+			"sandbox_capacity_action":            "deny",
+			"sandbox_capacity_queue_depth":       17,
+			"sandbox_capacity_inflight":          8,
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.SandboxRolloutPhase != "frozen" ||
+		got.SandboxRolloutEffectiveRatio != 0.25 ||
+		got.SandboxHealthBudgetStatus != "breached" ||
+		got.SandboxHealthBudgetBreachTotal != 3 ||
+		!got.SandboxFreezeState ||
+		got.SandboxFreezeReasonCode != "sandbox.rollout.health_budget_breached" ||
+		got.SandboxCapacityAction != "deny" ||
+		got.SandboxCapacityQueueDepth != 17 ||
+		got.SandboxCapacityInflight != 8 {
+		t.Fatalf("A52 rollout governance fields parse mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderParsesA50ArbitrationVersionGovernanceFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

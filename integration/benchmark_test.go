@@ -873,12 +873,37 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 
 	sandboxDecisions := []string{"deny", "sandbox", "sandbox", "sandbox", "deny"}
 	sandboxReasons := []string{"sandbox.timeout", "sandbox.runtime_launch_failed", "sandbox.capability_mismatch"}
+	sandboxRolloutPhases := []string{"observe", "canary", "baseline", "full", "frozen"}
+	sandboxCapacityActions := []string{"allow", "throttle", "deny"}
+	sandboxHealthBudgetStatuses := []string{"within_budget", "near_budget", "breached"}
 	for i := 0; i < diagnosticsBenchSandboxTotal; i++ {
 		status := "success"
 		decision := sandboxDecisions[i%len(sandboxDecisions)]
 		reason := sandboxReasons[i%len(sandboxReasons)]
 		if decision == "deny" {
 			status = "failed"
+		}
+		rolloutPhase := sandboxRolloutPhases[i%len(sandboxRolloutPhases)]
+		capacityAction := sandboxCapacityActions[(i+1)%len(sandboxCapacityActions)]
+		healthBudgetStatus := sandboxHealthBudgetStatuses[(i+2)%len(sandboxHealthBudgetStatuses)]
+		rolloutEffectiveRatio := map[string]float64{
+			"observe":  0.0,
+			"canary":   0.1,
+			"baseline": 0.5,
+			"full":     1.0,
+			"frozen":   0.0,
+		}[rolloutPhase]
+		healthBudgetBreachTotal := 0
+		switch healthBudgetStatus {
+		case "near_budget":
+			healthBudgetBreachTotal = 1
+		case "breached":
+			healthBudgetBreachTotal = 3
+		}
+		freezeState := rolloutPhase == "frozen" || healthBudgetStatus == "breached"
+		freezeReasonCode := ""
+		if freezeState {
+			freezeReasonCode = "sandbox.rollout.health_budget_breached"
 		}
 		store.AddRun(runtimediag.RunRecord{
 			Time:                              base.Add(20*time.Second + time.Duration(i)*2*time.Millisecond),
@@ -914,6 +939,15 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 			SandboxOOMTotal:                   i % 2,
 			SandboxResourceCPUMsTotal:         int64((i % 57) + 20),
 			SandboxResourceMemoryPeakBytesP95: int64((i%4096)+2048) * 4,
+			SandboxRolloutPhase:               rolloutPhase,
+			SandboxRolloutEffectiveRatio:      rolloutEffectiveRatio,
+			SandboxHealthBudgetStatus:         healthBudgetStatus,
+			SandboxHealthBudgetBreachTotal:    healthBudgetBreachTotal,
+			SandboxFreezeState:                freezeState,
+			SandboxFreezeReasonCode:           freezeReasonCode,
+			SandboxCapacityAction:             capacityAction,
+			SandboxCapacityQueueDepth:         40 + (i % 90),
+			SandboxCapacityInflight:           8 + (i % 24),
 			RuntimePrimaryDomain:              "scheduler",
 			RuntimePrimaryCode:                "scheduler.backend.fallback",
 			RuntimePrimarySource:              "runtime.readiness",
@@ -978,7 +1012,6 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 		sandboxRunsRequest: runtimediag.UnifiedRunQueryRequest{
 			TeamID:     "team-sandbox",
 			WorkflowID: "wf-sandbox",
-			Status:     "failed",
 			TimeRange: &runtimediag.UnifiedQueryTimeRange{
 				Start: base.Add(20*time.Second + 10*time.Millisecond),
 				End:   base.Add(22*time.Second + 500*time.Millisecond),
@@ -1084,10 +1117,31 @@ func BenchmarkDiagnosticsQueryRunsSandboxEnriched(b *testing.B) {
 		if first.Items[0].Time.After(first.Items[len(first.Items)-1].Time) {
 			b.Fatalf("query sandbox runs first page not sorted ascending")
 		}
+		phaseSeen := map[string]struct{}{}
+		capacityActionSeen := map[string]struct{}{}
+		healthBudgetSeen := map[string]struct{}{}
 		for _, item := range first.Items {
 			if item.PolicyKind != "sandbox" || item.SandboxMode != "enforce" || len(item.SandboxRequiredCapabilities) == 0 {
 				b.Fatalf("sandbox-enriched record missing mandatory fields: %#v", item)
 			}
+			if item.SandboxRolloutPhase == "" || item.SandboxCapacityAction == "" || item.SandboxHealthBudgetStatus == "" {
+				b.Fatalf("sandbox rollout governance record missing A52 additive fields: %#v", item)
+			}
+			phaseSeen[item.SandboxRolloutPhase] = struct{}{}
+			capacityActionSeen[item.SandboxCapacityAction] = struct{}{}
+			healthBudgetSeen[item.SandboxHealthBudgetStatus] = struct{}{}
+			if item.SandboxFreezeState && item.SandboxFreezeReasonCode == "" {
+				b.Fatalf("sandbox freeze state set without freeze reason code: %#v", item)
+			}
+		}
+		if len(phaseSeen) != 5 {
+			b.Fatalf("sandbox-enriched page must include mixed rollout phases, got=%d", len(phaseSeen))
+		}
+		if len(capacityActionSeen) != 3 {
+			b.Fatalf("sandbox-enriched page must include mixed capacity actions, got=%d", len(capacityActionSeen))
+		}
+		if len(healthBudgetSeen) != 3 {
+			b.Fatalf("sandbox-enriched page must include mixed health budget states, got=%d", len(healthBudgetSeen))
 		}
 		nextReq := fixture.sandboxRunsRequest
 		nextReq.Cursor = first.NextCursor

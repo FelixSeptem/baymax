@@ -280,6 +280,9 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	SandboxRolloutPhase                  string
+	SandboxCapacityAction                string
+	SandboxCapacityDegradedPolicy        string
 	ArbitrationRuleRequestedVersion      string
 	ArbitrationRuleEffectiveVersion      string
 	ArbitrationRuleVersionSource         string
@@ -1030,6 +1033,33 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	}
 	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
 		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
+	}
+	if strings.TrimSpace(stats.SandboxRolloutPhase) != "" {
+		payload["sandbox_rollout_phase"] = strings.TrimSpace(stats.SandboxRolloutPhase)
+	}
+	if strings.TrimSpace(stats.SandboxCapacityAction) != "" {
+		payload["sandbox_capacity_action"] = strings.TrimSpace(stats.SandboxCapacityAction)
+	}
+	if strings.TrimSpace(stats.SandboxCapacityDegradedPolicy) != "" {
+		payload["sandbox_capacity_degraded_policy"] = strings.TrimSpace(stats.SandboxCapacityDegradedPolicy)
+	}
+	if c.runtimeMgr != nil {
+		rolloutCfg := c.runtimeMgr.EffectiveConfig().Security.Sandbox.Rollout
+		payload["sandbox_rollout_effective_ratio"] = rolloutCfg.TrafficRatio
+		state := c.runtimeMgr.SandboxRolloutRuntimeState()
+		if strings.TrimSpace(state.HealthBudgetStatus) != "" {
+			payload["sandbox_health_budget_status"] = strings.TrimSpace(state.HealthBudgetStatus)
+		}
+		payload["sandbox_health_budget_breach_total"] = state.HealthBudgetBreachTotal
+		payload["sandbox_freeze_state"] = state.FreezeState
+		if strings.TrimSpace(state.FreezeReasonCode) != "" {
+			payload["sandbox_freeze_reason_code"] = strings.TrimSpace(state.FreezeReasonCode)
+		}
+		if strings.TrimSpace(state.CapacityAction) != "" {
+			payload["sandbox_capacity_action"] = strings.TrimSpace(state.CapacityAction)
+		}
+		payload["sandbox_capacity_queue_depth"] = state.CapacityQueueDepth
+		payload["sandbox_capacity_inflight"] = state.CapacityInflight
 	}
 
 	if s := c.Scheduler(); s != nil {

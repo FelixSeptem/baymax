@@ -1085,6 +1085,247 @@ reload:
 	}
 }
 
+func TestSecuritySandboxRolloutPhaseTransitionReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    mode: observe
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: allow_and_record
+      fallback_action_by_tool:
+        local+shell: deny
+    executor:
+      backend: windows_job
+      session_mode: per_call
+      required_capabilities: [stdout_stderr_capture]
+    profiles:
+      default:
+        network:
+          mode: network_off
+        filesystem:
+          readonly_root: true
+        mounts: []
+        resource_limits:
+          cpu_milli: 1000
+          memory_bytes: 536870912
+          pid_limit: 64
+        timeouts:
+          launch_timeout: 1s
+          exec_timeout: 5s
+    rollout:
+      phase: full
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase
+	if before != SecuritySandboxRolloutPhaseFull {
+		t.Fatalf("before sandbox rollout phase = %q, want %q", before, SecuritySandboxRolloutPhaseFull)
+	}
+
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    mode: observe
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: allow_and_record
+      fallback_action_by_tool:
+        local+shell: deny
+    executor:
+      backend: windows_job
+      session_mode: per_call
+      required_capabilities: [stdout_stderr_capture]
+    profiles:
+      default:
+        network:
+          mode: network_off
+        filesystem:
+          readonly_root: true
+        mounts: []
+        resource_limits:
+          cpu_milli: 1000
+          memory_bytes: 536870912
+          pid_limit: 64
+        timeouts:
+          launch_timeout: 1s
+          exec_timeout: 5s
+    rollout:
+      phase: observe
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase
+	if after != before {
+		t.Fatalf("invalid sandbox rollout transition should rollback, phase = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerSandboxRolloutGovernanceRecordRunAutoFreeze(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-governance.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: canary
+      error_budget: 0.05
+      freeze_on_breach: true
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.RecordRun(runtimediag.RunRecord{
+		RunID:                    "run-a52-breach",
+		SandboxLaunchFailedTotal: 1,
+	})
+	state := mgr.SandboxRolloutRuntimeState()
+	if state.HealthBudgetStatus != SandboxHealthBudgetBreached {
+		t.Fatalf("health budget status=%q, want %q", state.HealthBudgetStatus, SandboxHealthBudgetBreached)
+	}
+	if !state.FreezeState {
+		t.Fatalf("freeze_state=false, want true")
+	}
+	if state.FreezeReasonCode != ReadinessCodeSandboxRolloutHealthBreached {
+		t.Fatalf("freeze_reason_code=%q, want %q", state.FreezeReasonCode, ReadinessCodeSandboxRolloutHealthBreached)
+	}
+	if state.CapacityAction != SandboxCapacityActionDeny {
+		t.Fatalf("capacity_action=%q, want %q", state.CapacityAction, SandboxCapacityActionDeny)
+	}
+}
+
+func TestManagerSandboxRolloutUnfreezeRequiresCooldownAndToken(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-unfreeze.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: frozen
+      cooldown: 100ms
+      manual_unfreeze_token: token-1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{
+		FreezeState: true,
+		UpdatedAt:   time.Now().UTC(),
+	})
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: canary
+      cooldown: 100ms
+      manual_unfreeze_token: token-1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	if got := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase; got != SecuritySandboxRolloutPhaseFrozen {
+		t.Fatalf("phase should remain frozen before cooldown, got %q", got)
+	}
+
+	mgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{
+		FreezeState: true,
+		UpdatedAt:   time.Now().UTC().Add(-500 * time.Millisecond),
+	})
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: canary
+      cooldown: 100ms
+      manual_unfreeze_token: token-1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	if got := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase; got != SecuritySandboxRolloutPhaseCanary {
+		t.Fatalf("phase should unfreeze to canary after cooldown with valid token, got %q", got)
+	}
+}
+
+func TestManagerSandboxCapacityActionDeterministicFromQueueAndInflight(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a52-capacity.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    enabled: true
+    rollout:
+      phase: canary
+    capacity:
+      max_inflight: 10
+      max_queue: 20
+      throttle_threshold: 5
+      deny_threshold: 15
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	mgr.RecordRun(runtimediag.RunRecord{
+		RunID:               "run-a52-capacity-allow",
+		SchedulerQueueTotal: 3,
+		InflightPeak:        2,
+	})
+	if got := mgr.SandboxRolloutRuntimeState().CapacityAction; got != SandboxCapacityActionAllow {
+		t.Fatalf("capacity action (allow case)=%q, want %q", got, SandboxCapacityActionAllow)
+	}
+
+	mgr.RecordRun(runtimediag.RunRecord{
+		RunID:               "run-a52-capacity-throttle",
+		SchedulerQueueTotal: 6,
+		InflightPeak:        2,
+	})
+	if got := mgr.SandboxRolloutRuntimeState().CapacityAction; got != SandboxCapacityActionThrottle {
+		t.Fatalf("capacity action (throttle case)=%q, want %q", got, SandboxCapacityActionThrottle)
+	}
+
+	mgr.RecordRun(runtimediag.RunRecord{
+		RunID:               "run-a52-capacity-deny",
+		SchedulerQueueTotal: 16,
+		InflightPeak:        2,
+	})
+	if got := mgr.SandboxRolloutRuntimeState().CapacityAction; got != SandboxCapacityActionDeny {
+		t.Fatalf("capacity action (deny case)=%q, want %q", got, SandboxCapacityActionDeny)
+	}
+}
+
 func TestManagerTeamsInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

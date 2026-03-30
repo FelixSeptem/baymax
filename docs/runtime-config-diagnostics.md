@@ -1320,22 +1320,61 @@ security:
         - stdout_stderr_capture
 ```
 
+A52 在 A51 基础上新增 sandbox rollout/health-budget/capacity 治理配置，继续沿用统一优先级：`env > file > default`。
+
+```yaml
+security:
+  sandbox:
+    rollout:
+      phase: observe                    # observe|canary|baseline|full|frozen
+      traffic_ratio: 0.0               # [0,1]
+      health_window: 5m
+      error_budget: 0.05               # [0,1]
+      freeze_on_breach: true
+      cooldown: 10m
+      manual_unfreeze_token: ""
+    capacity:
+      max_inflight: 32
+      max_queue: 128
+      throttle_threshold: 96
+      deny_threshold: 120
+      degraded_policy: allow_and_record # allow_and_record|fail_fast
+```
+
+A52 配置 fail-fast 规则（startup + hot reload）：
+
+- 非法枚举值直接失败：`rollout.phase`、`capacity.degraded_policy`。
+- 非法范围直接失败：`rollout.traffic_ratio`、`rollout.error_budget`。
+- 阈值顺序非法直接失败：`throttle_threshold <= deny_threshold <= max_queue`。
+- hot reload 额外校验 phase 合法迁移并保持原子回滚：`observe->canary->baseline->full`；`canary|baseline|full->frozen`；`frozen->canary|observe`。
+
 新增 sandbox run diagnostics 字段（additive + nullable + default）：
 
 - 决策与配置：`sandbox_mode`、`sandbox_backend`、`sandbox_profile`、`sandbox_session_mode`、`sandbox_required_capabilities`、`sandbox_decision`、`sandbox_reason_code`
 - fallback 与失败计数：`sandbox_fallback_used`、`sandbox_fallback_reason`、`sandbox_timeout_total`、`sandbox_launch_failed_total`、`sandbox_capability_mismatch_total`
 - 资源与时延：`sandbox_exec_latency_ms_p95`、`sandbox_exit_code_last`、`sandbox_oom_total`、`sandbox_resource_cpu_ms_total`、`sandbox_resource_memory_peak_bytes_p95`
 
-A51 门禁与 required-check 暴露：
+A52 追加 rollout-governance diagnostics 字段（additive + nullable + default）：
+
+- rollout：`sandbox_rollout_phase`、`sandbox_rollout_effective_ratio`
+- health budget：`sandbox_health_budget_status`、`sandbox_health_budget_breach_total`
+- freeze：`sandbox_freeze_state`、`sandbox_freeze_reason_code`
+- capacity：`sandbox_capacity_action`、`sandbox_capacity_queue_depth`、`sandbox_capacity_inflight`
+
+A51/A52 门禁与 required-check 暴露：
 
 - sandbox contract gate：
   - Linux/macOS: `bash scripts/check-security-sandbox-contract.sh`
   - Windows: `pwsh -File scripts/check-security-sandbox-contract.ps1`
+- sandbox rollout governance gate（A52）：
+  - Linux/macOS: `bash scripts/check-sandbox-rollout-governance-contract.sh`
+  - Windows: `pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1`
 - sandbox executor offline conformance harness：
   - Linux/macOS: `bash scripts/check-sandbox-executor-conformance.sh`
   - Windows: `pwsh -File scripts/check-sandbox-executor-conformance.ps1`
 - CI Job: `security-sandbox-gate`（仅 PR 触发，可配置 branch-protection required check）
-- quality gate 集成：`check-security-sandbox-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- CI Job: `sandbox-rollout-governance-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-security-sandbox-contract.*` 与 `check-sandbox-rollout-governance-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

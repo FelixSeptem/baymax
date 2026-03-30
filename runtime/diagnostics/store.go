@@ -78,6 +78,15 @@ type RunRecord struct {
 	SandboxOOMTotal                             int                               `json:"sandbox_oom_total,omitempty"`
 	SandboxResourceCPUMsTotal                   int64                             `json:"sandbox_resource_cpu_ms_total,omitempty"`
 	SandboxResourceMemoryPeakBytesP95           int64                             `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
+	SandboxRolloutPhase                         string                            `json:"sandbox_rollout_phase,omitempty"`
+	SandboxRolloutEffectiveRatio                float64                           `json:"sandbox_rollout_effective_ratio,omitempty"`
+	SandboxHealthBudgetStatus                   string                            `json:"sandbox_health_budget_status,omitempty"`
+	SandboxHealthBudgetBreachTotal              int                               `json:"sandbox_health_budget_breach_total,omitempty"`
+	SandboxFreezeState                          bool                              `json:"sandbox_freeze_state,omitempty"`
+	SandboxFreezeReasonCode                     string                            `json:"sandbox_freeze_reason_code,omitempty"`
+	SandboxCapacityAction                       string                            `json:"sandbox_capacity_action,omitempty"`
+	SandboxCapacityQueueDepth                   int                               `json:"sandbox_capacity_queue_depth,omitempty"`
+	SandboxCapacityInflight                     int                               `json:"sandbox_capacity_inflight,omitempty"`
 	PrefixHash                                  string                            `json:"prefix_hash,omitempty"`
 	AssembleLatencyMs                           int64                             `json:"assemble_latency_ms,omitempty"`
 	AssembleStatus                              string                            `json:"assemble_status,omitempty"`

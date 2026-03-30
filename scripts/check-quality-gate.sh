@@ -108,6 +108,12 @@ if ! bash scripts/check-security-sandbox-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] sandbox rollout governance contract suites"
+if ! bash scripts/check-sandbox-rollout-governance-contract.sh; then
+  echo "[quality-gate][sandbox-rollout-governance-contract] sandbox rollout governance contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

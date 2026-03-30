@@ -1,0 +1,44 @@
+{
+  "version": "a52.v1",
+  "cases": [
+    {
+      "name": "sandbox_rollout_governance_case",
+      "canonical": {
+        "runtime_primary_domain": "runtime",
+        "runtime_primary_code": "sandbox.rollout.capacity_unavailable",
+        "runtime_primary_source": "runtime.readiness",
+        "runtime_primary_conflict_total": 0,
+        "runtime_secondary_reason_count": 0,
+        "runtime_arbitration_rule_version": "a49.v1",
+        "runtime_arbitration_rule_requested_version": "a49.v1",
+        "runtime_arbitration_rule_effective_version": "a49.v1",
+        "runtime_arbitration_rule_version_source": "requested",
+        "runtime_arbitration_rule_policy_action": "none",
+        "runtime_arbitration_rule_unsupported_total": 0,
+        "runtime_arbitration_rule_mismatch_total": 0,
+        "runtime_remediation_hint_code": "sandbox.rollout.relieve_capacity_pressure",
+        "runtime_remediation_hint_domain": "runtime",
+        "sandbox_mode": "observe",
+        "sandbox_backend": "windows_job",
+        "sandbox_profile": "default",
+        "sandbox_session_mode": "per_call",
+        "sandbox_required_capabilities": [
+          "stdout_stderr_capture"
+        ],
+        "sandbox_decision": "deny",
+        "sandbox_reason_code": "sandbox.rollout.capacity_denied",
+        "sandbox_queue_wait_ms_p95": 3,
+        "sandbox_exec_latency_ms_p95": 12,
+        "sandbox_resource_cpu_ms_total": 40,
+        "sandbox_resource_memory_peak_bytes_p95": 8192,
+        "sandbox_rollout_phase": "canary",
+        "sandbox_health_budget_status": "near_budget",
+        "sandbox_capacity_action": "throttle"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

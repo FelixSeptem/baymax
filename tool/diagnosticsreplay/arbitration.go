@@ -11,32 +11,39 @@ import (
 )
 
 const (
-	ArbitrationFixtureVersionA48V1 = "a48.v1"
-	ArbitrationFixtureVersionA49V1 = "a49.v1"
-	ArbitrationFixtureVersionA50V1 = "a50.v1"
-	ArbitrationFixtureVersionA51V1 = "a51.v1"
-	ArbitrationFixtureVersionA52V1 = "a52.v1"
+	ArbitrationFixtureVersionA48V1    = "a48.v1"
+	ArbitrationFixtureVersionA49V1    = "a49.v1"
+	ArbitrationFixtureVersionA50V1    = "a50.v1"
+	ArbitrationFixtureVersionA51V1    = "a51.v1"
+	ArbitrationFixtureVersionA52V1    = "a52.v1"
+	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
 
-	ReasonCodePrecedenceDrift              = "precedence_drift"
-	ReasonCodeTieBreakDrift                = "tie_break_drift"
-	ReasonCodeTaxonomyDrift                = "taxonomy_drift"
-	ReasonCodeSecondaryOrderDrift          = "secondary_order_drift"
-	ReasonCodeSecondaryCountDrift          = "secondary_count_drift"
-	ReasonCodeHintTaxonomyDrift            = "hint_taxonomy_drift"
-	ReasonCodeRuleVersionDrift             = "rule_version_drift"
-	ReasonCodeVersionMismatch              = "version_mismatch"
-	ReasonCodeUnsupportedVersion           = "unsupported_version"
-	ReasonCodeCrossVersionSemanticDrift    = "cross_version_semantic_drift"
-	ReasonCodeSandboxPolicyDrift           = "sandbox_policy_drift"
-	ReasonCodeSandboxFallbackDrift         = "sandbox_fallback_drift"
-	ReasonCodeSandboxTimeoutDrift          = "sandbox_timeout_drift"
-	ReasonCodeSandboxCapabilityDrift       = "sandbox_capability_drift"
-	ReasonCodeSandboxResourcePolicyDrift   = "sandbox_resource_policy_drift"
-	ReasonCodeSandboxSessionLifecycleDrift = "sandbox_session_lifecycle_drift"
-	ReasonCodeSandboxRolloutPhaseDrift     = "sandbox_rollout_phase_drift"
-	ReasonCodeSandboxHealthBudgetDrift     = "sandbox_health_budget_drift"
-	ReasonCodeSandboxCapacityActionDrift   = "sandbox_capacity_action_drift"
-	ReasonCodeSandboxFreezeStateDrift      = "sandbox_freeze_state_drift"
+	ReasonCodePrecedenceDrift               = "precedence_drift"
+	ReasonCodeTieBreakDrift                 = "tie_break_drift"
+	ReasonCodeTaxonomyDrift                 = "taxonomy_drift"
+	ReasonCodeSecondaryOrderDrift           = "secondary_order_drift"
+	ReasonCodeSecondaryCountDrift           = "secondary_count_drift"
+	ReasonCodeHintTaxonomyDrift             = "hint_taxonomy_drift"
+	ReasonCodeRuleVersionDrift              = "rule_version_drift"
+	ReasonCodeVersionMismatch               = "version_mismatch"
+	ReasonCodeUnsupportedVersion            = "unsupported_version"
+	ReasonCodeCrossVersionSemanticDrift     = "cross_version_semantic_drift"
+	ReasonCodeSandboxPolicyDrift            = "sandbox_policy_drift"
+	ReasonCodeSandboxFallbackDrift          = "sandbox_fallback_drift"
+	ReasonCodeSandboxTimeoutDrift           = "sandbox_timeout_drift"
+	ReasonCodeSandboxCapabilityDrift        = "sandbox_capability_drift"
+	ReasonCodeSandboxResourcePolicyDrift    = "sandbox_resource_policy_drift"
+	ReasonCodeSandboxSessionLifecycleDrift  = "sandbox_session_lifecycle_drift"
+	ReasonCodeSandboxRolloutPhaseDrift      = "sandbox_rollout_phase_drift"
+	ReasonCodeSandboxHealthBudgetDrift      = "sandbox_health_budget_drift"
+	ReasonCodeSandboxCapacityActionDrift    = "sandbox_capacity_action_drift"
+	ReasonCodeSandboxFreezeStateDrift       = "sandbox_freeze_state_drift"
+	ReasonCodeMemoryModeDrift               = "memory_mode_drift"
+	ReasonCodeMemoryProfileDrift            = "memory_profile_drift"
+	ReasonCodeMemoryContractVersionDrift    = "memory_contract_version_drift"
+	ReasonCodeMemoryFallbackDrift           = "memory_fallback_drift"
+	ReasonCodeMemoryErrorTaxonomyDrift      = "memory_error_taxonomy_drift"
+	ReasonCodeMemoryOperationAggregateDrift = "memory_operation_aggregate_drift"
 )
 
 type ArbitrationFixture struct {
@@ -92,6 +99,17 @@ type ArbitrationObservation struct {
 	SandboxCapacityAction                  string   `json:"sandbox_capacity_action,omitempty"`
 	SandboxFreezeState                     bool     `json:"sandbox_freeze_state,omitempty"`
 	SandboxFreezeReasonCode                string   `json:"sandbox_freeze_reason_code,omitempty"`
+	MemoryMode                             string   `json:"memory_mode,omitempty"`
+	MemoryProvider                         string   `json:"memory_provider,omitempty"`
+	MemoryProfile                          string   `json:"memory_profile,omitempty"`
+	MemoryContractVersion                  string   `json:"memory_contract_version,omitempty"`
+	MemoryQueryTotal                       int      `json:"memory_query_total,omitempty"`
+	MemoryUpsertTotal                      int      `json:"memory_upsert_total,omitempty"`
+	MemoryDeleteTotal                      int      `json:"memory_delete_total,omitempty"`
+	MemoryErrorTotal                       int      `json:"memory_error_total,omitempty"`
+	MemoryFallbackTotal                    int      `json:"memory_fallback_total,omitempty"`
+	MemoryFallbackReasonCode               string   `json:"memory_fallback_reason_code,omitempty"`
+	MemoryReasonCode                       string   `json:"memory_reason_code,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -120,7 +138,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA49V1 &&
 		version != ArbitrationFixtureVersionA50V1 &&
 		version != ArbitrationFixtureVersionA51V1 &&
-		version != ArbitrationFixtureVersionA52V1 {
+		version != ArbitrationFixtureVersionA52V1 &&
+		version != ArbitrationFixtureVersionMemoryV1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -255,6 +274,17 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		SandboxCapacityAction:                  strings.ToLower(strings.TrimSpace(in.SandboxCapacityAction)),
 		SandboxFreezeState:                     in.SandboxFreezeState,
 		SandboxFreezeReasonCode:                strings.ToLower(strings.TrimSpace(in.SandboxFreezeReasonCode)),
+		MemoryMode:                             strings.ToLower(strings.TrimSpace(in.MemoryMode)),
+		MemoryProvider:                         strings.ToLower(strings.TrimSpace(in.MemoryProvider)),
+		MemoryProfile:                          strings.ToLower(strings.TrimSpace(in.MemoryProfile)),
+		MemoryContractVersion:                  strings.ToLower(strings.TrimSpace(in.MemoryContractVersion)),
+		MemoryQueryTotal:                       in.MemoryQueryTotal,
+		MemoryUpsertTotal:                      in.MemoryUpsertTotal,
+		MemoryDeleteTotal:                      in.MemoryDeleteTotal,
+		MemoryErrorTotal:                       in.MemoryErrorTotal,
+		MemoryFallbackTotal:                    in.MemoryFallbackTotal,
+		MemoryFallbackReasonCode:               strings.ToLower(strings.TrimSpace(in.MemoryFallbackReasonCode)),
+		MemoryReasonCode:                       strings.ToLower(strings.TrimSpace(in.MemoryReasonCode)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -292,6 +322,21 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.SandboxResourceMemoryPeakBytesP95 < 0 {
 		out.SandboxResourceMemoryPeakBytesP95 = 0
 	}
+	if out.MemoryQueryTotal < 0 {
+		out.MemoryQueryTotal = 0
+	}
+	if out.MemoryUpsertTotal < 0 {
+		out.MemoryUpsertTotal = 0
+	}
+	if out.MemoryDeleteTotal < 0 {
+		out.MemoryDeleteTotal = 0
+	}
+	if out.MemoryErrorTotal < 0 {
+		out.MemoryErrorTotal = 0
+	}
+	if out.MemoryFallbackTotal < 0 {
+		out.MemoryFallbackTotal = 0
+	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
 		if code == "" {
@@ -316,6 +361,9 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 }
 
 func validateArbitrationObservation(version, caseName, lane string, obs ArbitrationObservation) error {
+	if version == ArbitrationFixtureVersionMemoryV1 {
+		return validateMemoryArbitrationObservation(caseName, lane, obs)
+	}
 	if strings.TrimSpace(obs.RuntimePrimaryDomain) == "" {
 		return &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
@@ -501,6 +549,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionMemoryV1 {
+		return assertMemoryArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
@@ -879,6 +930,19 @@ func assertSandboxRolloutArbitrationEquivalent(caseName, lane string, expected, 
 }
 
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
+	if version == ArbitrationFixtureVersionMemoryV1 {
+		return left.MemoryMode == right.MemoryMode &&
+			left.MemoryProvider == right.MemoryProvider &&
+			left.MemoryProfile == right.MemoryProfile &&
+			left.MemoryContractVersion == right.MemoryContractVersion &&
+			left.MemoryQueryTotal == right.MemoryQueryTotal &&
+			left.MemoryUpsertTotal == right.MemoryUpsertTotal &&
+			left.MemoryDeleteTotal == right.MemoryDeleteTotal &&
+			left.MemoryErrorTotal == right.MemoryErrorTotal &&
+			left.MemoryFallbackTotal == right.MemoryFallbackTotal &&
+			left.MemoryFallbackReasonCode == right.MemoryFallbackReasonCode &&
+			left.MemoryReasonCode == right.MemoryReasonCode
+	}
 	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
 		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
 		left.RuntimePrimarySource != right.RuntimePrimarySource ||
@@ -973,6 +1037,126 @@ func isCanonicalArbitrationCode(code string) bool {
 		return true
 	}
 	return false
+}
+
+func validateMemoryArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	switch strings.TrimSpace(obs.MemoryMode) {
+	case runtimeconfig.RuntimeMemoryModeBuiltinFilesystem, runtimeconfig.RuntimeMemoryModeExternalSPI:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeMemoryModeDrift,
+			Message: fmt.Sprintf("case %q %s memory_mode must be external_spi|builtin_filesystem", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.MemoryProvider) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_provider is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.MemoryProfile) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_profile is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.MemoryContractVersion) != runtimeconfig.RuntimeMemoryContractVersionV1 {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryContractVersionDrift,
+			Message: fmt.Sprintf("case %q %s memory_contract_version must be %q", caseName, lane, runtimeconfig.RuntimeMemoryContractVersionV1),
+		}
+	}
+	if obs.MemoryMode == runtimeconfig.RuntimeMemoryModeBuiltinFilesystem &&
+		strings.TrimSpace(obs.MemoryProvider) != runtimeconfig.RuntimeMemoryModeBuiltinFilesystem {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryProfileDrift,
+			Message: fmt.Sprintf("case %q %s builtin_filesystem mode must use memory_provider=builtin_filesystem", caseName, lane),
+		}
+	}
+	if obs.MemoryMode == runtimeconfig.RuntimeMemoryModeExternalSPI &&
+		strings.TrimSpace(obs.MemoryProvider) == runtimeconfig.RuntimeMemoryModeBuiltinFilesystem {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryProfileDrift,
+			Message: fmt.Sprintf("case %q %s external_spi mode must not use memory_provider=builtin_filesystem", caseName, lane),
+		}
+	}
+	if obs.MemoryFallbackTotal > 0 && strings.TrimSpace(obs.MemoryFallbackReasonCode) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryFallbackDrift,
+			Message: fmt.Sprintf("case %q %s memory_fallback_reason_code is required when memory_fallback_total>0", caseName, lane),
+		}
+	}
+	if obs.MemoryFallbackTotal == 0 && strings.TrimSpace(obs.MemoryFallbackReasonCode) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryFallbackDrift,
+			Message: fmt.Sprintf("case %q %s memory_fallback_reason_code must be empty when memory_fallback_total=0", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.MemoryFallbackReasonCode) != "" &&
+		!strings.HasPrefix(strings.TrimSpace(obs.MemoryFallbackReasonCode), "memory.fallback.") {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryFallbackDrift,
+			Message: fmt.Sprintf("case %q %s memory_fallback_reason_code must be memory.fallback.* canonical code", caseName, lane),
+		}
+	}
+	if obs.MemoryErrorTotal > 0 && strings.TrimSpace(obs.MemoryReasonCode) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryErrorTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s memory_reason_code is required when memory_error_total>0", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.MemoryReasonCode) != "" &&
+		!strings.HasPrefix(strings.TrimSpace(obs.MemoryReasonCode), "memory.") {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryErrorTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s memory_reason_code must be memory.* canonical code", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertMemoryArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.MemoryMode != actual.MemoryMode {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryModeDrift,
+			Message: fmt.Sprintf("case %q %s memory mode drift expected=%q actual=%q", caseName, lane, expected.MemoryMode, actual.MemoryMode),
+		}
+	}
+	if expected.MemoryProvider != actual.MemoryProvider || expected.MemoryProfile != actual.MemoryProfile {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryProfileDrift,
+			Message: fmt.Sprintf("case %q %s memory profile drift expected_provider/profile=%q/%q actual_provider/profile=%q/%q", caseName, lane, expected.MemoryProvider, expected.MemoryProfile, actual.MemoryProvider, actual.MemoryProfile),
+		}
+	}
+	if expected.MemoryContractVersion != actual.MemoryContractVersion {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryContractVersionDrift,
+			Message: fmt.Sprintf("case %q %s memory contract version drift expected=%q actual=%q", caseName, lane, expected.MemoryContractVersion, actual.MemoryContractVersion),
+		}
+	}
+	if expected.MemoryFallbackTotal != actual.MemoryFallbackTotal ||
+		expected.MemoryFallbackReasonCode != actual.MemoryFallbackReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryFallbackDrift,
+			Message: fmt.Sprintf("case %q %s memory fallback drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.MemoryReasonCode != actual.MemoryReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryErrorTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s memory error taxonomy drift expected_reason=%q actual_reason=%q", caseName, lane, expected.MemoryReasonCode, actual.MemoryReasonCode),
+		}
+	}
+	if expected.MemoryQueryTotal != actual.MemoryQueryTotal ||
+		expected.MemoryUpsertTotal != actual.MemoryUpsertTotal ||
+		expected.MemoryDeleteTotal != actual.MemoryDeleteTotal ||
+		expected.MemoryErrorTotal != actual.MemoryErrorTotal {
+		return &ValidationError{
+			Code:    ReasonCodeMemoryOperationAggregateDrift,
+			Message: fmt.Sprintf("case %q %s memory operation aggregate drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
 }
 
 func precedenceForArbitrationCode(code string) int {

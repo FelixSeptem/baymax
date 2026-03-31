@@ -1,4 +1,4 @@
-# Adapter Migration Mapping (A21/A53)
+# Adapter Migration Mapping (A21/A53/A54)
 
 更新时间：2026-03-30
 
@@ -22,6 +22,7 @@
 | MCP adapter | 在业务代码中直接散落网络调用与重试逻辑 | 收敛到 `mcp/http` 或 `mcp/stdio` 客户端，并由 profile/runtime policy 管理 | additive 字段可增量引入；旧字段缺失走 default；非法配置 fail-fast |
 | Model adapter | 直接在上层绑定 provider SDK 类型 | 在 `model/<provider>` 实现 `types.ModelClient` + 能力探测接口 | nullable 字段允许为空；新增能力字段保持 backward-safe |
 | Tool adapter | 工具执行逻辑与业务主流程耦合 | 使用 `types.Tool` + `tool/local.Registry` 显式注册 | schema 变更需保持 additive 优先，破坏性变更需 fail-fast |
+| Memory adapter | 直接依赖 legacy file-based memory 路径 | 迁移到 `runtime.memory` + `memory SPI`（`external_spi|builtin_filesystem`） | mode/profile/contract_version 对齐；required op 缺失 fail-fast；optional op 允许 deterministic downgrade |
 | Adapter manifest | 接入前无统一兼容边界声明 | 为每个外部 adapter 提供 `adapter-manifest.json` 并在激活前校验 | `baymax_compat` 必须可解析；required fail-fast；optional downgrade 必须 deterministic |
 
 ## Code-Snippet Mapping
@@ -257,3 +258,15 @@ bash scripts/check-sandbox-adapter-conformance-contract.sh
 ```powershell
 pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 ```
+
+## A54 Memory Legacy Path -> Unified SPI Mapping
+
+| legacy memory pattern | target pattern | compatibility notes | rollback notes | conformance suite id |
+| --- | --- | --- | --- | --- |
+| 直接访问历史 file-based memory 目录与文件协议 | `runtime.memory.mode=builtin_filesystem` + `runtime.memory.builtin.*`（WAL + compaction） | Query/Upsert/Delete 语义保持一致；reason taxonomy 统一到 `memory.*`；readiness 覆盖 `memory.filesystem_path_invalid` | 可回滚到 legacy 路径，但保留 `runtime.memory.*` 字段与 replay 夹具，保证可对账 | `memory-builtin-filesystem-switch` |
+| provider SDK 直接嵌入主流程 | `runtime.memory.mode=external_spi` + profile-pack（`mem0|zep|openviking|generic`） + manifest `memory.*` | manifest `memory.provider/profile/contract_version/operations/fallback` 必填；required op 缺失 fail-fast；optional op 输出 deterministic downgrade | 回滚 builtin 时仅切换 mode/profile，不删除 manifest memory 字段，避免后续 conformance 漂移 | `memory-mem0-matrix` / `memory-zep-matrix` / `memory-openviking-matrix` / `memory-generic-matrix` |
+
+迁移 acceptance checklist（每条迁移记录必须绑定）：
+- diagnostics 字段：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`。
+- readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
+- conformance suites：`integration/adapterconformance/memory_matrix_test.go`、`tool/diagnosticsreplay/arbitration_test.go`（`memory.v1` fixtures）。

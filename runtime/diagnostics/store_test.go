@@ -462,6 +462,71 @@ func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *t
 	}
 }
 
+func TestStoreRunMemoryAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                     time.Now(),
+		RunID:                    "run-a54-memory",
+		Status:                   "success",
+		MemoryMode:               "external_spi",
+		MemoryProvider:           "mem0",
+		MemoryProfile:            "mem0",
+		MemoryContractVersion:    "memory.v1",
+		MemoryQueryTotal:         3,
+		MemoryUpsertTotal:        1,
+		MemoryDeleteTotal:        0,
+		MemoryErrorTotal:         1,
+		MemoryFallbackTotal:      1,
+		MemoryFallbackReasonCode: "memory.fallback.used",
+		MemoryLatencyMsP95:       25,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].MemoryMode != "external_spi" ||
+		items[0].MemoryProvider != "mem0" ||
+		items[0].MemoryProfile != "mem0" ||
+		items[0].MemoryContractVersion != "memory.v1" ||
+		items[0].MemoryQueryTotal != 3 ||
+		items[0].MemoryUpsertTotal != 1 ||
+		items[0].MemoryDeleteTotal != 0 ||
+		items[0].MemoryErrorTotal != 1 ||
+		items[0].MemoryFallbackTotal != 1 ||
+		items[0].MemoryFallbackReasonCode != "memory.fallback.used" ||
+		items[0].MemoryLatencyMsP95 != 25 {
+		t.Fatalf("A54 memory fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.MemoryProvider = "zep"
+	rec.MemoryProfile = "zep"
+	rec.MemoryQueryTotal = 5
+	rec.MemoryUpsertTotal = 2
+	rec.MemoryErrorTotal = 0
+	rec.MemoryFallbackTotal = 0
+	rec.MemoryFallbackReasonCode = ""
+	rec.MemoryLatencyMsP95 = 19
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].MemoryProvider != "zep" ||
+		items[0].MemoryProfile != "zep" ||
+		items[0].MemoryQueryTotal != 5 ||
+		items[0].MemoryUpsertTotal != 2 ||
+		items[0].MemoryErrorTotal != 0 ||
+		items[0].MemoryFallbackTotal != 0 ||
+		items[0].MemoryFallbackReasonCode != "" ||
+		items[0].MemoryLatencyMsP95 != 19 {
+		t.Fatalf("A54 memory fields mismatch after replay replacement: %#v", items[0])
+	}
+}
+
 func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

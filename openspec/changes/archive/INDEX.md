@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-30 14:11:38
+Updated: 2026-03-31 10:20:39
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -103,3 +103,4 @@ Updated: 2026-03-30 14:11:38
 - 099 -> introduce-sandbox-execution-isolation-contract-a51
 - 100 -> introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52
 - 101 -> introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53
+- 102 -> introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54

@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-30：
-- 已归档并稳定：A4-A52（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档并稳定：A4-A53（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`
   - `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`
+  - `introduce-observability-export-and-diagnostics-bundle-contract-a55`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -396,7 +396,7 @@ A52 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A53 mainstream sandbox adapter conformance + migration pack（进行中，实施推进中）
+### P1：A53 mainstream sandbox adapter conformance + migration pack（已归档）
 
 A53 Why now：
 - A52 已归档并冻结 sandbox rollout/health/capacity 治理基线，但主流后端（nsjail/bwrap/OCI/windows-job）接入仍依赖分散脚本与非标准 glue code。
@@ -431,7 +431,7 @@ A53 当前阶段非目标（不做）：
 - 不引入平台化控制面或跨租户编排能力。
 - 不承诺后端底层实现一致，仅要求 canonical 合同输出一致。
 
-A53 已落地增量（当前分支）：
+A53 已落地增量（归档记录）：
 - `adapter/manifest` 已补齐 sandbox metadata/profile-pack 契约（`sandbox_backend`、`sandbox_profile_id`、`host_os`、`host_arch`、`session_modes_supported`）与 fail-fast 校验。
 - `integration/adapterconformance` 已增加 mainstream backend matrix、capability negotiation、session lifecycle（`per_call|per_session`、crash/reconnect、close idempotent）与 canonical drift class 断言。
 - `integration/adaptercontractreplay` 已增加 `sandbox.v1` 回放轨道与 mixed-track 回放，补齐 drift 分类断言（`sandbox_backend_profile_drift`、`sandbox_manifest_compat_drift`、`sandbox_session_mode_drift`）。
@@ -452,7 +452,7 @@ A53 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A54 memory provider SPI + builtin filesystem engine（进行中，提案已完成，待实施）
+### P1：A54 memory provider SPI + builtin filesystem engine（进行中，实施推进中）
 
 A54 Why now：
 - 当前 memory 接入仍依赖 CA2 file/external retriever 分散路径，缺少统一 memory SPI 与 profile 契约。
@@ -491,58 +491,70 @@ A54 验证命令（提案实施期最小集合）：
 - `go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractMemoryFixture' -count=1`
 - `go test -race ./...`
 - `golangci-lint run --config .golangci.yml`
+- `bash scripts/check-memory-contract-conformance.sh`
 - `pwsh -File scripts/check-memory-contract-conformance.ps1`
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1/P2：A55+ 借鉴整合提案池（全局视角）
+A54 gate 交付口径（当前实现）：
+- memory contract suites 以 `smoke|full` 分层执行（主线 quality gate 默认 smoke，CI 独立 `memory-contract-gate` job 默认 full）。
+- shell 与 PowerShell 脚本保持同一阻断语义（native command 非零即 fail-fast）。
+
+### P1/P2：A56+ 借鉴整合提案池（全局视角）
 
 前提约束（冻结）：
-- 不调整 A53/A54 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
+- 不调整 A54/A55 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
 - 新提案必须复用既有治理主链路：`runtime/config`（`env > file > default` + fail-fast/回滚）+ `RuntimeRecorder` 单写 + diagnostics replay + quality gate。
 
 与在研项目的先后顺序（强依赖）：
-1. A53（进行中）：mainstream sandbox adapter conformance + migration pack。
-2. A54（进行中）：memory provider SPI + builtin filesystem engine。
-3. A55（下一优先级，P1）：可观测出口与诊断包导出 contract。
-4. A56（次优先级，P1）：sandbox egress 治理与 adapter allowlist contract。
-5. A57（中期，P1/P2）：memory scope 与注入预算治理 contract。
-6. A58（后续，P2）：runtime 成本/时延预算与 admission contract。
+1. A54（进行中）：memory provider SPI + builtin filesystem engine。
+2. A55（进行中）：observability export + diagnostics bundle contract。
+3. A56（下一优先级，P1）：ReAct loop + tool-calling parity contract（Run/Stream 顺滑闭环）。
+4. A57（次优先级，P1）：sandbox egress 治理与 adapter allowlist contract。
+5. A58（中期，P1/P2）：memory scope 与注入预算治理 contract。
+6. A59（后续，P2）：runtime 成本/时延预算与 admission contract。
 
 备选项目说明（避免“单一路线”误解）：
-- A55/A56/A57/A58 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A56/A57/A58/A59 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A55 已进入在研执行，不再作为备选项；A56 默认复用 A55 的观测与取证能力，减少 ReAct 上线盲区。
 - 前置切换规则（示例）：
-  - 若线上排障成本高或跨环境定位慢：A55 可前置为首个落地项。
-  - 若合规审计或外部 adapter 引入加速：A56 可前置并优先实施。
-  - 若 A54 落地后出现 memory 注入成本漂移：A57 可前置到 A56 之前。
-- 无论是否前置切换，均不得改写 A53/A54 已冻结范围，只允许在其完成后做增量扩展。
+  - 若“Run 支持工具闭环但 Stream 无法工具分发/回灌”成为交付阻塞：A56 可前置为首个落地项。
+  - 若合规审计或外部 adapter 引入加速：A57 可前置并优先实施。
+  - 若 A54 落地后出现 memory 注入成本漂移：A58 可前置到 A57 之前。
+- 无论是否前置切换，均不得改写 A54/A55 已冻结范围，只允许在其完成后做增量扩展。
 
-备选 A55：`introduce-observability-export-and-diagnostics-bundle-contract-a55`
-- 目标：在不改变 `RuntimeRecorder` 单写入口的前提下，补齐标准观测出口（如 OTLP/Langfuse profile）与 diagnostics bundle 导出 contract。
-- 范围：`observability.export.*` 配置、bundle schema、redaction 规则、replay hint 索引、独立 gate（shell/PowerShell parity）。
-- 依赖：A53/A54 的新增字段需纳入 bundle 与 export 映射，避免后续重复补丁。
-- 启动条件：A53/A54 进入稳定阶段后，需提升跨环境排障与外部观测集成效率。
+备选 A56：`introduce-react-loop-and-tool-calling-parity-contract-a56`
+- 目标：在保持 `library-first + contract-first` 边界下，一次性冻结 ReAct 运行闭环 contract，确保 Run/Stream 在工具调用场景语义等价并可回放可门禁。
+- 范围：
+  - runner 侧 ReAct 状态机收敛（`model -> tool dispatch -> tool result feedback -> next iteration`）；
+  - Stream 路径工具分发与回灌能力补齐（消除 `stream_tool_dispatch_not_supported` 中间态）；
+  - 统一 run-level `tool_call_limit` 与 iteration-level 上限协同；
+  - provider adapter tool-calling 输入/输出归一（OpenAI/Anthropic/Gemini）；
+  - ReAct additive diagnostics 字段、`react.v1` replay fixture、独立 `check-react-contract.*` gate。
+- 依赖：复用 A44/A45/A49/A50/A55 的 admission/cardinality/explainability/version 与 observability 输出口径，不新增平行治理链路。
+- 启动条件：主线交付需要“可稳定工具推理循环 + Stream 等价”能力，或出现 provider tool-calling 行为漂移。
 
-备选 A56：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a56`
+备选 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`
 - 目标：补齐 sandbox 网络外呼治理（egress policy）与 adapter 供应链 allowlist 契约，形成“执行隔离 + 出口治理 + 激活准入”闭环。
 - 范围：`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission finding、taxonomy、replay drift 与 conformance matrix。
 - 依赖：复用 A51/A52/A53 sandbox taxonomy 与 adapter manifest 激活边界，不新增平行安全语义。
 - 启动条件：存在合规审计或外部 adapter 引入规模上升，需要可审计可阻断的 egress/allowlist 治理。
 
-备选 A57：`introduce-memory-scope-and-injection-budget-governance-contract-a57`
+备选 A58：`introduce-memory-scope-and-injection-budget-governance-contract-a58`
 - 目标：在 A54 SPI 基线之上补齐 `session|project|global` scope、注入预算与检索策略治理，抑制上下文膨胀与成本漂移。
 - 范围：`runtime.memory.scope.*`、`runtime.memory.injection_budget.*`、QueryRuns additive 字段、mixed replay fixture、gate 阈值回归。
 - 依赖：A54 memory facade/profile pack/readiness 字段稳定后再扩展，避免与 A54 实施交叉改动。
 - 启动条件：A54 上线后出现上下文成本抖动、memory 注入不可解释或跨 provider 行为漂移。
 
-备选 A58：`introduce-runtime-cost-latency-budget-and-admission-contract-a58`
+备选 A59：`introduce-runtime-cost-latency-budget-and-admission-contract-a59`
 - 目标：统一 token/tool/sandbox/memory 成本与时延预算，建立 admission 侧 fail-fast 与降级策略。
 - 启动条件：成本或 P95 抖动成为主线瓶颈。
 
 整合与重排说明：
-- 原备选 `A57 incident-forensics-replay-package` 并入 A55（diagnostics bundle + replay hint 一体化）。
-- 原备选 `A55 cross-channel-data-egress-and-secret-governance` 收敛并聚焦为 A56（优先 sandbox egress + adapter allowlist 闭环）。
-- 原备选 `A56 runtime-cost-latency-budget` 顺延为 A58，避免与 A55/A56/A57 的阶段目标重叠。
+- 原备选 `A57 incident-forensics-replay-package` 已并入 A55（diagnostics bundle + replay hint 一体化）。
+- 新增 `A56 react-loop-and-tool-calling-parity` 作为“顺滑 ReAct 模式”专项提案，并置于备选池首位。
+- 原备选 `A55 cross-channel-data-egress-and-secret-governance` 顺延并聚焦为 A57（sandbox egress + adapter allowlist 闭环）。
+- 原备选 `A56 runtime-cost-latency-budget` 顺延为 A59，避免与 A56/A57/A58 的阶段目标重叠。
 
 ### P2：0.x 质量与治理持续收敛
 

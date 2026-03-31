@@ -105,6 +105,12 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 			}
 			return runtimeconfig.DefaultConfig().Security.Redaction
 		}),
+		assembler.WithMemoryConfigProvider(func() runtimeconfig.RuntimeMemoryConfig {
+			if e.runtimeMgr != nil {
+				return e.runtimeMgr.EffectiveConfig().Runtime.Memory
+			}
+			return runtimeconfig.DefaultConfig().Runtime.Memory
+		}),
 	)
 	e.registerModel(model)
 	for _, opt := range opts {
@@ -245,6 +251,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
+	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
 	var terminal *types.ClassifiedError
@@ -298,6 +306,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ModelClient:   selectedModel,
 			}, modelReq)
 			lastAssemble = assembleResult
+			memoryAggregate.observeAssemble(assembleResult)
 			if assembleErr != nil {
 				if contextPhaseEnabled {
 					status, reason := classifyTimelineError(assembleErr)
@@ -651,6 +660,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					Memory:              memoryAggregate.snapshot(memoryRuntime),
 					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
@@ -710,6 +720,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					Memory:              memoryAggregate.snapshot(memoryRuntime),
 					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
@@ -738,6 +749,8 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
+	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
 	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, true, e.fallbackEnabled())
@@ -781,6 +794,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 				AlertCircuitState:   lastSecurity.AlertCircuitState,
 				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+				Memory:              memoryAggregate.snapshot(memoryRuntime),
 			}),
 		})
 		return result, errors.New(selErr.Message)
@@ -806,6 +820,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 		ModelClient:   selectedModel,
 	}, modelReq)
 	lastAssemble := assembleResult
+	memoryAggregate.observeAssemble(assembleResult)
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
@@ -855,6 +870,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 				AlertCircuitState:   lastSecurity.AlertCircuitState,
 				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+				Memory:              memoryAggregate.snapshot(memoryRuntime),
 			}),
 		})
 		return result, assembleErr
@@ -904,6 +920,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 				AlertCircuitState:   lastSecurity.AlertCircuitState,
 				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+				Memory:              memoryAggregate.snapshot(memoryRuntime),
 			}),
 		})
 		return result, filterErr
@@ -1113,6 +1130,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 				AlertCircuitState:   lastSecurity.AlertCircuitState,
 				AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+				Memory:              memoryAggregate.snapshot(memoryRuntime),
 			}),
 		})
 		return result, err
@@ -1167,6 +1185,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 			AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 			AlertCircuitState:   lastSecurity.AlertCircuitState,
 			AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+			Memory:              memoryAggregate.snapshot(memoryRuntime),
 		}),
 	})
 	return result, nil
@@ -1510,6 +1529,7 @@ type runFinishMeta struct {
 	AlertQueueDropCount int
 	AlertCircuitState   string
 	AlertCircuitReason  string
+	Memory              memoryRunDiagnostics
 	Sandbox             sandboxRunDiagnostics
 }
 
@@ -1747,6 +1767,29 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.AlertCircuitReason != "" {
 		payload["alert_circuit_open_reason"] = meta.AlertCircuitReason
 	}
+	if meta.Memory.Observed {
+		if meta.Memory.Mode != "" {
+			payload["memory_mode"] = meta.Memory.Mode
+		}
+		if meta.Memory.Provider != "" {
+			payload["memory_provider"] = meta.Memory.Provider
+		}
+		if meta.Memory.Profile != "" {
+			payload["memory_profile"] = meta.Memory.Profile
+		}
+		if meta.Memory.ContractVersion != "" {
+			payload["memory_contract_version"] = meta.Memory.ContractVersion
+		}
+		payload["memory_query_total"] = meta.Memory.QueryTotal
+		payload["memory_upsert_total"] = meta.Memory.UpsertTotal
+		payload["memory_delete_total"] = meta.Memory.DeleteTotal
+		payload["memory_error_total"] = meta.Memory.ErrorTotal
+		payload["memory_fallback_total"] = meta.Memory.FallbackTotal
+		if meta.Memory.FallbackReasonCode != "" {
+			payload["memory_fallback_reason_code"] = meta.Memory.FallbackReasonCode
+		}
+		payload["memory_latency_ms_p95"] = meta.Memory.LatencyMsP95
+	}
 	if meta.Sandbox.Observed {
 		if meta.Sandbox.Mode != "" {
 			payload["sandbox_mode"] = meta.Sandbox.Mode
@@ -1786,6 +1829,115 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["sandbox_resource_memory_peak_bytes_p95"] = meta.Sandbox.ResourceMemoryPeakBytesP95
 	}
 	return payload
+}
+
+type memoryRuntimeSnapshot struct {
+	Mode            string
+	Provider        string
+	Profile         string
+	ContractVersion string
+}
+
+type memoryRunDiagnostics struct {
+	Observed           bool
+	Mode               string
+	Provider           string
+	Profile            string
+	ContractVersion    string
+	QueryTotal         int
+	UpsertTotal        int
+	DeleteTotal        int
+	ErrorTotal         int
+	FallbackTotal      int
+	FallbackReasonCode string
+	LatencyMsP95       int64
+}
+
+type memoryRunDiagnosticsAccumulator struct {
+	observed           bool
+	queryTotal         int
+	upsertTotal        int
+	deleteTotal        int
+	errorTotal         int
+	fallbackTotal      int
+	fallbackReasonCode string
+	latencySamples     []int64
+}
+
+func (a *memoryRunDiagnosticsAccumulator) observeAssemble(assemble types.ContextAssembleResult) {
+	if a == nil {
+		return
+	}
+	stage := assemble.Stage
+	provider := strings.ToLower(strings.TrimSpace(stage.Stage2Provider))
+	reasonCode := strings.ToLower(strings.TrimSpace(stage.Stage2ReasonCode))
+	if provider != runtimeconfig.ContextStage2ProviderMemory && !strings.HasPrefix(reasonCode, "memory.") && reasonCode != "memory_error" {
+		return
+	}
+	a.observed = true
+	a.queryTotal++
+	if stage.Stage2LatencyMs >= 0 {
+		a.latencySamples = append(a.latencySamples, stage.Stage2LatencyMs)
+	}
+	if strings.EqualFold(strings.TrimSpace(stage.Stage2Source), runtimeconfig.ContextStage2ProviderFile) && stage.Stage2HitCount > 0 {
+		// Migration compatibility path: memory provider fell back to legacy file source then backfilled.
+		a.upsertTotal++
+	}
+	if memoryReasonCodeIsError(reasonCode, provider == runtimeconfig.ContextStage2ProviderMemory) {
+		a.errorTotal++
+	}
+	if reasonCode == "memory.fallback.used" {
+		a.fallbackTotal++
+		a.fallbackReasonCode = reasonCode
+	} else if strings.HasPrefix(reasonCode, "memory.fallback.") && reasonCode != "" {
+		a.fallbackReasonCode = reasonCode
+	}
+}
+
+func (a *memoryRunDiagnosticsAccumulator) snapshot(runtime memoryRuntimeSnapshot) memoryRunDiagnostics {
+	if a == nil || !a.observed {
+		return memoryRunDiagnostics{}
+	}
+	reasonCode := strings.TrimSpace(strings.ToLower(a.fallbackReasonCode))
+	if reasonCode == "" && a.fallbackTotal > 0 {
+		reasonCode = "memory.fallback.used"
+	}
+	return memoryRunDiagnostics{
+		Observed:           true,
+		Mode:               runtime.Mode,
+		Provider:           runtime.Provider,
+		Profile:            runtime.Profile,
+		ContractVersion:    runtime.ContractVersion,
+		QueryTotal:         a.queryTotal,
+		UpsertTotal:        a.upsertTotal,
+		DeleteTotal:        a.deleteTotal,
+		ErrorTotal:         a.errorTotal,
+		FallbackTotal:      a.fallbackTotal,
+		FallbackReasonCode: reasonCode,
+		LatencyMsP95:       percentileP95Int64(a.latencySamples),
+	}
+}
+
+func memoryReasonCodeIsError(reasonCode string, providerMemory bool) bool {
+	code := strings.ToLower(strings.TrimSpace(reasonCode))
+	switch code {
+	case "", "ok", "memory.ok", "memory.not_found", "memory.fallback.used":
+		return false
+	case "memory_error":
+		return true
+	}
+	if strings.HasPrefix(code, "memory.") {
+		return true
+	}
+	if !providerMemory {
+		return false
+	}
+	switch code {
+	case "fetch_error", "timeout", "auth_failed", "mapping_invalid", "request_failed":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Engine) resolvePrefixVersion() string {
@@ -1869,6 +2021,37 @@ func (e *Engine) sandboxRuntimeSnapshot() sandboxRuntimeSnapshot {
 		Profile:              strings.ToLower(strings.TrimSpace(cfg.Policy.Profile)),
 		SessionMode:          strings.ToLower(strings.TrimSpace(cfg.Executor.SessionMode)),
 		RequiredCapabilities: cloneNormalizedStringSlice(cfg.Executor.RequiredCapabilities),
+	}
+}
+
+func (e *Engine) runtimeMemorySnapshot() memoryRuntimeSnapshot {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Memory
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Memory
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		mode = runtimeconfig.RuntimeMemoryModeBuiltinFilesystem
+	}
+	provider := runtimeconfig.RuntimeMemoryProviderGeneric
+	if mode == runtimeconfig.RuntimeMemoryModeBuiltinFilesystem {
+		provider = runtimeconfig.RuntimeMemoryModeBuiltinFilesystem
+	} else if candidate := strings.ToLower(strings.TrimSpace(cfg.External.Provider)); candidate != "" {
+		provider = candidate
+	}
+	profile := strings.ToLower(strings.TrimSpace(cfg.External.Profile))
+	if profile == "" {
+		profile = runtimeconfig.RuntimeMemoryProfileGeneric
+	}
+	contractVersion := strings.ToLower(strings.TrimSpace(cfg.External.ContractVersion))
+	if contractVersion == "" {
+		contractVersion = runtimeconfig.RuntimeMemoryContractVersionV1
+	}
+	return memoryRuntimeSnapshot{
+		Mode:            mode,
+		Provider:        provider,
+		Profile:         profile,
+		ContractVersion: contractVersion,
 	}
 }
 

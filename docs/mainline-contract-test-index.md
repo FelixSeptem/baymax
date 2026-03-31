@@ -10,7 +10,7 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 
 状态口径说明：
 - 本索引仅收录已接入主线质量门禁的 contract suites。
-- 在研提案（当前 A53/A54）在完成实现并接入 gate 前不进入本索引，状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
+- 在研提案仅在“对应 suites 已接入主线 gate”后进入本索引；其余状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
 
 ## 索引
 
@@ -140,7 +140,7 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Sandbox Execution Isolation A51 Gate Path | `scripts/check-security-sandbox-contract.sh` | `scripts/check-security-sandbox-contract.ps1` |
 | Sandbox Rollout Governance A52 Phase/Health/Capacity Mapping | `runtime/config/config_test.go::TestSandboxRolloutPhaseTransitionValidation`、`runtime/config/manager_test.go::TestManagerSandboxRolloutGovernanceRecordRunAutoFreeze`、`runtime/config/readiness_test.go::TestManagerReadinessAdmissionSandboxCapacityPolicyMapping` | `runtime/config/manager_test.go::TestSecuritySandboxRolloutPhaseTransitionReloadRollsBack`、`runtime/config/manager_test.go::TestManagerSandboxRolloutUnfreezeRequiresCooldownAndToken` |
 | Sandbox Rollout Governance A52 Run/Stream Admission + Timeline Parity | `orchestration/composer/composer_test.go::TestComposerReadinessAdmissionSandboxRolloutFrozenRunAndStreamEquivalent`、`orchestration/composer/composer_test.go::TestComposerReadinessAdmissionSandboxCapacityThrottlePolicyParity` | `orchestration/composer/composer_test.go::TestComposerReadinessAdmissionSandboxRolloutTimelineReasonParity` |
-| Sandbox Rollout Governance A52 Recorder + Replay Drift Guard | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderParsesA52RolloutGovernanceFields`、`tool/diagnosticsreplay/arbitration_test.go::TestReplayContractArbitrationMixedA51A52Compatibility` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA52ParserCompatibilityAdditiveNullableDefault`、`tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| Sandbox Rollout Governance A52 Recorder + Replay Drift Guard | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderParsesA52RolloutGovernanceFields`、`tool/diagnosticsreplay/arbitration_test.go::TestReplayContractArbitrationMixedA48A52MemoryCompatibility` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderA52ParserCompatibilityAdditiveNullableDefault`、`tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | Sandbox Rollout Governance A52 Gate Path | `scripts/check-sandbox-rollout-governance-contract.sh` | `scripts/check-sandbox-rollout-governance-contract.ps1` |
 | Mailbox Contract A30 Sync/Async/Delayed Convergence | `integration/mailbox_contract_test.go::TestMailboxContractSyncAsyncDelayedConvergenceRunStreamSemanticEquivalence` | `orchestration/invoke/mailbox_bridge_test.go::TestMailboxBridgeInvokeAsyncPublishesResultFromReport` |
 | Mailbox Contract A30 Query + Correlation Mapping | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryAndAggregates` | `runtime/diagnostics/store_test.go::TestStoreMailboxQueryValidationAndCursorDeterminism` |
@@ -202,6 +202,11 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Sandbox Adapter Replay A53 Sandbox Track + Mixed Compatibility | `integration/adaptercontractreplay/replay_test.go::TestReplayContractSandboxProfilePackTrack` | `integration/adaptercontractreplay/replay_test.go::TestReplayContractMixedTracksBackwardCompatible` |
 | Sandbox Adapter Readiness A53 Finding Mapping | `runtime/config/readiness_test.go::TestManagerReadinessPreflightSandboxAdapterProfileMissingStrictMapping` | `runtime/config/readiness_test.go::TestManagerReadinessPreflightSandboxAdapterBackendUnsupportedAndHostMismatch` |
 | Sandbox Adapter Conformance A53 Gate Path | `scripts/check-sandbox-adapter-conformance-contract.sh` | `scripts/check-sandbox-adapter-conformance-contract.ps1` |
+| Memory Manifest Compatibility A54 Core Validation | `adapter/manifest/manifest_test.go::TestParseMemoryManifestCompleteMetadata` | `adapter/manifest/manifest_test.go::TestActivateMemoryManifestRequiredOperationMissingFailFast` |
+| Memory Adapter Conformance A54 Matrix | `integration/adapterconformance/memory_matrix_test.go::TestMemoryAdapterConformanceMainstreamProfileMatrix` | `integration/adapterconformance/memory_matrix_test.go::TestMemoryAdapterConformanceFallbackDriftClassification` |
+| Memory Replay A54 Fixture + Drift Guard | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| Memory Contract Gate A54 | `scripts/check-memory-contract-conformance.sh` | `scripts/check-memory-contract-conformance.ps1` |
+| Memory Contract Gate A54 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

@@ -4,6 +4,7 @@
 1. `MCP adapter`
 2. `Model provider adapter`
 3. `Tool adapter`
+4. `Memory adapter`（A54）
 
 模板定位：
 - 用于 onboarding 与迁移对照。
@@ -16,4 +17,5 @@
 go run ./examples/templates/mcp-adapter-template
 go run ./examples/templates/model-adapter-template
 go run ./examples/templates/tool-adapter-template
+go run ./examples/templates/memory-adapter-template
 ```

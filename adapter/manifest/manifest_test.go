@@ -470,6 +470,257 @@ func TestActivateSandboxManifestMissingProfileFailFast(t *testing.T) {
 	}
 }
 
+func TestParseMemoryManifestCompleteMetadata(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "memory-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "memory": {
+    "provider": "mem0",
+    "profile": "mem0",
+    "contract_version": "memory.v1",
+    "operations": {
+      "required": ["query", "upsert", "delete"],
+      "optional": ["metadata_filter"]
+    },
+    "fallback": {
+      "supported": true
+    }
+  }
+}`)
+	manifest, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse memory manifest: %v", err)
+	}
+	if manifest.Memory == nil {
+		t.Fatal("memory metadata should be present")
+	}
+	if manifest.Memory.Provider != "mem0" || manifest.Memory.Profile != "mem0" || manifest.Memory.ContractVersion != "memory.v1" {
+		t.Fatalf("unexpected memory metadata normalization: %#v", manifest.Memory)
+	}
+}
+
+func TestParseMemoryManifestMissingContractVersionFailFast(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "memory-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "memory": {
+    "provider": "mem0",
+    "profile": "mem0",
+    "operations": {
+      "required": ["query", "upsert", "delete"],
+      "optional": []
+    },
+    "fallback": {
+      "supported": true
+    }
+  }
+}`)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected missing memory.contract_version failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMissingField || ce.Field != "memory.contract_version" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateMemoryManifestProfileMismatchFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "memory-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Memory: &Memory{
+			Provider:        "mem0",
+			Profile:         "mem0",
+			ContractVersion: "memory.v1",
+			Operations: MemoryOperations{
+				Required: []string{"query", "upsert", "delete"},
+				Optional: []string{"metadata_filter"},
+			},
+			Fallback: MemoryFallback{Supported: boolPtr(true)},
+		},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			MemoryMode:       "external_spi",
+			MemoryProvider:   "mem0",
+			MemoryProfile:    "zep",
+			MemoryContract:   "memory.v1",
+			MemoryOperations: []string{"query", "upsert", "delete"},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected memory profile mismatch fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMemoryProfileMismatch || ce.Field != "memory.profile" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateMemoryManifestRequiredOperationMissingFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "memory-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Memory: &Memory{
+			Provider:        "mem0",
+			Profile:         "mem0",
+			ContractVersion: "memory.v1",
+			Operations: MemoryOperations{
+				Required: []string{"query", "upsert", "delete"},
+				Optional: []string{"metadata_filter"},
+			},
+			Fallback: MemoryFallback{Supported: boolPtr(true)},
+		},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			MemoryMode:       "external_spi",
+			MemoryProvider:   "mem0",
+			MemoryProfile:    "mem0",
+			MemoryContract:   "memory.v1",
+			MemoryOperations: []string{"query", "upsert"},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected memory required operation fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMemoryRequiredOpMissing || ce.Field != "memory.operations.required" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateMemoryManifestOptionalOperationDowngrade(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "memory-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Memory: &Memory{
+			Provider:        "mem0",
+			Profile:         "mem0",
+			ContractVersion: "memory.v1",
+			Operations: MemoryOperations{
+				Required: []string{"query", "upsert", "delete"},
+				Optional: []string{"metadata_filter"},
+			},
+			Fallback: MemoryFallback{Supported: boolPtr(true)},
+		},
+	}
+	out, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			MemoryMode:       "external_spi",
+			MemoryProvider:   "mem0",
+			MemoryProfile:    "mem0",
+			MemoryContract:   "memory.v1",
+			MemoryOperations: []string{"query", "upsert", "delete"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("memory optional operation downgrade should not block activation: %v", err)
+	}
+	if len(out.OptionalDowngrades) != 1 {
+		t.Fatalf("expected one optional downgrade, got %#v", out.OptionalDowngrades)
+	}
+	if out.OptionalDowngrades[0].Capability != "memory.metadata_filter" {
+		t.Fatalf("unexpected optional downgrade: %#v", out.OptionalDowngrades[0])
+	}
+	if out.OptionalDowngrades[0].ReasonCode != "adapter.manifest.memory.operation.optional_missing.metadata_filter" {
+		t.Fatalf("unexpected downgrade reason: %#v", out.OptionalDowngrades[0])
+	}
+}
+
+func TestActivateMemoryManifestMissingActivationContextFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "memory-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Memory: &Memory{
+			Provider:        "mem0",
+			Profile:         "mem0",
+			ContractVersion: "memory.v1",
+			Operations: MemoryOperations{
+				Required: []string{"query", "upsert", "delete"},
+				Optional: []string{},
+			},
+			Fallback: MemoryFallback{Supported: boolPtr(true)},
+		},
+	}
+	_, err := Activate(manifest, "0.26.0-rc.2", []string{"tool.invoke.required_input"})
+	if err == nil {
+		t.Fatal("expected missing memory activation context fail-fast")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMemoryContextMissing || ce.Field != "memory_mode" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func contractErr(t *testing.T, err error) *ContractError {
 	t.Helper()
 	ce := &ContractError{}

@@ -1,11 +1,11 @@
-# External Adapter Template Index (A21/A53)
+# External Adapter Template Index (A21/A53/A54)
 
 更新时间：2026-03-30
 
 ## 目标
 
-提供外部接入的最小模板入口，降低新接入方在 `MCP / Model / Tool` 三类适配上的理解与迁移成本。
-同时提供主流 sandbox backend 的 profile-pack onboarding 模板，保证接入命令与 conformance 套件可直接执行。
+提供外部接入的最小模板入口，降低新接入方在 `MCP / Model / Tool / Memory` 四类适配上的理解与迁移成本。
+同时提供主流 sandbox backend 与 memory profile-pack 的 onboarding 模板，保证接入命令与 conformance 套件可直接执行。
 
 优先级（固定）：
 1. MCP adapter template
@@ -25,6 +25,7 @@
 | P1 | MCP adapter template | `examples/templates/mcp-adapter-template/main.go` | `go run ./examples/templates/mcp-adapter-template` |
 | P2 | Model provider adapter template | `examples/templates/model-adapter-template/main.go` | `go run ./examples/templates/model-adapter-template` |
 | P3 | Tool adapter template | `examples/templates/tool-adapter-template/main.go` | `go run ./examples/templates/tool-adapter-template` |
+| P4 | Memory adapter template | `examples/templates/memory-adapter-template/main.go` | `go run ./examples/templates/memory-adapter-template` |
 
 ## Mainstream Sandbox Backend Onboarding Templates（A53）
 
@@ -210,3 +211,31 @@ bash scripts/check-sandbox-adapter-conformance-contract.sh
 ```powershell
 pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 ```
+
+## Mainstream Memory Adapter Onboarding Templates（A54）
+
+适用 profile（固定）：
+- `mem0`
+- `zep`
+- `openviking`
+- `generic`
+
+模板输出能力：
+- external SPI profile wiring（provider/profile/contract_version）；
+- builtin filesystem 开关路径（`mode=builtin_filesystem`）；
+- fallback 策略示例（`fail_fast|degrade_to_builtin|degrade_without_memory`）。
+
+memory profile 模板映射（onboarding skeleton）：
+
+| profile | provider | conformance case id | 运行命令 |
+| --- | --- | --- | --- |
+| `mem0` | `mem0` | `memory-mem0-matrix` | `go run ./examples/templates/memory-adapter-template` |
+| `zep` | `zep` | `memory-zep-matrix` | `go run ./examples/templates/memory-adapter-template` |
+| `openviking` | `openviking` | `memory-openviking-matrix` | `go run ./examples/templates/memory-adapter-template` |
+| `generic` | `generic` | `memory-generic-matrix` | `go run ./examples/templates/memory-adapter-template` |
+| `builtin_filesystem` | `builtin_filesystem` | `memory-builtin-filesystem-switch` | `go run ./examples/templates/memory-adapter-template` |
+
+模板验收清单（每条 conformance case id 必须对齐）：
+- diagnostics 字段：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`。
+- readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
+- conformance suite：`integration/adapterconformance/memory_matrix_test.go`。

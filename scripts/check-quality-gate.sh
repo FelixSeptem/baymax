@@ -44,6 +44,13 @@ fi
 if [[ -z "${CGO_ENABLED:-}" ]]; then
   export CGO_ENABLED=1
 fi
+if [[ "${GODEBUG:-}" != *"goindex="* ]]; then
+  if [[ -z "${GODEBUG:-}" ]]; then
+    export GODEBUG="goindex=0"
+  else
+    export GODEBUG="${GODEBUG},goindex=0"
+  fi
+fi
 
 echo "[quality-gate] repo hygiene"
 bash scripts/check-repo-hygiene.sh
@@ -141,6 +148,12 @@ fi
 echo "[quality-gate] sandbox adapter conformance contract"
 if ! bash scripts/check-sandbox-adapter-conformance-contract.sh; then
   echo "[quality-gate][sandbox-adapter-conformance-contract] sandbox adapter conformance contract check failed"
+  exit 1
+fi
+
+echo "[quality-gate] memory contract conformance"
+if ! bash scripts/check-memory-contract-conformance.sh; then
+  echo "[quality-gate][memory-contract] memory contract conformance check failed"
   exit 1
 fi
 

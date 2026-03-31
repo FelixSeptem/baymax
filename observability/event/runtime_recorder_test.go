@@ -1134,6 +1134,132 @@ func TestRuntimeRecorderParsesA52RolloutGovernanceFields(t *testing.T) {
 	}
 }
 
+func TestRuntimeRecorderParsesA54MemoryDiagnosticsFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a54-memory",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                      "success",
+			"memory_mode":                 "external_spi",
+			"memory_provider":             "mem0",
+			"memory_profile":              "mem0",
+			"memory_contract_version":     "memory.v1",
+			"memory_query_total":          3,
+			"memory_upsert_total":         1,
+			"memory_delete_total":         0,
+			"memory_error_total":          1,
+			"memory_fallback_total":       1,
+			"memory_fallback_reason_code": "memory.fallback.used",
+			"memory_latency_ms_p95":       int64(27),
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.MemoryMode != "external_spi" ||
+		got.MemoryProvider != "mem0" ||
+		got.MemoryProfile != "mem0" ||
+		got.MemoryContractVersion != "memory.v1" ||
+		got.MemoryQueryTotal != 3 ||
+		got.MemoryUpsertTotal != 1 ||
+		got.MemoryDeleteTotal != 0 ||
+		got.MemoryErrorTotal != 1 ||
+		got.MemoryFallbackTotal != 1 ||
+		got.MemoryFallbackReasonCode != "memory.fallback.used" ||
+		got.MemoryLatencyMsP95 != 27 {
+		t.Fatalf("A54 memory field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA54ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a54-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(54),
+			"a54_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 54 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.MemoryMode != "" ||
+		got.MemoryProvider != "" ||
+		got.MemoryProfile != "" ||
+		got.MemoryContractVersion != "" ||
+		got.MemoryQueryTotal != 0 ||
+		got.MemoryUpsertTotal != 0 ||
+		got.MemoryDeleteTotal != 0 ||
+		got.MemoryErrorTotal != 0 ||
+		got.MemoryFallbackTotal != 0 ||
+		got.MemoryFallbackReasonCode != "" ||
+		got.MemoryLatencyMsP95 != 0 {
+		t.Fatalf("missing A54 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderParsesA50ArbitrationVersionGovernanceFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

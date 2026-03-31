@@ -72,6 +72,7 @@ func (f AgenticRouterFunc) DecideStage2(ctx context.Context, req AgenticRoutingR
 type Assembler struct {
 	cfgProvider          func() runtimeconfig.ContextAssemblerConfig
 	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
+	memoryCfgProvider    func() runtimeconfig.RuntimeMemoryConfig
 	now                  func() time.Time
 
 	mu              sync.Mutex
@@ -98,6 +99,15 @@ func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedaction
 	return func(a *Assembler) {
 		if provider != nil {
 			a.redactionCfgProvider = provider
+		}
+	}
+}
+
+// WithMemoryConfigProvider injects runtime memory config provider for stage2 memory facade mode.
+func WithMemoryConfigProvider(provider func() runtimeconfig.RuntimeMemoryConfig) Option {
+	return func(a *Assembler) {
+		if provider != nil {
+			a.memoryCfgProvider = provider
 		}
 	}
 }
@@ -141,6 +151,9 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		cfgProvider: cfgProvider,
 		redactionCfgProvider: func() runtimeconfig.SecurityRedactionConfig {
 			return baseSecurity
+		},
+		memoryCfgProvider: func() runtimeconfig.RuntimeMemoryConfig {
+			return runtimeconfig.DefaultConfig().Runtime.Memory
 		},
 		now:             time.Now,
 		prefixCache:     map[string]string{},
@@ -354,6 +367,7 @@ func (a *Assembler) ensureStage2Provider(cfg runtimeconfig.ContextAssemblerConfi
 		Name:     cfg.CA2.Stage2.Provider,
 		FilePath: cfg.CA2.Stage2.FilePath,
 		External: cfg.CA2.Stage2.External,
+		Memory:   a.memoryCfgProvider(),
 	})
 	if err != nil {
 		return nil, err

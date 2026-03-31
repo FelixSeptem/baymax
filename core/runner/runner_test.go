@@ -4922,6 +4922,184 @@ func TestRunAndStreamCancelPropagationSemanticsEquivalent(t *testing.T) {
 	}
 }
 
+func TestRunAndStreamMemorySemanticsEquivalentExternalAndBuiltin(t *testing.T) {
+	type tc struct {
+		name              string
+		memoryMode        string
+		memoryProvider    string
+		memoryProfile     string
+		fallbackPolicy    string
+		stage2Endpoint    string
+		wantFallbackTotal any
+	}
+	cases := []tc{
+		{
+			name:              "builtin_filesystem",
+			memoryMode:        runtimeconfig.RuntimeMemoryModeBuiltinFilesystem,
+			memoryProvider:    runtimeconfig.RuntimeMemoryModeBuiltinFilesystem,
+			memoryProfile:     runtimeconfig.RuntimeMemoryProfileGeneric,
+			fallbackPolicy:    runtimeconfig.RuntimeMemoryFallbackPolicyFailFast,
+			wantFallbackTotal: 0,
+		},
+		{
+			name:              "external_spi_degrade_without_memory",
+			memoryMode:        runtimeconfig.RuntimeMemoryModeExternalSPI,
+			memoryProvider:    "mem0",
+			memoryProfile:     "mem0",
+			fallbackPolicy:    runtimeconfig.RuntimeMemoryFallbackPolicyDegradeWithoutMemory,
+			stage2Endpoint:    "http://127.0.0.1:1",
+			wantFallbackTotal: 1,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			cfgPath := filepath.Join(t.TempDir(), "runtime-memory.yaml")
+			journalPath := filepath.ToSlash(filepath.Join(t.TempDir(), "journal.jsonl"))
+			memoryRootDir, mkErr := os.MkdirTemp("", "baymax-a54-memory-store-*")
+			if mkErr != nil {
+				t.Fatalf("create memory temp dir failed: %v", mkErr)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(memoryRootDir) })
+			memoryRoot := filepath.ToSlash(memoryRootDir)
+			stage2EndpointLine := ""
+			if strings.TrimSpace(c.stage2Endpoint) != "" {
+				stage2EndpointLine = fmt.Sprintf("\n        endpoint: %q", strings.TrimSpace(c.stage2Endpoint))
+			}
+			providerLine := "      provider: \"\""
+			profileLine := "      profile: generic"
+			if c.memoryMode == runtimeconfig.RuntimeMemoryModeExternalSPI {
+				providerLine = fmt.Sprintf("      provider: %s", c.memoryProvider)
+				profileLine = fmt.Sprintf("      profile: %s", c.memoryProfile)
+			}
+			cfg := fmt.Sprintf(`
+context_assembler:
+  enabled: true
+  journal_path: %q
+  ca2:
+    enabled: true
+    routing:
+      min_input_chars: 1
+    stage_policy:
+      stage2: fail_fast
+    stage2:
+      provider: memory
+      external:%s
+runtime:
+  memory:
+    mode: %s
+    external:
+%s
+%s
+      contract_version: memory.v1
+    builtin:
+      root_dir: %q
+      compaction:
+        enabled: true
+        min_ops: 8
+        max_wal_bytes: 1024
+    fallback:
+      policy: %s
+`, journalPath, stage2EndpointLine, c.memoryMode, providerLine, profileLine, memoryRoot, c.fallbackPolicy)
+			if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+				t.Fatalf("write config failed: %v", err)
+			}
+			mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+			if err != nil {
+				t.Fatalf("new manager failed: %v", err)
+			}
+			t.Cleanup(func() { _ = mgr.Close() })
+
+			runEngine := New(&fakeModel{
+				generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+					_ = ctx
+					_ = req
+					return types.ModelResponse{FinalAnswer: "ok"}, nil
+				},
+			}, WithRuntimeManager(mgr))
+			streamEngine := New(&fakeModel{
+				stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+					_ = ctx
+					_ = req
+					return onEvent(types.ModelEvent{
+						Type:      types.ModelEventTypeOutputTextDelta,
+						TextDelta: "ok",
+					})
+				},
+			}, WithRuntimeManager(mgr))
+
+			runCollector := &eventCollector{}
+			streamCollector := &eventCollector{}
+			runResult, runErr := runEngine.Run(context.Background(), types.RunRequest{
+				RunID:     "run-memory-equivalent-" + c.name,
+				SessionID: "session-memory-equivalent",
+				Input:     "lookup memory",
+				Messages:  []types.Message{{Role: "system", Content: "s"}},
+			}, runCollector)
+			streamResult, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+				RunID:     "stream-memory-equivalent-" + c.name,
+				SessionID: "session-memory-equivalent",
+				Input:     "lookup memory",
+				Messages:  []types.Message{{Role: "system", Content: "s"}},
+			}, streamCollector)
+			if runErr != nil || streamErr != nil {
+				t.Fatalf("run/stream should both succeed, runErr=%v streamErr=%v runResult=%#v streamResult=%#v", runErr, streamErr, runResult, streamResult)
+			}
+
+			runFinished, ok := runCollector.lastNonTimelineEvent()
+			if !ok {
+				t.Fatal("missing run.finished in run lane")
+			}
+			streamFinished, ok := streamCollector.lastNonTimelineEvent()
+			if !ok {
+				t.Fatal("missing run.finished in stream lane")
+			}
+			keys := []string{
+				"memory_mode",
+				"memory_provider",
+				"memory_profile",
+				"memory_contract_version",
+				"memory_query_total",
+				"memory_upsert_total",
+				"memory_delete_total",
+				"memory_error_total",
+				"memory_fallback_total",
+				"memory_fallback_reason_code",
+			}
+			for _, key := range keys {
+				if runFinished.Payload[key] != streamFinished.Payload[key] {
+					t.Fatalf("run/stream memory payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+				}
+			}
+			runLatency, runLatencyOK := runFinished.Payload["memory_latency_ms_p95"].(int64)
+			streamLatency, streamLatencyOK := streamFinished.Payload["memory_latency_ms_p95"].(int64)
+			if !runLatencyOK || !streamLatencyOK || runLatency < 0 || streamLatency < 0 {
+				t.Fatalf(
+					"memory latency payload should be non-negative int64, run=%#v stream=%#v",
+					runFinished.Payload["memory_latency_ms_p95"],
+					streamFinished.Payload["memory_latency_ms_p95"],
+				)
+			}
+			if runFinished.Payload["memory_mode"] != c.memoryMode {
+				t.Fatalf("memory_mode = %#v, want %q", runFinished.Payload["memory_mode"], c.memoryMode)
+			}
+			if runFinished.Payload["memory_provider"] != c.memoryProvider {
+				t.Fatalf("memory_provider = %#v, want %q", runFinished.Payload["memory_provider"], c.memoryProvider)
+			}
+			if runFinished.Payload["memory_profile"] != c.memoryProfile {
+				t.Fatalf("memory_profile = %#v, want %q", runFinished.Payload["memory_profile"], c.memoryProfile)
+			}
+			if runFinished.Payload["memory_contract_version"] != runtimeconfig.RuntimeMemoryContractVersionV1 {
+				t.Fatalf("memory_contract_version = %#v, want %q", runFinished.Payload["memory_contract_version"], runtimeconfig.RuntimeMemoryContractVersionV1)
+			}
+			if runFinished.Payload["memory_fallback_total"] != c.wantFallbackTotal {
+				t.Fatalf("memory_fallback_total = %#v, want %#v", runFinished.Payload["memory_fallback_total"], c.wantFallbackTotal)
+			}
+		})
+	}
+}
+
 func assertPhaseDistEqual(
 	t *testing.T,
 	a, b map[string]runtimediag.TimelinePhaseAggregate,
@@ -4935,5 +5113,106 @@ func assertPhaseDistEqual(
 	}
 	if pa.CountTotal != pb.CountTotal || pa.FailedTotal != pb.FailedTotal || pa.CanceledTotal != pb.CanceledTotal || pa.SkippedTotal != pb.SkippedTotal {
 		t.Fatalf("phase distribution mismatch for %q: a=%#v b=%#v", phase, pa, pb)
+	}
+}
+
+func TestMemoryRunDiagnosticsAccumulatorSnapshot(t *testing.T) {
+	acc := memoryRunDiagnosticsAccumulator{}
+	acc.observeAssemble(types.ContextAssembleResult{
+		Stage: types.AssembleStage{
+			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode: "memory.ok",
+			Stage2LatencyMs:  12,
+		},
+	})
+	acc.observeAssemble(types.ContextAssembleResult{
+		Stage: types.AssembleStage{
+			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode: "memory.fallback.used",
+			Stage2LatencyMs:  25,
+		},
+	})
+	acc.observeAssemble(types.ContextAssembleResult{
+		Stage: types.AssembleStage{
+			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode: "memory.provider_unavailable",
+			Stage2LatencyMs:  30,
+		},
+	})
+
+	got := acc.snapshot(memoryRuntimeSnapshot{
+		Mode:            runtimeconfig.RuntimeMemoryModeExternalSPI,
+		Provider:        "mem0",
+		Profile:         "mem0",
+		ContractVersion: runtimeconfig.RuntimeMemoryContractVersionV1,
+	})
+	if !got.Observed {
+		t.Fatal("memory diagnostics should be observed")
+	}
+	if got.Mode != runtimeconfig.RuntimeMemoryModeExternalSPI ||
+		got.Provider != "mem0" ||
+		got.Profile != "mem0" ||
+		got.ContractVersion != runtimeconfig.RuntimeMemoryContractVersionV1 {
+		t.Fatalf("memory runtime snapshot mismatch: %#v", got)
+	}
+	if got.QueryTotal != 3 || got.UpsertTotal != 0 || got.DeleteTotal != 0 {
+		t.Fatalf("memory operation totals mismatch: %#v", got)
+	}
+	if got.ErrorTotal != 1 {
+		t.Fatalf("memory_error_total = %d, want 1", got.ErrorTotal)
+	}
+	if got.FallbackTotal != 1 || got.FallbackReasonCode != "memory.fallback.used" {
+		t.Fatalf("memory fallback fields mismatch: %#v", got)
+	}
+	if got.LatencyMsP95 != 30 {
+		t.Fatalf("memory_latency_ms_p95 = %d, want 30", got.LatencyMsP95)
+	}
+}
+
+func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
+	payload := runFinishedPayload(types.RunResult{
+		RunID:      "run-memory-finished",
+		Iterations: 2,
+		LatencyMs:  120,
+	}, "success", "", runFinishMeta{
+		Memory: memoryRunDiagnostics{
+			Observed:           true,
+			Mode:               runtimeconfig.RuntimeMemoryModeBuiltinFilesystem,
+			Provider:           runtimeconfig.RuntimeMemoryModeBuiltinFilesystem,
+			Profile:            runtimeconfig.RuntimeMemoryProfileGeneric,
+			ContractVersion:    runtimeconfig.RuntimeMemoryContractVersionV1,
+			QueryTotal:         2,
+			UpsertTotal:        1,
+			DeleteTotal:        0,
+			ErrorTotal:         0,
+			FallbackTotal:      1,
+			FallbackReasonCode: "memory.fallback.used",
+			LatencyMsP95:       18,
+		},
+	})
+	if payload["memory_mode"] != runtimeconfig.RuntimeMemoryModeBuiltinFilesystem ||
+		payload["memory_provider"] != runtimeconfig.RuntimeMemoryModeBuiltinFilesystem ||
+		payload["memory_profile"] != runtimeconfig.RuntimeMemoryProfileGeneric ||
+		payload["memory_contract_version"] != runtimeconfig.RuntimeMemoryContractVersionV1 ||
+		payload["memory_query_total"] != 2 ||
+		payload["memory_upsert_total"] != 1 ||
+		payload["memory_delete_total"] != 0 ||
+		payload["memory_error_total"] != 0 ||
+		payload["memory_fallback_total"] != 1 ||
+		payload["memory_fallback_reason_code"] != "memory.fallback.used" ||
+		payload["memory_latency_ms_p95"] != int64(18) {
+		t.Fatalf("memory payload mismatch: %#v", payload)
+	}
+
+	withoutObserved := runFinishedPayload(types.RunResult{
+		RunID:      "run-memory-empty",
+		Iterations: 1,
+		LatencyMs:  10,
+	}, "success", "", runFinishMeta{})
+	if _, ok := withoutObserved["memory_mode"]; ok {
+		t.Fatalf("memory fields should be omitted when not observed: %#v", withoutObserved)
 	}
 }

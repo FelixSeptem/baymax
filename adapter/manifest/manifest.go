@@ -12,6 +12,7 @@ import (
 
 	adaptercap "github.com/FelixSeptem/baymax/adapter/capability"
 	adapterprofile "github.com/FelixSeptem/baymax/adapter/profile"
+	memorypkg "github.com/FelixSeptem/baymax/memory"
 )
 
 const (
@@ -29,11 +30,19 @@ const (
 	CodeSandboxBackendUnsupported  = "adapter-manifest.sandbox-backend-unsupported"
 	CodeSandboxHostMismatch        = "adapter-manifest.sandbox-host-mismatch"
 	CodeSandboxSessionUnsupported  = "adapter-manifest.sandbox-session-mode-unsupported"
+	CodeMemoryModeMismatch         = "adapter-manifest.memory-mode-mismatch"
+	CodeMemoryProfileMismatch      = "adapter-manifest.memory-profile-mismatch"
+	CodeMemoryContractMismatch     = "adapter-manifest.memory-contract-mismatch"
+	CodeMemoryRequiredOpMissing    = "adapter-manifest.memory-required-operation-missing"
+	CodeMemoryContextMissing       = "adapter-manifest.memory-context-missing"
 )
 
 var (
 	namePattern               = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	conformanceProfilePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	memoryIdentityPattern     = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	memoryContractPattern     = regexp.MustCompile(`^memory\.v[0-9]+$`)
+	memoryOperationPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 type Capabilities struct {
@@ -55,6 +64,24 @@ type Manifest struct {
 	HostOS                 string       `json:"host_os,omitempty"`
 	HostArch               string       `json:"host_arch,omitempty"`
 	SessionModesSupported  []string     `json:"session_modes_supported,omitempty"`
+	Memory                 *Memory      `json:"memory,omitempty"`
+}
+
+type Memory struct {
+	Provider        string           `json:"provider,omitempty"`
+	Profile         string           `json:"profile,omitempty"`
+	ContractVersion string           `json:"contract_version,omitempty"`
+	Operations      MemoryOperations `json:"operations,omitempty"`
+	Fallback        MemoryFallback   `json:"fallback,omitempty"`
+}
+
+type MemoryOperations struct {
+	Required []string `json:"required"`
+	Optional []string `json:"optional"`
+}
+
+type MemoryFallback struct {
+	Supported *bool `json:"supported,omitempty"`
 }
 
 type Negotiation struct {
@@ -94,6 +121,11 @@ type ActivationContext struct {
 	HostArch          string
 	RequestedSession  string
 	SupportedBackends []string
+	MemoryMode        string
+	MemoryProvider    string
+	MemoryProfile     string
+	MemoryContract    string
+	MemoryOperations  []string
 }
 
 type ActivationResult struct {
@@ -236,7 +268,10 @@ func Validate(manifest Manifest) error {
 			Message: "default_strategy must be one of [fail_fast,best_effort]",
 		}
 	}
-	return validateSandboxMetadata(normalized)
+	if err := validateSandboxMetadata(normalized); err != nil {
+		return err
+	}
+	return validateMemoryManifest(normalized)
 }
 
 func Activate(manifest Manifest, runtimeVersion string, availableCapabilities []string) (ActivationResult, error) {
@@ -279,6 +314,10 @@ func ActivateWithRequestAndProfileWindowWithContext(manifest Manifest, runtimeVe
 		return ActivationResult{}, mapProfileError(err)
 	}
 	if err := validateSandboxActivationCompatibility(normalized, activationCtx); err != nil {
+		return ActivationResult{}, err
+	}
+	memoryOptionalDowngrades, err := validateMemoryActivationCompatibility(normalized, activationCtx)
+	if err != nil {
 		return ActivationResult{}, err
 	}
 
@@ -339,6 +378,13 @@ func ActivateWithRequestAndProfileWindowWithContext(manifest Manifest, runtimeVe
 	sort.Slice(downgrades, func(i, j int) bool {
 		return downgrades[i].Capability < downgrades[j].Capability
 	})
+	downgrades = append(downgrades, memoryOptionalDowngrades...)
+	sort.Slice(downgrades, func(i, j int) bool {
+		if downgrades[i].Capability == downgrades[j].Capability {
+			return downgrades[i].ReasonCode < downgrades[j].ReasonCode
+		}
+		return downgrades[i].Capability < downgrades[j].Capability
+	})
 	return ActivationResult{
 		OptionalDowngrades:     downgrades,
 		ContractProfileVersion: profileVersion.String(),
@@ -366,7 +412,47 @@ func normalize(manifest Manifest) Manifest {
 	manifest.SessionModesSupported = normalizeSessionModes(manifest.SessionModesSupported)
 	manifest.Capabilities.Required = normalizeCapabilities(manifest.Capabilities.Required)
 	manifest.Capabilities.Optional = normalizeCapabilities(manifest.Capabilities.Optional)
+	manifest.Memory = normalizeMemory(manifest.Memory)
 	return manifest
+}
+
+func normalizeMemory(in *Memory) *Memory {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Provider = strings.ToLower(strings.TrimSpace(out.Provider))
+	out.Profile = strings.ToLower(strings.TrimSpace(out.Profile))
+	out.ContractVersion = strings.ToLower(strings.TrimSpace(out.ContractVersion))
+	out.Operations.Required = normalizeMemoryOperations(out.Operations.Required)
+	out.Operations.Optional = normalizeMemoryOperations(out.Operations.Optional)
+	if in.Fallback.Supported != nil {
+		v := *in.Fallback.Supported
+		out.Fallback.Supported = &v
+	}
+	return &out
+}
+
+func normalizeMemoryOperations(raw []string) []string {
+	if raw == nil {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, item := range raw {
+		normalized := strings.ToLower(strings.TrimSpace(item))
+		if normalized == "" {
+			out = append(out, "")
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func normalizeCapabilities(raw []string) []string {
@@ -446,6 +532,236 @@ func reasonSegment(capability string) string {
 		return "unknown"
 	}
 	return out
+}
+
+func validateMemoryManifest(manifest Manifest) error {
+	if manifest.Memory == nil {
+		return nil
+	}
+	mem := manifest.Memory
+	requiredChecks := []struct {
+		field string
+		value string
+	}{
+		{field: "memory.provider", value: mem.Provider},
+		{field: "memory.profile", value: mem.Profile},
+		{field: "memory.contract_version", value: mem.ContractVersion},
+	}
+	for _, check := range requiredChecks {
+		if strings.TrimSpace(check.value) == "" {
+			return &ContractError{
+				Code:    CodeMissingField,
+				Field:   check.field,
+				Message: "required field is missing",
+			}
+		}
+	}
+	if mem.Operations.Required == nil {
+		return &ContractError{
+			Code:    CodeMissingField,
+			Field:   "memory.operations.required",
+			Message: "required field is missing",
+		}
+	}
+	if mem.Operations.Optional == nil {
+		return &ContractError{
+			Code:    CodeMissingField,
+			Field:   "memory.operations.optional",
+			Message: "required field is missing",
+		}
+	}
+	if mem.Fallback.Supported == nil {
+		return &ContractError{
+			Code:    CodeMissingField,
+			Field:   "memory.fallback.supported",
+			Message: "required field is missing",
+		}
+	}
+	if len(mem.Operations.Required) == 0 {
+		return &ContractError{
+			Code:    CodeMissingField,
+			Field:   "memory.operations.required",
+			Message: "required field is missing",
+		}
+	}
+	if !memoryIdentityPattern.MatchString(mem.Provider) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "memory.provider",
+			Message: "memory.provider must match ^[a-z][a-z0-9_-]*$",
+		}
+	}
+	if !memoryIdentityPattern.MatchString(mem.Profile) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "memory.profile",
+			Message: "memory.profile must match ^[a-z][a-z0-9_-]*$",
+		}
+	}
+	if !memoryContractPattern.MatchString(mem.ContractVersion) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "memory.contract_version",
+			Message: "memory.contract_version must match ^memory\\.v[0-9]+$",
+		}
+	}
+	if err := validateMemoryOperationField("memory.operations.required", mem.Operations.Required); err != nil {
+		return err
+	}
+	if err := validateMemoryOperationField("memory.operations.optional", mem.Operations.Optional); err != nil {
+		return err
+	}
+	requiredSet := toStringSet(mem.Operations.Required)
+	for _, op := range []string{memorypkg.OperationQuery, memorypkg.OperationUpsert, memorypkg.OperationDelete} {
+		if _, ok := requiredSet[op]; ok {
+			continue
+		}
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "memory.operations.required",
+			Message: "memory.operations.required must include query|upsert|delete",
+		}
+	}
+	for _, optional := range mem.Operations.Optional {
+		if _, ok := requiredSet[optional]; ok {
+			return &ContractError{
+				Code:    CodeInvalidField,
+				Field:   "memory.operations.optional",
+				Message: "memory.operations.optional must not overlap required operations",
+			}
+		}
+	}
+	return nil
+}
+
+func validateMemoryOperationField(field string, ops []string) error {
+	if hasEmptyCapability(ops) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   field,
+			Message: "memory operation identifiers must not be empty",
+		}
+	}
+	for _, op := range ops {
+		if memoryOperationPattern.MatchString(op) {
+			continue
+		}
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   field,
+			Message: "memory operation identifier is invalid",
+		}
+	}
+	return nil
+}
+
+func validateMemoryActivationCompatibility(manifest Manifest, in ActivationContext) ([]OptionalDowngrade, error) {
+	if manifest.Memory == nil {
+		return nil, nil
+	}
+	ctx := normalizeActivationContext(in)
+	if strings.TrimSpace(ctx.MemoryMode) == "" {
+		return nil, &ContractError{
+			Code:    CodeMemoryContextMissing,
+			Field:   "memory_mode",
+			Message: "runtime memory mode is required for memory manifest activation",
+		}
+	}
+	if strings.TrimSpace(ctx.MemoryProvider) == "" {
+		return nil, &ContractError{
+			Code:    CodeMemoryContextMissing,
+			Field:   "memory_provider",
+			Message: "runtime memory provider is required for memory manifest activation",
+		}
+	}
+	if strings.TrimSpace(ctx.MemoryProfile) == "" {
+		return nil, &ContractError{
+			Code:    CodeMemoryContextMissing,
+			Field:   "memory_profile",
+			Message: "runtime memory profile is required for memory manifest activation",
+		}
+	}
+	if strings.TrimSpace(ctx.MemoryContract) == "" {
+		return nil, &ContractError{
+			Code:    CodeMemoryContextMissing,
+			Field:   "memory_contract_version",
+			Message: "runtime memory contract version is required for memory manifest activation",
+		}
+	}
+
+	expectedMode := memorypkg.ModeExternalSPI
+	if manifest.Memory.Provider == memorypkg.ModeBuiltinFilesystem {
+		expectedMode = memorypkg.ModeBuiltinFilesystem
+	}
+	if ctx.MemoryMode != expectedMode {
+		return nil, &ContractError{
+			Code:    CodeMemoryModeMismatch,
+			Field:   "memory.mode",
+			Message: fmt.Sprintf("runtime memory mode %q mismatches manifest expectation %q", ctx.MemoryMode, expectedMode),
+		}
+	}
+	if ctx.MemoryProvider != manifest.Memory.Provider {
+		return nil, &ContractError{
+			Code:    CodeMemoryProfileMismatch,
+			Field:   "memory.provider",
+			Message: fmt.Sprintf("runtime memory provider %q mismatches manifest provider %q", ctx.MemoryProvider, manifest.Memory.Provider),
+		}
+	}
+	if ctx.MemoryProfile != manifest.Memory.Profile {
+		return nil, &ContractError{
+			Code:    CodeMemoryProfileMismatch,
+			Field:   "memory.profile",
+			Message: fmt.Sprintf("runtime memory profile %q mismatches manifest profile %q", ctx.MemoryProfile, manifest.Memory.Profile),
+		}
+	}
+	if !memoryContractCompatible(manifest.Memory.ContractVersion, ctx.MemoryContract) {
+		return nil, &ContractError{
+			Code:    CodeMemoryContractMismatch,
+			Field:   "memory.contract_version",
+			Message: fmt.Sprintf("runtime memory contract_version %q mismatches manifest contract_version %q", ctx.MemoryContract, manifest.Memory.ContractVersion),
+		}
+	}
+
+	supported := toStringSet(ctx.MemoryOperations)
+	missingRequired := make([]string, 0)
+	for _, op := range manifest.Memory.Operations.Required {
+		if _, ok := supported[op]; ok {
+			continue
+		}
+		missingRequired = append(missingRequired, op)
+	}
+	if len(missingRequired) > 0 {
+		sort.Strings(missingRequired)
+		return nil, &ContractError{
+			Code:    CodeMemoryRequiredOpMissing,
+			Field:   "memory.operations.required",
+			Message: "required memory operation unavailable: " + strings.Join(missingRequired, ","),
+		}
+	}
+
+	downgrades := make([]OptionalDowngrade, 0)
+	for _, op := range manifest.Memory.Operations.Optional {
+		if _, ok := supported[op]; ok {
+			continue
+		}
+		downgrades = append(downgrades, OptionalDowngrade{
+			Capability: "memory." + op,
+			ReasonCode: "adapter.manifest.memory.operation.optional_missing." + reasonSegment(op),
+		})
+	}
+	sort.Slice(downgrades, func(i, j int) bool {
+		return downgrades[i].Capability < downgrades[j].Capability
+	})
+	return downgrades, nil
+}
+
+func memoryContractCompatible(manifestContract, runtimeContract string) bool {
+	manifestVersion := strings.TrimSpace(manifestContract)
+	runtimeVersion := strings.TrimSpace(runtimeContract)
+	if manifestVersion == "" || runtimeVersion == "" {
+		return false
+	}
+	return manifestVersion == runtimeVersion
 }
 
 func validateSandboxMetadata(manifest Manifest) error {
@@ -634,6 +950,11 @@ func normalizeActivationContext(in ActivationContext) ActivationContext {
 	}
 	out.RequestedSession = strings.ToLower(strings.TrimSpace(out.RequestedSession))
 	out.SupportedBackends = normalizeCapabilities(out.SupportedBackends)
+	out.MemoryMode = strings.ToLower(strings.TrimSpace(out.MemoryMode))
+	out.MemoryProvider = strings.ToLower(strings.TrimSpace(out.MemoryProvider))
+	out.MemoryProfile = strings.ToLower(strings.TrimSpace(out.MemoryProfile))
+	out.MemoryContract = strings.ToLower(strings.TrimSpace(out.MemoryContract))
+	out.MemoryOperations = normalizeMemoryOperations(out.MemoryOperations)
 	return out
 }
 

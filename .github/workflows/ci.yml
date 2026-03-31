@@ -163,6 +163,27 @@ jobs:
       - name: Sandbox Adapter Conformance Gate
         run: bash scripts/check-sandbox-adapter-conformance-contract.sh
 
+  memory-contract-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      BAYMAX_MEMORY_CONTRACT_MODE: full
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Memory Contract Gate
+        run: bash scripts/check-memory-contract-conformance.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

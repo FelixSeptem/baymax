@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	memoryspi "github.com/FelixSeptem/baymax/memory"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
@@ -82,6 +83,7 @@ type Config struct {
 	Name     string
 	FilePath string
 	External runtimeconfig.ContextAssemblerCA2ExternalConfig
+	Memory   runtimeconfig.RuntimeMemoryConfig
 }
 
 func New(name, filePath string) (Provider, error) {
@@ -95,8 +97,86 @@ func NewWithConfig(cfg Config) (Provider, error) {
 		return &fileProvider{path: strings.TrimSpace(cfg.FilePath)}, nil
 	case runtimeconfig.ContextStage2ProviderHTTP, runtimeconfig.ContextStage2ProviderRAG, runtimeconfig.ContextStage2ProviderDB, runtimeconfig.ContextStage2ProviderElasticsearch:
 		return &httpProvider{name: providerName, cfg: cfg.External, client: &http.Client{}}, nil
+	case runtimeconfig.ContextStage2ProviderMemory:
+		return newMemoryProvider(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported context stage2 provider %q", cfg.Name)
+	}
+}
+
+type httpMemoryEngine struct {
+	p *httpProvider
+}
+
+func (h *httpMemoryEngine) Query(req memoryspi.QueryRequest) (memoryspi.QueryResponse, error) {
+	if h == nil || h.p == nil {
+		return memoryspi.QueryResponse{}, &memoryspi.Error{
+			Operation: memoryspi.OperationQuery,
+			Code:      memoryspi.ReasonCodeProviderUnavailable,
+			Layer:     memoryspi.LayerRuntime,
+			Message:   "external memory engine is not initialized",
+		}
+	}
+	resp, err := h.p.Fetch(context.Background(), Request{
+		RunID:     req.RunID,
+		SessionID: req.SessionID,
+		Input:     req.Query,
+		MaxItems:  req.MaxItems,
+	})
+	if err != nil {
+		var fetchErr *FetchError
+		if errors.As(err, &fetchErr) {
+			return memoryspi.QueryResponse{}, &memoryspi.Error{
+				Operation: memoryspi.OperationQuery,
+				Code:      memoryspi.ReasonCodeProviderUnavailable,
+				Layer:     memoryspi.LayerTransport,
+				Message:   strings.TrimSpace(fetchErr.Message),
+				Cause:     err,
+			}
+		}
+		return memoryspi.QueryResponse{}, &memoryspi.Error{
+			Operation: memoryspi.OperationQuery,
+			Code:      memoryspi.ReasonCodeProviderUnavailable,
+			Layer:     memoryspi.LayerRuntime,
+			Message:   "external memory query failed",
+			Cause:     err,
+		}
+	}
+	records := make([]memoryspi.Record, 0, len(resp.Chunks))
+	for i, chunk := range resp.Chunks {
+		records = append(records, memoryspi.Record{
+			ID:        fmt.Sprintf("chunk-%d", i),
+			Namespace: strings.TrimSpace(req.Namespace),
+			SessionID: strings.TrimSpace(req.SessionID),
+			RunID:     strings.TrimSpace(req.RunID),
+			Content:   strings.TrimSpace(chunk),
+		})
+	}
+	return memoryspi.QueryResponse{
+		OperationID: req.OperationID,
+		Namespace:   strings.TrimSpace(req.Namespace),
+		Records:     records,
+		Total:       len(records),
+		ReasonCode:  memoryspi.ReasonCodeOK,
+		Metadata:    cloneAnyMap(resp.Meta),
+	}, nil
+}
+
+func (h *httpMemoryEngine) Upsert(req memoryspi.UpsertRequest) (memoryspi.UpsertResponse, error) {
+	return memoryspi.UpsertResponse{}, &memoryspi.Error{
+		Operation: memoryspi.OperationUpsert,
+		Code:      memoryspi.ReasonCodeUnsupportedOperation,
+		Layer:     memoryspi.LayerSemantic,
+		Message:   "external stage2 adapter does not support upsert operation",
+	}
+}
+
+func (h *httpMemoryEngine) Delete(req memoryspi.DeleteRequest) (memoryspi.DeleteResponse, error) {
+	return memoryspi.DeleteResponse{}, &memoryspi.Error{
+		Operation: memoryspi.OperationDelete,
+		Code:      memoryspi.ReasonCodeUnsupportedOperation,
+		Layer:     memoryspi.LayerSemantic,
+		Message:   "external stage2 adapter does not support delete operation",
 	}
 }
 
@@ -502,4 +582,8 @@ func supportedHintCapabilities(providerName string) map[string]struct{} {
 			"metadata_filter": {},
 		}
 	}
+}
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{}
 }

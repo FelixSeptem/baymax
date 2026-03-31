@@ -60,6 +60,17 @@ type RunRecord struct {
 	FallbackPath                                string                            `json:"fallback_path,omitempty"`
 	RequiredCapabilities                        string                            `json:"required_capabilities,omitempty"`
 	FallbackReason                              string                            `json:"fallback_reason,omitempty"`
+	MemoryMode                                  string                            `json:"memory_mode,omitempty"`
+	MemoryProvider                              string                            `json:"memory_provider,omitempty"`
+	MemoryProfile                               string                            `json:"memory_profile,omitempty"`
+	MemoryContractVersion                       string                            `json:"memory_contract_version,omitempty"`
+	MemoryQueryTotal                            int                               `json:"memory_query_total,omitempty"`
+	MemoryUpsertTotal                           int                               `json:"memory_upsert_total,omitempty"`
+	MemoryDeleteTotal                           int                               `json:"memory_delete_total,omitempty"`
+	MemoryErrorTotal                            int                               `json:"memory_error_total,omitempty"`
+	MemoryFallbackTotal                         int                               `json:"memory_fallback_total,omitempty"`
+	MemoryFallbackReasonCode                    string                            `json:"memory_fallback_reason_code,omitempty"`
+	MemoryLatencyMsP95                          int64                             `json:"memory_latency_ms_p95,omitempty"`
 	SandboxMode                                 string                            `json:"sandbox_mode,omitempty"`
 	SandboxBackend                              string                            `json:"sandbox_backend,omitempty"`
 	SandboxProfile                              string                            `json:"sandbox_profile,omitempty"`

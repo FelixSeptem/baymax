@@ -405,6 +405,114 @@ func TestAssemblerCA2Stage2FailFast(t *testing.T) {
 	}
 }
 
+func TestAssemblerCA2MemoryFallbackPolicyStageSemantics(t *testing.T) {
+	type tc struct {
+		name           string
+		stagePolicy    string
+		fallbackPolicy string
+		wantErr        bool
+		wantStatus     types.AssembleStageStatus
+		wantSkipReason string
+		wantReasonCode string
+	}
+	cases := []tc{
+		{
+			name:           "fail_fast_stage_and_fail_fast_memory_fallback_returns_error",
+			stagePolicy:    "fail_fast",
+			fallbackPolicy: runtimeconfig.RuntimeMemoryFallbackPolicyFailFast,
+			wantErr:        true,
+		},
+		{
+			name:           "best_effort_stage_and_fail_fast_memory_fallback_degrades",
+			stagePolicy:    "best_effort",
+			fallbackPolicy: runtimeconfig.RuntimeMemoryFallbackPolicyFailFast,
+			wantErr:        false,
+			wantStatus:     types.AssembleStageStatusDegraded,
+			wantSkipReason: "stage2.fetch.failed",
+		},
+		{
+			name:           "fail_fast_stage_and_degrade_without_memory_fallback_keeps_stage1_only",
+			stagePolicy:    "fail_fast",
+			fallbackPolicy: runtimeconfig.RuntimeMemoryFallbackPolicyDegradeWithoutMemory,
+			wantErr:        false,
+			wantStatus:     types.AssembleStageStatusStage1Only,
+			wantSkipReason: "stage2.empty",
+			wantReasonCode: "memory.fallback.used",
+		},
+		{
+			name:           "best_effort_stage_and_degrade_without_memory_fallback_keeps_stage1_only",
+			stagePolicy:    "best_effort",
+			fallbackPolicy: runtimeconfig.RuntimeMemoryFallbackPolicyDegradeWithoutMemory,
+			wantErr:        false,
+			wantStatus:     types.AssembleStageStatusStage1Only,
+			wantSkipReason: "stage2.empty",
+			wantReasonCode: "memory.fallback.used",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			cfg := runtimeconfig.DefaultConfig().ContextAssembler
+			cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+			cfg.CA2.Enabled = true
+			cfg.CA2.Stage2.Provider = runtimeconfig.ContextStage2ProviderMemory
+			cfg.CA2.StagePolicy.Stage2 = c.stagePolicy
+			cfg.CA2.Routing.MinInputChars = 1
+			cfg.CA2.Timeout.Stage2 = 80 * time.Millisecond
+			cfg.CA2.Stage2.External.Endpoint = "http://127.0.0.1:1"
+
+			memoryCfg := runtimeconfig.DefaultConfig().Runtime.Memory
+			memoryCfg.Mode = runtimeconfig.RuntimeMemoryModeExternalSPI
+			memoryCfg.External.Provider = "mem0"
+			memoryCfg.External.Profile = "mem0"
+			memoryCfg.External.ContractVersion = runtimeconfig.RuntimeMemoryContractVersionV1
+			memoryCfg.Fallback.Policy = c.fallbackPolicy
+			memoryCfg.Builtin.RootDir = filepath.Join(t.TempDir(), "memory-store")
+
+			a := New(
+				func() runtimeconfig.ContextAssemblerConfig { return cfg },
+				WithMemoryConfigProvider(func() runtimeconfig.RuntimeMemoryConfig { return memoryCfg }),
+			)
+			_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+				RunID:         "run-memory-stage-policy",
+				SessionID:     "session-memory-stage-policy",
+				PrefixVersion: "ca1",
+				Input:         "lookup memory",
+				Messages:      []types.Message{{Role: "system", Content: "s"}},
+			}, types.ModelRequest{
+				RunID:    "run-memory-stage-policy",
+				Input:    "lookup memory",
+				Messages: []types.Message{{Role: "system", Content: "s"}},
+			})
+
+			if c.wantErr {
+				if err == nil {
+					t.Fatal("expected fail_fast stage2 error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Assemble should succeed, err=%v", err)
+			}
+			if result.Stage.Status != c.wantStatus {
+				t.Fatalf("stage status = %q, want %q", result.Stage.Status, c.wantStatus)
+			}
+			if result.Stage.Stage2SkipReason != c.wantSkipReason {
+				t.Fatalf("stage2 skip reason = %q, want %q", result.Stage.Stage2SkipReason, c.wantSkipReason)
+			}
+			if c.wantReasonCode != "" && result.Stage.Stage2ReasonCode != c.wantReasonCode {
+				t.Fatalf("stage2 reason code = %q, want %q", result.Stage.Stage2ReasonCode, c.wantReasonCode)
+			}
+			if c.stagePolicy == "best_effort" && c.fallbackPolicy == runtimeconfig.RuntimeMemoryFallbackPolicyFailFast {
+				if result.Stage.Stage2ReasonCode == "" {
+					t.Fatalf("best_effort + fail_fast fallback should preserve stage2 reason code, got %#v", result.Stage)
+				}
+			}
+		})
+	}
+}
+
 func TestAssemblerCA2RecapAppended(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")

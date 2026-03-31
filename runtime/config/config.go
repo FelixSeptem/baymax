@@ -38,6 +38,7 @@ const (
 	ContextStage2ProviderRAG           = "rag"
 	ContextStage2ProviderDB            = "db"
 	ContextStage2ProviderElasticsearch = "elasticsearch"
+	ContextStage2ProviderMemory        = "memory"
 )
 
 const (
@@ -258,6 +259,7 @@ type RuntimeDomainConfig struct {
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
+	Memory            RuntimeMemoryConfig            `json:"memory"`
 }
 
 type AdapterConfig struct {
@@ -1186,6 +1188,25 @@ func DefaultConfig() Config {
 					Timeout: 2 * time.Minute,
 				},
 			},
+			Memory: RuntimeMemoryConfig{
+				Mode: RuntimeMemoryModeBuiltinFilesystem,
+				External: RuntimeMemoryExternalConfig{
+					Provider:        "",
+					Profile:         "",
+					ContractVersion: RuntimeMemoryContractVersionV1,
+				},
+				Builtin: RuntimeMemoryBuiltinConfig{
+					RootDir: filepath.Join(os.TempDir(), "baymax", "memory-store"),
+					Compaction: RuntimeMemoryBuiltinCompactionConfig{
+						Enabled:     true,
+						MinOps:      32,
+						MaxWALBytes: 4 << 20,
+					},
+				},
+				Fallback: RuntimeMemoryFallbackConfig{
+					Policy: RuntimeMemoryFallbackPolicyFailFast,
+				},
+			},
 		},
 		Adapter: AdapterConfig{
 			Health: AdapterHealthConfig{
@@ -1926,6 +1947,9 @@ func Validate(cfg Config) error {
 	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
 		return err
 	}
+	if err := validateRuntimeMemory(cfg.Runtime.Memory); err != nil {
+		return err
+	}
 	if cfg.Adapter.Health.ProbeTimeout <= 0 {
 		return errors.New("adapter.health.probe_timeout must be > 0")
 	}
@@ -2581,15 +2605,15 @@ func Validate(cfg Config) error {
 			}
 			provider := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.Provider))
 			switch provider {
-			case ContextStage2ProviderFile, ContextStage2ProviderHTTP, ContextStage2ProviderRAG, ContextStage2ProviderDB, ContextStage2ProviderElasticsearch:
+			case ContextStage2ProviderFile, ContextStage2ProviderHTTP, ContextStage2ProviderRAG, ContextStage2ProviderDB, ContextStage2ProviderElasticsearch, ContextStage2ProviderMemory:
 			default:
-				return fmt.Errorf("context_assembler.ca2.stage2.provider must be one of [file,http,rag,db,elasticsearch], got %q", cfg.ContextAssembler.CA2.Stage2.Provider)
+				return fmt.Errorf("context_assembler.ca2.stage2.provider must be one of [file,http,rag,db,elasticsearch,memory], got %q", cfg.ContextAssembler.CA2.Stage2.Provider)
 			}
 			cfg.ContextAssembler.CA2.Stage2.Provider = provider
 			if provider == ContextStage2ProviderFile && strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.FilePath) == "" {
 				return errors.New("context_assembler.ca2.stage2.file_path is required when provider=file")
 			}
-			if provider != ContextStage2ProviderFile {
+			if provider != ContextStage2ProviderFile && provider != ContextStage2ProviderMemory {
 				precheck := PrecheckStage2External(provider, cfg.ContextAssembler.CA2.Stage2.External)
 				if err := precheck.FirstError(); err != nil {
 					return err
@@ -3580,6 +3604,10 @@ func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) erro
 	return ValidateRuntimeArbitrationVersionConfig(cfg)
 }
 
+func validateRuntimeMemory(cfg RuntimeMemoryConfig) error {
+	return ValidateRuntimeMemoryConfig(cfg)
+}
+
 func applyDefaults(v *viper.Viper) {
 	base := DefaultConfig()
 	v.SetDefault("mcp.active_profile", base.MCP.ActiveProfile)
@@ -3634,6 +3662,15 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
 	v.SetDefault("runtime.operation_profiles.background.timeout", base.Runtime.OperationProfiles.Background.Timeout)
 	v.SetDefault("runtime.operation_profiles.batch.timeout", base.Runtime.OperationProfiles.Batch.Timeout)
+	v.SetDefault("runtime.memory.mode", base.Runtime.Memory.Mode)
+	v.SetDefault("runtime.memory.external.provider", base.Runtime.Memory.External.Provider)
+	v.SetDefault("runtime.memory.external.profile", base.Runtime.Memory.External.Profile)
+	v.SetDefault("runtime.memory.external.contract_version", base.Runtime.Memory.External.ContractVersion)
+	v.SetDefault("runtime.memory.builtin.root_dir", base.Runtime.Memory.Builtin.RootDir)
+	v.SetDefault("runtime.memory.builtin.compaction.enabled", base.Runtime.Memory.Builtin.Compaction.Enabled)
+	v.SetDefault("runtime.memory.builtin.compaction.min_ops", base.Runtime.Memory.Builtin.Compaction.MinOps)
+	v.SetDefault("runtime.memory.builtin.compaction.max_wal_bytes", base.Runtime.Memory.Builtin.Compaction.MaxWALBytes)
+	v.SetDefault("runtime.memory.fallback.policy", base.Runtime.Memory.Fallback.Policy)
 	v.SetDefault("adapter.health.enabled", base.Adapter.Health.Enabled)
 	v.SetDefault("adapter.health.strict", base.Adapter.Health.Strict)
 	v.SetDefault("adapter.health.probe_timeout", base.Adapter.Health.ProbeTimeout)
@@ -4016,6 +4053,19 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")
 	cfg.Runtime.OperationProfiles.Background.Timeout = v.GetDuration("runtime.operation_profiles.background.timeout")
 	cfg.Runtime.OperationProfiles.Batch.Timeout = v.GetDuration("runtime.operation_profiles.batch.timeout")
+	cfg.Runtime.Memory.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.mode")))
+	cfg.Runtime.Memory.External.Provider = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.external.provider")))
+	cfg.Runtime.Memory.External.Profile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.external.profile")))
+	cfg.Runtime.Memory.External.ContractVersion = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.external.contract_version")))
+	cfg.Runtime.Memory.Builtin.RootDir = strings.TrimSpace(v.GetString("runtime.memory.builtin.root_dir"))
+	memoryCompactionEnabled, err := strictBoolConfigValue(v, "runtime.memory.builtin.compaction.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Memory.Builtin.Compaction.Enabled = memoryCompactionEnabled
+	cfg.Runtime.Memory.Builtin.Compaction.MinOps = v.GetInt("runtime.memory.builtin.compaction.min_ops")
+	cfg.Runtime.Memory.Builtin.Compaction.MaxWALBytes = v.GetInt64("runtime.memory.builtin.compaction.max_wal_bytes")
+	cfg.Runtime.Memory.Fallback.Policy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.fallback.policy")))
 	adapterHealthEnabled, err := strictBoolConfigValue(v, "adapter.health.enabled")
 	if err != nil {
 		return Config{}, err

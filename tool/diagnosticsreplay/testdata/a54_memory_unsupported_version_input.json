@@ -1,0 +1,8 @@
+{
+  "version": "memory.v2",
+  "cases": [
+    {
+      "name": "unsupported_memory_fixture_version_case"
+    }
+  ]
+}

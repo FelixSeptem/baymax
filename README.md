@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-30）：
-- 已归档并稳定：A4-A52。
-- A53（Introduce Mainstream Sandbox Adapter Conformance And Migration Pack）进行中。
+- 已归档并稳定：A4-A53。
 - A54（Introduce Memory Provider SPI And Builtin Filesystem Engine Contract）进行中。
+- A55（Introduce Observability Export And Diagnostics Bundle Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,10 +225,12 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：mainstream sandbox adapter 接入契约进行中（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
 - A54 `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`：memory provider SPI + builtin filesystem engine 提案进行中（统一 `Query/Upsert/Delete` SPI、`external_spi|builtin_filesystem` 模式切换、mem0/zep/openviking profile pack、readiness/diagnostics/replay/conformance/gate 一体化契约）。
+  - 迁移影响：legacy file-based memory 路径需要收敛到 `runtime.memory.mode` + manifest `memory.*` 声明，并通过 memory contract gate 校验。
+- A55 `introduce-observability-export-and-diagnostics-bundle-contract-a55`：observability export + diagnostics bundle 提案进行中（`observability.export.*` profile、diagnostics bundle schema、redaction/replay hint、readiness/replay/gate 一体化契约）。
 
 近期已归档能力（摘要）：
+- A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：已归档并稳定（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
 - A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：已归档并稳定（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture、rollout governance gate）。
 - A51 `introduce-sandbox-execution-isolation-contract-a51`：已归档并稳定（`host|sandbox|deny` 决策、`security.sandbox.*` 配置域、readiness/admission 与 replay/gate 收敛）。
 
@@ -246,7 +248,7 @@ _ = err
 - 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
 
 历史已归档里程碑：
-- A4-A52 的归档明细与能力范围请以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为准。
+- A4-A53 的归档明细与能力范围请以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为准。
 - 主线契约测试映射请查看 `docs/mainline-contract-test-index.md`。
 
 状态权威来源：
@@ -261,6 +263,7 @@ _ = err
 go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
+bash scripts/check-memory-contract-conformance.sh
 bash scripts/check-sandbox-rollout-governance-contract.sh
 bash scripts/check-diagnostics-query-performance-regression.sh
 ```
@@ -270,6 +273,7 @@ Windows 质量门禁：
 ```powershell
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
+pwsh -File scripts/check-memory-contract-conformance.ps1
 pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -67,6 +68,14 @@ const (
 	ReadinessCodeSandboxRolloutHealthBreached         = "sandbox.rollout.health_budget_breached"
 	ReadinessCodeSandboxRolloutFrozen                 = "sandbox.rollout.frozen"
 	ReadinessCodeSandboxRolloutCapacityBlocked        = "sandbox.rollout.capacity_unavailable"
+	ReadinessCodeMemoryModeInvalid                    = "memory.mode_invalid"
+	ReadinessCodeMemoryProfileMissing                 = "memory.profile_missing"
+	ReadinessCodeMemoryProviderNotSupported           = "memory.provider_not_supported"
+	ReadinessCodeMemorySPIUnavailable                 = "memory.spi_unavailable"
+	ReadinessCodeMemoryFilesystemPathInvalid          = "memory.filesystem_path_invalid"
+	ReadinessCodeMemoryContractVersionMismatch        = "memory.contract_version_mismatch"
+	ReadinessCodeMemoryFallbackPolicyConflict         = "memory.fallback_policy_conflict"
+	ReadinessCodeMemoryFallbackTargetUnavailable      = "memory.fallback_target_unavailable"
 )
 
 type ReadinessAdmissionOutcome string
@@ -411,6 +420,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 	findings = append(findings, componentReadinessFindings("scheduler", componentSnapshot.Scheduler)...)
 	findings = append(findings, componentReadinessFindings("mailbox", componentSnapshot.Mailbox)...)
 	findings = append(findings, componentReadinessFindings("recovery", componentSnapshot.Recovery)...)
+	findings = append(findings, memoryReadinessFindings(cfg)...)
 	findings = append(findings, m.sandboxReadinessFindings(cfg)...)
 	adapterResults, adapterFindings := m.adapterHealthReadinessFindings(cfg)
 	findings = append(findings, adapterFindings...)
@@ -1012,6 +1022,136 @@ func componentReadinessFindings(component string, state RuntimeReadinessComponen
 	}
 
 	return nil
+}
+
+func memoryReadinessFindings(cfg Config) []ReadinessFinding {
+	memoryCfg := normalizeRuntimeMemoryConfig(cfg.Runtime.Memory)
+	findings := make([]ReadinessFinding, 0, 4)
+	switch memoryCfg.Mode {
+	case RuntimeMemoryModeBuiltinFilesystem, RuntimeMemoryModeExternalSPI:
+	default:
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeMemoryModeInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "runtime memory mode is invalid",
+			Metadata: map[string]any{
+				"runtime_memory_mode": strings.TrimSpace(memoryCfg.Mode),
+			},
+		})
+		return findings
+	}
+
+	if strings.TrimSpace(memoryCfg.External.ContractVersion) != RuntimeMemoryContractVersionV1 {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeMemoryContractVersionMismatch,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "runtime memory contract version is unsupported",
+			Metadata: map[string]any{
+				"runtime_memory_contract_version": strings.TrimSpace(memoryCfg.External.ContractVersion),
+			},
+		})
+	}
+
+	if memoryCfg.Mode == RuntimeMemoryModeExternalSPI {
+		if strings.TrimSpace(memoryCfg.External.Profile) == "" {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeMemoryProfileMissing,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "runtime memory profile is required in external_spi mode",
+				Metadata: map[string]any{
+					"runtime_memory_mode": strings.TrimSpace(memoryCfg.Mode),
+				},
+			})
+		}
+		if !isSupportedMemoryProvider(memoryCfg.External.Provider) {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeMemoryProviderNotSupported,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "runtime memory provider is not supported",
+				Metadata: map[string]any{
+					"runtime_memory_provider": strings.TrimSpace(memoryCfg.External.Provider),
+				},
+			})
+		}
+		stage2Provider := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.Provider))
+		if stage2Provider == ContextStage2ProviderMemory && strings.TrimSpace(cfg.ContextAssembler.CA2.Stage2.External.Endpoint) == "" {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeMemorySPIUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+				Message:  "runtime memory external spi endpoint is unavailable",
+				Metadata: map[string]any{
+					"runtime_memory_provider": strings.TrimSpace(memoryCfg.External.Provider),
+					"context_stage2_provider": stage2Provider,
+				},
+			})
+		}
+	}
+
+	if memoryCfg.Mode == RuntimeMemoryModeBuiltinFilesystem {
+		if err := validateMemoryFilesystemPathReadiness(memoryCfg.Builtin.RootDir); err != nil {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeMemoryFilesystemPathInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "runtime memory filesystem path is invalid",
+				Metadata: map[string]any{
+					"runtime_memory_root_dir": strings.TrimSpace(memoryCfg.Builtin.RootDir),
+					"error":                   strings.TrimSpace(err.Error()),
+				},
+			})
+		}
+	}
+
+	if memoryCfg.Mode == RuntimeMemoryModeBuiltinFilesystem && memoryCfg.Fallback.Policy == RuntimeMemoryFallbackPolicyDegradeToBuiltin {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeMemoryFallbackPolicyConflict,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "runtime memory fallback policy conflicts with builtin_filesystem mode",
+			Metadata: map[string]any{
+				"runtime_memory_mode":            strings.TrimSpace(memoryCfg.Mode),
+				"runtime_memory_fallback_policy": strings.TrimSpace(memoryCfg.Fallback.Policy),
+			},
+		})
+	}
+
+	if memoryCfg.Mode == RuntimeMemoryModeExternalSPI && memoryCfg.Fallback.Policy == RuntimeMemoryFallbackPolicyDegradeToBuiltin {
+		if err := validateMemoryFilesystemPathReadiness(memoryCfg.Builtin.RootDir); err != nil {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeMemoryFallbackTargetUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+				Message:  "runtime memory fallback target builtin filesystem is unavailable",
+				Metadata: map[string]any{
+					"runtime_memory_root_dir": strings.TrimSpace(memoryCfg.Builtin.RootDir),
+					"error":                   strings.TrimSpace(err.Error()),
+				},
+			})
+		}
+	}
+	return findings
+}
+
+func validateMemoryFilesystemPathReadiness(root string) error {
+	path := strings.TrimSpace(root)
+	if path == "" {
+		return fmt.Errorf("runtime memory builtin root_dir is required")
+	}
+	return os.MkdirAll(path, 0o755)
+}
+
+func isSupportedMemoryProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "mem0", "zep", "openviking", RuntimeMemoryProviderGeneric:
+		return true
+	default:
+		return false
+	}
 }
 
 func readinessFallbackCode(component string) string {

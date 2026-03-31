@@ -1,0 +1,51 @@
+{
+  "version": "memory.v1",
+  "cases": [
+    {
+      "name": "memory_profile_drift_case",
+      "run": {
+        "memory_mode": "external_spi",
+        "memory_provider": "zep",
+        "memory_profile": "zep",
+        "memory_contract_version": "memory.v1",
+        "memory_query_total": 10,
+        "memory_upsert_total": 4,
+        "memory_delete_total": 1,
+        "memory_error_total": 0,
+        "memory_fallback_total": 0,
+        "memory_fallback_reason_code": "",
+        "memory_reason_code": ""
+      },
+      "stream": {
+        "memory_mode": "external_spi",
+        "memory_provider": "mem0",
+        "memory_profile": "mem0",
+        "memory_contract_version": "memory.v1",
+        "memory_query_total": 10,
+        "memory_upsert_total": 4,
+        "memory_delete_total": 1,
+        "memory_error_total": 0,
+        "memory_fallback_total": 0,
+        "memory_fallback_reason_code": "",
+        "memory_reason_code": ""
+      },
+      "expected": {
+        "memory_mode": "external_spi",
+        "memory_provider": "mem0",
+        "memory_profile": "mem0",
+        "memory_contract_version": "memory.v1",
+        "memory_query_total": 10,
+        "memory_upsert_total": 4,
+        "memory_delete_total": 1,
+        "memory_error_total": 0,
+        "memory_fallback_total": 0,
+        "memory_fallback_reason_code": "",
+        "memory_reason_code": ""
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

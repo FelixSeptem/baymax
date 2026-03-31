@@ -1,0 +1,25 @@
+{
+  "version": "memory.v1",
+  "cases": [
+    {
+      "name": "memory_external_spi_success_case",
+      "canonical": {
+        "memory_mode": "external_spi",
+        "memory_provider": "mem0",
+        "memory_profile": "mem0",
+        "memory_contract_version": "memory.v1",
+        "memory_query_total": 12,
+        "memory_upsert_total": 7,
+        "memory_delete_total": 3,
+        "memory_error_total": 1,
+        "memory_fallback_total": 1,
+        "memory_fallback_reason_code": "memory.fallback.degrade_to_builtin",
+        "memory_reason_code": "memory.provider.timeout"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

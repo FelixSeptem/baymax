@@ -250,6 +250,38 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 		Code:   "sandbox.adapter.adjust_session_mode",
 		Domain: ReadinessDomainRuntime,
 	},
+	ReadinessCodeMemoryModeInvalid: {
+		Code:   "runtime.memory.fix_mode",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryProfileMissing: {
+		Code:   "runtime.memory.set_profile",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryProviderNotSupported: {
+		Code:   "runtime.memory.select_supported_provider",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemorySPIUnavailable: {
+		Code:   "runtime.memory.restore_spi_endpoint",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryFilesystemPathInvalid: {
+		Code:   "runtime.memory.fix_filesystem_path",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryContractVersionMismatch: {
+		Code:   "runtime.memory.align_contract_version",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryFallbackPolicyConflict: {
+		Code:   "runtime.memory.align_fallback_policy",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeMemoryFallbackTargetUnavailable: {
+		Code:   "runtime.memory.restore_fallback_target",
+		Domain: ReadinessDomainRuntime,
+	},
 
 	ReadinessAdmissionCodeBypassDisabled:  {Code: "readiness.admission_enable_if_required", Domain: "runtime"},
 	ReadinessAdmissionCodeReady:           {Code: "readiness.no_action", Domain: "runtime"},
@@ -384,6 +416,16 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 	case ReadinessCodeAdapterOptionalUnavailable, ReadinessCodeAdapterOptionalCircuitOpen, ReadinessCodeAdapterDegraded, ReadinessCodeAdapterHalfOpenDegraded:
 		return 4
 	case ReadinessCodeSandboxOptionalUnavailable:
+		return 4
+	case ReadinessCodeMemoryModeInvalid,
+		ReadinessCodeMemoryProfileMissing,
+		ReadinessCodeMemoryProviderNotSupported,
+		ReadinessCodeMemoryFilesystemPathInvalid,
+		ReadinessCodeMemoryContractVersionMismatch:
+		return 3
+	case ReadinessCodeMemorySPIUnavailable,
+		ReadinessCodeMemoryFallbackPolicyConflict,
+		ReadinessCodeMemoryFallbackTargetUnavailable:
 		return 4
 	}
 

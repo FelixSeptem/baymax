@@ -56,6 +56,14 @@ if (-not $env:GOVULNDB) {
 if (-not $env:CGO_ENABLED) {
     $env:CGO_ENABLED = "1"
 }
+if ($env:GODEBUG) {
+    if ($env:GODEBUG -notmatch "(^|,)goindex=") {
+        $env:GODEBUG = "$($env:GODEBUG),goindex=0"
+    }
+}
+else {
+    $env:GODEBUG = "goindex=0"
+}
 
 function Invoke-RequiredStep {
     param(
@@ -135,6 +143,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] sandbox adapter conformance contr
     pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] memory contract conformance" -Command {
+    pwsh -File scripts/check-memory-contract-conformance.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter scaffold drift" -Command {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1
 }
@@ -150,15 +162,8 @@ if ($cgoEnabled -ne "1") {
     throw "[quality-gate] go test -race requires CGO_ENABLED=1"
 }
 
-$pkgs = (Invoke-NativeCaptureStrict -Label "go list ./..." -Command {
-        go list ./...
-    }) | Where-Object { $_ -notmatch "/examples/" }
-if (-not $pkgs -or $pkgs.Count -eq 0) {
-    throw "[quality-gate] no packages found for race tests"
-}
-
-Invoke-RequiredStep -StepLabel "[quality-gate] go test -race (exclude examples packages)" -Command {
-    go test -race @pkgs
+Invoke-RequiredStep -StepLabel "[quality-gate] go test -race ./..." -Command {
+    go test -race ./...
 }
 
 $lintConfig = ".golangci.yml"

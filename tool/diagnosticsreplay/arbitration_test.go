@@ -33,6 +33,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a52_sandbox_rollout_success_input.json",
 			expected: "a52_sandbox_rollout_success_expected.json",
 		},
+		{
+			name:     "a54-memory",
+			input:    "a54_memory_success_input.json",
+			expected: "a54_memory_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -188,6 +193,48 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeSandboxFreezeStateDrift,
 			wantInText: "sandbox freeze state drift",
 		},
+		{
+			name:       "a54-memory-mode-drift",
+			fixture:    "a54_memory_mode_drift_input.json",
+			wantCode:   ReasonCodeMemoryModeDrift,
+			wantInText: "memory mode drift",
+		},
+		{
+			name:       "a54-memory-profile-drift",
+			fixture:    "a54_memory_profile_drift_input.json",
+			wantCode:   ReasonCodeMemoryProfileDrift,
+			wantInText: "memory profile drift",
+		},
+		{
+			name:       "a54-memory-contract-version-drift",
+			fixture:    "a54_memory_contract_version_drift_input.json",
+			wantCode:   ReasonCodeMemoryContractVersionDrift,
+			wantInText: "memory_contract_version",
+		},
+		{
+			name:       "a54-memory-fallback-drift",
+			fixture:    "a54_memory_fallback_drift_input.json",
+			wantCode:   ReasonCodeMemoryFallbackDrift,
+			wantInText: "memory fallback drift",
+		},
+		{
+			name:       "a54-memory-error-taxonomy-drift",
+			fixture:    "a54_memory_error_taxonomy_drift_input.json",
+			wantCode:   ReasonCodeMemoryErrorTaxonomyDrift,
+			wantInText: "memory error taxonomy drift",
+		},
+		{
+			name:       "a54-memory-operation-aggregate-drift",
+			fixture:    "a54_memory_operation_aggregate_drift_input.json",
+			wantCode:   ReasonCodeMemoryOperationAggregateDrift,
+			wantInText: "memory operation aggregate drift",
+		},
+		{
+			name:       "a54-memory-unsupported-version",
+			fixture:    "a54_memory_unsupported_version_input.json",
+			wantCode:   ReasonCodeSchemaMismatch,
+			wantInText: "unsupported fixture version",
+		},
 	}
 
 	for _, tc := range tests {
@@ -211,10 +258,12 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 	}
 }
 
-func TestReplayContractArbitrationMixedA51A52Compatibility(t *testing.T) {
+func TestReplayContractArbitrationMixedA48A52MemoryCompatibility(t *testing.T) {
 	fixtures := []string{
+		"a48_arbitration_success_input.json",
 		"a51_sandbox_success_input.json",
 		"a52_sandbox_rollout_success_input.json",
+		"a54_memory_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

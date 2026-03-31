@@ -1,0 +1,42 @@
+{
+  "version": "observability.v1",
+  "cases": [
+    {
+      "name": "observability_export_status_drift_case",
+      "run": {
+        "observability_export_profile": "otlp",
+        "observability_export_status": "success",
+        "observability_export_reason_code": "",
+        "diagnostics_bundle_last_status": "failed",
+        "diagnostics_bundle_last_reason_code": "diagnostics.bundle.output_unavailable",
+        "diagnostics_bundle_last_schema_version": "bundle.v1",
+        "diagnostics_bundle_redaction_status": "redacted",
+        "diagnostics_bundle_gate_fingerprint": "gate.a55.v1"
+      },
+      "stream": {
+        "observability_export_profile": "otlp",
+        "observability_export_status": "success",
+        "observability_export_reason_code": "",
+        "diagnostics_bundle_last_status": "failed",
+        "diagnostics_bundle_last_reason_code": "diagnostics.bundle.output_unavailable",
+        "diagnostics_bundle_last_schema_version": "bundle.v1",
+        "diagnostics_bundle_redaction_status": "redacted",
+        "diagnostics_bundle_gate_fingerprint": "gate.a55.v1"
+      },
+      "expected": {
+        "observability_export_profile": "otlp",
+        "observability_export_status": "degraded",
+        "observability_export_reason_code": "observability.export.sink_unavailable",
+        "diagnostics_bundle_last_status": "failed",
+        "diagnostics_bundle_last_reason_code": "diagnostics.bundle.output_unavailable",
+        "diagnostics_bundle_last_schema_version": "bundle.v1",
+        "diagnostics_bundle_redaction_status": "redacted",
+        "diagnostics_bundle_gate_fingerprint": "gate.a55.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

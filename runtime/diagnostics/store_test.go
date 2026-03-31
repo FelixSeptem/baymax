@@ -628,6 +628,47 @@ func TestStoreRunObservabilityAdditiveFieldsBoundedCardinality(t *testing.T) {
 	}
 }
 
+func TestStoreRunReactAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  8,
+		MaxListEntries: 8,
+		MaxStringBytes: 24,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:                        time.Now(),
+		RunID:                       "run-a56-react-cardinality",
+		Status:                      "failed",
+		ReactEnabled:                true,
+		ReactIterationTotal:         5,
+		ReactToolCallTotal:          9,
+		ReactToolCallBudgetHitTotal: 1,
+		ReactTerminationReason:      "react.tool_call_limit_exceeded.with.private.suffix",
+		ReactStreamDispatchEnabled:  true,
+	}
+	d.AddRun(rec)
+
+	items := d.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if !got.ReactEnabled || !got.ReactStreamDispatchEnabled {
+		t.Fatalf("react booleans mismatch: %#v", got)
+	}
+	if got.ReactIterationTotal != 5 || got.ReactToolCallTotal != 9 || got.ReactToolCallBudgetHitTotal != 1 {
+		t.Fatalf("react numeric fields mismatch: %#v", got)
+	}
+	if len([]byte(got.ReactTerminationReason)) > 24 {
+		t.Fatalf("react_termination_reason should be bounded by cardinality config, got %q", got.ReactTerminationReason)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "react_termination_reason") {
+		t.Fatalf("missing react_termination_reason bounded summary: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+}
+
 func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

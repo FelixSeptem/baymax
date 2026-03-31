@@ -16,10 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-03-31：
-- 已归档并稳定：A4-A53（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档并稳定：A4-A55（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-observability-export-and-diagnostics-bundle-contract-a55`
   - `introduce-react-loop-and-tool-calling-parity-contract-a56`
+  - `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -452,7 +452,7 @@ A53 验证命令（提案实施期最小集合）：
 - `pwsh -File scripts/check-quality-gate.ps1`
 - `pwsh -File scripts/check-docs-consistency.ps1`
 
-### P1：A54 memory provider SPI + builtin filesystem engine（进行中，实施推进中）
+### P1：A54 memory provider SPI + builtin filesystem engine（已归档）
 
 A54 Why now：
 - 当前 memory 接入仍依赖 CA2 file/external retriever 分散路径，缺少统一 memory SPI 与 profile 契约。
@@ -500,61 +500,347 @@ A54 gate 交付口径（当前实现）：
 - memory contract suites 以 `smoke|full` 分层执行（主线 quality gate 默认 smoke，CI 独立 `memory-contract-gate` job 默认 full）。
 - shell 与 PowerShell 脚本保持同一阻断语义（native command 非零即 fail-fast）。
 
-### P1/P2：A56+ 借鉴整合提案池（全局视角）
+### P1：A56 react loop + tool-calling parity contract（进行中）
+
+A56 Why now：
+- Run/Stream 在工具闭环路径长期存在语义偏移风险（step 边界、dispatch、feedback 与终止 reason 不完全同构）。
+- provider tool-calling 映射与 readiness/admission/sandbox 语义在多提案叠加后需要统一收敛到单一 contract 口径。
+- 需要把 ReAct 主题一次性接入 replay + gate，避免后续分散修补。
+
+A56 当前落地（截至 2026-03-31）：
+- loop 与 taxonomy：Run/Stream 共享 ReAct termination taxonomy（`react.completed`、预算耗尽、dispatch 失败、provider 错误、取消）。
+- provider canonicalization：`model/openai|anthropic|gemini` 的 tool-call request/feedback 映射与 provider error taxonomy 已收敛。
+- readiness/admission：新增 `react.*` finding（loop/stream dispatch/provider/tool registry/sandbox dependency）并贯通 strict/non-strict 与 admission deny/allow 语义。
+- sandbox consistency：ReAct 多轮 host/sandbox/deny、fallback、capability mismatch 在 Run/Stream 下已具备 contract parity。
+- replay/gate：`tool/diagnosticsreplay` 新增 `react.v1` fixture 与 drift 分类；`scripts/check-react-contract.sh/.ps1` 已接入 `check-quality-gate.*`；CI 已暴露 `react-contract-gate`。
+- docs/examples：README、runtime-config-diagnostics、mainline index 与示例文档已补齐 ReAct 最小接入、字段与门禁映射。
+
+A56 一次性闭环审查（10.4）：
+- 审查范围：`loop -> provider -> readiness -> admission -> sandbox -> replay -> gate -> docs`。
+- 审查结论：上述链路已形成同一 contract 语义闭环，当前没有必须再拆分的 ReAct 后续子提案。
+- 剩余动作：执行全量回归验证（`go test`/`race`/`lint`/gate/docs consistency）并完成提案归档流程。
+
+### P1/P2：A58+ 候选提案池（全局视角）
 
 前提约束（冻结）：
-- 不调整 A54/A55 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
+- 不调整 A56/A57 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
 - 新提案必须复用既有治理主链路：`runtime/config`（`env > file > default` + fail-fast/回滚）+ `RuntimeRecorder` 单写 + diagnostics replay + quality gate。
+- 对齐主流框架时，优先补齐“可互操作 contract”缺口（guardrail precedence、memory 分层治理、OTel tracing/eval），避免散点功能堆叠。
+
+补充参考（主流框架实现与设计查询，2026-03-31 对齐）：
+- 本轮“无遗漏”对比项目（官方文档优先）：
+  - Coding Agent Runtime：Claude Code、OpenAI Codex、DeerFlow 2.0（明确采用 2.0 口径，不混用 1.x 结论）。
+  - Agent 编排框架：LangGraph、LlamaIndex Workflows、AutoGen、Semantic Kernel、CrewAI、Agno。
+  - Memory 框架/引擎：Mem0、Zep、OpenViking、OpenClaw（并回看当前内置 filesystem memory 实现）。
+- 对齐维度统一采用 7 项：`权限/审批`、`sandbox 边界`、`subagent/多 agent 编排`、`memory 分层与生命周期`、`tool/MCP 接入治理`、`HITL 中断恢复`、`observability/eval`。
+- 关键实现信号（用于约束 A58+ 设计，不额外开新主线）：
+  - Claude Code：managed/project/user 分层配置 + 权限规则、hook 事件化拦截、subagent 粒度权限与 MCP/memory 作用域；
+  - Codex：`sandbox_mode` 与 `approval_policy` 分离治理、workspace-write 默认模型、cloud setup/agent 两阶段与 agent phase 默认断网、AGENTS.md 分层覆盖；
+  - DeerFlow 2.0：local/docker/k8s sandbox 模式、host bash 默认关闭、subagent 并行与上下文隔离、local long-term memory、LangSmith tracing；
+  - LangGraph/AutoGen/LlamaIndex/Semantic Kernel：强调持久化 checkpoint、HITL interrupt/resume、工作流级状态可回放；
+  - CrewAI/Agno：强调角色编排、memory 与 tracing 结合、团队级任务分解与可观测；
+  - Mem0/Zep/OpenViking/OpenClaw：强调多层 memory（session/user/agent）、检索/重排、保留策略与 provider 互换能力。
+- 一次性补齐项目归并（保持现有优先级，不再拆平行提案）：
+  - A58：统一策略栈 precedence（action/sandbox/egress/allowlist/admission）+ 决策解释链，补齐跨入口判定一致性；
+  - A59：一次性补齐 memory scope、写入模式、检索质量、生命周期（retention/ttl/forget）与 builtin filesystem v2 治理；
+  - A60：统一 token/tool/sandbox/memory 成本与时延预算 admission 规则；
+  - A61：补齐 OTel tracing 语义映射与最小 agent eval contract，固定跨框架回归口径；
+  - A62：补齐“交付易用性”example pack（主要 agent 模式一站式示例与可回归冒烟）；
+  - A63：代码整合收敛专项（清理临时代码/文档、命名语义化、目录结构收敛），以“语义不变”为硬约束；
+  - A64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出），以“语义不变”为硬约束。
+- 执行约束：A58-A61 负责核心 runtime contract 缺口，A62 负责交付易用性收口，A63 负责代码整合收敛，A64 负责非语义性能工程化；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
+
+参考链接（本轮核对，滚动更新）：
+- Claude Code docs（permissions/hooks/subagents/memory/MCP）：<https://docs.anthropic.com/en/docs/claude-code>
+- OpenAI Codex docs（sandboxing/approvals/environments/AGENTS.md/subagents）：<https://developers.openai.com/codex>
+- DeerFlow 2.0（README + CONFIGURATION）：<https://github.com/bytedance/deer-flow>
+- PocketFlow docs（design patterns / agent modes）：<https://the-pocket.github.io/PocketFlow/design_pattern/>
+- LangGraph docs（persistence/HITL/interrupt）：<https://langchain-ai.github.io/langgraph/>
+- CrewAI docs：<https://docs.crewai.com/>
+- Agno docs：<https://docs.agno.com/>
+- AutoGen docs：<https://microsoft.github.io/autogen/>
+- LlamaIndex docs：<https://docs.llamaindex.ai/>
+- Semantic Kernel docs：<https://learn.microsoft.com/semantic-kernel/>
+- Mem0 docs：<https://docs.mem0.ai/>
+- Zep docs：<https://help.getzep.com/>
+- OpenViking docs：<https://volcengine-openviking.mintlify.app/>
+- OpenClaw docs：<https://docs.openclaw.ai/>
 
 与在研项目的先后顺序（强依赖）：
-1. A54（进行中）：memory provider SPI + builtin filesystem engine。
-2. A55（进行中）：observability export + diagnostics bundle contract。
-3. A56（下一优先级，P1）：ReAct loop + tool-calling parity contract（Run/Stream 顺滑闭环）。
-4. A57（次优先级，P1）：sandbox egress 治理与 adapter allowlist contract。
-5. A58（中期，P1/P2）：memory scope 与注入预算治理 contract。
-6. A59（后续，P2）：runtime 成本/时延预算与 admission contract。
+1. A56（进行中，P1）：ReAct loop + tool-calling parity contract（Run/Stream 顺滑闭环）。
+2. A57（进行中，P1）：sandbox egress 治理与 adapter allowlist contract。
+3. A58（下一优先级，P1）：policy precedence + decision trace contract（新增，紧急插入）。
+4. A59（A58 后优先落地，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
+5. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
+6. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（主流可观测/评测对齐）。
+7. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
+8. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+9. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
 
 备选项目说明（避免“单一路线”误解）：
-- A56/A57/A58/A59 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A55 已进入在研执行，不再作为备选项；A56 默认复用 A55 的观测与取证能力，减少 ReAct 上线盲区。
+- A58/A59/A60/A61/A62/A63/A64 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A56/A57 正在并行实施，A58 作为“跨策略层优先级治理”紧急插入项，用于降低并行实施带来的语义冲突风险。
 - 前置切换规则（示例）：
-  - 若“Run 支持工具闭环但 Stream 无法工具分发/回灌”成为交付阻塞：A56 可前置为首个落地项。
-  - 若合规审计或外部 adapter 引入加速：A57 可前置并优先实施。
-  - 若 A54 落地后出现 memory 注入成本漂移：A58 可前置到 A57 之前。
-- 无论是否前置切换，均不得改写 A54/A55 已冻结范围，只允许在其完成后做增量扩展。
+  - 若 A56/A57 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：A58 立即前置实施。
+  - 若 A56/A57 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：A59 与 scope 方案合并前置实施。
+  - 若成本或 P95 抖动在 A56/A57 上线窗口成为阻塞：A60 可提前实施。
+  - 若 tracing 字段与主流 OTel 后端对接成本持续偏高，或缺少稳定 agent 质量回归口径：A61 可前置实施。
+  - 若外部团队接入/迁移周期过长、样例复用率低、或示例与主链路契约脱节：A62 可前置实施。
+  - 若仓库出现临时代码/文档积压、Axx 文案耦合扩散、模块命名与职责漂移：A63 可前置实施。
+  - 若 CPU/GC 抖动、goroutine 峰值、allocs/op 退化成为主线风险：A64 可前置实施。
+- 无论是否前置切换，均不得改写 A56/A57 已冻结范围，只允许在其完成后做增量扩展。
 
-备选 A56：`introduce-react-loop-and-tool-calling-parity-contract-a56`
-- 目标：在保持 `library-first + contract-first` 边界下，一次性冻结 ReAct 运行闭环 contract，确保 Run/Stream 在工具调用场景语义等价并可回放可门禁。
+备选 A58（新增紧急插入）：`introduce-policy-precedence-and-decision-trace-contract-a58`
+- 目标：统一 ActionGate、Security S2、sandbox action/egress、adapter allowlist、readiness/admission 的策略判定优先级与解释链路，防止并行改造后出现判定冲突。
 - 范围：
-  - runner 侧 ReAct 状态机收敛（`model -> tool dispatch -> tool result feedback -> next iteration`）；
-  - Stream 路径工具分发与回灌能力补齐（消除 `stream_tool_dispatch_not_supported` 中间态）；
-  - 统一 run-level `tool_call_limit` 与 iteration-level 上限协同；
-  - provider adapter tool-calling 输入/输出归一（OpenAI/Anthropic/Gemini）；
-  - ReAct additive diagnostics 字段、`react.v1` replay fixture、独立 `check-react-contract.*` gate。
-- 依赖：复用 A44/A45/A49/A50/A55 的 admission/cardinality/explainability/version 与 observability 输出口径，不新增平行治理链路。
-- 启动条件：主线交付需要“可稳定工具推理循环 + Stream 等价”能力，或出现 provider tool-calling 行为漂移。
+  - 固化跨策略层 precedence matrix 与 deterministic tie-break；
+  - 统一 deny source taxonomy 与 explainability 字段；
+  - 增加 `policy_stack.v1` replay fixture 与 drift 分类；
+  - 增加独立 `check-policy-precedence-contract.*` gate。
+- Why now（紧急性）：A56 与 A57 同期改动 runner/sandbox/readiness/admission，若缺少统一 precedence contract，极易产生“同请求不同入口判定不一致”的高风险回归。
 
-备选 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`
+提案 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`（进行中）
 - 目标：补齐 sandbox 网络外呼治理（egress policy）与 adapter 供应链 allowlist 契约，形成“执行隔离 + 出口治理 + 激活准入”闭环。
 - 范围：`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission finding、taxonomy、replay drift 与 conformance matrix。
 - 依赖：复用 A51/A52/A53 sandbox taxonomy 与 adapter manifest 激活边界，不新增平行安全语义。
 - 启动条件：存在合规审计或外部 adapter 引入规模上升，需要可审计可阻断的 egress/allowlist 治理。
 
-备选 A58：`introduce-memory-scope-and-injection-budget-governance-contract-a58`
-- 目标：在 A54 SPI 基线之上补齐 `session|project|global` scope、注入预算与检索策略治理，抑制上下文膨胀与成本漂移。
-- 范围：`runtime.memory.scope.*`、`runtime.memory.injection_budget.*`、QueryRuns additive 字段、mixed replay fixture、gate 阈值回归。
-- 依赖：A54 memory facade/profile pack/readiness 字段稳定后再扩展，避免与 A54 实施交叉改动。
-- 启动条件：A54 上线后出现上下文成本抖动、memory 注入不可解释或跨 provider 行为漂移。
+备选 A59（合并版）：`introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
+- 目标：在 A54 SPI 基线之上合并推进两类能力：
+  - memory scope 与注入预算治理（`session|project|global` + injection budget）；
+  - builtin filesystem memory v2（本地检索与索引能力增强、恢复一致性与可观测治理）。
+- 对标主流实现（参考 OpenClaw + Agno memory 路径）的补齐方向：
+  - memory 语义分层治理：区分 `session_history`、`user_memory`、`session_summary` 三类语义及注入优先级；
+  - memory 写入策略治理：支持 `automatic` 与 `agentic` 两类写入模式，并冻结回填窗口与幂等规则；
+  - 本地索引检索增强：支持关键词检索与语义检索协同（hybrid retrieval）；
+  - 索引生命周期治理：文件变更触发增量更新、provider/model 变化触发全量重建；
+  - 结果后处理治理：去冗余重排（MMR 类）与时间衰减（recency boost）可配置；
+  - 索引与存储一致性：WAL/snapshot 基线之上增加校验与恢复漂移检测；
+  - 记忆生命周期治理：补齐 retention/ttl/forget 策略与 fail-fast 校验，避免 memory 无界增长；
+  - 检索质量基线：新增 memory retrieval quality 回归套件（recall/top-k 命中率等）并纳入 gate；
+  - 多源接入：memory 主文件 + 按 scope 的附加路径策略（保持 fail-fast + allowlist 边界）。
+- 范围（合并后）：
+  - `runtime.memory.mode.*`（`automatic|agentic` 写入策略与回填窗口）
+  - `runtime.memory.scope.*`
+  - `runtime.memory.injection_budget.*`
+  - `runtime.memory.lifecycle.*`（retention/ttl/forget）
+  - `runtime.memory.search.*`（hybrid/query/rerank/temporal_decay/index_update）
+  - QueryRuns additive 字段 + `memory_scope.v1`、`memory_search.v1`、`memory_lifecycle.v1` mixed replay fixtures
+  - 独立 gate：`check-memory-scope-and-search-contract.*`
+- 依赖：A54 memory facade/profile/readiness 字段稳定后扩展，避免与 A56/A57 实施冲突。
+- 启动条件：出现 memory 注入不可解释、检索召回不足、或本地文件 memory 在恢复/索引一致性上的风险信号。
 
-备选 A59：`introduce-runtime-cost-latency-budget-and-admission-contract-a59`
+备选 A60：`introduce-runtime-cost-latency-budget-and-admission-contract-a60`
 - 目标：统一 token/tool/sandbox/memory 成本与时延预算，建立 admission 侧 fail-fast 与降级策略。
 - 启动条件：成本或 P95 抖动成为主线瓶颈。
 
+备选 A61（新增）：`introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`
+- 目标：补齐主流框架常见的“可观测 + 评测”互操作治理，降低跨平台对接成本并固定回归口径。
+- 对标主流（OpenAI Agents / Agno / CrewAI）的补齐方向：
+  - tracing 语义：对齐 OTel 场景下 run/model/tool/mcp/memory/hitl 关键 span/attribute 映射；
+  - tracing 导出：保证不引入平台控制面的前提下，支持主流 OTel backend 稳定接入；
+  - 评测基线：新增最小 agent eval contract（任务成功率、工具调用正确率、拒绝/拦截准确率、cost-latency 约束）；
+  - 回放与门禁：增加 `otel_semconv.v1` 与 `agent_eval.v1` fixtures，新增 `check-agent-eval-and-tracing-interop-contract.*`。
+- 依赖：A55 observability export + diagnostics bundle 稳定后扩展；建议在 A58 decision trace 字段冻结后接入。
+- 启动条件：出现 tracing 字段跨后端解释不一致、外部可观测平台接线成本高、或缺少稳定 agent 质量回归基线。
+
+备选 A62（新增）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
+- 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
+- 模式覆盖（最低要求）：
+  - `single agent`（最小 chat/任务执行主链路）；
+  - `agent with skill`（skills 装载与触发评分、工具协同）；
+  - `react agent`（推理-行动-观察闭环，Run/Stream 等价）；
+  - `multi agent`（至少包含协作链路与异步通道两类范式）；
+  - `sandbox-governed agent`（sandbox/egress/allowlist 治理链路可演示）。
+- 对标参考（示例组织方法）：
+  - PocketFlow design patterns：Agent / Workflow / Multi-Agent 的模式化分层与最小可运行示例组织；
+  - 本仓库 `examples/01-09` 现有主链路示例（避免重复造样例，优先改造为统一模式矩阵）。
+- 范围：
+  - 建立 `examples/agent-modes` 统一目录或等价索引（支持按模式检索）；
+  - 每种模式提供 `minimal` + `production-ish` 两档示例（前者用于上手，后者用于治理链路演示）；
+  - 示例统一注入 diagnostics/tracing 标记，确保可进入 replay 与 gate；
+  - 提供模式级 `README` 与迁移指引（从旧示例到模式化示例的映射）。
+- Gate：
+  - `check-agent-mode-examples-smoke.sh/.ps1`（按模式矩阵执行最小冒烟）
+  - required-check 候选：`agent-mode-examples-smoke-gate`
+- 依赖：A56/A57 至少完成 runner/sandbox 主链路冻结后实施，以避免示例频繁返工。
+- 启动条件：新增团队接入成本偏高、PoC 转生产迁移慢、或示例与 contract 漂移信号出现。
+
+备选 A63（新增）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
+- 目标（简版）：在不改变运行时语义前提下，完成仓库“代码与文档收敛整顿”，降低历史负担与命名歧义。
+- 范围（简版）：
+  - 临时文档/目录治理：清理或归档 `docs/drafts`、示例与脚手架生成物等临时资产，建立统一收口规则；
+  - 离线生成物治理：收敛 `examples/adapters/_a23-offline-work/*` 这类离线 scaffold 产物，仅保留最小可复现样本与索引说明，其余转离线缓存或清理；
+  - Context Assembler 命名收敛：将 `ca/ca2/ca3/ca4` 相关实现对外统一为语义化 `ca` 口径（内部可分层，但不再暴露编号式心智）；
+  - Axx 文案语义化：仓库内面向用户/维护者的 Axx 编号描述迁移为语义化名称，Spec 编号映射集中在索引文档维护，不在模块 README/配置注释中散落耦合。
+  - 阶段性工具命名治理：`cmd/*` 与 `scripts/*` 中编号化阶段命名（如 `ca3-threshold-*`、`ca4-benchmark-*`）统一补充语义别名与映射，避免新入口继续放大编号耦合；
+  - 临时注释与占位清理：清理 `TODO/future milestone` 类临时注释并转化为 roadmap/index 可追踪事项，避免代码内长期悬挂。
+- 硬约束（简版）：
+  - 不改变 Run/Stream、readiness/admission、reason taxonomy、diagnostics/replay 契约语义；
+  - 不删除仍被 gate/fixture 使用的兼容数据，仅允许“迁移+别名+映射”方式收敛；
+  - 所有重命名或目录调整必须提供可回滚路径与兼容跳板。
+  - 编号化保留边界：`openspec/changes` 与 `openspec/changes/archive` 作为历史索引允许保留编号，代码与用户向文档默认使用语义名称。
+- 当前状态：占位提案（简版），待 A62 完成后基于当时代码状态展开详细清单与实施步骤。
+
+备选 A64（新增）：`introduce-engineering-and-performance-optimization-contract-a64`
+- 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
+- 硬约束（简版）：
+  - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
+  - 不绕过现有 contract gate 与 replay 约束；
+  - 所有优化都必须可开关、可回滚。
+- 当前状态：占位提案，仅保留方向与边界；详细 contract/fixture/gate 清单待 A62/A63 收敛后再单独规划。
+
+A58-A62 一次性验收清单（contract / replay / gate）：
+
+统一验收前提（当前已展开提案共用）：
+- 配置治理：所有新增配置必须遵守 `env > file > default`，非法值 fail-fast，热更新失败原子回滚。
+- 观测治理：运行态写入仅走 `RuntimeRecorder` 单写入口；QueryRuns 仅新增 additive 字段，禁止破坏既有字段语义。
+- 回放治理：每个提案至少新增 1 个 replay fixture 与 drift 分类，并接入 docs index。
+- 门禁治理：每个提案至少新增 1 个独立 contract gate（shell + PowerShell 语义等价），并接入 `check-quality-gate.*`。
+- 兼容治理：Run/Stream 语义保持等价；未经提案显式声明，不变更公开 API 破坏性行为。
+
+A58 验收清单：`introduce-policy-precedence-and-decision-trace-contract-a58`
+- Contract 字段（最小集）：
+  - `runtime.policy.precedence.version`
+  - `runtime.policy.precedence.matrix.*`
+  - `runtime.policy.tie_breaker.*`
+  - `runtime.policy.explainability.enabled`
+  - QueryRuns additive：`policy_decision_path`、`deny_source`、`winner_stage`、`tie_break_reason`
+- Replay fixtures：
+  - `policy_stack.v1`（覆盖 action/s2/sandbox/egress/allowlist/admission 冲突）
+  - drift 分类至少包含：`precedence_conflict`、`tie_break_drift`、`deny_source_mismatch`
+- Gate：
+  - `check-policy-precedence-contract.sh/.ps1`
+  - required-check 候选：`policy-precedence-gate`
+- 最小测试矩阵：
+  - 单测：precedence matrix 与 tie-break 决策稳定性；
+  - 集成：同一请求在 Run/Stream + 不同入口路径下决策一致；
+  - 负向：配置冲突/缺失时 fail-fast 与回滚。
+- 文档同步：
+  - `docs/runtime-config-diagnostics.md`（新增 policy 配置与 decision trace 字段）
+  - `docs/mainline-contract-test-index.md`（新增 gate 与 replay 条目）
+- 退出条件（DoD）：
+  - 联调阶段“同请求不同入口判定不一致”归零；
+  - replay 漂移被稳定归类且可复现。
+
+A59 验收清单：`introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
+- Contract 字段（最小集）：
+  - `runtime.memory.scope.*`（`session|project|global`）
+  - `runtime.memory.mode.*`（`automatic|agentic`）
+  - `runtime.memory.injection_budget.*`
+  - `runtime.memory.lifecycle.*`（retention/ttl/forget）
+  - `runtime.memory.search.*`（hybrid/query/rerank/temporal_decay/index_update）
+  - QueryRuns additive：`memory_scope_selected`、`memory_budget_used`、`memory_hits`、`memory_rerank_stats`、`memory_lifecycle_action`
+- Replay fixtures：
+  - `memory_scope.v1`
+  - `memory_search.v1`
+  - `memory_lifecycle.v1`
+  - drift 分类至少包含：`scope_resolution_drift`、`retrieval_quality_regression`、`lifecycle_policy_drift`、`recovery_consistency_drift`
+- Gate：
+  - `check-memory-scope-and-search-contract.sh/.ps1`
+  - required-check 候选：`memory-scope-search-gate`
+- 最小测试矩阵：
+  - 单测：scope 解析、budget 裁剪、TTL/forget 语义、search/rerank 配置边界；
+  - 集成：external SPI 与 builtin filesystem 双路径一致性；
+  - 恢复：WAL + snapshot crash recovery、index drift detect；
+  - 质量：recall@k / top-k 命中率 / 冗余率回归阈值。
+- 文档同步：
+  - `memory/README.md`（外部 SPI 与 builtin 模式选择、能力矩阵）
+  - `docs/runtime-config-diagnostics.md`（memory 新字段与默认值）
+  - `docs/mainline-contract-test-index.md`（memory fixtures + gate）
+- 退出条件（DoD）：
+  - memory 注入链路可解释（scope/budget/source 全可追踪）；
+  - builtin filesystem 在恢复与检索一致性上通过 contract gate 全量回归。
+
+A60 验收清单：`introduce-runtime-cost-latency-budget-and-admission-contract-a60`
+- Contract 字段（最小集）：
+  - `runtime.admission.budget.cost.*`
+  - `runtime.admission.budget.latency.*`
+  - `runtime.admission.degrade_policy.*`
+  - QueryRuns additive：`budget_snapshot`、`budget_decision`、`degrade_action`
+- Replay fixtures：
+  - `budget_admission.v1`（不同负载、不同 provider、不同 sandbox 开销）
+  - drift 分类至少包含：`budget_threshold_drift`、`admission_decision_drift`、`degrade_policy_drift`
+- Gate：
+  - `check-runtime-budget-admission-contract.sh/.ps1`
+  - required-check 候选：`runtime-budget-admission-gate`
+- 最小测试矩阵：
+  - 单测：预算计算与夹紧逻辑；
+  - 集成：token/tool/sandbox/memory 混合成本下 admission 判定一致；
+  - 压测：P95/P99 触发阈值下 degrade 与 fail-fast 行为稳定。
+- 文档同步：
+  - `docs/runtime-config-diagnostics.md`（budget/admission 字段、阈值示例）
+  - `docs/mainline-contract-test-index.md`（budget fixture + gate）
+- 退出条件（DoD）：
+  - 成本/时延抖动具备可解释 admission 决策；
+  - budget 相关回归可被 replay + gate 稳定拦截。
+
+A61 验收清单：`introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`
+- Contract 字段（最小集）：
+  - `runtime.observability.tracing.otel.*`
+  - `runtime.eval.agent.*`
+  - QueryRuns additive：`trace_export_status`、`trace_schema_version`、`eval_suite_id`、`eval_summary`
+- Replay fixtures：
+  - `otel_semconv.v1`
+  - `agent_eval.v1`
+  - drift 分类至少包含：`otel_attr_mapping_drift`、`span_topology_drift`、`eval_metric_drift`
+- Gate：
+  - `check-agent-eval-and-tracing-interop-contract.sh/.ps1`
+  - required-check 候选：`agent-eval-tracing-interop-gate`
+- 最小测试矩阵：
+  - 单测：span/attribute 映射稳定性；
+  - 集成：至少 2 类 OTel backend 兼容冒烟（本地 exporter + 远端 collector）；
+  - 评测：任务成功率、工具调用正确率、拒绝/拦截准确率、cost-latency 约束。
+- 文档同步：
+  - `docs/runtime-config-diagnostics.md`（OTel + eval 配置）
+  - `docs/mainline-contract-test-index.md`（OTel/eval fixtures + gate）
+- 退出条件（DoD）：
+  - tracing 字段跨后端解释一致；
+  - agent 质量回归具备稳定、可复放、可阻断的最小口径。
+
+A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
+- Contract 字段（最小集）：
+  - `runtime.examples.mode_index.version`
+  - `runtime.examples.mode_index.required_modes`（`single|skill|react|multi_agent|sandbox_governed`）
+  - `runtime.examples.smoke.enabled`
+  - QueryRuns additive（示例运行）：`example_mode`、`example_profile`、`example_contract_version`
+- Replay fixtures：
+  - `example_modes.v1`（覆盖五类模式的最小运行快照）
+  - drift 分类至少包含：`example_mode_contract_drift`、`example_readme_runtime_drift`
+- Gate：
+  - `check-agent-mode-examples-smoke.sh/.ps1`
+  - required-check 候选：`agent-mode-examples-smoke-gate`
+- 最小测试矩阵：
+  - 模式冒烟：`single`、`skill`、`react`、`multi_agent`、`sandbox_governed` 全部可运行；
+  - 语义一致：`react` 示例在 Run/Stream 下行为口径一致；
+  - 治理一致：`sandbox_governed` 示例可稳定触发 egress/allowlist 判定与解释字段；
+  - 文档一致：每个模式 README 都有“前置条件、运行命令、预期输出、失败排查”四段。
+- 文档同步：
+  - `examples/*/README.md`（模式化结构与索引）
+  - `README.md`（Examples 快速入口更新）
+  - `docs/mainline-contract-test-index.md`（新增 example gate）
+- 退出条件（DoD）：
+  - 新接入团队在不读源码前提下可按模式完成端到端跑通；
+  - 示例与主线 contract 不再出现长期漂移（通过 smoke gate 持续阻断）。
+
+跨提案联动收口（避免后续再开同域提案）：
+- A58 冻结 `policy_decision_path` 与 `deny_source` 后，A60/A61 禁止重定义同义字段，仅允许引用。
+- A59 冻结 memory 生命周期与检索质量阈值后，A60 预算计算必须复用该口径，不再另起成本定义。
+- A61 的 eval 指标定义必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
+- A62 的示例字段与观测语义必须引用 A56-A61 既有 contract 输出，禁止在 examples 侧定义平行语义。
+- A63 的命名与文档整合必须复用现有契约字段，不得改写 contract 语义；Axx->语义名映射集中维护于索引，不在多处重复定义。
+- A64 的优化实现必须复用 A58-A61 既有契约字段与 reason taxonomy，禁止以性能优化引入语义分叉。
+- 若出现新增需求，优先以 A58-A64 的“增量任务”吸收，默认不新增 A65+ 同域提案。
+
 整合与重排说明：
-- 原备选 `A57 incident-forensics-replay-package` 已并入 A55（diagnostics bundle + replay hint 一体化）。
-- 新增 `A56 react-loop-and-tool-calling-parity` 作为“顺滑 ReAct 模式”专项提案，并置于备选池首位。
-- 原备选 `A55 cross-channel-data-egress-and-secret-governance` 顺延并聚焦为 A57（sandbox egress + adapter allowlist 闭环）。
-- 原备选 `A56 runtime-cost-latency-budget` 顺延为 A59，避免与 A56/A57/A58 的阶段目标重叠。
+- A56/A57 已从备选池转入进行中，不再计入备选编号。
+- 新增紧急备选 A58（policy precedence + decision trace），用于承接 A56/A57 并行实施的跨策略冲突风险。
+- 原备选 A58（memory scope）顺延为 A59，并与 builtin filesystem local-memory 增强方案合并，减少重复提案。
+- 原备选 A59（runtime cost-latency budget）顺延为 A60。
+- 新增 A61（OTel tracing + agent eval 互操作），作为主流框架对齐的可观测与评测候选，不改变 A58-A60 既定顺序。
+- 新增 A62（delivery usability example pack），用于统一主要 agent 模式示例与交付上手体验，不改变 A58-A61 的核心契约收敛顺序。
+- 新增 A63（codebase consolidation and semantic labeling），用于临时代码/文档清理与语义化整顿，不改变 A58-A62 的核心契约顺序。
+- 原 A63（engineering/performance optimization）顺延为 A64，待 A62/A63 完成后再展开详细方案。
 
 ### P2：0.x 质量与治理持续收敛
 
@@ -569,6 +855,12 @@ A54 gate 交付口径（当前实现）：
 说明：
 - 原 `examples/01-08/TODO.md` 已收敛到本节，避免分散维护。
 - 示例运行态与使用方式以 `examples/*/README.md` 为准；增强项排期以本 roadmap 为准。
+- A62 启动后，本节 backlog 统一并入“agent mode example pack”任务编排，按模式矩阵优先收口：
+  - `single agent`
+  - `agent with skill`
+  - `react agent`
+  - `multi agent`
+  - `sandbox-governed agent`
 
 当前 backlog（按示例编号）：
 - `01-chat-minimal`：

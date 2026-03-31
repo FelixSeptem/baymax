@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +55,68 @@ func TestGenerateClassifiesTimeoutErrors(t *testing.T) {
 	}
 }
 
+func TestGenerateInjectsCanonicalToolFeedback(t *testing.T) {
+	captured := ""
+	c := &Client{
+		model: "gemini-2.5-flash",
+		generate: func(ctx context.Context, input string) (types.ModelResponse, error) {
+			captured = input
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	_, err := c.Generate(context.Background(), types.ModelRequest{
+		Input: "hello",
+		ToolResult: []types.ToolCallOutcome{
+			{
+				CallID: "call-1",
+				Name:   "local.echo",
+				Result: types.ToolResult{Content: "done"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	if !strings.Contains(captured, "[tool_result_feedback.v1]") ||
+		!strings.Contains(captured, `"tool_call_id":"call-1"`) ||
+		!strings.Contains(captured, `"tool_name":"local.echo"`) {
+		t.Fatalf("captured canonical feedback missing expected fields: %q", captured)
+	}
+}
+
+func TestGenerateRejectsInvalidToolFeedback(t *testing.T) {
+	called := false
+	c := &Client{
+		model: "gemini-2.5-flash",
+		generate: func(ctx context.Context, input string) (types.ModelResponse, error) {
+			called = true
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	_, err := c.Generate(context.Background(), types.ModelRequest{
+		Input: "hello",
+		ToolResult: []types.ToolCallOutcome{
+			{
+				CallID: "",
+				Name:   "local.echo",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected feedback_invalid error")
+	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) {
+		t.Fatalf("expected provider classified error, got %T", err)
+	}
+	if classified.Reason != "feedback_invalid" {
+		t.Fatalf("reason=%q, want feedback_invalid", classified.Reason)
+	}
+	if called {
+		t.Fatal("generate function should not be called for invalid feedback")
+	}
+}
+
 func TestStreamEmitsTextAndToolCall(t *testing.T) {
 	c := &Client{
 		model: "gemini-2.5-flash",
@@ -85,6 +148,9 @@ func TestStreamEmitsTextAndToolCall(t *testing.T) {
 			toolCount++
 			if ev.ToolCall == nil || ev.ToolCall.CallID != "call-1" {
 				t.Fatalf("unexpected tool call: %#v", ev.ToolCall)
+			}
+			if ev.Meta["tool_call_id"] != "call-1" || ev.Meta["tool_name"] != "local.weather" {
+				t.Fatalf("unexpected tool call meta: %#v", ev.Meta)
 			}
 		}
 	}

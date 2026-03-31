@@ -24,6 +24,18 @@
     "type": "model.completed"
   },
   {
+    "type": "tool.dispatch.started"
+  },
+  {
+    "type": "tool.dispatch.completed"
+  },
+  {
+    "type": "model.requested"
+  },
+  {
+    "type": "model.completed"
+  },
+  {
     "type": "run.finished"
   }
 ]

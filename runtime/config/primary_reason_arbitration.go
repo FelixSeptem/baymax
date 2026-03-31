@@ -197,8 +197,25 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	RuntimePrimaryCodeTimeoutExhausted: {Code: "timeout.increase_effective_budget", Domain: "timeout"},
 	RuntimePrimaryCodeTimeoutClamped:   {Code: "timeout.adjust_parent_budget", Domain: "timeout"},
 
-	ReadinessCodeConfigInvalid:                 {Code: "runtime.validate_config", Domain: "config"},
-	ReadinessCodeStrictEscalated:               {Code: "runtime.relax_strict_mode", Domain: "runtime"},
+	ReadinessCodeConfigInvalid:     {Code: "runtime.validate_config", Domain: "config"},
+	ReadinessCodeStrictEscalated:   {Code: "runtime.relax_strict_mode", Domain: "runtime"},
+	ReadinessCodeReactLoopDisabled: {Code: "react.enable_loop", Domain: ReadinessDomainRuntime},
+	ReadinessCodeReactStreamDispatchUnavailable: {
+		Code:   "react.enable_stream_dispatch",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeReactProviderToolCallingUnsupported: {
+		Code:   "react.select_tool_calling_provider",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeReactToolRegistryUnavailable: {
+		Code:   "react.restore_tool_registry",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeReactSandboxDependencyUnavailable: {
+		Code:   "react.restore_sandbox_dependency",
+		Domain: ReadinessDomainRuntime,
+	},
 	ReadinessCodeSchedulerFallback:             {Code: "scheduler.recover_backend", Domain: ReadinessDomainScheduler},
 	ReadinessCodeSchedulerActivationError:      {Code: "scheduler.fix_activation", Domain: ReadinessDomainScheduler},
 	ReadinessCodeMailboxFallback:               {Code: "mailbox.recover_backend", Domain: ReadinessDomainMailbox},
@@ -433,9 +450,16 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 		return 3
 	case ReadinessCodeSandboxRequiredUnavailable, ReadinessCodeSandboxProfileInvalid, ReadinessCodeSandboxCapabilityMismatch, ReadinessCodeSandboxSessionModeUnsupported:
 		return 3
+	case ReadinessCodeReactProviderToolCallingUnsupported:
+		return 3
 	case ReadinessCodeAdapterOptionalUnavailable, ReadinessCodeAdapterOptionalCircuitOpen, ReadinessCodeAdapterDegraded, ReadinessCodeAdapterHalfOpenDegraded:
 		return 4
 	case ReadinessCodeSandboxOptionalUnavailable:
+		return 4
+	case ReadinessCodeReactLoopDisabled,
+		ReadinessCodeReactStreamDispatchUnavailable,
+		ReadinessCodeReactToolRegistryUnavailable,
+		ReadinessCodeReactSandboxDependencyUnavailable:
 		return 4
 	case ReadinessCodeMemoryModeInvalid,
 		ReadinessCodeMemoryProfileMissing,

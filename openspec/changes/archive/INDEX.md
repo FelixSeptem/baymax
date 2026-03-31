@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-03-31 15:51:57
+Updated: 2026-03-31 20:18:29
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -105,3 +105,4 @@ Updated: 2026-03-31 15:51:57
 - 101 -> introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53
 - 102 -> introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54
 - 103 -> introduce-observability-export-and-diagnostics-bundle-contract-a55
+- 104 -> introduce-react-loop-and-tool-calling-parity-contract-a56

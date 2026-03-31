@@ -43,6 +43,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a55_observability_success_input.json",
 			expected: "a55_observability_success_expected.json",
 		},
+		{
+			name:     "a56-react",
+			input:    "a56_react_success_input.json",
+			expected: "a56_react_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -276,6 +281,48 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeBundleFingerprintDrift,
 			wantInText: "bundle fingerprint drift",
 		},
+		{
+			name:       "a56-react-loop-step-drift",
+			fixture:    "a56_react_loop_step_drift_input.json",
+			wantCode:   ReasonCodeReactLoopStepDrift,
+			wantInText: "react loop step drift",
+		},
+		{
+			name:       "a56-react-tool-call-budget-drift",
+			fixture:    "a56_react_tool_call_budget_drift_input.json",
+			wantCode:   ReasonCodeReactToolCallBudgetDrift,
+			wantInText: "react tool-call budget drift",
+		},
+		{
+			name:       "a56-react-iteration-budget-drift",
+			fixture:    "a56_react_iteration_budget_drift_input.json",
+			wantCode:   ReasonCodeReactIterationBudgetDrift,
+			wantInText: "react iteration budget drift",
+		},
+		{
+			name:       "a56-react-termination-reason-drift",
+			fixture:    "a56_react_termination_reason_drift_input.json",
+			wantCode:   ReasonCodeReactTerminationReasonDrift,
+			wantInText: "react termination reason drift",
+		},
+		{
+			name:       "a56-react-stream-dispatch-drift",
+			fixture:    "a56_react_stream_dispatch_drift_input.json",
+			wantCode:   ReasonCodeReactStreamDispatchDrift,
+			wantInText: "react stream dispatch drift",
+		},
+		{
+			name:       "a56-react-provider-mapping-drift",
+			fixture:    "a56_react_provider_mapping_drift_input.json",
+			wantCode:   ReasonCodeReactProviderMappingDrift,
+			wantInText: "react provider mapping drift",
+		},
+		{
+			name:       "a56-react-schema-malformed",
+			fixture:    "a56_react_schema_malformed_input.json",
+			wantCode:   ReasonCodeSchemaMismatch,
+			wantInText: "model_provider is required",
+		},
 	}
 
 	for _, tc := range tests {
@@ -306,6 +353,7 @@ func TestReplayContractArbitrationMixedA48A52MemoryCompatibility(t *testing.T) {
 		"a52_sandbox_rollout_success_input.json",
 		"a54_memory_success_input.json",
 		"a55_observability_success_input.json",
+		"a56_react_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

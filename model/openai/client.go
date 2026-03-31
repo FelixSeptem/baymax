@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	"github.com/FelixSeptem/baymax/model/toolcontract"
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
@@ -90,13 +92,15 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	normalizedReq, err := toolcontract.WithCanonicalInput(req)
+	if err != nil {
+		return types.ModelResponse{}, err
+	}
+	req = normalizedReq
 	if c.generateFn != nil {
 		return c.generateFn(ctx, req)
 	}
 	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
-	}
 	if input == "" {
 		return types.ModelResponse{}, errors.New("model input is empty")
 	}
@@ -120,13 +124,15 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	normalizedReq, err := toolcontract.WithCanonicalInput(req)
+	if err != nil {
+		return err
+	}
+	req = normalizedReq
 	if c.streamFn != nil {
 		return c.streamFn(ctx, req, onEvent)
 	}
 	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
-	}
 	if input == "" {
 		return errors.New("model input is empty")
 	}
@@ -146,6 +152,10 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	for stream.Next() {
 		mapped, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
+			var classified *providererror.Classified
+			if errors.As(err, &classified) {
+				return classified
+			}
 			if onEvent != nil {
 				_ = onEvent(types.ModelEvent{
 					Type: types.ModelEventTypeResponseError,
@@ -316,7 +326,12 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(raw), &args); err != nil {
-		return nil, fmt.Errorf("invalid tool call arguments for %s: %w", call.callID, err)
+		return nil, &providererror.Classified{
+			Class:     types.ErrModel,
+			Reason:    "request_invalid",
+			Retryable: false,
+			Cause:     fmt.Errorf("invalid tool call arguments for %s: %w", call.callID, err),
+		}
 	}
 	call.emitted = true
 	toolCall := types.ToolCall{
@@ -328,7 +343,10 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 		Type:     "tool_call",
 		ToolCall: &toolCall,
 		Meta: map[string]any{
-			"item_id": itemID,
+			"provider":     "openai",
+			"item_id":      itemID,
+			"tool_call_id": toolCall.CallID,
+			"tool_name":    toolCall.Name,
 		},
 	}, nil
 }

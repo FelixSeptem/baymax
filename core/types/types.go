@@ -398,6 +398,7 @@ type EventHandler interface {
 type LoopPolicy struct {
 	MaxIterations            int           `json:"max_iterations"`
 	MaxToolCallsPerIteration int           `json:"max_tool_calls_per_iteration"`
+	ToolCallLimit            int           `json:"tool_call_limit"`
 	StepTimeout              time.Duration `json:"step_timeout"`
 	ModelRetry               int           `json:"model_retry"`
 	ToolRetry                int           `json:"tool_retry"`
@@ -409,6 +410,7 @@ func DefaultLoopPolicy() LoopPolicy {
 	return LoopPolicy{
 		MaxIterations:            12,
 		MaxToolCallsPerIteration: 8,
+		ToolCallLimit:            64,
 		StepTimeout:              60 * time.Second,
 		ModelRetry:               2,
 		ToolRetry:                1,

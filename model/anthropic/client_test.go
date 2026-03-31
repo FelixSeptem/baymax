@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,66 @@ func TestGenerateClassifiesProviderErrors(t *testing.T) {
 	}
 }
 
+func TestGenerateInjectsCanonicalToolFeedback(t *testing.T) {
+	var captured string
+	c := NewClient(Config{
+		GenerateFn: func(ctx context.Context, input string) (types.ModelResponse, error) {
+			captured = input
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	})
+	_, err := c.Generate(context.Background(), types.ModelRequest{
+		Input: "hello",
+		ToolResult: []types.ToolCallOutcome{
+			{
+				CallID: "call-1",
+				Name:   "local.echo",
+				Result: types.ToolResult{Content: "done"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	if !strings.Contains(captured, "[tool_result_feedback.v1]") ||
+		!strings.Contains(captured, `"tool_call_id":"call-1"`) ||
+		!strings.Contains(captured, `"tool_name":"local.echo"`) {
+		t.Fatalf("captured canonical feedback missing expected fields: %q", captured)
+	}
+}
+
+func TestGenerateRejectsInvalidToolFeedback(t *testing.T) {
+	called := false
+	c := NewClient(Config{
+		GenerateFn: func(ctx context.Context, input string) (types.ModelResponse, error) {
+			called = true
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	})
+	_, err := c.Generate(context.Background(), types.ModelRequest{
+		Input: "hello",
+		ToolResult: []types.ToolCallOutcome{
+			{
+				CallID: "",
+				Name:   "local.echo",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected feedback_invalid error")
+	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) {
+		t.Fatalf("expected provider classified error, got %T", err)
+	}
+	if classified.Reason != "feedback_invalid" {
+		t.Fatalf("reason=%q, want feedback_invalid", classified.Reason)
+	}
+	if called {
+		t.Fatal("GenerateFn should not be called for invalid feedback")
+	}
+}
+
 func TestStreamEmitsTextAndCompleteToolCall(t *testing.T) {
 	stream := &fakeAnthropicStream{events: []anthropic.MessageStreamEventUnion{
 		{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "hello "}},
@@ -107,6 +168,9 @@ func TestStreamEmitsTextAndCompleteToolCall(t *testing.T) {
 			if ev.ToolCall.Args["city"] != "shanghai" {
 				t.Fatalf("unexpected tool args: %#v", ev.ToolCall.Args)
 			}
+			if ev.Meta["tool_call_id"] != "call-1" || ev.Meta["tool_name"] != "local.weather" {
+				t.Fatalf("unexpected tool call meta: %#v", ev.Meta)
+			}
 		}
 	}
 	if text != "hello world" {
@@ -117,6 +181,26 @@ func TestStreamEmitsTextAndCompleteToolCall(t *testing.T) {
 	}
 	if events[len(events)-1].Type != types.ModelEventTypeResponseCompleted {
 		t.Fatalf("last event = %q, want %q", events[len(events)-1].Type, types.ModelEventTypeResponseCompleted)
+	}
+}
+
+func TestStreamClassifiesInvalidToolArgumentsAsRequestInvalid(t *testing.T) {
+	stream := &fakeAnthropicStream{events: []anthropic.MessageStreamEventUnion{
+		{Type: "content_block_start", Index: 1, ContentBlock: anthropic.ContentBlockStartEventContentBlockUnion{Type: "tool_use", ID: "call-1", Name: "local.weather"}},
+		{Type: "content_block_delta", Index: 1, Delta: anthropic.MessageStreamEventUnionDelta{Type: "input_json_delta", PartialJSON: `{"city":`}},
+		{Type: "content_block_stop", Index: 1},
+	}}
+	c := NewClient(Config{StreamFn: func(ctx context.Context, input string) Stream { return stream }})
+	err := c.Stream(context.Background(), types.ModelRequest{Input: "x"}, nil)
+	if err == nil {
+		t.Fatal("expected stream error")
+	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) {
+		t.Fatalf("expected classified provider error, got %T", err)
+	}
+	if classified.Reason != "request_invalid" {
+		t.Fatalf("reason=%q, want request_invalid", classified.Reason)
 	}
 }
 

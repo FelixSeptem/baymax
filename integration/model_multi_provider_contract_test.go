@@ -11,11 +11,13 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/integration/fakes"
 	anthropicmodel "github.com/FelixSeptem/baymax/model/anthropic"
 	geminimodel "github.com/FelixSeptem/baymax/model/gemini"
 	openaimodel "github.com/FelixSeptem/baymax/model/openai"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
+	"github.com/FelixSeptem/baymax/tool/local"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"google.golang.org/genai"
 )
@@ -99,15 +101,22 @@ func TestModelProviderContractErrorClassification(t *testing.T) {
 }
 
 func TestModelProviderStreamingContract(t *testing.T) {
+	openaiStep := 0
+	anthropicStep := 0
+	geminiStep := 0
 	cases := map[string]types.ModelClient{
 		"openai": openaimodel.NewClient(openaimodel.Config{
 			StreamFn: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "he"}); err != nil {
-					return err
+				openaiStep++
+				if openaiStep == 1 {
+					if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{
+						CallID: "call-openai", Name: "local.weather", Args: map[string]any{"city": "shanghai"},
+					}}); err != nil {
+						return err
+					}
+					return onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted})
 				}
-				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{
-					CallID: "call-openai", Name: "local.weather", Args: map[string]any{"city": "shanghai"},
-				}}); err != nil {
+				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "he"}); err != nil {
 					return err
 				}
 				if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "llo"}); err != nil {
@@ -115,36 +124,66 @@ func TestModelProviderStreamingContract(t *testing.T) {
 				}
 				return onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted})
 			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("openai", model), nil
+			},
 		}),
 		"anthropic": anthropicmodel.NewClient(anthropicmodel.Config{
 			StreamFn: func(ctx context.Context, input string) anthropicmodel.Stream {
+				anthropicStep++
+				if anthropicStep == 1 {
+					return &fakeAnthropicContractStream{events: []anthropic.MessageStreamEventUnion{
+						{Type: "content_block_start", Index: 1, ContentBlock: anthropic.ContentBlockStartEventContentBlockUnion{Type: "tool_use", ID: "call-anthropic", Name: "local.weather"}},
+						{Type: "content_block_delta", Index: 1, Delta: anthropic.MessageStreamEventUnionDelta{Type: "input_json_delta", PartialJSON: `{"city":"shanghai"}`}},
+						{Type: "content_block_stop", Index: 1},
+						{Type: "message_stop"},
+					}}
+				}
 				return &fakeAnthropicContractStream{events: []anthropic.MessageStreamEventUnion{
 					{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "he"}},
-					{Type: "content_block_start", Index: 1, ContentBlock: anthropic.ContentBlockStartEventContentBlockUnion{Type: "tool_use", ID: "call-anthropic", Name: "local.weather"}},
-					{Type: "content_block_delta", Index: 1, Delta: anthropic.MessageStreamEventUnionDelta{Type: "input_json_delta", PartialJSON: `{"city":"shanghai"}`}},
-					{Type: "content_block_stop", Index: 1},
 					{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "llo"}},
 					{Type: "message_stop"},
 				}}
 			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("anthropic", model), nil
+			},
 		}),
 		"gemini": mustGeminiClient(t, geminimodel.Config{
 			StreamFn: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
+				geminiStep++
+				if geminiStep == 1 {
+					return seqGeminiChunks([]*genai.GenerateContentResponse{
+						{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{
+							FunctionCall: &genai.FunctionCall{ID: "call-gemini", Name: "local.weather", Args: map[string]any{"city": "shanghai"}},
+						}}}}}},
+					}, nil)
+				}
 				return seqGeminiChunks([]*genai.GenerateContentResponse{
 					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "he"}}}}}},
-					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{
-						FunctionCall: &genai.FunctionCall{ID: "call-gemini", Name: "local.weather", Args: map[string]any{"city": "shanghai"}},
-					}}}}}},
 					{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "llo"}}}}}},
 				}, nil)
+			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("gemini", model), nil
 			},
 		}),
 	}
 
 	for name, model := range cases {
 		t.Run(name, func(t *testing.T) {
+			reg := local.NewRegistry()
+			if _, err := reg.Register(&fakes.Tool{
+				NameValue:   "weather",
+				SchemaValue: map[string]any{"type": "object"},
+				InvokeFn: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+					return types.ToolResult{Content: "ok"}, nil
+				},
+			}); err != nil {
+				t.Fatalf("register tool: %v", err)
+			}
 			collector := &eventCollector{}
-			eng := runner.New(model)
+			eng := runner.New(model, runner.WithLocalRegistry(reg))
 			res, err := eng.Stream(context.Background(), types.RunRequest{Input: "hello"}, collector)
 			if err != nil {
 				t.Fatalf("Stream error: %v", err)
@@ -174,15 +213,24 @@ func TestModelProviderStreamingFailFastClassification(t *testing.T) {
 			StreamFn: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
 				return providererror.FromError(errors.New("request timeout"))
 			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("openai", model), nil
+			},
 		}),
 		"anthropic-timeout": anthropicmodel.NewClient(anthropicmodel.Config{
 			StreamFn: func(ctx context.Context, input string) anthropicmodel.Stream {
 				return &fakeAnthropicContractStream{err: errors.New("request timeout")}
 			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("anthropic", model), nil
+			},
 		}),
 		"gemini-timeout": mustGeminiClient(t, geminimodel.Config{
 			StreamFn: func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
 				return seqGeminiChunks(nil, errors.New("request timeout"))
+			},
+			DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+				return supportedToolStreamingCapabilities("gemini", model), nil
 			},
 		}),
 	}
@@ -198,6 +246,67 @@ func TestModelProviderStreamingFailFastClassification(t *testing.T) {
 				t.Fatalf("error=%+v, want %q", res.Error, types.ErrPolicyTimeout)
 			}
 		})
+	}
+}
+
+func TestModelProviderStreamingMidStepFailureDoesNotSwitchProvider(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-stream-midstep-fallback.yaml")
+	cfg := `
+provider_fallback:
+  enabled: true
+  providers: [openai, anthropic]
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	anthropicCalled := 0
+	openaiClient := openaimodel.NewClient(openaimodel.Config{
+		StreamFn: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "partial"}); err != nil {
+				return err
+			}
+			return providererror.FromError(errors.New("stream transport exploded"))
+		},
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return supportedToolStreamingCapabilities("openai", model), nil
+		},
+	})
+	anthropicClient := anthropicmodel.NewClient(anthropicmodel.Config{
+		StreamFn: func(ctx context.Context, input string) anthropicmodel.Stream {
+			anthropicCalled++
+			return &fakeAnthropicContractStream{events: []anthropic.MessageStreamEventUnion{
+				{Type: "content_block_delta", Index: 0, Delta: anthropic.MessageStreamEventUnionDelta{Type: "text_delta", Text: "fallback"}},
+				{Type: "message_stop"},
+			}}
+		},
+		DiscoverFn: func(ctx context.Context, model string) (types.ProviderCapabilities, error) {
+			return supportedToolStreamingCapabilities("anthropic", model), nil
+		},
+	})
+
+	eng := runner.New(
+		openaiClient,
+		runner.WithProviderModels("openai", map[string]types.ModelClient{
+			"openai":    openaiClient,
+			"anthropic": anthropicClient,
+		}),
+		runner.WithRuntimeManager(mgr),
+	)
+	res, streamErr := eng.Stream(context.Background(), types.RunRequest{Input: "hello"}, nil)
+	if streamErr == nil {
+		t.Fatal("expected mid-step stream failure")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrModel {
+		t.Fatalf("error=%#v, want ErrModel", res.Error)
+	}
+	if anthropicCalled != 0 {
+		t.Fatalf("fallback provider should not be called mid-step, anthropicCalled=%d", anthropicCalled)
 	}
 }
 
@@ -358,5 +467,17 @@ func seqGeminiChunks(chunks []*genai.GenerateContentResponse, tailErr error) ite
 		if tailErr != nil {
 			_ = yield(nil, tailErr)
 		}
+	}
+}
+
+func supportedToolStreamingCapabilities(provider string, model string) types.ProviderCapabilities {
+	return types.ProviderCapabilities{
+		Provider: provider,
+		Model:    model,
+		Support: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+		},
+		Source: "integration-test",
 	}
 }

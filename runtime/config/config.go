@@ -256,6 +256,7 @@ type Config struct {
 }
 
 type RuntimeDomainConfig struct {
+	React             RuntimeReactConfig             `json:"react"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
@@ -1155,6 +1156,13 @@ func DefaultConfig() Config {
 			},
 		},
 		Runtime: RuntimeDomainConfig{
+			React: RuntimeReactConfig{
+				Enabled:                   true,
+				MaxIterations:             12,
+				ToolCallLimit:             64,
+				StreamToolDispatchEnabled: true,
+				OnBudgetExhausted:         RuntimeReactOnBudgetExhaustedFailFast,
+			},
 			Readiness: RuntimeReadinessConfig{
 				Enabled:            true,
 				Strict:             false,
@@ -1962,6 +1970,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate > 1 {
 		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
+	}
+	if err := validateRuntimeReact(cfg.Runtime.React); err != nil {
+		return err
 	}
 	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
 		return err
@@ -3599,6 +3610,10 @@ func validateRuntimeOperationProfiles(cfg RuntimeOperationProfilesConfig) error 
 	return nil
 }
 
+func validateRuntimeReact(cfg RuntimeReactConfig) error {
+	return ValidateRuntimeReactConfig(cfg)
+}
+
 func validateRuntimeReadinessAdmission(cfg RuntimeReadinessAdmissionConfig) error {
 	switch mode := strings.ToLower(strings.TrimSpace(cfg.Mode)); mode {
 	case ReadinessAdmissionModeFailFast:
@@ -3684,6 +3699,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.p95_latency_ms", base.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.error_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate)
 	v.SetDefault("diagnostics.ca2_external_trend.thresholds.hit_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.HitRate)
+	v.SetDefault("runtime.react.enabled", base.Runtime.React.Enabled)
+	v.SetDefault("runtime.react.max_iterations", base.Runtime.React.MaxIterations)
+	v.SetDefault("runtime.react.tool_call_limit", base.Runtime.React.ToolCallLimit)
+	v.SetDefault("runtime.react.stream_tool_dispatch_enabled", base.Runtime.React.StreamToolDispatchEnabled)
+	v.SetDefault("runtime.react.on_budget_exhausted", base.Runtime.React.OnBudgetExhausted)
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
@@ -4064,6 +4084,19 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs = v.GetInt64("diagnostics.ca2_external_trend.thresholds.p95_latency_ms")
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.error_rate")
 	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.hit_rate")
+	reactEnabled, err := strictBoolConfigValue(v, "runtime.react.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	streamToolDispatchEnabled, err := strictBoolConfigValue(v, "runtime.react.stream_tool_dispatch_enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.React.Enabled = reactEnabled
+	cfg.Runtime.React.MaxIterations = v.GetInt("runtime.react.max_iterations")
+	cfg.Runtime.React.ToolCallLimit = v.GetInt("runtime.react.tool_call_limit")
+	cfg.Runtime.React.StreamToolDispatchEnabled = streamToolDispatchEnabled
+	cfg.Runtime.React.OnBudgetExhausted = strings.ToLower(strings.TrimSpace(v.GetString("runtime.react.on_budget_exhausted")))
 	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
 	if err != nil {
 		return Config{}, err

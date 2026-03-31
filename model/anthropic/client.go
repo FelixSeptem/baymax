@@ -10,6 +10,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	"github.com/FelixSeptem/baymax/model/toolcontract"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
@@ -104,9 +105,9 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
+	input, err := toolcontract.CanonicalInput(req)
+	if err != nil {
+		return types.ModelResponse{}, err
 	}
 	if input == "" {
 		return types.ModelResponse{}, errors.New("model input is empty")
@@ -115,9 +116,9 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
+	input, err := toolcontract.CanonicalInput(req)
+	if err != nil {
+		return err
 	}
 	if input == "" {
 		return errors.New("model input is empty")
@@ -319,7 +320,12 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 	}
 	args := map[string]any{}
 	if err := json.Unmarshal([]byte(raw), &args); err != nil {
-		return nil, fmt.Errorf("invalid anthropic tool arguments for %s: %w", call.id, err)
+		return nil, &providererror.Classified{
+			Class:     types.ErrModel,
+			Reason:    "request_invalid",
+			Retryable: false,
+			Cause:     fmt.Errorf("invalid anthropic tool arguments for %s: %w", call.id, err),
+		}
 	}
 	call.emitted = true
 	return &types.ModelEvent{
@@ -329,7 +335,11 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 			Name:   call.name,
 			Args:   args,
 		},
-		Meta: map[string]any{"provider": "anthropic"},
+		Meta: map[string]any{
+			"provider":     "anthropic",
+			"tool_call_id": call.id,
+			"tool_name":    call.name,
+		},
 	}, nil
 }
 

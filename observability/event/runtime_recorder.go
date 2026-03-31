@@ -431,6 +431,13 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			BackpressureDrop:                            payloadInt(payload, "backpressure_drop_count"),
 			BackpressureDropByPhase:                     payloadIntMap(payload, "backpressure_drop_count_by_phase"),
 			InflightPeak:                                payloadInt(payload, "inflight_peak"),
+			ReactEnabled:                                payloadBool(payload, "react_enabled"),
+			ReactIterationTotal:                         payloadInt(payload, "react_iteration_total"),
+			ReactToolCallTotal:                          payloadInt(payload, "react_tool_call_total"),
+			ReactToolCallBudgetHitTotal:                 payloadInt(payload, "react_tool_call_budget_hit_total"),
+			ReactIterationBudgetHitTotal:                payloadInt(payload, "react_iteration_budget_hit_total"),
+			ReactTerminationReason:                      payloadString(payload, "react_termination_reason"),
+			ReactStreamDispatchEnabled:                  payloadBool(payload, "react_stream_dispatch_enabled"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{

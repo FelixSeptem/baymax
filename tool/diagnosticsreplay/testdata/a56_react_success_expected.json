@@ -1,0 +1,20 @@
+{
+  "version": "react.v1",
+  "cases": [
+    {
+      "name": "react_success_case",
+      "canonical": {
+        "model_provider": "openai",
+        "react_enabled": true,
+        "react_iteration_total": 3,
+        "react_tool_call_total": 2,
+        "react_termination_reason": "react.completed",
+        "react_stream_dispatch_enabled": true
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

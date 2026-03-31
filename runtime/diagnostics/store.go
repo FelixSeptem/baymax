@@ -297,6 +297,13 @@ type RunRecord struct {
 	BackpressureDrop                            int                               `json:"backpressure_drop_count,omitempty"`
 	BackpressureDropByPhase                     map[string]int                    `json:"backpressure_drop_count_by_phase,omitempty"`
 	InflightPeak                                int                               `json:"inflight_peak,omitempty"`
+	ReactEnabled                                bool                              `json:"react_enabled,omitempty"`
+	ReactIterationTotal                         int                               `json:"react_iteration_total,omitempty"`
+	ReactToolCallTotal                          int                               `json:"react_tool_call_total,omitempty"`
+	ReactToolCallBudgetHitTotal                 int                               `json:"react_tool_call_budget_hit_total,omitempty"`
+	ReactIterationBudgetHitTotal                int                               `json:"react_iteration_budget_hit_total,omitempty"`
+	ReactTerminationReason                      string                            `json:"react_termination_reason,omitempty"`
+	ReactStreamDispatchEnabled                  bool                              `json:"react_stream_dispatch_enabled,omitempty"`
 	DiagnosticsCardinalityBudgetHitTotal        int                               `json:"diagnostics_cardinality_budget_hit_total,omitempty"`
 	DiagnosticsCardinalityTruncatedTotal        int                               `json:"diagnostics_cardinality_truncated_total,omitempty"`
 	DiagnosticsCardinalityFailFastRejectTotal   int                               `json:"diagnostics_cardinality_fail_fast_reject_total,omitempty"`

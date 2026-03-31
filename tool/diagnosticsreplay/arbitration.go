@@ -18,6 +18,7 @@ const (
 	ArbitrationFixtureVersionA52V1    = "a52.v1"
 	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
 	ArbitrationFixtureVersionObsV1    = "observability.v1"
+	ArbitrationFixtureVersionReactV1  = "react.v1"
 
 	ReasonCodePrecedenceDrift               = "precedence_drift"
 	ReasonCodeTieBreakDrift                 = "tie_break_drift"
@@ -51,6 +52,12 @@ const (
 	ReasonCodeBundleSchemaDrift             = "diagnostics_bundle_schema_drift"
 	ReasonCodeBundleRedactionDrift          = "diagnostics_bundle_redaction_drift"
 	ReasonCodeBundleFingerprintDrift        = "diagnostics_bundle_fingerprint_drift"
+	ReasonCodeReactLoopStepDrift            = "react_loop_step_drift"
+	ReasonCodeReactToolCallBudgetDrift      = "react_tool_call_budget_drift"
+	ReasonCodeReactIterationBudgetDrift     = "react_iteration_budget_drift"
+	ReasonCodeReactTerminationReasonDrift   = "react_termination_reason_drift"
+	ReasonCodeReactStreamDispatchDrift      = "react_stream_dispatch_drift"
+	ReasonCodeReactProviderMappingDrift     = "react_provider_mapping_drift"
 )
 
 type ArbitrationFixture struct {
@@ -83,6 +90,14 @@ type ArbitrationObservation struct {
 	RuntimeArbitrationRuleMismatchTotal    int      `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
 	RuntimeRemediationHintCode             string   `json:"runtime_remediation_hint_code,omitempty"`
 	RuntimeRemediationHintDomain           string   `json:"runtime_remediation_hint_domain,omitempty"`
+	ModelProvider                          string   `json:"model_provider,omitempty"`
+	ReactEnabled                           bool     `json:"react_enabled,omitempty"`
+	ReactIterationTotal                    int      `json:"react_iteration_total,omitempty"`
+	ReactToolCallTotal                     int      `json:"react_tool_call_total,omitempty"`
+	ReactToolCallBudgetHitTotal            int      `json:"react_tool_call_budget_hit_total,omitempty"`
+	ReactIterationBudgetHitTotal           int      `json:"react_iteration_budget_hit_total,omitempty"`
+	ReactTerminationReason                 string   `json:"react_termination_reason,omitempty"`
+	ReactStreamDispatchEnabled             bool     `json:"react_stream_dispatch_enabled,omitempty"`
 	SandboxMode                            string   `json:"sandbox_mode,omitempty"`
 	SandboxBackend                         string   `json:"sandbox_backend,omitempty"`
 	SandboxProfile                         string   `json:"sandbox_profile,omitempty"`
@@ -155,7 +170,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
-		version != ArbitrationFixtureVersionObsV1 {
+		version != ArbitrationFixtureVersionObsV1 &&
+		version != ArbitrationFixtureVersionReactV1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -268,6 +284,14 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		RuntimeArbitrationRuleMismatchTotal:    in.RuntimeArbitrationRuleMismatchTotal,
 		RuntimeRemediationHintCode:             strings.TrimSpace(in.RuntimeRemediationHintCode),
 		RuntimeRemediationHintDomain:           strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
+		ModelProvider:                          strings.ToLower(strings.TrimSpace(in.ModelProvider)),
+		ReactEnabled:                           in.ReactEnabled,
+		ReactIterationTotal:                    in.ReactIterationTotal,
+		ReactToolCallTotal:                     in.ReactToolCallTotal,
+		ReactToolCallBudgetHitTotal:            in.ReactToolCallBudgetHitTotal,
+		ReactIterationBudgetHitTotal:           in.ReactIterationBudgetHitTotal,
+		ReactTerminationReason:                 strings.ToLower(strings.TrimSpace(in.ReactTerminationReason)),
+		ReactStreamDispatchEnabled:             in.ReactStreamDispatchEnabled,
 		SandboxMode:                            strings.ToLower(strings.TrimSpace(in.SandboxMode)),
 		SandboxBackend:                         strings.ToLower(strings.TrimSpace(in.SandboxBackend)),
 		SandboxProfile:                         strings.ToLower(strings.TrimSpace(in.SandboxProfile)),
@@ -321,6 +345,18 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if out.RuntimeArbitrationRuleMismatchTotal < 0 {
 		out.RuntimeArbitrationRuleMismatchTotal = 0
+	}
+	if out.ReactIterationTotal < 0 {
+		out.ReactIterationTotal = 0
+	}
+	if out.ReactToolCallTotal < 0 {
+		out.ReactToolCallTotal = 0
+	}
+	if out.ReactToolCallBudgetHitTotal < 0 {
+		out.ReactToolCallBudgetHitTotal = 0
+	}
+	if out.ReactIterationBudgetHitTotal < 0 {
+		out.ReactIterationBudgetHitTotal = 0
 	}
 	if out.SandboxTimeoutTotal < 0 {
 		out.SandboxTimeoutTotal = 0
@@ -390,6 +426,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return validateMemoryArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionReactV1 {
+		return validateReactArbitrationObservation(caseName, lane, obs)
 	}
 	if strings.TrimSpace(obs.RuntimePrimaryDomain) == "" {
 		return &ValidationError{
@@ -576,6 +615,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionReactV1 {
+		return assertReactArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
@@ -784,6 +826,83 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 }
 
+func validateReactArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !obs.ReactEnabled {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_enabled must be true", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.ModelProvider) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s model_provider is required", caseName, lane),
+		}
+	}
+	if obs.ReactIterationTotal <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_iteration_total must be > 0", caseName, lane),
+		}
+	}
+	if obs.ReactToolCallTotal < 0 ||
+		obs.ReactToolCallBudgetHitTotal < 0 ||
+		obs.ReactIterationBudgetHitTotal < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react budget counters must be >= 0", caseName, lane),
+		}
+	}
+	if !isCanonicalReactTerminationReason(obs.ReactTerminationReason) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_termination_reason is not canonical: %q", caseName, lane, obs.ReactTerminationReason),
+		}
+	}
+	return nil
+}
+
+func assertReactArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.ReactEnabled != actual.ReactEnabled || expected.ReactIterationTotal != actual.ReactIterationTotal {
+		return &ValidationError{
+			Code:    ReasonCodeReactLoopStepDrift,
+			Message: fmt.Sprintf("case %q %s react loop step drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ReactToolCallTotal != actual.ReactToolCallTotal ||
+		expected.ReactToolCallBudgetHitTotal != actual.ReactToolCallBudgetHitTotal {
+		return &ValidationError{
+			Code:    ReasonCodeReactToolCallBudgetDrift,
+			Message: fmt.Sprintf("case %q %s react tool-call budget drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ReactIterationBudgetHitTotal != actual.ReactIterationBudgetHitTotal {
+		return &ValidationError{
+			Code:    ReasonCodeReactIterationBudgetDrift,
+			Message: fmt.Sprintf("case %q %s react iteration budget drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ReactTerminationReason != actual.ReactTerminationReason {
+		return &ValidationError{
+			Code:    ReasonCodeReactTerminationReasonDrift,
+			Message: fmt.Sprintf("case %q %s react termination reason drift expected=%q actual=%q", caseName, lane, expected.ReactTerminationReason, actual.ReactTerminationReason),
+		}
+	}
+	if expected.ReactStreamDispatchEnabled != actual.ReactStreamDispatchEnabled {
+		return &ValidationError{
+			Code:    ReasonCodeReactStreamDispatchDrift,
+			Message: fmt.Sprintf("case %q %s react stream dispatch drift expected=%t actual=%t", caseName, lane, expected.ReactStreamDispatchEnabled, actual.ReactStreamDispatchEnabled),
+		}
+	}
+	if expected.ModelProvider != actual.ModelProvider {
+		return &ValidationError{
+			Code:    ReasonCodeReactProviderMappingDrift,
+			Message: fmt.Sprintf("case %q %s react provider mapping drift expected=%q actual=%q", caseName, lane, expected.ModelProvider, actual.ModelProvider),
+		}
+	}
+	return nil
+}
+
 func validateSandboxArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
 	switch strings.TrimSpace(obs.SandboxMode) {
 	case runtimeconfig.SecuritySandboxModeObserve, runtimeconfig.SecuritySandboxModeEnforce:
@@ -983,6 +1102,16 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.MemoryFallbackReasonCode == right.MemoryFallbackReasonCode &&
 			left.MemoryReasonCode == right.MemoryReasonCode
 	}
+	if version == ArbitrationFixtureVersionReactV1 {
+		return left.ModelProvider == right.ModelProvider &&
+			left.ReactEnabled == right.ReactEnabled &&
+			left.ReactIterationTotal == right.ReactIterationTotal &&
+			left.ReactToolCallTotal == right.ReactToolCallTotal &&
+			left.ReactToolCallBudgetHitTotal == right.ReactToolCallBudgetHitTotal &&
+			left.ReactIterationBudgetHitTotal == right.ReactIterationBudgetHitTotal &&
+			left.ReactTerminationReason == right.ReactTerminationReason &&
+			left.ReactStreamDispatchEnabled == right.ReactStreamDispatchEnabled
+	}
 	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
 		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
 		left.RuntimePrimarySource != right.RuntimePrimarySource ||
@@ -1077,6 +1206,20 @@ func isCanonicalArbitrationCode(code string) bool {
 		return true
 	}
 	return false
+}
+
+func isCanonicalReactTerminationReason(reason string) bool {
+	switch strings.TrimSpace(reason) {
+	case runtimeconfig.RuntimeReactTerminationCompleted,
+		runtimeconfig.RuntimeReactTerminationMaxIterationsExceeded,
+		runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded,
+		runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
+		runtimeconfig.RuntimeReactTerminationProviderError,
+		runtimeconfig.RuntimeReactTerminationContextCanceled:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateMemoryArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {

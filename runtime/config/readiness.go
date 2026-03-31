@@ -40,6 +40,11 @@ const (
 const (
 	ReadinessCodeConfigInvalid                        = "runtime.config.invalid"
 	ReadinessCodeStrictEscalated                      = "runtime.readiness.strict_escalated"
+	ReadinessCodeReactLoopDisabled                    = "react.loop_disabled"
+	ReadinessCodeReactStreamDispatchUnavailable       = "react.stream_dispatch_unavailable"
+	ReadinessCodeReactProviderToolCallingUnsupported  = "react.provider_tool_calling_unsupported"
+	ReadinessCodeReactToolRegistryUnavailable         = "react.tool_registry_unavailable"
+	ReadinessCodeReactSandboxDependencyUnavailable    = "react.sandbox_dependency_unavailable"
 	ReadinessCodeArbitrationVersionUnsupported        = "runtime.arbitration.version.unsupported"
 	ReadinessCodeArbitrationVersionMismatch           = "runtime.arbitration.version.compatibility_mismatch"
 	ReadinessCodeSchedulerFallback                    = "scheduler.backend.fallback"
@@ -239,6 +244,20 @@ type RuntimeReadinessComponentSnapshot struct {
 	UpdatedAt time.Time                      `json:"updated_at,omitempty"`
 }
 
+type ReactReadinessDependencySnapshot struct {
+	ToolRegistryChecked          bool      `json:"tool_registry_checked"`
+	ToolRegistryAvailable        bool      `json:"tool_registry_available"`
+	ToolRegistryReason           string    `json:"tool_registry_reason,omitempty"`
+	ProviderChecked              bool      `json:"provider_checked"`
+	ProviderName                 string    `json:"provider_name,omitempty"`
+	ProviderToolCallingSupported bool      `json:"provider_tool_calling_supported"`
+	ProviderReason               string    `json:"provider_reason,omitempty"`
+	SandboxDependencyChecked     bool      `json:"sandbox_dependency_checked"`
+	SandboxDependencyAvailable   bool      `json:"sandbox_dependency_available"`
+	SandboxDependencyReason      string    `json:"sandbox_dependency_reason,omitempty"`
+	UpdatedAt                    time.Time `json:"updated_at,omitempty"`
+}
+
 type SandboxRolloutRuntimeState struct {
 	HealthBudgetStatus      string    `json:"health_budget_status,omitempty"`
 	HealthBudgetBreachTotal int       `json:"health_budget_breach_total,omitempty"`
@@ -266,6 +285,24 @@ func (m *Manager) ReadinessComponentSnapshot() RuntimeReadinessComponentSnapshot
 	m.readinessMu.RLock()
 	defer m.readinessMu.RUnlock()
 	return cloneReadinessComponentSnapshot(m.readinessComponents)
+}
+
+func (m *Manager) SetReactReadinessDependencySnapshot(snapshot ReactReadinessDependencySnapshot) {
+	if m == nil {
+		return
+	}
+	m.readinessMu.Lock()
+	m.reactReadiness = cloneReactReadinessDependencySnapshot(snapshot)
+	m.readinessMu.Unlock()
+}
+
+func (m *Manager) ReactReadinessDependencySnapshot() ReactReadinessDependencySnapshot {
+	if m == nil {
+		return ReactReadinessDependencySnapshot{}
+	}
+	m.readinessMu.RLock()
+	defer m.readinessMu.RUnlock()
+	return cloneReactReadinessDependencySnapshot(m.reactReadiness)
 }
 
 func (m *Manager) SetSandboxRolloutRuntimeState(state SandboxRolloutRuntimeState) {
@@ -423,9 +460,11 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 	}
 
 	componentSnapshot := m.ReadinessComponentSnapshot()
+	reactSnapshot := m.ReactReadinessDependencySnapshot()
 	findings = append(findings, componentReadinessFindings("scheduler", componentSnapshot.Scheduler)...)
 	findings = append(findings, componentReadinessFindings("mailbox", componentSnapshot.Mailbox)...)
 	findings = append(findings, componentReadinessFindings("recovery", componentSnapshot.Recovery)...)
+	findings = append(findings, reactReadinessFindings(cfg, reactSnapshot)...)
 	findings = append(findings, memoryReadinessFindings(cfg)...)
 	findings = append(findings, observabilityReadinessFindings(cfg)...)
 	findings = append(findings, m.sandboxReadinessFindings(cfg)...)
@@ -1029,6 +1068,87 @@ func componentReadinessFindings(component string, state RuntimeReadinessComponen
 	}
 
 	return nil
+}
+
+func reactReadinessFindings(cfg Config, snapshot ReactReadinessDependencySnapshot) []ReadinessFinding {
+	reactCfg := normalizeRuntimeReactConfig(cfg.Runtime.React)
+	base := map[string]any{
+		"react_enabled":                     reactCfg.Enabled,
+		"react_max_iterations":              reactCfg.MaxIterations,
+		"react_tool_call_limit":             reactCfg.ToolCallLimit,
+		"react_stream_dispatch_enabled":     reactCfg.StreamToolDispatchEnabled,
+		"react_on_budget_exhausted":         reactCfg.OnBudgetExhausted,
+		"react_dependency_snapshot_checked": snapshot.ToolRegistryChecked || snapshot.ProviderChecked || snapshot.SandboxDependencyChecked,
+	}
+	findings := make([]ReadinessFinding, 0, 5)
+
+	if !reactCfg.Enabled {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeReactLoopDisabled,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "react loop is disabled in runtime config",
+			Metadata: cloneAnyMap(base),
+		})
+		return findings
+	}
+
+	if !reactCfg.StreamToolDispatchEnabled {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeReactStreamDispatchUnavailable,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "react stream tool dispatch is unavailable",
+			Metadata: cloneAnyMap(base),
+		})
+	}
+
+	if snapshot.ProviderChecked && !snapshot.ProviderToolCallingSupported {
+		metadata := cloneAnyMap(base)
+		if provider := strings.ToLower(strings.TrimSpace(snapshot.ProviderName)); provider != "" {
+			metadata["react_provider"] = provider
+		}
+		if reason := strings.TrimSpace(snapshot.ProviderReason); reason != "" {
+			metadata["react_provider_reason"] = reason
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeReactProviderToolCallingUnsupported,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "react provider does not support required tool-calling capability",
+			Metadata: metadata,
+		})
+	}
+
+	if snapshot.ToolRegistryChecked && !snapshot.ToolRegistryAvailable {
+		metadata := cloneAnyMap(base)
+		if reason := strings.TrimSpace(snapshot.ToolRegistryReason); reason != "" {
+			metadata["react_tool_registry_reason"] = reason
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeReactToolRegistryUnavailable,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "react tool registry is unavailable",
+			Metadata: metadata,
+		})
+	}
+
+	if snapshot.SandboxDependencyChecked && !snapshot.SandboxDependencyAvailable {
+		metadata := cloneAnyMap(base)
+		if reason := strings.TrimSpace(snapshot.SandboxDependencyReason); reason != "" {
+			metadata["react_sandbox_dependency_reason"] = reason
+		}
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeReactSandboxDependencyUnavailable,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "react sandbox dependency is unavailable",
+			Metadata: metadata,
+		})
+	}
+
+	return findings
 }
 
 func memoryReadinessFindings(cfg Config) []ReadinessFinding {
@@ -1827,6 +1947,22 @@ func cloneReadinessComponentState(in RuntimeReadinessComponentState) RuntimeRead
 		Fallback:          in.Fallback,
 		FallbackReason:    strings.TrimSpace(in.FallbackReason),
 		ActivationError:   strings.TrimSpace(in.ActivationError),
+	}
+}
+
+func cloneReactReadinessDependencySnapshot(in ReactReadinessDependencySnapshot) ReactReadinessDependencySnapshot {
+	return ReactReadinessDependencySnapshot{
+		ToolRegistryChecked:          in.ToolRegistryChecked,
+		ToolRegistryAvailable:        in.ToolRegistryAvailable,
+		ToolRegistryReason:           strings.TrimSpace(in.ToolRegistryReason),
+		ProviderChecked:              in.ProviderChecked,
+		ProviderName:                 strings.ToLower(strings.TrimSpace(in.ProviderName)),
+		ProviderToolCallingSupported: in.ProviderToolCallingSupported,
+		ProviderReason:               strings.TrimSpace(in.ProviderReason),
+		SandboxDependencyChecked:     in.SandboxDependencyChecked,
+		SandboxDependencyAvailable:   in.SandboxDependencyAvailable,
+		SandboxDependencyReason:      strings.TrimSpace(in.SandboxDependencyReason),
+		UpdatedAt:                    in.UpdatedAt.UTC(),
 	}
 }
 

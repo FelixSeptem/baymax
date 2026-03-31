@@ -112,6 +112,33 @@ func TestArbitratePrimaryReasonSandboxRequiredOutranksOptional(t *testing.T) {
 	}
 }
 
+func TestArbitratePrimaryReasonReactProviderUnsupportedOutranksRecoverableReactFindings(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeReactToolRegistryUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+			},
+			{
+				Code:     ReadinessCodeReactProviderToolCallingUnsupported,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+			},
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeReactProviderToolCallingUnsupported ||
+		got.Source != RuntimePrimarySourceReadiness ||
+		got.SecondaryCount != 1 ||
+		len(got.SecondaryCodes) != 1 ||
+		got.SecondaryCodes[0] != ReadinessCodeReactToolRegistryUnavailable ||
+		got.RemediationHintCode != "react.select_tool_calling_provider" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("react precedence mismatch: %#v", got)
+	}
+}
+
 func TestArbitratePrimaryReasonTieBreakByLexicalCodeAndConflictCount(t *testing.T) {
 	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
 		ReadinessFindings: []ReadinessFinding{

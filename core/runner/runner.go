@@ -228,6 +228,7 @@ func WithSecurityAlertCallback(callback types.SecurityAlertCallback) Option {
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
+	reactCfg := e.runtimeReactConfigSnapshot()
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
@@ -255,6 +256,10 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
+	reactToolCallTotal := 0
+	reactToolCallBudgetHitTotal := 0
+	reactIterationBudgetHitTotal := 0
+	reactTerminationReason := ""
 	var terminal *types.ClassifiedError
 	var runErr error
 
@@ -268,71 +273,35 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if iteration >= policy.MaxIterations {
 				terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 				runErr = errors.New(terminal.Message)
+				reactIterationBudgetHitTotal++
 				state = StateAbort
 				continue
 			}
 			state = StateModelStep
 		case StateModelStep:
 			iteration++
-			required := req.Capabilities.Normalized()
-			modelReq := toModelRequest(runID, req, pendingOutcomes, required)
-			selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, false, len(required) > 0)
-			if selErr != nil {
-				terminal = selErr
-				runErr = errors.New(selErr.Message)
+			prepared, prepTerminal, prepErr := e.prepareReactModelStep(
+				ctx,
+				req,
+				runID,
+				iteration,
+				&timelineSeq,
+				pendingOutcomes,
+				false,
+				h,
+				&memoryAggregate,
+				&lastSecurity,
+			)
+			if prepTerminal != nil {
+				terminal = prepTerminal
+				runErr = prepErr
 				state = StateAbort
 				continue
 			}
-			contextPhaseEnabled := e.contextAssemblerEnabled()
-			if contextPhaseEnabled {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusRunning, "")
-			}
-			var tokenCounter types.TokenCounter
-			if tc, ok := selectedModel.(types.TokenCounter); ok {
-				tokenCounter = tc
-			}
-			assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
-				RunID:         runID,
-				SessionID:     req.SessionID,
-				PrefixVersion: e.resolvePrefixVersion(),
-				ModelProvider: selection.Provider,
-				Model:         modelReq.Model,
-				Input:         modelReq.Input,
-				Messages:      modelReq.Messages,
-				ToolResult:    modelReq.ToolResult,
-				Capabilities:  modelReq.Capabilities,
-				TokenCounter:  tokenCounter,
-				ModelClient:   selectedModel,
-			}, modelReq)
-			lastAssemble = assembleResult
-			memoryAggregate.observeAssemble(assembleResult)
-			if assembleErr != nil {
-				if contextPhaseEnabled {
-					status, reason := classifyTimelineError(assembleErr)
-					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, status, reason)
-				}
-				terminal = classified(types.ErrContext, assembleErr.Error(), false)
-				runErr = assembleErr
-				state = StateAbort
-				continue
-			}
-			if contextPhaseEnabled {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
-			}
-			modelReq = assembledReq
-			filteredReq, filterDecision, filterTerminal, filterErr := e.applyInputFilters(ctx, runID, iteration, modelReq)
-			if filterDecision != nil {
-				lastSecurity = *filterDecision
-			}
-			if filterTerminal != nil {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusFailed, lastSecurity.ReasonCode)
-				terminal = filterTerminal
-				runErr = filterErr
-				state = StateAbort
-				continue
-			}
-			modelReq = filteredReq
+			selectedModel := prepared.SelectedModel
+			modelReq := prepared.ModelRequest
+			selection := prepared.Selection
+			lastAssemble = prepared.AssembleResult
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusPending, "")
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusRunning, "")
 			lastSelection = selection
@@ -428,11 +397,19 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if iteration >= policy.MaxIterations {
 				terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 				runErr = errors.New(terminal.Message)
+				reactIterationBudgetHitTotal++
 				state = StateAbort
 				continue
 			}
 			if len(lastResponse.ToolCalls) == 0 {
 				state = StateFinalize
+				continue
+			}
+			if policy.ToolCallLimit > 0 && reactToolCallTotal+len(lastResponse.ToolCalls) > policy.ToolCallLimit {
+				terminal = classified(types.ErrIterationLimit, "tool call limit exceeded", false)
+				runErr = errors.New(terminal.Message)
+				reactToolCallBudgetHitTotal++
+				state = StateAbort
 				continue
 			}
 			if e.dispatcher == nil {
@@ -441,176 +418,38 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateModelStep
 				continue
 			}
-			toolSecurityDecision, toolSecurityTerminal, toolSecurityErr := e.enforceToolSecurityForCalls(
+			dispatchResult, dispatchTerminal, dispatchErr := e.dispatchReactToolCalls(
 				ctx,
-				h,
-				runID,
-				iteration,
-				&timelineSeq,
-				lastResponse.ToolCalls,
-			)
-			if toolSecurityDecision != nil {
-				lastSecurity = *toolSecurityDecision
-			}
-			if toolSecurityTerminal != nil {
-				terminal = toolSecurityTerminal
-				runErr = toolSecurityErr
-				state = StateAbort
-				continue
-			}
-			terminal, runErr = e.enforceActionGateForToolCalls(
-				ctx,
-				h,
 				req,
-				runID,
-				iteration,
-				&timelineSeq,
-				lastResponse.ToolCalls,
-				&gateStats,
-			)
-			if terminal != nil {
-				state = StateAbort
-				continue
-			}
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "")
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusRunning, "")
-			dispatchCfg := local.DispatchConfig{
-				MaxCalls:     policy.MaxToolCallsPerIteration,
-				Concurrency:  policy.LocalDispatch.MaxWorkers,
-				FailFast:     !policy.ContinueOnToolError,
-				QueueSize:    policy.LocalDispatch.QueueSize,
-				Backpressure: policy.LocalDispatch.Backpressure,
-				Retry:        policy.ToolRetry,
-			}
-			concurrencyStats.ObserveInflight(maxInflightEstimate(len(lastResponse.ToolCalls), dispatchCfg.Concurrency))
-			if dispatchCfg.Backpressure == types.BackpressureBlock && len(lastResponse.ToolCalls) > dispatchCfg.QueueSize {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.block")
-			}
-			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && len(lastResponse.ToolCalls) > dispatchCfg.QueueSize {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.drop_low_priority")
-				for _, phase := range dropRelevantPhases(lastResponse.ToolCalls) {
-					if phase == types.ActionPhaseTool {
-						continue
-					}
-					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, phase, types.ActionStatusPending, "backpressure.drop_low_priority")
-				}
-			}
-			e.emit(ctx, h, types.Event{
-				Version:   "v1",
-				Type:      "tool.dispatch.started",
-				RunID:     runID,
-				Iteration: iteration,
-				Time:      e.now(),
-				Payload: map[string]any{
-					"fanout":       len(lastResponse.ToolCalls),
-					"max_calls":    dispatchCfg.MaxCalls,
-					"workers":      dispatchCfg.Concurrency,
-					"queue_size":   dispatchCfg.QueueSize,
-					"backpressure": dispatchCfg.Backpressure,
-					"retry":        dispatchCfg.Retry,
-				},
-			})
-			stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
-			toolCtx, toolSpan := e.tracer.StartStep(stepCtx, "tool.dispatch", attribute.Int("iteration.index", iteration))
-			outcomes, err := e.dispatcher.Dispatch(toolCtx, lastResponse.ToolCalls, dispatchCfg)
-			toolSpan.End()
-			cancel()
-			dropTotal, dropByPhase := countBackpressureDrops(outcomes)
-			concurrencyStats.BackpressureDropCount += dropTotal
-			concurrencyStats.AddBackpressureDropByPhase(dropByPhase)
-			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority {
-				for _, phase := range phasesFullyDroppedByLowPriority(lastResponse.ToolCalls, outcomes) {
-					e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, phase, types.ActionStatusFailed, "backpressure.drop_low_priority")
-				}
-			}
-			if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && anyPhaseFullyDroppedByLowPriority(lastResponse.ToolCalls, outcomes) {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, "backpressure.drop_low_priority")
-				terminal = classified(types.ErrTool, "all tool calls dropped by low-priority backpressure", false)
-				runErr = errors.New(terminal.Message)
-				state = StateAbort
-				continue
-			}
-			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-				concurrencyStats.CancelPropagatedCount++
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "cancel.propagated")
-				terminal = classified(types.ErrPolicyTimeout, "tool dispatch canceled", true)
-				runErr = context.Canceled
-				state = StateAbort
-				continue
-			}
-			if err != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
-				terminal = classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
-				runErr = stepCtx.Err()
-				state = StateAbort
-				continue
-			}
-			for _, o := range outcomes {
-				mergedCalls = append(mergedCalls, types.ToolCallSummary{CallID: o.CallID, Name: o.Name, Error: o.Result.Error})
-				if o.Result.Error != nil {
-					warnings = append(warnings, o.Result.Error.Message)
-				}
-			}
-			sandboxAggregate.observeOutcomes(outcomes)
-			if err != nil {
-				primaryErr := primaryToolOutcomeError(outcomes)
-				reason := "dispatch_error"
-				terminal = classified(types.ErrTool, err.Error(), false)
-				if primaryErr != nil {
-					if timelineReason := toolDispatchTimelineReason(primaryErr); timelineReason != "" {
-						reason = timelineReason
-					}
-					terminal = &types.ClassifiedError{
-						Class:     primaryErr.Class,
-						Message:   strings.TrimSpace(primaryErr.Message),
-						Retryable: false,
-						Details:   cloneDetailsMap(primaryErr.Details),
-					}
-					if terminal.Message == "" {
-						terminal.Message = err.Error()
-					}
-					if decision, ok := securityDecisionFromToolError(primaryErr); ok {
-						lastSecurity = e.finalizeSecurityDecision(ctx, runID, iteration, decision)
-						terminal = securityDeniedError(terminal.Message, lastSecurity, cloneDetailsMap(terminal.Details))
-					}
-				}
-				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusFailed, reason)
-				runErr = err
-				state = StateAbort
-				continue
-			}
-			failed := 0
-			for _, o := range outcomes {
-				if o.Result.Error != nil {
-					failed++
-				}
-			}
-			e.emit(ctx, h, types.Event{
-				Version:   "v1",
-				Type:      "tool.dispatch.completed",
-				RunID:     runID,
-				Iteration: iteration,
-				Time:      e.now(),
-				Payload: map[string]any{
-					"fanout":       len(lastResponse.ToolCalls),
-					"completed":    len(outcomes),
-					"failed":       failed,
-					"backpressure": dispatchCfg.Backpressure,
-				},
-			})
-			e.emitTimeline(
-				ctx,
 				h,
 				runID,
 				iteration,
 				&timelineSeq,
-				types.ActionPhaseTool,
-				types.ActionStatusSucceeded,
-				toolDispatchObservedSandboxReason(outcomes),
+				lastResponse.ToolCalls,
+				policy,
+				&gateStats,
+				&concurrencyStats,
+				&lastSecurity,
+				&warnings,
+				&mergedCalls,
+				&sandboxAggregate,
+				reactToolDispatchOptions{FailOnToolRuntimeDisabled: false},
 			)
-			pendingOutcomes = outcomes
+			if dispatchTerminal != nil {
+				terminal = dispatchTerminal
+				runErr = dispatchErr
+				state = StateAbort
+				continue
+			}
+			if !dispatchResult.Dispatched {
+				state = StateModelStep
+				continue
+			}
+			reactToolCallTotal += len(lastResponse.ToolCalls)
+			pendingOutcomes = dispatchResult.Outcomes
 			state = StateModelStep
 		case StateFinalize:
+			reactTerminationReason = runtimeconfig.RuntimeReactTerminationCompleted
 			result := types.RunResult{
 				RunID:       runID,
 				FinalAnswer: lastResponse.FinalAnswer,
@@ -660,12 +499,25 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					ReactEnabled:        reactCfg.Enabled,
+					ReactIterationTotal: iteration,
+					ReactToolCallTotal:  reactToolCallTotal,
+					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
+					ReactTermination:    reactTerminationReason,
+					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
 					Memory:              memoryAggregate.snapshot(memoryRuntime),
 					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, nil
 		case StateAbort:
+			reactTerminationReason = resolveReactTerminationReason(
+				terminal,
+				runErr,
+				reactToolCallBudgetHitTotal,
+				reactIterationBudgetHitTotal,
+			)
 			result := types.RunResult{
 				RunID:      runID,
 				Iterations: iteration,
@@ -720,6 +572,13 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
 					AlertCircuitState:   lastSecurity.AlertCircuitState,
 					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					ReactEnabled:        reactCfg.Enabled,
+					ReactIterationTotal: iteration,
+					ReactToolCallTotal:  reactToolCallTotal,
+					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
+					ReactTermination:    reactTerminationReason,
+					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
 					Memory:              memoryAggregate.snapshot(memoryRuntime),
 					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
 				}),
@@ -731,6 +590,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 
 // Stream executes a streaming agent loop while preserving timeline/error semantics with Run.
 func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	return e.streamReact(ctx, req, h)
+}
+
+//nolint:unused // kept as rollback path for non-react stream loop during staged migrations
+func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
 	runID := req.RunID
@@ -1051,7 +915,7 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 				}
 			}
 			concurrencyStats.ObserveInflight(1)
-			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "stream_tool_dispatch_not_supported")
+			e.emitTimeline(stepCtx, h, runID, iteration, &timelineSeq, types.ActionPhaseTool, types.ActionStatusSkipped, "tool_dispatch_deferred_to_react_loop")
 		}
 		return nil
 	})
@@ -1191,12 +1055,762 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 	return result, nil
 }
 
+func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	policy := resolvePolicy(req.Policy)
+	policy = e.applyRuntimeDefaults(policy, req.Policy)
+	reactCfg := e.runtimeReactConfigSnapshot()
+	runID := req.RunID
+	if runID == "" {
+		runID = e.newRunID()
+	}
+	start := e.now()
+	ctx, runSpan := e.tracer.StartRun(ctx, runID)
+	defer runSpan.End()
+
+	iteration := 0
+	timelineSeq := int64(0)
+	final := ""
+	usage := types.TokenUsage{}
+	warnings := make([]string, 0)
+	mergedCalls := make([]types.ToolCallSummary, 0)
+	pendingOutcomes := make([]types.ToolCallOutcome, 0)
+	lastSelection := stepModelSelection{}
+	lastAssemble := types.ContextAssembleResult{}
+	selectionPath := make([]string, 0, 4)
+	fallbackUsed := false
+	gateStats := actionGateStats{}
+	hitlStats := clarificationStats{}
+	concurrencyStats := runtimeConcurrencyStats{}
+	lastSecurity := securityDecision{}
+	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryAggregate := memoryRunDiagnosticsAccumulator{}
+	sandboxRuntime := e.sandboxRuntimeSnapshot()
+	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
+	reactToolCallTotal := 0
+	reactToolCallBudgetHitTotal := 0
+	reactIterationBudgetHitTotal := 0
+	reactTerminationReason := ""
+
+	var terminal *types.ClassifiedError
+	var runErr error
+
+	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+
+	for {
+		if iteration >= policy.MaxIterations {
+			terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
+			runErr = errors.New(terminal.Message)
+			reactIterationBudgetHitTotal++
+			break
+		}
+
+		iteration++
+		prepared, prepTerminal, prepErr := e.prepareReactModelStep(
+			ctx,
+			req,
+			runID,
+			iteration,
+			&timelineSeq,
+			pendingOutcomes,
+			true,
+			h,
+			&memoryAggregate,
+			&lastSecurity,
+		)
+		selection := prepared.Selection
+		lastSelection = selection
+		if selection.Provider != "" {
+			selectionPath = append(selectionPath, selection.Provider)
+		}
+		fallbackUsed = fallbackUsed || selection.UsedFallback
+		if prepTerminal != nil {
+			terminal = prepTerminal
+			runErr = prepErr
+			break
+		}
+		selectedModel := prepared.SelectedModel
+		modelReq := prepared.ModelRequest
+		lastAssemble = prepared.AssembleResult
+
+		stepResult, stepErr := e.streamModelStep(
+			ctx,
+			policy,
+			selectedModel,
+			&req,
+			modelReq,
+			h,
+			runID,
+			iteration,
+			&timelineSeq,
+			selection.Provider,
+			selection.UsedFallback,
+			&hitlStats,
+			&lastSecurity,
+		)
+		if stepErr != nil {
+			var classifiedErr classifiedModelError
+			var gateErr *actionGateViolationError
+			terminal = classified(types.ErrModel, stepErr.Error(), false)
+			runErr = stepErr
+			var timelineStatus types.ActionStatus
+			var reason string
+			switch {
+			case errors.As(stepErr, &gateErr) && gateErr.ClassifiedError() != nil:
+				terminal = gateErr.ClassifiedError()
+				if gateErr.err != nil {
+					runErr = gateErr.err
+				}
+				timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+			case errors.As(stepErr, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
+				terminal = classifiedErr.ClassifiedError()
+				timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+			case errors.Is(stepErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+				terminal = classified(types.ErrPolicyTimeout, "model stream canceled", true)
+				timelineStatus, reason = types.ActionStatusCanceled, "cancel.propagated"
+				concurrencyStats.CancelPropagatedCount++
+			case errors.Is(stepErr, context.DeadlineExceeded):
+				terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
+				timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
+			default:
+				timelineStatus, reason = types.ActionStatusFailed, "model_error"
+			}
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
+			break
+		}
+
+		if len(stepResult.ToolCalls) == 0 {
+			final = stepResult.Text
+			reactTerminationReason = runtimeconfig.RuntimeReactTerminationCompleted
+			result := types.RunResult{
+				RunID:       runID,
+				FinalAnswer: final,
+				Iterations:  iteration,
+				ToolCalls:   mergedCalls,
+				TokenUsage:  usage,
+				LatencyMs:   e.now().Sub(start).Milliseconds(),
+				Warnings:    warnings,
+			}
+			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
+			e.emit(ctx, h, types.Event{
+				Version:   "v1",
+				Type:      "run.finished",
+				RunID:     runID,
+				Iteration: iteration,
+				Time:      e.now(),
+				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
+					Provider:            lastSelection.Provider,
+					Initial:             lastSelection.Initial,
+					Path:                selectionPath,
+					Required:            lastSelection.Required,
+					UsedFallback:        fallbackUsed,
+					Assemble:            lastAssemble,
+					GateChecks:          gateStats.Checks,
+					GateDenied:          gateStats.DeniedCount,
+					GateTimeout:         gateStats.TimeoutCount,
+					GateRuleHits:        gateStats.RuleHitCount,
+					GateRuleLast:        gateStats.RuleLastID,
+					HitlAwait:           hitlStats.AwaitCount,
+					HitlResumed:         hitlStats.ResumeCount,
+					HitlCanceled:        hitlStats.CancelByUserCount,
+					CancelProp:          concurrencyStats.CancelPropagatedCount,
+					BackDrop:            concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:        concurrencyStats.InflightPeak,
+					SecurityPolicy:      lastSecurity.PolicyKind,
+					NamespaceTool:       lastSecurity.NamespaceTool,
+					FilterStage:         lastSecurity.FilterStage,
+					SecurityDecision:    lastSecurity.Decision,
+					ReasonCode:          lastSecurity.ReasonCode,
+					Severity:            lastSecurity.Severity,
+					AlertStatus:         lastSecurity.AlertDispatchStatus,
+					AlertFailure:        lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:     lastSecurity.AlertRetryCount,
+					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:   lastSecurity.AlertCircuitState,
+					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+					ReactEnabled:        reactCfg.Enabled,
+					ReactIterationTotal: iteration,
+					ReactToolCallTotal:  reactToolCallTotal,
+					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
+					ReactTermination:    reactTerminationReason,
+					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
+					Memory:              memoryAggregate.snapshot(memoryRuntime),
+					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+				}),
+			})
+			return result, nil
+		}
+
+		if policy.ToolCallLimit > 0 && reactToolCallTotal+len(stepResult.ToolCalls) > policy.ToolCallLimit {
+			terminal = classified(types.ErrIterationLimit, "tool call limit exceeded", false)
+			runErr = errors.New(terminal.Message)
+			reactToolCallBudgetHitTotal++
+			break
+		}
+		if !reactCfg.StreamToolDispatchEnabled {
+			terminal = classified(types.ErrTool, "stream tool dispatch disabled", false)
+			runErr = errors.New(terminal.Message)
+			break
+		}
+
+		dispatchResult, dispatchTerminal, dispatchErr := e.dispatchReactToolCalls(
+			ctx,
+			req,
+			h,
+			runID,
+			iteration,
+			&timelineSeq,
+			stepResult.ToolCalls,
+			policy,
+			&gateStats,
+			&concurrencyStats,
+			&lastSecurity,
+			&warnings,
+			&mergedCalls,
+			&sandboxAggregate,
+			reactToolDispatchOptions{FailOnToolRuntimeDisabled: true},
+		)
+		if dispatchTerminal != nil {
+			terminal = dispatchTerminal
+			runErr = dispatchErr
+			break
+		}
+		pendingOutcomes = dispatchResult.Outcomes
+		reactToolCallTotal += len(stepResult.ToolCalls)
+	}
+
+	if reactTerminationReason == "" {
+		reactTerminationReason = resolveReactTerminationReason(
+			terminal,
+			runErr,
+			reactToolCallBudgetHitTotal,
+			reactIterationBudgetHitTotal,
+		)
+	}
+	result := types.RunResult{
+		RunID:       runID,
+		FinalAnswer: final,
+		Iterations:  iteration,
+		ToolCalls:   mergedCalls,
+		TokenUsage:  usage,
+		LatencyMs:   e.now().Sub(start).Milliseconds(),
+		Warnings:    warnings,
+		Error:       terminal,
+	}
+	errClass := ""
+	if terminal != nil {
+		errClass = string(terminal.Class)
+	}
+	status, runReason := classifyRunTerminal(terminal, runErr)
+	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, runReason)
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "run.finished",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
+			Provider:            lastSelection.Provider,
+			Initial:             lastSelection.Initial,
+			Path:                selectionPath,
+			Required:            lastSelection.Required,
+			Reason:              lastSelection.Reason,
+			UsedFallback:        fallbackUsed,
+			Assemble:            lastAssemble,
+			GateChecks:          gateStats.Checks,
+			GateDenied:          gateStats.DeniedCount,
+			GateTimeout:         gateStats.TimeoutCount,
+			GateRuleHits:        gateStats.RuleHitCount,
+			GateRuleLast:        gateStats.RuleLastID,
+			HitlAwait:           hitlStats.AwaitCount,
+			HitlResumed:         hitlStats.ResumeCount,
+			HitlCanceled:        hitlStats.CancelByUserCount,
+			CancelProp:          concurrencyStats.CancelPropagatedCount,
+			BackDrop:            concurrencyStats.BackpressureDropCount,
+			BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
+			InflightPeak:        concurrencyStats.InflightPeak,
+			SecurityPolicy:      lastSecurity.PolicyKind,
+			NamespaceTool:       lastSecurity.NamespaceTool,
+			FilterStage:         lastSecurity.FilterStage,
+			SecurityDecision:    lastSecurity.Decision,
+			ReasonCode:          lastSecurity.ReasonCode,
+			Severity:            lastSecurity.Severity,
+			AlertStatus:         lastSecurity.AlertDispatchStatus,
+			AlertFailure:        lastSecurity.AlertFailureReason,
+			AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
+			AlertRetryCount:     lastSecurity.AlertRetryCount,
+			AlertQueueDropped:   lastSecurity.AlertQueueDropped,
+			AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
+			AlertCircuitState:   lastSecurity.AlertCircuitState,
+			AlertCircuitReason:  lastSecurity.AlertCircuitReason,
+			ReactEnabled:        reactCfg.Enabled,
+			ReactIterationTotal: iteration,
+			ReactToolCallTotal:  reactToolCallTotal,
+			ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
+			ReactIterBudgetHit:  reactIterationBudgetHitTotal,
+			ReactTermination:    reactTerminationReason,
+			ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
+			Memory:              memoryAggregate.snapshot(memoryRuntime),
+			Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+		}),
+	})
+	return result, runErr
+}
+
+type streamModelStepResult struct {
+	Text      string
+	ToolCalls []types.ToolCall
+}
+
+type reactPreparedModelStep struct {
+	SelectedModel  types.ModelClient
+	ModelRequest   types.ModelRequest
+	Selection      stepModelSelection
+	AssembleResult types.ContextAssembleResult
+}
+
+type reactToolDispatchOptions struct {
+	FailOnToolRuntimeDisabled bool
+}
+
+type reactToolDispatchResult struct {
+	Outcomes   []types.ToolCallOutcome
+	Dispatched bool
+}
+
+func (e *Engine) prepareReactModelStep(
+	ctx context.Context,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	seq *int64,
+	pendingOutcomes []types.ToolCallOutcome,
+	stream bool,
+	h types.EventHandler,
+	memoryAggregate *memoryRunDiagnosticsAccumulator,
+	lastSecurity *securityDecision,
+) (reactPreparedModelStep, *types.ClassifiedError, error) {
+	required := req.Capabilities.Normalized()
+	if stream {
+		required = append(required, types.ModelCapabilityStreaming)
+	}
+	modelReq := toModelRequest(runID, req, pendingOutcomes, required)
+	selectedModel, selection, selErr := e.selectModelForStep(ctx, modelReq, stream, len(required) > 0)
+	if selErr != nil {
+		return reactPreparedModelStep{}, selErr, errors.New(selErr.Message)
+	}
+
+	contextPhaseEnabled := e.contextAssemblerEnabled()
+	if contextPhaseEnabled {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseContextAssembler, types.ActionStatusRunning, "")
+	}
+	var tokenCounter types.TokenCounter
+	if tc, ok := selectedModel.(types.TokenCounter); ok {
+		tokenCounter = tc
+	}
+	assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
+		RunID:         runID,
+		SessionID:     req.SessionID,
+		PrefixVersion: e.resolvePrefixVersion(),
+		ModelProvider: selection.Provider,
+		Model:         modelReq.Model,
+		Input:         modelReq.Input,
+		Messages:      modelReq.Messages,
+		ToolResult:    modelReq.ToolResult,
+		Capabilities:  modelReq.Capabilities,
+		TokenCounter:  tokenCounter,
+		ModelClient:   selectedModel,
+	}, modelReq)
+	if memoryAggregate != nil {
+		memoryAggregate.observeAssemble(assembleResult)
+	}
+	if assembleErr != nil {
+		if contextPhaseEnabled {
+			status, reason := classifyTimelineError(assembleErr)
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseContextAssembler, status, reason)
+		}
+		terminal := classified(types.ErrContext, assembleErr.Error(), false)
+		return reactPreparedModelStep{}, terminal, assembleErr
+	}
+	if contextPhaseEnabled {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseContextAssembler, types.ActionStatusSucceeded, "")
+	}
+
+	filteredReq, filterDecision, filterTerminal, filterErr := e.applyInputFilters(ctx, runID, iteration, assembledReq)
+	if filterDecision != nil && lastSecurity != nil {
+		*lastSecurity = *filterDecision
+	}
+	if filterTerminal != nil {
+		reason := ""
+		if lastSecurity != nil {
+			reason = lastSecurity.ReasonCode
+		}
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusFailed, reason)
+		return reactPreparedModelStep{}, filterTerminal, filterErr
+	}
+
+	return reactPreparedModelStep{
+		SelectedModel:  selectedModel,
+		ModelRequest:   filteredReq,
+		Selection:      selection,
+		AssembleResult: assembleResult,
+	}, nil, nil
+}
+
+func (e *Engine) streamModelStep(
+	ctx context.Context,
+	policy types.LoopPolicy,
+	selectedModel types.ModelClient,
+	req *types.RunRequest,
+	modelReq types.ModelRequest,
+	h types.EventHandler,
+	runID string,
+	iteration int,
+	seq *int64,
+	modelProvider string,
+	fallbackUsed bool,
+	hitlStats *clarificationStats,
+	lastSecurity *securityDecision,
+) (streamModelStepResult, error) {
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusRunning, "")
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "model.requested",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"model_provider": modelProvider,
+			"fallback_used":  fallbackUsed,
+		},
+	})
+
+	stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
+	modelCtx, modelSpan := e.tracer.StartStep(stepCtx, "model.stream", attribute.Int("iteration.index", iteration))
+	defer func() {
+		modelSpan.End()
+		cancel()
+	}()
+
+	stepText := strings.Builder{}
+	stepToolCalls := make([]types.ToolCall, 0)
+	streamErr := selectedModel.Stream(modelCtx, modelReq, func(ev types.ModelEvent) error {
+		normalizedEvent := ev
+		if normalizedEvent.Type == types.ModelEventTypeFinalAnswer || normalizedEvent.Type == types.ModelEventTypeOutputTextDelta {
+			filteredOutput, filterDecision, filterTerminal, filterErr := e.applyOutputFilters(stepCtx, runID, iteration, normalizedEvent.TextDelta)
+			if filterDecision != nil && lastSecurity != nil {
+				*lastSecurity = *filterDecision
+			}
+			if filterTerminal != nil {
+				return &actionGateViolationError{
+					classified: filterTerminal,
+					err:        filterErr,
+				}
+			}
+			normalizedEvent.TextDelta = filteredOutput
+			stepText.WriteString(normalizedEvent.TextDelta)
+		}
+		payload := map[string]any{
+			"event_type": normalizedEvent.Type,
+			"delta":      normalizedEvent.TextDelta,
+		}
+		if normalizedEvent.ToolCall != nil {
+			payload["tool_call"] = normalizedEvent.ToolCall
+		}
+		if normalizedEvent.ClarificationRequest != nil {
+			payload["clarification_request"] = map[string]any{
+				"request_id":      strings.TrimSpace(normalizedEvent.ClarificationRequest.RequestID),
+				"questions":       normalizedEvent.ClarificationRequest.Questions,
+				"context_summary": strings.TrimSpace(normalizedEvent.ClarificationRequest.ContextSummary),
+				"timeout_ms":      normalizedEvent.ClarificationRequest.Timeout.Milliseconds(),
+			}
+		}
+		if len(normalizedEvent.Meta) > 0 {
+			payload["meta"] = normalizedEvent.Meta
+		}
+		e.emit(stepCtx, h, types.Event{
+			Version:   "v1",
+			Type:      "model.delta",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload:   payload,
+		})
+
+		if normalizedEvent.ClarificationRequest != nil || normalizedEvent.Type == types.ModelEventTypeClarificationRequest {
+			request := normalizedEvent.ClarificationRequest
+			if request == nil {
+				request = &types.ClarificationRequest{}
+			}
+			if request.Timeout <= 0 {
+				request.Timeout = e.clarificationTimeout()
+			}
+			baseReq := types.RunRequest{}
+			if req != nil {
+				baseReq = *req
+			}
+			clarification, hitlTerminal, hitlErr := e.awaitClarification(
+				stepCtx,
+				h,
+				baseReq,
+				runID,
+				iteration,
+				seq,
+				request,
+				hitlStats,
+			)
+			if hitlTerminal != nil {
+				return &actionGateViolationError{
+					classified: hitlTerminal,
+					err:        hitlErr,
+				}
+			}
+			if req != nil {
+				*req = applyClarificationResponse(baseReq, clarification)
+			}
+		}
+
+		if normalizedEvent.ToolCall != nil {
+			stepToolCalls = mergeStreamToolCall(stepToolCalls, *normalizedEvent.ToolCall)
+		}
+		return nil
+	})
+	if streamErr != nil {
+		return streamModelStepResult{}, streamErr
+	}
+
+	e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
+	return streamModelStepResult{
+		Text:      stepText.String(),
+		ToolCalls: stepToolCalls,
+	}, nil
+}
+
+func (e *Engine) dispatchReactToolCalls(
+	ctx context.Context,
+	req types.RunRequest,
+	h types.EventHandler,
+	runID string,
+	iteration int,
+	seq *int64,
+	toolCalls []types.ToolCall,
+	policy types.LoopPolicy,
+	gateStats *actionGateStats,
+	concurrencyStats *runtimeConcurrencyStats,
+	lastSecurity *securityDecision,
+	warnings *[]string,
+	mergedCalls *[]types.ToolCallSummary,
+	sandboxAggregate *sandboxRunDiagnosticsAccumulator,
+	options reactToolDispatchOptions,
+) (reactToolDispatchResult, *types.ClassifiedError, error) {
+	toolSecurityDecision, toolSecurityTerminal, toolSecurityErr := e.enforceToolSecurityForCalls(
+		ctx,
+		h,
+		runID,
+		iteration,
+		seq,
+		toolCalls,
+	)
+	if toolSecurityDecision != nil && lastSecurity != nil {
+		*lastSecurity = *toolSecurityDecision
+	}
+	if toolSecurityTerminal != nil {
+		return reactToolDispatchResult{}, toolSecurityTerminal, toolSecurityErr
+	}
+
+	gateTerm, gateRunErr := e.enforceActionGateForToolCalls(
+		ctx,
+		h,
+		req,
+		runID,
+		iteration,
+		seq,
+		toolCalls,
+		gateStats,
+	)
+	if gateTerm != nil {
+		return reactToolDispatchResult{}, gateTerm, gateRunErr
+	}
+	if e.dispatcher == nil {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusSkipped, "tool_runtime_disabled")
+		if warnings != nil {
+			*warnings = append(*warnings, "tool calls requested but tool runtime is not enabled")
+		}
+		if !options.FailOnToolRuntimeDisabled {
+			return reactToolDispatchResult{Dispatched: false}, nil, nil
+		}
+		terminal := classified(types.ErrTool, "tool runtime is not enabled", false)
+		return reactToolDispatchResult{}, terminal, errors.New(terminal.Message)
+	}
+
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "")
+	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusRunning, "")
+	dispatchCfg := local.DispatchConfig{
+		MaxCalls:     policy.MaxToolCallsPerIteration,
+		Concurrency:  policy.LocalDispatch.MaxWorkers,
+		FailFast:     !policy.ContinueOnToolError,
+		QueueSize:    policy.LocalDispatch.QueueSize,
+		Backpressure: policy.LocalDispatch.Backpressure,
+		Retry:        policy.ToolRetry,
+	}
+	if concurrencyStats != nil {
+		concurrencyStats.ObserveInflight(maxInflightEstimate(len(toolCalls), dispatchCfg.Concurrency))
+	}
+	if dispatchCfg.Backpressure == types.BackpressureBlock && len(toolCalls) > dispatchCfg.QueueSize {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.block")
+	}
+	if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && len(toolCalls) > dispatchCfg.QueueSize {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "backpressure.drop_low_priority")
+		for _, phase := range dropRelevantPhases(toolCalls) {
+			if phase == types.ActionPhaseTool {
+				continue
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, phase, types.ActionStatusPending, "backpressure.drop_low_priority")
+		}
+	}
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "tool.dispatch.started",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"fanout":       len(toolCalls),
+			"max_calls":    dispatchCfg.MaxCalls,
+			"workers":      dispatchCfg.Concurrency,
+			"queue_size":   dispatchCfg.QueueSize,
+			"backpressure": dispatchCfg.Backpressure,
+			"retry":        dispatchCfg.Retry,
+		},
+	})
+
+	stepCtx, cancel := context.WithTimeout(ctx, policy.StepTimeout)
+	toolCtx, toolSpan := e.tracer.StartStep(stepCtx, "tool.dispatch", attribute.Int("iteration.index", iteration))
+	outcomes, dispatchErr := e.dispatcher.Dispatch(toolCtx, toolCalls, dispatchCfg)
+	toolSpan.End()
+	cancel()
+
+	dropTotal, dropByPhase := countBackpressureDrops(outcomes)
+	if concurrencyStats != nil {
+		concurrencyStats.BackpressureDropCount += dropTotal
+		concurrencyStats.AddBackpressureDropByPhase(dropByPhase)
+	}
+	if dispatchCfg.Backpressure == types.BackpressureDropLowPriority {
+		for _, phase := range phasesFullyDroppedByLowPriority(toolCalls, outcomes) {
+			e.emitTimeline(ctx, h, runID, iteration, seq, phase, types.ActionStatusFailed, "backpressure.drop_low_priority")
+		}
+	}
+	if dispatchCfg.Backpressure == types.BackpressureDropLowPriority && anyPhaseFullyDroppedByLowPriority(toolCalls, outcomes) {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "backpressure.drop_low_priority")
+		terminal := classified(types.ErrTool, "all tool calls dropped by low-priority backpressure", false)
+		return reactToolDispatchResult{}, terminal, errors.New(terminal.Message)
+	}
+	if errors.Is(dispatchErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		if concurrencyStats != nil {
+			concurrencyStats.CancelPropagatedCount++
+		}
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "cancel.propagated")
+		terminal := classified(types.ErrPolicyTimeout, "tool dispatch canceled", true)
+		return reactToolDispatchResult{}, terminal, context.Canceled
+	}
+	if dispatchErr != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
+		terminal := classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
+		return reactToolDispatchResult{}, terminal, stepCtx.Err()
+	}
+
+	for _, o := range outcomes {
+		if mergedCalls != nil {
+			*mergedCalls = append(*mergedCalls, types.ToolCallSummary{CallID: o.CallID, Name: o.Name, Error: o.Result.Error})
+		}
+		if warnings != nil && o.Result.Error != nil {
+			*warnings = append(*warnings, o.Result.Error.Message)
+		}
+	}
+	if sandboxAggregate != nil {
+		sandboxAggregate.observeOutcomes(outcomes)
+	}
+	if dispatchErr != nil {
+		primaryErr := primaryToolOutcomeError(outcomes)
+		reason := "dispatch_error"
+		terminal := classified(types.ErrTool, dispatchErr.Error(), false)
+		if primaryErr != nil {
+			if timelineReason := toolDispatchTimelineReason(primaryErr); timelineReason != "" {
+				reason = timelineReason
+			}
+			terminal = &types.ClassifiedError{
+				Class:     primaryErr.Class,
+				Message:   strings.TrimSpace(primaryErr.Message),
+				Retryable: false,
+				Details:   cloneDetailsMap(primaryErr.Details),
+			}
+			if terminal.Message == "" {
+				terminal.Message = dispatchErr.Error()
+			}
+			if decision, ok := securityDecisionFromToolError(primaryErr); ok {
+				resolved := e.finalizeSecurityDecision(ctx, runID, iteration, decision)
+				if lastSecurity != nil {
+					*lastSecurity = resolved
+				}
+				terminal = securityDeniedError(terminal.Message, resolved, cloneDetailsMap(terminal.Details))
+			}
+		}
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, reason)
+		return reactToolDispatchResult{}, terminal, dispatchErr
+	}
+
+	failed := 0
+	for _, o := range outcomes {
+		if o.Result.Error != nil {
+			failed++
+		}
+	}
+	e.emit(ctx, h, types.Event{
+		Version:   "v1",
+		Type:      "tool.dispatch.completed",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"fanout":       len(toolCalls),
+			"completed":    len(outcomes),
+			"failed":       failed,
+			"backpressure": dispatchCfg.Backpressure,
+		},
+	})
+	e.emitTimeline(
+		ctx,
+		h,
+		runID,
+		iteration,
+		seq,
+		types.ActionPhaseTool,
+		types.ActionStatusSucceeded,
+		toolDispatchObservedSandboxReason(outcomes),
+	)
+	return reactToolDispatchResult{
+		Outcomes:   outcomes,
+		Dispatched: true,
+	}, nil, nil
+}
+
 func resolvePolicy(p *types.LoopPolicy) types.LoopPolicy {
 	if p == nil {
 		return types.DefaultLoopPolicy()
 	}
 	policy := *p
 	def := types.DefaultLoopPolicy()
+	if policy.ToolCallLimit <= 0 {
+		policy.ToolCallLimit = def.ToolCallLimit
+	}
 	if policy.LocalDispatch.MaxWorkers <= 0 {
 		policy.LocalDispatch.MaxWorkers = def.LocalDispatch.MaxWorkers
 	}
@@ -1274,6 +1888,12 @@ func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.Loop
 		return policy
 	}
 	cfg := e.runtimeMgr.EffectiveConfig()
+	if cfg.Runtime.React.MaxIterations > 0 {
+		policy.MaxIterations = cfg.Runtime.React.MaxIterations
+	}
+	if cfg.Runtime.React.ToolCallLimit > 0 {
+		policy.ToolCallLimit = cfg.Runtime.React.ToolCallLimit
+	}
 	if cfg.Concurrency.LocalMaxWorkers > 0 {
 		policy.LocalDispatch.MaxWorkers = cfg.Concurrency.LocalMaxWorkers
 	}
@@ -1451,6 +2071,7 @@ func (e *Engine) resolveProviderOrder(primary string) []string {
 	return ordered
 }
 
+//nolint:unused // used by legacy stream fallback path retained for staged rollback safety
 func (e *Engine) fallbackEnabled() bool {
 	if e.runtimeMgr == nil {
 		return false
@@ -1529,6 +2150,13 @@ type runFinishMeta struct {
 	AlertQueueDropCount int
 	AlertCircuitState   string
 	AlertCircuitReason  string
+	ReactEnabled        bool
+	ReactIterationTotal int
+	ReactToolCallTotal  int
+	ReactToolBudgetHit  int
+	ReactIterBudgetHit  int
+	ReactTermination    string
+	ReactStreamDispatch bool
 	Memory              memoryRunDiagnostics
 	Sandbox             sandboxRunDiagnostics
 }
@@ -1766,6 +2394,15 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.AlertCircuitReason != "" {
 		payload["alert_circuit_open_reason"] = meta.AlertCircuitReason
+	}
+	payload["react_enabled"] = meta.ReactEnabled
+	payload["react_iteration_total"] = meta.ReactIterationTotal
+	payload["react_tool_call_total"] = meta.ReactToolCallTotal
+	payload["react_tool_call_budget_hit_total"] = meta.ReactToolBudgetHit
+	payload["react_iteration_budget_hit_total"] = meta.ReactIterBudgetHit
+	payload["react_stream_dispatch_enabled"] = meta.ReactStreamDispatch
+	if meta.ReactTermination != "" {
+		payload["react_termination_reason"] = meta.ReactTermination
 	}
 	if meta.Memory.Observed {
 		if meta.Memory.Mode != "" {
@@ -2053,6 +2690,68 @@ func (e *Engine) runtimeMemorySnapshot() memoryRuntimeSnapshot {
 		Profile:         profile,
 		ContractVersion: contractVersion,
 	}
+}
+
+func (e *Engine) runtimeReactConfigSnapshot() runtimeconfig.RuntimeReactConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.React
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.React
+	}
+	return cfg
+}
+
+func resolveReactTerminationReason(
+	terminal *types.ClassifiedError,
+	runErr error,
+	toolBudgetHitTotal int,
+	iterationBudgetHitTotal int,
+) string {
+	if toolBudgetHitTotal > 0 {
+		return runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded
+	}
+	if iterationBudgetHitTotal > 0 {
+		return runtimeconfig.RuntimeReactTerminationMaxIterationsExceeded
+	}
+	if errors.Is(runErr, context.Canceled) {
+		return runtimeconfig.RuntimeReactTerminationContextCanceled
+	}
+	if terminal == nil {
+		return runtimeconfig.RuntimeReactTerminationProviderError
+	}
+	switch terminal.Class {
+	case types.ErrIterationLimit:
+		return runtimeconfig.RuntimeReactTerminationMaxIterationsExceeded
+	case types.ErrTool, types.ErrSecurity:
+		return runtimeconfig.RuntimeReactTerminationToolDispatchFailed
+	case types.ErrPolicyTimeout:
+		return runtimeconfig.RuntimeReactTerminationContextCanceled
+	case types.ErrContext:
+		if errors.Is(runErr, context.Canceled) {
+			return runtimeconfig.RuntimeReactTerminationContextCanceled
+		}
+		return runtimeconfig.RuntimeReactTerminationProviderError
+	case types.ErrModel, types.ErrHITL:
+		return runtimeconfig.RuntimeReactTerminationProviderError
+	default:
+		return runtimeconfig.RuntimeReactTerminationProviderError
+	}
+}
+
+func mergeStreamToolCall(calls []types.ToolCall, call types.ToolCall) []types.ToolCall {
+	out := append([]types.ToolCall(nil), calls...)
+	call.CallID = strings.TrimSpace(call.CallID)
+	call.Name = strings.TrimSpace(call.Name)
+	if call.CallID != "" {
+		for i := range out {
+			if strings.TrimSpace(out[i].CallID) != call.CallID {
+				continue
+			}
+			out[i] = call
+			return out
+		}
+	}
+	out = append(out, call)
+	return out
 }
 
 func (a *sandboxRunDiagnosticsAccumulator) observeOutcomes(outcomes []types.ToolCallOutcome) {

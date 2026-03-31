@@ -74,6 +74,21 @@ func (equivalentModelAdapter) Stream(_ context.Context, _ types.ModelRequest, on
 	})
 }
 
+func (equivalentModelAdapter) ProviderName() string { return "adapter-conformance-model" }
+
+func (equivalentModelAdapter) DiscoverCapabilities(_ context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	return types.ProviderCapabilities{
+		Provider: "adapter-conformance-model",
+		Model:    req.Model,
+		Support: map[types.ModelCapability]types.CapabilitySupport{
+			types.ModelCapabilityStreaming: types.CapabilitySupportSupported,
+			types.ModelCapabilityToolCall:  types.CapabilitySupportSupported,
+		},
+		Source:    "adapter-conformance-fixture",
+		CheckedAt: time.Now().UTC(),
+	}, nil
+}
+
 type malformedModelAdapter struct{}
 
 func (malformedModelAdapter) Generate(context.Context, types.ModelRequest) (types.ModelResponse, error) {

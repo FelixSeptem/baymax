@@ -100,6 +100,11 @@
   - `runtime.readiness.admission.mode` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_MODE`
   - `runtime.readiness.admission.block_on` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_BLOCK_ON`
   - `runtime.readiness.admission.degraded_policy` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_DEGRADED_POLICY`
+  - `runtime.react.enabled` -> `BAYMAX_RUNTIME_REACT_ENABLED`
+  - `runtime.react.max_iterations` -> `BAYMAX_RUNTIME_REACT_MAX_ITERATIONS`
+  - `runtime.react.tool_call_limit` -> `BAYMAX_RUNTIME_REACT_TOOL_CALL_LIMIT`
+  - `runtime.react.stream_tool_dispatch_enabled` -> `BAYMAX_RUNTIME_REACT_STREAM_TOOL_DISPATCH_ENABLED`
+  - `runtime.react.on_budget_exhausted` -> `BAYMAX_RUNTIME_REACT_ON_BUDGET_EXHAUSTED`
   - `runtime.arbitration.version.enabled` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_ENABLED`
   - `runtime.arbitration.version.default` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_DEFAULT`
   - `runtime.arbitration.version.compat_window` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_COMPAT_WINDOW`
@@ -200,6 +205,12 @@ diagnostics:
       hit_rate: 0.20
 
 runtime:
+  react:
+    enabled: true                     # A56 默认开启
+    max_iterations: 12                # 必须 > 0
+    tool_call_limit: 64               # 必须 > 0
+    stream_tool_dispatch_enabled: true # stream 路径 ReAct 工具分发
+    on_budget_exhausted: fail_fast    # 当前仅支持 fail_fast
   readiness:
     enabled: true               # A40 默认开启
     strict: false               # A40 默认不升级 degraded
@@ -1001,6 +1012,7 @@ Mailbox diagnostics additive 字段（A35）：
   - A45 additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
+- ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
 - Memory（A54）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`
 - Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
@@ -1101,6 +1113,13 @@ Composed summary additive fields（contract markers）：
 - `runtime_arbitration_rule_mismatch_total`
 - `runtime_remediation_hint_code`
 - `runtime_remediation_hint_domain`
+- `react_enabled`
+- `react_iteration_total`
+- `react_tool_call_total`
+- `react_tool_call_budget_hit_total`
+- `react_iteration_budget_hit_total`
+- `react_termination_reason`
+- `react_stream_dispatch_enabled`
 - `memory_mode`
 - `memory_provider`
 - `memory_profile`
@@ -1121,7 +1140,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56）
 
 离线回放命令：
 
@@ -1180,6 +1199,25 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `version_mismatch`：requested version 与 compat window 语义漂移。
   - `unsupported_version`：unsupported version fail-fast 语义漂移。
   - `cross_version_semantic_drift`：跨版本输出语义漂移（requested/effective/source/policy）。
+
+语义（A56 ReAct arbitration 模式）：
+- 输入：版本化 fixture（`version=react.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `model_provider`
+  - `react_enabled`
+  - `react_iteration_total`
+  - `react_tool_call_total`
+  - `react_tool_call_budget_hit_total`
+  - `react_iteration_budget_hit_total`
+  - `react_termination_reason`
+  - `react_stream_dispatch_enabled`
+- 输出：按 case name 排序后的 canonical ReAct arbitration 输出。
+- drift 分类（A56 blocking）：
+  - `react_loop_step_drift`
+  - `react_tool_call_budget_drift`
+  - `react_iteration_budget_drift`
+  - `react_termination_reason_drift`
+  - `react_stream_dispatch_drift`
+  - `react_provider_mapping_drift`
 
 语义（A54 memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：

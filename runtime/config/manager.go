@@ -47,6 +47,7 @@ type Manager struct {
 
 	readinessMu          sync.RWMutex
 	readinessComponents  RuntimeReadinessComponentSnapshot
+	reactReadiness       ReactReadinessDependencySnapshot
 	adapterHealthMu      sync.RWMutex
 	adapterHealthTargets map[string]AdapterHealthTarget
 	adapterHealthRunner  *adapterhealth.Runner

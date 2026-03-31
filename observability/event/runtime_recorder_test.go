@@ -722,6 +722,67 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderRecordsReactAdditiveFieldsAndReplayIdempotent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	ev := types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a56-react-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                           "failed",
+			"error_class":                      "ErrIterationLimit",
+			"react_enabled":                    true,
+			"react_iteration_total":            3,
+			"react_tool_call_total":            5,
+			"react_tool_call_budget_hit_total": 1,
+			"react_iteration_budget_hit_total": 0,
+			"react_termination_reason":         "react.tool_call_limit_exceeded",
+			"react_stream_dispatch_enabled":    true,
+		},
+	}
+	rec.OnEvent(context.Background(), ev)
+	rec.OnEvent(context.Background(), ev)
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if !got.ReactEnabled ||
+		got.ReactIterationTotal != 3 ||
+		got.ReactToolCallTotal != 5 ||
+		got.ReactToolCallBudgetHitTotal != 1 ||
+		got.ReactIterationBudgetHitTotal != 0 ||
+		got.ReactTerminationReason != "react.tool_call_limit_exceeded" ||
+		!got.ReactStreamDispatchEnabled {
+		t.Fatalf("react additive fields mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA17ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

@@ -16,6 +16,9 @@ func TestDefaultLoopPolicy(t *testing.T) {
 	if p.MaxToolCallsPerIteration != 8 {
 		t.Fatalf("MaxToolCallsPerIteration = %d, want 8", p.MaxToolCallsPerIteration)
 	}
+	if p.ToolCallLimit != 64 {
+		t.Fatalf("ToolCallLimit = %d, want 64", p.ToolCallLimit)
+	}
 	if p.StepTimeout != 60*time.Second {
 		t.Fatalf("StepTimeout = %s, want 60s", p.StepTimeout)
 	}

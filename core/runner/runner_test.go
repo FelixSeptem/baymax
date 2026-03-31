@@ -390,6 +390,148 @@ func TestStreamFailFastWithErrModel(t *testing.T) {
 	}
 }
 
+func TestStreamToolLoopSuccessAtStepBoundary(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "hello"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	turn := 0
+	model := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			turn++
+			if turn == 1 {
+				if len(req.ToolResult) != 0 {
+					t.Fatalf("first step should not have tool results: %#v", req.ToolResult)
+				}
+				return onEvent(types.ModelEvent{
+					Type:     types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{CallID: "c1", Name: "local.echo"},
+				})
+			}
+			if len(req.ToolResult) != 1 || req.ToolResult[0].Result.Content != "hello" {
+				t.Fatalf("tool feedback not merged into next stream step: %#v", req.ToolResult)
+			}
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "done"})
+		},
+	}
+	engine := New(model, WithLocalRegistry(reg))
+	collector := &eventCollector{}
+	res, runErr := engine.Stream(context.Background(), types.RunRequest{Input: "x"}, collector)
+	if runErr != nil {
+		t.Fatalf("Stream failed: %v", runErr)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("FinalAnswer = %q, want done", res.FinalAnswer)
+	}
+	if len(res.ToolCalls) != 1 || res.ToolCalls[0].Name != "local.echo" {
+		t.Fatalf("tool call summary mismatch: %#v", res.ToolCalls)
+	}
+	for _, ev := range collector.timelineEvents() {
+		reason, _ := ev.Payload["reason"].(string)
+		if reason == "stream_tool_dispatch_not_supported" {
+			t.Fatalf("unexpected unsupported stream tool reason in timeline: %#v", ev)
+		}
+	}
+}
+
+func TestRunAndStreamToolCallLimitFailFast(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	runModelCalls := 0
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			runModelCalls++
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{
+					{CallID: "c1", Name: "local.echo"},
+					{CallID: "c2", Name: "local.echo"},
+				},
+			}, nil
+		},
+	}
+	streamModelCalls := 0
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamModelCalls++
+			if err := onEvent(types.ModelEvent{
+				Type:     types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{CallID: "c1", Name: "local.echo"},
+			}); err != nil {
+				return err
+			}
+			return onEvent(types.ModelEvent{
+				Type:     types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{CallID: "c2", Name: "local.echo"},
+			})
+		},
+	}
+	policy := types.DefaultLoopPolicy()
+	policy.ToolCallLimit = 1
+	policy.MaxIterations = 3
+
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runEngine := New(runModel, WithLocalRegistry(reg))
+	streamEngine := New(streamModel, WithLocalRegistry(reg))
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{Input: "x", Policy: &policy}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{Input: "x", Policy: &policy}, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected tool-call-limit errors, got run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream errors: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrIterationLimit || streamRes.Error.Class != types.ErrIterationLimit {
+		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runModelCalls != 1 || streamModelCalls != 1 {
+		t.Fatalf("fail-fast should stop extra model steps, run_calls=%d stream_calls=%d", runModelCalls, streamModelCalls)
+	}
+	if len(runRes.ToolCalls) != 0 || len(streamRes.ToolCalls) != 0 {
+		t.Fatalf("tool dispatch should not execute when budget is exceeded, run=%#v stream=%#v", runRes.ToolCalls, streamRes.ToolCalls)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	if runFinished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded ||
+		streamFinished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded {
+		t.Fatalf(
+			"react termination mismatch run=%#v stream=%#v",
+			runFinished.Payload["react_termination_reason"],
+			streamFinished.Payload["react_termination_reason"],
+		)
+	}
+	if runFinished.Payload["react_tool_call_budget_hit_total"] != 1 || streamFinished.Payload["react_tool_call_budget_hit_total"] != 1 {
+		t.Fatalf(
+			"react budget hit mismatch run=%#v stream=%#v",
+			runFinished.Payload["react_tool_call_budget_hit_total"],
+			streamFinished.Payload["react_tool_call_budget_hit_total"],
+		)
+	}
+}
+
 func TestRunToolLoopSuccess(t *testing.T) {
 	reg := local.NewRegistry()
 	_, err := reg.Register(&fakeTool{
@@ -5214,5 +5356,281 @@ func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
 	}, "success", "", runFinishMeta{})
 	if _, ok := withoutObserved["memory_mode"]; ok {
 		t.Fatalf("memory fields should be omitted when not observed: %#v", withoutObserved)
+	}
+}
+
+func TestRunFinishedPayloadIncludesReactAdditiveFields(t *testing.T) {
+	payload := runFinishedPayload(types.RunResult{
+		RunID:      "run-react-finished",
+		Iterations: 3,
+		LatencyMs:  88,
+	}, "failed", string(types.ErrIterationLimit), runFinishMeta{
+		ReactEnabled:        true,
+		ReactIterationTotal: 3,
+		ReactToolCallTotal:  4,
+		ReactToolBudgetHit:  1,
+		ReactIterBudgetHit:  0,
+		ReactTermination:    runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded,
+		ReactStreamDispatch: true,
+	})
+	if payload["react_enabled"] != true ||
+		payload["react_iteration_total"] != 3 ||
+		payload["react_tool_call_total"] != 4 ||
+		payload["react_tool_call_budget_hit_total"] != 1 ||
+		payload["react_iteration_budget_hit_total"] != 0 ||
+		payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded ||
+		payload["react_stream_dispatch_enabled"] != true {
+		t.Fatalf("react payload mismatch: %#v", payload)
+	}
+}
+
+func TestResolveReactTerminationReasonDeterministicMapping(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                 string
+		terminal             *types.ClassifiedError
+		runErr               error
+		toolBudgetHitTotal   int
+		iterationBudgetTotal int
+		want                 string
+	}{
+		{
+			name:               "tool budget hit has top priority",
+			terminal:           classified(types.ErrModel, "provider failed", false),
+			toolBudgetHitTotal: 1,
+			want:               runtimeconfig.RuntimeReactTerminationToolCallLimitExceeded,
+		},
+		{
+			name:                 "iteration budget hit when tool budget not hit",
+			terminal:             classified(types.ErrModel, "provider failed", false),
+			iterationBudgetTotal: 1,
+			want:                 runtimeconfig.RuntimeReactTerminationMaxIterationsExceeded,
+		},
+		{
+			name:     "context canceled by run error",
+			terminal: classified(types.ErrModel, "provider failed", false),
+			runErr:   context.Canceled,
+			want:     runtimeconfig.RuntimeReactTerminationContextCanceled,
+		},
+		{
+			name:     "tool class maps to tool dispatch failed",
+			terminal: classified(types.ErrTool, "tool failed", false),
+			want:     runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
+		},
+		{
+			name:     "policy timeout maps to context canceled",
+			terminal: classified(types.ErrPolicyTimeout, "timed out", true),
+			want:     runtimeconfig.RuntimeReactTerminationContextCanceled,
+		},
+		{
+			name:     "model class maps to provider error",
+			terminal: classified(types.ErrModel, "provider failed", false),
+			want:     runtimeconfig.RuntimeReactTerminationProviderError,
+		},
+		{
+			name: "nil terminal defaults to provider error",
+			want: runtimeconfig.RuntimeReactTerminationProviderError,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := resolveReactTerminationReason(tc.terminal, tc.runErr, tc.toolBudgetHitTotal, tc.iterationBudgetTotal)
+			if got != tc.want {
+				t.Fatalf("termination=%q, want %q", got, tc.want)
+			}
+			gotAgain := resolveReactTerminationReason(tc.terminal, tc.runErr, tc.toolBudgetHitTotal, tc.iterationBudgetTotal)
+			if gotAgain != got {
+				t.Fatalf("termination should be deterministic, first=%q second=%q", got, gotAgain)
+			}
+		})
+	}
+}
+
+func TestStreamReactDuplicateToolCallEventsAreIdempotent(t *testing.T) {
+	reg := local.NewRegistry()
+	invokeCount := 0
+	lastArgs := map[string]any{}
+	_, err := reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			invokeCount++
+			lastArgs = args
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	streamStep := 0
+	model := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamStep++
+			switch streamStep {
+			case 1:
+				if err := onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "call-1",
+						Name:   "local.echo",
+						Args:   map[string]any{"v": "first"},
+					},
+				}); err != nil {
+					return err
+				}
+				return onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "call-1",
+						Name:   "local.echo",
+						Args:   map[string]any{"v": "final"},
+					},
+				})
+			case 2:
+				return onEvent(types.ModelEvent{
+					Type:      types.ModelEventTypeOutputTextDelta,
+					TextDelta: "done",
+				})
+			default:
+				return errors.New("unexpected extra stream step")
+			}
+		},
+	}
+
+	engine := New(model, WithLocalRegistry(reg))
+	collector := &eventCollector{}
+	res, runErr := engine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-react-stream-idempotent",
+		Input: "x",
+	}, collector)
+	if runErr != nil {
+		t.Fatalf("Stream error: %v", runErr)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected classified error: %#v", res.Error)
+	}
+	if res.FinalAnswer != "done" {
+		t.Fatalf("final answer=%q, want done", res.FinalAnswer)
+	}
+	if invokeCount != 1 {
+		t.Fatalf("tool invoke count=%d, want 1", invokeCount)
+	}
+	if got, _ := lastArgs["v"].(string); got != "final" {
+		t.Fatalf("tool args should use latest duplicate event payload, got=%#v", lastArgs)
+	}
+	if len(res.ToolCalls) != 1 || res.ToolCalls[0].CallID != "call-1" {
+		t.Fatalf("tool summary mismatch: %#v", res.ToolCalls)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok || finished.Type != "run.finished" {
+		t.Fatalf("missing run.finished event: %#v", finished)
+	}
+	if finished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationCompleted {
+		t.Fatalf(
+			"react_termination_reason=%#v, want %q",
+			finished.Payload["react_termination_reason"],
+			runtimeconfig.RuntimeReactTerminationCompleted,
+		)
+	}
+	if finished.Payload["react_tool_call_total"] != 1 {
+		t.Fatalf("react_tool_call_total=%#v, want 1", finished.Payload["react_tool_call_total"])
+	}
+}
+
+func TestStreamReactCancellationUsesCanonicalTerminationReason(t *testing.T) {
+	model := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	engine := New(model)
+	collector := &eventCollector{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, runErr := engine.Stream(ctx, types.RunRequest{
+		RunID: "run-react-cancel",
+		Input: "cancel",
+	}, collector)
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("runErr=%v, want context canceled", runErr)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("result error=%#v, want ErrPolicyTimeout", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok || finished.Type != "run.finished" {
+		t.Fatalf("missing run.finished event: %#v", finished)
+	}
+	if finished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationContextCanceled {
+		t.Fatalf(
+			"react_termination_reason=%#v, want %q",
+			finished.Payload["react_termination_reason"],
+			runtimeconfig.RuntimeReactTerminationContextCanceled,
+		)
+	}
+}
+
+func TestStreamReactToolDispatchFailureUsesCanonicalTerminationReason(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "explode",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{}, errors.New("tool boom")
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	streamStep := 0
+	model := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamStep++
+			switch streamStep {
+			case 1:
+				return onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "call-explode",
+						Name:   "local.explode",
+					},
+				})
+			default:
+				return onEvent(types.ModelEvent{
+					Type:      types.ModelEventTypeOutputTextDelta,
+					TextDelta: "should-not-reach",
+				})
+			}
+		},
+	}
+
+	engine := New(model, WithLocalRegistry(reg))
+	collector := &eventCollector{}
+	res, runErr := engine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-react-tool-fail",
+		Input: "x",
+	}, collector)
+	if runErr == nil {
+		t.Fatal("expected stream error")
+	}
+	if res.Error == nil || res.Error.Class != types.ErrTool {
+		t.Fatalf("result error=%#v, want ErrTool", res.Error)
+	}
+	finished, ok := collector.lastNonTimelineEvent()
+	if !ok || finished.Type != "run.finished" {
+		t.Fatalf("missing run.finished event: %#v", finished)
+	}
+	if finished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationToolDispatchFailed {
+		t.Fatalf(
+			"react_termination_reason=%#v, want %q",
+			finished.Payload["react_termination_reason"],
+			runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
+		)
 	}
 }

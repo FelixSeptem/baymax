@@ -13,6 +13,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	"github.com/FelixSeptem/baymax/model/toolcontract"
 	"github.com/tidwall/gjson"
 	"google.golang.org/genai"
 	genaitokenizer "google.golang.org/genai/tokenizer"
@@ -113,9 +114,9 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
+	input, err := toolcontract.CanonicalInput(req)
+	if err != nil {
+		return types.ModelResponse{}, err
 	}
 	if input == "" {
 		return types.ModelResponse{}, errors.New("model input is empty")
@@ -124,9 +125,9 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	input := strings.TrimSpace(req.Input)
-	if input == "" && len(req.Messages) > 0 {
-		input = req.Messages[len(req.Messages)-1].Content
+	input, err := toolcontract.CanonicalInput(req)
+	if err != nil {
+		return err
 	}
 	if input == "" {
 		return errors.New("model input is empty")
@@ -291,7 +292,11 @@ func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.M
 						Name:   part.FunctionCall.Name,
 						Args:   args,
 					},
-					Meta: map[string]any{"provider": "gemini"},
+					Meta: map[string]any{
+						"provider":     "gemini",
+						"tool_call_id": callID,
+						"tool_name":    part.FunctionCall.Name,
+					},
 				})
 			}
 		}

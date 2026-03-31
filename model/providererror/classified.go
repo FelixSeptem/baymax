@@ -61,7 +61,7 @@ func FromStatusCode(err error, status int) error {
 	case status == 429:
 		return &Classified{Class: types.ErrModel, Reason: "rate_limit", Retryable: true, Cause: err}
 	case status == 400 || status == 404 || status == 422:
-		return &Classified{Class: types.ErrModel, Reason: "request", Retryable: false, Cause: err}
+		return &Classified{Class: types.ErrModel, Reason: "request_invalid", Retryable: false, Cause: err}
 	case status == 408 || status == 504:
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
 	case status >= 500:
@@ -75,6 +75,10 @@ func FromError(err error) error {
 	if err == nil {
 		return nil
 	}
+	var existing *Classified
+	if errors.As(err, &existing) && existing != nil {
+		return existing
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
 	}
@@ -84,6 +88,16 @@ func FromError(err error) error {
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(msg, "tool calling unsupported"),
+		strings.Contains(msg, "tool call unsupported"),
+		strings.Contains(msg, "unsupported tool calling"),
+		strings.Contains(msg, "unsupported function calling"):
+		return &Classified{Class: types.ErrModel, Reason: "capability_unsupported", Retryable: false, Cause: err}
+	case strings.Contains(msg, "feedback_invalid"),
+		strings.Contains(msg, "feedback invalid"),
+		strings.Contains(msg, "invalid tool result"),
+		strings.Contains(msg, "tool result feedback"):
+		return &Classified{Class: types.ErrModel, Reason: "feedback_invalid", Retryable: false, Cause: err}
 	case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"), strings.Contains(msg, "timed out"):
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
 	case strings.Contains(msg, "500"), strings.Contains(msg, "502"), strings.Contains(msg, "503"), strings.Contains(msg, "504"), strings.Contains(msg, "internal server"), strings.Contains(msg, "service unavailable"):
@@ -92,8 +106,8 @@ func FromError(err error) error {
 		return &Classified{Class: types.ErrModel, Reason: "auth", Retryable: false, Cause: err}
 	case strings.Contains(msg, "429"), strings.Contains(msg, "rate limit"), strings.Contains(msg, "quota"):
 		return &Classified{Class: types.ErrModel, Reason: "rate_limit", Retryable: true, Cause: err}
-	case strings.Contains(msg, "400"), strings.Contains(msg, "invalid argument"), strings.Contains(msg, "bad request"), strings.Contains(msg, "unprocessable"):
-		return &Classified{Class: types.ErrModel, Reason: "request", Retryable: false, Cause: err}
+	case strings.Contains(msg, "400"), strings.Contains(msg, "invalid argument"), strings.Contains(msg, "bad request"), strings.Contains(msg, "unprocessable"), strings.Contains(msg, "invalid tool"):
+		return &Classified{Class: types.ErrModel, Reason: "request_invalid", Retryable: false, Cause: err}
 	default:
 		return &Classified{Class: types.ErrModel, Reason: "unknown", Retryable: false, Cause: err}
 	}

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-30
+更新时间：2026-03-31
 
 ## 定位
 
@@ -15,11 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-30：
+截至 2026-03-31：
 - 已归档并稳定：A4-A53（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`
   - `introduce-observability-export-and-diagnostics-bundle-contract-a55`
+  - `introduce-react-loop-and-tool-calling-parity-contract-a56`
 
 ## 版本阶段口径（延续 0.x）
 

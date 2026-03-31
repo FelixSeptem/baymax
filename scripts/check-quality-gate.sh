@@ -157,6 +157,12 @@ if ! bash scripts/check-memory-contract-conformance.sh; then
   exit 1
 fi
 
+echo "[quality-gate] observability export and diagnostics bundle contract"
+if ! bash scripts/check-observability-export-and-bundle-contract.sh; then
+  echo "[quality-gate][observability-export-bundle-contract] observability export and diagnostics bundle contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

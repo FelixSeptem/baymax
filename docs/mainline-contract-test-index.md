@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-30
+更新时间：2026-03-31
 
 ## 目标
 
@@ -207,6 +207,9 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Memory Replay A54 Fixture + Drift Guard | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | Memory Contract Gate A54 | `scripts/check-memory-contract-conformance.sh` | `scripts/check-memory-contract-conformance.ps1` |
 | Memory Contract Gate A54 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Observability Export + Bundle A55 Recorder/Store Contract | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleSuccess`、`runtime/diagnostics/store_test.go::TestStoreRunObservabilityAdditiveFieldsPersistAndReplayIdempotent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleFailureReason`、`runtime/diagnostics/store_test.go::TestStoreRunObservabilityAdditiveFieldsBoundedCardinality` |
+| Observability Export + Bundle A55 Run/Stream Equivalence | `integration/observability_export_bundle_contract_test.go::TestObservabilityExportBundleContractRunStreamSemanticEquivalenceSuccess` | `integration/observability_export_bundle_contract_test.go::TestObservabilityExportBundleContractRunStreamBundleFailureTaxonomyEquivalent` |
+| Observability Export + Bundle A55 Gate Path | `scripts/check-observability-export-and-bundle-contract.sh` | `scripts/check-observability-export-and-bundle-contract.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

@@ -1260,6 +1260,330 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA55ObservabilityDiagnosticsFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a55-observability",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                                 "failed",
+			"observability_export_profile":           "otlp",
+			"observability_export_status":            "degraded",
+			"observability_export_error_total":       2,
+			"observability_export_drop_total":        1,
+			"observability_export_queue_depth_peak":  8,
+			"diagnostics_bundle_total":               1,
+			"diagnostics_bundle_last_status":         "failed",
+			"diagnostics_bundle_last_reason_code":    "diagnostics.bundle.output_unavailable",
+			"diagnostics_bundle_last_schema_version": "bundle.v1",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ObservabilityExportProfile != "otlp" ||
+		got.ObservabilityExportStatus != "degraded" ||
+		got.ObservabilityExportErrorTotal != 2 ||
+		got.ObservabilityExportDropTotal != 1 ||
+		got.ObservabilityExportQueueDepthPeak != 8 ||
+		got.DiagnosticsBundleTotal != 1 ||
+		got.DiagnosticsBundleLastStatus != "failed" ||
+		got.DiagnosticsBundleLastReasonCode != "diagnostics.bundle.output_unavailable" ||
+		got.DiagnosticsBundleLastSchemaVersion != "bundle.v1" {
+		t.Fatalf("A55 observability diagnostics parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA55ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeActionTimeline,
+		Time:    time.Now(),
+		RunID:   "run-a55-compat",
+		Payload: map[string]any{
+			"phase":    "run",
+			"status":   "running",
+			"sequence": int64(1),
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a55-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(55),
+			"a55_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 55 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.ObservabilityExportProfile != runtimeconfig.RuntimeObservabilityExportProfileNone ||
+		got.ObservabilityExportStatus != RuntimeExportStatusDisabled ||
+		got.ObservabilityExportErrorTotal != 0 ||
+		got.ObservabilityExportDropTotal != 0 ||
+		got.ObservabilityExportQueueDepthPeak != 0 ||
+		got.DiagnosticsBundleTotal != 0 ||
+		got.DiagnosticsBundleLastStatus != "" ||
+		got.DiagnosticsBundleLastReasonCode != "" ||
+		got.DiagnosticsBundleLastSchemaVersion != "" {
+		t.Fatalf("missing A55 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleSuccess(t *testing.T) {
+	bundleDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-bundle-success.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+runtime:
+  diagnostics:
+    bundle:
+      enabled: true
+      output_dir: ` + bundleDir + `
+      max_size_mb: 8
+      include_sections:
+        - timeline
+        - diagnostics
+        - effective_config
+        - replay_hints
+        - gate_fingerprint
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a55-bundle-success",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":        "success",
+			"client_secret": "raw-secret",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.DiagnosticsBundleTotal != 1 ||
+		got.DiagnosticsBundleLastStatus != runtimeconfig.RuntimeDiagnosticsBundleStatusSuccess ||
+		got.DiagnosticsBundleLastReasonCode != "" ||
+		got.DiagnosticsBundleLastSchemaVersion != runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1 {
+		t.Fatalf("auto bundle generation summary mismatch: %#v", got)
+	}
+	entries, err := os.ReadDir(bundleDir)
+	if err != nil {
+		t.Fatalf("read bundle output dir failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("bundle directory count = %d, want 1", len(entries))
+	}
+	manifestPath := filepath.Join(bundleDir, entries[0].Name(), "manifest.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("manifest file missing: %v", err)
+	}
+}
+
+func TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleFailureReason(t *testing.T) {
+	tmp := t.TempDir()
+	blocked := filepath.Join(tmp, "blocked")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocked marker: %v", err)
+	}
+	bundleDir := filepath.ToSlash(filepath.Join(blocked, "bundles"))
+	cfgPath := filepath.Join(tmp, "runtime-a55-bundle-failure.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+runtime:
+  diagnostics:
+    bundle:
+      enabled: true
+      output_dir: ` + bundleDir + `
+      max_size_mb: 8
+      include_sections:
+        - timeline
+        - diagnostics
+        - effective_config
+        - replay_hints
+        - gate_fingerprint
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a55-bundle-failure",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status": "failed",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.DiagnosticsBundleTotal != 1 ||
+		got.DiagnosticsBundleLastStatus != runtimeconfig.RuntimeDiagnosticsBundleStatusFailed ||
+		got.DiagnosticsBundleLastReasonCode != runtimeconfig.RuntimeDiagnosticsBundleReasonOutputUnavailable ||
+		got.DiagnosticsBundleLastSchemaVersion != runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1 {
+		t.Fatalf("auto bundle failure mapping mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderNormalizesA55ObservabilityAndBundleCardinalitySensitiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a55-normalize",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                                 "success",
+			"observability_export_profile":           "otlp-east-2.custom-tenant",
+			"observability_export_status":            "partially_failed",
+			"diagnostics_bundle_last_status":         "FAILED",
+			"diagnostics_bundle_last_reason_code":    "diagnostics.bundle.backend_42_private_code",
+			"diagnostics_bundle_last_schema_version": "bundle.v999",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ObservabilityExportProfile != runtimeconfig.RuntimeObservabilityExportProfileNone ||
+		got.ObservabilityExportStatus != RuntimeExportStatusDisabled ||
+		got.DiagnosticsBundleLastStatus != runtimeconfig.RuntimeDiagnosticsBundleStatusFailed ||
+		got.DiagnosticsBundleLastReasonCode != runtimeconfig.RuntimeDiagnosticsBundleReasonUnknown ||
+		got.DiagnosticsBundleLastSchemaVersion != runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1 {
+		t.Fatalf("A55 normalization mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderParsesA50ArbitrationVersionGovernanceFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

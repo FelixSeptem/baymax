@@ -17,6 +17,7 @@ const (
 	ArbitrationFixtureVersionA51V1    = "a51.v1"
 	ArbitrationFixtureVersionA52V1    = "a52.v1"
 	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
+	ArbitrationFixtureVersionObsV1    = "observability.v1"
 
 	ReasonCodePrecedenceDrift               = "precedence_drift"
 	ReasonCodeTieBreakDrift                 = "tie_break_drift"
@@ -44,6 +45,12 @@ const (
 	ReasonCodeMemoryFallbackDrift           = "memory_fallback_drift"
 	ReasonCodeMemoryErrorTaxonomyDrift      = "memory_error_taxonomy_drift"
 	ReasonCodeMemoryOperationAggregateDrift = "memory_operation_aggregate_drift"
+	ReasonCodeObsExportProfileDrift         = "observability_export_profile_drift"
+	ReasonCodeObsExportStatusDrift          = "observability_export_status_drift"
+	ReasonCodeObsExportReasonDrift          = "observability_export_reason_drift"
+	ReasonCodeBundleSchemaDrift             = "diagnostics_bundle_schema_drift"
+	ReasonCodeBundleRedactionDrift          = "diagnostics_bundle_redaction_drift"
+	ReasonCodeBundleFingerprintDrift        = "diagnostics_bundle_fingerprint_drift"
 )
 
 type ArbitrationFixture struct {
@@ -110,6 +117,14 @@ type ArbitrationObservation struct {
 	MemoryFallbackTotal                    int      `json:"memory_fallback_total,omitempty"`
 	MemoryFallbackReasonCode               string   `json:"memory_fallback_reason_code,omitempty"`
 	MemoryReasonCode                       string   `json:"memory_reason_code,omitempty"`
+	ObservabilityExportProfile             string   `json:"observability_export_profile,omitempty"`
+	ObservabilityExportStatus              string   `json:"observability_export_status,omitempty"`
+	ObservabilityExportReasonCode          string   `json:"observability_export_reason_code,omitempty"`
+	DiagnosticsBundleLastStatus            string   `json:"diagnostics_bundle_last_status,omitempty"`
+	DiagnosticsBundleLastReasonCode        string   `json:"diagnostics_bundle_last_reason_code,omitempty"`
+	DiagnosticsBundleLastSchemaVersion     string   `json:"diagnostics_bundle_last_schema_version,omitempty"`
+	DiagnosticsBundleRedactionStatus       string   `json:"diagnostics_bundle_redaction_status,omitempty"`
+	DiagnosticsBundleGateFingerprint       string   `json:"diagnostics_bundle_gate_fingerprint,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -139,7 +154,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA50V1 &&
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
-		version != ArbitrationFixtureVersionMemoryV1 {
+		version != ArbitrationFixtureVersionMemoryV1 &&
+		version != ArbitrationFixtureVersionObsV1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -285,6 +301,14 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		MemoryFallbackTotal:                    in.MemoryFallbackTotal,
 		MemoryFallbackReasonCode:               strings.ToLower(strings.TrimSpace(in.MemoryFallbackReasonCode)),
 		MemoryReasonCode:                       strings.ToLower(strings.TrimSpace(in.MemoryReasonCode)),
+		ObservabilityExportProfile:             strings.ToLower(strings.TrimSpace(in.ObservabilityExportProfile)),
+		ObservabilityExportStatus:              strings.ToLower(strings.TrimSpace(in.ObservabilityExportStatus)),
+		ObservabilityExportReasonCode:          strings.ToLower(strings.TrimSpace(in.ObservabilityExportReasonCode)),
+		DiagnosticsBundleLastStatus:            strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleLastStatus)),
+		DiagnosticsBundleLastReasonCode:        strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleLastReasonCode)),
+		DiagnosticsBundleLastSchemaVersion:     strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleLastSchemaVersion)),
+		DiagnosticsBundleRedactionStatus:       strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleRedactionStatus)),
+		DiagnosticsBundleGateFingerprint:       strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleGateFingerprint)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -361,6 +385,9 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 }
 
 func validateArbitrationObservation(version, caseName, lane string, obs ArbitrationObservation) error {
+	if version == ArbitrationFixtureVersionObsV1 {
+		return validateObservabilityArbitrationObservation(caseName, lane, obs)
+	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return validateMemoryArbitrationObservation(caseName, lane, obs)
 	}
@@ -549,6 +576,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionObsV1 {
+		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return assertMemoryArbitrationEquivalent(caseName, lane, expected, actual)
@@ -930,6 +960,16 @@ func assertSandboxRolloutArbitrationEquivalent(caseName, lane string, expected, 
 }
 
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
+	if version == ArbitrationFixtureVersionObsV1 {
+		return left.ObservabilityExportProfile == right.ObservabilityExportProfile &&
+			left.ObservabilityExportStatus == right.ObservabilityExportStatus &&
+			left.ObservabilityExportReasonCode == right.ObservabilityExportReasonCode &&
+			left.DiagnosticsBundleLastStatus == right.DiagnosticsBundleLastStatus &&
+			left.DiagnosticsBundleLastReasonCode == right.DiagnosticsBundleLastReasonCode &&
+			left.DiagnosticsBundleLastSchemaVersion == right.DiagnosticsBundleLastSchemaVersion &&
+			left.DiagnosticsBundleRedactionStatus == right.DiagnosticsBundleRedactionStatus &&
+			left.DiagnosticsBundleGateFingerprint == right.DiagnosticsBundleGateFingerprint
+	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return left.MemoryMode == right.MemoryMode &&
 			left.MemoryProvider == right.MemoryProvider &&
@@ -1159,6 +1199,149 @@ func assertMemoryArbitrationEquivalent(caseName, lane string, expected, actual A
 	return nil
 }
 
+func validateObservabilityArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isObservabilityExportProfile(obs.ObservabilityExportProfile) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s observability_export_profile must be none|otlp|langfuse|custom", caseName, lane),
+		}
+	}
+	if !isObservabilityStatus(obs.ObservabilityExportStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s observability_export_status must be disabled|success|degraded|failed", caseName, lane),
+		}
+	}
+	exportReason := strings.TrimSpace(obs.ObservabilityExportReasonCode)
+	if obs.ObservabilityExportStatus == "degraded" || obs.ObservabilityExportStatus == "failed" {
+		if exportReason == "" || !strings.HasPrefix(exportReason, "observability.export.") {
+			return &ValidationError{
+				Code:    ReasonCodeObsExportReasonDrift,
+				Message: fmt.Sprintf("case %q %s observability_export_reason_code must be observability.export.* when status is degraded|failed", caseName, lane),
+			}
+		}
+	} else if exportReason != "" {
+		return &ValidationError{
+			Code:    ReasonCodeObsExportReasonDrift,
+			Message: fmt.Sprintf("case %q %s observability_export_reason_code must be empty when status is disabled|success", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.DiagnosticsBundleLastSchemaVersion) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s diagnostics_bundle_last_schema_version is required", caseName, lane),
+		}
+	}
+	if !isDiagnosticsBundleStatus(obs.DiagnosticsBundleLastStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s diagnostics_bundle_last_status must be disabled|success|degraded|failed", caseName, lane),
+		}
+	}
+	bundleReason := strings.TrimSpace(obs.DiagnosticsBundleLastReasonCode)
+	if obs.DiagnosticsBundleLastStatus == "degraded" || obs.DiagnosticsBundleLastStatus == "failed" {
+		if bundleReason == "" || !strings.HasPrefix(bundleReason, "diagnostics.bundle.") {
+			return &ValidationError{
+				Code:    ReasonCodeBundleSchemaDrift,
+				Message: fmt.Sprintf("case %q %s diagnostics_bundle_last_reason_code must be diagnostics.bundle.* when bundle status is degraded|failed", caseName, lane),
+			}
+		}
+	} else if bundleReason != "" {
+		return &ValidationError{
+			Code:    ReasonCodeBundleSchemaDrift,
+			Message: fmt.Sprintf("case %q %s diagnostics_bundle_last_reason_code must be empty when bundle status is disabled|success", caseName, lane),
+		}
+	}
+	if obs.DiagnosticsBundleRedactionStatus != "redacted" && obs.DiagnosticsBundleRedactionStatus != "unredacted" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s diagnostics_bundle_redaction_status must be redacted|unredacted", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.DiagnosticsBundleGateFingerprint) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s diagnostics_bundle_gate_fingerprint is required", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertObservabilityArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.ObservabilityExportProfile != actual.ObservabilityExportProfile {
+		return &ValidationError{
+			Code:    ReasonCodeObsExportProfileDrift,
+			Message: fmt.Sprintf("case %q %s observability export profile drift expected=%q actual=%q", caseName, lane, expected.ObservabilityExportProfile, actual.ObservabilityExportProfile),
+		}
+	}
+	if expected.ObservabilityExportStatus != actual.ObservabilityExportStatus {
+		return &ValidationError{
+			Code:    ReasonCodeObsExportStatusDrift,
+			Message: fmt.Sprintf("case %q %s observability export status drift expected=%q actual=%q", caseName, lane, expected.ObservabilityExportStatus, actual.ObservabilityExportStatus),
+		}
+	}
+	if expected.ObservabilityExportReasonCode != actual.ObservabilityExportReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeObsExportReasonDrift,
+			Message: fmt.Sprintf("case %q %s observability export reason drift expected=%q actual=%q", caseName, lane, expected.ObservabilityExportReasonCode, actual.ObservabilityExportReasonCode),
+		}
+	}
+	if expected.DiagnosticsBundleLastSchemaVersion != actual.DiagnosticsBundleLastSchemaVersion ||
+		expected.DiagnosticsBundleLastStatus != actual.DiagnosticsBundleLastStatus ||
+		expected.DiagnosticsBundleLastReasonCode != actual.DiagnosticsBundleLastReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeBundleSchemaDrift,
+			Message: fmt.Sprintf("case %q %s diagnostics bundle schema drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.DiagnosticsBundleRedactionStatus != actual.DiagnosticsBundleRedactionStatus {
+		return &ValidationError{
+			Code:    ReasonCodeBundleRedactionDrift,
+			Message: fmt.Sprintf("case %q %s diagnostics bundle redaction drift expected=%q actual=%q", caseName, lane, expected.DiagnosticsBundleRedactionStatus, actual.DiagnosticsBundleRedactionStatus),
+		}
+	}
+	if expected.DiagnosticsBundleGateFingerprint != actual.DiagnosticsBundleGateFingerprint {
+		return &ValidationError{
+			Code:    ReasonCodeBundleFingerprintDrift,
+			Message: fmt.Sprintf("case %q %s diagnostics bundle fingerprint drift expected=%q actual=%q", caseName, lane, expected.DiagnosticsBundleGateFingerprint, actual.DiagnosticsBundleGateFingerprint),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s observability semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func isObservabilityExportProfile(profile string) bool {
+	switch strings.TrimSpace(profile) {
+	case runtimeconfig.RuntimeObservabilityExportProfileNone,
+		runtimeconfig.RuntimeObservabilityExportProfileOTLP,
+		runtimeconfig.RuntimeObservabilityExportProfileLangfuse,
+		runtimeconfig.RuntimeObservabilityExportProfileCustom:
+		return true
+	default:
+		return false
+	}
+}
+
+func isObservabilityStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "disabled", "success", "degraded", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDiagnosticsBundleStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "disabled", "success", "degraded", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func precedenceForArbitrationCode(code string) int {
 	switch strings.TrimSpace(code) {
 	case runtimeconfig.RuntimePrimaryCodeTimeoutRejected, runtimeconfig.RuntimePrimaryCodeTimeoutExhausted:
@@ -1176,6 +1359,14 @@ func precedenceForArbitrationCode(code string) int {
 		return 2
 	case runtimeconfig.ReadinessCodeAdapterRequiredUnavailable, runtimeconfig.ReadinessCodeAdapterRequiredCircuitOpen:
 		return 3
+	case runtimeconfig.ReadinessCodeMemoryModeInvalid,
+		runtimeconfig.ReadinessCodeMemoryProfileMissing,
+		runtimeconfig.ReadinessCodeMemoryProviderNotSupported,
+		runtimeconfig.ReadinessCodeMemoryFilesystemPathInvalid,
+		runtimeconfig.ReadinessCodeMemoryContractVersionMismatch,
+		runtimeconfig.ReadinessCodeObservabilityExportProfileInvalid,
+		runtimeconfig.ReadinessCodeDiagnosticsBundlePolicyInvalid:
+		return 3
 	case runtimeconfig.ReadinessCodeSchedulerFallback,
 		runtimeconfig.ReadinessCodeMailboxFallback,
 		runtimeconfig.ReadinessCodeRecoveryFallback,
@@ -1183,6 +1374,12 @@ func precedenceForArbitrationCode(code string) int {
 		runtimeconfig.ReadinessCodeAdapterOptionalCircuitOpen,
 		runtimeconfig.ReadinessCodeAdapterDegraded,
 		runtimeconfig.ReadinessCodeAdapterHalfOpenDegraded,
+		runtimeconfig.ReadinessCodeMemorySPIUnavailable,
+		runtimeconfig.ReadinessCodeMemoryFallbackPolicyConflict,
+		runtimeconfig.ReadinessCodeMemoryFallbackTargetUnavailable,
+		runtimeconfig.ReadinessCodeObservabilityExportSinkUnavailable,
+		runtimeconfig.ReadinessCodeObservabilityExportAuthInvalid,
+		runtimeconfig.ReadinessCodeDiagnosticsBundleOutputUnavailable,
 		runtimeconfig.ReadinessCodeSandboxRolloutHealthBreached,
 		runtimeconfig.ReadinessCodeSandboxRolloutCapacityBlocked:
 		return 4

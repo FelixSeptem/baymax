@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"sort"
@@ -76,6 +77,11 @@ const (
 	ReadinessCodeMemoryContractVersionMismatch        = "memory.contract_version_mismatch"
 	ReadinessCodeMemoryFallbackPolicyConflict         = "memory.fallback_policy_conflict"
 	ReadinessCodeMemoryFallbackTargetUnavailable      = "memory.fallback_target_unavailable"
+	ReadinessCodeObservabilityExportProfileInvalid    = "observability.export.profile_invalid"
+	ReadinessCodeObservabilityExportSinkUnavailable   = "observability.export.sink_unavailable"
+	ReadinessCodeObservabilityExportAuthInvalid       = "observability.export.auth_invalid"
+	ReadinessCodeDiagnosticsBundleOutputUnavailable   = "diagnostics.bundle.output_unavailable"
+	ReadinessCodeDiagnosticsBundlePolicyInvalid       = "diagnostics.bundle.policy_invalid"
 )
 
 type ReadinessAdmissionOutcome string
@@ -421,6 +427,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 	findings = append(findings, componentReadinessFindings("mailbox", componentSnapshot.Mailbox)...)
 	findings = append(findings, componentReadinessFindings("recovery", componentSnapshot.Recovery)...)
 	findings = append(findings, memoryReadinessFindings(cfg)...)
+	findings = append(findings, observabilityReadinessFindings(cfg)...)
 	findings = append(findings, m.sandboxReadinessFindings(cfg)...)
 	adapterResults, adapterFindings := m.adapterHealthReadinessFindings(cfg)
 	findings = append(findings, adapterFindings...)
@@ -1137,12 +1144,125 @@ func memoryReadinessFindings(cfg Config) []ReadinessFinding {
 	return findings
 }
 
+func observabilityReadinessFindings(cfg Config) []ReadinessFinding {
+	exportCfg := normalizeRuntimeObservabilityConfig(cfg.Runtime.Observability).Export
+	bundleCfg := normalizeRuntimeDiagnosticsBundleConfig(cfg.Runtime.Diagnostics.Bundle)
+	findings := make([]ReadinessFinding, 0, 4)
+
+	if !isSupportedRuntimeObservabilityExportProfile(exportCfg.Profile) {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeObservabilityExportProfileInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "runtime observability export profile is invalid",
+			Metadata: map[string]any{
+				"runtime_observability_export_profile": strings.TrimSpace(exportCfg.Profile),
+			},
+		})
+	}
+
+	if exportCfg.Enabled &&
+		exportCfg.Profile != RuntimeObservabilityExportProfileNone &&
+		isObservabilityExportSinkUnavailable(exportCfg.Endpoint) {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeObservabilityExportSinkUnavailable,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "runtime observability export sink is unavailable",
+			Metadata: map[string]any{
+				"runtime_observability_export_profile":  strings.TrimSpace(exportCfg.Profile),
+				"runtime_observability_export_endpoint": strings.TrimSpace(exportCfg.Endpoint),
+			},
+		})
+	}
+
+	if exportCfg.Enabled && exportCfg.Profile == RuntimeObservabilityExportProfileLangfuse {
+		endpoint := strings.ToLower(strings.TrimSpace(exportCfg.Endpoint))
+		if strings.Contains(endpoint, "auth_invalid") {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeObservabilityExportAuthInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+				Message:  "runtime observability export auth looks invalid",
+				Metadata: map[string]any{
+					"runtime_observability_export_profile":  strings.TrimSpace(exportCfg.Profile),
+					"runtime_observability_export_endpoint": strings.TrimSpace(exportCfg.Endpoint),
+				},
+			})
+		}
+	}
+
+	if err := validateRuntimeDiagnosticsBundlePolicyReadiness(bundleCfg); err != nil {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeDiagnosticsBundlePolicyInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "runtime diagnostics bundle policy is invalid",
+			Metadata: map[string]any{
+				"runtime_diagnostics_bundle_output_dir": strings.TrimSpace(bundleCfg.OutputDir),
+				"error":                                 strings.TrimSpace(err.Error()),
+			},
+		})
+		return findings
+	}
+
+	if bundleCfg.Enabled {
+		if err := validateObservabilityBundleOutputDirReadiness(bundleCfg.OutputDir); err != nil {
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeDiagnosticsBundleOutputUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+				Message:  "runtime diagnostics bundle output path is unavailable",
+				Metadata: map[string]any{
+					"runtime_diagnostics_bundle_output_dir": strings.TrimSpace(bundleCfg.OutputDir),
+					"error":                                 strings.TrimSpace(err.Error()),
+				},
+			})
+		}
+	}
+	return findings
+}
+
 func validateMemoryFilesystemPathReadiness(root string) error {
 	path := strings.TrimSpace(root)
 	if path == "" {
 		return fmt.Errorf("runtime memory builtin root_dir is required")
 	}
 	return os.MkdirAll(path, 0o755)
+}
+
+func validateRuntimeDiagnosticsBundlePolicyReadiness(cfg RuntimeDiagnosticsBundleConfig) error {
+	return ValidateRuntimeDiagnosticsBundleConfig(cfg)
+}
+
+func validateObservabilityBundleOutputDirReadiness(path string) error {
+	if err := validateRuntimeDiagnosticsBundleOutputDir(path); err != nil {
+		return err
+	}
+	return os.MkdirAll(strings.TrimSpace(path), 0o755)
+}
+
+func isObservabilityExportSinkUnavailable(endpoint string) bool {
+	raw := strings.TrimSpace(endpoint)
+	if raw == "" {
+		return true
+	}
+	lower := strings.ToLower(raw)
+	if strings.Contains(lower, "sink_unavailable") {
+		return true
+	}
+	if strings.Contains(lower, "127.0.0.1:9") || strings.Contains(lower, "localhost:9") || strings.Contains(lower, "[::1]:9") {
+		return true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Host)
+	if strings.Contains(host, "127.0.0.1:9") || strings.Contains(host, "localhost:9") || strings.Contains(host, "[::1]:9") {
+		return true
+	}
+	return false
 }
 
 func isSupportedMemoryProvider(provider string) bool {

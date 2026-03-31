@@ -282,6 +282,26 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 		Code:   "runtime.memory.restore_fallback_target",
 		Domain: ReadinessDomainRuntime,
 	},
+	ReadinessCodeObservabilityExportProfileInvalid: {
+		Code:   "runtime.observability.export.fix_profile",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeObservabilityExportSinkUnavailable: {
+		Code:   "runtime.observability.export.restore_sink",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeObservabilityExportAuthInvalid: {
+		Code:   "runtime.observability.export.fix_auth",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeDiagnosticsBundleOutputUnavailable: {
+		Code:   "runtime.diagnostics.bundle.restore_output_path",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeDiagnosticsBundlePolicyInvalid: {
+		Code:   "runtime.diagnostics.bundle.fix_policy",
+		Domain: ReadinessDomainRuntime,
+	},
 
 	ReadinessAdmissionCodeBypassDisabled:  {Code: "readiness.admission_enable_if_required", Domain: "runtime"},
 	ReadinessAdmissionCodeReady:           {Code: "readiness.no_action", Domain: "runtime"},
@@ -421,11 +441,16 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 		ReadinessCodeMemoryProfileMissing,
 		ReadinessCodeMemoryProviderNotSupported,
 		ReadinessCodeMemoryFilesystemPathInvalid,
-		ReadinessCodeMemoryContractVersionMismatch:
+		ReadinessCodeMemoryContractVersionMismatch,
+		ReadinessCodeObservabilityExportProfileInvalid,
+		ReadinessCodeDiagnosticsBundlePolicyInvalid:
 		return 3
 	case ReadinessCodeMemorySPIUnavailable,
 		ReadinessCodeMemoryFallbackPolicyConflict,
-		ReadinessCodeMemoryFallbackTargetUnavailable:
+		ReadinessCodeMemoryFallbackTargetUnavailable,
+		ReadinessCodeObservabilityExportSinkUnavailable,
+		ReadinessCodeObservabilityExportAuthInvalid,
+		ReadinessCodeDiagnosticsBundleOutputUnavailable:
 		return 4
 	}
 

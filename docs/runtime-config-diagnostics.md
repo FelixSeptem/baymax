@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-30
+更新时间：2026-03-31
 
 ## 目标
 
@@ -133,6 +133,15 @@
   - `runtime.memory.builtin.compaction.min_ops` -> `BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_MIN_OPS`
   - `runtime.memory.builtin.compaction.max_wal_bytes` -> `BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_MAX_WAL_BYTES`
   - `runtime.memory.fallback.policy` -> `BAYMAX_RUNTIME_MEMORY_FALLBACK_POLICY`
+  - `runtime.observability.export.enabled` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENABLED`
+  - `runtime.observability.export.profile` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_PROFILE`
+  - `runtime.observability.export.endpoint` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENDPOINT`
+  - `runtime.observability.export.queue_capacity` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_QUEUE_CAPACITY`
+  - `runtime.observability.export.on_error` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ON_ERROR`
+  - `runtime.diagnostics.bundle.enabled` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_ENABLED`
+  - `runtime.diagnostics.bundle.output_dir` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_OUTPUT_DIR`
+  - `runtime.diagnostics.bundle.max_size_mb` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_MAX_SIZE_MB`
+  - `runtime.diagnostics.bundle.include_sections` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_INCLUDE_SECTIONS`
   - `diagnostics.cardinality.enabled` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_ENABLED`
   - `diagnostics.cardinality.max_map_entries` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_MAP_ENTRIES`
   - `diagnostics.cardinality.max_list_entries` -> `BAYMAX_DIAGNOSTICS_CARDINALITY_MAX_LIST_ENTRIES`
@@ -231,6 +240,19 @@ runtime:
         max_wal_bytes: 1048576  # 必须 > 0
     fallback:
       policy: fail_fast         # fail_fast|degrade_to_builtin|degrade_without_memory
+  observability:
+    export:
+      enabled: false            # A55 默认关闭
+      profile: none             # none|otlp|langfuse|custom
+      endpoint: ""              # enabled=true 且 profile!=none 时必填
+      queue_capacity: 256       # 必须 > 0
+      on_error: degrade_and_record # fail_fast|degrade_and_record
+  diagnostics:
+    bundle:
+      enabled: false            # A55 默认关闭
+      output_dir: /tmp/baymax/diagnostics-bundles
+      max_size_mb: 64           # 必须 > 0
+      include_sections: [timeline, diagnostics, effective_config, replay_hints, gate_fingerprint]
 
 adapter:
   health:
@@ -980,6 +1002,7 @@ Mailbox diagnostics additive 字段（A35）：
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - Memory（A54）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`
+- Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
@@ -1088,8 +1111,17 @@ Composed summary additive fields（contract markers）：
 - `memory_error_total`
 - `memory_fallback_total`
 - `memory_fallback_reason_code`
+- `observability_export_profile`
+- `observability_export_status`
+- `observability_export_error_total`
+- `observability_export_drop_total`
+- `observability_export_queue_depth_peak`
+- `diagnostics_bundle_total`
+- `diagnostics_bundle_last_status`
+- `diagnostics_bundle_last_reason_code`
+- `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55）
 
 离线回放命令：
 
@@ -1170,6 +1202,25 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `memory_fallback_drift`
   - `memory_error_taxonomy_drift`
   - `memory_operation_aggregate_drift`
+
+语义（A55 observability arbitration 模式）：
+- 输入：版本化 fixture（`version=observability.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `observability_export_profile`
+  - `observability_export_status`
+  - `observability_export_reason_code`
+  - `diagnostics_bundle_last_status`
+  - `diagnostics_bundle_last_reason_code`
+  - `diagnostics_bundle_last_schema_version`
+  - `diagnostics_bundle_redaction_status`
+  - `diagnostics_bundle_gate_fingerprint`
+- 输出：按 case name 排序后的 canonical observability 输出。
+- drift 分类（A55 blocking）：
+  - `observability_export_profile_drift`
+  - `observability_export_status_drift`
+  - `observability_export_reason_drift`
+  - `diagnostics_bundle_schema_drift`
+  - `diagnostics_bundle_redaction_drift`
+  - `diagnostics_bundle_fingerprint_drift`
 
 详细使用说明见：`docs/diagnostics-replay.md`。
 

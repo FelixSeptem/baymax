@@ -527,6 +527,107 @@ func TestStoreRunMemoryAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunObservabilityAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                               time.Now(),
+		RunID:                              "run-a55-observability",
+		Status:                             "failed",
+		ObservabilityExportProfile:         "otlp",
+		ObservabilityExportStatus:          "degraded",
+		ObservabilityExportErrorTotal:      2,
+		ObservabilityExportDropTotal:       1,
+		ObservabilityExportQueueDepthPeak:  32,
+		DiagnosticsBundleTotal:             1,
+		DiagnosticsBundleLastStatus:        "failed",
+		DiagnosticsBundleLastReasonCode:    "diagnostics.bundle.output_unavailable",
+		DiagnosticsBundleLastSchemaVersion: "bundle.v1",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].ObservabilityExportProfile != "otlp" ||
+		items[0].ObservabilityExportStatus != "degraded" ||
+		items[0].ObservabilityExportErrorTotal != 2 ||
+		items[0].ObservabilityExportDropTotal != 1 ||
+		items[0].ObservabilityExportQueueDepthPeak != 32 ||
+		items[0].DiagnosticsBundleTotal != 1 ||
+		items[0].DiagnosticsBundleLastStatus != "failed" ||
+		items[0].DiagnosticsBundleLastReasonCode != "diagnostics.bundle.output_unavailable" ||
+		items[0].DiagnosticsBundleLastSchemaVersion != "bundle.v1" {
+		t.Fatalf("A55 observability fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.ObservabilityExportProfile = "langfuse"
+	rec.ObservabilityExportStatus = "failed"
+	rec.ObservabilityExportErrorTotal = 3
+	rec.ObservabilityExportDropTotal = 4
+	rec.ObservabilityExportQueueDepthPeak = 17
+	rec.DiagnosticsBundleTotal = 2
+	rec.DiagnosticsBundleLastStatus = "degraded"
+	rec.DiagnosticsBundleLastReasonCode = "diagnostics.bundle.policy_invalid"
+	rec.DiagnosticsBundleLastSchemaVersion = "bundle.v2"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].ObservabilityExportProfile != "langfuse" ||
+		items[0].ObservabilityExportStatus != "failed" ||
+		items[0].ObservabilityExportErrorTotal != 3 ||
+		items[0].ObservabilityExportDropTotal != 4 ||
+		items[0].ObservabilityExportQueueDepthPeak != 17 ||
+		items[0].DiagnosticsBundleTotal != 2 ||
+		items[0].DiagnosticsBundleLastStatus != "degraded" ||
+		items[0].DiagnosticsBundleLastReasonCode != "diagnostics.bundle.policy_invalid" ||
+		items[0].DiagnosticsBundleLastSchemaVersion != "bundle.v2" {
+		t.Fatalf("A55 observability fields mismatch after replay replacement: %#v", items[0])
+	}
+}
+
+func TestStoreRunObservabilityAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  8,
+		MaxListEntries: 8,
+		MaxStringBytes: 24,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:                               time.Now(),
+		RunID:                              "run-a55-observability-cardinality",
+		Status:                             "failed",
+		ObservabilityExportProfile:         "otlp-with-long-tenant-suffix-for-cardinality",
+		ObservabilityExportStatus:          "degraded",
+		DiagnosticsBundleLastStatus:        "failed",
+		DiagnosticsBundleLastReasonCode:    "diagnostics.bundle.backend_private_reason_code_should_be_bounded",
+		DiagnosticsBundleLastSchemaVersion: "bundle.v1.with.unbounded.suffix",
+	}
+	d.AddRun(rec)
+
+	items := d.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if len([]byte(got.ObservabilityExportProfile)) > 24 ||
+		len([]byte(got.DiagnosticsBundleLastReasonCode)) > 24 ||
+		len([]byte(got.DiagnosticsBundleLastSchemaVersion)) > 24 {
+		t.Fatalf("A55 string fields should be bounded by cardinality config, got %#v", got)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "observability_export_profile") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "diagnostics_bundle_last_reason_code") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "diagnostics_bundle_last_schema_version") {
+		t.Fatalf("A55 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+}
+
 func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

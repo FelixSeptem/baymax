@@ -329,3 +329,30 @@ func TestArbitratePrimaryReasonUnknownPrimaryCodeFailFast(t *testing.T) {
 		},
 	})
 }
+
+func TestArbitratePrimaryReasonObservabilityPolicyInvalidOutranksSinkUnavailable(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeObservabilityExportSinkUnavailable,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+			},
+			{
+				Code:     ReadinessCodeDiagnosticsBundlePolicyInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+			},
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeDiagnosticsBundlePolicyInvalid ||
+		got.Source != RuntimePrimarySourceReadiness ||
+		got.SecondaryCount != 1 ||
+		len(got.SecondaryCodes) != 1 ||
+		got.SecondaryCodes[0] != ReadinessCodeObservabilityExportSinkUnavailable ||
+		got.RemediationHintCode != "runtime.diagnostics.bundle.fix_policy" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("observability policy invalid precedence mismatch: %#v", got)
+	}
+}

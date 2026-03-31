@@ -259,6 +259,8 @@ type RuntimeDomainConfig struct {
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
+	Observability     RuntimeObservabilityConfig     `json:"observability"`
+	Diagnostics       RuntimeDiagnosticsConfig       `json:"diagnostics"`
 	Memory            RuntimeMemoryConfig            `json:"memory"`
 }
 
@@ -1188,6 +1190,29 @@ func DefaultConfig() Config {
 					Timeout: 2 * time.Minute,
 				},
 			},
+			Observability: RuntimeObservabilityConfig{
+				Export: RuntimeObservabilityExportConfig{
+					Enabled:       false,
+					Profile:       RuntimeObservabilityExportProfileNone,
+					Endpoint:      "",
+					QueueCapacity: 1024,
+					OnError:       RuntimeObservabilityExportOnErrorDegradeAndRecord,
+				},
+			},
+			Diagnostics: RuntimeDiagnosticsConfig{
+				Bundle: RuntimeDiagnosticsBundleConfig{
+					Enabled:   false,
+					OutputDir: filepath.Join(os.TempDir(), "baymax", "diagnostics-bundles"),
+					MaxSizeMB: 64,
+					IncludeSections: []string{
+						RuntimeDiagnosticsBundleSectionTimeline,
+						RuntimeDiagnosticsBundleSectionDiagnostics,
+						RuntimeDiagnosticsBundleSectionEffectiveConfig,
+						RuntimeDiagnosticsBundleSectionReplayHints,
+						RuntimeDiagnosticsBundleSectionGateFingerprint,
+					},
+				},
+			},
 			Memory: RuntimeMemoryConfig{
 				Mode: RuntimeMemoryModeBuiltinFilesystem,
 				External: RuntimeMemoryExternalConfig{
@@ -1945,6 +1970,12 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
+		return err
+	}
+	if err := validateRuntimeObservability(cfg.Runtime.Observability); err != nil {
+		return err
+	}
+	if err := validateRuntimeDiagnostics(cfg.Runtime.Diagnostics); err != nil {
 		return err
 	}
 	if err := validateRuntimeMemory(cfg.Runtime.Memory); err != nil {
@@ -3604,6 +3635,14 @@ func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) erro
 	return ValidateRuntimeArbitrationVersionConfig(cfg)
 }
 
+func validateRuntimeObservability(cfg RuntimeObservabilityConfig) error {
+	return ValidateRuntimeObservabilityConfig(cfg)
+}
+
+func validateRuntimeDiagnostics(cfg RuntimeDiagnosticsConfig) error {
+	return ValidateRuntimeDiagnosticsConfig(cfg)
+}
+
 func validateRuntimeMemory(cfg RuntimeMemoryConfig) error {
 	return ValidateRuntimeMemoryConfig(cfg)
 }
@@ -3662,6 +3701,15 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
 	v.SetDefault("runtime.operation_profiles.background.timeout", base.Runtime.OperationProfiles.Background.Timeout)
 	v.SetDefault("runtime.operation_profiles.batch.timeout", base.Runtime.OperationProfiles.Batch.Timeout)
+	v.SetDefault("runtime.observability.export.enabled", base.Runtime.Observability.Export.Enabled)
+	v.SetDefault("runtime.observability.export.profile", base.Runtime.Observability.Export.Profile)
+	v.SetDefault("runtime.observability.export.endpoint", base.Runtime.Observability.Export.Endpoint)
+	v.SetDefault("runtime.observability.export.queue_capacity", base.Runtime.Observability.Export.QueueCapacity)
+	v.SetDefault("runtime.observability.export.on_error", base.Runtime.Observability.Export.OnError)
+	v.SetDefault("runtime.diagnostics.bundle.enabled", base.Runtime.Diagnostics.Bundle.Enabled)
+	v.SetDefault("runtime.diagnostics.bundle.output_dir", base.Runtime.Diagnostics.Bundle.OutputDir)
+	v.SetDefault("runtime.diagnostics.bundle.max_size_mb", base.Runtime.Diagnostics.Bundle.MaxSizeMB)
+	v.SetDefault("runtime.diagnostics.bundle.include_sections", base.Runtime.Diagnostics.Bundle.IncludeSections)
 	v.SetDefault("runtime.memory.mode", base.Runtime.Memory.Mode)
 	v.SetDefault("runtime.memory.external.provider", base.Runtime.Memory.External.Provider)
 	v.SetDefault("runtime.memory.external.profile", base.Runtime.Memory.External.Profile)
@@ -4053,6 +4101,23 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")
 	cfg.Runtime.OperationProfiles.Background.Timeout = v.GetDuration("runtime.operation_profiles.background.timeout")
 	cfg.Runtime.OperationProfiles.Batch.Timeout = v.GetDuration("runtime.operation_profiles.batch.timeout")
+	exportEnabled, err := strictBoolConfigValue(v, "runtime.observability.export.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	bundleEnabled, err := strictBoolConfigValue(v, "runtime.diagnostics.bundle.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Observability.Export.Enabled = exportEnabled
+	cfg.Runtime.Observability.Export.Profile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.export.profile")))
+	cfg.Runtime.Observability.Export.Endpoint = strings.TrimSpace(v.GetString("runtime.observability.export.endpoint"))
+	cfg.Runtime.Observability.Export.QueueCapacity = v.GetInt("runtime.observability.export.queue_capacity")
+	cfg.Runtime.Observability.Export.OnError = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.export.on_error")))
+	cfg.Runtime.Diagnostics.Bundle.Enabled = bundleEnabled
+	cfg.Runtime.Diagnostics.Bundle.OutputDir = strings.TrimSpace(v.GetString("runtime.diagnostics.bundle.output_dir"))
+	cfg.Runtime.Diagnostics.Bundle.MaxSizeMB = v.GetInt("runtime.diagnostics.bundle.max_size_mb")
+	cfg.Runtime.Diagnostics.Bundle.IncludeSections = normalizeRuntimeDiagnosticsBundleSections(v.GetStringSlice("runtime.diagnostics.bundle.include_sections"))
 	cfg.Runtime.Memory.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.mode")))
 	cfg.Runtime.Memory.External.Provider = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.external.provider")))
 	cfg.Runtime.Memory.External.Profile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.external.profile")))

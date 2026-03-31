@@ -147,6 +147,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] memory contract conformance" -Com
     pwsh -File scripts/check-memory-contract-conformance.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] observability export and diagnostics bundle contract" -Command {
+    pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter scaffold drift" -Command {
     pwsh -File scripts/check-adapter-scaffold-drift.ps1
 }

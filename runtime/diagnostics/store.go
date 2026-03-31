@@ -71,6 +71,15 @@ type RunRecord struct {
 	MemoryFallbackTotal                         int                               `json:"memory_fallback_total,omitempty"`
 	MemoryFallbackReasonCode                    string                            `json:"memory_fallback_reason_code,omitempty"`
 	MemoryLatencyMsP95                          int64                             `json:"memory_latency_ms_p95,omitempty"`
+	ObservabilityExportProfile                  string                            `json:"observability_export_profile,omitempty"`
+	ObservabilityExportStatus                   string                            `json:"observability_export_status,omitempty"`
+	ObservabilityExportErrorTotal               int                               `json:"observability_export_error_total,omitempty"`
+	ObservabilityExportDropTotal                int                               `json:"observability_export_drop_total,omitempty"`
+	ObservabilityExportQueueDepthPeak           int                               `json:"observability_export_queue_depth_peak,omitempty"`
+	DiagnosticsBundleTotal                      int                               `json:"diagnostics_bundle_total,omitempty"`
+	DiagnosticsBundleLastStatus                 string                            `json:"diagnostics_bundle_last_status,omitempty"`
+	DiagnosticsBundleLastReasonCode             string                            `json:"diagnostics_bundle_last_reason_code,omitempty"`
+	DiagnosticsBundleLastSchemaVersion          string                            `json:"diagnostics_bundle_last_schema_version,omitempty"`
 	SandboxMode                                 string                            `json:"sandbox_mode,omitempty"`
 	SandboxBackend                              string                            `json:"sandbox_backend,omitempty"`
 	SandboxProfile                              string                            `json:"sandbox_profile,omitempty"`

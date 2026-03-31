@@ -38,6 +38,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a54_memory_success_input.json",
 			expected: "a54_memory_success_expected.json",
 		},
+		{
+			name:     "a55-observability",
+			input:    "a55_observability_success_input.json",
+			expected: "a55_observability_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -235,6 +240,42 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeSchemaMismatch,
 			wantInText: "unsupported fixture version",
 		},
+		{
+			name:       "a55-observability-export-profile-drift",
+			fixture:    "a55_observability_export_profile_drift_input.json",
+			wantCode:   ReasonCodeObsExportProfileDrift,
+			wantInText: "export profile drift",
+		},
+		{
+			name:       "a55-observability-export-status-drift",
+			fixture:    "a55_observability_export_status_drift_input.json",
+			wantCode:   ReasonCodeObsExportStatusDrift,
+			wantInText: "export status drift",
+		},
+		{
+			name:       "a55-observability-export-reason-drift",
+			fixture:    "a55_observability_export_reason_drift_input.json",
+			wantCode:   ReasonCodeObsExportReasonDrift,
+			wantInText: "export reason drift",
+		},
+		{
+			name:       "a55-observability-bundle-schema-drift",
+			fixture:    "a55_observability_bundle_schema_drift_input.json",
+			wantCode:   ReasonCodeBundleSchemaDrift,
+			wantInText: "bundle schema drift",
+		},
+		{
+			name:       "a55-observability-bundle-redaction-drift",
+			fixture:    "a55_observability_bundle_redaction_drift_input.json",
+			wantCode:   ReasonCodeBundleRedactionDrift,
+			wantInText: "bundle redaction drift",
+		},
+		{
+			name:       "a55-observability-bundle-fingerprint-drift",
+			fixture:    "a55_observability_bundle_fingerprint_drift_input.json",
+			wantCode:   ReasonCodeBundleFingerprintDrift,
+			wantInText: "bundle fingerprint drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -264,6 +305,7 @@ func TestReplayContractArbitrationMixedA48A52MemoryCompatibility(t *testing.T) {
 		"a51_sandbox_success_input.json",
 		"a52_sandbox_rollout_success_input.json",
 		"a54_memory_success_input.json",
+		"a55_observability_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

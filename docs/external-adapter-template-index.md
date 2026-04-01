@@ -239,3 +239,40 @@ memory profile 模板映射（onboarding skeleton）：
 - diagnostics 字段：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`。
 - readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
 - conformance suite：`integration/adapterconformance/memory_matrix_test.go`。
+
+## Sandbox Egress + Allowlist Onboarding Templates（A57）
+
+推荐将 sandbox-governed adapter onboarding skeleton 增补以下字段：
+
+- `security.sandbox.egress.enabled`
+- `security.sandbox.egress.default_action`
+- `security.sandbox.egress.by_tool`
+- `security.sandbox.egress.allowlist`
+- `security.sandbox.egress.on_violation`
+- `adapter.allowlist.enabled`
+- `adapter.allowlist.enforcement_mode`
+- `adapter.allowlist.entries`
+- `adapter.allowlist.on_unknown_signature`
+
+A57 conformance case id 绑定：
+
+| 分类 | case id | 说明 |
+| --- | --- | --- |
+| egress deny | `sandbox-egress-deny-matrix` | 默认 deny-first，未命中规则时阻断 |
+| egress allow | `sandbox-egress-allow-matrix` | allowlist 命中放行 |
+| egress allow_and_record | `sandbox-egress-allow-and-record-matrix` | on_violation 降级放行并记录 |
+| egress selector precedence | `sandbox-egress-selector-override-precedence` | `by_tool` 优先于 allowlist/default |
+| allowlist missing entry | `adapter-allowlist-missing-entry-enforce` | 激活前 entry 缺失 fail-fast |
+| allowlist signature invalid | `adapter-allowlist-signature-invalid-enforce` | enforce 下签名非法阻断 |
+| allowlist allowed path | `adapter-allowlist-allowed-path-enforce` | 命中 allowlist 正常激活 |
+| allowlist policy conflict | `adapter-allowlist-policy-conflict` | 非法 enforcement/on_unknown_signature 组合阻断 |
+
+A57 gate 命令：
+
+```bash
+bash scripts/check-sandbox-egress-allowlist-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
+```

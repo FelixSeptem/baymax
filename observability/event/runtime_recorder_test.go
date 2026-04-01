@@ -1864,6 +1864,62 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA57AdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a57-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                         "failed",
+			"sandbox_egress_action":          "deny",
+			"sandbox_egress_violation_total": 2,
+			"sandbox_egress_policy_source":   "by_tool",
+			"adapter_allowlist_decision":     "deny",
+			"adapter_allowlist_block_total":  1,
+			"adapter_allowlist_primary_code": "adapter.allowlist.missing_entry",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.SandboxEgressAction != "deny" ||
+		got.SandboxEgressViolationTotal != 2 ||
+		got.SandboxEgressPolicySource != "by_tool" ||
+		got.AdapterAllowlistDecision != "deny" ||
+		got.AdapterAllowlistBlockTotal != 1 ||
+		got.AdapterAllowlistPrimaryCode != "adapter.allowlist.missing_entry" {
+		t.Fatalf("A57 additive field parse mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderRedactsSensitivePayload(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

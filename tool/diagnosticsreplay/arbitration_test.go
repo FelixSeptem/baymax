@@ -48,6 +48,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a56_react_success_input.json",
 			expected: "a56_react_success_expected.json",
 		},
+		{
+			name:     "a57-sandbox-egress-allowlist",
+			input:    "a57_sandbox_egress_success_input.json",
+			expected: "a57_sandbox_egress_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -323,6 +328,36 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeSchemaMismatch,
 			wantInText: "model_provider is required",
 		},
+		{
+			name:       "a57-sandbox-egress-action-drift",
+			fixture:    "a57_sandbox_egress_action_drift_input.json",
+			wantCode:   ReasonCodeSandboxEgressActionDrift,
+			wantInText: "sandbox egress action drift",
+		},
+		{
+			name:       "a57-sandbox-egress-policy-source-drift",
+			fixture:    "a57_sandbox_egress_policy_source_drift_input.json",
+			wantCode:   ReasonCodeSandboxEgressPolicySourceDrift,
+			wantInText: "policy source drift",
+		},
+		{
+			name:       "a57-sandbox-egress-violation-taxonomy-drift",
+			fixture:    "a57_sandbox_egress_violation_taxonomy_drift_input.json",
+			wantCode:   ReasonCodeSandboxEgressViolationTaxonomyDrift,
+			wantInText: "violation taxonomy drift",
+		},
+		{
+			name:       "a57-adapter-allowlist-decision-drift",
+			fixture:    "a57_adapter_allowlist_decision_drift_input.json",
+			wantCode:   ReasonCodeAdapterAllowlistDecisionDrift,
+			wantInText: "allowlist decision drift",
+		},
+		{
+			name:       "a57-adapter-allowlist-taxonomy-drift",
+			fixture:    "a57_adapter_allowlist_taxonomy_drift_input.json",
+			wantCode:   ReasonCodeAdapterAllowlistTaxonomyDrift,
+			wantInText: "allowlist taxonomy drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -346,14 +381,12 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 	}
 }
 
-func TestReplayContractArbitrationMixedA48A52MemoryCompatibility(t *testing.T) {
+func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(t *testing.T) {
 	fixtures := []string{
-		"a48_arbitration_success_input.json",
-		"a51_sandbox_success_input.json",
 		"a52_sandbox_rollout_success_input.json",
 		"a54_memory_success_input.json",
-		"a55_observability_success_input.json",
 		"a56_react_success_input.json",
+		"a57_sandbox_egress_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

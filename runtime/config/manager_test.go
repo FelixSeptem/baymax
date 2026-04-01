@@ -1179,6 +1179,54 @@ reload:
 	}
 }
 
+func TestSecuritySandboxEgressInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+security:
+  sandbox:
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: deny
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Security.Sandbox.Egress.DefaultAction
+	if before != SecuritySandboxEgressActionDeny {
+		t.Fatalf("before sandbox egress default_action = %q, want %q", before, SecuritySandboxEgressActionDeny)
+	}
+
+	writeConfig(t, file, `
+security:
+  sandbox:
+    egress:
+      enabled: true
+      default_action: allow
+      on_violation: deny
+      allowlist:
+        - api.example.com
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Security.Sandbox.Egress.DefaultAction
+	if after != before {
+		t.Fatalf("invalid sandbox egress reload should rollback, default_action = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerSandboxRolloutGovernanceRecordRunAutoFreeze(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime-a52-governance.yaml")
 	writeConfig(t, file, `
@@ -2733,6 +2781,59 @@ reload:
 	after := mgr.EffectiveConfig().Adapter.Health.Backoff.Multiplier
 	if after != before {
 		t.Fatalf("invalid adapter health governance reload should rollback, multiplier=%v want=%v", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerAdapterAllowlistInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+adapter:
+  allowlist:
+    enabled: true
+    enforcement_mode: enforce
+    on_unknown_signature: deny
+    entries:
+      - adapter_id: adapter.one
+        publisher: acme
+        version: 1.0.0
+        signature_status: valid
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := len(mgr.EffectiveConfig().Adapter.Allowlist.Entries)
+	if before != 1 {
+		t.Fatalf("before adapter.allowlist.entries len = %d, want 1", before)
+	}
+
+	writeConfig(t, file, `
+adapter:
+  allowlist:
+    enabled: true
+    enforcement_mode: enforce
+    on_unknown_signature: deny
+    entries:
+      - adapter_id: adapter.one
+        version: 1.0.0
+        signature_status: valid
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := len(mgr.EffectiveConfig().Adapter.Allowlist.Entries)
+	if after != before {
+		t.Fatalf("invalid adapter allowlist reload should rollback, entries len = %d, want %d", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

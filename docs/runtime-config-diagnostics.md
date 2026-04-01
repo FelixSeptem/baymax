@@ -266,11 +266,25 @@ runtime:
       include_sections: [timeline, diagnostics, effective_config, replay_hints, gate_fingerprint]
 
 adapter:
+  allowlist:
+    enabled: false              # A57 默认关闭，按 adapter 接入分批启用
+    enforcement_mode: enforce   # observe|enforce
+    entries: []                 # adapter_id/publisher/version/signature_status
+    on_unknown_signature: deny  # deny|allow_and_record
   health:
     enabled: false              # A43 默认关闭，逐步启用
     strict: false               # A43 默认不强制 required unavailable 直接阻断
     probe_timeout: 500ms        # 必须 > 0
     cache_ttl: 30s              # 必须 > 0（TTL 内复用探测结果）
+
+security:
+  sandbox:
+    egress:
+      enabled: true             # A57 默认启用，deny-first
+      default_action: deny      # deny|allow|allow_and_record
+      by_tool: {}               # selector -> action
+      allowlist: []             # host/domain pattern allowlist
+      on_violation: deny        # deny|allow_and_record
 
 reload:
   enabled: true
@@ -1013,6 +1027,7 @@ Mailbox diagnostics additive 字段（A35）：
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
+- Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
 - Memory（A54）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`
 - Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
@@ -1120,6 +1135,12 @@ Composed summary additive fields（contract markers）：
 - `react_iteration_budget_hit_total`
 - `react_termination_reason`
 - `react_stream_dispatch_enabled`
+- `sandbox_egress_action`
+- `sandbox_egress_violation_total`
+- `sandbox_egress_policy_source`
+- `adapter_allowlist_decision`
+- `adapter_allowlist_block_total`
+- `adapter_allowlist_primary_code`
 - `memory_mode`
 - `memory_provider`
 - `memory_profile`
@@ -1140,7 +1161,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57）
 
 离线回放命令：
 
@@ -1218,6 +1239,23 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `react_termination_reason_drift`
   - `react_stream_dispatch_drift`
   - `react_provider_mapping_drift`
+
+语义（A57 sandbox egress + adapter allowlist arbitration 模式）：
+- 输入：版本化 fixture（`version=sandbox_egress.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `sandbox_egress_action`
+  - `sandbox_egress_violation_total`
+  - `sandbox_egress_policy_source`
+  - `adapter_allowlist_decision`
+  - `adapter_allowlist_block_total`
+  - `adapter_allowlist_primary_code`
+- 输出：按 case name 排序后的 canonical sandbox/allowlist arbitration 输出。
+- drift 分类（A57 blocking）：
+  - `sandbox_egress_action_drift`
+  - `sandbox_egress_policy_source_drift`
+  - `sandbox_egress_violation_taxonomy_drift`
+  - `adapter_allowlist_decision_drift`
+  - `adapter_allowlist_taxonomy_drift`
+- mixed fixture 兼容要求：A57 gate 必须与 `sandbox.v1` + `memory.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility`）。
 
 语义（A54 memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：
@@ -1520,6 +1558,42 @@ A51/A52 门禁与 required-check 暴露：
 - CI Job: `security-sandbox-gate`（仅 PR 触发，可配置 branch-protection required check）
 - CI Job: `sandbox-rollout-governance-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-security-sandbox-contract.*` 与 `check-sandbox-rollout-governance-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+
+A57 在 A51/A52 基础上补齐 sandbox egress 治理与 adapter allowlist 准入合同，继续沿用配置优先级 `env > file > default`，并保持启动/热更新 fail-fast + 原子回滚。
+
+A57 配置域：
+- `security.sandbox.egress.enabled`
+- `security.sandbox.egress.default_action`（`deny|allow|allow_and_record`）
+- `security.sandbox.egress.by_tool`
+- `security.sandbox.egress.allowlist`
+- `security.sandbox.egress.on_violation`（`deny|allow_and_record`）
+- `adapter.allowlist.enabled`
+- `adapter.allowlist.enforcement_mode`（`observe|enforce`）
+- `adapter.allowlist.entries`（`adapter_id/publisher/version/signature_status`）
+- `adapter.allowlist.on_unknown_signature`（`deny|allow_and_record`）
+
+A57 readiness/admission canonical findings：
+- `sandbox.egress.policy_invalid`
+- `sandbox.egress.allowlist_invalid`
+- `sandbox.egress.rule_conflict`
+- `sandbox.egress.violation_budget_breached`
+- `adapter.allowlist.missing_entry`
+- `adapter.allowlist.signature_invalid`
+- `adapter.allowlist.policy_conflict`
+
+A57 additive diagnostics 字段（`additive + nullable + default`）：
+- `sandbox_egress_action`
+- `sandbox_egress_violation_total`
+- `sandbox_egress_policy_source`
+- `adapter_allowlist_decision`
+- `adapter_allowlist_block_total`
+- `adapter_allowlist_primary_code`
+
+A57 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-sandbox-egress-allowlist-contract.sh`
+- Windows: `pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1`
+- CI Job: `sandbox-egress-allowlist-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-sandbox-egress-allowlist-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

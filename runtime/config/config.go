@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -228,6 +230,27 @@ const (
 )
 
 const (
+	SecuritySandboxEgressActionDeny           = "deny"
+	SecuritySandboxEgressActionAllow          = "allow"
+	SecuritySandboxEgressActionAllowAndRecord = "allow_and_record"
+
+	SecuritySandboxEgressOnViolationDeny           = "deny"
+	SecuritySandboxEgressOnViolationAllowAndRecord = "allow_and_record"
+)
+
+const (
+	AdapterAllowlistEnforcementModeObserve = "observe"
+	AdapterAllowlistEnforcementModeEnforce = "enforce"
+
+	AdapterAllowlistUnknownSignatureDeny           = "deny"
+	AdapterAllowlistUnknownSignatureAllowAndRecord = "allow_and_record"
+
+	AdapterAllowlistSignatureStatusValid   = "valid"
+	AdapterAllowlistSignatureStatusInvalid = "invalid"
+	AdapterAllowlistSignatureStatusUnknown = "unknown"
+)
+
+const (
 	DiagnosticsCardinalityOverflowTruncateAndRecord = "truncate_and_record"
 	DiagnosticsCardinalityOverflowFailFast          = "fail_fast"
 )
@@ -266,7 +289,8 @@ type RuntimeDomainConfig struct {
 }
 
 type AdapterConfig struct {
-	Health AdapterHealthConfig `json:"health"`
+	Health    AdapterHealthConfig    `json:"health"`
+	Allowlist AdapterAllowlistConfig `json:"allowlist"`
 }
 
 type AdapterHealthConfig struct {
@@ -292,6 +316,20 @@ type AdapterHealthCircuitConfig struct {
 	OpenDuration             time.Duration `json:"open_duration"`
 	HalfOpenMaxProbe         int           `json:"half_open_max_probe"`
 	HalfOpenSuccessThreshold int           `json:"half_open_success_threshold"`
+}
+
+type AdapterAllowlistConfig struct {
+	Enabled            bool                    `json:"enabled"`
+	EnforcementMode    string                  `json:"enforcement_mode"`
+	Entries            []AdapterAllowlistEntry `json:"entries"`
+	OnUnknownSignature string                  `json:"on_unknown_signature"`
+}
+
+type AdapterAllowlistEntry struct {
+	AdapterID       string `json:"adapter_id"`
+	Publisher       string `json:"publisher"`
+	Version         string `json:"version"`
+	SignatureStatus string `json:"signature_status"`
 }
 
 type RuntimeReadinessConfig struct {
@@ -991,6 +1029,7 @@ type SecuritySandboxConfig struct {
 	Profiles map[string]SecuritySandboxProfileConfig `json:"profiles"`
 	Rollout  SecuritySandboxRolloutConfig            `json:"rollout"`
 	Capacity SecuritySandboxCapacityConfig           `json:"capacity"`
+	Egress   SecuritySandboxEgressConfig             `json:"egress"`
 }
 
 type SecuritySandboxPolicyConfig struct {
@@ -1058,6 +1097,14 @@ type SecuritySandboxCapacityConfig struct {
 	ThrottleThreshold int    `json:"throttle_threshold"`
 	DenyThreshold     int    `json:"deny_threshold"`
 	DegradedPolicy    string `json:"degraded_policy"`
+}
+
+type SecuritySandboxEgressConfig struct {
+	Enabled       bool              `json:"enabled"`
+	DefaultAction string            `json:"default_action"`
+	ByTool        map[string]string `json:"by_tool"`
+	Allowlist     []string          `json:"allowlist"`
+	OnViolation   string            `json:"on_violation"`
 }
 
 type SecurityEventAlertConfig struct {
@@ -1261,6 +1308,12 @@ func DefaultConfig() Config {
 					HalfOpenMaxProbe:         1,
 					HalfOpenSuccessThreshold: 2,
 				},
+			},
+			Allowlist: AdapterAllowlistConfig{
+				Enabled:            false,
+				EnforcementMode:    AdapterAllowlistEnforcementModeEnforce,
+				Entries:            []AdapterAllowlistEntry{},
+				OnUnknownSignature: AdapterAllowlistUnknownSignatureDeny,
 			},
 		},
 		Reload: ReloadConfig{
@@ -1763,6 +1816,13 @@ func DefaultConfig() Config {
 					DenyThreshold:     120,
 					DegradedPolicy:    SecuritySandboxCapacityDegradedPolicyAllowAndRecord,
 				},
+				Egress: SecuritySandboxEgressConfig{
+					Enabled:       true,
+					DefaultAction: SecuritySandboxEgressActionDeny,
+					ByTool:        map[string]string{},
+					Allowlist:     []string{},
+					OnViolation:   SecuritySandboxEgressOnViolationDeny,
+				},
 			},
 			SecurityEvent: SecurityEventConfig{
 				Enabled: true,
@@ -2021,6 +2081,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold <= 0 {
 		return errors.New("adapter.health.circuit.half_open_success_threshold must be > 0")
+	}
+	if err := validateAdapterAllowlistConfig(cfg.Adapter.Allowlist); err != nil {
+		return err
 	}
 	if cfg.Reload.Debounce <= 0 {
 		return errors.New("reload.debounce must be > 0")
@@ -2976,7 +3039,10 @@ func validateSecuritySandboxConfig(cfg SecuritySandboxConfig) error {
 	if err := validateSecuritySandboxRolloutConfig(cfg.Rollout); err != nil {
 		return err
 	}
-	return validateSecuritySandboxCapacityConfig(cfg.Capacity)
+	if err := validateSecuritySandboxCapacityConfig(cfg.Capacity); err != nil {
+		return err
+	}
+	return validateSecuritySandboxEgressConfig(cfg.Egress)
 }
 
 func validateSecuritySandboxRolloutConfig(cfg SecuritySandboxRolloutConfig) error {
@@ -3030,6 +3096,189 @@ func validateSecuritySandboxCapacityConfig(cfg SecuritySandboxCapacityConfig) er
 		SecuritySandboxCapacityDegradedPolicyAllowAndRecord,
 		SecuritySandboxCapacityDegradedPolicyFailFast,
 	})
+}
+
+func validateSecuritySandboxEgressConfig(cfg SecuritySandboxEgressConfig) error {
+	if err := validateSecurityPolicyValue(cfg.DefaultAction, "security.sandbox.egress.default_action", []string{
+		SecuritySandboxEgressActionDeny,
+		SecuritySandboxEgressActionAllow,
+		SecuritySandboxEgressActionAllowAndRecord,
+	}); err != nil {
+		return err
+	}
+	for selector, action := range cfg.ByTool {
+		if err := validateNamespaceToolKey(selector, fmt.Sprintf("security.sandbox.egress.by_tool.%s", selector)); err != nil {
+			return err
+		}
+		if err := validateSecurityPolicyValue(action, fmt.Sprintf("security.sandbox.egress.by_tool.%s", selector), []string{
+			SecuritySandboxEgressActionDeny,
+			SecuritySandboxEgressActionAllow,
+			SecuritySandboxEgressActionAllowAndRecord,
+		}); err != nil {
+			return err
+		}
+	}
+	seenAllowlist := make(map[string]struct{}, len(cfg.Allowlist))
+	for i, rawPattern := range cfg.Allowlist {
+		field := fmt.Sprintf("security.sandbox.egress.allowlist[%d]", i)
+		if err := validateSandboxEgressAllowlistPattern(rawPattern, field); err != nil {
+			return err
+		}
+		normalized := strings.ToLower(strings.TrimSpace(rawPattern))
+		if _, exists := seenAllowlist[normalized]; exists {
+			return fmt.Errorf("%s duplicates %q", field, normalized)
+		}
+		seenAllowlist[normalized] = struct{}{}
+	}
+	if err := validateSecurityPolicyValue(cfg.OnViolation, "security.sandbox.egress.on_violation", []string{
+		SecuritySandboxEgressOnViolationDeny,
+		SecuritySandboxEgressOnViolationAllowAndRecord,
+	}); err != nil {
+		return err
+	}
+	if strings.ToLower(strings.TrimSpace(cfg.DefaultAction)) == SecuritySandboxEgressActionAllow && len(cfg.Allowlist) > 0 {
+		return fmt.Errorf(
+			"security.sandbox.egress.rule_conflict: allowlist requires security.sandbox.egress.default_action not be %q",
+			SecuritySandboxEgressActionAllow,
+		)
+	}
+	return nil
+}
+
+func validateAdapterAllowlistConfig(cfg AdapterAllowlistConfig) error {
+	if err := validateSecurityPolicyValue(cfg.EnforcementMode, "adapter.allowlist.enforcement_mode", []string{
+		AdapterAllowlistEnforcementModeObserve,
+		AdapterAllowlistEnforcementModeEnforce,
+	}); err != nil {
+		return err
+	}
+	if err := validateSecurityPolicyValue(cfg.OnUnknownSignature, "adapter.allowlist.on_unknown_signature", []string{
+		AdapterAllowlistUnknownSignatureDeny,
+		AdapterAllowlistUnknownSignatureAllowAndRecord,
+	}); err != nil {
+		return err
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.EnforcementMode))
+	unknownSignature := strings.ToLower(strings.TrimSpace(cfg.OnUnknownSignature))
+	if mode == AdapterAllowlistEnforcementModeObserve && unknownSignature == AdapterAllowlistUnknownSignatureDeny {
+		return fmt.Errorf(
+			"adapter.allowlist.policy_conflict: on_unknown_signature=%q conflicts with enforcement_mode=%q",
+			cfg.OnUnknownSignature,
+			cfg.EnforcementMode,
+		)
+	}
+	if mode == AdapterAllowlistEnforcementModeEnforce && unknownSignature == AdapterAllowlistUnknownSignatureAllowAndRecord {
+		return fmt.Errorf(
+			"adapter.allowlist.policy_conflict: on_unknown_signature=%q conflicts with enforcement_mode=%q",
+			cfg.OnUnknownSignature,
+			cfg.EnforcementMode,
+		)
+	}
+	seen := make(map[string]struct{}, len(cfg.Entries))
+	for i, entry := range cfg.Entries {
+		field := fmt.Sprintf("adapter.allowlist.entries[%d]", i)
+		if strings.TrimSpace(entry.AdapterID) == "" {
+			return fmt.Errorf("%s.adapter_id must not be empty", field)
+		}
+		if strings.TrimSpace(entry.Publisher) == "" {
+			return fmt.Errorf("%s.publisher must not be empty", field)
+		}
+		if strings.TrimSpace(entry.Version) == "" {
+			return fmt.Errorf("%s.version must not be empty", field)
+		}
+		if err := validateSecurityPolicyValue(entry.SignatureStatus, field+".signature_status", []string{
+			AdapterAllowlistSignatureStatusValid,
+			AdapterAllowlistSignatureStatusInvalid,
+			AdapterAllowlistSignatureStatusUnknown,
+		}); err != nil {
+			return err
+		}
+		identityKey := strings.ToLower(strings.Join([]string{
+			strings.TrimSpace(entry.AdapterID),
+			strings.TrimSpace(entry.Publisher),
+			strings.TrimSpace(entry.Version),
+		}, "|"))
+		if _, exists := seen[identityKey]; exists {
+			return fmt.Errorf("%s duplicates adapter identity %q", field, identityKey)
+		}
+		seen[identityKey] = struct{}{}
+	}
+	return nil
+}
+
+func validateSandboxEgressAllowlistPattern(raw, field string) error {
+	pattern := strings.ToLower(strings.TrimSpace(raw))
+	if pattern == "" {
+		return fmt.Errorf("%s must not be empty", field)
+	}
+
+	if strings.Contains(pattern, "://") {
+		parsed, err := url.Parse(pattern)
+		if err != nil || strings.TrimSpace(parsed.Host) == "" {
+			return fmt.Errorf("%s must be a valid host pattern, got %q", field, raw)
+		}
+		if strings.TrimSpace(parsed.Path) != "" || strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
+			return fmt.Errorf("%s must not contain path/query/fragment, got %q", field, raw)
+		}
+		pattern = strings.ToLower(strings.TrimSpace(parsed.Host))
+	}
+
+	if strings.Contains(pattern, "/") {
+		return fmt.Errorf("%s must be a host pattern, got %q", field, raw)
+	}
+	if host, _, err := net.SplitHostPort(pattern); err == nil {
+		pattern = strings.TrimSpace(host)
+	}
+	pattern = strings.TrimPrefix(pattern, "[")
+	pattern = strings.TrimSuffix(pattern, "]")
+	if ip := net.ParseIP(pattern); ip != nil {
+		return nil
+	}
+
+	if strings.HasPrefix(pattern, "*.") {
+		pattern = strings.TrimPrefix(pattern, "*.")
+		if strings.Contains(pattern, "*") {
+			return fmt.Errorf("%s wildcard must only appear as prefix '*.', got %q", field, raw)
+		}
+	} else if strings.Contains(pattern, "*") {
+		return fmt.Errorf("%s wildcard must only appear as prefix '*.', got %q", field, raw)
+	}
+
+	if pattern == "" {
+		return fmt.Errorf("%s must not be empty", field)
+	}
+	if strings.HasPrefix(pattern, ".") || strings.HasSuffix(pattern, ".") || strings.Contains(pattern, "..") {
+		return fmt.Errorf("%s must be a valid host pattern, got %q", field, raw)
+	}
+	if strings.ContainsAny(pattern, " \t\n\r\\/@") {
+		return fmt.Errorf("%s must be a valid host pattern, got %q", field, raw)
+	}
+
+	labels := strings.Split(pattern, ".")
+	for _, label := range labels {
+		if !isValidDNSLabel(label) {
+			return fmt.Errorf("%s must be a valid host pattern, got %q", field, raw)
+		}
+	}
+	return nil
+}
+
+func isValidDNSLabel(label string) bool {
+	if len(label) == 0 || len(label) > 63 {
+		return false
+	}
+	for i := 0; i < len(label); i++ {
+		ch := label[i]
+		isAlphaNum := (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+		if isAlphaNum {
+			continue
+		}
+		if ch == '-' && i > 0 && i < len(label)-1 {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validateSandboxRolloutPhaseTransition(fromPhase, toPhase string) error {
@@ -3753,6 +4002,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("adapter.health.circuit.open_duration", base.Adapter.Health.Circuit.OpenDuration)
 	v.SetDefault("adapter.health.circuit.half_open_max_probe", base.Adapter.Health.Circuit.HalfOpenMaxProbe)
 	v.SetDefault("adapter.health.circuit.half_open_success_threshold", base.Adapter.Health.Circuit.HalfOpenSuccessThreshold)
+	v.SetDefault("adapter.allowlist.enabled", base.Adapter.Allowlist.Enabled)
+	v.SetDefault("adapter.allowlist.enforcement_mode", base.Adapter.Allowlist.EnforcementMode)
+	v.SetDefault("adapter.allowlist.entries", base.Adapter.Allowlist.Entries)
+	v.SetDefault("adapter.allowlist.on_unknown_signature", base.Adapter.Allowlist.OnUnknownSignature)
 	v.SetDefault("reload.enabled", base.Reload.Enabled)
 	v.SetDefault("reload.debounce", base.Reload.Debounce)
 	v.SetDefault("provider_fallback.enabled", base.ProviderFallback.Enabled)
@@ -4022,6 +4275,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.sandbox.capacity.throttle_threshold", base.Security.Sandbox.Capacity.ThrottleThreshold)
 	v.SetDefault("security.sandbox.capacity.deny_threshold", base.Security.Sandbox.Capacity.DenyThreshold)
 	v.SetDefault("security.sandbox.capacity.degraded_policy", base.Security.Sandbox.Capacity.DegradedPolicy)
+	v.SetDefault("security.sandbox.egress.enabled", base.Security.Sandbox.Egress.Enabled)
+	v.SetDefault("security.sandbox.egress.default_action", base.Security.Sandbox.Egress.DefaultAction)
+	v.SetDefault("security.sandbox.egress.by_tool", base.Security.Sandbox.Egress.ByTool)
+	v.SetDefault("security.sandbox.egress.allowlist", base.Security.Sandbox.Egress.Allowlist)
+	v.SetDefault("security.sandbox.egress.on_violation", base.Security.Sandbox.Egress.OnViolation)
 	for profile, profileCfg := range base.Security.Sandbox.Profiles {
 		prefix := "security.sandbox.profiles." + strings.ToLower(strings.TrimSpace(profile)) + "."
 		v.SetDefault(prefix+"network.mode", profileCfg.Network.Mode)
@@ -4180,6 +4438,10 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	adapterAllowlistEnabled, err := strictBoolConfigValue(v, "adapter.allowlist.enabled")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Adapter.Health.Enabled = adapterHealthEnabled
 	cfg.Adapter.Health.Strict = adapterHealthStrict
 	cfg.Adapter.Health.ProbeTimeout = v.GetDuration("adapter.health.probe_timeout")
@@ -4194,6 +4456,10 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Adapter.Health.Circuit.OpenDuration = v.GetDuration("adapter.health.circuit.open_duration")
 	cfg.Adapter.Health.Circuit.HalfOpenMaxProbe = v.GetInt("adapter.health.circuit.half_open_max_probe")
 	cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold = v.GetInt("adapter.health.circuit.half_open_success_threshold")
+	cfg.Adapter.Allowlist.Enabled = adapterAllowlistEnabled
+	cfg.Adapter.Allowlist.EnforcementMode = strings.ToLower(strings.TrimSpace(v.GetString("adapter.allowlist.enforcement_mode")))
+	cfg.Adapter.Allowlist.Entries = normalizeAdapterAllowlistEntries(v.Get("adapter.allowlist.entries"))
+	cfg.Adapter.Allowlist.OnUnknownSignature = strings.ToLower(strings.TrimSpace(v.GetString("adapter.allowlist.on_unknown_signature")))
 	cfg.Reload.Enabled = v.GetBool("reload.enabled")
 	cfg.Reload.Debounce = v.GetDuration("reload.debounce")
 	cfg.ProviderFallback.Enabled = v.GetBool("provider_fallback.enabled")
@@ -4458,6 +4724,15 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Security.Sandbox.Capacity.ThrottleThreshold = v.GetInt("security.sandbox.capacity.throttle_threshold")
 	cfg.Security.Sandbox.Capacity.DenyThreshold = v.GetInt("security.sandbox.capacity.deny_threshold")
 	cfg.Security.Sandbox.Capacity.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.capacity.degraded_policy")))
+	sandboxEgressEnabled, err := strictBoolConfigValue(v, "security.sandbox.egress.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Security.Sandbox.Egress.Enabled = sandboxEgressEnabled
+	cfg.Security.Sandbox.Egress.DefaultAction = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.egress.default_action")))
+	cfg.Security.Sandbox.Egress.ByTool = normalizeNamespaceToolPolicyMap(v.GetStringMapString("security.sandbox.egress.by_tool"))
+	cfg.Security.Sandbox.Egress.Allowlist = normalizeSandboxEgressAllowlist(v.Get("security.sandbox.egress.allowlist"))
+	cfg.Security.Sandbox.Egress.OnViolation = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.egress.on_violation")))
 	cfg.Security.SecurityEvent.Enabled = v.GetBool("security.security_event.enabled")
 	cfg.Security.SecurityEvent.Alert.TriggerPolicy = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.trigger_policy")))
 	cfg.Security.SecurityEvent.Alert.Sink = strings.ToLower(strings.TrimSpace(v.GetString("security.security_event.alert.sink")))
@@ -4778,6 +5053,109 @@ func normalizeSandboxMounts(raw any) []SecuritySandboxMountConfig {
 		return decode(json.RawMessage(trimmed))
 	default:
 		return decode(raw)
+	}
+}
+
+func normalizeSandboxEgressAllowlist(raw any) []string {
+	normalize := func(in []string) []string {
+		if len(in) == 0 {
+			return []string{}
+		}
+		out := make([]string, 0, len(in))
+		seen := map[string]struct{}{}
+		for _, value := range in {
+			pattern := strings.ToLower(strings.TrimSpace(value))
+			if pattern == "" {
+				continue
+			}
+			if _, exists := seen[pattern]; exists {
+				continue
+			}
+			seen[pattern] = struct{}{}
+			out = append(out, pattern)
+		}
+		if len(out) == 0 {
+			return []string{}
+		}
+		return out
+	}
+	decode := func(src any) ([]string, bool) {
+		b, err := json.Marshal(src)
+		if err != nil {
+			return nil, false
+		}
+		out := make([]string, 0)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, false
+		}
+		return out, true
+	}
+	if raw == nil {
+		return []string{}
+	}
+	switch tv := raw.(type) {
+	case string:
+		trimmed := strings.TrimSpace(tv)
+		if trimmed == "" {
+			return []string{}
+		}
+		return normalize(strings.Split(trimmed, ","))
+	default:
+		decoded, ok := decode(raw)
+		if !ok {
+			return []string{fmt.Sprint(raw)}
+		}
+		return normalize(decoded)
+	}
+}
+
+func normalizeAdapterAllowlistEntries(raw any) []AdapterAllowlistEntry {
+	normalize := func(entries []AdapterAllowlistEntry) []AdapterAllowlistEntry {
+		if len(entries) == 0 {
+			return []AdapterAllowlistEntry{}
+		}
+		out := make([]AdapterAllowlistEntry, 0, len(entries))
+		for i := range entries {
+			entry := entries[i]
+			entry.AdapterID = strings.ToLower(strings.TrimSpace(entry.AdapterID))
+			entry.Publisher = strings.ToLower(strings.TrimSpace(entry.Publisher))
+			entry.Version = strings.TrimSpace(entry.Version)
+			entry.SignatureStatus = strings.ToLower(strings.TrimSpace(entry.SignatureStatus))
+			out = append(out, entry)
+		}
+		return out
+	}
+	decode := func(src any) ([]AdapterAllowlistEntry, bool) {
+		b, err := json.Marshal(src)
+		if err != nil {
+			return nil, false
+		}
+		out := make([]AdapterAllowlistEntry, 0)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, false
+		}
+		return out, true
+	}
+	if raw == nil {
+		return []AdapterAllowlistEntry{}
+	}
+	switch tv := raw.(type) {
+	case string:
+		trimmed := strings.TrimSpace(tv)
+		if trimmed == "" {
+			return []AdapterAllowlistEntry{}
+		}
+		decoded, ok := decode(json.RawMessage(trimmed))
+		if !ok {
+			return []AdapterAllowlistEntry{{}}
+		}
+		return normalize(decoded)
+	default:
+		decoded, ok := decode(raw)
+		if !ok {
+			return []AdapterAllowlistEntry{{}}
+		}
+		return normalize(decoded)
 	}
 }
 

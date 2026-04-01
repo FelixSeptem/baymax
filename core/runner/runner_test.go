@@ -929,6 +929,97 @@ security:
 	}
 }
 
+func TestRunSandboxEgressAdditiveFieldsPropagateToRunFinishedPayload(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-egress-fields.yaml")
+	cfg := `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: false
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: deny
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A57_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "search",
+		schema: map[string]any{
+			"type": "object",
+		},
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			_ = ctx
+			_ = args
+			return types.ToolResult{Content: "should-not-run"}, nil
+		},
+	})
+	model := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{
+					{
+						CallID: "call-egress-deny",
+						Name:   "local.search",
+						Args: map[string]any{
+							"url": "https://api.example.com/v1/search",
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	collector := &eventCollector{}
+	engine := New(model, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	res, runErr := engine.Run(context.Background(), types.RunRequest{Input: "trigger egress deny"}, collector)
+	if runErr == nil {
+		t.Fatalf("expected egress deny run error, got nil result=%#v", res)
+	}
+	if res.Error == nil || res.Error.Class != types.ErrSecurity {
+		t.Fatalf("run error class mismatch: %#v", res.Error)
+	}
+	if res.Error.Details["reason_code"] != "sandbox.egress_deny" {
+		t.Fatalf("run reason_code=%#v, want sandbox.egress_deny", res.Error.Details["reason_code"])
+	}
+	if res.Error.Details["sandbox_egress_action"] != runtimeconfig.SecuritySandboxEgressActionDeny ||
+		res.Error.Details["sandbox_egress_policy_source"] != "default_action" {
+		t.Fatalf("run egress details mismatch: %#v", res.Error.Details)
+	}
+
+	var finished types.Event
+	found := false
+	for _, ev := range collector.evs {
+		if ev.Type == "run.finished" {
+			finished = ev
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing run.finished event")
+	}
+	if finished.Payload["sandbox_reason_code"] != "sandbox.egress_deny" ||
+		finished.Payload["sandbox_egress_action"] != runtimeconfig.SecuritySandboxEgressActionDeny ||
+		finished.Payload["sandbox_egress_policy_source"] != "default_action" ||
+		finished.Payload["sandbox_egress_violation_total"] != 1 {
+		t.Fatalf("sandbox egress additive payload mismatch: %#v", finished.Payload)
+	}
+}
+
 func TestRunSandboxFallbackAllowRecordsTimelineReason(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-fallback-allow.yaml")
 	cfg := `

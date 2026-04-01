@@ -359,6 +359,134 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 	})
 }
 
+func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-a57-allowlist-missing.yaml")
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: " + runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord,
+		"adapter:",
+		"  allowlist:",
+		"    enabled: true",
+		"    enforcement_mode: enforce",
+		"    on_unknown_signature: deny",
+		"    entries: []",
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write runtime config: %v", err)
+	}
+
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A57_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
+		{
+			Name:     "required-adapter-a57",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{
+					Status: adapterhealth.StatusHealthy,
+					Code:   adapterhealth.CodeHealthy,
+				}, nil
+			}),
+		},
+	})
+
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := composer.NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+		Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+
+	before, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats before deny failed: %v", err)
+	}
+	mailboxBefore := len(mgr.RecentMailbox(10))
+
+	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
+		RunID: "run-a57-admission-allowlist-missing-run",
+		Input: "blocked-run",
+	}, nil)
+	if runErr == nil {
+		t.Fatal("run should be denied when required adapter allowlist entry is missing")
+	}
+	assertAdmissionContractDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a57-admission-allowlist-missing-stream",
+		Input: "blocked-stream",
+	}, nil)
+	if streamErr == nil {
+		t.Fatal("stream should be denied when required adapter allowlist entry is missing")
+	}
+	assertAdmissionContractDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
+
+	after, err := comp.SchedulerStats(context.Background())
+	if err != nil {
+		t.Fatalf("scheduler stats after deny failed: %v", err)
+	}
+	if before.QueueTotal != after.QueueTotal || before.ClaimTotal != after.ClaimTotal || before.ReclaimTotal != after.ReclaimTotal {
+		t.Fatalf("deny path should be side-effect free, before=%#v after=%#v", before, after)
+	}
+	if len(mgr.RecentMailbox(10)) != mailboxBefore {
+		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
+	}
+
+	assertAdmissionRunRecord(t, mgr, "run-a57-admission-allowlist-missing-run", func(rec mapRunRecord) {
+		if rec.RuntimeReadinessAdmissionTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
+			rec.AdapterAllowlistDecision != "deny" ||
+			rec.AdapterAllowlistBlockTotal != 1 ||
+			rec.AdapterAllowlistPrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "adapter.allowlist.add_required_entry" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
+			t.Fatalf("run admission record mismatch: %#v", rec)
+		}
+	})
+	assertAdmissionRunRecord(t, mgr, "run-a57-admission-allowlist-missing-stream", func(rec mapRunRecord) {
+		if rec.RuntimeReadinessAdmissionTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
+			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
+			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainAdapter ||
+			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
+			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceAdapter ||
+			rec.AdapterAllowlistDecision != "deny" ||
+			rec.AdapterAllowlistBlockTotal != 1 ||
+			rec.AdapterAllowlistPrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeRemediationHintCode != "adapter.allowlist.add_required_entry" ||
+			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
+			t.Fatalf("stream admission record mismatch: %#v", rec)
+		}
+	})
+}
+
 type mapRunRecord struct {
 	RunID                                       string
 	RuntimePrimaryDomain                        string
@@ -376,6 +504,9 @@ type mapRunRecord struct {
 	RuntimeReadinessAdmissionBypassTotal        int
 	RuntimeReadinessAdmissionMode               string
 	RuntimeReadinessAdmissionPrimaryCode        string
+	AdapterAllowlistDecision                    string
+	AdapterAllowlistBlockTotal                  int
+	AdapterAllowlistPrimaryCode                 string
 }
 
 func assertAdmissionRunRecord(t *testing.T, mgr *runtimeconfig.Manager, runID string, assertFn func(rec mapRunRecord)) {
@@ -402,6 +533,9 @@ func assertAdmissionRunRecord(t *testing.T, mgr *runtimeconfig.Manager, runID st
 			RuntimeReadinessAdmissionBypassTotal:        items[i].RuntimeReadinessAdmissionBypassTotal,
 			RuntimeReadinessAdmissionMode:               items[i].RuntimeReadinessAdmissionMode,
 			RuntimeReadinessAdmissionPrimaryCode:        items[i].RuntimeReadinessAdmissionPrimaryCode,
+			AdapterAllowlistDecision:                    items[i].AdapterAllowlistDecision,
+			AdapterAllowlistBlockTotal:                  items[i].AdapterAllowlistBlockTotal,
+			AdapterAllowlistPrimaryCode:                 items[i].AdapterAllowlistPrimaryCode,
 		}
 		assertFn(rec)
 		return

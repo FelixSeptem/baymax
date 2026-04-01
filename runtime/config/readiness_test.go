@@ -1323,6 +1323,185 @@ runtime:
 	}
 }
 
+func TestSandboxEgressReadinessFindingsPolicyAllowlistAndBudget(t *testing.T) {
+	findings := sandboxEgressReadinessFindings(
+		SecuritySandboxEgressConfig{
+			Enabled:       true,
+			DefaultAction: "invalid",
+			ByTool: map[string]string{
+				"bad selector": SecuritySandboxEgressActionDeny,
+			},
+			Allowlist:   []string{"bad/path", "api.example.com", "api.example.com"},
+			OnViolation: "invalid",
+		},
+		SandboxRolloutRuntimeState{
+			EgressViolationTotal:  3,
+			EgressViolationBudget: 1,
+			EgressBudgetBreached:  true,
+		},
+		map[string]any{"sandbox_enabled": true},
+	)
+	assertReadinessFindingCode(t, findings, ReadinessCodeSandboxEgressPolicyInvalid)
+	assertReadinessFindingCode(t, findings, ReadinessCodeSandboxEgressAllowlistInvalid)
+	assertReadinessFindingCode(t, findings, ReadinessCodeSandboxEgressViolationBudgetBreached)
+	assertReadinessCanonicalFields(t, canonicalizeReadinessFindings(findings))
+}
+
+func TestSandboxEgressReadinessFindingsRuleConflictRecoverable(t *testing.T) {
+	findings := sandboxEgressReadinessFindings(
+		SecuritySandboxEgressConfig{
+			Enabled:       true,
+			DefaultAction: SecuritySandboxEgressActionAllow,
+			Allowlist:     []string{"api.example.com"},
+			OnViolation:   SecuritySandboxEgressOnViolationDeny,
+		},
+		SandboxRolloutRuntimeState{},
+		map[string]any{"sandbox_enabled": true},
+	)
+	assertReadinessFindingCode(t, findings, ReadinessCodeSandboxEgressRuleConflict)
+	for i := range findings {
+		if findings[i].Code == ReadinessCodeSandboxEgressRuleConflict && findings[i].Severity != ReadinessSeverityWarning {
+			t.Fatalf("sandbox egress rule conflict severity=%q, want warning", findings[i].Severity)
+		}
+	}
+}
+
+func TestManagerReadinessPreflightSandboxEgressViolationBudgetBreached(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a57-egress-budget.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: false
+    mode: observe
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: allow_and_record
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: deny
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetSandboxExecutor(&fakeSandboxExecutor{
+		probe: func(context.Context) (types.SandboxCapabilityProbe, error) {
+			return types.SandboxCapabilityProbe{
+				Backend: sandboxBackendForCurrentHost(),
+			}, nil
+		},
+	})
+	mgr.SetSandboxRolloutRuntimeState(SandboxRolloutRuntimeState{
+		EgressViolationTotal:  2,
+		EgressViolationBudget: 1,
+		EgressBudgetBreached:  true,
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusDegraded {
+		t.Fatalf("status=%q, want degraded", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeSandboxEgressViolationBudgetBreached)
+}
+
+func TestManagerReadinessPreflightAdapterAllowlistStrictEscalation(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a57-allowlist-strict.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: true
+    remote_probe_enabled: false
+adapter:
+  allowlist:
+    enabled: true
+    enforcement_mode: observe
+    on_unknown_signature: allow_and_record
+    entries: []
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "required-adapter-a57",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusHealthy, Code: adapterhealth.CodeHealthy}, nil
+			}),
+		},
+	})
+
+	result := mgr.ReadinessPreflight()
+	if result.Status != ReadinessStatusBlocked {
+		t.Fatalf("status=%q, want blocked", result.Status)
+	}
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeAdapterAllowlistMissingEntry)
+	assertReadinessFindingCode(t, result.Findings, ReadinessCodeStrictEscalated)
+}
+
+func TestManagerReadinessAdmissionAdapterAllowlistMissingEntryDeny(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a57-admission-allowlist-missing.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+adapter:
+  allowlist:
+    enabled: true
+    enforcement_mode: enforce
+    on_unknown_signature: deny
+    entries: []
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	mgr.SetAdapterHealthTargets([]AdapterHealthTarget{
+		{
+			Name:     "required-adapter-a57",
+			Required: true,
+			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
+				return adapterhealth.Result{Status: adapterhealth.StatusHealthy, Code: adapterhealth.CodeHealthy}, nil
+			}),
+		},
+	})
+
+	decision := mgr.EvaluateReadinessAdmission()
+	if decision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("outcome=%q, want deny", decision.Outcome)
+	}
+	if decision.ReasonCode != ReadinessAdmissionCodeBlocked {
+		t.Fatalf("reason_code=%q, want %q", decision.ReasonCode, ReadinessAdmissionCodeBlocked)
+	}
+	if decision.ReadinessPrimaryDomain != ReadinessDomainAdapter ||
+		decision.ReadinessPrimaryCode != ReadinessCodeAdapterAllowlistMissingEntry ||
+		decision.ReadinessPrimarySource != RuntimePrimarySourceAdapter ||
+		decision.ReadinessRemediationHintCode != "adapter.allowlist.add_required_entry" ||
+		decision.ReadinessRemediationHintDomain != ReadinessDomainAdapter {
+		t.Fatalf("allowlist admission explainability mismatch: %#v", decision)
+	}
+}
+
 func sandboxBackendForCurrentHost() string {
 	if strings.EqualFold(runtime.GOOS, "windows") {
 		return SecuritySandboxBackendWindowsJob

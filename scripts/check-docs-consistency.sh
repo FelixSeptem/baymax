@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+if [[ -z "${GOCACHE:-}" ]]; then
+  export GOCACHE="${repo_root}/.gocache"
+fi
 
 readme="$(cat README.md)"
 mapfile -t readme_doc_refs < <(grep -oE 'docs/[A-Za-z0-9\-]+\.md' README.md || true)

@@ -87,6 +87,9 @@ type RunRecord struct {
 	SandboxRequiredCapabilities                 []string                          `json:"sandbox_required_capabilities,omitempty"`
 	SandboxDecision                             string                            `json:"sandbox_decision,omitempty"`
 	SandboxReasonCode                           string                            `json:"sandbox_reason_code,omitempty"`
+	SandboxEgressAction                         string                            `json:"sandbox_egress_action,omitempty"`
+	SandboxEgressViolationTotal                 int                               `json:"sandbox_egress_violation_total,omitempty"`
+	SandboxEgressPolicySource                   string                            `json:"sandbox_egress_policy_source,omitempty"`
 	SandboxFallbackUsed                         bool                              `json:"sandbox_fallback_used,omitempty"`
 	SandboxFallbackReason                       string                            `json:"sandbox_fallback_reason,omitempty"`
 	SandboxTimeoutTotal                         int                               `json:"sandbox_timeout_total,omitempty"`
@@ -269,6 +272,9 @@ type RunRecord struct {
 	RuntimeReadinessAdmissionBypassTotal        int                               `json:"runtime_readiness_admission_bypass_total,omitempty"`
 	RuntimeReadinessAdmissionMode               string                            `json:"runtime_readiness_admission_mode,omitempty"`
 	RuntimeReadinessAdmissionPrimaryCode        string                            `json:"runtime_readiness_admission_primary_code,omitempty"`
+	AdapterAllowlistDecision                    string                            `json:"adapter_allowlist_decision,omitempty"`
+	AdapterAllowlistBlockTotal                  int                               `json:"adapter_allowlist_block_total,omitempty"`
+	AdapterAllowlistPrimaryCode                 string                            `json:"adapter_allowlist_primary_code,omitempty"`
 	AdapterHealthStatus                         string                            `json:"adapter_health_status,omitempty"`
 	AdapterHealthProbeTotal                     int                               `json:"adapter_health_probe_total,omitempty"`
 	AdapterHealthDegradedTotal                  int                               `json:"adapter_health_degraded_total,omitempty"`

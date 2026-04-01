@@ -2449,6 +2449,13 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		if meta.Sandbox.ReasonCode != "" {
 			payload["sandbox_reason_code"] = meta.Sandbox.ReasonCode
 		}
+		if meta.Sandbox.EgressAction != "" {
+			payload["sandbox_egress_action"] = meta.Sandbox.EgressAction
+		}
+		if meta.Sandbox.EgressPolicySource != "" {
+			payload["sandbox_egress_policy_source"] = meta.Sandbox.EgressPolicySource
+		}
+		payload["sandbox_egress_violation_total"] = meta.Sandbox.EgressViolationTotal
 		payload["sandbox_fallback_used"] = meta.Sandbox.FallbackUsed
 		if meta.Sandbox.FallbackReason != "" {
 			payload["sandbox_fallback_reason"] = meta.Sandbox.FallbackReason
@@ -2609,6 +2616,9 @@ type sandboxRunDiagnostics struct {
 	RequiredCapabilities       []string
 	Decision                   string
 	ReasonCode                 string
+	EgressAction               string
+	EgressPolicySource         string
+	EgressViolationTotal       int
 	FallbackUsed               bool
 	FallbackReason             string
 	TimeoutTotal               int
@@ -2632,6 +2642,9 @@ type sandboxRunDiagnosticsAccumulator struct {
 	requiredCapabilities    []string
 	decision                string
 	reasonCode              string
+	egressAction            string
+	egressPolicySource      string
+	egressViolationTotal    int
 	fallbackUsed            bool
 	fallbackReason          string
 	timeoutTotal            int
@@ -2806,6 +2819,7 @@ func (a *sandboxRunDiagnosticsAccumulator) observeDetailFields(details map[strin
 		}
 		a.observed = true
 	}
+	a.observeEgressFields(details)
 	a.observeReason(sandboxMapString(details, "reason_code"))
 }
 
@@ -2848,6 +2862,7 @@ func (a *sandboxRunDiagnosticsAccumulator) observeStructuredFields(structured ma
 		a.fallbackReason = reason
 		a.observeReason(reason)
 	}
+	a.observeEgressFields(structured)
 	a.observeReason(sandboxMapString(structured, "sandbox_reason_code"))
 
 	if queueWait, ok := sandboxMapInt64(structured, "sandbox_queue_wait_ms"); ok && queueWait >= 0 {
@@ -2873,6 +2888,24 @@ func (a *sandboxRunDiagnosticsAccumulator) observeStructuredFields(structured ma
 	}
 	if memoryPeak, ok := sandboxMapInt64(structured, "sandbox_resource_memory_peak_bytes"); ok && memoryPeak >= 0 {
 		a.memoryPeakSamples = append(a.memoryPeakSamples, memoryPeak)
+		a.observed = true
+	}
+}
+
+func (a *sandboxRunDiagnosticsAccumulator) observeEgressFields(payload map[string]any) {
+	if a == nil || len(payload) == 0 {
+		return
+	}
+	if action := normalizeSandboxEgressAction(sandboxMapString(payload, "sandbox_egress_action")); action != "" {
+		a.egressAction = action
+		a.observed = true
+	}
+	if source := normalizeSandboxEgressPolicySource(sandboxMapString(payload, "sandbox_egress_policy_source")); source != "" {
+		a.egressPolicySource = source
+		a.observed = true
+	}
+	if total, ok := sandboxMapInt(payload, "sandbox_egress_violation_total"); ok && total > 0 {
+		a.egressViolationTotal += total
 		a.observed = true
 	}
 }
@@ -2904,6 +2937,16 @@ func (a *sandboxRunDiagnosticsAccumulator) observeReason(reason string) {
 		if a.decision == "" {
 			a.decision = runtimeconfig.SecuritySandboxActionHost
 		}
+	case "sandbox.egress_deny":
+		a.egressViolationTotal++
+		if a.egressAction == "" {
+			a.egressAction = runtimeconfig.SecuritySandboxEgressActionDeny
+		}
+	case "sandbox.egress_allow_and_record":
+		a.egressViolationTotal++
+		if a.egressAction == "" {
+			a.egressAction = runtimeconfig.SecuritySandboxEgressActionAllowAndRecord
+		}
 	}
 	if a.decision == "" {
 		a.decision = runtimeconfig.SecuritySandboxActionDeny
@@ -2920,6 +2963,9 @@ func (a sandboxRunDiagnosticsAccumulator) snapshot(runtime sandboxRuntimeSnapsho
 		RequiredCapabilities:       cloneNormalizedStringSlice(a.requiredCapabilities),
 		Decision:                   a.decision,
 		ReasonCode:                 a.reasonCode,
+		EgressAction:               a.egressAction,
+		EgressPolicySource:         a.egressPolicySource,
+		EgressViolationTotal:       a.egressViolationTotal,
 		FallbackUsed:               a.fallbackUsed,
 		FallbackReason:             a.fallbackReason,
 		TimeoutTotal:               a.timeoutTotal,
@@ -2964,6 +3010,34 @@ func (a sandboxRunDiagnosticsAccumulator) snapshot(runtime sandboxRuntimeSnapsho
 		out.ReasonCode = out.FallbackReason
 	}
 	return out
+}
+
+func normalizeSandboxEgressAction(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case runtimeconfig.SecuritySandboxEgressActionDeny:
+		return runtimeconfig.SecuritySandboxEgressActionDeny
+	case runtimeconfig.SecuritySandboxEgressActionAllow:
+		return runtimeconfig.SecuritySandboxEgressActionAllow
+	case runtimeconfig.SecuritySandboxEgressActionAllowAndRecord:
+		return runtimeconfig.SecuritySandboxEgressActionAllowAndRecord
+	default:
+		return ""
+	}
+}
+
+func normalizeSandboxEgressPolicySource(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "default_action":
+		return "default_action"
+	case "by_tool":
+		return "by_tool"
+	case "allowlist":
+		return "allowlist"
+	case "on_violation":
+		return "on_violation"
+	default:
+		return ""
+	}
 }
 
 func normalizeSandboxMode(value string) string {

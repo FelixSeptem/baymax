@@ -363,6 +363,189 @@ security:
 	}
 }
 
+func TestDispatcherSandboxEgressDenyFailFast(t *testing.T) {
+	mgr := newSandboxTestManager(t, `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: deny
+`)
+	defer func() { _ = mgr.Close() }()
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search", invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "host"}, nil
+	}})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.search", Args: map[string]any{"url": "https://blocked.example/v1"}},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err == nil {
+		t.Fatal("expected sandbox egress deny error, got nil")
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Error == nil {
+		t.Fatalf("unexpected outcomes: %#v", outcomes)
+	}
+	if outcomes[0].Result.Error.Class != types.ErrSecurity {
+		t.Fatalf("error class = %q, want %q", outcomes[0].Result.Error.Class, types.ErrSecurity)
+	}
+	if outcomes[0].Result.Error.Details["reason_code"] != sandboxReasonEgressDeny {
+		t.Fatalf("reason_code = %#v, want %q", outcomes[0].Result.Error.Details["reason_code"], sandboxReasonEgressDeny)
+	}
+	if outcomes[0].Result.Error.Details["sandbox_egress_policy_source"] != "default_action" {
+		t.Fatalf(
+			"sandbox_egress_policy_source = %#v, want default_action",
+			outcomes[0].Result.Error.Details["sandbox_egress_policy_source"],
+		)
+	}
+}
+
+func TestDispatcherSandboxEgressAllowByAllowlist(t *testing.T) {
+	mgr := newSandboxTestManager(t, `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: false
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      allowlist:
+        - api.example.com
+      on_violation: deny
+`)
+	defer func() { _ = mgr.Close() }()
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search", invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "host-ok"}, nil
+	}})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.search", Args: map[string]any{"url": "https://api.example.com/v1"}},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err != nil {
+		t.Fatalf("dispatch should allow allowlisted target, err=%v outcomes=%#v", err, outcomes)
+	}
+	if outcomes[0].Result.Error != nil || outcomes[0].Result.Content != "host-ok" {
+		t.Fatalf("unexpected allowlist result: %#v", outcomes[0].Result)
+	}
+}
+
+func TestDispatcherSandboxEgressAllowAndRecordOnViolation(t *testing.T) {
+	mgr := newSandboxTestManager(t, `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: false
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: allow_and_record
+`)
+	defer func() { _ = mgr.Close() }()
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search", invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "host-ok"}, nil
+	}})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.search", Args: map[string]any{"url": "https://blocked.example/v1"}},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err != nil {
+		t.Fatalf("dispatch should allow_and_record violation, err=%v outcomes=%#v", err, outcomes)
+	}
+	if outcomes[0].Result.Error != nil || outcomes[0].Result.Content != "host-ok" {
+		t.Fatalf("unexpected allow_and_record result: %#v", outcomes[0].Result)
+	}
+	if outcomes[0].Result.Structured["sandbox_reason_code"] != sandboxReasonEgressAllowAndRecord {
+		t.Fatalf("sandbox_reason_code=%#v, want %q", outcomes[0].Result.Structured["sandbox_reason_code"], sandboxReasonEgressAllowAndRecord)
+	}
+	if outcomes[0].Result.Structured["sandbox_egress_action"] != runtimeconfig.SecuritySandboxEgressActionAllowAndRecord {
+		t.Fatalf(
+			"sandbox_egress_action=%#v, want %q",
+			outcomes[0].Result.Structured["sandbox_egress_action"],
+			runtimeconfig.SecuritySandboxEgressActionAllowAndRecord,
+		)
+	}
+	if outcomes[0].Result.Structured["sandbox_egress_policy_source"] != "on_violation" {
+		t.Fatalf(
+			"sandbox_egress_policy_source=%#v, want on_violation",
+			outcomes[0].Result.Structured["sandbox_egress_policy_source"],
+		)
+	}
+}
+
+func TestDispatcherSandboxEgressByToolOverridePrecedence(t *testing.T) {
+	mgr := newSandboxTestManager(t, `
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: true
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      by_tool:
+        local+search: deny
+      allowlist:
+        - api.example.com
+      on_violation: deny
+`)
+	defer func() { _ = mgr.Close() }()
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{name: "search", invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "host"}, nil
+	}})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.search", Args: map[string]any{"url": "https://api.example.com/v1"}},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err == nil {
+		t.Fatal("expected by_tool egress deny error, got nil")
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Error == nil {
+		t.Fatalf("unexpected outcomes: %#v", outcomes)
+	}
+	if outcomes[0].Result.Error.Details["reason_code"] != sandboxReasonEgressDeny {
+		t.Fatalf("reason_code=%#v, want %q", outcomes[0].Result.Error.Details["reason_code"], sandboxReasonEgressDeny)
+	}
+	if outcomes[0].Result.Error.Details["sandbox_egress_policy_source"] != "by_tool" {
+		t.Fatalf(
+			"sandbox_egress_policy_source=%#v, want by_tool",
+			outcomes[0].Result.Error.Details["sandbox_egress_policy_source"],
+		)
+	}
+}
+
 func TestDispatcherSandboxToolNotAdaptedDenyByDefaultForHighRisk(t *testing.T) {
 	mgr := newSandboxTestManager(t, `
 security:

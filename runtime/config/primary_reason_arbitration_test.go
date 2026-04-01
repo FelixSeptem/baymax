@@ -139,6 +139,57 @@ func TestArbitratePrimaryReasonReactProviderUnsupportedOutranksRecoverableReactF
 	}
 }
 
+func TestArbitratePrimaryReasonSandboxEgressPolicyInvalidOutranksRuleConflict(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeSandboxEgressRuleConflict,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityWarning,
+			},
+			{
+				Code:     ReadinessCodeSandboxEgressPolicyInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+			},
+		},
+	})
+	if got.Domain != ReadinessDomainRuntime ||
+		got.Code != ReadinessCodeSandboxEgressPolicyInvalid ||
+		got.Source != RuntimePrimarySourceReadiness ||
+		got.SecondaryCount != 1 ||
+		len(got.SecondaryCodes) != 1 ||
+		got.SecondaryCodes[0] != ReadinessCodeSandboxEgressRuleConflict ||
+		got.RemediationHintCode != "sandbox.egress.fix_policy" ||
+		got.RemediationHintDomain != ReadinessDomainRuntime {
+		t.Fatalf("sandbox egress precedence mismatch: %#v", got)
+	}
+}
+
+func TestArbitratePrimaryReasonAdapterAllowlistMissingEntryUsesAdapterSource(t *testing.T) {
+	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
+		ReadinessFindings: []ReadinessFinding{
+			{
+				Code:     ReadinessCodeSchedulerFallback,
+				Domain:   ReadinessDomainScheduler,
+				Severity: ReadinessSeverityWarning,
+			},
+			{
+				Code:     ReadinessCodeAdapterAllowlistMissingEntry,
+				Domain:   ReadinessDomainAdapter,
+				Severity: ReadinessSeverityError,
+			},
+		},
+	})
+	if got.Domain != ReadinessDomainAdapter ||
+		got.Code != ReadinessCodeAdapterAllowlistMissingEntry ||
+		got.Source != RuntimePrimarySourceAdapter ||
+		got.RemediationHintCode != "adapter.allowlist.add_required_entry" ||
+		got.RemediationHintDomain != ReadinessDomainAdapter {
+		t.Fatalf("adapter allowlist arbitration mismatch: %#v", got)
+	}
+}
+
 func TestArbitratePrimaryReasonTieBreakByLexicalCodeAndConflictCount(t *testing.T) {
 	got := ArbitratePrimaryReason(PrimaryReasonArbitrationInput{
 		ReadinessFindings: []ReadinessFinding{

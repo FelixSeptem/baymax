@@ -930,6 +930,288 @@ func TestSandboxExecutionIsolationContractReactActionResolutionRunStreamParity(t
 	})
 }
 
+func TestSandboxExecutionIsolationContractReactEgressParity(t *testing.T) {
+	t.Run("deny", func(t *testing.T) {
+		runModel := &scriptedReactModel{
+			generateSteps: []scriptedGenerateStep{
+				{
+					response: types.ModelResponse{
+						ToolCalls: []types.ToolCall{{
+							CallID: "egress-deny-call-1",
+							Name:   "local.exec",
+							Args:   map[string]any{"url": "https://blocked.example/v1"},
+						}},
+					},
+				},
+			},
+		}
+		streamModel := &scriptedReactModel{
+			streamSteps: []scriptedStreamStep{
+				{
+					events: []types.ModelEvent{
+						{
+							Type: types.ModelEventTypeToolCall,
+							ToolCall: &types.ToolCall{
+								CallID: "egress-deny-call-1",
+								Name:   "local.exec",
+								Args:   map[string]any{"url": "https://blocked.example/v1"},
+							},
+						},
+						{Type: types.ModelEventTypeResponseCompleted},
+					},
+				},
+			},
+		}
+		cfg := strings.Join([]string{
+			"runtime:",
+			"  react:",
+			"    enabled: true",
+			"    stream_tool_dispatch_enabled: true",
+			"security:",
+			"  sandbox:",
+			"    enabled: true",
+			"    mode: enforce",
+			"    required: true",
+			"    policy:",
+			"      default_action: host",
+			"      profile: default",
+			"      fallback_action: deny",
+			"    egress:",
+			"      enabled: true",
+			"      default_action: deny",
+			"      on_violation: deny",
+			"",
+		}, "\n")
+		runEngine, streamEngine, _ := newSandboxReactRunStreamHarness(t, cfg, runModel, streamModel, nil)
+		runCollector := &eventCollector{}
+		streamCollector := &eventCollector{}
+		runHandler := newRunStreamDispatcherHandler(nil, runCollector)
+		streamHandler := newRunStreamDispatcherHandler(nil, streamCollector)
+		policy := defaultSandboxReactPolicy()
+
+		runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-deny-run",
+			Input:  "egress-deny",
+			Policy: &policy,
+		}, runHandler)
+		streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-deny-stream",
+			Input:  "egress-deny",
+			Policy: &policy,
+		}, streamHandler)
+		if runErr == nil || streamErr == nil {
+			t.Fatalf("egress deny parity should fail, runErr=%v streamErr=%v", runErr, streamErr)
+		}
+		if runRes.Error == nil || streamRes.Error == nil || runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+			t.Fatalf("egress deny classified error mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+		}
+		if runRes.Error.Details["reason_code"] != "sandbox.egress_deny" ||
+			streamRes.Error.Details["reason_code"] != "sandbox.egress_deny" {
+			t.Fatalf("egress deny reason mismatch run=%#v stream=%#v", runRes.Error.Details["reason_code"], streamRes.Error.Details["reason_code"])
+		}
+		runPayload := lastRunFinishedPayload(t, runCollector.events)
+		streamPayload := lastRunFinishedPayload(t, streamCollector.events)
+		assertReactParityPayload(t, runPayload, streamPayload, runtimeconfig.RuntimeReactTerminationToolDispatchFailed)
+		if runPayload["reason_code"] != "sandbox.egress_deny" || streamPayload["reason_code"] != "sandbox.egress_deny" {
+			t.Fatalf("egress deny payload reason mismatch run=%#v stream=%#v", runPayload["reason_code"], streamPayload["reason_code"])
+		}
+	})
+
+	t.Run("allow", func(t *testing.T) {
+		runModel := &scriptedReactModel{
+			generateSteps: []scriptedGenerateStep{
+				{
+					response: types.ModelResponse{
+						ToolCalls: []types.ToolCall{{
+							CallID: "egress-allow-call-1",
+							Name:   "local.exec",
+							Args:   map[string]any{"url": "https://api.example.com/v1"},
+						}},
+					},
+				},
+				{
+					assertRequest: func(req types.ModelRequest) error {
+						return assertSandboxToolFeedback(req, "egress-allow-call-1", "host", "")
+					},
+					response: types.ModelResponse{FinalAnswer: "ok"},
+				},
+			},
+		}
+		streamModel := &scriptedReactModel{
+			streamSteps: []scriptedStreamStep{
+				{
+					events: []types.ModelEvent{
+						{
+							Type: types.ModelEventTypeToolCall,
+							ToolCall: &types.ToolCall{
+								CallID: "egress-allow-call-1",
+								Name:   "local.exec",
+								Args:   map[string]any{"url": "https://api.example.com/v1"},
+							},
+						},
+						{Type: types.ModelEventTypeResponseCompleted},
+					},
+				},
+				{
+					assertRequest: func(req types.ModelRequest) error {
+						return assertSandboxToolFeedback(req, "egress-allow-call-1", "host", "")
+					},
+					events: []types.ModelEvent{
+						{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"},
+						{Type: types.ModelEventTypeResponseCompleted},
+					},
+				},
+			},
+		}
+		cfg := strings.Join([]string{
+			"runtime:",
+			"  react:",
+			"    enabled: true",
+			"    stream_tool_dispatch_enabled: true",
+			"security:",
+			"  sandbox:",
+			"    enabled: true",
+			"    mode: enforce",
+			"    required: false",
+			"    policy:",
+			"      default_action: host",
+			"      profile: default",
+			"      fallback_action: deny",
+			"    egress:",
+			"      enabled: true",
+			"      default_action: deny",
+			"      allowlist:",
+			"        - api.example.com",
+			"      on_violation: deny",
+			"",
+		}, "\n")
+		runEngine, streamEngine, _ := newSandboxReactRunStreamHarness(t, cfg, runModel, streamModel, nil)
+		runCollector := &eventCollector{}
+		streamCollector := &eventCollector{}
+		runHandler := newRunStreamDispatcherHandler(nil, runCollector)
+		streamHandler := newRunStreamDispatcherHandler(nil, streamCollector)
+		policy := defaultSandboxReactPolicy()
+
+		runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-allow-run",
+			Input:  "egress-allow",
+			Policy: &policy,
+		}, runHandler)
+		streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-allow-stream",
+			Input:  "egress-allow",
+			Policy: &policy,
+		}, streamHandler)
+		if runErr != nil || streamErr != nil {
+			t.Fatalf("egress allow parity should succeed, runErr=%v streamErr=%v", runErr, streamErr)
+		}
+		if runRes.Error != nil || streamRes.Error != nil {
+			t.Fatalf("egress allow classified error mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+		}
+		runPayload := lastRunFinishedPayload(t, runCollector.events)
+		streamPayload := lastRunFinishedPayload(t, streamCollector.events)
+		assertReactParityPayload(t, runPayload, streamPayload, runtimeconfig.RuntimeReactTerminationCompleted)
+	})
+
+	t.Run("allow_and_record", func(t *testing.T) {
+		runModel := &scriptedReactModel{
+			generateSteps: []scriptedGenerateStep{
+				{
+					response: types.ModelResponse{
+						ToolCalls: []types.ToolCall{{
+							CallID: "egress-record-call-1",
+							Name:   "local.exec",
+							Args:   map[string]any{"url": "https://blocked.example/v1"},
+						}},
+					},
+				},
+				{
+					assertRequest: func(req types.ModelRequest) error {
+						return assertSandboxEgressToolFeedback(req, "egress-record-call-1", "host", "sandbox.egress_allow_and_record")
+					},
+					response: types.ModelResponse{FinalAnswer: "ok"},
+				},
+			},
+		}
+		streamModel := &scriptedReactModel{
+			streamSteps: []scriptedStreamStep{
+				{
+					events: []types.ModelEvent{
+						{
+							Type: types.ModelEventTypeToolCall,
+							ToolCall: &types.ToolCall{
+								CallID: "egress-record-call-1",
+								Name:   "local.exec",
+								Args:   map[string]any{"url": "https://blocked.example/v1"},
+							},
+						},
+						{Type: types.ModelEventTypeResponseCompleted},
+					},
+				},
+				{
+					assertRequest: func(req types.ModelRequest) error {
+						return assertSandboxEgressToolFeedback(req, "egress-record-call-1", "host", "sandbox.egress_allow_and_record")
+					},
+					events: []types.ModelEvent{
+						{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"},
+						{Type: types.ModelEventTypeResponseCompleted},
+					},
+				},
+			},
+		}
+		cfg := strings.Join([]string{
+			"runtime:",
+			"  react:",
+			"    enabled: true",
+			"    stream_tool_dispatch_enabled: true",
+			"security:",
+			"  sandbox:",
+			"    enabled: true",
+			"    mode: enforce",
+			"    required: false",
+			"    policy:",
+			"      default_action: host",
+			"      profile: default",
+			"      fallback_action: deny",
+			"    egress:",
+			"      enabled: true",
+			"      default_action: deny",
+			"      on_violation: allow_and_record",
+			"",
+		}, "\n")
+		runEngine, streamEngine, _ := newSandboxReactRunStreamHarness(t, cfg, runModel, streamModel, nil)
+		runCollector := &eventCollector{}
+		streamCollector := &eventCollector{}
+		runHandler := newRunStreamDispatcherHandler(nil, runCollector)
+		streamHandler := newRunStreamDispatcherHandler(nil, streamCollector)
+		policy := defaultSandboxReactPolicy()
+
+		runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-record-run",
+			Input:  "egress-record",
+			Policy: &policy,
+		}, runHandler)
+		streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+			RunID:  "run-a57-sandbox-react-egress-record-stream",
+			Input:  "egress-record",
+			Policy: &policy,
+		}, streamHandler)
+		if runErr != nil || streamErr != nil {
+			t.Fatalf("egress allow_and_record parity should succeed, runErr=%v streamErr=%v", runErr, streamErr)
+		}
+		if runRes.Error != nil || streamRes.Error != nil {
+			t.Fatalf("egress allow_and_record classified error mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+		}
+		runPayload := lastRunFinishedPayload(t, runCollector.events)
+		streamPayload := lastRunFinishedPayload(t, streamCollector.events)
+		assertReactParityPayload(t, runPayload, streamPayload, runtimeconfig.RuntimeReactTerminationCompleted)
+		if runPayload["sandbox_reason_code"] != "sandbox.egress_allow_and_record" ||
+			streamPayload["sandbox_reason_code"] != "sandbox.egress_allow_and_record" {
+			t.Fatalf("egress allow_and_record payload mismatch run=%#v stream=%#v", runPayload, streamPayload)
+		}
+	})
+}
+
 func TestSandboxExecutionIsolationContractReactFallbackTaxonomyAndCountersParity(t *testing.T) {
 	t.Run("allow_and_record", func(t *testing.T) {
 		runModel := &scriptedReactModel{
@@ -1397,6 +1679,36 @@ func assertSandboxToolFeedback(
 	fallbackReason, _ := outcome.Result.Structured["sandbox_fallback_reason"].(string)
 	if strings.TrimSpace(fallbackReason) != strings.TrimSpace(wantFallbackReason) {
 		return fmt.Errorf("sandbox_fallback_reason=%q, want %q", fallbackReason, wantFallbackReason)
+	}
+	return nil
+}
+
+func assertSandboxEgressToolFeedback(
+	req types.ModelRequest,
+	wantCallID string,
+	wantContent string,
+	wantReasonCode string,
+) error {
+	if len(req.ToolResult) != 1 {
+		return fmt.Errorf("tool result count=%d, want 1: %#v", len(req.ToolResult), req.ToolResult)
+	}
+	outcome := req.ToolResult[0]
+	if strings.TrimSpace(outcome.CallID) != strings.TrimSpace(wantCallID) {
+		return fmt.Errorf("tool call id=%q, want %q", outcome.CallID, wantCallID)
+	}
+	if strings.TrimSpace(outcome.Result.Content) != strings.TrimSpace(wantContent) {
+		return fmt.Errorf("tool result content=%q, want %q", outcome.Result.Content, wantContent)
+	}
+	if outcome.Result.Structured == nil {
+		return fmt.Errorf("tool result structured missing, want reason %q", wantReasonCode)
+	}
+	reasonCode, _ := outcome.Result.Structured["sandbox_reason_code"].(string)
+	if strings.TrimSpace(reasonCode) != strings.TrimSpace(wantReasonCode) {
+		return fmt.Errorf("sandbox_reason_code=%q, want %q", reasonCode, wantReasonCode)
+	}
+	egressAction, _ := outcome.Result.Structured["sandbox_egress_action"].(string)
+	if strings.TrimSpace(egressAction) != runtimeconfig.SecuritySandboxEgressActionAllowAndRecord {
+		return fmt.Errorf("sandbox_egress_action=%q, want %q", egressAction, runtimeconfig.SecuritySandboxEgressActionAllowAndRecord)
 	}
 	return nil
 }

@@ -270,3 +270,24 @@ pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 - diagnostics 字段：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`。
 - readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
 - conformance suites：`integration/adapterconformance/memory_matrix_test.go`、`tool/diagnosticsreplay/arbitration_test.go`（`memory.v1` fixtures）。
+
+## A57 Sandbox Egress + Adapter Allowlist Migration Mapping
+
+| legacy pattern | target pattern | compatibility notes | rollback notes | conformance suite id |
+| --- | --- | --- | --- | --- |
+| 未治理的 sandbox 外呼（默认放开网络） | `security.sandbox.egress.default_action=deny` + `allowlist/by_tool/on_violation` 显式策略 | deny-first 保持安全默认；允许按 host/tool 精确放开；输出 `sandbox_egress_action/policy_source` additive 字段 | 紧急回滚可先把 `security.sandbox.egress.enabled=false` 或切回 `default_action=deny + 空 allowlist`，保留字段与 fixture 以便审计对账 | `sandbox-egress-deny-matrix` |
+| 仅按“全局开关”放开网络，无 host 维度边界 | `security.sandbox.egress.allowlist` + `security.sandbox.egress.by_tool` 组合策略 | allowlist 匹配与 selector override 优先级固定，避免“同请求不同入口”判定漂移 | 若回滚 selector 规则，保留 allowlist 与 replay fixture，避免 taxonomy 漂移 | `sandbox-egress-allow-matrix` / `sandbox-egress-selector-override-precedence` |
+| 违规外呼直接硬失败，缺少观测降级路径 | `security.sandbox.egress.on_violation=allow_and_record`（仅在显式需要时启用） | 可在不放松默认 deny 的前提下保留主链路可观测降级；reason taxonomy 固定 `sandbox.egress_allow_and_record` | 回滚时恢复 `on_violation=deny` 并保留计数器字段，保证趋势连续性 | `sandbox-egress-allow-and-record-matrix` |
+| adapter 激活不做供应链准入（仅靠运行时兜底） | `adapter.allowlist.*` 激活前 fail-fast（id/publisher/version/signature） | 未命中 entry 与签名非法在激活边界阻断；readiness/admission 可解释透传 | 回滚时可切 `adapter.allowlist.enabled=false`，但保留 manifest allowlist identity 字段与 case 数据 | `adapter-allowlist-missing-entry-enforce` / `adapter-allowlist-signature-invalid-enforce` |
+| allowlist 策略枚举不统一（不同模块含义不一致） | enforcement `observe|enforce` + unknown-signature `deny|allow_and_record` 固化 | 策略冲突在配置/激活边界 fail-fast；taxonomy 固定 `adapter.allowlist.*` | 回滚时不得删除策略字段，避免热更新路径出现 schema 漂移 | `adapter-allowlist-policy-conflict` |
+| allowlist 命中成功路径无稳定验收 | 命中路径进入正常激活并维持 Run/Stream 语义等价 | 成功路径不引入额外阻断副作用，且 diagnostics additive 字段可回放 | 回滚仅调整策略，不回滚 conformance case id 绑定 | `adapter-allowlist-allowed-path-enforce` |
+
+A57 最小验收命令：
+
+```bash
+bash scripts/check-sandbox-egress-allowlist-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
+```

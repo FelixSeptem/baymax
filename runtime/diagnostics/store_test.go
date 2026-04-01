@@ -408,6 +408,57 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	}
 }
 
+func TestStoreRunA57AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                        time.Now(),
+		RunID:                       "run-a57-additive",
+		Status:                      "failed",
+		SandboxEgressAction:         "deny",
+		SandboxEgressViolationTotal: 2,
+		SandboxEgressPolicySource:   "by_tool",
+		AdapterAllowlistDecision:    "deny",
+		AdapterAllowlistBlockTotal:  1,
+		AdapterAllowlistPrimaryCode: "adapter.allowlist.missing_entry",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].SandboxEgressAction != "deny" ||
+		items[0].SandboxEgressViolationTotal != 2 ||
+		items[0].SandboxEgressPolicySource != "by_tool" ||
+		items[0].AdapterAllowlistDecision != "deny" ||
+		items[0].AdapterAllowlistBlockTotal != 1 ||
+		items[0].AdapterAllowlistPrimaryCode != "adapter.allowlist.missing_entry" {
+		t.Fatalf("A57 additive fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.SandboxEgressAction = "allow_and_record"
+	rec.SandboxEgressViolationTotal = 3
+	rec.SandboxEgressPolicySource = "on_violation"
+	rec.AdapterAllowlistDecision = "allow"
+	rec.AdapterAllowlistBlockTotal = 0
+	rec.AdapterAllowlistPrimaryCode = "adapter.allowlist.signature_invalid"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].SandboxEgressAction != "allow_and_record" ||
+		items[0].SandboxEgressViolationTotal != 3 ||
+		items[0].SandboxEgressPolicySource != "on_violation" ||
+		items[0].AdapterAllowlistDecision != "allow" ||
+		items[0].AdapterAllowlistBlockTotal != 0 ||
+		items[0].AdapterAllowlistPrimaryCode != "adapter.allowlist.signature_invalid" {
+		t.Fatalf("A57 additive fields mismatch after replay replacement: %#v", items[0])
+	}
+}
+
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

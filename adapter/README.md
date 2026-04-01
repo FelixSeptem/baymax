@@ -43,6 +43,7 @@
 
 - `adapter/*` 仅承载 adapter 契约与脚手架逻辑，不承载 provider SDK 或 transport 运行时细节。
 - `adapter/manifest` 依赖 `adapter/capability` 做协商结果收敛；不直接依赖 `runtime/diagnostics`。
+- A57 allowlist 激活边界在 `adapter/manifest` 解析与激活阶段执行；readiness/admission 只消费 canonical finding，不反向写 manifest 判定。
 - `adapter/health` 提供探测与 taxonomy 能力；readiness 映射与阻断策略在 `runtime/config` 侧统一裁决。
 - 诊断与回放仍通过主线事件/contract gate 校验，不在 `adapter/*` 内部自行写入诊断存储。
 - 外部接入验收必须通过 `integration/adapterconformance` 与 `scripts/check-*` 门禁，不以“本地示例可跑”替代。
@@ -53,6 +54,12 @@
 - 协商默认策略：`fail_fast`（当 manifest 未显式配置 `negotiation.default_strategy` 时）。
 - 请求级策略覆盖：由 `manifest.negotiation.allow_request_override` 决定是否允许。
 - profile version/replay gate 的字段与兼容窗口以当前代码与 OpenSpec 为准。
+- A57 allowlist 激活默认值（由 `runtime/config` 生效）：
+  - `adapter.allowlist.enabled=false`
+  - `adapter.allowlist.enforcement_mode=enforce`
+  - `adapter.allowlist.entries=[]`
+  - `adapter.allowlist.on_unknown_signature=deny`
+- manifest allowlist identity 最小字段：`allowlist.adapter_id`、`allowlist.publisher`、`allowlist.version`、`allowlist.signature_status`。
 - adapter runtime health 默认值（由 `runtime/config` 生效）：
   - `adapter.health.enabled=false`
   - `adapter.health.strict=false`
@@ -65,12 +72,16 @@
   - `go test ./adapter/manifest ./adapter/capability ./adapter/health ./adapter/scaffold -count=1`
 - 交叉契约验证：
   - `go test ./integration/adapterconformance -count=1`
+- A57 专项验证：
+  - `go test ./adapter/manifest ./integration/adapterconformance -run 'Test(ParseManifestAllowlist|ActivateManifestAllowlist|SandboxAdapterConformance(EgressPolicyMatrix|AllowlistActivationMatrix|AllowlistTaxonomyDriftClassification))' -count=1`
 - 门禁脚本：
   - `bash scripts/check-adapter-conformance.sh`
+  - `bash scripts/check-sandbox-egress-allowlist-contract.sh`
   - `bash scripts/check-adapter-manifest-contract.sh`
   - `bash scripts/check-adapter-capability-contract.sh`
   - `bash scripts/check-adapter-scaffold-drift.sh`
   - `pwsh -File scripts/check-adapter-conformance.ps1`
+  - `pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1`
   - `pwsh -File scripts/check-adapter-manifest-contract.ps1`
   - `pwsh -File scripts/check-adapter-capability-contract.ps1`
   - `pwsh -File scripts/check-adapter-scaffold-drift.ps1`

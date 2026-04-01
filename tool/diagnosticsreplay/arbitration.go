@@ -16,48 +16,54 @@ const (
 	ArbitrationFixtureVersionA50V1    = "a50.v1"
 	ArbitrationFixtureVersionA51V1    = "a51.v1"
 	ArbitrationFixtureVersionA52V1    = "a52.v1"
+	ArbitrationFixtureVersionA57V1    = "sandbox_egress.v1"
 	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
 	ArbitrationFixtureVersionObsV1    = "observability.v1"
 	ArbitrationFixtureVersionReactV1  = "react.v1"
 
-	ReasonCodePrecedenceDrift               = "precedence_drift"
-	ReasonCodeTieBreakDrift                 = "tie_break_drift"
-	ReasonCodeTaxonomyDrift                 = "taxonomy_drift"
-	ReasonCodeSecondaryOrderDrift           = "secondary_order_drift"
-	ReasonCodeSecondaryCountDrift           = "secondary_count_drift"
-	ReasonCodeHintTaxonomyDrift             = "hint_taxonomy_drift"
-	ReasonCodeRuleVersionDrift              = "rule_version_drift"
-	ReasonCodeVersionMismatch               = "version_mismatch"
-	ReasonCodeUnsupportedVersion            = "unsupported_version"
-	ReasonCodeCrossVersionSemanticDrift     = "cross_version_semantic_drift"
-	ReasonCodeSandboxPolicyDrift            = "sandbox_policy_drift"
-	ReasonCodeSandboxFallbackDrift          = "sandbox_fallback_drift"
-	ReasonCodeSandboxTimeoutDrift           = "sandbox_timeout_drift"
-	ReasonCodeSandboxCapabilityDrift        = "sandbox_capability_drift"
-	ReasonCodeSandboxResourcePolicyDrift    = "sandbox_resource_policy_drift"
-	ReasonCodeSandboxSessionLifecycleDrift  = "sandbox_session_lifecycle_drift"
-	ReasonCodeSandboxRolloutPhaseDrift      = "sandbox_rollout_phase_drift"
-	ReasonCodeSandboxHealthBudgetDrift      = "sandbox_health_budget_drift"
-	ReasonCodeSandboxCapacityActionDrift    = "sandbox_capacity_action_drift"
-	ReasonCodeSandboxFreezeStateDrift       = "sandbox_freeze_state_drift"
-	ReasonCodeMemoryModeDrift               = "memory_mode_drift"
-	ReasonCodeMemoryProfileDrift            = "memory_profile_drift"
-	ReasonCodeMemoryContractVersionDrift    = "memory_contract_version_drift"
-	ReasonCodeMemoryFallbackDrift           = "memory_fallback_drift"
-	ReasonCodeMemoryErrorTaxonomyDrift      = "memory_error_taxonomy_drift"
-	ReasonCodeMemoryOperationAggregateDrift = "memory_operation_aggregate_drift"
-	ReasonCodeObsExportProfileDrift         = "observability_export_profile_drift"
-	ReasonCodeObsExportStatusDrift          = "observability_export_status_drift"
-	ReasonCodeObsExportReasonDrift          = "observability_export_reason_drift"
-	ReasonCodeBundleSchemaDrift             = "diagnostics_bundle_schema_drift"
-	ReasonCodeBundleRedactionDrift          = "diagnostics_bundle_redaction_drift"
-	ReasonCodeBundleFingerprintDrift        = "diagnostics_bundle_fingerprint_drift"
-	ReasonCodeReactLoopStepDrift            = "react_loop_step_drift"
-	ReasonCodeReactToolCallBudgetDrift      = "react_tool_call_budget_drift"
-	ReasonCodeReactIterationBudgetDrift     = "react_iteration_budget_drift"
-	ReasonCodeReactTerminationReasonDrift   = "react_termination_reason_drift"
-	ReasonCodeReactStreamDispatchDrift      = "react_stream_dispatch_drift"
-	ReasonCodeReactProviderMappingDrift     = "react_provider_mapping_drift"
+	ReasonCodePrecedenceDrift                     = "precedence_drift"
+	ReasonCodeTieBreakDrift                       = "tie_break_drift"
+	ReasonCodeTaxonomyDrift                       = "taxonomy_drift"
+	ReasonCodeSecondaryOrderDrift                 = "secondary_order_drift"
+	ReasonCodeSecondaryCountDrift                 = "secondary_count_drift"
+	ReasonCodeHintTaxonomyDrift                   = "hint_taxonomy_drift"
+	ReasonCodeRuleVersionDrift                    = "rule_version_drift"
+	ReasonCodeVersionMismatch                     = "version_mismatch"
+	ReasonCodeUnsupportedVersion                  = "unsupported_version"
+	ReasonCodeCrossVersionSemanticDrift           = "cross_version_semantic_drift"
+	ReasonCodeSandboxPolicyDrift                  = "sandbox_policy_drift"
+	ReasonCodeSandboxFallbackDrift                = "sandbox_fallback_drift"
+	ReasonCodeSandboxTimeoutDrift                 = "sandbox_timeout_drift"
+	ReasonCodeSandboxCapabilityDrift              = "sandbox_capability_drift"
+	ReasonCodeSandboxResourcePolicyDrift          = "sandbox_resource_policy_drift"
+	ReasonCodeSandboxSessionLifecycleDrift        = "sandbox_session_lifecycle_drift"
+	ReasonCodeSandboxRolloutPhaseDrift            = "sandbox_rollout_phase_drift"
+	ReasonCodeSandboxHealthBudgetDrift            = "sandbox_health_budget_drift"
+	ReasonCodeSandboxCapacityActionDrift          = "sandbox_capacity_action_drift"
+	ReasonCodeSandboxFreezeStateDrift             = "sandbox_freeze_state_drift"
+	ReasonCodeMemoryModeDrift                     = "memory_mode_drift"
+	ReasonCodeMemoryProfileDrift                  = "memory_profile_drift"
+	ReasonCodeMemoryContractVersionDrift          = "memory_contract_version_drift"
+	ReasonCodeMemoryFallbackDrift                 = "memory_fallback_drift"
+	ReasonCodeMemoryErrorTaxonomyDrift            = "memory_error_taxonomy_drift"
+	ReasonCodeMemoryOperationAggregateDrift       = "memory_operation_aggregate_drift"
+	ReasonCodeObsExportProfileDrift               = "observability_export_profile_drift"
+	ReasonCodeObsExportStatusDrift                = "observability_export_status_drift"
+	ReasonCodeObsExportReasonDrift                = "observability_export_reason_drift"
+	ReasonCodeBundleSchemaDrift                   = "diagnostics_bundle_schema_drift"
+	ReasonCodeBundleRedactionDrift                = "diagnostics_bundle_redaction_drift"
+	ReasonCodeBundleFingerprintDrift              = "diagnostics_bundle_fingerprint_drift"
+	ReasonCodeReactLoopStepDrift                  = "react_loop_step_drift"
+	ReasonCodeReactToolCallBudgetDrift            = "react_tool_call_budget_drift"
+	ReasonCodeReactIterationBudgetDrift           = "react_iteration_budget_drift"
+	ReasonCodeReactTerminationReasonDrift         = "react_termination_reason_drift"
+	ReasonCodeReactStreamDispatchDrift            = "react_stream_dispatch_drift"
+	ReasonCodeReactProviderMappingDrift           = "react_provider_mapping_drift"
+	ReasonCodeSandboxEgressActionDrift            = "sandbox_egress_action_drift"
+	ReasonCodeSandboxEgressPolicySourceDrift      = "sandbox_egress_policy_source_drift"
+	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
+	ReasonCodeAdapterAllowlistDecisionDrift       = "adapter_allowlist_decision_drift"
+	ReasonCodeAdapterAllowlistTaxonomyDrift       = "adapter_allowlist_taxonomy_drift"
 )
 
 type ArbitrationFixture struct {
@@ -121,6 +127,12 @@ type ArbitrationObservation struct {
 	SandboxCapacityAction                  string   `json:"sandbox_capacity_action,omitempty"`
 	SandboxFreezeState                     bool     `json:"sandbox_freeze_state,omitempty"`
 	SandboxFreezeReasonCode                string   `json:"sandbox_freeze_reason_code,omitempty"`
+	SandboxEgressAction                    string   `json:"sandbox_egress_action,omitempty"`
+	SandboxEgressViolationTotal            int      `json:"sandbox_egress_violation_total,omitempty"`
+	SandboxEgressPolicySource              string   `json:"sandbox_egress_policy_source,omitempty"`
+	AdapterAllowlistDecision               string   `json:"adapter_allowlist_decision,omitempty"`
+	AdapterAllowlistBlockTotal             int      `json:"adapter_allowlist_block_total,omitempty"`
+	AdapterAllowlistPrimaryCode            string   `json:"adapter_allowlist_primary_code,omitempty"`
 	MemoryMode                             string   `json:"memory_mode,omitempty"`
 	MemoryProvider                         string   `json:"memory_provider,omitempty"`
 	MemoryProfile                          string   `json:"memory_profile,omitempty"`
@@ -169,6 +181,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA50V1 &&
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
+		version != ArbitrationFixtureVersionA57V1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
 		version != ArbitrationFixtureVersionObsV1 &&
 		version != ArbitrationFixtureVersionReactV1 {
@@ -314,6 +327,12 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		SandboxCapacityAction:                  strings.ToLower(strings.TrimSpace(in.SandboxCapacityAction)),
 		SandboxFreezeState:                     in.SandboxFreezeState,
 		SandboxFreezeReasonCode:                strings.ToLower(strings.TrimSpace(in.SandboxFreezeReasonCode)),
+		SandboxEgressAction:                    strings.ToLower(strings.TrimSpace(in.SandboxEgressAction)),
+		SandboxEgressViolationTotal:            in.SandboxEgressViolationTotal,
+		SandboxEgressPolicySource:              strings.ToLower(strings.TrimSpace(in.SandboxEgressPolicySource)),
+		AdapterAllowlistDecision:               strings.ToLower(strings.TrimSpace(in.AdapterAllowlistDecision)),
+		AdapterAllowlistBlockTotal:             in.AdapterAllowlistBlockTotal,
+		AdapterAllowlistPrimaryCode:            strings.TrimSpace(in.AdapterAllowlistPrimaryCode),
 		MemoryMode:                             strings.ToLower(strings.TrimSpace(in.MemoryMode)),
 		MemoryProvider:                         strings.ToLower(strings.TrimSpace(in.MemoryProvider)),
 		MemoryProfile:                          strings.ToLower(strings.TrimSpace(in.MemoryProfile)),
@@ -382,6 +401,12 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.SandboxResourceMemoryPeakBytesP95 < 0 {
 		out.SandboxResourceMemoryPeakBytesP95 = 0
 	}
+	if out.SandboxEgressViolationTotal < 0 {
+		out.SandboxEgressViolationTotal = 0
+	}
+	if out.AdapterAllowlistBlockTotal < 0 {
+		out.AdapterAllowlistBlockTotal = 0
+	}
 	if out.MemoryQueryTotal < 0 {
 		out.MemoryQueryTotal = 0
 	}
@@ -429,6 +454,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return validateReactArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionA57V1 {
+		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
 	}
 	if strings.TrimSpace(obs.RuntimePrimaryDomain) == "" {
 		return &ValidationError{
@@ -624,6 +652,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return assertMemoryArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionA57V1 {
+		return assertSandboxEgressArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
@@ -1078,6 +1109,104 @@ func assertSandboxRolloutArbitrationEquivalent(caseName, lane string, expected, 
 	return nil
 }
 
+func validateSandboxEgressArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isSandboxEgressAction(obs.SandboxEgressAction) {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressActionDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_egress_action must be deny|allow|allow_and_record", caseName, lane),
+		}
+	}
+	if !isSandboxEgressPolicySource(obs.SandboxEgressPolicySource) {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressPolicySourceDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_egress_policy_source must be default_action|by_tool|allowlist|on_violation", caseName, lane),
+		}
+	}
+	if obs.SandboxEgressViolationTotal > 0 && obs.SandboxEgressAction == runtimeconfig.SecuritySandboxEgressActionAllow {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressViolationTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox_egress_violation_total>0 requires action deny|allow_and_record", caseName, lane),
+		}
+	}
+	if obs.SandboxEgressViolationTotal == 0 &&
+		(obs.SandboxEgressAction == runtimeconfig.SecuritySandboxEgressActionDeny ||
+			obs.SandboxEgressAction == runtimeconfig.SecuritySandboxEgressActionAllowAndRecord) {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressViolationTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s deny/allow_and_record requires sandbox_egress_violation_total>0", caseName, lane),
+		}
+	}
+	if !isAdapterAllowlistDecision(obs.AdapterAllowlistDecision) {
+		return &ValidationError{
+			Code:    ReasonCodeAdapterAllowlistDecisionDrift,
+			Message: fmt.Sprintf("case %q %s adapter_allowlist_decision must be allow|deny", caseName, lane),
+		}
+	}
+	if obs.AdapterAllowlistDecision == "deny" {
+		if obs.AdapterAllowlistBlockTotal <= 0 {
+			return &ValidationError{
+				Code:    ReasonCodeAdapterAllowlistTaxonomyDrift,
+				Message: fmt.Sprintf("case %q %s deny decision requires adapter_allowlist_block_total>0", caseName, lane),
+			}
+		}
+		if !isCanonicalAdapterAllowlistPrimaryCode(obs.AdapterAllowlistPrimaryCode) {
+			return &ValidationError{
+				Code:    ReasonCodeAdapterAllowlistTaxonomyDrift,
+				Message: fmt.Sprintf("case %q %s adapter_allowlist_primary_code must be canonical adapter.allowlist.*", caseName, lane),
+			}
+		}
+		return nil
+	}
+	if obs.AdapterAllowlistBlockTotal > 0 {
+		return &ValidationError{
+			Code:    ReasonCodeAdapterAllowlistTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s allow decision requires adapter_allowlist_block_total=0", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.AdapterAllowlistPrimaryCode) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeAdapterAllowlistTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s allow decision requires adapter_allowlist_primary_code empty", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertSandboxEgressArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.SandboxEgressAction != actual.SandboxEgressAction {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressActionDrift,
+			Message: fmt.Sprintf("case %q %s sandbox egress action drift expected=%q actual=%q", caseName, lane, expected.SandboxEgressAction, actual.SandboxEgressAction),
+		}
+	}
+	if expected.SandboxEgressPolicySource != actual.SandboxEgressPolicySource {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressPolicySourceDrift,
+			Message: fmt.Sprintf("case %q %s sandbox egress policy source drift expected=%q actual=%q", caseName, lane, expected.SandboxEgressPolicySource, actual.SandboxEgressPolicySource),
+		}
+	}
+	if expected.SandboxEgressViolationTotal != actual.SandboxEgressViolationTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSandboxEgressViolationTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s sandbox egress violation taxonomy drift expected=%d actual=%d", caseName, lane, expected.SandboxEgressViolationTotal, actual.SandboxEgressViolationTotal),
+		}
+	}
+	if expected.AdapterAllowlistDecision != actual.AdapterAllowlistDecision {
+		return &ValidationError{
+			Code:    ReasonCodeAdapterAllowlistDecisionDrift,
+			Message: fmt.Sprintf("case %q %s adapter allowlist decision drift expected=%q actual=%q", caseName, lane, expected.AdapterAllowlistDecision, actual.AdapterAllowlistDecision),
+		}
+	}
+	if expected.AdapterAllowlistBlockTotal != actual.AdapterAllowlistBlockTotal ||
+		expected.AdapterAllowlistPrimaryCode != actual.AdapterAllowlistPrimaryCode {
+		return &ValidationError{
+			Code:    ReasonCodeAdapterAllowlistTaxonomyDrift,
+			Message: fmt.Sprintf("case %q %s adapter allowlist taxonomy drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
+}
+
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
 	if version == ArbitrationFixtureVersionObsV1 {
 		return left.ObservabilityExportProfile == right.ObservabilityExportProfile &&
@@ -1111,6 +1240,14 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.ReactIterationBudgetHitTotal == right.ReactIterationBudgetHitTotal &&
 			left.ReactTerminationReason == right.ReactTerminationReason &&
 			left.ReactStreamDispatchEnabled == right.ReactStreamDispatchEnabled
+	}
+	if version == ArbitrationFixtureVersionA57V1 {
+		return left.SandboxEgressAction == right.SandboxEgressAction &&
+			left.SandboxEgressPolicySource == right.SandboxEgressPolicySource &&
+			left.SandboxEgressViolationTotal == right.SandboxEgressViolationTotal &&
+			left.AdapterAllowlistDecision == right.AdapterAllowlistDecision &&
+			left.AdapterAllowlistBlockTotal == right.AdapterAllowlistBlockTotal &&
+			left.AdapterAllowlistPrimaryCode == right.AdapterAllowlistPrimaryCode
 	}
 	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
 		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
@@ -1216,6 +1353,46 @@ func isCanonicalReactTerminationReason(reason string) bool {
 		runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
 		runtimeconfig.RuntimeReactTerminationProviderError,
 		runtimeconfig.RuntimeReactTerminationContextCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSandboxEgressAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case runtimeconfig.SecuritySandboxEgressActionDeny,
+		runtimeconfig.SecuritySandboxEgressActionAllow,
+		runtimeconfig.SecuritySandboxEgressActionAllowAndRecord:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSandboxEgressPolicySource(source string) bool {
+	switch strings.TrimSpace(source) {
+	case "default_action", "by_tool", "allowlist", "on_violation":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdapterAllowlistDecision(decision string) bool {
+	switch strings.TrimSpace(decision) {
+	case "allow", "deny":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalAdapterAllowlistPrimaryCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry,
+		runtimeconfig.ReadinessCodeAdapterAllowlistSignatureInvalid,
+		runtimeconfig.ReadinessCodeAdapterAllowlistPolicyConflict:
 		return true
 	default:
 		return false

@@ -35,6 +35,9 @@ const (
 	CodeMemoryContractMismatch     = "adapter-manifest.memory-contract-mismatch"
 	CodeMemoryRequiredOpMissing    = "adapter-manifest.memory-required-operation-missing"
 	CodeMemoryContextMissing       = "adapter-manifest.memory-context-missing"
+	CodeAllowlistMissingEntry      = "adapter-manifest.allowlist-missing-entry"
+	CodeAllowlistSignatureInvalid  = "adapter-manifest.allowlist-signature-invalid"
+	CodeAllowlistPolicyConflict    = "adapter-manifest.allowlist-policy-conflict"
 )
 
 var (
@@ -43,6 +46,19 @@ var (
 	memoryIdentityPattern     = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	memoryContractPattern     = regexp.MustCompile(`^memory\.v[0-9]+$`)
 	memoryOperationPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	allowlistIdentityPattern  = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
+)
+
+const (
+	allowlistSignatureStatusValid   = "valid"
+	allowlistSignatureStatusInvalid = "invalid"
+	allowlistSignatureStatusUnknown = "unknown"
+
+	allowlistEnforcementModeObserve = "observe"
+	allowlistEnforcementModeEnforce = "enforce"
+
+	allowlistUnknownSignatureDeny           = "deny"
+	allowlistUnknownSignatureAllowAndRecord = "allow_and_record"
 )
 
 type Capabilities struct {
@@ -65,6 +81,14 @@ type Manifest struct {
 	HostArch               string       `json:"host_arch,omitempty"`
 	SessionModesSupported  []string     `json:"session_modes_supported,omitempty"`
 	Memory                 *Memory      `json:"memory,omitempty"`
+	Allowlist              *AllowlistID `json:"allowlist,omitempty"`
+}
+
+type AllowlistID struct {
+	AdapterID       string `json:"adapter_id"`
+	Publisher       string `json:"publisher"`
+	Version         string `json:"version"`
+	SignatureStatus string `json:"signature_status"`
 }
 
 type Memory struct {
@@ -126,6 +150,14 @@ type ActivationContext struct {
 	MemoryProfile     string
 	MemoryContract    string
 	MemoryOperations  []string
+	Allowlist         AllowlistPolicy
+}
+
+type AllowlistPolicy struct {
+	Enabled            bool
+	EnforcementMode    string
+	OnUnknownSignature string
+	Entries            []AllowlistID
 }
 
 type ActivationResult struct {
@@ -271,6 +303,9 @@ func Validate(manifest Manifest) error {
 	if err := validateSandboxMetadata(normalized); err != nil {
 		return err
 	}
+	if err := validateAllowlistManifest(normalized); err != nil {
+		return err
+	}
 	return validateMemoryManifest(normalized)
 }
 
@@ -314,6 +349,9 @@ func ActivateWithRequestAndProfileWindowWithContext(manifest Manifest, runtimeVe
 		return ActivationResult{}, mapProfileError(err)
 	}
 	if err := validateSandboxActivationCompatibility(normalized, activationCtx); err != nil {
+		return ActivationResult{}, err
+	}
+	if err := validateAllowlistActivationCompatibility(normalized, activationCtx); err != nil {
 		return ActivationResult{}, err
 	}
 	memoryOptionalDowngrades, err := validateMemoryActivationCompatibility(normalized, activationCtx)
@@ -413,7 +451,20 @@ func normalize(manifest Manifest) Manifest {
 	manifest.Capabilities.Required = normalizeCapabilities(manifest.Capabilities.Required)
 	manifest.Capabilities.Optional = normalizeCapabilities(manifest.Capabilities.Optional)
 	manifest.Memory = normalizeMemory(manifest.Memory)
+	manifest.Allowlist = normalizeAllowlistID(manifest.Allowlist)
 	return manifest
+}
+
+func normalizeAllowlistID(in *AllowlistID) *AllowlistID {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.AdapterID = strings.ToLower(strings.TrimSpace(out.AdapterID))
+	out.Publisher = strings.ToLower(strings.TrimSpace(out.Publisher))
+	out.Version = strings.TrimSpace(out.Version)
+	out.SignatureStatus = strings.ToLower(strings.TrimSpace(out.SignatureStatus))
+	return &out
 }
 
 func normalizeMemory(in *Memory) *Memory {
@@ -844,6 +895,158 @@ func validateSandboxMetadata(manifest Manifest) error {
 	return nil
 }
 
+func validateAllowlistManifest(manifest Manifest) error {
+	if manifest.Allowlist == nil {
+		return nil
+	}
+	identity := manifest.Allowlist
+	checks := []struct {
+		field string
+		value string
+	}{
+		{field: "allowlist.adapter_id", value: identity.AdapterID},
+		{field: "allowlist.publisher", value: identity.Publisher},
+		{field: "allowlist.version", value: identity.Version},
+		{field: "allowlist.signature_status", value: identity.SignatureStatus},
+	}
+	for _, check := range checks {
+		if strings.TrimSpace(check.value) == "" {
+			return &ContractError{
+				Code:    CodeMissingField,
+				Field:   check.field,
+				Message: "required field is missing",
+			}
+		}
+	}
+	if !allowlistIdentityPattern.MatchString(identity.AdapterID) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "allowlist.adapter_id",
+			Message: "allowlist.adapter_id must match ^[a-z][a-z0-9._-]*$",
+		}
+	}
+	if !allowlistIdentityPattern.MatchString(identity.Publisher) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "allowlist.publisher",
+			Message: "allowlist.publisher must match ^[a-z][a-z0-9._-]*$",
+		}
+	}
+	if !isSupportedAllowlistSignatureStatus(identity.SignatureStatus) {
+		return &ContractError{
+			Code:    CodeInvalidField,
+			Field:   "allowlist.signature_status",
+			Message: "allowlist.signature_status must be one of: valid|invalid|unknown",
+		}
+	}
+	return nil
+}
+
+func validateAllowlistActivationCompatibility(manifest Manifest, in ActivationContext) error {
+	ctx := normalizeActivationContext(in)
+	if !ctx.Allowlist.Enabled {
+		return nil
+	}
+	if manifest.Allowlist == nil {
+		return &ContractError{
+			Code:    CodeAllowlistMissingEntry,
+			Field:   "allowlist.adapter_id",
+			Message: "manifest allowlist identity metadata is missing",
+		}
+	}
+	mode := strings.TrimSpace(ctx.Allowlist.EnforcementMode)
+	if mode == "" {
+		mode = allowlistEnforcementModeEnforce
+	}
+	switch mode {
+	case allowlistEnforcementModeObserve, allowlistEnforcementModeEnforce:
+	default:
+		return &ContractError{
+			Code:    CodeAllowlistPolicyConflict,
+			Field:   "allowlist.enforcement_mode",
+			Message: "allowlist enforcement_mode must be one of: observe|enforce",
+		}
+	}
+	unknownSignatureAction := strings.TrimSpace(ctx.Allowlist.OnUnknownSignature)
+	if unknownSignatureAction == "" {
+		unknownSignatureAction = allowlistUnknownSignatureDeny
+	}
+	switch unknownSignatureAction {
+	case allowlistUnknownSignatureDeny, allowlistUnknownSignatureAllowAndRecord:
+	default:
+		return &ContractError{
+			Code:    CodeAllowlistPolicyConflict,
+			Field:   "allowlist.on_unknown_signature",
+			Message: "allowlist on_unknown_signature must be one of: deny|allow_and_record",
+		}
+	}
+
+	identity := *manifest.Allowlist
+	if mode == allowlistEnforcementModeEnforce {
+		if identity.SignatureStatus == allowlistSignatureStatusInvalid {
+			return &ContractError{
+				Code:    CodeAllowlistSignatureInvalid,
+				Field:   "allowlist.signature_status",
+				Message: "manifest signature_status is invalid under enforce mode",
+			}
+		}
+		if identity.SignatureStatus == allowlistSignatureStatusUnknown && unknownSignatureAction == allowlistUnknownSignatureDeny {
+			return &ContractError{
+				Code:    CodeAllowlistSignatureInvalid,
+				Field:   "allowlist.signature_status",
+				Message: "manifest signature_status is unknown and on_unknown_signature=deny",
+			}
+		}
+	}
+
+	match, ok := findAllowlistEntry(identity, ctx.Allowlist.Entries)
+	if !ok {
+		return &ContractError{
+			Code:    CodeAllowlistMissingEntry,
+			Field:   "allowlist.entries",
+			Message: "manifest allowlist identity is not in effective allowlist entries",
+		}
+	}
+	if mode == allowlistEnforcementModeEnforce {
+		if match.SignatureStatus == allowlistSignatureStatusInvalid {
+			return &ContractError{
+				Code:    CodeAllowlistSignatureInvalid,
+				Field:   "allowlist.signature_status",
+				Message: "allowlist entry signature_status is invalid under enforce mode",
+			}
+		}
+		if match.SignatureStatus == allowlistSignatureStatusUnknown && unknownSignatureAction == allowlistUnknownSignatureDeny {
+			return &ContractError{
+				Code:    CodeAllowlistSignatureInvalid,
+				Field:   "allowlist.signature_status",
+				Message: "allowlist entry signature_status is unknown and on_unknown_signature=deny",
+			}
+		}
+	}
+	return nil
+}
+
+func isSupportedAllowlistSignatureStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case allowlistSignatureStatusValid, allowlistSignatureStatusInvalid, allowlistSignatureStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func findAllowlistEntry(identity AllowlistID, entries []AllowlistID) (AllowlistID, bool) {
+	for i := range entries {
+		entry := entries[i]
+		if identity.AdapterID == entry.AdapterID &&
+			identity.Publisher == entry.Publisher &&
+			identity.Version == entry.Version {
+			return entry, true
+		}
+	}
+	return AllowlistID{}, false
+}
+
 func isSandboxManifest(manifest Manifest) bool {
 	return strings.TrimSpace(manifest.SandboxBackend) != "" ||
 		strings.TrimSpace(manifest.SandboxProfileID) != "" ||
@@ -955,6 +1158,28 @@ func normalizeActivationContext(in ActivationContext) ActivationContext {
 	out.MemoryProfile = strings.ToLower(strings.TrimSpace(out.MemoryProfile))
 	out.MemoryContract = strings.ToLower(strings.TrimSpace(out.MemoryContract))
 	out.MemoryOperations = normalizeMemoryOperations(out.MemoryOperations)
+	out.Allowlist = normalizeAllowlistPolicy(out.Allowlist)
+	return out
+}
+
+func normalizeAllowlistPolicy(in AllowlistPolicy) AllowlistPolicy {
+	out := in
+	out.EnforcementMode = strings.ToLower(strings.TrimSpace(out.EnforcementMode))
+	out.OnUnknownSignature = strings.ToLower(strings.TrimSpace(out.OnUnknownSignature))
+	if len(out.Entries) == 0 {
+		out.Entries = []AllowlistID{}
+		return out
+	}
+	normalizedEntries := make([]AllowlistID, 0, len(out.Entries))
+	for i := range out.Entries {
+		entry := out.Entries[i]
+		entry.AdapterID = strings.ToLower(strings.TrimSpace(entry.AdapterID))
+		entry.Publisher = strings.ToLower(strings.TrimSpace(entry.Publisher))
+		entry.Version = strings.TrimSpace(entry.Version)
+		entry.SignatureStatus = strings.ToLower(strings.TrimSpace(entry.SignatureStatus))
+		normalizedEntries = append(normalizedEntries, entry)
+	}
+	out.Entries = normalizedEntries
 	return out
 }
 

@@ -119,8 +119,12 @@ func TestSandboxAdapterConformanceSessionLifecycle(t *testing.T) {
 func TestSandboxAdapterConformanceCanonicalDriftClasses(t *testing.T) {
 	got := CanonicalSandboxDriftClasses()
 	want := []string{
+		SandboxDriftAllowlistActivation,
+		SandboxDriftAllowlistTaxonomy,
 		SandboxDriftBackendProfile,
 		SandboxDriftCapabilityClaim,
+		SandboxDriftEgressPolicyDecision,
+		SandboxDriftEgressSelectorPrecedence,
 		SandboxDriftManifestCompat,
 		SandboxDriftSessionLifecycle,
 		SandboxDriftSessionModeCompat,
@@ -128,5 +132,112 @@ func TestSandboxAdapterConformanceCanonicalDriftClasses(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("canonical drift classes mismatch: got=%#v want=%#v", got, want)
+	}
+}
+
+func TestSandboxAdapterConformanceEgressPolicyMatrix(t *testing.T) {
+	matrix := MainstreamSandboxEgressPolicyMatrix()
+	if len(matrix) == 0 {
+		t.Fatal("egress policy matrix should not be empty")
+	}
+	coverage := map[string]map[string]bool{}
+	for i := range matrix {
+		tc := matrix[i]
+		if coverage[tc.CaseID] == nil {
+			coverage[tc.CaseID] = map[string]bool{}
+		}
+		got, err := EvaluateSandboxEgressPolicyCase(tc)
+		if err != nil {
+			t.Fatalf("evaluate egress case %s/%s failed: %v", tc.CaseID, tc.Backend, err)
+		}
+		drift := classifySandboxEgressMatrixDrift(tc, got)
+		if drift != "" {
+			t.Fatalf("egress matrix drift case=%s backend=%s drift=%s got=%#v", tc.CaseID, tc.Backend, drift, got)
+		}
+		coverage[tc.CaseID][tc.Backend] = true
+	}
+	requiredCases := []string{
+		"sandbox-egress-deny-matrix",
+		"sandbox-egress-allow-matrix",
+		"sandbox-egress-allow-and-record-matrix",
+		"sandbox-egress-selector-override-precedence",
+	}
+	backends := MainstreamSandboxBackendMatrix()
+	for _, caseID := range requiredCases {
+		for _, backend := range backends {
+			if !coverage[caseID][backend.Backend] {
+				t.Fatalf("missing egress matrix coverage case=%s backend=%s", caseID, backend.Backend)
+			}
+		}
+	}
+}
+
+func TestSandboxAdapterConformanceEgressSelectorOverridePrecedence(t *testing.T) {
+	caseDef := SandboxEgressPolicyCase{
+		CaseID:               "sandbox-egress-selector-override-precedence",
+		Backend:              adaptermanifest.SandboxBackendLinuxNSJail,
+		ProfileID:            adaptermanifest.SandboxBackendLinuxNSJail,
+		NamespaceTool:        "local+shell",
+		Host:                 "api.example.com",
+		DefaultAction:        "allow",
+		OnViolation:          "deny",
+		ByTool:               map[string]string{"local+shell": "deny"},
+		Allowlist:            []string{"api.example.com"},
+		ExpectedAction:       "deny",
+		ExpectedPolicySource: "by_tool",
+	}
+	got, err := EvaluateSandboxEgressPolicyCase(caseDef)
+	if err != nil {
+		t.Fatalf("evaluate selector override precedence failed: %v", err)
+	}
+	if got.Action != "deny" || got.PolicySource != "by_tool" || got.ReasonCode != "sandbox.egress_deny" {
+		t.Fatalf("selector override precedence mismatch: %#v", got)
+	}
+}
+
+func TestSandboxAdapterConformanceAllowlistActivationMatrix(t *testing.T) {
+	matrix := MainstreamAdapterAllowlistActivationMatrix()
+	if len(matrix) == 0 {
+		t.Fatal("allowlist activation matrix should not be empty")
+	}
+	coverage := map[string]map[string]bool{}
+	for i := range matrix {
+		tc := matrix[i]
+		if coverage[tc.CaseID] == nil {
+			coverage[tc.CaseID] = map[string]bool{}
+		}
+		got, err := EvaluateAdapterAllowlistActivationCase(tc)
+		if err != nil {
+			t.Fatalf("evaluate allowlist case %s/%s failed: %v", tc.CaseID, tc.Backend, err)
+		}
+		drift := classifyAllowlistMatrixDrift(tc.ExpectedContractCode, got)
+		if drift != "" {
+			t.Fatalf("allowlist matrix drift case=%s backend=%s drift=%s got=%#v", tc.CaseID, tc.Backend, drift, got)
+		}
+		coverage[tc.CaseID][tc.Backend] = true
+	}
+	requiredCases := []string{
+		"adapter-allowlist-missing-entry-enforce",
+		"adapter-allowlist-signature-invalid-enforce",
+		"adapter-allowlist-allowed-path-enforce",
+		"adapter-allowlist-policy-conflict",
+	}
+	backends := MainstreamSandboxBackendMatrix()
+	for _, caseID := range requiredCases {
+		for _, backend := range backends {
+			if !coverage[caseID][backend.Backend] {
+				t.Fatalf("missing allowlist matrix coverage case=%s backend=%s", caseID, backend.Backend)
+			}
+		}
+	}
+}
+
+func TestSandboxAdapterConformanceAllowlistTaxonomyDriftClassification(t *testing.T) {
+	drift := classifyAllowlistMatrixDrift(
+		adaptermanifest.CodeAllowlistMissingEntry,
+		AdapterAllowlistActivationResult{Accepted: false, ContractCode: adaptermanifest.CodeInvalidField},
+	)
+	if drift != SandboxDriftAllowlistTaxonomy {
+		t.Fatalf("allowlist taxonomy drift classification mismatch: %q", drift)
 	}
 }

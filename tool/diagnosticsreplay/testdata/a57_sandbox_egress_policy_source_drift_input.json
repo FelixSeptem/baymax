@@ -1,0 +1,36 @@
+{
+  "version": "sandbox_egress.v1",
+  "cases": [
+    {
+      "name": "sandbox_egress_policy_source_drift_case",
+      "run": {
+        "sandbox_egress_action": "deny",
+        "sandbox_egress_violation_total": 1,
+        "sandbox_egress_policy_source": "default_action",
+        "adapter_allowlist_decision": "deny",
+        "adapter_allowlist_block_total": 1,
+        "adapter_allowlist_primary_code": "adapter.allowlist.missing_entry"
+      },
+      "stream": {
+        "sandbox_egress_action": "deny",
+        "sandbox_egress_violation_total": 1,
+        "sandbox_egress_policy_source": "by_tool",
+        "adapter_allowlist_decision": "deny",
+        "adapter_allowlist_block_total": 1,
+        "adapter_allowlist_primary_code": "adapter.allowlist.missing_entry"
+      },
+      "expected": {
+        "sandbox_egress_action": "deny",
+        "sandbox_egress_violation_total": 1,
+        "sandbox_egress_policy_source": "default_action",
+        "adapter_allowlist_decision": "deny",
+        "adapter_allowlist_block_total": 1,
+        "adapter_allowlist_primary_code": "adapter.allowlist.missing_entry"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

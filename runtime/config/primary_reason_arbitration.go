@@ -259,6 +259,22 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 		Code:   "sandbox.rollout.relieve_capacity_pressure",
 		Domain: ReadinessDomainRuntime,
 	},
+	ReadinessCodeSandboxEgressPolicyInvalid: {
+		Code:   "sandbox.egress.fix_policy",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxEgressAllowlistInvalid: {
+		Code:   "sandbox.egress.fix_allowlist",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxEgressRuleConflict: {
+		Code:   "sandbox.egress.resolve_rule_conflict",
+		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeSandboxEgressViolationBudgetBreached: {
+		Code:   "sandbox.egress.reduce_violation_rate",
+		Domain: ReadinessDomainRuntime,
+	},
 	ReadinessCodeSandboxSessionModeUnsupported: {
 		Code:   "sandbox.adjust_session_mode",
 		Domain: ReadinessDomainRuntime,
@@ -298,6 +314,18 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 	ReadinessCodeMemoryFallbackTargetUnavailable: {
 		Code:   "runtime.memory.restore_fallback_target",
 		Domain: ReadinessDomainRuntime,
+	},
+	ReadinessCodeAdapterAllowlistMissingEntry: {
+		Code:   "adapter.allowlist.add_required_entry",
+		Domain: ReadinessDomainAdapter,
+	},
+	ReadinessCodeAdapterAllowlistSignatureInvalid: {
+		Code:   "adapter.allowlist.fix_signature_status",
+		Domain: ReadinessDomainAdapter,
+	},
+	ReadinessCodeAdapterAllowlistPolicyConflict: {
+		Code:   "adapter.allowlist.align_policy",
+		Domain: ReadinessDomainAdapter,
 	},
 	ReadinessCodeObservabilityExportProfileInvalid: {
 		Code:   "runtime.observability.export.fix_profile",
@@ -448,13 +476,21 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 		return 1
 	case ReadinessCodeAdapterRequiredUnavailable, ReadinessCodeAdapterRequiredCircuitOpen:
 		return 3
+	case ReadinessCodeAdapterAllowlistSignatureInvalid, ReadinessCodeAdapterAllowlistPolicyConflict:
+		return 3
+	case ReadinessCodeAdapterAllowlistMissingEntry:
+		return 3
 	case ReadinessCodeSandboxRequiredUnavailable, ReadinessCodeSandboxProfileInvalid, ReadinessCodeSandboxCapabilityMismatch, ReadinessCodeSandboxSessionModeUnsupported:
+		return 3
+	case ReadinessCodeSandboxEgressPolicyInvalid, ReadinessCodeSandboxEgressAllowlistInvalid:
 		return 3
 	case ReadinessCodeReactProviderToolCallingUnsupported:
 		return 3
 	case ReadinessCodeAdapterOptionalUnavailable, ReadinessCodeAdapterOptionalCircuitOpen, ReadinessCodeAdapterDegraded, ReadinessCodeAdapterHalfOpenDegraded:
 		return 4
 	case ReadinessCodeSandboxOptionalUnavailable:
+		return 4
+	case ReadinessCodeSandboxEgressRuleConflict, ReadinessCodeSandboxEgressViolationBudgetBreached:
 		return 4
 	case ReadinessCodeReactLoopDisabled,
 		ReadinessCodeReactStreamDispatchUnavailable,

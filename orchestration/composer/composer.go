@@ -280,6 +280,9 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	AdapterAllowlistDecision             string
+	AdapterAllowlistBlockTotal           int
+	AdapterAllowlistPrimaryCode          string
 	SandboxRolloutPhase                  string
 	SandboxCapacityAction                string
 	SandboxCapacityDegradedPolicy        string
@@ -1034,6 +1037,13 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
 		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
 	}
+	if strings.TrimSpace(stats.AdapterAllowlistDecision) != "" {
+		payload["adapter_allowlist_decision"] = strings.TrimSpace(stats.AdapterAllowlistDecision)
+	}
+	payload["adapter_allowlist_block_total"] = stats.AdapterAllowlistBlockTotal
+	if strings.TrimSpace(stats.AdapterAllowlistPrimaryCode) != "" {
+		payload["adapter_allowlist_primary_code"] = strings.TrimSpace(stats.AdapterAllowlistPrimaryCode)
+	}
 	if strings.TrimSpace(stats.SandboxRolloutPhase) != "" {
 		payload["sandbox_rollout_phase"] = strings.TrimSpace(stats.SandboxRolloutPhase)
 	}
@@ -1051,6 +1061,9 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 			payload["sandbox_health_budget_status"] = strings.TrimSpace(state.HealthBudgetStatus)
 		}
 		payload["sandbox_health_budget_breach_total"] = state.HealthBudgetBreachTotal
+		if _, ok := payload["sandbox_egress_violation_total"]; !ok {
+			payload["sandbox_egress_violation_total"] = state.EgressViolationTotal
+		}
 		payload["sandbox_freeze_state"] = state.FreezeState
 		if strings.TrimSpace(state.FreezeReasonCode) != "" {
 			payload["sandbox_freeze_reason_code"] = strings.TrimSpace(state.FreezeReasonCode)

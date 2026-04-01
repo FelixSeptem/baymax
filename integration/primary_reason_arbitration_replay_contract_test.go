@@ -36,6 +36,12 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a51_sandbox_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionA51V1,
 		},
+		{
+			name:          "a57-sandbox-egress",
+			versionFolder: "tool",
+			fixture:       "a57_sandbox_egress_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionA57V1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -182,6 +188,41 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeSandboxSessionLifecycleDrift,
 			messageHas: "sandbox session lifecycle drift",
 		},
+		{
+			name:       "a57-sandbox-egress-action-drift",
+			versionDir: "tool",
+			fixture:    "a57_sandbox_egress_action_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxEgressActionDrift,
+			messageHas: "sandbox egress action drift",
+		},
+		{
+			name:       "a57-sandbox-egress-policy-source-drift",
+			versionDir: "tool",
+			fixture:    "a57_sandbox_egress_policy_source_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxEgressPolicySourceDrift,
+			messageHas: "policy source drift",
+		},
+		{
+			name:       "a57-sandbox-egress-violation-taxonomy-drift",
+			versionDir: "tool",
+			fixture:    "a57_sandbox_egress_violation_taxonomy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSandboxEgressViolationTaxonomyDrift,
+			messageHas: "violation taxonomy drift",
+		},
+		{
+			name:       "a57-adapter-allowlist-decision-drift",
+			versionDir: "tool",
+			fixture:    "a57_adapter_allowlist_decision_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeAdapterAllowlistDecisionDrift,
+			messageHas: "allowlist decision drift",
+		},
+		{
+			name:       "a57-adapter-allowlist-taxonomy-drift",
+			versionDir: "tool",
+			fixture:    "a57_adapter_allowlist_taxonomy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift,
+			messageHas: "allowlist taxonomy drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -203,6 +244,41 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 				t.Fatalf("error message=%q, want contains %q", vErr.Message, tc.messageHas)
 			}
 		})
+	}
+}
+
+func TestReplayContractSandboxEgressAllowlistFixture(t *testing.T) {
+	raw := mustReadArbitrationReplayFixture(t, "tool", "a57_sandbox_egress_success_input.json")
+	out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
+	}
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionA57V1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionA57V1)
+	}
+	if len(out.Cases) == 0 {
+		t.Fatal("normalized output cases should not be empty")
+	}
+	replayOut, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON replay failed: %v", err)
+	}
+	if !reflect.DeepEqual(out, replayOut) {
+		t.Fatalf("replay output drift first=%#v replay=%#v", out, replayOut)
+	}
+
+	_, err = diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+		mustReadArbitrationReplayFixture(t, "tool", "a57_adapter_allowlist_taxonomy_drift_input.json"),
+	)
+	if err == nil {
+		t.Fatal("taxonomy drift fixture should fail")
+	}
+	vErr, ok := err.(*diagnosticsreplay.ValidationError)
+	if !ok {
+		t.Fatalf("error type=%T, want *ValidationError", err)
+	}
+	if vErr.Code != diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift {
+		t.Fatalf("error code=%q, want %q", vErr.Code, diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift)
 	}
 }
 

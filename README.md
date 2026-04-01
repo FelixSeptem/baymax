@@ -14,9 +14,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-03-31）：
-- 已归档并稳定：A4-A55。
-- A56（Introduce React Loop And Tool Calling Parity Contract）进行中。
+- 已归档并稳定：A4-A56。
 - A57（Introduce Sandbox Egress Governance And Adapter Allowlist Contract）进行中。
+- A58（Introduce Policy Precedence And Decision Trace Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,10 +225,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A56 `introduce-react-loop-and-tool-calling-parity-contract-a56`：ReAct loop + tool-calling parity 提案进行中（Run/Stream tool dispatch/feedback 语义收敛、provider tool-calling normalization、`react.v1` replay fixture 与独立 gate）。
-- A57 `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`：sandbox egress + adapter allowlist 提案进行中（`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission/replay/gate 一体化治理）。
+- A57 `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`：sandbox egress + adapter allowlist 提案进行中（`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission/replay/gate 一体化治理；独立 gate：`check-sandbox-egress-allowlist-contract.*`，CI check：`sandbox-egress-allowlist-gate`）。
+- A58 `introduce-policy-precedence-and-decision-trace-contract-a58`：policy precedence + decision trace 提案进行中（统一 action/s2/sandbox/egress/allowlist/admission precedence matrix、deterministic tie-break、`policy_stack.v1` replay fixture 与独立 gate）。
 
 近期已归档能力（摘要）：
+- A56 `introduce-react-loop-and-tool-calling-parity-contract-a56`：已归档并稳定（ReAct loop Run/Stream parity、tool-calling canonicalization、`react.v1` replay fixture 与独立 gate）。
 - A55 `introduce-observability-export-and-diagnostics-bundle-contract-a55`：已归档并稳定（observability exporter profile、diagnostics bundle schema、readiness/replay/gate 一体化契约）。
 - A54 `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`：已归档并稳定（统一 `Query/Upsert/Delete` SPI、`external_spi|builtin_filesystem` 模式切换、mem0/zep/openviking profile pack、readiness/diagnostics/replay/conformance/gate 一体化契约）。
 - A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：已归档并稳定（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
@@ -297,6 +298,7 @@ go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
 bash scripts/check-react-contract.sh
+bash scripts/check-sandbox-egress-allowlist-contract.sh
 bash scripts/check-observability-export-and-bundle-contract.sh
 bash scripts/check-memory-contract-conformance.sh
 bash scripts/check-sandbox-rollout-governance-contract.sh
@@ -309,6 +311,7 @@ Windows 质量门禁：
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
 pwsh -File scripts/check-react-contract.ps1
+pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
 pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
 pwsh -File scripts/check-memory-contract-conformance.ps1
 pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1

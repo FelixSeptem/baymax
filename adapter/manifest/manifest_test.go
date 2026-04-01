@@ -372,6 +372,68 @@ func TestParseSandboxManifestUnknownProfileFailFast(t *testing.T) {
 	}
 }
 
+func TestParseManifestAllowlistCompleteMetadata(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "allowlist-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "allowlist": {
+    "adapter_id": "adapter.sample",
+    "publisher": "acme",
+    "version": "1.2.3",
+    "signature_status": "valid"
+  }
+}`)
+	manifest, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse allowlist manifest: %v", err)
+	}
+	if manifest.Allowlist == nil {
+		t.Fatal("allowlist metadata should be present")
+	}
+	if manifest.Allowlist.AdapterID != "adapter.sample" ||
+		manifest.Allowlist.Publisher != "acme" ||
+		manifest.Allowlist.Version != "1.2.3" ||
+		manifest.Allowlist.SignatureStatus != allowlistSignatureStatusValid {
+		t.Fatalf("unexpected allowlist metadata normalization: %#v", manifest.Allowlist)
+	}
+}
+
+func TestParseManifestAllowlistMissingPublisherFailFast(t *testing.T) {
+	raw := []byte(`{
+  "type": "tool",
+  "name": "allowlist-tool",
+  "version": "0.1.0",
+  "contract_profile_version": "v1alpha1",
+  "baymax_compat": ">=0.26.0-rc.1 <0.27.0",
+  "capabilities": {
+    "required": ["tool.invoke.required_input"],
+    "optional": []
+  },
+  "conformance_profile": "tool-invoke-fail-fast",
+  "allowlist": {
+    "adapter_id": "adapter.sample",
+    "version": "1.2.3",
+    "signature_status": "valid"
+  }
+}`)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected missing allowlist.publisher failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeMissingField || ce.Field != "allowlist.publisher" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
 func TestActivateSandboxManifestHostMismatchFailFast(t *testing.T) {
 	manifest := Manifest{
 		Type:                   "tool",
@@ -467,6 +529,152 @@ func TestActivateSandboxManifestMissingProfileFailFast(t *testing.T) {
 	ce := contractErr(t, err)
 	if ce.Code != CodeSandboxProfileUnknown || ce.Field != "sandbox_profile_id" {
 		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateManifestAllowlistMissingEntryFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "allowlist-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Allowlist: &AllowlistID{
+			AdapterID:       "adapter.sample",
+			Publisher:       "acme",
+			Version:         "1.2.3",
+			SignatureStatus: allowlistSignatureStatusValid,
+		},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			Allowlist: AllowlistPolicy{
+				Enabled:            true,
+				EnforcementMode:    allowlistEnforcementModeEnforce,
+				OnUnknownSignature: allowlistUnknownSignatureDeny,
+				Entries: []AllowlistID{
+					{
+						AdapterID:       "adapter.other",
+						Publisher:       "acme",
+						Version:         "1.2.3",
+						SignatureStatus: allowlistSignatureStatusValid,
+					},
+				},
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected allowlist missing entry failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeAllowlistMissingEntry || ce.Field != "allowlist.entries" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateManifestAllowlistSignatureInvalidFailFast(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "allowlist-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Allowlist: &AllowlistID{
+			AdapterID:       "adapter.sample",
+			Publisher:       "acme",
+			Version:         "1.2.3",
+			SignatureStatus: allowlistSignatureStatusInvalid,
+		},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			Allowlist: AllowlistPolicy{
+				Enabled:            true,
+				EnforcementMode:    allowlistEnforcementModeEnforce,
+				OnUnknownSignature: allowlistUnknownSignatureDeny,
+				Entries: []AllowlistID{
+					{
+						AdapterID:       "adapter.sample",
+						Publisher:       "acme",
+						Version:         "1.2.3",
+						SignatureStatus: allowlistSignatureStatusValid,
+					},
+				},
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected allowlist signature invalid failure")
+	}
+	ce := contractErr(t, err)
+	if ce.Code != CodeAllowlistSignatureInvalid || ce.Field != "allowlist.signature_status" {
+		t.Fatalf("unexpected error: %#v", ce)
+	}
+}
+
+func TestActivateManifestAllowlistAllowedPath(t *testing.T) {
+	manifest := Manifest{
+		Type:                   "tool",
+		Name:                   "allowlist-tool",
+		Version:                "0.1.0",
+		ContractProfileVersion: adapterprofile.ProfileV1Alpha1,
+		BaymaxCompat:           ">=0.26.0-rc.1 <0.27.0",
+		Capabilities: Capabilities{
+			Required: []string{"tool.invoke.required_input"},
+			Optional: []string{},
+		},
+		ConformanceProfile: "tool-invoke-fail-fast",
+		Allowlist: &AllowlistID{
+			AdapterID:       "adapter.sample",
+			Publisher:       "acme",
+			Version:         "1.2.3",
+			SignatureStatus: allowlistSignatureStatusValid,
+		},
+	}
+	_, err := ActivateWithRequestAndProfileWindowWithContext(
+		manifest,
+		"0.26.0-rc.2",
+		[]string{"tool.invoke.required_input"},
+		CapabilityRequest{Required: []string{"tool.invoke.required_input"}},
+		adapterprofile.DefaultWindow(),
+		ActivationContext{
+			Allowlist: AllowlistPolicy{
+				Enabled:            true,
+				EnforcementMode:    allowlistEnforcementModeEnforce,
+				OnUnknownSignature: allowlistUnknownSignatureDeny,
+				Entries: []AllowlistID{
+					{
+						AdapterID:       "adapter.sample",
+						Publisher:       "acme",
+						Version:         "1.2.3",
+						SignatureStatus: allowlistSignatureStatusValid,
+					},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected allowlist allowed path success, got %v", err)
 	}
 }
 

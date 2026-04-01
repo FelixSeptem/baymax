@@ -634,6 +634,131 @@ func TestAdapterHealthConfigValidationRejectsInvalidDurations(t *testing.T) {
 	}
 }
 
+func TestAdapterAllowlistDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Adapter.Allowlist.Enabled {
+		t.Fatal("adapter.allowlist.enabled = true, want false")
+	}
+	if cfg.Adapter.Allowlist.EnforcementMode != AdapterAllowlistEnforcementModeEnforce {
+		t.Fatalf(
+			"adapter.allowlist.enforcement_mode = %q, want %q",
+			cfg.Adapter.Allowlist.EnforcementMode,
+			AdapterAllowlistEnforcementModeEnforce,
+		)
+	}
+	if cfg.Adapter.Allowlist.OnUnknownSignature != AdapterAllowlistUnknownSignatureDeny {
+		t.Fatalf(
+			"adapter.allowlist.on_unknown_signature = %q, want %q",
+			cfg.Adapter.Allowlist.OnUnknownSignature,
+			AdapterAllowlistUnknownSignatureDeny,
+		)
+	}
+	if len(cfg.Adapter.Allowlist.Entries) != 0 {
+		t.Fatalf("adapter.allowlist.entries = %#v, want empty", cfg.Adapter.Allowlist.Entries)
+	}
+}
+
+func TestAdapterAllowlistEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_ADAPTER_ALLOWLIST_ENABLED", "true")
+	t.Setenv("BAYMAX_ADAPTER_ALLOWLIST_ENFORCEMENT_MODE", AdapterAllowlistEnforcementModeObserve)
+	t.Setenv("BAYMAX_ADAPTER_ALLOWLIST_ON_UNKNOWN_SIGNATURE", AdapterAllowlistUnknownSignatureAllowAndRecord)
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+adapter:
+  allowlist:
+    enabled: false
+    enforcement_mode: enforce
+    on_unknown_signature: deny
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Adapter.Allowlist.Enabled {
+		t.Fatal("adapter.allowlist.enabled = false, want true")
+	}
+	if cfg.Adapter.Allowlist.EnforcementMode != AdapterAllowlistEnforcementModeObserve {
+		t.Fatalf(
+			"adapter.allowlist.enforcement_mode = %q, want %q",
+			cfg.Adapter.Allowlist.EnforcementMode,
+			AdapterAllowlistEnforcementModeObserve,
+		)
+	}
+	if cfg.Adapter.Allowlist.OnUnknownSignature != AdapterAllowlistUnknownSignatureAllowAndRecord {
+		t.Fatalf(
+			"adapter.allowlist.on_unknown_signature = %q, want %q",
+			cfg.Adapter.Allowlist.OnUnknownSignature,
+			AdapterAllowlistUnknownSignatureAllowAndRecord,
+		)
+	}
+}
+
+func TestValidateRejectsInvalidAdapterAllowlistConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Adapter.Allowlist.EnforcementMode = "strict"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.allowlist.enforcement_mode") {
+		t.Fatalf("expected enforcement_mode validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Adapter.Allowlist.Entries = []AdapterAllowlistEntry{
+		{
+			AdapterID:       "adapter.one",
+			Publisher:       "",
+			Version:         "1.0.0",
+			SignatureStatus: AdapterAllowlistSignatureStatusValid,
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.allowlist.entries[0].publisher") {
+		t.Fatalf("expected entry publisher validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Adapter.Allowlist.Entries = []AdapterAllowlistEntry{
+		{
+			AdapterID:       "adapter.one",
+			Publisher:       "acme",
+			Version:         "1.0.0",
+			SignatureStatus: "trusted",
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "signature_status") {
+		t.Fatalf("expected signature_status validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Adapter.Allowlist.EnforcementMode = AdapterAllowlistEnforcementModeObserve
+	cfg.Adapter.Allowlist.OnUnknownSignature = AdapterAllowlistUnknownSignatureDeny
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "adapter.allowlist.policy_conflict") {
+		t.Fatalf("expected policy_conflict validation error, got %v", err)
+	}
+}
+
+func TestLoadRejectsMalformedAdapterAllowlistEntries(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+adapter:
+  allowlist:
+    enabled: true
+    enforcement_mode: enforce
+    on_unknown_signature: deny
+    entries:
+      - adapter_id: adapter.one
+        version: 1.0.0
+        signature_status: valid
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err == nil || !strings.Contains(err.Error(), "adapter.allowlist.entries[0].publisher") {
+		t.Fatalf("expected malformed adapter.allowlist entry fail-fast, got %v", err)
+	}
+}
+
 func TestRuntimeOperationProfilesDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Runtime.OperationProfiles.DefaultProfile != OperationProfileLegacy {
@@ -2048,6 +2173,72 @@ security:
 	}
 }
 
+func TestSecuritySandboxEgressDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Security.Sandbox.Egress.Enabled {
+		t.Fatal("security.sandbox.egress.enabled = false, want true")
+	}
+	if cfg.Security.Sandbox.Egress.DefaultAction != SecuritySandboxEgressActionDeny {
+		t.Fatalf(
+			"security.sandbox.egress.default_action = %q, want %q",
+			cfg.Security.Sandbox.Egress.DefaultAction,
+			SecuritySandboxEgressActionDeny,
+		)
+	}
+	if cfg.Security.Sandbox.Egress.OnViolation != SecuritySandboxEgressOnViolationDeny {
+		t.Fatalf(
+			"security.sandbox.egress.on_violation = %q, want %q",
+			cfg.Security.Sandbox.Egress.OnViolation,
+			SecuritySandboxEgressOnViolationDeny,
+		)
+	}
+	if len(cfg.Security.Sandbox.Egress.Allowlist) != 0 {
+		t.Fatalf("security.sandbox.egress.allowlist = %#v, want empty", cfg.Security.Sandbox.Egress.Allowlist)
+	}
+}
+
+func TestSecuritySandboxEgressEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_EGRESS_DEFAULT_ACTION", SecuritySandboxEgressActionAllowAndRecord)
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_EGRESS_ON_VIOLATION", SecuritySandboxEgressOnViolationAllowAndRecord)
+	t.Setenv("BAYMAX_SECURITY_SANDBOX_EGRESS_ALLOWLIST", "api.env.example,*.env.example")
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  sandbox:
+    egress:
+      default_action: deny
+      on_violation: deny
+      allowlist:
+        - api.file.example
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Security.Sandbox.Egress.DefaultAction != SecuritySandboxEgressActionAllowAndRecord {
+		t.Fatalf(
+			"security.sandbox.egress.default_action = %q, want %q",
+			cfg.Security.Sandbox.Egress.DefaultAction,
+			SecuritySandboxEgressActionAllowAndRecord,
+		)
+	}
+	if cfg.Security.Sandbox.Egress.OnViolation != SecuritySandboxEgressOnViolationAllowAndRecord {
+		t.Fatalf(
+			"security.sandbox.egress.on_violation = %q, want %q",
+			cfg.Security.Sandbox.Egress.OnViolation,
+			SecuritySandboxEgressOnViolationAllowAndRecord,
+		)
+	}
+	if len(cfg.Security.Sandbox.Egress.Allowlist) != 2 ||
+		cfg.Security.Sandbox.Egress.Allowlist[0] != "api.env.example" ||
+		cfg.Security.Sandbox.Egress.Allowlist[1] != "*.env.example" {
+		t.Fatalf("security.sandbox.egress.allowlist = %#v, want env override", cfg.Security.Sandbox.Egress.Allowlist)
+	}
+}
+
 func TestValidateRejectsInvalidSandboxEnums(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Security.Sandbox.Mode = "strict"
@@ -2077,6 +2268,53 @@ func TestValidateRejectsInvalidSandboxEnums(t *testing.T) {
 	cfg.Security.Sandbox.Capacity.DegradedPolicy = "shadow_deny"
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.capacity.degraded_policy") {
 		t.Fatalf("expected sandbox capacity degraded_policy validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidSandboxEgressConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Security.Sandbox.Egress.DefaultAction = "host"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.egress.default_action") {
+		t.Fatalf("expected sandbox egress default_action validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Egress.OnViolation = "warn"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.egress.on_violation") {
+		t.Fatalf("expected sandbox egress on_violation validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Egress.Allowlist = []string{"bad host"}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.egress.allowlist") {
+		t.Fatalf("expected sandbox egress allowlist validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Security.Sandbox.Egress.DefaultAction = SecuritySandboxEgressActionAllow
+	cfg.Security.Sandbox.Egress.Allowlist = []string{"api.example.com"}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "security.sandbox.egress.rule_conflict") {
+		t.Fatalf("expected sandbox egress rule_conflict validation error, got %v", err)
+	}
+}
+
+func TestLoadRejectsMalformedSandboxEgressAllowlistEntry(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+security:
+  sandbox:
+    egress:
+      default_action: deny
+      on_violation: deny
+      allowlist:
+        - bad host
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err == nil || !strings.Contains(err.Error(), "security.sandbox.egress.allowlist") {
+		t.Fatalf("expected malformed sandbox egress allowlist fail-fast, got %v", err)
 	}
 }
 

@@ -74,6 +74,13 @@ const (
 	ReadinessCodeSandboxRolloutHealthBreached         = "sandbox.rollout.health_budget_breached"
 	ReadinessCodeSandboxRolloutFrozen                 = "sandbox.rollout.frozen"
 	ReadinessCodeSandboxRolloutCapacityBlocked        = "sandbox.rollout.capacity_unavailable"
+	ReadinessCodeSandboxEgressPolicyInvalid           = "sandbox.egress.policy_invalid"
+	ReadinessCodeSandboxEgressAllowlistInvalid        = "sandbox.egress.allowlist_invalid"
+	ReadinessCodeSandboxEgressRuleConflict            = "sandbox.egress.rule_conflict"
+	ReadinessCodeSandboxEgressViolationBudgetBreached = "sandbox.egress.violation_budget_breached"
+	ReadinessCodeAdapterAllowlistMissingEntry         = "adapter.allowlist.missing_entry"
+	ReadinessCodeAdapterAllowlistSignatureInvalid     = "adapter.allowlist.signature_invalid"
+	ReadinessCodeAdapterAllowlistPolicyConflict       = "adapter.allowlist.policy_conflict"
 	ReadinessCodeMemoryModeInvalid                    = "memory.mode_invalid"
 	ReadinessCodeMemoryProfileMissing                 = "memory.profile_missing"
 	ReadinessCodeMemoryProviderNotSupported           = "memory.provider_not_supported"
@@ -261,6 +268,9 @@ type ReactReadinessDependencySnapshot struct {
 type SandboxRolloutRuntimeState struct {
 	HealthBudgetStatus      string    `json:"health_budget_status,omitempty"`
 	HealthBudgetBreachTotal int       `json:"health_budget_breach_total,omitempty"`
+	EgressViolationTotal    int       `json:"egress_violation_total,omitempty"`
+	EgressViolationBudget   int       `json:"egress_violation_budget,omitempty"`
+	EgressBudgetBreached    bool      `json:"egress_budget_breached,omitempty"`
 	FreezeState             bool      `json:"freeze_state,omitempty"`
 	FreezeReasonCode        string    `json:"freeze_reason_code,omitempty"`
 	CapacityQueueDepth      int       `json:"capacity_queue_depth,omitempty"`
@@ -468,6 +478,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 	findings = append(findings, memoryReadinessFindings(cfg)...)
 	findings = append(findings, observabilityReadinessFindings(cfg)...)
 	findings = append(findings, m.sandboxReadinessFindings(cfg)...)
+	findings = append(findings, m.adapterAllowlistReadinessFindings(cfg)...)
 	adapterResults, adapterFindings := m.adapterHealthReadinessFindings(cfg)
 	findings = append(findings, adapterFindings...)
 	findings = canonicalizeReadinessFindings(findings)
@@ -788,6 +799,7 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 		return nil
 	}
 	sandboxCfg := cfg.Security.Sandbox
+	egressCfg := sandboxCfg.Egress
 	severity := ReadinessSeverityWarning
 	if sandboxCfg.Required {
 		severity = ReadinessSeverityError
@@ -810,26 +822,35 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	freezeState := rolloutState.FreezeState || rolloutPhase == SecuritySandboxRolloutPhaseFrozen
 	capacityDegradedPolicy := normalizeSandboxCapacityDegradedPolicy(sandboxCfg.Capacity.DegradedPolicy)
 	metadataBase := map[string]any{
-		"sandbox_enabled":                true,
-		"sandbox_required":               sandboxCfg.Required,
-		"sandbox_mode":                   strings.ToLower(strings.TrimSpace(sandboxCfg.Mode)),
-		"sandbox_backend":                strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend)),
-		"sandbox_session_mode":           strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)),
-		"sandbox_rollout_phase":          rolloutPhase,
-		"sandbox_capacity_action":        capacityAction,
-		"sandbox_capacity_queue_depth":   capacityQueueDepth,
-		"sandbox_capacity_inflight":      capacityInflight,
-		"sandbox_capacity_policy":        capacityDegradedPolicy,
-		"sandbox_health_budget_status":   healthBudgetStatus,
-		"sandbox_health_budget_breaches": rolloutState.HealthBudgetBreachTotal,
-		"sandbox_freeze_state":           freezeState,
+		"sandbox_enabled":                 true,
+		"sandbox_required":                sandboxCfg.Required,
+		"sandbox_mode":                    strings.ToLower(strings.TrimSpace(sandboxCfg.Mode)),
+		"sandbox_backend":                 strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend)),
+		"sandbox_session_mode":            strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.SessionMode)),
+		"sandbox_rollout_phase":           rolloutPhase,
+		"sandbox_capacity_action":         capacityAction,
+		"sandbox_capacity_queue_depth":    capacityQueueDepth,
+		"sandbox_capacity_inflight":       capacityInflight,
+		"sandbox_capacity_policy":         capacityDegradedPolicy,
+		"sandbox_health_budget_status":    healthBudgetStatus,
+		"sandbox_health_budget_breaches":  rolloutState.HealthBudgetBreachTotal,
+		"sandbox_freeze_state":            freezeState,
+		"sandbox_egress_enabled":          egressCfg.Enabled,
+		"sandbox_egress_default_action":   strings.ToLower(strings.TrimSpace(egressCfg.DefaultAction)),
+		"sandbox_egress_on_violation":     strings.ToLower(strings.TrimSpace(egressCfg.OnViolation)),
+		"sandbox_egress_allowlist_total":  len(egressCfg.Allowlist),
+		"sandbox_egress_by_tool_total":    len(egressCfg.ByTool),
+		"sandbox_egress_violation_total":  rolloutState.EgressViolationTotal,
+		"sandbox_egress_violation_budget": rolloutState.EgressViolationBudget,
+		"sandbox_egress_budget_breached":  rolloutState.EgressBudgetBreached,
 	}
 	if reason := strings.TrimSpace(rolloutState.FreezeReasonCode); reason != "" {
 		metadataBase["sandbox_freeze_reason_code"] = reason
 	}
 	selectedProfile := ResolveSandboxProfile(sandboxCfg, "")
 	metadataBase["sandbox_profile"] = selectedProfile
-	findings := make([]ReadinessFinding, 0, 6)
+	findings := make([]ReadinessFinding, 0, 10)
+	findings = append(findings, sandboxEgressReadinessFindings(egressCfg, rolloutState, metadataBase)...)
 	configuredBackend := strings.ToLower(strings.TrimSpace(sandboxCfg.Executor.Backend))
 	hostOS := strings.ToLower(strings.TrimSpace(runtime.GOOS))
 	hostArch := strings.ToLower(strings.TrimSpace(runtime.GOARCH))
@@ -1023,6 +1044,312 @@ func (m *Manager) sandboxReadinessFindings(cfg Config) []ReadinessFinding {
 	}
 
 	return findings
+}
+
+func sandboxEgressReadinessFindings(cfg SecuritySandboxEgressConfig, state SandboxRolloutRuntimeState, metadataBase map[string]any) []ReadinessFinding {
+	if !cfg.Enabled {
+		return nil
+	}
+	findings := make([]ReadinessFinding, 0, 4)
+	metadata := cloneAnyMap(metadataBase)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	defaultAction := strings.ToLower(strings.TrimSpace(cfg.DefaultAction))
+	onViolation := strings.ToLower(strings.TrimSpace(cfg.OnViolation))
+	metadata["sandbox_egress_default_action"] = defaultAction
+	metadata["sandbox_egress_on_violation"] = onViolation
+
+	if !isSandboxEgressAction(defaultAction) || !isSandboxEgressOnViolation(onViolation) {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxEgressPolicyInvalid,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityError,
+			Message:  "sandbox egress policy contains unsupported enum values",
+			Metadata: cloneAnyMap(metadata),
+		})
+	}
+
+	byToolKeys := make([]string, 0, len(cfg.ByTool))
+	for selector := range cfg.ByTool {
+		byToolKeys = append(byToolKeys, selector)
+	}
+	sort.Strings(byToolKeys)
+	for i := range byToolKeys {
+		selector := byToolKeys[i]
+		action := strings.ToLower(strings.TrimSpace(cfg.ByTool[selector]))
+		selectorField := fmt.Sprintf("security.sandbox.egress.by_tool.%s", selector)
+		if err := validateNamespaceToolKey(selector, selectorField); err != nil || !isSandboxEgressAction(action) {
+			itemMetadata := cloneAnyMap(metadata)
+			itemMetadata["sandbox_egress_selector"] = strings.ToLower(strings.TrimSpace(selector))
+			itemMetadata["sandbox_egress_selector_action"] = action
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeSandboxEgressPolicyInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "sandbox egress by_tool policy contains invalid selector or action",
+				Metadata: itemMetadata,
+			})
+		}
+	}
+
+	seenAllowlist := map[string]struct{}{}
+	for i := range cfg.Allowlist {
+		raw := cfg.Allowlist[i]
+		entry := strings.ToLower(strings.TrimSpace(raw))
+		field := fmt.Sprintf("security.sandbox.egress.allowlist[%d]", i)
+		if err := validateSandboxEgressAllowlistPattern(raw, field); err != nil {
+			itemMetadata := cloneAnyMap(metadata)
+			itemMetadata["sandbox_egress_allowlist_index"] = i
+			itemMetadata["sandbox_egress_allowlist_entry"] = entry
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeSandboxEgressAllowlistInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "sandbox egress allowlist contains malformed host pattern",
+				Metadata: itemMetadata,
+			})
+			continue
+		}
+		if _, ok := seenAllowlist[entry]; ok {
+			itemMetadata := cloneAnyMap(metadata)
+			itemMetadata["sandbox_egress_allowlist_entry"] = entry
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeSandboxEgressAllowlistInvalid,
+				Domain:   ReadinessDomainRuntime,
+				Severity: ReadinessSeverityError,
+				Message:  "sandbox egress allowlist contains duplicated host pattern",
+				Metadata: itemMetadata,
+			})
+			continue
+		}
+		seenAllowlist[entry] = struct{}{}
+	}
+
+	if defaultAction == SecuritySandboxEgressActionAllow && len(cfg.Allowlist) > 0 {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxEgressRuleConflict,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "sandbox egress allowlist conflicts with default_action=allow",
+			Metadata: cloneAnyMap(metadata),
+		})
+	}
+
+	if state.EgressBudgetBreached {
+		itemMetadata := cloneAnyMap(metadata)
+		itemMetadata["sandbox_egress_violation_total"] = state.EgressViolationTotal
+		itemMetadata["sandbox_egress_violation_budget"] = state.EgressViolationBudget
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeSandboxEgressViolationBudgetBreached,
+			Domain:   ReadinessDomainRuntime,
+			Severity: ReadinessSeverityWarning,
+			Message:  "sandbox egress violation budget is breached",
+			Metadata: itemMetadata,
+		})
+	}
+	return findings
+}
+
+func (m *Manager) adapterAllowlistReadinessFindings(cfg Config) []ReadinessFinding {
+	if m == nil || !cfg.Adapter.Allowlist.Enabled {
+		return nil
+	}
+	allowlist := cfg.Adapter.Allowlist
+	mode := strings.ToLower(strings.TrimSpace(allowlist.EnforcementMode))
+	onUnknown := strings.ToLower(strings.TrimSpace(allowlist.OnUnknownSignature))
+	baseMetadata := map[string]any{
+		"adapter_allowlist_enabled":              true,
+		"adapter_allowlist_enforcement_mode":     mode,
+		"adapter_allowlist_on_unknown_signature": onUnknown,
+		"adapter_allowlist_entry_total":          len(allowlist.Entries),
+	}
+	findings := make([]ReadinessFinding, 0, 4)
+	if !isAdapterAllowlistEnforcementMode(mode) || !isAdapterAllowlistUnknownSignature(onUnknown) {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeAdapterAllowlistPolicyConflict,
+			Domain:   ReadinessDomainAdapter,
+			Severity: ReadinessSeverityError,
+			Message:  "adapter allowlist policy contains unsupported enum values",
+			Metadata: cloneAnyMap(baseMetadata),
+		})
+		return findings
+	}
+	if mode == AdapterAllowlistEnforcementModeObserve && onUnknown == AdapterAllowlistUnknownSignatureDeny {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeAdapterAllowlistPolicyConflict,
+			Domain:   ReadinessDomainAdapter,
+			Severity: ReadinessSeverityError,
+			Message:  "adapter allowlist on_unknown_signature=deny conflicts with enforcement_mode=observe",
+			Metadata: cloneAnyMap(baseMetadata),
+		})
+		return findings
+	}
+	if mode == AdapterAllowlistEnforcementModeEnforce && onUnknown == AdapterAllowlistUnknownSignatureAllowAndRecord {
+		findings = append(findings, ReadinessFinding{
+			Code:     ReadinessCodeAdapterAllowlistPolicyConflict,
+			Domain:   ReadinessDomainAdapter,
+			Severity: ReadinessSeverityError,
+			Message:  "adapter allowlist on_unknown_signature=allow_and_record conflicts with enforcement_mode=enforce",
+			Metadata: cloneAnyMap(baseMetadata),
+		})
+		return findings
+	}
+
+	requiredAdapterIDs := make([]string, 0)
+	targets := m.AdapterHealthTargets()
+	for i := range targets {
+		if !targets[i].Required {
+			continue
+		}
+		adapterID := strings.ToLower(strings.TrimSpace(targets[i].Name))
+		if adapterID == "" {
+			continue
+		}
+		requiredAdapterIDs = append(requiredAdapterIDs, adapterID)
+	}
+	sort.Strings(requiredAdapterIDs)
+
+	for i := range requiredAdapterIDs {
+		adapterID := requiredAdapterIDs[i]
+		matches := matchingAdapterAllowlistEntriesByID(allowlist.Entries, adapterID)
+		if len(matches) == 0 {
+			severity := ReadinessSeverityWarning
+			if mode == AdapterAllowlistEnforcementModeEnforce {
+				severity = ReadinessSeverityError
+			}
+			itemMetadata := cloneAnyMap(baseMetadata)
+			itemMetadata["adapter_id"] = adapterID
+			itemMetadata["required"] = true
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeAdapterAllowlistMissingEntry,
+				Domain:   ReadinessDomainAdapter,
+				Severity: severity,
+				Message:  "required adapter identity is missing from allowlist entries",
+				Metadata: itemMetadata,
+			})
+			continue
+		}
+		if mode == AdapterAllowlistEnforcementModeEnforce && adapterAllowlistMatchesSignatureInvalid(matches, onUnknown) {
+			itemMetadata := cloneAnyMap(baseMetadata)
+			itemMetadata["adapter_id"] = adapterID
+			itemMetadata["required"] = true
+			itemMetadata["entry_signature_statuses"] = adapterAllowlistSignatureStatuses(matches)
+			findings = append(findings, ReadinessFinding{
+				Code:     ReadinessCodeAdapterAllowlistSignatureInvalid,
+				Domain:   ReadinessDomainAdapter,
+				Severity: ReadinessSeverityError,
+				Message:  "required adapter allowlist signature status is invalid under enforce mode",
+				Metadata: itemMetadata,
+			})
+		}
+	}
+
+	return findings
+}
+
+func matchingAdapterAllowlistEntriesByID(entries []AdapterAllowlistEntry, adapterID string) []AdapterAllowlistEntry {
+	target := strings.ToLower(strings.TrimSpace(adapterID))
+	if target == "" || len(entries) == 0 {
+		return nil
+	}
+	matches := make([]AdapterAllowlistEntry, 0)
+	for i := range entries {
+		if strings.ToLower(strings.TrimSpace(entries[i].AdapterID)) != target {
+			continue
+		}
+		matches = append(matches, entries[i])
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(matches[i].Publisher)) + "|" + strings.ToLower(strings.TrimSpace(matches[i].Version))
+		right := strings.ToLower(strings.TrimSpace(matches[j].Publisher)) + "|" + strings.ToLower(strings.TrimSpace(matches[j].Version))
+		if left != right {
+			return left < right
+		}
+		return strings.ToLower(strings.TrimSpace(matches[i].SignatureStatus)) < strings.ToLower(strings.TrimSpace(matches[j].SignatureStatus))
+	})
+	return matches
+}
+
+func adapterAllowlistMatchesSignatureInvalid(matches []AdapterAllowlistEntry, onUnknown string) bool {
+	if len(matches) == 0 {
+		return false
+	}
+	hasValid := false
+	hasUnknown := false
+	hasInvalid := false
+	for i := range matches {
+		switch strings.ToLower(strings.TrimSpace(matches[i].SignatureStatus)) {
+		case AdapterAllowlistSignatureStatusValid:
+			hasValid = true
+		case AdapterAllowlistSignatureStatusUnknown:
+			hasUnknown = true
+		case AdapterAllowlistSignatureStatusInvalid:
+			hasInvalid = true
+		}
+	}
+	if hasValid {
+		return false
+	}
+	if hasInvalid {
+		return true
+	}
+	if hasUnknown && onUnknown == AdapterAllowlistUnknownSignatureDeny {
+		return true
+	}
+	return false
+}
+
+func adapterAllowlistSignatureStatuses(entries []AdapterAllowlistEntry) []string {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for i := range entries {
+		status := strings.ToLower(strings.TrimSpace(entries[i].SignatureStatus))
+		if status == "" {
+			continue
+		}
+		out = append(out, status)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func isSandboxEgressAction(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case SecuritySandboxEgressActionDeny, SecuritySandboxEgressActionAllow, SecuritySandboxEgressActionAllowAndRecord:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSandboxEgressOnViolation(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case SecuritySandboxEgressOnViolationDeny, SecuritySandboxEgressOnViolationAllowAndRecord:
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdapterAllowlistEnforcementMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case AdapterAllowlistEnforcementModeObserve, AdapterAllowlistEnforcementModeEnforce:
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdapterAllowlistUnknownSignature(policy string) bool {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case AdapterAllowlistUnknownSignatureDeny, AdapterAllowlistUnknownSignatureAllowAndRecord:
+		return true
+	default:
+		return false
+	}
 }
 
 func componentReadinessFindings(component string, state RuntimeReadinessComponentState) []ReadinessFinding {
@@ -1970,6 +2297,9 @@ func cloneSandboxRolloutRuntimeState(in SandboxRolloutRuntimeState) SandboxRollo
 	return SandboxRolloutRuntimeState{
 		HealthBudgetStatus:      normalizeSandboxHealthBudgetStatus(in.HealthBudgetStatus),
 		HealthBudgetBreachTotal: in.HealthBudgetBreachTotal,
+		EgressViolationTotal:    in.EgressViolationTotal,
+		EgressViolationBudget:   in.EgressViolationBudget,
+		EgressBudgetBreached:    in.EgressBudgetBreached,
 		FreezeState:             in.FreezeState,
 		FreezeReasonCode:        strings.TrimSpace(in.FreezeReasonCode),
 		CapacityQueueDepth:      in.CapacityQueueDepth,

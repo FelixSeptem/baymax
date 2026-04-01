@@ -4,6 +4,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
+if (-not $env:GOCACHE) {
+    $env:GOCACHE = Join-Path $repoRoot ".gocache"
+}
 
 $readme = Get-Content -Raw README.md
 $docMatches = [regex]::Matches($readme, "docs/[A-Za-z0-9\-]+\.md")

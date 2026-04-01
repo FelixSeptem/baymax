@@ -93,6 +93,15 @@ func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig
 	stat := c.ensureRunStat(runID)
 	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
 	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	if strings.HasPrefix(strings.TrimSpace(decision.ReadinessPrimaryCode), "adapter.allowlist.") {
+		stat.AdapterAllowlistPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+		if decision.Outcome == runtimeconfig.ReadinessAdmissionOutcomeDeny {
+			stat.AdapterAllowlistDecision = "deny"
+			stat.AdapterAllowlistBlockTotal++
+		} else {
+			stat.AdapterAllowlistDecision = "allow"
+		}
+	}
 	stat.SandboxRolloutPhase = strings.TrimSpace(decision.SandboxRolloutPhase)
 	stat.SandboxCapacityAction = strings.TrimSpace(decision.SandboxCapacityAction)
 	stat.SandboxCapacityDegradedPolicy = strings.TrimSpace(decision.SandboxCapacityDegradedPolicy)

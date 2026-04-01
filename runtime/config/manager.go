@@ -482,6 +482,9 @@ func (m *Manager) updateSandboxRolloutGovernanceFromRun(rec runtimediag.RunRecor
 	if rec.InflightPeak > 0 {
 		state.CapacityInflight = rec.InflightPeak
 	}
+	if rec.SandboxEgressViolationTotal > 0 {
+		state.EgressViolationTotal += rec.SandboxEgressViolationTotal
+	}
 	state.CapacityAction = evaluateSandboxCapacityAction(sandboxCfg.Capacity, state.CapacityQueueDepth, state.CapacityInflight)
 	state.HealthBudgetStatus = evaluateSandboxHealthBudgetStatus(sandboxCfg.Rollout, rec)
 	if state.HealthBudgetStatus == SandboxHealthBudgetBreached {

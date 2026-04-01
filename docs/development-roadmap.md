@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-03-31
+更新时间：2026-04-01
 
 ## 定位
 
@@ -15,11 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-03-31：
-- 已归档并稳定：A4-A55（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+截至 2026-04-01：
+- 已归档并稳定：A4-A56（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-react-loop-and-tool-calling-parity-contract-a56`
   - `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`
+  - `introduce-policy-precedence-and-decision-trace-contract-a58`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -500,7 +500,7 @@ A54 gate 交付口径（当前实现）：
 - memory contract suites 以 `smoke|full` 分层执行（主线 quality gate 默认 smoke，CI 独立 `memory-contract-gate` job 默认 full）。
 - shell 与 PowerShell 脚本保持同一阻断语义（native command 非零即 fail-fast）。
 
-### P1：A56 react loop + tool-calling parity contract（进行中）
+### P1：A56 react loop + tool-calling parity contract（已归档）
 
 A56 Why now：
 - Run/Stream 在工具闭环路径长期存在语义偏移风险（step 边界、dispatch、feedback 与终止 reason 不完全同构）。
@@ -530,7 +530,7 @@ A56 一次性闭环审查（10.4）：
 补充参考（主流框架实现与设计查询，2026-03-31 对齐）：
 - 本轮“无遗漏”对比项目（官方文档优先）：
   - Coding Agent Runtime：Claude Code、OpenAI Codex、DeerFlow 2.0（明确采用 2.0 口径，不混用 1.x 结论）。
-  - Agent 编排框架：LangGraph、LlamaIndex Workflows、AutoGen、Semantic Kernel、CrewAI、Agno。
+  - Agent 编排框架：LangGraph、LlamaIndex Workflows、AutoGen、Semantic Kernel、CrewAI、Agno、AgentScope。
   - Memory 框架/引擎：Mem0、Zep、OpenViking、OpenClaw（并回看当前内置 filesystem memory 实现）。
 - 对齐维度统一采用 7 项：`权限/审批`、`sandbox 边界`、`subagent/多 agent 编排`、`memory 分层与生命周期`、`tool/MCP 接入治理`、`HITL 中断恢复`、`observability/eval`。
 - 关键实现信号（用于约束 A58+ 设计，不额外开新主线）：
@@ -539,16 +539,21 @@ A56 一次性闭环审查（10.4）：
   - DeerFlow 2.0：local/docker/k8s sandbox 模式、host bash 默认关闭、subagent 并行与上下文隔离、local long-term memory、LangSmith tracing；
   - LangGraph/AutoGen/LlamaIndex/Semantic Kernel：强调持久化 checkpoint、HITL interrupt/resume、工作流级状态可回放；
   - CrewAI/Agno：强调角色编排、memory 与 tracing 结合、团队级任务分解与可观测；
+  - AgentScope：强调 lifecycle hooks + middleware、统一 state/session 管理、plan notebook 与实时双向事件协议；
   - Mem0/Zep/OpenViking/OpenClaw：强调多层 memory（session/user/agent）、检索/重排、保留策略与 provider 互换能力。
 - 一次性补齐项目归并（保持现有优先级，不再拆平行提案）：
   - A58：统一策略栈 precedence（action/sandbox/egress/allowlist/admission）+ 决策解释链，补齐跨入口判定一致性；
   - A59：一次性补齐 memory scope、写入模式、检索质量、生命周期（retention/ttl/forget）与 builtin filesystem v2 治理；
   - A60：统一 token/tool/sandbox/memory 成本与时延预算 admission 规则；
-  - A61：补齐 OTel tracing 语义映射与最小 agent eval contract，固定跨框架回归口径；
-  - A62：补齐“交付易用性”example pack（主要 agent 模式一站式示例与可回归冒烟）；
+  - A61：补齐 OTel tracing 语义映射、agent eval contract，并合并 local/distributed evaluator 执行治理；
+  - A65：补齐 agent lifecycle hooks + tool middleware 合同，统一横切扩展面；
+  - A66：补齐统一 state/session snapshot 合同，打通跨模块恢复与迁移；
+  - A67：补齐 ReAct plan notebook + plan-change hook 合同，增强动态计划可控性；
+  - A68：实时双向事件协议专项（按业务触发），补齐 cancel/resume 与事件幂等合同；
   - A63：代码整合收敛专项（清理临时代码/文档、命名语义化、目录结构收敛），以“语义不变”为硬约束；
-  - A64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出），以“语义不变”为硬约束。
-- 执行约束：A58-A61 负责核心 runtime contract 缺口，A62 负责交付易用性收口，A63 负责代码整合收敛，A64 负责非语义性能工程化；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
+  - A64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出），以“语义不变”为硬约束；
+  - A62：补齐“交付易用性”example pack（主要 agent 模式一站式示例与可回归冒烟）；
+- 执行约束：A58-A61 负责核心 runtime contract 缺口，A65-A68 负责 agent runtime 基座能力补齐（A68 按实时交互需求触发），A63 负责代码整合收敛，A64 负责非语义性能工程化，A62 在前述能力相对稳定后承担交付易用性收口（example pack）；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
 
 参考链接（本轮核对，滚动更新）：
 - Claude Code docs（permissions/hooks/subagents/memory/MCP）：<https://docs.anthropic.com/en/docs/claude-code>
@@ -558,6 +563,8 @@ A56 一次性闭环审查（10.4）：
 - LangGraph docs（persistence/HITL/interrupt）：<https://langchain-ai.github.io/langgraph/>
 - CrewAI docs：<https://docs.crewai.com/>
 - Agno docs：<https://docs.agno.com/>
+- AgentScope docs：<https://doc.agentscope.io/>
+- AgentScope GitHub：<https://github.com/modelscope/agentscope>
 - AutoGen docs：<https://microsoft.github.io/autogen/>
 - LlamaIndex docs：<https://docs.llamaindex.ai/>
 - Semantic Kernel docs：<https://learn.microsoft.com/semantic-kernel/>
@@ -567,41 +574,49 @@ A56 一次性闭环审查（10.4）：
 - OpenClaw docs：<https://docs.openclaw.ai/>
 
 与在研项目的先后顺序（强依赖）：
-1. A56（进行中，P1）：ReAct loop + tool-calling parity contract（Run/Stream 顺滑闭环）。
-2. A57（进行中，P1）：sandbox egress 治理与 adapter allowlist contract。
-3. A58（下一优先级，P1）：policy precedence + decision trace contract（新增，紧急插入）。
-4. A59（A58 后优先落地，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
-5. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
-6. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（主流可观测/评测对齐）。
-7. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
-8. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
-9. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+1. A57（进行中，P1）：sandbox egress 治理与 adapter allowlist contract。
+2. A58（进行中，P1）：policy precedence + decision trace contract（本轮新建提案，优先承接 A57 联调冲突风险）。
+3. A59（下一优先级，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
+4. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
+5. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
+6. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
+7. A66（新增，P2）：unified state/session snapshot contract。
+8. A67（新增，P2）：react plan notebook + plan-change hook contract。
+9. A68（新增，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
+10. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+11. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+12. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 备选项目说明（避免“单一路线”误解）：
-- A58/A59/A60/A61/A62/A63/A64 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A56/A57 正在并行实施，A58 作为“跨策略层优先级治理”紧急插入项，用于降低并行实施带来的语义冲突风险。
+- A59/A60/A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A57/A58 正在并行实施，A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
-  - 若 A56/A57 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：A58 立即前置实施。
-  - 若 A56/A57 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：A59 与 scope 方案合并前置实施。
-  - 若成本或 P95 抖动在 A56/A57 上线窗口成为阻塞：A60 可提前实施。
-  - 若 tracing 字段与主流 OTel 后端对接成本持续偏高，或缺少稳定 agent 质量回归口径：A61 可前置实施。
-  - 若外部团队接入/迁移周期过长、样例复用率低、或示例与主链路契约脱节：A62 可前置实施。
+  - 若 A57/A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
+  - 若 A57/A58 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：A59 与 scope 方案合并前置实施。
+  - 若成本或 P95 抖动在 A57/A58 上线窗口成为阻塞：A60 可提前实施。
+  - 若 tracing 字段跨后端解释不一致，或评测执行耗时过长/不可续跑：A61 可前置实施（含 distributed eval 执行治理）。
+  - 若业务扩展频繁出现横切逻辑重复接线（审计、限流、缓存、鉴权）：A65 可前置实施。
+  - 若跨模块恢复/迁移需要统一状态导入导出：A66 可前置实施。
+  - 若 ReAct 场景出现计划漂移不可解释或计划恢复不稳定：A67 可前置实施。
+  - 若产品侧进入实时语音/实时协作阶段：A68 可前置实施。
   - 若仓库出现临时代码/文档积压、Axx 文案耦合扩散、模块命名与职责漂移：A63 可前置实施。
   - 若 CPU/GC 抖动、goroutine 峰值、allocs/op 退化成为主线风险：A64 可前置实施。
-- 无论是否前置切换，均不得改写 A56/A57 已冻结范围，只允许在其完成后做增量扩展。
+  - 若外部团队接入/迁移周期过长、样例复用率低、或示例与主链路契约脱节：A62 可前置实施（但需明确冻结口径，避免反复返工）。
+- 无论是否前置切换，均不得改写 A56 已归档与 A57 已冻结范围，只允许在其完成后做增量扩展。
 
-备选 A58（新增紧急插入）：`introduce-policy-precedence-and-decision-trace-contract-a58`
+提案 A58（进行中）：`introduce-policy-precedence-and-decision-trace-contract-a58`
 - 目标：统一 ActionGate、Security S2、sandbox action/egress、adapter allowlist、readiness/admission 的策略判定优先级与解释链路，防止并行改造后出现判定冲突。
 - 范围：
   - 固化跨策略层 precedence matrix 与 deterministic tie-break；
   - 统一 deny source taxonomy 与 explainability 字段；
   - 增加 `policy_stack.v1` replay fixture 与 drift 分类；
   - 增加独立 `check-policy-precedence-contract.*` gate。
-- Why now（紧急性）：A56 与 A57 同期改动 runner/sandbox/readiness/admission，若缺少统一 precedence contract，极易产生“同请求不同入口判定不一致”的高风险回归。
+- Why now（紧急性）：A57 联调改动 runner/sandbox/readiness/admission，若缺少统一 precedence contract，极易产生“同请求不同入口判定不一致”的高风险回归。
 
 提案 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`（进行中）
 - 目标：补齐 sandbox 网络外呼治理（egress policy）与 adapter 供应链 allowlist 契约，形成“执行隔离 + 出口治理 + 激活准入”闭环。
 - 范围：`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission finding、taxonomy、replay drift 与 conformance matrix。
+- 门禁：`check-sandbox-egress-allowlist-contract.sh/.ps1`（已纳入 `check-quality-gate.sh/.ps1`），CI 独立 required-check 候选为 `sandbox-egress-allowlist-gate`。
 - 依赖：复用 A51/A52/A53 sandbox taxonomy 与 adapter manifest 激活边界，不新增平行安全语义。
 - 启动条件：存在合规审计或外部 adapter 引入规模上升，需要可审计可阻断的 egress/allowlist 治理。
 
@@ -636,13 +651,91 @@ A56 一次性闭环审查（10.4）：
 
 备选 A61（新增）：`introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`
 - 目标：补齐主流框架常见的“可观测 + 评测”互操作治理，降低跨平台对接成本并固定回归口径。
-- 对标主流（OpenAI Agents / Agno / CrewAI）的补齐方向：
+- 对标主流（OpenAI Agents / Agno / CrewAI / AgentScope）的补齐方向：
   - tracing 语义：对齐 OTel 场景下 run/model/tool/mcp/memory/hitl 关键 span/attribute 映射；
   - tracing 导出：保证不引入平台控制面的前提下，支持主流 OTel backend 稳定接入；
   - 评测基线：新增最小 agent eval contract（任务成功率、工具调用正确率、拒绝/拦截准确率、cost-latency 约束）；
-  - 回放与门禁：增加 `otel_semconv.v1` 与 `agent_eval.v1` fixtures，新增 `check-agent-eval-and-tracing-interop-contract.*`。
+  - 评测执行治理（合并项）：在 A61 内一次性支持 `local|distributed` evaluator execution、分片汇总、失败重试、断点续跑与结果幂等聚合；
+  - 回放与门禁：增加 `otel_semconv.v1`、`agent_eval.v1`、`agent_eval_distributed.v1` fixtures，新增 `check-agent-eval-and-tracing-interop-contract.*`。
 - 依赖：A55 observability export + diagnostics bundle 稳定后扩展；建议在 A58 decision trace 字段冻结后接入。
 - 启动条件：出现 tracing 字段跨后端解释不一致、外部可观测平台接线成本高、或缺少稳定 agent 质量回归基线。
+- 约束项（新增）：
+  - Non-goals：不引入托管评测控制面、远程评测任务调度服务、平台化 UI/RBAC/多租户运维面板。
+  - Gate 边界断言：`check-agent-eval-and-tracing-interop-contract.*` 必须包含 `control_plane_absent` 断言（distributed execution 仅作为库内执行策略，不新增服务化控制面依赖）。
+
+备选 A65（新增）：`introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`
+- 目标：统一 agent 生命周期 hooks 与 tool middleware 合同，减少业务侧横切逻辑重复接线。
+- 范围（简版）：
+  - lifecycle hooks：`before_reasoning|after_reasoning|before_acting|after_acting|before_reply|after_reply`；
+  - tool middleware：冻结 onion-chain 执行顺序、上下文透传、错误冒泡与超时隔离；
+  - 配置治理：`runtime.hooks.*`、`runtime.tool_middleware.*` 统一 `env > file > default` 与 fail-fast/回滚；
+  - 回放与门禁：新增 `hooks_middleware.v1` fixture 与 `check-hooks-middleware-contract.*`。
+- 硬约束（简版）：
+  - 不绕过 A58 precedence、A57 安全治理与 `RuntimeRecorder` 单写入口；
+  - Hook/Middleware 失败语义必须 deterministic，不引入 Run/Stream 分叉。
+- 当前状态：占位提案（简版）。
+
+备选 A66（新增）：`introduce-unified-state-and-session-snapshot-contract-a66`
+- 目标：统一 runtime state/session snapshot 导入导出合同，打通跨模块恢复、迁移与重放。
+- 范围（简版）：
+  - state surface：runner/session、memory、workflow/composer/scheduler 的统一 state descriptor；
+  - snapshot contract：版本化 schema、部分恢复、字段兼容窗口、冲突 fail-fast；
+  - 恢复治理：增量恢复、幂等重放、跨后端一致性检查；
+  - 回放与门禁：新增 `state_session_snapshot.v1` fixture 与 `check-state-snapshot-contract.*`。
+- 硬约束（简版）：
+  - 不重写已有 checkpoint/snapshot 语义，仅做统一合同层；
+  - 不引入平台控制面或远程状态服务依赖。
+- 当前状态：占位提案（简版）。
+
+备选 A67（新增）：`introduce-react-plan-notebook-and-plan-change-hook-contract-a67`
+- 目标：补齐 ReAct 动态计划治理（Plan Notebook）与计划变更 hook，提升复杂任务可控性与可解释性。
+- 范围（简版）：
+  - plan notebook：`create|revise|complete|recover` 生命周期；
+  - plan-change hook：计划变更前后回调、变更原因与上下文快照；
+  - 观测与回放：新增计划漂移与恢复漂移字段、`react_plan_notebook.v1` fixture；
+  - 门禁：新增 `check-react-plan-notebook-contract.*`。
+- 硬约束（简版）：
+  - 复用 A56 ReAct termination taxonomy，不新增平行 loop 语义；
+  - 计划治理不得绕过 A58 决策链与 A57 安全链路。
+- 当前状态：占位提案（简版）。
+
+备选 A68（新增）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`
+- 目标（简版）：补齐实时双向事件协议（server/client）与 interrupt/resume 合同，支撑实时交互场景。
+- 范围（简版）：
+  - 事件协议：请求、增量输出、取消、恢复、确认、错误的 canonical event taxonomy；
+  - 会话治理：事件去重、顺序保证、重连恢复与幂等处理；
+  - 回放与门禁：新增 `realtime_event_protocol.v1` fixture 与 `check-realtime-protocol-contract.*`。
+- 硬约束（简版）：
+  - 不引入平台化实时网关或托管控制面；
+  - 协议语义必须与 A56/A58/A67 的主链路解释字段保持一致。
+- 约束项（新增）：
+  - Non-goals：不引入托管会话路由/连接管理控制面、实时 SaaS 运维面板或平台级常驻网关服务。
+  - Gate 边界断言：`check-realtime-protocol-contract.*` 必须包含 `realtime_control_plane_absent` 断言（协议实现仅限库内 contract + adapter 接缝，不新增网关服务依赖）。
+- 当前状态：占位提案（简版，按业务实时化需求触发）。
+
+备选 A63（新增）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
+- 目标（简版）：在不改变运行时语义前提下，完成仓库“代码与文档收敛整顿”，降低历史负担与命名歧义。
+- 范围（简版）：
+  - 临时文档/目录治理：清理或归档 `docs/drafts`、示例与脚手架生成物等临时资产，建立统一收口规则；
+  - 离线生成物治理：收敛 `examples/adapters/_a23-offline-work/*` 这类离线 scaffold 产物，仅保留最小可复现样本与索引说明，其余转离线缓存或清理；
+  - Context Assembler 命名收敛：将 `ca/ca2/ca3/ca4` 相关实现对外统一为语义化 `ca` 口径（内部可分层，但不再暴露编号式心智）；
+  - Axx 文案语义化：仓库内面向用户/维护者的 Axx 编号描述迁移为语义化名称，Spec 编号映射集中在索引文档维护，不在模块 README/配置注释中散落耦合。
+  - 阶段性工具命名治理：`cmd/*` 与 `scripts/*` 中编号化阶段命名（如 `ca3-threshold-*`、`ca4-benchmark-*`）统一补充语义别名与映射，避免新入口继续放大编号耦合；
+  - 临时注释与占位清理：清理 `TODO/future milestone` 类临时注释并转化为 roadmap/index 可追踪事项，避免代码内长期悬挂。
+- 硬约束（简版）：
+  - 不改变 Run/Stream、readiness/admission、reason taxonomy、diagnostics/replay 契约语义；
+  - 不删除仍被 gate/fixture 使用的兼容数据，仅允许“迁移+别名+映射”方式收敛；
+  - 所有重命名或目录调整必须提供可回滚路径与兼容跳板。
+  - 编号化保留边界：`openspec/changes` 与 `openspec/changes/archive` 作为历史索引允许保留编号，代码与用户向文档默认使用语义名称。
+- 当前状态：占位提案（简版），待 A67/A68（若启用）主链路冻结后基于当时代码状态展开详细清单与实施步骤。
+
+备选 A64（新增）：`introduce-engineering-and-performance-optimization-contract-a64`
+- 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
+- 硬约束（简版）：
+  - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
+  - 不绕过现有 contract gate 与 replay 约束；
+  - 所有优化都必须可开关、可回滚。
+- 当前状态：占位提案，仅保留方向与边界；详细 contract/fixture/gate 清单待 A63 收敛后再单独规划。
 
 备选 A62（新增）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
@@ -663,34 +756,10 @@ A56 一次性闭环审查（10.4）：
 - Gate：
   - `check-agent-mode-examples-smoke.sh/.ps1`（按模式矩阵执行最小冒烟）
   - required-check 候选：`agent-mode-examples-smoke-gate`
-- 依赖：A56/A57 至少完成 runner/sandbox 主链路冻结后实施，以避免示例频繁返工。
+- 依赖：A57-A61 与 A65-A68（若启用）主链路冻结，且 A63/A64 收敛完成后实施。
 - 启动条件：新增团队接入成本偏高、PoC 转生产迁移慢、或示例与 contract 漂移信号出现。
 
-备选 A63（新增）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
-- 目标（简版）：在不改变运行时语义前提下，完成仓库“代码与文档收敛整顿”，降低历史负担与命名歧义。
-- 范围（简版）：
-  - 临时文档/目录治理：清理或归档 `docs/drafts`、示例与脚手架生成物等临时资产，建立统一收口规则；
-  - 离线生成物治理：收敛 `examples/adapters/_a23-offline-work/*` 这类离线 scaffold 产物，仅保留最小可复现样本与索引说明，其余转离线缓存或清理；
-  - Context Assembler 命名收敛：将 `ca/ca2/ca3/ca4` 相关实现对外统一为语义化 `ca` 口径（内部可分层，但不再暴露编号式心智）；
-  - Axx 文案语义化：仓库内面向用户/维护者的 Axx 编号描述迁移为语义化名称，Spec 编号映射集中在索引文档维护，不在模块 README/配置注释中散落耦合。
-  - 阶段性工具命名治理：`cmd/*` 与 `scripts/*` 中编号化阶段命名（如 `ca3-threshold-*`、`ca4-benchmark-*`）统一补充语义别名与映射，避免新入口继续放大编号耦合；
-  - 临时注释与占位清理：清理 `TODO/future milestone` 类临时注释并转化为 roadmap/index 可追踪事项，避免代码内长期悬挂。
-- 硬约束（简版）：
-  - 不改变 Run/Stream、readiness/admission、reason taxonomy、diagnostics/replay 契约语义；
-  - 不删除仍被 gate/fixture 使用的兼容数据，仅允许“迁移+别名+映射”方式收敛；
-  - 所有重命名或目录调整必须提供可回滚路径与兼容跳板。
-  - 编号化保留边界：`openspec/changes` 与 `openspec/changes/archive` 作为历史索引允许保留编号，代码与用户向文档默认使用语义名称。
-- 当前状态：占位提案（简版），待 A62 完成后基于当时代码状态展开详细清单与实施步骤。
-
-备选 A64（新增）：`introduce-engineering-and-performance-optimization-contract-a64`
-- 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
-- 硬约束（简版）：
-  - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
-  - 不绕过现有 contract gate 与 replay 约束；
-  - 所有优化都必须可开关、可回滚。
-- 当前状态：占位提案，仅保留方向与边界；详细 contract/fixture/gate 清单待 A62/A63 收敛后再单独规划。
-
-A58-A62 一次性验收清单（contract / replay / gate）：
+A58-A62 验收清单（contract / replay / gate，A62 为后置收口项）：
 
 统一验收前提（当前已展开提案共用）：
 - 配置治理：所有新增配置必须遵守 `env > file > default`，非法值 fail-fast，热更新失败原子回滚。
@@ -779,24 +848,30 @@ A61 验收清单：`introduce-otel-tracing-and-agent-eval-interoperability-contr
 - Contract 字段（最小集）：
   - `runtime.observability.tracing.otel.*`
   - `runtime.eval.agent.*`
-  - QueryRuns additive：`trace_export_status`、`trace_schema_version`、`eval_suite_id`、`eval_summary`
+  - `runtime.eval.execution.*`（`mode=local|distributed`、`shard`、`retry`、`resume`、`aggregation`）
+  - QueryRuns additive：`trace_export_status`、`trace_schema_version`、`eval_suite_id`、`eval_summary`、`eval_execution_mode`、`eval_job_id`、`eval_shard_total`、`eval_resume_count`
 - Replay fixtures：
   - `otel_semconv.v1`
   - `agent_eval.v1`
-  - drift 分类至少包含：`otel_attr_mapping_drift`、`span_topology_drift`、`eval_metric_drift`
+  - `agent_eval_distributed.v1`
+  - drift 分类至少包含：`otel_attr_mapping_drift`、`span_topology_drift`、`eval_metric_drift`、`eval_aggregation_drift`、`eval_shard_resume_drift`
 - Gate：
   - `check-agent-eval-and-tracing-interop-contract.sh/.ps1`
+  - 边界断言：`control_plane_absent`（禁止托管评测控制面/服务化调度依赖）
   - required-check 候选：`agent-eval-tracing-interop-gate`
 - 最小测试矩阵：
   - 单测：span/attribute 映射稳定性；
   - 集成：至少 2 类 OTel backend 兼容冒烟（本地 exporter + 远端 collector）；
-  - 评测：任务成功率、工具调用正确率、拒绝/拦截准确率、cost-latency 约束。
+  - 评测：任务成功率、工具调用正确率、拒绝/拦截准确率、cost-latency 约束；
+  - 执行治理：local/distributed 评测结果聚合等价、分片失败重试、断点续跑幂等。
 - 文档同步：
-  - `docs/runtime-config-diagnostics.md`（OTel + eval 配置）
+  - `docs/runtime-config-diagnostics.md`（OTel + eval + eval execution 配置）
   - `docs/mainline-contract-test-index.md`（OTel/eval fixtures + gate）
 - 退出条件（DoD）：
   - tracing 字段跨后端解释一致；
-  - agent 质量回归具备稳定、可复放、可阻断的最小口径。
+  - agent 质量回归具备稳定、可复放、可阻断的最小口径；
+  - distributed 评测执行具备稳定聚合与断点恢复，不另开平行提案；
+  - 维持 `library-first` 形态：不引入托管评测控制面或服务化执行平面。
 
 A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - Contract 字段（最小集）：
@@ -823,24 +898,51 @@ A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contrac
   - 新接入团队在不读源码前提下可按模式完成端到端跑通；
   - 示例与主线 contract 不再出现长期漂移（通过 smoke gate 持续阻断）。
 
+A65-A68 占位验收口径（简版）：
+- A65（hooks + middleware）：
+  - 字段：`runtime.hooks.*`、`runtime.tool_middleware.*`
+  - 回放：`hooks_middleware.v1`
+  - 门禁：`check-hooks-middleware-contract.*`
+- A66（state/session snapshot）：
+  - 字段：`runtime.state.snapshot.*`、`runtime.session.state.*`
+  - 回放：`state_session_snapshot.v1`
+  - 门禁：`check-state-snapshot-contract.*`
+- A67（react plan notebook）：
+  - 字段：`runtime.react.plan_notebook.*`、`runtime.react.plan_change_hook.*`
+  - 回放：`react_plan_notebook.v1`
+  - 门禁：`check-react-plan-notebook-contract.*`
+- A68（realtime protocol）：
+  - 字段：`runtime.realtime.protocol.*`、`runtime.realtime.interrupt_resume.*`
+  - 回放：`realtime_event_protocol.v1`
+  - 边界断言：`realtime_control_plane_absent`（禁止平台化实时网关/托管控制面）
+  - 门禁：`check-realtime-protocol-contract.*`
+
 跨提案联动收口（避免后续再开同域提案）：
 - A58 冻结 `policy_decision_path` 与 `deny_source` 后，A60/A61 禁止重定义同义字段，仅允许引用。
 - A59 冻结 memory 生命周期与检索质量阈值后，A60 预算计算必须复用该口径，不再另起成本定义。
-- A61 的 eval 指标定义必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
-- A62 的示例字段与观测语义必须引用 A56-A61 既有 contract 输出，禁止在 examples 侧定义平行语义。
+- A61 的 eval 指标与 distributed 执行聚合必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
+- A61 distributed evaluator execution 仅允许库内嵌入式执行治理，不得演进为托管评测控制面或服务化调度平面。
+- A65 不得绕过 A58 precedence 与 A57 安全治理链路；hook/middleware 输出仅走 `RuntimeRecorder` 单写入口。
+- A66 必须复用现有 checkpoint/snapshot 语义与 A59 memory lifecycle，不得重写存储层事实源。
+- A67 必须复用 A56 ReAct loop 终止 taxonomy 与 A65 hook 合同，不得新增平行 ReAct 主循环。
+- A68 事件协议必须复用 A58/A67 决策与计划解释字段，不得引入第二套 interrupt/resume 语义。
+- A68 realtime 合同仅定义协议与嵌入式接缝，不得新增平台化实时网关或托管连接控制面。
 - A63 的命名与文档整合必须复用现有契约字段，不得改写 contract 语义；Axx->语义名映射集中维护于索引，不在多处重复定义。
-- A64 的优化实现必须复用 A58-A61 既有契约字段与 reason taxonomy，禁止以性能优化引入语义分叉。
-- 若出现新增需求，优先以 A58-A64 的“增量任务”吸收，默认不新增 A65+ 同域提案。
+- A64 的优化实现必须复用 A58-A68（若 A68 启用）既有契约字段与 reason taxonomy，禁止以性能优化引入语义分叉。
+- A62 的示例字段与观测语义必须引用 A56-A68（若 A68 启用）既有 contract 输出，禁止在 examples 侧定义平行语义。
+- 若出现新增需求，优先以 A58-A68 的“增量任务”吸收，默认不新增 A69+ 同域提案。
 
 整合与重排说明：
 - A56/A57 已从备选池转入进行中，不再计入备选编号。
 - 新增紧急备选 A58（policy precedence + decision trace），用于承接 A56/A57 并行实施的跨策略冲突风险。
 - 原备选 A58（memory scope）顺延为 A59，并与 builtin filesystem local-memory 增强方案合并，减少重复提案。
 - 原备选 A59（runtime cost-latency budget）顺延为 A60。
-- 新增 A61（OTel tracing + agent eval 互操作），作为主流框架对齐的可观测与评测候选，不改变 A58-A60 既定顺序。
-- 新增 A62（delivery usability example pack），用于统一主要 agent 模式示例与交付上手体验，不改变 A58-A61 的核心契约收敛顺序。
-- 新增 A63（codebase consolidation and semantic labeling），用于临时代码/文档清理与语义化整顿，不改变 A58-A62 的核心契约顺序。
-- 原 A63（engineering/performance optimization）顺延为 A64，待 A62/A63 完成后再展开详细方案。
+- A61 合并“distributed evaluator execution”能力，不再另开平行评测执行提案。
+- 新增 A65/A66/A67（hooks+middleware / unified state/session / react plan notebook），用于补齐 agent runtime 基座能力。
+- 新增 A68（realtime protocol）前移至 A63/A64/A62 之前，补齐实时交互合同能力（仍按业务需求触发）。
+- A63（codebase consolidation and semantic labeling）维持在 A68 之后，用于实施前收敛命名与结构。
+- 原 A63（engineering/performance optimization）已顺延为 A64，保持在代码收敛提案之后，作为后置优化项。
+- A62（delivery usability example pack）后移至 A64 之后，作为“功能相对完善后”的最终示例化与交付收口项。
 
 ### P2：0.x 质量与治理持续收敛
 

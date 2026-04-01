@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -26,6 +28,8 @@ const (
 	sandboxReasonCapabilityMismatch     = "sandbox.capability_mismatch"
 	sandboxReasonToolNotAdapted         = "sandbox.tool_not_adapted"
 	sandboxReasonSessionModeUnsupported = "sandbox.session_mode_unsupported"
+	sandboxReasonEgressDeny             = "sandbox.egress_deny"
+	sandboxReasonEgressAllowAndRecord   = "sandbox.egress_allow_and_record"
 )
 
 type WriteAwareTool interface {
@@ -41,6 +45,11 @@ type sandboxExecutionError struct {
 	reason  string
 	message string
 	details map[string]any
+}
+
+type sandboxHostMarker struct {
+	ReasonCode string
+	Fields     map[string]any
 }
 
 func (e *sandboxExecutionError) Error() string {
@@ -455,7 +464,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
 
-	hostMarker := ""
+	hostMarker := sandboxHostMarker{}
 	if handled, err := d.trySandboxInvoke(ctx, tool, call, outcomes, i, &hostMarker); handled {
 		d.recordToolDiag(call, start, outcomes[i].Result.Error)
 		return err
@@ -469,7 +478,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 	for attempt := 0; attempt < attempts; attempt++ {
 		result, err := tool.Invoke(ctx, call.Args)
 		if err == nil {
-			if hostMarker != "" {
+			if strings.TrimSpace(hostMarker.ReasonCode) != "" {
 				result.Structured = annotateSandboxStructured(result.Structured, hostMarker)
 			}
 			outcomes[i] = types.ToolCallOutcome{CallID: call.CallID, Name: call.Name, Result: result}
@@ -495,7 +504,7 @@ func (d *Dispatcher) trySandboxInvoke(
 	call types.ToolCall,
 	outcomes []types.ToolCallOutcome,
 	i int,
-	hostMarker *string,
+	hostMarker *sandboxHostMarker,
 ) (bool, error) {
 	if d == nil || d.runtimeMgr == nil {
 		return false, nil
@@ -508,11 +517,45 @@ func (d *Dispatcher) trySandboxInvoke(
 	namespaceTool, _ := sandboxNamespaceToolKey(call.Name)
 	action := runtimeconfig.ResolveSandboxAction(cfg, namespaceTool)
 	fallback := runtimeconfig.ResolveSandboxFallbackAction(cfg, namespaceTool)
+	egressDecision := resolveSandboxEgressDecision(cfg.Egress, namespaceTool, call.Args)
+	if egressDecision.Applied {
+		switch egressDecision.Action {
+		case runtimeconfig.SecuritySandboxEgressActionDeny:
+			if mode != runtimeconfig.SecuritySandboxModeEnforce {
+				if hostMarker != nil {
+					*hostMarker = sandboxHostMarker{
+						ReasonCode: sandboxReasonEgressAllowAndRecord,
+						Fields:     egressDecision.Fields(),
+					}
+				}
+				break
+			}
+			details := map[string]any{
+				"reason_code":      sandboxReasonEgressDeny,
+				"namespace_tool":   namespaceTool,
+				"sandbox_action":   action,
+				"sandbox_mode":     mode,
+				"sandbox_fallback": fallback,
+			}
+			for key, value := range egressDecision.Fields() {
+				details[key] = value
+			}
+			outcomes[i] = failedOutcome(call, types.ErrSecurity, "tool call denied by sandbox egress policy", false, details)
+			return true, errors.New(outcomes[i].Result.Error.Message)
+		case runtimeconfig.SecuritySandboxEgressActionAllowAndRecord:
+			if hostMarker != nil {
+				*hostMarker = sandboxHostMarker{
+					ReasonCode: sandboxReasonEgressAllowAndRecord,
+					Fields:     egressDecision.Fields(),
+				}
+			}
+		}
+	}
 
 	if mode != runtimeconfig.SecuritySandboxModeEnforce {
 		if action == runtimeconfig.SecuritySandboxActionSandbox {
 			if _, ok := tool.(SandboxAdapterTool); !ok && hostMarker != nil {
-				*hostMarker = sandboxReasonToolNotAdapted
+				*hostMarker = sandboxHostMarker{ReasonCode: sandboxReasonToolNotAdapted}
 			}
 		}
 		return false, nil
@@ -536,7 +579,7 @@ func (d *Dispatcher) trySandboxInvoke(
 	if !ok {
 		if fallback == runtimeconfig.SecuritySandboxFallbackAllowAndRecord {
 			if hostMarker != nil {
-				*hostMarker = sandboxReasonFallbackAllowRecord
+				*hostMarker = sandboxHostMarker{ReasonCode: sandboxReasonFallbackAllowRecord}
 			}
 			return false, nil
 		}
@@ -559,7 +602,7 @@ func (d *Dispatcher) trySandboxInvoke(
 	if errors.As(err, &sandboxErr) {
 		if fallback == runtimeconfig.SecuritySandboxFallbackAllowAndRecord {
 			if hostMarker != nil {
-				*hostMarker = sandboxReasonFallbackAllowRecord
+				*hostMarker = sandboxHostMarker{ReasonCode: sandboxReasonFallbackAllowRecord}
 			}
 			return false, nil
 		}
@@ -807,16 +850,163 @@ func mergeDetails(base map[string]any, extra map[string]any) map[string]any {
 	return base
 }
 
-func annotateSandboxStructured(base map[string]any, reason string) map[string]any {
+type sandboxEgressDecision struct {
+	Applied      bool
+	Action       string
+	PolicySource string
+	Target       string
+}
+
+func (d sandboxEgressDecision) Fields() map[string]any {
+	fields := map[string]any{}
+	if strings.TrimSpace(d.Action) != "" {
+		fields["sandbox_egress_action"] = strings.ToLower(strings.TrimSpace(d.Action))
+	}
+	if strings.TrimSpace(d.PolicySource) != "" {
+		fields["sandbox_egress_policy_source"] = strings.ToLower(strings.TrimSpace(d.PolicySource))
+	}
+	if strings.TrimSpace(d.Target) != "" {
+		fields["sandbox_egress_target"] = strings.ToLower(strings.TrimSpace(d.Target))
+	}
+	return fields
+}
+
+func resolveSandboxEgressDecision(cfg runtimeconfig.SecuritySandboxEgressConfig, namespaceTool string, args map[string]any) sandboxEgressDecision {
+	if !cfg.Enabled {
+		return sandboxEgressDecision{}
+	}
+	target, ok := extractSandboxEgressTarget(args)
+	if !ok {
+		return sandboxEgressDecision{}
+	}
+
+	action := strings.ToLower(strings.TrimSpace(cfg.DefaultAction))
+	if action == "" {
+		action = runtimeconfig.SecuritySandboxEgressActionDeny
+	}
+	source := "default_action"
+
+	if override, ok := cfg.ByTool[strings.ToLower(strings.TrimSpace(namespaceTool))]; ok {
+		action = strings.ToLower(strings.TrimSpace(override))
+		source = "by_tool"
+	} else if isSandboxEgressTargetAllowed(target, cfg.Allowlist) {
+		action = runtimeconfig.SecuritySandboxEgressActionAllow
+		source = "allowlist"
+	}
+
+	if source != "by_tool" && action == runtimeconfig.SecuritySandboxEgressActionDeny {
+		if strings.ToLower(strings.TrimSpace(cfg.OnViolation)) == runtimeconfig.SecuritySandboxEgressOnViolationAllowAndRecord {
+			action = runtimeconfig.SecuritySandboxEgressActionAllowAndRecord
+			source = "on_violation"
+		}
+	}
+
+	return sandboxEgressDecision{
+		Applied:      true,
+		Action:       action,
+		PolicySource: source,
+		Target:       target,
+	}
+}
+
+func extractSandboxEgressTarget(args map[string]any) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	keys := []string{
+		"egress_target",
+		"url",
+		"uri",
+		"endpoint",
+		"host",
+		"hostname",
+		"domain",
+		"address",
+	}
+	for _, key := range keys {
+		value, ok := args[key]
+		if !ok {
+			continue
+		}
+		typed, ok := value.(string)
+		if !ok {
+			continue
+		}
+		target := normalizeSandboxEgressTarget(typed)
+		if target != "" {
+			return target, true
+		}
+	}
+	return "", false
+}
+
+func normalizeSandboxEgressTarget(raw string) string {
+	target := strings.ToLower(strings.TrimSpace(raw))
+	if target == "" {
+		return ""
+	}
+	if strings.Contains(target, "://") {
+		parsed, err := url.Parse(target)
+		if err != nil {
+			return ""
+		}
+		target = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	}
+	if host, _, err := net.SplitHostPort(target); err == nil {
+		target = strings.ToLower(strings.TrimSpace(host))
+	}
+	if idx := strings.Index(target, "/"); idx > -1 {
+		target = target[:idx]
+	}
+	target = strings.TrimPrefix(target, "[")
+	target = strings.TrimSuffix(target, "]")
+	target = strings.TrimSpace(target)
+	return target
+}
+
+func isSandboxEgressTargetAllowed(target string, allowlist []string) bool {
+	normalizedTarget := normalizeSandboxEgressTarget(target)
+	if normalizedTarget == "" || len(allowlist) == 0 {
+		return false
+	}
+	for _, entry := range allowlist {
+		pattern := strings.ToLower(strings.TrimSpace(entry))
+		if pattern == "" {
+			continue
+		}
+		if strings.HasPrefix(pattern, "*.") {
+			suffix := strings.TrimPrefix(pattern, "*.")
+			if suffix != "" && strings.HasSuffix(normalizedTarget, "."+suffix) {
+				return true
+			}
+			continue
+		}
+		if normalizedTarget == pattern {
+			return true
+		}
+	}
+	return false
+}
+
+func annotateSandboxStructured(base map[string]any, marker sandboxHostMarker) map[string]any {
 	out := map[string]any{}
 	for key, value := range base {
 		out[key] = value
 	}
-	out["sandbox_fallback_reason"] = strings.ToLower(strings.TrimSpace(reason))
-	out["sandbox_fallback"] = true
-	out["sandbox_fallback_used"] = true
+	reason := strings.ToLower(strings.TrimSpace(marker.ReasonCode))
+	if reason == "" {
+		return out
+	}
+	for key, value := range marker.Fields {
+		out[key] = value
+	}
 	out["sandbox_decision"] = runtimeconfig.SecuritySandboxActionHost
-	out["sandbox_reason_code"] = strings.ToLower(strings.TrimSpace(reason))
+	out["sandbox_reason_code"] = reason
+	if reason == sandboxReasonFallbackAllowRecord {
+		out["sandbox_fallback_reason"] = reason
+		out["sandbox_fallback"] = true
+		out["sandbox_fallback_used"] = true
+	}
 	return out
 }
 

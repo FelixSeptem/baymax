@@ -133,6 +133,12 @@ if ! bash scripts/check-sandbox-egress-allowlist-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] policy precedence contract suites"
+if ! bash scripts/check-policy-precedence-contract.sh; then
+  echo "[quality-gate][policy-precedence-contract] policy precedence contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

@@ -32,6 +32,13 @@ type CallRecord struct {
 	ErrorClass     string    `json:"error_class,omitempty"`
 }
 
+type RuntimePolicyDecisionPathEntry struct {
+	Stage    string `json:"stage"`
+	Code     string `json:"code,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Decision string `json:"decision,omitempty"`
+}
+
 type RunRecord struct {
 	Time                                        time.Time                         `json:"time"`
 	RunID                                       string                            `json:"run_id"`
@@ -272,6 +279,11 @@ type RunRecord struct {
 	RuntimeReadinessAdmissionBypassTotal        int                               `json:"runtime_readiness_admission_bypass_total,omitempty"`
 	RuntimeReadinessAdmissionMode               string                            `json:"runtime_readiness_admission_mode,omitempty"`
 	RuntimeReadinessAdmissionPrimaryCode        string                            `json:"runtime_readiness_admission_primary_code,omitempty"`
+	PolicyPrecedenceVersion                     string                            `json:"policy_precedence_version,omitempty"`
+	WinnerStage                                 string                            `json:"winner_stage,omitempty"`
+	DenySource                                  string                            `json:"deny_source,omitempty"`
+	TieBreakReason                              string                            `json:"tie_break_reason,omitempty"`
+	PolicyDecisionPath                          []RuntimePolicyDecisionPathEntry  `json:"policy_decision_path,omitempty"`
 	AdapterAllowlistDecision                    string                            `json:"adapter_allowlist_decision,omitempty"`
 	AdapterAllowlistBlockTotal                  int                               `json:"adapter_allowlist_block_total,omitempty"`
 	AdapterAllowlistPrimaryCode                 string                            `json:"adapter_allowlist_primary_code,omitempty"`
@@ -467,6 +479,8 @@ type Store struct {
 	mbxKeys map[string]int
 	sklKeys map[string]int
 
+	runTimesStrictAscending bool
+
 	timelineStates map[string]*timelineRunState
 	trendConfig    TimelineTrendConfig
 	ca2TrendConfig CA2ExternalTrendConfig
@@ -649,22 +663,23 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 		ca2.Thresholds.HitRate = 0.2
 	}
 	return &Store{
-		maxCallRecords:  maxCalls,
-		maxRunRecords:   maxRuns,
-		maxReloadErrors: maxReloads,
-		maxSkillRecords: maxSkills,
-		calls:           make([]CallRecord, 0, maxCalls),
-		runs:            make([]RunRecord, 0, maxRuns),
-		mailbox:         make([]MailboxRecord, 0, maxRuns),
-		reloads:         make([]ReloadRecord, 0, maxReloads),
-		skills:          make([]SkillRecord, 0, maxSkills),
-		runKeys:         make(map[string]int, maxRuns),
-		mbxKeys:         make(map[string]int, maxRuns),
-		sklKeys:         make(map[string]int, maxSkills),
-		timelineStates:  make(map[string]*timelineRunState, maxRuns),
-		trendConfig:     trend,
-		ca2TrendConfig:  ca2,
-		cardinality:     normalizeCardinalityConfig(CardinalityConfig{}),
+		maxCallRecords:          maxCalls,
+		maxRunRecords:           maxRuns,
+		maxReloadErrors:         maxReloads,
+		maxSkillRecords:         maxSkills,
+		calls:                   make([]CallRecord, 0, maxCalls),
+		runs:                    make([]RunRecord, 0, maxRuns),
+		mailbox:                 make([]MailboxRecord, 0, maxRuns),
+		reloads:                 make([]ReloadRecord, 0, maxReloads),
+		skills:                  make([]SkillRecord, 0, maxSkills),
+		runKeys:                 make(map[string]int, maxRuns),
+		mbxKeys:                 make(map[string]int, maxRuns),
+		sklKeys:                 make(map[string]int, maxSkills),
+		runTimesStrictAscending: true,
+		timelineStates:          make(map[string]*timelineRunState, maxRuns),
+		trendConfig:             trend,
+		ca2TrendConfig:          ca2,
+		cardinality:             normalizeCardinalityConfig(CardinalityConfig{}),
 	}
 }
 
@@ -744,6 +759,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
 	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
 	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
+	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
 	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
@@ -751,8 +767,22 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec = applyCardinalityGovernance(rec, d.cardinality)
 	key := RunIdempotencyKey(rec)
 	if idx, ok := d.runKeys[key]; ok && idx >= 0 && idx < len(d.runs) {
+		if d.runTimesStrictAscending {
+			if idx > 0 && !rec.Time.After(d.runs[idx-1].Time) {
+				d.runTimesStrictAscending = false
+			}
+			if idx+1 < len(d.runs) && !d.runs[idx+1].Time.After(rec.Time) {
+				d.runTimesStrictAscending = false
+			}
+		}
 		d.runs[idx] = rec
 		return
+	}
+	if d.runTimesStrictAscending && len(d.runs) > 0 {
+		last := d.runs[len(d.runs)-1]
+		if !rec.Time.After(last.Time) {
+			d.runTimesStrictAscending = false
+		}
 	}
 	d.runs = append(d.runs, rec)
 	d.runs = trimTail(d.runs, d.maxRunRecords)
@@ -1324,6 +1354,10 @@ func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, er
 		return UnifiedRunQueryResult{}, err
 	}
 
+	if d.runTimesStrictAscending && q.SortField == "time" {
+		return queryRunsFastTimeSorted(d.runs, q, start, queryHash)
+	}
+
 	filtered := make([]RunRecord, 0, len(d.runs))
 	for i := range d.runs {
 		if matchesUnifiedRunQuery(d.runs[i], q) {
@@ -1350,6 +1384,75 @@ func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, er
 			return UnifiedRunQueryResult{}, err
 		}
 	}
+	return UnifiedRunQueryResult{
+		Items:      items,
+		NextCursor: nextCursor,
+		PageSize:   q.PageSize,
+		SortField:  q.SortField,
+		SortOrder:  q.SortOrder,
+	}, nil
+}
+
+func queryRunsFastTimeSorted(runs []RunRecord, q normalizedUnifiedRunQuery, start int, queryHash string) (UnifiedRunQueryResult, error) {
+	items := make([]RunRecord, 0, q.PageSize)
+	matched := 0
+	hasMore := false
+
+	if q.SortOrder == "asc" {
+		for i := 0; i < len(runs); i++ {
+			rec := runs[i]
+			if !matchesUnifiedRunQuery(rec, q) {
+				continue
+			}
+			if matched < start {
+				matched++
+				continue
+			}
+			if len(items) < q.PageSize {
+				items = append(items, rec)
+				matched++
+				continue
+			}
+			hasMore = true
+			break
+		}
+	} else {
+		for i := len(runs) - 1; i >= 0; i-- {
+			rec := runs[i]
+			if !matchesUnifiedRunQuery(rec, q) {
+				continue
+			}
+			if matched < start {
+				matched++
+				continue
+			}
+			if len(items) < q.PageSize {
+				items = append(items, rec)
+				matched++
+				continue
+			}
+			hasMore = true
+			break
+		}
+	}
+
+	if len(items) == 0 && matched < start {
+		return UnifiedRunQueryResult{}, fmt.Errorf("invalid query cursor")
+	}
+
+	nextCursor := ""
+	if hasMore {
+		end := start + len(items)
+		encoded, err := encodeUnifiedRunCursor(unifiedRunQueryCursor{
+			Offset:    end,
+			QueryHash: queryHash,
+		})
+		if err != nil {
+			return UnifiedRunQueryResult{}, err
+		}
+		nextCursor = encoded
+	}
+
 	return UnifiedRunQueryResult{
 		Items:      items,
 		NextCursor: nextCursor,
@@ -2232,6 +2335,28 @@ func cloneStringSlice(in []string) []string {
 	for i := range in {
 		item := strings.TrimSpace(in[i])
 		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneRuntimePolicyDecisionPath(in []RuntimePolicyDecisionPathEntry) []RuntimePolicyDecisionPathEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]RuntimePolicyDecisionPathEntry, 0, len(in))
+	for i := range in {
+		item := in[i]
+		item.Stage = strings.ToLower(strings.TrimSpace(item.Stage))
+		item.Code = strings.TrimSpace(item.Code)
+		item.Source = strings.ToLower(strings.TrimSpace(item.Source))
+		item.Decision = strings.ToLower(strings.TrimSpace(item.Decision))
+		if item.Stage == "" {
 			continue
 		}
 		out = append(out, item)

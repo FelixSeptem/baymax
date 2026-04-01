@@ -282,6 +282,7 @@ type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
+	Policy            RuntimePolicyConfig            `json:"policy"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
 	Observability     RuntimeObservabilityConfig     `json:"observability"`
 	Diagnostics       RuntimeDiagnosticsConfig       `json:"diagnostics"`
@@ -1230,6 +1231,19 @@ func DefaultConfig() Config {
 					OnMismatch:    RuntimeArbitrationVersionMismatchPolicyFailFast,
 				},
 			},
+			Policy: RuntimePolicyConfig{
+				Precedence: RuntimePolicyPrecedenceConfig{
+					Version: RuntimePolicyPrecedenceVersionPolicyStackV1,
+					Matrix:  DefaultRuntimePolicyPrecedenceMatrix(),
+				},
+				TieBreaker: RuntimePolicyTieBreakerConfig{
+					Mode:        RuntimePolicyTieBreakerModeLexicalCodeThenSourceOrder,
+					SourceOrder: RuntimePolicyCanonicalStages(),
+				},
+				Explainability: RuntimePolicyExplainabilityConfig{
+					Enabled: true,
+				},
+			},
 			OperationProfiles: RuntimeOperationProfilesConfig{
 				DefaultProfile: OperationProfileLegacy,
 				Legacy: RuntimeOperationProfileEntry{
@@ -2041,6 +2055,9 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
+		return err
+	}
+	if err := validateRuntimePolicy(cfg.Runtime.Policy); err != nil {
 		return err
 	}
 	if err := validateRuntimeObservability(cfg.Runtime.Observability); err != nil {
@@ -3899,6 +3916,10 @@ func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) erro
 	return ValidateRuntimeArbitrationVersionConfig(cfg)
 }
 
+func validateRuntimePolicy(cfg RuntimePolicyConfig) error {
+	return ValidateRuntimePolicyConfig(cfg)
+}
+
 func validateRuntimeObservability(cfg RuntimeObservabilityConfig) error {
 	return ValidateRuntimeObservabilityConfig(cfg)
 }
@@ -3965,6 +3986,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.arbitration.version.compat_window", base.Runtime.Arbitration.Version.CompatWindow)
 	v.SetDefault("runtime.arbitration.version.on_unsupported", base.Runtime.Arbitration.Version.OnUnsupported)
 	v.SetDefault("runtime.arbitration.version.on_mismatch", base.Runtime.Arbitration.Version.OnMismatch)
+	v.SetDefault("runtime.policy.precedence.version", base.Runtime.Policy.Precedence.Version)
+	for stage, rank := range base.Runtime.Policy.Precedence.Matrix {
+		v.SetDefault("runtime.policy.precedence.matrix."+stage, rank)
+	}
+	v.SetDefault("runtime.policy.tie_breaker.mode", base.Runtime.Policy.TieBreaker.Mode)
+	v.SetDefault("runtime.policy.tie_breaker.source_order", base.Runtime.Policy.TieBreaker.SourceOrder)
+	v.SetDefault("runtime.policy.explainability.enabled", base.Runtime.Policy.Explainability.Enabled)
 	v.SetDefault("runtime.operation_profiles.default_profile", base.Runtime.OperationProfiles.DefaultProfile)
 	v.SetDefault("runtime.operation_profiles.legacy.timeout", base.Runtime.OperationProfiles.Legacy.Timeout)
 	v.SetDefault("runtime.operation_profiles.interactive.timeout", base.Runtime.OperationProfiles.Interactive.Timeout)
@@ -4387,6 +4415,11 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Arbitration.Version.CompatWindow = v.GetInt("runtime.arbitration.version.compat_window")
 	cfg.Runtime.Arbitration.Version.OnUnsupported = strings.ToLower(strings.TrimSpace(v.GetString("runtime.arbitration.version.on_unsupported")))
 	cfg.Runtime.Arbitration.Version.OnMismatch = strings.ToLower(strings.TrimSpace(v.GetString("runtime.arbitration.version.on_mismatch")))
+	policyCfg, err := buildRuntimePolicyConfig(v)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Policy = policyCfg
 	cfg.Runtime.OperationProfiles.DefaultProfile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.operation_profiles.default_profile")))
 	cfg.Runtime.OperationProfiles.Legacy.Timeout = v.GetDuration("runtime.operation_profiles.legacy.timeout")
 	cfg.Runtime.OperationProfiles.Interactive.Timeout = v.GetDuration("runtime.operation_profiles.interactive.timeout")

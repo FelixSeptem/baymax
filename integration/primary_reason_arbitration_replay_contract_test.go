@@ -42,6 +42,12 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a57_sandbox_egress_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionA57V1,
 		},
+		{
+			name:          "a58-policy-stack",
+			versionFolder: "tool",
+			fixture:       "a58_policy_stack_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionPolicyV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -223,6 +229,27 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift,
 			messageHas: "allowlist taxonomy drift",
 		},
+		{
+			name:       "a58-policy-precedence-conflict",
+			versionDir: "tool",
+			fixture:    "a58_policy_stack_precedence_conflict_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodePrecedenceConflict,
+			messageHas: "precedence conflict",
+		},
+		{
+			name:       "a58-policy-tie-break-drift",
+			versionDir: "tool",
+			fixture:    "a58_policy_stack_tie_break_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeTieBreakDrift,
+			messageHas: "tie-break drift",
+		},
+		{
+			name:       "a58-policy-deny-source-mismatch",
+			versionDir: "tool",
+			fixture:    "a58_policy_stack_deny_source_mismatch_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeDenySourceMismatch,
+			messageHas: "deny source mismatch",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -279,6 +306,60 @@ func TestReplayContractSandboxEgressAllowlistFixture(t *testing.T) {
 	}
 	if vErr.Code != diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift {
 		t.Fatalf("error code=%q, want %q", vErr.Code, diagnosticsreplay.ReasonCodeAdapterAllowlistTaxonomyDrift)
+	}
+}
+
+func TestReplayContractPolicyPrecedenceFixture(t *testing.T) {
+	raw := mustReadArbitrationReplayFixture(t, "tool", "a58_policy_stack_success_input.json")
+	out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
+	}
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionPolicyV1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionPolicyV1)
+	}
+	if len(out.Cases) == 0 {
+		t.Fatal("normalized output cases should not be empty")
+	}
+	replayOut, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON replay failed: %v", err)
+	}
+	if !reflect.DeepEqual(out, replayOut) {
+		t.Fatalf("replay output drift first=%#v replay=%#v", out, replayOut)
+	}
+
+	_, err = diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+		mustReadArbitrationReplayFixture(t, "tool", "a58_policy_stack_precedence_conflict_drift_input.json"),
+	)
+	if err == nil {
+		t.Fatal("precedence conflict drift fixture should fail")
+	}
+	vErr, ok := err.(*diagnosticsreplay.ValidationError)
+	if !ok {
+		t.Fatalf("error type=%T, want *ValidationError", err)
+	}
+	if vErr.Code != diagnosticsreplay.ReasonCodePrecedenceConflict {
+		t.Fatalf("error code=%q, want %q", vErr.Code, diagnosticsreplay.ReasonCodePrecedenceConflict)
+	}
+}
+
+func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *testing.T) {
+	fixtures := []string{
+		"a50_arbitration_success_input.json",
+		"a56_react_success_input.json",
+		"a57_sandbox_egress_success_input.json",
+		"a58_policy_stack_success_input.json",
+	}
+	for _, name := range fixtures {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", name),
+			); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
 	}
 }
 

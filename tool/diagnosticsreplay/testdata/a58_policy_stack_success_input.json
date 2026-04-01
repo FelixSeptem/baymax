@@ -1,0 +1,130 @@
+{
+  "version": "policy_stack.v1",
+  "cases": [
+    {
+      "name": "deny_path",
+      "run": {
+        "policy_precedence_version": "POLICY_STACK.V1",
+        "winner_stage": "SANDBOX_ACTION",
+        "deny_source": "sandbox_action",
+        "policy_decision_path": [
+          {
+            "stage": "action_gate",
+            "code": "action.gate.allow",
+            "source": "action_gate",
+            "decision": "allow"
+          },
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "stream": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_action",
+        "deny_source": "sandbox_action",
+        "policy_decision_path": [
+          {
+            "stage": "action_gate",
+            "code": "action.gate.allow",
+            "source": "action_gate",
+            "decision": "allow"
+          },
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_action",
+        "deny_source": "sandbox_action",
+        "policy_decision_path": [
+          {
+            "stage": "action_gate",
+            "code": "action.gate.allow",
+            "source": "action_gate",
+            "decision": "allow"
+          },
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    },
+    {
+      "name": "allow_path",
+      "run": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "readiness_admission",
+        "policy_decision_path": [
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.ready",
+            "source": "readiness_admission",
+            "decision": "allow"
+          }
+        ]
+      },
+      "stream": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "readiness_admission",
+        "policy_decision_path": [
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.ready",
+            "source": "readiness_admission",
+            "decision": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "readiness_admission",
+        "policy_decision_path": [
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.ready",
+            "source": "readiness_admission",
+            "decision": "allow"
+          }
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

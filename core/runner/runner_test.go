@@ -1367,6 +1367,9 @@ security:
 		"policy_kind",
 		"decision",
 		"reason_code",
+		"policy_precedence_version",
+		"winner_stage",
+		"deny_source",
 		"alert_dispatch_status",
 		"alert_delivery_mode",
 		"alert_retry_count",
@@ -4073,6 +4076,29 @@ func TestActionGateRunAndStreamDenySemanticsEquivalent(t *testing.T) {
 	if runRes.Error.Class != streamRes.Error.Class {
 		t.Fatalf("run/stream error class mismatch: run=%s stream=%s", runRes.Error.Class, streamRes.Error.Class)
 	}
+	runWinner, _ := runRes.Error.Details["winner_stage"].(string)
+	streamWinner, _ := streamRes.Error.Details["winner_stage"].(string)
+	if runWinner != runtimeconfig.RuntimePolicyStageActionGate || streamWinner != runtimeconfig.RuntimePolicyStageActionGate {
+		t.Fatalf("run/stream winner_stage mismatch run=%q stream=%q details_run=%#v details_stream=%#v", runWinner, streamWinner, runRes.Error.Details, streamRes.Error.Details)
+	}
+	runDenySource, _ := runRes.Error.Details["deny_source"].(string)
+	streamDenySource, _ := streamRes.Error.Details["deny_source"].(string)
+	if runDenySource != runtimeconfig.RuntimePolicyStageActionGate || streamDenySource != runtimeconfig.RuntimePolicyStageActionGate {
+		t.Fatalf("run/stream deny_source mismatch run=%q stream=%q details_run=%#v details_stream=%#v", runDenySource, streamDenySource, runRes.Error.Details, streamRes.Error.Details)
+	}
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	for _, key := range []string{"reason_code", "policy_precedence_version", "winner_stage", "deny_source"} {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("run/stream action gate payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
 }
 
 func TestActionGateRunAndStreamTimeoutSemanticsEquivalent(t *testing.T) {
@@ -4140,6 +4166,16 @@ action_gate:
 	}
 	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
 		t.Fatalf("run/stream error class mismatch: run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	runWinner, _ := runRes.Error.Details["winner_stage"].(string)
+	streamWinner, _ := streamRes.Error.Details["winner_stage"].(string)
+	if runWinner != runtimeconfig.RuntimePolicyStageActionGate || streamWinner != runtimeconfig.RuntimePolicyStageActionGate {
+		t.Fatalf("timeout winner_stage mismatch run=%q stream=%q", runWinner, streamWinner)
+	}
+	runReason, _ := runRes.Error.Details["reason_code"].(string)
+	streamReason, _ := streamRes.Error.Details["reason_code"].(string)
+	if runReason != "action.gate.timeout" || streamReason != "action.gate.timeout" {
+		t.Fatalf("timeout reason_code mismatch run=%q stream=%q", runReason, streamReason)
 	}
 }
 

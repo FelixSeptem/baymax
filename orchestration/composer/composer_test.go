@@ -564,6 +564,25 @@ func TestComposerReadinessAdmissionSandboxRequiredDenyRunAndStreamEquivalent(t *
 		streamPrimarySource != runtimeconfig.RuntimePrimarySourceReadiness {
 		t.Fatalf("sandbox primary_source mismatch run=%q stream=%q", runPrimarySource, streamPrimarySource)
 	}
+	runWinnerStage, _ := runRes.Error.Details["winner_stage"].(string)
+	streamWinnerStage, _ := streamRes.Error.Details["winner_stage"].(string)
+	if runWinnerStage != runtimeconfig.RuntimePolicyStageSandboxAction ||
+		streamWinnerStage != runtimeconfig.RuntimePolicyStageSandboxAction {
+		t.Fatalf("winner_stage mismatch run=%q stream=%q", runWinnerStage, streamWinnerStage)
+	}
+	runDenySource, _ := runRes.Error.Details["deny_source"].(string)
+	streamDenySource, _ := streamRes.Error.Details["deny_source"].(string)
+	if strings.TrimSpace(runDenySource) == "" || strings.TrimSpace(streamDenySource) == "" {
+		t.Fatalf("deny_source should be populated run=%q stream=%q", runDenySource, streamDenySource)
+	}
+	runPath := policyDecisionPathFromDetail(runRes.Error.Details["policy_decision_path"])
+	streamPath := policyDecisionPathFromDetail(streamRes.Error.Details["policy_decision_path"])
+	if len(runPath) == 0 || len(streamPath) == 0 {
+		t.Fatalf("policy_decision_path should be present run=%#v stream=%#v", runRes.Error.Details["policy_decision_path"], streamRes.Error.Details["policy_decision_path"])
+	}
+	if runPath[0].Stage != streamPath[0].Stage {
+		t.Fatalf("policy_decision_path first stage mismatch run=%#v stream=%#v", runPath, streamPath)
+	}
 
 	after, err := comp.SchedulerStats(context.Background())
 	if err != nil {
@@ -1102,6 +1121,46 @@ func assertSchedulerStatsUnchanged(t *testing.T, before, after scheduler.Stats) 
 		before.ClaimTotal != after.ClaimTotal ||
 		before.ReclaimTotal != after.ReclaimTotal {
 		t.Fatalf("scheduler stats changed on deny path: before=%#v after=%#v", before, after)
+	}
+}
+
+func policyDecisionPathFromDetail(raw any) []runtimeconfig.RuntimePolicyCandidate {
+	switch value := raw.(type) {
+	case []runtimeconfig.RuntimePolicyCandidate:
+		out := make([]runtimeconfig.RuntimePolicyCandidate, len(value))
+		copy(out, value)
+		return out
+	case []any:
+		out := make([]runtimeconfig.RuntimePolicyCandidate, 0, len(value))
+		for i := range value {
+			switch item := value[i].(type) {
+			case runtimeconfig.RuntimePolicyCandidate:
+				out = append(out, item)
+			case map[string]any:
+				candidate := runtimeconfig.RuntimePolicyCandidate{}
+				if stage, ok := item["stage"].(string); ok {
+					candidate.Stage = strings.TrimSpace(stage)
+				}
+				if code, ok := item["code"].(string); ok {
+					candidate.Code = strings.TrimSpace(code)
+				}
+				if source, ok := item["source"].(string); ok {
+					candidate.Source = strings.TrimSpace(source)
+				}
+				if decision, ok := item["decision"].(string); ok {
+					candidate.Decision = strings.TrimSpace(decision)
+				}
+				if strings.TrimSpace(candidate.Stage) != "" {
+					out = append(out, candidate)
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

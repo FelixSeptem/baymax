@@ -126,6 +126,36 @@ func (e *Engine) securityToolGovernanceConfig() runtimeconfig.SecurityToolGovern
 	return e.runtimeMgr.EffectiveConfig().Security.ToolGovernance
 }
 
+func (e *Engine) runtimePolicyConfig() runtimeconfig.RuntimePolicyConfig {
+	if e == nil || e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig().Runtime.Policy
+	}
+	return e.runtimeMgr.EffectiveConfig().Runtime.Policy
+}
+
+func (e *Engine) evaluateRuntimePolicyTrace(candidates []runtimeconfig.RuntimePolicyCandidate) (runtimeconfig.RuntimePolicyDecisionResult, bool) {
+	if len(candidates) == 0 {
+		return runtimeconfig.RuntimePolicyDecisionResult{}, false
+	}
+	trace, err := runtimeconfig.EvaluateRuntimePolicyDecision(e.runtimePolicyConfig(), candidates)
+	if err != nil {
+		return runtimeconfig.RuntimePolicyDecisionResult{}, false
+	}
+	return trace, true
+}
+
+func runtimePolicyStageForSecurityDecision(decision securityDecision) string {
+	policyKind := strings.ToLower(strings.TrimSpace(decision.PolicyKind))
+	reasonCode := strings.ToLower(strings.TrimSpace(decision.ReasonCode))
+	if policyKind == securityPolicyKindSandbox {
+		if strings.HasPrefix(reasonCode, "sandbox.egress") {
+			return runtimeconfig.RuntimePolicyStageSandboxEgress
+		}
+		return runtimeconfig.RuntimePolicyStageSandboxAction
+	}
+	return runtimeconfig.RuntimePolicyStageSecurityS2
+}
+
 func (e *Engine) securitySandboxConfig() runtimeconfig.SecuritySandboxConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.Sandbox
@@ -177,7 +207,7 @@ func (e *Engine) enforceToolSecurityForCalls(
 				})
 				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, decision.ReasonCode)
 				msg := fmt.Sprintf("tool call denied by sandbox policy: %s", namespaceTool)
-				return &decision, securityDeniedError(msg, decision, map[string]any{
+				return &decision, e.securityDeniedError(msg, decision, map[string]any{
 					"call_id":          strings.TrimSpace(call.CallID),
 					"tool":             strings.TrimSpace(call.Name),
 					"sandbox_mode":     sandboxMode,
@@ -200,7 +230,7 @@ func (e *Engine) enforceToolSecurityForCalls(
 			})
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, decision.ReasonCode)
 			msg := fmt.Sprintf("tool call denied by permission policy: %s", namespaceTool)
-			return &decision, securityDeniedError(msg, decision, map[string]any{
+			return &decision, e.securityDeniedError(msg, decision, map[string]any{
 				"call_id": strings.TrimSpace(call.CallID),
 				"tool":    strings.TrimSpace(call.Name),
 			}), errors.New(msg)
@@ -229,7 +259,7 @@ func (e *Engine) enforceToolSecurityForCalls(
 		})
 		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, decision.ReasonCode)
 		msg := fmt.Sprintf("tool call denied by rate limit policy: %s", namespaceTool)
-		return &decision, securityDeniedError(msg, decision, map[string]any{
+		return &decision, e.securityDeniedError(msg, decision, map[string]any{
 			"call_id":         strings.TrimSpace(call.CallID),
 			"tool":            strings.TrimSpace(call.Name),
 			"rate_limit":      limit,
@@ -256,7 +286,7 @@ func (e *Engine) applyInputFilters(ctx context.Context, runID string, iteration 
 				ReasonCode:  securityReasonIOFilterMissing,
 			})
 			msg := "model input denied because no input security filter is registered"
-			return req, &decision, securityDeniedError(msg, decision, map[string]any{
+			return req, &decision, e.securityDeniedError(msg, decision, map[string]any{
 				"require_registered_filter": true,
 			}), errors.New(msg)
 		}
@@ -274,7 +304,7 @@ func (e *Engine) applyInputFilters(ctx context.Context, runID string, iteration 
 				ReasonCode:  securityReasonIOFilterError,
 			})
 			msg := fmt.Sprintf("model input denied because filter execution failed: %v", err)
-			return req, &decision, securityDeniedError(msg, decision, nil), err
+			return req, &decision, e.securityDeniedError(msg, decision, nil), err
 		}
 		current = next
 		normalized := normalizeFilterDecision(result)
@@ -287,7 +317,7 @@ func (e *Engine) applyInputFilters(ctx context.Context, runID string, iteration 
 				ReasonCode:  normalizeReasonCode(normalized.ReasonCode, securityReasonIOFilterDenied),
 			})
 			msg := fmt.Sprintf("model input denied by security filter: %s", decision.ReasonCode)
-			return req, &decision, securityDeniedError(msg, decision, nil), errors.New(msg)
+			return req, &decision, e.securityDeniedError(msg, decision, nil), errors.New(msg)
 		case types.SecurityFilterDecisionMatch:
 			matchDecision := e.finalizeSecurityDecision(ctx, runID, iteration, securityDecision{
 				PolicyKind:  securityPolicyKindIOFilter,
@@ -315,7 +345,7 @@ func (e *Engine) applyOutputFilters(ctx context.Context, runID string, iteration
 				ReasonCode:  securityReasonIOFilterMissing,
 			})
 			msg := "model output denied because no output security filter is registered"
-			return output, &decision, securityDeniedError(msg, decision, map[string]any{
+			return output, &decision, e.securityDeniedError(msg, decision, map[string]any{
 				"require_registered_filter": true,
 			}), errors.New(msg)
 		}
@@ -333,7 +363,7 @@ func (e *Engine) applyOutputFilters(ctx context.Context, runID string, iteration
 				ReasonCode:  securityReasonIOFilterError,
 			})
 			msg := fmt.Sprintf("model output denied because filter execution failed: %v", err)
-			return output, &decision, securityDeniedError(msg, decision, nil), err
+			return output, &decision, e.securityDeniedError(msg, decision, nil), err
 		}
 		current = next
 		normalized := normalizeFilterDecision(result)
@@ -346,7 +376,7 @@ func (e *Engine) applyOutputFilters(ctx context.Context, runID string, iteration
 				ReasonCode:  normalizeReasonCode(normalized.ReasonCode, securityReasonIOFilterDenied),
 			})
 			msg := fmt.Sprintf("model output denied by security filter: %s", decision.ReasonCode)
-			return output, &decision, securityDeniedError(msg, decision, nil), errors.New(msg)
+			return output, &decision, e.securityDeniedError(msg, decision, nil), errors.New(msg)
 		case types.SecurityFilterDecisionMatch:
 			matchDecision := e.finalizeSecurityDecision(ctx, runID, iteration, securityDecision{
 				PolicyKind:  securityPolicyKindIOFilter,
@@ -541,7 +571,7 @@ func namespaceToolKey(toolName string) (string, bool) {
 	return namespace + "+" + tool, true
 }
 
-func securityDeniedError(message string, decision securityDecision, extra map[string]any) *types.ClassifiedError {
+func (e *Engine) securityDeniedError(message string, decision securityDecision, extra map[string]any) *types.ClassifiedError {
 	details := map[string]any{
 		"policy_kind":    decision.PolicyKind,
 		"namespace_tool": decision.NamespaceTool,
@@ -571,6 +601,32 @@ func securityDeniedError(message string, decision securityDecision, extra map[st
 	}
 	if decision.AlertCircuitReason != "" {
 		details["alert_circuit_open_reason"] = decision.AlertCircuitReason
+	}
+	stage := runtimePolicyStageForSecurityDecision(decision)
+	reasonCode := strings.ToLower(strings.TrimSpace(decision.ReasonCode))
+	if trace, ok := e.evaluateRuntimePolicyTrace([]runtimeconfig.RuntimePolicyCandidate{
+		{
+			Stage:    stage,
+			Code:     reasonCode,
+			Source:   stage,
+			Decision: runtimeconfig.RuntimePolicyDecisionDeny,
+		},
+	}); ok {
+		if strings.TrimSpace(trace.Version) != "" {
+			details["policy_precedence_version"] = strings.TrimSpace(trace.Version)
+		}
+		if strings.TrimSpace(trace.WinnerStage) != "" {
+			details["winner_stage"] = strings.TrimSpace(trace.WinnerStage)
+		}
+		if strings.TrimSpace(trace.DenySource) != "" {
+			details["deny_source"] = strings.TrimSpace(trace.DenySource)
+		}
+		if strings.TrimSpace(trace.TieBreakReason) != "" {
+			details["tie_break_reason"] = strings.TrimSpace(trace.TieBreakReason)
+		}
+		if len(trace.PolicyDecisionPath) > 0 {
+			details["policy_decision_path"] = append([]runtimeconfig.RuntimePolicyCandidate(nil), trace.PolicyDecisionPath...)
+		}
 	}
 	for k, v := range extra {
 		details[k] = v

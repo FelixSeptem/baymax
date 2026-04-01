@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-03-31
+更新时间：2026-04-01
 
 ## 目标
 
@@ -110,6 +110,16 @@
   - `runtime.arbitration.version.compat_window` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_COMPAT_WINDOW`
   - `runtime.arbitration.version.on_unsupported` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_ON_UNSUPPORTED`
   - `runtime.arbitration.version.on_mismatch` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_ON_MISMATCH`
+  - `runtime.policy.precedence.version` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_VERSION`
+  - `runtime.policy.precedence.matrix.action_gate` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_ACTION_GATE`
+  - `runtime.policy.precedence.matrix.security_s2` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_SECURITY_S2`
+  - `runtime.policy.precedence.matrix.sandbox_action` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_SANDBOX_ACTION`
+  - `runtime.policy.precedence.matrix.sandbox_egress` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_SANDBOX_EGRESS`
+  - `runtime.policy.precedence.matrix.adapter_allowlist` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_ADAPTER_ALLOWLIST`
+  - `runtime.policy.precedence.matrix.readiness_admission` -> `BAYMAX_RUNTIME_POLICY_PRECEDENCE_MATRIX_READINESS_ADMISSION`
+  - `runtime.policy.tie_breaker.mode` -> `BAYMAX_RUNTIME_POLICY_TIE_BREAKER_MODE`
+  - `runtime.policy.tie_breaker.source_order` -> `BAYMAX_RUNTIME_POLICY_TIE_BREAKER_SOURCE_ORDER`
+  - `runtime.policy.explainability.enabled` -> `BAYMAX_RUNTIME_POLICY_EXPLAINABILITY_ENABLED`
   - `adapter.health.enabled` -> `BAYMAX_ADAPTER_HEALTH_ENABLED`
   - `adapter.health.strict` -> `BAYMAX_ADAPTER_HEALTH_STRICT`
   - `adapter.health.probe_timeout` -> `BAYMAX_ADAPTER_HEALTH_PROBE_TIMEOUT`
@@ -227,6 +237,21 @@ runtime:
       compat_window: 1          # A50 兼容窗口（>=0）
       on_unsupported: fail_fast # 当前仅支持 fail_fast
       on_mismatch: fail_fast    # 当前仅支持 fail_fast
+  policy:
+    precedence:
+      version: policy_stack.v1  # A58 固定 policy stack 契约版本
+      matrix:
+        action_gate: 1
+        security_s2: 2
+        sandbox_action: 3
+        sandbox_egress: 4
+        adapter_allowlist: 5
+        readiness_admission: 6
+    tie_breaker:
+      mode: lexical_code_then_source_order # 当前仅支持 lexical_code_then_source_order
+      source_order: [action_gate, security_s2, sandbox_action, sandbox_egress, adapter_allowlist, readiness_admission]
+    explainability:
+      enabled: true
   operation_profiles:
     default_profile: legacy     # A41 默认 legacy
     legacy:
@@ -1028,6 +1053,7 @@ Mailbox diagnostics additive 字段（A35）：
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
 - Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
+- Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
 - Memory（A54）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`
 - Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
@@ -1141,6 +1167,11 @@ Composed summary additive fields（contract markers）：
 - `adapter_allowlist_decision`
 - `adapter_allowlist_block_total`
 - `adapter_allowlist_primary_code`
+- `policy_precedence_version`
+- `winner_stage`
+- `deny_source`
+- `tie_break_reason`
+- `policy_decision_path`
 - `memory_mode`
 - `memory_provider`
 - `memory_profile`
@@ -1256,6 +1287,20 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `adapter_allowlist_decision_drift`
   - `adapter_allowlist_taxonomy_drift`
 - mixed fixture 兼容要求：A57 gate 必须与 `sandbox.v1` + `memory.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility`）。
+
+语义（A58 policy precedence + decision trace 模式）：
+- 输入：版本化 fixture（`version=policy_stack.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `policy_precedence_version`
+  - `winner_stage`
+  - `deny_source`
+  - `tie_break_reason`
+  - `policy_decision_path`（`stage/code/source/decision`）
+- 输出：按 case name 排序后的 canonical policy stack 输出。
+- drift 分类（A58 blocking）：
+  - `precedence_conflict`
+  - `tie_break_drift`
+  - `deny_source_mismatch`
+- mixed fixture 兼容要求：A58 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
 
 语义（A54 memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：
@@ -1594,6 +1639,28 @@ A57 gate 与 required-check 暴露：
 - Windows: `pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1`
 - CI Job: `sandbox-egress-allowlist-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-sandbox-egress-allowlist-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+
+A58 在 A57 基础上冻结跨策略层 precedence matrix 与 decision trace 合同，统一 action/s2/sandbox/egress/allowlist/admission 的 winner 解释链路。
+
+A58 配置域：
+- `runtime.policy.precedence.version`（当前固定 `policy_stack.v1`）
+- `runtime.policy.precedence.matrix.*`
+- `runtime.policy.tie_breaker.mode`（当前固定 `lexical_code_then_source_order`）
+- `runtime.policy.tie_breaker.source_order`
+- `runtime.policy.explainability.enabled`
+
+A58 additive diagnostics 字段（`additive + nullable + default`）：
+- `policy_precedence_version`
+- `winner_stage`
+- `deny_source`
+- `tie_break_reason`
+- `policy_decision_path`
+
+A58 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-policy-precedence-contract.sh`
+- Windows: `pwsh -File scripts/check-policy-precedence-contract.ps1`
+- CI Job: `policy-precedence-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-policy-precedence-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

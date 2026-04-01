@@ -809,6 +809,130 @@ security:
 	}
 }
 
+func TestManagerReadinessPreflightPolicyCandidatesWinnerMetadata(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a58-preflight.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+security:
+  sandbox:
+    enabled: true
+    required: true
+    mode: enforce
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: deny
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A58_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	first := mgr.ReadinessPreflight()
+	second := mgr.ReadinessPreflight()
+	if len(first.PolicyCandidates) == 0 {
+		t.Fatalf("policy_candidates should not be empty: %#v", first)
+	}
+	if len(first.PolicyDecisionPath) == 0 {
+		t.Fatalf("policy_decision_path should not be empty: %#v", first)
+	}
+	if first.PolicyPrecedenceVersion != RuntimePolicyPrecedenceVersionPolicyStackV1 {
+		t.Fatalf("policy_precedence_version=%q, want %q", first.PolicyPrecedenceVersion, RuntimePolicyPrecedenceVersionPolicyStackV1)
+	}
+	if first.WinnerStage != RuntimePolicyStageSandboxAction {
+		t.Fatalf("winner_stage=%q, want %q", first.WinnerStage, RuntimePolicyStageSandboxAction)
+	}
+	if strings.TrimSpace(first.DenySource) == "" {
+		t.Fatalf("deny_source should be present: %#v", first)
+	}
+
+	firstDigest, _ := json.Marshal(struct {
+		Candidates []RuntimePolicyCandidate `json:"policy_candidates"`
+		Path       []RuntimePolicyCandidate `json:"policy_decision_path"`
+		Version    string                   `json:"policy_precedence_version"`
+		Winner     string                   `json:"winner_stage"`
+		DenySource string                   `json:"deny_source"`
+		TieBreak   string                   `json:"tie_break_reason"`
+	}{
+		Candidates: first.PolicyCandidates,
+		Path:       first.PolicyDecisionPath,
+		Version:    first.PolicyPrecedenceVersion,
+		Winner:     first.WinnerStage,
+		DenySource: first.DenySource,
+		TieBreak:   first.TieBreakReason,
+	})
+	secondDigest, _ := json.Marshal(struct {
+		Candidates []RuntimePolicyCandidate `json:"policy_candidates"`
+		Path       []RuntimePolicyCandidate `json:"policy_decision_path"`
+		Version    string                   `json:"policy_precedence_version"`
+		Winner     string                   `json:"winner_stage"`
+		DenySource string                   `json:"deny_source"`
+		TieBreak   string                   `json:"tie_break_reason"`
+	}{
+		Candidates: second.PolicyCandidates,
+		Path:       second.PolicyDecisionPath,
+		Version:    second.PolicyPrecedenceVersion,
+		Winner:     second.WinnerStage,
+		DenySource: second.DenySource,
+		TieBreak:   second.TieBreakReason,
+	})
+	if string(firstDigest) != string(secondDigest) {
+		t.Fatalf("preflight policy metadata must be deterministic first=%s second=%s", string(firstDigest), string(secondDigest))
+	}
+}
+
+func TestManagerReadinessAdmissionPolicyDecisionTraceFields(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a58-admission.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+security:
+  sandbox:
+    enabled: true
+    required: true
+    mode: enforce
+    policy:
+      default_action: sandbox
+      profile: default
+      fallback_action: deny
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A58_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	decision := mgr.EvaluateReadinessAdmission()
+	if decision.Outcome != ReadinessAdmissionOutcomeDeny {
+		t.Fatalf("outcome=%q, want deny", decision.Outcome)
+	}
+	if decision.PolicyPrecedenceVersion != RuntimePolicyPrecedenceVersionPolicyStackV1 {
+		t.Fatalf("policy_precedence_version=%q, want %q", decision.PolicyPrecedenceVersion, RuntimePolicyPrecedenceVersionPolicyStackV1)
+	}
+	if decision.WinnerStage != RuntimePolicyStageSandboxAction {
+		t.Fatalf("winner_stage=%q, want %q", decision.WinnerStage, RuntimePolicyStageSandboxAction)
+	}
+	if strings.TrimSpace(decision.DenySource) == "" {
+		t.Fatalf("deny_source should be present: %#v", decision)
+	}
+	if len(decision.PolicyDecisionPath) == 0 {
+		t.Fatalf("policy_decision_path should not be empty: %#v", decision)
+	}
+}
+
 func TestManagerReadinessPreflightSandboxRolloutFrozenFinding(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime-a52-frozen.yaml")
 	writeConfig(t, file, `

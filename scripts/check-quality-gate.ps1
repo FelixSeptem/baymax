@@ -131,6 +131,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] sandbox egress + adapter allowlis
     pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] policy precedence contract suites" -Command {
+    pwsh -File scripts/check-policy-precedence-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

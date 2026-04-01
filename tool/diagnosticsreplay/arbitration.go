@@ -17,12 +17,15 @@ const (
 	ArbitrationFixtureVersionA51V1    = "a51.v1"
 	ArbitrationFixtureVersionA52V1    = "a52.v1"
 	ArbitrationFixtureVersionA57V1    = "sandbox_egress.v1"
+	ArbitrationFixtureVersionPolicyV1 = "policy_stack.v1"
 	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
 	ArbitrationFixtureVersionObsV1    = "observability.v1"
 	ArbitrationFixtureVersionReactV1  = "react.v1"
 
+	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
 	ReasonCodeTieBreakDrift                       = "tie_break_drift"
+	ReasonCodeDenySourceMismatch                  = "deny_source_mismatch"
 	ReasonCodeTaxonomyDrift                       = "taxonomy_drift"
 	ReasonCodeSecondaryOrderDrift                 = "secondary_order_drift"
 	ReasonCodeSecondaryCountDrift                 = "secondary_count_drift"
@@ -81,77 +84,89 @@ type ArbitrationFixtureCase struct {
 }
 
 type ArbitrationObservation struct {
-	RuntimePrimaryDomain                   string   `json:"runtime_primary_domain"`
-	RuntimePrimaryCode                     string   `json:"runtime_primary_code"`
-	RuntimePrimarySource                   string   `json:"runtime_primary_source"`
-	RuntimePrimaryConflictTotal            int      `json:"runtime_primary_conflict_total"`
-	RuntimeSecondaryReasonCodes            []string `json:"runtime_secondary_reason_codes,omitempty"`
-	RuntimeSecondaryReasonCount            int      `json:"runtime_secondary_reason_count,omitempty"`
-	RuntimeArbitrationRuleVersion          string   `json:"runtime_arbitration_rule_version,omitempty"`
-	RuntimeArbitrationRuleRequestedVersion string   `json:"runtime_arbitration_rule_requested_version,omitempty"`
-	RuntimeArbitrationRuleEffectiveVersion string   `json:"runtime_arbitration_rule_effective_version,omitempty"`
-	RuntimeArbitrationRuleVersionSource    string   `json:"runtime_arbitration_rule_version_source,omitempty"`
-	RuntimeArbitrationRulePolicyAction     string   `json:"runtime_arbitration_rule_policy_action,omitempty"`
-	RuntimeArbitrationRuleUnsupportedTotal int      `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
-	RuntimeArbitrationRuleMismatchTotal    int      `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
-	RuntimeRemediationHintCode             string   `json:"runtime_remediation_hint_code,omitempty"`
-	RuntimeRemediationHintDomain           string   `json:"runtime_remediation_hint_domain,omitempty"`
-	ModelProvider                          string   `json:"model_provider,omitempty"`
-	ReactEnabled                           bool     `json:"react_enabled,omitempty"`
-	ReactIterationTotal                    int      `json:"react_iteration_total,omitempty"`
-	ReactToolCallTotal                     int      `json:"react_tool_call_total,omitempty"`
-	ReactToolCallBudgetHitTotal            int      `json:"react_tool_call_budget_hit_total,omitempty"`
-	ReactIterationBudgetHitTotal           int      `json:"react_iteration_budget_hit_total,omitempty"`
-	ReactTerminationReason                 string   `json:"react_termination_reason,omitempty"`
-	ReactStreamDispatchEnabled             bool     `json:"react_stream_dispatch_enabled,omitempty"`
-	SandboxMode                            string   `json:"sandbox_mode,omitempty"`
-	SandboxBackend                         string   `json:"sandbox_backend,omitempty"`
-	SandboxProfile                         string   `json:"sandbox_profile,omitempty"`
-	SandboxSessionMode                     string   `json:"sandbox_session_mode,omitempty"`
-	SandboxRequiredCapabilities            []string `json:"sandbox_required_capabilities,omitempty"`
-	SandboxDecision                        string   `json:"sandbox_decision,omitempty"`
-	SandboxReasonCode                      string   `json:"sandbox_reason_code,omitempty"`
-	SandboxFallbackUsed                    bool     `json:"sandbox_fallback_used,omitempty"`
-	SandboxFallbackReason                  string   `json:"sandbox_fallback_reason,omitempty"`
-	SandboxTimeoutTotal                    int      `json:"sandbox_timeout_total,omitempty"`
-	SandboxLaunchFailedTotal               int      `json:"sandbox_launch_failed_total,omitempty"`
-	SandboxCapabilityMismatchTotal         int      `json:"sandbox_capability_mismatch_total,omitempty"`
-	SandboxQueueWaitMsP95                  int64    `json:"sandbox_queue_wait_ms_p95,omitempty"`
-	SandboxExecLatencyMsP95                int64    `json:"sandbox_exec_latency_ms_p95,omitempty"`
-	SandboxExitCodeLast                    int      `json:"sandbox_exit_code_last,omitempty"`
-	SandboxOOMTotal                        int      `json:"sandbox_oom_total,omitempty"`
-	SandboxResourceCPUMsTotal              int64    `json:"sandbox_resource_cpu_ms_total,omitempty"`
-	SandboxResourceMemoryPeakBytesP95      int64    `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
-	SandboxRolloutPhase                    string   `json:"sandbox_rollout_phase,omitempty"`
-	SandboxHealthBudgetStatus              string   `json:"sandbox_health_budget_status,omitempty"`
-	SandboxCapacityAction                  string   `json:"sandbox_capacity_action,omitempty"`
-	SandboxFreezeState                     bool     `json:"sandbox_freeze_state,omitempty"`
-	SandboxFreezeReasonCode                string   `json:"sandbox_freeze_reason_code,omitempty"`
-	SandboxEgressAction                    string   `json:"sandbox_egress_action,omitempty"`
-	SandboxEgressViolationTotal            int      `json:"sandbox_egress_violation_total,omitempty"`
-	SandboxEgressPolicySource              string   `json:"sandbox_egress_policy_source,omitempty"`
-	AdapterAllowlistDecision               string   `json:"adapter_allowlist_decision,omitempty"`
-	AdapterAllowlistBlockTotal             int      `json:"adapter_allowlist_block_total,omitempty"`
-	AdapterAllowlistPrimaryCode            string   `json:"adapter_allowlist_primary_code,omitempty"`
-	MemoryMode                             string   `json:"memory_mode,omitempty"`
-	MemoryProvider                         string   `json:"memory_provider,omitempty"`
-	MemoryProfile                          string   `json:"memory_profile,omitempty"`
-	MemoryContractVersion                  string   `json:"memory_contract_version,omitempty"`
-	MemoryQueryTotal                       int      `json:"memory_query_total,omitempty"`
-	MemoryUpsertTotal                      int      `json:"memory_upsert_total,omitempty"`
-	MemoryDeleteTotal                      int      `json:"memory_delete_total,omitempty"`
-	MemoryErrorTotal                       int      `json:"memory_error_total,omitempty"`
-	MemoryFallbackTotal                    int      `json:"memory_fallback_total,omitempty"`
-	MemoryFallbackReasonCode               string   `json:"memory_fallback_reason_code,omitempty"`
-	MemoryReasonCode                       string   `json:"memory_reason_code,omitempty"`
-	ObservabilityExportProfile             string   `json:"observability_export_profile,omitempty"`
-	ObservabilityExportStatus              string   `json:"observability_export_status,omitempty"`
-	ObservabilityExportReasonCode          string   `json:"observability_export_reason_code,omitempty"`
-	DiagnosticsBundleLastStatus            string   `json:"diagnostics_bundle_last_status,omitempty"`
-	DiagnosticsBundleLastReasonCode        string   `json:"diagnostics_bundle_last_reason_code,omitempty"`
-	DiagnosticsBundleLastSchemaVersion     string   `json:"diagnostics_bundle_last_schema_version,omitempty"`
-	DiagnosticsBundleRedactionStatus       string   `json:"diagnostics_bundle_redaction_status,omitempty"`
-	DiagnosticsBundleGateFingerprint       string   `json:"diagnostics_bundle_gate_fingerprint,omitempty"`
+	RuntimePrimaryDomain                   string                    `json:"runtime_primary_domain"`
+	RuntimePrimaryCode                     string                    `json:"runtime_primary_code"`
+	RuntimePrimarySource                   string                    `json:"runtime_primary_source"`
+	RuntimePrimaryConflictTotal            int                       `json:"runtime_primary_conflict_total"`
+	RuntimeSecondaryReasonCodes            []string                  `json:"runtime_secondary_reason_codes,omitempty"`
+	RuntimeSecondaryReasonCount            int                       `json:"runtime_secondary_reason_count,omitempty"`
+	RuntimeArbitrationRuleVersion          string                    `json:"runtime_arbitration_rule_version,omitempty"`
+	RuntimeArbitrationRuleRequestedVersion string                    `json:"runtime_arbitration_rule_requested_version,omitempty"`
+	RuntimeArbitrationRuleEffectiveVersion string                    `json:"runtime_arbitration_rule_effective_version,omitempty"`
+	RuntimeArbitrationRuleVersionSource    string                    `json:"runtime_arbitration_rule_version_source,omitempty"`
+	RuntimeArbitrationRulePolicyAction     string                    `json:"runtime_arbitration_rule_policy_action,omitempty"`
+	RuntimeArbitrationRuleUnsupportedTotal int                       `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
+	RuntimeArbitrationRuleMismatchTotal    int                       `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
+	RuntimeRemediationHintCode             string                    `json:"runtime_remediation_hint_code,omitempty"`
+	RuntimeRemediationHintDomain           string                    `json:"runtime_remediation_hint_domain,omitempty"`
+	PolicyPrecedenceVersion                string                    `json:"policy_precedence_version,omitempty"`
+	WinnerStage                            string                    `json:"winner_stage,omitempty"`
+	DenySource                             string                    `json:"deny_source,omitempty"`
+	TieBreakReason                         string                    `json:"tie_break_reason,omitempty"`
+	PolicyDecisionPath                     []PolicyDecisionPathEntry `json:"policy_decision_path,omitempty"`
+	ModelProvider                          string                    `json:"model_provider,omitempty"`
+	ReactEnabled                           bool                      `json:"react_enabled,omitempty"`
+	ReactIterationTotal                    int                       `json:"react_iteration_total,omitempty"`
+	ReactToolCallTotal                     int                       `json:"react_tool_call_total,omitempty"`
+	ReactToolCallBudgetHitTotal            int                       `json:"react_tool_call_budget_hit_total,omitempty"`
+	ReactIterationBudgetHitTotal           int                       `json:"react_iteration_budget_hit_total,omitempty"`
+	ReactTerminationReason                 string                    `json:"react_termination_reason,omitempty"`
+	ReactStreamDispatchEnabled             bool                      `json:"react_stream_dispatch_enabled,omitempty"`
+	SandboxMode                            string                    `json:"sandbox_mode,omitempty"`
+	SandboxBackend                         string                    `json:"sandbox_backend,omitempty"`
+	SandboxProfile                         string                    `json:"sandbox_profile,omitempty"`
+	SandboxSessionMode                     string                    `json:"sandbox_session_mode,omitempty"`
+	SandboxRequiredCapabilities            []string                  `json:"sandbox_required_capabilities,omitempty"`
+	SandboxDecision                        string                    `json:"sandbox_decision,omitempty"`
+	SandboxReasonCode                      string                    `json:"sandbox_reason_code,omitempty"`
+	SandboxFallbackUsed                    bool                      `json:"sandbox_fallback_used,omitempty"`
+	SandboxFallbackReason                  string                    `json:"sandbox_fallback_reason,omitempty"`
+	SandboxTimeoutTotal                    int                       `json:"sandbox_timeout_total,omitempty"`
+	SandboxLaunchFailedTotal               int                       `json:"sandbox_launch_failed_total,omitempty"`
+	SandboxCapabilityMismatchTotal         int                       `json:"sandbox_capability_mismatch_total,omitempty"`
+	SandboxQueueWaitMsP95                  int64                     `json:"sandbox_queue_wait_ms_p95,omitempty"`
+	SandboxExecLatencyMsP95                int64                     `json:"sandbox_exec_latency_ms_p95,omitempty"`
+	SandboxExitCodeLast                    int                       `json:"sandbox_exit_code_last,omitempty"`
+	SandboxOOMTotal                        int                       `json:"sandbox_oom_total,omitempty"`
+	SandboxResourceCPUMsTotal              int64                     `json:"sandbox_resource_cpu_ms_total,omitempty"`
+	SandboxResourceMemoryPeakBytesP95      int64                     `json:"sandbox_resource_memory_peak_bytes_p95,omitempty"`
+	SandboxRolloutPhase                    string                    `json:"sandbox_rollout_phase,omitempty"`
+	SandboxHealthBudgetStatus              string                    `json:"sandbox_health_budget_status,omitempty"`
+	SandboxCapacityAction                  string                    `json:"sandbox_capacity_action,omitempty"`
+	SandboxFreezeState                     bool                      `json:"sandbox_freeze_state,omitempty"`
+	SandboxFreezeReasonCode                string                    `json:"sandbox_freeze_reason_code,omitempty"`
+	SandboxEgressAction                    string                    `json:"sandbox_egress_action,omitempty"`
+	SandboxEgressViolationTotal            int                       `json:"sandbox_egress_violation_total,omitempty"`
+	SandboxEgressPolicySource              string                    `json:"sandbox_egress_policy_source,omitempty"`
+	AdapterAllowlistDecision               string                    `json:"adapter_allowlist_decision,omitempty"`
+	AdapterAllowlistBlockTotal             int                       `json:"adapter_allowlist_block_total,omitempty"`
+	AdapterAllowlistPrimaryCode            string                    `json:"adapter_allowlist_primary_code,omitempty"`
+	MemoryMode                             string                    `json:"memory_mode,omitempty"`
+	MemoryProvider                         string                    `json:"memory_provider,omitempty"`
+	MemoryProfile                          string                    `json:"memory_profile,omitempty"`
+	MemoryContractVersion                  string                    `json:"memory_contract_version,omitempty"`
+	MemoryQueryTotal                       int                       `json:"memory_query_total,omitempty"`
+	MemoryUpsertTotal                      int                       `json:"memory_upsert_total,omitempty"`
+	MemoryDeleteTotal                      int                       `json:"memory_delete_total,omitempty"`
+	MemoryErrorTotal                       int                       `json:"memory_error_total,omitempty"`
+	MemoryFallbackTotal                    int                       `json:"memory_fallback_total,omitempty"`
+	MemoryFallbackReasonCode               string                    `json:"memory_fallback_reason_code,omitempty"`
+	MemoryReasonCode                       string                    `json:"memory_reason_code,omitempty"`
+	ObservabilityExportProfile             string                    `json:"observability_export_profile,omitempty"`
+	ObservabilityExportStatus              string                    `json:"observability_export_status,omitempty"`
+	ObservabilityExportReasonCode          string                    `json:"observability_export_reason_code,omitempty"`
+	DiagnosticsBundleLastStatus            string                    `json:"diagnostics_bundle_last_status,omitempty"`
+	DiagnosticsBundleLastReasonCode        string                    `json:"diagnostics_bundle_last_reason_code,omitempty"`
+	DiagnosticsBundleLastSchemaVersion     string                    `json:"diagnostics_bundle_last_schema_version,omitempty"`
+	DiagnosticsBundleRedactionStatus       string                    `json:"diagnostics_bundle_redaction_status,omitempty"`
+	DiagnosticsBundleGateFingerprint       string                    `json:"diagnostics_bundle_gate_fingerprint,omitempty"`
+}
+
+type PolicyDecisionPathEntry struct {
+	Stage    string `json:"stage"`
+	Code     string `json:"code,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Decision string `json:"decision,omitempty"`
 }
 
 type ArbitrationReplayOutput struct {
@@ -182,6 +197,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
 		version != ArbitrationFixtureVersionA57V1 &&
+		version != ArbitrationFixtureVersionPolicyV1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
 		version != ArbitrationFixtureVersionObsV1 &&
 		version != ArbitrationFixtureVersionReactV1 {
@@ -297,6 +313,10 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		RuntimeArbitrationRuleMismatchTotal:    in.RuntimeArbitrationRuleMismatchTotal,
 		RuntimeRemediationHintCode:             strings.TrimSpace(in.RuntimeRemediationHintCode),
 		RuntimeRemediationHintDomain:           strings.ToLower(strings.TrimSpace(in.RuntimeRemediationHintDomain)),
+		PolicyPrecedenceVersion:                strings.ToLower(strings.TrimSpace(in.PolicyPrecedenceVersion)),
+		WinnerStage:                            strings.ToLower(strings.TrimSpace(in.WinnerStage)),
+		DenySource:                             strings.ToLower(strings.TrimSpace(in.DenySource)),
+		TieBreakReason:                         strings.ToLower(strings.TrimSpace(in.TieBreakReason)),
 		ModelProvider:                          strings.ToLower(strings.TrimSpace(in.ModelProvider)),
 		ReactEnabled:                           in.ReactEnabled,
 		ReactIterationTotal:                    in.ReactIterationTotal,
@@ -442,6 +462,22 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if len(out.SandboxRequiredCapabilities) == 0 {
 		out.SandboxRequiredCapabilities = nil
 	}
+	for i := range in.PolicyDecisionPath {
+		item := in.PolicyDecisionPath[i]
+		stage := strings.ToLower(strings.TrimSpace(item.Stage))
+		if stage == "" {
+			continue
+		}
+		out.PolicyDecisionPath = append(out.PolicyDecisionPath, PolicyDecisionPathEntry{
+			Stage:    stage,
+			Code:     strings.TrimSpace(item.Code),
+			Source:   strings.ToLower(strings.TrimSpace(item.Source)),
+			Decision: strings.ToLower(strings.TrimSpace(item.Decision)),
+		})
+	}
+	if len(out.PolicyDecisionPath) == 0 {
+		out.PolicyDecisionPath = nil
+	}
 	return out
 }
 
@@ -457,6 +493,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionPolicyV1 {
+		return validatePolicyStackArbitrationObservation(caseName, lane, obs)
 	}
 	if strings.TrimSpace(obs.RuntimePrimaryDomain) == "" {
 		return &ValidationError{
@@ -655,6 +694,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return assertSandboxEgressArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionPolicyV1 {
+		return assertPolicyStackArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
@@ -855,6 +897,111 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			actual,
 		),
 	}
+}
+
+func validatePolicyStackArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.PolicyPrecedenceVersion) != runtimeconfig.RuntimePolicyPrecedenceVersionPolicyStackV1 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s policy_precedence_version must be %q", caseName, lane, runtimeconfig.RuntimePolicyPrecedenceVersionPolicyStackV1),
+		}
+	}
+	if !isCanonicalPolicyStage(obs.WinnerStage) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s winner_stage is invalid: %q", caseName, lane, obs.WinnerStage),
+		}
+	}
+	if len(obs.PolicyDecisionPath) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s policy_decision_path must not be empty", caseName, lane),
+		}
+	}
+	winnerSeen := false
+	denySeen := false
+	for i := range obs.PolicyDecisionPath {
+		item := obs.PolicyDecisionPath[i]
+		if !isCanonicalPolicyStage(item.Stage) {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s policy_decision_path[%d].stage is invalid: %q", caseName, lane, i, item.Stage),
+			}
+		}
+		switch strings.TrimSpace(item.Decision) {
+		case runtimeconfig.RuntimePolicyDecisionAllow:
+		case runtimeconfig.RuntimePolicyDecisionDeny:
+			denySeen = true
+		default:
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s policy_decision_path[%d].decision must be allow|deny", caseName, lane, i),
+			}
+		}
+		if item.Stage == obs.WinnerStage {
+			winnerSeen = true
+		}
+	}
+	if !winnerSeen {
+		return &ValidationError{
+			Code:    ReasonCodePrecedenceConflict,
+			Message: fmt.Sprintf("case %q %s winner_stage=%q not found in policy_decision_path", caseName, lane, obs.WinnerStage),
+		}
+	}
+	if strings.TrimSpace(obs.TieBreakReason) != "" &&
+		strings.TrimSpace(obs.TieBreakReason) != runtimeconfig.RuntimePolicyTieBreakerModeLexicalCodeThenSourceOrder {
+		return &ValidationError{
+			Code:    ReasonCodeTieBreakDrift,
+			Message: fmt.Sprintf("case %q %s unsupported tie_break_reason=%q", caseName, lane, obs.TieBreakReason),
+		}
+	}
+	if strings.TrimSpace(obs.DenySource) != "" && !denySeen {
+		return &ValidationError{
+			Code:    ReasonCodeDenySourceMismatch,
+			Message: fmt.Sprintf("case %q %s deny_source must be empty when no deny candidate exists", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.DenySource) != "" && !isCanonicalPolicySource(obs.DenySource) {
+		return &ValidationError{
+			Code:    ReasonCodeDenySourceMismatch,
+			Message: fmt.Sprintf("case %q %s deny_source is invalid: %q", caseName, lane, obs.DenySource),
+		}
+	}
+	return nil
+}
+
+func assertPolicyStackArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.PolicyPrecedenceVersion != actual.PolicyPrecedenceVersion {
+		return &ValidationError{
+			Code:    ReasonCodePrecedenceConflict,
+			Message: fmt.Sprintf("case %q %s policy precedence version drift expected=%q actual=%q", caseName, lane, expected.PolicyPrecedenceVersion, actual.PolicyPrecedenceVersion),
+		}
+	}
+	if expected.WinnerStage != actual.WinnerStage {
+		return &ValidationError{
+			Code:    ReasonCodePrecedenceConflict,
+			Message: fmt.Sprintf("case %q %s precedence conflict expected winner=%q actual=%q", caseName, lane, expected.WinnerStage, actual.WinnerStage),
+		}
+	}
+	if expected.DenySource != actual.DenySource {
+		return &ValidationError{
+			Code:    ReasonCodeDenySourceMismatch,
+			Message: fmt.Sprintf("case %q %s deny source mismatch expected=%q actual=%q", caseName, lane, expected.DenySource, actual.DenySource),
+		}
+	}
+	if expected.TieBreakReason != actual.TieBreakReason {
+		return &ValidationError{
+			Code:    ReasonCodeTieBreakDrift,
+			Message: fmt.Sprintf("case %q %s tie-break drift expected=%q actual=%q", caseName, lane, expected.TieBreakReason, actual.TieBreakReason),
+		}
+	}
+	if !equalPolicyDecisionPath(expected.PolicyDecisionPath, actual.PolicyDecisionPath) {
+		return &ValidationError{
+			Code:    ReasonCodePrecedenceConflict,
+			Message: fmt.Sprintf("case %q %s precedence conflict expected_path=%#v actual_path=%#v", caseName, lane, expected.PolicyDecisionPath, actual.PolicyDecisionPath),
+		}
+	}
+	return nil
 }
 
 func validateReactArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
@@ -1249,6 +1396,13 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.AdapterAllowlistBlockTotal == right.AdapterAllowlistBlockTotal &&
 			left.AdapterAllowlistPrimaryCode == right.AdapterAllowlistPrimaryCode
 	}
+	if version == ArbitrationFixtureVersionPolicyV1 {
+		return left.PolicyPrecedenceVersion == right.PolicyPrecedenceVersion &&
+			left.WinnerStage == right.WinnerStage &&
+			left.DenySource == right.DenySource &&
+			left.TieBreakReason == right.TieBreakReason &&
+			equalPolicyDecisionPath(left.PolicyDecisionPath, right.PolicyDecisionPath)
+	}
 	if left.RuntimePrimaryDomain != right.RuntimePrimaryDomain ||
 		left.RuntimePrimaryCode != right.RuntimePrimaryCode ||
 		left.RuntimePrimarySource != right.RuntimePrimarySource ||
@@ -1324,6 +1478,49 @@ func equalStringSlice(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func equalPolicyDecisionPath(left, right []PolicyDecisionPathEntry) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].Stage != right[i].Stage ||
+			left[i].Code != right[i].Code ||
+			left[i].Source != right[i].Source ||
+			left[i].Decision != right[i].Decision {
+			return false
+		}
+	}
+	return true
+}
+
+func isCanonicalPolicyStage(stage string) bool {
+	needle := strings.ToLower(strings.TrimSpace(stage))
+	if needle == "" {
+		return false
+	}
+	for _, item := range runtimeconfig.RuntimePolicyCanonicalStages() {
+		if needle == strings.ToLower(strings.TrimSpace(item)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCanonicalPolicySource(source string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(source))
+	if normalized == "" {
+		return false
+	}
+	if isCanonicalPolicyStage(normalized) {
+		return true
+	}
+	normalized = strings.ReplaceAll(normalized, ".", "_")
+	normalized = strings.ReplaceAll(normalized, ":", "_")
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	normalized = strings.ReplaceAll(normalized, "/", "_")
+	return isCanonicalPolicyStage(normalized)
 }
 
 func isCanonicalArbitrationCode(code string) bool {

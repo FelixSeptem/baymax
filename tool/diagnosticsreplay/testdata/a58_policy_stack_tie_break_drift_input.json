@@ -1,0 +1,71 @@
+{
+  "version": "policy_stack.v1",
+  "cases": [
+    {
+      "name": "tie_break_drift_case",
+      "run": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_egress",
+        "deny_source": "sandbox_egress",
+        "tie_break_reason": "lexical_code_then_source_order",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_a",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          },
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_b",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          }
+        ]
+      },
+      "stream": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_egress",
+        "deny_source": "sandbox_egress",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_a",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          },
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_b",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_egress",
+        "deny_source": "sandbox_egress",
+        "tie_break_reason": "lexical_code_then_source_order",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_a",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          },
+          {
+            "stage": "sandbox_egress",
+            "code": "sandbox.egress.block_b",
+            "source": "sandbox_egress",
+            "decision": "deny"
+          }
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

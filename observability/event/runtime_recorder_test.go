@@ -303,28 +303,46 @@ mcp:
 			"runtime_readiness_admission_bypass_total":         0,
 			"runtime_readiness_admission_mode":                 "fail_fast",
 			"runtime_readiness_admission_primary_code":         "scheduler.backend.fallback",
-			"adapter_health_status":                            "unavailable",
-			"adapter_health_probe_total":                       3,
-			"adapter_health_degraded_total":                    1,
-			"adapter_health_unavailable_total":                 2,
-			"adapter_health_primary_code":                      "adapter.health.required_unavailable",
-			"adapter_health_backoff_applied_total":             4,
-			"adapter_health_circuit_open_total":                2,
-			"adapter_health_circuit_half_open_total":           1,
-			"adapter_health_circuit_recover_total":             1,
-			"adapter_health_circuit_state":                     "open",
-			"adapter_health_governance_primary_code":           "adapter.health.circuit_open",
-			"gate_checks":                                      4,
-			"gate_denied_count":                                2,
-			"gate_timeout_count":                               1,
-			"gate_rule_hit_count":                              2,
-			"gate_rule_last_id":                                "allow-echoloop",
-			"await_count":                                      2,
-			"resume_count":                                     1,
-			"cancel_by_user_count":                             1,
-			"cancel_propagated_count":                          3,
-			"backpressure_drop_count":                          0,
-			"inflight_peak":                                    8,
+			"policy_precedence_version":                        "policy_stack.v1",
+			"winner_stage":                                     "sandbox_action",
+			"deny_source":                                      "sandbox_action",
+			"tie_break_reason":                                 "lexical_code_then_source_order",
+			"policy_decision_path": []any{
+				map[string]any{
+					"stage":    "sandbox_action",
+					"code":     "runtime.readiness.admission.sandbox_capacity_deny",
+					"source":   "sandbox_action",
+					"decision": "deny",
+				},
+				map[string]any{
+					"stage":    "readiness_admission",
+					"code":     "runtime.readiness.admission.blocked",
+					"source":   "readiness_admission",
+					"decision": "deny",
+				},
+			},
+			"adapter_health_status":                  "unavailable",
+			"adapter_health_probe_total":             3,
+			"adapter_health_degraded_total":          1,
+			"adapter_health_unavailable_total":       2,
+			"adapter_health_primary_code":            "adapter.health.required_unavailable",
+			"adapter_health_backoff_applied_total":   4,
+			"adapter_health_circuit_open_total":      2,
+			"adapter_health_circuit_half_open_total": 1,
+			"adapter_health_circuit_recover_total":   1,
+			"adapter_health_circuit_state":           "open",
+			"adapter_health_governance_primary_code": "adapter.health.circuit_open",
+			"gate_checks":                            4,
+			"gate_denied_count":                      2,
+			"gate_timeout_count":                     1,
+			"gate_rule_hit_count":                    2,
+			"gate_rule_last_id":                      "allow-echoloop",
+			"await_count":                            2,
+			"resume_count":                           1,
+			"cancel_by_user_count":                   1,
+			"cancel_propagated_count":                3,
+			"backpressure_drop_count":                0,
+			"inflight_peak":                          8,
 		},
 	}
 	rec.OnEvent(context.Background(), ev)
@@ -562,6 +580,13 @@ mcp:
 		items[0].RuntimeReadinessAdmissionBypassTotal != 0 ||
 		items[0].RuntimeReadinessAdmissionMode != "fail_fast" ||
 		items[0].RuntimeReadinessAdmissionPrimaryCode != "scheduler.backend.fallback" ||
+		items[0].PolicyPrecedenceVersion != "policy_stack.v1" ||
+		items[0].WinnerStage != "sandbox_action" ||
+		items[0].DenySource != "sandbox_action" ||
+		items[0].TieBreakReason != "lexical_code_then_source_order" ||
+		len(items[0].PolicyDecisionPath) != 2 ||
+		items[0].PolicyDecisionPath[0].Stage != "sandbox_action" ||
+		items[0].PolicyDecisionPath[1].Stage != "readiness_admission" ||
 		items[0].AdapterHealthStatus != "unavailable" ||
 		items[0].AdapterHealthProbeTotal != 3 ||
 		items[0].AdapterHealthDegradedTotal != 1 ||
@@ -1917,6 +1942,129 @@ mcp:
 		got.AdapterAllowlistBlockTotal != 1 ||
 		got.AdapterAllowlistPrimaryCode != "adapter.allowlist.missing_entry" {
 		t.Fatalf("A57 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderParsesA58AdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a58-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                    "failed",
+			"policy_precedence_version": "policy_stack.v1",
+			"winner_stage":              "sandbox_action",
+			"deny_source":               "sandbox_action",
+			"tie_break_reason":          "lexical_code_then_source_order",
+			"policy_decision_path": []any{
+				map[string]any{
+					"stage":    "sandbox_action",
+					"code":     "runtime.readiness.admission.sandbox_capacity_deny",
+					"source":   "sandbox_action",
+					"decision": "deny",
+				},
+				map[string]any{
+					"stage":    "readiness_admission",
+					"code":     "runtime.readiness.admission.blocked",
+					"source":   "readiness_admission",
+					"decision": "deny",
+				},
+			},
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.PolicyPrecedenceVersion != "policy_stack.v1" ||
+		got.WinnerStage != "sandbox_action" ||
+		got.DenySource != "sandbox_action" ||
+		got.TieBreakReason != "lexical_code_then_source_order" ||
+		len(got.PolicyDecisionPath) != 2 ||
+		got.PolicyDecisionPath[0].Stage != "sandbox_action" ||
+		got.PolicyDecisionPath[1].Stage != "readiness_admission" {
+		t.Fatalf("A58 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a58-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(9),
+			"a58_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 9 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.PolicyPrecedenceVersion != "" ||
+		got.WinnerStage != "" ||
+		got.DenySource != "" ||
+		got.TieBreakReason != "" ||
+		len(got.PolicyDecisionPath) != 0 {
+		t.Fatalf("missing A58 additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

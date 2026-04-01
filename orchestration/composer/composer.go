@@ -280,6 +280,11 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	PolicyPrecedenceVersion              string
+	WinnerStage                          string
+	DenySource                           string
+	TieBreakReason                       string
+	PolicyDecisionPath                   []runtimeconfig.RuntimePolicyCandidate
 	AdapterAllowlistDecision             string
 	AdapterAllowlistBlockTotal           int
 	AdapterAllowlistPrimaryCode          string
@@ -1037,6 +1042,21 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
 		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
 	}
+	if strings.TrimSpace(stats.PolicyPrecedenceVersion) != "" {
+		payload["policy_precedence_version"] = strings.TrimSpace(stats.PolicyPrecedenceVersion)
+	}
+	if strings.TrimSpace(stats.WinnerStage) != "" {
+		payload["winner_stage"] = strings.TrimSpace(stats.WinnerStage)
+	}
+	if strings.TrimSpace(stats.DenySource) != "" {
+		payload["deny_source"] = strings.TrimSpace(stats.DenySource)
+	}
+	if strings.TrimSpace(stats.TieBreakReason) != "" {
+		payload["tie_break_reason"] = strings.TrimSpace(stats.TieBreakReason)
+	}
+	if len(stats.PolicyDecisionPath) > 0 {
+		payload["policy_decision_path"] = cloneRuntimePolicyCandidates(stats.PolicyDecisionPath)
+	}
 	if strings.TrimSpace(stats.AdapterAllowlistDecision) != "" {
 		payload["adapter_allowlist_decision"] = strings.TrimSpace(stats.AdapterAllowlistDecision)
 	}
@@ -1139,7 +1159,9 @@ func (c *Composer) snapshotRunStat(runID string) runStat {
 		c.runStat[runID] = &stat
 		return stat
 	}
-	return *current
+	out := *current
+	out.PolicyDecisionPath = cloneRuntimePolicyCandidates(out.PolicyDecisionPath)
+	return out
 }
 
 func (c *Composer) addChildOutcome(runID string, failed bool) {
@@ -1846,5 +1868,14 @@ func cloneIntMap(in map[string]int) map[string]int {
 	for key, value := range in {
 		out[key] = value
 	}
+	return out
+}
+
+func cloneRuntimePolicyCandidates(in []runtimeconfig.RuntimePolicyCandidate) []runtimeconfig.RuntimePolicyCandidate {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]runtimeconfig.RuntimePolicyCandidate, len(in))
+	copy(out, in)
 	return out
 }

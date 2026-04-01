@@ -720,6 +720,97 @@ func TestStoreRunReactAdditiveFieldsBoundedCardinality(t *testing.T) {
 	}
 }
 
+func TestStoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                    time.Now(),
+		RunID:                   "run-a58-policy",
+		Status:                  "failed",
+		PolicyPrecedenceVersion: "policy_stack.v1",
+		WinnerStage:             "sandbox_action",
+		DenySource:              "sandbox_action",
+		TieBreakReason:          "lexical_code_then_source_order",
+		PolicyDecisionPath: []RuntimePolicyDecisionPathEntry{
+			{Stage: "action_gate", Code: "action.gate.allow", Source: "action_gate", Decision: "allow"},
+			{Stage: "sandbox_action", Code: "runtime.readiness.admission.sandbox_capacity_deny", Source: "sandbox_action", Decision: "deny"},
+			{Stage: "readiness_admission", Code: "runtime.readiness.admission.blocked", Source: "readiness_admission", Decision: "deny"},
+		},
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.PolicyPrecedenceVersion != "policy_stack.v1" ||
+		got.WinnerStage != "sandbox_action" ||
+		got.DenySource != "sandbox_action" ||
+		got.TieBreakReason != "lexical_code_then_source_order" ||
+		len(got.PolicyDecisionPath) != 3 ||
+		got.PolicyDecisionPath[1].Stage != "sandbox_action" {
+		t.Fatalf("A58 policy fields mismatch: %#v", got)
+	}
+
+	rec.PolicyDecisionPath = []RuntimePolicyDecisionPathEntry{
+		{Stage: "sandbox_action", Code: "runtime.readiness.admission.sandbox_capacity_deny", Source: "sandbox_action", Decision: "deny"},
+	}
+	rec.DenySource = "sandbox_action"
+	d.AddRun(rec)
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replacement, want 1", len(items))
+	}
+	if len(items[0].PolicyDecisionPath) != 1 || items[0].PolicyDecisionPath[0].Stage != "sandbox_action" {
+		t.Fatalf("policy_decision_path should update on idempotent replacement: %#v", items[0].PolicyDecisionPath)
+	}
+}
+
+func TestStoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  8,
+		MaxListEntries: 1,
+		MaxStringBytes: 16,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:                    time.Now(),
+		RunID:                   "run-a58-policy-cardinality",
+		Status:                  "failed",
+		PolicyPrecedenceVersion: "policy_stack.v1.with.long.suffix",
+		WinnerStage:             "sandbox_action_with_private_suffix",
+		DenySource:              "sandbox_action_with_private_suffix",
+		TieBreakReason:          "lexical_code_then_source_order_with_private_suffix",
+		PolicyDecisionPath: []RuntimePolicyDecisionPathEntry{
+			{Stage: "action_gate", Code: "action.gate.allow.with.private.suffix", Source: "action_gate", Decision: "allow"},
+			{Stage: "sandbox_action", Code: "runtime.readiness.admission.sandbox_capacity_deny.with.private.suffix", Source: "sandbox_action", Decision: "deny"},
+		},
+	}
+	d.AddRun(rec)
+
+	items := d.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if len(got.PolicyDecisionPath) != 1 {
+		t.Fatalf("policy_decision_path should be truncated to 1 entry, got %#v", got.PolicyDecisionPath)
+	}
+	if len([]byte(got.PolicyPrecedenceVersion)) > 16 ||
+		len([]byte(got.WinnerStage)) > 16 ||
+		len([]byte(got.DenySource)) > 16 ||
+		len([]byte(got.TieBreakReason)) > 16 {
+		t.Fatalf("A58 policy string fields should be bounded by cardinality config, got %#v", got)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "policy_decision_path") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "policy_precedence_version") {
+		t.Fatalf("A58 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+}
+
 func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

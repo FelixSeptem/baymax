@@ -72,6 +72,11 @@ func (c *Composer) guardReadinessAdmission(
 				"readiness_arbitration_rule_mismatch_total":    decision.ReadinessArbitrationRuleMismatchTotal,
 				"readiness_remediation_hint_code":              strings.TrimSpace(decision.ReadinessRemediationHintCode),
 				"readiness_remediation_hint_domain":            strings.TrimSpace(decision.ReadinessRemediationHintDomain),
+				"policy_precedence_version":                    strings.TrimSpace(decision.PolicyPrecedenceVersion),
+				"winner_stage":                                 strings.TrimSpace(decision.WinnerStage),
+				"deny_source":                                  strings.TrimSpace(decision.DenySource),
+				"tie_break_reason":                             strings.TrimSpace(decision.TieBreakReason),
+				"policy_decision_path":                         append([]runtimeconfig.RuntimePolicyCandidate(nil), decision.PolicyDecisionPath...),
 				"sandbox_rollout_phase":                        strings.TrimSpace(decision.SandboxRolloutPhase),
 				"sandbox_capacity_action":                      strings.TrimSpace(decision.SandboxCapacityAction),
 				"sandbox_capacity_degraded_policy":             strings.TrimSpace(decision.SandboxCapacityDegradedPolicy),
@@ -93,6 +98,11 @@ func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig
 	stat := c.ensureRunStat(runID)
 	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
 	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	stat.PolicyPrecedenceVersion = strings.TrimSpace(decision.PolicyPrecedenceVersion)
+	stat.WinnerStage = strings.TrimSpace(decision.WinnerStage)
+	stat.DenySource = strings.TrimSpace(decision.DenySource)
+	stat.TieBreakReason = strings.TrimSpace(decision.TieBreakReason)
+	stat.PolicyDecisionPath = append([]runtimeconfig.RuntimePolicyCandidate(nil), decision.PolicyDecisionPath...)
 	if strings.HasPrefix(strings.TrimSpace(decision.ReadinessPrimaryCode), "adapter.allowlist.") {
 		stat.AdapterAllowlistPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
 		if decision.Outcome == runtimeconfig.ReadinessAdmissionOutcomeDeny {

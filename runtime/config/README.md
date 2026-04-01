@@ -43,6 +43,9 @@
 - `scheduler.async_await.reconcile.not_found_policy=keep_until_timeout`
 - `recovery.enabled=false`
 - `recovery.conflict_policy=fail_fast`
+- `runtime.policy.precedence.version=policy_stack.v1`
+- `runtime.policy.tie_breaker.mode=lexical_code_then_source_order`
+- `runtime.policy.explainability.enabled=true`
 
 ## 关键入口
 
@@ -56,6 +59,8 @@
 - 配置字段变更需要同步更新 `docs/runtime-config-diagnostics.md` 与契约测试。
 - A41 新增 operation profile 配置域：`runtime.operation_profiles.default_profile` 与四个 profile timeout（`legacy|interactive|background|batch`）。
 - A41 timeout 解析器固定三层优先级：`profile -> domain -> request`，并输出来源标签与 trace（`v1`）。
+- A58 新增 policy precedence 配置域：`runtime.policy.precedence.*`、`runtime.policy.tie_breaker.*`、`runtime.policy.explainability.*`；
+  固定 canonical stage 顺序 `action_gate -> security_s2 -> sandbox_action -> sandbox_egress -> adapter_allowlist -> readiness_admission`。
 
 ## 配置与默认值
 
@@ -68,6 +73,12 @@
   - `interactive.timeout=10s`
   - `background.timeout=30s`
   - `batch.timeout=2m`
+- policy precedence 默认值（A58）：
+  - `precedence.version=policy_stack.v1`
+  - `precedence.matrix` 使用 canonical rank `1..6`
+  - `tie_breaker.mode=lexical_code_then_source_order`
+  - `tie_breaker.source_order` 使用 canonical stage 顺序
+  - `explainability.enabled=true`
 
 ## 可观测性与验证
 

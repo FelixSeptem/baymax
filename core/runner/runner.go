@@ -1760,7 +1760,7 @@ func (e *Engine) dispatchReactToolCalls(
 				if lastSecurity != nil {
 					*lastSecurity = resolved
 				}
-				terminal = securityDeniedError(terminal.Message, resolved, cloneDetailsMap(terminal.Details))
+				terminal = e.securityDeniedError(terminal.Message, resolved, cloneDetailsMap(terminal.Details))
 			}
 		}
 		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, reason)
@@ -2472,7 +2472,56 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["sandbox_resource_cpu_ms_total"] = meta.Sandbox.ResourceCPUMsTotal
 		payload["sandbox_resource_memory_peak_bytes_p95"] = meta.Sandbox.ResourceMemoryPeakBytesP95
 	}
+	if result.Error != nil {
+		overlayRunFinishedPayloadFromErrorDetails(payload, result.Error.Details)
+	}
 	return payload
+}
+
+func overlayRunFinishedPayloadFromErrorDetails(payload map[string]any, details map[string]any) {
+	if len(payload) == 0 || len(details) == 0 {
+		return
+	}
+	keys := []string{
+		"policy_kind",
+		"namespace_tool",
+		"filter_stage",
+		"decision",
+		"reason_code",
+		"severity",
+		"policy_precedence_version",
+		"winner_stage",
+		"deny_source",
+		"tie_break_reason",
+	}
+	for i := range keys {
+		key := keys[i]
+		if _, exists := payload[key]; exists {
+			continue
+		}
+		if value, ok := details[key].(string); ok && strings.TrimSpace(value) != "" {
+			payload[key] = strings.TrimSpace(value)
+		}
+	}
+	if _, exists := payload["policy_decision_path"]; exists {
+		return
+	}
+	raw, ok := details["policy_decision_path"]
+	if !ok {
+		return
+	}
+	switch value := raw.(type) {
+	case []runtimeconfig.RuntimePolicyCandidate:
+		if len(value) == 0 {
+			return
+		}
+		payload["policy_decision_path"] = append([]runtimeconfig.RuntimePolicyCandidate(nil), value...)
+	case []any:
+		if len(value) == 0 {
+			return
+		}
+		payload["policy_decision_path"] = append([]any(nil), value...)
+	}
 }
 
 type memoryRuntimeSnapshot struct {
@@ -3445,6 +3494,60 @@ func (e *Engine) enforceActionGateForToolCalls(
 	calls []types.ToolCall,
 	stats *actionGateStats,
 ) (*types.ClassifiedError, error) {
+	classifiedActionGate := func(
+		call types.ToolCall,
+		class types.ErrorClass,
+		msg string,
+		retryable bool,
+		reasonCode string,
+	) *types.ClassifiedError {
+		ce := classified(class, msg, retryable)
+		code := strings.ToLower(strings.TrimSpace(reasonCode))
+		if code == "" {
+			code = "action.gate.denied"
+		}
+		details := map[string]any{
+			"policy_kind": "action_gate",
+			"decision":    "deny",
+			"reason_code": code,
+		}
+		if namespaceTool, ok := namespaceToolKey(call.Name); ok {
+			details["namespace_tool"] = namespaceTool
+		}
+		if callID := strings.TrimSpace(call.CallID); callID != "" {
+			details["call_id"] = callID
+		}
+		if tool := strings.TrimSpace(call.Name); tool != "" {
+			details["tool"] = tool
+		}
+		if trace, ok := e.evaluateRuntimePolicyTrace([]runtimeconfig.RuntimePolicyCandidate{
+			{
+				Stage:    runtimeconfig.RuntimePolicyStageActionGate,
+				Code:     code,
+				Source:   runtimeconfig.RuntimePolicyStageActionGate,
+				Decision: runtimeconfig.RuntimePolicyDecisionDeny,
+			},
+		}); ok {
+			if strings.TrimSpace(trace.Version) != "" {
+				details["policy_precedence_version"] = strings.TrimSpace(trace.Version)
+			}
+			if strings.TrimSpace(trace.WinnerStage) != "" {
+				details["winner_stage"] = strings.TrimSpace(trace.WinnerStage)
+			}
+			if strings.TrimSpace(trace.DenySource) != "" {
+				details["deny_source"] = strings.TrimSpace(trace.DenySource)
+			}
+			if strings.TrimSpace(trace.TieBreakReason) != "" {
+				details["tie_break_reason"] = strings.TrimSpace(trace.TieBreakReason)
+			}
+			if len(trace.PolicyDecisionPath) > 0 {
+				details["policy_decision_path"] = append([]runtimeconfig.RuntimePolicyCandidate(nil), trace.PolicyDecisionPath...)
+			}
+		}
+		ce.Details = details
+		return ce
+	}
+
 	for _, call := range calls {
 		check := types.ActionGateCheck{
 			RunID:     runID,
@@ -3457,7 +3560,13 @@ func (e *Engine) enforceActionGateForToolCalls(
 		}
 		evaluation, err := e.evaluateActionGateDecision(ctx, check)
 		if err != nil {
-			ce := classified(types.ErrTool, fmt.Sprintf("action gate evaluate failed: %v", err), false)
+			ce := classifiedActionGate(
+				call,
+				types.ErrTool,
+				fmt.Sprintf("action gate evaluate failed: %v", err),
+				false,
+				"action.gate.evaluate_failed",
+			)
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 			if stats != nil {
 				stats.Checks++
@@ -3487,7 +3596,7 @@ func (e *Engine) enforceActionGateForToolCalls(
 			}
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 			msg := fmt.Sprintf("action gate denied tool call: %s", strings.TrimSpace(call.Name))
-			return classified(types.ErrTool, msg, false), errors.New(msg)
+			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.denied"), errors.New(msg)
 		case types.ActionGateDecisionRequireConfirm:
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.require_confirm")
 			if e.actionGateResolver == nil {
@@ -3496,7 +3605,7 @@ func (e *Engine) enforceActionGateForToolCalls(
 				}
 				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 				msg := fmt.Sprintf("action gate requires confirmation but resolver is not configured: %s", strings.TrimSpace(call.Name))
-				return classified(types.ErrTool, msg, false), errors.New(msg)
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.resolver_missing"), errors.New(msg)
 			}
 			timeout := e.actionGateTimeout()
 			confirmCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -3513,14 +3622,14 @@ func (e *Engine) enforceActionGateForToolCalls(
 					}
 					e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "gate.timeout")
 					msg := fmt.Sprintf("action gate confirmation timed out for tool: %s", strings.TrimSpace(call.Name))
-					return classified(types.ErrPolicyTimeout, msg, true), context.DeadlineExceeded
+					return classifiedActionGate(call, types.ErrPolicyTimeout, msg, true, "action.gate.timeout"), context.DeadlineExceeded
 				}
 				if stats != nil {
 					stats.DeniedCount++
 				}
 				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 				msg := fmt.Sprintf("action gate confirmation failed for tool %s: %v", strings.TrimSpace(call.Name), confirmErr)
-				return classified(types.ErrTool, msg, false), confirmErr
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_failed"), confirmErr
 			}
 			if !approved {
 				if stats != nil {
@@ -3528,7 +3637,7 @@ func (e *Engine) enforceActionGateForToolCalls(
 				}
 				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 				msg := fmt.Sprintf("action gate confirmation denied tool call: %s", strings.TrimSpace(call.Name))
-				return classified(types.ErrTool, msg, false), errors.New(msg)
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_denied"), errors.New(msg)
 			}
 		default:
 			if stats != nil {
@@ -3536,7 +3645,7 @@ func (e *Engine) enforceActionGateForToolCalls(
 			}
 			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
 			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", evaluation.Decision, strings.TrimSpace(call.Name))
-			return classified(types.ErrTool, msg, false), errors.New(msg)
+			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.decision_unsupported"), errors.New(msg)
 		}
 	}
 	return nil, nil

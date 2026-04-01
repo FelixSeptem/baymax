@@ -16,10 +16,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-04-01：
-- 已归档并稳定：A4-A56（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档并稳定：A4-A58（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`
-  - `introduce-policy-precedence-and-decision-trace-contract-a58`
+  - `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -574,26 +573,25 @@ A56 一次性闭环审查（10.4）：
 - OpenClaw docs：<https://docs.openclaw.ai/>
 
 与在研项目的先后顺序（强依赖）：
-1. A57（进行中，P1）：sandbox egress 治理与 adapter allowlist contract。
-2. A58（进行中，P1）：policy precedence + decision trace contract（本轮新建提案，优先承接 A57 联调冲突风险）。
-3. A59（下一优先级，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
-4. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
-5. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
-6. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
-7. A66（新增，P2）：unified state/session snapshot contract。
-8. A67（新增，P2）：react plan notebook + plan-change hook contract。
-9. A68（新增，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
-10. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
-11. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
-12. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
+1. A58（已归档，P1）：policy precedence + decision trace contract（优先承接跨层策略冲突风险）。
+2. A59（进行中，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
+3. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
+4. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
+5. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
+6. A66（新增，P2）：unified state/session snapshot contract。
+7. A67（新增，P2）：react plan notebook + plan-change hook contract。
+8. A68（新增，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
+9. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+10. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+11. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 备选项目说明（避免“单一路线”误解）：
-- A59/A60/A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A57/A58 正在并行实施，A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
+- A60/A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A59 正在实施，A58 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
-  - 若 A57/A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
-  - 若 A57/A58 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：A59 与 scope 方案合并前置实施。
-  - 若成本或 P95 抖动在 A57/A58 上线窗口成为阻塞：A60 可提前实施。
+  - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
+  - 若 A58/A59 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：优先在 A59 内增量吸收。
+  - 若成本或 P95 抖动在 A58/A59 上线窗口成为阻塞：A60 可提前实施。
   - 若 tracing 字段跨后端解释不一致，或评测执行耗时过长/不可续跑：A61 可前置实施（含 distributed eval 执行治理）。
   - 若业务扩展频繁出现横切逻辑重复接线（审计、限流、缓存、鉴权）：A65 可前置实施。
   - 若跨模块恢复/迁移需要统一状态导入导出：A66 可前置实施。
@@ -604,16 +602,20 @@ A56 一次性闭环审查（10.4）：
   - 若外部团队接入/迁移周期过长、样例复用率低、或示例与主链路契约脱节：A62 可前置实施（但需明确冻结口径，避免反复返工）。
 - 无论是否前置切换，均不得改写 A56 已归档与 A57 已冻结范围，只允许在其完成后做增量扩展。
 
-提案 A58（进行中）：`introduce-policy-precedence-and-decision-trace-contract-a58`
+提案 A58（已归档）：`introduce-policy-precedence-and-decision-trace-contract-a58`
 - 目标：统一 ActionGate、Security S2、sandbox action/egress、adapter allowlist、readiness/admission 的策略判定优先级与解释链路，防止并行改造后出现判定冲突。
 - 范围：
   - 固化跨策略层 precedence matrix 与 deterministic tie-break；
   - 统一 deny source taxonomy 与 explainability 字段；
   - 增加 `policy_stack.v1` replay fixture 与 drift 分类；
   - 增加独立 `check-policy-precedence-contract.*` gate。
+- 当前落地（已完成）：
+  - `check-policy-precedence-contract.sh/.ps1` 已接入 `check-quality-gate.sh/.ps1`；
+  - CI 已暴露独立 required-check 候选 `policy-precedence-gate`；
+  - replay 已覆盖 `policy_stack.v1` 与 mixed compatibility（`a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1`）。
 - Why now（紧急性）：A57 联调改动 runner/sandbox/readiness/admission，若缺少统一 precedence contract，极易产生“同请求不同入口判定不一致”的高风险回归。
 
-提案 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`（进行中）
+提案 A57：`introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`（已归档）
 - 目标：补齐 sandbox 网络外呼治理（egress policy）与 adapter 供应链 allowlist 契约，形成“执行隔离 + 出口治理 + 激活准入”闭环。
 - 范围：`security.sandbox.egress.*`、`adapter.allowlist.*`、readiness/admission finding、taxonomy、replay drift 与 conformance matrix。
 - 门禁：`check-sandbox-egress-allowlist-contract.sh/.ps1`（已纳入 `check-quality-gate.sh/.ps1`），CI 独立 required-check 候选为 `sandbox-egress-allowlist-gate`。

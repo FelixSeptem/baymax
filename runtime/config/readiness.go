@@ -142,6 +142,12 @@ type ReadinessResult struct {
 	Findings                        []ReadinessFinding              `json:"findings"`
 	AdapterHealth                   []AdapterHealthEvaluation       `json:"adapter_health,omitempty"`
 	EvaluatedAt                     time.Time                       `json:"evaluated_at"`
+	PolicyCandidates                []RuntimePolicyCandidate        `json:"policy_candidates,omitempty"`
+	PolicyDecisionPath              []RuntimePolicyCandidate        `json:"policy_decision_path,omitempty"`
+	PolicyPrecedenceVersion         string                          `json:"policy_precedence_version,omitempty"`
+	WinnerStage                     string                          `json:"winner_stage,omitempty"`
+	DenySource                      string                          `json:"deny_source,omitempty"`
+	TieBreakReason                  string                          `json:"tie_break_reason,omitempty"`
 	ArbitrationRuleRequestedVersion string                          `json:"runtime_arbitration_rule_requested_version,omitempty"`
 	ArbitrationRuleEffectiveVersion string                          `json:"runtime_arbitration_rule_effective_version,omitempty"`
 	ArbitrationRuleVersionSource    string                          `json:"runtime_arbitration_rule_version_source,omitempty"`
@@ -209,6 +215,11 @@ type ReadinessAdmissionDecision struct {
 	ReadinessArbitrationRuleMismatchTotal    int                       `json:"readiness_arbitration_rule_mismatch_total,omitempty"`
 	ReadinessRemediationHintCode             string                    `json:"readiness_remediation_hint_code,omitempty"`
 	ReadinessRemediationHintDomain           string                    `json:"readiness_remediation_hint_domain,omitempty"`
+	PolicyPrecedenceVersion                  string                    `json:"policy_precedence_version,omitempty"`
+	WinnerStage                              string                    `json:"winner_stage,omitempty"`
+	DenySource                               string                    `json:"deny_source,omitempty"`
+	TieBreakReason                           string                    `json:"tie_break_reason,omitempty"`
+	PolicyDecisionPath                       []RuntimePolicyCandidate  `json:"policy_decision_path,omitempty"`
 	Bypass                                   bool                      `json:"bypass"`
 }
 
@@ -432,13 +443,14 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 				result.Findings = canonicalizeReadinessFindings(result.Findings)
 			}
 		}
-		return result
+		defaultCfg := DefaultConfig()
+		return attachReadinessPolicyMetadata(result, defaultCfg.Runtime.Policy, defaultCfg.Runtime.Readiness.Admission, defaultCfg.Security.Sandbox)
 	}
 
 	cfg := m.EffectiveConfig()
 	resolvedVersion, versionErr = ResolveArbitrationRuleVersion(cfg.Runtime.Arbitration.Version, requestedRuleVersion)
 	if !cfg.Runtime.Readiness.Enabled {
-		return ReadinessResult{
+		result := ReadinessResult{
 			Status:                          ReadinessStatusReady,
 			Findings:                        nil,
 			EvaluatedAt:                     evaluatedAt,
@@ -450,6 +462,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 			ArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
 			arbitrationVersionConfig:        cfg.Runtime.Arbitration.Version,
 		}
+		return attachReadinessPolicyMetadata(result, cfg.Runtime.Policy, cfg.Runtime.Readiness.Admission, cfg.Security.Sandbox)
 	}
 
 	findings := make([]ReadinessFinding, 0, 6)
@@ -496,7 +509,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 		status = ReadinessStatusBlocked
 	}
 
-	return ReadinessResult{
+	result := ReadinessResult{
 		Status:                          status,
 		Findings:                        findings,
 		AdapterHealth:                   adapterResults,
@@ -509,6 +522,7 @@ func (m *Manager) ReadinessPreflightWithRequest(requestedRuleVersion string) Rea
 		ArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
 		arbitrationVersionConfig:        cfg.Runtime.Arbitration.Version,
 	}
+	return attachReadinessPolicyMetadata(result, cfg.Runtime.Policy, cfg.Runtime.Readiness.Admission, cfg.Security.Sandbox)
 }
 
 func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
@@ -600,44 +614,49 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 	if decision.SandboxCapacityAction == "" {
 		decision.SandboxCapacityAction = SandboxCapacityActionAllow
 	}
+	outcomeResolved := false
 	if sandboxRolloutFrozenFromFindings(preflight.Findings) {
 		decision.Outcome = ReadinessAdmissionOutcomeDeny
 		decision.ReasonCode = ReadinessAdmissionCodeSandboxFrozen
-		return decision
+		outcomeResolved = true
 	}
-	switch decision.SandboxCapacityAction {
-	case SandboxCapacityActionDeny:
-		decision.Outcome = ReadinessAdmissionOutcomeDeny
-		decision.ReasonCode = ReadinessAdmissionCodeSandboxCapacityDeny
-		return decision
-	case SandboxCapacityActionThrottle:
-		if decision.SandboxCapacityDegradedPolicy == SecuritySandboxCapacityDegradedPolicyFailFast {
+	if !outcomeResolved {
+		switch decision.SandboxCapacityAction {
+		case SandboxCapacityActionDeny:
 			decision.Outcome = ReadinessAdmissionOutcomeDeny
-			decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottledDeny
-		} else {
-			decision.Outcome = ReadinessAdmissionOutcomeAllow
-			decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottle
+			decision.ReasonCode = ReadinessAdmissionCodeSandboxCapacityDeny
+			outcomeResolved = true
+		case SandboxCapacityActionThrottle:
+			if decision.SandboxCapacityDegradedPolicy == SecuritySandboxCapacityDegradedPolicyFailFast {
+				decision.Outcome = ReadinessAdmissionOutcomeDeny
+				decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottledDeny
+			} else {
+				decision.Outcome = ReadinessAdmissionOutcomeAllow
+				decision.ReasonCode = ReadinessAdmissionCodeSandboxThrottle
+			}
+			outcomeResolved = true
 		}
-		return decision
 	}
-	switch preflight.Status {
-	case ReadinessStatusReady:
-		decision.Outcome = ReadinessAdmissionOutcomeAllow
-		decision.ReasonCode = ReadinessAdmissionCodeReady
-	case ReadinessStatusBlocked:
-		decision.Outcome = ReadinessAdmissionOutcomeDeny
-		decision.ReasonCode = ReadinessAdmissionCodeBlocked
-	case ReadinessStatusDegraded:
-		if decision.DegradedPolicy == ReadinessAdmissionDegradedPolicyFailFast {
-			decision.Outcome = ReadinessAdmissionOutcomeDeny
-			decision.ReasonCode = ReadinessAdmissionCodeDegradedDeny
-		} else {
+	if !outcomeResolved {
+		switch preflight.Status {
+		case ReadinessStatusReady:
 			decision.Outcome = ReadinessAdmissionOutcomeAllow
-			decision.ReasonCode = ReadinessAdmissionCodeDegradedAllow
+			decision.ReasonCode = ReadinessAdmissionCodeReady
+		case ReadinessStatusBlocked:
+			decision.Outcome = ReadinessAdmissionOutcomeDeny
+			decision.ReasonCode = ReadinessAdmissionCodeBlocked
+		case ReadinessStatusDegraded:
+			if decision.DegradedPolicy == ReadinessAdmissionDegradedPolicyFailFast {
+				decision.Outcome = ReadinessAdmissionOutcomeDeny
+				decision.ReasonCode = ReadinessAdmissionCodeDegradedDeny
+			} else {
+				decision.Outcome = ReadinessAdmissionOutcomeAllow
+				decision.ReasonCode = ReadinessAdmissionCodeDegradedAllow
+			}
+		default:
+			decision.Outcome = ReadinessAdmissionOutcomeDeny
+			decision.ReasonCode = ReadinessAdmissionCodeUnknownStatus
 		}
-	default:
-		decision.Outcome = ReadinessAdmissionOutcomeDeny
-		decision.ReasonCode = ReadinessAdmissionCodeUnknownStatus
 	}
 	if decision.ReadinessPrimaryCode == "" {
 		decision.ReadinessPrimaryCode = decision.ReasonCode
@@ -665,7 +684,225 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 		decision.ReadinessRemediationHintCode = hintCode
 		decision.ReadinessRemediationHintDomain = hintDomain
 	}
+	policyCandidates := buildReadinessPolicyCandidates(preflight, decision.DegradedPolicy, decision.SandboxCapacityDegradedPolicy)
+	policyDecision, policyErr := EvaluateRuntimePolicyDecision(effectiveCfg.Runtime.Policy, policyCandidates)
+	if policyErr == nil {
+		decision.PolicyPrecedenceVersion = strings.TrimSpace(policyDecision.Version)
+		decision.WinnerStage = strings.TrimSpace(policyDecision.WinnerStage)
+		decision.DenySource = strings.TrimSpace(policyDecision.DenySource)
+		decision.TieBreakReason = strings.TrimSpace(policyDecision.TieBreakReason)
+		decision.PolicyDecisionPath = cloneRuntimePolicyCandidates(policyDecision.PolicyDecisionPath)
+		switch strings.TrimSpace(policyDecision.winnerCandidate.Decision) {
+		case RuntimePolicyDecisionDeny:
+			if decision.Outcome != ReadinessAdmissionOutcomeDeny {
+				decision.Outcome = ReadinessAdmissionOutcomeDeny
+				if code := strings.TrimSpace(policyDecision.winnerCandidate.Code); code != "" {
+					decision.ReasonCode = code
+				} else {
+					decision.ReasonCode = ReadinessAdmissionCodeBlocked
+				}
+			}
+		case RuntimePolicyDecisionAllow:
+			if decision.Outcome != ReadinessAdmissionOutcomeAllow {
+				decision.Outcome = ReadinessAdmissionOutcomeAllow
+				if code := strings.TrimSpace(policyDecision.winnerCandidate.Code); code != "" {
+					decision.ReasonCode = code
+				}
+			}
+		}
+	}
 	return decision
+}
+
+func attachReadinessPolicyMetadata(
+	result ReadinessResult,
+	policyCfg RuntimePolicyConfig,
+	admissionCfg RuntimeReadinessAdmissionConfig,
+	sandboxCfg SecuritySandboxConfig,
+) ReadinessResult {
+	degradedPolicy := normalizeReadinessAdmissionDegradedPolicy(admissionCfg.DegradedPolicy)
+	sandboxDegradedPolicy := normalizeSandboxCapacityDegradedPolicy(sandboxCfg.Capacity.DegradedPolicy)
+	candidates := buildReadinessPolicyCandidates(result, degradedPolicy, sandboxDegradedPolicy)
+	result.PolicyCandidates = cloneRuntimePolicyCandidates(candidates)
+	decision, err := EvaluateRuntimePolicyDecision(policyCfg, candidates)
+	if err != nil {
+		return result
+	}
+	result.PolicyPrecedenceVersion = strings.TrimSpace(decision.Version)
+	result.WinnerStage = strings.TrimSpace(decision.WinnerStage)
+	result.DenySource = strings.TrimSpace(decision.DenySource)
+	result.TieBreakReason = strings.TrimSpace(decision.TieBreakReason)
+	result.PolicyDecisionPath = cloneRuntimePolicyCandidates(decision.PolicyDecisionPath)
+	return result
+}
+
+func buildReadinessPolicyCandidates(
+	preflight ReadinessResult,
+	degradedPolicy string,
+	sandboxCapacityDegradedPolicy string,
+) []RuntimePolicyCandidate {
+	candidates := readinessFindingPolicyCandidates(preflight.Findings)
+	frozen := sandboxRolloutFrozenFromFindings(preflight.Findings)
+	capacityAction := sandboxCapacityActionFromFindings(preflight.Findings)
+	if capacityAction == "" {
+		capacityAction = SandboxCapacityActionAllow
+	}
+	if frozen {
+		candidates = append(candidates, RuntimePolicyCandidate{
+			Stage:    RuntimePolicyStageSandboxAction,
+			Code:     ReadinessAdmissionCodeSandboxFrozen,
+			Source:   RuntimePolicyStageSandboxAction,
+			Decision: RuntimePolicyDecisionDeny,
+		})
+	} else {
+		switch capacityAction {
+		case SandboxCapacityActionDeny:
+			candidates = append(candidates, RuntimePolicyCandidate{
+				Stage:    RuntimePolicyStageSandboxAction,
+				Code:     ReadinessAdmissionCodeSandboxCapacityDeny,
+				Source:   RuntimePolicyStageSandboxAction,
+				Decision: RuntimePolicyDecisionDeny,
+			})
+		case SandboxCapacityActionThrottle:
+			code := ReadinessAdmissionCodeSandboxThrottle
+			decision := RuntimePolicyDecisionAllow
+			if normalizeSandboxCapacityDegradedPolicy(sandboxCapacityDegradedPolicy) == SecuritySandboxCapacityDegradedPolicyFailFast {
+				code = ReadinessAdmissionCodeSandboxThrottledDeny
+				decision = RuntimePolicyDecisionDeny
+			}
+			candidates = append(candidates, RuntimePolicyCandidate{
+				Stage:    RuntimePolicyStageSandboxAction,
+				Code:     code,
+				Source:   RuntimePolicyStageSandboxAction,
+				Decision: decision,
+			})
+		}
+	}
+
+	var readinessDecision string
+	var readinessCode string
+	switch preflight.Status {
+	case ReadinessStatusBlocked:
+		readinessDecision = RuntimePolicyDecisionDeny
+		readinessCode = ReadinessAdmissionCodeBlocked
+	case ReadinessStatusDegraded:
+		if normalizeReadinessAdmissionDegradedPolicy(degradedPolicy) == ReadinessAdmissionDegradedPolicyFailFast {
+			readinessDecision = RuntimePolicyDecisionDeny
+			readinessCode = ReadinessAdmissionCodeDegradedDeny
+		} else {
+			readinessDecision = RuntimePolicyDecisionAllow
+			readinessCode = ReadinessAdmissionCodeDegradedAllow
+		}
+	case ReadinessStatusReady:
+		readinessDecision = RuntimePolicyDecisionAllow
+		readinessCode = ReadinessAdmissionCodeReady
+	default:
+		readinessDecision = RuntimePolicyDecisionDeny
+		readinessCode = ReadinessAdmissionCodeUnknownStatus
+	}
+	candidates = append(candidates, RuntimePolicyCandidate{
+		Stage:    RuntimePolicyStageReadinessAdmission,
+		Code:     readinessCode,
+		Source:   RuntimePolicyStageReadinessAdmission,
+		Decision: readinessDecision,
+	})
+
+	return deduplicateRuntimePolicyCandidates(candidates)
+}
+
+func readinessFindingPolicyCandidates(findings []ReadinessFinding) []RuntimePolicyCandidate {
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]RuntimePolicyCandidate, 0, len(findings))
+	for i := range findings {
+		code := strings.TrimSpace(findings[i].Code)
+		if code == "" {
+			continue
+		}
+		stage := runtimePolicyStageForReadinessCode(code)
+		if stage == "" {
+			continue
+		}
+		decision := RuntimePolicyDecisionAllow
+		if strings.ToLower(strings.TrimSpace(findings[i].Severity)) == ReadinessSeverityError {
+			decision = RuntimePolicyDecisionDeny
+		}
+		source := stage
+		out = append(out, RuntimePolicyCandidate{
+			Stage:    stage,
+			Code:     code,
+			Source:   source,
+			Decision: decision,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func runtimePolicyStageForReadinessCode(code string) string {
+	normalized := strings.ToLower(strings.TrimSpace(code))
+	switch {
+	case strings.HasPrefix(normalized, "action.gate."), strings.HasPrefix(normalized, "action_gate."):
+		return RuntimePolicyStageActionGate
+	case strings.HasPrefix(normalized, "security."):
+		return RuntimePolicyStageSecurityS2
+	case strings.HasPrefix(normalized, "sandbox.egress."):
+		return RuntimePolicyStageSandboxEgress
+	case strings.HasPrefix(normalized, "sandbox."):
+		return RuntimePolicyStageSandboxAction
+	case strings.HasPrefix(normalized, "adapter.allowlist."):
+		return RuntimePolicyStageAdapterAllowlist
+	default:
+		return RuntimePolicyStageReadinessAdmission
+	}
+}
+
+func deduplicateRuntimePolicyCandidates(in []RuntimePolicyCandidate) []RuntimePolicyCandidate {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]RuntimePolicyCandidate, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for i := range in {
+		item := in[i]
+		key := strings.Join([]string{
+			strings.ToLower(strings.TrimSpace(item.Stage)),
+			strings.ToLower(strings.TrimSpace(item.Code)),
+			strings.ToLower(strings.TrimSpace(item.Source)),
+			strings.ToLower(strings.TrimSpace(item.Decision)),
+		}, "|")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneRuntimePolicyCandidates(in []RuntimePolicyCandidate) []RuntimePolicyCandidate {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]RuntimePolicyCandidate, 0, len(in))
+	for i := range in {
+		item := in[i]
+		item.Stage = strings.ToLower(strings.TrimSpace(item.Stage))
+		item.Code = strings.TrimSpace(item.Code)
+		item.Source = strings.ToLower(strings.TrimSpace(item.Source))
+		item.Decision = strings.ToLower(strings.TrimSpace(item.Decision))
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (r ReadinessResult) Summary() ReadinessSummary {

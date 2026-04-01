@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-03-31
+更新时间：2026-04-01
 
 ## 目标
 
@@ -223,6 +223,12 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Sandbox Egress + Allowlist Gate A57 | `scripts/check-sandbox-egress-allowlist-contract.sh` | `scripts/check-sandbox-egress-allowlist-contract.ps1` |
 | Sandbox Egress + Allowlist Gate A57 CI Required-Check 候选 | `.github/workflows/ci.yml::sandbox-egress-allowlist-gate` | `.github/workflows/ci.yml::sandbox-egress-allowlist-gate` |
 | Sandbox Egress + Allowlist Gate A57 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Policy Precedence + Decision Trace A58 Cross-Layer Matrix | `runtime/config/policy_precedence_test.go::TestEvaluateRuntimePolicyDecisionDenyPrecedence` | `runtime/config/policy_precedence_test.go::TestEvaluateRuntimePolicyDecisionSameStageTieBreakDeterministic` |
+| Policy Precedence + Decision Trace A58 Run/Stream Parity | `core/runner/runner_test.go::TestActionGateRunAndStreamDenySemanticsEquivalent` | `core/runner/runner_test.go::TestActionGateRunAndStreamTimeoutSemanticsEquivalent` |
+| Policy Precedence + Decision Trace Replay A58 (`policy_stack.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestReplayContractPolicyPrecedenceFixture` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| Policy Precedence + Decision Trace Gate A58 | `scripts/check-policy-precedence-contract.sh` | `scripts/check-policy-precedence-contract.ps1` |
+| Policy Precedence + Decision Trace Gate A58 CI Required-Check 候选 | `.github/workflows/ci.yml::policy-precedence-gate` | `.github/workflows/ci.yml::policy-precedence-gate` |
+| Policy Precedence + Decision Trace Gate A58 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

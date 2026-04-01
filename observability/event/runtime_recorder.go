@@ -401,6 +401,11 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			RuntimeReadinessAdmissionBypassTotal:        payloadInt(payload, "runtime_readiness_admission_bypass_total"),
 			RuntimeReadinessAdmissionMode:               payloadString(payload, "runtime_readiness_admission_mode"),
 			RuntimeReadinessAdmissionPrimaryCode:        payloadString(payload, "runtime_readiness_admission_primary_code"),
+			PolicyPrecedenceVersion:                     payloadString(payload, "policy_precedence_version"),
+			WinnerStage:                                 payloadString(payload, "winner_stage"),
+			DenySource:                                  payloadString(payload, "deny_source"),
+			TieBreakReason:                              payloadString(payload, "tie_break_reason"),
+			PolicyDecisionPath:                          payloadPolicyDecisionPath(payload, "policy_decision_path"),
 			AdapterAllowlistDecision:                    payloadString(payload, "adapter_allowlist_decision"),
 			AdapterAllowlistBlockTotal:                  payloadInt(payload, "adapter_allowlist_block_total"),
 			AdapterAllowlistPrimaryCode:                 payloadString(payload, "adapter_allowlist_primary_code"),
@@ -638,6 +643,61 @@ func payloadStringSlice(m map[string]any, key string) []string {
 				continue
 			}
 			out = append(out, item)
+		}
+	default:
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func payloadPolicyDecisionPath(m map[string]any, key string) []runtimediag.RuntimePolicyDecisionPathEntry {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, ok := m[key]
+	if !ok {
+		return nil
+	}
+	out := make([]runtimediag.RuntimePolicyDecisionPathEntry, 0)
+	appendItem := func(stage, code, source, decision string) {
+		entry := runtimediag.RuntimePolicyDecisionPathEntry{
+			Stage:    strings.ToLower(strings.TrimSpace(stage)),
+			Code:     strings.TrimSpace(code),
+			Source:   strings.ToLower(strings.TrimSpace(source)),
+			Decision: strings.ToLower(strings.TrimSpace(decision)),
+		}
+		if entry.Stage == "" {
+			return
+		}
+		out = append(out, entry)
+	}
+	switch src := raw.(type) {
+	case []runtimeconfig.RuntimePolicyCandidate:
+		for i := range src {
+			appendItem(src[i].Stage, src[i].Code, src[i].Source, src[i].Decision)
+		}
+	case []runtimediag.RuntimePolicyDecisionPathEntry:
+		for i := range src {
+			appendItem(src[i].Stage, src[i].Code, src[i].Source, src[i].Decision)
+		}
+	case []any:
+		for i := range src {
+			switch item := src[i].(type) {
+			case map[string]any:
+				appendItem(
+					payloadString(item, "stage"),
+					payloadString(item, "code"),
+					payloadString(item, "source"),
+					payloadString(item, "decision"),
+				)
+			case runtimeconfig.RuntimePolicyCandidate:
+				appendItem(item.Stage, item.Code, item.Source, item.Decision)
+			case runtimediag.RuntimePolicyDecisionPathEntry:
+				appendItem(item.Stage, item.Code, item.Source, item.Decision)
+			}
 		}
 	default:
 		return nil

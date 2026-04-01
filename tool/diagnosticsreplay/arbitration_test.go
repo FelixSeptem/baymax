@@ -53,6 +53,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a57_sandbox_egress_success_input.json",
 			expected: "a57_sandbox_egress_success_expected.json",
 		},
+		{
+			name:     "a58-policy-stack",
+			input:    "a58_policy_stack_success_input.json",
+			expected: "a58_policy_stack_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -358,6 +363,24 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeAdapterAllowlistTaxonomyDrift,
 			wantInText: "allowlist taxonomy drift",
 		},
+		{
+			name:       "a58-policy-precedence-conflict",
+			fixture:    "a58_policy_stack_precedence_conflict_drift_input.json",
+			wantCode:   ReasonCodePrecedenceConflict,
+			wantInText: "precedence conflict",
+		},
+		{
+			name:       "a58-policy-tie-break-drift",
+			fixture:    "a58_policy_stack_tie_break_drift_input.json",
+			wantCode:   ReasonCodeTieBreakDrift,
+			wantInText: "tie-break drift",
+		},
+		{
+			name:       "a58-policy-deny-source-mismatch",
+			fixture:    "a58_policy_stack_deny_source_mismatch_drift_input.json",
+			wantCode:   ReasonCodeDenySourceMismatch,
+			wantInText: "deny source mismatch",
+		},
 	}
 
 	for _, tc := range tests {
@@ -387,6 +410,23 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a54_memory_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
+	}
+	for _, name := range fixtures {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, name)); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibility(t *testing.T) {
+	fixtures := []string{
+		"a50_arbitration_success_input.json",
+		"a56_react_success_input.json",
+		"a57_sandbox_egress_success_input.json",
+		"a58_policy_stack_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

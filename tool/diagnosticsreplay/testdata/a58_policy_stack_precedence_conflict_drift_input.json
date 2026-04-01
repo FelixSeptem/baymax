@@ -1,0 +1,69 @@
+{
+  "version": "policy_stack.v1",
+  "cases": [
+    {
+      "name": "precedence_conflict_case",
+      "run": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "readiness_admission",
+        "deny_source": "readiness_admission",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "stream": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "readiness_admission",
+        "deny_source": "readiness_admission",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "policy_precedence_version": "policy_stack.v1",
+        "winner_stage": "sandbox_action",
+        "deny_source": "sandbox_action",
+        "policy_decision_path": [
+          {
+            "stage": "sandbox_action",
+            "code": "runtime.readiness.admission.sandbox_capacity_deny",
+            "source": "sandbox_action",
+            "decision": "deny"
+          },
+          {
+            "stage": "readiness_admission",
+            "code": "runtime.readiness.admission.blocked",
+            "source": "readiness_admission",
+            "decision": "deny"
+          }
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

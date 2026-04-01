@@ -2672,6 +2672,73 @@ reload:
 	}
 }
 
+func TestManagerRuntimePolicyInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  policy:
+    precedence:
+      version: policy_stack.v1
+      matrix:
+        action_gate: 1
+        security_s2: 2
+        sandbox_action: 3
+        sandbox_egress: 4
+        adapter_allowlist: 5
+        readiness_admission: 6
+    tie_breaker:
+      mode: lexical_code_then_source_order
+      source_order: [action_gate, security_s2, sandbox_action, sandbox_egress, adapter_allowlist, readiness_admission]
+    explainability:
+      enabled: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.Policy.Precedence.Matrix[RuntimePolicyStageActionGate]
+	if before != 1 {
+		t.Fatalf("before runtime.policy.precedence.matrix.action_gate = %d, want 1", before)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  policy:
+    precedence:
+      version: policy_stack.v1
+      matrix:
+        action_gate: 1
+        security_s2: 2
+        sandbox_action: 3
+        sandbox_egress: 4
+        adapter_allowlist: 5
+        readiness_admission: 6
+        unknown_stage: 7
+    tie_breaker:
+      mode: lexical_code_then_source_order
+      source_order: [action_gate, security_s2, sandbox_action, sandbox_egress, adapter_allowlist, readiness_admission]
+    explainability:
+      enabled: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Policy.Precedence.Matrix[RuntimePolicyStageActionGate]
+	if after != before {
+		t.Fatalf("invalid runtime policy reload should rollback, action_gate rank = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerAdapterHealthInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

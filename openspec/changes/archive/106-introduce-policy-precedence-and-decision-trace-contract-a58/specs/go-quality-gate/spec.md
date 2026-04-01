@@ -16,7 +16,7 @@ Minimum required scripts:
 - **THEN** policy precedence contract checks execute with equivalent blocking semantics
 
 ### Requirement: Policy precedence gate SHALL provide deterministic required-check candidate
-CI SHOULD expose independent required-check candidate `policy-precedence-gate` for policy-stack contract regressions.
+CI MUST expose independent required-check candidate `policy-precedence-gate` for policy-stack contract regressions.
 
 #### Scenario: Policy precedence gate detects replay drift
 - **WHEN** `policy_stack.v1` replay validation fails

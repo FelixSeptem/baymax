@@ -1373,6 +1373,147 @@ func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
 	}
 }
 
+func TestManagerReadinessAdmissionBudgetDecisionThresholdMapping(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a60-budget.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+  admission:
+    budget:
+      cost:
+        degrade_threshold: 0.75
+        hard_threshold: 1.0
+      latency:
+        degrade_threshold: 1200ms
+        hard_threshold: 2s
+    degrade_policy:
+      enabled: true
+      action_order: [trim_memory_context, reduce_tool_call_limit]
+      conflict_policy: first_action
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A60_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	allowDecision := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", ReadinessAdmissionRequest{
+		ExplicitBudgetEstimate: &RuntimeAdmissionBudgetEstimate{
+			TokenCost:      0.10,
+			ToolCost:       0.08,
+			SandboxCost:    0.06,
+			MemoryCost:     0.04,
+			TokenLatency:   200 * time.Millisecond,
+			ToolLatency:    180 * time.Millisecond,
+			SandboxLatency: 120 * time.Millisecond,
+			MemoryLatency:  80 * time.Millisecond,
+		},
+	})
+	if allowDecision.BudgetDecision != RuntimeAdmissionBudgetDecisionAllow ||
+		allowDecision.Outcome != ReadinessAdmissionOutcomeAllow ||
+		strings.TrimSpace(allowDecision.DegradeAction) != "" {
+		t.Fatalf("budget allow decision mismatch: %#v", allowDecision)
+	}
+	if allowDecision.BudgetSnapshot == nil ||
+		allowDecision.BudgetSnapshot.CostEstimate.Total <= 0 ||
+		allowDecision.BudgetSnapshot.LatencyEstimate.TotalMs <= 0 {
+		t.Fatalf("budget allow snapshot mismatch: %#v", allowDecision.BudgetSnapshot)
+	}
+
+	degradeDecision := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", ReadinessAdmissionRequest{
+		ExplicitBudgetEstimate: &RuntimeAdmissionBudgetEstimate{
+			TokenCost:      0.36,
+			ToolCost:       0.24,
+			SandboxCost:    0.20,
+			MemoryCost:     0.08,
+			TokenLatency:   320 * time.Millisecond,
+			ToolLatency:    260 * time.Millisecond,
+			SandboxLatency: 210 * time.Millisecond,
+			MemoryLatency:  140 * time.Millisecond,
+		},
+	})
+	if degradeDecision.BudgetDecision != RuntimeAdmissionBudgetDecisionDegrade ||
+		degradeDecision.Outcome != ReadinessAdmissionOutcomeAllow ||
+		degradeDecision.ReasonCode != ReadinessAdmissionCodeBudgetDegradeAllow ||
+		degradeDecision.DegradeAction != RuntimeAdmissionDegradeActionTrimMemoryContext {
+		t.Fatalf("budget degrade decision mismatch: %#v", degradeDecision)
+	}
+
+	denyDecision := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", ReadinessAdmissionRequest{
+		ExplicitBudgetEstimate: &RuntimeAdmissionBudgetEstimate{
+			TokenCost:      0.45,
+			ToolCost:       0.30,
+			SandboxCost:    0.22,
+			MemoryCost:     0.18,
+			TokenLatency:   700 * time.Millisecond,
+			ToolLatency:    560 * time.Millisecond,
+			SandboxLatency: 420 * time.Millisecond,
+			MemoryLatency:  330 * time.Millisecond,
+		},
+	})
+	if denyDecision.BudgetDecision != RuntimeAdmissionBudgetDecisionDeny ||
+		denyDecision.Outcome != ReadinessAdmissionOutcomeDeny ||
+		denyDecision.ReasonCode != ReadinessAdmissionCodeBudgetHardDeny ||
+		strings.TrimSpace(denyDecision.DegradeAction) != "" {
+		t.Fatalf("budget deny decision mismatch: %#v", denyDecision)
+	}
+}
+
+func TestManagerReadinessAdmissionBudgetSnapshotDeterministicEquivalentInput(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime-a60-deterministic.yaml")
+	writeConfig(t, file, `
+runtime:
+  readiness:
+    enabled: true
+    strict: false
+    remote_probe_enabled: false
+    admission:
+      enabled: true
+      mode: fail_fast
+      block_on: blocked_only
+      degraded_policy: allow_and_record
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A60_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	req := ReadinessAdmissionRequest{
+		InputChars:   420,
+		MessageCount: 4,
+		RequiredCapabilities: []types.ModelCapability{
+			types.ModelCapabilityToolCall,
+		},
+	}
+	first := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", req)
+	second := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", req)
+
+	if first.BudgetDecision != second.BudgetDecision || first.DegradeAction != second.DegradeAction {
+		t.Fatalf("budget decision determinism mismatch first=%#v second=%#v", first, second)
+	}
+	if first.BudgetSnapshot == nil || second.BudgetSnapshot == nil {
+		t.Fatalf("budget snapshot should be present first=%#v second=%#v", first.BudgetSnapshot, second.BudgetSnapshot)
+	}
+	firstSnapshot := *first.BudgetSnapshot
+	secondSnapshot := *second.BudgetSnapshot
+	firstSnapshot.EvaluatedAt = time.Time{}
+	secondSnapshot.EvaluatedAt = time.Time{}
+	firstBlob, _ := json.Marshal(firstSnapshot)
+	secondBlob, _ := json.Marshal(secondSnapshot)
+	if string(firstBlob) != string(secondBlob) {
+		t.Fatalf("budget snapshot semantic drift first=%s second=%s", string(firstBlob), string(secondBlob))
+	}
+}
+
 func TestManagerReadinessPreflightWithRequestArbitrationVersionUnsupported(t *testing.T) {
 	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A50_TEST"})
 	if err != nil {
@@ -1685,6 +1826,12 @@ func readinessSemanticFingerprint(result ReadinessResult) string {
 }
 
 func readinessAdmissionFingerprint(decision ReadinessAdmissionDecision) string {
-	blob, _ := json.Marshal(decision)
+	clone := decision
+	if clone.BudgetSnapshot != nil {
+		snapshot := *clone.BudgetSnapshot
+		snapshot.EvaluatedAt = time.Time{}
+		clone.BudgetSnapshot = &snapshot
+	}
+	blob, _ := json.Marshal(clone)
 	return string(blob)
 }

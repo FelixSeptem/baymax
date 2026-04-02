@@ -489,6 +489,169 @@ func TestRuntimeReadinessAdmissionConfigValidationRejectsInvalidEnum(t *testing.
 	}
 }
 
+func TestRuntimeAdmissionBudgetConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Runtime.Admission.Budget.Cost.DegradeThreshold != 0.75 {
+		t.Fatalf("runtime.admission.budget.cost.degrade_threshold = %v, want 0.75", cfg.Runtime.Admission.Budget.Cost.DegradeThreshold)
+	}
+	if cfg.Runtime.Admission.Budget.Cost.HardThreshold != 1.0 {
+		t.Fatalf("runtime.admission.budget.cost.hard_threshold = %v, want 1.0", cfg.Runtime.Admission.Budget.Cost.HardThreshold)
+	}
+	if cfg.Runtime.Admission.Budget.Latency.DegradeThreshold != 1200*time.Millisecond {
+		t.Fatalf(
+			"runtime.admission.budget.latency.degrade_threshold = %v, want 1200ms",
+			cfg.Runtime.Admission.Budget.Latency.DegradeThreshold,
+		)
+	}
+	if cfg.Runtime.Admission.Budget.Latency.HardThreshold != 2*time.Second {
+		t.Fatalf("runtime.admission.budget.latency.hard_threshold = %v, want 2s", cfg.Runtime.Admission.Budget.Latency.HardThreshold)
+	}
+	if !cfg.Runtime.Admission.DegradePolicy.Enabled {
+		t.Fatal("runtime.admission.degrade_policy.enabled = false, want true")
+	}
+	if cfg.Runtime.Admission.DegradePolicy.ConflictPolicy != RuntimeAdmissionDegradeConflictPolicyFirstAction {
+		t.Fatalf(
+			"runtime.admission.degrade_policy.conflict_policy = %q, want %q",
+			cfg.Runtime.Admission.DegradePolicy.ConflictPolicy,
+			RuntimeAdmissionDegradeConflictPolicyFirstAction,
+		)
+	}
+	wantActions := []string{
+		RuntimeAdmissionDegradeActionReduceToolCallLimit,
+		RuntimeAdmissionDegradeActionTrimMemoryContext,
+		RuntimeAdmissionDegradeActionSandboxThrottle,
+	}
+	if len(cfg.Runtime.Admission.DegradePolicy.ActionOrder) != len(wantActions) {
+		t.Fatalf("runtime.admission.degrade_policy.action_order len = %d, want %d", len(cfg.Runtime.Admission.DegradePolicy.ActionOrder), len(wantActions))
+	}
+	for i := range wantActions {
+		if cfg.Runtime.Admission.DegradePolicy.ActionOrder[i] != wantActions[i] {
+			t.Fatalf(
+				"runtime.admission.degrade_policy.action_order[%d] = %q, want %q",
+				i,
+				cfg.Runtime.Admission.DegradePolicy.ActionOrder[i],
+				wantActions[i],
+			)
+		}
+	}
+}
+
+func TestRuntimeAdmissionBudgetConfigEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_BUDGET_COST_DEGRADE_THRESHOLD", "0.55")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_BUDGET_COST_HARD_THRESHOLD", "0.80")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_BUDGET_LATENCY_DEGRADE_THRESHOLD", "900ms")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_BUDGET_LATENCY_HARD_THRESHOLD", "1500ms")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_ACTION_ORDER", "sandbox_throttle,trim_memory_context")
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_CONFLICT_POLICY", RuntimeAdmissionDegradeConflictPolicyFailFast)
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	content := `
+runtime:
+  admission:
+    budget:
+      cost:
+        degrade_threshold: 0.72
+        hard_threshold: 0.90
+      latency:
+        degrade_threshold: 1100ms
+        hard_threshold: 1800ms
+    degrade_policy:
+      enabled: true
+      action_order: [reduce_tool_call_limit, trim_memory_context]
+      conflict_policy: first_action
+`
+	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Runtime.Admission.Budget.Cost.DegradeThreshold != 0.55 {
+		t.Fatalf("cost.degrade_threshold = %v, want 0.55 from env", cfg.Runtime.Admission.Budget.Cost.DegradeThreshold)
+	}
+	if cfg.Runtime.Admission.Budget.Cost.HardThreshold != 0.80 {
+		t.Fatalf("cost.hard_threshold = %v, want 0.80 from env", cfg.Runtime.Admission.Budget.Cost.HardThreshold)
+	}
+	if cfg.Runtime.Admission.Budget.Latency.DegradeThreshold != 900*time.Millisecond {
+		t.Fatalf("latency.degrade_threshold = %v, want 900ms from env", cfg.Runtime.Admission.Budget.Latency.DegradeThreshold)
+	}
+	if cfg.Runtime.Admission.Budget.Latency.HardThreshold != 1500*time.Millisecond {
+		t.Fatalf("latency.hard_threshold = %v, want 1500ms from env", cfg.Runtime.Admission.Budget.Latency.HardThreshold)
+	}
+	if cfg.Runtime.Admission.DegradePolicy.Enabled {
+		t.Fatal("runtime.admission.degrade_policy.enabled = true, want false from env")
+	}
+	if cfg.Runtime.Admission.DegradePolicy.ConflictPolicy != RuntimeAdmissionDegradeConflictPolicyFailFast {
+		t.Fatalf(
+			"runtime.admission.degrade_policy.conflict_policy = %q, want %q from env",
+			cfg.Runtime.Admission.DegradePolicy.ConflictPolicy,
+			RuntimeAdmissionDegradeConflictPolicyFailFast,
+		)
+	}
+	wantActions := []string{
+		RuntimeAdmissionDegradeActionSandboxThrottle,
+		RuntimeAdmissionDegradeActionTrimMemoryContext,
+	}
+	if len(cfg.Runtime.Admission.DegradePolicy.ActionOrder) != len(wantActions) {
+		t.Fatalf("runtime.admission.degrade_policy.action_order len = %d, want %d", len(cfg.Runtime.Admission.DegradePolicy.ActionOrder), len(wantActions))
+	}
+	for i := range wantActions {
+		if cfg.Runtime.Admission.DegradePolicy.ActionOrder[i] != wantActions[i] {
+			t.Fatalf(
+				"runtime.admission.degrade_policy.action_order[%d] = %q, want %q",
+				i,
+				cfg.Runtime.Admission.DegradePolicy.ActionOrder[i],
+				wantActions[i],
+			)
+		}
+	}
+}
+
+func TestRuntimeAdmissionBudgetConfigInvalidBoolFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_ENABLED", "definitely-not-bool")
+	_, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err == nil {
+		t.Fatal("expected runtime.admission.degrade_policy.enabled invalid bool error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "runtime.admission.degrade_policy.enabled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRuntimeAdmissionBudgetConfigValidationRejectsInvalidThresholdAndPolicy(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Runtime.Admission.Budget.Cost.DegradeThreshold = 1.2
+	cfg.Runtime.Admission.Budget.Cost.HardThreshold = 1.0
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.admission.budget.cost.degrade_threshold") {
+		t.Fatalf("expected validation error for runtime.admission.budget.cost.degrade_threshold, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Admission.Budget.Latency.DegradeThreshold = 2500 * time.Millisecond
+	cfg.Runtime.Admission.Budget.Latency.HardThreshold = 2 * time.Second
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.admission.budget.latency.degrade_threshold") {
+		t.Fatalf("expected validation error for runtime.admission.budget.latency.degrade_threshold, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Admission.DegradePolicy.ConflictPolicy = "last_action"
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.admission.degrade_policy.conflict_policy") {
+		t.Fatalf("expected validation error for runtime.admission.degrade_policy.conflict_policy, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Admission.DegradePolicy.ConflictPolicy = RuntimeAdmissionDegradeConflictPolicyFailFast
+	cfg.Runtime.Admission.DegradePolicy.ActionOrder = []string{
+		RuntimeAdmissionDegradeActionTrimMemoryContext,
+		RuntimeAdmissionDegradeActionTrimMemoryContext,
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(strings.ToLower(err.Error()), "runtime.admission.degrade_policy.action_order") {
+		t.Fatalf("expected validation error for runtime.admission.degrade_policy.action_order duplicate, got %v", err)
+	}
+}
+
 func TestAdapterHealthConfigDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Adapter.Health.Enabled {

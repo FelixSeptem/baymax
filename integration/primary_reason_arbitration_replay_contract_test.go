@@ -66,6 +66,12 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a59_memory_lifecycle_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionMemoryLifecycleV1,
 		},
+		{
+			name:          "a60-budget-admission",
+			versionFolder: "tool",
+			fixture:       "a60_budget_admission_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionBudgetAdmissionV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -89,6 +95,17 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 				t.Fatalf("replay output drift first=%#v replay=%#v", out, replayOut)
 			}
 		})
+	}
+}
+
+func TestReplayContractBudgetAdmissionFixtureCompatibility(t *testing.T) {
+	raw := mustReadArbitrationReplayFixture(t, "tool", "a60_budget_admission_success_input.json")
+	out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON budget success fixture failed: %v", err)
+	}
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionBudgetAdmissionV1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionBudgetAdmissionV1)
 	}
 }
 
@@ -296,6 +313,27 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeRecoveryConsistencyDrift,
 			messageHas: "recovery consistency drift",
 		},
+		{
+			name:       "a60-budget-threshold-drift",
+			versionDir: "tool",
+			fixture:    "a60_budget_threshold_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeBudgetThresholdDrift,
+			messageHas: "budget threshold drift",
+		},
+		{
+			name:       "a60-admission-decision-drift",
+			versionDir: "tool",
+			fixture:    "a60_budget_decision_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeAdmissionDecisionDrift,
+			messageHas: "admission decision drift",
+		},
+		{
+			name:       "a60-degrade-policy-drift",
+			versionDir: "tool",
+			fixture:    "a60_degrade_policy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeDegradePolicyDrift,
+			messageHas: "degrade policy drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -399,6 +437,7 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a59_memory_scope_success_input.json",
 		"a59_memory_search_success_input.json",
 		"a59_memory_lifecycle_success_input.json",
+		"a60_budget_admission_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

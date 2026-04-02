@@ -13,10 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-04-01）：
-- 已归档并稳定：A4-A58。
-- A59（Introduce Memory Scope And Builtin Filesystem v2 Governance Contract）进行中（scope/write_mode/injection_budget/lifecycle/search 与 replay/gate 已落地，待归档）。
-- A60（Introduce Runtime Cost-Latency Budget And Admission Contract）进行中。
+当前里程碑快照（2026-04-02）：
+- 已归档并稳定：A4-A60。
+- A60（Introduce Runtime Cost-Latency Budget And Admission Contract）已归档并稳定。
+- A61（Introduce OTel Tracing And Agent Eval Interoperability Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,10 +225,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：memory scope + builtin filesystem v2 提案进行中（scope/write_mode/injection_budget/lifecycle/search 与 builtin 引擎一致性治理已落地，新增 `memory_scope_selected`/`memory_budget_used`/`memory_hits`/`memory_rerank_stats`/`memory_lifecycle_action` additive 字段与 `check-memory-scope-and-search-contract.*` 门禁）。
-- A60 `introduce-runtime-cost-latency-budget-and-admission-contract-a60`：runtime 成本/时延预算与 admission 提案进行中（统一 `budget_snapshot`、`budget_decision`、`degrade_action` 合同与 gate 收口）。
+- A61 `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`：OTel tracing + agent eval 互操作提案进行中（tracing 语义映射、eval 套件契约与执行治理收口）。
 
 近期已归档能力（摘要）：
+- A60 `introduce-runtime-cost-latency-budget-and-admission-contract-a60`：已归档并稳定（统一 token/tool/sandbox/memory 成本与时延预算 admission 判定，新增 `budget_snapshot`/`budget_decision`/`degrade_action` additive 字段、`budget_admission.v1` replay fixture 与独立 gate `check-runtime-budget-admission-contract.*`，CI check：`runtime-budget-admission-gate`）。
+- A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：已归档并稳定（memory scope/write_mode/injection_budget/lifecycle/search 与 builtin filesystem v2 治理收口，新增 `memory_scope_selected`/`memory_budget_used`/`memory_hits`/`memory_rerank_stats`/`memory_lifecycle_action` additive 字段与 `check-memory-scope-and-search-contract.*` 门禁）。
 - A58 `introduce-policy-precedence-and-decision-trace-contract-a58`：已归档并稳定（统一 action/s2/sandbox/egress/allowlist/admission precedence matrix、deterministic tie-break、`policy_stack.v1` replay fixture、独立 gate `check-policy-precedence-contract.*`，CI check：`policy-precedence-gate`）。
 - A57 `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`：已归档并稳定（sandbox egress + adapter allowlist 的 readiness/admission/replay/gate 一体化治理；独立 gate：`check-sandbox-egress-allowlist-contract.*`，CI check：`sandbox-egress-allowlist-gate`）。
 - A56 `introduce-react-loop-and-tool-calling-parity-contract-a56`：已归档并稳定（ReAct loop Run/Stream parity、tool-calling canonicalization、`react.v1` replay fixture 与独立 gate）。

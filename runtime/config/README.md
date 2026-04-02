@@ -46,6 +46,13 @@
 - `runtime.policy.precedence.version=policy_stack.v1`
 - `runtime.policy.tie_breaker.mode=lexical_code_then_source_order`
 - `runtime.policy.explainability.enabled=true`
+- `runtime.admission.budget.cost.degrade_threshold=0.75`
+- `runtime.admission.budget.cost.hard_threshold=1.0`
+- `runtime.admission.budget.latency.degrade_threshold=1200ms`
+- `runtime.admission.budget.latency.hard_threshold=2s`
+- `runtime.admission.degrade_policy.enabled=true`
+- `runtime.admission.degrade_policy.action_order=[reduce_tool_call_limit, trim_memory_context, sandbox_throttle]`
+- `runtime.admission.degrade_policy.conflict_policy=first_action`
 
 ## 关键入口
 
@@ -61,6 +68,7 @@
 - A41 timeout 解析器固定三层优先级：`profile -> domain -> request`，并输出来源标签与 trace（`v1`）。
 - A58 新增 policy precedence 配置域：`runtime.policy.precedence.*`、`runtime.policy.tie_breaker.*`、`runtime.policy.explainability.*`；
   固定 canonical stage 顺序 `action_gate -> security_s2 -> sandbox_action -> sandbox_egress -> adapter_allowlist -> readiness_admission`。
+- A60 新增 budget admission 配置域：`runtime.admission.budget.*`、`runtime.admission.degrade_policy.*`；阈值非法或策略非法时启动/热更新必须 fail-fast，并保持旧快照回滚。
 
 ## 配置与默认值
 
@@ -79,6 +87,14 @@
   - `tie_breaker.mode=lexical_code_then_source_order`
   - `tie_breaker.source_order` 使用 canonical stage 顺序
   - `explainability.enabled=true`
+- budget admission 默认值（A60）：
+  - `budget.cost.degrade_threshold=0.75`
+  - `budget.cost.hard_threshold=1.0`
+  - `budget.latency.degrade_threshold=1200ms`
+  - `budget.latency.hard_threshold=2s`
+  - `degrade_policy.enabled=true`
+  - `degrade_policy.action_order=[reduce_tool_call_limit, trim_memory_context, sandbox_throttle]`
+  - `degrade_policy.conflict_policy=first_action`
 
 ## 可观测性与验证
 

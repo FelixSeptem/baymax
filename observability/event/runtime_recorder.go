@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -406,6 +407,9 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			RuntimeReadinessAdmissionBypassTotal:        payloadInt(payload, "runtime_readiness_admission_bypass_total"),
 			RuntimeReadinessAdmissionMode:               payloadString(payload, "runtime_readiness_admission_mode"),
 			RuntimeReadinessAdmissionPrimaryCode:        payloadString(payload, "runtime_readiness_admission_primary_code"),
+			BudgetSnapshot:                              payloadAnyMap(payload, "budget_snapshot"),
+			BudgetDecision:                              payloadString(payload, "budget_decision"),
+			DegradeAction:                               payloadString(payload, "degrade_action"),
 			PolicyPrecedenceVersion:                     payloadString(payload, "policy_precedence_version"),
 			WinnerStage:                                 payloadString(payload, "winner_stage"),
 			DenySource:                                  payloadString(payload, "deny_source"),
@@ -615,6 +619,45 @@ func payloadIntMap(m map[string]any, key string) map[string]int {
 	out := make(map[string]int, len(in))
 	for k, v := range in {
 		out[k] = int(v)
+	}
+	return out
+}
+
+func payloadAnyMap(m map[string]any, key string) map[string]any {
+	if len(m) == 0 {
+		return nil
+	}
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch value := raw.(type) {
+	case map[string]any:
+		return cloneAnyMap(value)
+	default:
+		blob, err := json.Marshal(raw)
+		if err != nil {
+			return nil
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(blob, &decoded); err != nil {
+			return nil
+		}
+		return cloneAnyMap(decoded)
+	}
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		if child, ok := value.(map[string]any); ok {
+			out[key] = cloneAnyMap(child)
+			continue
+		}
+		out[key] = value
 	}
 	return out
 }

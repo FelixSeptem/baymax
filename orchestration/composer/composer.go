@@ -280,6 +280,10 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	BudgetDecision                       string
+	DegradeAction                        string
+	BudgetSnapshot                       runtimeconfig.RuntimeAdmissionBudgetSnapshot
+	BudgetSnapshotSet                    bool
 	PolicyPrecedenceVersion              string
 	WinnerStage                          string
 	DenySource                           string
@@ -1041,6 +1045,15 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	}
 	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
 		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
+	}
+	if strings.TrimSpace(stats.BudgetDecision) != "" {
+		payload["budget_decision"] = strings.TrimSpace(stats.BudgetDecision)
+	}
+	if strings.TrimSpace(stats.DegradeAction) != "" {
+		payload["degrade_action"] = strings.TrimSpace(stats.DegradeAction)
+	}
+	if stats.BudgetSnapshotSet {
+		payload["budget_snapshot"] = stats.BudgetSnapshot
 	}
 	if strings.TrimSpace(stats.PolicyPrecedenceVersion) != "" {
 		payload["policy_precedence_version"] = strings.TrimSpace(stats.PolicyPrecedenceVersion)

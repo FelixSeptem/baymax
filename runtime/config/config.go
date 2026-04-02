@@ -145,6 +145,14 @@ const (
 )
 
 const (
+	RuntimeAdmissionDegradeConflictPolicyFirstAction = "first_action"
+	RuntimeAdmissionDegradeConflictPolicyFailFast    = "fail_fast"
+	RuntimeAdmissionDegradeActionReduceToolCallLimit = "reduce_tool_call_limit"
+	RuntimeAdmissionDegradeActionTrimMemoryContext   = "trim_memory_context"
+	RuntimeAdmissionDegradeActionSandboxThrottle     = "sandbox_throttle"
+)
+
+const (
 	RuntimeArbitrationVersionUnsupportedPolicyFailFast = "fail_fast"
 	RuntimeArbitrationVersionMismatchPolicyFailFast    = "fail_fast"
 )
@@ -281,6 +289,7 @@ type Config struct {
 type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
+	Admission         RuntimeAdmissionConfig         `json:"admission"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	Policy            RuntimePolicyConfig            `json:"policy"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
@@ -345,6 +354,32 @@ type RuntimeReadinessAdmissionConfig struct {
 	Mode           string `json:"mode"`
 	BlockOn        string `json:"block_on"`
 	DegradedPolicy string `json:"degraded_policy"`
+}
+
+type RuntimeAdmissionConfig struct {
+	Budget        RuntimeAdmissionBudgetConfig        `json:"budget"`
+	DegradePolicy RuntimeAdmissionDegradePolicyConfig `json:"degrade_policy"`
+}
+
+type RuntimeAdmissionBudgetConfig struct {
+	Cost    RuntimeAdmissionBudgetCostConfig    `json:"cost"`
+	Latency RuntimeAdmissionBudgetLatencyConfig `json:"latency"`
+}
+
+type RuntimeAdmissionBudgetCostConfig struct {
+	DegradeThreshold float64 `json:"degrade_threshold"`
+	HardThreshold    float64 `json:"hard_threshold"`
+}
+
+type RuntimeAdmissionBudgetLatencyConfig struct {
+	DegradeThreshold time.Duration `json:"degrade_threshold"`
+	HardThreshold    time.Duration `json:"hard_threshold"`
+}
+
+type RuntimeAdmissionDegradePolicyConfig struct {
+	Enabled        bool     `json:"enabled"`
+	ActionOrder    []string `json:"action_order"`
+	ConflictPolicy string   `json:"conflict_policy"`
 }
 
 type RuntimeOperationProfilesConfig struct {
@@ -1222,6 +1257,27 @@ func DefaultConfig() Config {
 					DegradedPolicy: ReadinessAdmissionDegradedPolicyAllowAndRecord,
 				},
 			},
+			Admission: RuntimeAdmissionConfig{
+				Budget: RuntimeAdmissionBudgetConfig{
+					Cost: RuntimeAdmissionBudgetCostConfig{
+						DegradeThreshold: 0.75,
+						HardThreshold:    1.0,
+					},
+					Latency: RuntimeAdmissionBudgetLatencyConfig{
+						DegradeThreshold: 1200 * time.Millisecond,
+						HardThreshold:    2 * time.Second,
+					},
+				},
+				DegradePolicy: RuntimeAdmissionDegradePolicyConfig{
+					Enabled: true,
+					ActionOrder: []string{
+						RuntimeAdmissionDegradeActionReduceToolCallLimit,
+						RuntimeAdmissionDegradeActionTrimMemoryContext,
+						RuntimeAdmissionDegradeActionSandboxThrottle,
+					},
+					ConflictPolicy: RuntimeAdmissionDegradeConflictPolicyFirstAction,
+				},
+			},
 			Arbitration: RuntimeArbitrationConfig{
 				Version: RuntimeArbitrationVersionConfig{
 					Enabled:       true,
@@ -2093,6 +2149,9 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeReadinessAdmission(cfg.Runtime.Readiness.Admission); err != nil {
+		return err
+	}
+	if err := validateRuntimeAdmission(cfg.Runtime.Admission); err != nil {
 		return err
 	}
 	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
@@ -3953,6 +4012,66 @@ func validateRuntimeReadinessAdmission(cfg RuntimeReadinessAdmissionConfig) erro
 	return nil
 }
 
+func validateRuntimeAdmission(cfg RuntimeAdmissionConfig) error {
+	if cfg.Budget.Cost.DegradeThreshold <= 0 {
+		return errors.New("runtime.admission.budget.cost.degrade_threshold must be > 0")
+	}
+	if cfg.Budget.Cost.HardThreshold <= 0 {
+		return errors.New("runtime.admission.budget.cost.hard_threshold must be > 0")
+	}
+	if cfg.Budget.Cost.DegradeThreshold > cfg.Budget.Cost.HardThreshold {
+		return errors.New("runtime.admission.budget.cost.degrade_threshold must be <= runtime.admission.budget.cost.hard_threshold")
+	}
+	if cfg.Budget.Latency.DegradeThreshold <= 0 {
+		return errors.New("runtime.admission.budget.latency.degrade_threshold must be > 0")
+	}
+	if cfg.Budget.Latency.HardThreshold <= 0 {
+		return errors.New("runtime.admission.budget.latency.hard_threshold must be > 0")
+	}
+	if cfg.Budget.Latency.DegradeThreshold > cfg.Budget.Latency.HardThreshold {
+		return errors.New("runtime.admission.budget.latency.degrade_threshold must be <= runtime.admission.budget.latency.hard_threshold")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.DegradePolicy.ConflictPolicy)) {
+	case RuntimeAdmissionDegradeConflictPolicyFirstAction, RuntimeAdmissionDegradeConflictPolicyFailFast:
+	default:
+		return fmt.Errorf(
+			"runtime.admission.degrade_policy.conflict_policy must be one of [%s,%s], got %q",
+			RuntimeAdmissionDegradeConflictPolicyFirstAction,
+			RuntimeAdmissionDegradeConflictPolicyFailFast,
+			cfg.DegradePolicy.ConflictPolicy,
+		)
+	}
+	if cfg.DegradePolicy.Enabled && len(cfg.DegradePolicy.ActionOrder) == 0 {
+		return errors.New("runtime.admission.degrade_policy.action_order must not be empty when enabled=true")
+	}
+
+	seen := map[string]struct{}{}
+	for i := range cfg.DegradePolicy.ActionOrder {
+		action := strings.ToLower(strings.TrimSpace(cfg.DegradePolicy.ActionOrder[i]))
+		switch action {
+		case RuntimeAdmissionDegradeActionReduceToolCallLimit,
+			RuntimeAdmissionDegradeActionTrimMemoryContext,
+			RuntimeAdmissionDegradeActionSandboxThrottle:
+		default:
+			return fmt.Errorf(
+				"runtime.admission.degrade_policy.action_order[%d] must be one of [%s,%s,%s], got %q",
+				i,
+				RuntimeAdmissionDegradeActionReduceToolCallLimit,
+				RuntimeAdmissionDegradeActionTrimMemoryContext,
+				RuntimeAdmissionDegradeActionSandboxThrottle,
+				cfg.DegradePolicy.ActionOrder[i],
+			)
+		}
+		if _, ok := seen[action]; ok && strings.ToLower(strings.TrimSpace(cfg.DegradePolicy.ConflictPolicy)) == RuntimeAdmissionDegradeConflictPolicyFailFast {
+			return fmt.Errorf("runtime.admission.degrade_policy.action_order[%d]=%q duplicates existing action while conflict_policy=fail_fast", i, action)
+		}
+		seen[action] = struct{}{}
+	}
+
+	return nil
+}
+
 func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) error {
 	return ValidateRuntimeArbitrationVersionConfig(cfg)
 }
@@ -4022,6 +4141,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.readiness.admission.mode", base.Runtime.Readiness.Admission.Mode)
 	v.SetDefault("runtime.readiness.admission.block_on", base.Runtime.Readiness.Admission.BlockOn)
 	v.SetDefault("runtime.readiness.admission.degraded_policy", base.Runtime.Readiness.Admission.DegradedPolicy)
+	v.SetDefault("runtime.admission.budget.cost.degrade_threshold", base.Runtime.Admission.Budget.Cost.DegradeThreshold)
+	v.SetDefault("runtime.admission.budget.cost.hard_threshold", base.Runtime.Admission.Budget.Cost.HardThreshold)
+	v.SetDefault("runtime.admission.budget.latency.degrade_threshold", base.Runtime.Admission.Budget.Latency.DegradeThreshold)
+	v.SetDefault("runtime.admission.budget.latency.hard_threshold", base.Runtime.Admission.Budget.Latency.HardThreshold)
+	v.SetDefault("runtime.admission.degrade_policy.enabled", base.Runtime.Admission.DegradePolicy.Enabled)
+	v.SetDefault("runtime.admission.degrade_policy.action_order", base.Runtime.Admission.DegradePolicy.ActionOrder)
+	v.SetDefault("runtime.admission.degrade_policy.conflict_policy", base.Runtime.Admission.DegradePolicy.ConflictPolicy)
 	v.SetDefault("runtime.arbitration.version.enabled", base.Runtime.Arbitration.Version.Enabled)
 	v.SetDefault("runtime.arbitration.version.default", base.Runtime.Arbitration.Version.Default)
 	v.SetDefault("runtime.arbitration.version.compat_window", base.Runtime.Arbitration.Version.CompatWindow)
@@ -4472,6 +4598,17 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Readiness.Admission.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.mode")))
 	cfg.Runtime.Readiness.Admission.BlockOn = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.block_on")))
 	cfg.Runtime.Readiness.Admission.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.degraded_policy")))
+	admissionDegradePolicyEnabled, err := strictBoolConfigValue(v, "runtime.admission.degrade_policy.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Admission.Budget.Cost.DegradeThreshold = v.GetFloat64("runtime.admission.budget.cost.degrade_threshold")
+	cfg.Runtime.Admission.Budget.Cost.HardThreshold = v.GetFloat64("runtime.admission.budget.cost.hard_threshold")
+	cfg.Runtime.Admission.Budget.Latency.DegradeThreshold = v.GetDuration("runtime.admission.budget.latency.degrade_threshold")
+	cfg.Runtime.Admission.Budget.Latency.HardThreshold = v.GetDuration("runtime.admission.budget.latency.hard_threshold")
+	cfg.Runtime.Admission.DegradePolicy.Enabled = admissionDegradePolicyEnabled
+	cfg.Runtime.Admission.DegradePolicy.ActionOrder = normalizeOrderedKeywords(v.GetStringSlice("runtime.admission.degrade_policy.action_order"))
+	cfg.Runtime.Admission.DegradePolicy.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.admission.degrade_policy.conflict_policy")))
 	arbitrationVersionEnabled, err := strictBoolConfigValue(v, "runtime.arbitration.version.enabled")
 	if err != nil {
 		return Config{}, err
@@ -5115,6 +5252,27 @@ func normalizeKeywords(in []string) []string {
 			seen[item] = struct{}{}
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+func normalizeOrderedKeywords(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, value := range in {
+		chunks := strings.Split(value, ",")
+		for _, chunk := range chunks {
+			item := strings.ToLower(strings.TrimSpace(chunk))
+			if item == "" {
+				continue
+			}
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

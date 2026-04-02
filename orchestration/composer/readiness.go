@@ -36,7 +36,8 @@ func (c *Composer) guardReadinessAdmission(
 		runID = fmt.Sprintf("run-%d", resolveReadinessSnapshotTime(c.now).UnixNano())
 		req.RunID = runID
 	}
-	decision := c.runtimeMgr.EvaluateReadinessAdmissionWithRequest(strings.TrimSpace(req.ArbitrationRuleVersion))
+	admissionRequest := buildReadinessAdmissionRequest(req)
+	decision := c.runtimeMgr.EvaluateReadinessAdmissionWithBudgetRequest(strings.TrimSpace(req.ArbitrationRuleVersion), admissionRequest)
 	c.recordReadinessAdmission(runID, decision)
 	c.emitRolloutGovernanceTimeline(ctx, runID, h, decision)
 	if decision.Outcome != runtimeconfig.ReadinessAdmissionOutcomeDeny {
@@ -81,6 +82,9 @@ func (c *Composer) guardReadinessAdmission(
 				"sandbox_capacity_action":                      strings.TrimSpace(decision.SandboxCapacityAction),
 				"sandbox_capacity_degraded_policy":             strings.TrimSpace(decision.SandboxCapacityDegradedPolicy),
 				"admission_mode":                               strings.TrimSpace(decision.Mode),
+				"budget_decision":                              strings.TrimSpace(string(decision.BudgetDecision)),
+				"degrade_action":                               strings.TrimSpace(decision.DegradeAction),
+				"budget_snapshot":                              decision.BudgetSnapshot,
 			},
 		},
 	}
@@ -98,6 +102,15 @@ func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig
 	stat := c.ensureRunStat(runID)
 	stat.ReadinessAdmissionMode = strings.TrimSpace(decision.Mode)
 	stat.ReadinessAdmissionPrimaryCode = strings.TrimSpace(decision.ReadinessPrimaryCode)
+	stat.BudgetDecision = strings.TrimSpace(string(decision.BudgetDecision))
+	stat.DegradeAction = strings.TrimSpace(decision.DegradeAction)
+	if decision.BudgetSnapshot != nil {
+		stat.BudgetSnapshot = *decision.BudgetSnapshot
+		stat.BudgetSnapshotSet = true
+	} else {
+		stat.BudgetSnapshot = runtimeconfig.RuntimeAdmissionBudgetSnapshot{}
+		stat.BudgetSnapshotSet = false
+	}
 	stat.PolicyPrecedenceVersion = strings.TrimSpace(decision.PolicyPrecedenceVersion)
 	stat.WinnerStage = strings.TrimSpace(decision.WinnerStage)
 	stat.DenySource = strings.TrimSpace(decision.DenySource)
@@ -213,6 +226,17 @@ func rolloutGovernanceTimelineReason(decision runtimeconfig.ReadinessAdmissionDe
 		return "sandbox.rollout.phase_canary"
 	}
 	return ""
+}
+
+func buildReadinessAdmissionRequest(req types.RunRequest) runtimeconfig.ReadinessAdmissionRequest {
+	inputChars := len([]rune(strings.TrimSpace(req.Input)))
+	messageCount := len(req.Messages)
+	caps := req.Capabilities.Normalized()
+	return runtimeconfig.ReadinessAdmissionRequest{
+		InputChars:           inputChars,
+		MessageCount:         messageCount,
+		RequiredCapabilities: append([]types.ModelCapability(nil), caps...),
+	}
 }
 
 func (c *Composer) publishRuntimeReadinessSnapshot() {

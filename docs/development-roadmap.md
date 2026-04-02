@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-04-01
+更新时间：2026-04-02
 
 ## 定位
 
@@ -15,11 +15,10 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-04-01：
-- 已归档并稳定：A4-A58（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+截至 2026-04-02：
+- 已归档并稳定：A4-A60（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
-  - `introduce-runtime-cost-latency-budget-and-admission-contract-a60`
+  - `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -551,7 +550,7 @@ A56 一次性闭环审查（10.4）：
   - A67：补齐 ReAct plan notebook + plan-change hook 合同，增强动态计划可控性；
   - A68：实时双向事件协议专项（按业务触发），补齐 cancel/resume 与事件幂等合同；
   - A63：代码整合收敛专项（清理临时代码/文档、命名语义化、目录结构收敛），以“语义不变”为硬约束；
-  - A64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出），以“语义不变”为硬约束；
+  - A64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出、Context Assembler 热路径治理），以“语义不变”为硬约束；
   - A62：补齐“交付易用性”example pack（主要 agent 模式一站式示例与可回归冒烟）；
 - 执行约束：A58-A61 负责核心 runtime contract 缺口，A65-A68 负责 agent runtime 基座能力补齐（A68 按实时交互需求触发），A63 负责代码整合收敛，A64 负责非语义性能工程化，A62 在前述能力相对稳定后承担交付易用性收口（example pack）；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
 
@@ -575,9 +574,9 @@ A56 一次性闭环审查（10.4）：
 
 与在研项目的先后顺序（强依赖）：
 1. A58（已归档，P1）：policy precedence + decision trace contract（优先承接跨层策略冲突风险）。
-2. A59（进行中，P1）：memory scope + builtin filesystem memory v2 治理 contract（已完成实现与 gate 接线，处于待归档收尾阶段）。
-3. A60（进行中，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
-4. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
+2. A59（已归档，P1）：memory scope + builtin filesystem memory v2 治理 contract（scope/write_mode/injection_budget/lifecycle/search 与 gate 已收口）。
+3. A60（已归档，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
+4. A61（进行中，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
 5. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
 6. A66（新增，P2）：unified state/session snapshot contract。
 7. A67（新增，P2）：react plan notebook + plan-change hook contract。
@@ -588,7 +587,7 @@ A56 一次性闭环审查（10.4）：
 
 备选项目说明（避免“单一路线”误解）：
 - A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A59/A60 正在实施，A58 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
+- A61 正在实施，A58/A59/A60 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
   - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
   - 若 A58/A59 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：优先在 A59 内增量吸收。
@@ -599,7 +598,7 @@ A56 一次性闭环审查（10.4）：
   - 若 ReAct 场景出现计划漂移不可解释或计划恢复不稳定：A67 可前置实施。
   - 若产品侧进入实时语音/实时协作阶段：A68 可前置实施。
   - 若仓库出现临时代码/文档积压、Axx 文案耦合扩散、模块命名与职责漂移：A63 可前置实施。
-  - 若 CPU/GC 抖动、goroutine 峰值、allocs/op 退化成为主线风险：A64 可前置实施。
+  - 若 CPU/GC 抖动、goroutine 峰值、allocs/op 退化成为主线风险：A64 可前置实施，按 `A64-S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8 -> S9 -> S10` 风险链路逐项吸收（允许按瓶颈信号调整顺序）。
   - 若外部团队接入/迁移周期过长、样例复用率低、或示例与主链路契约脱节：A62 可前置实施（但需明确冻结口径，避免反复返工）。
 - 无论是否前置切换，均不得改写 A56 已归档与 A57 已冻结范围，只允许在其完成后做增量扩展。
 
@@ -744,11 +743,154 @@ A56 一次性闭环审查（10.4）：
 
 备选 A64（新增）：`introduce-engineering-and-performance-optimization-contract-a64`
 - 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
+- 子项目（性能治理，优先落地）：
+  - A64-S1：`context-assembler-loop-hotpath-governance`
+  - 目标：降低每轮 `Assemble` 固定开销与长跑内存累积风险，在不改变 CA1/CA2/CA3/CA4 语义前提下提升稳定吞吐。
+  - 范围（第一批）：
+    - 为 `prefixCache` / `ca3State` 增加 run-finished 清理与 TTL/LRU 上限治理，避免常驻进程无界增长；
+    - 为 context journal 增加可开关批量写入路径（默认保持同步语义），并补齐 flush/异常中断边界测试；
+    - 增加 CA3 stage2 “无增量跳过”优化开关（仅在 stage2 未追加有效上下文且输入签名不变时跳过第二次 CA3）；
+    - 为 `stage2 provider=file` 增加索引化读取或分段扫描策略，降低大文件线性扫描成本；
+    - 为 `stage2 provider=external(http/rag/db/elasticsearch)` 增加请求/响应编解码快路径与有界缓冲复用，降低 `json marshal/unmarshal + body read` 抖动；
+    - 增加热点基准与回归门禁：`BenchmarkContextAssemblerLoop*`、`BenchmarkCA3Stage2Pass*`、`BenchmarkStage2FileProvider*`。
+  - 非目标（第一批）：
+    - 不修改 A60 成本/时延 budget admission 公式与降级动作；
+    - 不调整 Run/Stream 行为、reason taxonomy、diagnostics 字段语义。
+  - A64-S2：`runtime-recorder-and-diagnostics-hotpath-governance`
+  - 目标：降低 `run.finished` 大负载映射、query 聚合与排序复制带来的 CPU/GC 抖动，保持 recorder/query 语义不变。
+  - 范围（第一批）：
+    - 为 `RuntimeRecorder` 增加可复用映射缓冲与按需字段投影，减少 `run.finished` 事件大对象重复分配；
+    - 为 diagnostics store 查询路径增加可开关索引/分页游标策略，减少全量筛选 + 排序 + 复制；
+    - 为 `MailboxAggregates`/P95 聚合引入有界统计优化（保持输出字段与解释口径不变）；
+    - 增加 `BenchmarkRuntimeRecorderRunFinished*`、`BenchmarkDiagnosticsQueryRuns*`、`BenchmarkDiagnosticsMailboxAggregates*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不改写 `RuntimeRecorder` 单写入口契约；
+    - 不变更 QueryRuns/QueryMailbox 对外字段、排序解释与 replay 语义。
+  - A64-S3：`scheduler-mailbox-file-backend-persistence-governance`
+  - 目标：降低 file backend 高频全量持久化开销，控制 I/O 放大与锁竞争，同时维持 crash recovery 与幂等语义。
+  - 范围（第一批）：
+    - 为 scheduler/mailbox file store 增加可开关增量刷盘或批量合并持久化策略（默认保持现有强一致行为）；
+    - 将 composer recovery file store 一并纳入持久化治理，控制全量 `marshal + atomic write` 放大；
+    - 为 scheduler task-board query 增加可开关索引/缓存与增量分页策略，降低全量过滤+排序路径成本；
+    - 引入持久化节流/批次参数与 fail-fast 校验，并补齐热更新回滚测试；
+    - 增加 `BenchmarkSchedulerFileStorePersist*`、`BenchmarkMailboxFileStorePersist*` 与崩溃恢复一致性回归 gate。
+  - 非目标（第一批）：
+    - 不改变 task lifecycle、manual control、async-await 终态裁决；
+    - 不引入外部 MQ 或服务化存储控制面。
+  - A64-S4：`mcp-transport-invoke-and-event-emission-hotpath-governance`
+  - 目标：降低 MCP stdio/http 调用链 goroutine 峰值与事件发射分配开销，保持 call contract 与诊断解释稳定。
+  - 范围（第一批）：
+    - 为 stdio/http client 的 invoke 路径增加有界 worker/复用策略开关，抑制每调用 goroutine 激增；
+    - 为 MCP 事件发射 map 构建引入模板复用与延迟填充，减少短生命周期分配；
+    - 增加 `BenchmarkMCPInvokePath*`、`BenchmarkMCPEventEmit*` 与 transport 回归 gate。
+  - 非目标（第一批）：
+    - 不调整 MCP 对外 API、重试/超时语义或错误 taxonomy；
+    - 不改变已有 tracing/diagnostics 字段口径。
+  - A64-S5：`skill-loader-discover-compile-io-and-scoring-governance`
+  - 目标：降低 skill discover/compile 重复 I/O 与评分路径开销，保证 `agents.md|folder|hybrid` 解析结果一致。
+  - 范围（第一批）：
+    - 为 discover/compile 建立可开关元数据缓存与文件读取复用，避免同轮重复解析；
+    - 为评分 tokenization/sort 路径引入有界缓存与短路策略（仅优化实现，不改分数语义）；
+    - 增加 `BenchmarkSkillLoaderDiscover*`、`BenchmarkSkillLoaderCompile*`、`BenchmarkSkillSelectionScore*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不改 discovery precedence、去重顺序、`SkillBundle -> prompt/tool whitelist` 映射语义；
+    - 不替代 A65/A62 的 skill contract 主线治理职责。
+  - A64-S6：`memory-filesystem-engine-write-query-index-governance`
+  - 目标：降低 filesystem memory 引擎 WAL 写入、查询排序与索引重建成本，保持 A59 scope/lifecycle/search 契约不变。
+  - 范围（第一批）：
+    - 为 WAL 增加可开关批量 fsync/组提交策略（默认保留现有 durability 语义）；
+    - 为 query 路径引入命名空间级索引/缓存与稳定排序复用，降低每次全量扫描；
+    - 为索引 checksum/compaction 增加分段重建与后台节流治理；
+    - 增加 `BenchmarkMemoryFilesystemWrite*`、`BenchmarkMemoryFilesystemQuery*`、`BenchmarkMemoryFilesystemCompaction*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不修改 A59 的 scope resolution、retrieval quality 阈值、lifecycle policy 与可解释字段；
+    - 不引入新 memory provider 协议面或第二套事实源。
+  - A64-S7：`runner-loop-and-local-dispatch-hotpath-governance`
+  - 目标：降低 Runner 每轮 timeline/run-finished 构造开销与 local tool dispatch 分类开销，稳定高迭代场景吞吐。
+  - 范围（第一批）：
+    - 为 Runner 引入 run-scope 配置快照/派生值复用，减少循环内重复 `EffectiveConfig()` 读取与大对象复制；
+    - 为 `emitTimeline` / `runFinishedPayload` 增加可复用 payload 构建策略，降低 map 分配与拷贝；
+    - 为 local dispatcher 的 `drop_low_priority` 分类链路增加关键字预编译与签名缓存，避免每调用重复排序/归一化；
+    - 增加 `BenchmarkRunnerLoopHotpath*`、`BenchmarkRunnerTimelineEmit*`、`BenchmarkLocalDispatchPriorityClassify*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不改变 action timeline 事件顺序、字段语义与 reason taxonomy；
+    - 不改变 backpressure/retry/fail-fast 决策语义。
+  - A64-S8：`provider-adapter-stream-and-decode-hotpath-governance`
+  - 目标：降低 OpenAI/Anthropic/Gemini 适配器在流式事件映射与非流式解码阶段的分配与序列化开销。
+  - 范围（第一批）：
+    - 为 provider stream 事件映射引入 meta/payload 复用策略，减少每事件 map 临时分配；
+    - 为 tool-call 参数解码增加快速路径与有界缓冲复用，降低高频 `json.Unmarshal` 抖动；
+    - 为非流式响应解码优先使用 typed 字段读取，减少全量 `json.Marshal + gjson` 回退路径触发；
+    - 增加 `BenchmarkProviderStreamEventMap*`、`BenchmarkProviderResponseDecode*` 与 provider parity gate。
+  - 非目标（第一批）：
+    - 不改变 provider capability 判定、tool_call 触发条件、事件顺序与 token usage 口径；
+    - 不改写已有 provider 错误分类与重试语义。
+  - A64-S9：`runtime-config-readpath-and-policy-resolve-hotpath-governance`
+  - 目标：降低高并发场景下 runtime config 读取与 MCP policy 解析开销，保持配置治理与热更新语义稳定。
+  - 范围（第一批）：
+    - 为 runtime config 增加只读快照引用/派生缓存机制，减少频繁值拷贝；
+    - 为 MCP runtime policy resolve 增加按 `profile + explicit override` 的可失效缓存（reload 后自动失效）；
+    - 为关键热路径补齐 `BenchmarkRuntimeConfigReadPath*`、`BenchmarkMCPPolicyResolve*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不改变 `env > file > default`、fail-fast 与热更新原子回滚语义；
+    - 不改写 policy precedence、admission 与 sandbox rollout contract 字段。
+  - A64-S10：`observability-event-pipeline-throughput-governance`
+  - 目标：降低 observability 事件管线（dispatcher/logger/exporter）在高事件率场景下的分配与串行阻塞开销。
+  - 范围（第一批）：
+    - 为 runtime exporter 增加批量导出与批次聚合开关，替代逐事件 `ExportEvents([]event{...})` 热路径；
+    - 为 dispatcher 增加可配置 fanout 策略与 handler 隔离治理，避免慢 handler 放大主链路延迟；
+    - 为 JSON logger 增加编码器/缓冲复用与最小化字段构建路径，降低 per-event `map + json.Marshal` 开销；
+    - 增加 `BenchmarkRuntimeExporterBatch*`、`BenchmarkEventDispatcherFanout*`、`BenchmarkJSONLoggerEmit*` 与回归 gate。
+  - 非目标（第一批）：
+    - 不改变事件 schema、timeline 序列、RuntimeRecorder 单写入口和 replay 字段语义；
+    - 不引入平台化 observability 控制面或外置必选依赖。
+- 强门禁（A64 子项共用，阻断合入）：
+  - 必须新增并接入 `check-a64-semantic-stability-contract.sh/.ps1`，阻断“对外语义漂移”：
+    - Run/Stream 行为等价；
+    - diagnostics schema 与 reason taxonomy 不漂移；
+    - replay fixture idempotency 稳定。
+  - 必须新增并接入 `check-a64-performance-regression.sh/.ps1`，阻断关键基准退化（`ns/op`、`allocs/op`、`B/op`）；
+  - 必须接入 `A64 impacted-contract suites` 校验（按改动模块选择主干 contract suites），要求主干 contract/replay suites 全绿且无漂移豁免；
+  - A64 任一子项未通过 contract/replay/perf gate，不允许合入主干。
+- `A64 impacted-contract suites` 模块映射（最低必跑，shell/PowerShell 必须语义等价）：
+  - S1（context assembler + stage2 provider + journal）：
+    - `go test ./context/assembler ./context/provider ./context/journal -count=1`
+    - `scripts/check-diagnostics-replay-contract.sh/.ps1`
+  - S2（runtime recorder + diagnostics）：
+    - `scripts/check-diagnostics-replay-contract.sh/.ps1`
+    - `scripts/check-diagnostics-query-performance-regression.sh/.ps1`
+  - S3（scheduler/mailbox/composer recovery + task-board query）：
+    - `scripts/check-multi-agent-shared-contract.sh/.ps1`
+    - `go test ./orchestration/scheduler ./orchestration/composer -count=1`
+  - S4（MCP transport invoke path）：
+    - `go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1`
+    - `scripts/check-multi-agent-shared-contract.sh/.ps1`
+  - S5（skill loader discover/compile/scoring）：
+    - `go test ./skill/loader ./runtime/config -count=1`
+  - S6（memory filesystem engine）：
+    - `scripts/check-memory-contract-conformance.sh/.ps1`
+    - `scripts/check-memory-scope-and-search-contract.sh/.ps1`
+  - S7（runner loop + local dispatch）：
+    - `scripts/check-security-policy-contract.sh/.ps1`
+    - `scripts/check-security-event-contract.sh/.ps1`
+    - `scripts/check-security-delivery-contract.sh/.ps1`
+    - `scripts/check-security-sandbox-contract.sh/.ps1`
+  - S8（model provider adapters）：
+    - `scripts/check-react-contract.sh/.ps1`
+  - S9（runtime config read-path + policy resolve）：
+    - `scripts/check-policy-precedence-contract.sh/.ps1`
+    - `scripts/check-runtime-budget-admission-contract.sh/.ps1`
+    - `scripts/check-sandbox-rollout-governance-contract.sh/.ps1`
+  - S10（observability dispatcher/logger/exporter pipeline）：
+    - `scripts/check-observability-export-and-bundle-contract.sh/.ps1`
+    - `scripts/check-diagnostics-replay-contract.sh/.ps1`
+  - 横切兜底（所有 A64 子项合并前必跑）：
+    - `scripts/check-quality-gate.sh/.ps1`
 - 硬约束（简版）：
   - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
   - 不绕过现有 contract gate 与 replay 约束；
   - 所有优化都必须可开关、可回滚。
-- 当前状态：占位提案，仅保留方向与边界；详细 contract/fixture/gate 清单待 A63 收敛后再单独规划。
+- 当前状态：占位提案（含 A64-S1~S10 子项目），详细 contract/fixture/gate 清单待 A63 收敛后展开。
 
 备选 A62（新增）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
@@ -948,6 +1090,11 @@ A65-A68 占位验收口径（简版）：
 - A68 realtime 合同仅定义协议与嵌入式接缝，不得新增平台化实时网关或托管连接控制面。
 - A63 的命名与文档整合必须复用现有契约字段，不得改写 contract 语义；Axx->语义名映射集中维护于索引，不在多处重复定义。
 - A64 的优化实现必须复用 A58-A68（若 A68 启用）既有契约字段与 reason taxonomy，禁止以性能优化引入语义分叉。
+- Context Assembler 循环热路径同域需求（cache 回收、journal 批写、CA3 stage2 pass 优化、stage2 file 读取优化）统一在 A64-S1 内增量吸收，不再新增平行性能提案。
+- RuntimeRecorder/diagnostics、scheduler-file/mailbox/composer recovery、MCP 调用链、skill loader、memory filesystem 引擎的同域性能需求统一在 A64-S2~S6 内增量吸收，不再新增平行性能提案。
+- Runner 循环、local dispatch、provider adapter、runtime config/policy resolve 的同域性能需求统一在 A64-S7~S9 内增量吸收，不再新增平行性能提案。
+- observability dispatcher/logger/exporter 事件管线的同域性能需求统一在 A64-S10 内增量吸收，不再新增平行性能提案。
+- A64 所有子项必须通过 `semantic-stability + replay + perf-regression` 强门禁；任何 gate 漂移均按阻断处理，不得以“仅性能优化”为由豁免。
 - A62 的示例字段与观测语义必须引用 A56-A68（若 A68 启用）既有 contract 输出，禁止在 examples 侧定义平行语义。
 - 若出现新增需求，优先以 A58-A68 的“增量任务”吸收，默认不新增 A69+ 同域提案。
 

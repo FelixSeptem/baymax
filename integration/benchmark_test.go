@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -32,6 +34,120 @@ func BenchmarkIterationLatency(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = eng.Run(context.Background(), types.RunRequest{Input: "x"}, nil)
+	}
+}
+
+func BenchmarkRuntimeBudgetAdmissionDecisionStability(b *testing.B) {
+	cfgPath := filepath.Join(b.TempDir(), "runtime-a60-budget-bench.yaml")
+	cfg := strings.Join([]string{
+		"runtime:",
+		"  readiness:",
+		"    enabled: true",
+		"    strict: false",
+		"    remote_probe_enabled: false",
+		"    admission:",
+		"      enabled: true",
+		"      mode: fail_fast",
+		"      block_on: blocked_only",
+		"      degraded_policy: allow_and_record",
+		"  admission:",
+		"    budget:",
+		"      cost:",
+		"        degrade_threshold: 0.75",
+		"        hard_threshold: 1.20",
+		"      latency:",
+		"        degrade_threshold: 1s",
+		"        hard_threshold: 2200ms",
+		"    degrade_policy:",
+		"      enabled: true",
+		"      action_order: [reduce_tool_call_limit, trim_memory_context, sandbox_throttle]",
+		"      conflict_policy: first_action",
+		"reload:",
+		"  enabled: false",
+		"  debounce: 20ms",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		b.Fatalf("write runtime config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A60_BENCH",
+	})
+	if err != nil {
+		b.Fatalf("new runtime manager: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	degradeReq := runtimeconfig.ReadinessAdmissionRequest{
+		ExplicitBudgetEstimate: &runtimeconfig.RuntimeAdmissionBudgetEstimate{
+			TokenCost:      0.35,
+			ToolCost:       0.21,
+			SandboxCost:    0.18,
+			MemoryCost:     0.15,
+			TokenLatency:   420 * time.Millisecond,
+			ToolLatency:    320 * time.Millisecond,
+			SandboxLatency: 260 * time.Millisecond,
+			MemoryLatency:  180 * time.Millisecond,
+		},
+	}
+	denyReq := runtimeconfig.ReadinessAdmissionRequest{
+		ExplicitBudgetEstimate: &runtimeconfig.RuntimeAdmissionBudgetEstimate{
+			TokenCost:      0.55,
+			ToolCost:       0.40,
+			SandboxCost:    0.30,
+			MemoryCost:     0.20,
+			TokenLatency:   700 * time.Millisecond,
+			ToolLatency:    620 * time.Millisecond,
+			SandboxLatency: 540 * time.Millisecond,
+			MemoryLatency:  420 * time.Millisecond,
+		},
+	}
+
+	degradeDurations := make([]int64, 0, b.N)
+	denyDurations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		startDegrade := time.Now()
+		degradeDecision := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", degradeReq)
+		degradeDurations = append(degradeDurations, time.Since(startDegrade).Nanoseconds())
+		if degradeDecision.BudgetDecision != runtimeconfig.RuntimeAdmissionBudgetDecisionDegrade {
+			b.Fatalf("degrade decision drift at iter=%d: %#v", i, degradeDecision)
+		}
+		if degradeDecision.ReasonCode != runtimeconfig.ReadinessAdmissionCodeBudgetDegradeAllow {
+			b.Fatalf("degrade reason drift at iter=%d: %#v", i, degradeDecision)
+		}
+		if degradeDecision.DegradeAction != runtimeconfig.RuntimeAdmissionDegradeActionReduceToolCallLimit {
+			b.Fatalf("degrade action drift at iter=%d: %#v", i, degradeDecision)
+		}
+
+		startDeny := time.Now()
+		denyDecision := mgr.EvaluateReadinessAdmissionWithBudgetRequest("", denyReq)
+		denyDurations = append(denyDurations, time.Since(startDeny).Nanoseconds())
+		if denyDecision.BudgetDecision != runtimeconfig.RuntimeAdmissionBudgetDecisionDeny {
+			b.Fatalf("deny decision drift at iter=%d: %#v", i, denyDecision)
+		}
+		if denyDecision.ReasonCode != runtimeconfig.ReadinessAdmissionCodeBudgetHardDeny {
+			b.Fatalf("deny reason drift at iter=%d: %#v", i, denyDecision)
+		}
+		if strings.TrimSpace(denyDecision.DegradeAction) != "" {
+			b.Fatalf("deny action must be empty at iter=%d: %#v", i, denyDecision)
+		}
+	}
+	b.StopTimer()
+
+	if p95 := percentileNs(degradeDurations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "a60-degrade-p95-ns/op")
+	}
+	if p99 := percentileNs(degradeDurations, 99); p99 > 0 {
+		b.ReportMetric(float64(p99), "a60-degrade-p99-ns/op")
+	}
+	if p95 := percentileNs(denyDurations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "a60-deny-p95-ns/op")
+	}
+	if p99 := percentileNs(denyDurations, 99); p99 > 0 {
+		b.ReportMetric(float64(p99), "a60-deny-p99-ns/op")
 	}
 }
 

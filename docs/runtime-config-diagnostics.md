@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-04-01
+更新时间：2026-04-02
 
 ## 目标
 
@@ -100,6 +100,13 @@
   - `runtime.readiness.admission.mode` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_MODE`
   - `runtime.readiness.admission.block_on` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_BLOCK_ON`
   - `runtime.readiness.admission.degraded_policy` -> `BAYMAX_RUNTIME_READINESS_ADMISSION_DEGRADED_POLICY`
+  - `runtime.admission.budget.cost.degrade_threshold` -> `BAYMAX_RUNTIME_ADMISSION_BUDGET_COST_DEGRADE_THRESHOLD`
+  - `runtime.admission.budget.cost.hard_threshold` -> `BAYMAX_RUNTIME_ADMISSION_BUDGET_COST_HARD_THRESHOLD`
+  - `runtime.admission.budget.latency.degrade_threshold` -> `BAYMAX_RUNTIME_ADMISSION_BUDGET_LATENCY_DEGRADE_THRESHOLD`
+  - `runtime.admission.budget.latency.hard_threshold` -> `BAYMAX_RUNTIME_ADMISSION_BUDGET_LATENCY_HARD_THRESHOLD`
+  - `runtime.admission.degrade_policy.enabled` -> `BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_ENABLED`
+  - `runtime.admission.degrade_policy.action_order` -> `BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_ACTION_ORDER`
+  - `runtime.admission.degrade_policy.conflict_policy` -> `BAYMAX_RUNTIME_ADMISSION_DEGRADE_POLICY_CONFLICT_POLICY`
   - `runtime.react.enabled` -> `BAYMAX_RUNTIME_REACT_ENABLED`
   - `runtime.react.max_iterations` -> `BAYMAX_RUNTIME_REACT_MAX_ITERATIONS`
   - `runtime.react.tool_call_limit` -> `BAYMAX_RUNTIME_REACT_TOOL_CALL_LIMIT`
@@ -255,6 +262,18 @@ runtime:
       mode: fail_fast           # 当前仅支持 fail_fast
       block_on: blocked_only    # 当前仅支持 blocked_only
       degraded_policy: allow_and_record # allow_and_record|fail_fast
+  admission:
+    budget:
+      cost:
+        degrade_threshold: 0.75 # 必须 > 0 且 <= hard_threshold
+        hard_threshold: 1.0     # 必须 > 0
+      latency:
+        degrade_threshold: 1200ms # 必须 > 0 且 <= hard_threshold
+        hard_threshold: 2s        # 必须 > 0
+    degrade_policy:
+      enabled: true
+      action_order: [reduce_tool_call_limit, trim_memory_context, sandbox_throttle]
+      conflict_policy: first_action # first_action|fail_fast
   arbitration:
     version:
       enabled: true             # A50 默认开启
@@ -1112,6 +1131,7 @@ Mailbox diagnostics additive 字段（A35）：
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
 - Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
 - Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
+- Budget Admission（A60）：`budget_snapshot`、`budget_decision`、`degrade_action`
 - Memory（A54/A59）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`、`memory_scope_selected`、`memory_budget_used`、`memory_hits`、`memory_rerank_stats`、`memory_lifecycle_action`
 - Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
@@ -1255,7 +1275,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60）
 
 离线回放命令：
 
@@ -1364,6 +1384,20 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `tie_break_drift`
   - `deny_source_mismatch`
 - mixed fixture 兼容要求：A58 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
+
+语义（A60 runtime budget admission 模式）：
+- 输入：版本化 fixture（`version=budget_admission.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `budget_snapshot.version`（固定 `budget_admission.v1`）
+  - `budget_snapshot.cost_estimate.{token,tool,sandbox,memory,total}`
+  - `budget_snapshot.latency_estimate.{token_ms,tool_ms,sandbox_ms,memory_ms,total_ms}`
+  - `budget_decision`（`allow|degrade|deny`）
+  - `degrade_action`（`degrade` 决策下必须为 canonical action）
+- 输出：按 case name 排序后的 canonical budget admission 输出。
+- drift 分类（A60 blocking）：
+  - `budget_threshold_drift`
+  - `admission_decision_drift`
+  - `degrade_policy_drift`
+- mixed fixture 兼容要求：A60 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `budget_admission.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
 
 语义（A54 memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：
@@ -1738,6 +1772,28 @@ A58 gate 与 required-check 暴露：
 - Windows: `pwsh -File scripts/check-policy-precedence-contract.ps1`
 - CI Job: `policy-precedence-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-policy-precedence-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+
+A60 在 A58/A59 基础上冻结 runtime 成本/时延预算 admission 合同，统一 `allow|degrade|deny` 判定、降级动作选择、回放与门禁口径。
+
+A60 配置域：
+- `runtime.admission.budget.cost.degrade_threshold`
+- `runtime.admission.budget.cost.hard_threshold`
+- `runtime.admission.budget.latency.degrade_threshold`
+- `runtime.admission.budget.latency.hard_threshold`
+- `runtime.admission.degrade_policy.enabled`
+- `runtime.admission.degrade_policy.action_order`
+- `runtime.admission.degrade_policy.conflict_policy`（`first_action|fail_fast`）
+
+A60 additive diagnostics 字段（`additive + nullable + default`）：
+- `budget_snapshot`
+- `budget_decision`
+- `degrade_action`
+
+A60 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-runtime-budget-admission-contract.sh`
+- Windows: `pwsh -File scripts/check-runtime-budget-admission-contract.ps1`
+- CI Job: `runtime-budget-admission-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-runtime-budget-admission-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

@@ -38,6 +38,10 @@
   - `timeout_resolution_trace`
   - `timeout_parent_budget_clamp_total`
   - `timeout_parent_budget_reject_total`
+- A60 budget admission additive 字段：
+  - `budget_snapshot`
+  - `budget_decision`
+  - `degrade_action`
 
 该包只负责数据模型和聚合算法，不负责事件订阅。
 
@@ -63,6 +67,7 @@
 - 关键验证：`go test ./runtime/diagnostics -count=1`。
 - 回归重点：幂等写入、重复事件收敛、趋势聚合确定性。
 - A41 回归重点：timeout-resolution 字段在 replay/重复写入下保持逻辑幂等，不膨胀聚合计数。
+- A60 回归重点：`budget_snapshot/budget_decision/degrade_action` 保持 `additive + nullable + default` 兼容，不破坏历史 QueryRuns 消费端。
 - 与 integration 契约共同验证 run/team/workflow/task 查询语义。
 
 ## 扩展点与常见误用

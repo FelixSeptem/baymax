@@ -73,6 +73,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a59_memory_lifecycle_success_input.json",
 			expected: "a59_memory_lifecycle_success_expected.json",
 		},
+		{
+			name:     "a60-budget-admission",
+			input:    "a60_budget_admission_success_input.json",
+			expected: "a60_budget_admission_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -420,6 +425,24 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeRecoveryConsistencyDrift,
 			wantInText: "recovery consistency drift",
 		},
+		{
+			name:       "a60-budget-threshold-drift",
+			fixture:    "a60_budget_threshold_drift_input.json",
+			wantCode:   ReasonCodeBudgetThresholdDrift,
+			wantInText: "budget threshold drift",
+		},
+		{
+			name:       "a60-admission-decision-drift",
+			fixture:    "a60_budget_decision_drift_input.json",
+			wantCode:   ReasonCodeAdmissionDecisionDrift,
+			wantInText: "admission decision drift",
+		},
+		{
+			name:       "a60-degrade-policy-drift",
+			fixture:    "a60_degrade_policy_drift_input.json",
+			wantCode:   ReasonCodeDegradePolicyDrift,
+			wantInText: "degrade policy drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -443,6 +466,45 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 	}
 }
 
+func TestReplayContractBudgetAdmissionFixtureAndDriftClassification(t *testing.T) {
+	if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, "a60_budget_admission_success_input.json")); err != nil {
+		t.Fatalf("budget admission success fixture should pass: %v", err)
+	}
+	tests := []struct {
+		fixture  string
+		wantCode string
+	}{
+		{
+			fixture:  "a60_budget_threshold_drift_input.json",
+			wantCode: ReasonCodeBudgetThresholdDrift,
+		},
+		{
+			fixture:  "a60_budget_decision_drift_input.json",
+			wantCode: ReasonCodeAdmissionDecisionDrift,
+		},
+		{
+			fixture:  "a60_degrade_policy_drift_input.json",
+			wantCode: ReasonCodeDegradePolicyDrift,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.fixture))
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
 func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a52_sandbox_rollout_success_input.json",
@@ -450,6 +512,7 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a59_memory_scope_success_input.json",
 		"a59_memory_search_success_input.json",
 		"a59_memory_lifecycle_success_input.json",
+		"a60_budget_admission_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -469,6 +532,7 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 		"a58_policy_stack_success_input.json",
+		"a60_budget_admission_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

@@ -1,0 +1,72 @@
+{
+  "version": "budget_admission.v1",
+  "cases": [
+    {
+      "name": "budget_decision_drift_case",
+      "run": {
+        "budget_decision": "allow",
+        "budget_snapshot": {
+          "version": "budget_admission.v1",
+          "cost_estimate": {
+            "token": 0.52,
+            "tool": 0.34,
+            "sandbox": 0.28,
+            "memory": 0.17,
+            "total": 1.31
+          },
+          "latency_estimate": {
+            "token_ms": 700,
+            "tool_ms": 520,
+            "sandbox_ms": 680,
+            "memory_ms": 280,
+            "total_ms": 2180
+          }
+        }
+      },
+      "stream": {
+        "budget_decision": "deny",
+        "budget_snapshot": {
+          "version": "budget_admission.v1",
+          "cost_estimate": {
+            "token": 0.52,
+            "tool": 0.34,
+            "sandbox": 0.28,
+            "memory": 0.17,
+            "total": 1.31
+          },
+          "latency_estimate": {
+            "token_ms": 700,
+            "tool_ms": 520,
+            "sandbox_ms": 680,
+            "memory_ms": 280,
+            "total_ms": 2180
+          }
+        }
+      },
+      "expected": {
+        "budget_decision": "deny",
+        "budget_snapshot": {
+          "version": "budget_admission.v1",
+          "cost_estimate": {
+            "token": 0.52,
+            "tool": 0.34,
+            "sandbox": 0.28,
+            "memory": 0.17,
+            "total": 1.31
+          },
+          "latency_estimate": {
+            "token_ms": 700,
+            "tool_ms": 520,
+            "sandbox_ms": 680,
+            "memory_ms": 280,
+            "total_ms": 2180
+          }
+        }
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

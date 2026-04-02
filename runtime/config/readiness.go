@@ -103,6 +103,15 @@ const (
 	ReadinessAdmissionOutcomeDeny  ReadinessAdmissionOutcome = "deny"
 )
 
+type RuntimeAdmissionBudgetDecision string
+
+const (
+	RuntimeAdmissionBudgetDecisionAllow     RuntimeAdmissionBudgetDecision = "allow"
+	RuntimeAdmissionBudgetDecisionDegrade   RuntimeAdmissionBudgetDecision = "degrade"
+	RuntimeAdmissionBudgetDecisionDeny      RuntimeAdmissionBudgetDecision = "deny"
+	RuntimeAdmissionBudgetSnapshotVersionV1                                = "budget_admission.v1"
+)
+
 const (
 	ReadinessAdmissionCodeBypassDisabled       = "runtime.readiness.admission.disabled"
 	ReadinessAdmissionCodeReady                = "runtime.readiness.admission.ready"
@@ -115,6 +124,8 @@ const (
 	ReadinessAdmissionCodeSandboxCapacityDeny  = "runtime.readiness.admission.sandbox_capacity_deny"
 	ReadinessAdmissionCodeUnknownStatus        = "runtime.readiness.admission.unknown_status"
 	ReadinessAdmissionCodeManagerNotReady      = "runtime.readiness.admission.manager_unavailable"
+	ReadinessAdmissionCodeBudgetDegradeAllow   = "runtime.readiness.admission.budget_degrade_allow"
+	ReadinessAdmissionCodeBudgetHardDeny       = "runtime.readiness.admission.budget_hard_threshold_deny"
 )
 
 const (
@@ -191,36 +202,80 @@ type ReadinessSummary struct {
 }
 
 type ReadinessAdmissionDecision struct {
-	Enabled                                  bool                      `json:"enabled"`
-	Mode                                     string                    `json:"mode"`
-	BlockOn                                  string                    `json:"block_on"`
-	DegradedPolicy                           string                    `json:"degraded_policy"`
-	SandboxRolloutPhase                      string                    `json:"sandbox_rollout_phase,omitempty"`
-	SandboxCapacityAction                    string                    `json:"sandbox_capacity_action,omitempty"`
-	SandboxCapacityDegradedPolicy            string                    `json:"sandbox_capacity_degraded_policy,omitempty"`
-	Outcome                                  ReadinessAdmissionOutcome `json:"outcome"`
-	ReasonCode                               string                    `json:"reason_code"`
-	ReadinessStatus                          ReadinessStatus           `json:"readiness_status"`
-	ReadinessPrimaryDomain                   string                    `json:"readiness_primary_domain,omitempty"`
-	ReadinessPrimaryCode                     string                    `json:"readiness_primary_code,omitempty"`
-	ReadinessPrimarySource                   string                    `json:"readiness_primary_source,omitempty"`
-	ReadinessSecondaryReasonCodes            []string                  `json:"readiness_secondary_reason_codes,omitempty"`
-	ReadinessSecondaryReasonCount            int                       `json:"readiness_secondary_reason_count,omitempty"`
-	ReadinessArbitrationRuleVersion          string                    `json:"readiness_arbitration_rule_version,omitempty"`
-	ReadinessArbitrationRuleRequestedVersion string                    `json:"readiness_arbitration_rule_requested_version,omitempty"`
-	ReadinessArbitrationRuleEffectiveVersion string                    `json:"readiness_arbitration_rule_effective_version,omitempty"`
-	ReadinessArbitrationRuleVersionSource    string                    `json:"readiness_arbitration_rule_version_source,omitempty"`
-	ReadinessArbitrationRulePolicyAction     string                    `json:"readiness_arbitration_rule_policy_action,omitempty"`
-	ReadinessArbitrationRuleUnsupportedTotal int                       `json:"readiness_arbitration_rule_unsupported_total,omitempty"`
-	ReadinessArbitrationRuleMismatchTotal    int                       `json:"readiness_arbitration_rule_mismatch_total,omitempty"`
-	ReadinessRemediationHintCode             string                    `json:"readiness_remediation_hint_code,omitempty"`
-	ReadinessRemediationHintDomain           string                    `json:"readiness_remediation_hint_domain,omitempty"`
-	PolicyPrecedenceVersion                  string                    `json:"policy_precedence_version,omitempty"`
-	WinnerStage                              string                    `json:"winner_stage,omitempty"`
-	DenySource                               string                    `json:"deny_source,omitempty"`
-	TieBreakReason                           string                    `json:"tie_break_reason,omitempty"`
-	PolicyDecisionPath                       []RuntimePolicyCandidate  `json:"policy_decision_path,omitempty"`
-	Bypass                                   bool                      `json:"bypass"`
+	Enabled                                  bool                            `json:"enabled"`
+	Mode                                     string                          `json:"mode"`
+	BlockOn                                  string                          `json:"block_on"`
+	DegradedPolicy                           string                          `json:"degraded_policy"`
+	SandboxRolloutPhase                      string                          `json:"sandbox_rollout_phase,omitempty"`
+	SandboxCapacityAction                    string                          `json:"sandbox_capacity_action,omitempty"`
+	SandboxCapacityDegradedPolicy            string                          `json:"sandbox_capacity_degraded_policy,omitempty"`
+	Outcome                                  ReadinessAdmissionOutcome       `json:"outcome"`
+	ReasonCode                               string                          `json:"reason_code"`
+	ReadinessStatus                          ReadinessStatus                 `json:"readiness_status"`
+	ReadinessPrimaryDomain                   string                          `json:"readiness_primary_domain,omitempty"`
+	ReadinessPrimaryCode                     string                          `json:"readiness_primary_code,omitempty"`
+	ReadinessPrimarySource                   string                          `json:"readiness_primary_source,omitempty"`
+	ReadinessSecondaryReasonCodes            []string                        `json:"readiness_secondary_reason_codes,omitempty"`
+	ReadinessSecondaryReasonCount            int                             `json:"readiness_secondary_reason_count,omitempty"`
+	ReadinessArbitrationRuleVersion          string                          `json:"readiness_arbitration_rule_version,omitempty"`
+	ReadinessArbitrationRuleRequestedVersion string                          `json:"readiness_arbitration_rule_requested_version,omitempty"`
+	ReadinessArbitrationRuleEffectiveVersion string                          `json:"readiness_arbitration_rule_effective_version,omitempty"`
+	ReadinessArbitrationRuleVersionSource    string                          `json:"readiness_arbitration_rule_version_source,omitempty"`
+	ReadinessArbitrationRulePolicyAction     string                          `json:"readiness_arbitration_rule_policy_action,omitempty"`
+	ReadinessArbitrationRuleUnsupportedTotal int                             `json:"readiness_arbitration_rule_unsupported_total,omitempty"`
+	ReadinessArbitrationRuleMismatchTotal    int                             `json:"readiness_arbitration_rule_mismatch_total,omitempty"`
+	ReadinessRemediationHintCode             string                          `json:"readiness_remediation_hint_code,omitempty"`
+	ReadinessRemediationHintDomain           string                          `json:"readiness_remediation_hint_domain,omitempty"`
+	BudgetSnapshot                           *RuntimeAdmissionBudgetSnapshot `json:"budget_snapshot,omitempty"`
+	BudgetDecision                           RuntimeAdmissionBudgetDecision  `json:"budget_decision,omitempty"`
+	DegradeAction                            string                          `json:"degrade_action,omitempty"`
+	PolicyPrecedenceVersion                  string                          `json:"policy_precedence_version,omitempty"`
+	WinnerStage                              string                          `json:"winner_stage,omitempty"`
+	DenySource                               string                          `json:"deny_source,omitempty"`
+	TieBreakReason                           string                          `json:"tie_break_reason,omitempty"`
+	PolicyDecisionPath                       []RuntimePolicyCandidate        `json:"policy_decision_path,omitempty"`
+	Bypass                                   bool                            `json:"bypass"`
+}
+
+type RuntimeAdmissionBudgetEstimate struct {
+	TokenCost      float64       `json:"token_cost,omitempty"`
+	ToolCost       float64       `json:"tool_cost,omitempty"`
+	SandboxCost    float64       `json:"sandbox_cost,omitempty"`
+	MemoryCost     float64       `json:"memory_cost,omitempty"`
+	TokenLatency   time.Duration `json:"token_latency,omitempty"`
+	ToolLatency    time.Duration `json:"tool_latency,omitempty"`
+	SandboxLatency time.Duration `json:"sandbox_latency,omitempty"`
+	MemoryLatency  time.Duration `json:"memory_latency,omitempty"`
+}
+
+type ReadinessAdmissionRequest struct {
+	InputChars             int                             `json:"input_chars,omitempty"`
+	MessageCount           int                             `json:"message_count,omitempty"`
+	RequiredCapabilities   []types.ModelCapability         `json:"required_capabilities,omitempty"`
+	ExplicitBudgetEstimate *RuntimeAdmissionBudgetEstimate `json:"explicit_budget_estimate,omitempty"`
+}
+
+type RuntimeAdmissionBudgetSnapshot struct {
+	Version         string                                `json:"version"`
+	EvaluatedAt     time.Time                             `json:"evaluated_at"`
+	CostEstimate    RuntimeAdmissionBudgetCostEstimate    `json:"cost_estimate"`
+	LatencyEstimate RuntimeAdmissionBudgetLatencyEstimate `json:"latency_estimate"`
+}
+
+type RuntimeAdmissionBudgetCostEstimate struct {
+	Token   float64 `json:"token"`
+	Tool    float64 `json:"tool"`
+	Sandbox float64 `json:"sandbox"`
+	Memory  float64 `json:"memory"`
+	Total   float64 `json:"total"`
+}
+
+type RuntimeAdmissionBudgetLatencyEstimate struct {
+	TokenMs   int64 `json:"token_ms"`
+	ToolMs    int64 `json:"tool_ms"`
+	SandboxMs int64 `json:"sandbox_ms"`
+	MemoryMs  int64 `json:"memory_ms"`
+	TotalMs   int64 `json:"total_ms"`
 }
 
 type AdapterHealthTarget struct {
@@ -530,6 +585,13 @@ func (m *Manager) EvaluateReadinessAdmission() ReadinessAdmissionDecision {
 }
 
 func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion string) ReadinessAdmissionDecision {
+	return m.EvaluateReadinessAdmissionWithBudgetRequest(requestedRuleVersion, ReadinessAdmissionRequest{})
+}
+
+func (m *Manager) EvaluateReadinessAdmissionWithBudgetRequest(
+	requestedRuleVersion string,
+	request ReadinessAdmissionRequest,
+) ReadinessAdmissionDecision {
 	defaultResolved, _ := ResolveArbitrationRuleVersion(DefaultConfig().Runtime.Arbitration.Version, requestedRuleVersion)
 	if m == nil {
 		hintCode, hintDomain := mustRemediationHintForPrimaryCode(ReadinessAdmissionCodeManagerNotReady)
@@ -553,6 +615,7 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 			ReadinessArbitrationRuleMismatchTotal:    defaultResolved.MismatchTotal,
 			ReadinessRemediationHintCode:             hintCode,
 			ReadinessRemediationHintDomain:           hintDomain,
+			BudgetDecision:                           RuntimeAdmissionBudgetDecisionAllow,
 			Bypass:                                   true,
 		}
 	}
@@ -586,6 +649,7 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 		ReadinessArbitrationRuleMismatchTotal:    resolvedVersion.MismatchTotal,
 		ReadinessRemediationHintCode:             hintCode,
 		ReadinessRemediationHintDomain:           hintDomain,
+		BudgetDecision:                           RuntimeAdmissionBudgetDecisionAllow,
 		Bypass:                                   true,
 	}
 	if !decision.Enabled {
@@ -610,6 +674,11 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 	decision.ReadinessArbitrationRuleMismatchTotal = summary.ArbitrationRuleMismatchTotal
 	decision.ReadinessRemediationHintCode = strings.TrimSpace(summary.RemediationHintCode)
 	decision.ReadinessRemediationHintDomain = strings.TrimSpace(summary.RemediationHintDomain)
+	budgetSnapshot := buildRuntimeAdmissionBudgetSnapshot(effectiveCfg, preflight, request, m.SandboxRolloutRuntimeState())
+	decision.BudgetSnapshot = &budgetSnapshot
+	budgetDecision, budgetReasonCode, degradeAction := evaluateRuntimeAdmissionBudgetDecision(budgetSnapshot, effectiveCfg.Runtime.Admission)
+	decision.BudgetDecision = budgetDecision
+	decision.DegradeAction = degradeAction
 	decision.SandboxCapacityAction = sandboxCapacityActionFromFindings(preflight.Findings)
 	if decision.SandboxCapacityAction == "" {
 		decision.SandboxCapacityAction = SandboxCapacityActionAllow
@@ -684,7 +753,12 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 		decision.ReadinessRemediationHintCode = hintCode
 		decision.ReadinessRemediationHintDomain = hintDomain
 	}
-	policyCandidates := buildReadinessPolicyCandidates(preflight, decision.DegradedPolicy, decision.SandboxCapacityDegradedPolicy)
+	policyCandidates := buildReadinessPolicyCandidates(
+		preflight,
+		decision.DegradedPolicy,
+		decision.SandboxCapacityDegradedPolicy,
+		decision.BudgetDecision,
+	)
 	policyDecision, policyErr := EvaluateRuntimePolicyDecision(effectiveCfg.Runtime.Policy, policyCandidates)
 	if policyErr == nil {
 		decision.PolicyPrecedenceVersion = strings.TrimSpace(policyDecision.Version)
@@ -711,6 +785,18 @@ func (m *Manager) EvaluateReadinessAdmissionWithRequest(requestedRuleVersion str
 			}
 		}
 	}
+	switch decision.BudgetDecision {
+	case RuntimeAdmissionBudgetDecisionDeny:
+		decision.Outcome = ReadinessAdmissionOutcomeDeny
+		decision.ReasonCode = budgetReasonCode
+		decision.DegradeAction = ""
+	case RuntimeAdmissionBudgetDecisionDegrade:
+		if decision.Outcome == ReadinessAdmissionOutcomeAllow {
+			decision.ReasonCode = budgetReasonCode
+		}
+	default:
+		decision.DegradeAction = ""
+	}
 	return decision
 }
 
@@ -722,7 +808,7 @@ func attachReadinessPolicyMetadata(
 ) ReadinessResult {
 	degradedPolicy := normalizeReadinessAdmissionDegradedPolicy(admissionCfg.DegradedPolicy)
 	sandboxDegradedPolicy := normalizeSandboxCapacityDegradedPolicy(sandboxCfg.Capacity.DegradedPolicy)
-	candidates := buildReadinessPolicyCandidates(result, degradedPolicy, sandboxDegradedPolicy)
+	candidates := buildReadinessPolicyCandidates(result, degradedPolicy, sandboxDegradedPolicy, RuntimeAdmissionBudgetDecisionAllow)
 	result.PolicyCandidates = cloneRuntimePolicyCandidates(candidates)
 	decision, err := EvaluateRuntimePolicyDecision(policyCfg, candidates)
 	if err != nil {
@@ -740,6 +826,7 @@ func buildReadinessPolicyCandidates(
 	preflight ReadinessResult,
 	degradedPolicy string,
 	sandboxCapacityDegradedPolicy string,
+	budgetDecision RuntimeAdmissionBudgetDecision,
 ) []RuntimePolicyCandidate {
 	candidates := readinessFindingPolicyCandidates(preflight.Findings)
 	frozen := sandboxRolloutFrozenFromFindings(preflight.Findings)
@@ -806,6 +893,22 @@ func buildReadinessPolicyCandidates(
 		Source:   RuntimePolicyStageReadinessAdmission,
 		Decision: readinessDecision,
 	})
+	switch budgetDecision {
+	case RuntimeAdmissionBudgetDecisionDeny:
+		candidates = append(candidates, RuntimePolicyCandidate{
+			Stage:    RuntimePolicyStageReadinessAdmission,
+			Code:     ReadinessAdmissionCodeBudgetHardDeny,
+			Source:   RuntimePolicyStageReadinessAdmission,
+			Decision: RuntimePolicyDecisionDeny,
+		})
+	case RuntimeAdmissionBudgetDecisionDegrade:
+		candidates = append(candidates, RuntimePolicyCandidate{
+			Stage:    RuntimePolicyStageReadinessAdmission,
+			Code:     ReadinessAdmissionCodeBudgetDegradeAllow,
+			Source:   RuntimePolicyStageReadinessAdmission,
+			Decision: RuntimePolicyDecisionAllow,
+		})
+	}
 
 	return deduplicateRuntimePolicyCandidates(candidates)
 }
@@ -2361,6 +2464,247 @@ func normalizeReadinessAdmissionDegradedPolicy(in string) string {
 	default:
 		return ReadinessAdmissionDegradedPolicyAllowAndRecord
 	}
+}
+
+func buildRuntimeAdmissionBudgetSnapshot(
+	cfg Config,
+	preflight ReadinessResult,
+	request ReadinessAdmissionRequest,
+	rolloutState SandboxRolloutRuntimeState,
+) RuntimeAdmissionBudgetSnapshot {
+	now := time.Now().UTC()
+	out := RuntimeAdmissionBudgetSnapshot{
+		Version:     RuntimeAdmissionBudgetSnapshotVersionV1,
+		EvaluatedAt: now,
+	}
+
+	if request.ExplicitBudgetEstimate != nil {
+		estimate := request.ExplicitBudgetEstimate
+		out.CostEstimate.Token = nonNegativeFloat64(estimate.TokenCost)
+		out.CostEstimate.Tool = nonNegativeFloat64(estimate.ToolCost)
+		out.CostEstimate.Sandbox = nonNegativeFloat64(estimate.SandboxCost)
+		out.CostEstimate.Memory = nonNegativeFloat64(estimate.MemoryCost)
+		out.LatencyEstimate.TokenMs = durationToNonNegativeMilliseconds(estimate.TokenLatency)
+		out.LatencyEstimate.ToolMs = durationToNonNegativeMilliseconds(estimate.ToolLatency)
+		out.LatencyEstimate.SandboxMs = durationToNonNegativeMilliseconds(estimate.SandboxLatency)
+		out.LatencyEstimate.MemoryMs = durationToNonNegativeMilliseconds(estimate.MemoryLatency)
+	} else {
+		inputChars := request.InputChars
+		if inputChars < 0 {
+			inputChars = 0
+		}
+		messageCount := request.MessageCount
+		if messageCount < 0 {
+			messageCount = 0
+		}
+
+		tokenCost := float64(inputChars)/4000.0 + float64(messageCount)*0.02
+		if tokenCost > 0.6 {
+			tokenCost = 0.6
+		}
+		tokenLatencyMs := int64(inputChars/6 + messageCount*20)
+		if tokenLatencyMs < 0 {
+			tokenLatencyMs = 0
+		}
+		out.CostEstimate.Token = nonNegativeFloat64(tokenCost)
+		out.LatencyEstimate.TokenMs = tokenLatencyMs
+
+		toolCost := 0.05
+		toolLatencyMs := int64(80)
+		if cfg.Runtime.React.Enabled {
+			toolCost += 0.07
+			toolLatencyMs += 120
+		}
+		if containsModelCapability(request.RequiredCapabilities, types.ModelCapabilityToolCall) {
+			toolCost += 0.10
+			toolLatencyMs += 140
+		}
+		if !cfg.Runtime.React.StreamToolDispatchEnabled {
+			toolCost += 0.03
+			toolLatencyMs += 70
+		}
+		out.CostEstimate.Tool = nonNegativeFloat64(toolCost)
+		out.LatencyEstimate.ToolMs = nonNegativeInt64(toolLatencyMs)
+
+		sandboxAction := sandboxCapacityActionFromFindings(preflight.Findings)
+		if sandboxAction == "" {
+			sandboxAction = normalizeSandboxCapacityAction(rolloutState.CapacityAction)
+		}
+		if sandboxAction == "" && cfg.Security.Sandbox.Enabled {
+			sandboxAction = evaluateSandboxCapacityAction(
+				cfg.Security.Sandbox.Capacity,
+				rolloutState.CapacityQueueDepth,
+				rolloutState.CapacityInflight,
+			)
+		}
+		if sandboxAction == "" {
+			sandboxAction = SandboxCapacityActionAllow
+		}
+		sandboxCost := 0.0
+		sandboxLatencyMs := int64(0)
+		if cfg.Security.Sandbox.Enabled {
+			sandboxCost = 0.08
+			sandboxLatencyMs = 90
+			switch sandboxAction {
+			case SandboxCapacityActionThrottle:
+				sandboxCost += 0.16
+				sandboxLatencyMs += 450
+			case SandboxCapacityActionDeny:
+				sandboxCost += 0.28
+				sandboxLatencyMs += 900
+			}
+			if sandboxRolloutFrozenFromFindings(preflight.Findings) || rolloutState.FreezeState {
+				sandboxCost += 0.10
+				sandboxLatencyMs += 300
+			}
+		}
+		out.CostEstimate.Sandbox = nonNegativeFloat64(sandboxCost)
+		out.LatencyEstimate.SandboxMs = nonNegativeInt64(sandboxLatencyMs)
+
+		memoryCost := 0.06
+		memoryLatencyMs := int64(90)
+		if strings.TrimSpace(cfg.Runtime.Memory.Mode) == RuntimeMemoryModeExternalSPI {
+			memoryCost = 0.18
+			memoryLatencyMs = 260
+		}
+		if hasReadinessFindingCode(preflight.Findings, ReadinessCodeMemoryFallbackTargetUnavailable) ||
+			hasReadinessFindingCode(preflight.Findings, ReadinessCodeMemorySPIUnavailable) {
+			memoryCost += 0.05
+			memoryLatencyMs += 120
+		}
+		out.CostEstimate.Memory = nonNegativeFloat64(memoryCost)
+		out.LatencyEstimate.MemoryMs = nonNegativeInt64(memoryLatencyMs)
+	}
+
+	out.CostEstimate.Total = sumFloat64Ordered(
+		out.CostEstimate.Token,
+		out.CostEstimate.Tool,
+		out.CostEstimate.Sandbox,
+		out.CostEstimate.Memory,
+	)
+	out.LatencyEstimate.TotalMs = sumInt64Ordered(
+		out.LatencyEstimate.TokenMs,
+		out.LatencyEstimate.ToolMs,
+		out.LatencyEstimate.SandboxMs,
+		out.LatencyEstimate.MemoryMs,
+	)
+	return out
+}
+
+func evaluateRuntimeAdmissionBudgetDecision(
+	snapshot RuntimeAdmissionBudgetSnapshot,
+	cfg RuntimeAdmissionConfig,
+) (RuntimeAdmissionBudgetDecision, string, string) {
+	totalCost := nonNegativeFloat64(snapshot.CostEstimate.Total)
+	totalLatency := time.Duration(nonNegativeInt64(snapshot.LatencyEstimate.TotalMs)) * time.Millisecond
+	if totalCost > cfg.Budget.Cost.HardThreshold || totalLatency > cfg.Budget.Latency.HardThreshold {
+		return RuntimeAdmissionBudgetDecisionDeny, ReadinessAdmissionCodeBudgetHardDeny, ""
+	}
+	if totalCost > cfg.Budget.Cost.DegradeThreshold || totalLatency > cfg.Budget.Latency.DegradeThreshold {
+		return RuntimeAdmissionBudgetDecisionDegrade, ReadinessAdmissionCodeBudgetDegradeAllow, selectRuntimeAdmissionDegradeAction(cfg.DegradePolicy)
+	}
+	return RuntimeAdmissionBudgetDecisionAllow, "", ""
+}
+
+func selectRuntimeAdmissionDegradeAction(cfg RuntimeAdmissionDegradePolicyConfig) string {
+	if !cfg.Enabled || len(cfg.ActionOrder) == 0 {
+		return ""
+	}
+	conflictPolicy := strings.ToLower(strings.TrimSpace(cfg.ConflictPolicy))
+	if conflictPolicy == "" {
+		conflictPolicy = RuntimeAdmissionDegradeConflictPolicyFirstAction
+	}
+	seen := map[string]struct{}{}
+	for i := range cfg.ActionOrder {
+		action := normalizeRuntimeAdmissionDegradeAction(cfg.ActionOrder[i])
+		if action == "" {
+			continue
+		}
+		if _, ok := seen[action]; ok {
+			if conflictPolicy == RuntimeAdmissionDegradeConflictPolicyFailFast {
+				return ""
+			}
+			continue
+		}
+		seen[action] = struct{}{}
+		return action
+	}
+	return ""
+}
+
+func normalizeRuntimeAdmissionDegradeAction(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case RuntimeAdmissionDegradeActionReduceToolCallLimit:
+		return RuntimeAdmissionDegradeActionReduceToolCallLimit
+	case RuntimeAdmissionDegradeActionTrimMemoryContext:
+		return RuntimeAdmissionDegradeActionTrimMemoryContext
+	case RuntimeAdmissionDegradeActionSandboxThrottle:
+		return RuntimeAdmissionDegradeActionSandboxThrottle
+	default:
+		return ""
+	}
+}
+
+func hasReadinessFindingCode(findings []ReadinessFinding, code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	for i := range findings {
+		if strings.TrimSpace(findings[i].Code) == code {
+			return true
+		}
+	}
+	return false
+}
+
+func containsModelCapability(caps []types.ModelCapability, want types.ModelCapability) bool {
+	if len(caps) == 0 {
+		return false
+	}
+	for i := range caps {
+		if caps[i] == want {
+			return true
+		}
+	}
+	return false
+}
+
+func nonNegativeFloat64(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+func nonNegativeInt64(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+func durationToNonNegativeMilliseconds(value time.Duration) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value.Milliseconds()
+}
+
+func sumFloat64Ordered(values ...float64) float64 {
+	total := 0.0
+	for i := range values {
+		total += nonNegativeFloat64(values[i])
+	}
+	return total
+}
+
+func sumInt64Ordered(values ...int64) int64 {
+	total := int64(0)
+	for i := range values {
+		total += nonNegativeInt64(values[i])
+	}
+	return total
 }
 
 func normalizeSandboxHealthBudgetStatus(in string) string {

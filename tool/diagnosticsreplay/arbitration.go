@@ -17,6 +17,7 @@ const (
 	ArbitrationFixtureVersionA51V1             = "a51.v1"
 	ArbitrationFixtureVersionA52V1             = "a52.v1"
 	ArbitrationFixtureVersionA57V1             = "sandbox_egress.v1"
+	ArbitrationFixtureVersionBudgetAdmissionV1 = "budget_admission.v1"
 	ArbitrationFixtureVersionPolicyV1          = "policy_stack.v1"
 	ArbitrationFixtureVersionMemoryV1          = "memory.v1"
 	ArbitrationFixtureVersionMemoryScopeV1     = "memory_scope.v1"
@@ -70,6 +71,9 @@ const (
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
 	ReasonCodeAdapterAllowlistDecisionDrift       = "adapter_allowlist_decision_drift"
 	ReasonCodeAdapterAllowlistTaxonomyDrift       = "adapter_allowlist_taxonomy_drift"
+	ReasonCodeBudgetThresholdDrift                = "budget_threshold_drift"
+	ReasonCodeAdmissionDecisionDrift              = "admission_decision_drift"
+	ReasonCodeDegradePolicyDrift                  = "degrade_policy_drift"
 	ReasonCodeScopeResolutionDrift                = "scope_resolution_drift"
 	ReasonCodeRetrievalQualityRegression          = "retrieval_quality_regression"
 	ReasonCodeLifecyclePolicyDrift                = "lifecycle_policy_drift"
@@ -148,6 +152,9 @@ type ArbitrationObservation struct {
 	AdapterAllowlistDecision               string                    `json:"adapter_allowlist_decision,omitempty"`
 	AdapterAllowlistBlockTotal             int                       `json:"adapter_allowlist_block_total,omitempty"`
 	AdapterAllowlistPrimaryCode            string                    `json:"adapter_allowlist_primary_code,omitempty"`
+	BudgetSnapshot                         *BudgetAdmissionSnapshot  `json:"budget_snapshot,omitempty"`
+	BudgetDecision                         string                    `json:"budget_decision,omitempty"`
+	DegradeAction                          string                    `json:"degrade_action,omitempty"`
 	MemoryMode                             string                    `json:"memory_mode,omitempty"`
 	MemoryProvider                         string                    `json:"memory_provider,omitempty"`
 	MemoryProfile                          string                    `json:"memory_profile,omitempty"`
@@ -181,6 +188,28 @@ type PolicyDecisionPathEntry struct {
 	Decision string `json:"decision,omitempty"`
 }
 
+type BudgetAdmissionSnapshot struct {
+	Version         string                         `json:"version,omitempty"`
+	CostEstimate    BudgetAdmissionCostEstimate    `json:"cost_estimate,omitempty"`
+	LatencyEstimate BudgetAdmissionLatencyEstimate `json:"latency_estimate,omitempty"`
+}
+
+type BudgetAdmissionCostEstimate struct {
+	Token   float64 `json:"token,omitempty"`
+	Tool    float64 `json:"tool,omitempty"`
+	Sandbox float64 `json:"sandbox,omitempty"`
+	Memory  float64 `json:"memory,omitempty"`
+	Total   float64 `json:"total,omitempty"`
+}
+
+type BudgetAdmissionLatencyEstimate struct {
+	TokenMs   int64 `json:"token_ms,omitempty"`
+	ToolMs    int64 `json:"tool_ms,omitempty"`
+	SandboxMs int64 `json:"sandbox_ms,omitempty"`
+	MemoryMs  int64 `json:"memory_ms,omitempty"`
+	TotalMs   int64 `json:"total_ms,omitempty"`
+}
+
 type ArbitrationReplayOutput struct {
 	Version string                        `json:"version"`
 	Cases   []ArbitrationNormalizedOutput `json:"cases"`
@@ -209,6 +238,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
 		version != ArbitrationFixtureVersionA57V1 &&
+		version != ArbitrationFixtureVersionBudgetAdmissionV1 &&
 		version != ArbitrationFixtureVersionPolicyV1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
 		version != ArbitrationFixtureVersionMemoryScopeV1 &&
@@ -368,6 +398,8 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		AdapterAllowlistDecision:               strings.ToLower(strings.TrimSpace(in.AdapterAllowlistDecision)),
 		AdapterAllowlistBlockTotal:             in.AdapterAllowlistBlockTotal,
 		AdapterAllowlistPrimaryCode:            strings.TrimSpace(in.AdapterAllowlistPrimaryCode),
+		BudgetDecision:                         strings.ToLower(strings.TrimSpace(in.BudgetDecision)),
+		DegradeAction:                          strings.ToLower(strings.TrimSpace(in.DegradeAction)),
 		MemoryMode:                             strings.ToLower(strings.TrimSpace(in.MemoryMode)),
 		MemoryProvider:                         strings.ToLower(strings.TrimSpace(in.MemoryProvider)),
 		MemoryProfile:                          strings.ToLower(strings.TrimSpace(in.MemoryProfile)),
@@ -519,6 +551,7 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if len(out.PolicyDecisionPath) == 0 {
 		out.PolicyDecisionPath = nil
 	}
+	out.BudgetSnapshot = canonicalizeBudgetAdmissionSnapshot(in.BudgetSnapshot)
 	return out
 }
 
@@ -543,6 +576,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionBudgetAdmissionV1 {
+		return validateBudgetAdmissionArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionPolicyV1 {
 		return validatePolicyStackArbitrationObservation(caseName, lane, obs)
@@ -753,6 +789,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return assertSandboxEgressArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionBudgetAdmissionV1 {
+		return assertBudgetAdmissionArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionPolicyV1 {
 		return assertPolicyStackArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1413,6 +1452,201 @@ func assertSandboxEgressArbitrationEquivalent(caseName, lane string, expected, a
 	return nil
 }
 
+func canonicalizeBudgetAdmissionSnapshot(in *BudgetAdmissionSnapshot) *BudgetAdmissionSnapshot {
+	if in == nil {
+		return nil
+	}
+	out := &BudgetAdmissionSnapshot{
+		Version: strings.ToLower(strings.TrimSpace(in.Version)),
+		CostEstimate: BudgetAdmissionCostEstimate{
+			Token:   nonNegativeFloat64(in.CostEstimate.Token),
+			Tool:    nonNegativeFloat64(in.CostEstimate.Tool),
+			Sandbox: nonNegativeFloat64(in.CostEstimate.Sandbox),
+			Memory:  nonNegativeFloat64(in.CostEstimate.Memory),
+			Total:   nonNegativeFloat64(in.CostEstimate.Total),
+		},
+		LatencyEstimate: BudgetAdmissionLatencyEstimate{
+			TokenMs:   nonNegativeInt64(in.LatencyEstimate.TokenMs),
+			ToolMs:    nonNegativeInt64(in.LatencyEstimate.ToolMs),
+			SandboxMs: nonNegativeInt64(in.LatencyEstimate.SandboxMs),
+			MemoryMs:  nonNegativeInt64(in.LatencyEstimate.MemoryMs),
+			TotalMs:   nonNegativeInt64(in.LatencyEstimate.TotalMs),
+		},
+	}
+	return out
+}
+
+func validateBudgetAdmissionArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isCanonicalBudgetDecision(obs.BudgetDecision) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s budget_decision must be allow|degrade|deny", caseName, lane),
+		}
+	}
+	if obs.BudgetSnapshot == nil {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s budget_snapshot is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.BudgetSnapshot.Version) != runtimeconfig.RuntimeAdmissionBudgetSnapshotVersionV1 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s budget_snapshot.version must be %q", caseName, lane, runtimeconfig.RuntimeAdmissionBudgetSnapshotVersionV1),
+		}
+	}
+	if err := validateBudgetEstimateTotals(caseName, lane, obs.BudgetSnapshot); err != nil {
+		return err
+	}
+	switch strings.TrimSpace(obs.BudgetDecision) {
+	case string(runtimeconfig.RuntimeAdmissionBudgetDecisionAllow), string(runtimeconfig.RuntimeAdmissionBudgetDecisionDeny):
+		if strings.TrimSpace(obs.DegradeAction) != "" {
+			return &ValidationError{
+				Code:    ReasonCodeDegradePolicyDrift,
+				Message: fmt.Sprintf("case %q %s degrade_action must be empty when budget_decision=%s", caseName, lane, obs.BudgetDecision),
+			}
+		}
+	case string(runtimeconfig.RuntimeAdmissionBudgetDecisionDegrade):
+		if !isCanonicalBudgetDegradeAction(obs.DegradeAction) {
+			return &ValidationError{
+				Code:    ReasonCodeDegradePolicyDrift,
+				Message: fmt.Sprintf("case %q %s degrade_action must be canonical when budget_decision=degrade", caseName, lane),
+			}
+		}
+	}
+	return nil
+}
+
+func validateBudgetEstimateTotals(caseName, lane string, snapshot *BudgetAdmissionSnapshot) error {
+	if snapshot == nil {
+		return nil
+	}
+	cost := snapshot.CostEstimate
+	latency := snapshot.LatencyEstimate
+	if cost.Token < 0 || cost.Tool < 0 || cost.Sandbox < 0 || cost.Memory < 0 || cost.Total < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeBudgetThresholdDrift,
+			Message: fmt.Sprintf("case %q %s budget_snapshot.cost_estimate values must be >= 0", caseName, lane),
+		}
+	}
+	if latency.TokenMs < 0 || latency.ToolMs < 0 || latency.SandboxMs < 0 || latency.MemoryMs < 0 || latency.TotalMs < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeBudgetThresholdDrift,
+			Message: fmt.Sprintf("case %q %s budget_snapshot.latency_estimate values must be >= 0", caseName, lane),
+		}
+	}
+	costSum := nonNegativeFloat64(cost.Token) +
+		nonNegativeFloat64(cost.Tool) +
+		nonNegativeFloat64(cost.Sandbox) +
+		nonNegativeFloat64(cost.Memory)
+	if !approxFloat64(cost.Total, costSum) {
+		return &ValidationError{
+			Code:    ReasonCodeBudgetThresholdDrift,
+			Message: fmt.Sprintf("case %q %s budget_snapshot.cost_estimate.total must equal sum(token|tool|sandbox|memory)", caseName, lane),
+		}
+	}
+	latencySum := nonNegativeInt64(latency.TokenMs) +
+		nonNegativeInt64(latency.ToolMs) +
+		nonNegativeInt64(latency.SandboxMs) +
+		nonNegativeInt64(latency.MemoryMs)
+	if latency.TotalMs != latencySum {
+		return &ValidationError{
+			Code:    ReasonCodeBudgetThresholdDrift,
+			Message: fmt.Sprintf("case %q %s budget_snapshot.latency_estimate.total_ms must equal sum(token_ms|tool_ms|sandbox_ms|memory_ms)", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertBudgetAdmissionArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if !equalBudgetAdmissionSnapshot(expected.BudgetSnapshot, actual.BudgetSnapshot) {
+		return &ValidationError{
+			Code:    ReasonCodeBudgetThresholdDrift,
+			Message: fmt.Sprintf("case %q %s budget threshold drift expected_snapshot=%#v actual_snapshot=%#v", caseName, lane, expected.BudgetSnapshot, actual.BudgetSnapshot),
+		}
+	}
+	if expected.BudgetDecision != actual.BudgetDecision {
+		return &ValidationError{
+			Code:    ReasonCodeAdmissionDecisionDrift,
+			Message: fmt.Sprintf("case %q %s admission decision drift expected=%q actual=%q", caseName, lane, expected.BudgetDecision, actual.BudgetDecision),
+		}
+	}
+	if expected.DegradeAction != actual.DegradeAction {
+		return &ValidationError{
+			Code:    ReasonCodeDegradePolicyDrift,
+			Message: fmt.Sprintf("case %q %s degrade policy drift expected=%q actual=%q", caseName, lane, expected.DegradeAction, actual.DegradeAction),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s budget admission semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func equalBudgetAdmissionSnapshot(left, right *BudgetAdmissionSnapshot) bool {
+	if left == nil && right == nil {
+		return true
+	}
+	if left == nil || right == nil {
+		return false
+	}
+	return left.Version == right.Version &&
+		approxFloat64(left.CostEstimate.Token, right.CostEstimate.Token) &&
+		approxFloat64(left.CostEstimate.Tool, right.CostEstimate.Tool) &&
+		approxFloat64(left.CostEstimate.Sandbox, right.CostEstimate.Sandbox) &&
+		approxFloat64(left.CostEstimate.Memory, right.CostEstimate.Memory) &&
+		approxFloat64(left.CostEstimate.Total, right.CostEstimate.Total) &&
+		left.LatencyEstimate.TokenMs == right.LatencyEstimate.TokenMs &&
+		left.LatencyEstimate.ToolMs == right.LatencyEstimate.ToolMs &&
+		left.LatencyEstimate.SandboxMs == right.LatencyEstimate.SandboxMs &&
+		left.LatencyEstimate.MemoryMs == right.LatencyEstimate.MemoryMs &&
+		left.LatencyEstimate.TotalMs == right.LatencyEstimate.TotalMs
+}
+
+func isCanonicalBudgetDecision(decision string) bool {
+	switch strings.TrimSpace(decision) {
+	case string(runtimeconfig.RuntimeAdmissionBudgetDecisionAllow),
+		string(runtimeconfig.RuntimeAdmissionBudgetDecisionDegrade),
+		string(runtimeconfig.RuntimeAdmissionBudgetDecisionDeny):
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalBudgetDegradeAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case runtimeconfig.RuntimeAdmissionDegradeActionReduceToolCallLimit,
+		runtimeconfig.RuntimeAdmissionDegradeActionTrimMemoryContext,
+		runtimeconfig.RuntimeAdmissionDegradeActionSandboxThrottle:
+		return true
+	default:
+		return false
+	}
+}
+
+func approxFloat64(left, right float64) bool {
+	diff := left - right
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= 1e-9
+}
+
+func nonNegativeFloat64(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func nonNegativeInt64(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
 	if version == ArbitrationFixtureVersionObsV1 {
 		return left.ObservabilityExportProfile == right.ObservabilityExportProfile &&
@@ -1466,6 +1700,11 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.AdapterAllowlistDecision == right.AdapterAllowlistDecision &&
 			left.AdapterAllowlistBlockTotal == right.AdapterAllowlistBlockTotal &&
 			left.AdapterAllowlistPrimaryCode == right.AdapterAllowlistPrimaryCode
+	}
+	if version == ArbitrationFixtureVersionBudgetAdmissionV1 {
+		return left.BudgetDecision == right.BudgetDecision &&
+			left.DegradeAction == right.DegradeAction &&
+			equalBudgetAdmissionSnapshot(left.BudgetSnapshot, right.BudgetSnapshot)
 	}
 	if version == ArbitrationFixtureVersionPolicyV1 {
 		return left.PolicyPrecedenceVersion == right.PolicyPrecedenceVersion &&

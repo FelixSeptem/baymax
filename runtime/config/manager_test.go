@@ -2622,6 +2622,79 @@ reload:
 	}
 }
 
+func TestManagerRuntimeAdmissionBudgetInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  admission:
+    budget:
+      cost:
+        degrade_threshold: 0.75
+        hard_threshold: 1.0
+      latency:
+        degrade_threshold: 1200ms
+        hard_threshold: 2s
+    degrade_policy:
+      enabled: true
+      action_order: [reduce_tool_call_limit, trim_memory_context]
+      conflict_policy: first_action
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	beforeCostHard := mgr.EffectiveConfig().Runtime.Admission.Budget.Cost.HardThreshold
+	beforeActionOrder := append([]string(nil), mgr.EffectiveConfig().Runtime.Admission.DegradePolicy.ActionOrder...)
+	if beforeCostHard != 1.0 {
+		t.Fatalf("before runtime.admission.budget.cost.hard_threshold = %v, want 1.0", beforeCostHard)
+	}
+	if len(beforeActionOrder) != 2 {
+		t.Fatalf("before runtime.admission.degrade_policy.action_order len = %d, want 2", len(beforeActionOrder))
+	}
+
+	writeConfig(t, file, `
+runtime:
+  admission:
+    budget:
+      cost:
+        degrade_threshold: 1.2
+        hard_threshold: 1.0
+      latency:
+        degrade_threshold: 1200ms
+        hard_threshold: 2s
+    degrade_policy:
+      enabled: true
+      action_order: [reduce_tool_call_limit, trim_memory_context]
+      conflict_policy: first_action
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Admission.Budget.Cost.HardThreshold
+	if after != beforeCostHard {
+		t.Fatalf("invalid runtime.admission budget reload should rollback, hard_threshold = %v, want %v", after, beforeCostHard)
+	}
+	afterActions := mgr.EffectiveConfig().Runtime.Admission.DegradePolicy.ActionOrder
+	if len(afterActions) != len(beforeActionOrder) {
+		t.Fatalf("invalid runtime.admission budget reload should rollback action_order len=%d want=%d", len(afterActions), len(beforeActionOrder))
+	}
+	for i := range beforeActionOrder {
+		if afterActions[i] != beforeActionOrder[i] {
+			t.Fatalf("invalid runtime.admission budget reload should rollback action_order[%d]=%q want=%q", i, afterActions[i], beforeActionOrder[i])
+		}
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRuntimeArbitrationVersionInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `

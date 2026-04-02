@@ -2123,6 +2123,124 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA60BudgetAdmissionAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a60-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":          "success",
+			"budget_decision": "degrade",
+			"degrade_action":  "trim_memory_context",
+			"budget_snapshot": map[string]any{
+				"version": "budget_admission.v1",
+				"cost_estimate": map[string]any{
+					"token":   0.2,
+					"tool":    0.1,
+					"sandbox": 0.08,
+					"memory":  0.05,
+					"total":   0.43,
+				},
+				"latency_estimate": map[string]any{
+					"token_ms":   180,
+					"tool_ms":    120,
+					"sandbox_ms": 100,
+					"memory_ms":  60,
+					"total_ms":   460,
+				},
+			},
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.BudgetDecision != "degrade" ||
+		got.DegradeAction != "trim_memory_context" ||
+		got.BudgetSnapshot["version"] != "budget_admission.v1" {
+		t.Fatalf("A60 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA60ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a60-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(13),
+			"a60_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 13 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.BudgetDecision != "" ||
+		got.DegradeAction != "" ||
+		len(got.BudgetSnapshot) != 0 {
+		t.Fatalf("missing A60 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

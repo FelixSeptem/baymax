@@ -284,6 +284,9 @@ type RunRecord struct {
 	RuntimeReadinessAdmissionBypassTotal        int                               `json:"runtime_readiness_admission_bypass_total,omitempty"`
 	RuntimeReadinessAdmissionMode               string                            `json:"runtime_readiness_admission_mode,omitempty"`
 	RuntimeReadinessAdmissionPrimaryCode        string                            `json:"runtime_readiness_admission_primary_code,omitempty"`
+	BudgetSnapshot                              map[string]any                    `json:"budget_snapshot,omitempty"`
+	BudgetDecision                              string                            `json:"budget_decision,omitempty"`
+	DegradeAction                               string                            `json:"degrade_action,omitempty"`
 	PolicyPrecedenceVersion                     string                            `json:"policy_precedence_version,omitempty"`
 	WinnerStage                                 string                            `json:"winner_stage,omitempty"`
 	DenySource                                  string                            `json:"deny_source,omitempty"`
@@ -767,6 +770,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
 	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
 	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
+	rec.BudgetSnapshot = cloneAnyMap(rec.BudgetSnapshot)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}
@@ -2328,6 +2332,21 @@ func cloneIntMap(in map[string]int) map[string]int {
 	}
 	out := make(map[string]int, len(in))
 	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		if child, ok := value.(map[string]any); ok {
+			out[key] = cloneAnyMap(child)
+			continue
+		}
 		out[key] = value
 	}
 	return out

@@ -523,6 +523,90 @@ func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *
 	}
 }
 
+func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:           time.Now(),
+		RunID:          "run-a60-budget-admission",
+		Status:         "success",
+		BudgetDecision: "degrade",
+		DegradeAction:  "trim_memory_context",
+		BudgetSnapshot: map[string]any{
+			"version": "budget_admission.v1",
+			"cost_estimate": map[string]any{
+				"token":   0.20,
+				"tool":    0.15,
+				"sandbox": 0.10,
+				"memory":  0.08,
+				"total":   0.53,
+			},
+			"latency_estimate": map[string]any{
+				"token_ms":   int64(220),
+				"tool_ms":    int64(180),
+				"sandbox_ms": int64(140),
+				"memory_ms":  int64(90),
+				"total_ms":   int64(630),
+			},
+		},
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].BudgetDecision != "degrade" ||
+		items[0].DegradeAction != "trim_memory_context" ||
+		items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
+		t.Fatalf("A60 additive fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.BudgetDecision = "deny"
+	rec.DegradeAction = ""
+	rec.BudgetSnapshot = map[string]any{
+		"version": "budget_admission.v1",
+		"cost_estimate": map[string]any{
+			"token":   0.42,
+			"tool":    0.33,
+			"sandbox": 0.25,
+			"memory":  0.11,
+			"total":   1.11,
+		},
+		"latency_estimate": map[string]any{
+			"token_ms":   int64(640),
+			"tool_ms":    int64(520),
+			"sandbox_ms": int64(480),
+			"memory_ms":  int64(210),
+			"total_ms":   int64(1850),
+		},
+	}
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].BudgetDecision != "deny" ||
+		items[0].DegradeAction != "" ||
+		items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
+		t.Fatalf("A60 additive fields mismatch after replay replacement: %#v", items[0])
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a60-budget-admission"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	if page.Items[0].BudgetDecision != "deny" ||
+		page.Items[0].DegradeAction != "" ||
+		page.Items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
+		t.Fatalf("A60 query mapping mismatch: %#v", page.Items[0])
+	}
+}
+
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

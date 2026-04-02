@@ -51,6 +51,16 @@
 - `fallback.policy`：默认 `fail_fast`
 - `builtin.compaction.min_ops`：默认 `32`
 - `builtin.compaction.max_wal_bytes`：默认 `4 << 20`（4MiB）
+- `scope.default`：默认 `session`（允许 `session|project|global`）
+- `scope.allowed`：默认 `[session, project, global]`
+- `write_mode.mode`：默认 `automatic`（`automatic|agentic`）
+- `write_mode.automatic_window/agentic_window/idempotency_window`：默认 `30m/2h/24h`
+- `injection_budget.max_records/max_bytes/truncate_policy`：默认 `8/16384/score_then_recency`
+- `lifecycle.retention_days/ttl_enabled/ttl/forget_scope_allow`：默认 `30/false/168h/[session,project,global]`
+- `search.hybrid.enabled/keyword_weight/vector_weight`：默认 `true/0.6/0.4`
+- `search.rerank.enabled/max_candidates`：默认 `false/32`
+- `search.temporal_decay.enabled/half_life/max_boost_rate`：默认 `false/168h/0.2`
+- `search.index_update_policy/drift_recovery_policy`：默认 `incremental/incremental_then_full`
 
 约束：
 
@@ -90,6 +100,11 @@ SPI 响应统一携带可观测字段：
 - `contract_version`
 - `fallback_used`
 - `fallback_reason_code`
+- `memory_scope_selected`
+- `memory_budget_used`
+- `memory_hits`
+- `memory_rerank_stats`
+- `memory_lifecycle_action`
 
 建议最小验证命令：
 
@@ -97,6 +112,7 @@ SPI 响应统一携带可观测字段：
 go test ./memory -count=1
 go test ./memory -run 'Test(Facade|FilesystemEngine)' -count=1
 pwsh -File scripts/check-memory-contract-conformance.ps1
+pwsh -File scripts/check-memory-scope-and-search-contract.ps1
 ```
 
 ## 扩展点与常见误用

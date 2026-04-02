@@ -1,0 +1,20 @@
+{
+  "version": "memory_search.v1",
+  "cases": [
+    {
+      "name": "memory_search_pipeline_success_case",
+      "canonical": {
+        "memory_hits": 4,
+        "memory_rerank_stats": {
+          "input_total": 8,
+          "output_total": 4,
+          "reranked_total": 6
+        }
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

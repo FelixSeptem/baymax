@@ -229,6 +229,14 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Policy Precedence + Decision Trace Gate A58 | `scripts/check-policy-precedence-contract.sh` | `scripts/check-policy-precedence-contract.ps1` |
 | Policy Precedence + Decision Trace Gate A58 CI Required-Check 候选 | `.github/workflows/ci.yml::policy-precedence-gate` | `.github/workflows/ci.yml::policy-precedence-gate` |
 | Policy Precedence + Decision Trace Gate A58 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Memory Scope/Search/Lifecycle A59 Replay Fixture (`memory_scope.v1`/`memory_search.v1`/`memory_lifecycle.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast` |
+| Memory Scope/Search/Lifecycle A59 Mixed Compatibility | `integration/primary_reason_arbitration_replay_contract_test.go::TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility` |
+| Memory Scope/Search Contract Gate A59 | `scripts/check-memory-scope-and-search-contract.sh` | `scripts/check-memory-scope-and-search-contract.ps1` |
+| Memory Scope/Search Contract Gate A59 CI Required-Check 候选 | `.github/workflows/ci.yml::memory-scope-search-gate` | `.github/workflows/ci.yml::memory-scope-search-gate` |
+| Memory Scope/Search Contract Gate A59 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Runtime Budget + Admission A60 Gate Assertion | `scripts/check-runtime-budget-admission-contract.sh` | `scripts/check-runtime-budget-admission-contract.ps1` |
+| Runtime Budget + Admission A60 CI Required-Check 候选 | `.github/workflows/ci.yml::runtime-budget-admission-gate` | `.github/workflows/ci.yml::runtime-budget-admission-gate` |
+| Runtime Budget + Admission A60 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

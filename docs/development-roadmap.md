@@ -19,6 +19,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档并稳定：A4-A58（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
   - `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
+  - `introduce-runtime-cost-latency-budget-and-admission-contract-a60`
 
 ## 版本阶段口径（延续 0.x）
 
@@ -574,8 +575,8 @@ A56 一次性闭环审查（10.4）：
 
 与在研项目的先后顺序（强依赖）：
 1. A58（已归档，P1）：policy precedence + decision trace contract（优先承接跨层策略冲突风险）。
-2. A59（进行中，P1）：memory scope + builtin filesystem memory v2 治理 contract（与本地实现增强合并）。
-3. A60（后续，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
+2. A59（进行中，P1）：memory scope + builtin filesystem memory v2 治理 contract（已完成实现与 gate 接线，处于待归档收尾阶段）。
+3. A60（进行中，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
 4. A61（新增，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
 5. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
 6. A66（新增，P2）：unified state/session snapshot contract。
@@ -586,12 +587,12 @@ A56 一次性闭环审查（10.4）：
 11. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 备选项目说明（避免“单一路线”误解）：
-- A60/A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A59 正在实施，A58 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
+- A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A59/A60 正在实施，A58 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
   - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
   - 若 A58/A59 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：优先在 A59 内增量吸收。
-  - 若成本或 P95 抖动在 A58/A59 上线窗口成为阻塞：A60 可提前实施。
+  - 若成本或 P95 抖动在 A58/A59 联调窗口成为阻塞：优先在 A60 内增量吸收，不再拆平行预算 admission 提案。
   - 若 tracing 字段跨后端解释不一致，或评测执行耗时过长/不可续跑：A61 可前置实施（含 distributed eval 执行治理）。
   - 若业务扩展频繁出现横切逻辑重复接线（审计、限流、缓存、鉴权）：A65 可前置实施。
   - 若跨模块恢复/迁移需要统一状态导入导出：A66 可前置实施。
@@ -671,9 +672,19 @@ A56 一次性闭环审查（10.4）：
   - lifecycle hooks：`before_reasoning|after_reasoning|before_acting|after_acting|before_reply|after_reply`；
   - tool middleware：冻结 onion-chain 执行顺序、上下文透传、错误冒泡与超时隔离；
   - 配置治理：`runtime.hooks.*`、`runtime.tool_middleware.*` 统一 `env > file > default` 与 fail-fast/回滚；
+  - skill discovery source（一次补齐）：在保持 `AGENTS.md` 兼容的前提下，新增按目录路径加载技能的统一配置口径；
+  - discovery 配置（简版）：`runtime.skill.discovery.mode`（`agents_md|folder|hybrid`）与 `runtime.skill.discovery.roots`（目录列表）；
+  - discovery 治理（简版）：多来源合并顺序 deterministic、重复技能去重规则固定、非法路径/不可读目录 fail-fast 并原子回滚；
+  - 预处理接缝（一次补齐）：将 `Discover/Compile` 挂入 Run/Stream 前统一预处理阶段，支持开关控制与失败策略；
+  - 预处理配置（简版）：`runtime.skill.preprocess.enabled`、`runtime.skill.preprocess.phase=before_run_stream`、`runtime.skill.preprocess.fail_mode=fail_fast|degrade`；
+  - bundle 映射（一次补齐）：冻结 `SkillBundle -> prompt augmentation` 与 `SkillBundle -> tool whitelist` 的合同映射与冲突仲裁顺序；
+  - 映射配置（简版）：`runtime.skill.bundle_mapping.prompt_mode`、`runtime.skill.bundle_mapping.whitelist_mode`、`runtime.skill.bundle_mapping.conflict_policy`；
   - 回放与门禁：新增 `hooks_middleware.v1` fixture 与 `check-hooks-middleware-contract.*`。
 - 硬约束（简版）：
   - 不绕过 A58 precedence、A57 安全治理与 `RuntimeRecorder` 单写入口；
+  - skill discovery source 切换不得绕过既有 trigger scoring/budget 与 skill 观测事件口径；
+  - `Discover/Compile` 预处理与 `SkillBundle` 映射在 Run/Stream 下必须等价，不得引入“预处理只在单入口生效”的分叉；
+  - whitelist 映射不得突破 A57 adapter allowlist 与 sandbox/egress 治理上界。
   - Hook/Middleware 失败语义必须 deterministic，不引入 Run/Stream 分叉。
 - 当前状态：占位提案（简版）。
 
@@ -743,7 +754,7 @@ A56 一次性闭环审查（10.4）：
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
 - 模式覆盖（最低要求）：
   - `single agent`（最小 chat/任务执行主链路）；
-  - `agent with skill`（skills 装载与触发评分、工具协同）；
+  - `agent with skill`（skills 装载与触发评分、工具协同；同时覆盖 `AGENTS.md` 与目录路径配置两类加载入口）；
   - `react agent`（推理-行动-观察闭环，Run/Stream 等价）；
   - `multi agent`（至少包含协作链路与异步通道两类范式）；
   - `sandbox-governed agent`（sandbox/egress/allowlist 治理链路可演示）。
@@ -797,7 +808,7 @@ A58 验收清单：`introduce-policy-precedence-and-decision-trace-contract-a58`
 A59 验收清单：`introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`
 - Contract 字段（最小集）：
   - `runtime.memory.scope.*`（`session|project|global`）
-  - `runtime.memory.mode.*`（`automatic|agentic`）
+  - `runtime.memory.write_mode.*`（`automatic|agentic`）
   - `runtime.memory.injection_budget.*`
   - `runtime.memory.lifecycle.*`（retention/ttl/forget）
   - `runtime.memory.search.*`（hybrid/query/rerank/temporal_decay/index_update）
@@ -889,6 +900,9 @@ A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contrac
   - required-check 候选：`agent-mode-examples-smoke-gate`
 - 最小测试矩阵：
   - 模式冒烟：`single`、`skill`、`react`、`multi_agent`、`sandbox_governed` 全部可运行；
+  - skill 入口一致：`skill` 模式需覆盖 `AGENTS.md`、`folder`、`hybrid` 三类 discovery 配置并验证触发评分与装载结果一致性；
+  - skill 预处理接线：`Discover/Compile` 在 `Run` 与 `Stream` 前均可按开关启停，且失败策略与诊断输出保持一致；
+  - skill bundle 映射一致：`SkillBundle` 对 prompt augmentation 与 tool whitelist 的映射在 `Run|Stream`、`discover-only|discover+compile`、`on|off` 组合下语义一致；
   - 语义一致：`react` 示例在 Run/Stream 下行为口径一致；
   - 治理一致：`sandbox_governed` 示例可稳定触发 egress/allowlist 判定与解释字段；
   - 文档一致：每个模式 README 都有“前置条件、运行命令、预期输出、失败排查”四段。
@@ -902,8 +916,8 @@ A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contrac
 
 A65-A68 占位验收口径（简版）：
 - A65（hooks + middleware）：
-  - 字段：`runtime.hooks.*`、`runtime.tool_middleware.*`
-  - 回放：`hooks_middleware.v1`
+  - 字段：`runtime.hooks.*`、`runtime.tool_middleware.*`、`runtime.skill.discovery.*`、`runtime.skill.preprocess.*`、`runtime.skill.bundle_mapping.*`
+  - 回放：`hooks_middleware.v1`、`skill_discovery_sources.v1`（覆盖 `agents_md|folder|hybrid`）、`skill_preprocess_and_mapping.v1`
   - 门禁：`check-hooks-middleware-contract.*`
 - A66（state/session snapshot）：
   - 字段：`runtime.state.snapshot.*`、`runtime.session.state.*`
@@ -922,9 +936,12 @@ A65-A68 占位验收口径（简版）：
 跨提案联动收口（避免后续再开同域提案）：
 - A58 冻结 `policy_decision_path` 与 `deny_source` 后，A60/A61 禁止重定义同义字段，仅允许引用。
 - A59 冻结 memory 生命周期与检索质量阈值后，A60 预算计算必须复用该口径，不再另起成本定义。
+- A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。
 - A61 的 eval 指标与 distributed 执行聚合必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
 - A61 distributed evaluator execution 仅允许库内嵌入式执行治理，不得演进为托管评测控制面或服务化调度平面。
 - A65 不得绕过 A58 precedence 与 A57 安全治理链路；hook/middleware 输出仅走 `RuntimeRecorder` 单写入口。
+- skill discovery source 同域需求（`AGENTS.md`/目录路径/混合加载、配置校验、去重顺序、回放与门禁）优先在 A65/A62 内增量吸收，不再新增平行提案。
+- `Discover/Compile` 预处理接线与 `SkillBundle -> prompt/tool whitelist` 映射同域需求统一在 A65/A62 内增量吸收，不再新增平行提案。
 - A66 必须复用现有 checkpoint/snapshot 语义与 A59 memory lifecycle，不得重写存储层事实源。
 - A67 必须复用 A56 ReAct loop 终止 taxonomy 与 A65 hook 合同，不得新增平行 ReAct 主循环。
 - A68 事件协议必须复用 A58/A67 决策与计划解释字段，不得引入第二套 interrupt/resume 语义。

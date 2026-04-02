@@ -5389,26 +5389,39 @@ func TestMemoryRunDiagnosticsAccumulatorSnapshot(t *testing.T) {
 	acc := memoryRunDiagnosticsAccumulator{}
 	acc.observeAssemble(types.ContextAssembleResult{
 		Stage: types.AssembleStage{
-			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
-			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
-			Stage2ReasonCode: "memory.ok",
-			Stage2LatencyMs:  12,
+			Stage2Provider:      runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:        runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode:    "memory.ok",
+			Stage2LatencyMs:     12,
+			MemoryScopeSelected: "session",
+			MemoryBudgetUsed:    2,
+			MemoryHits:          2,
+			MemoryRerankStats: map[string]int{
+				"input_total": 2,
+			},
 		},
 	})
 	acc.observeAssemble(types.ContextAssembleResult{
 		Stage: types.AssembleStage{
-			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
-			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
-			Stage2ReasonCode: "memory.fallback.used",
-			Stage2LatencyMs:  25,
+			Stage2Provider:      runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:        runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode:    "memory.fallback.used",
+			Stage2LatencyMs:     25,
+			MemoryScopeSelected: "project",
+			MemoryBudgetUsed:    1,
+			MemoryHits:          1,
+			MemoryRerankStats: map[string]int{
+				"input_total": 1,
+			},
 		},
 	})
 	acc.observeAssemble(types.ContextAssembleResult{
 		Stage: types.AssembleStage{
-			Stage2Provider:   runtimeconfig.ContextStage2ProviderMemory,
-			Stage2Source:     runtimeconfig.ContextStage2ProviderMemory,
-			Stage2ReasonCode: "memory.provider_unavailable",
-			Stage2LatencyMs:  30,
+			Stage2Provider:        runtimeconfig.ContextStage2ProviderMemory,
+			Stage2Source:          runtimeconfig.ContextStage2ProviderMemory,
+			Stage2ReasonCode:      "memory.provider_unavailable",
+			Stage2LatencyMs:       30,
+			MemoryLifecycleAction: "recovery_consistency_drift",
 		},
 	})
 
@@ -5439,6 +5452,21 @@ func TestMemoryRunDiagnosticsAccumulatorSnapshot(t *testing.T) {
 	if got.LatencyMsP95 != 30 {
 		t.Fatalf("memory_latency_ms_p95 = %d, want 30", got.LatencyMsP95)
 	}
+	if got.ScopeSelected != "project" {
+		t.Fatalf("memory_scope_selected = %q, want project", got.ScopeSelected)
+	}
+	if got.BudgetUsed != 3 {
+		t.Fatalf("memory_budget_used = %d, want 3", got.BudgetUsed)
+	}
+	if got.Hits != 3 {
+		t.Fatalf("memory_hits = %d, want 3", got.Hits)
+	}
+	if got.RerankStats["input_total"] != 3 {
+		t.Fatalf("memory_rerank_stats = %#v, want input_total=3", got.RerankStats)
+	}
+	if got.LifecycleAction != "recovery_consistency_drift" {
+		t.Fatalf("memory_lifecycle_action = %q, want recovery_consistency_drift", got.LifecycleAction)
+	}
 }
 
 func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
@@ -5460,6 +5488,13 @@ func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
 			FallbackTotal:      1,
 			FallbackReasonCode: "memory.fallback.used",
 			LatencyMsP95:       18,
+			ScopeSelected:      "session",
+			BudgetUsed:         2,
+			Hits:               2,
+			RerankStats: map[string]int{
+				"input_total": 2,
+			},
+			LifecycleAction: "ttl_expired",
 		},
 	})
 	if payload["memory_mode"] != runtimeconfig.RuntimeMemoryModeBuiltinFilesystem ||
@@ -5472,8 +5507,15 @@ func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
 		payload["memory_error_total"] != 0 ||
 		payload["memory_fallback_total"] != 1 ||
 		payload["memory_fallback_reason_code"] != "memory.fallback.used" ||
-		payload["memory_latency_ms_p95"] != int64(18) {
+		payload["memory_latency_ms_p95"] != int64(18) ||
+		payload["memory_scope_selected"] != "session" ||
+		payload["memory_budget_used"] != 2 ||
+		payload["memory_hits"] != 2 ||
+		payload["memory_lifecycle_action"] != "ttl_expired" {
 		t.Fatalf("memory payload mismatch: %#v", payload)
+	}
+	if got, ok := payload["memory_rerank_stats"].(map[string]int); !ok || got["input_total"] != 2 {
+		t.Fatalf("memory_rerank_stats = %#v, want input_total=2", payload["memory_rerank_stats"])
 	}
 
 	withoutObserved := runFinishedPayload(types.RunResult{

@@ -1,0 +1,36 @@
+{
+  "version": "memory_search.v1",
+  "cases": [
+    {
+      "name": "memory_search_pipeline_success_case",
+      "run": {
+        "memory_hits": 4,
+        "memory_rerank_stats": {
+          "input_total": 8,
+          "reranked_total": 6,
+          "output_total": 4
+        }
+      },
+      "stream": {
+        "memory_hits": 4,
+        "memory_rerank_stats": {
+          "input_total": 8,
+          "reranked_total": 6,
+          "output_total": 4
+        }
+      },
+      "expected": {
+        "memory_hits": 4,
+        "memory_rerank_stats": {
+          "input_total": 8,
+          "reranked_total": 6,
+          "output_total": 4
+        }
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

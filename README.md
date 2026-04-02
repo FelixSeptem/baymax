@@ -15,7 +15,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 当前里程碑快照（2026-04-01）：
 - 已归档并稳定：A4-A58。
-- A59（Introduce Memory Scope And Builtin Filesystem v2 Governance Contract）进行中。
+- A59（Introduce Memory Scope And Builtin Filesystem v2 Governance Contract）进行中（scope/write_mode/injection_budget/lifecycle/search 与 replay/gate 已落地，待归档）。
+- A60（Introduce Runtime Cost-Latency Budget And Admission Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -224,7 +225,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：memory scope + builtin filesystem v2 提案进行中（scope/budget/lifecycle/search 与 builtin 引擎一致性治理）。
+- A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：memory scope + builtin filesystem v2 提案进行中（scope/write_mode/injection_budget/lifecycle/search 与 builtin 引擎一致性治理已落地，新增 `memory_scope_selected`/`memory_budget_used`/`memory_hits`/`memory_rerank_stats`/`memory_lifecycle_action` additive 字段与 `check-memory-scope-and-search-contract.*` 门禁）。
+- A60 `introduce-runtime-cost-latency-budget-and-admission-contract-a60`：runtime 成本/时延预算与 admission 提案进行中（统一 `budget_snapshot`、`budget_decision`、`degrade_action` 合同与 gate 收口）。
 
 近期已归档能力（摘要）：
 - A58 `introduce-policy-precedence-and-decision-trace-contract-a58`：已归档并稳定（统一 action/s2/sandbox/egress/allowlist/admission precedence matrix、deterministic tie-break、`policy_stack.v1` replay fixture、独立 gate `check-policy-precedence-contract.*`，CI check：`policy-precedence-gate`）。

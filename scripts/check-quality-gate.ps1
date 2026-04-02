@@ -135,6 +135,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] policy precedence contract suites
     pwsh -File scripts/check-policy-precedence-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] runtime budget admission contract suites" -Command {
+    pwsh -File scripts/check-runtime-budget-admission-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }
@@ -157,6 +161,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] sandbox adapter conformance contr
 
 Invoke-RequiredStep -StepLabel "[quality-gate] memory contract conformance" -Command {
     pwsh -File scripts/check-memory-contract-conformance.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] memory scope and search governance contract" -Command {
+    pwsh -File scripts/check-memory-scope-and-search-contract.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] observability export and diagnostics bundle contract" -Command {

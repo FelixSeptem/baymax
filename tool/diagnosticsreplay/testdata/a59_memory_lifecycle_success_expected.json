@@ -1,0 +1,15 @@
+{
+  "version": "memory_lifecycle.v1",
+  "cases": [
+    {
+      "name": "memory_lifecycle_policy_success_case",
+      "canonical": {
+        "memory_lifecycle_action": "ttl_expired"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

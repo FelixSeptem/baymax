@@ -556,6 +556,11 @@ type AssembleStage struct {
 	Stage2Reason                   string              `json:"stage2_reason,omitempty"`
 	Stage2ReasonCode               string              `json:"stage2_reason_code,omitempty"`
 	Stage2ErrorLayer               string              `json:"stage2_error_layer,omitempty"`
+	MemoryScopeSelected            string              `json:"memory_scope_selected,omitempty"`
+	MemoryBudgetUsed               int                 `json:"memory_budget_used,omitempty"`
+	MemoryHits                     int                 `json:"memory_hits,omitempty"`
+	MemoryRerankStats              map[string]int      `json:"memory_rerank_stats,omitempty"`
+	MemoryLifecycleAction          string              `json:"memory_lifecycle_action,omitempty"`
 	PressureZone                   string              `json:"pressure_zone,omitempty"`
 	PressureReason                 string              `json:"pressure_reason,omitempty"`
 	// PressureTriggerSource stores the concrete trigger branch selected by CA3/CA4 logic.

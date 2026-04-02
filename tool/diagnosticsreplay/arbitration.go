@@ -11,16 +11,19 @@ import (
 )
 
 const (
-	ArbitrationFixtureVersionA48V1    = "a48.v1"
-	ArbitrationFixtureVersionA49V1    = "a49.v1"
-	ArbitrationFixtureVersionA50V1    = "a50.v1"
-	ArbitrationFixtureVersionA51V1    = "a51.v1"
-	ArbitrationFixtureVersionA52V1    = "a52.v1"
-	ArbitrationFixtureVersionA57V1    = "sandbox_egress.v1"
-	ArbitrationFixtureVersionPolicyV1 = "policy_stack.v1"
-	ArbitrationFixtureVersionMemoryV1 = "memory.v1"
-	ArbitrationFixtureVersionObsV1    = "observability.v1"
-	ArbitrationFixtureVersionReactV1  = "react.v1"
+	ArbitrationFixtureVersionA48V1             = "a48.v1"
+	ArbitrationFixtureVersionA49V1             = "a49.v1"
+	ArbitrationFixtureVersionA50V1             = "a50.v1"
+	ArbitrationFixtureVersionA51V1             = "a51.v1"
+	ArbitrationFixtureVersionA52V1             = "a52.v1"
+	ArbitrationFixtureVersionA57V1             = "sandbox_egress.v1"
+	ArbitrationFixtureVersionPolicyV1          = "policy_stack.v1"
+	ArbitrationFixtureVersionMemoryV1          = "memory.v1"
+	ArbitrationFixtureVersionMemoryScopeV1     = "memory_scope.v1"
+	ArbitrationFixtureVersionMemorySearchV1    = "memory_search.v1"
+	ArbitrationFixtureVersionMemoryLifecycleV1 = "memory_lifecycle.v1"
+	ArbitrationFixtureVersionObsV1             = "observability.v1"
+	ArbitrationFixtureVersionReactV1           = "react.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -67,6 +70,10 @@ const (
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
 	ReasonCodeAdapterAllowlistDecisionDrift       = "adapter_allowlist_decision_drift"
 	ReasonCodeAdapterAllowlistTaxonomyDrift       = "adapter_allowlist_taxonomy_drift"
+	ReasonCodeScopeResolutionDrift                = "scope_resolution_drift"
+	ReasonCodeRetrievalQualityRegression          = "retrieval_quality_regression"
+	ReasonCodeLifecyclePolicyDrift                = "lifecycle_policy_drift"
+	ReasonCodeRecoveryConsistencyDrift            = "recovery_consistency_drift"
 )
 
 type ArbitrationFixture struct {
@@ -152,6 +159,11 @@ type ArbitrationObservation struct {
 	MemoryFallbackTotal                    int                       `json:"memory_fallback_total,omitempty"`
 	MemoryFallbackReasonCode               string                    `json:"memory_fallback_reason_code,omitempty"`
 	MemoryReasonCode                       string                    `json:"memory_reason_code,omitempty"`
+	MemoryScopeSelected                    string                    `json:"memory_scope_selected,omitempty"`
+	MemoryBudgetUsed                       int                       `json:"memory_budget_used,omitempty"`
+	MemoryHits                             int                       `json:"memory_hits,omitempty"`
+	MemoryRerankStats                      map[string]int            `json:"memory_rerank_stats,omitempty"`
+	MemoryLifecycleAction                  string                    `json:"memory_lifecycle_action,omitempty"`
 	ObservabilityExportProfile             string                    `json:"observability_export_profile,omitempty"`
 	ObservabilityExportStatus              string                    `json:"observability_export_status,omitempty"`
 	ObservabilityExportReasonCode          string                    `json:"observability_export_reason_code,omitempty"`
@@ -199,6 +211,9 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA57V1 &&
 		version != ArbitrationFixtureVersionPolicyV1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
+		version != ArbitrationFixtureVersionMemoryScopeV1 &&
+		version != ArbitrationFixtureVersionMemorySearchV1 &&
+		version != ArbitrationFixtureVersionMemoryLifecycleV1 &&
 		version != ArbitrationFixtureVersionObsV1 &&
 		version != ArbitrationFixtureVersionReactV1 {
 		return ArbitrationFixture{}, &ValidationError{
@@ -364,6 +379,10 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		MemoryFallbackTotal:                    in.MemoryFallbackTotal,
 		MemoryFallbackReasonCode:               strings.ToLower(strings.TrimSpace(in.MemoryFallbackReasonCode)),
 		MemoryReasonCode:                       strings.ToLower(strings.TrimSpace(in.MemoryReasonCode)),
+		MemoryScopeSelected:                    strings.ToLower(strings.TrimSpace(in.MemoryScopeSelected)),
+		MemoryBudgetUsed:                       in.MemoryBudgetUsed,
+		MemoryHits:                             in.MemoryHits,
+		MemoryLifecycleAction:                  strings.ToLower(strings.TrimSpace(in.MemoryLifecycleAction)),
 		ObservabilityExportProfile:             strings.ToLower(strings.TrimSpace(in.ObservabilityExportProfile)),
 		ObservabilityExportStatus:              strings.ToLower(strings.TrimSpace(in.ObservabilityExportStatus)),
 		ObservabilityExportReasonCode:          strings.ToLower(strings.TrimSpace(in.ObservabilityExportReasonCode)),
@@ -442,6 +461,28 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.MemoryFallbackTotal < 0 {
 		out.MemoryFallbackTotal = 0
 	}
+	if out.MemoryBudgetUsed < 0 {
+		out.MemoryBudgetUsed = 0
+	}
+	if out.MemoryHits < 0 {
+		out.MemoryHits = 0
+	}
+	for key, value := range in.MemoryRerankStats {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" {
+			continue
+		}
+		if value < 0 {
+			value = 0
+		}
+		if out.MemoryRerankStats == nil {
+			out.MemoryRerankStats = map[string]int{}
+		}
+		out.MemoryRerankStats[normalizedKey] = value
+	}
+	if len(out.MemoryRerankStats) == 0 {
+		out.MemoryRerankStats = nil
+	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
 		if code == "" {
@@ -487,6 +528,15 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return validateMemoryArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionMemoryScopeV1 {
+		return validateMemoryScopeArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionMemorySearchV1 {
+		return validateMemorySearchArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionMemoryLifecycleV1 {
+		return validateMemoryLifecycleArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return validateReactArbitrationObservation(caseName, lane, obs)
@@ -691,6 +741,15 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionMemoryV1 {
 		return assertMemoryArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionMemoryScopeV1 {
+		return assertMemoryScopeArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionMemorySearchV1 {
+		return assertMemorySearchArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionMemoryLifecycleV1 {
+		return assertMemoryLifecycleArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return assertSandboxEgressArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1378,6 +1437,18 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.MemoryFallbackReasonCode == right.MemoryFallbackReasonCode &&
 			left.MemoryReasonCode == right.MemoryReasonCode
 	}
+	if version == ArbitrationFixtureVersionMemoryScopeV1 {
+		return left.MemoryScopeSelected == right.MemoryScopeSelected &&
+			left.MemoryBudgetUsed == right.MemoryBudgetUsed &&
+			left.MemoryHits == right.MemoryHits
+	}
+	if version == ArbitrationFixtureVersionMemorySearchV1 {
+		return left.MemoryHits == right.MemoryHits &&
+			equalIntMap(left.MemoryRerankStats, right.MemoryRerankStats)
+	}
+	if version == ArbitrationFixtureVersionMemoryLifecycleV1 {
+		return left.MemoryLifecycleAction == right.MemoryLifecycleAction
+	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return left.ModelProvider == right.ModelProvider &&
 			left.ReactEnabled == right.ReactEnabled &&
@@ -1489,6 +1560,18 @@ func equalPolicyDecisionPath(left, right []PolicyDecisionPathEntry) bool {
 			left[i].Code != right[i].Code ||
 			left[i].Source != right[i].Source ||
 			left[i].Decision != right[i].Decision {
+			return false
+		}
+	}
+	return true
+}
+
+func equalIntMap(left, right map[string]int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		if right[key] != leftValue {
 			return false
 		}
 	}
@@ -1714,6 +1797,123 @@ func assertMemoryArbitrationEquivalent(caseName, lane string, expected, actual A
 		}
 	}
 	return nil
+}
+
+func validateMemoryScopeArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	switch strings.TrimSpace(obs.MemoryScopeSelected) {
+	case runtimeconfig.RuntimeMemoryScopeSession, runtimeconfig.RuntimeMemoryScopeProject, runtimeconfig.RuntimeMemoryScopeGlobal:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_scope_selected must be session|project|global", caseName, lane),
+		}
+	}
+	if obs.MemoryBudgetUsed < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_budget_used must be >= 0", caseName, lane),
+		}
+	}
+	if obs.MemoryHits < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_hits must be >= 0", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertMemoryScopeArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.MemoryScopeSelected == actual.MemoryScopeSelected &&
+		expected.MemoryBudgetUsed == actual.MemoryBudgetUsed &&
+		expected.MemoryHits == actual.MemoryHits {
+		return nil
+	}
+	return &ValidationError{
+		Code:    ReasonCodeScopeResolutionDrift,
+		Message: fmt.Sprintf("case %q %s scope resolution drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateMemorySearchArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if obs.MemoryHits < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_hits must be >= 0", caseName, lane),
+		}
+	}
+	if len(obs.MemoryRerankStats) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_rerank_stats must not be empty", caseName, lane),
+		}
+	}
+	required := []string{"input_total", "reranked_total", "output_total"}
+	for i := range required {
+		key := required[i]
+		value, ok := obs.MemoryRerankStats[key]
+		if !ok {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s memory_rerank_stats.%s is required", caseName, lane, key),
+			}
+		}
+		if value < 0 {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s memory_rerank_stats.%s must be >= 0", caseName, lane, key),
+			}
+		}
+	}
+	inputTotal := obs.MemoryRerankStats["input_total"]
+	rerankedTotal := obs.MemoryRerankStats["reranked_total"]
+	outputTotal := obs.MemoryRerankStats["output_total"]
+	if rerankedTotal > inputTotal || outputTotal > rerankedTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_rerank_stats must satisfy output_total<=reranked_total<=input_total", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertMemorySearchArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.MemoryHits == actual.MemoryHits && equalIntMap(expected.MemoryRerankStats, actual.MemoryRerankStats) {
+		return nil
+	}
+	return &ValidationError{
+		Code:    ReasonCodeRetrievalQualityRegression,
+		Message: fmt.Sprintf("case %q %s retrieval quality regression expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateMemoryLifecycleArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	switch strings.TrimSpace(obs.MemoryLifecycleAction) {
+	case "retention_applied", "ttl_expired", "forget_applied", ReasonCodeRecoveryConsistencyDrift:
+		return nil
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s memory_lifecycle_action is invalid", caseName, lane),
+		}
+	}
+}
+
+func assertMemoryLifecycleArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.MemoryLifecycleAction == actual.MemoryLifecycleAction {
+		return nil
+	}
+	if expected.MemoryLifecycleAction == ReasonCodeRecoveryConsistencyDrift ||
+		actual.MemoryLifecycleAction == ReasonCodeRecoveryConsistencyDrift {
+		return &ValidationError{
+			Code:    ReasonCodeRecoveryConsistencyDrift,
+			Message: fmt.Sprintf("case %q %s recovery consistency drift expected=%q actual=%q", caseName, lane, expected.MemoryLifecycleAction, actual.MemoryLifecycleAction),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeLifecyclePolicyDrift,
+		Message: fmt.Sprintf("case %q %s lifecycle policy drift expected=%q actual=%q", caseName, lane, expected.MemoryLifecycleAction, actual.MemoryLifecycleAction),
+	}
 }
 
 func validateObservabilityArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {

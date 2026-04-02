@@ -84,6 +84,7 @@ type QueryRequest struct {
 	Namespace   string            `json:"namespace"`
 	SessionID   string            `json:"session_id,omitempty"`
 	RunID       string            `json:"run_id,omitempty"`
+	Scope       string            `json:"scope,omitempty"`
 	Query       string            `json:"query,omitempty"`
 	IDs         []string          `json:"ids,omitempty"`
 	MaxItems    int               `json:"max_items,omitempty"`
@@ -91,19 +92,24 @@ type QueryRequest struct {
 }
 
 type QueryResponse struct {
-	OperationID        string         `json:"operation_id,omitempty"`
-	Namespace          string         `json:"namespace,omitempty"`
-	Records            []Record       `json:"records,omitempty"`
-	Total              int            `json:"total,omitempty"`
-	ReasonCode         string         `json:"reason_code,omitempty"`
-	LatencyMs          int64          `json:"latency_ms,omitempty"`
-	Mode               string         `json:"mode,omitempty"`
-	Provider           string         `json:"provider,omitempty"`
-	Profile            string         `json:"profile,omitempty"`
-	ContractVersion    string         `json:"contract_version,omitempty"`
-	FallbackUsed       bool           `json:"fallback_used,omitempty"`
-	FallbackReasonCode string         `json:"fallback_reason_code,omitempty"`
-	Metadata           map[string]any `json:"metadata,omitempty"`
+	OperationID           string         `json:"operation_id,omitempty"`
+	Namespace             string         `json:"namespace,omitempty"`
+	Records               []Record       `json:"records,omitempty"`
+	Total                 int            `json:"total,omitempty"`
+	ReasonCode            string         `json:"reason_code,omitempty"`
+	LatencyMs             int64          `json:"latency_ms,omitempty"`
+	Mode                  string         `json:"mode,omitempty"`
+	Provider              string         `json:"provider,omitempty"`
+	Profile               string         `json:"profile,omitempty"`
+	ContractVersion       string         `json:"contract_version,omitempty"`
+	FallbackUsed          bool           `json:"fallback_used,omitempty"`
+	FallbackReasonCode    string         `json:"fallback_reason_code,omitempty"`
+	MemoryScopeSelected   string         `json:"memory_scope_selected,omitempty"`
+	MemoryBudgetUsed      int            `json:"memory_budget_used,omitempty"`
+	MemoryHits            int            `json:"memory_hits,omitempty"`
+	MemoryRerankStats     map[string]int `json:"memory_rerank_stats,omitempty"`
+	MemoryLifecycleAction string         `json:"memory_lifecycle_action,omitempty"`
+	Metadata              map[string]any `json:"metadata,omitempty"`
 }
 
 type UpsertRequest struct {
@@ -113,37 +119,40 @@ type UpsertRequest struct {
 }
 
 type UpsertResponse struct {
-	OperationID        string `json:"operation_id,omitempty"`
-	Namespace          string `json:"namespace,omitempty"`
-	Upserted           int    `json:"upserted,omitempty"`
-	ReasonCode         string `json:"reason_code,omitempty"`
-	LatencyMs          int64  `json:"latency_ms,omitempty"`
-	Mode               string `json:"mode,omitempty"`
-	Provider           string `json:"provider,omitempty"`
-	Profile            string `json:"profile,omitempty"`
-	ContractVersion    string `json:"contract_version,omitempty"`
-	FallbackUsed       bool   `json:"fallback_used,omitempty"`
-	FallbackReasonCode string `json:"fallback_reason_code,omitempty"`
+	OperationID           string `json:"operation_id,omitempty"`
+	Namespace             string `json:"namespace,omitempty"`
+	Upserted              int    `json:"upserted,omitempty"`
+	ReasonCode            string `json:"reason_code,omitempty"`
+	LatencyMs             int64  `json:"latency_ms,omitempty"`
+	Mode                  string `json:"mode,omitempty"`
+	Provider              string `json:"provider,omitempty"`
+	Profile               string `json:"profile,omitempty"`
+	ContractVersion       string `json:"contract_version,omitempty"`
+	FallbackUsed          bool   `json:"fallback_used,omitempty"`
+	FallbackReasonCode    string `json:"fallback_reason_code,omitempty"`
+	MemoryLifecycleAction string `json:"memory_lifecycle_action,omitempty"`
 }
 
 type DeleteRequest struct {
 	OperationID string   `json:"operation_id,omitempty"`
 	Namespace   string   `json:"namespace"`
+	Scope       string   `json:"scope,omitempty"`
 	IDs         []string `json:"ids"`
 }
 
 type DeleteResponse struct {
-	OperationID        string `json:"operation_id,omitempty"`
-	Namespace          string `json:"namespace,omitempty"`
-	Deleted            int    `json:"deleted,omitempty"`
-	ReasonCode         string `json:"reason_code,omitempty"`
-	LatencyMs          int64  `json:"latency_ms,omitempty"`
-	Mode               string `json:"mode,omitempty"`
-	Provider           string `json:"provider,omitempty"`
-	Profile            string `json:"profile,omitempty"`
-	ContractVersion    string `json:"contract_version,omitempty"`
-	FallbackUsed       bool   `json:"fallback_used,omitempty"`
-	FallbackReasonCode string `json:"fallback_reason_code,omitempty"`
+	OperationID           string `json:"operation_id,omitempty"`
+	Namespace             string `json:"namespace,omitempty"`
+	Deleted               int    `json:"deleted,omitempty"`
+	ReasonCode            string `json:"reason_code,omitempty"`
+	LatencyMs             int64  `json:"latency_ms,omitempty"`
+	Mode                  string `json:"mode,omitempty"`
+	Provider              string `json:"provider,omitempty"`
+	Profile               string `json:"profile,omitempty"`
+	ContractVersion       string `json:"contract_version,omitempty"`
+	FallbackUsed          bool   `json:"fallback_used,omitempty"`
+	FallbackReasonCode    string `json:"fallback_reason_code,omitempty"`
+	MemoryLifecycleAction string `json:"memory_lifecycle_action,omitempty"`
 }
 
 type Engine interface {

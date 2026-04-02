@@ -459,6 +459,70 @@ func TestStoreRunA57AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                  time.Now(),
+		RunID:                 "run-a59-memory-governance",
+		Status:                "success",
+		MemoryScopeSelected:   "session",
+		MemoryBudgetUsed:      3,
+		MemoryHits:            3,
+		MemoryRerankStats:     map[string]int{"input_total": 4, "output_total": 3},
+		MemoryLifecycleAction: "ttl_expired",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	if items[0].MemoryScopeSelected != "session" ||
+		items[0].MemoryBudgetUsed != 3 ||
+		items[0].MemoryHits != 3 ||
+		items[0].MemoryRerankStats["input_total"] != 4 ||
+		items[0].MemoryRerankStats["output_total"] != 3 ||
+		items[0].MemoryLifecycleAction != "ttl_expired" {
+		t.Fatalf("A59 additive fields mismatch after dedup: %#v", items[0])
+	}
+
+	rec.MemoryScopeSelected = "project"
+	rec.MemoryBudgetUsed = 2
+	rec.MemoryHits = 2
+	rec.MemoryRerankStats = map[string]int{"input_total": 2, "output_total": 2}
+	rec.MemoryLifecycleAction = "forget_applied"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	if items[0].MemoryScopeSelected != "project" ||
+		items[0].MemoryBudgetUsed != 2 ||
+		items[0].MemoryHits != 2 ||
+		items[0].MemoryRerankStats["input_total"] != 2 ||
+		items[0].MemoryRerankStats["output_total"] != 2 ||
+		items[0].MemoryLifecycleAction != "forget_applied" {
+		t.Fatalf("A59 additive fields mismatch after replay replacement: %#v", items[0])
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a59-memory-governance"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	if page.Items[0].MemoryScopeSelected != "project" ||
+		page.Items[0].MemoryBudgetUsed != 2 ||
+		page.Items[0].MemoryHits != 2 ||
+		page.Items[0].MemoryRerankStats["input_total"] != 2 ||
+		page.Items[0].MemoryLifecycleAction != "forget_applied" {
+		t.Fatalf("A59 query mapping mismatch: %#v", page.Items[0])
+	}
+}
+
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

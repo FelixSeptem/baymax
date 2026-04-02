@@ -1,0 +1,21 @@
+{
+  "version": "memory_lifecycle.v1",
+  "cases": [
+    {
+      "name": "memory_lifecycle_policy_drift_case",
+      "run": {
+        "memory_lifecycle_action": "forget_applied"
+      },
+      "stream": {
+        "memory_lifecycle_action": "ttl_expired"
+      },
+      "expected": {
+        "memory_lifecycle_action": "ttl_expired"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

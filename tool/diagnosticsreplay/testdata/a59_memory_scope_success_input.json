@@ -1,0 +1,27 @@
+{
+  "version": "memory_scope.v1",
+  "cases": [
+    {
+      "name": "memory_scope_resolution_success_case",
+      "run": {
+        "memory_scope_selected": "SESSION",
+        "memory_budget_used": 3,
+        "memory_hits": 3
+      },
+      "stream": {
+        "memory_scope_selected": "session",
+        "memory_budget_used": 3,
+        "memory_hits": 3
+      },
+      "expected": {
+        "memory_scope_selected": "session",
+        "memory_budget_used": 3,
+        "memory_hits": 3
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -139,6 +139,12 @@ if ! bash scripts/check-policy-precedence-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] runtime budget admission contract suites"
+if ! bash scripts/check-runtime-budget-admission-contract.sh; then
+  echo "[quality-gate][runtime-budget-admission-contract] runtime budget admission contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"
@@ -172,6 +178,12 @@ fi
 echo "[quality-gate] memory contract conformance"
 if ! bash scripts/check-memory-contract-conformance.sh; then
   echo "[quality-gate][memory-contract] memory contract conformance check failed"
+  exit 1
+fi
+
+echo "[quality-gate] memory scope and search governance contract"
+if ! bash scripts/check-memory-scope-and-search-contract.sh; then
+  echo "[quality-gate][memory-scope-search-contract] memory scope and search governance contract check failed"
   exit 1
 fi
 

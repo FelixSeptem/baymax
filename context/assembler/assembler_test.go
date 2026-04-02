@@ -661,6 +661,96 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 	}
 }
 
+func TestAssemblerCA2MemoryGovernanceDiagnosticsFields(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = runtimeconfig.ContextStage2ProviderMemory
+	cfg.CA2.Routing.MinInputChars = 1
+
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	content := strings.Join([]string{
+		`{"session_id":"session-memory","content":"ctx-memory-a"}`,
+		`{"session_id":"session-memory","content":"ctx-memory-b"}`,
+	}, "\n")
+	if err := os.WriteFile(stage2File, []byte(content), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	cfg.CA2.Stage2.FilePath = stage2File
+
+	memoryCfg := runtimeconfig.DefaultConfig().Runtime.Memory
+	memoryCfg.Mode = runtimeconfig.RuntimeMemoryModeBuiltinFilesystem
+	memoryCfg.Builtin.RootDir = filepath.Join(t.TempDir(), "memory-store")
+	memoryCfg.Fallback.Policy = runtimeconfig.RuntimeMemoryFallbackPolicyFailFast
+	memoryCfg.Scope.Default = runtimeconfig.RuntimeMemoryScopeSession
+	memoryCfg.Scope.Allowed = []string{
+		runtimeconfig.RuntimeMemoryScopeSession,
+		runtimeconfig.RuntimeMemoryScopeProject,
+		runtimeconfig.RuntimeMemoryScopeGlobal,
+	}
+	memoryCfg.Scope.AllowOverride = true
+	memoryCfg.Scope.GlobalNamespace = "global"
+
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithMemoryConfigProvider(func() runtimeconfig.RuntimeMemoryConfig { return memoryCfg }),
+	)
+	t.Cleanup(func() {
+		if closer, ok := a.stage2Provider.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	})
+	for i := 0; i < 2; i++ {
+		_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+			RunID:         "run-memory-governance",
+			SessionID:     "session-memory",
+			PrefixVersion: "ca1",
+			Input:         "ctx-memory",
+			Messages:      []types.Message{{Role: "system", Content: "s"}},
+		}, types.ModelRequest{
+			RunID:    "run-memory-governance",
+			Input:    "ctx-memory",
+			Messages: []types.Message{{Role: "system", Content: "s"}},
+		})
+		if err != nil {
+			t.Fatalf("Assemble warmup #%d failed: %v", i+1, err)
+		}
+	}
+
+	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID:         "run-memory-governance",
+		SessionID:     "session-memory",
+		PrefixVersion: "ca1",
+		Input:         "ctx-memory",
+		Messages:      []types.Message{{Role: "system", Content: "s"}},
+	}, types.ModelRequest{
+		RunID:    "run-memory-governance",
+		Input:    "ctx-memory",
+		Messages: []types.Message{{Role: "system", Content: "s"}},
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if result.Stage.Status != types.AssembleStageStatusStage2Used {
+		t.Fatalf("stage status = %q, want stage2_used", result.Stage.Status)
+	}
+	if result.Stage.Stage2Source != runtimeconfig.ContextStage2ProviderMemory {
+		t.Fatalf("stage2_source = %q, want memory", result.Stage.Stage2Source)
+	}
+	if result.Stage.MemoryScopeSelected == "" {
+		t.Fatalf("memory_scope_selected should be populated, got %#v", result.Stage)
+	}
+	if result.Stage.MemoryBudgetUsed <= 0 {
+		t.Fatalf("memory_budget_used = %d, want > 0", result.Stage.MemoryBudgetUsed)
+	}
+	if result.Stage.MemoryHits <= 0 {
+		t.Fatalf("memory_hits = %d, want > 0", result.Stage.MemoryHits)
+	}
+	if len(result.Stage.MemoryRerankStats) == 0 {
+		t.Fatalf("memory_rerank_stats should be populated, got %#v", result.Stage.MemoryRerankStats)
+	}
+}
+
 func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")

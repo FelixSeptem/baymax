@@ -1300,6 +1300,47 @@ func DefaultConfig() Config {
 				Fallback: RuntimeMemoryFallbackConfig{
 					Policy: RuntimeMemoryFallbackPolicyFailFast,
 				},
+				Scope: RuntimeMemoryScopeConfig{
+					Default:         RuntimeMemoryScopeSession,
+					Allowed:         []string{RuntimeMemoryScopeSession, RuntimeMemoryScopeProject, RuntimeMemoryScopeGlobal},
+					AllowOverride:   true,
+					GlobalNamespace: "global",
+				},
+				WriteMode: RuntimeMemoryWriteModeConfig{
+					Mode:              RuntimeMemoryWriteModeAutomatic,
+					AutomaticWindow:   30 * time.Minute,
+					AgenticWindow:     2 * time.Hour,
+					IdempotencyWindow: 24 * time.Hour,
+				},
+				InjectionBudget: RuntimeMemoryInjectionBudgetConfig{
+					MaxRecords:     8,
+					MaxBytes:       16 * 1024,
+					TruncatePolicy: RuntimeMemoryInjectionTruncatePolicyScoreThenRecency,
+				},
+				Lifecycle: RuntimeMemoryLifecycleConfig{
+					RetentionDays:    30,
+					TTLEnabled:       false,
+					TTL:              7 * 24 * time.Hour,
+					ForgetScopeAllow: []string{RuntimeMemoryScopeSession, RuntimeMemoryScopeProject, RuntimeMemoryScopeGlobal},
+				},
+				Search: RuntimeMemorySearchConfig{
+					Hybrid: RuntimeMemorySearchHybridConfig{
+						Enabled:       true,
+						KeywordWeight: 0.6,
+						VectorWeight:  0.4,
+					},
+					Rerank: RuntimeMemorySearchRerankConfig{
+						Enabled:       false,
+						MaxCandidates: 32,
+					},
+					TemporalDecay: RuntimeMemorySearchTemporalDecayConfig{
+						Enabled:      false,
+						HalfLife:     7 * 24 * time.Hour,
+						MaxBoostRate: 0.2,
+					},
+					IndexUpdatePolicy:   RuntimeMemorySearchIndexUpdatePolicyIncremental,
+					DriftRecoveryPolicy: RuntimeMemorySearchDriftRecoveryPolicyIncrementalThenFull,
+				},
 			},
 		},
 		Adapter: AdapterConfig{
@@ -4016,6 +4057,31 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.memory.builtin.compaction.min_ops", base.Runtime.Memory.Builtin.Compaction.MinOps)
 	v.SetDefault("runtime.memory.builtin.compaction.max_wal_bytes", base.Runtime.Memory.Builtin.Compaction.MaxWALBytes)
 	v.SetDefault("runtime.memory.fallback.policy", base.Runtime.Memory.Fallback.Policy)
+	v.SetDefault("runtime.memory.scope.default", base.Runtime.Memory.Scope.Default)
+	v.SetDefault("runtime.memory.scope.allowed", base.Runtime.Memory.Scope.Allowed)
+	v.SetDefault("runtime.memory.scope.allow_override", base.Runtime.Memory.Scope.AllowOverride)
+	v.SetDefault("runtime.memory.scope.global_namespace", base.Runtime.Memory.Scope.GlobalNamespace)
+	v.SetDefault("runtime.memory.write_mode", base.Runtime.Memory.WriteMode.Mode)
+	v.SetDefault("runtime.memory.write_mode.automatic_window", base.Runtime.Memory.WriteMode.AutomaticWindow)
+	v.SetDefault("runtime.memory.write_mode.agentic_window", base.Runtime.Memory.WriteMode.AgenticWindow)
+	v.SetDefault("runtime.memory.write_mode.idempotency_window", base.Runtime.Memory.WriteMode.IdempotencyWindow)
+	v.SetDefault("runtime.memory.injection_budget.max_records", base.Runtime.Memory.InjectionBudget.MaxRecords)
+	v.SetDefault("runtime.memory.injection_budget.max_bytes", base.Runtime.Memory.InjectionBudget.MaxBytes)
+	v.SetDefault("runtime.memory.injection_budget.truncate_policy", base.Runtime.Memory.InjectionBudget.TruncatePolicy)
+	v.SetDefault("runtime.memory.lifecycle.retention_days", base.Runtime.Memory.Lifecycle.RetentionDays)
+	v.SetDefault("runtime.memory.lifecycle.ttl_enabled", base.Runtime.Memory.Lifecycle.TTLEnabled)
+	v.SetDefault("runtime.memory.lifecycle.ttl", base.Runtime.Memory.Lifecycle.TTL)
+	v.SetDefault("runtime.memory.lifecycle.forget_scope_allow", base.Runtime.Memory.Lifecycle.ForgetScopeAllow)
+	v.SetDefault("runtime.memory.search.hybrid.enabled", base.Runtime.Memory.Search.Hybrid.Enabled)
+	v.SetDefault("runtime.memory.search.hybrid.keyword_weight", base.Runtime.Memory.Search.Hybrid.KeywordWeight)
+	v.SetDefault("runtime.memory.search.hybrid.vector_weight", base.Runtime.Memory.Search.Hybrid.VectorWeight)
+	v.SetDefault("runtime.memory.search.rerank.enabled", base.Runtime.Memory.Search.Rerank.Enabled)
+	v.SetDefault("runtime.memory.search.rerank.max_candidates", base.Runtime.Memory.Search.Rerank.MaxCandidates)
+	v.SetDefault("runtime.memory.search.temporal_decay.enabled", base.Runtime.Memory.Search.TemporalDecay.Enabled)
+	v.SetDefault("runtime.memory.search.temporal_decay.half_life", base.Runtime.Memory.Search.TemporalDecay.HalfLife)
+	v.SetDefault("runtime.memory.search.temporal_decay.max_boost_rate", base.Runtime.Memory.Search.TemporalDecay.MaxBoostRate)
+	v.SetDefault("runtime.memory.search.index_update_policy", base.Runtime.Memory.Search.IndexUpdatePolicy)
+	v.SetDefault("runtime.memory.search.drift_recovery_policy", base.Runtime.Memory.Search.DriftRecoveryPolicy)
 	v.SetDefault("adapter.health.enabled", base.Adapter.Health.Enabled)
 	v.SetDefault("adapter.health.strict", base.Adapter.Health.Strict)
 	v.SetDefault("adapter.health.probe_timeout", base.Adapter.Health.ProbeTimeout)
@@ -4455,6 +4521,51 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Memory.Builtin.Compaction.MinOps = v.GetInt("runtime.memory.builtin.compaction.min_ops")
 	cfg.Runtime.Memory.Builtin.Compaction.MaxWALBytes = v.GetInt64("runtime.memory.builtin.compaction.max_wal_bytes")
 	cfg.Runtime.Memory.Fallback.Policy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.fallback.policy")))
+	scopeAllowOverride, err := strictBoolConfigValue(v, "runtime.memory.scope.allow_override")
+	if err != nil {
+		return Config{}, err
+	}
+	ttlEnabled, err := strictBoolConfigValue(v, "runtime.memory.lifecycle.ttl_enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	searchHybridEnabled, err := strictBoolConfigValue(v, "runtime.memory.search.hybrid.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	searchRerankEnabled, err := strictBoolConfigValue(v, "runtime.memory.search.rerank.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	searchTemporalDecayEnabled, err := strictBoolConfigValue(v, "runtime.memory.search.temporal_decay.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Runtime.Memory.Scope.Default = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.scope.default")))
+	cfg.Runtime.Memory.Scope.Allowed = normalizeKeywords(v.GetStringSlice("runtime.memory.scope.allowed"))
+	cfg.Runtime.Memory.Scope.AllowOverride = scopeAllowOverride
+	cfg.Runtime.Memory.Scope.GlobalNamespace = strings.TrimSpace(v.GetString("runtime.memory.scope.global_namespace"))
+	cfg.Runtime.Memory.WriteMode.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.write_mode")))
+	cfg.Runtime.Memory.WriteMode.AutomaticWindow = v.GetDuration("runtime.memory.write_mode.automatic_window")
+	cfg.Runtime.Memory.WriteMode.AgenticWindow = v.GetDuration("runtime.memory.write_mode.agentic_window")
+	cfg.Runtime.Memory.WriteMode.IdempotencyWindow = v.GetDuration("runtime.memory.write_mode.idempotency_window")
+	cfg.Runtime.Memory.InjectionBudget.MaxRecords = v.GetInt("runtime.memory.injection_budget.max_records")
+	cfg.Runtime.Memory.InjectionBudget.MaxBytes = v.GetInt("runtime.memory.injection_budget.max_bytes")
+	cfg.Runtime.Memory.InjectionBudget.TruncatePolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.injection_budget.truncate_policy")))
+	cfg.Runtime.Memory.Lifecycle.RetentionDays = v.GetInt("runtime.memory.lifecycle.retention_days")
+	cfg.Runtime.Memory.Lifecycle.TTLEnabled = ttlEnabled
+	cfg.Runtime.Memory.Lifecycle.TTL = v.GetDuration("runtime.memory.lifecycle.ttl")
+	cfg.Runtime.Memory.Lifecycle.ForgetScopeAllow = normalizeKeywords(v.GetStringSlice("runtime.memory.lifecycle.forget_scope_allow"))
+	cfg.Runtime.Memory.Search.Hybrid.Enabled = searchHybridEnabled
+	cfg.Runtime.Memory.Search.Hybrid.KeywordWeight = v.GetFloat64("runtime.memory.search.hybrid.keyword_weight")
+	cfg.Runtime.Memory.Search.Hybrid.VectorWeight = v.GetFloat64("runtime.memory.search.hybrid.vector_weight")
+	cfg.Runtime.Memory.Search.Rerank.Enabled = searchRerankEnabled
+	cfg.Runtime.Memory.Search.Rerank.MaxCandidates = v.GetInt("runtime.memory.search.rerank.max_candidates")
+	cfg.Runtime.Memory.Search.TemporalDecay.Enabled = searchTemporalDecayEnabled
+	cfg.Runtime.Memory.Search.TemporalDecay.HalfLife = v.GetDuration("runtime.memory.search.temporal_decay.half_life")
+	cfg.Runtime.Memory.Search.TemporalDecay.MaxBoostRate = v.GetFloat64("runtime.memory.search.temporal_decay.max_boost_rate")
+	cfg.Runtime.Memory.Search.IndexUpdatePolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.search.index_update_policy")))
+	cfg.Runtime.Memory.Search.DriftRecoveryPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.search.drift_recovery_policy")))
 	adapterHealthEnabled, err := strictBoolConfigValue(v, "adapter.health.enabled")
 	if err != nil {
 		return Config{}, err

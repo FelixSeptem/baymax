@@ -222,6 +222,25 @@ jobs:
       - name: Memory Contract Gate
         run: bash scripts/check-memory-contract-conformance.sh
 
+  memory-scope-search-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Memory Scope and Search Governance Gate
+        run: bash scripts/check-memory-scope-and-search-contract.sh
+
   observability-export-bundle-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

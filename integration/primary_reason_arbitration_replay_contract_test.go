@@ -48,6 +48,24 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a58_policy_stack_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionPolicyV1,
 		},
+		{
+			name:          "a59-memory-scope",
+			versionFolder: "tool",
+			fixture:       "a59_memory_scope_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionMemoryScopeV1,
+		},
+		{
+			name:          "a59-memory-search",
+			versionFolder: "tool",
+			fixture:       "a59_memory_search_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionMemorySearchV1,
+		},
+		{
+			name:          "a59-memory-lifecycle",
+			versionFolder: "tool",
+			fixture:       "a59_memory_lifecycle_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionMemoryLifecycleV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -250,6 +268,34 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeDenySourceMismatch,
 			messageHas: "deny source mismatch",
 		},
+		{
+			name:       "a59-scope-resolution-drift",
+			versionDir: "tool",
+			fixture:    "a59_memory_scope_resolution_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeScopeResolutionDrift,
+			messageHas: "scope resolution drift",
+		},
+		{
+			name:       "a59-retrieval-quality-regression",
+			versionDir: "tool",
+			fixture:    "a59_memory_retrieval_quality_regression_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRetrievalQualityRegression,
+			messageHas: "retrieval quality regression",
+		},
+		{
+			name:       "a59-lifecycle-policy-drift",
+			versionDir: "tool",
+			fixture:    "a59_memory_lifecycle_policy_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeLifecyclePolicyDrift,
+			messageHas: "lifecycle policy drift",
+		},
+		{
+			name:       "a59-recovery-consistency-drift",
+			versionDir: "tool",
+			fixture:    "a59_memory_recovery_consistency_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRecoveryConsistencyDrift,
+			messageHas: "recovery consistency drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -350,6 +396,9 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 		"a58_policy_stack_success_input.json",
+		"a59_memory_scope_success_input.json",
+		"a59_memory_search_success_input.json",
+		"a59_memory_lifecycle_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

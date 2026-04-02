@@ -78,6 +78,11 @@ type RunRecord struct {
 	MemoryFallbackTotal                         int                               `json:"memory_fallback_total,omitempty"`
 	MemoryFallbackReasonCode                    string                            `json:"memory_fallback_reason_code,omitempty"`
 	MemoryLatencyMsP95                          int64                             `json:"memory_latency_ms_p95,omitempty"`
+	MemoryScopeSelected                         string                            `json:"memory_scope_selected,omitempty"`
+	MemoryBudgetUsed                            int                               `json:"memory_budget_used,omitempty"`
+	MemoryHits                                  int                               `json:"memory_hits,omitempty"`
+	MemoryRerankStats                           map[string]int                    `json:"memory_rerank_stats,omitempty"`
+	MemoryLifecycleAction                       string                            `json:"memory_lifecycle_action,omitempty"`
 	ObservabilityExportProfile                  string                            `json:"observability_export_profile,omitempty"`
 	ObservabilityExportStatus                   string                            `json:"observability_export_status,omitempty"`
 	ObservabilityExportErrorTotal               int                               `json:"observability_export_error_total,omitempty"`
@@ -758,6 +763,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
 	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
 	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
+	rec.MemoryRerankStats = cloneIntMap(rec.MemoryRerankStats)
 	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
 	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
 	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)

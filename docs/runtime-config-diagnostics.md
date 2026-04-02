@@ -148,6 +148,31 @@
   - `runtime.memory.builtin.compaction.min_ops` -> `BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_MIN_OPS`
   - `runtime.memory.builtin.compaction.max_wal_bytes` -> `BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_MAX_WAL_BYTES`
   - `runtime.memory.fallback.policy` -> `BAYMAX_RUNTIME_MEMORY_FALLBACK_POLICY`
+  - `runtime.memory.scope.default` -> `BAYMAX_RUNTIME_MEMORY_SCOPE_DEFAULT`
+  - `runtime.memory.scope.allowed` -> `BAYMAX_RUNTIME_MEMORY_SCOPE_ALLOWED`
+  - `runtime.memory.scope.allow_override` -> `BAYMAX_RUNTIME_MEMORY_SCOPE_ALLOW_OVERRIDE`
+  - `runtime.memory.scope.global_namespace` -> `BAYMAX_RUNTIME_MEMORY_SCOPE_GLOBAL_NAMESPACE`
+  - `runtime.memory.write_mode` -> `BAYMAX_RUNTIME_MEMORY_WRITE_MODE`
+  - `runtime.memory.write_mode.automatic_window` -> `BAYMAX_RUNTIME_MEMORY_WRITE_MODE_AUTOMATIC_WINDOW`
+  - `runtime.memory.write_mode.agentic_window` -> `BAYMAX_RUNTIME_MEMORY_WRITE_MODE_AGENTIC_WINDOW`
+  - `runtime.memory.write_mode.idempotency_window` -> `BAYMAX_RUNTIME_MEMORY_WRITE_MODE_IDEMPOTENCY_WINDOW`
+  - `runtime.memory.injection_budget.max_records` -> `BAYMAX_RUNTIME_MEMORY_INJECTION_BUDGET_MAX_RECORDS`
+  - `runtime.memory.injection_budget.max_bytes` -> `BAYMAX_RUNTIME_MEMORY_INJECTION_BUDGET_MAX_BYTES`
+  - `runtime.memory.injection_budget.truncate_policy` -> `BAYMAX_RUNTIME_MEMORY_INJECTION_BUDGET_TRUNCATE_POLICY`
+  - `runtime.memory.lifecycle.retention_days` -> `BAYMAX_RUNTIME_MEMORY_LIFECYCLE_RETENTION_DAYS`
+  - `runtime.memory.lifecycle.ttl_enabled` -> `BAYMAX_RUNTIME_MEMORY_LIFECYCLE_TTL_ENABLED`
+  - `runtime.memory.lifecycle.ttl` -> `BAYMAX_RUNTIME_MEMORY_LIFECYCLE_TTL`
+  - `runtime.memory.lifecycle.forget_scope_allow` -> `BAYMAX_RUNTIME_MEMORY_LIFECYCLE_FORGET_SCOPE_ALLOW`
+  - `runtime.memory.search.hybrid.enabled` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_HYBRID_ENABLED`
+  - `runtime.memory.search.hybrid.keyword_weight` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_HYBRID_KEYWORD_WEIGHT`
+  - `runtime.memory.search.hybrid.vector_weight` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_HYBRID_VECTOR_WEIGHT`
+  - `runtime.memory.search.rerank.enabled` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_RERANK_ENABLED`
+  - `runtime.memory.search.rerank.max_candidates` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_RERANK_MAX_CANDIDATES`
+  - `runtime.memory.search.temporal_decay.enabled` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_TEMPORAL_DECAY_ENABLED`
+  - `runtime.memory.search.temporal_decay.half_life` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_TEMPORAL_DECAY_HALF_LIFE`
+  - `runtime.memory.search.temporal_decay.max_boost_rate` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_TEMPORAL_DECAY_MAX_BOOST_RATE`
+  - `runtime.memory.search.index_update_policy` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_INDEX_UPDATE_POLICY`
+  - `runtime.memory.search.drift_recovery_policy` -> `BAYMAX_RUNTIME_MEMORY_SEARCH_DRIFT_RECOVERY_POLICY`
   - `runtime.observability.export.enabled` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENABLED`
   - `runtime.observability.export.profile` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_PROFILE`
   - `runtime.observability.export.endpoint` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENDPOINT`
@@ -265,17 +290,50 @@ runtime:
   memory:
     mode: builtin_filesystem    # external_spi|builtin_filesystem
     external:
-      provider: generic         # mode=external_spi 时必填
-      profile: generic          # mode=external_spi 时必填
+      provider: ""              # mode=external_spi 时必填
+      profile: ""               # mode=external_spi 时必填
       contract_version: memory.v1 # 当前固定 memory.v1
     builtin:
-      root_dir: .baymax/memory  # mode=builtin_filesystem 或 degrade_to_builtin 时必填
+      root_dir: /tmp/baymax/memory-store # 默认临时目录；mode=builtin_filesystem 或 degrade_to_builtin 时必填
       compaction:
         enabled: true
-        min_ops: 128            # 必须 > 0
-        max_wal_bytes: 1048576  # 必须 > 0
+        min_ops: 32             # 必须 > 0
+        max_wal_bytes: 4194304  # 必须 > 0
     fallback:
       policy: fail_fast         # fail_fast|degrade_to_builtin|degrade_without_memory
+    scope:
+      default: session          # session|project|global
+      allowed: [session, project, global]
+      allow_override: true
+      global_namespace: global
+    write_mode:
+      mode: automatic           # automatic|agentic
+      automatic_window: 30m     # 必须 > 0
+      agentic_window: 2h        # 必须 > 0
+      idempotency_window: 24h   # 必须 > 0
+    injection_budget:
+      max_records: 8            # 必须 > 0
+      max_bytes: 16384          # 必须 > 0
+      truncate_policy: score_then_recency # score_then_recency|recency_then_id
+    lifecycle:
+      retention_days: 30        # 必须 > 0
+      ttl_enabled: false
+      ttl: 168h                 # ttl_enabled=true 时必须 > 0
+      forget_scope_allow: [session, project, global]
+    search:
+      hybrid:
+        enabled: true
+        keyword_weight: 0.6     # enabled=true 时 keyword+vector 必须 > 0
+        vector_weight: 0.4
+      rerank:
+        enabled: false
+        max_candidates: 32      # rerank.enabled=true 时必须 > 0
+      temporal_decay:
+        enabled: false
+        half_life: 168h         # temporal_decay.enabled=true 时必须 > 0
+        max_boost_rate: 0.2     # 必须 >= 0
+      index_update_policy: incremental # incremental|full_rebuild_on_profile_drift
+      drift_recovery_policy: incremental_then_full # incremental_then_full|full_rebuild
   observability:
     export:
       enabled: false            # A55 默认关闭
@@ -1054,7 +1112,7 @@ Mailbox diagnostics additive 字段（A35）：
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
 - Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
 - Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
-- Memory（A54）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`
+- Memory（A54/A59）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`、`memory_scope_selected`、`memory_budget_used`、`memory_hits`、`memory_rerank_stats`、`memory_lifecycle_action`
 - Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
 - Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
@@ -1182,6 +1240,11 @@ Composed summary additive fields（contract markers）：
 - `memory_error_total`
 - `memory_fallback_total`
 - `memory_fallback_reason_code`
+- `memory_scope_selected`
+- `memory_budget_used`
+- `memory_hits`
+- `memory_rerank_stats`
+- `memory_lifecycle_action`
 - `observability_export_profile`
 - `observability_export_status`
 - `observability_export_error_total`
@@ -1192,7 +1255,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59）
 
 离线回放命令：
 
@@ -1286,7 +1349,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `sandbox_egress_violation_taxonomy_drift`
   - `adapter_allowlist_decision_drift`
   - `adapter_allowlist_taxonomy_drift`
-- mixed fixture 兼容要求：A57 gate 必须与 `sandbox.v1` + `memory.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility`）。
+- mixed fixture 兼容要求：A57 gate 必须与 `sandbox.v1` + `memory.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility`）。
 
 语义（A58 policy precedence + decision trace 模式）：
 - 输入：版本化 fixture（`version=policy_stack.v1`），每个 case 包含 `run/stream/expected/idempotency`：
@@ -1300,7 +1363,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `precedence_conflict`
   - `tie_break_drift`
   - `deny_source_mismatch`
-- mixed fixture 兼容要求：A58 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
+- mixed fixture 兼容要求：A58 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
 
 语义（A54 memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：
@@ -1323,6 +1386,20 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `memory_fallback_drift`
   - `memory_error_taxonomy_drift`
   - `memory_operation_aggregate_drift`
+
+语义（A59 memory governance arbitration 模式）：
+- 输入：版本化 fixture（`version=memory_scope.v1|memory_search.v1|memory_lifecycle.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+  - `memory_scope_selected`
+  - `memory_budget_used`
+  - `memory_hits`
+  - `memory_rerank_stats`
+  - `memory_lifecycle_action`
+- 输出：按 case name 排序后的 canonical memory governance 输出。
+- drift 分类（A59 blocking）：
+  - `scope_resolution_drift`
+  - `retrieval_quality_regression`
+  - `lifecycle_policy_drift`
+  - `recovery_consistency_drift`
 
 语义（A55 observability arbitration 模式）：
 - 输入：版本化 fixture（`version=observability.v1`），每个 case 包含 `run/stream/expected/idempotency`：

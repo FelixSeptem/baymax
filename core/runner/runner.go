@@ -2426,6 +2426,17 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 			payload["memory_fallback_reason_code"] = meta.Memory.FallbackReasonCode
 		}
 		payload["memory_latency_ms_p95"] = meta.Memory.LatencyMsP95
+		if meta.Memory.ScopeSelected != "" {
+			payload["memory_scope_selected"] = meta.Memory.ScopeSelected
+		}
+		payload["memory_budget_used"] = meta.Memory.BudgetUsed
+		payload["memory_hits"] = meta.Memory.Hits
+		if len(meta.Memory.RerankStats) > 0 {
+			payload["memory_rerank_stats"] = cloneIntMap(meta.Memory.RerankStats)
+		}
+		if meta.Memory.LifecycleAction != "" {
+			payload["memory_lifecycle_action"] = meta.Memory.LifecycleAction
+		}
 	}
 	if meta.Sandbox.Observed {
 		if meta.Sandbox.Mode != "" {
@@ -2544,6 +2555,11 @@ type memoryRunDiagnostics struct {
 	FallbackTotal      int
 	FallbackReasonCode string
 	LatencyMsP95       int64
+	ScopeSelected      string
+	BudgetUsed         int
+	Hits               int
+	RerankStats        map[string]int
+	LifecycleAction    string
 }
 
 type memoryRunDiagnosticsAccumulator struct {
@@ -2555,6 +2571,11 @@ type memoryRunDiagnosticsAccumulator struct {
 	fallbackTotal      int
 	fallbackReasonCode string
 	latencySamples     []int64
+	scopeSelected      string
+	budgetUsed         int
+	hits               int
+	rerankStats        map[string]int
+	lifecycleAction    string
 }
 
 func (a *memoryRunDiagnosticsAccumulator) observeAssemble(assemble types.ContextAssembleResult) {
@@ -2585,6 +2606,26 @@ func (a *memoryRunDiagnosticsAccumulator) observeAssemble(assemble types.Context
 	} else if strings.HasPrefix(reasonCode, "memory.fallback.") && reasonCode != "" {
 		a.fallbackReasonCode = reasonCode
 	}
+	if scope := strings.TrimSpace(stage.MemoryScopeSelected); scope != "" {
+		a.scopeSelected = scope
+	}
+	if stage.MemoryBudgetUsed > 0 {
+		a.budgetUsed += stage.MemoryBudgetUsed
+	}
+	if stage.MemoryHits > 0 {
+		a.hits += stage.MemoryHits
+	}
+	if len(stage.MemoryRerankStats) > 0 {
+		if a.rerankStats == nil {
+			a.rerankStats = map[string]int{}
+		}
+		for key, value := range stage.MemoryRerankStats {
+			a.rerankStats[key] += value
+		}
+	}
+	if action := strings.TrimSpace(stage.MemoryLifecycleAction); action != "" {
+		a.lifecycleAction = action
+	}
 }
 
 func (a *memoryRunDiagnosticsAccumulator) snapshot(runtime memoryRuntimeSnapshot) memoryRunDiagnostics {
@@ -2608,6 +2649,11 @@ func (a *memoryRunDiagnosticsAccumulator) snapshot(runtime memoryRuntimeSnapshot
 		FallbackTotal:      a.fallbackTotal,
 		FallbackReasonCode: reasonCode,
 		LatencyMsP95:       percentileP95Int64(a.latencySamples),
+		ScopeSelected:      strings.TrimSpace(a.scopeSelected),
+		BudgetUsed:         a.budgetUsed,
+		Hits:               a.hits,
+		RerankStats:        cloneIntMap(a.rerankStats),
+		LifecycleAction:    strings.TrimSpace(a.lifecycleAction),
 	}
 }
 
@@ -3401,6 +3447,17 @@ func cloneDetailsMap(in map[string]any) map[string]any {
 		return nil
 	}
 	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

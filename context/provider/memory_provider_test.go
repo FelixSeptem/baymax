@@ -74,6 +74,18 @@ func TestMemoryProviderBackfillsFromLegacyFilePath(t *testing.T) {
 	if second.Meta["source"] != "memory" {
 		t.Fatalf("second fetch source = %#v, want memory", second.Meta["source"])
 	}
+	if second.Meta["memory_scope_selected"] == "" {
+		t.Fatalf("memory_scope_selected should be populated, got %#v", second.Meta["memory_scope_selected"])
+	}
+	if _, ok := second.Meta["memory_budget_used"]; !ok {
+		t.Fatalf("memory_budget_used should be populated, got %#v", second.Meta)
+	}
+	if _, ok := second.Meta["memory_hits"]; !ok {
+		t.Fatalf("memory_hits should be populated, got %#v", second.Meta)
+	}
+	if _, ok := second.Meta["memory_rerank_stats"]; !ok {
+		t.Fatalf("memory_rerank_stats should be populated, got %#v", second.Meta)
+	}
 }
 
 func TestMemoryProviderExternalModeRequiresEndpoint(t *testing.T) {
@@ -104,5 +116,40 @@ func TestMemoryProviderExternalModeRequiresEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "external endpoint") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMemoryProviderPassesGovernanceConfigToFacade(t *testing.T) {
+	_, err := NewWithConfig(Config{
+		Name: runtimeconfig.ContextStage2ProviderMemory,
+		Memory: runtimeconfig.RuntimeMemoryConfig{
+			Mode: runtimeconfig.RuntimeMemoryModeBuiltinFilesystem,
+			External: runtimeconfig.RuntimeMemoryExternalConfig{
+				ContractVersion: runtimeconfig.RuntimeMemoryContractVersionV1,
+			},
+			Builtin: runtimeconfig.RuntimeMemoryBuiltinConfig{
+				RootDir: filepath.Join(t.TempDir(), "memory-store"),
+				Compaction: runtimeconfig.RuntimeMemoryBuiltinCompactionConfig{
+					Enabled:     true,
+					MinOps:      8,
+					MaxWALBytes: 1024,
+				},
+			},
+			Fallback: runtimeconfig.RuntimeMemoryFallbackConfig{
+				Policy: runtimeconfig.RuntimeMemoryFallbackPolicyFailFast,
+			},
+			Scope: runtimeconfig.RuntimeMemoryScopeConfig{
+				Default:         "invalid-scope",
+				Allowed:         []string{runtimeconfig.RuntimeMemoryScopeSession},
+				AllowOverride:   true,
+				GlobalNamespace: "global",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected NewWithConfig to fail for invalid runtime.memory.scope.default")
+	}
+	if !strings.Contains(err.Error(), "scope.default") {
+		t.Fatalf("unexpected error for scope governance validation: %v", err)
 	}
 }

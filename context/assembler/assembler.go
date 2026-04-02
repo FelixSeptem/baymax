@@ -535,6 +535,11 @@ func (a *Assembler) applyCA2(
 		)
 		outcome.Stage.Stage2HintApplied = stage2HintAppliedFromMeta(resp.Meta)
 		outcome.Stage.Stage2HintMismatchReason = stage2HintMismatchReasonFromMeta(resp.Meta)
+		outcome.Stage.MemoryScopeSelected = memoryScopeSelectedFromMeta(resp.Meta)
+		outcome.Stage.MemoryBudgetUsed = memoryBudgetUsedFromMeta(resp.Meta)
+		outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, 0)
+		outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
+		outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
 		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
@@ -559,6 +564,11 @@ func (a *Assembler) applyCA2(
 	)
 	outcome.Stage.Stage2HintApplied = stage2HintAppliedFromMeta(resp.Meta)
 	outcome.Stage.Stage2HintMismatchReason = stage2HintMismatchReasonFromMeta(resp.Meta)
+	outcome.Stage.MemoryScopeSelected = memoryScopeSelectedFromMeta(resp.Meta)
+	outcome.Stage.MemoryBudgetUsed = memoryBudgetUsedFromMeta(resp.Meta)
+	outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, len(resp.Chunks))
+	outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
+	outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
 	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
@@ -725,6 +735,120 @@ func stage2HintMismatchReasonFromMeta(meta map[string]any) string {
 	}
 	if reason, ok := meta["hint_mismatch_reason"].(string); ok && strings.TrimSpace(reason) != "" {
 		return strings.TrimSpace(reason)
+	}
+	return ""
+}
+
+func memoryScopeSelectedFromMeta(meta map[string]any) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	if scope, ok := meta["memory_scope_selected"].(string); ok && strings.TrimSpace(scope) != "" {
+		return strings.TrimSpace(scope)
+	}
+	return ""
+}
+
+func memoryBudgetUsedFromMeta(meta map[string]any) int {
+	if len(meta) == 0 {
+		return 0
+	}
+	switch raw := meta["memory_budget_used"].(type) {
+	case int:
+		if raw > 0 {
+			return raw
+		}
+	case int64:
+		if raw > 0 {
+			return int(raw)
+		}
+	case float64:
+		if raw > 0 {
+			return int(raw)
+		}
+	}
+	return 0
+}
+
+func memoryHitsFromMeta(meta map[string]any, fallback int) int {
+	if len(meta) == 0 {
+		if fallback > 0 {
+			return fallback
+		}
+		return 0
+	}
+	switch raw := meta["memory_hits"].(type) {
+	case int:
+		if raw >= 0 {
+			return raw
+		}
+	case int64:
+		if raw >= 0 {
+			return int(raw)
+		}
+	case float64:
+		if raw >= 0 {
+			return int(raw)
+		}
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 0
+}
+
+func memoryRerankStatsFromMeta(meta map[string]any) map[string]int {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw, ok := meta["memory_rerank_stats"]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case map[string]int:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]int, len(typed))
+		for key, value := range typed {
+			out[strings.TrimSpace(key)] = value
+		}
+		return out
+	case map[string]any:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]int, len(typed))
+		for key, value := range typed {
+			normalizedKey := strings.TrimSpace(key)
+			if normalizedKey == "" {
+				continue
+			}
+			switch tv := value.(type) {
+			case int:
+				out[normalizedKey] = tv
+			case int64:
+				out[normalizedKey] = int(tv)
+			case float64:
+				out[normalizedKey] = int(tv)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func memoryLifecycleActionFromMeta(meta map[string]any) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	if action, ok := meta["memory_lifecycle_action"].(string); ok && strings.TrimSpace(action) != "" {
+		return strings.TrimSpace(action)
 	}
 	return ""
 }

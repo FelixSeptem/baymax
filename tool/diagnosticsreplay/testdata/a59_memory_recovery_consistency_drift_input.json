@@ -1,0 +1,21 @@
+{
+  "version": "memory_lifecycle.v1",
+  "cases": [
+    {
+      "name": "memory_recovery_consistency_drift_case",
+      "run": {
+        "memory_lifecycle_action": "ttl_expired"
+      },
+      "stream": {
+        "memory_lifecycle_action": "recovery_consistency_drift"
+      },
+      "expected": {
+        "memory_lifecycle_action": "recovery_consistency_drift"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

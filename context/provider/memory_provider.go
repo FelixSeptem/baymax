@@ -17,6 +17,13 @@ type memoryProvider struct {
 	legacy Provider
 }
 
+func (m *memoryProvider) Close() error {
+	if m == nil || m.facade == nil {
+		return nil
+	}
+	return m.facade.Close()
+}
+
 func newMemoryProvider(cfg Config) (Provider, error) {
 	memoryCfg := cfg.Memory
 	if strings.TrimSpace(memoryCfg.Mode) == "" {
@@ -46,6 +53,47 @@ func newMemoryProvider(cfg Config) (Provider, error) {
 		},
 		Fallback: memoryspi.FallbackConfig{
 			Policy: memoryCfg.Fallback.Policy,
+		},
+		Scope: memoryspi.ScopeConfig{
+			Default:         memoryCfg.Scope.Default,
+			Allowed:         append([]string(nil), memoryCfg.Scope.Allowed...),
+			AllowOverride:   memoryCfg.Scope.AllowOverride,
+			GlobalNamespace: memoryCfg.Scope.GlobalNamespace,
+		},
+		WriteMode: memoryspi.WriteModeConfig{
+			Mode:              memoryCfg.WriteMode.Mode,
+			AutomaticWindow:   memoryCfg.WriteMode.AutomaticWindow,
+			AgenticWindow:     memoryCfg.WriteMode.AgenticWindow,
+			IdempotencyWindow: memoryCfg.WriteMode.IdempotencyWindow,
+		},
+		InjectionBudget: memoryspi.InjectionBudgetConfig{
+			MaxRecords:     memoryCfg.InjectionBudget.MaxRecords,
+			MaxBytes:       memoryCfg.InjectionBudget.MaxBytes,
+			TruncatePolicy: memoryCfg.InjectionBudget.TruncatePolicy,
+		},
+		Lifecycle: memoryspi.LifecycleConfig{
+			RetentionDays:    memoryCfg.Lifecycle.RetentionDays,
+			TTLEnabled:       memoryCfg.Lifecycle.TTLEnabled,
+			TTL:              memoryCfg.Lifecycle.TTL,
+			ForgetScopeAllow: append([]string(nil), memoryCfg.Lifecycle.ForgetScopeAllow...),
+		},
+		Search: memoryspi.SearchConfig{
+			Hybrid: memoryspi.SearchHybridConfig{
+				Enabled:       memoryCfg.Search.Hybrid.Enabled,
+				KeywordWeight: memoryCfg.Search.Hybrid.KeywordWeight,
+				VectorWeight:  memoryCfg.Search.Hybrid.VectorWeight,
+			},
+			Rerank: memoryspi.SearchRerankConfig{
+				Enabled:       memoryCfg.Search.Rerank.Enabled,
+				MaxCandidates: memoryCfg.Search.Rerank.MaxCandidates,
+			},
+			TemporalDecay: memoryspi.SearchTemporalDecayConfig{
+				Enabled:      memoryCfg.Search.TemporalDecay.Enabled,
+				HalfLife:     memoryCfg.Search.TemporalDecay.HalfLife,
+				MaxBoostRate: memoryCfg.Search.TemporalDecay.MaxBoostRate,
+			},
+			IndexUpdatePolicy:   memoryCfg.Search.IndexUpdatePolicy,
+			DriftRecoveryPolicy: memoryCfg.Search.DriftRecoveryPolicy,
 		},
 	}
 	externalFactory := func(ext memoryspi.ExternalConfig) (memoryspi.Engine, error) {
@@ -125,6 +173,11 @@ func (m *memoryProvider) Fetch(ctx context.Context, req Request) (Response, erro
 			"memory_contract_version":     strings.TrimSpace(opResp.ContractVersion),
 			"memory_fallback_used":        opResp.FallbackUsed,
 			"memory_fallback_reason_code": strings.TrimSpace(opResp.FallbackReasonCode),
+			"memory_scope_selected":       strings.TrimSpace(opResp.MemoryScopeSelected),
+			"memory_budget_used":          opResp.MemoryBudgetUsed,
+			"memory_hits":                 opResp.MemoryHits,
+			"memory_rerank_stats":         cloneIntMap(opResp.MemoryRerankStats),
+			"memory_lifecycle_action":     strings.TrimSpace(opResp.MemoryLifecycleAction),
 		},
 	}, nil
 }
@@ -242,6 +295,17 @@ func cloneAnyMap(in map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

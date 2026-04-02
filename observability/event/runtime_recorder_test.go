@@ -2014,6 +2014,115 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA59MemoryGovernanceAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a59-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                  "success",
+			"memory_scope_selected":   "session",
+			"memory_budget_used":      3,
+			"memory_hits":             3,
+			"memory_rerank_stats":     map[string]any{"input_total": float64(4), "output_total": float64(3)},
+			"memory_lifecycle_action": "ttl_expired",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.MemoryScopeSelected != "session" ||
+		got.MemoryBudgetUsed != 3 ||
+		got.MemoryHits != 3 ||
+		got.MemoryRerankStats["input_total"] != 4 ||
+		got.MemoryRerankStats["output_total"] != 3 ||
+		got.MemoryLifecycleAction != "ttl_expired" {
+		t.Fatalf("A59 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA59ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a59-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(11),
+			"a59_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 11 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.MemoryScopeSelected != "" ||
+		got.MemoryBudgetUsed != 0 ||
+		got.MemoryHits != 0 ||
+		len(got.MemoryRerankStats) != 0 ||
+		got.MemoryLifecycleAction != "" {
+		t.Fatalf("missing A59 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

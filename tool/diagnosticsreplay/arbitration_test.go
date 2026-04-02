@@ -58,6 +58,21 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a58_policy_stack_success_input.json",
 			expected: "a58_policy_stack_success_expected.json",
 		},
+		{
+			name:     "a59-memory-scope",
+			input:    "a59_memory_scope_success_input.json",
+			expected: "a59_memory_scope_success_expected.json",
+		},
+		{
+			name:     "a59-memory-search",
+			input:    "a59_memory_search_success_input.json",
+			expected: "a59_memory_search_success_expected.json",
+		},
+		{
+			name:     "a59-memory-lifecycle",
+			input:    "a59_memory_lifecycle_success_input.json",
+			expected: "a59_memory_lifecycle_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -381,6 +396,30 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeDenySourceMismatch,
 			wantInText: "deny source mismatch",
 		},
+		{
+			name:       "a59-scope-resolution-drift",
+			fixture:    "a59_memory_scope_resolution_drift_input.json",
+			wantCode:   ReasonCodeScopeResolutionDrift,
+			wantInText: "scope resolution drift",
+		},
+		{
+			name:       "a59-retrieval-quality-regression",
+			fixture:    "a59_memory_retrieval_quality_regression_drift_input.json",
+			wantCode:   ReasonCodeRetrievalQualityRegression,
+			wantInText: "retrieval quality regression",
+		},
+		{
+			name:       "a59-lifecycle-policy-drift",
+			fixture:    "a59_memory_lifecycle_policy_drift_input.json",
+			wantCode:   ReasonCodeLifecyclePolicyDrift,
+			wantInText: "lifecycle policy drift",
+		},
+		{
+			name:       "a59-recovery-consistency-drift",
+			fixture:    "a59_memory_recovery_consistency_drift_input.json",
+			wantCode:   ReasonCodeRecoveryConsistencyDrift,
+			wantInText: "recovery consistency drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -408,6 +447,9 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 	fixtures := []string{
 		"a52_sandbox_rollout_success_input.json",
 		"a54_memory_success_input.json",
+		"a59_memory_scope_success_input.json",
+		"a59_memory_search_success_input.json",
+		"a59_memory_lifecycle_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}

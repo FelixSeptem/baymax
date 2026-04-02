@@ -1,0 +1,27 @@
+{
+  "version": "memory_scope.v1",
+  "cases": [
+    {
+      "name": "memory_scope_resolution_drift_case",
+      "run": {
+        "memory_scope_selected": "project",
+        "memory_budget_used": 2,
+        "memory_hits": 2
+      },
+      "stream": {
+        "memory_scope_selected": "session",
+        "memory_budget_used": 3,
+        "memory_hits": 3
+      },
+      "expected": {
+        "memory_scope_selected": "session",
+        "memory_budget_used": 3,
+        "memory_hits": 3
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

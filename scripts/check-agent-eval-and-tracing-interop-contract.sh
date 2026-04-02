@@ -63,6 +63,28 @@ assert_no_parallel_a61_changes() {
   fi
 }
 
+resolve_a61_change_dir() {
+  local active="openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
+  if [[ -d "${active}" ]]; then
+    echo "${active}"
+    return 0
+  fi
+
+  local candidate
+  shopt -s nullglob
+  for candidate in openspec/changes/archive/*introduce-otel-tracing-and-agent-eval-interoperability-contract-a61; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  shopt -u nullglob
+
+  echo "[agent-eval-tracing-interop-gate] unable to locate A61 change directory in active or archive paths" >&2
+  exit 1
+}
+
 run_step() {
   local label="$1"
   shift
@@ -70,14 +92,16 @@ run_step() {
   "$@"
 }
 
+A61_CHANGE_DIR="$(resolve_a61_change_dir)"
+
 run_step "assertion control_plane_absent: contract marker" \
   assert_contains_literal "control_plane_absent" \
-  "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
+  "${A61_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
   "embedded library behavior"
 
 run_step "assertion control_plane_absent: gate spec marker" \
   assert_contains_literal "control_plane_absent" \
-  "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/go-quality-gate/spec.md" \
+  "${A61_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "control_plane_absent"
 
 run_step "assertion control_plane_absent: active change set closure" \
@@ -89,12 +113,12 @@ run_step "assertion control_plane_absent: reject eval execution control-plane ke
 
 run_step "assertion a61_field_reuse_required: upstream reuse marker" \
   assert_contains_literal "a61_field_reuse_required" \
-  "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
+  "${A61_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
   "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
 
 run_step "assertion a61_field_reuse_required: gate spec marker" \
   assert_contains_literal "a61_field_reuse_required" \
-  "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/go-quality-gate/spec.md" \
+  "${A61_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "Quality gate SHALL include tracing and eval interoperability contract checks"
 
 run_step "assertion a61_field_reuse_required: roadmap closure marker" \

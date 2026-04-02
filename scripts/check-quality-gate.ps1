@@ -119,6 +119,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] react contract suites" -Command {
     pwsh -File scripts/check-react-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] hooks + middleware contract suites" -Command {
+    pwsh -File scripts/check-hooks-middleware-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] security sandbox contract suites" -Command {
     pwsh -File scripts/check-security-sandbox-contract.ps1
 }

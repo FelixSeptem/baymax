@@ -92,7 +92,7 @@ run_step() {
   "$@"
 }
 
-$BUDGET_A60_CHANGE_DIR="$(resolve_budget_a60_change_dir)"
+BUDGET_A60_CHANGE_DIR="$(resolve_budget_a60_change_dir)"
 
 run_step "assertion budget_control_plane_absent: contract markers + no parallel control-plane config key" \
   assert_contains_literal "budget_control_plane_absent" \

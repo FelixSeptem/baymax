@@ -48,6 +48,9 @@ type Engine struct {
 	clarification      types.ClarificationResolver
 	modelInputFilters  []types.ModelInputSecurityFilter
 	modelOutputFilters []types.ModelOutputSecurityFilter
+	lifecycleHooks     []types.AgentLifecycleHook
+	toolMiddlewares    []types.ToolMiddleware
+	skillLoader        types.SkillLoader
 	securityAlert      types.SecurityAlertCallback
 	securityDeliveryMu sync.Mutex
 	securityDelivery   *securityAlertDeliveryExecutor
@@ -126,6 +129,9 @@ func WithLocalRegistry(registry *local.Registry) Option {
 		if e.runtimeMgr != nil {
 			e.dispatcher.SetRuntimeManager(e.runtimeMgr)
 		}
+		if len(e.toolMiddlewares) > 0 {
+			e.dispatcher.SetMiddlewares(e.toolMiddlewares...)
+		}
 	}
 }
 
@@ -147,6 +153,9 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 		}
 		if e.dispatcher != nil {
 			e.dispatcher.SetRuntimeManager(mgr)
+			if len(e.toolMiddlewares) > 0 {
+				e.dispatcher.SetMiddlewares(e.toolMiddlewares...)
+			}
 		}
 	}
 }
@@ -217,6 +226,30 @@ func WithModelOutputFilters(filters ...types.ModelOutputSecurityFilter) Option {
 	}
 }
 
+// WithLifecycleHooks registers lifecycle hooks for before/after reasoning, acting, and reply phases.
+func WithLifecycleHooks(hooks ...types.AgentLifecycleHook) Option {
+	return func(e *Engine) {
+		e.lifecycleHooks = normalizeLifecycleHooks(hooks)
+	}
+}
+
+// WithToolMiddlewares registers onion-style tool middlewares for local tool dispatch.
+func WithToolMiddlewares(middlewares ...types.ToolMiddleware) Option {
+	return func(e *Engine) {
+		e.toolMiddlewares = normalizeToolMiddlewares(middlewares)
+		if e.dispatcher != nil {
+			e.dispatcher.SetMiddlewares(e.toolMiddlewares...)
+		}
+	}
+}
+
+// WithSkillLoader registers a skill loader used by run/stream preprocess stage.
+func WithSkillLoader(loader types.SkillLoader) Option {
+	return func(e *Engine) {
+		e.skillLoader = loader
+	}
+}
+
 // WithSecurityAlertCallback registers a host callback sink for deny-only security alerts.
 func WithSecurityAlertCallback(callback types.SecurityAlertCallback) Option {
 	return func(e *Engine) {
@@ -229,6 +262,8 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
 	reactCfg := e.runtimeReactConfigSnapshot()
+	hooksCfg := e.runtimeHooksConfigSnapshot()
+	toolMiddlewareCfg := e.runtimeToolMiddlewareConfigSnapshot()
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
@@ -260,12 +295,17 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
 	reactTerminationReason := ""
+	var skillPreprocess skillPreprocessState
 	var terminal *types.ClassifiedError
 	var runErr error
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+	req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, false, h, &warnings)
+	if terminal != nil {
+		state = StateAbort
+	}
 
 	for {
 		switch state {
@@ -280,6 +320,24 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			state = StateModelStep
 		case StateModelStep:
 			iteration++
+			hookTerminal, hookErr := e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseBeforeReasoning,
+				"",
+				nil,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				state = StateAbort
+				continue
+			}
 			prepared, prepTerminal, prepErr := e.prepareReactModelStep(
 				ctx,
 				req,
@@ -367,6 +425,24 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			lastResponse = resp
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseAfterReasoning,
+				resp.FinalAnswer,
+				resp.ToolCalls,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				state = StateAbort
+				continue
+			}
 			if resp.ClarificationRequest != nil {
 				clarification, hitlTerminal, hitlErr := e.awaitClarification(
 					ctx,
@@ -401,6 +477,22 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateAbort
 				continue
 			}
+			filteredCalls, whitelistTerminal, whitelistErr := e.enforceSkillWhitelistForToolCalls(
+				ctx,
+				h,
+				runID,
+				iteration,
+				lastResponse.ToolCalls,
+				skillPreprocess,
+				&warnings,
+			)
+			if whitelistTerminal != nil {
+				terminal = whitelistTerminal
+				runErr = whitelistErr
+				state = StateAbort
+				continue
+			}
+			lastResponse.ToolCalls = filteredCalls
 			if len(lastResponse.ToolCalls) == 0 {
 				state = StateFinalize
 				continue
@@ -409,6 +501,24 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				terminal = classified(types.ErrIterationLimit, "tool call limit exceeded", false)
 				runErr = errors.New(terminal.Message)
 				reactToolCallBudgetHitTotal++
+				state = StateAbort
+				continue
+			}
+			hookTerminal, hookErr := e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseBeforeActing,
+				lastResponse.FinalAnswer,
+				lastResponse.ToolCalls,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
 				state = StateAbort
 				continue
 			}
@@ -445,10 +555,64 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateModelStep
 				continue
 			}
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseAfterActing,
+				lastResponse.FinalAnswer,
+				lastResponse.ToolCalls,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				state = StateAbort
+				continue
+			}
 			reactToolCallTotal += len(lastResponse.ToolCalls)
 			pendingOutcomes = dispatchResult.Outcomes
 			state = StateModelStep
 		case StateFinalize:
+			hookTerminal, hookErr := e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseBeforeReply,
+				lastResponse.FinalAnswer,
+				nil,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				state = StateAbort
+				continue
+			}
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseAfterReply,
+				lastResponse.FinalAnswer,
+				nil,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				state = StateAbort
+				continue
+			}
 			reactTerminationReason = runtimeconfig.RuntimeReactTerminationCompleted
 			result := types.RunResult{
 				RunID:       runID,
@@ -467,51 +631,103 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:            lastSelection.Provider,
-					Initial:             lastSelection.Initial,
-					Path:                selectionPath,
-					Required:            lastSelection.Required,
-					UsedFallback:        fallbackUsed,
-					Assemble:            lastAssemble,
-					GateChecks:          gateStats.Checks,
-					GateDenied:          gateStats.DeniedCount,
-					GateTimeout:         gateStats.TimeoutCount,
-					GateRuleHits:        gateStats.RuleHitCount,
-					GateRuleLast:        gateStats.RuleLastID,
-					HitlAwait:           hitlStats.AwaitCount,
-					HitlResumed:         hitlStats.ResumeCount,
-					HitlCanceled:        hitlStats.CancelByUserCount,
-					CancelProp:          concurrencyStats.CancelPropagatedCount,
-					BackDrop:            concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:        concurrencyStats.InflightPeak,
-					SecurityPolicy:      lastSecurity.PolicyKind,
-					NamespaceTool:       lastSecurity.NamespaceTool,
-					FilterStage:         lastSecurity.FilterStage,
-					SecurityDecision:    lastSecurity.Decision,
-					ReasonCode:          lastSecurity.ReasonCode,
-					Severity:            lastSecurity.Severity,
-					AlertStatus:         lastSecurity.AlertDispatchStatus,
-					AlertFailure:        lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:     lastSecurity.AlertRetryCount,
-					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:   lastSecurity.AlertCircuitState,
-					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
-					ReactEnabled:        reactCfg.Enabled,
-					ReactIterationTotal: iteration,
-					ReactToolCallTotal:  reactToolCallTotal,
-					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
-					ReactTermination:    reactTerminationReason,
-					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
-					Memory:              memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+					Provider:                          lastSelection.Provider,
+					Initial:                           lastSelection.Initial,
+					Path:                              selectionPath,
+					Required:                          lastSelection.Required,
+					UsedFallback:                      fallbackUsed,
+					Assemble:                          lastAssemble,
+					GateChecks:                        gateStats.Checks,
+					GateDenied:                        gateStats.DeniedCount,
+					GateTimeout:                       gateStats.TimeoutCount,
+					GateRuleHits:                      gateStats.RuleHitCount,
+					GateRuleLast:                      gateStats.RuleLastID,
+					HitlAwait:                         hitlStats.AwaitCount,
+					HitlResumed:                       hitlStats.ResumeCount,
+					HitlCanceled:                      hitlStats.CancelByUserCount,
+					CancelProp:                        concurrencyStats.CancelPropagatedCount,
+					BackDrop:                          concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:                      concurrencyStats.InflightPeak,
+					SecurityPolicy:                    lastSecurity.PolicyKind,
+					NamespaceTool:                     lastSecurity.NamespaceTool,
+					FilterStage:                       lastSecurity.FilterStage,
+					SecurityDecision:                  lastSecurity.Decision,
+					ReasonCode:                        lastSecurity.ReasonCode,
+					Severity:                          lastSecurity.Severity,
+					AlertStatus:                       lastSecurity.AlertDispatchStatus,
+					AlertFailure:                      lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:                   lastSecurity.AlertRetryCount,
+					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:                 lastSecurity.AlertCircuitState,
+					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+					ReactEnabled:                      reactCfg.Enabled,
+					ReactIterationTotal:               iteration,
+					ReactToolCallTotal:                reactToolCallTotal,
+					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+					ReactTermination:                  reactTerminationReason,
+					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A65Recorded:                       true,
+					HooksEnabled:                      hooksCfg.Enabled,
+					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+					SkillBundlePromptMode:             skillPreprocess.PromptMode,
+					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+					Memory:                            memoryAggregate.snapshot(memoryRuntime),
+					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, nil
 		case StateAbort:
+			hookTerminal, hookErr := e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseBeforeReply,
+				lastResponse.FinalAnswer,
+				nil,
+				h,
+				&warnings,
+			)
+			if terminal == nil && hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+			}
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				false,
+				types.AgentLifecyclePhaseAfterReply,
+				lastResponse.FinalAnswer,
+				nil,
+				h,
+				&warnings,
+			)
+			if terminal == nil && hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+			}
 			reactTerminationReason = resolveReactTerminationReason(
 				terminal,
 				runErr,
@@ -539,48 +755,68 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-					Provider:            lastSelection.Provider,
-					Initial:             lastSelection.Initial,
-					Path:                selectionPath,
-					Required:            lastSelection.Required,
-					Reason:              lastSelection.Reason,
-					UsedFallback:        fallbackUsed,
-					Assemble:            lastAssemble,
-					GateChecks:          gateStats.Checks,
-					GateDenied:          gateStats.DeniedCount,
-					GateTimeout:         gateStats.TimeoutCount,
-					GateRuleHits:        gateStats.RuleHitCount,
-					GateRuleLast:        gateStats.RuleLastID,
-					HitlAwait:           hitlStats.AwaitCount,
-					HitlResumed:         hitlStats.ResumeCount,
-					HitlCanceled:        hitlStats.CancelByUserCount,
-					CancelProp:          concurrencyStats.CancelPropagatedCount,
-					BackDrop:            concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:        concurrencyStats.InflightPeak,
-					SecurityPolicy:      lastSecurity.PolicyKind,
-					NamespaceTool:       lastSecurity.NamespaceTool,
-					FilterStage:         lastSecurity.FilterStage,
-					SecurityDecision:    lastSecurity.Decision,
-					ReasonCode:          lastSecurity.ReasonCode,
-					Severity:            lastSecurity.Severity,
-					AlertStatus:         lastSecurity.AlertDispatchStatus,
-					AlertFailure:        lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:     lastSecurity.AlertRetryCount,
-					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:   lastSecurity.AlertCircuitState,
-					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
-					ReactEnabled:        reactCfg.Enabled,
-					ReactIterationTotal: iteration,
-					ReactToolCallTotal:  reactToolCallTotal,
-					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
-					ReactTermination:    reactTerminationReason,
-					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
-					Memory:              memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+					Provider:                          lastSelection.Provider,
+					Initial:                           lastSelection.Initial,
+					Path:                              selectionPath,
+					Required:                          lastSelection.Required,
+					Reason:                            lastSelection.Reason,
+					UsedFallback:                      fallbackUsed,
+					Assemble:                          lastAssemble,
+					GateChecks:                        gateStats.Checks,
+					GateDenied:                        gateStats.DeniedCount,
+					GateTimeout:                       gateStats.TimeoutCount,
+					GateRuleHits:                      gateStats.RuleHitCount,
+					GateRuleLast:                      gateStats.RuleLastID,
+					HitlAwait:                         hitlStats.AwaitCount,
+					HitlResumed:                       hitlStats.ResumeCount,
+					HitlCanceled:                      hitlStats.CancelByUserCount,
+					CancelProp:                        concurrencyStats.CancelPropagatedCount,
+					BackDrop:                          concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:                      concurrencyStats.InflightPeak,
+					SecurityPolicy:                    lastSecurity.PolicyKind,
+					NamespaceTool:                     lastSecurity.NamespaceTool,
+					FilterStage:                       lastSecurity.FilterStage,
+					SecurityDecision:                  lastSecurity.Decision,
+					ReasonCode:                        lastSecurity.ReasonCode,
+					Severity:                          lastSecurity.Severity,
+					AlertStatus:                       lastSecurity.AlertDispatchStatus,
+					AlertFailure:                      lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:                   lastSecurity.AlertRetryCount,
+					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:                 lastSecurity.AlertCircuitState,
+					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+					ReactEnabled:                      reactCfg.Enabled,
+					ReactIterationTotal:               iteration,
+					ReactToolCallTotal:                reactToolCallTotal,
+					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+					ReactTermination:                  reactTerminationReason,
+					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A65Recorded:                       true,
+					HooksEnabled:                      hooksCfg.Enabled,
+					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+					SkillBundlePromptMode:             skillPreprocess.PromptMode,
+					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+					Memory:                            memoryAggregate.snapshot(memoryRuntime),
+					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, runErr
@@ -1059,6 +1295,8 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy)
 	reactCfg := e.runtimeReactConfigSnapshot()
+	hooksCfg := e.runtimeHooksConfigSnapshot()
+	toolMiddlewareCfg := e.runtimeToolMiddlewareConfigSnapshot()
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
@@ -1090,6 +1328,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
 	reactTerminationReason := ""
+	var skillPreprocess skillPreprocessState
 
 	var terminal *types.ClassifiedError
 	var runErr error
@@ -1097,8 +1336,9 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+	req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, true, h, &warnings)
 
-	for {
+	for terminal == nil {
 		if iteration >= policy.MaxIterations {
 			terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 			runErr = errors.New(terminal.Message)
@@ -1107,6 +1347,23 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		}
 
 		iteration++
+		hookTerminal, hookErr := e.runLifecycleHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			true,
+			types.AgentLifecyclePhaseBeforeReasoning,
+			"",
+			nil,
+			h,
+			&warnings,
+		)
+		if hookTerminal != nil {
+			terminal = hookTerminal
+			runErr = hookErr
+			break
+		}
 		prepared, prepTerminal, prepErr := e.prepareReactModelStep(
 			ctx,
 			req,
@@ -1179,9 +1436,75 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
 			break
 		}
+		hookTerminal, hookErr = e.runLifecycleHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			true,
+			types.AgentLifecyclePhaseAfterReasoning,
+			stepResult.Text,
+			stepResult.ToolCalls,
+			h,
+			&warnings,
+		)
+		if hookTerminal != nil {
+			terminal = hookTerminal
+			runErr = hookErr
+			break
+		}
+		filteredCalls, whitelistTerminal, whitelistErr := e.enforceSkillWhitelistForToolCalls(
+			ctx,
+			h,
+			runID,
+			iteration,
+			stepResult.ToolCalls,
+			skillPreprocess,
+			&warnings,
+		)
+		if whitelistTerminal != nil {
+			terminal = whitelistTerminal
+			runErr = whitelistErr
+			break
+		}
+		stepResult.ToolCalls = filteredCalls
 
 		if len(stepResult.ToolCalls) == 0 {
 			final = stepResult.Text
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				true,
+				types.AgentLifecyclePhaseBeforeReply,
+				final,
+				nil,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				break
+			}
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				true,
+				types.AgentLifecyclePhaseAfterReply,
+				final,
+				nil,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				break
+			}
 			reactTerminationReason = runtimeconfig.RuntimeReactTerminationCompleted
 			result := types.RunResult{
 				RunID:       runID,
@@ -1200,47 +1523,67 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				Iteration: iteration,
 				Time:      e.now(),
 				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:            lastSelection.Provider,
-					Initial:             lastSelection.Initial,
-					Path:                selectionPath,
-					Required:            lastSelection.Required,
-					UsedFallback:        fallbackUsed,
-					Assemble:            lastAssemble,
-					GateChecks:          gateStats.Checks,
-					GateDenied:          gateStats.DeniedCount,
-					GateTimeout:         gateStats.TimeoutCount,
-					GateRuleHits:        gateStats.RuleHitCount,
-					GateRuleLast:        gateStats.RuleLastID,
-					HitlAwait:           hitlStats.AwaitCount,
-					HitlResumed:         hitlStats.ResumeCount,
-					HitlCanceled:        hitlStats.CancelByUserCount,
-					CancelProp:          concurrencyStats.CancelPropagatedCount,
-					BackDrop:            concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:        concurrencyStats.InflightPeak,
-					SecurityPolicy:      lastSecurity.PolicyKind,
-					NamespaceTool:       lastSecurity.NamespaceTool,
-					FilterStage:         lastSecurity.FilterStage,
-					SecurityDecision:    lastSecurity.Decision,
-					ReasonCode:          lastSecurity.ReasonCode,
-					Severity:            lastSecurity.Severity,
-					AlertStatus:         lastSecurity.AlertDispatchStatus,
-					AlertFailure:        lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:     lastSecurity.AlertRetryCount,
-					AlertQueueDropped:   lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:   lastSecurity.AlertCircuitState,
-					AlertCircuitReason:  lastSecurity.AlertCircuitReason,
-					ReactEnabled:        reactCfg.Enabled,
-					ReactIterationTotal: iteration,
-					ReactToolCallTotal:  reactToolCallTotal,
-					ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:  reactIterationBudgetHitTotal,
-					ReactTermination:    reactTerminationReason,
-					ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
-					Memory:              memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+					Provider:                          lastSelection.Provider,
+					Initial:                           lastSelection.Initial,
+					Path:                              selectionPath,
+					Required:                          lastSelection.Required,
+					UsedFallback:                      fallbackUsed,
+					Assemble:                          lastAssemble,
+					GateChecks:                        gateStats.Checks,
+					GateDenied:                        gateStats.DeniedCount,
+					GateTimeout:                       gateStats.TimeoutCount,
+					GateRuleHits:                      gateStats.RuleHitCount,
+					GateRuleLast:                      gateStats.RuleLastID,
+					HitlAwait:                         hitlStats.AwaitCount,
+					HitlResumed:                       hitlStats.ResumeCount,
+					HitlCanceled:                      hitlStats.CancelByUserCount,
+					CancelProp:                        concurrencyStats.CancelPropagatedCount,
+					BackDrop:                          concurrencyStats.BackpressureDropCount,
+					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+					InflightPeak:                      concurrencyStats.InflightPeak,
+					SecurityPolicy:                    lastSecurity.PolicyKind,
+					NamespaceTool:                     lastSecurity.NamespaceTool,
+					FilterStage:                       lastSecurity.FilterStage,
+					SecurityDecision:                  lastSecurity.Decision,
+					ReasonCode:                        lastSecurity.ReasonCode,
+					Severity:                          lastSecurity.Severity,
+					AlertStatus:                       lastSecurity.AlertDispatchStatus,
+					AlertFailure:                      lastSecurity.AlertFailureReason,
+					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+					AlertRetryCount:                   lastSecurity.AlertRetryCount,
+					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+					AlertCircuitState:                 lastSecurity.AlertCircuitState,
+					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+					ReactEnabled:                      reactCfg.Enabled,
+					ReactIterationTotal:               iteration,
+					ReactToolCallTotal:                reactToolCallTotal,
+					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+					ReactTermination:                  reactTerminationReason,
+					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A65Recorded:                       true,
+					HooksEnabled:                      hooksCfg.Enabled,
+					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+					SkillBundlePromptMode:             skillPreprocess.PromptMode,
+					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+					Memory:                            memoryAggregate.snapshot(memoryRuntime),
+					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
 				}),
 			})
 			return result, nil
@@ -1255,6 +1598,23 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		if !reactCfg.StreamToolDispatchEnabled {
 			terminal = classified(types.ErrTool, "stream tool dispatch disabled", false)
 			runErr = errors.New(terminal.Message)
+			break
+		}
+		hookTerminal, hookErr = e.runLifecycleHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			true,
+			types.AgentLifecyclePhaseBeforeActing,
+			stepResult.Text,
+			stepResult.ToolCalls,
+			h,
+			&warnings,
+		)
+		if hookTerminal != nil {
+			terminal = hookTerminal
+			runErr = hookErr
 			break
 		}
 
@@ -1280,8 +1640,58 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			runErr = dispatchErr
 			break
 		}
+		hookTerminal, hookErr = e.runLifecycleHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			true,
+			types.AgentLifecyclePhaseAfterActing,
+			stepResult.Text,
+			stepResult.ToolCalls,
+			h,
+			&warnings,
+		)
+		if hookTerminal != nil {
+			terminal = hookTerminal
+			runErr = hookErr
+			break
+		}
 		pendingOutcomes = dispatchResult.Outcomes
 		reactToolCallTotal += len(stepResult.ToolCalls)
+	}
+
+	hookTerminal, hookErr := e.runLifecycleHooks(
+		ctx,
+		req,
+		runID,
+		iteration,
+		true,
+		types.AgentLifecyclePhaseBeforeReply,
+		final,
+		nil,
+		h,
+		&warnings,
+	)
+	if terminal == nil && hookTerminal != nil {
+		terminal = hookTerminal
+		runErr = hookErr
+	}
+	hookTerminal, hookErr = e.runLifecycleHooks(
+		ctx,
+		req,
+		runID,
+		iteration,
+		true,
+		types.AgentLifecyclePhaseAfterReply,
+		final,
+		nil,
+		h,
+		&warnings,
+	)
+	if terminal == nil && hookTerminal != nil {
+		terminal = hookTerminal
+		runErr = hookErr
 	}
 
 	if reactTerminationReason == "" {
@@ -1315,48 +1725,68 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		Iteration: iteration,
 		Time:      e.now(),
 		Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-			Provider:            lastSelection.Provider,
-			Initial:             lastSelection.Initial,
-			Path:                selectionPath,
-			Required:            lastSelection.Required,
-			Reason:              lastSelection.Reason,
-			UsedFallback:        fallbackUsed,
-			Assemble:            lastAssemble,
-			GateChecks:          gateStats.Checks,
-			GateDenied:          gateStats.DeniedCount,
-			GateTimeout:         gateStats.TimeoutCount,
-			GateRuleHits:        gateStats.RuleHitCount,
-			GateRuleLast:        gateStats.RuleLastID,
-			HitlAwait:           hitlStats.AwaitCount,
-			HitlResumed:         hitlStats.ResumeCount,
-			HitlCanceled:        hitlStats.CancelByUserCount,
-			CancelProp:          concurrencyStats.CancelPropagatedCount,
-			BackDrop:            concurrencyStats.BackpressureDropCount,
-			BackDropByPhase:     concurrencyStats.BackpressureDropByPhase,
-			InflightPeak:        concurrencyStats.InflightPeak,
-			SecurityPolicy:      lastSecurity.PolicyKind,
-			NamespaceTool:       lastSecurity.NamespaceTool,
-			FilterStage:         lastSecurity.FilterStage,
-			SecurityDecision:    lastSecurity.Decision,
-			ReasonCode:          lastSecurity.ReasonCode,
-			Severity:            lastSecurity.Severity,
-			AlertStatus:         lastSecurity.AlertDispatchStatus,
-			AlertFailure:        lastSecurity.AlertFailureReason,
-			AlertDeliveryMode:   lastSecurity.AlertDeliveryMode,
-			AlertRetryCount:     lastSecurity.AlertRetryCount,
-			AlertQueueDropped:   lastSecurity.AlertQueueDropped,
-			AlertQueueDropCount: lastSecurity.AlertQueueDropCount,
-			AlertCircuitState:   lastSecurity.AlertCircuitState,
-			AlertCircuitReason:  lastSecurity.AlertCircuitReason,
-			ReactEnabled:        reactCfg.Enabled,
-			ReactIterationTotal: iteration,
-			ReactToolCallTotal:  reactToolCallTotal,
-			ReactToolBudgetHit:  reactToolCallBudgetHitTotal,
-			ReactIterBudgetHit:  reactIterationBudgetHitTotal,
-			ReactTermination:    reactTerminationReason,
-			ReactStreamDispatch: reactCfg.StreamToolDispatchEnabled,
-			Memory:              memoryAggregate.snapshot(memoryRuntime),
-			Sandbox:             sandboxAggregate.snapshot(sandboxRuntime),
+			Provider:                          lastSelection.Provider,
+			Initial:                           lastSelection.Initial,
+			Path:                              selectionPath,
+			Required:                          lastSelection.Required,
+			Reason:                            lastSelection.Reason,
+			UsedFallback:                      fallbackUsed,
+			Assemble:                          lastAssemble,
+			GateChecks:                        gateStats.Checks,
+			GateDenied:                        gateStats.DeniedCount,
+			GateTimeout:                       gateStats.TimeoutCount,
+			GateRuleHits:                      gateStats.RuleHitCount,
+			GateRuleLast:                      gateStats.RuleLastID,
+			HitlAwait:                         hitlStats.AwaitCount,
+			HitlResumed:                       hitlStats.ResumeCount,
+			HitlCanceled:                      hitlStats.CancelByUserCount,
+			CancelProp:                        concurrencyStats.CancelPropagatedCount,
+			BackDrop:                          concurrencyStats.BackpressureDropCount,
+			BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+			InflightPeak:                      concurrencyStats.InflightPeak,
+			SecurityPolicy:                    lastSecurity.PolicyKind,
+			NamespaceTool:                     lastSecurity.NamespaceTool,
+			FilterStage:                       lastSecurity.FilterStage,
+			SecurityDecision:                  lastSecurity.Decision,
+			ReasonCode:                        lastSecurity.ReasonCode,
+			Severity:                          lastSecurity.Severity,
+			AlertStatus:                       lastSecurity.AlertDispatchStatus,
+			AlertFailure:                      lastSecurity.AlertFailureReason,
+			AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+			AlertRetryCount:                   lastSecurity.AlertRetryCount,
+			AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+			AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+			AlertCircuitState:                 lastSecurity.AlertCircuitState,
+			AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+			ReactEnabled:                      reactCfg.Enabled,
+			ReactIterationTotal:               iteration,
+			ReactToolCallTotal:                reactToolCallTotal,
+			ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+			ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+			ReactTermination:                  reactTerminationReason,
+			ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+			A65Recorded:                       true,
+			HooksEnabled:                      hooksCfg.Enabled,
+			HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+			HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+			ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+			ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+			SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+			SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+			SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+			SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+			SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+			SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+			SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+			SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+			SkillBundlePromptMode:             skillPreprocess.PromptMode,
+			SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+			SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+			SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+			SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+			SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+			Memory:                            memoryAggregate.snapshot(memoryRuntime),
+			Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
 		}),
 	})
 	return result, runErr
@@ -1725,6 +2155,11 @@ func (e *Engine) dispatchReactToolCalls(
 		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
 		terminal := classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
 		return reactToolDispatchResult{}, terminal, stepCtx.Err()
+	}
+	if errors.Is(dispatchErr, context.DeadlineExceeded) {
+		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "policy_timeout")
+		terminal := classified(types.ErrPolicyTimeout, "tool dispatch timed out", true)
+		return reactToolDispatchResult{}, terminal, dispatchErr
 	}
 
 	for _, o := range outcomes {
@@ -2117,48 +2552,68 @@ func (e *Engine) discoverCapabilities(
 }
 
 type runFinishMeta struct {
-	Provider            string
-	Initial             string
-	Path                []string
-	Required            []types.ModelCapability
-	UsedFallback        bool
-	Reason              string
-	Assemble            types.ContextAssembleResult
-	GateChecks          int
-	GateDenied          int
-	GateTimeout         int
-	GateRuleHits        int
-	GateRuleLast        string
-	HitlAwait           int
-	HitlResumed         int
-	HitlCanceled        int
-	CancelProp          int
-	BackDrop            int
-	BackDropByPhase     map[string]int
-	InflightPeak        int
-	SecurityPolicy      string
-	NamespaceTool       string
-	FilterStage         string
-	SecurityDecision    string
-	ReasonCode          string
-	Severity            string
-	AlertStatus         string
-	AlertFailure        string
-	AlertDeliveryMode   string
-	AlertRetryCount     int
-	AlertQueueDropped   bool
-	AlertQueueDropCount int
-	AlertCircuitState   string
-	AlertCircuitReason  string
-	ReactEnabled        bool
-	ReactIterationTotal int
-	ReactToolCallTotal  int
-	ReactToolBudgetHit  int
-	ReactIterBudgetHit  int
-	ReactTermination    string
-	ReactStreamDispatch bool
-	Memory              memoryRunDiagnostics
-	Sandbox             sandboxRunDiagnostics
+	Provider                          string
+	Initial                           string
+	Path                              []string
+	Required                          []types.ModelCapability
+	UsedFallback                      bool
+	Reason                            string
+	Assemble                          types.ContextAssembleResult
+	GateChecks                        int
+	GateDenied                        int
+	GateTimeout                       int
+	GateRuleHits                      int
+	GateRuleLast                      string
+	HitlAwait                         int
+	HitlResumed                       int
+	HitlCanceled                      int
+	CancelProp                        int
+	BackDrop                          int
+	BackDropByPhase                   map[string]int
+	InflightPeak                      int
+	SecurityPolicy                    string
+	NamespaceTool                     string
+	FilterStage                       string
+	SecurityDecision                  string
+	ReasonCode                        string
+	Severity                          string
+	AlertStatus                       string
+	AlertFailure                      string
+	AlertDeliveryMode                 string
+	AlertRetryCount                   int
+	AlertQueueDropped                 bool
+	AlertQueueDropCount               int
+	AlertCircuitState                 string
+	AlertCircuitReason                string
+	ReactEnabled                      bool
+	ReactIterationTotal               int
+	ReactToolCallTotal                int
+	ReactToolBudgetHit                int
+	ReactIterBudgetHit                int
+	ReactTermination                  string
+	ReactStreamDispatch               bool
+	A65Recorded                       bool
+	HooksEnabled                      bool
+	HooksFailMode                     string
+	HooksPhases                       []string
+	ToolMiddlewareEnabled             bool
+	ToolMiddlewareFailMode            string
+	SkillDiscoveryMode                string
+	SkillDiscoveryRoots               []string
+	SkillPreprocessEnabled            bool
+	SkillPreprocessPhase              string
+	SkillPreprocessFailMode           string
+	SkillPreprocessStatus             string
+	SkillPreprocessReasonCode         string
+	SkillPreprocessSpecCount          int
+	SkillBundlePromptMode             string
+	SkillBundleWhitelistMode          string
+	SkillBundleConflictPolicy         string
+	SkillBundlePromptTotal            int
+	SkillBundleWhitelistTotal         int
+	SkillBundleWhitelistRejectedTotal int
+	Memory                            memoryRunDiagnostics
+	Sandbox                           sandboxRunDiagnostics
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
@@ -2403,6 +2858,51 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["react_stream_dispatch_enabled"] = meta.ReactStreamDispatch
 	if meta.ReactTermination != "" {
 		payload["react_termination_reason"] = meta.ReactTermination
+	}
+	if meta.A65Recorded {
+		payload["hooks_enabled"] = meta.HooksEnabled
+		if strings.TrimSpace(meta.HooksFailMode) != "" {
+			payload["hooks_fail_mode"] = strings.ToLower(strings.TrimSpace(meta.HooksFailMode))
+		}
+		if len(meta.HooksPhases) > 0 {
+			payload["hooks_phases"] = cloneNormalizedStringSlice(meta.HooksPhases)
+		}
+		payload["tool_middleware_enabled"] = meta.ToolMiddlewareEnabled
+		if strings.TrimSpace(meta.ToolMiddlewareFailMode) != "" {
+			payload["tool_middleware_fail_mode"] = strings.ToLower(strings.TrimSpace(meta.ToolMiddlewareFailMode))
+		}
+		if strings.TrimSpace(meta.SkillDiscoveryMode) != "" {
+			payload["skill_discovery_mode"] = strings.ToLower(strings.TrimSpace(meta.SkillDiscoveryMode))
+		}
+		if len(meta.SkillDiscoveryRoots) > 0 {
+			payload["skill_discovery_roots"] = append([]string(nil), meta.SkillDiscoveryRoots...)
+		}
+		payload["skill_preprocess_enabled"] = meta.SkillPreprocessEnabled
+		if strings.TrimSpace(meta.SkillPreprocessPhase) != "" {
+			payload["skill_preprocess_phase"] = strings.ToLower(strings.TrimSpace(meta.SkillPreprocessPhase))
+		}
+		if strings.TrimSpace(meta.SkillPreprocessFailMode) != "" {
+			payload["skill_preprocess_fail_mode"] = strings.ToLower(strings.TrimSpace(meta.SkillPreprocessFailMode))
+		}
+		if strings.TrimSpace(meta.SkillPreprocessStatus) != "" {
+			payload["skill_preprocess_status"] = strings.ToLower(strings.TrimSpace(meta.SkillPreprocessStatus))
+		}
+		if strings.TrimSpace(meta.SkillPreprocessReasonCode) != "" {
+			payload["skill_preprocess_reason_code"] = strings.ToLower(strings.TrimSpace(meta.SkillPreprocessReasonCode))
+		}
+		payload["skill_preprocess_spec_count"] = meta.SkillPreprocessSpecCount
+		if strings.TrimSpace(meta.SkillBundlePromptMode) != "" {
+			payload["skill_bundle_prompt_mode"] = strings.ToLower(strings.TrimSpace(meta.SkillBundlePromptMode))
+		}
+		if strings.TrimSpace(meta.SkillBundleWhitelistMode) != "" {
+			payload["skill_bundle_whitelist_mode"] = strings.ToLower(strings.TrimSpace(meta.SkillBundleWhitelistMode))
+		}
+		if strings.TrimSpace(meta.SkillBundleConflictPolicy) != "" {
+			payload["skill_bundle_conflict_policy"] = strings.ToLower(strings.TrimSpace(meta.SkillBundleConflictPolicy))
+		}
+		payload["skill_bundle_prompt_total"] = meta.SkillBundlePromptTotal
+		payload["skill_bundle_whitelist_total"] = meta.SkillBundleWhitelistTotal
+		payload["skill_bundle_whitelist_rejected_total"] = meta.SkillBundleWhitelistRejectedTotal
 	}
 	if meta.Memory.Observed {
 		if meta.Memory.Mode != "" {
@@ -2806,6 +3306,498 @@ func (e *Engine) runtimeReactConfigSnapshot() runtimeconfig.RuntimeReactConfig {
 		cfg = e.runtimeMgr.EffectiveConfig().Runtime.React
 	}
 	return cfg
+}
+
+func (e *Engine) runtimeHooksConfigSnapshot() runtimeconfig.RuntimeHooksConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Hooks
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Hooks
+	}
+	return cfg
+}
+
+func (e *Engine) runtimeToolMiddlewareConfigSnapshot() runtimeconfig.RuntimeToolMiddlewareConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.ToolMiddleware
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.ToolMiddleware
+	}
+	return cfg
+}
+
+func (e *Engine) runtimeSkillPreprocessConfigSnapshot() runtimeconfig.RuntimeSkillPreprocessConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.Preprocess
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.Preprocess
+	}
+	return cfg
+}
+
+func (e *Engine) runtimeSkillDiscoveryConfigSnapshot() runtimeconfig.RuntimeSkillDiscoveryConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.Discovery
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.Discovery
+	}
+	return cfg
+}
+
+func (e *Engine) runtimeSkillBundleMappingConfigSnapshot() runtimeconfig.RuntimeSkillBundleMappingConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.BundleMapping
+	if e != nil && e.runtimeMgr != nil {
+		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.BundleMapping
+	}
+	return cfg
+}
+
+type skillPreprocessState struct {
+	DiscoveryMode          string
+	DiscoveryRoots         []string
+	PreprocessEnabled      bool
+	PreprocessPhase        string
+	PreprocessFailMode     string
+	PreprocessStatus       string
+	PreprocessReasonCode   string
+	PromptMode             string
+	WhitelistMode          string
+	ConflictPolicy         string
+	PromptFragmentCount    int
+	WhitelistCount         int
+	WhitelistRejectedTotal int
+	SpecCount              int
+	AllowedToolSet         map[string]struct{}
+}
+
+func (s skillPreprocessState) whitelistEnforced() bool {
+	return strings.EqualFold(strings.TrimSpace(s.WhitelistMode), runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge) &&
+		len(s.AllowedToolSet) > 0
+}
+
+type skillPreprocessError struct {
+	reasonCode string
+	cause      error
+}
+
+func (e *skillPreprocessError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.cause != nil {
+		return e.cause.Error()
+	}
+	return "skill preprocess error"
+}
+
+func (e *skillPreprocessError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func newSkillPreprocessError(reasonCode string, cause error) error {
+	return &skillPreprocessError{
+		reasonCode: strings.ToLower(strings.TrimSpace(reasonCode)),
+		cause:      cause,
+	}
+}
+
+func (e *Engine) runSkillPreprocess(
+	ctx context.Context,
+	req types.RunRequest,
+	runID string,
+	stream bool,
+	h types.EventHandler,
+	warnings *[]string,
+) (types.RunRequest, skillPreprocessState, *types.ClassifiedError, error) {
+	discoveryCfg := e.runtimeSkillDiscoveryConfigSnapshot()
+	preprocessCfg := e.runtimeSkillPreprocessConfigSnapshot()
+	mappingCfg := e.runtimeSkillBundleMappingConfigSnapshot()
+	state := skillPreprocessState{
+		DiscoveryMode:        strings.ToLower(strings.TrimSpace(discoveryCfg.Mode)),
+		DiscoveryRoots:       append([]string(nil), discoveryCfg.Roots...),
+		PreprocessEnabled:    preprocessCfg.Enabled,
+		PreprocessPhase:      strings.ToLower(strings.TrimSpace(preprocessCfg.Phase)),
+		PreprocessFailMode:   strings.ToLower(strings.TrimSpace(preprocessCfg.FailMode)),
+		PreprocessStatus:     "skipped",
+		PromptMode:           strings.ToLower(strings.TrimSpace(mappingCfg.PromptMode)),
+		WhitelistMode:        strings.ToLower(strings.TrimSpace(mappingCfg.WhitelistMode)),
+		ConflictPolicy:       strings.ToLower(strings.TrimSpace(mappingCfg.ConflictPolicy)),
+		AllowedToolSet:       map[string]struct{}{},
+		PromptFragmentCount:  0,
+		WhitelistCount:       0,
+		SpecCount:            0,
+		PreprocessReasonCode: "",
+	}
+	if e == nil || e.skillLoader == nil {
+		return req, state, nil, nil
+	}
+	if e.runtimeMgr != nil && !preprocessCfg.Enabled {
+		return req, state, nil, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(preprocessCfg.Phase), runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream) {
+		return req, state, nil, nil
+	}
+	skillCtx := map[string]string{
+		"run_id":      runID,
+		"session_id":  req.SessionID,
+		"entry_point": "run",
+	}
+	if stream {
+		skillCtx["entry_point"] = "stream"
+	}
+	specs, err := e.skillLoader.Discover(ctx, ".")
+	if err != nil {
+		return e.resolveSkillPreprocessFailure(req, state, preprocessCfg, err, warnings)
+	}
+	state.SpecCount = len(specs)
+	bundle, err := e.skillLoader.Compile(ctx, specs, types.SkillInput{
+		UserInput: req.Input,
+		Context:   skillCtx,
+	})
+	if err != nil {
+		return e.resolveSkillPreprocessFailure(req, state, preprocessCfg, err, warnings)
+	}
+	req, state, err = e.applySkillBundleMappings(req, state, bundle)
+	if err != nil {
+		return e.resolveSkillPreprocessFailure(req, state, preprocessCfg, err, warnings)
+	}
+	state.PreprocessStatus = "success"
+	e.emit(ctx, h, types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "skill.preprocess.completed",
+		RunID:   runID,
+		Time:    e.now(),
+		Payload: map[string]any{
+			"spec_count":                state.SpecCount,
+			"stream":                    stream,
+			"phase":                     runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream,
+			"preprocess_status":         state.PreprocessStatus,
+			"preprocess_fail_mode":      state.PreprocessFailMode,
+			"discovery_mode":            state.DiscoveryMode,
+			"bundle_prompt_mode":        state.PromptMode,
+			"bundle_whitelist_mode":     state.WhitelistMode,
+			"bundle_conflict_policy":    state.ConflictPolicy,
+			"bundle_prompt_total":       state.PromptFragmentCount,
+			"bundle_whitelist_total":    state.WhitelistCount,
+			"bundle_whitelist_rejected": state.WhitelistRejectedTotal,
+		},
+	})
+	return req, state, nil, nil
+}
+
+func (e *Engine) applySkillBundleMappings(
+	req types.RunRequest,
+	state skillPreprocessState,
+	bundle types.SkillBundle,
+) (types.RunRequest, skillPreprocessState, error) {
+	mappedReq := req
+	normalizedConflict := strings.ToLower(strings.TrimSpace(state.ConflictPolicy))
+	if normalizedConflict == "" {
+		normalizedConflict = runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin
+	}
+
+	if strings.EqualFold(strings.TrimSpace(state.PromptMode), runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend) {
+		seenPrompt := map[string]struct{}{}
+		for _, msg := range mappedReq.Messages {
+			if !strings.EqualFold(strings.TrimSpace(msg.Role), "system") {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(msg.Content))
+			if key == "" {
+				continue
+			}
+			seenPrompt[key] = struct{}{}
+		}
+		for _, fragment := range bundle.SystemPromptFragments {
+			content := strings.TrimSpace(fragment)
+			if content == "" {
+				continue
+			}
+			key := strings.ToLower(content)
+			if _, exists := seenPrompt[key]; exists {
+				if normalizedConflict == runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast {
+					return req, state, newSkillPreprocessError(
+						"skill_bundle_prompt_conflict",
+						fmt.Errorf("prompt fragment conflict detected for %q", content),
+					)
+				}
+				continue
+			}
+			seenPrompt[key] = struct{}{}
+			mappedReq.Messages = append(mappedReq.Messages, types.Message{
+				Role:    "system",
+				Content: content,
+			})
+			state.PromptFragmentCount++
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(state.WhitelistMode), runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge) {
+		seenTool := map[string]struct{}{}
+		for _, raw := range bundle.EnabledTools {
+			name := normalizeToolName(raw)
+			if name == "" {
+				continue
+			}
+			if _, exists := seenTool[name]; exists {
+				if normalizedConflict == runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast {
+					return req, state, newSkillPreprocessError(
+						"skill_bundle_whitelist_conflict",
+						fmt.Errorf("tool whitelist conflict detected for %q", name),
+					)
+				}
+				continue
+			}
+			seenTool[name] = struct{}{}
+			allowed, reasonCode := e.skillWhitelistWithinSecurityUpperBound(name)
+			if !allowed {
+				state.WhitelistRejectedTotal++
+				if normalizedConflict == runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast {
+					return req, state, newSkillPreprocessError(
+						reasonCode,
+						fmt.Errorf("tool whitelist exceeds upper-bound for %q", name),
+					)
+				}
+				continue
+			}
+			state.AllowedToolSet[name] = struct{}{}
+			state.WhitelistCount++
+		}
+	}
+	return mappedReq, state, nil
+}
+
+func (e *Engine) skillWhitelistWithinSecurityUpperBound(name string) (bool, string) {
+	namespaceTool, ok := namespaceToolKey(name)
+	if !ok {
+		return false, "skill_bundle_whitelist_invalid_tool"
+	}
+	sandboxCfg := e.securitySandboxConfig()
+	if sandboxCfg.Enabled && strings.EqualFold(strings.TrimSpace(sandboxCfg.Mode), runtimeconfig.SecuritySandboxModeEnforce) {
+		if runtimeconfig.ResolveSandboxAction(sandboxCfg, namespaceTool) == runtimeconfig.SecuritySandboxActionDeny {
+			return false, "skill_bundle_whitelist_exceeds_sandbox"
+		}
+	}
+	if e == nil || e.runtimeMgr == nil {
+		return true, ""
+	}
+	allowlistCfg := e.runtimeMgr.EffectiveConfig().Adapter.Allowlist
+	if !allowlistCfg.Enabled || !strings.EqualFold(strings.TrimSpace(allowlistCfg.EnforcementMode), runtimeconfig.AdapterAllowlistEnforcementModeEnforce) {
+		return true, ""
+	}
+	namespace := strings.TrimSpace(strings.SplitN(namespaceTool, "+", 2)[0])
+	if namespace == "" || namespace == "local" {
+		return true, ""
+	}
+	denyUnknown := strings.EqualFold(strings.TrimSpace(allowlistCfg.OnUnknownSignature), runtimeconfig.AdapterAllowlistUnknownSignatureDeny)
+	for i := range allowlistCfg.Entries {
+		entry := allowlistCfg.Entries[i]
+		if !strings.EqualFold(strings.TrimSpace(entry.AdapterID), namespace) {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(entry.SignatureStatus))
+		switch status {
+		case runtimeconfig.AdapterAllowlistSignatureStatusValid:
+			return true, ""
+		case runtimeconfig.AdapterAllowlistSignatureStatusUnknown:
+			if !denyUnknown {
+				return true, ""
+			}
+		}
+	}
+	return false, "skill_bundle_whitelist_exceeds_adapter_allowlist"
+}
+
+func (e *Engine) enforceSkillWhitelistForToolCalls(
+	ctx context.Context,
+	h types.EventHandler,
+	runID string,
+	iteration int,
+	calls []types.ToolCall,
+	state skillPreprocessState,
+	warnings *[]string,
+) ([]types.ToolCall, *types.ClassifiedError, error) {
+	if len(calls) == 0 || !state.whitelistEnforced() {
+		return calls, nil, nil
+	}
+	allowedSet := state.AllowedToolSet
+	filtered := make([]types.ToolCall, 0, len(calls))
+	blocked := make([]string, 0, len(calls))
+	for i := range calls {
+		call := calls[i]
+		name := normalizeToolName(call.Name)
+		if _, ok := allowedSet[name]; ok {
+			filtered = append(filtered, call)
+			continue
+		}
+		blocked = append(blocked, name)
+	}
+	if len(blocked) == 0 {
+		return calls, nil, nil
+	}
+	e.emit(ctx, h, types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      "skill.bundle_mapping.whitelist.filtered",
+		RunID:     runID,
+		Iteration: iteration,
+		Time:      e.now(),
+		Payload: map[string]any{
+			"blocked_tools":    append([]string(nil), blocked...),
+			"whitelist_total":  state.WhitelistCount,
+			"conflict_policy":  state.ConflictPolicy,
+			"preprocess_phase": state.PreprocessPhase,
+		},
+	})
+	if strings.EqualFold(strings.TrimSpace(state.ConflictPolicy), runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast) {
+		terminal := classified(types.ErrSecurity, fmt.Sprintf("tool call rejected by skill whitelist: %s", blocked[0]), false)
+		terminal.Details = map[string]any{
+			"reason_code":      "skill_bundle_whitelist_violation",
+			"blocked_tools":    append([]string(nil), blocked...),
+			"whitelist_total":  state.WhitelistCount,
+			"preprocess_phase": state.PreprocessPhase,
+		}
+		return nil, terminal, errors.New(terminal.Message)
+	}
+	if warnings != nil {
+		*warnings = append(*warnings, fmt.Sprintf("skill whitelist filtered tools: %s", strings.Join(blocked, ",")))
+	}
+	return filtered, nil, nil
+}
+
+func (e *Engine) resolveSkillPreprocessFailure(
+	req types.RunRequest,
+	state skillPreprocessState,
+	cfg runtimeconfig.RuntimeSkillPreprocessConfig,
+	err error,
+	warnings *[]string,
+) (types.RunRequest, skillPreprocessState, *types.ClassifiedError, error) {
+	reasonCode := "skill_preprocess_failed"
+	var preprocessErr *skillPreprocessError
+	if errors.As(err, &preprocessErr) {
+		if code := strings.ToLower(strings.TrimSpace(preprocessErr.reasonCode)); code != "" {
+			reasonCode = code
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.FailMode), runtimeconfig.RuntimeSkillPreprocessFailModeDegrade) {
+		state.PreprocessStatus = "degraded"
+		state.PreprocessReasonCode = reasonCode
+		if warnings != nil {
+			*warnings = append(*warnings, fmt.Sprintf("skill preprocess degraded: %v", err))
+		}
+		return req, state, nil, nil
+	}
+	state.PreprocessStatus = "failed"
+	state.PreprocessReasonCode = reasonCode
+	terminal := classified(types.ErrSkill, fmt.Sprintf("skill preprocess failed: %v", err), false)
+	terminal.Details = map[string]any{
+		"phase":       runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream,
+		"reason_code": reasonCode,
+	}
+	return req, state, terminal, err
+}
+
+func (e *Engine) runLifecycleHooks(
+	ctx context.Context,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	stream bool,
+	phase types.AgentLifecyclePhase,
+	finalAnswer string,
+	toolCalls []types.ToolCall,
+	h types.EventHandler,
+	warnings *[]string,
+) (*types.ClassifiedError, error) {
+	if e == nil || len(e.lifecycleHooks) == 0 {
+		return nil, nil
+	}
+	cfg := e.runtimeHooksConfigSnapshot()
+	if e.runtimeMgr != nil && !cfg.Enabled {
+		return nil, nil
+	}
+	if !lifecyclePhaseEnabled(cfg.Phases, phase) {
+		return nil, nil
+	}
+	for i := range e.lifecycleHooks {
+		hook := e.lifecycleHooks[i]
+		if hook == nil {
+			continue
+		}
+		hookCtx := ctx
+		cancel := func() {}
+		if cfg.Timeout > 0 {
+			hookCtx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+		}
+		err := hook.OnPhase(hookCtx, types.AgentLifecycleHookContext{
+			RunID:       runID,
+			SessionID:   req.SessionID,
+			Iteration:   iteration,
+			Stream:      stream,
+			Phase:       phase,
+			FinalAnswer: finalAnswer,
+			ToolCalls:   append([]types.ToolCall(nil), toolCalls...),
+		})
+		cancel()
+		if err == nil {
+			continue
+		}
+		reasonCode := "hook_error"
+		errClass := types.ErrContext
+		retryable := false
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			reasonCode = "hook_timeout"
+			errClass = types.ErrPolicyTimeout
+			retryable = true
+		case errors.Is(err, context.Canceled):
+			reasonCode = "hook_canceled"
+			errClass = types.ErrPolicyTimeout
+			retryable = true
+		}
+		e.emit(ctx, h, types.Event{
+			Version:   types.EventSchemaVersionV1,
+			Type:      "hook.failed",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: map[string]any{
+				"phase":       string(phase),
+				"reason_code": reasonCode,
+				"hook_index":  i,
+				"stream":      stream,
+			},
+		})
+		if strings.EqualFold(strings.TrimSpace(cfg.FailMode), runtimeconfig.RuntimeHooksFailModeDegrade) {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("lifecycle hook degraded at %s: %v", phase, err))
+			}
+			continue
+		}
+		terminal := classified(errClass, fmt.Sprintf("lifecycle hook failed at %s: %v", phase, err), retryable)
+		terminal.Details = map[string]any{
+			"phase":       string(phase),
+			"reason_code": reasonCode,
+			"hook_index":  i,
+		}
+		return terminal, err
+	}
+	return nil, nil
+}
+
+func lifecyclePhaseEnabled(phases []string, phase types.AgentLifecyclePhase) bool {
+	target := strings.ToLower(strings.TrimSpace(string(phase)))
+	if target == "" {
+		return false
+	}
+	normalized := runtimeconfig.DefaultConfig().Runtime.Hooks.Phases
+	if len(phases) > 0 {
+		normalized = phases
+	}
+	for i := range normalized {
+		if strings.EqualFold(strings.TrimSpace(normalized[i]), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveReactTerminationReason(
@@ -4313,6 +5305,40 @@ func applyClarificationResponse(req types.RunRequest, response types.Clarificati
 		Content: "clarification:\n" + joined,
 	})
 	return req
+}
+
+func normalizeLifecycleHooks(hooks []types.AgentLifecycleHook) []types.AgentLifecycleHook {
+	if len(hooks) == 0 {
+		return nil
+	}
+	out := make([]types.AgentLifecycleHook, 0, len(hooks))
+	for _, hook := range hooks {
+		if hook == nil {
+			continue
+		}
+		out = append(out, hook)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeToolMiddlewares(middlewares []types.ToolMiddleware) []types.ToolMiddleware {
+	if len(middlewares) == 0 {
+		return nil
+	}
+	out := make([]types.ToolMiddleware, 0, len(middlewares))
+	for _, middleware := range middlewares {
+		if middleware == nil {
+			continue
+		}
+		out = append(out, middleware)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func normalizeToolName(name string) string {

@@ -18,7 +18,8 @@ Baymax 主线保持 `library-first + contract-first`：
 截至 2026-04-02：
 - 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`（hooks/middleware 与 skill discovery/preprocess 合同定义中，待进入实现）
+  - `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`（hooks/middleware + skill discovery/preprocess）
+  - `introduce-unified-state-and-session-snapshot-contract-a66`（unified state/session snapshot）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -577,17 +578,17 @@ A56 一次性闭环审查（10.4）：
 2. A59（已归档，P1）：memory scope + builtin filesystem memory v2 治理 contract（scope/write_mode/injection_budget/lifecycle/search 与 gate 已收口）。
 3. A60（已归档，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
 4. A61（已归档，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
-5. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
-6. A66（新增，P2）：unified state/session snapshot contract。
-7. A67（新增，P2）：react plan notebook + plan-change hook contract。
-8. A68（新增，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
-9. A63（新增，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
-10. A64（新增，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
-11. A62（新增，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
+5. A65（已实施，待归档，P2）：agent lifecycle hooks + tool middleware contract。
+6. A66（进行中，P2）：unified state/session snapshot contract。
+7. A67（候选，P2）：react plan notebook + plan-change hook contract。
+8. A68（候选，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
+9. A63（候选，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+10. A64（候选，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+11. A62（候选，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
-备选项目说明（避免“单一路线”误解）：
-- A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A61 已归档，A58/A59/A60 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
+后续项目说明（避免“单一路线”误解）：
+- A65/A66（进行中）与 A67/A68/A63/A64/A62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A58/A59/A60/A61 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
   - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
   - 若 A58/A59 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：优先在 A59 内增量吸收。
@@ -665,7 +666,7 @@ A56 一次性闭环审查（10.4）：
   - Non-goals：不引入托管评测控制面、远程评测任务调度服务、平台化 UI/RBAC/多租户运维面板。
   - Gate 边界断言：`check-agent-eval-and-tracing-interop-contract.*` 必须包含 `control_plane_absent` 断言（distributed execution 仅作为库内执行策略，不新增服务化控制面依赖）。
 
-备选 A65（新增）：`introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`
+提案 A65（已实施，待归档）：`introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`
 - 目标：统一 agent 生命周期 hooks 与 tool middleware 合同，减少业务侧横切逻辑重复接线。
 - 范围（简版）：
   - lifecycle hooks：`before_reasoning|after_reasoning|before_acting|after_acting|before_reply|after_reply`；
@@ -679,15 +680,16 @@ A56 一次性闭环审查（10.4）：
   - bundle 映射（一次补齐）：冻结 `SkillBundle -> prompt augmentation` 与 `SkillBundle -> tool whitelist` 的合同映射与冲突仲裁顺序；
   - 映射配置（简版）：`runtime.skill.bundle_mapping.prompt_mode`、`runtime.skill.bundle_mapping.whitelist_mode`、`runtime.skill.bundle_mapping.conflict_policy`；
   - 回放与门禁：新增 `hooks_middleware.v1` fixture 与 `check-hooks-middleware-contract.*`。
+  - required-check 候选：`hooks-middleware-contract-gate`。
 - 硬约束（简版）：
   - 不绕过 A58 precedence、A57 安全治理与 `RuntimeRecorder` 单写入口；
   - skill discovery source 切换不得绕过既有 trigger scoring/budget 与 skill 观测事件口径；
   - `Discover/Compile` 预处理与 `SkillBundle` 映射在 Run/Stream 下必须等价，不得引入“预处理只在单入口生效”的分叉；
   - whitelist 映射不得突破 A57 adapter allowlist 与 sandbox/egress 治理上界。
   - Hook/Middleware 失败语义必须 deterministic，不引入 Run/Stream 分叉。
-- 当前状态：占位提案（简版）。
+- 当前状态：已实施（OpenSpec tasks 完成，待归档）。
 
-备选 A66（新增）：`introduce-unified-state-and-session-snapshot-contract-a66`
+提案 A66（进行中）：`introduce-unified-state-and-session-snapshot-contract-a66`
 - 目标：统一 runtime state/session snapshot 导入导出合同，打通跨模块恢复、迁移与重放。
 - 范围（简版）：
   - state surface：runner/session、memory、workflow/composer/scheduler 的统一 state descriptor；
@@ -697,9 +699,9 @@ A56 一次性闭环审查（10.4）：
 - 硬约束（简版）：
   - 不重写已有 checkpoint/snapshot 语义，仅做统一合同层；
   - 不引入平台控制面或远程状态服务依赖。
-- 当前状态：占位提案（简版）。
+- 当前状态：进行中（OpenSpec `in-progress`）。
 
-备选 A67（新增）：`introduce-react-plan-notebook-and-plan-change-hook-contract-a67`
+提案 A67（候选）：`introduce-react-plan-notebook-and-plan-change-hook-contract-a67`
 - 目标：补齐 ReAct 动态计划治理（Plan Notebook）与计划变更 hook，提升复杂任务可控性与可解释性。
 - 范围（简版）：
   - plan notebook：`create|revise|complete|recover` 生命周期；
@@ -709,9 +711,9 @@ A56 一次性闭环审查（10.4）：
 - 硬约束（简版）：
   - 复用 A56 ReAct termination taxonomy，不新增平行 loop 语义；
   - 计划治理不得绕过 A58 决策链与 A57 安全链路。
-- 当前状态：占位提案（简版）。
+- 当前状态：候选（未启动）。
 
-备选 A68（新增）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`
+提案 A68（候选）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`
 - 目标（简版）：补齐实时双向事件协议（server/client）与 interrupt/resume 合同，支撑实时交互场景。
 - 范围（简版）：
   - 事件协议：请求、增量输出、取消、恢复、确认、错误的 canonical event taxonomy；
@@ -723,9 +725,9 @@ A56 一次性闭环审查（10.4）：
 - 约束项（新增）：
   - Non-goals：不引入托管会话路由/连接管理控制面、实时 SaaS 运维面板或平台级常驻网关服务。
   - Gate 边界断言：`check-realtime-protocol-contract.*` 必须包含 `realtime_control_plane_absent` 断言（协议实现仅限库内 contract + adapter 接缝，不新增网关服务依赖）。
-- 当前状态：占位提案（简版，按业务实时化需求触发）。
+- 当前状态：候选（按业务实时化需求触发，未启动）。
 
-备选 A63（新增）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
+提案 A63（候选）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
 - 目标（简版）：在不改变运行时语义前提下，完成仓库“代码与文档收敛整顿”，降低历史负担与命名歧义。
 - 范围（简版）：
   - 临时文档/目录治理：清理或归档 `docs/drafts`、示例与脚手架生成物等临时资产，建立统一收口规则；
@@ -739,9 +741,9 @@ A56 一次性闭环审查（10.4）：
   - 不删除仍被 gate/fixture 使用的兼容数据，仅允许“迁移+别名+映射”方式收敛；
   - 所有重命名或目录调整必须提供可回滚路径与兼容跳板。
   - 编号化保留边界：`openspec/changes` 与 `openspec/changes/archive` 作为历史索引允许保留编号，代码与用户向文档默认使用语义名称。
-- 当前状态：占位提案（简版），待 A67/A68（若启用）主链路冻结后基于当时代码状态展开详细清单与实施步骤。
+- 当前状态：候选（未启动）；待 A67/A68（若启用）主链路冻结后展开详细清单与实施步骤。
 
-备选 A64（新增）：`introduce-engineering-and-performance-optimization-contract-a64`
+提案 A64（候选）：`introduce-engineering-and-performance-optimization-contract-a64`
 - 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
 - 子项目（性能治理，优先落地）：
   - A64-S1：`context-assembler-loop-hotpath-governance`
@@ -890,9 +892,9 @@ A56 一次性闭环审查（10.4）：
   - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
   - 不绕过现有 contract gate 与 replay 约束；
   - 所有优化都必须可开关、可回滚。
-- 当前状态：占位提案（含 A64-S1~S10 子项目），详细 contract/fixture/gate 清单待 A63 收敛后展开。
+- 当前状态：候选（未启动，含 A64-S1~S10 子项目）；详细 contract/fixture/gate 清单待 A63 收敛后展开。
 
-备选 A62（新增）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
+提案 A62（候选）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
 - 模式覆盖（最低要求）：
   - `single agent`（最小 chat/任务执行主链路）；
@@ -1057,7 +1059,7 @@ A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contrac
   - 新接入团队在不读源码前提下可按模式完成端到端跑通；
   - 示例与主线 contract 不再出现长期漂移（通过 smoke gate 持续阻断）。
 
-A65-A68 占位验收口径（简版）：
+A65-A68 验收口径（简版）：
 - A65（hooks + middleware）：
   - 字段：`runtime.hooks.*`、`runtime.tool_middleware.*`、`runtime.skill.discovery.*`、`runtime.skill.preprocess.*`、`runtime.skill.bundle_mapping.*`
   - 回放：`hooks_middleware.v1`、`skill_discovery_sources.v1`（覆盖 `agents_md|folder|hybrid`）、`skill_preprocess_and_mapping.v1`
@@ -1081,6 +1083,7 @@ A65-A68 占位验收口径（简版）：
 - A59 冻结 memory 生命周期与检索质量阈值后，A60 预算计算必须复用该口径，不再另起成本定义。
 - A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。
 - A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。
+- A65 hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在 A65 内以增量任务吸收，不再新开平行提案。
 - A61 的 eval 指标与 distributed 执行聚合必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
 - A61 distributed evaluator execution 仅允许库内嵌入式执行治理，不得演进为托管评测控制面或服务化调度平面。
 - A65 不得绕过 A58 precedence 与 A57 安全治理链路；hook/middleware 输出仅走 `RuntimeRecorder` 单写入口。
@@ -1100,17 +1103,11 @@ A65-A68 占位验收口径（简版）：
 - A62 的示例字段与观测语义必须引用 A56-A68（若 A68 启用）既有 contract 输出，禁止在 examples 侧定义平行语义。
 - 若出现新增需求，优先以 A58-A68 的“增量任务”吸收，默认不新增 A69+ 同域提案。
 
-整合与重排说明：
-- A56/A57 已从备选池转入进行中，不再计入备选编号。
-- 新增紧急备选 A58（policy precedence + decision trace），用于承接 A56/A57 并行实施的跨策略冲突风险。
-- 原备选 A58（memory scope）顺延为 A59，并与 builtin filesystem local-memory 增强方案合并，减少重复提案。
-- 原备选 A59（runtime cost-latency budget）顺延为 A60。
-- A61 合并“distributed evaluator execution”能力，不再另开平行评测执行提案。
-- 新增 A65/A66/A67（hooks+middleware / unified state/session / react plan notebook），用于补齐 agent runtime 基座能力。
-- 新增 A68（realtime protocol）前移至 A63/A64/A62 之前，补齐实时交互合同能力（仍按业务需求触发）。
-- A63（codebase consolidation and semantic labeling）维持在 A68 之后，用于实施前收敛命名与结构。
-- 原 A63（engineering/performance optimization）已顺延为 A64，保持在代码收敛提案之后，作为后置优化项。
-- A62（delivery usability example pack）后移至 A64 之后，作为“功能相对完善后”的最终示例化与交付收口项。
+状态对齐说明（2026-04-02）：
+- 已归档并稳定：A58-A61（A4-A57 归档历史见 `openspec/changes/archive/INDEX.md`）。
+- 进行中：A66。
+- 候选未启动：A67、A68、A63、A64、A62。
+- 顺序约束保持不变：先补齐 agent runtime 基座合同（A65-A68），再做代码收敛（A63）、性能治理（A64）与交付易用性示例收口（A62）。
 
 ### P2：0.x 质量与治理持续收敛
 

@@ -83,6 +83,26 @@ function Assert-NoParallelA61Changes {
     }
 }
 
+function Resolve-A61ChangeDir {
+    $active = "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
+    $activeFull = Join-Path $repoRoot $active
+    if (Test-Path -LiteralPath $activeFull -PathType Container) {
+        return $active
+    }
+
+    $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
+    if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $archiveRoot -Directory |
+            Where-Object { $_.Name -like "*introduce-otel-tracing-and-agent-eval-interoperability-contract-a61" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/archive/$($candidate.Name)"
+        }
+    }
+
+    throw "[agent-eval-tracing-interop-gate] unable to locate A61 change directory in active or archive paths"
+}
+
 function Invoke-AgentEvalTracingStep {
     param(
         [Parameter(Mandatory = $true)][string]$Label,
@@ -92,12 +112,14 @@ function Invoke-AgentEvalTracingStep {
     & $Command
 }
 
+$a61ChangeDir = Resolve-A61ChangeDir
+
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: contract marker" -Command {
-    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "embedded library behavior"
+    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a61ChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "embedded library behavior"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
+    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a61ChangeDir/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: active change set closure" -Command {
@@ -109,11 +131,11 @@ Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: reject eval 
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: upstream reuse marker" -Command {
-    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
+    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "$a61ChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61/specs/go-quality-gate/spec.md" -Literal "Quality gate SHALL include tracing and eval interoperability contract checks"
+    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "$a61ChangeDir/specs/go-quality-gate/spec.md" -Literal "Quality gate SHALL include tracing and eval interoperability contract checks"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: roadmap closure marker" -Command {

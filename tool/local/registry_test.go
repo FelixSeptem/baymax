@@ -169,6 +169,182 @@ func TestDispatcherFailFastBehavior(t *testing.T) {
 	}
 }
 
+func TestDispatcherToolMiddlewareOnionOrderDeterministic(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+
+	var mu sync.Mutex
+	order := make([]string, 0, 6)
+	makeMiddleware := func(name string) types.ToolMiddleware {
+		return types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+			_ = call
+			mu.Lock()
+			order = append(order, name+"-in")
+			mu.Unlock()
+			result, err := next(ctx, call)
+			mu.Lock()
+			order = append(order, name+"-out")
+			mu.Unlock()
+			return result, err
+		})
+	}
+	dispatcher.SetMiddlewares(
+		makeMiddleware("m1"),
+		makeMiddleware("m2"),
+		makeMiddleware("m3"),
+	)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.echo"},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Error != nil {
+		t.Fatalf("unexpected outcome: %#v", outcomes)
+	}
+	got := strings.Join(order, ",")
+	want := "m1-in,m2-in,m3-in,m3-out,m2-out,m1-out"
+	if got != want {
+		t.Fatalf("middleware order = %q, want %q", got, want)
+	}
+}
+
+func TestDispatcherToolMiddlewareShortCircuitSkipsToolAndDownstream(t *testing.T) {
+	reg := NewRegistry()
+	invokeCount := 0
+	_, _ = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			invokeCount++
+			return types.ToolResult{Content: "tool"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+
+	downstreamCalled := false
+	dispatcher.SetMiddlewares(
+		types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+			_ = ctx
+			_ = call
+			_ = next
+			return types.ToolResult{Content: "short"}, nil
+		}),
+		types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+			downstreamCalled = true
+			return next(ctx, call)
+		}),
+	)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.echo"},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if invokeCount != 0 {
+		t.Fatalf("tool invoke count = %d, want 0", invokeCount)
+	}
+	if downstreamCalled {
+		t.Fatal("downstream middleware should be skipped by short-circuit")
+	}
+	if outcomes[0].Result.Error != nil || outcomes[0].Result.Content != "short" {
+		t.Fatalf("unexpected short-circuit outcome: %#v", outcomes[0])
+	}
+}
+
+func TestDispatcherToolMiddlewareErrorBubblesWithFailFast(t *testing.T) {
+	reg := NewRegistry()
+	invokeCount := 0
+	_, _ = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			invokeCount++
+			return types.ToolResult{Content: "tool"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	dispatcher.SetMiddlewares(
+		types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+			return types.ToolResult{}, errors.New("middleware boom")
+		}),
+	)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.echo"},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if err == nil {
+		t.Fatal("expected fail-fast middleware error")
+	}
+	if invokeCount != 0 {
+		t.Fatalf("tool invoke count = %d, want 0", invokeCount)
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Error == nil {
+		t.Fatalf("unexpected outcomes: %#v", outcomes)
+	}
+	if !strings.Contains(outcomes[0].Result.Error.Message, "middleware boom") {
+		t.Fatalf("middleware error message mismatch: %#v", outcomes[0].Result.Error)
+	}
+}
+
+func TestDispatcherToolMiddlewareTimeoutReturnsDeadlineExceeded(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-middleware.yaml")
+	cfg := `
+runtime:
+  tool_middleware:
+    enabled: true
+    timeout: 30ms
+    fail_mode: fail_fast
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A65_LOCAL_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "tool"}, nil
+		},
+	})
+	dispatcher := NewDispatcherWithRuntimeManager(reg, mgr)
+	dispatcher.SetMiddlewares(
+		types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+			_ = call
+			select {
+			case <-ctx.Done():
+				return types.ToolResult{}, ctx.Err()
+			case <-time.After(200 * time.Millisecond):
+				return next(ctx, call)
+			}
+		}),
+	)
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "c1", Name: "local.echo"},
+	}, DispatchConfig{MaxCalls: 1, Concurrency: 1, FailFast: true})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context deadline exceeded", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Error == nil {
+		t.Fatalf("unexpected outcomes: %#v", outcomes)
+	}
+	if !strings.Contains(strings.ToLower(outcomes[0].Result.Error.Message), "deadline exceeded") {
+		t.Fatalf("timeout outcome message mismatch: %#v", outcomes[0].Result.Error)
+	}
+}
+
 func TestDispatcherRecordsDiagnosticsWithRuntimeManager(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

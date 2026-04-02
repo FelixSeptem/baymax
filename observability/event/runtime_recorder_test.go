@@ -2362,6 +2362,206 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA65HooksMiddlewareSkillAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a65-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                                "success",
+			"hooks_enabled":                         true,
+			"hooks_fail_mode":                       "degrade",
+			"hooks_phases":                          []any{"before_reasoning", "after_reasoning"},
+			"tool_middleware_enabled":               true,
+			"tool_middleware_fail_mode":             "fail_fast",
+			"skill_discovery_mode":                  "hybrid",
+			"skill_discovery_roots":                 []any{"./skills", "./agents"},
+			"skill_preprocess_enabled":              true,
+			"skill_preprocess_phase":                "before_run_stream",
+			"skill_preprocess_fail_mode":            "degrade",
+			"skill_preprocess_status":               "success",
+			"skill_preprocess_reason_code":          "skill_preprocess_failed",
+			"skill_preprocess_spec_count":           3,
+			"skill_bundle_prompt_mode":              "append",
+			"skill_bundle_whitelist_mode":           "merge",
+			"skill_bundle_conflict_policy":          "first_win",
+			"skill_bundle_prompt_total":             2,
+			"skill_bundle_whitelist_total":          4,
+			"skill_bundle_whitelist_rejected_total": 1,
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if !got.HooksEnabled ||
+		got.HooksFailMode != "degrade" ||
+		len(got.HooksPhases) != 2 ||
+		got.HooksPhases[0] != "before_reasoning" ||
+		got.HooksPhases[1] != "after_reasoning" ||
+		!got.ToolMiddlewareEnabled ||
+		got.ToolMiddlewareFailMode != "fail_fast" ||
+		got.SkillDiscoveryMode != "hybrid" ||
+		len(got.SkillDiscoveryRoots) != 2 ||
+		got.SkillDiscoveryRoots[0] != "./skills" ||
+		got.SkillDiscoveryRoots[1] != "./agents" ||
+		!got.SkillPreprocessEnabled ||
+		got.SkillPreprocessPhase != "before_run_stream" ||
+		got.SkillPreprocessFailMode != "degrade" ||
+		got.SkillPreprocessStatus != "success" ||
+		got.SkillPreprocessReasonCode != "skill_preprocess_failed" ||
+		got.SkillPreprocessSpecCount != 3 ||
+		got.SkillBundlePromptMode != "append" ||
+		got.SkillBundleWhitelistMode != "merge" ||
+		got.SkillBundleConflictPolicy != "first_win" ||
+		got.SkillBundlePromptTotal != 2 ||
+		got.SkillBundleWhitelistTotal != 4 ||
+		got.SkillBundleWhitelistRejectedTotal != 1 {
+		t.Fatalf("A65 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA65ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a65-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(21),
+			"a65_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 21 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.HooksEnabled ||
+		got.HooksFailMode != "" ||
+		len(got.HooksPhases) != 0 ||
+		got.ToolMiddlewareEnabled ||
+		got.ToolMiddlewareFailMode != "" ||
+		got.SkillDiscoveryMode != "" ||
+		len(got.SkillDiscoveryRoots) != 0 ||
+		got.SkillPreprocessEnabled ||
+		got.SkillPreprocessPhase != "" ||
+		got.SkillPreprocessFailMode != "" ||
+		got.SkillPreprocessStatus != "" ||
+		got.SkillPreprocessReasonCode != "" ||
+		got.SkillPreprocessSpecCount != 0 ||
+		got.SkillBundlePromptMode != "" ||
+		got.SkillBundleWhitelistMode != "" ||
+		got.SkillBundleConflictPolicy != "" ||
+		got.SkillBundlePromptTotal != 0 ||
+		got.SkillBundleWhitelistTotal != 0 ||
+		got.SkillBundleWhitelistRejectedTotal != 0 {
+		t.Fatalf("missing A65 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA65ReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a65-reason-guard",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                       "failed",
+			"skill_preprocess_status":      "failed",
+			"skill_preprocess_reason_code": "skill.preprocess.custom_alias",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	if items[0].SkillPreprocessReasonCode != "skill_preprocess_failed" {
+		t.Fatalf("reason taxonomy drift should fallback to canonical code, got %#v", items[0].SkillPreprocessReasonCode)
+	}
+}
+
 func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

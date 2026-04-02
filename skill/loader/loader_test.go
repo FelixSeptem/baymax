@@ -55,6 +55,120 @@ func TestDiscoverSkipsMissingSkillAndEmitsWarning(t *testing.T) {
 	}
 }
 
+func TestDiscoverModeAgentsMDFolderHybridMatrix(t *testing.T) {
+	root := t.TempDir()
+
+	agentsSkillPath := filepath.Join(t.TempDir(), "agents-shared", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(agentsSkillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentsSkillPath, []byte("description: from agents\n- tool: local.from_agents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agentsContent := "- shared: test (file: " + filepath.ToSlash(agentsSkillPath) + ")\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(agentsContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	folderShared := filepath.Join(root, "shared", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(folderShared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(folderShared, []byte("description: from folder shared\n- tool: local.from_folder_shared"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	folderBeta := filepath.Join(root, "beta", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(folderBeta), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(folderBeta, []byte("description: from folder beta\n- tool: local.from_folder_beta"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("agents_md", func(t *testing.T) {
+		mgr := newLoaderDiscoveryManager(t, runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD, []string{root})
+		defer func() { _ = mgr.Close() }()
+		l := NewWithRuntimeManager(nil, mgr)
+		specs, err := l.Discover(context.Background(), root)
+		if err != nil {
+			t.Fatalf("Discover failed: %v", err)
+		}
+		if len(specs) != 1 || specs[0].Name != "shared" {
+			t.Fatalf("agents_md specs mismatch: %#v", specs)
+		}
+		if specs[0].Metadata["source"] != "agents_md" {
+			t.Fatalf("agents_md source = %q, want agents_md", specs[0].Metadata["source"])
+		}
+	})
+
+	t.Run("folder", func(t *testing.T) {
+		mgr := newLoaderDiscoveryManager(t, runtimeconfig.RuntimeSkillDiscoveryModeFolder, []string{root})
+		defer func() { _ = mgr.Close() }()
+		l := NewWithRuntimeManager(nil, mgr)
+		specs, err := l.Discover(context.Background(), root)
+		if err != nil {
+			t.Fatalf("Discover failed: %v", err)
+		}
+		if len(specs) != 2 {
+			t.Fatalf("folder specs len = %d, want 2", len(specs))
+		}
+		if specs[0].Name != "beta" || specs[1].Name != "shared" {
+			t.Fatalf("folder order mismatch: %#v", specs)
+		}
+		if specs[0].Metadata["source"] != "folder" || specs[1].Metadata["source"] != "folder" {
+			t.Fatalf("folder source mismatch: %#v", specs)
+		}
+	})
+
+	t.Run("hybrid", func(t *testing.T) {
+		mgr := newLoaderDiscoveryManager(t, runtimeconfig.RuntimeSkillDiscoveryModeHybrid, []string{root})
+		defer func() { _ = mgr.Close() }()
+		l := NewWithRuntimeManager(nil, mgr)
+
+		first, err := l.Discover(context.Background(), root)
+		if err != nil {
+			t.Fatalf("first Discover failed: %v", err)
+		}
+		second, err := l.Discover(context.Background(), root)
+		if err != nil {
+			t.Fatalf("second Discover failed: %v", err)
+		}
+		if len(first) != len(second) {
+			t.Fatalf("hybrid deterministic length mismatch first=%d second=%d", len(first), len(second))
+		}
+		for i := range first {
+			if first[i].Name != second[i].Name || first[i].Path != second[i].Path {
+				t.Fatalf("hybrid deterministic mismatch first=%#v second=%#v", first, second)
+			}
+		}
+		if len(first) != 2 {
+			t.Fatalf("hybrid specs len = %d, want 2 (dedup shared)", len(first))
+		}
+		if first[0].Name != "shared" || first[0].Metadata["source"] != "agents_md" {
+			t.Fatalf("hybrid first spec mismatch: %#v", first[0])
+		}
+		if first[1].Name != "beta" || first[1].Metadata["source"] != "folder" {
+			t.Fatalf("hybrid second spec mismatch: %#v", first[1])
+		}
+	})
+}
+
+func TestDiscoverModeFolderInvalidRootFailsFast(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing-root")
+	mgr := newLoaderDiscoveryManager(t, runtimeconfig.RuntimeSkillDiscoveryModeFolder, []string{missing})
+	defer func() { _ = mgr.Close() }()
+
+	l := NewWithRuntimeManager(nil, mgr)
+	_, err := l.Discover(context.Background(), root)
+	if err == nil {
+		t.Fatal("expected invalid discovery root error")
+	}
+	if !strings.Contains(err.Error(), "runtime.skill.discovery.roots[0]") {
+		t.Fatalf("unexpected discovery root error: %v", err)
+	}
+}
+
 func TestCompileExplicitTriggerWins(t *testing.T) {
 	dir := t.TempDir()
 	skillPath := filepath.Join(dir, "one", "SKILL.md")
@@ -1127,4 +1241,28 @@ diagnostics:
 	if len(items) != 1 {
 		t.Fatalf("replayed warning should be deduped, got %d records", len(items))
 	}
+}
+
+func newLoaderDiscoveryManager(t *testing.T, mode string, roots []string) *runtimeconfig.Manager {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "runtime-discovery.yaml")
+	rootLines := make([]string, 0, len(roots))
+	for _, item := range roots {
+		rootLines = append(rootLines, "        - "+filepath.ToSlash(strings.TrimSpace(item)))
+	}
+	cfg := `
+runtime:
+  skill:
+    discovery:
+      mode: ` + strings.TrimSpace(mode) + `
+      roots:
+` + strings.Join(rootLines, "\n")
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	return mgr
 }

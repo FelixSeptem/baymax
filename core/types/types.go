@@ -391,6 +391,58 @@ type SkillLoader interface {
 	Compile(ctx context.Context, specs []SkillSpec, in SkillInput) (SkillBundle, error)
 }
 
+type AgentLifecyclePhase string
+
+const (
+	AgentLifecyclePhaseBeforeReasoning AgentLifecyclePhase = "before_reasoning"
+	AgentLifecyclePhaseAfterReasoning  AgentLifecyclePhase = "after_reasoning"
+	AgentLifecyclePhaseBeforeActing    AgentLifecyclePhase = "before_acting"
+	AgentLifecyclePhaseAfterActing     AgentLifecyclePhase = "after_acting"
+	AgentLifecyclePhaseBeforeReply     AgentLifecyclePhase = "before_reply"
+	AgentLifecyclePhaseAfterReply      AgentLifecyclePhase = "after_reply"
+)
+
+type AgentLifecycleHookContext struct {
+	RunID       string              `json:"run_id"`
+	SessionID   string              `json:"session_id,omitempty"`
+	Iteration   int                 `json:"iteration"`
+	Stream      bool                `json:"stream"`
+	Phase       AgentLifecyclePhase `json:"phase"`
+	FinalAnswer string              `json:"final_answer,omitempty"`
+	ToolCalls   []ToolCall          `json:"tool_calls,omitempty"`
+}
+
+type AgentLifecycleHook interface {
+	OnPhase(ctx context.Context, in AgentLifecycleHookContext) error
+}
+
+type AgentLifecycleHookFunc func(ctx context.Context, in AgentLifecycleHookContext) error
+
+func (f AgentLifecycleHookFunc) OnPhase(ctx context.Context, in AgentLifecycleHookContext) error {
+	if f == nil {
+		return nil
+	}
+	return f(ctx, in)
+}
+
+type ToolInvokeFunc func(ctx context.Context, call ToolCall) (ToolResult, error)
+
+type ToolMiddleware interface {
+	Invoke(ctx context.Context, call ToolCall, next ToolInvokeFunc) (ToolResult, error)
+}
+
+type ToolMiddlewareFunc func(ctx context.Context, call ToolCall, next ToolInvokeFunc) (ToolResult, error)
+
+func (f ToolMiddlewareFunc) Invoke(ctx context.Context, call ToolCall, next ToolInvokeFunc) (ToolResult, error) {
+	if f == nil {
+		if next == nil {
+			return ToolResult{}, nil
+		}
+		return next(ctx, call)
+	}
+	return f(ctx, call, next)
+}
+
 type EventHandler interface {
 	OnEvent(ctx context.Context, ev Event)
 }

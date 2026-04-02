@@ -95,6 +95,147 @@ func (l *Loader) SetEmbeddingScorer(scorer SkillTriggerEmbeddingScorer) {
 func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, error) {
 	ctx, span := otel.Tracer("baymax/skill/loader").Start(ctx, "skill.discover")
 	defer span.End()
+	discoverStart := l.now()
+	cfg := l.runtimeSkillDiscoveryConfig()
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		mode = runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD
+	}
+	roots := l.resolveDiscoveryRoots(root, cfg.Roots)
+	specs, err := l.discoverByMode(ctx, mode, roots)
+	if err != nil {
+		return nil, err
+	}
+	l.emit(ctx, "", "skill.discovered", map[string]any{
+		"action":     "discover",
+		"status":     "success",
+		"count":      len(specs),
+		"mode":       mode,
+		"latency_ms": l.now().Sub(discoverStart).Milliseconds(),
+	})
+	return specs, nil
+}
+
+func (l *Loader) runtimeSkillDiscoveryConfig() runtimeconfig.RuntimeSkillDiscoveryConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.Discovery
+	if l != nil && l.runtimeMgr != nil {
+		cfg = l.runtimeMgr.EffectiveConfig().Runtime.Skill.Discovery
+	}
+	return cfg
+}
+
+func (l *Loader) resolveDiscoveryRoots(fallbackRoot string, configured []string) []string {
+	roots := make([]string, 0, len(configured)+1)
+	if len(configured) > 0 {
+		for _, raw := range configured {
+			for _, item := range strings.Split(raw, ",") {
+				trimmed := strings.TrimSpace(item)
+				if trimmed == "" {
+					continue
+				}
+				roots = append(roots, filepath.Clean(trimmed))
+			}
+		}
+	}
+	if len(roots) == 0 && strings.TrimSpace(fallbackRoot) != "" {
+		roots = append(roots, filepath.Clean(strings.TrimSpace(fallbackRoot)))
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(roots))
+	for _, root := range roots {
+		key := strings.ToLower(strings.TrimSpace(root))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, root)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (l *Loader) discoverByMode(ctx context.Context, mode string, roots []string) ([]types.SkillSpec, error) {
+	discoveredByName := map[string]types.SkillSpec{}
+	orderedKeys := make([]string, 0)
+	appendSpecs := func(specs []types.SkillSpec) {
+		for _, spec := range specs {
+			key := strings.ToLower(strings.TrimSpace(spec.Name))
+			if key == "" {
+				key = strings.ToLower(strings.TrimSpace(spec.Path))
+			}
+			if key == "" {
+				continue
+			}
+			if _, exists := discoveredByName[key]; exists {
+				continue
+			}
+			discoveredByName[key] = spec
+			orderedKeys = append(orderedKeys, key)
+		}
+	}
+	discoverAgents := func() error {
+		for i, root := range roots {
+			if err := validateDiscoveryRoot(root, i); err != nil {
+				return err
+			}
+			specs, err := l.discoverFromAgentsRoot(ctx, root)
+			if err != nil {
+				return err
+			}
+			appendSpecs(specs)
+		}
+		return nil
+	}
+	discoverFolder := func() error {
+		for i, root := range roots {
+			if err := validateDiscoveryRoot(root, i); err != nil {
+				return err
+			}
+			specs, err := l.discoverFromFolderRoot(root)
+			if err != nil {
+				return err
+			}
+			appendSpecs(specs)
+		}
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD:
+		if err := discoverAgents(); err != nil {
+			return nil, err
+		}
+	case runtimeconfig.RuntimeSkillDiscoveryModeFolder:
+		if err := discoverFolder(); err != nil {
+			return nil, err
+		}
+	case runtimeconfig.RuntimeSkillDiscoveryModeHybrid:
+		if err := discoverAgents(); err != nil {
+			return nil, err
+		}
+		if err := discoverFolder(); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf(
+			"runtime.skill.discovery.mode must be one of [%s,%s,%s], got %q",
+			runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD,
+			runtimeconfig.RuntimeSkillDiscoveryModeFolder,
+			runtimeconfig.RuntimeSkillDiscoveryModeHybrid,
+			mode,
+		)
+	}
+	out := make([]types.SkillSpec, 0, len(orderedKeys))
+	for _, key := range orderedKeys {
+		spec := discoveredByName[key]
+		out = append(out, spec)
+	}
+	return out, nil
+}
+
+func (l *Loader) discoverFromAgentsRoot(ctx context.Context, root string) ([]types.SkillSpec, error) {
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	data, err := os.ReadFile(agentsPath)
 	if err != nil {
@@ -105,7 +246,6 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 	}
 
 	specs := make([]types.SkillSpec, 0)
-	discoverStart := l.now()
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -143,21 +283,79 @@ func (l *Loader) Discover(ctx context.Context, root string) ([]types.SkillSpec, 
 			Triggers:    triggers,
 			Priority:    priority,
 			Metadata: map[string]string{
-				"source": "AGENTS",
+				"source": "agents_md",
 			},
 		})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	sort.SliceStable(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
-	l.emit(ctx, "", "skill.discovered", map[string]any{
-		"action":     "discover",
-		"status":     "success",
-		"count":      len(specs),
-		"latency_ms": l.now().Sub(discoverStart).Milliseconds(),
+	sort.SliceStable(specs, func(i, j int) bool {
+		if specs[i].Name != specs[j].Name {
+			return specs[i].Name < specs[j].Name
+		}
+		return specs[i].Path < specs[j].Path
 	})
 	return specs, nil
+}
+
+func (l *Loader) discoverFromFolderRoot(root string) ([]types.SkillSpec, error) {
+	paths := make([]string, 0, 16)
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d == nil || d.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(d.Name(), "SKILL.md") {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	sort.Strings(paths)
+
+	specs := make([]types.SkillSpec, 0, len(paths))
+	for _, skillPath := range paths {
+		name := strings.TrimSpace(filepath.Base(filepath.Dir(skillPath)))
+		desc, triggers, priority := parseSkillMeta(skillPath)
+		specs = append(specs, types.SkillSpec{
+			Name:        name,
+			Path:        skillPath,
+			Description: desc,
+			Triggers:    triggers,
+			Priority:    priority,
+			Metadata: map[string]string{
+				"source": "folder",
+			},
+		})
+	}
+	sort.SliceStable(specs, func(i, j int) bool {
+		if specs[i].Name != specs[j].Name {
+			return specs[i].Name < specs[j].Name
+		}
+		return specs[i].Path < specs[j].Path
+	})
+	return specs, nil
+}
+
+func validateDiscoveryRoot(root string, i int) error {
+	trimmed := strings.TrimSpace(root)
+	if trimmed == "" {
+		return fmt.Errorf("runtime.skill.discovery.roots[%d] must not be empty", i)
+	}
+	info, err := os.Stat(trimmed)
+	if err != nil {
+		return fmt.Errorf("runtime.skill.discovery.roots[%d] is not readable: %w", i, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("runtime.skill.discovery.roots[%d] must be a directory: %q", i, trimmed)
+	}
+	return nil
 }
 
 // Compile resolves explicit and semantic skill matches and builds an executable skill bundle.

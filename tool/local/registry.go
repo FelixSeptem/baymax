@@ -142,8 +142,9 @@ type DropLowPriorityPolicy struct {
 }
 
 type Dispatcher struct {
-	registry   *Registry
-	runtimeMgr *runtimeconfig.Manager
+	registry    *Registry
+	runtimeMgr  *runtimeconfig.Manager
+	middlewares []types.ToolMiddleware
 }
 
 func NewDispatcher(registry *Registry) *Dispatcher {
@@ -161,6 +162,24 @@ func NewDispatcherWithRuntimeManager(registry *Registry, mgr *runtimeconfig.Mana
 
 func (d *Dispatcher) SetRuntimeManager(mgr *runtimeconfig.Manager) {
 	d.runtimeMgr = mgr
+}
+
+func (d *Dispatcher) SetMiddlewares(middlewares ...types.ToolMiddleware) {
+	if d == nil {
+		return
+	}
+	if len(middlewares) == 0 {
+		d.middlewares = nil
+		return
+	}
+	out := make([]types.ToolMiddleware, 0, len(middlewares))
+	for _, middleware := range middlewares {
+		if middleware == nil {
+			continue
+		}
+		out = append(out, middleware)
+	}
+	d.middlewares = out
 }
 
 func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg DispatchConfig) ([]types.ToolCallOutcome, error) {
@@ -470,32 +489,109 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		return err
 	}
 
+	invokeCtx := ctx
+	cancelInvoke := func() {}
+	if d.middlewareEnabled() {
+		timeout := d.runtimeToolMiddlewareConfig().Timeout
+		if timeout > 0 {
+			invokeCtx, cancelInvoke = context.WithTimeout(ctx, timeout)
+		}
+	}
+	defer cancelInvoke()
+
+	retryCount := 0
+	baseInvoke := func(invokeCtx context.Context, invokeCall types.ToolCall) (types.ToolResult, error) {
+		result, attemptsUsed, err := d.invokeToolWithRetry(invokeCtx, tool, invokeCall, retry)
+		retryCount = attemptsUsed
+		return result, err
+	}
+	invoker := baseInvoke
+	if d.middlewareEnabled() && len(d.middlewares) > 0 {
+		invoker = buildToolMiddlewareChain(d.middlewares, baseInvoke)
+	}
+
+	result, err := invoker(invokeCtx, call)
+	if err == nil {
+		if strings.TrimSpace(hostMarker.ReasonCode) != "" {
+			result.Structured = annotateSandboxStructured(result.Structured, hostMarker)
+		}
+		outcomes[i] = types.ToolCallOutcome{CallID: call.CallID, Name: call.Name, Result: result}
+		if outcomes[i].Result.Error != nil {
+			outcomes[i].Result.Error.Details = mergeDetails(outcomes[i].Result.Error.Details, map[string]any{"retry_count": retryCount})
+		}
+		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		return nil
+	}
+	outcomes[i] = failedOutcome(call, types.ErrTool, err.Error(), false, map[string]any{"retry_count": retryCount})
+	d.recordToolDiag(call, start, outcomes[i].Result.Error)
+	return err
+}
+
+func (d *Dispatcher) middlewareEnabled() bool {
+	if d == nil {
+		return false
+	}
+	if len(d.middlewares) == 0 {
+		return false
+	}
+	if d.runtimeMgr == nil {
+		return true
+	}
+	cfg := d.runtimeToolMiddlewareConfig()
+	return cfg.Enabled
+}
+
+func (d *Dispatcher) runtimeToolMiddlewareConfig() runtimeconfig.RuntimeToolMiddlewareConfig {
+	cfg := runtimeconfig.DefaultConfig().Runtime.ToolMiddleware
+	if d != nil && d.runtimeMgr != nil {
+		cfg = d.runtimeMgr.EffectiveConfig().Runtime.ToolMiddleware
+	}
+	return cfg
+}
+
+func (d *Dispatcher) invokeToolWithRetry(
+	ctx context.Context,
+	tool types.Tool,
+	call types.ToolCall,
+	retry int,
+) (types.ToolResult, int, error) {
 	attempts := retry + 1
 	if attempts < 1 {
 		attempts = 1
 	}
 	var lastErr error
+	var retryCount int
 	for attempt := 0; attempt < attempts; attempt++ {
 		result, err := tool.Invoke(ctx, call.Args)
+		retryCount = attempt
 		if err == nil {
-			if strings.TrimSpace(hostMarker.ReasonCode) != "" {
-				result.Structured = annotateSandboxStructured(result.Structured, hostMarker)
-			}
-			outcomes[i] = types.ToolCallOutcome{CallID: call.CallID, Name: call.Name, Result: result}
-			if outcomes[i].Result.Error != nil {
-				outcomes[i].Result.Error.Details = mergeDetails(outcomes[i].Result.Error.Details, map[string]any{"retry_count": attempt})
-			}
-			d.recordToolDiag(call, start, outcomes[i].Result.Error)
-			return nil
+			return result, retryCount, nil
 		}
 		lastErr = err
 		if !shouldRetryToolError(result, err, attempt, attempts) {
 			break
 		}
 	}
-	outcomes[i] = failedOutcome(call, types.ErrTool, lastErr.Error(), false, map[string]any{"retry_count": attempts - 1})
-	d.recordToolDiag(call, start, outcomes[i].Result.Error)
-	return lastErr
+	return types.ToolResult{}, retryCount, lastErr
+}
+
+func buildToolMiddlewareChain(
+	middlewares []types.ToolMiddleware,
+	base types.ToolInvokeFunc,
+) types.ToolInvokeFunc {
+	chain := base
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		middleware := middlewares[i]
+		if middleware == nil {
+			continue
+		}
+		mw := middleware
+		next := chain
+		chain = func(ctx context.Context, call types.ToolCall) (types.ToolResult, error) {
+			return mw.Invoke(ctx, call, next)
+		}
+	}
+	return chain
 }
 
 func (d *Dispatcher) trySandboxInvoke(

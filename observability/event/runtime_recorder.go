@@ -466,6 +466,25 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			ReactIterationBudgetHitTotal:                payloadInt(payload, "react_iteration_budget_hit_total"),
 			ReactTerminationReason:                      payloadString(payload, "react_termination_reason"),
 			ReactStreamDispatchEnabled:                  payloadBool(payload, "react_stream_dispatch_enabled"),
+			HooksEnabled:                                payloadBool(payload, "hooks_enabled"),
+			HooksFailMode:                               normalizeA65HooksFailMode(payloadString(payload, "hooks_fail_mode")),
+			HooksPhases:                                 payloadStringSliceCSV(payload, "hooks_phases"),
+			ToolMiddlewareEnabled:                       payloadBool(payload, "tool_middleware_enabled"),
+			ToolMiddlewareFailMode:                      normalizeA65ToolMiddlewareFailMode(payloadString(payload, "tool_middleware_fail_mode")),
+			SkillDiscoveryMode:                          normalizeA65SkillDiscoveryMode(payloadString(payload, "skill_discovery_mode")),
+			SkillDiscoveryRoots:                         payloadStringSlice(payload, "skill_discovery_roots"),
+			SkillPreprocessEnabled:                      payloadBool(payload, "skill_preprocess_enabled"),
+			SkillPreprocessPhase:                        normalizeA65SkillPreprocessPhase(payloadString(payload, "skill_preprocess_phase")),
+			SkillPreprocessFailMode:                     normalizeA65SkillPreprocessFailMode(payloadString(payload, "skill_preprocess_fail_mode")),
+			SkillPreprocessStatus:                       normalizeA65SkillPreprocessStatus(payloadString(payload, "skill_preprocess_status")),
+			SkillPreprocessReasonCode:                   normalizeA65SkillPreprocessReasonCode(payloadString(payload, "skill_preprocess_reason_code")),
+			SkillPreprocessSpecCount:                    payloadInt(payload, "skill_preprocess_spec_count"),
+			SkillBundlePromptMode:                       normalizeA65SkillBundlePromptMode(payloadString(payload, "skill_bundle_prompt_mode")),
+			SkillBundleWhitelistMode:                    normalizeA65SkillBundleWhitelistMode(payloadString(payload, "skill_bundle_whitelist_mode")),
+			SkillBundleConflictPolicy:                   normalizeA65SkillBundleConflictPolicy(payloadString(payload, "skill_bundle_conflict_policy")),
+			SkillBundlePromptTotal:                      payloadInt(payload, "skill_bundle_prompt_total"),
+			SkillBundleWhitelistTotal:                   payloadInt(payload, "skill_bundle_whitelist_total"),
+			SkillBundleWhitelistRejectedTotal:           payloadInt(payload, "skill_bundle_whitelist_rejected_total"),
 		})
 	case "skill.discovered":
 		r.manager.RecordSkill(runtimediag.SkillRecord{
@@ -948,6 +967,128 @@ func normalizeRuntimeDiagnosticsBundleSchemaVersion(raw string) string {
 		return runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1
 	default:
 		return runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1
+	}
+}
+
+func normalizeA65HooksFailMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeHooksFailModeFailFast:
+		return runtimeconfig.RuntimeHooksFailModeFailFast
+	case runtimeconfig.RuntimeHooksFailModeDegrade:
+		return runtimeconfig.RuntimeHooksFailModeDegrade
+	default:
+		return ""
+	}
+}
+
+func normalizeA65ToolMiddlewareFailMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeToolMiddlewareFailModeFailFast:
+		return runtimeconfig.RuntimeToolMiddlewareFailModeFailFast
+	case runtimeconfig.RuntimeToolMiddlewareFailModeDegrade:
+		return runtimeconfig.RuntimeToolMiddlewareFailModeDegrade
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillDiscoveryMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD:
+		return runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD
+	case runtimeconfig.RuntimeSkillDiscoveryModeFolder:
+		return runtimeconfig.RuntimeSkillDiscoveryModeFolder
+	case runtimeconfig.RuntimeSkillDiscoveryModeHybrid:
+		return runtimeconfig.RuntimeSkillDiscoveryModeHybrid
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillPreprocessPhase(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream:
+		return runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillPreprocessFailMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillPreprocessFailModeFailFast:
+		return runtimeconfig.RuntimeSkillPreprocessFailModeFailFast
+	case runtimeconfig.RuntimeSkillPreprocessFailModeDegrade:
+		return runtimeconfig.RuntimeSkillPreprocessFailModeDegrade
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillPreprocessStatus(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "success":
+		return "success"
+	case "failed":
+		return "failed"
+	case "degraded":
+		return "degraded"
+	case "skipped":
+		return "skipped"
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillPreprocessReasonCode(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "":
+		return ""
+	case "skill_preprocess_failed",
+		"skill_bundle_prompt_conflict",
+		"skill_bundle_whitelist_conflict",
+		"skill_bundle_whitelist_exceeds_sandbox",
+		"skill_bundle_whitelist_exceeds_adapter_allowlist",
+		"skill_bundle_whitelist_invalid_tool",
+		"skill_bundle_whitelist_violation":
+		return value
+	default:
+		// Drift guard: unknown synonyms collapse to canonical fallback.
+		return "skill_preprocess_failed"
+	}
+}
+
+func normalizeA65SkillBundlePromptMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled:
+		return runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled
+	case runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend:
+		return runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillBundleWhitelistMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled:
+		return runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled
+	case runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge:
+		return runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge
+	default:
+		return ""
+	}
+}
+
+func normalizeA65SkillBundleConflictPolicy(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast:
+		return runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast
+	case runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin:
+		return runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin
+	default:
+		return ""
 	}
 }
 

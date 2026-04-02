@@ -93,6 +93,21 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a61_agent_eval_distributed_success_input.json",
 			expected: "a61_agent_eval_distributed_success_expected.json",
 		},
+		{
+			name:     "a65-hooks-middleware",
+			input:    "a65_hooks_middleware_success_input.json",
+			expected: "a65_hooks_middleware_success_expected.json",
+		},
+		{
+			name:     "a65-skill-discovery",
+			input:    "a65_skill_discovery_sources_success_input.json",
+			expected: "a65_skill_discovery_sources_success_expected.json",
+		},
+		{
+			name:     "a65-skill-preprocess-mapping",
+			input:    "a65_skill_preprocess_and_mapping_success_input.json",
+			expected: "a65_skill_preprocess_and_mapping_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -488,6 +503,30 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeEvalShardResumeDrift,
 			wantInText: "eval shard/resume drift",
 		},
+		{
+			name:       "a65-hooks-order-drift",
+			fixture:    "a65_hooks_order_drift_input.json",
+			wantCode:   ReasonCodeHooksOrderDrift,
+			wantInText: "hooks order drift",
+		},
+		{
+			name:       "a65-skill-discovery-source-drift",
+			fixture:    "a65_skill_discovery_source_drift_input.json",
+			wantCode:   ReasonCodeSkillDiscoverySourceDrift,
+			wantInText: "skill discovery source drift",
+		},
+		{
+			name:       "a65-skill-bundle-mapping-drift",
+			fixture:    "a65_skill_bundle_mapping_drift_input.json",
+			wantCode:   ReasonCodeSkillBundleMappingDrift,
+			wantInText: "skill preprocess/mapping drift",
+		},
+		{
+			name:       "a65-hooks-schema-mismatch",
+			fixture:    "a65_hooks_middleware_schema_mismatch_input.json",
+			wantCode:   ReasonCodeSchemaMismatch,
+			wantInText: "hooks_phases must not be empty",
+		},
 	}
 
 	for _, tc := range tests {
@@ -561,6 +600,9 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -584,6 +626,9 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -655,6 +700,62 @@ func TestReplayContractA61OtelEvalDriftClassification(t *testing.T) {
 	}
 }
 
+func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
+	fixtures := []string{
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
+				t.Fatalf("A65 fixture %q should pass: %v", fixture, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA65HooksMiddlewareDriftClassification(t *testing.T) {
+	tests := []struct {
+		fixture  string
+		wantCode string
+	}{
+		{
+			fixture:  "a65_hooks_order_drift_input.json",
+			wantCode: ReasonCodeHooksOrderDrift,
+		},
+		{
+			fixture:  "a65_skill_discovery_source_drift_input.json",
+			wantCode: ReasonCodeSkillDiscoverySourceDrift,
+		},
+		{
+			fixture:  "a65_skill_bundle_mapping_drift_input.json",
+			wantCode: ReasonCodeSkillBundleMappingDrift,
+		},
+		{
+			fixture:  "a65_hooks_middleware_schema_mismatch_input.json",
+			wantCode: ReasonCodeSchemaMismatch,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.fixture))
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
 func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a50_arbitration_success_input.json",
@@ -664,6 +765,9 @@ func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture

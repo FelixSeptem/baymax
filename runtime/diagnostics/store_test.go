@@ -523,6 +523,99 @@ func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *
 	}
 }
 
+func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                              time.Now(),
+		RunID:                             "run-a65-hooks-middleware",
+		Status:                            "failed",
+		HooksEnabled:                      true,
+		HooksFailMode:                     "degrade",
+		HooksPhases:                       []string{"before_reasoning", "after_reasoning"},
+		ToolMiddlewareEnabled:             true,
+		ToolMiddlewareFailMode:            "fail_fast",
+		SkillDiscoveryMode:                "hybrid",
+		SkillDiscoveryRoots:               []string{"./skills", "./agents"},
+		SkillPreprocessEnabled:            true,
+		SkillPreprocessPhase:              "before_run_stream",
+		SkillPreprocessFailMode:           "degrade",
+		SkillPreprocessStatus:             "degraded",
+		SkillPreprocessReasonCode:         "skill_preprocess_failed",
+		SkillPreprocessSpecCount:          2,
+		SkillBundlePromptMode:             "append",
+		SkillBundleWhitelistMode:          "merge",
+		SkillBundleConflictPolicy:         "first_win",
+		SkillBundlePromptTotal:            1,
+		SkillBundleWhitelistTotal:         3,
+		SkillBundleWhitelistRejectedTotal: 1,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if !got.HooksEnabled ||
+		got.HooksFailMode != "degrade" ||
+		len(got.HooksPhases) != 2 ||
+		got.HooksPhases[0] != "before_reasoning" ||
+		got.HooksPhases[1] != "after_reasoning" ||
+		!got.ToolMiddlewareEnabled ||
+		got.ToolMiddlewareFailMode != "fail_fast" ||
+		got.SkillDiscoveryMode != "hybrid" ||
+		len(got.SkillDiscoveryRoots) != 2 ||
+		got.SkillDiscoveryRoots[0] != "./skills" ||
+		got.SkillDiscoveryRoots[1] != "./agents" ||
+		!got.SkillPreprocessEnabled ||
+		got.SkillPreprocessPhase != "before_run_stream" ||
+		got.SkillPreprocessFailMode != "degrade" ||
+		got.SkillPreprocessStatus != "degraded" ||
+		got.SkillPreprocessReasonCode != "skill_preprocess_failed" ||
+		got.SkillPreprocessSpecCount != 2 ||
+		got.SkillBundlePromptMode != "append" ||
+		got.SkillBundleWhitelistMode != "merge" ||
+		got.SkillBundleConflictPolicy != "first_win" ||
+		got.SkillBundlePromptTotal != 1 ||
+		got.SkillBundleWhitelistTotal != 3 ||
+		got.SkillBundleWhitelistRejectedTotal != 1 {
+		t.Fatalf("A65 additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.SkillPreprocessStatus = "failed"
+	rec.SkillPreprocessReasonCode = "skill_bundle_whitelist_violation"
+	rec.SkillBundlePromptTotal = 2
+	rec.SkillBundleWhitelistRejectedTotal = 2
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.SkillPreprocessStatus != "failed" ||
+		got.SkillPreprocessReasonCode != "skill_bundle_whitelist_violation" ||
+		got.SkillBundlePromptTotal != 2 ||
+		got.SkillBundleWhitelistRejectedTotal != 2 {
+		t.Fatalf("A65 additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a65-hooks-middleware"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].SkillPreprocessStatus != "failed" ||
+		page.Items[0].SkillPreprocessReasonCode != "skill_bundle_whitelist_violation" ||
+		page.Items[0].SkillBundlePromptTotal != 2 ||
+		page.Items[0].SkillBundleWhitelistRejectedTotal != 2 {
+		t.Fatalf("A65 QueryRuns additive parse mismatch: %#v", page.Items[0])
+	}
+}
+
 func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

@@ -16,6 +16,9 @@ const (
 	ArbitrationFixtureVersionA50V1             = "a50.v1"
 	ArbitrationFixtureVersionA51V1             = "a51.v1"
 	ArbitrationFixtureVersionA52V1             = "a52.v1"
+	ArbitrationFixtureVersionHooksMiddlewareV1 = "hooks_middleware.v1"
+	ArbitrationFixtureVersionSkillDiscoveryV1  = "skill_discovery_sources.v1"
+	ArbitrationFixtureVersionSkillMappingV1    = "skill_preprocess_and_mapping.v1"
 	ArbitrationFixtureVersionA57V1             = "sandbox_egress.v1"
 	ArbitrationFixtureVersionBudgetAdmissionV1 = "budget_admission.v1"
 	ArbitrationFixtureVersionPolicyV1          = "policy_stack.v1"
@@ -82,6 +85,9 @@ const (
 	ReasonCodeBudgetThresholdDrift                = "budget_threshold_drift"
 	ReasonCodeAdmissionDecisionDrift              = "admission_decision_drift"
 	ReasonCodeDegradePolicyDrift                  = "degrade_policy_drift"
+	ReasonCodeHooksOrderDrift                     = "hooks_order_drift"
+	ReasonCodeSkillDiscoverySourceDrift           = "skill_discovery_source_drift"
+	ReasonCodeSkillBundleMappingDrift             = "skill_bundle_mapping_drift"
 	ReasonCodeScopeResolutionDrift                = "scope_resolution_drift"
 	ReasonCodeRetrievalQualityRegression          = "retrieval_quality_regression"
 	ReasonCodeLifecyclePolicyDrift                = "lifecycle_policy_drift"
@@ -123,6 +129,25 @@ type ArbitrationObservation struct {
 	DenySource                             string                    `json:"deny_source,omitempty"`
 	TieBreakReason                         string                    `json:"tie_break_reason,omitempty"`
 	PolicyDecisionPath                     []PolicyDecisionPathEntry `json:"policy_decision_path,omitempty"`
+	HooksEnabled                           bool                      `json:"hooks_enabled,omitempty"`
+	HooksFailMode                          string                    `json:"hooks_fail_mode,omitempty"`
+	HooksPhases                            []string                  `json:"hooks_phases,omitempty"`
+	ToolMiddlewareEnabled                  bool                      `json:"tool_middleware_enabled,omitempty"`
+	ToolMiddlewareFailMode                 string                    `json:"tool_middleware_fail_mode,omitempty"`
+	SkillDiscoveryMode                     string                    `json:"skill_discovery_mode,omitempty"`
+	SkillDiscoveryRoots                    []string                  `json:"skill_discovery_roots,omitempty"`
+	SkillPreprocessEnabled                 bool                      `json:"skill_preprocess_enabled,omitempty"`
+	SkillPreprocessPhase                   string                    `json:"skill_preprocess_phase,omitempty"`
+	SkillPreprocessFailMode                string                    `json:"skill_preprocess_fail_mode,omitempty"`
+	SkillPreprocessStatus                  string                    `json:"skill_preprocess_status,omitempty"`
+	SkillPreprocessReasonCode              string                    `json:"skill_preprocess_reason_code,omitempty"`
+	SkillPreprocessSpecCount               int                       `json:"skill_preprocess_spec_count,omitempty"`
+	SkillBundlePromptMode                  string                    `json:"skill_bundle_prompt_mode,omitempty"`
+	SkillBundleWhitelistMode               string                    `json:"skill_bundle_whitelist_mode,omitempty"`
+	SkillBundleConflictPolicy              string                    `json:"skill_bundle_conflict_policy,omitempty"`
+	SkillBundlePromptTotal                 int                       `json:"skill_bundle_prompt_total,omitempty"`
+	SkillBundleWhitelistTotal              int                       `json:"skill_bundle_whitelist_total,omitempty"`
+	SkillBundleWhitelistRejectedTotal      int                       `json:"skill_bundle_whitelist_rejected_total,omitempty"`
 	ModelProvider                          string                    `json:"model_provider,omitempty"`
 	ReactEnabled                           bool                      `json:"react_enabled,omitempty"`
 	ReactIterationTotal                    int                       `json:"react_iteration_total,omitempty"`
@@ -255,6 +280,9 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionA50V1 &&
 		version != ArbitrationFixtureVersionA51V1 &&
 		version != ArbitrationFixtureVersionA52V1 &&
+		version != ArbitrationFixtureVersionHooksMiddlewareV1 &&
+		version != ArbitrationFixtureVersionSkillDiscoveryV1 &&
+		version != ArbitrationFixtureVersionSkillMappingV1 &&
 		version != ArbitrationFixtureVersionA57V1 &&
 		version != ArbitrationFixtureVersionBudgetAdmissionV1 &&
 		version != ArbitrationFixtureVersionPolicyV1 &&
@@ -383,6 +411,23 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		WinnerStage:                            strings.ToLower(strings.TrimSpace(in.WinnerStage)),
 		DenySource:                             strings.ToLower(strings.TrimSpace(in.DenySource)),
 		TieBreakReason:                         strings.ToLower(strings.TrimSpace(in.TieBreakReason)),
+		HooksEnabled:                           in.HooksEnabled,
+		HooksFailMode:                          strings.ToLower(strings.TrimSpace(in.HooksFailMode)),
+		ToolMiddlewareEnabled:                  in.ToolMiddlewareEnabled,
+		ToolMiddlewareFailMode:                 strings.ToLower(strings.TrimSpace(in.ToolMiddlewareFailMode)),
+		SkillDiscoveryMode:                     strings.ToLower(strings.TrimSpace(in.SkillDiscoveryMode)),
+		SkillPreprocessEnabled:                 in.SkillPreprocessEnabled,
+		SkillPreprocessPhase:                   strings.ToLower(strings.TrimSpace(in.SkillPreprocessPhase)),
+		SkillPreprocessFailMode:                strings.ToLower(strings.TrimSpace(in.SkillPreprocessFailMode)),
+		SkillPreprocessStatus:                  strings.ToLower(strings.TrimSpace(in.SkillPreprocessStatus)),
+		SkillPreprocessReasonCode:              strings.ToLower(strings.TrimSpace(in.SkillPreprocessReasonCode)),
+		SkillPreprocessSpecCount:               in.SkillPreprocessSpecCount,
+		SkillBundlePromptMode:                  strings.ToLower(strings.TrimSpace(in.SkillBundlePromptMode)),
+		SkillBundleWhitelistMode:               strings.ToLower(strings.TrimSpace(in.SkillBundleWhitelistMode)),
+		SkillBundleConflictPolicy:              strings.ToLower(strings.TrimSpace(in.SkillBundleConflictPolicy)),
+		SkillBundlePromptTotal:                 in.SkillBundlePromptTotal,
+		SkillBundleWhitelistTotal:              in.SkillBundleWhitelistTotal,
+		SkillBundleWhitelistRejectedTotal:      in.SkillBundleWhitelistRejectedTotal,
 		ModelProvider:                          strings.ToLower(strings.TrimSpace(in.ModelProvider)),
 		ReactEnabled:                           in.ReactEnabled,
 		ReactIterationTotal:                    in.ReactIterationTotal,
@@ -477,6 +522,18 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if out.ReactIterationBudgetHitTotal < 0 {
 		out.ReactIterationBudgetHitTotal = 0
+	}
+	if out.SkillPreprocessSpecCount < 0 {
+		out.SkillPreprocessSpecCount = 0
+	}
+	if out.SkillBundlePromptTotal < 0 {
+		out.SkillBundlePromptTotal = 0
+	}
+	if out.SkillBundleWhitelistTotal < 0 {
+		out.SkillBundleWhitelistTotal = 0
+	}
+	if out.SkillBundleWhitelistRejectedTotal < 0 {
+		out.SkillBundleWhitelistRejectedTotal = 0
 	}
 	if out.SandboxTimeoutTotal < 0 {
 		out.SandboxTimeoutTotal = 0
@@ -587,6 +644,26 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if len(out.PolicyDecisionPath) == 0 {
 		out.PolicyDecisionPath = nil
 	}
+	for i := range in.HooksPhases {
+		item := strings.ToLower(strings.TrimSpace(in.HooksPhases[i]))
+		if item == "" {
+			continue
+		}
+		out.HooksPhases = append(out.HooksPhases, item)
+	}
+	if len(out.HooksPhases) == 0 {
+		out.HooksPhases = nil
+	}
+	for i := range in.SkillDiscoveryRoots {
+		item := strings.TrimSpace(in.SkillDiscoveryRoots[i])
+		if item == "" {
+			continue
+		}
+		out.SkillDiscoveryRoots = append(out.SkillDiscoveryRoots, item)
+	}
+	if len(out.SkillDiscoveryRoots) == 0 {
+		out.SkillDiscoveryRoots = nil
+	}
 	traceAttrSet := map[string]struct{}{}
 	for i := range in.TraceCanonicalAttrKeys {
 		item := strings.ToLower(strings.TrimSpace(in.TraceCanonicalAttrKeys[i]))
@@ -607,6 +684,15 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 }
 
 func validateArbitrationObservation(version, caseName, lane string, obs ArbitrationObservation) error {
+	if version == ArbitrationFixtureVersionHooksMiddlewareV1 {
+		return validateHooksMiddlewareArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionSkillDiscoveryV1 {
+		return validateSkillDiscoveryArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionSkillMappingV1 {
+		return validateSkillMappingArbitrationObservation(caseName, lane, obs)
+	}
 	if version == ArbitrationFixtureVersionOTelSemconvV1 {
 		return validateOTelSemconvArbitrationObservation(caseName, lane, obs)
 	}
@@ -828,6 +914,15 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionHooksMiddlewareV1 {
+		return assertHooksMiddlewareArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionSkillDiscoveryV1 {
+		return assertSkillDiscoveryArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionSkillMappingV1 {
+		return assertSkillMappingArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionOTelSemconvV1 {
 		return assertOTelSemconvArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1243,6 +1338,182 @@ func assertReactArbitrationEquivalent(caseName, lane string, expected, actual Ar
 		return &ValidationError{
 			Code:    ReasonCodeReactProviderMappingDrift,
 			Message: fmt.Sprintf("case %q %s react provider mapping drift expected=%q actual=%q", caseName, lane, expected.ModelProvider, actual.ModelProvider),
+		}
+	}
+	return nil
+}
+
+func validateHooksMiddlewareArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isHooksFailMode(obs.HooksFailMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s hooks_fail_mode must be fail_fast|degrade", caseName, lane),
+		}
+	}
+	if !isToolMiddlewareFailMode(obs.ToolMiddlewareFailMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s tool_middleware_fail_mode must be fail_fast|degrade", caseName, lane),
+		}
+	}
+	if len(obs.HooksPhases) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s hooks_phases must not be empty", caseName, lane),
+		}
+	}
+	for i := range obs.HooksPhases {
+		if !isHookPhase(obs.HooksPhases[i]) {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s hooks_phases[%d] is invalid: %q", caseName, lane, i, obs.HooksPhases[i]),
+			}
+		}
+	}
+	if !equalStringSlice(obs.HooksPhases, canonicalHookPhases()) {
+		return &ValidationError{
+			Code:    ReasonCodeHooksOrderDrift,
+			Message: fmt.Sprintf("case %q %s hooks order drift expected=%v actual=%v", caseName, lane, canonicalHookPhases(), obs.HooksPhases),
+		}
+	}
+	return nil
+}
+
+func assertHooksMiddlewareArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if !equalStringSlice(expected.HooksPhases, actual.HooksPhases) {
+		return &ValidationError{
+			Code:    ReasonCodeHooksOrderDrift,
+			Message: fmt.Sprintf("case %q %s hooks order drift expected=%v actual=%v", caseName, lane, expected.HooksPhases, actual.HooksPhases),
+		}
+	}
+	if expected.HooksEnabled != actual.HooksEnabled ||
+		expected.HooksFailMode != actual.HooksFailMode ||
+		expected.ToolMiddlewareEnabled != actual.ToolMiddlewareEnabled ||
+		expected.ToolMiddlewareFailMode != actual.ToolMiddlewareFailMode {
+		return &ValidationError{
+			Code:    ReasonCodeSemanticDrift,
+			Message: fmt.Sprintf("case %q %s hooks/middleware semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
+}
+
+func validateSkillDiscoveryArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isSkillDiscoveryMode(obs.SkillDiscoveryMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_discovery_mode must be agents_md|folder|hybrid", caseName, lane),
+		}
+	}
+	if (obs.SkillDiscoveryMode == runtimeconfig.RuntimeSkillDiscoveryModeFolder || obs.SkillDiscoveryMode == runtimeconfig.RuntimeSkillDiscoveryModeHybrid) &&
+		len(obs.SkillDiscoveryRoots) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_discovery_roots must not be empty when discovery mode is folder|hybrid", caseName, lane),
+		}
+	}
+	for i := range obs.SkillDiscoveryRoots {
+		if strings.TrimSpace(obs.SkillDiscoveryRoots[i]) == "" {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s skill_discovery_roots[%d] must not be empty", caseName, lane, i),
+			}
+		}
+	}
+	if obs.SkillPreprocessSpecCount <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_spec_count must be > 0", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertSkillDiscoveryArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.SkillDiscoveryMode != actual.SkillDiscoveryMode ||
+		!equalStringSlice(expected.SkillDiscoveryRoots, actual.SkillDiscoveryRoots) ||
+		expected.SkillPreprocessSpecCount != actual.SkillPreprocessSpecCount {
+		return &ValidationError{
+			Code:    ReasonCodeSkillDiscoverySourceDrift,
+			Message: fmt.Sprintf("case %q %s skill discovery source drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
+}
+
+func validateSkillMappingArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isSkillPreprocessPhase(obs.SkillPreprocessPhase) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_phase must be before_run_stream", caseName, lane),
+		}
+	}
+	if !isSkillPreprocessFailMode(obs.SkillPreprocessFailMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_fail_mode must be fail_fast|degrade", caseName, lane),
+		}
+	}
+	if !isSkillPreprocessStatus(obs.SkillPreprocessStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_status must be success|failed|degraded|skipped", caseName, lane),
+		}
+	}
+	if !isSkillBundlePromptMode(obs.SkillBundlePromptMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_bundle_prompt_mode must be disabled|append", caseName, lane),
+		}
+	}
+	if !isSkillBundleWhitelistMode(obs.SkillBundleWhitelistMode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_bundle_whitelist_mode must be disabled|merge", caseName, lane),
+		}
+	}
+	if !isSkillBundleConflictPolicy(obs.SkillBundleConflictPolicy) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_bundle_conflict_policy must be fail_fast|first_win", caseName, lane),
+		}
+	}
+	if obs.SkillBundlePromptTotal < 0 || obs.SkillBundleWhitelistTotal < 0 || obs.SkillBundleWhitelistRejectedTotal < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill bundle counters must be >= 0", caseName, lane),
+		}
+	}
+	if (obs.SkillPreprocessStatus == "failed" || obs.SkillPreprocessStatus == "degraded") && !isSkillPreprocessReasonCode(obs.SkillPreprocessReasonCode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_reason_code must be canonical when status is failed|degraded", caseName, lane),
+		}
+	}
+	if (obs.SkillPreprocessStatus == "success" || obs.SkillPreprocessStatus == "skipped") && strings.TrimSpace(obs.SkillPreprocessReasonCode) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s skill_preprocess_reason_code must be empty when status is success|skipped", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertSkillMappingArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.SkillPreprocessEnabled != actual.SkillPreprocessEnabled ||
+		expected.SkillPreprocessPhase != actual.SkillPreprocessPhase ||
+		expected.SkillPreprocessFailMode != actual.SkillPreprocessFailMode ||
+		expected.SkillPreprocessStatus != actual.SkillPreprocessStatus ||
+		expected.SkillPreprocessReasonCode != actual.SkillPreprocessReasonCode ||
+		expected.SkillBundlePromptMode != actual.SkillBundlePromptMode ||
+		expected.SkillBundleWhitelistMode != actual.SkillBundleWhitelistMode ||
+		expected.SkillBundleConflictPolicy != actual.SkillBundleConflictPolicy ||
+		expected.SkillBundlePromptTotal != actual.SkillBundlePromptTotal ||
+		expected.SkillBundleWhitelistTotal != actual.SkillBundleWhitelistTotal ||
+		expected.SkillBundleWhitelistRejectedTotal != actual.SkillBundleWhitelistRejectedTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSkillBundleMappingDrift,
+			Message: fmt.Sprintf("case %q %s skill preprocess/mapping drift expected=%#v actual=%#v", caseName, lane, expected, actual),
 		}
 	}
 	return nil
@@ -1717,6 +1988,31 @@ func nonNegativeInt64(value int64) int64 {
 }
 
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
+	if version == ArbitrationFixtureVersionHooksMiddlewareV1 {
+		return left.HooksEnabled == right.HooksEnabled &&
+			left.HooksFailMode == right.HooksFailMode &&
+			equalStringSlice(left.HooksPhases, right.HooksPhases) &&
+			left.ToolMiddlewareEnabled == right.ToolMiddlewareEnabled &&
+			left.ToolMiddlewareFailMode == right.ToolMiddlewareFailMode
+	}
+	if version == ArbitrationFixtureVersionSkillDiscoveryV1 {
+		return left.SkillDiscoveryMode == right.SkillDiscoveryMode &&
+			equalStringSlice(left.SkillDiscoveryRoots, right.SkillDiscoveryRoots) &&
+			left.SkillPreprocessSpecCount == right.SkillPreprocessSpecCount
+	}
+	if version == ArbitrationFixtureVersionSkillMappingV1 {
+		return left.SkillPreprocessEnabled == right.SkillPreprocessEnabled &&
+			left.SkillPreprocessPhase == right.SkillPreprocessPhase &&
+			left.SkillPreprocessFailMode == right.SkillPreprocessFailMode &&
+			left.SkillPreprocessStatus == right.SkillPreprocessStatus &&
+			left.SkillPreprocessReasonCode == right.SkillPreprocessReasonCode &&
+			left.SkillBundlePromptMode == right.SkillBundlePromptMode &&
+			left.SkillBundleWhitelistMode == right.SkillBundleWhitelistMode &&
+			left.SkillBundleConflictPolicy == right.SkillBundleConflictPolicy &&
+			left.SkillBundlePromptTotal == right.SkillBundlePromptTotal &&
+			left.SkillBundleWhitelistTotal == right.SkillBundleWhitelistTotal &&
+			left.SkillBundleWhitelistRejectedTotal == right.SkillBundleWhitelistRejectedTotal
+	}
 	if version == ArbitrationFixtureVersionOTelSemconvV1 {
 		return left.TraceExportStatus == right.TraceExportStatus &&
 			left.TraceSchemaVersion == right.TraceSchemaVersion &&
@@ -2071,6 +2367,118 @@ func isCanonicalAdapterAllowlistPrimaryCode(code string) bool {
 	case runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry,
 		runtimeconfig.ReadinessCodeAdapterAllowlistSignatureInvalid,
 		runtimeconfig.ReadinessCodeAdapterAllowlistPolicyConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalHookPhases() []string {
+	return []string{
+		runtimeconfig.RuntimeHookPhaseBeforeReasoning,
+		runtimeconfig.RuntimeHookPhaseAfterReasoning,
+		runtimeconfig.RuntimeHookPhaseBeforeActing,
+		runtimeconfig.RuntimeHookPhaseAfterActing,
+		runtimeconfig.RuntimeHookPhaseBeforeReply,
+		runtimeconfig.RuntimeHookPhaseAfterReply,
+	}
+}
+
+func isHookPhase(phase string) bool {
+	needle := strings.ToLower(strings.TrimSpace(phase))
+	for _, item := range canonicalHookPhases() {
+		if needle == item {
+			return true
+		}
+	}
+	return false
+}
+
+func isHooksFailMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeHooksFailModeFailFast, runtimeconfig.RuntimeHooksFailModeDegrade:
+		return true
+	default:
+		return false
+	}
+}
+
+func isToolMiddlewareFailMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeToolMiddlewareFailModeFailFast, runtimeconfig.RuntimeToolMiddlewareFailModeDegrade:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillDiscoveryMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD, runtimeconfig.RuntimeSkillDiscoveryModeFolder, runtimeconfig.RuntimeSkillDiscoveryModeHybrid:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillPreprocessPhase(phase string) bool {
+	return strings.TrimSpace(phase) == runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream
+}
+
+func isSkillPreprocessFailMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeSkillPreprocessFailModeFailFast, runtimeconfig.RuntimeSkillPreprocessFailModeDegrade:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillPreprocessStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "success", "failed", "degraded", "skipped":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillBundlePromptMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled, runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillBundleWhitelistMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled, runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillBundleConflictPolicy(policy string) bool {
+	switch strings.TrimSpace(policy) {
+	case runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast, runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillPreprocessReasonCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "skill_preprocess_failed",
+		"skill_bundle_prompt_conflict",
+		"skill_bundle_whitelist_conflict",
+		"skill_bundle_whitelist_exceeds_sandbox",
+		"skill_bundle_whitelist_exceeds_adapter_allowlist",
+		"skill_bundle_whitelist_invalid_tool",
+		"skill_bundle_whitelist_violation":
 		return true
 	default:
 		return false

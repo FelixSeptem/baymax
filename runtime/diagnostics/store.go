@@ -338,6 +338,25 @@ type RunRecord struct {
 	ReactIterationBudgetHitTotal                int                               `json:"react_iteration_budget_hit_total,omitempty"`
 	ReactTerminationReason                      string                            `json:"react_termination_reason,omitempty"`
 	ReactStreamDispatchEnabled                  bool                              `json:"react_stream_dispatch_enabled,omitempty"`
+	HooksEnabled                                bool                              `json:"hooks_enabled,omitempty"`
+	HooksFailMode                               string                            `json:"hooks_fail_mode,omitempty"`
+	HooksPhases                                 []string                          `json:"hooks_phases,omitempty"`
+	ToolMiddlewareEnabled                       bool                              `json:"tool_middleware_enabled,omitempty"`
+	ToolMiddlewareFailMode                      string                            `json:"tool_middleware_fail_mode,omitempty"`
+	SkillDiscoveryMode                          string                            `json:"skill_discovery_mode,omitempty"`
+	SkillDiscoveryRoots                         []string                          `json:"skill_discovery_roots,omitempty"`
+	SkillPreprocessEnabled                      bool                              `json:"skill_preprocess_enabled,omitempty"`
+	SkillPreprocessPhase                        string                            `json:"skill_preprocess_phase,omitempty"`
+	SkillPreprocessFailMode                     string                            `json:"skill_preprocess_fail_mode,omitempty"`
+	SkillPreprocessStatus                       string                            `json:"skill_preprocess_status,omitempty"`
+	SkillPreprocessReasonCode                   string                            `json:"skill_preprocess_reason_code,omitempty"`
+	SkillPreprocessSpecCount                    int                               `json:"skill_preprocess_spec_count,omitempty"`
+	SkillBundlePromptMode                       string                            `json:"skill_bundle_prompt_mode,omitempty"`
+	SkillBundleWhitelistMode                    string                            `json:"skill_bundle_whitelist_mode,omitempty"`
+	SkillBundleConflictPolicy                   string                            `json:"skill_bundle_conflict_policy,omitempty"`
+	SkillBundlePromptTotal                      int                               `json:"skill_bundle_prompt_total,omitempty"`
+	SkillBundleWhitelistTotal                   int                               `json:"skill_bundle_whitelist_total,omitempty"`
+	SkillBundleWhitelistRejectedTotal           int                               `json:"skill_bundle_whitelist_rejected_total,omitempty"`
 	DiagnosticsCardinalityBudgetHitTotal        int                               `json:"diagnostics_cardinality_budget_hit_total,omitempty"`
 	DiagnosticsCardinalityTruncatedTotal        int                               `json:"diagnostics_cardinality_truncated_total,omitempty"`
 	DiagnosticsCardinalityFailFastRejectTotal   int                               `json:"diagnostics_cardinality_fail_fast_reject_total,omitempty"`
@@ -778,6 +797,8 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
 	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
 	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
+	rec.HooksPhases = cloneStringSlice(rec.HooksPhases)
+	rec.SkillDiscoveryRoots = cloneStringSlice(rec.SkillDiscoveryRoots)
 	rec.BudgetSnapshot = cloneAnyMap(rec.BudgetSnapshot)
 	rec.EvalSummary = cloneAnyMap(rec.EvalSummary)
 	if len(rec.TimelinePhases) == 0 {

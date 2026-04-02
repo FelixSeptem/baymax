@@ -14,10 +14,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-04-02）：
-- 已归档并稳定：A4-A61。
-- A60（Introduce Runtime Cost-Latency Budget And Admission Contract）已归档并稳定。
-- A61（Introduce OTel Tracing And Agent Eval Interoperability Contract）已归档并稳定。
-- A65（Introduce Agent Lifecycle Hooks And Tool Middleware Contract）进行中。
+- 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 进行中：
+  - A65（Introduce Agent Lifecycle Hooks And Tool Middleware Contract）进行中（实施完成，待归档）。
+  - A66（Introduce Unified State And Session Snapshot Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -226,20 +226,52 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A65 `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`：agent lifecycle hooks + tool middleware + skill discovery/preprocess 契约提案进行中（尚未进入实现阶段）。
+- A65 `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`：agent lifecycle hooks + tool middleware + skill discovery/preprocess/bundle mapping 契约（进行中，实施完成待归档）。
+- A66 `introduce-unified-state-and-session-snapshot-contract-a66`：unified state/session snapshot 契约。
 
-近期已归档能力（摘要）：
-- A61 `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`：已归档并稳定（OTel tracing 语义映射、collector export runtime、`trace_export_status`/`trace_schema_version` 与 `eval_*` additive 字段、`otel_semconv.v1`/`agent_eval.v1`/`agent_eval_distributed.v1` replay fixtures、独立 gate `check-agent-eval-and-tracing-interop-contract.*`，CI check：`agent-eval-tracing-interop-gate`）。
-- A60 `introduce-runtime-cost-latency-budget-and-admission-contract-a60`：已归档并稳定（统一 token/tool/sandbox/memory 成本与时延预算 admission 判定，新增 `budget_snapshot`/`budget_decision`/`degrade_action` additive 字段、`budget_admission.v1` replay fixture 与独立 gate `check-runtime-budget-admission-contract.*`，CI check：`runtime-budget-admission-gate`）。
-- A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：已归档并稳定（memory scope/write_mode/injection_budget/lifecycle/search 与 builtin filesystem v2 治理收口，新增 `memory_scope_selected`/`memory_budget_used`/`memory_hits`/`memory_rerank_stats`/`memory_lifecycle_action` additive 字段与 `check-memory-scope-and-search-contract.*` 门禁）。
-- A58 `introduce-policy-precedence-and-decision-trace-contract-a58`：已归档并稳定（统一 action/s2/sandbox/egress/allowlist/admission precedence matrix、deterministic tie-break、`policy_stack.v1` replay fixture、独立 gate `check-policy-precedence-contract.*`，CI check：`policy-precedence-gate`）。
-- A57 `introduce-sandbox-egress-governance-and-adapter-allowlist-contract-a57`：已归档并稳定（sandbox egress + adapter allowlist 的 readiness/admission/replay/gate 一体化治理；独立 gate：`check-sandbox-egress-allowlist-contract.*`，CI check：`sandbox-egress-allowlist-gate`）。
-- A56 `introduce-react-loop-and-tool-calling-parity-contract-a56`：已归档并稳定（ReAct loop Run/Stream parity、tool-calling canonicalization、`react.v1` replay fixture 与独立 gate）。
-- A55 `introduce-observability-export-and-diagnostics-bundle-contract-a55`：已归档并稳定（observability exporter profile、diagnostics bundle schema、readiness/replay/gate 一体化契约）。
-- A54 `introduce-memory-provider-spi-and-builtin-filesystem-engine-contract-a54`：已归档并稳定（统一 `Query/Upsert/Delete` SPI、`external_spi|builtin_filesystem` 模式切换、mem0/zep/openviking profile pack、readiness/diagnostics/replay/conformance/gate 一体化契约）。
-- A53 `introduce-mainstream-sandbox-adapter-conformance-and-migration-pack-a53`：已归档并稳定（nsjail/bwrap/OCI/windows-job profile pack、manifest compatibility、conformance matrix、template/migration mapping、profile replay 与独立 adapter gate）。
-- A52 `introduce-sandbox-runtime-health-rollout-and-capacity-governance-contract-a52`：已归档并稳定（rollout phase 状态机、health budget/freeze、capacity admission action、A52 replay fixture、rollout governance gate）。
-- A51 `introduce-sandbox-execution-isolation-contract-a51`：已归档并稳定（`host|sandbox|deny` 决策、`security.sandbox.*` 配置域、readiness/admission 与 replay/gate 收敛）。
+近期已归档能力：
+- A51-A61 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+
+### A65 Hooks/Middleware + Skill Preprocess
+
+A65 在 runner 主循环中新增 lifecycle hooks、tool middleware 与 skill preprocess/bundle mapping 合同，并保持 Run/Stream 语义等价。
+
+最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
+
+```yaml
+runtime:
+  hooks:
+    enabled: true
+    phases: [before_reasoning, after_reasoning, before_acting, after_acting, before_reply, after_reply]
+    fail_mode: fail_fast # fail_fast|degrade
+    timeout: 2s
+  tool_middleware:
+    enabled: true
+    fail_mode: fail_fast # fail_fast|degrade
+    timeout: 2s
+  skill:
+    discovery:
+      mode: hybrid # agents_md|folder|hybrid
+      roots: ["./skills"]
+    preprocess:
+      enabled: true
+      phase: before_run_stream
+      fail_mode: fail_fast # fail_fast|degrade
+    bundle_mapping:
+      prompt_mode: append # disabled|append
+      whitelist_mode: merge # disabled|merge
+      conflict_policy: first_win # fail_fast|first_win
+```
+
+合同门禁（A65）：
+
+```bash
+bash scripts/check-hooks-middleware-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-hooks-middleware-contract.ps1
+```
 
 ### 9) ReAct 最小接入蓝图（A56）
 

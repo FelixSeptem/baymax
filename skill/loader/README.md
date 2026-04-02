@@ -39,6 +39,26 @@
 - 未注入 embedding scorer 时会降级到词法评分路径并记录原因码。
 - 默认预算策略支持 `fixed` 与 `adaptive`，按配置生效。
 
+A65 新增与 loader 协作的 runtime skill 子域（由 runner 在 Run/Stream 前统一接线）：
+
+- discovery：
+  - `runtime.skill.discovery.mode=agents_md|folder|hybrid`
+  - `runtime.skill.discovery.roots`（`folder|hybrid` 模式必填）
+- preprocess：
+  - `runtime.skill.preprocess.enabled`
+  - `runtime.skill.preprocess.phase=before_run_stream`
+  - `runtime.skill.preprocess.fail_mode=fail_fast|degrade`
+- bundle mapping：
+  - `runtime.skill.bundle_mapping.prompt_mode=disabled|append`
+  - `runtime.skill.bundle_mapping.whitelist_mode=disabled|merge`
+  - `runtime.skill.bundle_mapping.conflict_policy=fail_fast|first_win`
+
+约束：
+
+- preprocess 失败在 `fail_fast` 下直接终止，在 `degrade` 下继续执行并写入 warning + reason。
+- `SkillBundle -> tool whitelist` 映射受 sandbox/allowlist 上界约束，超界项不会生效。
+- Run/Stream 共享同一 preprocess 与 mapping 路径，禁止单入口语义分叉。
+
 ## 可观测性与验证
 
 - 关键验证：`go test ./skill/loader -count=1`。

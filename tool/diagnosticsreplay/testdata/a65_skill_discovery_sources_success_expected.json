@@ -1,0 +1,20 @@
+{
+  "version": "skill_discovery_sources.v1",
+  "cases": [
+    {
+      "name": "skill-discovery-hybrid-deterministic",
+      "canonical": {
+        "skill_discovery_mode": "hybrid",
+        "skill_discovery_roots": [
+          "./skills/base",
+          "./skills/agents"
+        ],
+        "skill_preprocess_spec_count": 4
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 2,
+        "replay_logical_ingest_total": 2
+      }
+    }
+  ]
+}

@@ -90,6 +90,24 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a61_agent_eval_distributed_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionAgentEvalDistV1,
 		},
+		{
+			name:          "a65-hooks-middleware",
+			versionFolder: "tool",
+			fixture:       "a65_hooks_middleware_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionHooksMiddlewareV1,
+		},
+		{
+			name:          "a65-skill-discovery-sources",
+			versionFolder: "tool",
+			fixture:       "a65_skill_discovery_sources_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionSkillDiscoveryV1,
+		},
+		{
+			name:          "a65-skill-preprocess-mapping",
+			versionFolder: "tool",
+			fixture:       "a65_skill_preprocess_and_mapping_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionSkillMappingV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -387,6 +405,27 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeEvalShardResumeDrift,
 			messageHas: "eval shard/resume drift",
 		},
+		{
+			name:       "a65-hooks-order-drift",
+			versionDir: "tool",
+			fixture:    "a65_hooks_order_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeHooksOrderDrift,
+			messageHas: "hooks order drift",
+		},
+		{
+			name:       "a65-skill-discovery-source-drift",
+			versionDir: "tool",
+			fixture:    "a65_skill_discovery_source_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSkillDiscoverySourceDrift,
+			messageHas: "skill discovery source drift",
+		},
+		{
+			name:       "a65-skill-bundle-mapping-drift",
+			versionDir: "tool",
+			fixture:    "a65_skill_bundle_mapping_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSkillBundleMappingDrift,
+			messageHas: "skill preprocess/mapping drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -494,6 +533,9 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -549,6 +591,62 @@ func TestReplayContractA61OtelEvalDriftGuardFailFast(t *testing.T) {
 		{
 			fixture:  "a61_eval_shard_resume_drift_input.json",
 			wantCode: diagnosticsreplay.ReasonCodeEvalShardResumeDrift,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", tc.fixture),
+			)
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*diagnosticsreplay.ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
+	fixtures := []string{
+		"a65_hooks_middleware_success_input.json",
+		"a65_skill_discovery_sources_success_input.json",
+		"a65_skill_preprocess_and_mapping_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", fixture),
+			); err != nil {
+				t.Fatalf("A65 fixture %q should pass: %v", fixture, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA65HooksMiddlewareDriftGuardFailFast(t *testing.T) {
+	tests := []struct {
+		fixture  string
+		wantCode string
+	}{
+		{
+			fixture:  "a65_hooks_order_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeHooksOrderDrift,
+		},
+		{
+			fixture:  "a65_skill_discovery_source_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeSkillDiscoverySourceDrift,
+		},
+		{
+			fixture:  "a65_skill_bundle_mapping_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeSkillBundleMappingDrift,
 		},
 	}
 	for _, tc := range tests {

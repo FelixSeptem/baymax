@@ -1,5 +1,8 @@
-## ADDED Requirements
+# agent-lifecycle-hooks-and-tool-middleware-contract Specification
 
+## Purpose
+TBD - created by archiving change introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65. Update Purpose after archive.
+## Requirements
 ### Requirement: Lifecycle Hooks Execution Contract
 The runtime MUST expose lifecycle hooks at `before_reasoning`, `after_reasoning`, `before_acting`, `after_acting`, `before_reply`, and `after_reply`, and MUST execute them in deterministic phase order for both `Run` and `Stream`.
 
@@ -33,6 +36,8 @@ The runtime MUST execute tool middleware as onion-chain semantics: inbound in re
 ### Requirement: Security and Policy Boundary Preservation
 Hooks and middleware MUST NOT bypass existing policy precedence, sandbox governance, adapter allowlist, or egress restrictions.
 
+`control_plane_absent`: A65 runtime hooks/middleware and skill preprocess/mapping MUST NOT require hosted control-plane services, managed orchestrators, or remote scheduler dependencies; all semantics remain embedded library behavior.
+
 #### Scenario: Deny decision cannot be overridden
 - **WHEN** upstream policy precedence resolves final decision to deny
 - **THEN** hook or middleware logic MUST NOT override the deny result to allow
@@ -51,3 +56,4 @@ Hook and middleware observability output MUST be emitted through `RuntimeRecorde
 #### Scenario: Additive diagnostics compatibility
 - **WHEN** new hook/middleware fields are introduced
 - **THEN** existing diagnostics parsers MUST remain compatible via additive nullable default semantics
+

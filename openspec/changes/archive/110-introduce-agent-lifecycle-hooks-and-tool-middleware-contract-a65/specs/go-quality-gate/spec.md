@@ -14,6 +14,14 @@ Quality gate MUST include `check-hooks-middleware-contract.sh/.ps1` to enforce A
 ### Requirement: A65 Impacted Contract Suites Enforcement
 Gate execution MUST enforce impacted contract suites per changed A65 module scope, and MUST reject merges when any required suite is missing or failing.
 
+#### Scenario: Missing impacted suite blocks merge
+- **WHEN** A65 changed-file scope resolves to one or more impacted contract suites
+- **AND** any required impacted suite is not executed or exits non-zero
+- **THEN** quality gate MUST fail and block merge
+
+### Requirement: control_plane_absent
+Gate execution MUST include `control_plane_absent` assertions to prevent introducing hosted hooks/middleware control-plane dependencies into `runtime.hooks.*` or `runtime.tool_middleware.*` surfaces.
+
 #### Scenario: Runner scope change requires security suites
 - **WHEN** A65 changes touch runner lifecycle or dispatch boundaries
 - **THEN** gate MUST require relevant security contract suites before allowing merge

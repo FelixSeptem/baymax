@@ -241,6 +241,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | A61 Tracing + Eval Interop Gate | `scripts/check-agent-eval-and-tracing-interop-contract.sh` | `scripts/check-agent-eval-and-tracing-interop-contract.ps1` |
 | A61 Tracing + Eval Interop Gate CI Required-Check 候选 | `.github/workflows/ci.yml::agent-eval-tracing-interop-gate` | `.github/workflows/ci.yml::agent-eval-tracing-interop-gate` |
 | A61 Tracing + Eval Interop Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A65 Hooks + Middleware/Skill Replay Fixtures | `integration/primary_reason_arbitration_replay_contract_test.go::TestReplayContractA65HooksMiddlewareFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractA65HooksMiddlewareDriftClassification` |
+| A65 Hooks + Middleware Contract Gate | `scripts/check-hooks-middleware-contract.sh` | `scripts/check-hooks-middleware-contract.ps1` |
+| A65 Hooks + Middleware Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::hooks-middleware-contract-gate` | `.github/workflows/ci.yml::hooks-middleware-contract-gate` |
+| A65 Hooks + Middleware Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

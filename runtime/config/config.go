@@ -290,6 +290,9 @@ type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Admission         RuntimeAdmissionConfig         `json:"admission"`
+	Hooks             RuntimeHooksConfig             `json:"hooks"`
+	ToolMiddleware    RuntimeToolMiddlewareConfig    `json:"tool_middleware"`
+	Skill             RuntimeSkillConfig             `json:"skill"`
 	Arbitration       RuntimeArbitrationConfig       `json:"arbitration"`
 	Policy            RuntimePolicyConfig            `json:"policy"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
@@ -1279,6 +1282,40 @@ func DefaultConfig() Config {
 					ConflictPolicy: RuntimeAdmissionDegradeConflictPolicyFirstAction,
 				},
 			},
+			Hooks: RuntimeHooksConfig{
+				Enabled: false,
+				Phases: []string{
+					RuntimeHookPhaseBeforeReasoning,
+					RuntimeHookPhaseAfterReasoning,
+					RuntimeHookPhaseBeforeActing,
+					RuntimeHookPhaseAfterActing,
+					RuntimeHookPhaseBeforeReply,
+					RuntimeHookPhaseAfterReply,
+				},
+				FailMode: RuntimeHooksFailModeFailFast,
+				Timeout:  2 * time.Second,
+			},
+			ToolMiddleware: RuntimeToolMiddlewareConfig{
+				Enabled:  false,
+				Timeout:  2 * time.Second,
+				FailMode: RuntimeToolMiddlewareFailModeFailFast,
+			},
+			Skill: RuntimeSkillConfig{
+				Discovery: RuntimeSkillDiscoveryConfig{
+					Mode:  RuntimeSkillDiscoveryModeAgentsMD,
+					Roots: []string{},
+				},
+				Preprocess: RuntimeSkillPreprocessConfig{
+					Enabled:  false,
+					Phase:    RuntimeSkillPreprocessPhaseBeforeRunStream,
+					FailMode: RuntimeSkillPreprocessFailModeFailFast,
+				},
+				BundleMapping: RuntimeSkillBundleMappingConfig{
+					PromptMode:     RuntimeSkillBundleMappingPromptModeDisabled,
+					WhitelistMode:  RuntimeSkillBundleMappingWhitelistModeDisabled,
+					ConflictPolicy: RuntimeSkillBundleMappingConflictPolicyFailFast,
+				},
+			},
 			Arbitration: RuntimeArbitrationConfig{
 				Version: RuntimeArbitrationVersionConfig{
 					Enabled:       true,
@@ -2193,6 +2230,15 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeAdmission(cfg.Runtime.Admission); err != nil {
+		return err
+	}
+	if err := validateRuntimeHooks(cfg.Runtime.Hooks); err != nil {
+		return err
+	}
+	if err := validateRuntimeToolMiddleware(cfg.Runtime.ToolMiddleware); err != nil {
+		return err
+	}
+	if err := validateRuntimeSkill(cfg.Runtime.Skill); err != nil {
 		return err
 	}
 	if err := validateRuntimeArbitrationVersion(cfg.Runtime.Arbitration.Version); err != nil {
@@ -4116,6 +4162,18 @@ func validateRuntimeAdmission(cfg RuntimeAdmissionConfig) error {
 	return nil
 }
 
+func validateRuntimeHooks(cfg RuntimeHooksConfig) error {
+	return ValidateRuntimeHooksConfig(cfg)
+}
+
+func validateRuntimeToolMiddleware(cfg RuntimeToolMiddlewareConfig) error {
+	return ValidateRuntimeToolMiddlewareConfig(cfg)
+}
+
+func validateRuntimeSkill(cfg RuntimeSkillConfig) error {
+	return ValidateRuntimeSkillConfig(cfg)
+}
+
 func validateRuntimeArbitrationVersion(cfg RuntimeArbitrationVersionConfig) error {
 	return ValidateRuntimeArbitrationVersionConfig(cfg)
 }
@@ -4196,6 +4254,21 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.admission.degrade_policy.enabled", base.Runtime.Admission.DegradePolicy.Enabled)
 	v.SetDefault("runtime.admission.degrade_policy.action_order", base.Runtime.Admission.DegradePolicy.ActionOrder)
 	v.SetDefault("runtime.admission.degrade_policy.conflict_policy", base.Runtime.Admission.DegradePolicy.ConflictPolicy)
+	v.SetDefault("runtime.hooks.enabled", base.Runtime.Hooks.Enabled)
+	v.SetDefault("runtime.hooks.phases", base.Runtime.Hooks.Phases)
+	v.SetDefault("runtime.hooks.fail_mode", base.Runtime.Hooks.FailMode)
+	v.SetDefault("runtime.hooks.timeout", base.Runtime.Hooks.Timeout)
+	v.SetDefault("runtime.tool_middleware.enabled", base.Runtime.ToolMiddleware.Enabled)
+	v.SetDefault("runtime.tool_middleware.timeout", base.Runtime.ToolMiddleware.Timeout)
+	v.SetDefault("runtime.tool_middleware.fail_mode", base.Runtime.ToolMiddleware.FailMode)
+	v.SetDefault("runtime.skill.discovery.mode", base.Runtime.Skill.Discovery.Mode)
+	v.SetDefault("runtime.skill.discovery.roots", base.Runtime.Skill.Discovery.Roots)
+	v.SetDefault("runtime.skill.preprocess.enabled", base.Runtime.Skill.Preprocess.Enabled)
+	v.SetDefault("runtime.skill.preprocess.phase", base.Runtime.Skill.Preprocess.Phase)
+	v.SetDefault("runtime.skill.preprocess.fail_mode", base.Runtime.Skill.Preprocess.FailMode)
+	v.SetDefault("runtime.skill.bundle_mapping.prompt_mode", base.Runtime.Skill.BundleMapping.PromptMode)
+	v.SetDefault("runtime.skill.bundle_mapping.whitelist_mode", base.Runtime.Skill.BundleMapping.WhitelistMode)
+	v.SetDefault("runtime.skill.bundle_mapping.conflict_policy", base.Runtime.Skill.BundleMapping.ConflictPolicy)
 	v.SetDefault("runtime.arbitration.version.enabled", base.Runtime.Arbitration.Version.Enabled)
 	v.SetDefault("runtime.arbitration.version.default", base.Runtime.Arbitration.Version.Default)
 	v.SetDefault("runtime.arbitration.version.compat_window", base.Runtime.Arbitration.Version.CompatWindow)
@@ -4671,6 +4744,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	hooksEnabled, err := strictBoolConfigValue(v, "runtime.hooks.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	toolMiddlewareEnabled, err := strictBoolConfigValue(v, "runtime.tool_middleware.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	skillPreprocessEnabled, err := strictBoolConfigValue(v, "runtime.skill.preprocess.enabled")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.Admission.Budget.Cost.DegradeThreshold = v.GetFloat64("runtime.admission.budget.cost.degrade_threshold")
 	cfg.Runtime.Admission.Budget.Cost.HardThreshold = v.GetFloat64("runtime.admission.budget.cost.hard_threshold")
 	cfg.Runtime.Admission.Budget.Latency.DegradeThreshold = v.GetDuration("runtime.admission.budget.latency.degrade_threshold")
@@ -4678,6 +4763,21 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Admission.DegradePolicy.Enabled = admissionDegradePolicyEnabled
 	cfg.Runtime.Admission.DegradePolicy.ActionOrder = normalizeOrderedKeywords(v.GetStringSlice("runtime.admission.degrade_policy.action_order"))
 	cfg.Runtime.Admission.DegradePolicy.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.admission.degrade_policy.conflict_policy")))
+	cfg.Runtime.Hooks.Enabled = hooksEnabled
+	cfg.Runtime.Hooks.Phases = normalizeRuntimeHookPhases(v.GetStringSlice("runtime.hooks.phases"))
+	cfg.Runtime.Hooks.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.hooks.fail_mode")))
+	cfg.Runtime.Hooks.Timeout = v.GetDuration("runtime.hooks.timeout")
+	cfg.Runtime.ToolMiddleware.Enabled = toolMiddlewareEnabled
+	cfg.Runtime.ToolMiddleware.Timeout = v.GetDuration("runtime.tool_middleware.timeout")
+	cfg.Runtime.ToolMiddleware.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.tool_middleware.fail_mode")))
+	cfg.Runtime.Skill.Discovery.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.discovery.mode")))
+	cfg.Runtime.Skill.Discovery.Roots = normalizeRuntimeSkillDiscoveryRoots(v.GetStringSlice("runtime.skill.discovery.roots"))
+	cfg.Runtime.Skill.Preprocess.Enabled = skillPreprocessEnabled
+	cfg.Runtime.Skill.Preprocess.Phase = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.preprocess.phase")))
+	cfg.Runtime.Skill.Preprocess.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.preprocess.fail_mode")))
+	cfg.Runtime.Skill.BundleMapping.PromptMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.bundle_mapping.prompt_mode")))
+	cfg.Runtime.Skill.BundleMapping.WhitelistMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.bundle_mapping.whitelist_mode")))
+	cfg.Runtime.Skill.BundleMapping.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.skill.bundle_mapping.conflict_policy")))
 	arbitrationVersionEnabled, err := strictBoolConfigValue(v, "runtime.arbitration.version.enabled")
 	if err != nil {
 		return Config{}, err
@@ -4754,6 +4854,9 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Eval.Execution.Resume.Enabled = evalResumeEnabled
 	cfg.Runtime.Eval.Execution.Resume.MaxCount = v.GetInt("runtime.eval.execution.resume.max_count")
 	cfg.Runtime.Eval.Execution.Aggregation = strings.ToLower(strings.TrimSpace(v.GetString("runtime.eval.execution.aggregation")))
+	cfg.Runtime.Hooks = normalizeRuntimeHooksConfig(cfg.Runtime.Hooks)
+	cfg.Runtime.ToolMiddleware = normalizeRuntimeToolMiddlewareConfig(cfg.Runtime.ToolMiddleware)
+	cfg.Runtime.Skill = normalizeRuntimeSkillConfig(cfg.Runtime.Skill)
 	cfg.Runtime.Observability = normalizeRuntimeObservabilityConfig(cfg.Runtime.Observability)
 	cfg.Runtime.Eval = normalizeRuntimeEvalConfig(cfg.Runtime.Eval)
 	cfg.Runtime.Diagnostics.Bundle.Enabled = bundleEnabled

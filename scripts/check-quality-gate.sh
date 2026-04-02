@@ -115,6 +115,12 @@ if ! bash scripts/check-react-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] hooks + middleware contract suites"
+if ! bash scripts/check-hooks-middleware-contract.sh; then
+  echo "[quality-gate][hooks-middleware-contract] hooks + middleware contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] security sandbox contract suites"
 if ! bash scripts/check-security-sandbox-contract.sh; then
   echo "[quality-gate][security-sandbox-contract] security sandbox contract suites failed"
@@ -219,9 +225,8 @@ if [[ -z "${packages}" ]]; then
   exit 1
 fi
 if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || "${MSYSTEM:-}" == MINGW64 || "${MSYSTEM:-}" == MINGW32 ]]; then
-  # Git Bash on Windows may hit ThreadSanitizer allocation issues; bridge to pwsh keeps the same blocking semantics.
-  race_packages="$(echo "${packages}" | tr '\n' ' ')"
-  pwsh -NoProfile -Command "\$env:CGO_ENABLED='1'; go test -race ${race_packages}"
+  # Run race tests through cmd to avoid MSYS process model causing sporadic ThreadSanitizer allocation failures.
+  cmd.exe /c "set CGO_ENABLED=1&& go test -race ./..."
 else
   go test -race ${packages}
 fi

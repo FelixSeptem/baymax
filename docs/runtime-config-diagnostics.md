@@ -1845,6 +1845,42 @@ A61 gate 与 required-check 暴露：
 - quality gate 集成：`check-agent-eval-and-tracing-interop-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：`control_plane_absent`（distributed eval 仅允许库内嵌入式执行治理，不引入托管控制面）
 
+A65 在 A56/A57/A58/A61 基础上冻结 lifecycle hooks + tool middleware + skill discovery/preprocess/mapping 合同，保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
+
+A65 配置域（默认值）：
+- `runtime.hooks.enabled`（`false`）
+- `runtime.hooks.phases`（`before_reasoning,after_reasoning,before_acting,after_acting,before_reply,after_reply`）
+- `runtime.hooks.fail_mode`（`fail_fast`）
+- `runtime.hooks.timeout`（`2s`）
+- `runtime.tool_middleware.enabled`（`false`）
+- `runtime.tool_middleware.fail_mode`（`fail_fast`）
+- `runtime.tool_middleware.timeout`（`2s`）
+- `runtime.skill.discovery.mode`（`agents_md`，可选 `agents_md|folder|hybrid`）
+- `runtime.skill.discovery.roots`（默认空；`folder|hybrid` 模式下必填）
+- `runtime.skill.preprocess.enabled`（`false`）
+- `runtime.skill.preprocess.phase`（`before_run_stream`）
+- `runtime.skill.preprocess.fail_mode`（`fail_fast`）
+- `runtime.skill.bundle_mapping.prompt_mode`（`disabled`，可选 `disabled|append`）
+- `runtime.skill.bundle_mapping.whitelist_mode`（`disabled`，可选 `disabled|merge`）
+- `runtime.skill.bundle_mapping.conflict_policy`（`fail_fast`，可选 `fail_fast|first_win`）
+
+A65 fail-fast/降级语义：
+- hooks 与 middleware 在 `fail_fast` 下返回 deterministic classified error，在 `degrade` 下继续执行并写入 warning + 诊断 reason。
+- skill preprocess 在 `fail_fast` 下于模型/工具执行前终止；`degrade` 下继续执行并写入 `skill_preprocess_status=degraded` 与 canonical reason。
+- `SkillBundle -> tool whitelist` 受 A57 sandbox/allowlist 上界约束，超界条目在 `fail_fast` 下阻断，在 `first_win` 下过滤并记录拒绝计数。
+
+A65 additive diagnostics 字段（`additive + nullable + default`）：
+- hooks/middleware：`hooks_enabled`、`hooks_fail_mode`、`hooks_phases`、`tool_middleware_enabled`、`tool_middleware_fail_mode`
+- discovery/preprocess：`skill_discovery_mode`、`skill_discovery_roots`、`skill_preprocess_enabled`、`skill_preprocess_phase`、`skill_preprocess_fail_mode`、`skill_preprocess_status`、`skill_preprocess_reason_code`、`skill_preprocess_spec_count`
+- bundle mapping：`skill_bundle_prompt_mode`、`skill_bundle_whitelist_mode`、`skill_bundle_conflict_policy`、`skill_bundle_prompt_total`、`skill_bundle_whitelist_total`、`skill_bundle_whitelist_rejected_total`
+
+A65 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-hooks-middleware-contract.sh`
+- Windows: `pwsh -File scripts/check-hooks-middleware-contract.ps1`
+- CI Job: `hooks-middleware-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-hooks-middleware-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- 边界断言：`control_plane_absent`（禁止托管 hooks/middleware 控制面）
+
 ## 热更新语义
 
 - 触发机制：监听配置文件变更。

@@ -1,0 +1,33 @@
+{
+  "version": "hooks_middleware.v1",
+  "cases": [
+    {
+      "name": "hooks-schema-mismatch",
+      "run": {
+        "hooks_enabled": true,
+        "hooks_fail_mode": "fail_fast",
+        "hooks_phases": [],
+        "tool_middleware_enabled": true,
+        "tool_middleware_fail_mode": "degrade"
+      },
+      "stream": {
+        "hooks_enabled": true,
+        "hooks_fail_mode": "fail_fast",
+        "hooks_phases": [],
+        "tool_middleware_enabled": true,
+        "tool_middleware_fail_mode": "degrade"
+      },
+      "expected": {
+        "hooks_enabled": true,
+        "hooks_fail_mode": "fail_fast",
+        "hooks_phases": [],
+        "tool_middleware_enabled": true,
+        "tool_middleware_fail_mode": "degrade"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

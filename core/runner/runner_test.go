@@ -96,6 +96,25 @@ func (t *fakeTool) Invoke(ctx context.Context, args map[string]any) (types.ToolR
 	return types.ToolResult{}, nil
 }
 
+type fakeSkillLoader struct {
+	discover func(ctx context.Context, root string) ([]types.SkillSpec, error)
+	compile  func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error)
+}
+
+func (f *fakeSkillLoader) Discover(ctx context.Context, root string) ([]types.SkillSpec, error) {
+	if f != nil && f.discover != nil {
+		return f.discover(ctx, root)
+	}
+	return nil, nil
+}
+
+func (f *fakeSkillLoader) Compile(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+	if f != nil && f.compile != nil {
+		return f.compile(ctx, specs, in)
+	}
+	return types.SkillBundle{}, nil
+}
+
 type fakeSandboxAdapterRunnerTool struct {
 	*fakeTool
 	build  func(ctx context.Context, args map[string]any) (types.SandboxExecSpec, error)
@@ -5802,4 +5821,969 @@ func TestStreamReactToolDispatchFailureUsesCanonicalTerminationReason(t *testing
 			runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
 		)
 	}
+}
+
+func TestLifecycleHooksRunAndStreamPhaseOrderParity(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	runCalls := 0
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			runCalls++
+			if runCalls == 1 {
+				return types.ModelResponse{
+					ToolCalls: []types.ToolCall{
+						{CallID: "c1", Name: "local.echo"},
+					},
+				}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "done"}, nil
+		},
+	}
+
+	streamCalls := 0
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamCalls++
+			if streamCalls == 1 {
+				return onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{
+						CallID: "c1",
+						Name:   "local.echo",
+					},
+				})
+			}
+			return onEvent(types.ModelEvent{
+				Type:      types.ModelEventTypeOutputTextDelta,
+				TextDelta: "done",
+			})
+		},
+	}
+
+	var runMu sync.Mutex
+	runPhases := make([]string, 0, 8)
+	runHook := types.AgentLifecycleHookFunc(func(ctx context.Context, in types.AgentLifecycleHookContext) error {
+		_ = ctx
+		runMu.Lock()
+		runPhases = append(runPhases, fmt.Sprintf("%d:%s", in.Iteration, in.Phase))
+		runMu.Unlock()
+		return nil
+	})
+	var streamMu sync.Mutex
+	streamPhases := make([]string, 0, 8)
+	streamHook := types.AgentLifecycleHookFunc(func(ctx context.Context, in types.AgentLifecycleHookContext) error {
+		_ = ctx
+		streamMu.Lock()
+		streamPhases = append(streamPhases, fmt.Sprintf("%d:%s", in.Iteration, in.Phase))
+		streamMu.Unlock()
+		return nil
+	})
+
+	runEngine := New(runModel, WithLocalRegistry(reg), WithLifecycleHooks(runHook))
+	streamEngine := New(streamModel, WithLocalRegistry(reg), WithLifecycleHooks(streamHook))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-parity-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-parity-stream",
+		Input: "x",
+	}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("run/stream should both succeed, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "done" || streamRes.FinalAnswer != "done" {
+		t.Fatalf("run/stream final answer mismatch, run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	if got, want := strings.Join(runPhases, ","), strings.Join(streamPhases, ","); got != want {
+		t.Fatalf("hook phase order mismatch run=%q stream=%q", got, want)
+	}
+	wantPhases := "1:before_reasoning,1:after_reasoning,1:before_acting,1:after_acting,2:before_reasoning,2:after_reasoning,2:before_reply,2:after_reply"
+	if got := strings.Join(runPhases, ","); got != wantPhases {
+		t.Fatalf("unexpected hook phase order=%q, want %q", got, wantPhases)
+	}
+}
+
+func TestLifecycleHooksFailFastStopsRunAndStream(t *testing.T) {
+	mgr := newLifecycleHooksRuntimeManager(t, runtimeconfig.RuntimeHooksFailModeFailFast)
+	defer func() { _ = mgr.Close() }()
+
+	runModelCalled := 0
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			runModelCalled++
+			return types.ModelResponse{FinalAnswer: "should-not-reach"}, nil
+		},
+	}
+	streamModelCalled := 0
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamModelCalled++
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "should-not-reach"})
+		},
+	}
+
+	hook := types.AgentLifecycleHookFunc(func(ctx context.Context, in types.AgentLifecycleHookContext) error {
+		_ = ctx
+		_ = in
+		return errors.New("hook boom")
+	})
+
+	runEngine := New(runModel, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-fail-fast-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-fail-fast-stream",
+		Input: "x",
+	}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected run/stream fail-fast errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrContext || streamRes.Error.Class != types.ErrContext {
+		t.Fatalf("hook fail-fast class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runModelCalled != 0 || streamModelCalled != 0 {
+		t.Fatalf("model should not run after before_reasoning hook failure, run=%d stream=%d", runModelCalled, streamModelCalled)
+	}
+	if runRes.Error.Details["phase"] != string(types.AgentLifecyclePhaseBeforeReasoning) ||
+		streamRes.Error.Details["phase"] != string(types.AgentLifecyclePhaseBeforeReasoning) {
+		t.Fatalf("hook fail-fast phase mismatch run=%#v stream=%#v", runRes.Error.Details, streamRes.Error.Details)
+	}
+}
+
+func TestLifecycleHooksDegradeContinuesRunAndStream(t *testing.T) {
+	mgr := newLifecycleHooksRuntimeManager(t, runtimeconfig.RuntimeHooksFailModeDegrade)
+	defer func() { _ = mgr.Close() }()
+
+	hook := types.AgentLifecycleHookFunc(func(ctx context.Context, in types.AgentLifecycleHookContext) error {
+		_ = ctx
+		_ = in
+		return errors.New("hook degrade")
+	})
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-degrade-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-hooks-degrade-stream",
+		Input: "x",
+	}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("degrade should not fail run/stream, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("degrade final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	if len(runRes.Warnings) == 0 || len(streamRes.Warnings) == 0 {
+		t.Fatalf("expected degrade warnings run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+	if !strings.Contains(runRes.Warnings[0], "lifecycle hook degraded") || !strings.Contains(streamRes.Warnings[0], "lifecycle hook degraded") {
+		t.Fatalf("unexpected degrade warnings run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+}
+
+func TestToolMiddlewareTimeoutClassifiedAsPolicyTimeoutInRunAndStream(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-middleware.yaml")
+	cfg := `
+runtime:
+  tool_middleware:
+    enabled: true
+    timeout: 30ms
+    fail_mode: fail_fast
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A65_MIDDLEWARE_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	reg := local.NewRegistry()
+	invokeCount := 0
+	_, err = reg.Register(&fakeTool{
+		name: "echo",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			invokeCount++
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+
+	middleware := types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+		_ = call
+		select {
+		case <-ctx.Done():
+			return types.ToolResult{}, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+			return next(ctx, call)
+		}
+	})
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+		},
+	}, WithRuntimeManager(mgr), WithLocalRegistry(reg), WithToolMiddlewares(middleware))
+	streamStep := 0
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			streamStep++
+			if streamStep == 1 {
+				return onEvent(types.ModelEvent{
+					Type:     types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{CallID: "c1", Name: "local.echo"},
+				})
+			}
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "done"})
+		},
+	}, WithRuntimeManager(mgr), WithLocalRegistry(reg), WithToolMiddlewares(middleware))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-middleware-timeout-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-middleware-timeout-stream",
+		Input: "x",
+	}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected run/stream timeout errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrPolicyTimeout || streamRes.Error.Class != types.ErrPolicyTimeout {
+		t.Fatalf("timeout class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if invokeCount != 0 {
+		t.Fatalf("tool invoke count = %d, want 0 because middleware timed out first", invokeCount)
+	}
+}
+
+func TestSkillPreprocessRunsBeforeRunAndStreamModelLoop(t *testing.T) {
+	mgr := newSkillPreprocessRuntimeManager(t, runtimeconfig.RuntimeSkillPreprocessFailModeFailFast)
+	defer func() { _ = mgr.Close() }()
+
+	runDiscoverCount := 0
+	runCompileCount := 0
+	streamDiscoverCount := 0
+	streamCompileCount := 0
+
+	runLoader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			if root != "." {
+				t.Fatalf("discover root = %q, want .", root)
+			}
+			runDiscoverCount++
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			runCompileCount++
+			if in.Context["entry_point"] != "run" {
+				t.Fatalf("entry_point = %q, want run", in.Context["entry_point"])
+			}
+			if in.Context["run_id"] == "" {
+				t.Fatal("run_id should be populated for preprocess compile")
+			}
+			return types.SkillBundle{}, nil
+		},
+	}
+	streamLoader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			if root != "." {
+				t.Fatalf("discover root = %q, want .", root)
+			}
+			streamDiscoverCount++
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			streamCompileCount++
+			if in.Context["entry_point"] != "stream" {
+				t.Fatalf("entry_point = %q, want stream", in.Context["entry_point"])
+			}
+			if in.Context["run_id"] == "" {
+				t.Fatal("run_id should be populated for preprocess compile")
+			}
+			return types.SkillBundle{}, nil
+		},
+	}
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(runLoader))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(streamLoader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-preprocess-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-preprocess-stream",
+		Input: "x",
+	}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("run/stream preprocess should succeed, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("run/stream final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	if runDiscoverCount != 1 || runCompileCount != 1 || streamDiscoverCount != 1 || streamCompileCount != 1 {
+		t.Fatalf(
+			"preprocess call count mismatch runDiscover=%d runCompile=%d streamDiscover=%d streamCompile=%d",
+			runDiscoverCount,
+			runCompileCount,
+			streamDiscoverCount,
+			streamCompileCount,
+		)
+	}
+}
+
+func TestSkillPreprocessFailFastAbortsRunAndStream(t *testing.T) {
+	mgr := newSkillPreprocessRuntimeManager(t, runtimeconfig.RuntimeSkillPreprocessFailModeFailFast)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return nil, errors.New("discover failed")
+		},
+	}
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "should-not-reach"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "should-not-reach"})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-failfast-run", Input: "x"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-failfast-stream", Input: "x"}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected preprocess fail-fast errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing preprocess classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSkill || streamRes.Error.Class != types.ErrSkill {
+		t.Fatalf("preprocess fail-fast class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+}
+
+func TestSkillPreprocessDegradeContinuesRunAndStream(t *testing.T) {
+	mgr := newSkillPreprocessRuntimeManager(t, runtimeconfig.RuntimeSkillPreprocessFailModeDegrade)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return nil, errors.New("discover degraded")
+		},
+	}
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-degrade-run", Input: "x"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-degrade-stream", Input: "x"}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("preprocess degrade should continue, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("preprocess degrade final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	if len(runRes.Warnings) == 0 || len(streamRes.Warnings) == 0 {
+		t.Fatalf("preprocess degrade warnings missing run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+	if !strings.Contains(runRes.Warnings[0], "skill preprocess degraded") || !strings.Contains(streamRes.Warnings[0], "skill preprocess degraded") {
+		t.Fatalf("unexpected preprocess degrade warnings run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+}
+
+func TestSkillBundlePromptMappingAppendDeterministicForRunAndStream(t *testing.T) {
+	mgr := newSkillBundleMappingRuntimeManager(
+		t,
+		runtimeconfig.RuntimeSkillPreprocessFailModeFailFast,
+		runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend,
+		runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled,
+		runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin,
+		"",
+	)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			_ = specs
+			_ = in
+			return types.SkillBundle{
+				SystemPromptFragments: []string{"alpha", "alpha", "beta"},
+			}, nil
+		},
+	}
+
+	var runMessages []types.Message
+	var streamMessages []types.Message
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			runMessages = append([]types.Message(nil), req.Messages...)
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			_ = ctx
+			streamMessages = append([]types.Message(nil), req.Messages...)
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	baseReq := types.RunRequest{
+		RunID:    "run-a65-bundle-prompt-map",
+		Input:    "x",
+		Messages: []types.Message{{Role: "user", Content: "hello"}},
+	}
+	runRes, runErr := runEngine.Run(context.Background(), baseReq, nil)
+	streamReq := baseReq
+	streamReq.RunID = "run-a65-bundle-prompt-map-stream"
+	streamRes, streamErr := streamEngine.Stream(context.Background(), streamReq, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("prompt mapping should succeed, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	runSystem := systemMessageContents(runMessages)
+	streamSystem := systemMessageContents(streamMessages)
+	if len(runSystem) != 2 || runSystem[0] != "alpha" || runSystem[1] != "beta" {
+		t.Fatalf("run system prompt mapping mismatch: %#v", runSystem)
+	}
+	if len(streamSystem) != 2 || streamSystem[0] != "alpha" || streamSystem[1] != "beta" {
+		t.Fatalf("stream system prompt mapping mismatch: %#v", streamSystem)
+	}
+}
+
+func TestSkillBundlePromptMappingConflictFailFastForRunAndStream(t *testing.T) {
+	mgr := newSkillBundleMappingRuntimeManager(
+		t,
+		runtimeconfig.RuntimeSkillPreprocessFailModeFailFast,
+		runtimeconfig.RuntimeSkillBundleMappingPromptModeAppend,
+		runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled,
+		runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast,
+		"",
+	)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			_ = specs
+			_ = in
+			return types.SkillBundle{
+				SystemPromptFragments: []string{"duplicate", "duplicate"},
+			}, nil
+		},
+	}
+
+	runModelCalled := 0
+	streamModelCalled := 0
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			runModelCalled++
+			return types.ModelResponse{FinalAnswer: "should-not-reach"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			_ = ctx
+			_ = req
+			_ = onEvent
+			streamModelCalled++
+			return nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID:    "run-a65-bundle-prompt-conflict-run",
+		Input:    "x",
+		Messages: []types.Message{{Role: "system", Content: "duplicate"}},
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID:    "run-a65-bundle-prompt-conflict-stream",
+		Input:    "x",
+		Messages: []types.Message{{Role: "system", Content: "duplicate"}},
+	}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected run/stream prompt conflict errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSkill || streamRes.Error.Class != types.ErrSkill {
+		t.Fatalf("prompt conflict class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Details["reason_code"] != "skill_bundle_prompt_conflict" ||
+		streamRes.Error.Details["reason_code"] != "skill_bundle_prompt_conflict" {
+		t.Fatalf("reason_code mismatch run=%#v stream=%#v", runRes.Error.Details, streamRes.Error.Details)
+	}
+	if runModelCalled != 0 || streamModelCalled != 0 {
+		t.Fatalf("model should not run when prompt mapping fails, run=%d stream=%d", runModelCalled, streamModelCalled)
+	}
+}
+
+func TestSkillBundleWhitelistFailFastRejectsBlockedToolForRunAndStream(t *testing.T) {
+	mgr := newSkillBundleMappingRuntimeManager(
+		t,
+		runtimeconfig.RuntimeSkillPreprocessFailModeFailFast,
+		runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled,
+		runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge,
+		runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast,
+		"",
+	)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			_ = specs
+			_ = in
+			return types.SkillBundle{
+				EnabledTools: []string{"local.allowed"},
+			}, nil
+		},
+	}
+
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.blocked"}},
+			}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			_ = ctx
+			_ = req
+			return onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{
+					CallID: "c1",
+					Name:   "local.blocked",
+				},
+			})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-failfast-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-failfast-stream",
+		Input: "x",
+	}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected run/stream whitelist violation errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing run/stream whitelist classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("whitelist violation class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Details["reason_code"] != "skill_bundle_whitelist_violation" ||
+		streamRes.Error.Details["reason_code"] != "skill_bundle_whitelist_violation" {
+		t.Fatalf("whitelist violation reason_code mismatch run=%#v stream=%#v", runRes.Error.Details, streamRes.Error.Details)
+	}
+}
+
+func TestSkillBundleWhitelistUpperBoundSandboxRejectsDuringPreprocess(t *testing.T) {
+	mgr := newSkillBundleMappingRuntimeManager(
+		t,
+		runtimeconfig.RuntimeSkillPreprocessFailModeFailFast,
+		runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled,
+		runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge,
+		runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast,
+		`
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    policy:
+      by_tool:
+        local+blocked: deny
+`,
+	)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			_ = specs
+			_ = in
+			return types.SkillBundle{
+				EnabledTools: []string{"local.blocked"},
+			}, nil
+		},
+	}
+
+	runModelCalled := 0
+	streamModelCalled := 0
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			runModelCalled++
+			return types.ModelResponse{FinalAnswer: "should-not-reach"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			_ = ctx
+			_ = req
+			_ = onEvent
+			streamModelCalled++
+			return nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-sandbox-upper-bound-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-sandbox-upper-bound-stream",
+		Input: "x",
+	}, nil)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("expected preprocess upper-bound errors, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("missing preprocess upper-bound classified errors run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSkill || streamRes.Error.Class != types.ErrSkill {
+		t.Fatalf("upper-bound class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Details["reason_code"] != "skill_bundle_whitelist_exceeds_sandbox" ||
+		streamRes.Error.Details["reason_code"] != "skill_bundle_whitelist_exceeds_sandbox" {
+		t.Fatalf("upper-bound reason mismatch run=%#v stream=%#v", runRes.Error.Details, streamRes.Error.Details)
+	}
+	if runModelCalled != 0 || streamModelCalled != 0 {
+		t.Fatalf("model should not run when preprocess upper-bound fails, run=%d stream=%d", runModelCalled, streamModelCalled)
+	}
+}
+
+func TestSkillBundleWhitelistFirstWinFiltersBlockedToolForRunAndStream(t *testing.T) {
+	mgr := newSkillBundleMappingRuntimeManager(
+		t,
+		runtimeconfig.RuntimeSkillPreprocessFailModeFailFast,
+		runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled,
+		runtimeconfig.RuntimeSkillBundleMappingWhitelistModeMerge,
+		runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFirstWin,
+		"",
+	)
+	defer func() { _ = mgr.Close() }()
+
+	loader := &fakeSkillLoader{
+		discover: func(ctx context.Context, root string) ([]types.SkillSpec, error) {
+			_ = ctx
+			_ = root
+			return []types.SkillSpec{{Name: "demo", Path: "demo/skill.md"}}, nil
+		},
+		compile: func(ctx context.Context, specs []types.SkillSpec, in types.SkillInput) (types.SkillBundle, error) {
+			_ = ctx
+			_ = specs
+			_ = in
+			return types.SkillBundle{
+				EnabledTools: []string{"local.allowed"},
+			}, nil
+		},
+	}
+
+	reg := local.NewRegistry()
+	allowedInvokeCount := 0
+	blockedInvokeCount := 0
+	if _, err := reg.Register(&fakeTool{
+		name: "allowed",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			_ = ctx
+			_ = args
+			allowedInvokeCount++
+			return types.ToolResult{Content: "allowed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register allowed tool failed: %v", err)
+	}
+	if _, err := reg.Register(&fakeTool{
+		name: "blocked",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			_ = ctx
+			_ = args
+			blockedInvokeCount++
+			return types.ToolResult{Content: "blocked"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register blocked tool failed: %v", err)
+	}
+
+	runStep := 0
+	runEngine := New(&fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			_ = ctx
+			_ = req
+			runStep++
+			if runStep == 1 {
+				return types.ModelResponse{
+					ToolCalls: []types.ToolCall{
+						{CallID: "r-blocked", Name: "local.blocked"},
+						{CallID: "r-allowed", Name: "local.allowed"},
+					},
+				}, nil
+			}
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader), WithLocalRegistry(reg))
+
+	streamStep := 0
+	streamEngine := New(&fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			_ = ctx
+			_ = req
+			streamStep++
+			if streamStep == 1 {
+				if err := onEvent(types.ModelEvent{
+					Type:     types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{CallID: "s-blocked", Name: "local.blocked"},
+				}); err != nil {
+					return err
+				}
+				return onEvent(types.ModelEvent{
+					Type:     types.ModelEventTypeToolCall,
+					ToolCall: &types.ToolCall{CallID: "s-allowed", Name: "local.allowed"},
+				})
+			}
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}, WithRuntimeManager(mgr), WithSkillLoader(loader), WithLocalRegistry(reg))
+
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-first-win-run",
+		Input: "x",
+	}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
+		RunID: "run-a65-bundle-whitelist-first-win-stream",
+		Input: "x",
+	}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("first_win whitelist should continue, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+	if allowedInvokeCount != 2 {
+		t.Fatalf("allowed tool invoke count = %d, want 2", allowedInvokeCount)
+	}
+	if blockedInvokeCount != 0 {
+		t.Fatalf("blocked tool should be filtered, invoke count = %d, want 0", blockedInvokeCount)
+	}
+	if len(runRes.Warnings) == 0 || len(streamRes.Warnings) == 0 {
+		t.Fatalf("expected whitelist filtered warnings run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+	if !strings.Contains(runRes.Warnings[0], "skill whitelist filtered tools") ||
+		!strings.Contains(streamRes.Warnings[0], "skill whitelist filtered tools") {
+		t.Fatalf("unexpected whitelist warnings run=%#v stream=%#v", runRes.Warnings, streamRes.Warnings)
+	}
+}
+
+func systemMessageContents(messages []types.Message) []string {
+	out := make([]string, 0, len(messages))
+	for i := range messages {
+		if !strings.EqualFold(strings.TrimSpace(messages[i].Role), "system") {
+			continue
+		}
+		content := strings.TrimSpace(messages[i].Content)
+		if content == "" {
+			continue
+		}
+		out = append(out, content)
+	}
+	return out
+}
+
+func newLifecycleHooksRuntimeManager(t *testing.T, failMode string) *runtimeconfig.Manager {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "runtime-hooks.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  hooks:
+    enabled: true
+    phases: [before_reasoning, after_reasoning, before_acting, after_acting, before_reply, after_reply]
+    fail_mode: %s
+    timeout: 200ms
+`, strings.TrimSpace(failMode))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A65_HOOK_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager failed: %v", err)
+	}
+	return mgr
+}
+
+func newSkillPreprocessRuntimeManager(t *testing.T, failMode string) *runtimeconfig.Manager {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "runtime-skill-preprocess.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  skill:
+    preprocess:
+      enabled: true
+      phase: before_run_stream
+      fail_mode: %s
+`, strings.TrimSpace(failMode))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A65_SKILL_PREPROCESS_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager failed: %v", err)
+	}
+	return mgr
+}
+
+func newSkillBundleMappingRuntimeManager(
+	t *testing.T,
+	preprocessFailMode string,
+	promptMode string,
+	whitelistMode string,
+	conflictPolicy string,
+	extra string,
+) *runtimeconfig.Manager {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "runtime-skill-bundle-mapping.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  skill:
+    preprocess:
+      enabled: true
+      phase: before_run_stream
+      fail_mode: %s
+    bundle_mapping:
+      prompt_mode: %s
+      whitelist_mode: %s
+      conflict_policy: %s
+%s
+`,
+		strings.TrimSpace(preprocessFailMode),
+		strings.TrimSpace(promptMode),
+		strings.TrimSpace(whitelistMode),
+		strings.TrimSpace(conflictPolicy),
+		strings.TrimSpace(extra),
+	)
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: "BAYMAX_A65_SKILL_BUNDLE_MAPPING_TEST",
+	})
+	if err != nil {
+		t.Fatalf("new runtime manager failed: %v", err)
+	}
+	return mgr
 }

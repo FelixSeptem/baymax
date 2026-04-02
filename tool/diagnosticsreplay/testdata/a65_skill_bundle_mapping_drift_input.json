@@ -1,0 +1,48 @@
+{
+  "version": "skill_preprocess_and_mapping.v1",
+  "cases": [
+    {
+      "name": "skill-bundle-mapping-drift",
+      "run": {
+        "skill_preprocess_enabled": true,
+        "skill_preprocess_phase": "before_run_stream",
+        "skill_preprocess_fail_mode": "fail_fast",
+        "skill_preprocess_status": "success",
+        "skill_bundle_prompt_mode": "append",
+        "skill_bundle_whitelist_mode": "merge",
+        "skill_bundle_conflict_policy": "first_win",
+        "skill_bundle_prompt_total": 2,
+        "skill_bundle_whitelist_total": 2,
+        "skill_bundle_whitelist_rejected_total": 0
+      },
+      "stream": {
+        "skill_preprocess_enabled": true,
+        "skill_preprocess_phase": "before_run_stream",
+        "skill_preprocess_fail_mode": "fail_fast",
+        "skill_preprocess_status": "success",
+        "skill_bundle_prompt_mode": "append",
+        "skill_bundle_whitelist_mode": "merge",
+        "skill_bundle_conflict_policy": "first_win",
+        "skill_bundle_prompt_total": 2,
+        "skill_bundle_whitelist_total": 1,
+        "skill_bundle_whitelist_rejected_total": 0
+      },
+      "expected": {
+        "skill_preprocess_enabled": true,
+        "skill_preprocess_phase": "before_run_stream",
+        "skill_preprocess_fail_mode": "fail_fast",
+        "skill_preprocess_status": "success",
+        "skill_bundle_prompt_mode": "append",
+        "skill_bundle_whitelist_mode": "merge",
+        "skill_bundle_conflict_policy": "first_win",
+        "skill_bundle_prompt_total": 2,
+        "skill_bundle_whitelist_total": 1,
+        "skill_bundle_whitelist_rejected_total": 0
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 3,
+        "replay_logical_ingest_total": 3
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "version": "otel_semconv.v1",
+  "cases": [
+    {
+      "name": "a61_otel_semconv_success_case",
+      "canonical": {
+        "trace_export_status": "success",
+        "trace_schema_version": "otel_semconv.v1",
+        "trace_topology_class": "run>model|run>tool>mcp|run>memory|run>hitl",
+        "trace_canonical_attr_keys": [
+          "budget_decision",
+          "mcp.transport",
+          "memory_scope_selected",
+          "policy_decision_path",
+          "run.id",
+          "run.mode",
+          "step.id",
+          "tool.name",
+          "trace.domain",
+          "trace.schema_version"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

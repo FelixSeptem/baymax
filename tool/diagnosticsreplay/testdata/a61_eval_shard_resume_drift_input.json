@@ -1,0 +1,60 @@
+{
+  "version": "agent_eval_distributed.v1",
+  "cases": [
+    {
+      "name": "a61_eval_shard_resume_drift_case",
+      "run": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61-replay",
+        "eval_shard_total": 6,
+        "eval_resume_count": 3,
+        "eval_summary": {
+          "version": "agent_eval_distributed.v1",
+          "aggregation": "weighted_mean",
+          "task_success_rate": 0.91,
+          "tool_correctness_rate": 0.89,
+          "deny_intercept_rate": 0.96,
+          "cost_estimate": 0.74,
+          "latency_estimate": 1400000000
+        }
+      },
+      "stream": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61-replay",
+        "eval_shard_total": 6,
+        "eval_resume_count": 3,
+        "eval_summary": {
+          "version": "agent_eval_distributed.v1",
+          "aggregation": "weighted_mean",
+          "task_success_rate": 0.91,
+          "tool_correctness_rate": 0.89,
+          "deny_intercept_rate": 0.96,
+          "cost_estimate": 0.74,
+          "latency_estimate": 1400000000
+        }
+      },
+      "expected": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61",
+        "eval_shard_total": 4,
+        "eval_resume_count": 1,
+        "eval_summary": {
+          "version": "agent_eval_distributed.v1",
+          "aggregation": "weighted_mean",
+          "task_success_rate": 0.91,
+          "tool_correctness_rate": 0.89,
+          "deny_intercept_rate": 0.96,
+          "cost_estimate": 0.74,
+          "latency_estimate": 1400000000
+        }
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

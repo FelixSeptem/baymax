@@ -139,6 +139,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] runtime budget admission contract
     pwsh -File scripts/check-runtime-budget-admission-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] agent eval and tracing interop contract suites" -Command {
+    pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter conformance" -Command {
     pwsh -File scripts/check-adapter-conformance.ps1
 }

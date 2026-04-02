@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-02 11:47:42
+Updated: 2026-04-02 15:38:12
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -110,3 +110,4 @@ Updated: 2026-04-02 11:47:42
 - 106 -> introduce-policy-precedence-and-decision-trace-contract-a58
 - 107 -> introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59
 - 108 -> introduce-runtime-cost-latency-budget-and-admission-contract-a60
+- 109 -> introduce-otel-tracing-and-agent-eval-interoperability-contract-a61

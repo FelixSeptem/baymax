@@ -1,0 +1,117 @@
+{
+  "version": "agent_eval.v1",
+  "cases": [
+    {
+      "name": "a61_agent_eval_success_case",
+      "run": {
+        "eval_suite_id": "AGENT_EVAL.V1",
+        "eval_execution_mode": "LOCAL",
+        "eval_summary": {
+          "Version": "agent_eval.v1",
+          "Task_Success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "Tool_Correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "Deny_Intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "Cost_Latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "All_Constraints_Pass": true
+        }
+      },
+      "stream": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "local",
+        "eval_summary": {
+          "version": "agent_eval.v1",
+          "task_success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "tool_correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "deny_intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "cost_latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "all_constraints_pass": true
+        }
+      },
+      "expected": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "local",
+        "eval_summary": {
+          "version": "agent_eval.v1",
+          "task_success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "tool_correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "deny_intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "cost_latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "all_constraints_pass": true
+        }
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

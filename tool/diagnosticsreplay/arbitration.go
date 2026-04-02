@@ -25,6 +25,9 @@ const (
 	ArbitrationFixtureVersionMemoryLifecycleV1 = "memory_lifecycle.v1"
 	ArbitrationFixtureVersionObsV1             = "observability.v1"
 	ArbitrationFixtureVersionReactV1           = "react.v1"
+	ArbitrationFixtureVersionOTelSemconvV1     = "otel_semconv.v1"
+	ArbitrationFixtureVersionAgentEvalV1       = "agent_eval.v1"
+	ArbitrationFixtureVersionAgentEvalDistV1   = "agent_eval_distributed.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -60,6 +63,11 @@ const (
 	ReasonCodeBundleSchemaDrift                   = "diagnostics_bundle_schema_drift"
 	ReasonCodeBundleRedactionDrift                = "diagnostics_bundle_redaction_drift"
 	ReasonCodeBundleFingerprintDrift              = "diagnostics_bundle_fingerprint_drift"
+	ReasonCodeOTelAttrMappingDrift                = "otel_attr_mapping_drift"
+	ReasonCodeSpanTopologyDrift                   = "span_topology_drift"
+	ReasonCodeEvalMetricDrift                     = "eval_metric_drift"
+	ReasonCodeEvalAggregationDrift                = "eval_aggregation_drift"
+	ReasonCodeEvalShardResumeDrift                = "eval_shard_resume_drift"
 	ReasonCodeReactLoopStepDrift                  = "react_loop_step_drift"
 	ReasonCodeReactToolCallBudgetDrift            = "react_tool_call_budget_drift"
 	ReasonCodeReactIterationBudgetDrift           = "react_iteration_budget_drift"
@@ -179,6 +187,16 @@ type ArbitrationObservation struct {
 	DiagnosticsBundleLastSchemaVersion     string                    `json:"diagnostics_bundle_last_schema_version,omitempty"`
 	DiagnosticsBundleRedactionStatus       string                    `json:"diagnostics_bundle_redaction_status,omitempty"`
 	DiagnosticsBundleGateFingerprint       string                    `json:"diagnostics_bundle_gate_fingerprint,omitempty"`
+	TraceExportStatus                      string                    `json:"trace_export_status,omitempty"`
+	TraceSchemaVersion                     string                    `json:"trace_schema_version,omitempty"`
+	TraceTopologyClass                     string                    `json:"trace_topology_class,omitempty"`
+	TraceCanonicalAttrKeys                 []string                  `json:"trace_canonical_attr_keys,omitempty"`
+	EvalSuiteID                            string                    `json:"eval_suite_id,omitempty"`
+	EvalSummary                            map[string]any            `json:"eval_summary,omitempty"`
+	EvalExecutionMode                      string                    `json:"eval_execution_mode,omitempty"`
+	EvalJobID                              string                    `json:"eval_job_id,omitempty"`
+	EvalShardTotal                         int                       `json:"eval_shard_total,omitempty"`
+	EvalResumeCount                        int                       `json:"eval_resume_count,omitempty"`
 }
 
 type PolicyDecisionPathEntry struct {
@@ -245,7 +263,10 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionMemorySearchV1 &&
 		version != ArbitrationFixtureVersionMemoryLifecycleV1 &&
 		version != ArbitrationFixtureVersionObsV1 &&
-		version != ArbitrationFixtureVersionReactV1 {
+		version != ArbitrationFixtureVersionReactV1 &&
+		version != ArbitrationFixtureVersionOTelSemconvV1 &&
+		version != ArbitrationFixtureVersionAgentEvalV1 &&
+		version != ArbitrationFixtureVersionAgentEvalDistV1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -423,6 +444,15 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		DiagnosticsBundleLastSchemaVersion:     strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleLastSchemaVersion)),
 		DiagnosticsBundleRedactionStatus:       strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleRedactionStatus)),
 		DiagnosticsBundleGateFingerprint:       strings.ToLower(strings.TrimSpace(in.DiagnosticsBundleGateFingerprint)),
+		TraceExportStatus:                      strings.ToLower(strings.TrimSpace(in.TraceExportStatus)),
+		TraceSchemaVersion:                     strings.ToLower(strings.TrimSpace(in.TraceSchemaVersion)),
+		TraceTopologyClass:                     strings.ToLower(strings.TrimSpace(in.TraceTopologyClass)),
+		EvalSuiteID:                            strings.ToLower(strings.TrimSpace(in.EvalSuiteID)),
+		EvalSummary:                            canonicalizeAnyMap(in.EvalSummary),
+		EvalExecutionMode:                      strings.ToLower(strings.TrimSpace(in.EvalExecutionMode)),
+		EvalJobID:                              strings.ToLower(strings.TrimSpace(in.EvalJobID)),
+		EvalShardTotal:                         in.EvalShardTotal,
+		EvalResumeCount:                        in.EvalResumeCount,
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -499,6 +529,12 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.MemoryHits < 0 {
 		out.MemoryHits = 0
 	}
+	if out.EvalShardTotal < 0 {
+		out.EvalShardTotal = 0
+	}
+	if out.EvalResumeCount < 0 {
+		out.EvalResumeCount = 0
+	}
 	for key, value := range in.MemoryRerankStats {
 		normalizedKey := strings.ToLower(strings.TrimSpace(key))
 		if normalizedKey == "" {
@@ -551,11 +587,35 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if len(out.PolicyDecisionPath) == 0 {
 		out.PolicyDecisionPath = nil
 	}
+	traceAttrSet := map[string]struct{}{}
+	for i := range in.TraceCanonicalAttrKeys {
+		item := strings.ToLower(strings.TrimSpace(in.TraceCanonicalAttrKeys[i]))
+		if item == "" {
+			continue
+		}
+		traceAttrSet[item] = struct{}{}
+	}
+	if len(traceAttrSet) > 0 {
+		out.TraceCanonicalAttrKeys = make([]string, 0, len(traceAttrSet))
+		for item := range traceAttrSet {
+			out.TraceCanonicalAttrKeys = append(out.TraceCanonicalAttrKeys, item)
+		}
+		sort.Strings(out.TraceCanonicalAttrKeys)
+	}
 	out.BudgetSnapshot = canonicalizeBudgetAdmissionSnapshot(in.BudgetSnapshot)
 	return out
 }
 
 func validateArbitrationObservation(version, caseName, lane string, obs ArbitrationObservation) error {
+	if version == ArbitrationFixtureVersionOTelSemconvV1 {
+		return validateOTelSemconvArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalV1 {
+		return validateAgentEvalArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
+		return validateAgentEvalDistributedArbitrationObservation(caseName, lane, obs)
+	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return validateObservabilityArbitrationObservation(caseName, lane, obs)
 	}
@@ -768,6 +828,15 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 func assertArbitrationEquivalent(version, caseName string, expected, actual ArbitrationObservation, lane string) error {
 	if arbitrationObservationsEqual(version, expected, actual) {
 		return nil
+	}
+	if version == ArbitrationFixtureVersionOTelSemconvV1 {
+		return assertOTelSemconvArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalV1 {
+		return assertAgentEvalArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
+		return assertAgentEvalDistributedArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return assertReactArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1648,6 +1717,25 @@ func nonNegativeInt64(value int64) int64 {
 }
 
 func arbitrationObservationsEqual(version string, left, right ArbitrationObservation) bool {
+	if version == ArbitrationFixtureVersionOTelSemconvV1 {
+		return left.TraceExportStatus == right.TraceExportStatus &&
+			left.TraceSchemaVersion == right.TraceSchemaVersion &&
+			left.TraceTopologyClass == right.TraceTopologyClass &&
+			equalStringSlice(left.TraceCanonicalAttrKeys, right.TraceCanonicalAttrKeys)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalV1 {
+		return left.EvalSuiteID == right.EvalSuiteID &&
+			left.EvalExecutionMode == right.EvalExecutionMode &&
+			equalAnyMap(left.EvalSummary, right.EvalSummary)
+	}
+	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
+		return left.EvalSuiteID == right.EvalSuiteID &&
+			left.EvalExecutionMode == right.EvalExecutionMode &&
+			left.EvalJobID == right.EvalJobID &&
+			left.EvalShardTotal == right.EvalShardTotal &&
+			left.EvalResumeCount == right.EvalResumeCount &&
+			equalAnyMap(left.EvalSummary, right.EvalSummary)
+	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return left.ObservabilityExportProfile == right.ObservabilityExportProfile &&
 			left.ObservabilityExportStatus == right.ObservabilityExportStatus &&
@@ -1815,6 +1903,77 @@ func equalIntMap(left, right map[string]int) bool {
 		}
 	}
 	return true
+}
+
+func anyMapString(m map[string]any, key string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	raw, ok := m[strings.ToLower(strings.TrimSpace(key))]
+	if !ok || raw == nil {
+		return ""
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func equalAnyMap(left, right map[string]any) bool {
+	if len(left) == 0 && len(right) == 0 {
+		return true
+	}
+	lhs, err := json.Marshal(canonicalizeAnyMap(left))
+	if err != nil {
+		return false
+	}
+	rhs, err := json.Marshal(canonicalizeAnyMap(right))
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(lhs, rhs)
+}
+
+func canonicalizeAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" {
+			continue
+		}
+		out[normalizedKey] = canonicalizeAnyValue(value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func canonicalizeAnyValue(in any) any {
+	switch typed := in.(type) {
+	case map[string]any:
+		return canonicalizeAnyMap(typed)
+	case []any:
+		out := make([]any, 0, len(typed))
+		for i := range typed {
+			out = append(out, canonicalizeAnyValue(typed[i]))
+		}
+		return out
+	case []string:
+		out := make([]any, 0, len(typed))
+		for i := range typed {
+			out = append(out, strings.TrimSpace(typed[i]))
+		}
+		return out
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return in
+	}
 }
 
 func isCanonicalPolicyStage(stage string) bool {
@@ -2152,6 +2311,244 @@ func assertMemoryLifecycleArbitrationEquivalent(caseName, lane string, expected,
 	return &ValidationError{
 		Code:    ReasonCodeLifecyclePolicyDrift,
 		Message: fmt.Sprintf("case %q %s lifecycle policy drift expected=%q actual=%q", caseName, lane, expected.MemoryLifecycleAction, actual.MemoryLifecycleAction),
+	}
+}
+
+func validateOTelSemconvArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.TraceSchemaVersion) != ArbitrationFixtureVersionOTelSemconvV1 {
+		return &ValidationError{
+			Code:    ReasonCodeOTelAttrMappingDrift,
+			Message: fmt.Sprintf("case %q %s trace_schema_version must be %q", caseName, lane, ArbitrationFixtureVersionOTelSemconvV1),
+		}
+	}
+	switch strings.TrimSpace(obs.TraceExportStatus) {
+	case "disabled", "success", "degraded", "failed":
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s trace_export_status must be disabled|success|degraded|failed", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.TraceTopologyClass) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s trace_topology_class is required", caseName, lane),
+		}
+	}
+	if len(obs.TraceCanonicalAttrKeys) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s trace_canonical_attr_keys must not be empty", caseName, lane),
+		}
+	}
+	requiredKeys := map[string]struct{}{
+		"trace.schema_version": {},
+		"trace.domain":         {},
+	}
+	for i := range obs.TraceCanonicalAttrKeys {
+		item := strings.ToLower(strings.TrimSpace(obs.TraceCanonicalAttrKeys[i]))
+		if item == "" {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s trace_canonical_attr_keys contains empty key", caseName, lane),
+			}
+		}
+		delete(requiredKeys, item)
+	}
+	if len(requiredKeys) > 0 {
+		return &ValidationError{
+			Code:    ReasonCodeOTelAttrMappingDrift,
+			Message: fmt.Sprintf("case %q %s trace_canonical_attr_keys missing required canonical keys", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func assertOTelSemconvArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.TraceTopologyClass != actual.TraceTopologyClass {
+		return &ValidationError{
+			Code:    ReasonCodeSpanTopologyDrift,
+			Message: fmt.Sprintf("case %q %s span topology drift expected=%q actual=%q", caseName, lane, expected.TraceTopologyClass, actual.TraceTopologyClass),
+		}
+	}
+	if expected.TraceSchemaVersion != actual.TraceSchemaVersion ||
+		expected.TraceExportStatus != actual.TraceExportStatus ||
+		!equalStringSlice(expected.TraceCanonicalAttrKeys, actual.TraceCanonicalAttrKeys) {
+		return &ValidationError{
+			Code:    ReasonCodeOTelAttrMappingDrift,
+			Message: fmt.Sprintf("case %q %s otel attr mapping drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s otel semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateAgentEvalArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.EvalSuiteID) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_suite_id is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.EvalExecutionMode) != runtimeconfig.RuntimeEvalExecutionModeLocal {
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval_execution_mode must be local for agent_eval.v1 fixtures", caseName, lane),
+		}
+	}
+	if len(obs.EvalSummary) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_summary is required", caseName, lane),
+		}
+	}
+	version := strings.ToLower(strings.TrimSpace(anyMapString(obs.EvalSummary, "version")))
+	if version != "" && version != ArbitrationFixtureVersionAgentEvalV1 {
+		return &ValidationError{
+			Code:    ReasonCodeEvalMetricDrift,
+			Message: fmt.Sprintf("case %q %s eval_summary.version must be %q", caseName, lane, ArbitrationFixtureVersionAgentEvalV1),
+		}
+	}
+	requiredSummary := []string{"task_success", "tool_correctness", "deny_intercept", "cost_latency", "all_constraints_pass"}
+	for i := range requiredSummary {
+		if _, ok := obs.EvalSummary[requiredSummary[i]]; !ok {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s eval_summary.%s is required", caseName, lane, requiredSummary[i]),
+			}
+		}
+	}
+	return nil
+}
+
+func assertAgentEvalArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.EvalExecutionMode != actual.EvalExecutionMode {
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval execution mode drift expected=%q actual=%q", caseName, lane, expected.EvalExecutionMode, actual.EvalExecutionMode),
+		}
+	}
+	if expected.EvalSuiteID != actual.EvalSuiteID {
+		return &ValidationError{
+			Code:    ReasonCodeEvalMetricDrift,
+			Message: fmt.Sprintf("case %q %s eval suite drift expected=%q actual=%q", caseName, lane, expected.EvalSuiteID, actual.EvalSuiteID),
+		}
+	}
+	if !equalAnyMap(expected.EvalSummary, actual.EvalSummary) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalMetricDrift,
+			Message: fmt.Sprintf("case %q %s eval metric drift expected=%#v actual=%#v", caseName, lane, expected.EvalSummary, actual.EvalSummary),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s eval semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateAgentEvalDistributedArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.EvalSuiteID) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_suite_id is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.EvalExecutionMode) != runtimeconfig.RuntimeEvalExecutionModeDistributed {
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval_execution_mode must be distributed for agent_eval_distributed.v1 fixtures", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.EvalJobID) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_job_id is required", caseName, lane),
+		}
+	}
+	if obs.EvalShardTotal <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeEvalShardResumeDrift,
+			Message: fmt.Sprintf("case %q %s eval_shard_total must be > 0", caseName, lane),
+		}
+	}
+	if obs.EvalResumeCount < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeEvalShardResumeDrift,
+			Message: fmt.Sprintf("case %q %s eval_resume_count must be >= 0", caseName, lane),
+		}
+	}
+	if len(obs.EvalSummary) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_summary is required", caseName, lane),
+		}
+	}
+	version := strings.ToLower(strings.TrimSpace(anyMapString(obs.EvalSummary, "version")))
+	if version != "" && version != ArbitrationFixtureVersionAgentEvalDistV1 {
+		return &ValidationError{
+			Code:    ReasonCodeEvalMetricDrift,
+			Message: fmt.Sprintf("case %q %s eval_summary.version must be %q", caseName, lane, ArbitrationFixtureVersionAgentEvalDistV1),
+		}
+	}
+	aggregation := strings.ToLower(strings.TrimSpace(anyMapString(obs.EvalSummary, "aggregation")))
+	if aggregation == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s eval_summary.aggregation is required", caseName, lane),
+		}
+	}
+	switch aggregation {
+	case runtimeconfig.RuntimeEvalExecutionAggregationWeightedMean, runtimeconfig.RuntimeEvalExecutionAggregationWorstCase:
+	default:
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval_summary.aggregation must be weighted_mean|worst_case", caseName, lane),
+		}
+	}
+	requiredSummary := []string{"task_success_rate", "tool_correctness_rate", "deny_intercept_rate", "cost_estimate", "latency_estimate"}
+	for i := range requiredSummary {
+		if _, ok := obs.EvalSummary[requiredSummary[i]]; !ok {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s eval_summary.%s is required", caseName, lane, requiredSummary[i]),
+			}
+		}
+	}
+	return nil
+}
+
+func assertAgentEvalDistributedArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.EvalExecutionMode != actual.EvalExecutionMode {
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval execution mode drift expected=%q actual=%q", caseName, lane, expected.EvalExecutionMode, actual.EvalExecutionMode),
+		}
+	}
+	if expected.EvalShardTotal != actual.EvalShardTotal ||
+		expected.EvalResumeCount != actual.EvalResumeCount ||
+		expected.EvalJobID != actual.EvalJobID {
+		return &ValidationError{
+			Code:    ReasonCodeEvalShardResumeDrift,
+			Message: fmt.Sprintf("case %q %s eval shard/resume drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if !strings.EqualFold(strings.TrimSpace(anyMapString(expected.EvalSummary, "aggregation")), strings.TrimSpace(anyMapString(actual.EvalSummary, "aggregation"))) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalAggregationDrift,
+			Message: fmt.Sprintf("case %q %s eval aggregation drift expected=%q actual=%q", caseName, lane, anyMapString(expected.EvalSummary, "aggregation"), anyMapString(actual.EvalSummary, "aggregation")),
+		}
+	}
+	if expected.EvalSuiteID != actual.EvalSuiteID || !equalAnyMap(expected.EvalSummary, actual.EvalSummary) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalMetricDrift,
+			Message: fmt.Sprintf("case %q %s eval metric drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s eval distributed semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
 	}
 }
 

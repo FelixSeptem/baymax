@@ -14,9 +14,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-04-02）：
-- 已归档并稳定：A4-A60。
+- 已归档并稳定：A4-A61。
 - A60（Introduce Runtime Cost-Latency Budget And Admission Contract）已归档并稳定。
-- A61（Introduce OTel Tracing And Agent Eval Interoperability Contract）进行中。
+- A61（Introduce OTel Tracing And Agent Eval Interoperability Contract）已归档并稳定。
+- A65（Introduce Agent Lifecycle Hooks And Tool Middleware Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,9 +226,10 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A61 `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`：OTel tracing + agent eval 互操作提案进行中（tracing 语义映射、eval 套件契约与执行治理收口）。
+- A65 `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`：agent lifecycle hooks + tool middleware + skill discovery/preprocess 契约提案进行中（尚未进入实现阶段）。
 
 近期已归档能力（摘要）：
+- A61 `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`：已归档并稳定（OTel tracing 语义映射、collector export runtime、`trace_export_status`/`trace_schema_version` 与 `eval_*` additive 字段、`otel_semconv.v1`/`agent_eval.v1`/`agent_eval_distributed.v1` replay fixtures、独立 gate `check-agent-eval-and-tracing-interop-contract.*`，CI check：`agent-eval-tracing-interop-gate`）。
 - A60 `introduce-runtime-cost-latency-budget-and-admission-contract-a60`：已归档并稳定（统一 token/tool/sandbox/memory 成本与时延预算 admission 判定，新增 `budget_snapshot`/`budget_decision`/`degrade_action` additive 字段、`budget_admission.v1` replay fixture 与独立 gate `check-runtime-budget-admission-contract.*`，CI check：`runtime-budget-admission-gate`）。
 - A59 `introduce-memory-scope-and-builtin-filesystem-v2-governance-contract-a59`：已归档并稳定（memory scope/write_mode/injection_budget/lifecycle/search 与 builtin filesystem v2 治理收口，新增 `memory_scope_selected`/`memory_budget_used`/`memory_hits`/`memory_rerank_stats`/`memory_lifecycle_action` additive 字段与 `check-memory-scope-and-search-contract.*` 门禁）。
 - A58 `introduce-policy-precedence-and-decision-trace-contract-a58`：已归档并稳定（统一 action/s2/sandbox/egress/allowlist/admission precedence matrix、deterministic tie-break、`policy_stack.v1` replay fixture、独立 gate `check-policy-precedence-contract.*`，CI check：`policy-precedence-gate`）。
@@ -306,6 +308,7 @@ bash scripts/check-policy-precedence-contract.sh
 bash scripts/check-observability-export-and-bundle-contract.sh
 bash scripts/check-memory-contract-conformance.sh
 bash scripts/check-sandbox-rollout-governance-contract.sh
+bash scripts/check-agent-eval-and-tracing-interop-contract.sh
 bash scripts/check-diagnostics-query-performance-regression.sh
 ```
 
@@ -320,6 +323,7 @@ pwsh -File scripts/check-policy-precedence-contract.ps1
 pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
 pwsh -File scripts/check-memory-contract-conformance.ps1
 pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
+pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```
 

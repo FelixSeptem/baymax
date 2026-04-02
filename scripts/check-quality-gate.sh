@@ -145,6 +145,12 @@ if ! bash scripts/check-runtime-budget-admission-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] agent eval and tracing interop contract suites"
+if ! bash scripts/check-agent-eval-and-tracing-interop-contract.sh; then
+  echo "[quality-gate][agent-eval-tracing-interop-contract] agent eval and tracing interop contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter conformance"
 if ! bash scripts/check-adapter-conformance.sh; then
   echo "[quality-gate][adapter-conformance] adapter conformance harness failed"

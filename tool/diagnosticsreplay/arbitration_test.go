@@ -78,6 +78,21 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a60_budget_admission_success_input.json",
 			expected: "a60_budget_admission_success_expected.json",
 		},
+		{
+			name:     "a61-otel-semconv",
+			input:    "a61_otel_semconv_success_input.json",
+			expected: "a61_otel_semconv_success_expected.json",
+		},
+		{
+			name:     "a61-agent-eval",
+			input:    "a61_agent_eval_success_input.json",
+			expected: "a61_agent_eval_success_expected.json",
+		},
+		{
+			name:     "a61-agent-eval-distributed",
+			input:    "a61_agent_eval_distributed_success_input.json",
+			expected: "a61_agent_eval_distributed_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -443,6 +458,36 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeDegradePolicyDrift,
 			wantInText: "degrade policy drift",
 		},
+		{
+			name:       "a61-otel-attr-mapping-drift",
+			fixture:    "a61_otel_attr_mapping_drift_input.json",
+			wantCode:   ReasonCodeOTelAttrMappingDrift,
+			wantInText: "otel attr mapping drift",
+		},
+		{
+			name:       "a61-span-topology-drift",
+			fixture:    "a61_span_topology_drift_input.json",
+			wantCode:   ReasonCodeSpanTopologyDrift,
+			wantInText: "span topology drift",
+		},
+		{
+			name:       "a61-eval-metric-drift",
+			fixture:    "a61_eval_metric_drift_input.json",
+			wantCode:   ReasonCodeEvalMetricDrift,
+			wantInText: "eval metric drift",
+		},
+		{
+			name:       "a61-eval-aggregation-drift",
+			fixture:    "a61_eval_aggregation_drift_input.json",
+			wantCode:   ReasonCodeEvalAggregationDrift,
+			wantInText: "eval aggregation drift",
+		},
+		{
+			name:       "a61-eval-shard-resume-drift",
+			fixture:    "a61_eval_shard_resume_drift_input.json",
+			wantCode:   ReasonCodeEvalShardResumeDrift,
+			wantInText: "eval shard/resume drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -513,6 +558,9 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a59_memory_search_success_input.json",
 		"a59_memory_lifecycle_success_input.json",
 		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -533,12 +581,95 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a57_sandbox_egress_success_input.json",
 		"a58_policy_stack_success_input.json",
 		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, name)); err != nil {
 				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
+	fixtures := []string{
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
+				t.Fatalf("A61 fixture %q should pass: %v", fixture, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA61OtelEvalDriftClassification(t *testing.T) {
+	tests := []struct {
+		fixture  string
+		wantCode string
+	}{
+		{
+			fixture:  "a61_otel_attr_mapping_drift_input.json",
+			wantCode: ReasonCodeOTelAttrMappingDrift,
+		},
+		{
+			fixture:  "a61_span_topology_drift_input.json",
+			wantCode: ReasonCodeSpanTopologyDrift,
+		},
+		{
+			fixture:  "a61_eval_metric_drift_input.json",
+			wantCode: ReasonCodeEvalMetricDrift,
+		},
+		{
+			fixture:  "a61_eval_aggregation_drift_input.json",
+			wantCode: ReasonCodeEvalAggregationDrift,
+		},
+		{
+			fixture:  "a61_eval_shard_resume_drift_input.json",
+			wantCode: ReasonCodeEvalShardResumeDrift,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.fixture))
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
+	fixtures := []string{
+		"a50_arbitration_success_input.json",
+		"a55_observability_success_input.json",
+		"a59_memory_scope_success_input.json",
+		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", fixture, err)
 			}
 		})
 	}

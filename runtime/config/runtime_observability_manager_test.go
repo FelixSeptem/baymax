@@ -74,6 +74,84 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 	assertLatestReloadFailed(t, mgr, "runtime.observability.export.on_error")
 }
 
+func TestManagerRuntimeObservabilityTracingInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  observability:
+    export:
+      enabled: true
+      profile: otlp
+      endpoint: http://127.0.0.1:4318/v1/traces
+      queue_capacity: 128
+      on_error: degrade_and_record
+    tracing:
+      otel:
+        enabled: true
+        protocol: grpc
+        endpoint: http://127.0.0.1:4318/v1/traces
+        sample_ratio: 1.0
+        export_timeout: 5s
+        resource_attributes:
+          service.name: baymax-runtime
+        schema_version: otel_semconv.v1
+        on_error: degrade_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A61_TEST", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig()
+	if before.Runtime.Observability.Tracing.OTel.Protocol != RuntimeObservabilityTracingOTelProtocolGRPC {
+		t.Fatalf(
+			"before runtime.observability.tracing.otel.protocol = %q, want %q",
+			before.Runtime.Observability.Tracing.OTel.Protocol,
+			RuntimeObservabilityTracingOTelProtocolGRPC,
+		)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  observability:
+    export:
+      enabled: true
+      profile: otlp
+      endpoint: http://127.0.0.1:4318/v1/traces
+      queue_capacity: 128
+      on_error: degrade_and_record
+    tracing:
+      otel:
+        enabled: true
+        protocol: thrift
+        endpoint: http://127.0.0.1:4318/v1/traces
+        sample_ratio: 1.0
+        export_timeout: 5s
+        resource_attributes:
+          service.name: baymax-runtime
+        schema_version: otel_semconv.v1
+        on_error: degrade_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig()
+	if after.Runtime.Observability.Tracing.OTel.Protocol != before.Runtime.Observability.Tracing.OTel.Protocol {
+		t.Fatalf(
+			"invalid runtime.observability.tracing.otel.protocol should rollback, got %q want %q",
+			after.Runtime.Observability.Tracing.OTel.Protocol,
+			before.Runtime.Observability.Tracing.OTel.Protocol,
+		)
+	}
+	assertLatestReloadFailed(t, mgr, "runtime.observability.tracing.otel.protocol")
+}
+
 type runtimeObservabilityReloadInput struct {
 	Profile   string
 	OnError   string

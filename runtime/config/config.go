@@ -294,6 +294,7 @@ type RuntimeDomainConfig struct {
 	Policy            RuntimePolicyConfig            `json:"policy"`
 	OperationProfiles RuntimeOperationProfilesConfig `json:"operation_profiles"`
 	Observability     RuntimeObservabilityConfig     `json:"observability"`
+	Eval              RuntimeEvalConfig              `json:"eval"`
 	Diagnostics       RuntimeDiagnosticsConfig       `json:"diagnostics"`
 	Memory            RuntimeMemoryConfig            `json:"memory"`
 }
@@ -1323,6 +1324,46 @@ func DefaultConfig() Config {
 					QueueCapacity: 1024,
 					OnError:       RuntimeObservabilityExportOnErrorDegradeAndRecord,
 				},
+				Tracing: RuntimeObservabilityTracingConfig{
+					OTel: RuntimeObservabilityTracingOTelConfig{
+						Enabled:       false,
+						Protocol:      RuntimeObservabilityTracingOTelProtocolGRPC,
+						Endpoint:      "",
+						SampleRatio:   1.0,
+						ExportTimeout: 5 * time.Second,
+						ResourceAttributes: map[string]string{
+							"service.name":      "baymax-runtime",
+							"service.namespace": "baymax",
+						},
+						SchemaVersion: RuntimeObservabilityTraceSchemaVersionOTelSemconvV1,
+						OnError:       RuntimeObservabilityExportOnErrorDegradeAndRecord,
+					},
+				},
+			},
+			Eval: RuntimeEvalConfig{
+				Agent: RuntimeEvalAgentConfig{
+					Enabled:                        false,
+					SuiteID:                        "agent_eval.v1",
+					TaskSuccessThreshold:           0.90,
+					ToolCorrectnessThreshold:       0.90,
+					DenyInterceptAccuracyThreshold: 0.95,
+					CostBudgetThreshold:            1.0,
+					LatencyBudgetThreshold:         2 * time.Second,
+				},
+				Execution: RuntimeEvalExecutionConfig{
+					Mode: RuntimeEvalExecutionModeLocal,
+					Shard: RuntimeEvalExecutionShardConfig{
+						Total: 1,
+					},
+					Retry: RuntimeEvalExecutionRetryConfig{
+						MaxAttempts: 2,
+					},
+					Resume: RuntimeEvalExecutionResumeConfig{
+						Enabled:  true,
+						MaxCount: 3,
+					},
+					Aggregation: RuntimeEvalExecutionAggregationWeightedMean,
+				},
 			},
 			Diagnostics: RuntimeDiagnosticsConfig{
 				Bundle: RuntimeDiagnosticsBundleConfig{
@@ -2161,6 +2202,9 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeObservability(cfg.Runtime.Observability); err != nil {
+		return err
+	}
+	if err := validateRuntimeEval(cfg.Runtime.Eval); err != nil {
 		return err
 	}
 	if err := validateRuntimeDiagnostics(cfg.Runtime.Diagnostics); err != nil {
@@ -4084,6 +4128,10 @@ func validateRuntimeObservability(cfg RuntimeObservabilityConfig) error {
 	return ValidateRuntimeObservabilityConfig(cfg)
 }
 
+func validateRuntimeEval(cfg RuntimeEvalConfig) error {
+	return ValidateRuntimeEvalConfig(cfg)
+}
+
 func validateRuntimeDiagnostics(cfg RuntimeDiagnosticsConfig) error {
 	return ValidateRuntimeDiagnosticsConfig(cfg)
 }
@@ -4170,6 +4218,27 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.observability.export.endpoint", base.Runtime.Observability.Export.Endpoint)
 	v.SetDefault("runtime.observability.export.queue_capacity", base.Runtime.Observability.Export.QueueCapacity)
 	v.SetDefault("runtime.observability.export.on_error", base.Runtime.Observability.Export.OnError)
+	v.SetDefault("runtime.observability.tracing.otel.enabled", base.Runtime.Observability.Tracing.OTel.Enabled)
+	v.SetDefault("runtime.observability.tracing.otel.protocol", base.Runtime.Observability.Tracing.OTel.Protocol)
+	v.SetDefault("runtime.observability.tracing.otel.endpoint", base.Runtime.Observability.Tracing.OTel.Endpoint)
+	v.SetDefault("runtime.observability.tracing.otel.sample_ratio", base.Runtime.Observability.Tracing.OTel.SampleRatio)
+	v.SetDefault("runtime.observability.tracing.otel.export_timeout", base.Runtime.Observability.Tracing.OTel.ExportTimeout)
+	v.SetDefault("runtime.observability.tracing.otel.resource_attributes", base.Runtime.Observability.Tracing.OTel.ResourceAttributes)
+	v.SetDefault("runtime.observability.tracing.otel.schema_version", base.Runtime.Observability.Tracing.OTel.SchemaVersion)
+	v.SetDefault("runtime.observability.tracing.otel.on_error", base.Runtime.Observability.Tracing.OTel.OnError)
+	v.SetDefault("runtime.eval.agent.enabled", base.Runtime.Eval.Agent.Enabled)
+	v.SetDefault("runtime.eval.agent.suite_id", base.Runtime.Eval.Agent.SuiteID)
+	v.SetDefault("runtime.eval.agent.task_success_threshold", base.Runtime.Eval.Agent.TaskSuccessThreshold)
+	v.SetDefault("runtime.eval.agent.tool_correctness_threshold", base.Runtime.Eval.Agent.ToolCorrectnessThreshold)
+	v.SetDefault("runtime.eval.agent.deny_intercept_accuracy_threshold", base.Runtime.Eval.Agent.DenyInterceptAccuracyThreshold)
+	v.SetDefault("runtime.eval.agent.cost_budget_threshold", base.Runtime.Eval.Agent.CostBudgetThreshold)
+	v.SetDefault("runtime.eval.agent.latency_budget_threshold", base.Runtime.Eval.Agent.LatencyBudgetThreshold)
+	v.SetDefault("runtime.eval.execution.mode", base.Runtime.Eval.Execution.Mode)
+	v.SetDefault("runtime.eval.execution.shard.total", base.Runtime.Eval.Execution.Shard.Total)
+	v.SetDefault("runtime.eval.execution.retry.max_attempts", base.Runtime.Eval.Execution.Retry.MaxAttempts)
+	v.SetDefault("runtime.eval.execution.resume.enabled", base.Runtime.Eval.Execution.Resume.Enabled)
+	v.SetDefault("runtime.eval.execution.resume.max_count", base.Runtime.Eval.Execution.Resume.MaxCount)
+	v.SetDefault("runtime.eval.execution.aggregation", base.Runtime.Eval.Execution.Aggregation)
 	v.SetDefault("runtime.diagnostics.bundle.enabled", base.Runtime.Diagnostics.Bundle.Enabled)
 	v.SetDefault("runtime.diagnostics.bundle.output_dir", base.Runtime.Diagnostics.Bundle.OutputDir)
 	v.SetDefault("runtime.diagnostics.bundle.max_size_mb", base.Runtime.Diagnostics.Bundle.MaxSizeMB)
@@ -4632,6 +4701,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	traceOTelEnabled, err := strictBoolConfigValue(v, "runtime.observability.tracing.otel.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	evalAgentEnabled, err := strictBoolConfigValue(v, "runtime.eval.agent.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	evalResumeEnabled, err := strictBoolConfigValue(v, "runtime.eval.execution.resume.enabled")
+	if err != nil {
+		return Config{}, err
+	}
 	bundleEnabled, err := strictBoolConfigValue(v, "runtime.diagnostics.bundle.enabled")
 	if err != nil {
 		return Config{}, err
@@ -4641,6 +4722,40 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Observability.Export.Endpoint = strings.TrimSpace(v.GetString("runtime.observability.export.endpoint"))
 	cfg.Runtime.Observability.Export.QueueCapacity = v.GetInt("runtime.observability.export.queue_capacity")
 	cfg.Runtime.Observability.Export.OnError = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.export.on_error")))
+	cfg.Runtime.Observability.Tracing.OTel.Enabled = traceOTelEnabled
+	cfg.Runtime.Observability.Tracing.OTel.Protocol = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.protocol")))
+	cfg.Runtime.Observability.Tracing.OTel.Endpoint = strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.endpoint"))
+	cfg.Runtime.Observability.Tracing.OTel.SampleRatio = v.GetFloat64("runtime.observability.tracing.otel.sample_ratio")
+	cfg.Runtime.Observability.Tracing.OTel.ExportTimeout = v.GetDuration("runtime.observability.tracing.otel.export_timeout")
+	cfg.Runtime.Observability.Tracing.OTel.SchemaVersion = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.schema_version")))
+	cfg.Runtime.Observability.Tracing.OTel.OnError = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.on_error")))
+	tracingResourceAttrs := normalizeStringMap(v.GetStringMapString("runtime.observability.tracing.otel.resource_attributes"))
+	if len(tracingResourceAttrs) == 0 {
+		resourceAttrRaw := strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.resource_attributes"))
+		if resourceAttrRaw != "" {
+			parsedResourceAttrs, parseErr := parseDelimitedStringMap(resourceAttrRaw, "runtime.observability.tracing.otel.resource_attributes")
+			if parseErr != nil {
+				return Config{}, parseErr
+			}
+			tracingResourceAttrs = parsedResourceAttrs
+		}
+	}
+	cfg.Runtime.Observability.Tracing.OTel.ResourceAttributes = tracingResourceAttrs
+	cfg.Runtime.Eval.Agent.Enabled = evalAgentEnabled
+	cfg.Runtime.Eval.Agent.SuiteID = strings.TrimSpace(v.GetString("runtime.eval.agent.suite_id"))
+	cfg.Runtime.Eval.Agent.TaskSuccessThreshold = v.GetFloat64("runtime.eval.agent.task_success_threshold")
+	cfg.Runtime.Eval.Agent.ToolCorrectnessThreshold = v.GetFloat64("runtime.eval.agent.tool_correctness_threshold")
+	cfg.Runtime.Eval.Agent.DenyInterceptAccuracyThreshold = v.GetFloat64("runtime.eval.agent.deny_intercept_accuracy_threshold")
+	cfg.Runtime.Eval.Agent.CostBudgetThreshold = v.GetFloat64("runtime.eval.agent.cost_budget_threshold")
+	cfg.Runtime.Eval.Agent.LatencyBudgetThreshold = v.GetDuration("runtime.eval.agent.latency_budget_threshold")
+	cfg.Runtime.Eval.Execution.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.eval.execution.mode")))
+	cfg.Runtime.Eval.Execution.Shard.Total = v.GetInt("runtime.eval.execution.shard.total")
+	cfg.Runtime.Eval.Execution.Retry.MaxAttempts = v.GetInt("runtime.eval.execution.retry.max_attempts")
+	cfg.Runtime.Eval.Execution.Resume.Enabled = evalResumeEnabled
+	cfg.Runtime.Eval.Execution.Resume.MaxCount = v.GetInt("runtime.eval.execution.resume.max_count")
+	cfg.Runtime.Eval.Execution.Aggregation = strings.ToLower(strings.TrimSpace(v.GetString("runtime.eval.execution.aggregation")))
+	cfg.Runtime.Observability = normalizeRuntimeObservabilityConfig(cfg.Runtime.Observability)
+	cfg.Runtime.Eval = normalizeRuntimeEvalConfig(cfg.Runtime.Eval)
 	cfg.Runtime.Diagnostics.Bundle.Enabled = bundleEnabled
 	cfg.Runtime.Diagnostics.Bundle.OutputDir = strings.TrimSpace(v.GetString("runtime.diagnostics.bundle.output_dir"))
 	cfg.Runtime.Diagnostics.Bundle.MaxSizeMB = v.GetInt("runtime.diagnostics.bundle.max_size_mb")
@@ -5290,6 +5405,32 @@ func normalizeStringMap(in map[string]string) map[string]string {
 		out[key] = strings.TrimSpace(v)
 	}
 	return out
+}
+
+func parseDelimitedStringMap(raw string, field string) (map[string]string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return map[string]string{}, nil
+	}
+	out := map[string]string{}
+	pairs := strings.Split(trimmed, ",")
+	for i := range pairs {
+		segment := strings.TrimSpace(pairs[i])
+		if segment == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(segment, "=")
+		if !ok {
+			return nil, fmt.Errorf("%s[%d] must be formatted as key=value, got %q", field, i, segment)
+		}
+		k := strings.TrimSpace(key)
+		v := strings.TrimSpace(value)
+		if k == "" || v == "" {
+			return nil, fmt.Errorf("%s[%d] must contain non-empty key and value, got %q", field, i, segment)
+		}
+		out[k] = v
+	}
+	return out, nil
 }
 
 func normalizeStringToPolicyMap(in map[string]string) map[string]string {

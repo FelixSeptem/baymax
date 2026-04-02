@@ -24,6 +24,7 @@ func TestPowerShellGateScriptsUseStrictNativePath(t *testing.T) {
 		"scripts/check-security-policy-contract.ps1",
 		"scripts/check-sandbox-rollout-governance-contract.ps1",
 		"scripts/check-runtime-budget-admission-contract.ps1",
+		"scripts/check-agent-eval-and-tracing-interop-contract.ps1",
 	}
 
 	for _, rel := range requiredScripts {
@@ -80,6 +81,7 @@ func TestPowerShellQualityGateGovernanceWarnExceptionOnly(t *testing.T) {
 		"scripts/check-security-policy-contract.ps1",
 		"scripts/check-sandbox-rollout-governance-contract.ps1",
 		"scripts/check-runtime-budget-admission-contract.ps1",
+		"scripts/check-agent-eval-and-tracing-interop-contract.ps1",
 	}
 	for _, rel := range otherScripts {
 		raw, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))

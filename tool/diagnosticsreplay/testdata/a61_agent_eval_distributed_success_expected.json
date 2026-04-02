@@ -1,0 +1,28 @@
+{
+  "version": "agent_eval_distributed.v1",
+  "cases": [
+    {
+      "name": "a61_agent_eval_distributed_success_case",
+      "canonical": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_summary": {
+          "aggregation": "weighted_mean",
+          "cost_estimate": 0.74,
+          "deny_intercept_rate": 0.96,
+          "latency_estimate": 1400000000,
+          "task_success_rate": 0.91,
+          "tool_correctness_rate": 0.89,
+          "version": "agent_eval_distributed.v1"
+        },
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61",
+        "eval_shard_total": 4,
+        "eval_resume_count": 1
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

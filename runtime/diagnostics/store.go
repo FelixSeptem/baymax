@@ -284,6 +284,14 @@ type RunRecord struct {
 	RuntimeReadinessAdmissionBypassTotal        int                               `json:"runtime_readiness_admission_bypass_total,omitempty"`
 	RuntimeReadinessAdmissionMode               string                            `json:"runtime_readiness_admission_mode,omitempty"`
 	RuntimeReadinessAdmissionPrimaryCode        string                            `json:"runtime_readiness_admission_primary_code,omitempty"`
+	TraceExportStatus                           string                            `json:"trace_export_status,omitempty"`
+	TraceSchemaVersion                          string                            `json:"trace_schema_version,omitempty"`
+	EvalSuiteID                                 string                            `json:"eval_suite_id,omitempty"`
+	EvalSummary                                 map[string]any                    `json:"eval_summary,omitempty"`
+	EvalExecutionMode                           string                            `json:"eval_execution_mode,omitempty"`
+	EvalJobID                                   string                            `json:"eval_job_id,omitempty"`
+	EvalShardTotal                              int                               `json:"eval_shard_total,omitempty"`
+	EvalResumeCount                             int                               `json:"eval_resume_count,omitempty"`
 	BudgetSnapshot                              map[string]any                    `json:"budget_snapshot,omitempty"`
 	BudgetDecision                              string                            `json:"budget_decision,omitempty"`
 	DegradeAction                               string                            `json:"degrade_action,omitempty"`
@@ -771,6 +779,7 @@ func (d *Store) AddRun(rec RunRecord) {
 	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
 	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
 	rec.BudgetSnapshot = cloneAnyMap(rec.BudgetSnapshot)
+	rec.EvalSummary = cloneAnyMap(rec.EvalSummary)
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}

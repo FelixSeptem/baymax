@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-04-01
+更新时间：2026-04-02
 
 ## 目标
 
@@ -237,6 +237,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | Runtime Budget + Admission A60 Gate Assertion | `scripts/check-runtime-budget-admission-contract.sh` | `scripts/check-runtime-budget-admission-contract.ps1` |
 | Runtime Budget + Admission A60 CI Required-Check 候选 | `.github/workflows/ci.yml::runtime-budget-admission-gate` | `.github/workflows/ci.yml::runtime-budget-admission-gate` |
 | Runtime Budget + Admission A60 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A61 OTel/Eval Replay Fixture (`otel_semconv.v1`/`agent_eval.v1`/`agent_eval_distributed.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestReplayContractA61OtelEvalFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractA61OtelEvalDriftClassification` |
+| A61 Tracing + Eval Interop Gate | `scripts/check-agent-eval-and-tracing-interop-contract.sh` | `scripts/check-agent-eval-and-tracing-interop-contract.ps1` |
+| A61 Tracing + Eval Interop Gate CI Required-Check 候选 | `.github/workflows/ci.yml::agent-eval-tracing-interop-gate` | `.github/workflows/ci.yml::agent-eval-tracing-interop-gate` |
+| A61 Tracing + Eval Interop Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

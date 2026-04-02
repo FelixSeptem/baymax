@@ -83,6 +83,26 @@ function Assert-NoParallelBudgetAdmissionChanges {
     }
 }
 
+function Resolve-BudgetA60ChangeDir {
+    $active = "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60"
+    $activeFull = Join-Path $repoRoot $active
+    if (Test-Path -LiteralPath $activeFull -PathType Container) {
+        return $active
+    }
+
+    $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
+    if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $archiveRoot -Directory |
+            Where-Object { $_.Name -like "*introduce-runtime-cost-latency-budget-and-admission-contract-a60" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/archive/$($candidate.Name)"
+        }
+    }
+
+    throw "[runtime-budget-admission-gate] unable to locate A60 change directory in active or archive paths"
+}
+
 function Invoke-BudgetAdmissionStep {
     param(
         [Parameter(Mandatory = $true)][string]$Label,
@@ -92,12 +112,14 @@ function Invoke-BudgetAdmissionStep {
     & $Command
 }
 
+$budgetA60ChangeDir = Resolve-BudgetA60ChangeDir
+
 Invoke-BudgetAdmissionStep -Label "assertion budget_control_plane_absent: contract markers + no parallel control-plane config key" -Command {
-    Assert-ContainsLiteral -Assertion "budget_control_plane_absent" -FilePath "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" -Literal "MUST NOT require hosted control-plane services"
+    Assert-ContainsLiteral -Assertion "budget_control_plane_absent" -FilePath "$budgetA60ChangeDir/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" -Literal "MUST NOT require hosted control-plane services"
 }
 
 Invoke-BudgetAdmissionStep -Label "assertion budget_control_plane_absent: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "budget_control_plane_absent" -FilePath "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/go-quality-gate/spec.md" -Literal "budget_control_plane_absent"
+    Assert-ContainsLiteral -Assertion "budget_control_plane_absent" -FilePath "$budgetA60ChangeDir/specs/go-quality-gate/spec.md" -Literal "budget_control_plane_absent"
 }
 
 Invoke-BudgetAdmissionStep -Label "assertion budget_control_plane_absent: active change set closure" -Command {
@@ -109,11 +131,11 @@ Invoke-BudgetAdmissionStep -Label "assertion budget_control_plane_absent: reject
 }
 
 Invoke-BudgetAdmissionStep -Label "assertion budget_field_reuse_required: canonical field reuse marker" -Command {
-    Assert-ContainsLiteral -Assertion "budget_field_reuse_required" -FilePath "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" -Literal "policy_decision_path"
+    Assert-ContainsLiteral -Assertion "budget_field_reuse_required" -FilePath "$budgetA60ChangeDir/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" -Literal "policy_decision_path"
 }
 
 Invoke-BudgetAdmissionStep -Label "assertion budget_field_reuse_required: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "budget_field_reuse_required" -FilePath "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/go-quality-gate/spec.md" -Literal "budget_field_reuse_required"
+    Assert-ContainsLiteral -Assertion "budget_field_reuse_required" -FilePath "$budgetA60ChangeDir/specs/go-quality-gate/spec.md" -Literal "budget_field_reuse_required"
 }
 
 Invoke-BudgetAdmissionStep -Label "assertion budget_field_reuse_required: roadmap closure marker" -Command {

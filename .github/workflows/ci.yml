@@ -298,6 +298,25 @@ jobs:
       - name: Runtime Budget Admission Gate
         run: bash scripts/check-runtime-budget-admission-contract.sh
 
+  agent-eval-tracing-interop-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Agent Eval + Tracing Interop Gate
+        run: bash scripts/check-agent-eval-and-tracing-interop-contract.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

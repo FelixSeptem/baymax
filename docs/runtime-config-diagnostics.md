@@ -1795,6 +1795,56 @@ A60 gate 与 required-check 暴露：
 - CI Job: `runtime-budget-admission-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-runtime-budget-admission-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
+A61 在 A55/A58/A59/A60 基础上冻结 OTel tracing + agent eval 互操作 contract，并继续保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
+
+A61 配置域：
+- `runtime.observability.tracing.otel.enabled`
+- `runtime.observability.tracing.otel.protocol`（`grpc|http/protobuf`）
+- `runtime.observability.tracing.otel.endpoint`
+- `runtime.observability.tracing.otel.sample_ratio`（`(0,1]`）
+- `runtime.observability.tracing.otel.export_timeout`
+- `runtime.observability.tracing.otel.resource_attributes`
+- `runtime.observability.tracing.otel.schema_version`（当前固定 `otel_semconv.v1`）
+- `runtime.observability.tracing.otel.on_error`（`fail_fast|degrade_and_record`）
+- `runtime.eval.agent.enabled`
+- `runtime.eval.agent.suite_id`
+- `runtime.eval.agent.task_success_threshold`
+- `runtime.eval.agent.tool_correctness_threshold`
+- `runtime.eval.agent.deny_intercept_accuracy_threshold`
+- `runtime.eval.agent.cost_budget_threshold`
+- `runtime.eval.agent.latency_budget_threshold`
+- `runtime.eval.execution.mode`（`local|distributed`）
+- `runtime.eval.execution.shard.total`
+- `runtime.eval.execution.retry.max_attempts`
+- `runtime.eval.execution.resume.enabled`
+- `runtime.eval.execution.resume.max_count`
+- `runtime.eval.execution.aggregation`（`weighted_mean|worst_case`）
+
+A61 tracing 导出状态与原因分类（最小集）：
+- `trace_export_status`：`disabled|success|degraded|failed`
+- `trace.export.collector_unreachable`
+- `trace.export.timeout`
+- `trace.export.auth_failed`
+- `trace.export.canceled`
+- `trace.export.error`
+
+A61 additive diagnostics 字段（`additive + nullable + default`）：
+- `trace_export_status`
+- `trace_schema_version`
+- `eval_suite_id`
+- `eval_summary`
+- `eval_execution_mode`
+- `eval_job_id`
+- `eval_shard_total`
+- `eval_resume_count`
+
+A61 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-agent-eval-and-tracing-interop-contract.sh`
+- Windows: `pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1`
+- CI Job: `agent-eval-tracing-interop-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-agent-eval-and-tracing-interop-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- 边界断言：`control_plane_absent`（distributed eval 仅允许库内嵌入式执行治理，不引入托管控制面）
+
 ## 热更新语义
 
 - 触发机制：监听配置文件变更。

@@ -16,9 +16,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-04-02：
-- 已归档并稳定：A4-A60（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-otel-tracing-and-agent-eval-interoperability-contract-a61`
+  - `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`（hooks/middleware 与 skill discovery/preprocess 合同定义中，待进入实现）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -576,7 +576,7 @@ A56 一次性闭环审查（10.4）：
 1. A58（已归档，P1）：policy precedence + decision trace contract（优先承接跨层策略冲突风险）。
 2. A59（已归档，P1）：memory scope + builtin filesystem memory v2 治理 contract（scope/write_mode/injection_budget/lifecycle/search 与 gate 已收口）。
 3. A60（已归档，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
-4. A61（进行中，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
+4. A61（已归档，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
 5. A65（新增，P2）：agent lifecycle hooks + tool middleware contract。
 6. A66（新增，P2）：unified state/session snapshot contract。
 7. A67（新增，P2）：react plan notebook + plan-change hook contract。
@@ -587,7 +587,7 @@ A56 一次性闭环审查（10.4）：
 
 备选项目说明（避免“单一路线”误解）：
 - A61/A65/A66/A67/A68/A63/A64/A62 组成后续备选池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
-- A61 正在实施，A58/A59/A60 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
+- A61 已归档，A58/A59/A60 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
   - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
   - 若 A58/A59 联调出现 memory 检索召回不足、注入不可解释、或本地文件引擎恢复/索引一致性风险：优先在 A59 内增量吸收。
@@ -1027,6 +1027,7 @@ A61 验收清单：`introduce-otel-tracing-and-agent-eval-interoperability-contr
   - agent 质量回归具备稳定、可复放、可阻断的最小口径；
   - distributed 评测执行具备稳定聚合与断点恢复，不另开平行提案；
   - 维持 `library-first` 形态：不引入托管评测控制面或服务化执行平面。
+  - gate 的 `control_plane_absent` 边界断言可在 shell/PowerShell/CI 三路径稳定阻断。
 
 A62 验收清单：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - Contract 字段（最小集）：
@@ -1079,6 +1080,7 @@ A65-A68 占位验收口径（简版）：
 - A58 冻结 `policy_decision_path` 与 `deny_source` 后，A60/A61 禁止重定义同义字段，仅允许引用。
 - A59 冻结 memory 生命周期与检索质量阈值后，A60 预算计算必须复用该口径，不再另起成本定义。
 - A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。
+- A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。
 - A61 的 eval 指标与 distributed 执行聚合必须复用 A58/A59/A60 的 contract 输出字段，禁止引入平行观测数据面。
 - A61 distributed evaluator execution 仅允许库内嵌入式执行治理，不得演进为托管评测控制面或服务化调度平面。
 - A65 不得绕过 A58 precedence 与 A57 安全治理链路；hook/middleware 输出仅走 `RuntimeRecorder` 单写入口。

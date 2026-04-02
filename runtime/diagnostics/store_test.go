@@ -607,6 +607,125 @@ func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *t
 	}
 }
 
+func TestStoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:               time.Now(),
+		RunID:              "run-a61-tracing-eval",
+		Status:             "success",
+		TraceExportStatus:  "degraded",
+		TraceSchemaVersion: "otel_semconv.v1",
+		EvalSuiteID:        "agent_eval.v1",
+		EvalSummary: map[string]any{
+			"task_success":     map[string]any{"pass_rate": 0.92},
+			"tool_correctness": map[string]any{"pass_rate": 0.88},
+		},
+		EvalExecutionMode: "distributed",
+		EvalJobID:         "eval-job-a61",
+		EvalShardTotal:    4,
+		EvalResumeCount:   1,
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.TraceExportStatus != "degraded" ||
+		got.TraceSchemaVersion != "otel_semconv.v1" ||
+		got.EvalSuiteID != "agent_eval.v1" ||
+		got.EvalExecutionMode != "distributed" ||
+		got.EvalJobID != "eval-job-a61" ||
+		got.EvalShardTotal != 4 ||
+		got.EvalResumeCount != 1 {
+		t.Fatalf("A61 additive fields mismatch after dedup: %#v", got)
+	}
+	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.92 {
+		t.Fatalf("A61 eval_summary parse mismatch after dedup: %#v", got.EvalSummary)
+	}
+
+	rec.TraceExportStatus = "failed"
+	rec.EvalExecutionMode = "local"
+	rec.EvalResumeCount = 0
+	rec.EvalSummary = map[string]any{
+		"task_success": map[string]any{"pass_rate": 0.81},
+	}
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.TraceExportStatus != "failed" ||
+		got.EvalExecutionMode != "local" ||
+		got.EvalResumeCount != 0 {
+		t.Fatalf("A61 additive fields mismatch after replay replacement: %#v", got)
+	}
+	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.81 {
+		t.Fatalf("A61 eval_summary parse mismatch after replay replacement: %#v", got.EvalSummary)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a61-tracing-eval"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	if page.Items[0].TraceExportStatus != "failed" ||
+		page.Items[0].EvalExecutionMode != "local" {
+		t.Fatalf("A61 query mapping mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunA61TracingEvalAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  2,
+		MaxListEntries: 2,
+		MaxStringBytes: 24,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:               time.Now(),
+		RunID:              "run-a61-tracing-eval-cardinality",
+		Status:             "failed",
+		TraceExportStatus:  "collector_authentication_failed_and_retried",
+		TraceSchemaVersion: "otel_semconv.v1.with.future.patch.suffix",
+		EvalExecutionMode:  "distributed-with-unbounded-hint",
+		EvalSummary: map[string]any{
+			"a": 1,
+			"b": 2,
+			"c": 3,
+		},
+	}
+	d.AddRun(rec)
+
+	items := d.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if len([]byte(got.TraceExportStatus)) > 24 ||
+		len([]byte(got.TraceSchemaVersion)) > 24 ||
+		len([]byte(got.EvalExecutionMode)) > 24 {
+		t.Fatalf("A61 string fields should be bounded by cardinality config, got %#v", got)
+	}
+	if len(got.EvalSummary) > 2 {
+		t.Fatalf("A61 eval_summary map should be bounded by cardinality config, got %#v", got.EvalSummary)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "trace_export_status") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "trace_schema_version") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "eval_execution_mode") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "eval_summary") {
+		t.Fatalf("A61 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+	}
+}
+
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

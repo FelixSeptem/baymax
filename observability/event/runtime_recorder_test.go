@@ -2241,6 +2241,127 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA61TracingEvalAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a61-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":               "success",
+			"trace_export_status":  "degraded",
+			"trace_schema_version": "otel_semconv.v1",
+			"eval_suite_id":        "agent_eval.v1",
+			"eval_summary": map[string]any{
+				"task_success": map[string]any{"pass_rate": 0.94},
+			},
+			"eval_execution_mode": "distributed",
+			"eval_job_id":         "eval-job-recorder-a61",
+			"eval_shard_total":    8,
+			"eval_resume_count":   2,
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.TraceExportStatus != "degraded" ||
+		got.TraceSchemaVersion != "otel_semconv.v1" ||
+		got.EvalSuiteID != "agent_eval.v1" ||
+		got.EvalExecutionMode != "distributed" ||
+		got.EvalJobID != "eval-job-recorder-a61" ||
+		got.EvalShardTotal != 8 ||
+		got.EvalResumeCount != 2 {
+		t.Fatalf("A61 additive field parse mismatch: %#v", got)
+	}
+	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.94 {
+		t.Fatalf("A61 eval_summary parse mismatch: %#v", got.EvalSummary)
+	}
+}
+
+func TestRuntimeRecorderA61ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a61-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(17),
+			"a61_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 17 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.TraceExportStatus != "" ||
+		got.TraceSchemaVersion != "" ||
+		got.EvalSuiteID != "" ||
+		len(got.EvalSummary) != 0 ||
+		got.EvalExecutionMode != "" ||
+		got.EvalJobID != "" ||
+		got.EvalShardTotal != 0 ||
+		got.EvalResumeCount != 0 {
+		t.Fatalf("missing A61 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

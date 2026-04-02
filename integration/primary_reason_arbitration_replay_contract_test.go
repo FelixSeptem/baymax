@@ -72,6 +72,24 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a60_budget_admission_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionBudgetAdmissionV1,
 		},
+		{
+			name:          "a61-otel-semconv",
+			versionFolder: "tool",
+			fixture:       "a61_otel_semconv_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionOTelSemconvV1,
+		},
+		{
+			name:          "a61-agent-eval",
+			versionFolder: "tool",
+			fixture:       "a61_agent_eval_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionAgentEvalV1,
+		},
+		{
+			name:          "a61-agent-eval-distributed",
+			versionFolder: "tool",
+			fixture:       "a61_agent_eval_distributed_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionAgentEvalDistV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -334,6 +352,41 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeDegradePolicyDrift,
 			messageHas: "degrade policy drift",
 		},
+		{
+			name:       "a61-otel-attr-mapping-drift",
+			versionDir: "tool",
+			fixture:    "a61_otel_attr_mapping_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeOTelAttrMappingDrift,
+			messageHas: "otel attr mapping drift",
+		},
+		{
+			name:       "a61-span-topology-drift",
+			versionDir: "tool",
+			fixture:    "a61_span_topology_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSpanTopologyDrift,
+			messageHas: "span topology drift",
+		},
+		{
+			name:       "a61-eval-metric-drift",
+			versionDir: "tool",
+			fixture:    "a61_eval_metric_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeEvalMetricDrift,
+			messageHas: "eval metric drift",
+		},
+		{
+			name:       "a61-eval-aggregation-drift",
+			versionDir: "tool",
+			fixture:    "a61_eval_aggregation_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeEvalAggregationDrift,
+			messageHas: "eval aggregation drift",
+		},
+		{
+			name:       "a61-eval-shard-resume-drift",
+			versionDir: "tool",
+			fixture:    "a61_eval_shard_resume_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeEvalShardResumeDrift,
+			messageHas: "eval shard/resume drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -438,6 +491,9 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a59_memory_search_success_input.json",
 		"a59_memory_lifecycle_success_input.json",
 		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -446,6 +502,70 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 				mustReadArbitrationReplayFixture(t, "tool", name),
 			); err != nil {
 				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
+	fixtures := []string{
+		"a61_otel_semconv_success_input.json",
+		"a61_agent_eval_success_input.json",
+		"a61_agent_eval_distributed_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", fixture),
+			); err != nil {
+				t.Fatalf("A61 fixture %q should pass: %v", fixture, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractA61OtelEvalDriftGuardFailFast(t *testing.T) {
+	tests := []struct {
+		fixture  string
+		wantCode string
+	}{
+		{
+			fixture:  "a61_otel_attr_mapping_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeOTelAttrMappingDrift,
+		},
+		{
+			fixture:  "a61_span_topology_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeSpanTopologyDrift,
+		},
+		{
+			fixture:  "a61_eval_metric_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeEvalMetricDrift,
+		},
+		{
+			fixture:  "a61_eval_aggregation_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeEvalAggregationDrift,
+		},
+		{
+			fixture:  "a61_eval_shard_resume_drift_input.json",
+			wantCode: diagnosticsreplay.ReasonCodeEvalShardResumeDrift,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", tc.fixture),
+			)
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*diagnosticsreplay.ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
 			}
 		})
 	}

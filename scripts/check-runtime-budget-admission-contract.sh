@@ -63,6 +63,28 @@ assert_no_parallel_budget_admission_changes() {
   fi
 }
 
+resolve_budget_a60_change_dir() {
+  local active="openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60"
+  if [[ -d "${active}" ]]; then
+    echo "${active}"
+    return 0
+  fi
+
+  local candidate
+  shopt -s nullglob
+  for candidate in openspec/changes/archive/*introduce-runtime-cost-latency-budget-and-admission-contract-a60; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  shopt -u nullglob
+
+  echo "[runtime-budget-admission-gate] unable to locate A60 change directory in active or archive paths" >&2
+  exit 1
+}
+
 run_step() {
   local label="$1"
   shift
@@ -70,14 +92,16 @@ run_step() {
   "$@"
 }
 
+$BUDGET_A60_CHANGE_DIR="$(resolve_budget_a60_change_dir)"
+
 run_step "assertion budget_control_plane_absent: contract markers + no parallel control-plane config key" \
   assert_contains_literal "budget_control_plane_absent" \
-  "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
+  "${BUDGET_A60_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
   "MUST NOT require hosted control-plane services"
 
 run_step "assertion budget_control_plane_absent: gate spec marker" \
   assert_contains_literal "budget_control_plane_absent" \
-  "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/go-quality-gate/spec.md" \
+  "${BUDGET_A60_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "budget_control_plane_absent"
 
 run_step "assertion budget_control_plane_absent: active change set closure" \
@@ -89,12 +113,12 @@ run_step "assertion budget_control_plane_absent: reject runtime admission contro
 
 run_step "assertion budget_field_reuse_required: canonical field reuse marker" \
   assert_contains_literal "budget_field_reuse_required" \
-  "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
+  "${BUDGET_A60_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
   "policy_decision_path"
 
 run_step "assertion budget_field_reuse_required: gate spec marker" \
   assert_contains_literal "budget_field_reuse_required" \
-  "openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60/specs/go-quality-gate/spec.md" \
+  "${BUDGET_A60_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "budget_field_reuse_required"
 
 run_step "assertion budget_field_reuse_required: roadmap closure marker" \

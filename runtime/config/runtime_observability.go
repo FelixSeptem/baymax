@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -16,6 +17,15 @@ const (
 const (
 	RuntimeObservabilityExportOnErrorFailFast         = "fail_fast"
 	RuntimeObservabilityExportOnErrorDegradeAndRecord = "degrade_and_record"
+)
+
+const (
+	RuntimeObservabilityTracingOTelProtocolGRPC         = "grpc"
+	RuntimeObservabilityTracingOTelProtocolHTTPProtobuf = "http/protobuf"
+)
+
+const (
+	RuntimeObservabilityTraceSchemaVersionOTelSemconvV1 = "otel_semconv.v1"
 )
 
 const (
@@ -48,7 +58,8 @@ const (
 )
 
 type RuntimeObservabilityConfig struct {
-	Export RuntimeObservabilityExportConfig `json:"export"`
+	Export  RuntimeObservabilityExportConfig  `json:"export"`
+	Tracing RuntimeObservabilityTracingConfig `json:"tracing"`
 }
 
 type RuntimeObservabilityExportConfig struct {
@@ -57,6 +68,21 @@ type RuntimeObservabilityExportConfig struct {
 	Endpoint      string `json:"endpoint"`
 	QueueCapacity int    `json:"queue_capacity"`
 	OnError       string `json:"on_error"`
+}
+
+type RuntimeObservabilityTracingConfig struct {
+	OTel RuntimeObservabilityTracingOTelConfig `json:"otel"`
+}
+
+type RuntimeObservabilityTracingOTelConfig struct {
+	Enabled            bool              `json:"enabled"`
+	Protocol           string            `json:"protocol"`
+	Endpoint           string            `json:"endpoint"`
+	SampleRatio        float64           `json:"sample_ratio"`
+	ExportTimeout      time.Duration     `json:"export_timeout"`
+	ResourceAttributes map[string]string `json:"resource_attributes"`
+	SchemaVersion      string            `json:"schema_version"`
+	OnError            string            `json:"on_error"`
 }
 
 type RuntimeDiagnosticsConfig struct {
@@ -85,6 +111,7 @@ func normalizeRuntimeObservabilityConfig(in RuntimeObservabilityConfig) RuntimeO
 	if out.Export.OnError == "" {
 		out.Export.OnError = base.Export.OnError
 	}
+	out.Tracing.OTel = normalizeRuntimeObservabilityTracingOTelConfig(out.Tracing.OTel, out.Export, base.Tracing.OTel)
 	return out
 }
 
@@ -106,7 +133,10 @@ func normalizeRuntimeDiagnosticsBundleConfig(in RuntimeDiagnosticsBundleConfig) 
 }
 
 func ValidateRuntimeObservabilityConfig(cfg RuntimeObservabilityConfig) error {
-	return ValidateRuntimeObservabilityExportConfig(cfg.Export)
+	if err := ValidateRuntimeObservabilityExportConfig(cfg.Export); err != nil {
+		return err
+	}
+	return ValidateRuntimeObservabilityTracingOTelConfig(cfg.Tracing.OTel, cfg.Export)
 }
 
 func ValidateRuntimeObservabilityExportConfig(cfg RuntimeObservabilityExportConfig) error {
@@ -156,6 +186,58 @@ func ValidateRuntimeObservabilityExportConfig(cfg RuntimeObservabilityExportConf
 		normalized.Profile != RuntimeObservabilityExportProfileNone &&
 		normalized.Endpoint == "" {
 		return fmt.Errorf("runtime.observability.export.endpoint is required when runtime.observability.export.enabled=true")
+	}
+	return nil
+}
+
+func ValidateRuntimeObservabilityTracingOTelConfig(cfg RuntimeObservabilityTracingOTelConfig, exportCfg RuntimeObservabilityExportConfig) error {
+	normalized := normalizeRuntimeObservabilityTracingOTelConfig(cfg, exportCfg, DefaultConfig().Runtime.Observability.Tracing.OTel)
+	if !isSupportedRuntimeObservabilityTracingOTelProtocol(normalized.Protocol) {
+		return fmt.Errorf(
+			"runtime.observability.tracing.otel.protocol must be one of [%s,%s], got %q",
+			RuntimeObservabilityTracingOTelProtocolGRPC,
+			RuntimeObservabilityTracingOTelProtocolHTTPProtobuf,
+			cfg.Protocol,
+		)
+	}
+	if normalized.SampleRatio <= 0 || normalized.SampleRatio > 1 {
+		return fmt.Errorf("runtime.observability.tracing.otel.sample_ratio must be in (0,1], got %v", cfg.SampleRatio)
+	}
+	if normalized.ExportTimeout <= 0 {
+		return fmt.Errorf("runtime.observability.tracing.otel.export_timeout must be > 0")
+	}
+	if normalized.SchemaVersion != RuntimeObservabilityTraceSchemaVersionOTelSemconvV1 {
+		return fmt.Errorf(
+			"runtime.observability.tracing.otel.schema_version must be one of [%s], got %q",
+			RuntimeObservabilityTraceSchemaVersionOTelSemconvV1,
+			cfg.SchemaVersion,
+		)
+	}
+	switch normalized.OnError {
+	case RuntimeObservabilityExportOnErrorFailFast, RuntimeObservabilityExportOnErrorDegradeAndRecord:
+	default:
+		return fmt.Errorf(
+			"runtime.observability.tracing.otel.on_error must be one of [%s,%s], got %q",
+			RuntimeObservabilityExportOnErrorFailFast,
+			RuntimeObservabilityExportOnErrorDegradeAndRecord,
+			cfg.OnError,
+		)
+	}
+	if strings.ContainsRune(normalized.Endpoint, '\x00') {
+		return fmt.Errorf("runtime.observability.tracing.otel.endpoint contains invalid null character")
+	}
+	if normalized.Enabled && strings.TrimSpace(normalized.Endpoint) == "" {
+		return fmt.Errorf("runtime.observability.tracing.otel.endpoint is required when runtime.observability.tracing.otel.enabled=true")
+	}
+	for key, value := range normalized.ResourceAttributes {
+		trimmedKey := strings.TrimSpace(key)
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedKey == "" || trimmedValue == "" {
+			return fmt.Errorf("runtime.observability.tracing.otel.resource_attributes must contain non-empty key/value pairs")
+		}
+		if strings.ContainsRune(trimmedKey, '\x00') || strings.ContainsRune(trimmedValue, '\x00') {
+			return fmt.Errorf("runtime.observability.tracing.otel.resource_attributes contains invalid null character")
+		}
 	}
 	return nil
 }
@@ -220,6 +302,36 @@ func normalizeRuntimeObservabilityExportOnError(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
+func normalizeRuntimeObservabilityTracingOTelConfig(
+	in RuntimeObservabilityTracingOTelConfig,
+	exportCfg RuntimeObservabilityExportConfig,
+	base RuntimeObservabilityTracingOTelConfig,
+) RuntimeObservabilityTracingOTelConfig {
+	out := in
+	out.Protocol = strings.ToLower(strings.TrimSpace(out.Protocol))
+	if out.Protocol == "" {
+		out.Protocol = strings.ToLower(strings.TrimSpace(base.Protocol))
+	}
+	out.Endpoint = strings.TrimSpace(out.Endpoint)
+	if out.Endpoint == "" &&
+		strings.EqualFold(strings.TrimSpace(exportCfg.Profile), RuntimeObservabilityExportProfileOTLP) {
+		out.Endpoint = strings.TrimSpace(exportCfg.Endpoint)
+	}
+	out.SchemaVersion = strings.ToLower(strings.TrimSpace(out.SchemaVersion))
+	if out.SchemaVersion == "" {
+		out.SchemaVersion = strings.ToLower(strings.TrimSpace(base.SchemaVersion))
+	}
+	out.OnError = normalizeRuntimeObservabilityExportOnError(out.OnError)
+	if out.OnError == "" {
+		out.OnError = normalizeRuntimeObservabilityExportOnError(base.OnError)
+	}
+	if out.ResourceAttributes == nil {
+		out.ResourceAttributes = map[string]string{}
+	}
+	out.ResourceAttributes = normalizeStringMap(out.ResourceAttributes)
+	return out
+}
+
 func normalizeRuntimeDiagnosticsBundleSections(in []string) []string {
 	if len(in) == 0 {
 		return nil
@@ -249,6 +361,15 @@ func isSupportedRuntimeObservabilityExportProfile(raw string) bool {
 		RuntimeObservabilityExportProfileOTLP,
 		RuntimeObservabilityExportProfileLangfuse,
 		RuntimeObservabilityExportProfileCustom:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedRuntimeObservabilityTracingOTelProtocol(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case RuntimeObservabilityTracingOTelProtocolGRPC, RuntimeObservabilityTracingOTelProtocolHTTPProtobuf:
 		return true
 	default:
 		return false

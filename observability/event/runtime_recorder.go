@@ -379,6 +379,10 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			RecoveryTimeoutReentryExhaustedTotal:        payloadInt(payload, "recovery_timeout_reentry_exhausted_total"),
 			RecoveryConflict:                            payloadBool(payload, "recovery_conflict"),
 			RecoveryConflictCode:                        payloadString(payload, "recovery_conflict_code"),
+			StateSnapshotVersion:                        normalizeA66StateSnapshotVersion(payloadString(payload, "state_snapshot_version")),
+			StateRestoreAction:                          normalizeA66StateRestoreAction(payloadString(payload, "state_restore_action")),
+			StateRestoreConflictCode:                    normalizeA66StateRestoreConflictCode(payloadString(payload, "state_restore_conflict_code")),
+			StateRestoreSource:                          normalizeA66StateRestoreSource(payloadString(payload, "state_restore_source")),
 			RecoveryFallbackUsed:                        payloadBool(payload, "recovery_fallback_used"),
 			RecoveryFallbackReason:                      payloadString(payload, "recovery_fallback_reason"),
 			RuntimeReadinessStatus:                      payloadString(payload, "runtime_readiness_status"),
@@ -1090,6 +1094,63 @@ func normalizeA65SkillBundleConflictPolicy(raw string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeA66StateSnapshotVersion(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "", "state_session_snapshot.v1":
+		return value
+	default:
+		// Additive+nullable contract: preserve unknown snapshot version strings for forward compatibility.
+		return value
+	}
+}
+
+func normalizeA66StateRestoreAction(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return ""
+	case "strict_exact_restore":
+		return "strict_exact_restore"
+	case "compatible_exact_restore":
+		return "compatible_exact_restore"
+	case "compatible_bounded_restore":
+		return "compatible_bounded_restore"
+	case "idempotent_noop":
+		return "idempotent_noop"
+	default:
+		// Drift guard: unknown aliases collapse to canonical bounded restore action.
+		return "compatible_bounded_restore"
+	}
+}
+
+func normalizeA66StateRestoreConflictCode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return ""
+	case "state_snapshot_invalid_payload",
+		"state_snapshot_restore_mode_invalid",
+		"state_snapshot_strict_incompatible",
+		"state_snapshot_compat_window_exceeded",
+		"state_snapshot_operation_conflict",
+		"state_snapshot_digest_mismatch",
+		"snapshot_recovery_boundary_violation",
+		"snapshot_scheduler_conflict",
+		"snapshot_mailbox_conflict",
+		"snapshot_memory_contract_mismatch",
+		"snapshot_memory_lifecycle_mismatch",
+		"snapshot_memory_search_policy_mismatch",
+		"snapshot_memory_retrieval_quality_drift":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		// Drift guard: unknown aliases collapse to canonical snapshot conflict code.
+		return "state_snapshot_invalid_payload"
+	}
+}
+
+func normalizeA66StateRestoreSource(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 var _ types.EventHandler = (*RuntimeRecorder)(nil)

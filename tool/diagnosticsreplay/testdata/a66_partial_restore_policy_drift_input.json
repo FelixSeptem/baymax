@@ -1,0 +1,30 @@
+{
+  "version": "state_session_snapshot.v1",
+  "cases": [
+    {
+      "name": "partial_restore_policy_drift_case",
+      "run": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_bounded_restore",
+        "state_restore_conflict_code": "snapshot_mailbox_conflict",
+        "state_restore_source": "composer"
+      },
+      "stream": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_bounded_restore",
+        "state_restore_conflict_code": "snapshot_mailbox_conflict",
+        "state_restore_source": "composer"
+      },
+      "expected": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_bounded_restore",
+        "state_restore_conflict_code": "snapshot_scheduler_conflict",
+        "state_restore_source": "composer"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

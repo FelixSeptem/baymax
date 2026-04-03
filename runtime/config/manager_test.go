@@ -1277,7 +1277,7 @@ reload:
   enabled: true
   debounce: 20ms
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST", EnableHotReload: true})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1299,7 +1299,7 @@ reload:
   enabled: true
   debounce: 20ms
 `)
-	time.Sleep(250 * time.Millisecond)
+	mgr.reload()
 	if got := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase; got != SecuritySandboxRolloutPhaseFrozen {
 		t.Fatalf("phase should remain frozen before cooldown, got %q", got)
 	}
@@ -1320,7 +1320,7 @@ reload:
   enabled: true
   debounce: 20ms
 `)
-	time.Sleep(250 * time.Millisecond)
+	mgr.reload()
 	if got := mgr.EffectiveConfig().Security.Sandbox.Rollout.Phase; got != SecuritySandboxRolloutPhaseCanary {
 		t.Fatalf("phase should unfreeze to canary after cooldown with valid token, got %q", got)
 	}

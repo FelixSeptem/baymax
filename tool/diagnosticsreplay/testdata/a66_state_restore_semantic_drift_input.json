@@ -1,0 +1,27 @@
+{
+  "version": "state_session_snapshot.v1",
+  "cases": [
+    {
+      "name": "state_restore_semantic_drift_case",
+      "run": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_exact_restore",
+        "state_restore_source": "composer"
+      },
+      "stream": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_exact_restore",
+        "state_restore_source": "composer"
+      },
+      "expected": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "idempotent_noop",
+        "state_restore_source": "composer"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

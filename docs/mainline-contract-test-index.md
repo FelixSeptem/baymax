@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-04-02
+更新时间：2026-04-03
 
 ## 目标
 
@@ -245,6 +245,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | A65 Hooks + Middleware Contract Gate | `scripts/check-hooks-middleware-contract.sh` | `scripts/check-hooks-middleware-contract.ps1` |
 | A65 Hooks + Middleware Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::hooks-middleware-contract-gate` | `.github/workflows/ci.yml::hooks-middleware-contract-gate` |
 | A65 Hooks + Middleware Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A66 State/Session Snapshot Replay Fixture (`state_session_snapshot.v1`) | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| A66 State/Session Snapshot Contract Gate | `scripts/check-state-snapshot-contract.sh` | `scripts/check-state-snapshot-contract.ps1` |
+| A66 State/Session Snapshot Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::state-snapshot-contract-gate` | `.github/workflows/ci.yml::state-snapshot-contract-gate` |
+| A66 State/Session Snapshot Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

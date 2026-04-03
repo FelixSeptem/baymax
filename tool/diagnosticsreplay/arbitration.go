@@ -31,6 +31,7 @@ const (
 	ArbitrationFixtureVersionOTelSemconvV1     = "otel_semconv.v1"
 	ArbitrationFixtureVersionAgentEvalV1       = "agent_eval.v1"
 	ArbitrationFixtureVersionAgentEvalDistV1   = "agent_eval_distributed.v1"
+	ArbitrationFixtureVersionStateSnapshotV1   = "state_session_snapshot.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -92,6 +93,10 @@ const (
 	ReasonCodeRetrievalQualityRegression          = "retrieval_quality_regression"
 	ReasonCodeLifecyclePolicyDrift                = "lifecycle_policy_drift"
 	ReasonCodeRecoveryConsistencyDrift            = "recovery_consistency_drift"
+	ReasonCodeSnapshotSchemaDrift                 = "snapshot_schema_drift"
+	ReasonCodeStateRestoreSemanticDrift           = "state_restore_semantic_drift"
+	ReasonCodeSnapshotCompatWindowDrift           = "snapshot_compat_window_drift"
+	ReasonCodePartialRestorePolicyDrift           = "partial_restore_policy_drift"
 )
 
 type ArbitrationFixture struct {
@@ -222,6 +227,10 @@ type ArbitrationObservation struct {
 	EvalJobID                              string                    `json:"eval_job_id,omitempty"`
 	EvalShardTotal                         int                       `json:"eval_shard_total,omitempty"`
 	EvalResumeCount                        int                       `json:"eval_resume_count,omitempty"`
+	StateSnapshotVersion                   string                    `json:"state_snapshot_version,omitempty"`
+	StateRestoreAction                     string                    `json:"state_restore_action,omitempty"`
+	StateRestoreConflictCode               string                    `json:"state_restore_conflict_code,omitempty"`
+	StateRestoreSource                     string                    `json:"state_restore_source,omitempty"`
 }
 
 type PolicyDecisionPathEntry struct {
@@ -294,7 +303,8 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionReactV1 &&
 		version != ArbitrationFixtureVersionOTelSemconvV1 &&
 		version != ArbitrationFixtureVersionAgentEvalV1 &&
-		version != ArbitrationFixtureVersionAgentEvalDistV1 {
+		version != ArbitrationFixtureVersionAgentEvalDistV1 &&
+		version != ArbitrationFixtureVersionStateSnapshotV1 {
 		return ArbitrationFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -498,6 +508,10 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		EvalJobID:                              strings.ToLower(strings.TrimSpace(in.EvalJobID)),
 		EvalShardTotal:                         in.EvalShardTotal,
 		EvalResumeCount:                        in.EvalResumeCount,
+		StateSnapshotVersion:                   strings.ToLower(strings.TrimSpace(in.StateSnapshotVersion)),
+		StateRestoreAction:                     strings.ToLower(strings.TrimSpace(in.StateRestoreAction)),
+		StateRestoreConflictCode:               strings.ToLower(strings.TrimSpace(in.StateRestoreConflictCode)),
+		StateRestoreSource:                     strings.ToLower(strings.TrimSpace(in.StateRestoreSource)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -701,6 +715,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
 		return validateAgentEvalDistributedArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionStateSnapshotV1 {
+		return validateStateSessionSnapshotArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return validateObservabilityArbitrationObservation(caseName, lane, obs)
@@ -933,6 +950,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
 		return assertAgentEvalDistributedArbitrationEquivalent(caseName, lane, expected, actual)
 	}
+	if version == ArbitrationFixtureVersionStateSnapshotV1 {
+		return assertStateSessionSnapshotArbitrationEquivalent(caseName, lane, expected, actual)
+	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return assertReactArbitrationEquivalent(caseName, lane, expected, actual)
 	}
@@ -1159,6 +1179,82 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			actual,
 		),
 	}
+}
+
+func validateStateSessionSnapshotArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.StateSnapshotVersion) != ArbitrationFixtureVersionStateSnapshotV1 {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotSchemaDrift,
+			Message: fmt.Sprintf("case %q %s state_snapshot_version must be %q", caseName, lane, ArbitrationFixtureVersionStateSnapshotV1),
+		}
+	}
+	if !isCanonicalStateRestoreAction(obs.StateRestoreAction) {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotSchemaDrift,
+			Message: fmt.Sprintf("case %q %s state_restore_action is not canonical: %q", caseName, lane, obs.StateRestoreAction),
+		}
+	}
+	if strings.TrimSpace(obs.StateRestoreSource) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotSchemaDrift,
+			Message: fmt.Sprintf("case %q %s state_restore_source is required", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.StateRestoreConflictCode) != "" &&
+		!isCanonicalStateRestoreConflictCode(obs.StateRestoreConflictCode) {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotSchemaDrift,
+			Message: fmt.Sprintf("case %q %s state_restore_conflict_code is not canonical: %q", caseName, lane, obs.StateRestoreConflictCode),
+		}
+	}
+	if obs.StateRestoreAction == "compatible_bounded_restore" && strings.TrimSpace(obs.StateRestoreConflictCode) == "" {
+		return &ValidationError{
+			Code:    ReasonCodePartialRestorePolicyDrift,
+			Message: fmt.Sprintf("case %q %s compatible_bounded_restore requires state_restore_conflict_code", caseName, lane),
+		}
+	}
+	if obs.StateRestoreAction != "compatible_bounded_restore" && strings.TrimSpace(obs.StateRestoreConflictCode) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeStateRestoreSemanticDrift,
+			Message: fmt.Sprintf("case %q %s state_restore_conflict_code must be empty for action=%q", caseName, lane, obs.StateRestoreAction),
+		}
+	}
+	return nil
+}
+
+func assertStateSessionSnapshotArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.StateSnapshotVersion != actual.StateSnapshotVersion {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotSchemaDrift,
+			Message: fmt.Sprintf("case %q %s snapshot schema drift expected=%q actual=%q", caseName, lane, expected.StateSnapshotVersion, actual.StateSnapshotVersion),
+		}
+	}
+	if isStrictRestoreAction(expected.StateRestoreAction) != isStrictRestoreAction(actual.StateRestoreAction) {
+		return &ValidationError{
+			Code:    ReasonCodeSnapshotCompatWindowDrift,
+			Message: fmt.Sprintf("case %q %s compat window drift expected_action=%q actual_action=%q", caseName, lane, expected.StateRestoreAction, actual.StateRestoreAction),
+		}
+	}
+	if expected.StateRestoreAction == "compatible_bounded_restore" || actual.StateRestoreAction == "compatible_bounded_restore" {
+		if expected.StateRestoreAction != actual.StateRestoreAction ||
+			expected.StateRestoreConflictCode != actual.StateRestoreConflictCode ||
+			expected.StateRestoreSource != actual.StateRestoreSource {
+			return &ValidationError{
+				Code:    ReasonCodePartialRestorePolicyDrift,
+				Message: fmt.Sprintf("case %q %s partial restore policy drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+			}
+		}
+		return nil
+	}
+	if expected.StateRestoreAction != actual.StateRestoreAction ||
+		expected.StateRestoreConflictCode != actual.StateRestoreConflictCode ||
+		expected.StateRestoreSource != actual.StateRestoreSource {
+		return &ValidationError{
+			Code:    ReasonCodeStateRestoreSemanticDrift,
+			Message: fmt.Sprintf("case %q %s state restore semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	return nil
 }
 
 func validatePolicyStackArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
@@ -2032,6 +2128,12 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.EvalResumeCount == right.EvalResumeCount &&
 			equalAnyMap(left.EvalSummary, right.EvalSummary)
 	}
+	if version == ArbitrationFixtureVersionStateSnapshotV1 {
+		return left.StateSnapshotVersion == right.StateSnapshotVersion &&
+			left.StateRestoreAction == right.StateRestoreAction &&
+			left.StateRestoreConflictCode == right.StateRestoreConflictCode &&
+			left.StateRestoreSource == right.StateRestoreSource
+	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return left.ObservabilityExportProfile == right.ObservabilityExportProfile &&
 			left.ObservabilityExportStatus == right.ObservabilityExportStatus &&
@@ -2317,6 +2419,40 @@ func isCanonicalArbitrationCode(code string) bool {
 		return true
 	}
 	return false
+}
+
+func isCanonicalStateRestoreAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "strict_exact_restore", "compatible_exact_restore", "compatible_bounded_restore", "idempotent_noop":
+		return true
+	default:
+		return false
+	}
+}
+
+func isStrictRestoreAction(action string) bool {
+	return strings.TrimSpace(action) == "strict_exact_restore"
+}
+
+func isCanonicalStateRestoreConflictCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "state_snapshot_invalid_payload",
+		"state_snapshot_restore_mode_invalid",
+		"state_snapshot_strict_incompatible",
+		"state_snapshot_compat_window_exceeded",
+		"state_snapshot_operation_conflict",
+		"state_snapshot_digest_mismatch",
+		"snapshot_recovery_boundary_violation",
+		"snapshot_scheduler_conflict",
+		"snapshot_mailbox_conflict",
+		"snapshot_memory_contract_mismatch",
+		"snapshot_memory_lifecycle_mismatch",
+		"snapshot_memory_search_policy_mismatch",
+		"snapshot_memory_retrieval_quality_drift":
+		return true
+	default:
+		return false
+	}
 }
 
 func isCanonicalReactTerminationReason(reason string) bool {

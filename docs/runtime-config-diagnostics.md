@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-04-02
+更新时间：2026-04-03
 
 ## 目标
 
@@ -1880,6 +1880,31 @@ A65 gate 与 required-check 暴露：
 - CI Job: `hooks-middleware-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-hooks-middleware-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：`control_plane_absent`（禁止托管 hooks/middleware 控制面）
+
+A66 在 A59/A60/A61/A65 基础上冻结 unified state/session snapshot 合同，统一 state 导入导出、恢复兼容窗口、幂等导入与回放门禁口径。
+
+A66 配置域（默认值）：
+- `runtime.state.snapshot.enabled`（`false`）
+- `runtime.state.snapshot.restore_mode`（`strict`，可选 `strict|compatible`）
+- `runtime.state.snapshot.compat_window`（`1`，`>= 0`）
+- `runtime.state.snapshot.schema_version`（`state_session_snapshot.v1`）
+- `runtime.session.state.enabled`（`false`）
+- `runtime.session.state.partial_restore_policy`（`reject`，可选 `reject|allow`）
+
+A66 additive diagnostics 字段（`additive + nullable + default`）：
+- `state_snapshot_version`
+- `state_restore_action`
+- `state_restore_conflict_code`
+- `state_restore_source`
+
+A66 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-state-snapshot-contract.sh`
+- Windows: `pwsh -File scripts/check-state-snapshot-contract.ps1`
+- CI Job: `state-snapshot-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-state-snapshot-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- 边界断言：
+  - `state_control_plane_absent`（禁止托管状态控制面）
+  - `state_source_of_truth_reuse_required`（不得重写 A59 memory 事实源）
 
 ## 热更新语义
 

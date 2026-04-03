@@ -73,6 +73,12 @@ if ! bash scripts/check-multi-agent-shared-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] state snapshot contract suites"
+if ! bash scripts/check-state-snapshot-contract.sh; then
+  echo "[quality-gate][state-snapshot-contract] state snapshot contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] runtime readiness + explainability + version governance contract suites"
 if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1; then
   echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"

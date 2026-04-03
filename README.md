@@ -13,11 +13,11 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-04-02）：
+当前里程碑快照（2026-04-03）：
 - 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - A65（Introduce Agent Lifecycle Hooks And Tool Middleware Contract）进行中（实施完成，待归档）。
   - A66（Introduce Unified State And Session Snapshot Contract）进行中。
+  - A67（Introduce ReAct Plan Notebook And Plan Change Hook Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -226,8 +226,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A65 `introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65`：agent lifecycle hooks + tool middleware + skill discovery/preprocess/bundle mapping 契约（进行中，实施完成待归档）。
 - A66 `introduce-unified-state-and-session-snapshot-contract-a66`：unified state/session snapshot 契约。
+- A67 `introduce-react-plan-notebook-and-plan-change-hook-contract-a67`：ReAct plan notebook + plan-change hook 契约。
 
 近期已归档能力：
 - A51-A61 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
@@ -271,6 +271,42 @@ bash scripts/check-hooks-middleware-contract.sh
 
 ```powershell
 pwsh -File scripts/check-hooks-middleware-contract.ps1
+```
+
+### A66 Unified State/Session Snapshot Contract
+
+A66 在 composer/scheduler/memory/recovery 接缝上提供统一 snapshot 导入导出合同，并补齐 strict|compatible 恢复策略、compat window、重复导入幂等与回放门禁口径。
+
+最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
+
+```yaml
+runtime:
+  state:
+    snapshot:
+      enabled: false
+      restore_mode: strict # strict|compatible
+      compat_window: 1
+      schema_version: state_session_snapshot.v1
+  session:
+    state:
+      enabled: false
+      partial_restore_policy: reject # reject|allow
+```
+
+新增运行诊断字段（additive + nullable + default）：
+- `state_snapshot_version`
+- `state_restore_action`
+- `state_restore_conflict_code`
+- `state_restore_source`
+
+合同门禁（A66）：
+
+```bash
+bash scripts/check-state-snapshot-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-state-snapshot-contract.ps1
 ```
 
 ### 9) ReAct 最小接入蓝图（A56）
@@ -341,6 +377,7 @@ bash scripts/check-observability-export-and-bundle-contract.sh
 bash scripts/check-memory-contract-conformance.sh
 bash scripts/check-sandbox-rollout-governance-contract.sh
 bash scripts/check-agent-eval-and-tracing-interop-contract.sh
+bash scripts/check-state-snapshot-contract.sh
 bash scripts/check-diagnostics-query-performance-regression.sh
 ```
 
@@ -356,6 +393,7 @@ pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
 pwsh -File scripts/check-memory-contract-conformance.ps1
 pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
 pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1
+pwsh -File scripts/check-state-snapshot-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```
 

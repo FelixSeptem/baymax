@@ -12,6 +12,7 @@ import (
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
+	orchestrationsnapshot "github.com/FelixSeptem/baymax/orchestration/snapshot"
 	"github.com/FelixSeptem/baymax/orchestration/teams"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -255,6 +256,7 @@ type Composer struct {
 	recoveryFallback                 bool
 	recoveryFallbackReason           string
 	recoveryConflictPolicy           string
+	stateSnapshotImporter            *orchestrationsnapshot.Importer
 
 	now               func() time.Time
 	childWorkerID     string
@@ -343,13 +345,14 @@ type runStat struct {
 
 func New(model types.ModelClient, opts ...Option) (*Composer, error) {
 	c := &Composer{
-		now:                  time.Now,
-		childWorkerID:        defaultChildWorkerID,
-		childPollInterval:    defaultChildPollTimeout,
-		managedScheduler:     true,
-		managedMailbox:       true,
-		managedRecoveryStore: true,
-		runStat:              map[string]*runStat{},
+		now:                   time.Now,
+		childWorkerID:         defaultChildWorkerID,
+		childPollInterval:     defaultChildPollTimeout,
+		managedScheduler:      true,
+		managedMailbox:        true,
+		managedRecoveryStore:  true,
+		stateSnapshotImporter: orchestrationsnapshot.NewImporter(),
+		runStat:               map[string]*runStat{},
 	}
 	for _, opt := range opts {
 		if opt != nil {

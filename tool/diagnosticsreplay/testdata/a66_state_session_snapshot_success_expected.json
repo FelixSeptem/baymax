@@ -1,0 +1,18 @@
+{
+  "version": "state_session_snapshot.v1",
+  "cases": [
+    {
+      "name": "state_snapshot_restore_success_case",
+      "canonical": {
+        "state_snapshot_version": "state_session_snapshot.v1",
+        "state_restore_action": "compatible_bounded_restore",
+        "state_restore_conflict_code": "snapshot_memory_search_policy_mismatch",
+        "state_restore_source": "composer"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

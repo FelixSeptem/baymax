@@ -290,6 +290,8 @@ type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Admission         RuntimeAdmissionConfig         `json:"admission"`
+	State             RuntimeStateConfig             `json:"state"`
+	Session           RuntimeSessionConfig           `json:"session"`
 	Hooks             RuntimeHooksConfig             `json:"hooks"`
 	ToolMiddleware    RuntimeToolMiddlewareConfig    `json:"tool_middleware"`
 	Skill             RuntimeSkillConfig             `json:"skill"`
@@ -1282,6 +1284,20 @@ func DefaultConfig() Config {
 					ConflictPolicy: RuntimeAdmissionDegradeConflictPolicyFirstAction,
 				},
 			},
+			State: RuntimeStateConfig{
+				Snapshot: RuntimeStateSnapshotConfig{
+					Enabled:       false,
+					RestoreMode:   RuntimeStateSnapshotRestoreModeStrict,
+					CompatWindow:  1,
+					SchemaVersion: RuntimeStateSnapshotSchemaVersionV1,
+				},
+			},
+			Session: RuntimeSessionConfig{
+				State: RuntimeSessionStateConfig{
+					Enabled:              false,
+					PartialRestorePolicy: RuntimeSessionStatePartialRestorePolicyReject,
+				},
+			},
 			Hooks: RuntimeHooksConfig{
 				Enabled: false,
 				Phases: []string{
@@ -2230,6 +2246,12 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeAdmission(cfg.Runtime.Admission); err != nil {
+		return err
+	}
+	if err := validateRuntimeState(cfg.Runtime.State); err != nil {
+		return err
+	}
+	if err := validateRuntimeSession(cfg.Runtime.Session); err != nil {
 		return err
 	}
 	if err := validateRuntimeHooks(cfg.Runtime.Hooks); err != nil {
@@ -4166,6 +4188,14 @@ func validateRuntimeHooks(cfg RuntimeHooksConfig) error {
 	return ValidateRuntimeHooksConfig(cfg)
 }
 
+func validateRuntimeState(cfg RuntimeStateConfig) error {
+	return ValidateRuntimeStateSnapshotConfig(cfg.Snapshot)
+}
+
+func validateRuntimeSession(cfg RuntimeSessionConfig) error {
+	return ValidateRuntimeSessionStateConfig(cfg.State)
+}
+
 func validateRuntimeToolMiddleware(cfg RuntimeToolMiddlewareConfig) error {
 	return ValidateRuntimeToolMiddlewareConfig(cfg)
 }
@@ -4254,6 +4284,12 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.admission.degrade_policy.enabled", base.Runtime.Admission.DegradePolicy.Enabled)
 	v.SetDefault("runtime.admission.degrade_policy.action_order", base.Runtime.Admission.DegradePolicy.ActionOrder)
 	v.SetDefault("runtime.admission.degrade_policy.conflict_policy", base.Runtime.Admission.DegradePolicy.ConflictPolicy)
+	v.SetDefault("runtime.state.snapshot.enabled", base.Runtime.State.Snapshot.Enabled)
+	v.SetDefault("runtime.state.snapshot.restore_mode", base.Runtime.State.Snapshot.RestoreMode)
+	v.SetDefault("runtime.state.snapshot.compat_window", base.Runtime.State.Snapshot.CompatWindow)
+	v.SetDefault("runtime.state.snapshot.schema_version", base.Runtime.State.Snapshot.SchemaVersion)
+	v.SetDefault("runtime.session.state.enabled", base.Runtime.Session.State.Enabled)
+	v.SetDefault("runtime.session.state.partial_restore_policy", base.Runtime.Session.State.PartialRestorePolicy)
 	v.SetDefault("runtime.hooks.enabled", base.Runtime.Hooks.Enabled)
 	v.SetDefault("runtime.hooks.phases", base.Runtime.Hooks.Phases)
 	v.SetDefault("runtime.hooks.fail_mode", base.Runtime.Hooks.FailMode)
@@ -4744,6 +4780,18 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	stateSnapshotEnabled, err := strictBoolConfigValue(v, "runtime.state.snapshot.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	sessionStateEnabled, err := strictBoolConfigValue(v, "runtime.session.state.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	stateSnapshotCompatWindow, err := strictIntConfigValue(v, "runtime.state.snapshot.compat_window")
+	if err != nil {
+		return Config{}, err
+	}
 	hooksEnabled, err := strictBoolConfigValue(v, "runtime.hooks.enabled")
 	if err != nil {
 		return Config{}, err
@@ -4763,6 +4811,12 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Admission.DegradePolicy.Enabled = admissionDegradePolicyEnabled
 	cfg.Runtime.Admission.DegradePolicy.ActionOrder = normalizeOrderedKeywords(v.GetStringSlice("runtime.admission.degrade_policy.action_order"))
 	cfg.Runtime.Admission.DegradePolicy.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.admission.degrade_policy.conflict_policy")))
+	cfg.Runtime.State.Snapshot.Enabled = stateSnapshotEnabled
+	cfg.Runtime.State.Snapshot.RestoreMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.state.snapshot.restore_mode")))
+	cfg.Runtime.State.Snapshot.CompatWindow = stateSnapshotCompatWindow
+	cfg.Runtime.State.Snapshot.SchemaVersion = strings.ToLower(strings.TrimSpace(v.GetString("runtime.state.snapshot.schema_version")))
+	cfg.Runtime.Session.State.Enabled = sessionStateEnabled
+	cfg.Runtime.Session.State.PartialRestorePolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.session.state.partial_restore_policy")))
 	cfg.Runtime.Hooks.Enabled = hooksEnabled
 	cfg.Runtime.Hooks.Phases = normalizeRuntimeHookPhases(v.GetStringSlice("runtime.hooks.phases"))
 	cfg.Runtime.Hooks.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.hooks.fail_mode")))

@@ -91,6 +91,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent shared contract suite
     pwsh -File scripts/check-multi-agent-shared-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] state snapshot contract suites" -Command {
+    pwsh -File scripts/check-state-snapshot-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness + explainability + version governance contract suites" -Command {
     go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1
 }

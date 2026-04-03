@@ -819,6 +819,91 @@ func TestStoreRunA61TracingEvalAdditiveFieldsBoundedCardinality(t *testing.T) {
 	}
 }
 
+func TestStoreRunA66SnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                     time.Now(),
+		RunID:                    "run-a66-snapshot-restore",
+		Status:                   "failed",
+		StateSnapshotVersion:     "state_session_snapshot.v1",
+		StateRestoreAction:       "compatible_bounded_restore",
+		StateRestoreConflictCode: "snapshot_memory_search_policy_mismatch",
+		StateRestoreSource:       "composer",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.StateSnapshotVersion != "state_session_snapshot.v1" ||
+		got.StateRestoreAction != "compatible_bounded_restore" ||
+		got.StateRestoreConflictCode != "snapshot_memory_search_policy_mismatch" ||
+		got.StateRestoreSource != "composer" {
+		t.Fatalf("A66 additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.StateRestoreAction = "strict_exact_restore"
+	rec.StateRestoreConflictCode = "state_snapshot_strict_incompatible"
+	rec.StateRestoreSource = "scheduler"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.StateRestoreAction != "strict_exact_restore" ||
+		got.StateRestoreConflictCode != "state_snapshot_strict_incompatible" ||
+		got.StateRestoreSource != "scheduler" {
+		t.Fatalf("A66 additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a66-snapshot-restore"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	if page.Items[0].StateSnapshotVersion != "state_session_snapshot.v1" ||
+		page.Items[0].StateRestoreAction != "strict_exact_restore" ||
+		page.Items[0].StateRestoreConflictCode != "state_snapshot_strict_incompatible" ||
+		page.Items[0].StateRestoreSource != "scheduler" {
+		t.Fatalf("A66 query mapping mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunA66QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.AddRun(RunRecord{
+		Time:      time.Now(),
+		RunID:     "run-a66-compat",
+		Status:    "success",
+		LatencyMs: 19,
+	})
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a66-compat"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	got := page.Items[0]
+	if got.Status != "success" || got.LatencyMs != 19 {
+		t.Fatalf("existing fields should stay unchanged: %#v", got)
+	}
+	if got.StateSnapshotVersion != "" ||
+		got.StateRestoreAction != "" ||
+		got.StateRestoreConflictCode != "" ||
+		got.StateRestoreSource != "" {
+		t.Fatalf("missing A66 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

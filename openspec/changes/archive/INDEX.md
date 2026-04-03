@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-03 00:25:14
+Updated: 2026-04-03 14:39:41
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -112,3 +112,4 @@ Updated: 2026-04-03 00:25:14
 - 108 -> introduce-runtime-cost-latency-budget-and-admission-contract-a60
 - 109 -> introduce-otel-tracing-and-agent-eval-interoperability-contract-a61
 - 110 -> introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65
+- 111 -> introduce-unified-state-and-session-snapshot-contract-a66

@@ -108,6 +108,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			input:    "a65_skill_preprocess_and_mapping_success_input.json",
 			expected: "a65_skill_preprocess_and_mapping_success_expected.json",
 		},
+		{
+			name:     "a66-state-session-snapshot",
+			input:    "a66_state_session_snapshot_success_input.json",
+			expected: "a66_state_session_snapshot_success_expected.json",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -527,6 +532,30 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantCode:   ReasonCodeSchemaMismatch,
 			wantInText: "hooks_phases must not be empty",
 		},
+		{
+			name:       "a66-snapshot-schema-drift",
+			fixture:    "a66_snapshot_schema_drift_input.json",
+			wantCode:   ReasonCodeSnapshotSchemaDrift,
+			wantInText: "state_snapshot_version",
+		},
+		{
+			name:       "a66-state-restore-semantic-drift",
+			fixture:    "a66_state_restore_semantic_drift_input.json",
+			wantCode:   ReasonCodeStateRestoreSemanticDrift,
+			wantInText: "semantic drift",
+		},
+		{
+			name:       "a66-snapshot-compat-window-drift",
+			fixture:    "a66_snapshot_compat_window_drift_input.json",
+			wantCode:   ReasonCodeSnapshotCompatWindowDrift,
+			wantInText: "compat window drift",
+		},
+		{
+			name:       "a66-partial-restore-policy-drift",
+			fixture:    "a66_partial_restore_policy_drift_input.json",
+			wantCode:   ReasonCodePartialRestorePolicyDrift,
+			wantInText: "partial restore policy drift",
+		},
 	}
 
 	for _, tc := range tests {
@@ -603,6 +632,7 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
+		"a66_state_session_snapshot_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -629,6 +659,7 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
+		"a66_state_session_snapshot_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -768,6 +799,7 @@ func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
+		"a66_state_session_snapshot_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture

@@ -23,6 +23,7 @@ func TestPowerShellGateScriptsUseStrictNativePath(t *testing.T) {
 		"scripts/check-security-event-contract.ps1",
 		"scripts/check-security-policy-contract.ps1",
 		"scripts/check-sandbox-rollout-governance-contract.ps1",
+		"scripts/check-state-snapshot-contract.ps1",
 		"scripts/check-runtime-budget-admission-contract.ps1",
 		"scripts/check-agent-eval-and-tracing-interop-contract.ps1",
 	}
@@ -80,6 +81,7 @@ func TestPowerShellQualityGateGovernanceWarnExceptionOnly(t *testing.T) {
 		"scripts/check-security-event-contract.ps1",
 		"scripts/check-security-policy-contract.ps1",
 		"scripts/check-sandbox-rollout-governance-contract.ps1",
+		"scripts/check-state-snapshot-contract.ps1",
 		"scripts/check-runtime-budget-admission-contract.ps1",
 		"scripts/check-agent-eval-and-tracing-interop-contract.ps1",
 	}

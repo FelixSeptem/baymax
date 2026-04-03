@@ -256,6 +256,10 @@ type RunRecord struct {
 	RecoveryTimeoutReentryExhaustedTotal        int                               `json:"recovery_timeout_reentry_exhausted_total,omitempty"`
 	RecoveryConflict                            bool                              `json:"recovery_conflict,omitempty"`
 	RecoveryConflictCode                        string                            `json:"recovery_conflict_code,omitempty"`
+	StateSnapshotVersion                        string                            `json:"state_snapshot_version,omitempty"`
+	StateRestoreAction                          string                            `json:"state_restore_action,omitempty"`
+	StateRestoreConflictCode                    string                            `json:"state_restore_conflict_code,omitempty"`
+	StateRestoreSource                          string                            `json:"state_restore_source,omitempty"`
 	RecoveryFallbackUsed                        bool                              `json:"recovery_fallback_used,omitempty"`
 	RecoveryFallbackReason                      string                            `json:"recovery_fallback_reason,omitempty"`
 	RuntimeReadinessStatus                      string                            `json:"runtime_readiness_status,omitempty"`

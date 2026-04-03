@@ -2562,6 +2562,165 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA66SnapshotRestoreAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a66-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                      "failed",
+			"state_snapshot_version":      "state_session_snapshot.v1",
+			"state_restore_action":        "compatible_exact_restore",
+			"state_restore_conflict_code": "state_snapshot_compat_window_exceeded",
+			"state_restore_source":        "Composer",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.StateSnapshotVersion != "state_session_snapshot.v1" ||
+		got.StateRestoreAction != "compatible_exact_restore" ||
+		got.StateRestoreConflictCode != "state_snapshot_compat_window_exceeded" ||
+		got.StateRestoreSource != "composer" {
+		t.Fatalf("A66 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA66ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a66-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(25),
+			"a66_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 25 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.StateSnapshotVersion != "" ||
+		got.StateRestoreAction != "" ||
+		got.StateRestoreConflictCode != "" ||
+		got.StateRestoreSource != "" {
+		t.Fatalf("missing A66 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA66RestoreTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a66-taxonomy-guard",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                      "failed",
+			"state_restore_action":        "compat.restore.alias",
+			"state_restore_conflict_code": "snapshot.custom.conflict.alias",
+			"state_restore_source":        "Composer",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.StateRestoreAction != "compatible_bounded_restore" {
+		t.Fatalf("restore action taxonomy drift should fallback to canonical action, got %#v", got.StateRestoreAction)
+	}
+	if got.StateRestoreConflictCode != "state_snapshot_invalid_payload" {
+		t.Fatalf("restore conflict taxonomy drift should fallback to canonical conflict code, got %#v", got.StateRestoreConflictCode)
+	}
+	if got.StateRestoreSource != "composer" {
+		t.Fatalf("state restore source should normalize to lower-case, got %#v", got.StateRestoreSource)
+	}
+}
+
 func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

@@ -470,6 +470,13 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			ReactIterationBudgetHitTotal:                payloadInt(payload, "react_iteration_budget_hit_total"),
 			ReactTerminationReason:                      payloadString(payload, "react_termination_reason"),
 			ReactStreamDispatchEnabled:                  payloadBool(payload, "react_stream_dispatch_enabled"),
+			ReactPlanID:                                 payloadString(payload, "react_plan_id"),
+			ReactPlanVersion:                            payloadInt(payload, "react_plan_version"),
+			ReactPlanChangeTotal:                        payloadInt(payload, "react_plan_change_total"),
+			ReactPlanLastAction:                         normalizeA67PlanAction(payloadString(payload, "react_plan_last_action")),
+			ReactPlanChangeReason:                       payloadString(payload, "react_plan_change_reason"),
+			ReactPlanRecoverCount:                       payloadInt(payload, "react_plan_recover_count"),
+			ReactPlanHookStatus:                         normalizeA67PlanHookStatus(payloadString(payload, "react_plan_hook_status")),
 			HooksEnabled:                                payloadBool(payload, "hooks_enabled"),
 			HooksFailMode:                               normalizeA65HooksFailMode(payloadString(payload, "hooks_fail_mode")),
 			HooksPhases:                                 payloadStringSliceCSV(payload, "hooks_phases"),
@@ -971,6 +978,36 @@ func normalizeRuntimeDiagnosticsBundleSchemaVersion(raw string) string {
 		return runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1
 	default:
 		return runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1
+	}
+}
+
+func normalizeA67PlanAction(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "create":
+		return "create"
+	case "revise":
+		return "revise"
+	case "complete":
+		return "complete"
+	case "recover":
+		return "recover"
+	default:
+		return ""
+	}
+}
+
+func normalizeA67PlanHookStatus(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "ok":
+		return "ok"
+	case "degraded":
+		return "degraded"
+	case "failed":
+		return "failed"
+	case "disabled":
+		return "disabled"
+	default:
+		return ""
 	}
 }
 

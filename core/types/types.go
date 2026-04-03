@@ -394,12 +394,14 @@ type SkillLoader interface {
 type AgentLifecyclePhase string
 
 const (
-	AgentLifecyclePhaseBeforeReasoning AgentLifecyclePhase = "before_reasoning"
-	AgentLifecyclePhaseAfterReasoning  AgentLifecyclePhase = "after_reasoning"
-	AgentLifecyclePhaseBeforeActing    AgentLifecyclePhase = "before_acting"
-	AgentLifecyclePhaseAfterActing     AgentLifecyclePhase = "after_acting"
-	AgentLifecyclePhaseBeforeReply     AgentLifecyclePhase = "before_reply"
-	AgentLifecyclePhaseAfterReply      AgentLifecyclePhase = "after_reply"
+	AgentLifecyclePhaseBeforeReasoning  AgentLifecyclePhase = "before_reasoning"
+	AgentLifecyclePhaseAfterReasoning   AgentLifecyclePhase = "after_reasoning"
+	AgentLifecyclePhaseBeforeActing     AgentLifecyclePhase = "before_acting"
+	AgentLifecyclePhaseAfterActing      AgentLifecyclePhase = "after_acting"
+	AgentLifecyclePhaseBeforePlanChange AgentLifecyclePhase = "before_plan_change"
+	AgentLifecyclePhaseAfterPlanChange  AgentLifecyclePhase = "after_plan_change"
+	AgentLifecyclePhaseBeforeReply      AgentLifecyclePhase = "before_reply"
+	AgentLifecyclePhaseAfterReply       AgentLifecyclePhase = "after_reply"
 )
 
 type AgentLifecycleHookContext struct {
@@ -410,6 +412,10 @@ type AgentLifecycleHookContext struct {
 	Phase       AgentLifecyclePhase `json:"phase"`
 	FinalAnswer string              `json:"final_answer,omitempty"`
 	ToolCalls   []ToolCall          `json:"tool_calls,omitempty"`
+	PlanID      string              `json:"plan_id,omitempty"`
+	PlanVersion int                 `json:"plan_version,omitempty"`
+	PlanAction  string              `json:"plan_action,omitempty"`
+	PlanReason  string              `json:"plan_reason,omitempty"`
 }
 
 type AgentLifecycleHook interface {

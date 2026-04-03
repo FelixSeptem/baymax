@@ -49,6 +49,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			expected: "a56_react_success_expected.json",
 		},
 		{
+			name:     "a67-react-plan-notebook",
+			input:    "a67_react_plan_notebook_success_input.json",
+			expected: "a67_react_plan_notebook_success_expected.json",
+		},
+		{
 			name:     "a57-sandbox-egress-allowlist",
 			input:    "a57_sandbox_egress_success_input.json",
 			expected: "a57_sandbox_egress_success_expected.json",
@@ -381,6 +386,30 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			fixture:    "a56_react_provider_mapping_drift_input.json",
 			wantCode:   ReasonCodeReactProviderMappingDrift,
 			wantInText: "react provider mapping drift",
+		},
+		{
+			name:       "a67-react-plan-version-drift",
+			fixture:    "a67_react_plan_version_drift_input.json",
+			wantCode:   ReasonCodeReactPlanVersionDrift,
+			wantInText: "react plan version drift",
+		},
+		{
+			name:       "a67-react-plan-change-reason-drift",
+			fixture:    "a67_react_plan_change_reason_drift_input.json",
+			wantCode:   ReasonCodeReactPlanChangeReasonDrift,
+			wantInText: "react plan change reason drift",
+		},
+		{
+			name:       "a67-react-plan-hook-semantic-drift",
+			fixture:    "a67_react_plan_hook_semantic_drift_input.json",
+			wantCode:   ReasonCodeReactPlanHookSemanticDrift,
+			wantInText: "react plan hook semantic drift",
+		},
+		{
+			name:       "a67-react-plan-recover-drift",
+			fixture:    "a67_react_plan_recover_drift_input.json",
+			wantCode:   ReasonCodeReactPlanRecoverDrift,
+			wantInText: "react plan recover drift",
 		},
 		{
 			name:       "a56-react-schema-malformed",

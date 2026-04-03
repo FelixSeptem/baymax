@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-03 14:39:41
+Updated: 2026-04-03 22:42:18
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -113,3 +113,4 @@ Updated: 2026-04-03 14:39:41
 - 109 -> introduce-otel-tracing-and-agent-eval-interoperability-contract-a61
 - 110 -> introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65
 - 111 -> introduce-unified-state-and-session-snapshot-contract-a66
+- 112 -> introduce-react-plan-notebook-and-plan-change-hook-contract-a67

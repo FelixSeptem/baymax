@@ -28,6 +28,7 @@ const (
 	ArbitrationFixtureVersionMemoryLifecycleV1 = "memory_lifecycle.v1"
 	ArbitrationFixtureVersionObsV1             = "observability.v1"
 	ArbitrationFixtureVersionReactV1           = "react.v1"
+	ArbitrationFixtureVersionReactPlanV1       = "react_plan_notebook.v1"
 	ArbitrationFixtureVersionOTelSemconvV1     = "otel_semconv.v1"
 	ArbitrationFixtureVersionAgentEvalV1       = "agent_eval.v1"
 	ArbitrationFixtureVersionAgentEvalDistV1   = "agent_eval_distributed.v1"
@@ -78,6 +79,10 @@ const (
 	ReasonCodeReactTerminationReasonDrift         = "react_termination_reason_drift"
 	ReasonCodeReactStreamDispatchDrift            = "react_stream_dispatch_drift"
 	ReasonCodeReactProviderMappingDrift           = "react_provider_mapping_drift"
+	ReasonCodeReactPlanVersionDrift               = "react_plan_version_drift"
+	ReasonCodeReactPlanChangeReasonDrift          = "react_plan_change_reason_drift"
+	ReasonCodeReactPlanHookSemanticDrift          = "react_plan_hook_semantic_drift"
+	ReasonCodeReactPlanRecoverDrift               = "react_plan_recover_drift"
 	ReasonCodeSandboxEgressActionDrift            = "sandbox_egress_action_drift"
 	ReasonCodeSandboxEgressPolicySourceDrift      = "sandbox_egress_policy_source_drift"
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
@@ -161,6 +166,13 @@ type ArbitrationObservation struct {
 	ReactIterationBudgetHitTotal           int                       `json:"react_iteration_budget_hit_total,omitempty"`
 	ReactTerminationReason                 string                    `json:"react_termination_reason,omitempty"`
 	ReactStreamDispatchEnabled             bool                      `json:"react_stream_dispatch_enabled,omitempty"`
+	ReactPlanID                            string                    `json:"react_plan_id,omitempty"`
+	ReactPlanVersion                       int                       `json:"react_plan_version,omitempty"`
+	ReactPlanChangeTotal                   int                       `json:"react_plan_change_total,omitempty"`
+	ReactPlanLastAction                    string                    `json:"react_plan_last_action,omitempty"`
+	ReactPlanChangeReason                  string                    `json:"react_plan_change_reason,omitempty"`
+	ReactPlanRecoverCount                  int                       `json:"react_plan_recover_count,omitempty"`
+	ReactPlanHookStatus                    string                    `json:"react_plan_hook_status,omitempty"`
 	SandboxMode                            string                    `json:"sandbox_mode,omitempty"`
 	SandboxBackend                         string                    `json:"sandbox_backend,omitempty"`
 	SandboxProfile                         string                    `json:"sandbox_profile,omitempty"`
@@ -301,6 +313,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionMemoryLifecycleV1 &&
 		version != ArbitrationFixtureVersionObsV1 &&
 		version != ArbitrationFixtureVersionReactV1 &&
+		version != ArbitrationFixtureVersionReactPlanV1 &&
 		version != ArbitrationFixtureVersionOTelSemconvV1 &&
 		version != ArbitrationFixtureVersionAgentEvalV1 &&
 		version != ArbitrationFixtureVersionAgentEvalDistV1 &&
@@ -446,6 +459,13 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		ReactIterationBudgetHitTotal:           in.ReactIterationBudgetHitTotal,
 		ReactTerminationReason:                 strings.ToLower(strings.TrimSpace(in.ReactTerminationReason)),
 		ReactStreamDispatchEnabled:             in.ReactStreamDispatchEnabled,
+		ReactPlanID:                            strings.ToLower(strings.TrimSpace(in.ReactPlanID)),
+		ReactPlanVersion:                       in.ReactPlanVersion,
+		ReactPlanChangeTotal:                   in.ReactPlanChangeTotal,
+		ReactPlanLastAction:                    strings.ToLower(strings.TrimSpace(in.ReactPlanLastAction)),
+		ReactPlanChangeReason:                  strings.ToLower(strings.TrimSpace(in.ReactPlanChangeReason)),
+		ReactPlanRecoverCount:                  in.ReactPlanRecoverCount,
+		ReactPlanHookStatus:                    strings.ToLower(strings.TrimSpace(in.ReactPlanHookStatus)),
 		SandboxMode:                            strings.ToLower(strings.TrimSpace(in.SandboxMode)),
 		SandboxBackend:                         strings.ToLower(strings.TrimSpace(in.SandboxBackend)),
 		SandboxProfile:                         strings.ToLower(strings.TrimSpace(in.SandboxProfile)),
@@ -536,6 +556,15 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if out.ReactIterationBudgetHitTotal < 0 {
 		out.ReactIterationBudgetHitTotal = 0
+	}
+	if out.ReactPlanVersion < 0 {
+		out.ReactPlanVersion = 0
+	}
+	if out.ReactPlanChangeTotal < 0 {
+		out.ReactPlanChangeTotal = 0
+	}
+	if out.ReactPlanRecoverCount < 0 {
+		out.ReactPlanRecoverCount = 0
 	}
 	if out.SkillPreprocessSpecCount < 0 {
 		out.SkillPreprocessSpecCount = 0
@@ -736,6 +765,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return validateReactArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionReactPlanV1 {
+		return validateReactPlanNotebookArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
@@ -955,6 +987,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionReactV1 {
 		return assertReactArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionReactPlanV1 {
+		return assertReactPlanNotebookArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1434,6 +1469,89 @@ func assertReactArbitrationEquivalent(caseName, lane string, expected, actual Ar
 		return &ValidationError{
 			Code:    ReasonCodeReactProviderMappingDrift,
 			Message: fmt.Sprintf("case %q %s react provider mapping drift expected=%q actual=%q", caseName, lane, expected.ModelProvider, actual.ModelProvider),
+		}
+	}
+	return nil
+}
+
+func validateReactPlanNotebookArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if err := validateReactArbitrationObservation(caseName, lane, obs); err != nil {
+		return err
+	}
+	if strings.TrimSpace(obs.ReactPlanID) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_id is required", caseName, lane),
+		}
+	}
+	if obs.ReactPlanVersion <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_version must be > 0", caseName, lane),
+		}
+	}
+	if obs.ReactPlanChangeTotal <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_change_total must be > 0", caseName, lane),
+		}
+	}
+	if !isCanonicalReactPlanAction(obs.ReactPlanLastAction) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_last_action is invalid: %q", caseName, lane, obs.ReactPlanLastAction),
+		}
+	}
+	if strings.TrimSpace(obs.ReactPlanChangeReason) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_change_reason is required", caseName, lane),
+		}
+	}
+	if obs.ReactPlanRecoverCount < 0 || obs.ReactPlanRecoverCount > obs.ReactPlanChangeTotal {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_recover_count must be in [0, react_plan_change_total]", caseName, lane),
+		}
+	}
+	if !isCanonicalReactPlanHookStatus(obs.ReactPlanHookStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s react_plan_hook_status is invalid: %q", caseName, lane, obs.ReactPlanHookStatus),
+		}
+	}
+	return nil
+}
+
+func assertReactPlanNotebookArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if err := assertReactArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+		return err
+	}
+	if expected.ReactPlanVersion != actual.ReactPlanVersion {
+		return &ValidationError{
+			Code:    ReasonCodeReactPlanVersionDrift,
+			Message: fmt.Sprintf("case %q %s react plan version drift expected=%d actual=%d", caseName, lane, expected.ReactPlanVersion, actual.ReactPlanVersion),
+		}
+	}
+	if expected.ReactPlanChangeReason != actual.ReactPlanChangeReason {
+		return &ValidationError{
+			Code:    ReasonCodeReactPlanChangeReasonDrift,
+			Message: fmt.Sprintf("case %q %s react plan change reason drift expected=%q actual=%q", caseName, lane, expected.ReactPlanChangeReason, actual.ReactPlanChangeReason),
+		}
+	}
+	if expected.ReactPlanID != actual.ReactPlanID ||
+		expected.ReactPlanChangeTotal != actual.ReactPlanChangeTotal ||
+		expected.ReactPlanLastAction != actual.ReactPlanLastAction ||
+		expected.ReactPlanHookStatus != actual.ReactPlanHookStatus {
+		return &ValidationError{
+			Code:    ReasonCodeReactPlanHookSemanticDrift,
+			Message: fmt.Sprintf("case %q %s react plan hook semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ReactPlanRecoverCount != actual.ReactPlanRecoverCount {
+		return &ValidationError{
+			Code:    ReasonCodeReactPlanRecoverDrift,
+			Message: fmt.Sprintf("case %q %s react plan recover drift expected=%d actual=%d", caseName, lane, expected.ReactPlanRecoverCount, actual.ReactPlanRecoverCount),
 		}
 	}
 	return nil
@@ -2179,6 +2297,23 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.ReactTerminationReason == right.ReactTerminationReason &&
 			left.ReactStreamDispatchEnabled == right.ReactStreamDispatchEnabled
 	}
+	if version == ArbitrationFixtureVersionReactPlanV1 {
+		return left.ModelProvider == right.ModelProvider &&
+			left.ReactEnabled == right.ReactEnabled &&
+			left.ReactIterationTotal == right.ReactIterationTotal &&
+			left.ReactToolCallTotal == right.ReactToolCallTotal &&
+			left.ReactToolCallBudgetHitTotal == right.ReactToolCallBudgetHitTotal &&
+			left.ReactIterationBudgetHitTotal == right.ReactIterationBudgetHitTotal &&
+			left.ReactTerminationReason == right.ReactTerminationReason &&
+			left.ReactStreamDispatchEnabled == right.ReactStreamDispatchEnabled &&
+			left.ReactPlanID == right.ReactPlanID &&
+			left.ReactPlanVersion == right.ReactPlanVersion &&
+			left.ReactPlanChangeTotal == right.ReactPlanChangeTotal &&
+			left.ReactPlanLastAction == right.ReactPlanLastAction &&
+			left.ReactPlanChangeReason == right.ReactPlanChangeReason &&
+			left.ReactPlanRecoverCount == right.ReactPlanRecoverCount &&
+			left.ReactPlanHookStatus == right.ReactPlanHookStatus
+	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return left.SandboxEgressAction == right.SandboxEgressAction &&
 			left.SandboxEgressPolicySource == right.SandboxEgressPolicySource &&
@@ -2463,6 +2598,24 @@ func isCanonicalReactTerminationReason(reason string) bool {
 		runtimeconfig.RuntimeReactTerminationToolDispatchFailed,
 		runtimeconfig.RuntimeReactTerminationProviderError,
 		runtimeconfig.RuntimeReactTerminationContextCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalReactPlanAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "create", "revise", "complete", "recover":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalReactPlanHookStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "ok", "degraded", "failed", "disabled":
 		return true
 	default:
 		return false

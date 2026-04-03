@@ -112,6 +112,12 @@
   - `runtime.react.tool_call_limit` -> `BAYMAX_RUNTIME_REACT_TOOL_CALL_LIMIT`
   - `runtime.react.stream_tool_dispatch_enabled` -> `BAYMAX_RUNTIME_REACT_STREAM_TOOL_DISPATCH_ENABLED`
   - `runtime.react.on_budget_exhausted` -> `BAYMAX_RUNTIME_REACT_ON_BUDGET_EXHAUSTED`
+  - `runtime.react.plan_notebook.enabled` -> `BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_ENABLED`
+  - `runtime.react.plan_notebook.max_history` -> `BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_MAX_HISTORY`
+  - `runtime.react.plan_notebook.on_recover_conflict` -> `BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_ON_RECOVER_CONFLICT`
+  - `runtime.react.plan_change_hook.enabled` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_ENABLED`
+  - `runtime.react.plan_change_hook.fail_mode` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_FAIL_MODE`
+  - `runtime.react.plan_change_hook.timeout_ms` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_TIMEOUT_MS`
   - `runtime.arbitration.version.enabled` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_ENABLED`
   - `runtime.arbitration.version.default` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_DEFAULT`
   - `runtime.arbitration.version.compat_window` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_COMPAT_WINDOW`
@@ -253,6 +259,14 @@ runtime:
     tool_call_limit: 64               # 必须 > 0
     stream_tool_dispatch_enabled: true # stream 路径 ReAct 工具分发
     on_budget_exhausted: fail_fast    # 当前仅支持 fail_fast
+    plan_notebook:
+      enabled: false                  # A67 默认关闭
+      max_history: 32                 # 必须 > 0
+      on_recover_conflict: reject     # reject|prefer_latest
+    plan_change_hook:
+      enabled: false                  # A67 默认关闭
+      fail_mode: fail_fast            # fail_fast|degrade
+      timeout_ms: 2000                # 必须 > 0；开启时要求 plan_notebook.enabled=true
   readiness:
     enabled: true               # A40 默认开启
     strict: false               # A40 默认不升级 degraded
@@ -927,6 +941,15 @@ runtime arbitration version governance（A50）校验语义：
 4. `runtime.arbitration.version.on_unsupported|on_mismatch` 当前仅支持 `fail_fast`。
 5. 启动加载与热更新都遵循 fail-fast，非法版本治理配置会拒绝生效并保留上一有效快照。
 
+runtime react plan notebook（A67）校验语义：
+1. `runtime.react.plan_notebook.enabled` 与 `runtime.react.plan_change_hook.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
+2. `runtime.react.plan_notebook.max_history` 必须 `> 0`。
+3. `runtime.react.plan_notebook.on_recover_conflict` 仅支持 `reject|prefer_latest`。
+4. `runtime.react.plan_change_hook.fail_mode` 仅支持 `fail_fast|degrade`。
+5. `runtime.react.plan_change_hook.timeout_ms` 必须 `> 0`。
+6. 组合约束：`runtime.react.plan_change_hook.enabled=true` 时必须满足 `runtime.react.plan_notebook.enabled=true`。
+7. 启动加载与热更新都遵循 fail-fast；非法配置会拒绝生效并保留上一有效快照。
+
 adapter health（A43/A46）校验语义：
 1. `adapter.health.enabled|strict|backoff.enabled|circuit.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `adapter.health.probe_timeout` 与 `adapter.health.cache_ttl` 必须 `> 0`。
@@ -1129,6 +1152,7 @@ Mailbox diagnostics additive 字段（A35）：
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
+- ReAct Plan Notebook + Plan Change Hook（A67）：`react_plan_id`、`react_plan_version`、`react_plan_change_total`、`react_plan_last_action`、`react_plan_change_reason`、`react_plan_recover_count`、`react_plan_hook_status`
 - Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
 - Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
 - Budget Admission（A60）：`budget_snapshot`、`budget_decision`、`degrade_action`
@@ -1275,7 +1299,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60 + A65 + A66 + A67）
 
 离线回放命令：
 
@@ -1905,6 +1929,41 @@ A66 gate 与 required-check 暴露：
 - 边界断言：
   - `state_control_plane_absent`（禁止托管状态控制面）
   - `state_source_of_truth_reuse_required`（不得重写 A59 memory 事实源）
+
+A67 在 A56/A65/A66 基础上冻结 ReAct plan notebook + plan-change hook 合同，统一计划生命周期、计划变更 hook 失败语义与回放门禁口径。
+
+A67 配置域（默认值）：
+- `runtime.react.plan_notebook.enabled`（`false`）
+- `runtime.react.plan_notebook.max_history`（`32`，`> 0`）
+- `runtime.react.plan_notebook.on_recover_conflict`（`reject`，可选 `reject|prefer_latest`）
+- `runtime.react.plan_change_hook.enabled`（`false`）
+- `runtime.react.plan_change_hook.fail_mode`（`fail_fast`，可选 `fail_fast|degrade`）
+- `runtime.react.plan_change_hook.timeout_ms`（`2000`，`> 0`）
+
+A67 fail-fast/降级语义：
+- notebook action taxonomy 固定为 `create|revise|complete|recover`，版本号必须单调递增，`complete` 后计划分支冻结（拒绝后续 mutate）。
+- `plan_change_hook.fail_mode=fail_fast`：`before_plan_change`/`after_plan_change` 任一失败即阻断当前计划变更并按既有 ReAct taxonomy 终止。
+- `plan_change_hook.fail_mode=degrade`：跳过当前计划变更并继续执行，且写入 `react_plan_hook_status=degraded`。
+- 组合约束：`runtime.react.plan_change_hook.enabled=true` 时必须满足 `runtime.react.plan_notebook.enabled=true`。
+
+A67 additive diagnostics 字段（`additive + nullable + default`）：
+- `react_plan_id`
+- `react_plan_version`
+- `react_plan_change_total`
+- `react_plan_last_action`
+- `react_plan_change_reason`
+- `react_plan_recover_count`
+- `react_plan_hook_status`（`ok|degraded|failed|disabled`）
+
+A67 replay fixture 与 drift 分类：
+- fixture：`react_plan_notebook.v1`
+- drift：`react_plan_version_drift`、`react_plan_change_reason_drift`、`react_plan_hook_semantic_drift`、`react_plan_recover_drift`
+
+A67 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-react-plan-notebook-contract.sh`
+- Windows: `pwsh -File scripts/check-react-plan-notebook-contract.ps1`
+- CI Job: `react-plan-notebook-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-react-plan-notebook-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
 ## 热更新语义
 

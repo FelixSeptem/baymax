@@ -18,8 +18,8 @@ Baymax 主线保持 `library-first + contract-first`：
 截至 2026-04-03：
 - 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - `introduce-unified-state-and-session-snapshot-contract-a66`（unified state/session snapshot）
   - `introduce-react-plan-notebook-and-plan-change-hook-contract-a67`（react plan notebook + plan-change hook）
+  - `introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`（realtime event protocol + interrupt/resume）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -579,17 +579,17 @@ A56 一次性闭环审查（10.4）：
 2. A59（已归档，P1）：memory scope + builtin filesystem memory v2 治理 contract（scope/write_mode/injection_budget/lifecycle/search 与 gate 已收口）。
 3. A60（已归档，P2）：runtime 成本/时延预算与 admission contract（原 A59 顺延）。
 4. A61（已归档，P2）：OTel tracing + agent eval 互操作 contract（含 local/distributed evaluator 执行治理）。
-5. A65（已实施，待归档，P2）：agent lifecycle hooks + tool middleware contract。
-6. A66（进行中，P2）：unified state/session snapshot contract。
+5. A65（已归档，P2）：agent lifecycle hooks + tool middleware contract。
+6. A66（已归档，P2）：unified state/session snapshot contract。
 7. A67（进行中，P2）：react plan notebook + plan-change hook contract。
-8. A68（候选，P2）：realtime event protocol + interrupt/resume contract（按业务触发）。
+8. A68（进行中，P2）：realtime event protocol + interrupt/resume contract。
 9. A67-CTX（候选，P2）：jit context organization + reference-first assembly contract（ReAct 场景上下文组织专项）。
 10. A63（候选，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
 11. A64（候选，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
 12. A62（候选，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 后续项目说明（避免“单一路线”误解）：
-- A66/A67（进行中）与 A68/A67-CTX/A63/A64/A62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A67/A68（进行中）与 A67-CTX/A63/A64/A62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
 - A58/A59/A60/A61 已归档；A58 作为“跨策略层优先级治理”主提案，用于降低联调阶段语义冲突风险。
 - 前置切换规则（示例）：
   - 若 A58 联调出现同一请求在 ActionGate/S2/sandbox/admission 判定不一致：优先在 A58 内增量吸收，不再拆平行提案。
@@ -692,7 +692,7 @@ A56 一次性闭环审查（10.4）：
   - Hook/Middleware 失败语义必须 deterministic，不引入 Run/Stream 分叉。
 - 当前状态：已实施（OpenSpec tasks 完成，待归档）。
 
-提案 A66（进行中）：`introduce-unified-state-and-session-snapshot-contract-a66`
+提案 A66（已归档）：`introduce-unified-state-and-session-snapshot-contract-a66`
 - 目标：统一 runtime state/session snapshot 导入导出合同，打通跨模块恢复、迁移与重放。
 - 范围（简版）：
   - state surface：runner/session、memory、workflow/composer/scheduler 的统一 state descriptor；
@@ -703,21 +703,22 @@ A56 一次性闭环审查（10.4）：
 - 硬约束（简版）：
   - 不重写已有 checkpoint/snapshot 语义，仅做统一合同层；
   - 不引入平台控制面或远程状态服务依赖。
-- 当前状态：进行中（OpenSpec 1-9 已完成，剩余文档与全量验证收尾）。
+- 当前状态：已归档（详见 `openspec/changes/archive/111-introduce-unified-state-and-session-snapshot-contract-a66`）。
 
 提案 A67（进行中）：`introduce-react-plan-notebook-and-plan-change-hook-contract-a67`
 - 目标：补齐 ReAct 动态计划治理（Plan Notebook）与计划变更 hook，提升复杂任务可控性与可解释性。
 - 范围（简版）：
   - plan notebook：`create|revise|complete|recover` 生命周期；
   - plan-change hook：计划变更前后回调、变更原因与上下文快照；
-  - 观测与回放：新增计划漂移与恢复漂移字段、`react_plan_notebook.v1` fixture；
-  - 门禁：新增 `check-react-plan-notebook-contract.*`。
+  - 配置域：`runtime.react.plan_notebook.*`、`runtime.react.plan_change_hook.*`（默认关闭，`env > file > default`，非法配置 fail-fast + 热更新原子回滚）；
+  - 观测与回放：新增 `react_plan_id`、`react_plan_version`、`react_plan_change_total`、`react_plan_last_action`、`react_plan_change_reason`、`react_plan_recover_count`、`react_plan_hook_status` 与 `react_plan_notebook.v1` fixture；
+  - 门禁：新增 `check-react-plan-notebook-contract.*`，并暴露 CI required-check 候选 `react-plan-notebook-gate`。
 - 硬约束（简版）：
   - 复用 A56 ReAct termination taxonomy，不新增平行 loop 语义；
   - 计划治理不得绕过 A58 决策链与 A57 安全链路。
-- 当前状态：进行中（OpenSpec `in-progress`）。
+- 当前状态：进行中（核心实现与 gate 接线已完成，待文档与全量验证收口后归档）。
 
-提案 A68（候选）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`
+提案 A68（进行中）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`
 - 目标（简版）：补齐实时双向事件协议（server/client）与 interrupt/resume 合同，支撑实时交互场景。
 - 范围（简版）：
   - 事件协议：请求、增量输出、取消、恢复、确认、错误的 canonical event taxonomy；
@@ -735,7 +736,7 @@ A56 一次性闭环审查（10.4）：
 - 退出条件（DoD）：
   - interrupt/resume 在 Run/Stream 与 replay 下语义等价，事件顺序/幂等断言稳定通过；
   - realtime contract 的增量需求可在 A68 tasks 内吸收，不再拆分 A68 平行子提案。
-- 当前状态：候选（按业务实时化需求触发，未启动）。
+- 当前状态：进行中（OpenSpec `in-progress`）。
 
 提案 A67-CTX（候选）：`introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`
 - 目标：以“顺滑支撑 ReAct 模式”为导向，在不破坏既有 CA 合同语义前提下，一次性补齐 JIT context organization 的核心契约，降低上下文噪声与膨胀风险。
@@ -1173,9 +1174,9 @@ A65-A68 与 A67-CTX 验收口径（简版）：
 
 状态对齐说明（2026-04-03）：
 - 已归档并稳定：A58-A61（A4-A57 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：A66、A67。
-- 候选未启动：A68、A67-CTX、A63、A64、A62。
-- 顺序约束保持不变：先补齐 agent runtime 基座合同（A65-A68）并收敛 ReAct 上下文组织合同（A67-CTX），再做代码收敛（A63）、性能治理（A64）与交付易用性示例收口（A62）。
+- 进行中：A67、A68。
+- 候选未启动：A67-CTX、A63、A64、A62。
+- 顺序约束保持不变：先收口进行中 A67/A68，并收敛 ReAct 上下文组织合同（A67-CTX），再做代码收敛（A63）、性能治理（A64）与交付易用性示例收口（A62）。
 
 ### P2：0.x 质量与治理持续收敛
 

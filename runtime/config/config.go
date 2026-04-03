@@ -1251,6 +1251,16 @@ func DefaultConfig() Config {
 				ToolCallLimit:             64,
 				StreamToolDispatchEnabled: true,
 				OnBudgetExhausted:         RuntimeReactOnBudgetExhaustedFailFast,
+				PlanNotebook: RuntimeReactPlanNotebookConfig{
+					Enabled:           false,
+					MaxHistory:        32,
+					OnRecoverConflict: RuntimeReactPlanNotebookRecoverConflictReject,
+				},
+				PlanChangeHook: RuntimeReactPlanChangeHookConfig{
+					Enabled:   false,
+					FailMode:  RuntimeReactPlanChangeHookFailModeFailFast,
+					TimeoutMs: 2000,
+				},
 			},
 			Readiness: RuntimeReadinessConfig{
 				Enabled:            true,
@@ -4270,6 +4280,12 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.react.tool_call_limit", base.Runtime.React.ToolCallLimit)
 	v.SetDefault("runtime.react.stream_tool_dispatch_enabled", base.Runtime.React.StreamToolDispatchEnabled)
 	v.SetDefault("runtime.react.on_budget_exhausted", base.Runtime.React.OnBudgetExhausted)
+	v.SetDefault("runtime.react.plan_notebook.enabled", base.Runtime.React.PlanNotebook.Enabled)
+	v.SetDefault("runtime.react.plan_notebook.max_history", base.Runtime.React.PlanNotebook.MaxHistory)
+	v.SetDefault("runtime.react.plan_notebook.on_recover_conflict", base.Runtime.React.PlanNotebook.OnRecoverConflict)
+	v.SetDefault("runtime.react.plan_change_hook.enabled", base.Runtime.React.PlanChangeHook.Enabled)
+	v.SetDefault("runtime.react.plan_change_hook.fail_mode", base.Runtime.React.PlanChangeHook.FailMode)
+	v.SetDefault("runtime.react.plan_change_hook.timeout_ms", base.Runtime.React.PlanChangeHook.TimeoutMs)
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
@@ -4748,11 +4764,33 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	planNotebookEnabled, err := strictBoolConfigValue(v, "runtime.react.plan_notebook.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	planChangeHookEnabled, err := strictBoolConfigValue(v, "runtime.react.plan_change_hook.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	planNotebookMaxHistory, err := strictIntConfigValue(v, "runtime.react.plan_notebook.max_history")
+	if err != nil {
+		return Config{}, err
+	}
+	planChangeHookTimeoutMs, err := strictIntConfigValue(v, "runtime.react.plan_change_hook.timeout_ms")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.React.Enabled = reactEnabled
 	cfg.Runtime.React.MaxIterations = v.GetInt("runtime.react.max_iterations")
 	cfg.Runtime.React.ToolCallLimit = v.GetInt("runtime.react.tool_call_limit")
 	cfg.Runtime.React.StreamToolDispatchEnabled = streamToolDispatchEnabled
 	cfg.Runtime.React.OnBudgetExhausted = strings.ToLower(strings.TrimSpace(v.GetString("runtime.react.on_budget_exhausted")))
+	cfg.Runtime.React.PlanNotebook.Enabled = planNotebookEnabled
+	cfg.Runtime.React.PlanNotebook.MaxHistory = planNotebookMaxHistory
+	cfg.Runtime.React.PlanNotebook.OnRecoverConflict = strings.ToLower(strings.TrimSpace(v.GetString("runtime.react.plan_notebook.on_recover_conflict")))
+	cfg.Runtime.React.PlanChangeHook.Enabled = planChangeHookEnabled
+	cfg.Runtime.React.PlanChangeHook.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.react.plan_change_hook.fail_mode")))
+	cfg.Runtime.React.PlanChangeHook.TimeoutMs = planChangeHookTimeoutMs
 	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
 	if err != nil {
 		return Config{}, err

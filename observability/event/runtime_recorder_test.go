@@ -2516,6 +2516,120 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA67PlanNotebookAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a67-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                   "success",
+			"react_plan_id":            "run-a67-recorder",
+			"react_plan_version":       4,
+			"react_plan_change_total":  4,
+			"react_plan_last_action":   "ReViSe",
+			"react_plan_change_reason": "react_iteration_boundary",
+			"react_plan_recover_count": 1,
+			"react_plan_hook_status":   "DEGRADED",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ReactPlanID != "run-a67-recorder" ||
+		got.ReactPlanVersion != 4 ||
+		got.ReactPlanChangeTotal != 4 ||
+		got.ReactPlanLastAction != "revise" ||
+		got.ReactPlanChangeReason != "react_iteration_boundary" ||
+		got.ReactPlanRecoverCount != 1 ||
+		got.ReactPlanHookStatus != "degraded" {
+		t.Fatalf("A67 additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA67ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a67-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":           "success",
+			"latency_ms":       int64(31),
+			"a67_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 31 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.ReactPlanID != "" ||
+		got.ReactPlanVersion != 0 ||
+		got.ReactPlanChangeTotal != 0 ||
+		got.ReactPlanLastAction != "" ||
+		got.ReactPlanChangeReason != "" ||
+		got.ReactPlanRecoverCount != 0 ||
+		got.ReactPlanHookStatus != "" {
+		t.Fatalf("missing A67 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderA65ReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

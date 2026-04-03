@@ -39,14 +39,11 @@ function Assert-PatternAbsentAcrossRepo {
         [Parameter(Mandatory = $true)][string]$Pattern
     )
 
-    $archiveRoot = [Regex]::Escape((Join-Path $repoRoot "openspec\changes\archive"))
-    $files = Get-ChildItem -Path $repoRoot -Recurse -File | Where-Object {
-        $_.FullName -notmatch $archiveRoot
-    }
+    $files = Get-PatternScanFiles
 
     $matches = @()
     foreach ($file in $files) {
-        $hit = Select-String -Path $file.FullName -Pattern $Pattern -ErrorAction SilentlyContinue
+        $hit = Select-String -Path $file -Pattern $Pattern -ErrorAction SilentlyContinue
         if ($hit) {
             $matches += $hit
             if ($matches.Count -ge 10) {
@@ -61,6 +58,111 @@ function Assert-PatternAbsentAcrossRepo {
             }) -join "`n"
         throw "[runtime-budget-admission-gate][$Assertion] unexpected matches found for /$Pattern/:`n$preview"
     }
+}
+
+$script:PatternScanFiles = $null
+
+function Test-PatternScanExtension {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+    $ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($ext)) {
+        return $false
+    }
+    $allow = @(
+        ".go",
+        ".md",
+        ".txt",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".ps1",
+        ".sh"
+    )
+    return $allow -contains $ext
+}
+
+function Get-PatternScanFiles {
+    if ($null -ne $script:PatternScanFiles) {
+        return $script:PatternScanFiles
+    }
+
+    $candidates = @()
+    $gitLsFiles = @()
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        try {
+            $gitLsFiles = @((Invoke-NativeCaptureStrict -Label "git ls-files (runtime-budget-admission-gate)" -Command {
+                        git ls-files
+                    }) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+        catch {
+            $gitLsFiles = @()
+        }
+    }
+
+    if ($gitLsFiles.Count -gt 0) {
+        foreach ($rel in $gitLsFiles) {
+            $norm = $rel.Replace("\", "/")
+            if ($norm.StartsWith("openspec/changes/archive/")) {
+                continue
+            }
+            if (-not (Test-PatternScanExtension -Path $norm)) {
+                continue
+            }
+            $full = Join-Path $repoRoot $rel
+            if (Test-Path -LiteralPath $full -PathType Leaf) {
+                $candidates += $full
+            }
+        }
+    }
+    else {
+        $skipDirNames = @(
+            ".git",
+            ".gocache",
+            ".golangci-cache",
+            ".tmp",
+            ".tmp-go-cache",
+            ".codex",
+            ".claude",
+            ".cursor",
+            ".gemini",
+            ".opencode",
+            ".trae",
+            "vendor"
+        )
+        $allFiles = Get-ChildItem -Path $repoRoot -Recurse -File
+        foreach ($file in $allFiles) {
+            $full = $file.FullName
+            $rel = [System.IO.Path]::GetRelativePath($repoRoot, $full).Replace("\", "/")
+            if ($rel.StartsWith("openspec/changes/archive/")) {
+                continue
+            }
+            $segments = $rel.Split("/")
+            $skip = $false
+            foreach ($segment in $segments) {
+                if ($skipDirNames -contains $segment) {
+                    $skip = $true
+                    break
+                }
+            }
+            if ($skip) {
+                continue
+            }
+            if (-not (Test-PatternScanExtension -Path $rel)) {
+                continue
+            }
+            $candidates += $full
+        }
+    }
+
+    $script:PatternScanFiles = $candidates
+    Write-Host "[runtime-budget-admission-gate] pattern scan file set prepared: $($script:PatternScanFiles.Count) files"
+    return $script:PatternScanFiles
 }
 
 function Assert-NoParallelBudgetAdmissionChanges {
@@ -108,8 +210,11 @@ function Invoke-BudgetAdmissionStep {
         [Parameter(Mandatory = $true)][string]$Label,
         [Parameter(Mandatory = $true)][scriptblock]$Command
     )
-    Write-Host "[runtime-budget-admission-gate] $Label"
+    $startedAt = Get-Date
+    Write-Host "[runtime-budget-admission-gate] $Label [start=$($startedAt.ToString('yyyy-MM-dd HH:mm:ss'))]"
     & $Command
+    $elapsed = (Get-Date) - $startedAt
+    Write-Host "[runtime-budget-admission-gate] $Label [done=$([Math]::Round($elapsed.TotalSeconds, 2))s]"
 }
 
 $budgetA60ChangeDir = Resolve-BudgetA60ChangeDir

@@ -121,6 +121,12 @@ if ! bash scripts/check-react-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] react plan notebook contract suites"
+if ! bash scripts/check-react-plan-notebook-contract.sh; then
+  echo "[quality-gate][react-plan-notebook-contract] react plan notebook contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] hooks + middleware contract suites"
 if ! bash scripts/check-hooks-middleware-contract.sh; then
   echo "[quality-gate][hooks-middleware-contract] hooks + middleware contract suites failed"

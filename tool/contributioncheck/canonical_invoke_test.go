@@ -26,6 +26,21 @@ func TestCanonicalMailboxInvokeEntrypoints(t *testing.T) {
 	activeUse := make([]string, 0)
 	testOnlyUse := make([]string, 0)
 	docOnlyUse := make([]string, 0)
+	skipDirs := map[string]struct{}{
+		".git":            {},
+		".gocache":        {},
+		".golangci-cache": {},
+		".tmp":            {},
+		".tmp-go-cache":   {},
+		".codex":          {},
+		".claude":         {},
+		".cursor":         {},
+		".gemini":         {},
+		".opencode":       {},
+		".trae":           {},
+		"vendor":          {},
+		"openspec":        {},
+	}
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -33,7 +48,7 @@ func TestCanonicalMailboxInvokeEntrypoints(t *testing.T) {
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == ".git" || name == ".gocache" || name == "vendor" || name == "openspec" {
+			if _, ok := skipDirs[name]; ok {
 				return filepath.SkipDir
 			}
 			return nil

@@ -1,0 +1,57 @@
+{
+  "version": "react_plan_notebook.v1",
+  "cases": [
+    {
+      "name": "react_plan_change_reason_drift_case",
+      "run": {
+        "model_provider": "openai",
+        "react_enabled": true,
+        "react_iteration_total": 2,
+        "react_tool_call_total": 1,
+        "react_termination_reason": "react.completed",
+        "react_stream_dispatch_enabled": true,
+        "react_plan_id": "run-a67-plan",
+        "react_plan_version": 4,
+        "react_plan_change_total": 4,
+        "react_plan_last_action": "complete",
+        "react_plan_change_reason": "session_resume",
+        "react_plan_recover_count": 1,
+        "react_plan_hook_status": "ok"
+      },
+      "stream": {
+        "model_provider": "openai",
+        "react_enabled": true,
+        "react_iteration_total": 2,
+        "react_tool_call_total": 1,
+        "react_termination_reason": "react.completed",
+        "react_stream_dispatch_enabled": true,
+        "react_plan_id": "run-a67-plan",
+        "react_plan_version": 4,
+        "react_plan_change_total": 4,
+        "react_plan_last_action": "complete",
+        "react_plan_change_reason": "run_completed",
+        "react_plan_recover_count": 1,
+        "react_plan_hook_status": "ok"
+      },
+      "expected": {
+        "model_provider": "openai",
+        "react_enabled": true,
+        "react_iteration_total": 2,
+        "react_tool_call_total": 1,
+        "react_termination_reason": "react.completed",
+        "react_stream_dispatch_enabled": true,
+        "react_plan_id": "run-a67-plan",
+        "react_plan_version": 4,
+        "react_plan_change_total": 4,
+        "react_plan_last_action": "complete",
+        "react_plan_change_reason": "run_completed",
+        "react_plan_recover_count": 1,
+        "react_plan_hook_status": "ok"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

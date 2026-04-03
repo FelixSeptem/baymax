@@ -10,6 +10,16 @@ const (
 )
 
 const (
+	RuntimeReactPlanNotebookRecoverConflictReject       = "reject"
+	RuntimeReactPlanNotebookRecoverConflictPreferLatest = "prefer_latest"
+)
+
+const (
+	RuntimeReactPlanChangeHookFailModeFailFast = "fail_fast"
+	RuntimeReactPlanChangeHookFailModeDegrade  = "degrade"
+)
+
+const (
 	RuntimeReactTerminationCompleted             = "react.completed"
 	RuntimeReactTerminationMaxIterationsExceeded = "react.max_iterations_exceeded"
 	RuntimeReactTerminationToolCallLimitExceeded = "react.tool_call_limit_exceeded"
@@ -19,11 +29,25 @@ const (
 )
 
 type RuntimeReactConfig struct {
-	Enabled                   bool   `json:"enabled"`
-	MaxIterations             int    `json:"max_iterations"`
-	ToolCallLimit             int    `json:"tool_call_limit"`
-	StreamToolDispatchEnabled bool   `json:"stream_tool_dispatch_enabled"`
-	OnBudgetExhausted         string `json:"on_budget_exhausted"`
+	Enabled                   bool                             `json:"enabled"`
+	MaxIterations             int                              `json:"max_iterations"`
+	ToolCallLimit             int                              `json:"tool_call_limit"`
+	StreamToolDispatchEnabled bool                             `json:"stream_tool_dispatch_enabled"`
+	OnBudgetExhausted         string                           `json:"on_budget_exhausted"`
+	PlanNotebook              RuntimeReactPlanNotebookConfig   `json:"plan_notebook"`
+	PlanChangeHook            RuntimeReactPlanChangeHookConfig `json:"plan_change_hook"`
+}
+
+type RuntimeReactPlanNotebookConfig struct {
+	Enabled           bool   `json:"enabled"`
+	MaxHistory        int    `json:"max_history"`
+	OnRecoverConflict string `json:"on_recover_conflict"`
+}
+
+type RuntimeReactPlanChangeHookConfig struct {
+	Enabled   bool   `json:"enabled"`
+	FailMode  string `json:"fail_mode"`
+	TimeoutMs int    `json:"timeout_ms"`
 }
 
 func normalizeRuntimeReactConfig(in RuntimeReactConfig) RuntimeReactConfig {
@@ -39,6 +63,8 @@ func normalizeRuntimeReactConfig(in RuntimeReactConfig) RuntimeReactConfig {
 	if out.OnBudgetExhausted == "" {
 		out.OnBudgetExhausted = base.OnBudgetExhausted
 	}
+	out.PlanNotebook = normalizeRuntimeReactPlanNotebookConfig(out.PlanNotebook)
+	out.PlanChangeHook = normalizeRuntimeReactPlanChangeHookConfig(out.PlanChangeHook)
 	return out
 }
 
@@ -62,6 +88,79 @@ func ValidateRuntimeReactConfig(cfg RuntimeReactConfig) error {
 	if cfg.StreamToolDispatchEnabled && !cfg.Enabled {
 		return fmt.Errorf(
 			"runtime.react.stream_tool_dispatch_enabled requires runtime.react.enabled=true",
+		)
+	}
+	if err := ValidateRuntimeReactPlanNotebookConfig(cfg.PlanNotebook); err != nil {
+		return err
+	}
+	if err := ValidateRuntimeReactPlanChangeHookConfig(cfg.PlanChangeHook); err != nil {
+		return err
+	}
+	if cfg.PlanChangeHook.Enabled && !cfg.PlanNotebook.Enabled {
+		return fmt.Errorf(
+			"runtime.react.plan_change_hook.enabled requires runtime.react.plan_notebook.enabled=true",
+		)
+	}
+	return nil
+}
+
+func normalizeRuntimeReactPlanNotebookConfig(in RuntimeReactPlanNotebookConfig) RuntimeReactPlanNotebookConfig {
+	base := DefaultConfig().Runtime.React.PlanNotebook
+	out := in
+	if out.MaxHistory <= 0 {
+		out.MaxHistory = base.MaxHistory
+	}
+	out.OnRecoverConflict = strings.ToLower(strings.TrimSpace(out.OnRecoverConflict))
+	if out.OnRecoverConflict == "" {
+		out.OnRecoverConflict = strings.ToLower(strings.TrimSpace(base.OnRecoverConflict))
+	}
+	return out
+}
+
+func normalizeRuntimeReactPlanChangeHookConfig(in RuntimeReactPlanChangeHookConfig) RuntimeReactPlanChangeHookConfig {
+	base := DefaultConfig().Runtime.React.PlanChangeHook
+	out := in
+	out.FailMode = strings.ToLower(strings.TrimSpace(out.FailMode))
+	if out.FailMode == "" {
+		out.FailMode = strings.ToLower(strings.TrimSpace(base.FailMode))
+	}
+	if out.TimeoutMs <= 0 {
+		out.TimeoutMs = base.TimeoutMs
+	}
+	return out
+}
+
+func ValidateRuntimeReactPlanNotebookConfig(cfg RuntimeReactPlanNotebookConfig) error {
+	normalized := normalizeRuntimeReactPlanNotebookConfig(cfg)
+	if cfg.MaxHistory <= 0 {
+		return fmt.Errorf("runtime.react.plan_notebook.max_history must be > 0")
+	}
+	switch normalized.OnRecoverConflict {
+	case RuntimeReactPlanNotebookRecoverConflictReject, RuntimeReactPlanNotebookRecoverConflictPreferLatest:
+	default:
+		return fmt.Errorf(
+			"runtime.react.plan_notebook.on_recover_conflict must be one of [%s,%s], got %q",
+			RuntimeReactPlanNotebookRecoverConflictReject,
+			RuntimeReactPlanNotebookRecoverConflictPreferLatest,
+			cfg.OnRecoverConflict,
+		)
+	}
+	return nil
+}
+
+func ValidateRuntimeReactPlanChangeHookConfig(cfg RuntimeReactPlanChangeHookConfig) error {
+	normalized := normalizeRuntimeReactPlanChangeHookConfig(cfg)
+	if cfg.TimeoutMs <= 0 {
+		return fmt.Errorf("runtime.react.plan_change_hook.timeout_ms must be > 0")
+	}
+	switch normalized.FailMode {
+	case RuntimeReactPlanChangeHookFailModeFailFast, RuntimeReactPlanChangeHookFailModeDegrade:
+	default:
+		return fmt.Errorf(
+			"runtime.react.plan_change_hook.fail_mode must be one of [%s,%s], got %q",
+			RuntimeReactPlanChangeHookFailModeFailFast,
+			RuntimeReactPlanChangeHookFailModeDegrade,
+			cfg.FailMode,
 		)
 	}
 	return nil

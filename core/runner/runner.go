@@ -31,6 +31,13 @@ const (
 	StateAbort      State = "Abort"
 )
 
+const (
+	reactPlanHookStatusOK       = "ok"
+	reactPlanHookStatusDegraded = "degraded"
+	reactPlanHookStatusFailed   = "failed"
+	reactPlanHookStatusDisabled = "disabled"
+)
+
 // Option customizes engine wiring such as tool runtime, tracing, runtime config, and HITL hooks.
 type Option func(*Engine)
 
@@ -298,11 +305,43 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	var skillPreprocess skillPreprocessState
 	var terminal *types.ClassifiedError
 	var runErr error
+	reactPlanHookStatus := reactPlanHookStatusDisabled
+	var reactPlanNotebook *reactPlanNotebook
+	if reactCfg.PlanNotebook.Enabled {
+		reactPlanNotebook = newReactPlanNotebook(runID, reactCfg.PlanNotebook.MaxHistory)
+		if reactCfg.PlanChangeHook.Enabled {
+			reactPlanHookStatus = reactPlanHookStatusOK
+		}
+		if strings.TrimSpace(req.SessionID) != "" && len(req.Messages) > 0 {
+			planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+				ctx,
+				req,
+				runID,
+				0,
+				false,
+				reactPlanNotebook,
+				reactCfg.PlanNotebook,
+				reactCfg.PlanChangeHook,
+				reactPlanActionRecover,
+				"session_resume",
+				h,
+				&warnings,
+			)
+			reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+			if planTerminal != nil {
+				terminal = planTerminal
+				runErr = planErr
+				state = StateAbort
+			}
+		}
+	}
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
-	req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, false, h, &warnings)
+	if terminal == nil {
+		req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, false, h, &warnings)
+	}
 	if terminal != nil {
 		state = StateAbort
 	}
@@ -320,6 +359,35 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			state = StateModelStep
 		case StateModelStep:
 			iteration++
+			if reactPlanNotebook != nil {
+				planAction := reactPlanActionCreate
+				planReason := "initial_plan"
+				if reactPlanNotebook.Version > 0 {
+					planAction = reactPlanActionRevise
+					planReason = "react_iteration_boundary"
+				}
+				planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+					ctx,
+					req,
+					runID,
+					iteration,
+					false,
+					reactPlanNotebook,
+					reactCfg.PlanNotebook,
+					reactCfg.PlanChangeHook,
+					planAction,
+					planReason,
+					h,
+					&warnings,
+				)
+				reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+				if planTerminal != nil {
+					terminal = planTerminal
+					runErr = planErr
+					state = StateAbort
+					continue
+				}
+			}
 			hookTerminal, hookErr := e.runLifecycleHooks(
 				ctx,
 				req,
@@ -577,6 +645,29 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			pendingOutcomes = dispatchResult.Outcomes
 			state = StateModelStep
 		case StateFinalize:
+			if reactPlanNotebook != nil {
+				planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+					ctx,
+					req,
+					runID,
+					iteration,
+					false,
+					reactPlanNotebook,
+					reactCfg.PlanNotebook,
+					reactCfg.PlanChangeHook,
+					reactPlanActionComplete,
+					"run_completed",
+					h,
+					&warnings,
+				)
+				reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+				if planTerminal != nil {
+					terminal = planTerminal
+					runErr = planErr
+					state = StateAbort
+					continue
+				}
+			}
 			hookTerminal, hookErr := e.runLifecycleHooks(
 				ctx,
 				req,
@@ -623,6 +714,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				LatencyMs:   e.now().Sub(start).Milliseconds(),
 				Warnings:    warnings,
 			}
+			planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
@@ -670,6 +762,14 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 					ReactTermination:                  reactTerminationReason,
 					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A67Recorded:                       true,
+					ReactPlanID:                       planSnapshot.PlanID,
+					ReactPlanVersion:                  planSnapshot.Version,
+					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+					ReactPlanLastAction:               planSnapshot.LastAction,
+					ReactPlanChangeReason:             planSnapshot.LastReason,
+					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+					ReactPlanHookStatus:               planSnapshot.HookStatus,
 					A65Recorded:                       true,
 					HooksEnabled:                      hooksCfg.Enabled,
 					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
@@ -742,6 +842,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Warnings:   warnings,
 				Error:      terminal,
 			}
+			planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
 			errClass := ""
 			if terminal != nil {
 				errClass = string(terminal.Class)
@@ -795,6 +896,14 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 					ReactTermination:                  reactTerminationReason,
 					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A67Recorded:                       true,
+					ReactPlanID:                       planSnapshot.PlanID,
+					ReactPlanVersion:                  planSnapshot.Version,
+					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+					ReactPlanLastAction:               planSnapshot.LastAction,
+					ReactPlanChangeReason:             planSnapshot.LastReason,
+					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+					ReactPlanHookStatus:               planSnapshot.HookStatus,
 					A65Recorded:                       true,
 					HooksEnabled:                      hooksCfg.Enabled,
 					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
@@ -1332,11 +1441,42 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 
 	var terminal *types.ClassifiedError
 	var runErr error
+	reactPlanHookStatus := reactPlanHookStatusDisabled
+	var reactPlanNotebook *reactPlanNotebook
+	if reactCfg.PlanNotebook.Enabled {
+		reactPlanNotebook = newReactPlanNotebook(runID, reactCfg.PlanNotebook.MaxHistory)
+		if reactCfg.PlanChangeHook.Enabled {
+			reactPlanHookStatus = reactPlanHookStatusOK
+		}
+		if strings.TrimSpace(req.SessionID) != "" && len(req.Messages) > 0 {
+			planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+				ctx,
+				req,
+				runID,
+				0,
+				true,
+				reactPlanNotebook,
+				reactCfg.PlanNotebook,
+				reactCfg.PlanChangeHook,
+				reactPlanActionRecover,
+				"session_resume",
+				h,
+				&warnings,
+			)
+			reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+			if planTerminal != nil {
+				terminal = planTerminal
+				runErr = planErr
+			}
+		}
+	}
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
-	req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, true, h, &warnings)
+	if terminal == nil {
+		req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, true, h, &warnings)
+	}
 
 	for terminal == nil {
 		if iteration >= policy.MaxIterations {
@@ -1347,6 +1487,34 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		}
 
 		iteration++
+		if reactPlanNotebook != nil {
+			planAction := reactPlanActionCreate
+			planReason := "initial_plan"
+			if reactPlanNotebook.Version > 0 {
+				planAction = reactPlanActionRevise
+				planReason = "react_iteration_boundary"
+			}
+			planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+				ctx,
+				req,
+				runID,
+				iteration,
+				true,
+				reactPlanNotebook,
+				reactCfg.PlanNotebook,
+				reactCfg.PlanChangeHook,
+				planAction,
+				planReason,
+				h,
+				&warnings,
+			)
+			reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+			if planTerminal != nil {
+				terminal = planTerminal
+				runErr = planErr
+				break
+			}
+		}
 		hookTerminal, hookErr := e.runLifecycleHooks(
 			ctx,
 			req,
@@ -1471,6 +1639,28 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 
 		if len(stepResult.ToolCalls) == 0 {
 			final = stepResult.Text
+			if reactPlanNotebook != nil {
+				planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+					ctx,
+					req,
+					runID,
+					iteration,
+					true,
+					reactPlanNotebook,
+					reactCfg.PlanNotebook,
+					reactCfg.PlanChangeHook,
+					reactPlanActionComplete,
+					"run_completed",
+					h,
+					&warnings,
+				)
+				reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+				if planTerminal != nil {
+					terminal = planTerminal
+					runErr = planErr
+					break
+				}
+			}
 			hookTerminal, hookErr = e.runLifecycleHooks(
 				ctx,
 				req,
@@ -1515,6 +1705,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				LatencyMs:   e.now().Sub(start).Milliseconds(),
 				Warnings:    warnings,
 			}
+			planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
@@ -1562,6 +1753,14 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 					ReactTermination:                  reactTerminationReason,
 					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+					A67Recorded:                       true,
+					ReactPlanID:                       planSnapshot.PlanID,
+					ReactPlanVersion:                  planSnapshot.Version,
+					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+					ReactPlanLastAction:               planSnapshot.LastAction,
+					ReactPlanChangeReason:             planSnapshot.LastReason,
+					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+					ReactPlanHookStatus:               planSnapshot.HookStatus,
 					A65Recorded:                       true,
 					HooksEnabled:                      hooksCfg.Enabled,
 					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
@@ -1712,6 +1911,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		Warnings:    warnings,
 		Error:       terminal,
 	}
+	planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
 	errClass := ""
 	if terminal != nil {
 		errClass = string(terminal.Class)
@@ -1765,6 +1965,14 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 			ReactTermination:                  reactTerminationReason,
 			ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+			A67Recorded:                       true,
+			ReactPlanID:                       planSnapshot.PlanID,
+			ReactPlanVersion:                  planSnapshot.Version,
+			ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+			ReactPlanLastAction:               planSnapshot.LastAction,
+			ReactPlanChangeReason:             planSnapshot.LastReason,
+			ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+			ReactPlanHookStatus:               planSnapshot.HookStatus,
 			A65Recorded:                       true,
 			HooksEnabled:                      hooksCfg.Enabled,
 			HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
@@ -2592,6 +2800,14 @@ type runFinishMeta struct {
 	ReactIterBudgetHit                int
 	ReactTermination                  string
 	ReactStreamDispatch               bool
+	A67Recorded                       bool
+	ReactPlanID                       string
+	ReactPlanVersion                  int
+	ReactPlanChangeTotal              int
+	ReactPlanLastAction               string
+	ReactPlanChangeReason             string
+	ReactPlanRecoverCount             int
+	ReactPlanHookStatus               string
 	A65Recorded                       bool
 	HooksEnabled                      bool
 	HooksFailMode                     string
@@ -2858,6 +3074,23 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["react_stream_dispatch_enabled"] = meta.ReactStreamDispatch
 	if meta.ReactTermination != "" {
 		payload["react_termination_reason"] = meta.ReactTermination
+	}
+	if meta.A67Recorded {
+		if strings.TrimSpace(meta.ReactPlanID) != "" {
+			payload["react_plan_id"] = strings.TrimSpace(meta.ReactPlanID)
+		}
+		payload["react_plan_version"] = meta.ReactPlanVersion
+		payload["react_plan_change_total"] = meta.ReactPlanChangeTotal
+		if strings.TrimSpace(meta.ReactPlanLastAction) != "" {
+			payload["react_plan_last_action"] = strings.ToLower(strings.TrimSpace(meta.ReactPlanLastAction))
+		}
+		if strings.TrimSpace(meta.ReactPlanChangeReason) != "" {
+			payload["react_plan_change_reason"] = strings.TrimSpace(meta.ReactPlanChangeReason)
+		}
+		payload["react_plan_recover_count"] = meta.ReactPlanRecoverCount
+		if strings.TrimSpace(meta.ReactPlanHookStatus) != "" {
+			payload["react_plan_hook_status"] = strings.ToLower(strings.TrimSpace(meta.ReactPlanHookStatus))
+		}
 	}
 	if meta.A65Recorded {
 		payload["hooks_enabled"] = meta.HooksEnabled
@@ -3693,6 +3926,264 @@ func (e *Engine) resolveSkillPreprocessFailure(
 		"reason_code": reasonCode,
 	}
 	return req, state, terminal, err
+}
+
+func normalizeReactPlanHookStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case reactPlanHookStatusOK:
+		return reactPlanHookStatusOK
+	case reactPlanHookStatusDegraded:
+		return reactPlanHookStatusDegraded
+	case reactPlanHookStatusFailed:
+		return reactPlanHookStatusFailed
+	default:
+		return reactPlanHookStatusDisabled
+	}
+}
+
+func mergeReactPlanHookStatus(current, next string) string {
+	currentStatus := normalizeReactPlanHookStatus(current)
+	nextStatus := normalizeReactPlanHookStatus(next)
+	rank := map[string]int{
+		reactPlanHookStatusDisabled: 0,
+		reactPlanHookStatusOK:       1,
+		reactPlanHookStatusDegraded: 2,
+		reactPlanHookStatusFailed:   3,
+	}
+	if rank[nextStatus] > rank[currentStatus] {
+		return nextStatus
+	}
+	return currentStatus
+}
+
+func classifyHookFailure(err error) (string, types.ErrorClass, bool) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "hook_timeout", types.ErrPolicyTimeout, true
+	}
+	if errors.Is(err, context.Canceled) {
+		return "hook_canceled", types.ErrPolicyTimeout, true
+	}
+	return "hook_error", types.ErrContext, false
+}
+
+func (e *Engine) runPlanChangeHooks(
+	ctx context.Context,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	stream bool,
+	notebook *reactPlanNotebook,
+	cfg runtimeconfig.RuntimeReactPlanChangeHookConfig,
+	phase types.AgentLifecyclePhase,
+	action string,
+	reason string,
+	h types.EventHandler,
+	warnings *[]string,
+) (*types.ClassifiedError, bool, string, error) {
+	if e == nil || !cfg.Enabled {
+		return nil, false, reactPlanHookStatusDisabled, nil
+	}
+	if len(e.lifecycleHooks) == 0 {
+		return nil, false, reactPlanHookStatusOK, nil
+	}
+	planID := ""
+	planVersion := 0
+	if notebook != nil {
+		planID = strings.TrimSpace(notebook.PlanID)
+		planVersion = notebook.Version
+		if phase == types.AgentLifecyclePhaseBeforePlanChange {
+			planVersion++
+		}
+	}
+	normalizedAction := strings.ToLower(strings.TrimSpace(action))
+	normalizedReason := strings.TrimSpace(reason)
+	status := reactPlanHookStatusOK
+	for i := range e.lifecycleHooks {
+		hook := e.lifecycleHooks[i]
+		if hook == nil {
+			continue
+		}
+		hookCtx := ctx
+		cancel := func() {}
+		if cfg.TimeoutMs > 0 {
+			hookCtx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutMs)*time.Millisecond)
+		}
+		err := hook.OnPhase(hookCtx, types.AgentLifecycleHookContext{
+			RunID:       runID,
+			SessionID:   req.SessionID,
+			Iteration:   iteration,
+			Stream:      stream,
+			Phase:       phase,
+			PlanID:      planID,
+			PlanVersion: planVersion,
+			PlanAction:  normalizedAction,
+			PlanReason:  normalizedReason,
+		})
+		cancel()
+		if err == nil {
+			continue
+		}
+		reasonCode, errClass, retryable := classifyHookFailure(err)
+		e.emit(ctx, h, types.Event{
+			Version:   types.EventSchemaVersionV1,
+			Type:      "hook.failed",
+			RunID:     runID,
+			Iteration: iteration,
+			Time:      e.now(),
+			Payload: map[string]any{
+				"phase":         string(phase),
+				"reason_code":   reasonCode,
+				"hook_index":    i,
+				"stream":        stream,
+				"plan_id":       planID,
+				"plan_version":  planVersion,
+				"plan_action":   normalizedAction,
+				"plan_reason":   normalizedReason,
+				"react_feature": "plan_change_hook",
+			},
+		})
+		if strings.EqualFold(strings.TrimSpace(cfg.FailMode), runtimeconfig.RuntimeReactPlanChangeHookFailModeDegrade) {
+			status = mergeReactPlanHookStatus(status, reactPlanHookStatusDegraded)
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("plan-change hook degraded at %s: %v", phase, err))
+			}
+			if phase == types.AgentLifecyclePhaseBeforePlanChange {
+				return nil, true, status, nil
+			}
+			continue
+		}
+		terminal := classified(errClass, fmt.Sprintf("plan-change hook failed at %s: %v", phase, err), retryable)
+		terminal.Details = map[string]any{
+			"phase":        string(phase),
+			"reason_code":  reasonCode,
+			"hook_index":   i,
+			"plan_id":      planID,
+			"plan_version": planVersion,
+			"plan_action":  normalizedAction,
+			"plan_reason":  normalizedReason,
+		}
+		return terminal, false, reactPlanHookStatusFailed, err
+	}
+	return nil, false, status, nil
+}
+
+func (e *Engine) applyReactPlanNotebookAction(
+	ctx context.Context,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	stream bool,
+	notebook *reactPlanNotebook,
+	notebookCfg runtimeconfig.RuntimeReactPlanNotebookConfig,
+	hookCfg runtimeconfig.RuntimeReactPlanChangeHookConfig,
+	action string,
+	reason string,
+	h types.EventHandler,
+	warnings *[]string,
+) (*types.ClassifiedError, string, error) {
+	status := reactPlanHookStatusDisabled
+	if hookCfg.Enabled {
+		status = reactPlanHookStatusOK
+	}
+	if notebook == nil {
+		return nil, status, nil
+	}
+	normalizedAction := strings.ToLower(strings.TrimSpace(action))
+	normalizedReason := strings.TrimSpace(reason)
+	if normalizedAction == reactPlanActionRecover && notebook.Version > 0 {
+		if strings.EqualFold(strings.TrimSpace(notebookCfg.OnRecoverConflict), runtimeconfig.RuntimeReactPlanNotebookRecoverConflictPreferLatest) {
+			return nil, status, nil
+		}
+		notebookErr := fmt.Errorf(
+			"react plan recover conflict: version=%d action=%s",
+			notebook.Version,
+			normalizedAction,
+		)
+		if strings.EqualFold(strings.TrimSpace(hookCfg.FailMode), runtimeconfig.RuntimeReactPlanChangeHookFailModeDegrade) {
+			status = mergeReactPlanHookStatus(status, reactPlanHookStatusDegraded)
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("react plan notebook degraded: %v", notebookErr))
+			}
+			return nil, status, nil
+		}
+		terminal := classified(types.ErrContext, fmt.Sprintf("react plan notebook failed: %v", notebookErr), false)
+		terminal.Details = map[string]any{
+			"reason_code": "react_plan_recover_conflict",
+			"plan_id":     strings.TrimSpace(notebook.PlanID),
+			"action":      normalizedAction,
+			"iteration":   iteration,
+		}
+		return terminal, mergeReactPlanHookStatus(status, reactPlanHookStatusFailed), notebookErr
+	}
+	if hookCfg.Enabled {
+		hookTerminal, skipMutation, hookStatus, hookErr := e.runPlanChangeHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			stream,
+			notebook,
+			hookCfg,
+			types.AgentLifecyclePhaseBeforePlanChange,
+			normalizedAction,
+			normalizedReason,
+			h,
+			warnings,
+		)
+		status = mergeReactPlanHookStatus(status, hookStatus)
+		if hookTerminal != nil {
+			return hookTerminal, status, hookErr
+		}
+		if skipMutation {
+			return nil, status, nil
+		}
+	}
+	idempotencyKey := fmt.Sprintf(
+		"%s|%d|%t|%s|%s",
+		strings.TrimSpace(runID),
+		iteration,
+		stream,
+		normalizedAction,
+		normalizedReason,
+	)
+	if err := notebook.apply(normalizedAction, normalizedReason, idempotencyKey); err != nil {
+		if strings.EqualFold(strings.TrimSpace(hookCfg.FailMode), runtimeconfig.RuntimeReactPlanChangeHookFailModeDegrade) {
+			status = mergeReactPlanHookStatus(status, reactPlanHookStatusDegraded)
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("react plan notebook degraded: %v", err))
+			}
+			return nil, status, nil
+		}
+		terminal := classified(types.ErrContext, fmt.Sprintf("react plan notebook failed: %v", err), false)
+		terminal.Details = map[string]any{
+			"reason_code": "react_plan_notebook_error",
+			"plan_id":     strings.TrimSpace(notebook.PlanID),
+			"action":      normalizedAction,
+			"iteration":   iteration,
+		}
+		return terminal, mergeReactPlanHookStatus(status, reactPlanHookStatusFailed), err
+	}
+	if hookCfg.Enabled {
+		hookTerminal, _, hookStatus, hookErr := e.runPlanChangeHooks(
+			ctx,
+			req,
+			runID,
+			iteration,
+			stream,
+			notebook,
+			hookCfg,
+			types.AgentLifecyclePhaseAfterPlanChange,
+			normalizedAction,
+			normalizedReason,
+			h,
+			warnings,
+		)
+		status = mergeReactPlanHookStatus(status, hookStatus)
+		if hookTerminal != nil {
+			return hookTerminal, status, hookErr
+		}
+	}
+	return nil, status, nil
 }
 
 func (e *Engine) runLifecycleHooks(

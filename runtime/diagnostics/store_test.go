@@ -616,6 +616,107 @@ func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreRunA67PlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                  time.Now(),
+		RunID:                 "run-a67-plan-notebook",
+		Status:                "success",
+		ReactPlanID:           "run-a67-plan-notebook",
+		ReactPlanVersion:      3,
+		ReactPlanChangeTotal:  3,
+		ReactPlanLastAction:   "complete",
+		ReactPlanChangeReason: "run_completed",
+		ReactPlanRecoverCount: 1,
+		ReactPlanHookStatus:   "ok",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ReactPlanID != "run-a67-plan-notebook" ||
+		got.ReactPlanVersion != 3 ||
+		got.ReactPlanChangeTotal != 3 ||
+		got.ReactPlanLastAction != "complete" ||
+		got.ReactPlanChangeReason != "run_completed" ||
+		got.ReactPlanRecoverCount != 1 ||
+		got.ReactPlanHookStatus != "ok" {
+		t.Fatalf("A67 additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.ReactPlanVersion = 4
+	rec.ReactPlanChangeTotal = 4
+	rec.ReactPlanLastAction = "recover"
+	rec.ReactPlanChangeReason = "session_resume"
+	rec.ReactPlanRecoverCount = 2
+	rec.ReactPlanHookStatus = "degraded"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.ReactPlanVersion != 4 ||
+		got.ReactPlanChangeTotal != 4 ||
+		got.ReactPlanLastAction != "recover" ||
+		got.ReactPlanChangeReason != "session_resume" ||
+		got.ReactPlanRecoverCount != 2 ||
+		got.ReactPlanHookStatus != "degraded" {
+		t.Fatalf("A67 additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-plan-notebook"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].ReactPlanVersion != 4 ||
+		page.Items[0].ReactPlanChangeTotal != 4 ||
+		page.Items[0].ReactPlanLastAction != "recover" ||
+		page.Items[0].ReactPlanRecoverCount != 2 ||
+		page.Items[0].ReactPlanHookStatus != "degraded" {
+		t.Fatalf("A67 QueryRuns additive parse mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunA67QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.AddRun(RunRecord{
+		Time:      time.Now(),
+		RunID:     "run-a67-compat",
+		Status:    "success",
+		LatencyMs: 21,
+	})
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-compat"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len=%d, want 1", len(page.Items))
+	}
+	got := page.Items[0]
+	if got.Status != "success" || got.LatencyMs != 21 {
+		t.Fatalf("existing fields mismatch: %#v", got)
+	}
+	if got.ReactPlanID != "" ||
+		got.ReactPlanVersion != 0 ||
+		got.ReactPlanChangeTotal != 0 ||
+		got.ReactPlanLastAction != "" ||
+		got.ReactPlanChangeReason != "" ||
+		got.ReactPlanRecoverCount != 0 ||
+		got.ReactPlanHookStatus != "" {
+		t.Fatalf("missing A67 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

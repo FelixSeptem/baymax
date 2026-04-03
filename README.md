@@ -16,8 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 当前里程碑快照（2026-04-03）：
 - 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - A66（Introduce Unified State And Session Snapshot Contract）进行中。
   - A67（Introduce ReAct Plan Notebook And Plan Change Hook Contract）进行中。
+  - A68（Introduce Realtime Event Protocol And Interrupt Resume Contract）进行中。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -226,11 +226,11 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A66 `introduce-unified-state-and-session-snapshot-contract-a66`：unified state/session snapshot 契约。
 - A67 `introduce-react-plan-notebook-and-plan-change-hook-contract-a67`：ReAct plan notebook + plan-change hook 契约。
+- A68 `introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`：realtime event protocol + interrupt/resume 契约。
 
 近期已归档能力：
-- A51-A61 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+- A51-A66 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
 
 ### A65 Hooks/Middleware + Skill Preprocess
 
@@ -309,6 +309,44 @@ bash scripts/check-state-snapshot-contract.sh
 pwsh -File scripts/check-state-snapshot-contract.ps1
 ```
 
+### A67 ReAct Plan Notebook + Plan Change Hook Contract
+
+A67 在 A56 ReAct loop 基础上新增计划治理合同，固定 `create|revise|complete|recover` 生命周期，并在计划变更边界提供 `before_plan_change` / `after_plan_change` hook。
+
+最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
+
+```yaml
+runtime:
+  react:
+    plan_notebook:
+      enabled: false
+      max_history: 32
+      on_recover_conflict: reject # reject|prefer_latest
+    plan_change_hook:
+      enabled: false
+      fail_mode: fail_fast # fail_fast|degrade
+      timeout_ms: 2000
+```
+
+新增运行诊断字段（additive + nullable + default）：
+- `react_plan_id`
+- `react_plan_version`
+- `react_plan_change_total`
+- `react_plan_last_action`
+- `react_plan_change_reason`
+- `react_plan_recover_count`
+- `react_plan_hook_status`
+
+合同门禁（A67）：
+
+```bash
+bash scripts/check-react-plan-notebook-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-react-plan-notebook-contract.ps1
+```
+
 ### 9) ReAct 最小接入蓝图（A56）
 
 ReAct loop 在主线默认可用（`runtime.react.enabled=true`），Run/Stream 共享同一 loop 终止 taxonomy 与预算语义。
@@ -371,6 +409,7 @@ go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
 bash scripts/check-react-contract.sh
+bash scripts/check-react-plan-notebook-contract.sh
 bash scripts/check-sandbox-egress-allowlist-contract.sh
 bash scripts/check-policy-precedence-contract.sh
 bash scripts/check-observability-export-and-bundle-contract.sh
@@ -387,6 +426,7 @@ Windows 质量门禁：
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
 pwsh -File scripts/check-react-contract.ps1
+pwsh -File scripts/check-react-plan-notebook-contract.ps1
 pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
 pwsh -File scripts/check-policy-precedence-contract.ps1
 pwsh -File scripts/check-observability-export-and-bundle-contract.ps1

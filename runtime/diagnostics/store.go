@@ -349,6 +349,13 @@ type RunRecord struct {
 	ReactPlanChangeReason                       string                            `json:"react_plan_change_reason,omitempty"`
 	ReactPlanRecoverCount                       int                               `json:"react_plan_recover_count,omitempty"`
 	ReactPlanHookStatus                         string                            `json:"react_plan_hook_status,omitempty"`
+	RealtimeProtocolVersion                     string                            `json:"realtime_protocol_version,omitempty"`
+	RealtimeEventSeqMax                         int64                             `json:"realtime_event_seq_max,omitempty"`
+	RealtimeInterruptTotal                      int                               `json:"realtime_interrupt_total,omitempty"`
+	RealtimeResumeTotal                         int                               `json:"realtime_resume_total,omitempty"`
+	RealtimeResumeSource                        string                            `json:"realtime_resume_source,omitempty"`
+	RealtimeIdempotencyDedupTotal               int                               `json:"realtime_idempotency_dedup_total,omitempty"`
+	RealtimeLastErrorCode                       string                            `json:"realtime_last_error_code,omitempty"`
 	HooksEnabled                                bool                              `json:"hooks_enabled,omitempty"`
 	HooksFailMode                               string                            `json:"hooks_fail_mode,omitempty"`
 	HooksPhases                                 []string                          `json:"hooks_phases,omitempty"`

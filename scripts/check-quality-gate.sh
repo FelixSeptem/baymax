@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || "${MSYSTEM:-}" == MINGW64 || "${MSYSTEM:-}" == MINGW32 ]]; then
+  if command -v pwsh >/dev/null 2>&1; then
+    echo "[quality-gate] windows bash detected; delegating to scripts/check-quality-gate.ps1 for timeout and parallel semantics"
+    exec pwsh -File scripts/check-quality-gate.ps1
+  fi
+fi
+
 is_writable_dir() {
   local path="${1:-}"
   [[ -n "${path}" ]] || return 1
@@ -124,6 +131,12 @@ fi
 echo "[quality-gate] react plan notebook contract suites"
 if ! bash scripts/check-react-plan-notebook-contract.sh; then
   echo "[quality-gate][react-plan-notebook-contract] react plan notebook contract suites failed"
+  exit 1
+fi
+
+echo "[quality-gate] realtime protocol contract suites"
+if ! bash scripts/check-realtime-protocol-contract.sh; then
+  echo "[quality-gate][realtime-protocol-contract] realtime protocol contract suites failed"
   exit 1
 fi
 

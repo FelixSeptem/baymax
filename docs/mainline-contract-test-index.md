@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-04-03
+更新时间：2026-04-04
 
 ## 目标
 
@@ -254,6 +254,11 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | A67 ReAct Plan Notebook Contract Gate | `scripts/check-react-plan-notebook-contract.sh` | `scripts/check-react-plan-notebook-contract.ps1` |
 | A67 ReAct Plan Notebook Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::react-plan-notebook-gate` | `.github/workflows/ci.yml::react-plan-notebook-gate` |
 | A67 ReAct Plan Notebook Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A68 Realtime Protocol + Interrupt/Resume Run/Stream Parity | `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamResumeParityAndIdempotency` | `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamInvalidResumeClassificationParity` |
+| A68 Realtime Protocol Replay Fixture (`realtime_event_protocol.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
+| A68 Realtime Protocol Contract Gate | `scripts/check-realtime-protocol-contract.sh` | `scripts/check-realtime-protocol-contract.ps1` |
+| A68 Realtime Protocol Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::realtime-protocol-contract-gate` | `.github/workflows/ci.yml::realtime-protocol-contract-gate` |
+| A68 Realtime Protocol Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Pre-1 Governance A24 Docs Consistency | `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance A24 Gate Path | `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance A24 Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

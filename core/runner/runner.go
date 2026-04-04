@@ -66,6 +66,8 @@ type Engine struct {
 	newRunID           func() string
 	capCacheMu         sync.RWMutex
 	capCache           map[string]cachedCapabilities
+	realtimeCursorMu   sync.Mutex
+	realtimeCursors    map[string]realtimeCursorRecord
 }
 
 type cachedCapabilities struct {
@@ -90,11 +92,12 @@ type classifiedModelError interface {
 // New creates a runner engine with default tracer and context assembler wiring.
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
-		model:    model,
-		models:   map[string]types.ModelClient{},
-		tracer:   obsTrace.NewManager("baymax/core/runner"),
-		now:      time.Now,
-		capCache: map[string]cachedCapabilities{},
+		model:           model,
+		models:          map[string]types.ModelClient{},
+		tracer:          obsTrace.NewManager("baymax/core/runner"),
+		now:             time.Now,
+		capCache:        map[string]cachedCapabilities{},
+		realtimeCursors: map[string]realtimeCursorRecord{},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
@@ -298,6 +301,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
+	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
 	reactToolCallTotal := 0
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
@@ -339,6 +343,21 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+	if terminal == nil && realtimeRuntime != nil {
+		realtimeRuntime.emitRequest(ctx, h, 0, req)
+		if req.Realtime != nil {
+			if err := realtimeRuntime.ingestControlEvents(ctx, h, 0, req.Realtime.Events); err != nil {
+				terminal = classifyRealtimeError(err)
+				runErr = err
+				state = StateAbort
+			}
+		}
+		if terminal == nil && realtimeRuntime.interrupted {
+			terminal = realtimeRuntime.interruptTerminalError()
+			runErr = errors.New(terminal.Message)
+			state = StateAbort
+		}
+	}
 	if terminal == nil {
 		req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, false, h, &warnings)
 	}
@@ -491,6 +510,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				resp.FinalAnswer = filteredOutput
 			}
 			lastResponse = resp
+			if realtimeRuntime != nil && strings.TrimSpace(resp.FinalAnswer) != "" {
+				realtimeRuntime.emitDelta(ctx, h, iteration, resp.FinalAnswer)
+			}
 			e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, types.ActionStatusSucceeded, "")
 			hookTerminal, hookErr = e.runLifecycleHooks(
@@ -715,6 +737,81 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Warnings:    warnings,
 			}
 			planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
+			meta := runFinishMeta{
+				Provider:                          lastSelection.Provider,
+				Initial:                           lastSelection.Initial,
+				Path:                              selectionPath,
+				Required:                          lastSelection.Required,
+				UsedFallback:                      fallbackUsed,
+				Assemble:                          lastAssemble,
+				GateChecks:                        gateStats.Checks,
+				GateDenied:                        gateStats.DeniedCount,
+				GateTimeout:                       gateStats.TimeoutCount,
+				GateRuleHits:                      gateStats.RuleHitCount,
+				GateRuleLast:                      gateStats.RuleLastID,
+				HitlAwait:                         hitlStats.AwaitCount,
+				HitlResumed:                       hitlStats.ResumeCount,
+				HitlCanceled:                      hitlStats.CancelByUserCount,
+				CancelProp:                        concurrencyStats.CancelPropagatedCount,
+				BackDrop:                          concurrencyStats.BackpressureDropCount,
+				BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:                      concurrencyStats.InflightPeak,
+				SecurityPolicy:                    lastSecurity.PolicyKind,
+				NamespaceTool:                     lastSecurity.NamespaceTool,
+				FilterStage:                       lastSecurity.FilterStage,
+				SecurityDecision:                  lastSecurity.Decision,
+				ReasonCode:                        lastSecurity.ReasonCode,
+				Severity:                          lastSecurity.Severity,
+				AlertStatus:                       lastSecurity.AlertDispatchStatus,
+				AlertFailure:                      lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:                   lastSecurity.AlertRetryCount,
+				AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:                 lastSecurity.AlertCircuitState,
+				AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+				ReactEnabled:                      reactCfg.Enabled,
+				ReactIterationTotal:               iteration,
+				ReactToolCallTotal:                reactToolCallTotal,
+				ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+				ReactTermination:                  reactTerminationReason,
+				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+				A67Recorded:                       true,
+				ReactPlanID:                       planSnapshot.PlanID,
+				ReactPlanVersion:                  planSnapshot.Version,
+				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+				ReactPlanLastAction:               planSnapshot.LastAction,
+				ReactPlanChangeReason:             planSnapshot.LastReason,
+				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+				ReactPlanHookStatus:               planSnapshot.HookStatus,
+				A65Recorded:                       true,
+				HooksEnabled:                      hooksCfg.Enabled,
+				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+				ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+				ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+				SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+				SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+				SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+				SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+				SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+				SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+				SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+				SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+				SkillBundlePromptMode:             skillPreprocess.PromptMode,
+				SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+				SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+				SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+				SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+				SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+				Memory:                            memoryAggregate.snapshot(memoryRuntime),
+				Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
+			}
+			if realtimeRuntime != nil {
+				realtimeRuntime.emitComplete(ctx, h, iteration, lastResponse.FinalAnswer)
+				realtimeRuntime.fillRunFinishMeta(&meta)
+			}
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
@@ -722,77 +819,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				RunID:     runID,
 				Iteration: iteration,
 				Time:      e.now(),
-				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:                          lastSelection.Provider,
-					Initial:                           lastSelection.Initial,
-					Path:                              selectionPath,
-					Required:                          lastSelection.Required,
-					UsedFallback:                      fallbackUsed,
-					Assemble:                          lastAssemble,
-					GateChecks:                        gateStats.Checks,
-					GateDenied:                        gateStats.DeniedCount,
-					GateTimeout:                       gateStats.TimeoutCount,
-					GateRuleHits:                      gateStats.RuleHitCount,
-					GateRuleLast:                      gateStats.RuleLastID,
-					HitlAwait:                         hitlStats.AwaitCount,
-					HitlResumed:                       hitlStats.ResumeCount,
-					HitlCanceled:                      hitlStats.CancelByUserCount,
-					CancelProp:                        concurrencyStats.CancelPropagatedCount,
-					BackDrop:                          concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:                      concurrencyStats.InflightPeak,
-					SecurityPolicy:                    lastSecurity.PolicyKind,
-					NamespaceTool:                     lastSecurity.NamespaceTool,
-					FilterStage:                       lastSecurity.FilterStage,
-					SecurityDecision:                  lastSecurity.Decision,
-					ReasonCode:                        lastSecurity.ReasonCode,
-					Severity:                          lastSecurity.Severity,
-					AlertStatus:                       lastSecurity.AlertDispatchStatus,
-					AlertFailure:                      lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:                   lastSecurity.AlertRetryCount,
-					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:                 lastSecurity.AlertCircuitState,
-					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
-					ReactEnabled:                      reactCfg.Enabled,
-					ReactIterationTotal:               iteration,
-					ReactToolCallTotal:                reactToolCallTotal,
-					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
-					ReactTermination:                  reactTerminationReason,
-					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-					A67Recorded:                       true,
-					ReactPlanID:                       planSnapshot.PlanID,
-					ReactPlanVersion:                  planSnapshot.Version,
-					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
-					ReactPlanLastAction:               planSnapshot.LastAction,
-					ReactPlanChangeReason:             planSnapshot.LastReason,
-					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
-					ReactPlanHookStatus:               planSnapshot.HookStatus,
-					A65Recorded:                       true,
-					HooksEnabled:                      hooksCfg.Enabled,
-					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
-					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
-					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
-					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
-					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
-					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
-					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
-					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
-					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
-					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
-					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
-					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
-					SkillBundlePromptMode:             skillPreprocess.PromptMode,
-					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
-					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
-					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
-					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
-					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
-					Memory:                            memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
-				}),
+				Payload:   runFinishedPayload(result, "success", "", meta),
 			})
 			return result, nil
 		case StateAbort:
@@ -848,6 +875,83 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				errClass = string(terminal.Class)
 			}
 			status, reason := classifyRunTerminal(terminal, runErr)
+			meta := runFinishMeta{
+				Provider:                          lastSelection.Provider,
+				Initial:                           lastSelection.Initial,
+				Path:                              selectionPath,
+				Required:                          lastSelection.Required,
+				Reason:                            lastSelection.Reason,
+				UsedFallback:                      fallbackUsed,
+				Assemble:                          lastAssemble,
+				GateChecks:                        gateStats.Checks,
+				GateDenied:                        gateStats.DeniedCount,
+				GateTimeout:                       gateStats.TimeoutCount,
+				GateRuleHits:                      gateStats.RuleHitCount,
+				GateRuleLast:                      gateStats.RuleLastID,
+				HitlAwait:                         hitlStats.AwaitCount,
+				HitlResumed:                       hitlStats.ResumeCount,
+				HitlCanceled:                      hitlStats.CancelByUserCount,
+				CancelProp:                        concurrencyStats.CancelPropagatedCount,
+				BackDrop:                          concurrencyStats.BackpressureDropCount,
+				BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:                      concurrencyStats.InflightPeak,
+				SecurityPolicy:                    lastSecurity.PolicyKind,
+				NamespaceTool:                     lastSecurity.NamespaceTool,
+				FilterStage:                       lastSecurity.FilterStage,
+				SecurityDecision:                  lastSecurity.Decision,
+				ReasonCode:                        lastSecurity.ReasonCode,
+				Severity:                          lastSecurity.Severity,
+				AlertStatus:                       lastSecurity.AlertDispatchStatus,
+				AlertFailure:                      lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:                   lastSecurity.AlertRetryCount,
+				AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:                 lastSecurity.AlertCircuitState,
+				AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+				ReactEnabled:                      reactCfg.Enabled,
+				ReactIterationTotal:               iteration,
+				ReactToolCallTotal:                reactToolCallTotal,
+				ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+				ReactTermination:                  reactTerminationReason,
+				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+				A67Recorded:                       true,
+				ReactPlanID:                       planSnapshot.PlanID,
+				ReactPlanVersion:                  planSnapshot.Version,
+				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+				ReactPlanLastAction:               planSnapshot.LastAction,
+				ReactPlanChangeReason:             planSnapshot.LastReason,
+				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+				ReactPlanHookStatus:               planSnapshot.HookStatus,
+				A65Recorded:                       true,
+				HooksEnabled:                      hooksCfg.Enabled,
+				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+				ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+				ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+				SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+				SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+				SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+				SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+				SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+				SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+				SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+				SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+				SkillBundlePromptMode:             skillPreprocess.PromptMode,
+				SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+				SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+				SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+				SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+				SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+				Memory:                            memoryAggregate.snapshot(memoryRuntime),
+				Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
+			}
+			if realtimeRuntime != nil {
+				reasonCode, layer := realtimeErrorDetailsFromTerminal(terminal)
+				realtimeRuntime.emitError(ctx, h, iteration, reasonCode, layer, errorMessageForRealtime(runErr, terminal))
+				realtimeRuntime.fillRunFinishMeta(&meta)
+			}
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, reason)
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
@@ -855,78 +959,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				RunID:     runID,
 				Iteration: iteration,
 				Time:      e.now(),
-				Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-					Provider:                          lastSelection.Provider,
-					Initial:                           lastSelection.Initial,
-					Path:                              selectionPath,
-					Required:                          lastSelection.Required,
-					Reason:                            lastSelection.Reason,
-					UsedFallback:                      fallbackUsed,
-					Assemble:                          lastAssemble,
-					GateChecks:                        gateStats.Checks,
-					GateDenied:                        gateStats.DeniedCount,
-					GateTimeout:                       gateStats.TimeoutCount,
-					GateRuleHits:                      gateStats.RuleHitCount,
-					GateRuleLast:                      gateStats.RuleLastID,
-					HitlAwait:                         hitlStats.AwaitCount,
-					HitlResumed:                       hitlStats.ResumeCount,
-					HitlCanceled:                      hitlStats.CancelByUserCount,
-					CancelProp:                        concurrencyStats.CancelPropagatedCount,
-					BackDrop:                          concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:                      concurrencyStats.InflightPeak,
-					SecurityPolicy:                    lastSecurity.PolicyKind,
-					NamespaceTool:                     lastSecurity.NamespaceTool,
-					FilterStage:                       lastSecurity.FilterStage,
-					SecurityDecision:                  lastSecurity.Decision,
-					ReasonCode:                        lastSecurity.ReasonCode,
-					Severity:                          lastSecurity.Severity,
-					AlertStatus:                       lastSecurity.AlertDispatchStatus,
-					AlertFailure:                      lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:                   lastSecurity.AlertRetryCount,
-					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:                 lastSecurity.AlertCircuitState,
-					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
-					ReactEnabled:                      reactCfg.Enabled,
-					ReactIterationTotal:               iteration,
-					ReactToolCallTotal:                reactToolCallTotal,
-					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
-					ReactTermination:                  reactTerminationReason,
-					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-					A67Recorded:                       true,
-					ReactPlanID:                       planSnapshot.PlanID,
-					ReactPlanVersion:                  planSnapshot.Version,
-					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
-					ReactPlanLastAction:               planSnapshot.LastAction,
-					ReactPlanChangeReason:             planSnapshot.LastReason,
-					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
-					ReactPlanHookStatus:               planSnapshot.HookStatus,
-					A65Recorded:                       true,
-					HooksEnabled:                      hooksCfg.Enabled,
-					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
-					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
-					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
-					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
-					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
-					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
-					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
-					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
-					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
-					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
-					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
-					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
-					SkillBundlePromptMode:             skillPreprocess.PromptMode,
-					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
-					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
-					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
-					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
-					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
-					Memory:                            memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
-				}),
+				Payload:   runFinishedPayload(result, "failed", errClass, meta),
 			})
 			return result, runErr
 		}
@@ -1433,6 +1466,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
+	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
 	reactToolCallTotal := 0
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
@@ -1474,6 +1508,19 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "run.started", RunID: runID, Time: start})
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, 0, &timelineSeq, types.ActionPhaseRun, types.ActionStatusRunning, "")
+	if terminal == nil && realtimeRuntime != nil {
+		realtimeRuntime.emitRequest(ctx, h, 0, req)
+		if req.Realtime != nil {
+			if err := realtimeRuntime.ingestControlEvents(ctx, h, 0, req.Realtime.Events); err != nil {
+				terminal = classifyRealtimeError(err)
+				runErr = err
+			}
+		}
+		if terminal == nil && realtimeRuntime.interrupted {
+			terminal = realtimeRuntime.interruptTerminalError()
+			runErr = errors.New(terminal.Message)
+		}
+	}
 	if terminal == nil {
 		req, skillPreprocess, terminal, runErr = e.runSkillPreprocess(ctx, req, runID, true, h, &warnings)
 	}
@@ -1573,6 +1620,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			selection.UsedFallback,
 			&hitlStats,
 			&lastSecurity,
+			realtimeRuntime,
 		)
 		if stepErr != nil {
 			var classifiedErr classifiedModelError
@@ -1706,6 +1754,81 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				Warnings:    warnings,
 			}
 			planSnapshot := snapshotReactPlanDiagnostics(reactPlanNotebook, reactPlanHookStatus)
+			meta := runFinishMeta{
+				Provider:                          lastSelection.Provider,
+				Initial:                           lastSelection.Initial,
+				Path:                              selectionPath,
+				Required:                          lastSelection.Required,
+				UsedFallback:                      fallbackUsed,
+				Assemble:                          lastAssemble,
+				GateChecks:                        gateStats.Checks,
+				GateDenied:                        gateStats.DeniedCount,
+				GateTimeout:                       gateStats.TimeoutCount,
+				GateRuleHits:                      gateStats.RuleHitCount,
+				GateRuleLast:                      gateStats.RuleLastID,
+				HitlAwait:                         hitlStats.AwaitCount,
+				HitlResumed:                       hitlStats.ResumeCount,
+				HitlCanceled:                      hitlStats.CancelByUserCount,
+				CancelProp:                        concurrencyStats.CancelPropagatedCount,
+				BackDrop:                          concurrencyStats.BackpressureDropCount,
+				BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+				InflightPeak:                      concurrencyStats.InflightPeak,
+				SecurityPolicy:                    lastSecurity.PolicyKind,
+				NamespaceTool:                     lastSecurity.NamespaceTool,
+				FilterStage:                       lastSecurity.FilterStage,
+				SecurityDecision:                  lastSecurity.Decision,
+				ReasonCode:                        lastSecurity.ReasonCode,
+				Severity:                          lastSecurity.Severity,
+				AlertStatus:                       lastSecurity.AlertDispatchStatus,
+				AlertFailure:                      lastSecurity.AlertFailureReason,
+				AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+				AlertRetryCount:                   lastSecurity.AlertRetryCount,
+				AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+				AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+				AlertCircuitState:                 lastSecurity.AlertCircuitState,
+				AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+				ReactEnabled:                      reactCfg.Enabled,
+				ReactIterationTotal:               iteration,
+				ReactToolCallTotal:                reactToolCallTotal,
+				ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+				ReactTermination:                  reactTerminationReason,
+				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+				A67Recorded:                       true,
+				ReactPlanID:                       planSnapshot.PlanID,
+				ReactPlanVersion:                  planSnapshot.Version,
+				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+				ReactPlanLastAction:               planSnapshot.LastAction,
+				ReactPlanChangeReason:             planSnapshot.LastReason,
+				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+				ReactPlanHookStatus:               planSnapshot.HookStatus,
+				A65Recorded:                       true,
+				HooksEnabled:                      hooksCfg.Enabled,
+				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+				ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+				ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+				SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+				SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+				SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+				SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+				SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+				SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+				SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+				SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+				SkillBundlePromptMode:             skillPreprocess.PromptMode,
+				SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+				SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+				SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+				SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+				SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+				Memory:                            memoryAggregate.snapshot(memoryRuntime),
+				Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
+			}
+			if realtimeRuntime != nil {
+				realtimeRuntime.emitComplete(ctx, h, iteration, final)
+				realtimeRuntime.fillRunFinishMeta(&meta)
+			}
 			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, types.ActionStatusSucceeded, "")
 			e.emit(ctx, h, types.Event{
 				Version:   "v1",
@@ -1713,77 +1836,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				RunID:     runID,
 				Iteration: iteration,
 				Time:      e.now(),
-				Payload: runFinishedPayload(result, "success", "", runFinishMeta{
-					Provider:                          lastSelection.Provider,
-					Initial:                           lastSelection.Initial,
-					Path:                              selectionPath,
-					Required:                          lastSelection.Required,
-					UsedFallback:                      fallbackUsed,
-					Assemble:                          lastAssemble,
-					GateChecks:                        gateStats.Checks,
-					GateDenied:                        gateStats.DeniedCount,
-					GateTimeout:                       gateStats.TimeoutCount,
-					GateRuleHits:                      gateStats.RuleHitCount,
-					GateRuleLast:                      gateStats.RuleLastID,
-					HitlAwait:                         hitlStats.AwaitCount,
-					HitlResumed:                       hitlStats.ResumeCount,
-					HitlCanceled:                      hitlStats.CancelByUserCount,
-					CancelProp:                        concurrencyStats.CancelPropagatedCount,
-					BackDrop:                          concurrencyStats.BackpressureDropCount,
-					BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
-					InflightPeak:                      concurrencyStats.InflightPeak,
-					SecurityPolicy:                    lastSecurity.PolicyKind,
-					NamespaceTool:                     lastSecurity.NamespaceTool,
-					FilterStage:                       lastSecurity.FilterStage,
-					SecurityDecision:                  lastSecurity.Decision,
-					ReasonCode:                        lastSecurity.ReasonCode,
-					Severity:                          lastSecurity.Severity,
-					AlertStatus:                       lastSecurity.AlertDispatchStatus,
-					AlertFailure:                      lastSecurity.AlertFailureReason,
-					AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
-					AlertRetryCount:                   lastSecurity.AlertRetryCount,
-					AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
-					AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
-					AlertCircuitState:                 lastSecurity.AlertCircuitState,
-					AlertCircuitReason:                lastSecurity.AlertCircuitReason,
-					ReactEnabled:                      reactCfg.Enabled,
-					ReactIterationTotal:               iteration,
-					ReactToolCallTotal:                reactToolCallTotal,
-					ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
-					ReactIterBudgetHit:                reactIterationBudgetHitTotal,
-					ReactTermination:                  reactTerminationReason,
-					ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-					A67Recorded:                       true,
-					ReactPlanID:                       planSnapshot.PlanID,
-					ReactPlanVersion:                  planSnapshot.Version,
-					ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
-					ReactPlanLastAction:               planSnapshot.LastAction,
-					ReactPlanChangeReason:             planSnapshot.LastReason,
-					ReactPlanRecoverCount:             planSnapshot.RecoverCount,
-					ReactPlanHookStatus:               planSnapshot.HookStatus,
-					A65Recorded:                       true,
-					HooksEnabled:                      hooksCfg.Enabled,
-					HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
-					HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
-					ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
-					ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
-					SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
-					SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
-					SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
-					SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
-					SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
-					SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
-					SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
-					SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
-					SkillBundlePromptMode:             skillPreprocess.PromptMode,
-					SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
-					SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
-					SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
-					SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
-					SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
-					Memory:                            memoryAggregate.snapshot(memoryRuntime),
-					Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
-				}),
+				Payload:   runFinishedPayload(result, "success", "", meta),
 			})
 			return result, nil
 		}
@@ -1917,6 +1970,83 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		errClass = string(terminal.Class)
 	}
 	status, runReason := classifyRunTerminal(terminal, runErr)
+	meta := runFinishMeta{
+		Provider:                          lastSelection.Provider,
+		Initial:                           lastSelection.Initial,
+		Path:                              selectionPath,
+		Required:                          lastSelection.Required,
+		Reason:                            lastSelection.Reason,
+		UsedFallback:                      fallbackUsed,
+		Assemble:                          lastAssemble,
+		GateChecks:                        gateStats.Checks,
+		GateDenied:                        gateStats.DeniedCount,
+		GateTimeout:                       gateStats.TimeoutCount,
+		GateRuleHits:                      gateStats.RuleHitCount,
+		GateRuleLast:                      gateStats.RuleLastID,
+		HitlAwait:                         hitlStats.AwaitCount,
+		HitlResumed:                       hitlStats.ResumeCount,
+		HitlCanceled:                      hitlStats.CancelByUserCount,
+		CancelProp:                        concurrencyStats.CancelPropagatedCount,
+		BackDrop:                          concurrencyStats.BackpressureDropCount,
+		BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
+		InflightPeak:                      concurrencyStats.InflightPeak,
+		SecurityPolicy:                    lastSecurity.PolicyKind,
+		NamespaceTool:                     lastSecurity.NamespaceTool,
+		FilterStage:                       lastSecurity.FilterStage,
+		SecurityDecision:                  lastSecurity.Decision,
+		ReasonCode:                        lastSecurity.ReasonCode,
+		Severity:                          lastSecurity.Severity,
+		AlertStatus:                       lastSecurity.AlertDispatchStatus,
+		AlertFailure:                      lastSecurity.AlertFailureReason,
+		AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
+		AlertRetryCount:                   lastSecurity.AlertRetryCount,
+		AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
+		AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
+		AlertCircuitState:                 lastSecurity.AlertCircuitState,
+		AlertCircuitReason:                lastSecurity.AlertCircuitReason,
+		ReactEnabled:                      reactCfg.Enabled,
+		ReactIterationTotal:               iteration,
+		ReactToolCallTotal:                reactToolCallTotal,
+		ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
+		ReactIterBudgetHit:                reactIterationBudgetHitTotal,
+		ReactTermination:                  reactTerminationReason,
+		ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
+		A67Recorded:                       true,
+		ReactPlanID:                       planSnapshot.PlanID,
+		ReactPlanVersion:                  planSnapshot.Version,
+		ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
+		ReactPlanLastAction:               planSnapshot.LastAction,
+		ReactPlanChangeReason:             planSnapshot.LastReason,
+		ReactPlanRecoverCount:             planSnapshot.RecoverCount,
+		ReactPlanHookStatus:               planSnapshot.HookStatus,
+		A65Recorded:                       true,
+		HooksEnabled:                      hooksCfg.Enabled,
+		HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
+		HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
+		ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
+		ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
+		SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
+		SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
+		SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
+		SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
+		SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
+		SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
+		SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
+		SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
+		SkillBundlePromptMode:             skillPreprocess.PromptMode,
+		SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
+		SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
+		SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
+		SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
+		SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
+		Memory:                            memoryAggregate.snapshot(memoryRuntime),
+		Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
+	}
+	if realtimeRuntime != nil {
+		reasonCode, layer := realtimeErrorDetailsFromTerminal(terminal)
+		realtimeRuntime.emitError(ctx, h, iteration, reasonCode, layer, errorMessageForRealtime(runErr, terminal))
+		realtimeRuntime.fillRunFinishMeta(&meta)
+	}
 	e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseRun, status, runReason)
 	e.emit(ctx, h, types.Event{
 		Version:   "v1",
@@ -1924,78 +2054,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		RunID:     runID,
 		Iteration: iteration,
 		Time:      e.now(),
-		Payload: runFinishedPayload(result, "failed", errClass, runFinishMeta{
-			Provider:                          lastSelection.Provider,
-			Initial:                           lastSelection.Initial,
-			Path:                              selectionPath,
-			Required:                          lastSelection.Required,
-			Reason:                            lastSelection.Reason,
-			UsedFallback:                      fallbackUsed,
-			Assemble:                          lastAssemble,
-			GateChecks:                        gateStats.Checks,
-			GateDenied:                        gateStats.DeniedCount,
-			GateTimeout:                       gateStats.TimeoutCount,
-			GateRuleHits:                      gateStats.RuleHitCount,
-			GateRuleLast:                      gateStats.RuleLastID,
-			HitlAwait:                         hitlStats.AwaitCount,
-			HitlResumed:                       hitlStats.ResumeCount,
-			HitlCanceled:                      hitlStats.CancelByUserCount,
-			CancelProp:                        concurrencyStats.CancelPropagatedCount,
-			BackDrop:                          concurrencyStats.BackpressureDropCount,
-			BackDropByPhase:                   concurrencyStats.BackpressureDropByPhase,
-			InflightPeak:                      concurrencyStats.InflightPeak,
-			SecurityPolicy:                    lastSecurity.PolicyKind,
-			NamespaceTool:                     lastSecurity.NamespaceTool,
-			FilterStage:                       lastSecurity.FilterStage,
-			SecurityDecision:                  lastSecurity.Decision,
-			ReasonCode:                        lastSecurity.ReasonCode,
-			Severity:                          lastSecurity.Severity,
-			AlertStatus:                       lastSecurity.AlertDispatchStatus,
-			AlertFailure:                      lastSecurity.AlertFailureReason,
-			AlertDeliveryMode:                 lastSecurity.AlertDeliveryMode,
-			AlertRetryCount:                   lastSecurity.AlertRetryCount,
-			AlertQueueDropped:                 lastSecurity.AlertQueueDropped,
-			AlertQueueDropCount:               lastSecurity.AlertQueueDropCount,
-			AlertCircuitState:                 lastSecurity.AlertCircuitState,
-			AlertCircuitReason:                lastSecurity.AlertCircuitReason,
-			ReactEnabled:                      reactCfg.Enabled,
-			ReactIterationTotal:               iteration,
-			ReactToolCallTotal:                reactToolCallTotal,
-			ReactToolBudgetHit:                reactToolCallBudgetHitTotal,
-			ReactIterBudgetHit:                reactIterationBudgetHitTotal,
-			ReactTermination:                  reactTerminationReason,
-			ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-			A67Recorded:                       true,
-			ReactPlanID:                       planSnapshot.PlanID,
-			ReactPlanVersion:                  planSnapshot.Version,
-			ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
-			ReactPlanLastAction:               planSnapshot.LastAction,
-			ReactPlanChangeReason:             planSnapshot.LastReason,
-			ReactPlanRecoverCount:             planSnapshot.RecoverCount,
-			ReactPlanHookStatus:               planSnapshot.HookStatus,
-			A65Recorded:                       true,
-			HooksEnabled:                      hooksCfg.Enabled,
-			HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
-			HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
-			ToolMiddlewareEnabled:             toolMiddlewareCfg.Enabled,
-			ToolMiddlewareFailMode:            strings.ToLower(strings.TrimSpace(toolMiddlewareCfg.FailMode)),
-			SkillDiscoveryMode:                skillPreprocess.DiscoveryMode,
-			SkillDiscoveryRoots:               append([]string(nil), skillPreprocess.DiscoveryRoots...),
-			SkillPreprocessEnabled:            skillPreprocess.PreprocessEnabled,
-			SkillPreprocessPhase:              skillPreprocess.PreprocessPhase,
-			SkillPreprocessFailMode:           skillPreprocess.PreprocessFailMode,
-			SkillPreprocessStatus:             skillPreprocess.PreprocessStatus,
-			SkillPreprocessReasonCode:         skillPreprocess.PreprocessReasonCode,
-			SkillPreprocessSpecCount:          skillPreprocess.SpecCount,
-			SkillBundlePromptMode:             skillPreprocess.PromptMode,
-			SkillBundleWhitelistMode:          skillPreprocess.WhitelistMode,
-			SkillBundleConflictPolicy:         skillPreprocess.ConflictPolicy,
-			SkillBundlePromptTotal:            skillPreprocess.PromptFragmentCount,
-			SkillBundleWhitelistTotal:         skillPreprocess.WhitelistCount,
-			SkillBundleWhitelistRejectedTotal: skillPreprocess.WhitelistRejectedTotal,
-			Memory:                            memoryAggregate.snapshot(memoryRuntime),
-			Sandbox:                           sandboxAggregate.snapshot(sandboxRuntime),
-		}),
+		Payload:   runFinishedPayload(result, "failed", errClass, meta),
 	})
 	return result, runErr
 }
@@ -2115,6 +2174,7 @@ func (e *Engine) streamModelStep(
 	fallbackUsed bool,
 	hitlStats *clarificationStats,
 	lastSecurity *securityDecision,
+	realtimeRuntime *realtimeSessionRuntime,
 ) (streamModelStepResult, error) {
 	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusPending, "")
 	e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseModel, types.ActionStatusRunning, "")
@@ -2154,6 +2214,9 @@ func (e *Engine) streamModelStep(
 			}
 			normalizedEvent.TextDelta = filteredOutput
 			stepText.WriteString(normalizedEvent.TextDelta)
+			if realtimeRuntime != nil && strings.TrimSpace(normalizedEvent.TextDelta) != "" {
+				realtimeRuntime.emitDelta(stepCtx, h, iteration, normalizedEvent.TextDelta)
+			}
 		}
 		payload := map[string]any{
 			"event_type": normalizedEvent.Type,
@@ -2828,6 +2891,14 @@ type runFinishMeta struct {
 	SkillBundlePromptTotal            int
 	SkillBundleWhitelistTotal         int
 	SkillBundleWhitelistRejectedTotal int
+	RealtimeProtocolVersion           string
+	RealtimeEventSeqMax               int64
+	RealtimeInterruptTotal            int
+	RealtimeResumeTotal               int
+	RealtimeResumeSource              string
+	RealtimeIdempotencyDedupTotal     int
+	RealtimeLastErrorCode             string
+	RealtimeErrorLayer                string
 	Memory                            memoryRunDiagnostics
 	Sandbox                           sandboxRunDiagnostics
 }
@@ -3136,6 +3207,22 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["skill_bundle_prompt_total"] = meta.SkillBundlePromptTotal
 		payload["skill_bundle_whitelist_total"] = meta.SkillBundleWhitelistTotal
 		payload["skill_bundle_whitelist_rejected_total"] = meta.SkillBundleWhitelistRejectedTotal
+	}
+	if strings.TrimSpace(meta.RealtimeProtocolVersion) != "" {
+		payload["realtime_protocol_version"] = strings.TrimSpace(meta.RealtimeProtocolVersion)
+		payload["realtime_event_seq_max"] = meta.RealtimeEventSeqMax
+		payload["realtime_interrupt_total"] = meta.RealtimeInterruptTotal
+		payload["realtime_resume_total"] = meta.RealtimeResumeTotal
+		if strings.TrimSpace(meta.RealtimeResumeSource) != "" {
+			payload["realtime_resume_source"] = strings.TrimSpace(meta.RealtimeResumeSource)
+		}
+		payload["realtime_idempotency_dedup_total"] = meta.RealtimeIdempotencyDedupTotal
+		if strings.TrimSpace(meta.RealtimeLastErrorCode) != "" {
+			payload["realtime_last_error_code"] = strings.TrimSpace(meta.RealtimeLastErrorCode)
+		}
+		if strings.TrimSpace(meta.RealtimeErrorLayer) != "" {
+			payload["realtime_error_layer"] = strings.TrimSpace(meta.RealtimeErrorLayer)
+		}
 	}
 	if meta.Memory.Observed {
 		if meta.Memory.Mode != "" {

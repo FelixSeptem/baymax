@@ -39,6 +39,25 @@ function Assert-PatternAbsentAcrossRepo {
         [Parameter(Mandatory = $true)][string]$Pattern
     )
 
+    $rgPath = Get-Command rg -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+    if (-not [string]::IsNullOrWhiteSpace($rgPath)) {
+        $scanOutput = @(& $rgPath -n --glob '!openspec/changes/archive/**' -- $Pattern $repoRoot.Path 2>&1)
+        $scanExit = $LASTEXITCODE
+        if ($scanExit -eq 0) {
+            $preview = ($scanOutput | Where-Object { $null -ne $_ } | Select-Object -First 10 | ForEach-Object {
+                    $_.ToString().Trim()
+                }) -join "`n"
+            throw "[state-snapshot-contract-gate][$Assertion] unexpected matches found for /$Pattern/:`n$preview"
+        }
+        if ($scanExit -eq 1) {
+            return
+        }
+        $details = ($scanOutput | Where-Object { $null -ne $_ } | Select-Object -First 10 | ForEach-Object {
+                $_.ToString().Trim()
+            }) -join "`n"
+        throw "[state-snapshot-contract-gate][$Assertion] rg scan failed for /$Pattern/ (exit=$scanExit):`n$details"
+    }
+
     $archiveRoot = [Regex]::Escape((Join-Path $repoRoot "openspec\changes\archive"))
     $files = Get-ChildItem -Path $repoRoot -Recurse -File | Where-Object {
         $_.FullName -notmatch $archiveRoot

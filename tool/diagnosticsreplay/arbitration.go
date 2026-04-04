@@ -11,28 +11,29 @@ import (
 )
 
 const (
-	ArbitrationFixtureVersionA48V1             = "a48.v1"
-	ArbitrationFixtureVersionA49V1             = "a49.v1"
-	ArbitrationFixtureVersionA50V1             = "a50.v1"
-	ArbitrationFixtureVersionA51V1             = "a51.v1"
-	ArbitrationFixtureVersionA52V1             = "a52.v1"
-	ArbitrationFixtureVersionHooksMiddlewareV1 = "hooks_middleware.v1"
-	ArbitrationFixtureVersionSkillDiscoveryV1  = "skill_discovery_sources.v1"
-	ArbitrationFixtureVersionSkillMappingV1    = "skill_preprocess_and_mapping.v1"
-	ArbitrationFixtureVersionA57V1             = "sandbox_egress.v1"
-	ArbitrationFixtureVersionBudgetAdmissionV1 = "budget_admission.v1"
-	ArbitrationFixtureVersionPolicyV1          = "policy_stack.v1"
-	ArbitrationFixtureVersionMemoryV1          = "memory.v1"
-	ArbitrationFixtureVersionMemoryScopeV1     = "memory_scope.v1"
-	ArbitrationFixtureVersionMemorySearchV1    = "memory_search.v1"
-	ArbitrationFixtureVersionMemoryLifecycleV1 = "memory_lifecycle.v1"
-	ArbitrationFixtureVersionObsV1             = "observability.v1"
-	ArbitrationFixtureVersionReactV1           = "react.v1"
-	ArbitrationFixtureVersionReactPlanV1       = "react_plan_notebook.v1"
-	ArbitrationFixtureVersionOTelSemconvV1     = "otel_semconv.v1"
-	ArbitrationFixtureVersionAgentEvalV1       = "agent_eval.v1"
-	ArbitrationFixtureVersionAgentEvalDistV1   = "agent_eval_distributed.v1"
-	ArbitrationFixtureVersionStateSnapshotV1   = "state_session_snapshot.v1"
+	ArbitrationFixtureVersionA48V1              = "a48.v1"
+	ArbitrationFixtureVersionA49V1              = "a49.v1"
+	ArbitrationFixtureVersionA50V1              = "a50.v1"
+	ArbitrationFixtureVersionA51V1              = "a51.v1"
+	ArbitrationFixtureVersionA52V1              = "a52.v1"
+	ArbitrationFixtureVersionHooksMiddlewareV1  = "hooks_middleware.v1"
+	ArbitrationFixtureVersionSkillDiscoveryV1   = "skill_discovery_sources.v1"
+	ArbitrationFixtureVersionSkillMappingV1     = "skill_preprocess_and_mapping.v1"
+	ArbitrationFixtureVersionA57V1              = "sandbox_egress.v1"
+	ArbitrationFixtureVersionBudgetAdmissionV1  = "budget_admission.v1"
+	ArbitrationFixtureVersionPolicyV1           = "policy_stack.v1"
+	ArbitrationFixtureVersionMemoryV1           = "memory.v1"
+	ArbitrationFixtureVersionMemoryScopeV1      = "memory_scope.v1"
+	ArbitrationFixtureVersionMemorySearchV1     = "memory_search.v1"
+	ArbitrationFixtureVersionMemoryLifecycleV1  = "memory_lifecycle.v1"
+	ArbitrationFixtureVersionObsV1              = "observability.v1"
+	ArbitrationFixtureVersionReactV1            = "react.v1"
+	ArbitrationFixtureVersionReactPlanV1        = "react_plan_notebook.v1"
+	ArbitrationFixtureVersionRealtimeProtocolV1 = "realtime_event_protocol.v1"
+	ArbitrationFixtureVersionOTelSemconvV1      = "otel_semconv.v1"
+	ArbitrationFixtureVersionAgentEvalV1        = "agent_eval.v1"
+	ArbitrationFixtureVersionAgentEvalDistV1    = "agent_eval_distributed.v1"
+	ArbitrationFixtureVersionStateSnapshotV1    = "state_session_snapshot.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -83,6 +84,11 @@ const (
 	ReasonCodeReactPlanChangeReasonDrift          = "react_plan_change_reason_drift"
 	ReasonCodeReactPlanHookSemanticDrift          = "react_plan_hook_semantic_drift"
 	ReasonCodeReactPlanRecoverDrift               = "react_plan_recover_drift"
+	ReasonCodeRealtimeEventOrderDrift             = "realtime_event_order_drift"
+	ReasonCodeRealtimeInterruptSemanticDrift      = "realtime_interrupt_semantic_drift"
+	ReasonCodeRealtimeResumeSemanticDrift         = "realtime_resume_semantic_drift"
+	ReasonCodeRealtimeIdempotencyDrift            = "realtime_idempotency_drift"
+	ReasonCodeRealtimeSequenceGapDrift            = "realtime_sequence_gap_drift"
 	ReasonCodeSandboxEgressActionDrift            = "sandbox_egress_action_drift"
 	ReasonCodeSandboxEgressPolicySourceDrift      = "sandbox_egress_policy_source_drift"
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
@@ -173,6 +179,13 @@ type ArbitrationObservation struct {
 	ReactPlanChangeReason                  string                    `json:"react_plan_change_reason,omitempty"`
 	ReactPlanRecoverCount                  int                       `json:"react_plan_recover_count,omitempty"`
 	ReactPlanHookStatus                    string                    `json:"react_plan_hook_status,omitempty"`
+	RealtimeProtocolVersion                string                    `json:"realtime_protocol_version,omitempty"`
+	RealtimeEventSeqMax                    int64                     `json:"realtime_event_seq_max,omitempty"`
+	RealtimeInterruptTotal                 int                       `json:"realtime_interrupt_total,omitempty"`
+	RealtimeResumeTotal                    int                       `json:"realtime_resume_total,omitempty"`
+	RealtimeResumeSource                   string                    `json:"realtime_resume_source,omitempty"`
+	RealtimeIdempotencyDedupTotal          int                       `json:"realtime_idempotency_dedup_total,omitempty"`
+	RealtimeLastErrorCode                  string                    `json:"realtime_last_error_code,omitempty"`
 	SandboxMode                            string                    `json:"sandbox_mode,omitempty"`
 	SandboxBackend                         string                    `json:"sandbox_backend,omitempty"`
 	SandboxProfile                         string                    `json:"sandbox_profile,omitempty"`
@@ -314,6 +327,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionObsV1 &&
 		version != ArbitrationFixtureVersionReactV1 &&
 		version != ArbitrationFixtureVersionReactPlanV1 &&
+		version != ArbitrationFixtureVersionRealtimeProtocolV1 &&
 		version != ArbitrationFixtureVersionOTelSemconvV1 &&
 		version != ArbitrationFixtureVersionAgentEvalV1 &&
 		version != ArbitrationFixtureVersionAgentEvalDistV1 &&
@@ -466,6 +480,13 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		ReactPlanChangeReason:                  strings.ToLower(strings.TrimSpace(in.ReactPlanChangeReason)),
 		ReactPlanRecoverCount:                  in.ReactPlanRecoverCount,
 		ReactPlanHookStatus:                    strings.ToLower(strings.TrimSpace(in.ReactPlanHookStatus)),
+		RealtimeProtocolVersion:                strings.ToLower(strings.TrimSpace(in.RealtimeProtocolVersion)),
+		RealtimeEventSeqMax:                    in.RealtimeEventSeqMax,
+		RealtimeInterruptTotal:                 in.RealtimeInterruptTotal,
+		RealtimeResumeTotal:                    in.RealtimeResumeTotal,
+		RealtimeResumeSource:                   strings.ToLower(strings.TrimSpace(in.RealtimeResumeSource)),
+		RealtimeIdempotencyDedupTotal:          in.RealtimeIdempotencyDedupTotal,
+		RealtimeLastErrorCode:                  strings.ToLower(strings.TrimSpace(in.RealtimeLastErrorCode)),
 		SandboxMode:                            strings.ToLower(strings.TrimSpace(in.SandboxMode)),
 		SandboxBackend:                         strings.ToLower(strings.TrimSpace(in.SandboxBackend)),
 		SandboxProfile:                         strings.ToLower(strings.TrimSpace(in.SandboxProfile)),
@@ -565,6 +586,18 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if out.ReactPlanRecoverCount < 0 {
 		out.ReactPlanRecoverCount = 0
+	}
+	if out.RealtimeEventSeqMax < 0 {
+		out.RealtimeEventSeqMax = 0
+	}
+	if out.RealtimeInterruptTotal < 0 {
+		out.RealtimeInterruptTotal = 0
+	}
+	if out.RealtimeResumeTotal < 0 {
+		out.RealtimeResumeTotal = 0
+	}
+	if out.RealtimeIdempotencyDedupTotal < 0 {
+		out.RealtimeIdempotencyDedupTotal = 0
 	}
 	if out.SkillPreprocessSpecCount < 0 {
 		out.SkillPreprocessSpecCount = 0
@@ -768,6 +801,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionReactPlanV1 {
 		return validateReactPlanNotebookArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionRealtimeProtocolV1 {
+		return validateRealtimeProtocolArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
@@ -990,6 +1026,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionReactPlanV1 {
 		return assertReactPlanNotebookArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionRealtimeProtocolV1 {
+		return assertRealtimeProtocolArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1555,6 +1594,128 @@ func assertReactPlanNotebookArbitrationEquivalent(caseName, lane string, expecte
 		}
 	}
 	return nil
+}
+
+func validateRealtimeProtocolArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if err := validateReactArbitrationObservation(caseName, lane, obs); err != nil {
+		return err
+	}
+	if strings.TrimSpace(obs.RealtimeProtocolVersion) != ArbitrationFixtureVersionRealtimeProtocolV1 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s realtime_protocol_version must be %q", caseName, lane, ArbitrationFixtureVersionRealtimeProtocolV1),
+		}
+	}
+	if obs.RealtimeEventSeqMax <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s realtime_event_seq_max must be > 0", caseName, lane),
+		}
+	}
+	if obs.RealtimeInterruptTotal < 0 ||
+		obs.RealtimeResumeTotal < 0 ||
+		obs.RealtimeIdempotencyDedupTotal < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s realtime counters must be >= 0", caseName, lane),
+		}
+	}
+	if obs.RealtimeResumeTotal > obs.RealtimeInterruptTotal {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeResumeSemanticDrift,
+			Message: fmt.Sprintf("case %q %s realtime_resume_total must be <= realtime_interrupt_total", caseName, lane),
+		}
+	}
+	if !isCanonicalRealtimeResumeSource(obs.RealtimeResumeSource) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s realtime_resume_source must be cursor or empty", caseName, lane),
+		}
+	}
+	if obs.RealtimeResumeTotal > 0 && strings.TrimSpace(obs.RealtimeResumeSource) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeResumeSemanticDrift,
+			Message: fmt.Sprintf("case %q %s realtime_resume_source is required when realtime_resume_total > 0", caseName, lane),
+		}
+	}
+	if obs.RealtimeResumeTotal == 0 && strings.TrimSpace(obs.RealtimeResumeSource) != "" {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeResumeSemanticDrift,
+			Message: fmt.Sprintf("case %q %s realtime_resume_source must be empty when realtime_resume_total == 0", caseName, lane),
+		}
+	}
+	if !isCanonicalRealtimeReasonCode(obs.RealtimeLastErrorCode) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s realtime_last_error_code is not canonical: %q", caseName, lane, obs.RealtimeLastErrorCode),
+		}
+	}
+	return nil
+}
+
+func assertRealtimeProtocolArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if err := assertReactArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+		return err
+	}
+	if expected.RealtimeProtocolVersion != actual.RealtimeProtocolVersion {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeEventOrderDrift,
+			Message: fmt.Sprintf("case %q %s realtime protocol version drift expected=%q actual=%q", caseName, lane, expected.RealtimeProtocolVersion, actual.RealtimeProtocolVersion),
+		}
+	}
+	if expected.RealtimeEventSeqMax != actual.RealtimeEventSeqMax {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeSequenceGapDrift,
+			Message: fmt.Sprintf("case %q %s realtime sequence gap drift expected=%d actual=%d", caseName, lane, expected.RealtimeEventSeqMax, actual.RealtimeEventSeqMax),
+		}
+	}
+	if expected.RealtimeInterruptTotal != actual.RealtimeInterruptTotal {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeInterruptSemanticDrift,
+			Message: fmt.Sprintf("case %q %s realtime interrupt semantic drift expected=%d actual=%d", caseName, lane, expected.RealtimeInterruptTotal, actual.RealtimeInterruptTotal),
+		}
+	}
+	if expected.RealtimeResumeTotal != actual.RealtimeResumeTotal ||
+		expected.RealtimeResumeSource != actual.RealtimeResumeSource {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeResumeSemanticDrift,
+			Message: fmt.Sprintf("case %q %s realtime resume semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.RealtimeIdempotencyDedupTotal != actual.RealtimeIdempotencyDedupTotal {
+		return &ValidationError{
+			Code:    ReasonCodeRealtimeIdempotencyDrift,
+			Message: fmt.Sprintf("case %q %s realtime idempotency drift expected=%d actual=%d", caseName, lane, expected.RealtimeIdempotencyDedupTotal, actual.RealtimeIdempotencyDedupTotal),
+		}
+	}
+	if expected.RealtimeLastErrorCode != actual.RealtimeLastErrorCode {
+		switch {
+		case isRealtimeOrderReasonCode(expected.RealtimeLastErrorCode) || isRealtimeOrderReasonCode(actual.RealtimeLastErrorCode):
+			return &ValidationError{
+				Code:    ReasonCodeRealtimeEventOrderDrift,
+				Message: fmt.Sprintf("case %q %s realtime event order drift expected=%q actual=%q", caseName, lane, expected.RealtimeLastErrorCode, actual.RealtimeLastErrorCode),
+			}
+		case strings.Contains(expected.RealtimeLastErrorCode, "resume.") || strings.Contains(actual.RealtimeLastErrorCode, "resume."):
+			return &ValidationError{
+				Code:    ReasonCodeRealtimeResumeSemanticDrift,
+				Message: fmt.Sprintf("case %q %s realtime resume semantic drift expected=%q actual=%q", caseName, lane, expected.RealtimeLastErrorCode, actual.RealtimeLastErrorCode),
+			}
+		case strings.Contains(expected.RealtimeLastErrorCode, "interrupt.") || strings.Contains(actual.RealtimeLastErrorCode, "interrupt."):
+			return &ValidationError{
+				Code:    ReasonCodeRealtimeInterruptSemanticDrift,
+				Message: fmt.Sprintf("case %q %s realtime interrupt semantic drift expected=%q actual=%q", caseName, lane, expected.RealtimeLastErrorCode, actual.RealtimeLastErrorCode),
+			}
+		default:
+			return &ValidationError{
+				Code:    ReasonCodeRealtimeEventOrderDrift,
+				Message: fmt.Sprintf("case %q %s realtime error code drift expected=%q actual=%q", caseName, lane, expected.RealtimeLastErrorCode, actual.RealtimeLastErrorCode),
+			}
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s realtime semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
 }
 
 func validateHooksMiddlewareArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
@@ -2314,6 +2475,23 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.ReactPlanRecoverCount == right.ReactPlanRecoverCount &&
 			left.ReactPlanHookStatus == right.ReactPlanHookStatus
 	}
+	if version == ArbitrationFixtureVersionRealtimeProtocolV1 {
+		return left.ModelProvider == right.ModelProvider &&
+			left.ReactEnabled == right.ReactEnabled &&
+			left.ReactIterationTotal == right.ReactIterationTotal &&
+			left.ReactToolCallTotal == right.ReactToolCallTotal &&
+			left.ReactToolCallBudgetHitTotal == right.ReactToolCallBudgetHitTotal &&
+			left.ReactIterationBudgetHitTotal == right.ReactIterationBudgetHitTotal &&
+			left.ReactTerminationReason == right.ReactTerminationReason &&
+			left.ReactStreamDispatchEnabled == right.ReactStreamDispatchEnabled &&
+			left.RealtimeProtocolVersion == right.RealtimeProtocolVersion &&
+			left.RealtimeEventSeqMax == right.RealtimeEventSeqMax &&
+			left.RealtimeInterruptTotal == right.RealtimeInterruptTotal &&
+			left.RealtimeResumeTotal == right.RealtimeResumeTotal &&
+			left.RealtimeResumeSource == right.RealtimeResumeSource &&
+			left.RealtimeIdempotencyDedupTotal == right.RealtimeIdempotencyDedupTotal &&
+			left.RealtimeLastErrorCode == right.RealtimeLastErrorCode
+	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return left.SandboxEgressAction == right.SandboxEgressAction &&
 			left.SandboxEgressPolicySource == right.SandboxEgressPolicySource &&
@@ -2616,6 +2794,40 @@ func isCanonicalReactPlanAction(action string) bool {
 func isCanonicalReactPlanHookStatus(status string) bool {
 	switch strings.TrimSpace(status) {
 	case "ok", "degraded", "failed", "disabled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalRealtimeResumeSource(source string) bool {
+	switch strings.TrimSpace(source) {
+	case "", "cursor":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCanonicalRealtimeReasonCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "",
+		"realtime.event_order_drift",
+		"realtime.sequence_gap",
+		"realtime.resume.invalid_cursor",
+		"realtime.interrupt.freeze",
+		"realtime.unsupported_event_type",
+		"realtime.schema_invalid",
+		"realtime.buffer_overflow":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRealtimeOrderReasonCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "realtime.event_order_drift", "realtime.sequence_gap":
 		return true
 	default:
 		return false

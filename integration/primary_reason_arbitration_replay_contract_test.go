@@ -108,6 +108,12 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a65_skill_preprocess_and_mapping_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionSkillMappingV1,
 		},
+		{
+			name:          "a68-realtime-protocol",
+			versionFolder: "tool",
+			fixture:       "a68_realtime_event_protocol_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionRealtimeProtocolV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -426,6 +432,41 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeSkillBundleMappingDrift,
 			messageHas: "skill preprocess/mapping drift",
 		},
+		{
+			name:       "a68-realtime-event-order-drift",
+			versionDir: "tool",
+			fixture:    "a68_realtime_event_order_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRealtimeEventOrderDrift,
+			messageHas: "realtime event order drift",
+		},
+		{
+			name:       "a68-realtime-interrupt-semantic-drift",
+			versionDir: "tool",
+			fixture:    "a68_realtime_interrupt_semantic_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRealtimeInterruptSemanticDrift,
+			messageHas: "realtime interrupt semantic drift",
+		},
+		{
+			name:       "a68-realtime-resume-semantic-drift",
+			versionDir: "tool",
+			fixture:    "a68_realtime_resume_semantic_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRealtimeResumeSemanticDrift,
+			messageHas: "realtime resume semantic drift",
+		},
+		{
+			name:       "a68-realtime-idempotency-drift",
+			versionDir: "tool",
+			fixture:    "a68_realtime_idempotency_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRealtimeIdempotencyDrift,
+			messageHas: "realtime idempotency drift",
+		},
+		{
+			name:       "a68-realtime-sequence-gap-drift",
+			versionDir: "tool",
+			fixture:    "a68_realtime_sequence_gap_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRealtimeSequenceGapDrift,
+			messageHas: "realtime sequence gap drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -536,6 +577,7 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
+		"a68_realtime_event_protocol_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

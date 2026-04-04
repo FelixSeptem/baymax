@@ -288,6 +288,7 @@ type Config struct {
 
 type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
+	Realtime          RuntimeRealtimeConfig          `json:"realtime"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Admission         RuntimeAdmissionConfig         `json:"admission"`
 	State             RuntimeStateConfig             `json:"state"`
@@ -1260,6 +1261,18 @@ func DefaultConfig() Config {
 					Enabled:   false,
 					FailMode:  RuntimeReactPlanChangeHookFailModeFailFast,
 					TimeoutMs: 2000,
+				},
+			},
+			Realtime: RuntimeRealtimeConfig{
+				Protocol: RuntimeRealtimeProtocolConfig{
+					Enabled:           false,
+					Version:           RuntimeRealtimeProtocolVersionV1,
+					MaxBufferedEvents: 512,
+				},
+				InterruptResume: RuntimeRealtimeInterruptResumeConfig{
+					Enabled:             false,
+					ResumeCursorTTLMS:   300000,
+					IdempotencyWindowMS: 120000,
 				},
 			},
 			Readiness: RuntimeReadinessConfig{
@@ -2247,6 +2260,9 @@ func Validate(cfg Config) error {
 		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
 	}
 	if err := validateRuntimeReact(cfg.Runtime.React); err != nil {
+		return err
+	}
+	if err := validateRuntimeRealtime(cfg.Runtime.Realtime); err != nil {
 		return err
 	}
 	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
@@ -4206,6 +4222,10 @@ func validateRuntimeSession(cfg RuntimeSessionConfig) error {
 	return ValidateRuntimeSessionStateConfig(cfg.State)
 }
 
+func validateRuntimeRealtime(cfg RuntimeRealtimeConfig) error {
+	return ValidateRuntimeRealtimeConfig(cfg)
+}
+
 func validateRuntimeToolMiddleware(cfg RuntimeToolMiddlewareConfig) error {
 	return ValidateRuntimeToolMiddlewareConfig(cfg)
 }
@@ -4286,6 +4306,12 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.react.plan_change_hook.enabled", base.Runtime.React.PlanChangeHook.Enabled)
 	v.SetDefault("runtime.react.plan_change_hook.fail_mode", base.Runtime.React.PlanChangeHook.FailMode)
 	v.SetDefault("runtime.react.plan_change_hook.timeout_ms", base.Runtime.React.PlanChangeHook.TimeoutMs)
+	v.SetDefault("runtime.realtime.protocol.enabled", base.Runtime.Realtime.Protocol.Enabled)
+	v.SetDefault("runtime.realtime.protocol.version", base.Runtime.Realtime.Protocol.Version)
+	v.SetDefault("runtime.realtime.protocol.max_buffered_events", base.Runtime.Realtime.Protocol.MaxBufferedEvents)
+	v.SetDefault("runtime.realtime.interrupt_resume.enabled", base.Runtime.Realtime.InterruptResume.Enabled)
+	v.SetDefault("runtime.realtime.interrupt_resume.resume_cursor_ttl_ms", base.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS)
+	v.SetDefault("runtime.realtime.interrupt_resume.idempotency_window_ms", base.Runtime.Realtime.InterruptResume.IdempotencyWindowMS)
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
@@ -4780,6 +4806,26 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	realtimeProtocolEnabled, err := strictBoolConfigValue(v, "runtime.realtime.protocol.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	realtimeInterruptResumeEnabled, err := strictBoolConfigValue(v, "runtime.realtime.interrupt_resume.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	realtimeMaxBufferedEvents, err := strictIntConfigValue(v, "runtime.realtime.protocol.max_buffered_events")
+	if err != nil {
+		return Config{}, err
+	}
+	realtimeResumeCursorTTLMS, err := strictIntConfigValue(v, "runtime.realtime.interrupt_resume.resume_cursor_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	realtimeIdempotencyWindowMS, err := strictIntConfigValue(v, "runtime.realtime.interrupt_resume.idempotency_window_ms")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.React.Enabled = reactEnabled
 	cfg.Runtime.React.MaxIterations = v.GetInt("runtime.react.max_iterations")
 	cfg.Runtime.React.ToolCallLimit = v.GetInt("runtime.react.tool_call_limit")
@@ -4791,6 +4837,12 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.React.PlanChangeHook.Enabled = planChangeHookEnabled
 	cfg.Runtime.React.PlanChangeHook.FailMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.react.plan_change_hook.fail_mode")))
 	cfg.Runtime.React.PlanChangeHook.TimeoutMs = planChangeHookTimeoutMs
+	cfg.Runtime.Realtime.Protocol.Enabled = realtimeProtocolEnabled
+	cfg.Runtime.Realtime.Protocol.Version = strings.ToLower(strings.TrimSpace(v.GetString("runtime.realtime.protocol.version")))
+	cfg.Runtime.Realtime.Protocol.MaxBufferedEvents = realtimeMaxBufferedEvents
+	cfg.Runtime.Realtime.InterruptResume.Enabled = realtimeInterruptResumeEnabled
+	cfg.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS = realtimeResumeCursorTTLMS
+	cfg.Runtime.Realtime.InterruptResume.IdempotencyWindowMS = realtimeIdempotencyWindowMS
 	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
 	if err != nil {
 		return Config{}, err

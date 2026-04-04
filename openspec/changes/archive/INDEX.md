@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-03 22:42:18
+Updated: 2026-04-04 10:59:05
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -114,3 +114,4 @@ Updated: 2026-04-03 22:42:18
 - 110 -> introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65
 - 111 -> introduce-unified-state-and-session-snapshot-contract-a66
 - 112 -> introduce-react-plan-notebook-and-plan-change-hook-contract-a67
+- 113 -> introduce-realtime-event-protocol-and-interrupt-resume-contract-a68

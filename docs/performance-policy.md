@@ -103,7 +103,7 @@ pwsh -File scripts/check-ca4-benchmark-regression.ps1
 每次性能相关改动需提交：
 - 基线与候选对比表（相对百分比）
 - 指标异常解释
-- 后续优化 TODO（若未达目标）
+- 后续优化项（若未达目标）
 
 ## MCP 重构重复逻辑度量（结构性指标）
 

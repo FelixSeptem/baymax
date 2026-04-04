@@ -1,0 +1,27 @@
+{
+  "version": "realtime_event_protocol.v1",
+  "cases": [
+    {
+      "name": "realtime_protocol_success_case",
+      "canonical": {
+        "model_provider": "openai",
+        "react_enabled": true,
+        "react_iteration_total": 3,
+        "react_tool_call_total": 1,
+        "react_termination_reason": "react.completed",
+        "react_stream_dispatch_enabled": true,
+        "realtime_protocol_version": "realtime_event_protocol.v1",
+        "realtime_event_seq_max": 9,
+        "realtime_interrupt_total": 2,
+        "realtime_resume_total": 1,
+        "realtime_resume_source": "cursor",
+        "realtime_idempotency_dedup_total": 3,
+        "realtime_last_error_code": "realtime.interrupt.freeze"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 2,
+        "replay_logical_ingest_total": 2
+      }
+    }
+  ]
+}

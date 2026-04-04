@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-04-03
+更新时间：2026-04-04
 
 ## 目标
 
@@ -118,6 +118,12 @@
   - `runtime.react.plan_change_hook.enabled` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_ENABLED`
   - `runtime.react.plan_change_hook.fail_mode` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_FAIL_MODE`
   - `runtime.react.plan_change_hook.timeout_ms` -> `BAYMAX_RUNTIME_REACT_PLAN_CHANGE_HOOK_TIMEOUT_MS`
+  - `runtime.realtime.protocol.enabled` -> `BAYMAX_RUNTIME_REALTIME_PROTOCOL_ENABLED`
+  - `runtime.realtime.protocol.version` -> `BAYMAX_RUNTIME_REALTIME_PROTOCOL_VERSION`
+  - `runtime.realtime.protocol.max_buffered_events` -> `BAYMAX_RUNTIME_REALTIME_PROTOCOL_MAX_BUFFERED_EVENTS`
+  - `runtime.realtime.interrupt_resume.enabled` -> `BAYMAX_RUNTIME_REALTIME_INTERRUPT_RESUME_ENABLED`
+  - `runtime.realtime.interrupt_resume.resume_cursor_ttl_ms` -> `BAYMAX_RUNTIME_REALTIME_INTERRUPT_RESUME_RESUME_CURSOR_TTL_MS`
+  - `runtime.realtime.interrupt_resume.idempotency_window_ms` -> `BAYMAX_RUNTIME_REALTIME_INTERRUPT_RESUME_IDEMPOTENCY_WINDOW_MS`
   - `runtime.arbitration.version.enabled` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_ENABLED`
   - `runtime.arbitration.version.default` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_DEFAULT`
   - `runtime.arbitration.version.compat_window` -> `BAYMAX_RUNTIME_ARBITRATION_VERSION_COMPAT_WINDOW`
@@ -267,6 +273,15 @@ runtime:
       enabled: false                  # A67 默认关闭
       fail_mode: fail_fast            # fail_fast|degrade
       timeout_ms: 2000                # 必须 > 0；开启时要求 plan_notebook.enabled=true
+  realtime:
+    protocol:
+      enabled: false                  # A68 默认关闭
+      version: realtime_event_protocol.v1 # A68 固定协议版本
+      max_buffered_events: 64         # 必须 > 0
+    interrupt_resume:
+      enabled: false                  # A68 默认关闭
+      resume_cursor_ttl_ms: 300000    # 必须 > 0；resume cursor 过期窗口
+      idempotency_window_ms: 30000    # 必须 > 0；幂等吸收窗口
   readiness:
     enabled: true               # A40 默认开启
     strict: false               # A40 默认不升级 degraded
@@ -950,6 +965,15 @@ runtime react plan notebook（A67）校验语义：
 6. 组合约束：`runtime.react.plan_change_hook.enabled=true` 时必须满足 `runtime.react.plan_notebook.enabled=true`。
 7. 启动加载与热更新都遵循 fail-fast；非法配置会拒绝生效并保留上一有效快照。
 
+runtime realtime protocol（A68）校验语义：
+1. `runtime.realtime.protocol.enabled` 与 `runtime.realtime.interrupt_resume.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
+2. `runtime.realtime.protocol.version` 当前固定为 `realtime_event_protocol.v1`。
+3. `runtime.realtime.protocol.max_buffered_events` 必须 `> 0`。
+4. `runtime.realtime.interrupt_resume.resume_cursor_ttl_ms` 必须 `> 0`。
+5. `runtime.realtime.interrupt_resume.idempotency_window_ms` 必须 `> 0`。
+6. 组合约束：`runtime.realtime.interrupt_resume.enabled=true` 时必须满足 `runtime.realtime.protocol.enabled=true`。
+7. 启动加载与热更新都遵循 fail-fast；非法配置会拒绝生效并保留上一有效快照。
+
 adapter health（A43/A46）校验语义：
 1. `adapter.health.enabled|strict|backoff.enabled|circuit.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `adapter.health.probe_timeout` 与 `adapter.health.cache_ttl` 必须 `> 0`。
@@ -1153,6 +1177,7 @@ Mailbox diagnostics additive 字段（A35）：
 - Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
 - ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
 - ReAct Plan Notebook + Plan Change Hook（A67）：`react_plan_id`、`react_plan_version`、`react_plan_change_total`、`react_plan_last_action`、`react_plan_change_reason`、`react_plan_recover_count`、`react_plan_hook_status`
+- Realtime Protocol + Interrupt/Resume（A68）：`realtime_protocol_version`、`realtime_event_seq_max`、`realtime_interrupt_total`、`realtime_resume_total`、`realtime_resume_source`、`realtime_idempotency_dedup_total`、`realtime_last_error_code`
 - Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
 - Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
 - Budget Admission（A60）：`budget_snapshot`、`budget_decision`、`degrade_action`
@@ -1263,6 +1288,13 @@ Composed summary additive fields（contract markers）：
 - `react_iteration_budget_hit_total`
 - `react_termination_reason`
 - `react_stream_dispatch_enabled`
+- `realtime_protocol_version`
+- `realtime_event_seq_max`
+- `realtime_interrupt_total`
+- `realtime_resume_total`
+- `realtime_resume_source`
+- `realtime_idempotency_dedup_total`
+- `realtime_last_error_code`
 - `sandbox_egress_action`
 - `sandbox_egress_violation_total`
 - `sandbox_egress_policy_source`
@@ -1299,7 +1331,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60 + A65 + A66 + A67）
+## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60 + A65 + A66 + A67 + A68）
 
 离线回放命令：
 
@@ -1964,6 +1996,43 @@ A67 gate 与 required-check 暴露：
 - Windows: `pwsh -File scripts/check-react-plan-notebook-contract.ps1`
 - CI Job: `react-plan-notebook-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-react-plan-notebook-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+
+A68 在 A56/A58/A67 基础上冻结 realtime event protocol + interrupt/resume 合同，统一事件信封、序列推进、去重幂等与恢复游标语义，并保持 Run/Stream 语义等价。
+
+A68 配置域（默认值）：
+- `runtime.realtime.protocol.enabled`（`false`）
+- `runtime.realtime.protocol.version`（`realtime_event_protocol.v1`）
+- `runtime.realtime.protocol.max_buffered_events`（`64`，`> 0`）
+- `runtime.realtime.interrupt_resume.enabled`（`false`）
+- `runtime.realtime.interrupt_resume.resume_cursor_ttl_ms`（`300000`，`> 0`）
+- `runtime.realtime.interrupt_resume.idempotency_window_ms`（`30000`，`> 0`）
+
+A68 fail-fast/降级语义：
+- protocol event taxonomy 固定为 `request|delta|interrupt|resume|ack|error|complete`，非法类型在协议层 fail-fast。
+- realtime control-event 序列固定为单调递增 `seq`，乱序与 gap 必须产生 deterministic 分类（`realtime.event_order_drift|realtime.sequence_gap`）。
+- interrupt 进入受控冻结边界并记录 resume cursor；resume 必须校验 cursor 合法性，非法 cursor 直接拒绝（`realtime.resume.invalid_cursor`）。
+- 重复 event（event_id/dedup key）必须幂等吸收，不允许膨胀 interrupt/resume/logical counters。
+- 组合约束：`runtime.realtime.interrupt_resume.enabled=true` 时必须满足 `runtime.realtime.protocol.enabled=true`。
+
+A68 additive diagnostics 字段（`additive + nullable + default`）：
+- `realtime_protocol_version`
+- `realtime_event_seq_max`
+- `realtime_interrupt_total`
+- `realtime_resume_total`
+- `realtime_resume_source`
+- `realtime_idempotency_dedup_total`
+- `realtime_last_error_code`
+
+A68 replay fixture 与 drift 分类：
+- fixture：`realtime_event_protocol.v1`
+- drift：`realtime_event_order_drift`、`realtime_interrupt_semantic_drift`、`realtime_resume_semantic_drift`、`realtime_idempotency_drift`、`realtime_sequence_gap_drift`
+
+A68 gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-realtime-protocol-contract.sh`
+- Windows: `pwsh -File scripts/check-realtime-protocol-contract.ps1`
+- CI Job: `realtime-protocol-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-realtime-protocol-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- 边界断言：`realtime_control_plane_absent`（禁止托管实时网关/托管连接控制面）
 
 ## 热更新语义
 

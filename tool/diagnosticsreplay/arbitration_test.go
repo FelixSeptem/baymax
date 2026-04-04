@@ -54,6 +54,11 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			expected: "a67_react_plan_notebook_success_expected.json",
 		},
 		{
+			name:     "a68-realtime-protocol",
+			input:    "a68_realtime_event_protocol_success_input.json",
+			expected: "a68_realtime_event_protocol_success_expected.json",
+		},
+		{
 			name:     "a57-sandbox-egress-allowlist",
 			input:    "a57_sandbox_egress_success_input.json",
 			expected: "a57_sandbox_egress_success_expected.json",
@@ -412,6 +417,36 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantInText: "react plan recover drift",
 		},
 		{
+			name:       "a68-realtime-event-order-drift",
+			fixture:    "a68_realtime_event_order_drift_input.json",
+			wantCode:   ReasonCodeRealtimeEventOrderDrift,
+			wantInText: "realtime event order drift",
+		},
+		{
+			name:       "a68-realtime-interrupt-semantic-drift",
+			fixture:    "a68_realtime_interrupt_semantic_drift_input.json",
+			wantCode:   ReasonCodeRealtimeInterruptSemanticDrift,
+			wantInText: "realtime interrupt semantic drift",
+		},
+		{
+			name:       "a68-realtime-resume-semantic-drift",
+			fixture:    "a68_realtime_resume_semantic_drift_input.json",
+			wantCode:   ReasonCodeRealtimeResumeSemanticDrift,
+			wantInText: "realtime resume semantic drift",
+		},
+		{
+			name:       "a68-realtime-idempotency-drift",
+			fixture:    "a68_realtime_idempotency_drift_input.json",
+			wantCode:   ReasonCodeRealtimeIdempotencyDrift,
+			wantInText: "realtime idempotency drift",
+		},
+		{
+			name:       "a68-realtime-sequence-gap-drift",
+			fixture:    "a68_realtime_sequence_gap_drift_input.json",
+			wantCode:   ReasonCodeRealtimeSequenceGapDrift,
+			wantInText: "realtime sequence gap drift",
+		},
+		{
 			name:       "a56-react-schema-malformed",
 			fixture:    "a56_react_schema_malformed_input.json",
 			wantCode:   ReasonCodeSchemaMismatch,
@@ -662,6 +697,7 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
+		"a68_realtime_event_protocol_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -689,6 +725,7 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
+		"a68_realtime_event_protocol_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -829,6 +866,7 @@ func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
+		"a68_realtime_event_protocol_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture

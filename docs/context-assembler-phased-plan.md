@@ -64,7 +64,7 @@
   - Stage2：retrieval provider（支持 `file/http/rag/db/elasticsearch`）
 - 支持 `best-effort/fail-fast` 两种模式与超时策略。
 - 增加 tail recap（规则模板）将 `todo/decisions/status` 推送末尾。
-- 路由模式默认 rules；agentic hook 仅预留 TODO 扩展点。
+- 路由模式默认 rules；agentic hook 仅保留后续扩展接缝。
 - 新增外部检索接入：统一 Retriever SPI + 通用 HTTP adapter（JSON 映射、Bearer/自定义鉴权头）。
 - 新增 Stage2 诊断字段：`stage2_hit_count`、`stage2_source`、`stage2_reason`。
 
@@ -77,7 +77,7 @@
 ### CA2 边界（未包含）
 
 - 未实现 agentic routing 决策执行，仅保留接口占位与显式 not-ready 错误。
-- examples 目录本期不新增 CA2 示例，后续在 roadmap TODO 批次补齐。
+- examples 目录本期不新增 CA2 示例，后续按 roadmap 批次补齐。
 
 ### CA2 External Retriever 演进约束（与 roadmap 对齐）
 

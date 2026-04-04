@@ -13,10 +13,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-04-03）：
-- 已归档并稳定：A4-A61（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+当前里程碑快照（2026-04-04）：
+- 已归档并稳定：A4-A67（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - A67（Introduce ReAct Plan Notebook And Plan Change Hook Contract）进行中。
+  - A67-CTX（Introduce JIT Context Organization And Reference-First Assembly Contract）进行中。
   - A68（Introduce Realtime Event Protocol And Interrupt Resume Contract）进行中。
 
 版本阶段快照：
@@ -226,175 +226,33 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前进行中能力（最新）：
-- A67 `introduce-react-plan-notebook-and-plan-change-hook-contract-a67`：ReAct plan notebook + plan-change hook 契约。
+- A67-CTX `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约。
 - A68 `introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`：realtime event protocol + interrupt/resume 契约。
 
 近期已归档能力：
-- A51-A66 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+- A51-A67 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
 
-### A65 Hooks/Middleware + Skill Preprocess
+### 当前主线能力（现状）
 
-A65 在 runner 主循环中新增 lifecycle hooks、tool middleware 与 skill preprocess/bundle mapping 合同，并保持 Run/Stream 语义等价。
+- 进行中：
+  - A67-CTX：JIT context organization + reference-first assembly
+  - A68：realtime event protocol + interrupt/resume
+- 已归档稳定：A51-A67（包含 hooks/middleware、state/session snapshot、react plan notebook 等能力）
 
-最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
+当前主线建议优先关注：
+- 运行时配置与诊断字段：`docs/runtime-config-diagnostics.md`
+- 合同测试与门禁映射：`docs/mainline-contract-test-index.md`
+- 提案状态与范围边界：`docs/development-roadmap.md`
 
-```yaml
-runtime:
-  hooks:
-    enabled: true
-    phases: [before_reasoning, after_reasoning, before_acting, after_acting, before_reply, after_reply]
-    fail_mode: fail_fast # fail_fast|degrade
-    timeout: 2s
-  tool_middleware:
-    enabled: true
-    fail_mode: fail_fast # fail_fast|degrade
-    timeout: 2s
-  skill:
-    discovery:
-      mode: hybrid # agents_md|folder|hybrid
-      roots: ["./skills"]
-    preprocess:
-      enabled: true
-      phase: before_run_stream
-      fail_mode: fail_fast # fail_fast|degrade
-    bundle_mapping:
-      prompt_mode: append # disabled|append
-      whitelist_mode: merge # disabled|merge
-      conflict_policy: first_win # fail_fast|first_win
-```
-
-合同门禁（A65）：
+A68 专项门禁：
 
 ```bash
-bash scripts/check-hooks-middleware-contract.sh
+bash scripts/check-realtime-protocol-contract.sh
 ```
 
 ```powershell
-pwsh -File scripts/check-hooks-middleware-contract.ps1
+pwsh -File scripts/check-realtime-protocol-contract.ps1
 ```
-
-### A66 Unified State/Session Snapshot Contract
-
-A66 在 composer/scheduler/memory/recovery 接缝上提供统一 snapshot 导入导出合同，并补齐 strict|compatible 恢复策略、compat window、重复导入幂等与回放门禁口径。
-
-最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
-
-```yaml
-runtime:
-  state:
-    snapshot:
-      enabled: false
-      restore_mode: strict # strict|compatible
-      compat_window: 1
-      schema_version: state_session_snapshot.v1
-  session:
-    state:
-      enabled: false
-      partial_restore_policy: reject # reject|allow
-```
-
-新增运行诊断字段（additive + nullable + default）：
-- `state_snapshot_version`
-- `state_restore_action`
-- `state_restore_conflict_code`
-- `state_restore_source`
-
-合同门禁（A66）：
-
-```bash
-bash scripts/check-state-snapshot-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-state-snapshot-contract.ps1
-```
-
-### A67 ReAct Plan Notebook + Plan Change Hook Contract
-
-A67 在 A56 ReAct loop 基础上新增计划治理合同，固定 `create|revise|complete|recover` 生命周期，并在计划变更边界提供 `before_plan_change` / `after_plan_change` hook。
-
-最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
-
-```yaml
-runtime:
-  react:
-    plan_notebook:
-      enabled: false
-      max_history: 32
-      on_recover_conflict: reject # reject|prefer_latest
-    plan_change_hook:
-      enabled: false
-      fail_mode: fail_fast # fail_fast|degrade
-      timeout_ms: 2000
-```
-
-新增运行诊断字段（additive + nullable + default）：
-- `react_plan_id`
-- `react_plan_version`
-- `react_plan_change_total`
-- `react_plan_last_action`
-- `react_plan_change_reason`
-- `react_plan_recover_count`
-- `react_plan_hook_status`
-
-合同门禁（A67）：
-
-```bash
-bash scripts/check-react-plan-notebook-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-react-plan-notebook-contract.ps1
-```
-
-### 9) ReAct 最小接入蓝图（A56）
-
-ReAct loop 在主线默认可用（`runtime.react.enabled=true`），Run/Stream 共享同一 loop 终止 taxonomy 与预算语义。
-
-最小配置（`env > file > default`，支持热更新 + 非法更新回滚）：
-
-```yaml
-runtime:
-  react:
-    enabled: true
-    max_iterations: 12
-    tool_call_limit: 64
-    stream_tool_dispatch_enabled: true
-    on_budget_exhausted: fail_fast
-```
-
-最小接入要点：
-- Run 与 Stream 使用同一份 `types.RunRequest`（含 `Policy`），确保 budget/termination 口径等价。
-- 为模型适配器实现 tool-calling capability 探测，并保持 provider canonical tool-call 映射一致。
-- 在 loop step-boundary 做工具分发与 feedback 回灌，避免 mid-step 语义漂移。
-- 通过 `runtime/config.Manager` 注入 readiness/admission，确保 `react.*` finding 与 deny path side-effect-free。
-
-合同门禁（A56）：
-
-```bash
-bash scripts/check-react-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-react-contract.ps1
-```
-
-### 10) Runtime Readiness Admission（A44）
-
-默认值（保持历史行为不变）：
-- `runtime.readiness.admission.enabled=false`
-- `runtime.readiness.admission.mode=fail_fast`
-- `runtime.readiness.admission.block_on=blocked_only`
-- `runtime.readiness.admission.degraded_policy=allow_and_record`
-
-启用后，managed `Composer.Run/Stream` 在执行前统一做 admission 判定：
-- `blocked`：拒绝执行（fail-fast）。
-- `degraded`：按 `degraded_policy` 决定 `allow_and_record` 或 `fail_fast`。
-- 拒绝路径保证不触发 scheduler enqueue / mailbox publish / task lifecycle mutation。
-
-历史已归档里程碑：
-- A4-A53 的归档明细与能力范围请以 `docs/development-roadmap.md` 与 `openspec/changes/archive/INDEX.md` 为准。
-- 主线契约测试映射请查看 `docs/mainline-contract-test-index.md`。
 
 状态权威来源：
 - `openspec list --json`
@@ -410,6 +268,7 @@ go test -race ./...
 golangci-lint run --config .golangci.yml
 bash scripts/check-react-contract.sh
 bash scripts/check-react-plan-notebook-contract.sh
+bash scripts/check-realtime-protocol-contract.sh
 bash scripts/check-sandbox-egress-allowlist-contract.sh
 bash scripts/check-policy-precedence-contract.sh
 bash scripts/check-observability-export-and-bundle-contract.sh
@@ -427,6 +286,7 @@ pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
 pwsh -File scripts/check-react-contract.ps1
 pwsh -File scripts/check-react-plan-notebook-contract.ps1
+pwsh -File scripts/check-realtime-protocol-contract.ps1
 pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
 pwsh -File scripts/check-policy-precedence-contract.ps1
 pwsh -File scripts/check-observability-export-and-bundle-contract.ps1

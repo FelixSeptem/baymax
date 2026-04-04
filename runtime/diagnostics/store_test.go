@@ -717,6 +717,107 @@ func TestStoreRunA67QueryRunsParserCompatibilityAdditiveNullableDefault(t *testi
 	}
 }
 
+func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                          time.Now(),
+		RunID:                         "run-a68-realtime",
+		Status:                        "success",
+		RealtimeProtocolVersion:       "realtime_event_protocol.v1",
+		RealtimeEventSeqMax:           12,
+		RealtimeInterruptTotal:        1,
+		RealtimeResumeTotal:           1,
+		RealtimeResumeSource:          "cursor",
+		RealtimeIdempotencyDedupTotal: 2,
+		RealtimeLastErrorCode:         "",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.RealtimeProtocolVersion != "realtime_event_protocol.v1" ||
+		got.RealtimeEventSeqMax != 12 ||
+		got.RealtimeInterruptTotal != 1 ||
+		got.RealtimeResumeTotal != 1 ||
+		got.RealtimeResumeSource != "cursor" ||
+		got.RealtimeIdempotencyDedupTotal != 2 {
+		t.Fatalf("A68 additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.RealtimeEventSeqMax = 24
+	rec.RealtimeInterruptTotal = 2
+	rec.RealtimeResumeTotal = 2
+	rec.RealtimeResumeSource = "persisted_cursor"
+	rec.RealtimeIdempotencyDedupTotal = 4
+	rec.RealtimeLastErrorCode = "realtime.sequence_gap"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.RealtimeEventSeqMax != 24 ||
+		got.RealtimeInterruptTotal != 2 ||
+		got.RealtimeResumeTotal != 2 ||
+		got.RealtimeResumeSource != "persisted_cursor" ||
+		got.RealtimeIdempotencyDedupTotal != 4 ||
+		got.RealtimeLastErrorCode != "realtime.sequence_gap" {
+		t.Fatalf("A68 additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a68-realtime"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].RealtimeEventSeqMax != 24 ||
+		page.Items[0].RealtimeInterruptTotal != 2 ||
+		page.Items[0].RealtimeResumeTotal != 2 ||
+		page.Items[0].RealtimeResumeSource != "persisted_cursor" ||
+		page.Items[0].RealtimeIdempotencyDedupTotal != 4 ||
+		page.Items[0].RealtimeLastErrorCode != "realtime.sequence_gap" {
+		t.Fatalf("A68 QueryRuns additive parse mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunA68QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.AddRun(RunRecord{
+		Time:      time.Now(),
+		RunID:     "run-a68-compat",
+		Status:    "success",
+		LatencyMs: 21,
+	})
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a68-compat"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len=%d, want 1", len(page.Items))
+	}
+	got := page.Items[0]
+	if got.Status != "success" || got.LatencyMs != 21 {
+		t.Fatalf("existing fields mismatch: %#v", got)
+	}
+	if got.RealtimeProtocolVersion != "" ||
+		got.RealtimeEventSeqMax != 0 ||
+		got.RealtimeInterruptTotal != 0 ||
+		got.RealtimeResumeTotal != 0 ||
+		got.RealtimeResumeSource != "" ||
+		got.RealtimeIdempotencyDedupTotal != 0 ||
+		got.RealtimeLastErrorCode != "" {
+		t.Fatalf("missing A68 additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

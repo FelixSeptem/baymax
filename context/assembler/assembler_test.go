@@ -538,10 +538,82 @@ func TestAssemblerCA2RecapAppended(t *testing.T) {
 	if result.Recap.Status != types.RecapStatusAppended && result.Recap.Status != types.RecapStatusTruncated {
 		t.Fatalf("recap status = %q, want appended/truncated", result.Recap.Status)
 	}
+	if result.Stage.ContextRecapSource != contextRecapSourceTaskAwareV1 {
+		t.Fatalf("context recap source = %q, want %q", result.Stage.ContextRecapSource, contextRecapSourceTaskAwareV1)
+	}
+	if !containsRecapItem(result.Recap.Tail.Decisions, "stage_status=stage1_only") {
+		t.Fatalf("task-aware recap should include stage status decision, got %#v", result.Recap.Tail.Decisions)
+	}
+	if !containsRecapItem(result.Recap.Tail.Todo, "review_stage2_skip_reason="+result.Stage.Stage2SkipReason) {
+		t.Fatalf("task-aware recap should include skip-reason todo, got %#v", result.Recap.Tail.Todo)
+	}
+	if recapContainsStaticTemplate(result.Recap.Tail) {
+		t.Fatalf("task-aware recap should not include static template phrases, got %#v", result.Recap.Tail)
+	}
 	last := outReq.Messages[len(outReq.Messages)-1].Content
 	if !strings.HasPrefix(last, "tail_recap:") {
 		t.Fatalf("tail recap message missing: %q", last)
 	}
+}
+
+func TestBuildTaskAwareTailRecapStableOrdering(t *testing.T) {
+	recap, source := buildTaskAwareTailRecap(runtimeconfig.DefaultConfig().ContextAssembler.CA2, types.AssembleStage{
+		Status:                        types.AssembleStageStatusStage2Used,
+		Stage2RouterMode:              "agentic",
+		Stage2RouterDecision:          "run_stage2",
+		Stage2Provider:                "file",
+		Stage2ReasonCode:              "partial_missing_refs",
+		ContextRefDiscoverCount:       5,
+		ContextRefResolveCount:        3,
+		ContextEditGateDecision:       contextEditGateDecisionDenyGainRatio,
+		ContextSwapbackRelevanceScore: 0.8254,
+		ContextLifecycleTierStats: map[string]int{
+			"migrate_warm_to_cold": 2,
+			"hot":                  1,
+			"pruned":               4,
+			"warm":                 3,
+			"cold":                 5,
+		},
+	})
+
+	if source != contextRecapSourceTaskAwareV1 {
+		t.Fatalf("recap source = %q, want %q", source, contextRecapSourceTaskAwareV1)
+	}
+	if !containsRecapItem(recap.Decisions, "lifecycle_tiering=hot=1,warm=3,cold=5,pruned=4,migrate_warm_to_cold=2") {
+		t.Fatalf("lifecycle tiering summary must be stable-ordered, got %#v", recap.Decisions)
+	}
+	if !containsRecapItem(recap.Todo, "resolve_missing_refs=2") {
+		t.Fatalf("todo should include unresolved refs, got %#v", recap.Todo)
+	}
+	if recapContainsStaticTemplate(recap) {
+		t.Fatalf("task-aware recap should not include static template phrases, got %#v", recap)
+	}
+}
+
+func containsRecapItem(items []string, want string) bool {
+	for _, item := range items {
+		if strings.TrimSpace(item) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func recapContainsStaticTemplate(recap types.TailRecap) bool {
+	phrases := []string{
+		"review_stage2_quality",
+		"evaluate_agentic_routing_todo",
+	}
+	all := append(append(append([]string{}, recap.Decisions...), recap.Todo...), recap.Risks...)
+	for _, item := range all {
+		normalized := strings.ToLower(strings.TrimSpace(item))
+		for _, phrase := range phrases {
+			if strings.Contains(normalized, phrase) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {

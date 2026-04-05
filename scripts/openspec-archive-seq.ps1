@@ -114,17 +114,20 @@ function Migrate-ExistingArchive {
     }
 
     $used = @{}
+    $occupiedSeq = @{}
     $plan = New-Object System.Collections.ArrayList
 
-    # First, enforce explicit historical order.
+    # First, enforce explicit historical order for preferred slugs only.
     for ($i = 0; $i -lt $Preferred.Count; $i++) {
         $slug = $Preferred[$i]
-        $target = ("{0:D3}-{1}" -f ($i + 1), $slug)
+        $seq = $i + 1
+        $target = ("{0:D3}-{1}" -f $seq, $slug)
         $match = $dirs | Where-Object { (Get-SlugFromArchiveDirName -Name $_.Name) -eq $slug } | Select-Object -First 1
         if ($null -eq $match) {
             continue
         }
         $used[$match.FullName] = $true
+        $occupiedSeq[$seq] = $true
         if ($match.Name -ne $target) {
             [void]$plan.Add([pscustomobject]@{
                     Source = $match.Name
@@ -133,12 +136,37 @@ function Migrate-ExistingArchive {
         }
     }
 
-    # Then assign sequence numbers to remaining directories.
-    $next = $Preferred.Count + 1
-    $left = $dirs | Where-Object { -not $used.ContainsKey($_.FullName) } | Sort-Object LastWriteTime, Name
+    # Preserve existing numeric sequence assignments for non-preferred slugs when possible.
+    $pending = New-Object System.Collections.ArrayList
+    $left = $dirs | Where-Object { -not $used.ContainsKey($_.FullName) } | Sort-Object Name
     foreach ($d in $left) {
         $slug = Get-SlugFromArchiveDirName -Name $d.Name
+        $existingSeq = Get-SeqFromArchiveDirName -Name $d.Name
+
+        if ($null -ne $existingSeq -and -not $occupiedSeq.ContainsKey($existingSeq)) {
+            $occupiedSeq[$existingSeq] = $true
+            $target = ("{0:D3}-{1}" -f $existingSeq, $slug)
+            if ($d.Name -ne $target) {
+                [void]$plan.Add([pscustomobject]@{
+                        Source = $d.Name
+                        Target = $target
+                    })
+            }
+            continue
+        }
+
+        [void]$pending.Add($d)
+    }
+
+    # Assign sequence numbers only for unresolved/non-numeric/colliding entries.
+    $next = 1
+    foreach ($d in ($pending | Sort-Object LastWriteTime, Name)) {
+        while ($occupiedSeq.ContainsKey($next)) {
+            $next++
+        }
+        $slug = Get-SlugFromArchiveDirName -Name $d.Name
         $target = ("{0:D3}-{1}" -f $next, $slug)
+        $occupiedSeq[$next] = $true
         if ($d.Name -ne $target) {
             [void]$plan.Add([pscustomobject]@{
                     Source = $d.Name

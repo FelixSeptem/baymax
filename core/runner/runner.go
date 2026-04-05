@@ -124,6 +124,12 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 			}
 			return runtimeconfig.DefaultConfig().Runtime.Memory
 		}),
+		assembler.WithRuntimeContextConfigProvider(func() runtimeconfig.RuntimeContextConfig {
+			if e.runtimeMgr != nil {
+				return e.runtimeMgr.EffectiveConfig().Runtime.Context
+			}
+			return runtimeconfig.DefaultConfig().Runtime.Context
+		}),
 	)
 	e.registerModel(model)
 	for _, opt := range opts {
@@ -3001,6 +3007,27 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if meta.Assemble.Stage.Stage2ErrorLayer != "" {
 		payload["stage2_error_layer"] = meta.Assemble.Stage.Stage2ErrorLayer
+	}
+	if meta.Assemble.Stage.ContextRefDiscoverCount > 0 {
+		payload["context_ref_discover_count"] = meta.Assemble.Stage.ContextRefDiscoverCount
+	}
+	if meta.Assemble.Stage.ContextRefResolveCount > 0 {
+		payload["context_ref_resolve_count"] = meta.Assemble.Stage.ContextRefResolveCount
+	}
+	if meta.Assemble.Stage.ContextEditEstimatedSavedTokens > 0 || meta.Assemble.Stage.ContextEditGateDecision != "" {
+		payload["context_edit_estimated_saved_tokens"] = meta.Assemble.Stage.ContextEditEstimatedSavedTokens
+	}
+	if meta.Assemble.Stage.ContextEditGateDecision != "" {
+		payload["context_edit_gate_decision"] = meta.Assemble.Stage.ContextEditGateDecision
+	}
+	if meta.Assemble.Stage.ContextSwapbackRelevanceScore > 0 {
+		payload["context_swapback_relevance_score"] = meta.Assemble.Stage.ContextSwapbackRelevanceScore
+	}
+	if len(meta.Assemble.Stage.ContextLifecycleTierStats) > 0 {
+		payload["context_lifecycle_tier_stats"] = meta.Assemble.Stage.ContextLifecycleTierStats
+	}
+	if meta.Assemble.Stage.ContextRecapSource != "" {
+		payload["context_recap_source"] = meta.Assemble.Stage.ContextRecapSource
 	}
 	if meta.Assemble.Stage.PressureZone != "" {
 		payload["ca3_pressure_zone"] = meta.Assemble.Stage.PressureZone

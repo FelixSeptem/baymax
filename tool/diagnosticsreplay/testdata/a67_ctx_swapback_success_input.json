@@ -1,0 +1,24 @@
+{
+  "version": "context_relevance_swapback.v1",
+  "cases": [
+    {
+      "name": "context_swapback_success_case",
+      "run": {
+        "context_swapback_relevance_score": 0.82,
+        "context_recap_source": "TASK_AWARE.STAGE_ACTIONS.V1"
+      },
+      "stream": {
+        "context_swapback_relevance_score": 0.82,
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "context_swapback_relevance_score": 0.82,
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

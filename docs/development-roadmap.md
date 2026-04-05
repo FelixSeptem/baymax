@@ -16,10 +16,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
 截至 2026-04-04：
-- 已归档并稳定：A4-A67（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
-- 进行中：
+- 已归档并稳定：A4-A68（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档：
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization + reference-first assembly）
-  - `introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`（realtime event protocol + interrupt/resume）
+- 进行中：
+  - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation + semantic labeling）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -582,14 +583,14 @@ A56 一次性闭环审查（10.4）：
 5. A65（已归档，P2）：agent lifecycle hooks + tool middleware contract。
 6. A66（已归档，P2）：unified state/session snapshot contract。
 7. A67（已归档，P2）：react plan notebook + plan-change hook contract。
-8. A68（进行中，P2）：realtime event protocol + interrupt/resume contract。
-9. A67-CTX（进行中，P2）：jit context organization + reference-first assembly contract（ReAct 场景上下文组织专项）。
-10. A63（候选，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+8. A68（已归档，P2）：realtime event protocol + interrupt/resume contract。
+9. A67-CTX（已归档，P2）：jit context organization + reference-first assembly contract（ReAct 场景上下文组织专项）。
+10. A63（进行中，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
 11. A64（候选，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
 12. A62（候选，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 后续项目说明（避免“单一路线”误解）：
-- A68/A67-CTX（进行中）与 A63/A64/A62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- A63（进行中）与 A67-CTX（已归档）、A68（已归档）、A64/A62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
 - A58-A61 已归档，用作稳定基线，不再作为当前推进主路径。
 - 前置切换仅在以下风险信号出现时触发：实时交互压力（A68）、上下文组织漂移（A67-CTX）、命名/文档收敛压力（A63）、性能回归压力（A64）、交付易用性压力（A62）。
 - A64 前置时仍按 `A64-S1 -> ... -> A64-S10` 风险链路吸收，允许按瓶颈调整顺序。
@@ -727,7 +728,7 @@ A56 一次性闭环审查（10.4）：
   - realtime contract 的增量需求可在 A68 tasks 内吸收，不再拆分 A68 平行子提案。
 - 当前状态：进行中（OpenSpec `in-progress`）。
 
-提案 A67-CTX（进行中）：`introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`
+提案 A67-CTX（已归档）：`introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`
 - 目标：以“顺滑支撑 ReAct 模式”为导向，在不破坏既有 CA 合同语义前提下，一次性补齐 JIT context organization 的核心契约，降低上下文噪声与膨胀风险。
 - 范围（聚焦 6 项，避免后续重复拆提案）：
   - reference-first stage2：新增 `discover_refs -> resolve_selected_refs` 两段式注入路径，优先注入引用（path/id/type/locator），按需再展开正文；
@@ -759,9 +760,9 @@ A56 一次性闭环审查（10.4）：
 - 退出条件（DoD）：
   - 六类 fixture 与 gate 全绿，且 Run/Stream 语义不漂移；
   - context 组织新增诉求可在 A67-CTX 内闭环吸收，不再拆分平行提案。
-- 当前状态：进行中（OpenSpec `in-progress`）。
+- 当前状态：已归档（详见 `openspec/changes/archive/113-introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`）。
 
-提案 A63（候选）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
+提案 A63（进行中）：`introduce-codebase-consolidation-and-semantic-labeling-contract-a63`
 - 目标（简版）：在不改变运行时语义前提下，完成仓库“代码与文档收敛整顿”，降低历史负担与命名歧义。
 - 范围（简版）：
   - 临时文档/目录治理：清理或归档 `docs/drafts`、示例与脚手架生成物等临时资产，建立统一收口规则；
@@ -1006,7 +1007,9 @@ A65-A68 与 A67-CTX 验收口径（简版）：
 - A67-CTX（jit context organization）：
   - 字段：`runtime.context.jit.reference_first.*`、`runtime.context.jit.isolate_handoff.*`、`runtime.context.jit.edit_gate.*`、`runtime.context.jit.swap_back.*`、`runtime.context.jit.lifecycle_tiering.*`
   - 回放：`context_reference_first.v1`、`context_isolate_handoff.v1`、`context_edit_gate.v1`、`context_relevance_swapback.v1`、`context_lifecycle_tiering.v1`
+  - 边界断言：`context_provider_sdk_absent`（禁止 `context/*` 直连 provider 官方 SDK）
   - 门禁：`check-context-jit-organization-contract.*`
+  - CI 候选：`context-jit-organization-contract-gate`
 
 跨提案联动收口（避免后续再开同域提案）：
 - A58 冻结 `policy_decision_path` 与 `deny_source` 后，A60/A61 禁止重定义同义字段，仅允许引用。
@@ -1038,10 +1041,11 @@ A65-A68 与 A67-CTX 验收口径（简版）：
 - 若出现新增需求，优先以 A58-A68 与 A67-CTX 的“增量任务”吸收，默认不新增 A69+ 同域提案。
 
 状态对齐说明（2026-04-04）：
-- 已归档并稳定：A58-A67（A4-A57 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：A67-CTX、A68。
-- 候选未启动：A63、A64、A62。
-- 顺序约束保持不变：先收口进行中 A67-CTX/A68，再做代码收敛（A63）、性能治理（A64）与交付易用性示例收口（A62）。
+- 已归档并稳定：A58-A68（A4-A57 归档历史见 `openspec/changes/archive/INDEX.md`）。
+- 进行中：A63。
+- 已归档：A67-CTX。
+- 候选未启动：A64、A62。
+- 顺序约束保持不变：先收口进行中 A63，再做性能治理（A64）与交付易用性示例收口（A62）。
 
 ### P2：0.x 质量与治理持续收敛
 

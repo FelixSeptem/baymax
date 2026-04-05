@@ -14,10 +14,11 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `openspec list --json`
 
 当前里程碑快照（2026-04-04）：
-- 已归档并稳定：A4-A67（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已归档并稳定：A4-A68（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 进行中：
-  - A67-CTX（Introduce JIT Context Organization And Reference-First Assembly Contract）进行中。
-  - A68（Introduce Realtime Event Protocol And Interrupt Resume Contract）进行中。
+  - A63（Introduce Codebase Consolidation And Semantic Labeling Contract）进行中。
+- 已归档：
+  - A67-CTX（Introduce JIT Context Organization And Reference-First Assembly Contract）已归档。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -225,19 +226,20 @@ _ = err
 - 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、全链路 smoke gate、文档一致性 gate。
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
-当前进行中能力（最新）：
-- A67-CTX `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约。
-- A68 `introduce-realtime-event-protocol-and-interrupt-resume-contract-a68`：realtime event protocol + interrupt/resume 契约。
+当前主线能力状态（最新）：
+- A63 `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约。
+- A67-CTX `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
 
 近期已归档能力：
-- A51-A67 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+- A51-A68 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
 
 ### 当前主线能力（现状）
 
 - 进行中：
+  - A63：codebase consolidation + semantic labeling
+- 已归档：
   - A67-CTX：JIT context organization + reference-first assembly
-  - A68：realtime event protocol + interrupt/resume
-- 已归档稳定：A51-A67（包含 hooks/middleware、state/session snapshot、react plan notebook 等能力）
+- 已归档稳定：A51-A68（包含 hooks/middleware、state/session snapshot、react plan notebook、realtime event protocol 等能力）
 
 当前主线建议优先关注：
 - 运行时配置与诊断字段：`docs/runtime-config-diagnostics.md`
@@ -254,6 +256,16 @@ bash scripts/check-realtime-protocol-contract.sh
 pwsh -File scripts/check-realtime-protocol-contract.ps1
 ```
 
+A67-CTX 专项门禁：
+
+```bash
+bash scripts/check-context-jit-organization-contract.sh
+```
+
+```powershell
+pwsh -File scripts/check-context-jit-organization-contract.ps1
+```
+
 状态权威来源：
 - `openspec list --json`
 - `openspec/changes/archive/INDEX.md`
@@ -268,6 +280,7 @@ go test -race ./...
 golangci-lint run --config .golangci.yml
 bash scripts/check-react-contract.sh
 bash scripts/check-react-plan-notebook-contract.sh
+bash scripts/check-context-jit-organization-contract.sh
 bash scripts/check-realtime-protocol-contract.sh
 bash scripts/check-sandbox-egress-allowlist-contract.sh
 bash scripts/check-policy-precedence-contract.sh
@@ -286,6 +299,7 @@ pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
 pwsh -File scripts/check-react-contract.ps1
 pwsh -File scripts/check-react-plan-notebook-contract.ps1
+pwsh -File scripts/check-context-jit-organization-contract.ps1
 pwsh -File scripts/check-realtime-protocol-contract.ps1
 pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
 pwsh -File scripts/check-policy-precedence-contract.ps1

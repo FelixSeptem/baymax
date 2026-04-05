@@ -575,6 +575,61 @@ type ContextAssembleResult struct {
 	Recap        RecapMetadata  `json:"recap,omitempty"`
 }
 
+type ContextReference struct {
+	ID      string   `json:"id,omitempty"`
+	Type    string   `json:"type,omitempty"`
+	Locator string   `json:"locator,omitempty"`
+	Source  string   `json:"source,omitempty"`
+	Summary string   `json:"summary,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
+}
+
+type ContextReferenceDiscoveryPayload struct {
+	References       []ContextReference `json:"references,omitempty"`
+	Deduplicated     int                `json:"deduplicated,omitempty"`
+	MaxRefsApplied   int                `json:"max_refs_applied,omitempty"`
+	DiscoverFrom     string             `json:"discover_from,omitempty"`
+	ReferenceVersion string             `json:"reference_version,omitempty"`
+}
+
+type ContextReferenceResolutionItem struct {
+	Reference ContextReference `json:"reference"`
+	Content   string           `json:"content,omitempty"`
+	Tokens    int              `json:"tokens,omitempty"`
+}
+
+type ContextReferenceResolutionPayload struct {
+	Resolved         []ContextReferenceResolutionItem `json:"resolved,omitempty"`
+	Missing          []ContextReference               `json:"missing,omitempty"`
+	BudgetUsedTokens int                              `json:"budget_used_tokens,omitempty"`
+	MaxTokens        int                              `json:"max_tokens,omitempty"`
+	Truncated        bool                             `json:"truncated,omitempty"`
+}
+
+type IsolateHandoffArtifact struct {
+	ID      string `json:"id,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Locator string `json:"locator,omitempty"`
+	Body    string `json:"body,omitempty"`
+}
+
+type IsolateHandoffPayload struct {
+	Summary      string                   `json:"summary,omitempty"`
+	Artifacts    []IsolateHandoffArtifact `json:"artifacts,omitempty"`
+	EvidenceRefs []ContextReference       `json:"evidence_refs,omitempty"`
+	Confidence   float64                  `json:"confidence,omitempty"`
+	TTL          int64                    `json:"ttl,omitempty"`
+}
+
+type IsolateHandoffIngestionPayload struct {
+	Handoffs        []IsolateHandoffPayload `json:"handoffs,omitempty"`
+	AcceptedTotal   int                     `json:"accepted_total,omitempty"`
+	RejectedTotal   int                     `json:"rejected_total,omitempty"`
+	RejectedReasons []string                `json:"rejected_reasons,omitempty"`
+	DeferBody       bool                    `json:"defer_body,omitempty"`
+	Version         string                  `json:"version,omitempty"`
+}
+
 type AssembleStageStatus string
 
 const (
@@ -649,6 +704,13 @@ type AssembleStage struct {
 	CompactionRerankerRolloutHit      bool             `json:"compaction_reranker_rollout_hit,omitempty"`
 	CompactionRerankerThresholdDrift  float64          `json:"compaction_reranker_threshold_drift,omitempty"`
 	RetainedEvidenceCount             int              `json:"retained_evidence_count,omitempty"`
+	ContextRefDiscoverCount           int              `json:"context_ref_discover_count,omitempty"`
+	ContextRefResolveCount            int              `json:"context_ref_resolve_count,omitempty"`
+	ContextEditEstimatedSavedTokens   int              `json:"context_edit_estimated_saved_tokens,omitempty"`
+	ContextEditGateDecision           string           `json:"context_edit_gate_decision,omitempty"`
+	ContextSwapbackRelevanceScore     float64          `json:"context_swapback_relevance_score,omitempty"`
+	ContextLifecycleTierStats         map[string]int   `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextRecapSource                string           `json:"context_recap_source,omitempty"`
 }
 
 type TailRecap struct {

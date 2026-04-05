@@ -41,6 +41,7 @@ type ca3RunState struct {
 	TriggerCounts      map[string]int
 	AccessFrequency    map[string]int
 	SpilledByRun       map[string]spillRecord
+	SpillTierByRef     map[string]string
 	SpillWrites        map[string]struct{}
 	LastTokenEstimate  int
 	LastTokenSignature string
@@ -48,12 +49,13 @@ type ca3RunState struct {
 }
 
 type spillRecord struct {
-	RunID     string    `json:"run_id"`
-	SessionID string    `json:"session_id,omitempty"`
-	Stage     string    `json:"stage"`
-	OriginRef string    `json:"origin_ref"`
-	Content   string    `json:"content"`
-	SpilledAt time.Time `json:"spilled_at"`
+	RunID        string    `json:"run_id"`
+	SessionID    string    `json:"session_id,omitempty"`
+	Stage        string    `json:"stage"`
+	OriginRef    string    `json:"origin_ref"`
+	Content      string    `json:"content"`
+	EvidenceTags []string  `json:"evidence_tags,omitempty"`
+	SpilledAt    time.Time `json:"spilled_at"`
 }
 
 type SpillBackend interface {
@@ -150,8 +152,12 @@ func (a *Assembler) applyCA3(
 	now := a.now()
 	compactionMode := normalizeCompactionMode(cfg.CA3.Compaction.Mode)
 	outcome.Stage.CompactionMode = compactionMode
+	runtimeContextCfg := runtimeconfig.DefaultConfig().Runtime.Context
+	if a.runtimeContextConfig != nil {
+		runtimeContextCfg = a.runtimeContextConfig()
+	}
 
-	swapBackCount, err := a.swapBackIfNeeded(ctx, req, &modelReq, cfg.CA3, state)
+	swapBackCount, swapBackRelevance, err := a.swapBackIfNeeded(ctx, req, &modelReq, cfg.CA3, runtimeContextCfg, state)
 	if err != nil {
 		return modelReq, outcome, decision, err
 	}
@@ -357,6 +363,23 @@ func (a *Assembler) applyCA3(
 	}
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
+	}
+	if swapBackRelevance > 0 {
+		outcome.Stage.ContextSwapbackRelevanceScore = swapBackRelevance
+	}
+	if runtimeContextCfg.JIT.LifecycleTiering.Enabled {
+		tierStats, lifecycleAction := applyLifecycleTiering(state, now, runtimeContextCfg.JIT.LifecycleTiering)
+		if len(tierStats) > 0 {
+			if outcome.Stage.ContextLifecycleTierStats == nil {
+				outcome.Stage.ContextLifecycleTierStats = map[string]int{}
+			}
+			for key, value := range tierStats {
+				outcome.Stage.ContextLifecycleTierStats[key] += value
+			}
+		}
+		if strings.TrimSpace(lifecycleAction) != "" {
+			outcome.Stage.MemoryLifecycleAction = lifecycleAction
+		}
 	}
 	return modelReq, outcome, decision, nil
 }
@@ -578,6 +601,7 @@ func (a *Assembler) spillRecords(
 		rec.SessionID = req.SessionID
 		rec.Stage = stage
 		rec.SpilledAt = a.now()
+		rec.EvidenceTags = extractEvidenceTags(rec.Content, cfg.Compaction.Evidence.Keywords)
 		if _, exists := state.SpillWrites[rec.OriginRef]; exists {
 			continue
 		}
@@ -586,6 +610,10 @@ func (a *Assembler) spillRecords(
 		}
 		state.SpillWrites[rec.OriginRef] = struct{}{}
 		state.SpilledByRun[rec.OriginRef] = rec
+		if state.SpillTierByRef == nil {
+			state.SpillTierByRef = map[string]string{}
+		}
+		state.SpillTierByRef[rec.OriginRef] = "hot"
 		written++
 	}
 	return written, nil
@@ -596,25 +624,45 @@ func (a *Assembler) swapBackIfNeeded(
 	req types.ContextAssembleRequest,
 	modelReq *types.ModelRequest,
 	cfg runtimeconfig.ContextAssemblerCA3Config,
+	runtimeContextCfg runtimeconfig.RuntimeContextConfig,
 	state *ca3RunState,
-) (int, error) {
+) (int, float64, error) {
 	if !cfg.Spill.Enabled || strings.ToLower(strings.TrimSpace(cfg.Spill.Backend)) != "file" {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if cfg.Spill.SwapBackLimit <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	backend, err := a.ensureSpillBackend(cfg)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	recs, err := backend.LoadByRun(ctx, req.RunID, cfg.Spill.SwapBackLimit)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	appended := 0
+	maxRelevance := 0.0
+	minScore := 0.0
+	if runtimeContextCfg.JIT.SwapBack.Enabled {
+		minScore = runtimeContextCfg.JIT.SwapBack.MinRelevanceScore
+	}
+	now := a.now()
 	for _, rec := range recs {
+		if runtimeContextCfg.JIT.LifecycleTiering.Enabled &&
+			runtimeContextCfg.JIT.LifecycleTiering.ColdTTLMS > 0 &&
+			!rec.SpilledAt.IsZero() &&
+			now.Sub(rec.SpilledAt).Milliseconds() > int64(runtimeContextCfg.JIT.LifecycleTiering.ColdTTLMS) {
+			continue
+		}
 		if _, ok := state.SpilledByRun[rec.OriginRef]; ok {
+			continue
+		}
+		relevance := scoreSwapBackRelevance(req.Input, rec)
+		if relevance > maxRelevance {
+			maxRelevance = relevance
+		}
+		if relevance < minScore {
 			continue
 		}
 		modelReq.Messages = append(modelReq.Messages, types.Message{
@@ -622,9 +670,208 @@ func (a *Assembler) swapBackIfNeeded(
 			Content: "swap_back_context:" + rec.Content,
 		})
 		state.SpilledByRun[rec.OriginRef] = rec
+		if state.SpillTierByRef == nil {
+			state.SpillTierByRef = map[string]string{}
+		}
+		state.SpillTierByRef[rec.OriginRef] = "cold"
 		appended++
 	}
-	return appended, nil
+	return appended, maxRelevance, nil
+}
+
+func applyLifecycleTiering(
+	state *ca3RunState,
+	now time.Time,
+	cfg runtimeconfig.RuntimeContextJITLifecycleTieringConfig,
+) (map[string]int, string) {
+	if state == nil || len(state.SpilledByRun) == 0 {
+		return nil, ""
+	}
+	if state.SpillTierByRef == nil {
+		state.SpillTierByRef = map[string]string{}
+	}
+	stats := map[string]int{
+		"hot":    0,
+		"warm":   0,
+		"cold":   0,
+		"pruned": 0,
+	}
+	lifecycleAction := ""
+	for originRef, rec := range state.SpilledByRun {
+		if rec.SpilledAt.IsZero() {
+			rec.SpilledAt = now
+		}
+		ageMS := now.Sub(rec.SpilledAt).Milliseconds()
+		nextTier := "hot"
+		switch {
+		case ageMS <= int64(cfg.HotTTLMS):
+			nextTier = "hot"
+		case ageMS <= int64(cfg.WarmTTLMS):
+			nextTier = "warm"
+			if len([]rune(rec.Content)) > 256 {
+				rec.Content = truncateRunes(rec.Content, 256)
+				state.SpilledByRun[originRef] = rec
+				lifecycleAction = mergeLifecycleAction(lifecycleAction, "compress")
+			}
+		case ageMS <= int64(cfg.ColdTTLMS):
+			nextTier = "cold"
+			lifecycleAction = mergeLifecycleAction(lifecycleAction, "spill")
+		default:
+			stats["pruned"]++
+			delete(state.SpilledByRun, originRef)
+			delete(state.SpillTierByRef, originRef)
+			lifecycleAction = mergeLifecycleAction(lifecycleAction, "prune")
+			continue
+		}
+		stats[nextTier]++
+		prevTier := strings.TrimSpace(state.SpillTierByRef[originRef])
+		if prevTier != "" && prevTier != nextTier {
+			stats["migrate_"+prevTier+"_to_"+nextTier]++
+		}
+		state.SpillTierByRef[originRef] = nextTier
+	}
+	if stats["hot"] == 0 && stats["warm"] == 0 && stats["cold"] == 0 && stats["pruned"] == 0 {
+		return nil, lifecycleAction
+	}
+	return stats, lifecycleAction
+}
+
+func scoreSwapBackRelevance(query string, rec spillRecord) float64 {
+	queryTerms := tokenizeRelevanceTerms(query)
+	if len(queryTerms) == 0 {
+		return 0
+	}
+	tagTerms := map[string]struct{}{}
+	for _, tag := range rec.EvidenceTags {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized == "" {
+			continue
+		}
+		tagTerms[normalized] = struct{}{}
+	}
+	contentTerms := tokenizeRelevanceTerms(rec.Content)
+	tagHit := overlapRatio(queryTerms, tagTerms)
+	contentHit := overlapRatio(queryTerms, contentTerms)
+	score := (0.7 * tagHit) + (0.3 * contentHit)
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func extractEvidenceTags(content string, configured []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(configured))
+	lower := strings.ToLower(content)
+	for _, kw := range configured {
+		tag := strings.ToLower(strings.TrimSpace(kw))
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		if strings.Contains(lower, tag) {
+			seen[tag] = struct{}{}
+			out = append(out, tag)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for token := range tokenizeRelevanceTerms(content) {
+		if len(out) >= 6 {
+			break
+		}
+		if len(token) < 4 {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		out = append(out, token)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func tokenizeRelevanceTerms(raw string) map[string]struct{} {
+	out := map[string]struct{}{}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return out
+	}
+	replacer := strings.NewReplacer(
+		"\n", " ",
+		"\r", " ",
+		"\t", " ",
+		",", " ",
+		".", " ",
+		";", " ",
+		":", " ",
+		"!", " ",
+		"?", " ",
+		"(", " ",
+		")", " ",
+		"[", " ",
+		"]", " ",
+		"{", " ",
+		"}", " ",
+		"\"", " ",
+		"'", " ",
+		"`", " ",
+		"/", " ",
+		"\\", " ",
+		"|", " ",
+		"+", " ",
+		"-", " ",
+		"_", " ",
+		"#", " ",
+		"@", " ",
+	)
+	normalized = replacer.Replace(normalized)
+	parts := strings.Fields(normalized)
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		if len(token) <= 1 {
+			continue
+		}
+		out[token] = struct{}{}
+	}
+	return out
+}
+
+func overlapRatio(queryTerms map[string]struct{}, targetTerms map[string]struct{}) float64 {
+	if len(queryTerms) == 0 || len(targetTerms) == 0 {
+		return 0
+	}
+	hits := 0
+	for token := range queryTerms {
+		if _, ok := targetTerms[token]; ok {
+			hits++
+		}
+	}
+	return float64(hits) / float64(len(queryTerms))
+}
+
+func mergeLifecycleAction(current string, candidate string) string {
+	priority := map[string]int{
+		"":         0,
+		"spill":    1,
+		"compress": 2,
+		"prune":    3,
+	}
+	if priority[strings.TrimSpace(candidate)] > priority[strings.TrimSpace(current)] {
+		return strings.TrimSpace(candidate)
+	}
+	return strings.TrimSpace(current)
 }
 
 func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Config) (SpillBackend, error) {
@@ -668,6 +915,7 @@ func (a *Assembler) ca3StateFor(runID string) *ca3RunState {
 		TriggerCounts:   map[string]int{},
 		AccessFrequency: map[string]int{},
 		SpilledByRun:    map[string]spillRecord{},
+		SpillTierByRef:  map[string]string{},
 		SpillWrites:     map[string]struct{}{},
 	}
 	a.ca3State[key] = st

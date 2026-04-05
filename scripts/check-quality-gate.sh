@@ -134,6 +134,12 @@ if ! bash scripts/check-react-plan-notebook-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] context jit organization contract suites"
+if ! bash scripts/check-context-jit-organization-contract.sh; then
+  echo "[quality-gate][context-jit-organization-contract] context jit organization contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] realtime protocol contract suites"
 if ! bash scripts/check-realtime-protocol-contract.sh; then
   echo "[quality-gate][realtime-protocol-contract] realtime protocol contract suites failed"

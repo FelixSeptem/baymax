@@ -289,6 +289,7 @@ type Config struct {
 type RuntimeDomainConfig struct {
 	React             RuntimeReactConfig             `json:"react"`
 	Realtime          RuntimeRealtimeConfig          `json:"realtime"`
+	Context           RuntimeContextConfig           `json:"context"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
 	Admission         RuntimeAdmissionConfig         `json:"admission"`
 	State             RuntimeStateConfig             `json:"state"`
@@ -1273,6 +1274,35 @@ func DefaultConfig() Config {
 					Enabled:             false,
 					ResumeCursorTTLMS:   300000,
 					IdempotencyWindowMS: 120000,
+				},
+			},
+			Context: RuntimeContextConfig{
+				JIT: RuntimeContextJITConfig{
+					ReferenceFirst: RuntimeContextJITReferenceFirstConfig{
+						Enabled:          false,
+						MaxRefs:          8,
+						MaxResolveTokens: 4096,
+					},
+					IsolateHandoff: RuntimeContextJITIsolateHandoffConfig{
+						Enabled:       false,
+						DefaultTTLMS:  300000,
+						MinConfidence: 0.60,
+					},
+					EditGate: RuntimeContextJITEditGateConfig{
+						Enabled:            false,
+						ClearAtLeastTokens: 1024,
+						MinGainRatio:       0.20,
+					},
+					SwapBack: RuntimeContextJITSwapBackConfig{
+						Enabled:           false,
+						MinRelevanceScore: 0.60,
+					},
+					LifecycleTiering: RuntimeContextJITLifecycleTieringConfig{
+						Enabled:   false,
+						HotTTLMS:  300000,
+						WarmTTLMS: 1800000,
+						ColdTTLMS: 7200000,
+					},
 				},
 			},
 			Readiness: RuntimeReadinessConfig{
@@ -2263,6 +2293,9 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateRuntimeRealtime(cfg.Runtime.Realtime); err != nil {
+		return err
+	}
+	if err := validateRuntimeContext(cfg.Runtime.Context); err != nil {
 		return err
 	}
 	if err := validateRuntimeOperationProfiles(cfg.Runtime.OperationProfiles); err != nil {
@@ -4226,6 +4259,10 @@ func validateRuntimeRealtime(cfg RuntimeRealtimeConfig) error {
 	return ValidateRuntimeRealtimeConfig(cfg)
 }
 
+func validateRuntimeContext(cfg RuntimeContextConfig) error {
+	return ValidateRuntimeContextConfig(cfg)
+}
+
 func validateRuntimeToolMiddleware(cfg RuntimeToolMiddlewareConfig) error {
 	return ValidateRuntimeToolMiddlewareConfig(cfg)
 }
@@ -4312,6 +4349,21 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.realtime.interrupt_resume.enabled", base.Runtime.Realtime.InterruptResume.Enabled)
 	v.SetDefault("runtime.realtime.interrupt_resume.resume_cursor_ttl_ms", base.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS)
 	v.SetDefault("runtime.realtime.interrupt_resume.idempotency_window_ms", base.Runtime.Realtime.InterruptResume.IdempotencyWindowMS)
+	v.SetDefault("runtime.context.jit.reference_first.enabled", base.Runtime.Context.JIT.ReferenceFirst.Enabled)
+	v.SetDefault("runtime.context.jit.reference_first.max_refs", base.Runtime.Context.JIT.ReferenceFirst.MaxRefs)
+	v.SetDefault("runtime.context.jit.reference_first.max_resolve_tokens", base.Runtime.Context.JIT.ReferenceFirst.MaxResolveTokens)
+	v.SetDefault("runtime.context.jit.isolate_handoff.enabled", base.Runtime.Context.JIT.IsolateHandoff.Enabled)
+	v.SetDefault("runtime.context.jit.isolate_handoff.default_ttl_ms", base.Runtime.Context.JIT.IsolateHandoff.DefaultTTLMS)
+	v.SetDefault("runtime.context.jit.isolate_handoff.min_confidence", base.Runtime.Context.JIT.IsolateHandoff.MinConfidence)
+	v.SetDefault("runtime.context.jit.edit_gate.enabled", base.Runtime.Context.JIT.EditGate.Enabled)
+	v.SetDefault("runtime.context.jit.edit_gate.clear_at_least_tokens", base.Runtime.Context.JIT.EditGate.ClearAtLeastTokens)
+	v.SetDefault("runtime.context.jit.edit_gate.min_gain_ratio", base.Runtime.Context.JIT.EditGate.MinGainRatio)
+	v.SetDefault("runtime.context.jit.swap_back.enabled", base.Runtime.Context.JIT.SwapBack.Enabled)
+	v.SetDefault("runtime.context.jit.swap_back.min_relevance_score", base.Runtime.Context.JIT.SwapBack.MinRelevanceScore)
+	v.SetDefault("runtime.context.jit.lifecycle_tiering.enabled", base.Runtime.Context.JIT.LifecycleTiering.Enabled)
+	v.SetDefault("runtime.context.jit.lifecycle_tiering.hot_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.HotTTLMS)
+	v.SetDefault("runtime.context.jit.lifecycle_tiering.warm_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.WarmTTLMS)
+	v.SetDefault("runtime.context.jit.lifecycle_tiering.cold_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS)
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
@@ -4826,6 +4878,66 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	contextJITReferenceFirstEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.reference_first.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITReferenceFirstMaxRefs, err := strictIntConfigValue(v, "runtime.context.jit.reference_first.max_refs")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITReferenceFirstMaxResolveTokens, err := strictIntConfigValue(v, "runtime.context.jit.reference_first.max_resolve_tokens")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITIsolateHandoffEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.isolate_handoff.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITIsolateHandoffDefaultTTLMS, err := strictIntConfigValue(v, "runtime.context.jit.isolate_handoff.default_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITIsolateHandoffMinConfidence, err := strictFloatConfigValue(v, "runtime.context.jit.isolate_handoff.min_confidence")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITEditGateEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.edit_gate.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITEditGateClearAtLeastTokens, err := strictIntConfigValue(v, "runtime.context.jit.edit_gate.clear_at_least_tokens")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITEditGateMinGainRatio, err := strictFloatConfigValue(v, "runtime.context.jit.edit_gate.min_gain_ratio")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITSwapBackEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.swap_back.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITSwapBackMinRelevanceScore, err := strictFloatConfigValue(v, "runtime.context.jit.swap_back.min_relevance_score")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITLifecycleTieringEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.lifecycle_tiering.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITLifecycleTieringHotTTLMS, err := strictIntConfigValue(v, "runtime.context.jit.lifecycle_tiering.hot_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITLifecycleTieringWarmTTLMS, err := strictIntConfigValue(v, "runtime.context.jit.lifecycle_tiering.warm_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITLifecycleTieringColdTTLMS, err := strictIntConfigValue(v, "runtime.context.jit.lifecycle_tiering.cold_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.React.Enabled = reactEnabled
 	cfg.Runtime.React.MaxIterations = v.GetInt("runtime.react.max_iterations")
 	cfg.Runtime.React.ToolCallLimit = v.GetInt("runtime.react.tool_call_limit")
@@ -4843,6 +4955,21 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Realtime.InterruptResume.Enabled = realtimeInterruptResumeEnabled
 	cfg.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS = realtimeResumeCursorTTLMS
 	cfg.Runtime.Realtime.InterruptResume.IdempotencyWindowMS = realtimeIdempotencyWindowMS
+	cfg.Runtime.Context.JIT.ReferenceFirst.Enabled = contextJITReferenceFirstEnabled
+	cfg.Runtime.Context.JIT.ReferenceFirst.MaxRefs = contextJITReferenceFirstMaxRefs
+	cfg.Runtime.Context.JIT.ReferenceFirst.MaxResolveTokens = contextJITReferenceFirstMaxResolveTokens
+	cfg.Runtime.Context.JIT.IsolateHandoff.Enabled = contextJITIsolateHandoffEnabled
+	cfg.Runtime.Context.JIT.IsolateHandoff.DefaultTTLMS = contextJITIsolateHandoffDefaultTTLMS
+	cfg.Runtime.Context.JIT.IsolateHandoff.MinConfidence = contextJITIsolateHandoffMinConfidence
+	cfg.Runtime.Context.JIT.EditGate.Enabled = contextJITEditGateEnabled
+	cfg.Runtime.Context.JIT.EditGate.ClearAtLeastTokens = contextJITEditGateClearAtLeastTokens
+	cfg.Runtime.Context.JIT.EditGate.MinGainRatio = contextJITEditGateMinGainRatio
+	cfg.Runtime.Context.JIT.SwapBack.Enabled = contextJITSwapBackEnabled
+	cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore = contextJITSwapBackMinRelevanceScore
+	cfg.Runtime.Context.JIT.LifecycleTiering.Enabled = contextJITLifecycleTieringEnabled
+	cfg.Runtime.Context.JIT.LifecycleTiering.HotTTLMS = contextJITLifecycleTieringHotTTLMS
+	cfg.Runtime.Context.JIT.LifecycleTiering.WarmTTLMS = contextJITLifecycleTieringWarmTTLMS
+	cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS = contextJITLifecycleTieringColdTTLMS
 	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
 	if err != nil {
 		return Config{}, err

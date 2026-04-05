@@ -174,6 +174,13 @@ type RunRecord struct {
 	CA3CompactionRerankerRolloutHit             bool                              `json:"ca3_compaction_reranker_rollout_hit,omitempty"`
 	CA3CompactionRerankerThresholdDrift         float64                           `json:"ca3_compaction_reranker_threshold_drift,omitempty"`
 	CA3RetainedEvidence                         int                               `json:"ca3_compaction_retained_evidence_count,omitempty"`
+	ContextRefDiscoverCount                     int                               `json:"context_ref_discover_count,omitempty"`
+	ContextRefResolveCount                      int                               `json:"context_ref_resolve_count,omitempty"`
+	ContextEditEstimatedSavedTokens             int                               `json:"context_edit_estimated_saved_tokens,omitempty"`
+	ContextEditGateDecision                     string                            `json:"context_edit_gate_decision,omitempty"`
+	ContextSwapbackRelevanceScore               float64                           `json:"context_swapback_relevance_score,omitempty"`
+	ContextLifecycleTierStats                   map[string]int                    `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextRecapSource                          string                            `json:"context_recap_source,omitempty"`
 	RecapStatus                                 string                            `json:"recap_status,omitempty"`
 	TeamID                                      string                            `json:"team_id,omitempty"`
 	TeamStrategy                                string                            `json:"team_strategy,omitempty"`

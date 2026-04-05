@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,6 +193,80 @@ func TestRealtimeSequenceGapAndOrderClassification(t *testing.T) {
 	}
 }
 
+func TestRealtimeResumeBoundaryStableWithContextJITSwapBackTiering(t *testing.T) {
+	dir := t.TempDir()
+	spillPath := filepath.Join(dir, "spill.jsonl")
+	writeRealtimeSpillFixture(t, spillPath, "run-a68-ctx-boundary")
+	mgr := newRealtimeRuntimeManagerWithContextJITForTest(t, "BAYMAX_A68_CTX_BOUNDARY", spillPath)
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				FinalAnswer: "done",
+				Usage:       types.TokenUsage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+			}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type:      types.ModelEventTypeOutputTextDelta,
+				TextDelta: "done",
+			})
+		},
+	}
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	req := types.RunRequest{
+		RunID:     "run-a68-ctx-boundary",
+		SessionID: "session-a68-ctx-boundary",
+		Input:     "resume boundary status",
+		Realtime: &types.RealtimeRunRequest{
+			Events: []types.RealtimeEventEnvelope{
+				newRealtimeControlEvent("interrupt-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("interrupt-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("resume-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-a68-ctx-boundary:run-a68-ctx-boundary:1",
+				}),
+				newRealtimeControlEvent("resume-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-a68-ctx-boundary:run-a68-ctx-boundary:1",
+				}),
+			},
+		},
+	}
+
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	runResult, runErr := runEngine.Run(context.Background(), req, runCollector)
+	if runErr != nil {
+		t.Fatalf("Run failed: %v", runErr)
+	}
+	streamResult, streamErr := streamEngine.Stream(context.Background(), req, streamCollector)
+	if streamErr != nil {
+		t.Fatalf("Stream failed: %v", streamErr)
+	}
+	if runResult.FinalAnswer != "done" || streamResult.FinalAnswer != "done" {
+		t.Fatalf("run/stream final answer mismatch run=%q stream=%q", runResult.FinalAnswer, streamResult.FinalAnswer)
+	}
+
+	runPayload := lastRunFinishedPayloadFromCollector(t, runCollector)
+	streamPayload := lastRunFinishedPayloadFromCollector(t, streamCollector)
+	assertRealtimePayloadCounters(t, runPayload)
+	assertRealtimePayloadCounters(t, streamPayload)
+	if runPayload["realtime_resume_source"] != streamPayload["realtime_resume_source"] {
+		t.Fatalf("resume source mismatch run=%#v stream=%#v", runPayload["realtime_resume_source"], streamPayload["realtime_resume_source"])
+	}
+	if runPayload["reason_code"] != streamPayload["reason_code"] {
+		t.Fatalf("reason_code mismatch run=%#v stream=%#v", runPayload["reason_code"], streamPayload["reason_code"])
+	}
+	if runPayload["realtime_error_layer"] != streamPayload["realtime_error_layer"] {
+		t.Fatalf("realtime_error_layer mismatch run=%#v stream=%#v", runPayload["realtime_error_layer"], streamPayload["realtime_error_layer"])
+	}
+	if runPayload["context_lifecycle_tier_stats"] == nil || streamPayload["context_lifecycle_tier_stats"] == nil {
+		t.Fatalf("context lifecycle tier stats should be emitted with context-jit enabled, run=%#v stream=%#v", runPayload["context_lifecycle_tier_stats"], streamPayload["context_lifecycle_tier_stats"])
+	}
+}
+
 func newRealtimeRuntimeManagerForTest(t *testing.T, envPrefix string) *runtimeconfig.Manager {
 	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
@@ -219,6 +294,89 @@ runtime:
 	}
 	t.Cleanup(func() { _ = mgr.Close() })
 	return mgr
+}
+
+func newRealtimeRuntimeManagerWithContextJITForTest(t *testing.T, envPrefix string, spillPath string) *runtimeconfig.Manager {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "runtime-context-jit.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  realtime:
+    protocol:
+      enabled: true
+      version: realtime_event_protocol.v1
+      max_buffered_events: 128
+    interrupt_resume:
+      enabled: true
+      resume_cursor_ttl_ms: 300000
+      idempotency_window_ms: 120000
+  context:
+    jit:
+      swap_back:
+        enabled: true
+        min_relevance_score: 0.20
+      lifecycle_tiering:
+        enabled: true
+        hot_ttl_ms: 1000
+        warm_ttl_ms: 2000
+        cold_ttl_ms: 5000
+context_assembler:
+  enabled: true
+  journal_path: '%s'
+  ca2:
+    enabled: false
+  ca3:
+    enabled: true
+    max_context_tokens: 4096
+    percent_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    absolute_thresholds:
+      safe: 400
+      comfort: 800
+      warning: 1200
+      danger: 1600
+      emergency: 2000
+    spill:
+      enabled: true
+      backend: file
+      path: '%s'
+      swap_back_limit: 8
+`, filepath.ToSlash(filepath.Join(filepath.Dir(spillPath), "journal.jsonl")), filepath.ToSlash(spillPath))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		FilePath:  cfgPath,
+		EnvPrefix: envPrefix,
+	})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	return mgr
+}
+
+func writeRealtimeSpillFixture(t *testing.T, spillPath string, runID string) {
+	t.Helper()
+	rec := map[string]any{
+		"run_id":        runID,
+		"stage":         "stage1",
+		"origin_ref":    "realtime-context-ref",
+		"content":       "resume boundary evidence context",
+		"evidence_tags": []string{"resume", "boundary"},
+		"spilled_at":    time.Now().Add(-2500 * time.Millisecond).UTC(),
+	}
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("marshal spill fixture: %v", err)
+	}
+	if err := os.WriteFile(spillPath, append(raw, '\n'), 0o600); err != nil {
+		t.Fatalf("write spill fixture: %v", err)
+	}
 }
 
 func newRealtimeControlEvent(

@@ -1997,6 +1997,54 @@ A67 gate 与 required-check 暴露：
 - CI Job: `react-plan-notebook-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-react-plan-notebook-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
+A67-CTX 在 A56/A57/A58/A67/A68 兼容边界上冻结 JIT context organization 合同，统一 reference-first、isolate handoff、edit gate、swap-back relevance、lifecycle tiering 与 task-aware recap 的可观测与回放口径。
+
+A67-CTX 配置域（默认值）：
+- `runtime.context.jit.reference_first.enabled`（`false`）
+- `runtime.context.jit.reference_first.max_refs`（`8`，`> 0`）
+- `runtime.context.jit.reference_first.max_resolve_tokens`（`4096`，`> 0`）
+- `runtime.context.jit.isolate_handoff.enabled`（`false`）
+- `runtime.context.jit.isolate_handoff.min_confidence`（`0.6`，`[0,1]`）
+- `runtime.context.jit.isolate_handoff.default_ttl_ms`（`300000`，`> 0`）
+- `runtime.context.jit.edit_gate.enabled`（`false`）
+- `runtime.context.jit.edit_gate.clear_at_least_tokens`（`1024`，`> 0`）
+- `runtime.context.jit.edit_gate.min_gain_ratio`（`0.2`，`> 0`）
+- `runtime.context.jit.swap_back.enabled`（`false`）
+- `runtime.context.jit.swap_back.min_relevance_score`（`0.6`，`[0,1]`）
+- `runtime.context.jit.lifecycle_tiering.enabled`（`false`）
+- `runtime.context.jit.lifecycle_tiering.hot_ttl_ms`（`300000`，`> 0`）
+- `runtime.context.jit.lifecycle_tiering.warm_ttl_ms`（`1800000`，`> 0`）
+- `runtime.context.jit.lifecycle_tiering.cold_ttl_ms`（`7200000`，`> 0`）
+
+A67-CTX fail-fast/降级语义：
+- `reference_first` 固定两段式 `discover_refs -> resolve_selected_refs`；resolve 预算越界与非法 locator 在 fail-fast 策略下阻断，best-effort 下写入 deterministic `stage2_skip_reason`。
+- `isolate_handoff` 固定 payload（`summary/artifacts/evidence_refs/confidence/ttl`）；confidence/ttl/evidence refs 非法时按 stage policy 触发 fail-fast 或降级记录。
+- `edit_gate` 在 `clear_at_least_tokens + min_gain_ratio` 未达阈值时只记录 `context_edit_gate_decision`，不得隐式清理上下文。
+- `swap_back + lifecycle_tiering` 仅在相关性阈值命中后回填，分层迁移固定 `hot|warm|cold|pruned` 统计与 canonical reason。
+- `tail recap` 固定来源标记 `context_recap_source=task_aware.stage_actions.v1`，避免模板化无关摘要注入。
+
+A67-CTX additive diagnostics 字段（`additive + nullable + default`）：
+- `context_ref_discover_count`
+- `context_ref_resolve_count`
+- `context_edit_estimated_saved_tokens`
+- `context_edit_gate_decision`
+- `context_swapback_relevance_score`
+- `context_lifecycle_tier_stats`
+- `context_recap_source`
+- `stage2_skip_reason`
+- `stage2_reason_code`
+
+A67-CTX replay fixture 与 drift 分类：
+- fixture：`context_reference_first.v1`、`context_isolate_handoff.v1`、`context_edit_gate.v1`、`context_relevance_swapback.v1`、`context_lifecycle_tiering.v1`
+- drift：`reference_resolution_drift`、`isolate_handoff_drift`、`edit_gate_threshold_drift`、`swapback_relevance_drift`、`lifecycle_tiering_drift`、`recap_semantic_drift`
+
+A67-CTX gate 与 required-check 暴露：
+- Linux/macOS: `bash scripts/check-context-jit-organization-contract.sh`
+- Windows: `pwsh -File scripts/check-context-jit-organization-contract.ps1`
+- CI Job: `context-jit-organization-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
+- quality gate 集成：`check-context-jit-organization-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
+- 边界断言：`context_provider_sdk_absent`（禁止 `context/*` 直连 provider 官方 SDK）
+
 A68 在 A56/A58/A67 基础上冻结 realtime event protocol + interrupt/resume 合同，统一事件信封、序列推进、去重幂等与恢复游标语义，并保持 Run/Stream 语义等价。
 
 A68 配置域（默认值）：

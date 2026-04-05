@@ -1,0 +1,17 @@
+{
+  "version": "context_edit_gate.v1",
+  "cases": [
+    {
+      "name": "context_edit_gate_success_case",
+      "canonical": {
+        "context_edit_estimated_saved_tokens": 128,
+        "context_edit_gate_decision": "allow.threshold_met",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 2,
+        "replay_logical_ingest_total": 2
+      }
+    }
+  ]
+}

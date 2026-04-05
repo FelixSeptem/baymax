@@ -1,0 +1,27 @@
+{
+  "version": "context_isolate_handoff.v1",
+  "cases": [
+    {
+      "name": "context_isolate_handoff_drift_case",
+      "run": {
+        "stage2_skip_reason": "stage2.isolate_handoff.empty",
+        "stage2_reason_code": "ok",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "stream": {
+        "stage2_skip_reason": "stage2.isolate_handoff.empty",
+        "stage2_reason_code": "isolate_handoff_rejected",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "stage2_skip_reason": "stage2.isolate_handoff.empty",
+        "stage2_reason_code": "isolate_handoff_rejected",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

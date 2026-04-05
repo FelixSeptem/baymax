@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,8 @@ const (
 	stage2RouterErrCallbackTimeout = "agentic.callback_timeout"
 	stage2RouterErrCallbackError   = "agentic.callback_error"
 	stage2RouterErrInvalidDecision = "agentic.invalid_decision"
+
+	contextRecapSourceTaskAwareV1 = "task_aware.stage_actions.v1"
 )
 
 // AgenticRoutingRequest is the normalized callback input for CA2 agentic routing.
@@ -73,6 +76,7 @@ type Assembler struct {
 	cfgProvider          func() runtimeconfig.ContextAssemblerConfig
 	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
 	memoryCfgProvider    func() runtimeconfig.RuntimeMemoryConfig
+	runtimeContextConfig func() runtimeconfig.RuntimeContextConfig
 	now                  func() time.Time
 
 	mu              sync.Mutex
@@ -108,6 +112,15 @@ func WithMemoryConfigProvider(provider func() runtimeconfig.RuntimeMemoryConfig)
 	return func(a *Assembler) {
 		if provider != nil {
 			a.memoryCfgProvider = provider
+		}
+	}
+}
+
+// WithRuntimeContextConfigProvider injects runtime context-domain config provider for JIT controls.
+func WithRuntimeContextConfigProvider(provider func() runtimeconfig.RuntimeContextConfig) Option {
+	return func(a *Assembler) {
+		if provider != nil {
+			a.runtimeContextConfig = provider
 		}
 	}
 }
@@ -154,6 +167,9 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		},
 		memoryCfgProvider: func() runtimeconfig.RuntimeMemoryConfig {
 			return runtimeconfig.DefaultConfig().Runtime.Memory
+		},
+		runtimeContextConfig: func() runtimeconfig.RuntimeContextConfig {
+			return runtimeconfig.DefaultConfig().Runtime.Context
 		},
 		now:             time.Now,
 		prefixCache:     map[string]string{},
@@ -464,14 +480,14 @@ func (a *Assembler) applyCA2(
 	if !shouldStage2 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = skipReason
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
 	if ca3.BlockLowPriorityLoads && !isHighPriorityRequest(modelReq.Input, cfg.CA3.Emergency.HighPriorityTokens) {
 		outcome.Stage.Status = types.AssembleStageStatusDegraded
 		outcome.Stage.Stage2SkipReason = "ca3.emergency.low_priority_rejected"
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
@@ -482,7 +498,7 @@ func (a *Assembler) applyCA2(
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.provider.not_ready"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -514,7 +530,7 @@ func (a *Assembler) applyCA2(
 		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.fetch.failed"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -540,21 +556,167 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, 0)
 		outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
 		outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
 	resp.Chunks = a.sanitizeStage2Chunks(resp.Chunks)
+	resolvedChunks := append([]string(nil), resp.Chunks...)
+	stage2ReasonOverride := ""
+	stage2ReasonCodeOverride := ""
+	runtimeContextCfg := runtimeconfig.DefaultConfig().Runtime.Context
+	if a.runtimeContextConfig != nil {
+		runtimeContextCfg = a.runtimeContextConfig()
+	}
+	stage2Source := sourceFromMeta(resp.Meta, p.Name())
+	if runtimeContextCfg.JIT.IsolateHandoff.Enabled {
+		ingestedChunks, handoffPayload, err := ingestIsolateHandoffChunks(
+			resolvedChunks,
+			stage2Source,
+			a.now(),
+			runtimeContextCfg.JIT.IsolateHandoff,
+			cfg.CA2.StagePolicy.Stage2,
+		)
+		if err != nil {
+			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+				outcome.Stage.Status = types.AssembleStageStatusDegraded
+				outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.failed"
+				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				outcome.Recap = recap
+				return modelReq, outcome, nil
+			}
+			return modelReq, outcome, err
+		}
+		resolvedChunks = ingestedChunks
+		if handoffPayload.AcceptedTotal > 0 || handoffPayload.RejectedTotal > 0 {
+			raw, err := json.Marshal(handoffPayload)
+			if err != nil {
+				if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+					outcome.Stage.Status = types.AssembleStageStatusDegraded
+					outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.serialize_failed"
+					modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+					outcome.Recap = recap
+					return modelReq, outcome, nil
+				}
+				return modelReq, outcome, err
+			}
+			modelReq.Messages = append(modelReq.Messages, types.Message{
+				Role:    "system",
+				Content: "stage2_isolate_handoff:" + string(raw),
+			})
+		}
+		if handoffPayload.RejectedTotal > 0 {
+			stage2ReasonOverride = "isolate_handoff_rejected"
+			stage2ReasonCodeOverride = "isolate_handoff_rejected"
+		}
+		if len(resolvedChunks) == 0 {
+			outcome.Stage.Status = types.AssembleStageStatusStage1Only
+			outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.empty"
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			outcome.Recap = recap
+			return modelReq, outcome, nil
+		}
+	}
+	if runtimeContextCfg.JIT.ReferenceFirst.Enabled {
+		discovery, catalog := discoverStage2References(
+			resolvedChunks,
+			stage2Source,
+			runtimeContextCfg.JIT.ReferenceFirst.MaxRefs,
+		)
+		outcome.Stage.ContextRefDiscoverCount = len(discovery.References)
+		discoveryRaw, err := json.Marshal(discovery)
+		if err != nil {
+			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+				outcome.Stage.Status = types.AssembleStageStatusDegraded
+				outcome.Stage.Stage2SkipReason = "stage2.discover_refs.failed"
+				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				outcome.Recap = recap
+				return modelReq, outcome, nil
+			}
+			return modelReq, outcome, err
+		}
+		modelReq.Messages = append(modelReq.Messages, types.Message{
+			Role:    "system",
+			Content: "stage2_refs:" + string(discoveryRaw),
+		})
+
+		resolution, err := resolveSelectedStage2References(
+			discovery.References,
+			catalog,
+			runtimeContextCfg.JIT.ReferenceFirst.MaxResolveTokens,
+			resolveReferenceMissingPolicy(cfg.CA2.StagePolicy.Stage2),
+		)
+		if err != nil {
+			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+				outcome.Stage.Status = types.AssembleStageStatusDegraded
+				outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.failed"
+				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				outcome.Recap = recap
+				return modelReq, outcome, nil
+			}
+			return modelReq, outcome, err
+		}
+		outcome.Stage.ContextRefResolveCount = len(resolution.Resolved)
+		if len(resolution.Missing) > 0 {
+			stage2ReasonOverride = "partial_missing_refs"
+			stage2ReasonCodeOverride = "partial_missing_refs"
+		}
+		resolutionRaw, err := json.Marshal(resolution)
+		if err != nil {
+			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+				outcome.Stage.Status = types.AssembleStageStatusDegraded
+				outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.serialize_failed"
+				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				outcome.Recap = recap
+				return modelReq, outcome, nil
+			}
+			return modelReq, outcome, err
+		}
+		modelReq.Messages = append(modelReq.Messages, types.Message{
+			Role:    "system",
+			Content: "stage2_resolved_refs:" + string(resolutionRaw),
+		})
+		resolvedChunks = resolvedChunks[:0]
+		for _, item := range resolution.Resolved {
+			resolvedChunks = append(resolvedChunks, item.Content)
+		}
+		if len(resolvedChunks) == 0 {
+			outcome.Stage.Status = types.AssembleStageStatusStage1Only
+			outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.empty"
+			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			outcome.Recap = recap
+			return modelReq, outcome, nil
+		}
+	}
+	if runtimeContextCfg.JIT.EditGate.Enabled {
+		editGate := applyContextEditGate(resolvedChunks, runtimeContextCfg.JIT.EditGate)
+		outcome.Stage.ContextEditEstimatedSavedTokens = editGate.EstimatedSavedTokens
+		outcome.Stage.ContextEditGateDecision = editGate.Decision
+		resolvedChunks = editGate.Chunks
+	}
+	if len(resolvedChunks) == 0 {
+		outcome.Stage.Status = types.AssembleStageStatusStage1Only
+		outcome.Stage.Stage2SkipReason = "stage2.context.empty"
+		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+		outcome.Recap = recap
+		return modelReq, outcome, nil
+	}
 	modelReq.Messages = append(modelReq.Messages, types.Message{
 		Role:    "system",
-		Content: "stage2_context:\n" + strings.Join(resp.Chunks, "\n"),
+		Content: "stage2_context:\n" + strings.Join(resolvedChunks, "\n"),
 	})
 	outcome.Stage.Status = types.AssembleStageStatusStage2Used
 	outcome.Stage.Stage2SkipReason = ""
-	outcome.Stage.Stage2HitCount = len(resp.Chunks)
-	outcome.Stage.Stage2Source = sourceFromMeta(resp.Meta, p.Name())
+	outcome.Stage.Stage2HitCount = len(resolvedChunks)
+	outcome.Stage.Stage2Source = stage2Source
 	outcome.Stage.Stage2Reason = stage2ReasonFromMeta(resp.Meta, "ok")
+	if stage2ReasonOverride != "" {
+		outcome.Stage.Stage2Reason = stage2ReasonOverride
+	}
 	outcome.Stage.Stage2ReasonCode = stage2ReasonCodeFromMeta(resp.Meta, "ok")
+	if stage2ReasonCodeOverride != "" {
+		outcome.Stage.Stage2ReasonCode = stage2ReasonCodeOverride
+	}
 	outcome.Stage.Stage2ErrorLayer = stage2ErrorLayerFromMeta(resp.Meta, "")
 	outcome.Stage.Stage2Profile = stage2ProfileFromMeta(resp.Meta, outcome.Stage.Stage2Profile)
 	outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromMeta(resp.Meta, outcome.Stage.Stage2TemplateProfile)
@@ -566,10 +728,10 @@ func (a *Assembler) applyCA2(
 	outcome.Stage.Stage2HintMismatchReason = stage2HintMismatchReasonFromMeta(resp.Meta)
 	outcome.Stage.MemoryScopeSelected = memoryScopeSelectedFromMeta(resp.Meta)
 	outcome.Stage.MemoryBudgetUsed = memoryBudgetUsedFromMeta(resp.Meta)
-	outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, len(resp.Chunks))
+	outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, len(resolvedChunks))
 	outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
 	outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
-	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, outcome)
+	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
 }
@@ -974,8 +1136,16 @@ func shouldRunStage2(req types.ModelRequest, cfg runtimeconfig.ContextAssemblerC
 	return false, "routing.threshold.not_met"
 }
 
-func (a *Assembler) appendTailRecap(modelReq types.ModelRequest, cfg runtimeconfig.ContextAssemblerCA2Config, outcome types.ContextAssembleResult) (types.ModelRequest, types.RecapMetadata) {
+func (a *Assembler) appendTailRecap(
+	modelReq types.ModelRequest,
+	cfg runtimeconfig.ContextAssemblerCA2Config,
+	outcome *types.ContextAssembleResult,
+) (types.ModelRequest, types.RecapMetadata) {
+	if outcome == nil {
+		return modelReq, types.RecapMetadata{Status: types.RecapStatusDisabled}
+	}
 	if !cfg.TailRecap.Enabled {
+		outcome.Stage.ContextRecapSource = ""
 		return modelReq, types.RecapMetadata{Status: types.RecapStatusDisabled}
 	}
 	maxItems := cfg.TailRecap.MaxItems
@@ -986,12 +1156,11 @@ func (a *Assembler) appendTailRecap(modelReq types.ModelRequest, cfg runtimeconf
 	if maxChars <= 0 {
 		maxChars = 256
 	}
-	recap := types.TailRecap{
-		Status:    string(outcome.Stage.Status),
-		Decisions: cropItems([]string{"routing_mode=" + cfg.RoutingMode, "stage2_provider=" + cfg.Stage2.Provider}, maxItems),
-		Todo:      cropItems([]string{"review_stage2_quality", "evaluate_agentic_routing_todo"}, maxItems),
-		Risks:     cropItems([]string{riskForStage(outcome.Stage.Status)}, maxItems),
-	}
+	recap, recapSource := buildTaskAwareTailRecap(cfg, outcome.Stage)
+	outcome.Stage.ContextRecapSource = recapSource
+	recap.Decisions = cropItems(recap.Decisions, maxItems)
+	recap.Todo = cropItems(recap.Todo, maxItems)
+	recap.Risks = cropItems(recap.Risks, maxItems)
 	recap.Status = truncateField(recap.Status, maxChars)
 	recap.Decisions = truncateSlice(recap.Decisions, maxChars)
 	recap.Todo = truncateSlice(recap.Todo, maxChars)
@@ -1011,6 +1180,121 @@ func (a *Assembler) appendTailRecap(modelReq types.ModelRequest, cfg runtimeconf
 		meta.Status = types.RecapStatusTruncated
 	}
 	return modelReq, meta
+}
+
+func buildTaskAwareTailRecap(cfg runtimeconfig.ContextAssemblerCA2Config, stage types.AssembleStage) (types.TailRecap, string) {
+	status := string(stage.Status)
+	routerMode := strings.TrimSpace(stage.Stage2RouterMode)
+	if routerMode == "" {
+		routerMode = normalizedStage2RouterMode(cfg.RoutingMode)
+	}
+	decisions := make([]string, 0, 12)
+	if status != "" {
+		decisions = append(decisions, "stage_status="+status)
+	}
+	if routerMode != "" {
+		decisions = append(decisions, "stage2_router_mode="+routerMode)
+	}
+	if stage.Stage2RouterDecision != "" {
+		decisions = append(decisions, "stage2_router_decision="+stage.Stage2RouterDecision)
+	}
+	if stage.Stage2Provider != "" {
+		decisions = append(decisions, "stage2_provider="+stage.Stage2Provider)
+	}
+	if stage.Stage2ReasonCode != "" {
+		decisions = append(decisions, "stage2_reason_code="+stage.Stage2ReasonCode)
+	}
+	if stage.Stage2SkipReason != "" {
+		decisions = append(decisions, "stage2_skip_reason="+stage.Stage2SkipReason)
+	}
+	if stage.ContextRefDiscoverCount > 0 || stage.ContextRefResolveCount > 0 {
+		decisions = append(decisions, fmt.Sprintf("reference_first.discover=%d", stage.ContextRefDiscoverCount))
+		decisions = append(decisions, fmt.Sprintf("reference_first.resolve=%d", stage.ContextRefResolveCount))
+	}
+	if stage.ContextEditGateDecision != "" {
+		decisions = append(decisions, "edit_gate_decision="+stage.ContextEditGateDecision)
+	}
+	if stage.ContextSwapbackRelevanceScore > 0 {
+		decisions = append(decisions, fmt.Sprintf("swapback_relevance_score=%.4f", stage.ContextSwapbackRelevanceScore))
+	}
+	if tierStats := stableTierStatsSummary(stage.ContextLifecycleTierStats); tierStats != "" {
+		decisions = append(decisions, "lifecycle_tiering="+tierStats)
+	}
+
+	todo := make([]string, 0, 4)
+	if stage.Stage2SkipReason != "" {
+		todo = append(todo, "review_stage2_skip_reason="+stage.Stage2SkipReason)
+	}
+	if missingRefs := stage.ContextRefDiscoverCount - stage.ContextRefResolveCount; missingRefs > 0 {
+		todo = append(todo, fmt.Sprintf("resolve_missing_refs=%d", missingRefs))
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(stage.ContextEditGateDecision)), "deny.") {
+		todo = append(todo, "tune_edit_gate_thresholds")
+	}
+	if stage.Status == types.AssembleStageStatusDegraded {
+		todo = append(todo, "inspect_stage2_degraded_path")
+	}
+
+	risks := make([]string, 0, 4)
+	if stage.Status == types.AssembleStageStatusDegraded {
+		risks = append(risks, "stage2_degraded")
+	}
+	if stage.Stage2ErrorLayer != "" {
+		risks = append(risks, "stage2_error_layer="+stage.Stage2ErrorLayer)
+	}
+	if strings.EqualFold(strings.TrimSpace(stage.Stage2ReasonCode), "partial_missing_refs") {
+		risks = append(risks, "reference_resolution_partial")
+	}
+	if strings.EqualFold(strings.TrimSpace(stage.ContextEditGateDecision), contextEditGateDecisionDenyConfig) {
+		risks = append(risks, "edit_gate_config_conflict")
+	}
+	if len(risks) == 0 {
+		risks = append(risks, "none")
+	}
+
+	return types.TailRecap{
+		Status:    status,
+		Decisions: decisions,
+		Todo:      todo,
+		Risks:     risks,
+	}, contextRecapSourceTaskAwareV1
+}
+
+func stableTierStatsSummary(stats map[string]int) string {
+	if len(stats) == 0 {
+		return ""
+	}
+	ordered := []string{
+		"hot",
+		"warm",
+		"cold",
+		"pruned",
+		"migrate_hot_to_warm",
+		"migrate_warm_to_cold",
+		"migrate_cold_to_pruned",
+	}
+	parts := make([]string, 0, len(stats))
+	seen := map[string]struct{}{}
+	for _, key := range ordered {
+		value, ok := stats[key]
+		if !ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%d", key, value))
+		seen[key] = struct{}{}
+	}
+	extraKeys := make([]string, 0, len(stats))
+	for key := range stats {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		extraKeys = append(extraKeys, key)
+	}
+	sort.Strings(extraKeys)
+	for _, key := range extraKeys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, stats[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func (a *Assembler) sanitizeStage2Chunks(chunks []string) []string {
@@ -1083,13 +1367,6 @@ func isAnyTruncated(recap types.TailRecap, max int) bool {
 		}
 	}
 	return len([]rune(recap.Status)) >= max
-}
-
-func riskForStage(s types.AssembleStageStatus) string {
-	if s == types.AssembleStageStatusDegraded {
-		return "stage2_degraded"
-	}
-	return "none"
 }
 
 func isBestEffortPolicy(policy string) bool {

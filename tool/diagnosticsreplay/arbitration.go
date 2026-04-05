@@ -30,6 +30,11 @@ const (
 	ArbitrationFixtureVersionReactV1            = "react.v1"
 	ArbitrationFixtureVersionReactPlanV1        = "react_plan_notebook.v1"
 	ArbitrationFixtureVersionRealtimeProtocolV1 = "realtime_event_protocol.v1"
+	ArbitrationFixtureVersionContextRefFirstV1  = "context_reference_first.v1"
+	ArbitrationFixtureVersionContextHandoffV1   = "context_isolate_handoff.v1"
+	ArbitrationFixtureVersionContextEditGateV1  = "context_edit_gate.v1"
+	ArbitrationFixtureVersionContextSwapBackV1  = "context_relevance_swapback.v1"
+	ArbitrationFixtureVersionContextTieringV1   = "context_lifecycle_tiering.v1"
 	ArbitrationFixtureVersionOTelSemconvV1      = "otel_semconv.v1"
 	ArbitrationFixtureVersionAgentEvalV1        = "agent_eval.v1"
 	ArbitrationFixtureVersionAgentEvalDistV1    = "agent_eval_distributed.v1"
@@ -89,6 +94,12 @@ const (
 	ReasonCodeRealtimeResumeSemanticDrift         = "realtime_resume_semantic_drift"
 	ReasonCodeRealtimeIdempotencyDrift            = "realtime_idempotency_drift"
 	ReasonCodeRealtimeSequenceGapDrift            = "realtime_sequence_gap_drift"
+	ReasonCodeReferenceResolutionDrift            = "reference_resolution_drift"
+	ReasonCodeIsolateHandoffDrift                 = "isolate_handoff_drift"
+	ReasonCodeEditGateThresholdDrift              = "edit_gate_threshold_drift"
+	ReasonCodeSwapbackRelevanceDrift              = "swapback_relevance_drift"
+	ReasonCodeLifecycleTieringDrift               = "lifecycle_tiering_drift"
+	ReasonCodeRecapSemanticDrift                  = "recap_semantic_drift"
 	ReasonCodeSandboxEgressActionDrift            = "sandbox_egress_action_drift"
 	ReasonCodeSandboxEgressPolicySourceDrift      = "sandbox_egress_policy_source_drift"
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
@@ -256,6 +267,15 @@ type ArbitrationObservation struct {
 	StateRestoreAction                     string                    `json:"state_restore_action,omitempty"`
 	StateRestoreConflictCode               string                    `json:"state_restore_conflict_code,omitempty"`
 	StateRestoreSource                     string                    `json:"state_restore_source,omitempty"`
+	Stage2SkipReason                       string                    `json:"stage2_skip_reason,omitempty"`
+	Stage2ReasonCode                       string                    `json:"stage2_reason_code,omitempty"`
+	ContextRefDiscoverCount                int                       `json:"context_ref_discover_count,omitempty"`
+	ContextRefResolveCount                 int                       `json:"context_ref_resolve_count,omitempty"`
+	ContextEditEstimatedSavedTokens        int                       `json:"context_edit_estimated_saved_tokens,omitempty"`
+	ContextEditGateDecision                string                    `json:"context_edit_gate_decision,omitempty"`
+	ContextSwapbackRelevanceScore          float64                   `json:"context_swapback_relevance_score,omitempty"`
+	ContextLifecycleTierStats              map[string]int            `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextRecapSource                     string                    `json:"context_recap_source,omitempty"`
 }
 
 type PolicyDecisionPathEntry struct {
@@ -328,6 +348,11 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionReactV1 &&
 		version != ArbitrationFixtureVersionReactPlanV1 &&
 		version != ArbitrationFixtureVersionRealtimeProtocolV1 &&
+		version != ArbitrationFixtureVersionContextRefFirstV1 &&
+		version != ArbitrationFixtureVersionContextHandoffV1 &&
+		version != ArbitrationFixtureVersionContextEditGateV1 &&
+		version != ArbitrationFixtureVersionContextSwapBackV1 &&
+		version != ArbitrationFixtureVersionContextTieringV1 &&
 		version != ArbitrationFixtureVersionOTelSemconvV1 &&
 		version != ArbitrationFixtureVersionAgentEvalV1 &&
 		version != ArbitrationFixtureVersionAgentEvalDistV1 &&
@@ -553,6 +578,14 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		StateRestoreAction:                     strings.ToLower(strings.TrimSpace(in.StateRestoreAction)),
 		StateRestoreConflictCode:               strings.ToLower(strings.TrimSpace(in.StateRestoreConflictCode)),
 		StateRestoreSource:                     strings.ToLower(strings.TrimSpace(in.StateRestoreSource)),
+		Stage2SkipReason:                       strings.ToLower(strings.TrimSpace(in.Stage2SkipReason)),
+		Stage2ReasonCode:                       strings.ToLower(strings.TrimSpace(in.Stage2ReasonCode)),
+		ContextRefDiscoverCount:                in.ContextRefDiscoverCount,
+		ContextRefResolveCount:                 in.ContextRefResolveCount,
+		ContextEditEstimatedSavedTokens:        in.ContextEditEstimatedSavedTokens,
+		ContextEditGateDecision:                strings.ToLower(strings.TrimSpace(in.ContextEditGateDecision)),
+		ContextSwapbackRelevanceScore:          in.ContextSwapbackRelevanceScore,
+		ContextRecapSource:                     strings.ToLower(strings.TrimSpace(in.ContextRecapSource)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
 		out.RuntimePrimaryConflictTotal = 0
@@ -668,6 +701,21 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.EvalResumeCount < 0 {
 		out.EvalResumeCount = 0
 	}
+	if out.ContextRefDiscoverCount < 0 {
+		out.ContextRefDiscoverCount = 0
+	}
+	if out.ContextRefResolveCount < 0 {
+		out.ContextRefResolveCount = 0
+	}
+	if out.ContextEditEstimatedSavedTokens < 0 {
+		out.ContextEditEstimatedSavedTokens = 0
+	}
+	if out.ContextSwapbackRelevanceScore < 0 {
+		out.ContextSwapbackRelevanceScore = 0
+	}
+	if out.ContextSwapbackRelevanceScore > 1 {
+		out.ContextSwapbackRelevanceScore = 1
+	}
 	for key, value := range in.MemoryRerankStats {
 		normalizedKey := strings.ToLower(strings.TrimSpace(key))
 		if normalizedKey == "" {
@@ -683,6 +731,22 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if len(out.MemoryRerankStats) == 0 {
 		out.MemoryRerankStats = nil
+	}
+	for key, value := range in.ContextLifecycleTierStats {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" {
+			continue
+		}
+		if value < 0 {
+			value = 0
+		}
+		if out.ContextLifecycleTierStats == nil {
+			out.ContextLifecycleTierStats = map[string]int{}
+		}
+		out.ContextLifecycleTierStats[normalizedKey] = value
+	}
+	if len(out.ContextLifecycleTierStats) == 0 {
+		out.ContextLifecycleTierStats = nil
 	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
@@ -804,6 +868,21 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionRealtimeProtocolV1 {
 		return validateRealtimeProtocolArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextRefFirstV1 {
+		return validateContextReferenceFirstArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextHandoffV1 {
+		return validateContextIsolateHandoffArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextEditGateV1 {
+		return validateContextEditGateArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextSwapBackV1 {
+		return validateContextSwapBackArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextTieringV1 {
+		return validateContextLifecycleTieringArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
@@ -1029,6 +1108,21 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionRealtimeProtocolV1 {
 		return assertRealtimeProtocolArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextRefFirstV1 {
+		return assertContextReferenceFirstArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextHandoffV1 {
+		return assertContextIsolateHandoffArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextEditGateV1 {
+		return assertContextEditGateArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextSwapBackV1 {
+		return assertContextSwapBackArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextTieringV1 {
+		return assertContextLifecycleTieringArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
@@ -1715,6 +1809,251 @@ func assertRealtimeProtocolArbitrationEquivalent(caseName, lane string, expected
 	return &ValidationError{
 		Code:    ReasonCodeSemanticDrift,
 		Message: fmt.Sprintf("case %q %s realtime semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateContextReferenceFirstArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if obs.ContextRefDiscoverCount <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_ref_discover_count must be > 0", caseName, lane),
+		}
+	}
+	if obs.ContextRefResolveCount < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_ref_resolve_count must be >= 0", caseName, lane),
+		}
+	}
+	if obs.ContextRefResolveCount > obs.ContextRefDiscoverCount {
+		return &ValidationError{
+			Code:    ReasonCodeReferenceResolutionDrift,
+			Message: fmt.Sprintf("case %q %s context_ref_resolve_count=%d exceeds context_ref_discover_count=%d", caseName, lane, obs.ContextRefResolveCount, obs.ContextRefDiscoverCount),
+		}
+	}
+	if strings.TrimSpace(obs.Stage2ReasonCode) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s stage2_reason_code is required", caseName, lane),
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func validateContextIsolateHandoffArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	skipReason := strings.TrimSpace(obs.Stage2SkipReason)
+	reasonCode := strings.TrimSpace(obs.Stage2ReasonCode)
+	if skipReason == "" && reasonCode == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s either stage2_skip_reason or stage2_reason_code is required", caseName, lane),
+		}
+	}
+	joined := strings.ToLower(skipReason + " " + reasonCode)
+	if !strings.Contains(joined, "isolate_handoff") {
+		return &ValidationError{
+			Code:    ReasonCodeIsolateHandoffDrift,
+			Message: fmt.Sprintf("case %q %s isolate handoff semantic marker is required", caseName, lane),
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func validateContextEditGateArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isContextEditGateDecision(obs.ContextEditGateDecision) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_edit_gate_decision is invalid: %q", caseName, lane, obs.ContextEditGateDecision),
+		}
+	}
+	if strings.HasPrefix(strings.TrimSpace(obs.ContextEditGateDecision), "allow.") && obs.ContextEditEstimatedSavedTokens <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeEditGateThresholdDrift,
+			Message: fmt.Sprintf("case %q %s allow decision requires context_edit_estimated_saved_tokens > 0", caseName, lane),
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func validateContextSwapBackArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if obs.ContextSwapbackRelevanceScore <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_swapback_relevance_score must be > 0", caseName, lane),
+		}
+	}
+	if obs.ContextSwapbackRelevanceScore > 1 {
+		return &ValidationError{
+			Code:    ReasonCodeSwapbackRelevanceDrift,
+			Message: fmt.Sprintf("case %q %s context_swapback_relevance_score must be <= 1", caseName, lane),
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func validateContextLifecycleTieringArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if len(obs.ContextLifecycleTierStats) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats must not be empty", caseName, lane),
+		}
+	}
+	for key, value := range obs.ContextLifecycleTierStats {
+		if !isContextLifecycleTierStatKey(key) {
+			return &ValidationError{
+				Code:    ReasonCodeLifecycleTieringDrift,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats contains invalid key %q", caseName, lane, key),
+			}
+		}
+		if value < 0 {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats[%s] must be >= 0", caseName, lane, key),
+			}
+		}
+	}
+	for _, required := range []string{"hot", "warm", "cold", "pruned"} {
+		if _, ok := obs.ContextLifecycleTierStats[required]; !ok {
+			return &ValidationError{
+				Code:    ReasonCodeLifecycleTieringDrift,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats missing required key %q", caseName, lane, required),
+			}
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func assertContextReferenceFirstArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.ContextRefDiscoverCount != actual.ContextRefDiscoverCount ||
+		expected.ContextRefResolveCount != actual.ContextRefResolveCount ||
+		expected.Stage2ReasonCode != actual.Stage2ReasonCode ||
+		expected.Stage2SkipReason != actual.Stage2SkipReason {
+		return &ValidationError{
+			Code:    ReasonCodeReferenceResolutionDrift,
+			Message: fmt.Sprintf("case %q %s reference resolution drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context reference-first semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func assertContextIsolateHandoffArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.Stage2SkipReason != actual.Stage2SkipReason ||
+		expected.Stage2ReasonCode != actual.Stage2ReasonCode {
+		return &ValidationError{
+			Code:    ReasonCodeIsolateHandoffDrift,
+			Message: fmt.Sprintf("case %q %s isolate handoff drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context isolate-handoff semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func assertContextEditGateArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.ContextEditGateDecision != actual.ContextEditGateDecision ||
+		expected.ContextEditEstimatedSavedTokens != actual.ContextEditEstimatedSavedTokens {
+		return &ValidationError{
+			Code:    ReasonCodeEditGateThresholdDrift,
+			Message: fmt.Sprintf("case %q %s edit gate threshold drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context edit-gate semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func assertContextSwapBackArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if !approxFloat64(expected.ContextSwapbackRelevanceScore, actual.ContextSwapbackRelevanceScore) {
+		return &ValidationError{
+			Code:    ReasonCodeSwapbackRelevanceDrift,
+			Message: fmt.Sprintf("case %q %s swapback relevance drift expected=%f actual=%f", caseName, lane, expected.ContextSwapbackRelevanceScore, actual.ContextSwapbackRelevanceScore),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context swap-back semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func assertContextLifecycleTieringArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if !equalIntMap(expected.ContextLifecycleTierStats, actual.ContextLifecycleTierStats) {
+		return &ValidationError{
+			Code:    ReasonCodeLifecycleTieringDrift,
+			Message: fmt.Sprintf("case %q %s lifecycle tiering drift expected=%#v actual=%#v", caseName, lane, expected.ContextLifecycleTierStats, actual.ContextLifecycleTierStats),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context lifecycle-tiering semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
+func validateContextRecapSource(caseName, lane string, obs ArbitrationObservation) error {
+	if strings.TrimSpace(obs.ContextRecapSource) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_recap_source is required", caseName, lane),
+		}
+	}
+	return nil
+}
+
+func isContextEditGateDecision(decision string) bool {
+	switch strings.TrimSpace(decision) {
+	case "allow.threshold_met",
+		"deny.no_savings",
+		"deny.saved_tokens_below_threshold",
+		"deny.gain_ratio_below_threshold",
+		"deny.config_conflict",
+		"bypass.noop",
+		"bypass.disabled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContextLifecycleTierStatKey(key string) bool {
+	switch strings.TrimSpace(key) {
+	case "hot", "warm", "cold", "pruned", "migrate_hot_to_warm", "migrate_warm_to_cold", "migrate_cold_to_pruned":
+		return true
+	default:
+		return strings.Contains(strings.TrimSpace(key), "migrate_") && strings.Contains(strings.TrimSpace(key), "_to_")
 	}
 }
 
@@ -2491,6 +2830,31 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.RealtimeResumeSource == right.RealtimeResumeSource &&
 			left.RealtimeIdempotencyDedupTotal == right.RealtimeIdempotencyDedupTotal &&
 			left.RealtimeLastErrorCode == right.RealtimeLastErrorCode
+	}
+	if version == ArbitrationFixtureVersionContextRefFirstV1 {
+		return left.ContextRefDiscoverCount == right.ContextRefDiscoverCount &&
+			left.ContextRefResolveCount == right.ContextRefResolveCount &&
+			left.Stage2SkipReason == right.Stage2SkipReason &&
+			left.Stage2ReasonCode == right.Stage2ReasonCode &&
+			left.ContextRecapSource == right.ContextRecapSource
+	}
+	if version == ArbitrationFixtureVersionContextHandoffV1 {
+		return left.Stage2SkipReason == right.Stage2SkipReason &&
+			left.Stage2ReasonCode == right.Stage2ReasonCode &&
+			left.ContextRecapSource == right.ContextRecapSource
+	}
+	if version == ArbitrationFixtureVersionContextEditGateV1 {
+		return left.ContextEditEstimatedSavedTokens == right.ContextEditEstimatedSavedTokens &&
+			left.ContextEditGateDecision == right.ContextEditGateDecision &&
+			left.ContextRecapSource == right.ContextRecapSource
+	}
+	if version == ArbitrationFixtureVersionContextSwapBackV1 {
+		return approxFloat64(left.ContextSwapbackRelevanceScore, right.ContextSwapbackRelevanceScore) &&
+			left.ContextRecapSource == right.ContextRecapSource
+	}
+	if version == ArbitrationFixtureVersionContextTieringV1 {
+		return equalIntMap(left.ContextLifecycleTierStats, right.ContextLifecycleTierStats) &&
+			left.ContextRecapSource == right.ContextRecapSource
 	}
 	if version == ArbitrationFixtureVersionA57V1 {
 		return left.SandboxEgressAction == right.SandboxEgressAction &&

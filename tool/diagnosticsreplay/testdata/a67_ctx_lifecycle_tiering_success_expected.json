@@ -1,0 +1,22 @@
+{
+  "version": "context_lifecycle_tiering.v1",
+  "cases": [
+    {
+      "name": "context_lifecycle_tiering_success_case",
+      "canonical": {
+        "context_lifecycle_tier_stats": {
+          "cold": 1,
+          "hot": 2,
+          "migrate_warm_to_cold": 1,
+          "pruned": 0,
+          "warm": 3
+        },
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -575,6 +575,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-react-plan-notebook-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] context jit organization contract suites"
+        Command   = { pwsh -File scripts/check-context-jit-organization-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] realtime protocol contract suites"
         Command   = { pwsh -File scripts/check-realtime-protocol-contract.ps1 }
     },

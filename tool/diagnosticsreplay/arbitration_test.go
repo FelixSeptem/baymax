@@ -59,6 +59,31 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			expected: "a68_realtime_event_protocol_success_expected.json",
 		},
 		{
+			name:     "a67-ctx-reference-first",
+			input:    "a67_ctx_reference_first_success_input.json",
+			expected: "a67_ctx_reference_first_success_expected.json",
+		},
+		{
+			name:     "a67-ctx-isolate-handoff",
+			input:    "a67_ctx_isolate_handoff_success_input.json",
+			expected: "a67_ctx_isolate_handoff_success_expected.json",
+		},
+		{
+			name:     "a67-ctx-edit-gate",
+			input:    "a67_ctx_edit_gate_success_input.json",
+			expected: "a67_ctx_edit_gate_success_expected.json",
+		},
+		{
+			name:     "a67-ctx-swapback",
+			input:    "a67_ctx_swapback_success_input.json",
+			expected: "a67_ctx_swapback_success_expected.json",
+		},
+		{
+			name:     "a67-ctx-lifecycle-tiering",
+			input:    "a67_ctx_lifecycle_tiering_success_input.json",
+			expected: "a67_ctx_lifecycle_tiering_success_expected.json",
+		},
+		{
 			name:     "a57-sandbox-egress-allowlist",
 			input:    "a57_sandbox_egress_success_input.json",
 			expected: "a57_sandbox_egress_success_expected.json",
@@ -447,6 +472,42 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantInText: "realtime sequence gap drift",
 		},
 		{
+			name:       "a67-ctx-reference-resolution-drift",
+			fixture:    "a67_ctx_reference_resolution_drift_input.json",
+			wantCode:   ReasonCodeReferenceResolutionDrift,
+			wantInText: "reference resolution drift",
+		},
+		{
+			name:       "a67-ctx-isolate-handoff-drift",
+			fixture:    "a67_ctx_isolate_handoff_drift_input.json",
+			wantCode:   ReasonCodeIsolateHandoffDrift,
+			wantInText: "isolate handoff drift",
+		},
+		{
+			name:       "a67-ctx-edit-gate-threshold-drift",
+			fixture:    "a67_ctx_edit_gate_threshold_drift_input.json",
+			wantCode:   ReasonCodeEditGateThresholdDrift,
+			wantInText: "edit gate threshold drift",
+		},
+		{
+			name:       "a67-ctx-swapback-relevance-drift",
+			fixture:    "a67_ctx_swapback_relevance_drift_input.json",
+			wantCode:   ReasonCodeSwapbackRelevanceDrift,
+			wantInText: "swapback relevance drift",
+		},
+		{
+			name:       "a67-ctx-lifecycle-tiering-drift",
+			fixture:    "a67_ctx_lifecycle_tiering_drift_input.json",
+			wantCode:   ReasonCodeLifecycleTieringDrift,
+			wantInText: "lifecycle tiering drift",
+		},
+		{
+			name:       "a67-ctx-recap-semantic-drift",
+			fixture:    "a67_ctx_recap_semantic_drift_input.json",
+			wantCode:   ReasonCodeRecapSemanticDrift,
+			wantInText: "recap semantic drift",
+		},
+		{
 			name:       "a56-react-schema-malformed",
 			fixture:    "a56_react_schema_malformed_input.json",
 			wantCode:   ReasonCodeSchemaMismatch,
@@ -698,6 +759,11 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
 		"a68_realtime_event_protocol_success_input.json",
+		"a67_ctx_reference_first_success_input.json",
+		"a67_ctx_isolate_handoff_success_input.json",
+		"a67_ctx_edit_gate_success_input.json",
+		"a67_ctx_swapback_success_input.json",
+		"a67_ctx_lifecycle_tiering_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -726,6 +792,11 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
 		"a68_realtime_event_protocol_success_input.json",
+		"a67_ctx_reference_first_success_input.json",
+		"a67_ctx_isolate_handoff_success_input.json",
+		"a67_ctx_edit_gate_success_input.json",
+		"a67_ctx_swapback_success_input.json",
+		"a67_ctx_lifecycle_tiering_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -867,6 +938,11 @@ func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
 		"a68_realtime_event_protocol_success_input.json",
+		"a67_ctx_reference_first_success_input.json",
+		"a67_ctx_isolate_handoff_success_input.json",
+		"a67_ctx_edit_gate_success_input.json",
+		"a67_ctx_swapback_success_input.json",
+		"a67_ctx_lifecycle_tiering_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture

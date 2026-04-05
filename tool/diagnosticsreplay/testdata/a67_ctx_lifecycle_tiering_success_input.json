@@ -1,0 +1,42 @@
+{
+  "version": "context_lifecycle_tiering.v1",
+  "cases": [
+    {
+      "name": "context_lifecycle_tiering_success_case",
+      "run": {
+        "context_lifecycle_tier_stats": {
+          "hot": 2,
+          "warm": 3,
+          "cold": 1,
+          "pruned": 0,
+          "migrate_warm_to_cold": 1
+        },
+        "context_recap_source": "TASK_AWARE.STAGE_ACTIONS.V1"
+      },
+      "stream": {
+        "context_lifecycle_tier_stats": {
+          "hot": 2,
+          "warm": 3,
+          "cold": 1,
+          "pruned": 0,
+          "migrate_warm_to_cold": 1
+        },
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "context_lifecycle_tier_stats": {
+          "hot": 2,
+          "warm": 3,
+          "cold": 1,
+          "pruned": 0,
+          "migrate_warm_to_cold": 1
+        },
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

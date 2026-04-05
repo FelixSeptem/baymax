@@ -114,6 +114,36 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			fixture:       "a68_realtime_event_protocol_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionRealtimeProtocolV1,
 		},
+		{
+			name:          "a67-ctx-reference-first",
+			versionFolder: "tool",
+			fixture:       "a67_ctx_reference_first_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextRefFirstV1,
+		},
+		{
+			name:          "a67-ctx-isolate-handoff",
+			versionFolder: "tool",
+			fixture:       "a67_ctx_isolate_handoff_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextHandoffV1,
+		},
+		{
+			name:          "a67-ctx-edit-gate",
+			versionFolder: "tool",
+			fixture:       "a67_ctx_edit_gate_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextEditGateV1,
+		},
+		{
+			name:          "a67-ctx-swapback",
+			versionFolder: "tool",
+			fixture:       "a67_ctx_swapback_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextSwapBackV1,
+		},
+		{
+			name:          "a67-ctx-lifecycle-tiering",
+			versionFolder: "tool",
+			fixture:       "a67_ctx_lifecycle_tiering_success_input.json",
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextTieringV1,
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -467,6 +497,48 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeSequenceGapDrift,
 			messageHas: "realtime sequence gap drift",
 		},
+		{
+			name:       "a67-ctx-reference-resolution-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_reference_resolution_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeReferenceResolutionDrift,
+			messageHas: "reference resolution drift",
+		},
+		{
+			name:       "a67-ctx-isolate-handoff-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_isolate_handoff_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeIsolateHandoffDrift,
+			messageHas: "isolate handoff drift",
+		},
+		{
+			name:       "a67-ctx-edit-gate-threshold-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_edit_gate_threshold_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeEditGateThresholdDrift,
+			messageHas: "edit gate threshold drift",
+		},
+		{
+			name:       "a67-ctx-swapback-relevance-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_swapback_relevance_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeSwapbackRelevanceDrift,
+			messageHas: "swapback relevance drift",
+		},
+		{
+			name:       "a67-ctx-lifecycle-tiering-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_lifecycle_tiering_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeLifecycleTieringDrift,
+			messageHas: "lifecycle tiering drift",
+		},
+		{
+			name:       "a67-ctx-recap-semantic-drift",
+			versionDir: "tool",
+			fixture:    "a67_ctx_recap_semantic_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeRecapSemanticDrift,
+			messageHas: "recap semantic drift",
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -578,6 +650,11 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a68_realtime_event_protocol_success_input.json",
+		"a67_ctx_reference_first_success_input.json",
+		"a67_ctx_isolate_handoff_success_input.json",
+		"a67_ctx_edit_gate_success_input.json",
+		"a67_ctx_swapback_success_input.json",
+		"a67_ctx_lifecycle_tiering_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name

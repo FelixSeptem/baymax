@@ -2630,6 +2630,120 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesA67ContextJITOrganizationAdditiveFields(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a67-ctx-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                              "success",
+			"context_ref_discover_count":          7,
+			"context_ref_resolve_count":           5,
+			"context_edit_estimated_saved_tokens": 88,
+			"context_edit_gate_decision":          "allow.threshold_met",
+			"context_swapback_relevance_score":    0.77,
+			"context_lifecycle_tier_stats":        map[string]any{"hot": 2, "warm": 3, "cold": 1},
+			"context_recap_source":                "task_aware.stage_actions.v1",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ContextRefDiscoverCount != 7 ||
+		got.ContextRefResolveCount != 5 ||
+		got.ContextEditEstimatedSavedTokens != 88 ||
+		got.ContextEditGateDecision != "allow.threshold_met" ||
+		got.ContextSwapbackRelevanceScore != 0.77 ||
+		got.ContextLifecycleTierStats["warm"] != 3 ||
+		got.ContextRecapSource != "task_aware.stage_actions.v1" {
+		t.Fatalf("A67-CTX additive field parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderA67ContextJITParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a67-ctx-compat",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":               "success",
+			"latency_ms":           int64(31),
+			"a67_ctx_future_field": "ignore_me",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Status != "success" || got.LatencyMs != 31 {
+		t.Fatalf("existing run fields should stay unchanged: %#v", got)
+	}
+	if got.ContextRefDiscoverCount != 0 ||
+		got.ContextRefResolveCount != 0 ||
+		got.ContextEditEstimatedSavedTokens != 0 ||
+		got.ContextEditGateDecision != "" ||
+		got.ContextSwapbackRelevanceScore != 0 ||
+		len(got.ContextLifecycleTierStats) != 0 ||
+		got.ContextRecapSource != "" {
+		t.Fatalf("missing A67-CTX additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderParsesA68RealtimeAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

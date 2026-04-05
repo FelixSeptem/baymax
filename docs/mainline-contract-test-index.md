@@ -254,6 +254,10 @@ A30 起 mailbox 统一契约为主线（sync/async/delayed/query）；A34 收口
 | A67 ReAct Plan Notebook Contract Gate | `scripts/check-react-plan-notebook-contract.sh` | `scripts/check-react-plan-notebook-contract.ps1` |
 | A67 ReAct Plan Notebook Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::react-plan-notebook-gate` | `.github/workflows/ci.yml::react-plan-notebook-gate` |
 | A67 ReAct Plan Notebook Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A67-CTX JIT Context Organization Replay Fixture (`context_reference_first.v1`/`context_isolate_handoff.v1`/`context_edit_gate.v1`/`context_relevance_swapback.v1`/`context_lifecycle_tiering.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast` |
+| A67-CTX JIT Context Organization Contract Gate | `scripts/check-context-jit-organization-contract.sh` | `scripts/check-context-jit-organization-contract.ps1` |
+| A67-CTX JIT Context Organization Contract Gate CI Required-Check 候选 | `.github/workflows/ci.yml::context-jit-organization-contract-gate` | `.github/workflows/ci.yml::context-jit-organization-contract-gate` |
+| A67-CTX JIT Context Organization Contract Gate Quality Path | `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | A68 Realtime Protocol + Interrupt/Resume Run/Stream Parity | `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamResumeParityAndIdempotency` | `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamInvalidResumeClassificationParity` |
 | A68 Realtime Protocol Replay Fixture (`realtime_event_protocol.v1`) | `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | A68 Realtime Protocol Contract Gate | `scripts/check-realtime-protocol-contract.sh` | `scripts/check-realtime-protocol-contract.ps1` |

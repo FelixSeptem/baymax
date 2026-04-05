@@ -4927,6 +4927,347 @@ context_assembler:
 	}
 }
 
+func TestContextJITRunAndStreamSemanticEquivalent(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-a67-ctx-parity"
+	sessionID := "session-a67-ctx-parity"
+	stage2File := filepath.Join(dir, "stage2.jsonl")
+	stage2Rows := strings.Join([]string{
+		`{"session_id":"` + sessionID + `","content":"search docs reference alpha"}`,
+		`{"session_id":"` + sessionID + `","content":"search docs reference alpha"}`,
+	}, "\n")
+	if err := os.WriteFile(stage2File, []byte(stage2Rows), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+	spillPath := filepath.Join(dir, "spill.jsonl")
+	spillRecord := fmt.Sprintf(
+		"{\"run_id\":\"%s\",\"stage\":\"stage1\",\"origin_ref\":\"ctx-ref-1\",\"content\":\"search resume evidence\",\"evidence_tags\":[\"search\",\"resume\"],\"spilled_at\":\"%s\"}\n",
+		runID,
+		time.Now().Add(-1500*time.Millisecond).UTC().Format(time.RFC3339Nano),
+	)
+	if err := os.WriteFile(spillPath, []byte(spillRecord), 0o600); err != nil {
+		t.Fatalf("write spill fixture: %v", err)
+	}
+
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  context:
+    jit:
+      reference_first:
+        enabled: true
+        max_refs: 8
+        max_resolve_tokens: 512
+      edit_gate:
+        enabled: true
+        clear_at_least_tokens: 1
+        min_gain_ratio: 0.01
+      swap_back:
+        enabled: true
+        min_relevance_score: 0.1
+      lifecycle_tiering:
+        enabled: true
+        hot_ttl_ms: 1000
+        warm_ttl_ms: 2000
+        cold_ttl_ms: 5000
+context_assembler:
+  enabled: true
+  journal_path: '%s'
+  ca2:
+    enabled: true
+    tail_recap:
+      enabled: true
+      max_items: 8
+      max_field_chars: 256
+    stage2:
+      provider: file
+      file_path: '%s'
+    routing:
+      min_input_chars: 1
+  ca3:
+    enabled: true
+    max_context_tokens: 4096
+    percent_thresholds:
+      safe: 10
+      comfort: 20
+      warning: 30
+      danger: 40
+      emergency: 50
+    absolute_thresholds:
+      safe: 400
+      comfort: 800
+      warning: 1200
+      danger: 1600
+      emergency: 2000
+    spill:
+      enabled: true
+      backend: file
+      path: '%s'
+      swap_back_limit: 8
+`, filepath.ToSlash(filepath.Join(dir, "journal.jsonl")), filepath.ToSlash(stage2File), filepath.ToSlash(spillPath))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A67_CTX_PARITY"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{FinalAnswer: "ok"}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+		},
+	}
+	runEngine := New(runModel, WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithRuntimeManager(mgr))
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	baseReq := types.RunRequest{
+		RunID:     runID,
+		SessionID: sessionID,
+		Input:     "search resume context",
+		Messages:  []types.Message{{Role: "system", Content: "s"}},
+	}
+
+	runRes, runErr := runEngine.Run(context.Background(), baseReq, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), baseReq, streamCollector)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("run/stream failed: run=%v stream=%v", runErr, streamErr)
+	}
+	if runRes.FinalAnswer != "ok" || streamRes.FinalAnswer != "ok" {
+		t.Fatalf("final answer mismatch run=%q stream=%q", runRes.FinalAnswer, streamRes.FinalAnswer)
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	simpleKeys := []string{
+		"assemble_stage_status",
+		"context_ref_discover_count",
+		"context_ref_resolve_count",
+		"context_edit_estimated_saved_tokens",
+		"context_edit_gate_decision",
+		"context_swapback_relevance_score",
+		"context_recap_source",
+		"react_termination_reason",
+	}
+	for _, key := range simpleKeys {
+		if runFinished.Payload[key] != streamFinished.Payload[key] {
+			t.Fatalf("run/stream payload mismatch key=%s run=%#v stream=%#v", key, runFinished.Payload[key], streamFinished.Payload[key])
+		}
+	}
+	if runFinished.Payload["context_ref_discover_count"] == nil || runFinished.Payload["context_ref_resolve_count"] == nil {
+		t.Fatalf("reference-first diagnostics must be emitted, payload=%#v", runFinished.Payload)
+	}
+	if runFinished.Payload["context_edit_gate_decision"] == nil {
+		t.Fatalf("edit gate decision must be emitted, payload=%#v", runFinished.Payload)
+	}
+	if runFinished.Payload["context_recap_source"] != "task_aware.stage_actions.v1" {
+		t.Fatalf("context_recap_source=%#v, want task_aware.stage_actions.v1", runFinished.Payload["context_recap_source"])
+	}
+	if runFinished.Payload["react_termination_reason"] != runtimeconfig.RuntimeReactTerminationCompleted {
+		t.Fatalf("react termination taxonomy drift: %#v", runFinished.Payload["react_termination_reason"])
+	}
+	if _, exists := runFinished.Payload["policy_decision_path"]; exists {
+		t.Fatalf("A58 decision path should not be injected on success path: %#v", runFinished.Payload["policy_decision_path"])
+	}
+	if _, exists := streamFinished.Payload["policy_decision_path"]; exists {
+		t.Fatalf("A58 decision path should not be injected on success path: %#v", streamFinished.Payload["policy_decision_path"])
+	}
+
+	runStats := contextTierStatsFromPayload(runFinished.Payload["context_lifecycle_tier_stats"])
+	streamStats := contextTierStatsFromPayload(streamFinished.Payload["context_lifecycle_tier_stats"])
+	if len(runStats) == 0 || len(streamStats) == 0 {
+		t.Fatalf("lifecycle tier stats must be emitted run=%#v stream=%#v", runFinished.Payload["context_lifecycle_tier_stats"], streamFinished.Payload["context_lifecycle_tier_stats"])
+	}
+	if runStats["hot"] != streamStats["hot"] ||
+		runStats["warm"] != streamStats["warm"] ||
+		runStats["cold"] != streamStats["cold"] ||
+		runStats["pruned"] != streamStats["pruned"] {
+		t.Fatalf("lifecycle tier stats mismatch run=%#v stream=%#v", runStats, streamStats)
+	}
+}
+
+func TestContextJITDoesNotBypassSandboxEgressRunAndStreamParity(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runtime.yaml")
+	cfg := fmt.Sprintf(`
+runtime:
+  context:
+    jit:
+      reference_first:
+        enabled: true
+      edit_gate:
+        enabled: true
+        clear_at_least_tokens: 1
+        min_gain_ratio: 0.01
+      swap_back:
+        enabled: true
+        min_relevance_score: 0.1
+      lifecycle_tiering:
+        enabled: true
+        hot_ttl_ms: 1000
+        warm_ttl_ms: 2000
+        cold_ttl_ms: 5000
+security:
+  sandbox:
+    enabled: true
+    mode: enforce
+    required: false
+    policy:
+      default_action: host
+      profile: default
+      fallback_action: deny
+    egress:
+      enabled: true
+      default_action: deny
+      on_violation: deny
+context_assembler:
+  enabled: true
+  journal_path: '%s'
+  ca2:
+    enabled: true
+    tail_recap:
+      enabled: true
+      max_items: 8
+      max_field_chars: 256
+    routing:
+      min_input_chars: 1
+  ca3:
+    enabled: false
+`, filepath.ToSlash(filepath.Join(dir, "journal.jsonl")))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A67_CTX_A57"})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	reg := local.NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "search",
+		schema: map[string]any{
+			"type": "object",
+		},
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			_ = ctx
+			_ = args
+			return types.ToolResult{Content: "should-not-run"}, nil
+		},
+	})
+	runModel := &fakeModel{
+		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			return types.ModelResponse{
+				ToolCalls: []types.ToolCall{{
+					CallID: "call-egress-deny-run",
+					Name:   "local.search",
+					Args: map[string]any{
+						"url": "https://api.example.com/v1/search",
+					},
+				}},
+			}, nil
+		},
+	}
+	streamModel := &fakeModel{
+		stream: func(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			return onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeToolCall,
+				ToolCall: &types.ToolCall{
+					CallID: "call-egress-deny-stream",
+					Name:   "local.search",
+					Args: map[string]any{
+						"url": "https://api.example.com/v1/search",
+					},
+				},
+			})
+		},
+	}
+	runEngine := New(runModel, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	streamEngine := New(streamModel, WithLocalRegistry(reg), WithRuntimeManager(mgr))
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	req := types.RunRequest{
+		RunID:     "run-a67-ctx-a57-run",
+		SessionID: "session-a67-ctx-a57",
+		Input:     "trigger egress deny with context jit",
+	}
+
+	runRes, runErr := runEngine.Run(context.Background(), req, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), req, streamCollector)
+	if runErr == nil || streamErr == nil {
+		t.Fatalf("run/stream should both be denied by sandbox egress, runErr=%v streamErr=%v", runErr, streamErr)
+	}
+	if runRes.Error == nil || streamRes.Error == nil {
+		t.Fatalf("run/stream classified errors missing run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Class != types.ErrSecurity || streamRes.Error.Class != types.ErrSecurity {
+		t.Fatalf("run/stream security class mismatch run=%#v stream=%#v", runRes.Error, streamRes.Error)
+	}
+	if runRes.Error.Details["reason_code"] != "sandbox.egress_deny" ||
+		streamRes.Error.Details["reason_code"] != "sandbox.egress_deny" {
+		t.Fatalf("sandbox egress reason mismatch run=%#v stream=%#v", runRes.Error.Details["reason_code"], streamRes.Error.Details["reason_code"])
+	}
+
+	runFinished, ok := runCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing run run.finished")
+	}
+	streamFinished, ok := streamCollector.lastNonTimelineEvent()
+	if !ok {
+		t.Fatal("missing stream run.finished")
+	}
+	if runFinished.Payload["sandbox_reason_code"] != "sandbox.egress_deny" ||
+		streamFinished.Payload["sandbox_reason_code"] != "sandbox.egress_deny" {
+		t.Fatalf("sandbox reason code mismatch run=%#v stream=%#v", runFinished.Payload["sandbox_reason_code"], streamFinished.Payload["sandbox_reason_code"])
+	}
+	if runFinished.Payload["sandbox_egress_action"] != runtimeconfig.SecuritySandboxEgressActionDeny ||
+		streamFinished.Payload["sandbox_egress_action"] != runtimeconfig.SecuritySandboxEgressActionDeny {
+		t.Fatalf("sandbox egress action mismatch run=%#v stream=%#v", runFinished.Payload["sandbox_egress_action"], streamFinished.Payload["sandbox_egress_action"])
+	}
+	if runFinished.Payload["sandbox_egress_policy_source"] != "default_action" ||
+		streamFinished.Payload["sandbox_egress_policy_source"] != "default_action" {
+		t.Fatalf("sandbox egress policy source mismatch run=%#v stream=%#v", runFinished.Payload["sandbox_egress_policy_source"], streamFinished.Payload["sandbox_egress_policy_source"])
+	}
+	if runFinished.Payload["context_recap_source"] != streamFinished.Payload["context_recap_source"] {
+		t.Fatalf("context recap source mismatch run=%#v stream=%#v", runFinished.Payload["context_recap_source"], streamFinished.Payload["context_recap_source"])
+	}
+}
+
+func contextTierStatsFromPayload(raw any) map[string]int {
+	switch typed := raw.(type) {
+	case map[string]int:
+		return typed
+	case map[string]any:
+		out := map[string]int{}
+		for key, value := range typed {
+			switch num := value.(type) {
+			case int:
+				out[key] = num
+			case int64:
+				out[key] = int(num)
+			case float64:
+				out[key] = int(num)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func TestRunBackpressureBlockDiagnosticsAndTimeline(t *testing.T) {
 	reg := local.NewRegistry()
 	_, err := reg.Register(&fakeTool{

@@ -717,6 +717,108 @@ func TestStoreRunA67QueryRunsParserCompatibilityAdditiveNullableDefault(t *testi
 	}
 }
 
+func TestStoreRunA67CTXAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                            time.Now(),
+		RunID:                           "run-a67-ctx",
+		Status:                          "success",
+		ContextRefDiscoverCount:         6,
+		ContextRefResolveCount:          4,
+		ContextEditEstimatedSavedTokens: 128,
+		ContextEditGateDecision:         "allow.threshold_met",
+		ContextSwapbackRelevanceScore:   0.82,
+		ContextLifecycleTierStats:       map[string]int{"hot": 2, "warm": 3, "cold": 1, "pruned": 0},
+		ContextRecapSource:              "task_aware.stage_actions.v1",
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ContextRefDiscoverCount != 6 ||
+		got.ContextRefResolveCount != 4 ||
+		got.ContextEditEstimatedSavedTokens != 128 ||
+		got.ContextEditGateDecision != "allow.threshold_met" ||
+		got.ContextSwapbackRelevanceScore != 0.82 ||
+		got.ContextLifecycleTierStats["warm"] != 3 ||
+		got.ContextRecapSource != "task_aware.stage_actions.v1" {
+		t.Fatalf("A67-CTX additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.ContextRefResolveCount = 5
+	rec.ContextEditEstimatedSavedTokens = 96
+	rec.ContextEditGateDecision = "deny.gain_ratio_below_threshold"
+	rec.ContextSwapbackRelevanceScore = 0.65
+	rec.ContextLifecycleTierStats = map[string]int{"hot": 1, "warm": 2, "cold": 2, "pruned": 1}
+	rec.ContextRecapSource = "task_aware.stage_actions.v1"
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.ContextRefResolveCount != 5 ||
+		got.ContextEditEstimatedSavedTokens != 96 ||
+		got.ContextEditGateDecision != "deny.gain_ratio_below_threshold" ||
+		got.ContextSwapbackRelevanceScore != 0.65 ||
+		got.ContextLifecycleTierStats["pruned"] != 1 {
+		t.Fatalf("A67-CTX additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-ctx"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].ContextRefDiscoverCount != 6 ||
+		page.Items[0].ContextRefResolveCount != 5 ||
+		page.Items[0].ContextEditEstimatedSavedTokens != 96 ||
+		page.Items[0].ContextEditGateDecision != "deny.gain_ratio_below_threshold" ||
+		page.Items[0].ContextSwapbackRelevanceScore != 0.65 ||
+		page.Items[0].ContextLifecycleTierStats["hot"] != 1 ||
+		page.Items[0].ContextRecapSource != "task_aware.stage_actions.v1" {
+		t.Fatalf("A67-CTX QueryRuns additive parse mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunA67CTXQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.AddRun(RunRecord{
+		Time:      time.Now(),
+		RunID:     "run-a67-ctx-compat",
+		Status:    "success",
+		LatencyMs: 21,
+	})
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-ctx-compat"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("QueryRuns items len=%d, want 1", len(page.Items))
+	}
+	got := page.Items[0]
+	if got.Status != "success" || got.LatencyMs != 21 {
+		t.Fatalf("existing fields mismatch: %#v", got)
+	}
+	if got.ContextRefDiscoverCount != 0 ||
+		got.ContextRefResolveCount != 0 ||
+		got.ContextEditEstimatedSavedTokens != 0 ||
+		got.ContextEditGateDecision != "" ||
+		got.ContextSwapbackRelevanceScore != 0 ||
+		len(got.ContextLifecycleTierStats) != 0 ||
+		got.ContextRecapSource != "" {
+		t.Fatalf("missing A67-CTX additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
 func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{

@@ -1,0 +1,30 @@
+{
+  "version": "context_reference_first.v1",
+  "cases": [
+    {
+      "name": "context_reference_resolution_drift_case",
+      "run": {
+        "context_ref_discover_count": 8,
+        "context_ref_resolve_count": 6,
+        "stage2_reason_code": "ok",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "stream": {
+        "context_ref_discover_count": 8,
+        "context_ref_resolve_count": 5,
+        "stage2_reason_code": "partial_missing_refs",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "context_ref_discover_count": 8,
+        "context_ref_resolve_count": 5,
+        "stage2_reason_code": "partial_missing_refs",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

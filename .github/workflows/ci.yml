@@ -298,6 +298,25 @@ jobs:
       - name: ReAct Plan Notebook Contract Gate
         run: bash scripts/check-react-plan-notebook-contract.sh
 
+  context-jit-organization-contract-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Context JIT Organization Contract Gate
+        run: bash scripts/check-context-jit-organization-contract.sh
+
   realtime-protocol-contract-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

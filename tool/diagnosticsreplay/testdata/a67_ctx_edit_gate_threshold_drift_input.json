@@ -1,0 +1,27 @@
+{
+  "version": "context_edit_gate.v1",
+  "cases": [
+    {
+      "name": "context_edit_gate_threshold_drift_case",
+      "run": {
+        "context_edit_estimated_saved_tokens": 96,
+        "context_edit_gate_decision": "deny.gain_ratio_below_threshold",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "stream": {
+        "context_edit_estimated_saved_tokens": 128,
+        "context_edit_gate_decision": "allow.threshold_met",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "context_edit_estimated_saved_tokens": 128,
+        "context_edit_gate_decision": "allow.threshold_met",
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -16,6 +16,8 @@ import (
 	tiktoken "github.com/pkoukk/tiktoken-go"
 )
 
+const semanticPrefixVersion = "context-prefix-and-journal-baseline"
+
 func TestAssemblerStablePrefixHashWithinSessionVersion(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
@@ -23,7 +25,7 @@ func TestAssemblerStablePrefixHashWithinSessionVersion(t *testing.T) {
 	req := types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Messages:      []types.Message{{Role: "system", Content: "stable"}},
 	}
 	modelReq := types.ModelRequest{RunID: req.RunID, Messages: req.Messages}
@@ -48,7 +50,7 @@ func TestAssemblerFailFastOnPrefixDrift(t *testing.T) {
 	base := types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Messages:      []types.Message{{Role: "system", Content: "stable"}},
 	}
 
@@ -74,14 +76,14 @@ func TestAssemblerRejectsDBBackendPlaceholder(t *testing.T) {
 	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 	}, types.ModelRequest{RunID: "run-1"})
 	if !errors.Is(err, journal.ErrBackendNotReady) {
 		t.Fatalf("err = %v, want ErrBackendNotReady", err)
 	}
 }
 
-func TestAssemblerCA2RoutesToStage2ByKeyword(t *testing.T) {
+func TestAssemblerContextStage2RoutesToStage2ByKeyword(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -97,7 +99,7 @@ func TestAssemblerCA2RoutesToStage2ByKeyword(t *testing.T) {
 	req := types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "please lookup details",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}
@@ -124,7 +126,7 @@ func TestAssemblerCA2RoutesToStage2ByKeyword(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2AgenticCallbackRunStage2(t *testing.T) {
+func TestAssemblerContextStage2AgenticCallbackRunStage2(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -151,7 +153,7 @@ func TestAssemblerCA2AgenticCallbackRunStage2(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-agentic-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "short",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -186,7 +188,7 @@ func TestAssemblerCA2AgenticCallbackRunStage2(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2AgenticCallbackSkipStage2(t *testing.T) {
+func TestAssemblerContextStage2AgenticCallbackSkipStage2(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -203,7 +205,7 @@ func TestAssemblerCA2AgenticCallbackSkipStage2(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-agentic-2",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup please",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -225,7 +227,7 @@ func TestAssemblerCA2AgenticCallbackSkipStage2(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2AgenticCallbackFallbackClasses(t *testing.T) {
+func TestAssemblerContextStage2AgenticCallbackFallbackClasses(t *testing.T) {
 	type tc struct {
 		name           string
 		router         AgenticRouter
@@ -318,7 +320,7 @@ func TestAssemblerCA2AgenticCallbackFallbackClasses(t *testing.T) {
 			_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 				RunID:         "run-" + c.name,
 				SessionID:     "session-1",
-				PrefixVersion: "ca1",
+				PrefixVersion: semanticPrefixVersion,
 				Input:         c.input,
 				Messages:      []types.Message{{Role: "system", Content: "s"}},
 			}, types.ModelRequest{
@@ -348,7 +350,7 @@ func TestAssemblerCA2AgenticCallbackFallbackClasses(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2Stage2BestEffort(t *testing.T) {
+func TestAssemblerContextStage2Stage2BestEffort(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -359,7 +361,7 @@ func TestAssemblerCA2Stage2BestEffort(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "x",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -378,7 +380,7 @@ func TestAssemblerCA2Stage2BestEffort(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2Stage2FailFast(t *testing.T) {
+func TestAssemblerContextStage2Stage2FailFast(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -389,7 +391,7 @@ func TestAssemblerCA2Stage2FailFast(t *testing.T) {
 	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "x",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -405,7 +407,7 @@ func TestAssemblerCA2Stage2FailFast(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2MemoryFallbackPolicyStageSemantics(t *testing.T) {
+func TestAssemblerContextStage2MemoryFallbackPolicyStageSemantics(t *testing.T) {
 	type tc struct {
 		name           string
 		stagePolicy    string
@@ -477,7 +479,7 @@ func TestAssemblerCA2MemoryFallbackPolicyStageSemantics(t *testing.T) {
 			_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 				RunID:         "run-memory-stage-policy",
 				SessionID:     "session-memory-stage-policy",
-				PrefixVersion: "ca1",
+				PrefixVersion: semanticPrefixVersion,
 				Input:         "lookup memory",
 				Messages:      []types.Message{{Role: "system", Content: "s"}},
 			}, types.ModelRequest{
@@ -513,7 +515,7 @@ func TestAssemblerCA2MemoryFallbackPolicyStageSemantics(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2RecapAppended(t *testing.T) {
+func TestAssemblerContextStage2RecapAppended(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -524,7 +526,7 @@ func TestAssemblerCA2RecapAppended(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "short",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -616,7 +618,7 @@ func recapContainsStaticTemplate(recap types.TailRecap) bool {
 	return false
 }
 
-func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {
+func TestAssemblerContextStage2Stage2ContextRedacted(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -640,7 +642,7 @@ func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -666,7 +668,7 @@ func TestAssemblerCA2Stage2ContextRedacted(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
+func TestAssemblerContextStage2Stage2DiagnosticsFields(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -686,7 +688,7 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -733,7 +735,7 @@ func TestAssemblerCA2Stage2DiagnosticsFields(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2MemoryGovernanceDiagnosticsFields(t *testing.T) {
+func TestAssemblerContextStage2MemoryGovernanceDiagnosticsFields(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -776,7 +778,7 @@ func TestAssemblerCA2MemoryGovernanceDiagnosticsFields(t *testing.T) {
 		_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 			RunID:         "run-memory-governance",
 			SessionID:     "session-memory",
-			PrefixVersion: "ca1",
+			PrefixVersion: semanticPrefixVersion,
 			Input:         "ctx-memory",
 			Messages:      []types.Message{{Role: "system", Content: "s"}},
 		}, types.ModelRequest{
@@ -792,7 +794,7 @@ func TestAssemblerCA2MemoryGovernanceDiagnosticsFields(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-memory-governance",
 		SessionID:     "session-memory",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "ctx-memory",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -823,7 +825,7 @@ func TestAssemblerCA2MemoryGovernanceDiagnosticsFields(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
+func TestAssemblerContextPressureEmergencyRejectsLowPriorityStage2(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -849,7 +851,7 @@ func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("x", 500),
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -868,7 +870,7 @@ func TestAssemblerCA3EmergencyRejectsLowPriorityStage2(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3ProtectedMessagesNotPruned(t *testing.T) {
+func TestAssemblerContextPressureProtectedMessagesNotPruned(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -889,7 +891,7 @@ func TestAssemblerCA3ProtectedMessagesNotPruned(t *testing.T) {
 	outReq, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-2",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need trim", 10),
 		Messages:      msgs,
 	}, types.ModelRequest{
@@ -911,7 +913,7 @@ func TestAssemblerCA3ProtectedMessagesNotPruned(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3SpillIdempotentAcrossRetry(t *testing.T) {
+func TestAssemblerContextPressureSpillIdempotentAcrossRetry(t *testing.T) {
 	dir := t.TempDir()
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(dir, "journal.jsonl")
@@ -929,7 +931,7 @@ func TestAssemblerCA3SpillIdempotentAcrossRetry(t *testing.T) {
 	req := types.ContextAssembleRequest{
 		RunID:         "run-3",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("large ", 100),
 		Messages: []types.Message{
 			{Role: "system", Content: "base"},
@@ -994,7 +996,7 @@ func (f *failingTokenCounter) CountTokens(ctx context.Context, req types.ModelRe
 	return 0, errors.New("counting unsupported")
 }
 
-func TestResolveCA3ThresholdsUsesStageOverride(t *testing.T) {
+func TestResolveContextPressureThresholdsUsesStageOverride(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
 	cfg.Stage2.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 25, Comfort: 45, Warning: 65, Danger: 80, Emergency: 95,
@@ -1002,20 +1004,20 @@ func TestResolveCA3ThresholdsUsesStageOverride(t *testing.T) {
 	cfg.Stage2.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 25000, Comfort: 45000, Warning: 65000, Danger: 80000, Emergency: 95000,
 	}
-	p, a := resolveCA3Thresholds(cfg, "stage2")
+	p, a := resolvePressureThresholds(cfg, "stage2")
 	if p.Warning != 65 || a.Warning != 65000 {
 		t.Fatalf("stage2 override not applied: percent=%+v absolute=%+v", p, a)
 	}
 }
 
-func TestEvaluateCA3ZonePrefersHigherTrigger(t *testing.T) {
+func TestEvaluateContextPressureZonePrefersHigherTrigger(t *testing.T) {
 	percent := runtimeconfig.ContextAssemblerCA3Thresholds{Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 90}
 	absolute := runtimeconfig.ContextAssemblerCA3Thresholds{Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50}
-	zone, reason, trigger := evaluateCA3Zone(15, 35, percent, absolute)
-	if zone != ca3ZoneWarning {
+	zone, reason, trigger := evaluatePressureZone(15, 35, percent, absolute)
+	if zone != pressureZoneWarning {
 		t.Fatalf("zone=%s, want warning", zone)
 	}
-	if reason != "absolute_token_trigger" || trigger != string(ca3ZoneWarning) {
+	if reason != "absolute_token_trigger" || trigger != string(pressureZoneWarning) {
 		t.Fatalf("unexpected reason/trigger: reason=%s trigger=%s", reason, trigger)
 	}
 }
@@ -1033,9 +1035,9 @@ func TestCountContextTokensSmallDeltaSkipsProviderThenRefreshes(t *testing.T) {
 		return 77, nil
 	})
 	now := time.Now()
-	state := &ca3RunState{
+	state := &pressureRunState{
 		LastTokenEstimate:  estimate,
-		LastTokenSignature: ca3TokenSignature(req),
+		LastTokenSignature: pressureTokenSignature(req),
 		LastSDKCountAt:     now,
 	}
 	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
@@ -1085,7 +1087,7 @@ func TestCountContextTokensFallbackDoesNotBlockOnTokenizerFailure(t *testing.T) 
 	cfg.Tokenizer.SmallDeltaTokens = 0
 	cfg.Tokenizer.SDKRefreshInterval = time.Millisecond
 	req := types.ModelRequest{Input: "fallback path should still return estimate"}
-	state := &ca3RunState{}
+	state := &pressureRunState{}
 	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
 	failing := &failingTokenCounter{}
 	got := a.countContextTokens(context.Background(), types.ContextAssembleRequest{
@@ -1135,7 +1137,7 @@ func (m modelClientFunc) Stream(ctx context.Context, req types.ModelRequest, onE
 	return nil
 }
 
-func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionUsesModelClient(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1163,7 +1165,7 @@ func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-semantic-success",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 18),
 		Messages:      msgs,
 		ModelClient:   client,
@@ -1199,7 +1201,7 @@ func TestAssemblerCA3SemanticCompactionUsesModelClient(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionBestEffortFallback(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionBestEffortFallback(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1227,7 +1229,7 @@ func TestAssemblerCA3SemanticCompactionBestEffortFallback(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-semantic-fallback",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 18),
 		Messages:      msgs,
 		ModelClient:   client,
@@ -1257,7 +1259,7 @@ func TestAssemblerCA3SemanticCompactionBestEffortFallback(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionFailFast(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionFailFast(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1284,7 +1286,7 @@ func TestAssemblerCA3SemanticCompactionFailFast(t *testing.T) {
 	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-semantic-fail-fast",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 18),
 		Messages:      msgs,
 		ModelClient:   client,
@@ -1298,7 +1300,7 @@ func TestAssemblerCA3SemanticCompactionFailFast(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionQualityGateBestEffortFallback(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1327,7 +1329,7 @@ func TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback(t *testing.
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-semantic-quality-fallback",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 18),
 		Messages:      msgs,
 		ModelClient:   client,
@@ -1357,7 +1359,7 @@ func TestAssemblerCA3SemanticCompactionQualityGateBestEffortFallback(t *testing.
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionHybridScoreUsesCosineWeight(t *testing.T) {
 	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
 	ca3cfg.Compaction.Embedding.Enabled = true
 	ca3cfg.Compaction.Embedding.Selector = "test"
@@ -1380,7 +1382,7 @@ func TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight(t *testing.T)
 		return 0.8, nil
 	})
 	compactor := &semanticCompactor{client: client, embedding: scorer}
-	result, err := compactor.compact(context.Background(), ca3CompactionRequest{
+	result, err := compactor.compact(context.Background(), pressureCompactionRequest{
 		AssembleReq: types.ContextAssembleRequest{
 			Input: "compact please",
 		},
@@ -1413,7 +1415,7 @@ func TestAssemblerCA3SemanticCompactionHybridScoreUsesCosineWeight(t *testing.T)
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionEmbeddingFailureBestEffortFallback(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionEmbeddingFailureBestEffortFallback(t *testing.T) {
 	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
 	ca3cfg.Compaction.Embedding.Enabled = true
 	ca3cfg.Compaction.Embedding.Selector = "test"
@@ -1430,7 +1432,7 @@ func TestAssemblerCA3SemanticCompactionEmbeddingFailureBestEffortFallback(t *tes
 		return 0, errors.New("embedding service down")
 	})
 	compactor := &semanticCompactor{client: client, embedding: scorer}
-	result, err := compactor.compact(context.Background(), ca3CompactionRequest{
+	result, err := compactor.compact(context.Background(), pressureCompactionRequest{
 		AssembleReq: types.ContextAssembleRequest{
 			Input: "compact please",
 		},
@@ -1454,7 +1456,7 @@ func TestAssemblerCA3SemanticCompactionEmbeddingFailureBestEffortFallback(t *tes
 	}
 }
 
-func TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast(t *testing.T) {
+func TestAssemblerContextPressureSemanticCompactionEmbeddingFailureFailFast(t *testing.T) {
 	ca3cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
 	ca3cfg.Compaction.Embedding.Enabled = true
 	ca3cfg.Compaction.Embedding.Selector = "test"
@@ -1471,7 +1473,7 @@ func TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast(t *testing.T) {
 		return 0, errors.New("embedding service down")
 	})
 	compactor := &semanticCompactor{client: client, embedding: scorer}
-	_, err := compactor.compact(context.Background(), ca3CompactionRequest{
+	_, err := compactor.compact(context.Background(), pressureCompactionRequest{
 		AssembleReq: types.ContextAssembleRequest{
 			Input: "compact please",
 		},
@@ -1489,7 +1491,7 @@ func TestAssemblerCA3SemanticCompactionEmbeddingFailureFailFast(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3PruneRetainsEvidenceAndReportsCount(t *testing.T) {
+func TestAssemblerContextPressurePruneRetainsEvidenceAndReportsCount(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1513,7 +1515,7 @@ func TestAssemblerCA3PruneRetainsEvidenceAndReportsCount(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-evidence",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need trim", 12),
 		Messages:      msgs,
 	}, types.ModelRequest{
@@ -1565,7 +1567,7 @@ func TestBuildEmbeddingScorerAnthropicUsablePath(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3RerankerBestEffortFallback(t *testing.T) {
+func TestAssemblerContextPressureRerankerBestEffortFallback(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1607,7 +1609,7 @@ func TestAssemblerCA3RerankerBestEffortFallback(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-reranker-best-effort",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 20),
 		Messages: []types.Message{
 			{Role: "system", Content: "base"},
@@ -1628,7 +1630,7 @@ func TestAssemblerCA3RerankerBestEffortFallback(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3RerankerFailFast(t *testing.T) {
+func TestAssemblerContextPressureRerankerFailFast(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA3.Enabled = true
@@ -1669,7 +1671,7 @@ func TestAssemblerCA3RerankerFailFast(t *testing.T) {
 	_, _, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-reranker-fail-fast",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 20),
 		Messages: []types.Message{
 			{Role: "system", Content: "base"},
@@ -1687,7 +1689,7 @@ func TestAssemblerCA3RerankerFailFast(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3RerankerGovernanceEnforceVsDryRun(t *testing.T) {
+func TestAssemblerContextPressureRerankerGovernanceEnforceVsDryRun(t *testing.T) {
 	newCfg := func(mode string) runtimeconfig.ContextAssemblerConfig {
 		cfg := runtimeconfig.DefaultConfig().ContextAssembler
 		cfg.JournalPath = filepath.Join(t.TempDir(), mode+"-journal.jsonl")
@@ -1738,7 +1740,7 @@ func TestAssemblerCA3RerankerGovernanceEnforceVsDryRun(t *testing.T) {
 		_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 			RunID:         runID,
 			SessionID:     "s-1",
-			PrefixVersion: "ca1",
+			PrefixVersion: semanticPrefixVersion,
 			Input:         strings.Repeat("need compact ", 20),
 			Messages: []types.Message{
 				{Role: "system", Content: "base"},
@@ -1782,7 +1784,7 @@ func TestAssemblerCA3RerankerGovernanceEnforceVsDryRun(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3RerankerGovernanceRolloutMatchDeterministic(t *testing.T) {
+func TestAssemblerContextPressureRerankerGovernanceRolloutMatchDeterministic(t *testing.T) {
 	baseCfg := runtimeconfig.DefaultConfig().ContextAssembler
 	baseCfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	baseCfg.CA3.Enabled = true
@@ -1829,7 +1831,7 @@ func TestAssemblerCA3RerankerGovernanceRolloutMatchDeterministic(t *testing.T) {
 		_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 			RunID:         runID,
 			SessionID:     "s-1",
-			PrefixVersion: "ca1",
+			PrefixVersion: semanticPrefixVersion,
 			Input:         strings.Repeat("need compact ", 20),
 			Messages: []types.Message{
 				{Role: "system", Content: "base"},
@@ -1869,7 +1871,7 @@ func TestAssemblerCA3RerankerGovernanceRolloutMatchDeterministic(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3RerankerGovernanceModeFailurePolicy(t *testing.T) {
+func TestAssemblerContextPressureRerankerGovernanceModeFailurePolicy(t *testing.T) {
 	baseCfg := runtimeconfig.DefaultConfig().ContextAssembler
 	baseCfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	baseCfg.CA3.Enabled = true
@@ -1910,7 +1912,7 @@ func TestAssemblerCA3RerankerGovernanceModeFailurePolicy(t *testing.T) {
 	_, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-governance-best-effort",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 10),
 		Messages: []types.Message{
 			{Role: "system", Content: "base"},
@@ -1940,7 +1942,7 @@ func TestAssemblerCA3RerankerGovernanceModeFailurePolicy(t *testing.T) {
 	_, _, err = a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-governance-fail-fast",
 		SessionID:     "s-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         strings.Repeat("need compact ", 10),
 		Messages: []types.Message{
 			{Role: "system", Content: "base"},

@@ -1,4 +1,4 @@
-# Adapter Migration Mapping (A21/A53/A54)
+# Adapter Migration Mapping (adapter template + sandbox profile-pack + memory SPI)
 
 更新时间：2026-03-30
 
@@ -153,9 +153,9 @@ Compatibility notes:
 
 该边界与仓库兼容策略保持一致：`docs/versioning-and-compatibility.md`。
 
-## Manifest Migration Notes（A26）
+## Manifest Migration Notes（manifest contract 主线）
 
-迁移到 A26 后，建议在 adapter 根目录补齐 `adapter-manifest.json`，最小结构：
+迁移到 manifest contract 主线后，建议在 adapter 根目录补齐 `adapter-manifest.json`，最小结构：
 
 ```json
 {
@@ -185,7 +185,7 @@ Compatibility notes:
 - `negotiation.allow_request_override=true` 时可按请求覆盖到 `best_effort`，并记录 override reason taxonomy。
 - `conformance_profile` 与执行场景不一致时，conformance harness 必须阻断。
 
-## A22 Conformance 对齐
+## Adapter Conformance 对齐
 
 迁移完成后建议执行：
 
@@ -219,9 +219,9 @@ pwsh -File scripts/check-adapter-capability-contract.ps1
 - optional capability 降级行为是否仍 deterministic；
 - negotiation 默认策略与 override 开关是否与 conformance profile 对齐。
 
-## Profile Versioning Migration Notes（A28）
+## Profile Versioning Migration Notes（profile versioning + replay 主线）
 
-A28 已补齐 profile version 与 replay gate，迁移建议如下：
+profile versioning + replay 主线已补齐 profile version 与 replay gate，迁移建议如下：
 - 在 adapter 合同元数据中显式维护 `contract_profile_version`（当前基线 `v1alpha1`）。
 - 将 profile 版本与 `conformance_profile` 一起纳入发布记录，避免“版本已升级但验收矩阵未切换”。
 - 为 manifest/negotiation/reason taxonomy 维护最小 replay fixture，升级后先跑回放再放量。
@@ -240,7 +240,7 @@ bash scripts/check-adapter-contract-replay.sh
 pwsh -File scripts/check-adapter-contract-replay.ps1
 ```
 
-## A53 Sandbox Wrapper -> Profile-Pack Adapter Mapping
+## Sandbox Wrapper -> Profile-Pack Adapter Mapping
 
 | legacy wrapper pattern | target profile-pack pattern | compatibility notes | rollback notes | conformance suite id |
 | --- | --- | --- | --- | --- |
@@ -259,7 +259,7 @@ bash scripts/check-sandbox-adapter-conformance-contract.sh
 pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 ```
 
-## A54 Memory Legacy Path -> Unified SPI Mapping
+## Memory Legacy Path -> Unified SPI Mapping
 
 | legacy memory pattern | target pattern | compatibility notes | rollback notes | conformance suite id |
 | --- | --- | --- | --- | --- |
@@ -271,7 +271,7 @@ pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 - readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
 - conformance suites：`integration/adapterconformance/memory_matrix_test.go`、`tool/diagnosticsreplay/arbitration_test.go`（`memory.v1` fixtures）。
 
-## A57 Sandbox Egress + Adapter Allowlist Migration Mapping
+## Sandbox Egress + Adapter Allowlist Migration Mapping
 
 | legacy pattern | target pattern | compatibility notes | rollback notes | conformance suite id |
 | --- | --- | --- | --- | --- |
@@ -282,7 +282,7 @@ pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 | allowlist 策略枚举不统一（不同模块含义不一致） | enforcement `observe|enforce` + unknown-signature `deny|allow_and_record` 固化 | 策略冲突在配置/激活边界 fail-fast；taxonomy 固定 `adapter.allowlist.*` | 回滚时不得删除策略字段，避免热更新路径出现 schema 漂移 | `adapter-allowlist-policy-conflict` |
 | allowlist 命中成功路径无稳定验收 | 命中路径进入正常激活并维持 Run/Stream 语义等价 | 成功路径不引入额外阻断副作用，且 diagnostics additive 字段可回放 | 回滚仅调整策略，不回滚 conformance case id 绑定 | `adapter-allowlist-allowed-path-enforce` |
 
-A57 最小验收命令：
+sandbox egress + adapter allowlist 最小验收命令：
 
 ```bash
 bash scripts/check-sandbox-egress-allowlist-contract.sh

@@ -89,15 +89,15 @@ function Test-ChangedPrefix {
     return $false
 }
 
-Invoke-ReactPlanStep -Label "a67 runner lifecycle + hook + boundary suites" -Command {
+Invoke-ReactPlanStep -Label "react plan notebook runner lifecycle + hook + boundary suites" -Command {
     go test ./core/runner -run 'Test(ReactPlan|ReactPlanNotebookDoesNotBypass)' -count=1
 }
 
-Invoke-ReactPlanStep -Label "a67 config + diagnostics + recorder additive suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(RuntimeReactPlanNotebook|ManagerRuntimeReactPlanNotebook|StoreRunA67|RuntimeRecorderParsesA67|RuntimeRecorderA67)' -count=1
+Invoke-ReactPlanStep -Label "react plan notebook config + diagnostics + recorder additive suites" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(RuntimeReactPlanNotebook|ManagerRuntimeReactPlanNotebook|StoreRunReactPlanNotebook|RuntimeRecorderParsesReactPlanNotebookAdditiveFields|RuntimeRecorderReactPlanNotebookParserCompatibilityAdditiveNullableDefault)' -count=1
 }
 
-Invoke-ReactPlanStep -Label "a67 replay fixture + drift taxonomy suites" -Command {
+Invoke-ReactPlanStep -Label "react plan notebook replay fixture + drift taxonomy suites" -Command {
     go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
 }
 

@@ -35,6 +35,44 @@ if [[ "${boundary_doc}" != *"依赖方向"* ]]; then
   exit 1
 fi
 
+echo "[docs-consistency] semantic labeling governance"
+if ! bash scripts/check-semantic-labeling-governance.sh; then
+  echo "[docs-consistency][semantic-labeling-governance] semantic labeling governance failed"
+  exit 1
+fi
+
+offline_cache_issues=()
+mapfile -t offline_tracked < <(git ls-files -- examples/adapters/_a23-offline-work || true)
+for path in "${offline_tracked[@]}"; do
+  [[ -z "${path}" ]] && continue
+  case "${path}" in
+    "examples/adapters/_a23-offline-work/.gitkeep"|"examples/adapters/_a23-offline-work/README.md")
+      ;;
+    *)
+      offline_cache_issues+=("${path}")
+      ;;
+  esac
+done
+if (( ${#offline_cache_issues[@]} > 0 )); then
+  echo "[offline-scaffold-cache] tracked offline cache artifacts must be removed: ${offline_cache_issues[*]}"
+  exit 1
+fi
+
+repo_hygiene_issues=()
+mapfile -t untracked_paths < <(git ls-files --others --exclude-standard || true)
+for path in "${untracked_paths[@]}"; do
+  [[ -z "${path}" ]] && continue
+  case "${path}" in
+    *.go.[0-9]*|*.tmp|*.bak|*~)
+      repo_hygiene_issues+=("${path}")
+      ;;
+  esac
+done
+if (( ${#repo_hygiene_issues[@]} > 0 )); then
+  echo "[repo-hygiene] temporary artifacts must be removed: ${repo_hygiene_issues[*]}"
+  exit 1
+fi
+
 pre1_issues=()
 roadmap_doc="$(cat docs/development-roadmap.md)"
 versioning_doc="$(cat docs/versioning-and-compatibility.md)"
@@ -134,6 +172,6 @@ if (( ${#adapter_issues[@]} > 0 )); then
   exit 1
 fi
 
-go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection)$' -count=1
+go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts)$' -count=1
 
 echo "Docs consistency check passed."

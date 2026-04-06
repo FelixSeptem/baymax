@@ -13,7 +13,7 @@ import (
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 )
 
-func TestWorkflowGraphComposabilityA15ExpansionDeterminismAndCanonicalIDs(t *testing.T) {
+func TestWorkflowGraphComposabilityExpansionDeterminismAndCanonicalIDs(t *testing.T) {
 	engine := workflow.New(
 		workflow.WithGraphComposabilityEnabled(true),
 		workflow.WithStepAdapter(workflow.DispatchAdapter{
@@ -23,7 +23,7 @@ func TestWorkflowGraphComposabilityA15ExpansionDeterminismAndCanonicalIDs(t *tes
 		}),
 	)
 	def := workflow.Definition{
-		WorkflowID: "wf-a15-determinism",
+		WorkflowID: "wf-workflow-graph-determinism",
 		Subgraphs: map[string]workflow.Subgraph{
 			"prepare": {
 				Steps: []workflow.Step{
@@ -53,7 +53,7 @@ func TestWorkflowGraphComposabilityA15ExpansionDeterminismAndCanonicalIDs(t *tes
 		t.Fatalf("expanded canonical ids mismatch: got=%q want=%q", got, want)
 	}
 
-	res, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-a15-determinism", DSL: def})
+	res, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-workflow-graph-determinism", DSL: def})
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestWorkflowGraphComposabilityA15ExpansionDeterminismAndCanonicalIDs(t *tes
 	}
 }
 
-func TestWorkflowGraphComposabilityA15CompileFailFastMatrix(t *testing.T) {
+func TestWorkflowGraphComposabilityCompileFailFastMatrix(t *testing.T) {
 	timeline := &a2aTimelineCollector{}
 	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(ctx context.Context, req a2a.TaskRequest) (map[string]any, error) {
 		return map[string]any{"ok": true}, nil
@@ -81,7 +81,7 @@ func TestWorkflowGraphComposabilityA15CompileFailFastMatrix(t *testing.T) {
 
 	overrideKind := workflow.StepKindTool
 	invalid := workflow.Definition{
-		WorkflowID: "wf-a15-fail-fast",
+		WorkflowID: "wf-workflow-graph-fail-fast",
 		Subgraphs: map[string]workflow.Subgraph{
 			"remote": {
 				Steps: []workflow.Step{
@@ -108,10 +108,10 @@ func TestWorkflowGraphComposabilityA15CompileFailFastMatrix(t *testing.T) {
 		}),
 	)
 
-	if _, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-a15-fail-fast", DSL: invalid}); err == nil {
+	if _, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-workflow-graph-fail-fast", DSL: invalid}); err == nil {
 		t.Fatal("run should fail fast on forbidden kind override")
 	}
-	if _, err := engine.Stream(context.Background(), workflow.RunRequest{RunID: "stream-a15-fail-fast", DSL: invalid}, func(workflow.StreamEvent) error { return nil }); err == nil {
+	if _, err := engine.Stream(context.Background(), workflow.RunRequest{RunID: "stream-workflow-graph-fail-fast", DSL: invalid}, func(workflow.StreamEvent) error { return nil }); err == nil {
 		t.Fatal("stream should fail fast on forbidden kind override")
 	}
 
@@ -126,7 +126,7 @@ func TestWorkflowGraphComposabilityA15CompileFailFastMatrix(t *testing.T) {
 	}
 }
 
-func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t *testing.T) {
+func TestWorkflowGraphComposabilityRunStreamEquivalenceAndResumeConsistency(t *testing.T) {
 	store := workflow.NewMemoryCheckpointStore()
 	failOnce := true
 	engine := workflow.New(
@@ -143,7 +143,7 @@ func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t
 		}),
 	)
 	def := workflow.Definition{
-		WorkflowID: "wf-a15-resume",
+		WorkflowID: "wf-workflow-graph-resume",
 		Subgraphs: map[string]workflow.Subgraph{
 			"flow": {
 				Steps: []workflow.Step{
@@ -158,7 +158,7 @@ func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t
 		},
 	}
 
-	first, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-a15-resume-1", DSL: def})
+	first, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-workflow-graph-resume-1", DSL: def})
 	if err != nil {
 		t.Fatalf("first run failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t
 		t.Fatalf("first workflow status=%q, want failed", first.WorkflowStatus)
 	}
 
-	resume, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-a15-resume-2", Resume: true, DSL: def})
+	resume, err := engine.Run(context.Background(), workflow.RunRequest{RunID: "run-workflow-graph-resume-2", Resume: true, DSL: def})
 	if err != nil {
 		t.Fatalf("resume run failed: %v", err)
 	}
@@ -174,9 +174,9 @@ func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t
 		t.Fatalf("resume semantics mismatch: %#v", resume)
 	}
 
-	eqReq := workflow.RunRequest{RunID: "run-a15-eq", DSL: def}
+	eqReq := workflow.RunRequest{RunID: "run-workflow-graph-eq", DSL: def}
 	runRes, runErr := engine.Run(context.Background(), eqReq)
-	streamRes, streamErr := engine.Stream(context.Background(), workflow.RunRequest{RunID: "stream-a15-eq", DSL: def}, func(workflow.StreamEvent) error { return nil })
+	streamRes, streamErr := engine.Stream(context.Background(), workflow.RunRequest{RunID: "stream-workflow-graph-eq", DSL: def}, func(workflow.StreamEvent) error { return nil })
 	if runErr != nil || streamErr != nil {
 		t.Fatalf("run/stream errors mismatch run=%v stream=%v", runErr, streamErr)
 	}
@@ -190,7 +190,7 @@ func TestWorkflowGraphComposabilityA15RunStreamEquivalenceAndResumeConsistency(t
 	}
 }
 
-func TestWorkflowGraphComposabilityA15ComposerManagedRemoteStep(t *testing.T) {
+func TestWorkflowGraphComposabilityComposerManagedRemoteStep(t *testing.T) {
 	timeline := &a2aTimelineCollector{}
 	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(ctx context.Context, req a2a.TaskRequest) (map[string]any, error) {
 		return map[string]any{"ok": true}, nil
@@ -224,13 +224,13 @@ func TestWorkflowGraphComposabilityA15ComposerManagedRemoteStep(t *testing.T) {
 	}
 
 	req := workflow.RunRequest{
-		RunID: "run-a15-composer-managed",
+		RunID: "run-workflow-graph-composer-managed",
 		DSL: workflow.Definition{
-			WorkflowID: "wf-a15-composer-managed",
+			WorkflowID: "wf-workflow-graph-composer-managed",
 			Subgraphs: map[string]workflow.Subgraph{
 				"remote": {
 					Steps: []workflow.Step{
-						{StepID: "delegate", TaskID: "task-delegate", Kind: workflow.StepKindA2A, TeamID: "team-a15", AgentID: "agent-main", PeerID: "peer-remote"},
+						{StepID: "delegate", TaskID: "task-delegate", Kind: workflow.StepKindA2A, TeamID: "team-workflow-graph", AgentID: "agent-main", PeerID: "peer-remote"},
 					},
 				},
 			},

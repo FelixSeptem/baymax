@@ -12,19 +12,19 @@ import (
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
-type ca3Compactor interface {
+type pressureCompactor interface {
 	mode() string
-	compact(ctx context.Context, req ca3CompactionRequest) (ca3CompactionResult, error)
+	compact(ctx context.Context, req pressureCompactionRequest) (pressureCompactionResult, error)
 }
 
-type ca3CompactionRequest struct {
+type pressureCompactionRequest struct {
 	AssembleReq types.ContextAssembleRequest
 	ModelReq    types.ModelRequest
 	Config      runtimeconfig.ContextAssemblerCA3Config
 	StagePolicy string
 }
 
-type ca3CompactionResult struct {
+type pressureCompactionResult struct {
 	Messages                []types.Message
 	CompressionRatio        float64
 	Fallback                bool
@@ -54,7 +54,7 @@ func (c *truncateCompactor) mode() string {
 	return "truncate"
 }
 
-func (c *truncateCompactor) compact(_ context.Context, req ca3CompactionRequest) (ca3CompactionResult, error) {
+func (c *truncateCompactor) compact(_ context.Context, req pressureCompactionRequest) (pressureCompactionResult, error) {
 	before := 0
 	after := 0
 	messages := make([]types.Message, 0, len(req.ModelReq.Messages))
@@ -84,7 +84,7 @@ func (c *truncateCompactor) compact(_ context.Context, req ca3CompactionRequest)
 			compression = 0
 		}
 	}
-	return ca3CompactionResult{
+	return pressureCompactionResult{
 		Messages:         messages,
 		CompressionRatio: compression,
 	}, nil
@@ -100,9 +100,9 @@ func (c *semanticCompactor) mode() string {
 	return "semantic"
 }
 
-func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionRequest) (ca3CompactionResult, error) {
+func (c *semanticCompactor) compact(ctx context.Context, req pressureCompactionRequest) (pressureCompactionResult, error) {
 	if c.client == nil {
-		return ca3CompactionResult{}, fmt.Errorf("semantic compactor model client not available")
+		return pressureCompactionResult{}, fmt.Errorf("semantic compactor model client not available")
 	}
 	before := 0
 	after := 0
@@ -135,7 +135,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		embeddingStatus = "enabled"
 		if c.embedding == nil {
 			if !isBestEffortPolicy(req.StagePolicy) {
-				return ca3CompactionResult{}, errors.New("embedding scorer is not configured")
+				return pressureCompactionResult{}, errors.New("embedding scorer is not configured")
 			}
 			embeddingStatus = "fallback_rule_only"
 			embeddingFallbackReason = "embedding_hook_not_bound"
@@ -144,7 +144,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 	if rerankerCfg.Enabled {
 		if govMode == "" {
 			if !isBestEffortPolicy(req.StagePolicy) {
-				return ca3CompactionResult{}, errors.New("invalid reranker governance mode")
+				return pressureCompactionResult{}, errors.New("invalid reranker governance mode")
 			}
 			rerankerFallbackReason = "governance_mode_invalid"
 		}
@@ -152,7 +152,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		rerankerRolloutHit, rolloutErr = isRerankerRolloutMatch(embeddingProvider, embeddingModel, rerankerCfg.Governance.RolloutProviderModels)
 		if rolloutErr != nil {
 			if !isBestEffortPolicy(req.StagePolicy) {
-				return ca3CompactionResult{}, rolloutErr
+				return pressureCompactionResult{}, rolloutErr
 			}
 			if rerankerFallbackReason == "" {
 				rerankerFallbackReason = "governance_rollout_invalid"
@@ -167,7 +167,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 				rerankerThresholdDrift = math.Abs(rerankerThreshold - req.Config.Compaction.Quality.Threshold)
 			}
 		} else if !isBestEffortPolicy(req.StagePolicy) {
-			return ca3CompactionResult{}, fmt.Errorf("reranker threshold profile missing key %q", key)
+			return pressureCompactionResult{}, fmt.Errorf("reranker threshold profile missing key %q", key)
 		} else if rerankerFallbackReason == "" {
 			rerankerFallbackReason = "governance_profile_missing"
 		}
@@ -191,18 +191,18 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 		}
 		prompt, err := buildSemanticCompactionPrompt(req, msg.Content, maxRunes)
 		if err != nil {
-			return ca3CompactionResult{}, fmt.Errorf("semantic prompt render failed: %w", err)
+			return pressureCompactionResult{}, fmt.Errorf("semantic prompt render failed: %w", err)
 		}
 		resp, err := c.client.Generate(ctx, types.ModelRequest{
 			Model: req.ModelReq.Model,
 			Input: prompt,
 		})
 		if err != nil {
-			return ca3CompactionResult{}, fmt.Errorf("semantic compaction generate failed: %w", err)
+			return pressureCompactionResult{}, fmt.Errorf("semantic compaction generate failed: %w", err)
 		}
 		content := strings.TrimSpace(resp.FinalAnswer)
 		if content == "" {
-			return ca3CompactionResult{}, fmt.Errorf("semantic compaction returned empty content")
+			return pressureCompactionResult{}, fmt.Errorf("semantic compaction returned empty content")
 		}
 		if len([]rune(content)) > maxRunes {
 			content = string([]rune(content)[:maxRunes]) + " ...[squashed]"
@@ -232,7 +232,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			cancel()
 			if scoreErr != nil {
 				if !isBestEffortPolicy(req.StagePolicy) {
-					return ca3CompactionResult{}, fmt.Errorf("embedding scoring failed: %w", scoreErr)
+					return pressureCompactionResult{}, fmt.Errorf("embedding scoring failed: %w", scoreErr)
 				}
 				embeddingStatus = "fallback_rule_only"
 				if embeddingFallbackReason == "" {
@@ -259,7 +259,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			})
 			if rerankErr != nil {
 				if !isBestEffortPolicy(req.StagePolicy) {
-					return ca3CompactionResult{}, fmt.Errorf("reranker failed: %w", rerankErr)
+					return pressureCompactionResult{}, fmt.Errorf("reranker failed: %w", rerankErr)
 				}
 				rerankerFallbackReason = "reranker_error"
 				qualityReason = appendReason(qualityReason, rerankerFallbackReason)
@@ -304,7 +304,7 @@ func (c *semanticCompactor) compact(ctx context.Context, req ca3CompactionReques
 			reason = appendReason(reason, embeddingFallbackReason)
 		}
 	}
-	return ca3CompactionResult{
+	return pressureCompactionResult{
 		Messages:                out,
 		CompressionRatio:        compression,
 		GateThreshold:           effectiveGateThreshold,
@@ -413,7 +413,7 @@ func blendSemanticQuality(ruleScore, similarity, ruleWeight, embeddingWeight flo
 	return score
 }
 
-func buildSemanticCompactionPrompt(req ca3CompactionRequest, content string, maxRunes int) (string, error) {
+func buildSemanticCompactionPrompt(req pressureCompactionRequest, content string, maxRunes int) (string, error) {
 	template, err := newSemanticPromptTemplate(req.Config.Compaction.SemanticTemplate)
 	if err != nil {
 		return "", err

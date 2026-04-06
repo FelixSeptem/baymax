@@ -75,8 +75,8 @@ func (e *ArbitrationRuleVersionError) Error() string {
 var arbitrationVersionPattern = regexp.MustCompile(`^a(\d+)\.v(\d+)$`)
 
 var runtimeArbitrationRuleRegistry = map[string]struct{}{
-	RuntimeArbitrationRuleVersionA48V1: {},
-	RuntimeArbitrationRuleVersionA49V1: {},
+	RuntimeArbitrationRuleVersionPrimaryReasonV1:  {},
+	RuntimeArbitrationRuleVersionExplainabilityV1: {},
 }
 
 func RegisteredRuntimeArbitrationRuleVersions() []string {

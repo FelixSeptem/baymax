@@ -21,9 +21,9 @@ const (
 )
 
 const (
-	RuntimeArbitrationRuleVersionA48V1 = "a48.v1"
-	RuntimeArbitrationRuleVersionA49V1 = "a49.v1"
-	RuntimeArbitrationMaxSecondary     = 3
+	RuntimeArbitrationRuleVersionPrimaryReasonV1  = "a48.v1"
+	RuntimeArbitrationRuleVersionExplainabilityV1 = "a49.v1"
+	RuntimeArbitrationMaxSecondary                = 3
 )
 
 type PrimaryReasonArbitrationInput struct {

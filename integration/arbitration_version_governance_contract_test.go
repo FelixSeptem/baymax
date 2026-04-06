@@ -17,7 +17,7 @@ import (
 )
 
 func TestArbitrationVersionGovernanceContractRunStreamParitySupportedRequested(t *testing.T) {
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A50_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_ARBITRATION_VERSION_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -35,40 +35,40 @@ func TestArbitrationVersionGovernanceContractRunStreamParitySupportedRequested(t
 	}
 
 	if _, err := comp.Run(context.Background(), types.RunRequest{
-		RunID:                  "run-a50-supported-run",
+		RunID:                  "run-arbitration-version-supported-run",
 		Input:                  "run",
-		ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionA48V1,
+		ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1,
 	}, nil); err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
 	if _, err := comp.Stream(context.Background(), types.RunRequest{
-		RunID:                  "run-a50-supported-stream",
+		RunID:                  "run-arbitration-version-supported-stream",
 		Input:                  "stream",
-		ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionA48V1,
+		ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1,
 	}, nil); err != nil {
 		t.Fatalf("stream failed: %v", err)
 	}
 
-	runRecord := findRunRecord(t, mgr.RecentRuns(20), "run-a50-supported-run")
-	streamRecord := findRunRecord(t, mgr.RecentRuns(20), "run-a50-supported-stream")
+	runRecord := findRunRecord(t, mgr.RecentRuns(20), "run-arbitration-version-supported-run")
+	streamRecord := findRunRecord(t, mgr.RecentRuns(20), "run-arbitration-version-supported-stream")
 	runSnapshot := arbitrationGovernanceSnapshotFromRunRecord(runRecord)
 	streamSnapshot := arbitrationGovernanceSnapshotFromRunRecord(streamRecord)
 	if !reflect.DeepEqual(runSnapshot, streamSnapshot) {
 		t.Fatalf("run/stream governance parity mismatch run=%#v stream=%#v", runSnapshot, streamSnapshot)
 	}
-	if runSnapshot.RuleRequestedVersion != runtimeconfig.RuntimeArbitrationRuleVersionA48V1 ||
-		runSnapshot.RuleEffectiveVersion != runtimeconfig.RuntimeArbitrationRuleVersionA48V1 ||
+	if runSnapshot.RuleRequestedVersion != runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1 ||
+		runSnapshot.RuleEffectiveVersion != runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1 ||
 		runSnapshot.RuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceRequested ||
 		runSnapshot.RulePolicyAction != runtimeconfig.RuntimeArbitrationPolicyActionNone ||
 		runSnapshot.RuleUnsupportedTotal != 0 ||
 		runSnapshot.RuleMismatchTotal != 0 ||
-		runSnapshot.RuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA48V1 {
+		runSnapshot.RuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1 {
 		t.Fatalf("supported requested version governance mismatch: %#v", runSnapshot)
 	}
 }
 
 func TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a50-admission.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-arbitration-version-admission.yaml")
 	cfg := strings.Join([]string{
 		"runtime:",
 		"  readiness:",
@@ -97,7 +97,7 @@ func TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast(
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A50_TEST",
+		EnvPrefix: "BAYMAX_ARBITRATION_VERSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -116,7 +116,7 @@ func TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast(
 	}
 
 	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
-		RunID:                  "run-a50-unsupported-run",
+		RunID:                  "run-arbitration-version-unsupported-run",
 		Input:                  "run",
 		ArbitrationRuleVersion: "a77.v9",
 	}, nil)
@@ -124,18 +124,18 @@ func TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast(
 		t.Fatal("run should fail-fast on unsupported arbitration version")
 	}
 	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
-		RunID:                  "run-a50-unsupported-stream",
+		RunID:                  "run-arbitration-version-unsupported-stream",
 		Input:                  "stream",
 		ArbitrationRuleVersion: "a77.v9",
 	}, nil)
 	if streamErr == nil {
 		t.Fatal("stream should fail-fast on unsupported arbitration version")
 	}
-	assertA50AdmissionDenyDetails(t, runRes, runtimeconfig.ReadinessCodeArbitrationVersionUnsupported)
-	assertA50AdmissionDenyDetails(t, streamRes, runtimeconfig.ReadinessCodeArbitrationVersionUnsupported)
+	assertArbitrationVersionAdmissionDenyDetails(t, runRes, runtimeconfig.ReadinessCodeArbitrationVersionUnsupported)
+	assertArbitrationVersionAdmissionDenyDetails(t, streamRes, runtimeconfig.ReadinessCodeArbitrationVersionUnsupported)
 
-	runRecord := findRunRecord(t, mgr.RecentRuns(20), "run-a50-unsupported-run")
-	streamRecord := findRunRecord(t, mgr.RecentRuns(20), "run-a50-unsupported-stream")
+	runRecord := findRunRecord(t, mgr.RecentRuns(20), "run-arbitration-version-unsupported-run")
+	streamRecord := findRunRecord(t, mgr.RecentRuns(20), "run-arbitration-version-unsupported-stream")
 	runSnapshot := arbitrationGovernanceSnapshotFromRunRecord(runRecord)
 	streamSnapshot := arbitrationGovernanceSnapshotFromRunRecord(streamRecord)
 	if !reflect.DeepEqual(runSnapshot, streamSnapshot) {
@@ -144,8 +144,8 @@ func TestArbitrationVersionGovernanceContractRunStreamParityUnsupportedFailFast(
 	if runSnapshot.PrimaryCode != runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
 		runSnapshot.PrimarySource != runtimeconfig.RuntimePrimarySourceArbitration ||
 		runSnapshot.RuleRequestedVersion != "a77.v9" ||
-		runSnapshot.RuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
-		runSnapshot.RuleEffectiveVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+		runSnapshot.RuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
+		runSnapshot.RuleEffectiveVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		runSnapshot.RuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceRequested ||
 		runSnapshot.RulePolicyAction != runtimeconfig.RuntimeArbitrationPolicyActionFailFastUnsupported ||
 		runSnapshot.RuleUnsupportedTotal != 1 ||
@@ -178,7 +178,7 @@ func TestArbitrationVersionGovernanceContractMemoryFileParity(t *testing.T) {
 		}
 		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 			FilePath:  cfgPath,
-			EnvPrefix: "BAYMAX_A50_TEST",
+			EnvPrefix: "BAYMAX_ARBITRATION_VERSION_TEST",
 		})
 		if err != nil {
 			t.Fatalf("new runtime manager: %v", err)
@@ -196,15 +196,15 @@ func TestArbitrationVersionGovernanceContractMemoryFileParity(t *testing.T) {
 		if _, err := comp.Run(context.Background(), types.RunRequest{
 			RunID:                  runID,
 			Input:                  "run",
-			ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionA48V1,
+			ArbitrationRuleVersion: runtimeconfig.RuntimeArbitrationRuleVersionPrimaryReasonV1,
 		}, nil); err != nil {
 			t.Fatalf("composer run failed: %v", err)
 		}
 		return findRunRecord(t, mgr.RecentRuns(20), runID)
 	}
 
-	memoryRecord := runOnce(t, "memory", "run-a50-memory")
-	fileRecord := runOnce(t, "file", "run-a50-file")
+	memoryRecord := runOnce(t, "memory", "run-arbitration-version-memory")
+	fileRecord := runOnce(t, "file", "run-arbitration-version-file")
 	memorySnapshot := arbitrationGovernanceSnapshotFromRunRecord(memoryRecord)
 	fileSnapshot := arbitrationGovernanceSnapshotFromRunRecord(fileRecord)
 	if !reflect.DeepEqual(memorySnapshot, fileSnapshot) {
@@ -238,7 +238,7 @@ func arbitrationGovernanceSnapshotFromRunRecord(rec runtimediag.RunRecord) arbit
 	}
 }
 
-func assertA50AdmissionDenyDetails(t *testing.T, result types.RunResult, wantReasonCode string) {
+func assertArbitrationVersionAdmissionDenyDetails(t *testing.T, result types.RunResult, wantReasonCode string) {
 	t.Helper()
 	if result.Error == nil {
 		t.Fatalf("run result missing classified error: %#v", result)
@@ -256,6 +256,6 @@ func assertA50AdmissionDenyDetails(t *testing.T, result types.RunResult, wantRea
 	if strings.TrimSpace(requestedVersion) == "" ||
 		strings.TrimSpace(versionSource) != runtimeconfig.RuntimeArbitrationVersionSourceRequested ||
 		strings.TrimSpace(policyAction) != runtimeconfig.RuntimeArbitrationPolicyActionFailFastUnsupported {
-		t.Fatalf("deny details missing A50 governance explainability: %#v", result.Error.Details)
+		t.Fatalf("deny details missing arbitration governance explainability: %#v", result.Error.Details)
 	}
 }

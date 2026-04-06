@@ -656,7 +656,7 @@ func (c *Composer) executeChild(
 		if pollInterval <= 0 {
 			pollInterval = c.childPollInterval
 		}
-		// Scheduler-managed child execution is the single retry owner (A33).
+		// Scheduler-managed child execution is the single retry owner (collaboration primitive retry contract).
 		// Keep primitive-layer retry outside this path to avoid compounded retries.
 		return scheduler.ExecuteClaimWithA2A(
 			ctx,

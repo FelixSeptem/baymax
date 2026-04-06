@@ -396,66 +396,66 @@ mcp:
 		t.Fatalf("assembler fields mismatch: %#v", items[0])
 	}
 	if items[0].AssembleStageStatus != "stage1_only" || items[0].Stage2SkipReason == "" || items[0].RecapStatus != "appended" {
-		t.Fatalf("ca2 fields mismatch: %#v", items[0])
+		t.Fatalf("context stage2 fields mismatch: %#v", items[0])
 	}
 	if items[0].Stage2RouterMode != "agentic" || items[0].Stage2RouterDecision != "skip_stage2" {
-		t.Fatalf("ca2 router mode/decision mismatch: %#v", items[0])
+		t.Fatalf("context stage2 router mode/decision mismatch: %#v", items[0])
 	}
 	if items[0].Stage2RouterLatencyMs != 7 || items[0].Stage2RouterError != "agentic.callback_missing" {
-		t.Fatalf("ca2 router latency/error mismatch: %#v", items[0])
+		t.Fatalf("context stage2 router latency/error mismatch: %#v", items[0])
 	}
 	if !strings.Contains(items[0].Stage2RouterReason, "agentic.fallback.agentic.callback_missing") {
-		t.Fatalf("ca2 router reason mismatch: %#v", items[0])
+		t.Fatalf("context stage2 router reason mismatch: %#v", items[0])
 	}
 	if items[0].Stage2HitCount != 2 || items[0].Stage2Source != "http" || items[0].Stage2Reason != "ok" {
-		t.Fatalf("ca2 retrieval fields mismatch: %#v", items[0])
+		t.Fatalf("context stage2 retrieval fields mismatch: %#v", items[0])
 	}
 	if items[0].Stage2ReasonCode != "ok" || items[0].Stage2Profile != "http_generic" {
-		t.Fatalf("ca2 retrieval extended fields mismatch: %#v", items[0])
+		t.Fatalf("context stage2 retrieval extended fields mismatch: %#v", items[0])
 	}
 	if items[0].Stage2TemplateProfile != "ragflow_like" ||
 		items[0].Stage2TemplateResolutionSource != "profile_defaults_then_explicit_overrides" ||
 		items[0].Stage2HintMismatchReason != "hint.unsupported" {
-		t.Fatalf("ca2 hint/template fields mismatch: %#v", items[0])
+		t.Fatalf("context stage2 hint/template fields mismatch: %#v", items[0])
 	}
 	if items[0].CA3PressureZone != "warning" || items[0].CA3PressureReason == "" {
-		t.Fatalf("ca3 fields mismatch: %#v", items[0])
+		t.Fatalf("context pressure fields mismatch: %#v", items[0])
 	}
 	if items[0].CA3PressureTrigger != "warning" {
-		t.Fatalf("ca3 trigger mismatch: %#v", items[0])
+		t.Fatalf("context pressure trigger mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompressionRatio == 0 || items[0].CA3SpillCount != 1 || items[0].CA3SwapBackCount != 1 {
-		t.Fatalf("ca3 metrics mismatch: %#v", items[0])
+		t.Fatalf("context pressure metrics mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionMode != "semantic" || !items[0].CA3CompactionFallback || items[0].CA3RetainedEvidence != 2 {
-		t.Fatalf("ca3 compaction metrics mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction metrics mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionFallbackReason != "quality_below_threshold" {
-		t.Fatalf("ca3 compaction fallback reason mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction fallback reason mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionQualityScore != 0.66 || items[0].CA3CompactionQualityReason != "coverage_low" {
-		t.Fatalf("ca3 compaction quality metrics mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction quality metrics mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionEmbeddingProvider != "openai" || items[0].CA3CompactionEmbeddingStatus != "used" {
-		t.Fatalf("ca3 compaction embedding provider/status mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction embedding provider/status mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionEmbeddingSimilarity <= 0 || items[0].CA3CompactionEmbeddingContribution <= 0 {
-		t.Fatalf("ca3 compaction embedding metrics mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction embedding metrics mismatch: %#v", items[0])
 	}
 	if !items[0].CA3CompactionRerankerUsed || items[0].CA3CompactionRerankerProvider != "openai" {
-		t.Fatalf("ca3 compaction reranker provider/used mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction reranker provider/used mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionRerankerModel != "text-embedding-3-small" {
-		t.Fatalf("ca3 compaction reranker model mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction reranker model mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionRerankerThresholdSource != "provider_model_profile" || !items[0].CA3CompactionRerankerThresholdHit {
-		t.Fatalf("ca3 compaction reranker threshold fields mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction reranker threshold fields mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionRerankerProfileVersion != "e5-canary-v1" || !items[0].CA3CompactionRerankerRolloutHit {
-		t.Fatalf("ca3 compaction reranker governance fields mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction reranker governance fields mismatch: %#v", items[0])
 	}
 	if items[0].CA3CompactionRerankerThresholdDrift <= 0 {
-		t.Fatalf("ca3 compaction reranker threshold drift mismatch: %#v", items[0])
+		t.Fatalf("context pressure compaction reranker threshold drift mismatch: %#v", items[0])
 	}
 	if items[0].TeamID != "team-alpha" || items[0].TeamStrategy != "parallel" {
 		t.Fatalf("teams summary id/strategy mismatch: %#v", items[0])
@@ -621,7 +621,7 @@ mcp:
 	}
 }
 
-func TestRuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderAcceptsSemanticContextPressurePayload(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -649,15 +649,110 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a14-compat",
+		Time:    time.Now(),
+		RunID:   "run-semantic-context-pressure",
+		Payload: map[string]any{
+			"status":                                       "succeeded",
+			"context_pressure_zone":                        "warning",
+			"context_pressure_reason":                      "usage_percent_trigger",
+			"context_pressure_trigger":                     "warning",
+			"context_pressure_zone_residency_ms":           map[string]any{"safe": float64(9), "warning": float64(5)},
+			"context_pressure_trigger_counts":              map[string]any{"warning": float64(2)},
+			"context_compaction_compression_ratio":         0.52,
+			"context_spill_count":                          1,
+			"context_swap_back_count":                      1,
+			"context_compaction_mode":                      "semantic",
+			"context_compaction_fallback":                  true,
+			"context_compaction_fallback_reason":           "quality_below_threshold",
+			"context_compaction_quality_score":             0.71,
+			"context_compaction_quality_reason":            "coverage_ok",
+			"context_compaction_embedding_provider":        "openai",
+			"context_compaction_embedding_similarity":      0.83,
+			"context_compaction_embedding_contribution":    0.37,
+			"context_compaction_embedding_status":          "used",
+			"context_compaction_reranker_used":             true,
+			"context_compaction_reranker_provider":         "openai",
+			"context_compaction_reranker_model":            "text-embedding-3-small",
+			"context_compaction_reranker_threshold_source": "provider_model_profile",
+			"context_compaction_reranker_threshold_hit":    true,
+			"context_compaction_reranker_profile_version":  "e5-canary-v1",
+			"context_compaction_reranker_rollout_hit":      true,
+			"context_compaction_reranker_threshold_drift":  0.11,
+			"context_compaction_retained_evidence_count":   3,
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.CA3PressureZone != "warning" || got.CA3PressureReason != "usage_percent_trigger" || got.CA3PressureTrigger != "warning" {
+		t.Fatalf("semantic pressure payload parse mismatch: %#v", got)
+	}
+	if got.CA3CompressionRatio != 0.52 || got.CA3SpillCount != 1 || got.CA3SwapBackCount != 1 {
+		t.Fatalf("semantic pressure metrics parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionMode != "semantic" || !got.CA3CompactionFallback || got.CA3CompactionFallbackReason != "quality_below_threshold" {
+		t.Fatalf("semantic compaction mode/fallback parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionQualityScore != 0.71 || got.CA3CompactionQualityReason != "coverage_ok" {
+		t.Fatalf("semantic compaction quality parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionEmbeddingProvider != "openai" || got.CA3CompactionEmbeddingStatus != "used" {
+		t.Fatalf("semantic compaction embedding parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionRerankerProvider != "openai" || got.CA3CompactionRerankerModel != "text-embedding-3-small" || !got.CA3CompactionRerankerUsed {
+		t.Fatalf("semantic compaction reranker parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionRerankerThresholdSource != "provider_model_profile" || !got.CA3CompactionRerankerThresholdHit {
+		t.Fatalf("semantic compaction reranker threshold parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionRerankerProfileVersion != "e5-canary-v1" || !got.CA3CompactionRerankerRolloutHit {
+		t.Fatalf("semantic compaction reranker governance parse mismatch: %#v", got)
+	}
+	if got.CA3CompactionRerankerThresholdDrift != 0.11 || got.CA3RetainedEvidence != 3 {
+		t.Fatalf("semantic compaction reranker drift/evidence parse mismatch: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderTaskBoardParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-task-board-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":                "success",
-			"latency_ms":            int64(11),
-			"tool_calls":            1,
-			"team_task_total":       2,
-			"a14_future_field":      123,
-			"a14_future_nested_map": map[string]any{"k": "v"},
+			"status":                       "success",
+			"latency_ms":                   int64(11),
+			"tool_calls":                   1,
+			"team_task_total":              2,
+			"task_board_future_field":      123,
+			"task_board_future_nested_map": map[string]any{"k": "v"},
 		},
 	})
 
@@ -686,11 +781,11 @@ mcp:
 		got.WorkflowSubgraphExpansionTotal != 0 ||
 		got.WorkflowConditionTemplateTotal != 0 ||
 		got.WorkflowGraphCompileFailed {
-		t.Fatalf("missing A12/A13 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing async workflow additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA16ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderCollaborationParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -718,12 +813,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a16-compat",
+		RunID:   "run-collaboration-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(12),
-			"a16_future_field": "ignore_me",
+			"status":                     "success",
+			"latency_ms":                 int64(12),
+			"collaboration_future_field": "ignore_me",
 		},
 	})
 
@@ -743,7 +838,7 @@ mcp:
 		got.CollabRetryTotal != 0 ||
 		got.CollabRetrySuccessTotal != 0 ||
 		got.CollabRetryExhaustedTotal != 0 {
-		t.Fatalf("missing A16 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing collaboration additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
@@ -775,7 +870,7 @@ mcp:
 	ev := types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a56-react-recorder",
+		RunID:   "run-react-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                           "failed",
@@ -808,7 +903,7 @@ mcp:
 	}
 }
 
-func TestRuntimeRecorderA17ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderRecoveryParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -836,12 +931,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a17-compat",
+		RunID:   "run-recovery-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(13),
-			"a17_future_field": "ignore_me",
+			"status":                "success",
+			"latency_ms":            int64(13),
+			"recovery_future_field": "ignore_me",
 		},
 	})
 
@@ -857,11 +952,11 @@ mcp:
 		got.RecoveryInflightPolicy != "" ||
 		got.RecoveryTimeoutReentryTotal != 0 ||
 		got.RecoveryTimeoutReentryExhaustedTotal != 0 {
-		t.Fatalf("missing A17 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing recovery additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -889,12 +984,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a40-compat",
+		RunID:   "run-readiness-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(14),
-			"a40_future_field": "ignore_me",
+			"status":                 "success",
+			"latency_ms":             int64(14),
+			"readiness_future_field": "ignore_me",
 		},
 	})
 
@@ -937,11 +1032,11 @@ mcp:
 		got.AdapterHealthCircuitRecoverTotal != 0 ||
 		got.AdapterHealthCircuitState != "" ||
 		got.AdapterHealthGovernancePrimaryCode != "" {
-		t.Fatalf("missing A40 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing runtime readiness additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderArbitrationExplainabilityParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -969,12 +1064,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a49-compat",
+		RunID:   "run-arbitration-explainability-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(49),
-			"a49_future_field": "ignore_me",
+			"status":     "success",
+			"latency_ms": int64(49),
+			"arbitration_explainability_future_field": "ignore_me",
 		},
 	})
 
@@ -991,11 +1086,11 @@ mcp:
 		got.RuntimeArbitrationRuleVersion != "" ||
 		got.RuntimeRemediationHintCode != "" ||
 		got.RuntimeRemediationHintDomain != "" {
-		t.Fatalf("missing A49 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing runtime arbitration explainability additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderArbitrationVersionGovernanceParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1023,12 +1118,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a50-compat",
+		RunID:   "run-arbitration-version-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(50),
-			"a50_future_field": "ignore_me",
+			"status":                           "success",
+			"latency_ms":                       int64(50),
+			"arbitration_version_future_field": "ignore_me",
 		},
 	})
 
@@ -1046,11 +1141,11 @@ mcp:
 		got.RuntimeArbitrationRulePolicyAction != "" ||
 		got.RuntimeArbitrationRuleUnsupportedTotal != 0 ||
 		got.RuntimeArbitrationRuleMismatchTotal != 0 {
-		t.Fatalf("missing A50 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing arbitration version governance additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA51ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderSandboxExecutionParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1078,12 +1173,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a51-compat",
+		RunID:   "run-sandbox-execution-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(51),
-			"a51_future_field": "ignore_me",
+			"status":                         "success",
+			"latency_ms":                     int64(51),
+			"sandbox_execution_future_field": "ignore_me",
 		},
 	})
 
@@ -1113,11 +1208,11 @@ mcp:
 		got.SandboxOOMTotal != 0 ||
 		got.SandboxResourceCPUMsTotal != 0 ||
 		got.SandboxResourceMemoryPeakBytesP95 != 0 {
-		t.Fatalf("missing A51 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing sandbox execution additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA52ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderSandboxRolloutParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1145,12 +1240,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a52-compat",
+		RunID:   "run-sandbox-rollout-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(52),
-			"a52_future_field": "ignore_me",
+			"status":                       "success",
+			"latency_ms":                   int64(52),
+			"sandbox_rollout_future_field": "ignore_me",
 		},
 	})
 
@@ -1171,11 +1266,11 @@ mcp:
 		got.SandboxCapacityAction != "" ||
 		got.SandboxCapacityQueueDepth != 0 ||
 		got.SandboxCapacityInflight != 0 {
-		t.Fatalf("missing A52 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing sandbox rollout additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA52RolloutGovernanceFields(t *testing.T) {
+func TestRuntimeRecorderParsesSandboxRolloutGovernanceFields(t *testing.T) {
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -1186,7 +1281,7 @@ func TestRuntimeRecorderParsesA52RolloutGovernanceFields(t *testing.T) {
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a52-rollout-governance",
+		RunID:   "run-sandbox-rollout-governance",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                             "failed",
@@ -1216,11 +1311,11 @@ func TestRuntimeRecorderParsesA52RolloutGovernanceFields(t *testing.T) {
 		got.SandboxCapacityAction != "deny" ||
 		got.SandboxCapacityQueueDepth != 17 ||
 		got.SandboxCapacityInflight != 8 {
-		t.Fatalf("A52 rollout governance fields parse mismatch: %#v", got)
+		t.Fatalf("sandbox rollout governance fields parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA54MemoryDiagnosticsFields(t *testing.T) {
+func TestRuntimeRecorderParsesMemoryDiagnosticsFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1248,7 +1343,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a54-memory",
+		RunID:   "run-memory-diagnostics",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                      "success",
@@ -1282,11 +1377,11 @@ mcp:
 		got.MemoryFallbackTotal != 1 ||
 		got.MemoryFallbackReasonCode != "memory.fallback.used" ||
 		got.MemoryLatencyMsP95 != 27 {
-		t.Fatalf("A54 memory field parse mismatch: %#v", got)
+		t.Fatalf("memory diagnostics field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA54ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderMemoryParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1314,12 +1409,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a54-compat",
+		RunID:   "run-memory-diagnostics-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(54),
-			"a54_future_field": "ignore_me",
+			"status":                          "success",
+			"latency_ms":                      int64(54),
+			"memory_diagnostics_future_field": "ignore_me",
 		},
 	})
 
@@ -1342,11 +1437,11 @@ mcp:
 		got.MemoryFallbackTotal != 0 ||
 		got.MemoryFallbackReasonCode != "" ||
 		got.MemoryLatencyMsP95 != 0 {
-		t.Fatalf("missing A54 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing memory diagnostics additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA55ObservabilityDiagnosticsFields(t *testing.T) {
+func TestRuntimeRecorderParsesObservabilityDiagnosticsFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1374,7 +1469,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a55-observability",
+		RunID:   "run-observability-diagnostics",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                                 "failed",
@@ -1404,11 +1499,11 @@ mcp:
 		got.DiagnosticsBundleLastStatus != "failed" ||
 		got.DiagnosticsBundleLastReasonCode != "diagnostics.bundle.output_unavailable" ||
 		got.DiagnosticsBundleLastSchemaVersion != "bundle.v1" {
-		t.Fatalf("A55 observability diagnostics parse mismatch: %#v", got)
+		t.Fatalf("observability diagnostics parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA55ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderObservabilityParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1437,7 +1532,7 @@ mcp:
 		Version: types.EventSchemaVersionV1,
 		Type:    types.EventTypeActionTimeline,
 		Time:    time.Now(),
-		RunID:   "run-a55-compat",
+		RunID:   "run-observability-diagnostics-compat",
 		Payload: map[string]any{
 			"phase":    "run",
 			"status":   "running",
@@ -1447,12 +1542,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a55-compat",
+		RunID:   "run-observability-diagnostics-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(55),
-			"a55_future_field": "ignore_me",
+			"status":                                 "success",
+			"latency_ms":                             int64(55),
+			"observability_diagnostics_future_field": "ignore_me",
 		},
 	})
 
@@ -1473,13 +1568,13 @@ mcp:
 		got.DiagnosticsBundleLastStatus != "" ||
 		got.DiagnosticsBundleLastReasonCode != "" ||
 		got.DiagnosticsBundleLastSchemaVersion != "" {
-		t.Fatalf("missing A55 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing observability diagnostics additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleSuccess(t *testing.T) {
+func TestRuntimeRecorderAutoGeneratesObservabilityDiagnosticsBundleSuccess(t *testing.T) {
 	bundleDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-bundle-success.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-observability-bundle-success.yaml")
 	cfg := `
 mcp:
   active_profile: default
@@ -1518,7 +1613,7 @@ runtime:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a55-bundle-success",
+		RunID:   "run-observability-bundle-success",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":        "success",
@@ -1550,14 +1645,14 @@ runtime:
 	}
 }
 
-func TestRuntimeRecorderAutoGeneratesA55DiagnosticsBundleFailureReason(t *testing.T) {
+func TestRuntimeRecorderAutoGeneratesObservabilityDiagnosticsBundleFailureReason(t *testing.T) {
 	tmp := t.TempDir()
 	blocked := filepath.Join(tmp, "blocked")
 	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write blocked marker: %v", err)
 	}
 	bundleDir := filepath.ToSlash(filepath.Join(blocked, "bundles"))
-	cfgPath := filepath.Join(tmp, "runtime-a55-bundle-failure.yaml")
+	cfgPath := filepath.Join(tmp, "runtime-observability-bundle-failure.yaml")
 	cfg := `
 mcp:
   active_profile: default
@@ -1596,7 +1691,7 @@ runtime:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a55-bundle-failure",
+		RunID:   "run-observability-bundle-failure",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status": "failed",
@@ -1616,7 +1711,7 @@ runtime:
 	}
 }
 
-func TestRuntimeRecorderNormalizesA55ObservabilityAndBundleCardinalitySensitiveFields(t *testing.T) {
+func TestRuntimeRecorderNormalizesObservabilityAndBundleCardinalitySensitiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1644,7 +1739,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a55-normalize",
+		RunID:   "run-observability-normalize",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                                 "success",
@@ -1666,11 +1761,11 @@ mcp:
 		got.DiagnosticsBundleLastStatus != runtimeconfig.RuntimeDiagnosticsBundleStatusFailed ||
 		got.DiagnosticsBundleLastReasonCode != runtimeconfig.RuntimeDiagnosticsBundleReasonUnknown ||
 		got.DiagnosticsBundleLastSchemaVersion != runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1 {
-		t.Fatalf("A55 normalization mismatch: %#v", got)
+		t.Fatalf("observability diagnostics normalization mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA50ArbitrationVersionGovernanceFields(t *testing.T) {
+func TestRuntimeRecorderParsesArbitrationVersionGovernanceFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1698,7 +1793,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a50-governance",
+		RunID:   "run-arbitration-version-governance",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status": "failed",
@@ -1722,11 +1817,11 @@ mcp:
 		got.RuntimeArbitrationRulePolicyAction != "fail_fast_unsupported_version" ||
 		got.RuntimeArbitrationRuleUnsupportedTotal != 1 ||
 		got.RuntimeArbitrationRuleMismatchTotal != 0 {
-		t.Fatalf("A50 governance parsing mismatch: %#v", got)
+		t.Fatalf("arbitration version governance parsing mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA41ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderTimeoutResolutionParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1754,12 +1849,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a41-compat",
+		RunID:   "run-timeout-resolution-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(15),
-			"a41_future_field": "ignore_me",
+			"status":                          "success",
+			"latency_ms":                      int64(15),
+			"timeout_resolution_future_field": "ignore_me",
 		},
 	})
 
@@ -1776,11 +1871,11 @@ mcp:
 		got.TimeoutResolutionTrace != "" ||
 		got.TimeoutParentBudgetClampTotal != 0 ||
 		got.TimeoutParentBudgetRejectTotal != 0 {
-		t.Fatalf("missing A41 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing timeout resolution additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderDiagnosticsCardinalityParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1808,12 +1903,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a45-compat",
+		RunID:   "run-diagnostics-cardinality-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(16),
-			"a45_future_field": "ignore_me",
+			"status":                               "success",
+			"latency_ms":                           int64(16),
+			"diagnostics_cardinality_future_field": "ignore_me",
 		},
 	})
 
@@ -1830,11 +1925,11 @@ mcp:
 		got.DiagnosticsCardinalityFailFastRejectTotal != 0 ||
 		got.DiagnosticsCardinalityOverflowPolicy != "truncate_and_record" ||
 		got.DiagnosticsCardinalityTruncatedFieldSummary != "" {
-		t.Fatalf("missing A45 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing diagnostics cardinality additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA46ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderAdapterHealthGovernanceParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1862,12 +1957,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a46-compat",
+		RunID:   "run-adapter-health-governance-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(17),
-			"a46_future_field": "ignore_me",
+			"status":                                 "success",
+			"latency_ms":                             int64(17),
+			"adapter_health_governance_future_field": "ignore_me",
 		},
 	})
 
@@ -1885,11 +1980,11 @@ mcp:
 		got.AdapterHealthCircuitRecoverTotal != 0 ||
 		got.AdapterHealthCircuitState != "" ||
 		got.AdapterHealthGovernancePrimaryCode != "" {
-		t.Fatalf("missing A46 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing adapter health governance additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA57AdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesSandboxEgressAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1917,7 +2012,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a57-recorder",
+		RunID:   "run-security-event-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                         "failed",
@@ -1941,11 +2036,11 @@ mcp:
 		got.AdapterAllowlistDecision != "deny" ||
 		got.AdapterAllowlistBlockTotal != 1 ||
 		got.AdapterAllowlistPrimaryCode != "adapter.allowlist.missing_entry" {
-		t.Fatalf("A57 additive field parse mismatch: %#v", got)
+		t.Fatalf("sandbox egress additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA58AdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesPolicyPrecedenceAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -1973,7 +2068,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a58-recorder",
+		RunID:   "run-policy-decision-path-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                    "failed",
@@ -2010,11 +2105,11 @@ mcp:
 		len(got.PolicyDecisionPath) != 2 ||
 		got.PolicyDecisionPath[0].Stage != "sandbox_action" ||
 		got.PolicyDecisionPath[1].Stage != "readiness_admission" {
-		t.Fatalf("A58 additive field parse mismatch: %#v", got)
+		t.Fatalf("policy precedence additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA59MemoryGovernanceAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesMemoryGovernanceAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2042,7 +2137,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a59-recorder",
+		RunID:   "run-security-event-delivery-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                  "success",
@@ -2065,11 +2160,11 @@ mcp:
 		got.MemoryRerankStats["input_total"] != 4 ||
 		got.MemoryRerankStats["output_total"] != 3 ||
 		got.MemoryLifecycleAction != "ttl_expired" {
-		t.Fatalf("A59 additive field parse mismatch: %#v", got)
+		t.Fatalf("memory governance additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA59ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderMemoryGovernanceParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2097,12 +2192,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a59-compat",
+		RunID:   "run-security-event-delivery-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(11),
-			"a59_future_field": "ignore_me",
+			"status":                               "success",
+			"latency_ms":                           int64(11),
+			"security_event_delivery_future_field": "ignore_me",
 		},
 	})
 
@@ -2119,11 +2214,11 @@ mcp:
 		got.MemoryHits != 0 ||
 		len(got.MemoryRerankStats) != 0 ||
 		got.MemoryLifecycleAction != "" {
-		t.Fatalf("missing A59 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing memory governance additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA60BudgetAdmissionAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesRuntimeBudgetAdmissionAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2151,7 +2246,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a60-recorder",
+		RunID:   "run-runtime-memory-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":          "success",
@@ -2185,11 +2280,11 @@ mcp:
 	if got.BudgetDecision != "degrade" ||
 		got.DegradeAction != "trim_memory_context" ||
 		got.BudgetSnapshot["version"] != "budget_admission.v1" {
-		t.Fatalf("A60 additive field parse mismatch: %#v", got)
+		t.Fatalf("runtime budget admission additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA60ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderRuntimeBudgetAdmissionParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2217,12 +2312,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a60-compat",
+		RunID:   "run-runtime-memory-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(13),
-			"a60_future_field": "ignore_me",
+			"status":                      "success",
+			"latency_ms":                  int64(13),
+			"runtime_memory_future_field": "ignore_me",
 		},
 	})
 
@@ -2237,11 +2332,11 @@ mcp:
 	if got.BudgetDecision != "" ||
 		got.DegradeAction != "" ||
 		len(got.BudgetSnapshot) != 0 {
-		t.Fatalf("missing A60 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing runtime budget admission additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA61TracingEvalAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesTracingEvalAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2269,7 +2364,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a61-recorder",
+		RunID:   "run-agent-eval-tracing-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":               "success",
@@ -2298,14 +2393,14 @@ mcp:
 		got.EvalJobID != "eval-job-recorder-a61" ||
 		got.EvalShardTotal != 8 ||
 		got.EvalResumeCount != 2 {
-		t.Fatalf("A61 additive field parse mismatch: %#v", got)
+		t.Fatalf("tracing+eval additive field parse mismatch: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.94 {
-		t.Fatalf("A61 eval_summary parse mismatch: %#v", got.EvalSummary)
+		t.Fatalf("tracing+eval eval_summary parse mismatch: %#v", got.EvalSummary)
 	}
 }
 
-func TestRuntimeRecorderA61ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2333,12 +2428,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a61-compat",
+		RunID:   "run-agent-eval-tracing-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(17),
-			"a61_future_field": "ignore_me",
+			"status":                          "success",
+			"latency_ms":                      int64(17),
+			"agent_eval_tracing_future_field": "ignore_me",
 		},
 	})
 
@@ -2358,11 +2453,11 @@ mcp:
 		got.EvalJobID != "" ||
 		got.EvalShardTotal != 0 ||
 		got.EvalResumeCount != 0 {
-		t.Fatalf("missing A61 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing tracing+eval additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA65HooksMiddlewareSkillAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesHooksMiddlewareSkillAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2390,7 +2485,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a65-recorder",
+		RunID:   "run-hooks-middleware-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                                "success",
@@ -2444,11 +2539,11 @@ mcp:
 		got.SkillBundlePromptTotal != 2 ||
 		got.SkillBundleWhitelistTotal != 4 ||
 		got.SkillBundleWhitelistRejectedTotal != 1 {
-		t.Fatalf("A65 additive field parse mismatch: %#v", got)
+		t.Fatalf("hooks/middleware additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA65ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderHooksMiddlewareParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2476,12 +2571,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a65-compat",
+		RunID:   "run-hooks-middleware-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(21),
-			"a65_future_field": "ignore_me",
+			"status":                        "success",
+			"latency_ms":                    int64(21),
+			"hooks_middleware_future_field": "ignore_me",
 		},
 	})
 
@@ -2512,11 +2607,11 @@ mcp:
 		got.SkillBundlePromptTotal != 0 ||
 		got.SkillBundleWhitelistTotal != 0 ||
 		got.SkillBundleWhitelistRejectedTotal != 0 {
-		t.Fatalf("missing A65 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing hooks/middleware additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA67PlanNotebookAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesReactPlanNotebookAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2544,11 +2639,11 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a67-recorder",
+		RunID:   "run-react-plan-notebook-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                   "success",
-			"react_plan_id":            "run-a67-recorder",
+			"react_plan_id":            "run-react-plan-notebook-recorder",
 			"react_plan_version":       4,
 			"react_plan_change_total":  4,
 			"react_plan_last_action":   "ReViSe",
@@ -2563,18 +2658,18 @@ mcp:
 		t.Fatalf("run records len = %d, want 1", len(items))
 	}
 	got := items[0]
-	if got.ReactPlanID != "run-a67-recorder" ||
+	if got.ReactPlanID != "run-react-plan-notebook-recorder" ||
 		got.ReactPlanVersion != 4 ||
 		got.ReactPlanChangeTotal != 4 ||
 		got.ReactPlanLastAction != "revise" ||
 		got.ReactPlanChangeReason != "react_iteration_boundary" ||
 		got.ReactPlanRecoverCount != 1 ||
 		got.ReactPlanHookStatus != "degraded" {
-		t.Fatalf("A67 additive field parse mismatch: %#v", got)
+		t.Fatalf("react plan notebook additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA67ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderReactPlanNotebookParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2602,12 +2697,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a67-compat",
+		RunID:   "run-react-plan-notebook-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(31),
-			"a67_future_field": "ignore_me",
+			"status":                           "success",
+			"latency_ms":                       int64(31),
+			"react_plan_notebook_future_field": "ignore_me",
 		},
 	})
 
@@ -2626,11 +2721,11 @@ mcp:
 		got.ReactPlanChangeReason != "" ||
 		got.ReactPlanRecoverCount != 0 ||
 		got.ReactPlanHookStatus != "" {
-		t.Fatalf("missing A67 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing react plan notebook additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA67ContextJITOrganizationAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesContextJITOrganizationAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2658,7 +2753,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a67-ctx-recorder",
+		RunID:   "run-context-jit-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                              "success",
@@ -2684,11 +2779,11 @@ mcp:
 		got.ContextSwapbackRelevanceScore != 0.77 ||
 		got.ContextLifecycleTierStats["warm"] != 3 ||
 		got.ContextRecapSource != "task_aware.stage_actions.v1" {
-		t.Fatalf("A67-CTX additive field parse mismatch: %#v", got)
+		t.Fatalf("context jit additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA67ContextJITParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderContextJITParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2716,12 +2811,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a67-ctx-compat",
+		RunID:   "run-context-jit-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":               "success",
-			"latency_ms":           int64(31),
-			"a67_ctx_future_field": "ignore_me",
+			"status":                   "success",
+			"latency_ms":               int64(31),
+			"context_jit_future_field": "ignore_me",
 		},
 	})
 
@@ -2740,11 +2835,11 @@ mcp:
 		got.ContextSwapbackRelevanceScore != 0 ||
 		len(got.ContextLifecycleTierStats) != 0 ||
 		got.ContextRecapSource != "" {
-		t.Fatalf("missing A67-CTX additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing context jit additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderParsesA68RealtimeAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesRealtimeProtocolAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2772,7 +2867,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a68-recorder",
+		RunID:   "run-realtime-protocol-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                           "success",
@@ -2798,11 +2893,11 @@ mcp:
 		got.RealtimeResumeSource != "cursor" ||
 		got.RealtimeIdempotencyDedupTotal != 3 ||
 		got.RealtimeLastErrorCode != "realtime.sequence_gap" {
-		t.Fatalf("A68 additive field parse mismatch: %#v", got)
+		t.Fatalf("realtime protocol additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA68ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderRealtimeProtocolParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2830,12 +2925,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a68-compat",
+		RunID:   "run-realtime-protocol-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(31),
-			"a68_future_field": "ignore_me",
+			"status":                         "success",
+			"latency_ms":                     int64(31),
+			"realtime_protocol_future_field": "ignore_me",
 		},
 	})
 
@@ -2854,11 +2949,11 @@ mcp:
 		got.RealtimeResumeSource != "" ||
 		got.RealtimeIdempotencyDedupTotal != 0 ||
 		got.RealtimeLastErrorCode != "" {
-		t.Fatalf("missing A68 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing realtime protocol additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA65ReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
+func TestRuntimeRecorderHooksMiddlewareReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2886,7 +2981,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a65-reason-guard",
+		RunID:   "run-hooks-reason-guard",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                       "failed",
@@ -2904,7 +2999,7 @@ mcp:
 	}
 }
 
-func TestRuntimeRecorderParsesA66SnapshotRestoreAdditiveFields(t *testing.T) {
+func TestRuntimeRecorderParsesStateSnapshotRestoreAdditiveFields(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2932,7 +3027,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a66-recorder",
+		RunID:   "run-state-snapshot-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                      "failed",
@@ -2952,11 +3047,11 @@ mcp:
 		got.StateRestoreAction != "compatible_exact_restore" ||
 		got.StateRestoreConflictCode != "state_snapshot_compat_window_exceeded" ||
 		got.StateRestoreSource != "composer" {
-		t.Fatalf("A66 additive field parse mismatch: %#v", got)
+		t.Fatalf("state snapshot restore additive field parse mismatch: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA66ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderStateSnapshotParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -2984,12 +3079,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a66-compat",
+		RunID:   "run-state-snapshot-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(25),
-			"a66_future_field": "ignore_me",
+			"status":                      "success",
+			"latency_ms":                  int64(25),
+			"state_snapshot_future_field": "ignore_me",
 		},
 	})
 
@@ -3005,11 +3100,11 @@ mcp:
 		got.StateRestoreAction != "" ||
 		got.StateRestoreConflictCode != "" ||
 		got.StateRestoreSource != "" {
-		t.Fatalf("missing A66 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing state snapshot restore additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestRuntimeRecorderA66RestoreTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
+func TestRuntimeRecorderStateSnapshotRestoreTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -3037,7 +3132,7 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a66-taxonomy-guard",
+		RunID:   "run-state-snapshot-taxonomy-guard",
 		Time:    time.Now(),
 		Payload: map[string]any{
 			"status":                      "failed",
@@ -3063,7 +3158,7 @@ mcp:
 	}
 }
 
-func TestRuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+func TestRuntimeRecorderPolicyPrecedenceParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 mcp:
@@ -3091,12 +3186,12 @@ mcp:
 	rec.OnEvent(context.Background(), types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
-		RunID:   "run-a58-compat",
+		RunID:   "run-policy-decision-path-compat",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":           "success",
-			"latency_ms":       int64(9),
-			"a58_future_field": "ignore_me",
+			"status":                            "success",
+			"latency_ms":                        int64(9),
+			"policy_decision_path_future_field": "ignore_me",
 		},
 	})
 
@@ -3113,7 +3208,7 @@ mcp:
 		got.DenySource != "" ||
 		got.TieBreakReason != "" ||
 		len(got.PolicyDecisionPath) != 0 {
-		t.Fatalf("missing A58 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing policy precedence additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 

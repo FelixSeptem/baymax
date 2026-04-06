@@ -40,9 +40,9 @@ assert_absent_regex() {
   fi
 }
 
-assert_no_parallel_a65_changes() {
+assert_no_parallel_hooks_middleware_changes() {
   local assertion="$1"
-  local canonical_change="introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65"
+  local canonical_change_hint="introduce-agent-lifecycle-hooks-and-tool-middleware-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +51,7 @@ assert_no_parallel_a65_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${name}" != "${canonical_change}" && "${lower}" == *hook* && "${lower}" == *middleware* ]]; then
+    if [[ "${lower}" != *"${canonical_change_hint}"* && "${lower}" == *hook* && "${lower}" == *middleware* ]]; then
       violations+=("${name}")
     fi
   done
@@ -63,16 +63,17 @@ assert_no_parallel_a65_changes() {
   fi
 }
 
-resolve_a65_change_dir() {
-  local active="openspec/changes/introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65"
-  if [[ -d "${active}" ]]; then
-    echo "${active}"
-    return 0
-  fi
-
+resolve_hooks_middleware_change_dir() {
   local candidate
   shopt -s nullglob
-  for candidate in openspec/changes/archive/*introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65; do
+  for candidate in openspec/changes/*introduce-agent-lifecycle-hooks-and-tool-middleware-contract*; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  for candidate in openspec/changes/archive/*introduce-agent-lifecycle-hooks-and-tool-middleware-contract*; do
     if [[ -d "${candidate}" ]]; then
       echo "${candidate}"
       shopt -u nullglob
@@ -81,7 +82,7 @@ resolve_a65_change_dir() {
   done
   shopt -u nullglob
 
-  echo "[hooks-middleware-contract-gate] unable to locate A65 change directory in active or archive paths" >&2
+  echo "[hooks-middleware-contract-gate] unable to locate hooks/middleware change directory in active or archive paths" >&2
   exit 1
 }
 
@@ -120,38 +121,38 @@ run_step() {
   "$@"
 }
 
-A65_CHANGE_DIR="$(resolve_a65_change_dir)"
+HOOKS_MIDDLEWARE_CHANGE_DIR="$(resolve_hooks_middleware_change_dir)"
 
 run_step "assertion control_plane_absent: contract marker" \
   assert_contains_literal "control_plane_absent" \
-  "${A65_CHANGE_DIR}/specs/agent-lifecycle-hooks-and-tool-middleware-contract/spec.md" \
+  "${HOOKS_MIDDLEWARE_CHANGE_DIR}/specs/agent-lifecycle-hooks-and-tool-middleware-contract/spec.md" \
   "MUST NOT require hosted control-plane services"
 
 run_step "assertion control_plane_absent: gate spec marker" \
   assert_contains_literal "control_plane_absent" \
-  "${A65_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${HOOKS_MIDDLEWARE_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "control_plane_absent"
 
 run_step "assertion control_plane_absent: active change set closure" \
-  assert_no_parallel_a65_changes "control_plane_absent"
+  assert_no_parallel_hooks_middleware_changes "control_plane_absent"
 
 run_step "assertion control_plane_absent: reject hooks/middleware control-plane key drift" \
   assert_absent_regex "control_plane_absent" \
   "runtime\\.(hooks|tool_middleware)\\.[a-zA-Z0-9_.-]*(control_plane|controlplane|orchestrator|controller|service_endpoint|remote_hook|hosted_hook|managed_middleware)"
 
-run_step "assertion a65_same_domain_closure: roadmap marker" \
-  assert_contains_literal "a65_same_domain_closure" \
+run_step "assertion hooks_middleware_same_domain_closure: roadmap marker" \
+  assert_contains_literal "hooks_middleware_same_domain_closure" \
   "docs/development-roadmap.md" \
-  "A65 hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在 A65 内以增量任务吸收，不再新开平行提案。"
+  "Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 
-run_step "a65 runner hooks/middleware run-stream parity suites" \
+run_step "hooks/middleware run-stream parity suites" \
   go test ./core/runner -run 'Test(LifecycleHooksRunAndStreamPhaseOrderParity|LifecycleHooksFailFastStopsRunAndStream|LifecycleHooksDegradeContinuesRunAndStream|ToolMiddlewareTimeoutClassifiedAsPolicyTimeoutInRunAndStream|SkillPreprocessRunsBeforeRunAndStreamModelLoop|SkillPreprocessFailFastAbortsRunAndStream|SkillPreprocessDegradeContinuesRunAndStream|SkillBundlePromptMappingAppendDeterministicForRunAndStream|SkillBundlePromptMappingConflictFailFastForRunAndStream|SkillBundleWhitelistFailFastRejectsBlockedToolForRunAndStream|SkillBundleWhitelistUpperBoundSandboxRejectsDuringPreprocess|SkillBundleWhitelistFirstWinFiltersBlockedToolForRunAndStream)' -count=1
 
-run_step "a65 diagnostics additive compatibility suites" \
-  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA65AdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesA65HooksMiddlewareSkillAdditiveFields|RuntimeRecorderA65ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA65ReasonTaxonomyDriftGuardCanonicalFallback)' -count=1
+run_step "hooks/middleware diagnostics additive compatibility suites" \
+  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunHooksMiddlewareAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesHooksMiddlewareSkillAdditiveFields|RuntimeRecorderHooksMiddlewareParserCompatibilityAdditiveNullableDefault|RuntimeRecorderHooksMiddlewareReasonTaxonomyDriftGuardCanonicalFallback)' -count=1
 
-run_step "a65 replay fixture + drift suites" \
-  go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractA65HooksMiddleware(FixtureSuite|DriftClassification|DriftGuardFailFast)' -count=1
+run_step "hooks/middleware replay fixture + drift suites" \
+  go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractHooksMiddleware(FixtureSuite|DriftClassification|DriftGuardFailFast)' -count=1
 
 changed_files=()
 while IFS= read -r line; do
@@ -195,14 +196,14 @@ if [[ "${skill_impacted}" == "true" ]]; then
   run_step "impacted-contract suites (skill scope): skill loader + runtime skill config suites" \
     go test ./skill/loader ./runtime/config -run 'Test(Compile|RuntimeHooksToolMiddlewareSkillConfig|ManagerRuntimeHooksAndSkillInvalidReloadRollsBack)' -count=1
   run_step "impacted-contract suites (skill scope): replay/contract compatibility suites" \
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractA65HooksMiddleware|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractHooksMiddleware|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
 fi
 
 if [[ "${observability_impacted}" == "true" ]]; then
   run_step "impacted-contract suites (observability scope): observability export+bundle gate" \
     bash scripts/check-observability-export-and-bundle-contract.sh
   run_step "impacted-contract suites (observability scope): diagnostics replay compatibility suites" \
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractA65HooksMiddleware|ReplayContractA61|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput)' -count=1
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractHooksMiddleware|ReplayContractTracingEval|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput)' -count=1
 fi
 
 run_step "contributioncheck parity suites for hooks/middleware gate" \

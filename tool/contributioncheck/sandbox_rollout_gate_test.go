@@ -30,8 +30,8 @@ func TestSandboxRolloutGovernanceGateScriptParity(t *testing.T) {
 		"ManagerSandboxCapacityActionDeterministicFromQueueAndInflight",
 		"ManagerReadinessAdmissionSandboxCapacityPolicyMapping",
 		"ComposerReadinessAdmissionSandbox(RolloutFrozenRunAndStreamEquivalent|CapacityThrottlePolicyParity|RolloutTimelineReasonParity)",
-		"RuntimeRecorder(A52ParserCompatibilityAdditiveNullableDefault|ParsesA52RolloutGovernanceFields)",
-		"ReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedA51A52Compatibility)",
+		"RuntimeRecorder(SandboxRolloutParserCompatibilityAdditiveNullableDefault|ParsesSandboxRolloutGovernanceFields)",
+		"ReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility)",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {

@@ -86,7 +86,7 @@ func TestApplyContextEditGateNegativeDecisions(t *testing.T) {
 	})
 }
 
-func TestAssemblerCA2EditGateDenyKeepsSemantics(t *testing.T) {
+func TestAssemblerContextStage2EditGateDenyKeepsSemantics(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -118,7 +118,7 @@ func TestAssemblerCA2EditGateDenyKeepsSemantics(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-edit-gate-deny",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup context",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{

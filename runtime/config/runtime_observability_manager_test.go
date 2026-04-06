@@ -17,7 +17,7 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 		OutputDir: bundleDir,
 	})
 
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A55_TEST", EnableHotReload: true})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST", EnableHotReload: true})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

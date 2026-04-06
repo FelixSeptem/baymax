@@ -30,9 +30,8 @@ const (
 	stage2RouterModeRules   = "rules"
 	stage2RouterModeAgentic = "agentic"
 
-	stage2RouterDecisionRun  = "run_stage2"
-	stage2RouterDecisionSkip = "skip_stage2"
-
+	stage2RouterDecisionRun        = "run_stage2"
+	stage2RouterDecisionSkip       = "skip_stage2"
 	stage2RouterErrCallbackMissing = "agentic.callback_missing"
 	stage2RouterErrCallbackTimeout = "agentic.callback_timeout"
 	stage2RouterErrCallbackError   = "agentic.callback_error"
@@ -41,7 +40,7 @@ const (
 	contextRecapSourceTaskAwareV1 = "task_aware.stage_actions.v1"
 )
 
-// AgenticRoutingRequest is the normalized callback input for CA2 agentic routing.
+// AgenticRoutingRequest is the normalized callback input for context stage2 agentic routing.
 type AgenticRoutingRequest struct {
 	RunID         string
 	SessionID     string
@@ -52,13 +51,13 @@ type AgenticRoutingRequest struct {
 	Capabilities  []types.ModelCapability
 }
 
-// AgenticRoutingDecision is the callback output for CA2 Stage2 routing.
+// AgenticRoutingDecision is the callback output for context stage2 routing.
 type AgenticRoutingDecision struct {
 	RunStage2 bool
 	Reason    string
 }
 
-// AgenticRouter decides whether Stage2 should run for a CA2 assemble cycle.
+// AgenticRouter decides whether Stage2 should run for a context stage2 assemble cycle.
 type AgenticRouter interface {
 	DecideStage2(ctx context.Context, req AgenticRoutingRequest) (AgenticRoutingDecision, error)
 }
@@ -71,7 +70,7 @@ func (f AgenticRouterFunc) DecideStage2(ctx context.Context, req AgenticRoutingR
 	return f(ctx, req)
 }
 
-// Assembler composes context before model execution using CA1/CA2/CA3 policies.
+// Assembler composes context before model execution using prefix-baseline, stage2-routing, and pressure-compaction policies.
 type Assembler struct {
 	cfgProvider          func() runtimeconfig.ContextAssemblerConfig
 	redactionCfgProvider func() runtimeconfig.SecurityRedactionConfig
@@ -85,7 +84,7 @@ type Assembler struct {
 	stage2Key       string
 	stage2Provider  provider.Provider
 	prefixCache     map[string]string
-	ca3State        map[string]*ca3RunState
+	pressureState   map[string]*pressureRunState
 	spillBackend    SpillBackend
 	spillBackendKey string
 	embeddingScorer SemanticEmbeddingScorer
@@ -150,7 +149,7 @@ func WithSemanticReranker(provider string, reranker SemanticReranker) Option {
 	}
 }
 
-// WithAgenticRouter registers a host callback for CA2 agentic routing decisions.
+// WithAgenticRouter registers a host callback for context stage2 agentic routing decisions.
 func WithAgenticRouter(router AgenticRouter) Option {
 	return func(a *Assembler) {
 		a.agenticRouter = router
@@ -173,7 +172,7 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		},
 		now:             time.Now,
 		prefixCache:     map[string]string{},
-		ca3State:        map[string]*ca3RunState{},
+		pressureState:   map[string]*pressureRunState{},
 		rerankers:       map[string]SemanticReranker{},
 		defaultReranker: &defaultSemanticReranker{},
 	}
@@ -192,10 +191,11 @@ func (a *Assembler) SetAgenticRouter(router AgenticRouter) {
 	a.agenticRouter = router
 }
 
-// Assemble builds model-ready context with CA1/CA2/CA3 policies and diagnostics metadata.
+// Assemble builds model-ready context with prefix-baseline, stage2-routing, and pressure-compaction policies.
 func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleRequest, modelReq types.ModelRequest) (types.ModelRequest, types.ContextAssembleResult, error) {
 	start := a.now()
 	cfg := a.cfgProvider()
+	stage2Config, pressureConfig := cfg.CA2, cfg.CA3
 	if !cfg.Enabled {
 		return modelReq, types.ContextAssembleResult{
 			Prefix: types.PrefixMetadata{
@@ -258,7 +258,7 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 
 	if guardErr != nil {
 		outcome.GuardFailure = guardResult.GuardViolation
-		if !isBestEffortPolicy(cfg.CA2.StagePolicy.Stage1) {
+		if !isBestEffortPolicy(stage2Config.StagePolicy.Stage1) {
 			commit := journal.Entry{
 				Time:          a.now(),
 				RunID:         req.RunID,
@@ -281,9 +281,9 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 	modelReq.Input = guardResult.Input
 	modelReq.Messages = guardResult.Messages
 
-	var ca3Decision ca3Decision
-	if cfg.CA3.Enabled {
-		updatedReq, updatedOutcome, decision, err := a.applyCA3(ctx, req, modelReq, outcome, cfg, "stage1")
+	var pressureGateDecision pressureDecision
+	if pressureConfig.Enabled {
+		updatedReq, updatedOutcome, decision, err := a.applyPressureCompactionAndSwapback(ctx, req, modelReq, outcome, cfg, "stage1")
 		if err != nil {
 			commit := journal.Entry{
 				Time:          a.now(),
@@ -300,11 +300,11 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 		}
 		modelReq = updatedReq
 		outcome = updatedOutcome
-		ca3Decision = decision
+		pressureGateDecision = decision
 	}
 
-	if cfg.CA2.Enabled {
-		modelReq, outcome, err = a.applyCA2(ctx, modelReq, req, cfg, outcome, ca3Decision)
+	if stage2Config.Enabled {
+		modelReq, outcome, err = a.applyStage2RoutingAndDisclosure(ctx, modelReq, req, cfg, outcome, pressureGateDecision)
 		if err != nil {
 			commit := journal.Entry{
 				Time:          a.now(),
@@ -320,8 +320,8 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 			return modelReq, failedResult(req, start, err.Error()), err
 		}
 	}
-	if cfg.CA3.Enabled {
-		modelReq, outcome, _, err = a.applyCA3(ctx, req, modelReq, outcome, cfg, "stage2")
+	if pressureConfig.Enabled {
+		modelReq, outcome, _, err = a.applyPressureCompactionAndSwapback(ctx, req, modelReq, outcome, cfg, "stage2")
 		if err != nil {
 			commit := journal.Entry{
 				Time:          a.now(),
@@ -451,21 +451,20 @@ func failedResult(req types.ContextAssembleRequest, start time.Time, violation s
 		Stage: types.AssembleStage{
 			Status: types.AssembleStageStatusFailed,
 		},
-		Recap: types.RecapMetadata{
-			Status: types.RecapStatusFailed,
-		},
+		Recap: types.RecapMetadata{Status: types.RecapStatusFailed},
 	}
 }
 
-func (a *Assembler) applyCA2(
+func (a *Assembler) applyStage2RoutingAndDisclosure(
 	ctx context.Context,
 	modelReq types.ModelRequest,
 	req types.ContextAssembleRequest,
 	cfg runtimeconfig.ContextAssemblerConfig,
 	outcome types.ContextAssembleResult,
-	ca3 ca3Decision,
+	pressure pressureDecision,
 ) (types.ModelRequest, types.ContextAssembleResult, error) {
-	mode := normalizedStage2RouterMode(cfg.CA2.RoutingMode)
+	stage2Config := cfg.CA2
+	mode := normalizedStage2RouterMode(stage2Config.RoutingMode)
 	outcome.Stage.Stage2RouterMode = mode
 	shouldStage2, skipReason, routerReason, routerError, routerLatency := a.resolveStage2Decision(ctx, req, modelReq, cfg)
 	outcome.Stage.Stage2RouterLatencyMs = routerLatency
@@ -476,50 +475,48 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.Stage2RouterDecision = stage2RouterDecisionSkip
 	}
 	outcome.Stage.Stage2RouterReason = routerReason
-
 	if !shouldStage2 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = skipReason
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
-	if ca3.BlockLowPriorityLoads && !isHighPriorityRequest(modelReq.Input, cfg.CA3.Emergency.HighPriorityTokens) {
+	if pressure.BlockLowPriorityLoads && !isHighPriorityRequest(modelReq.Input, cfg.CA3.Emergency.HighPriorityTokens) {
 		outcome.Stage.Status = types.AssembleStageStatusDegraded
 		outcome.Stage.Stage2SkipReason = "ca3.emergency.low_priority_rejected"
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
-
 	stage2Start := a.now()
 	p, err := a.ensureStage2Provider(cfg)
 	if err != nil {
-		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+		if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.provider.not_ready"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
 		return modelReq, outcome, err
 	}
 	outcome.Stage.Stage2Provider = p.Name()
-	outcome.Stage.Stage2Profile = stage2ProfileFromConfig(cfg.CA2.Stage2.External.Profile, p.Name())
-	outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromConfig(cfg.CA2.Stage2.External.Profile, p.Name())
+	outcome.Stage.Stage2Profile = stage2ProfileFromConfig(stage2Config.Stage2.External.Profile, p.Name())
+	outcome.Stage.Stage2TemplateProfile = stage2TemplateProfileFromConfig(stage2Config.Stage2.External.Profile, p.Name())
 	outcome.Stage.Stage2TemplateResolutionSource = stage2TemplateResolutionSourceFromConfig(
-		cfg.CA2.Stage2.External.TemplateResolutionSource,
-		cfg.CA2.Stage2.External.Profile,
+		stage2Config.Stage2.External.TemplateResolutionSource,
+		stage2Config.Stage2.External.Profile,
 		p.Name(),
 	)
-	stage2Ctx, cancel := context.WithTimeout(ctx, cfg.CA2.Timeout.Stage2)
+	stage2Ctx, cancel := context.WithTimeout(ctx, stage2Config.Timeout.Stage2)
 	defer cancel()
 	resp, err := p.Fetch(stage2Ctx, provider.Request{
 		RunID:     req.RunID,
 		SessionID: req.SessionID,
 		Input:     modelReq.Input,
-		MaxItems:  cfg.CA2.TailRecap.MaxItems,
-		Hints:     stage2HintsFromConfig(cfg.CA2.Stage2.External.Hints),
+		MaxItems:  stage2Config.TailRecap.MaxItems,
+		Hints:     stage2HintsFromConfig(stage2Config.Stage2.External.Hints),
 	})
 	outcome.Stage.Stage2LatencyMs = a.now().Sub(stage2Start).Milliseconds()
 	if err != nil {
@@ -527,10 +524,10 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.Stage2Reason = reason
 		outcome.Stage.Stage2ReasonCode = reasonCode
 		outcome.Stage.Stage2ErrorLayer = errorLayer
-		if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+		if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 			outcome.Stage.Status = types.AssembleStageStatusDegraded
 			outcome.Stage.Stage2SkipReason = "stage2.fetch.failed"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -556,14 +553,13 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, 0)
 		outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
 		outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
 	resp.Chunks = a.sanitizeStage2Chunks(resp.Chunks)
 	resolvedChunks := append([]string(nil), resp.Chunks...)
-	stage2ReasonOverride := ""
-	stage2ReasonCodeOverride := ""
+	stage2ReasonOverride, stage2ReasonCodeOverride := "", ""
 	runtimeContextCfg := runtimeconfig.DefaultConfig().Runtime.Context
 	if a.runtimeContextConfig != nil {
 		runtimeContextCfg = a.runtimeContextConfig()
@@ -575,13 +571,13 @@ func (a *Assembler) applyCA2(
 			stage2Source,
 			a.now(),
 			runtimeContextCfg.JIT.IsolateHandoff,
-			cfg.CA2.StagePolicy.Stage2,
+			stage2Config.StagePolicy.Stage2,
 		)
 		if err != nil {
-			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+			if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 				outcome.Stage.Status = types.AssembleStageStatusDegraded
 				outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.failed"
-				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 				outcome.Recap = recap
 				return modelReq, outcome, nil
 			}
@@ -591,10 +587,10 @@ func (a *Assembler) applyCA2(
 		if handoffPayload.AcceptedTotal > 0 || handoffPayload.RejectedTotal > 0 {
 			raw, err := json.Marshal(handoffPayload)
 			if err != nil {
-				if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+				if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 					outcome.Stage.Status = types.AssembleStageStatusDegraded
 					outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.serialize_failed"
-					modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+					modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 					outcome.Recap = recap
 					return modelReq, outcome, nil
 				}
@@ -612,7 +608,7 @@ func (a *Assembler) applyCA2(
 		if len(resolvedChunks) == 0 {
 			outcome.Stage.Status = types.AssembleStageStatusStage1Only
 			outcome.Stage.Stage2SkipReason = "stage2.isolate_handoff.empty"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -626,10 +622,10 @@ func (a *Assembler) applyCA2(
 		outcome.Stage.ContextRefDiscoverCount = len(discovery.References)
 		discoveryRaw, err := json.Marshal(discovery)
 		if err != nil {
-			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+			if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 				outcome.Stage.Status = types.AssembleStageStatusDegraded
 				outcome.Stage.Stage2SkipReason = "stage2.discover_refs.failed"
-				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 				outcome.Recap = recap
 				return modelReq, outcome, nil
 			}
@@ -639,18 +635,17 @@ func (a *Assembler) applyCA2(
 			Role:    "system",
 			Content: "stage2_refs:" + string(discoveryRaw),
 		})
-
 		resolution, err := resolveSelectedStage2References(
 			discovery.References,
 			catalog,
 			runtimeContextCfg.JIT.ReferenceFirst.MaxResolveTokens,
-			resolveReferenceMissingPolicy(cfg.CA2.StagePolicy.Stage2),
+			resolveReferenceMissingPolicy(stage2Config.StagePolicy.Stage2),
 		)
 		if err != nil {
-			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+			if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 				outcome.Stage.Status = types.AssembleStageStatusDegraded
 				outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.failed"
-				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 				outcome.Recap = recap
 				return modelReq, outcome, nil
 			}
@@ -663,10 +658,10 @@ func (a *Assembler) applyCA2(
 		}
 		resolutionRaw, err := json.Marshal(resolution)
 		if err != nil {
-			if isBestEffortPolicy(cfg.CA2.StagePolicy.Stage2) {
+			if isBestEffortPolicy(stage2Config.StagePolicy.Stage2) {
 				outcome.Stage.Status = types.AssembleStageStatusDegraded
 				outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.serialize_failed"
-				modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+				modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 				outcome.Recap = recap
 				return modelReq, outcome, nil
 			}
@@ -683,7 +678,7 @@ func (a *Assembler) applyCA2(
 		if len(resolvedChunks) == 0 {
 			outcome.Stage.Status = types.AssembleStageStatusStage1Only
 			outcome.Stage.Stage2SkipReason = "stage2.resolve_refs.empty"
-			modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+			modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 			outcome.Recap = recap
 			return modelReq, outcome, nil
 		}
@@ -697,7 +692,7 @@ func (a *Assembler) applyCA2(
 	if len(resolvedChunks) == 0 {
 		outcome.Stage.Status = types.AssembleStageStatusStage1Only
 		outcome.Stage.Stage2SkipReason = "stage2.context.empty"
-		modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+		modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 		outcome.Recap = recap
 		return modelReq, outcome, nil
 	}
@@ -731,7 +726,7 @@ func (a *Assembler) applyCA2(
 	outcome.Stage.MemoryHits = memoryHitsFromMeta(resp.Meta, len(resolvedChunks))
 	outcome.Stage.MemoryRerankStats = memoryRerankStatsFromMeta(resp.Meta)
 	outcome.Stage.MemoryLifecycleAction = memoryLifecycleActionFromMeta(resp.Meta)
-	modelReq, recap := a.appendTailRecap(modelReq, cfg.CA2, &outcome)
+	modelReq, recap := a.appendTailRecap(modelReq, stage2Config, &outcome)
 	outcome.Recap = recap
 	return modelReq, outcome, nil
 }
@@ -742,9 +737,9 @@ func (a *Assembler) resolveStage2Decision(
 	modelReq types.ModelRequest,
 	cfg runtimeconfig.ContextAssemblerConfig,
 ) (bool, string, string, string, int64) {
-	mode := normalizedStage2RouterMode(cfg.CA2.RoutingMode)
+	stage2Config, mode := cfg.CA2, normalizedStage2RouterMode(cfg.CA2.RoutingMode)
 	if mode != stage2RouterModeAgentic {
-		shouldStage2, skipReason := shouldRunStage2(modelReq, cfg.CA2.Routing)
+		shouldStage2, skipReason := shouldRunStage2(modelReq, stage2Config.Routing)
 		if shouldStage2 {
 			return true, "", "rules.threshold.met", "", 0
 		}
@@ -754,10 +749,10 @@ func (a *Assembler) resolveStage2Decision(
 	start := a.now()
 	router := a.snapshotAgenticRouter()
 	if router == nil {
-		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackMissing, 0)
+		return fallbackStage2Decision(modelReq, stage2Config.Routing, stage2RouterErrCallbackMissing, 0)
 	}
 
-	timeout := cfg.CA2.Agentic.DecisionTimeout
+	timeout := stage2Config.Agentic.DecisionTimeout
 	if timeout <= 0 {
 		timeout = runtimeconfig.DefaultConfig().ContextAssembler.CA2.Agentic.DecisionTimeout
 	}
@@ -774,14 +769,14 @@ func (a *Assembler) resolveStage2Decision(
 	})
 	latency := a.now().Sub(start).Milliseconds()
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(routerCtx.Err(), context.DeadlineExceeded) {
-		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackTimeout, latency)
+		return fallbackStage2Decision(modelReq, stage2Config.Routing, stage2RouterErrCallbackTimeout, latency)
 	}
 	if err != nil {
-		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrCallbackError, latency)
+		return fallbackStage2Decision(modelReq, stage2Config.Routing, stage2RouterErrCallbackError, latency)
 	}
 	reason := strings.TrimSpace(decision.Reason)
 	if reason == "" {
-		return fallbackStage2Decision(modelReq, cfg.CA2.Routing, stage2RouterErrInvalidDecision, latency)
+		return fallbackStage2Decision(modelReq, stage2Config.Routing, stage2RouterErrInvalidDecision, latency)
 	}
 	if decision.RunStage2 {
 		return true, "", reason, "", latency

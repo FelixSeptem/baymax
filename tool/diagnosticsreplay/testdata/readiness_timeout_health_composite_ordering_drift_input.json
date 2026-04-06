@@ -1,0 +1,326 @@
+{
+  "version": "readiness_timeout_health.v1",
+  "cases": [
+    {
+      "name": "ready-profile-healthy-closed",
+      "dimensions": {
+        "readiness_status": "ready",
+        "readiness_strict": false,
+        "timeout_source": "profile",
+        "timeout_budget_outcome": "none",
+        "adapter_status": "healthy",
+        "adapter_required": true,
+        "adapter_circuit_state": "closed"
+      },
+      "run": {
+        "readiness": {
+          "status": "ready",
+          "strict": false,
+          "primary_code": "runtime.readiness.admission.ready",
+          "reason_taxonomy": "runtime.readiness.admission.ready"
+        },
+        "timeout": {
+          "source": "profile",
+          "budget_outcome": "none",
+          "trace": [
+            "profile",
+            "resolved"
+          ]
+        },
+        "adapter_health": {
+          "status": "healthy",
+          "required": true,
+          "circuit_state": "closed",
+          "primary_code": "adapter.health.healthy",
+          "governance_primary_code": "adapter.health.circuit_recovered",
+          "reason_taxonomy": "adapter.health.healthy"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "stream": {
+        "readiness": {
+          "status": "ready",
+          "strict": false,
+          "primary_code": "runtime.readiness.admission.ready",
+          "reason_taxonomy": "runtime.readiness.admission.ready"
+        },
+        "timeout": {
+          "source": "profile",
+          "budget_outcome": "none",
+          "trace": [
+            "profile",
+            "resolved"
+          ]
+        },
+        "adapter_health": {
+          "status": "healthy",
+          "required": true,
+          "circuit_state": "closed",
+          "primary_code": "adapter.health.healthy",
+          "governance_primary_code": "adapter.health.circuit_recovered",
+          "reason_taxonomy": "adapter.health.healthy"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "expected": {
+        "readiness": {
+          "status": "ready",
+          "strict": false,
+          "primary_code": "runtime.readiness.admission.ready",
+          "reason_taxonomy": "runtime.readiness.admission.ready"
+        },
+        "timeout": {
+          "source": "profile",
+          "budget_outcome": "none",
+          "trace": [
+            "profile",
+            "resolved"
+          ]
+        },
+        "adapter_health": {
+          "status": "healthy",
+          "required": true,
+          "circuit_state": "closed",
+          "primary_code": "adapter.health.healthy",
+          "governance_primary_code": "adapter.health.circuit_recovered",
+          "reason_taxonomy": "adapter.health.healthy"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ],
+        "nullable_compatibility_keys": [
+          "adapter_health_optional_metadata"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    },
+    {
+      "name": "degraded-domain-clamped-optional-half-open",
+      "dimensions": {
+        "readiness_status": "degraded",
+        "readiness_strict": false,
+        "timeout_source": "domain",
+        "timeout_budget_outcome": "clamped",
+        "adapter_status": "degraded",
+        "adapter_required": false,
+        "adapter_circuit_state": "half_open"
+      },
+      "run": {
+        "readiness": {
+          "status": "degraded",
+          "strict": false,
+          "primary_code": "scheduler.backend.fallback",
+          "reason_taxonomy": "scheduler.backend.fallback"
+        },
+        "timeout": {
+          "source": "domain",
+          "budget_outcome": "clamped",
+          "trace": [
+            "profile",
+            "domain",
+            "parent_clamp"
+          ]
+        },
+        "adapter_health": {
+          "status": "degraded",
+          "required": false,
+          "circuit_state": "half_open",
+          "primary_code": "adapter.health.degraded",
+          "governance_primary_code": "adapter.health.circuit_half_open",
+          "reason_taxonomy": "adapter.health.half_open_degraded"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "stream": {
+        "readiness": {
+          "status": "degraded",
+          "strict": false,
+          "primary_code": "scheduler.backend.fallback",
+          "reason_taxonomy": "scheduler.backend.fallback"
+        },
+        "timeout": {
+          "source": "domain",
+          "budget_outcome": "clamped",
+          "trace": [
+            "profile",
+            "domain",
+            "parent_clamp"
+          ]
+        },
+        "adapter_health": {
+          "status": "degraded",
+          "required": false,
+          "circuit_state": "half_open",
+          "primary_code": "adapter.health.degraded",
+          "governance_primary_code": "adapter.health.circuit_half_open",
+          "reason_taxonomy": "adapter.health.half_open_degraded"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "expected": {
+        "readiness": {
+          "status": "degraded",
+          "strict": false,
+          "primary_code": "scheduler.backend.fallback",
+          "reason_taxonomy": "scheduler.backend.fallback"
+        },
+        "timeout": {
+          "source": "domain",
+          "budget_outcome": "clamped",
+          "trace": [
+            "profile",
+            "domain",
+            "parent_clamp"
+          ]
+        },
+        "adapter_health": {
+          "status": "degraded",
+          "required": false,
+          "circuit_state": "half_open",
+          "primary_code": "adapter.health.degraded",
+          "governance_primary_code": "adapter.health.circuit_half_open",
+          "reason_taxonomy": "adapter.health.half_open_degraded"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 2,
+        "replay_logical_ingest_total": 2
+      }
+    },
+    {
+      "name": "blocked-request-rejected-required-open",
+      "dimensions": {
+        "readiness_status": "blocked",
+        "readiness_strict": true,
+        "timeout_source": "request",
+        "timeout_budget_outcome": "rejected",
+        "adapter_status": "unavailable",
+        "adapter_required": true,
+        "adapter_circuit_state": "open"
+      },
+      "run": {
+        "readiness": {
+          "status": "blocked",
+          "strict": true,
+          "primary_code": "adapter.health.required_circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "timeout": {
+          "source": "request",
+          "budget_outcome": "rejected",
+          "trace": [
+            "profile",
+            "domain",
+            "request",
+            "parent_reject"
+          ]
+        },
+        "adapter_health": {
+          "status": "unavailable",
+          "required": true,
+          "circuit_state": "open",
+          "primary_code": "adapter.health.circuit_open",
+          "governance_primary_code": "adapter.health.circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "stream": {
+        "readiness": {
+          "status": "blocked",
+          "strict": true,
+          "primary_code": "adapter.health.required_circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "timeout": {
+          "source": "request",
+          "budget_outcome": "rejected",
+          "trace": [
+            "profile",
+            "domain",
+            "request",
+            "parent_reject"
+          ]
+        },
+        "adapter_health": {
+          "status": "unavailable",
+          "required": true,
+          "circuit_state": "open",
+          "primary_code": "adapter.health.circuit_open",
+          "governance_primary_code": "adapter.health.circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "ordering": [
+          "timeout",
+          "readiness",
+          "adapter_health"
+        ]
+      },
+      "expected": {
+        "readiness": {
+          "status": "blocked",
+          "strict": true,
+          "primary_code": "adapter.health.required_circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "timeout": {
+          "source": "request",
+          "budget_outcome": "rejected",
+          "trace": [
+            "profile",
+            "domain",
+            "request",
+            "parent_reject"
+          ]
+        },
+        "adapter_health": {
+          "status": "unavailable",
+          "required": true,
+          "circuit_state": "open",
+          "primary_code": "adapter.health.circuit_open",
+          "governance_primary_code": "adapter.health.circuit_open",
+          "reason_taxonomy": "adapter.health.required_circuit_open"
+        },
+        "ordering": [
+          "readiness",
+          "timeout",
+          "adapter_health"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

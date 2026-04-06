@@ -16,7 +16,7 @@ import (
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 )
 
-func TestRecoveryBoundaryA17CrashRestartReplayTimeoutMatrix(t *testing.T) {
+func TestRecoveryBoundaryCrashRestartReplayTimeoutMatrix(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "scheduler-state.json")
 	store1, err := scheduler.NewFileStore(path)
@@ -140,13 +140,13 @@ func TestRecoveryBoundaryA17CrashRestartReplayTimeoutMatrix(t *testing.T) {
 	}
 }
 
-func TestRecoveryBoundaryA17RunStreamEquivalence(t *testing.T) {
+func TestRecoveryBoundaryRunStreamEquivalence(t *testing.T) {
 	exec := func(stream bool, runID, taskID string) runtimediag.RunRecord {
 		cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 		recoveryPath := filepath.Join(t.TempDir(), "recovery")
-		writeA17RecoveryBoundaryRuntimeConfig(t, cfgPath, recoveryPath)
+		writeRecoveryBoundaryRuntimeConfig(t, cfgPath, recoveryPath)
 
-		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A17_EQ_TEST"})
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_RECOVERY_BOUNDARY_EQ_TEST"})
 		if err != nil {
 			t.Fatalf("new runtime manager: %v", err)
 		}
@@ -218,12 +218,12 @@ func TestRecoveryBoundaryA17RunStreamEquivalence(t *testing.T) {
 	}
 }
 
-func TestRecoveryBoundaryA17ReplayIdempotency(t *testing.T) {
+func TestRecoveryBoundaryReplayIdempotency(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	recoveryPath := filepath.Join(t.TempDir(), "recovery")
-	writeA17RecoveryBoundaryRuntimeConfig(t, cfgPath, recoveryPath)
+	writeRecoveryBoundaryRuntimeConfig(t, cfgPath, recoveryPath)
 
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A17_REPLAY_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_RECOVERY_BOUNDARY_REPLAY_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestRecoveryBoundaryA17ReplayIdempotency(t *testing.T) {
 	}
 }
 
-func writeA17RecoveryBoundaryRuntimeConfig(t *testing.T, path, recoveryPath string) {
+func writeRecoveryBoundaryRuntimeConfig(t *testing.T, path, recoveryPath string) {
 	t.Helper()
 	content := "" +
 		"reload:\n" +
@@ -307,6 +307,6 @@ func writeA17RecoveryBoundaryRuntimeConfig(t *testing.T, path, recoveryPath stri
 		"  max_active_children: 8\n" +
 		"  child_timeout_budget: 5s\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write A17 recovery boundary runtime config: %v", err)
+		t.Fatalf("write recovery boundary runtime config: %v", err)
 	}
 }

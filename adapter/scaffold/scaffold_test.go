@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,15 +198,12 @@ func TestBuildPlanIncludesCategoryBootstrapHints(t *testing.T) {
 
 func TestGeneratedConformanceBootstrapOfflineExecutable(t *testing.T) {
 	root := repoRoot(t)
-	parent := filepath.Join(root, "examples", "adapters", "_a23-offline-work")
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		t.Fatalf("mkdir parent: %v", err)
-	}
-	workDir, err := os.MkdirTemp(parent, "a23-offline-")
+	workDir := t.TempDir()
+	moduleRoot := filepath.ToSlash(root)
+	goSum, err := os.ReadFile(filepath.Join(root, "go.sum"))
 	if err != nil {
-		t.Fatalf("mkdir temp scaffold dir: %v", err)
+		t.Fatalf("read root go.sum: %v", err)
 	}
-	defer func() { _ = os.RemoveAll(workDir) }()
 
 	for _, scaffoldType := range []string{TypeMCP, TypeModel, TypeTool} {
 		output := filepath.Join(workDir, scaffoldType)
@@ -217,8 +215,15 @@ func TestGeneratedConformanceBootstrapOfflineExecutable(t *testing.T) {
 		}); genErr != nil {
 			t.Fatalf("generate %s scaffold: %v", scaffoldType, genErr)
 		}
+		goMod := fmt.Sprintf("module baymax-offline-%s\n\ngo 1.26.0\n\nrequire github.com/FelixSeptem/baymax v0.0.0\n\nreplace github.com/FelixSeptem/baymax => %s\n", scaffoldType, moduleRoot)
+		if writeErr := os.WriteFile(filepath.Join(output, "go.mod"), []byte(goMod), 0o600); writeErr != nil {
+			t.Fatalf("write temporary go.mod for %s: %v", scaffoldType, writeErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(output, "go.sum"), goSum, 0o600); writeErr != nil {
+			t.Fatalf("write temporary go.sum for %s: %v", scaffoldType, writeErr)
+		}
 
-		cmd := exec.Command("go", "test", ".", "-run", "^TestConformanceBootstrapAlignment$", "-count=1")
+		cmd := exec.Command("go", "test", "-mod=mod", ".", "-run", "^TestConformanceBootstrapAlignment$", "-count=1")
 		cmd.Dir = output
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 		out, runErr := cmd.CombinedOutput()

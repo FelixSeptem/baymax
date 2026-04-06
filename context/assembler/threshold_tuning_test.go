@@ -79,7 +79,7 @@ func TestRenderThresholdTuningMarkdown(t *testing.T) {
 		CorpusReadiness:    "limited",
 		CorpusReadinessMsg: "guidance",
 	})
-	if !strings.Contains(md, "CA3 Threshold Tuning Report") {
+	if !strings.Contains(md, "Context Pressure Threshold Tuning Report") {
 		t.Fatalf("unexpected markdown output: %s", md)
 	}
 	if !strings.Contains(md, "Threshold: `0.620`") {

@@ -15,7 +15,7 @@ import (
 )
 
 func TestRealtimeRunStreamResumeParityAndIdempotency(t *testing.T) {
-	mgr := newRealtimeRuntimeManagerForTest(t, "BAYMAX_A68_RUNNER_PARITY")
+	mgr := newRealtimeRuntimeManagerForTest(t, "BAYMAX_RUNTIME_REALTIME_RUNNER_PARITY")
 
 	runModel := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -37,18 +37,18 @@ func TestRealtimeRunStreamResumeParityAndIdempotency(t *testing.T) {
 	runEngine := New(runModel, WithRuntimeManager(mgr))
 	streamEngine := New(streamModel, WithRuntimeManager(mgr))
 	req := types.RunRequest{
-		RunID:     "run-a68-parity",
-		SessionID: "session-a68-parity",
+		RunID:     "run-realtime-parity",
+		SessionID: "session-realtime-parity",
 		Input:     "resume",
 		Realtime: &types.RealtimeRunRequest{
 			Events: []types.RealtimeEventEnvelope{
-				newRealtimeControlEvent("interrupt-1", "session-a68-parity", "run-a68-parity", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
-				newRealtimeControlEvent("interrupt-1", "session-a68-parity", "run-a68-parity", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
-				newRealtimeControlEvent("resume-1", "session-a68-parity", "run-a68-parity", 2, types.RealtimeEventTypeResume, map[string]any{
-					"cursor": "session-a68-parity:run-a68-parity:1",
+				newRealtimeControlEvent("interrupt-1", "session-realtime-parity", "run-realtime-parity", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("interrupt-1", "session-realtime-parity", "run-realtime-parity", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("resume-1", "session-realtime-parity", "run-realtime-parity", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-realtime-parity:run-realtime-parity:1",
 				}),
-				newRealtimeControlEvent("resume-1", "session-a68-parity", "run-a68-parity", 2, types.RealtimeEventTypeResume, map[string]any{
-					"cursor": "session-a68-parity:run-a68-parity:1",
+				newRealtimeControlEvent("resume-1", "session-realtime-parity", "run-realtime-parity", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-realtime-parity:run-realtime-parity:1",
 				}),
 			},
 		},
@@ -82,7 +82,7 @@ func TestRealtimeRunStreamResumeParityAndIdempotency(t *testing.T) {
 }
 
 func TestRealtimeRunStreamInvalidResumeClassificationParity(t *testing.T) {
-	mgr := newRealtimeRuntimeManagerForTest(t, "BAYMAX_A68_RUNNER_INVALID_RESUME")
+	mgr := newRealtimeRuntimeManagerForTest(t, "BAYMAX_RUNTIME_REALTIME_RUNNER_INVALID_RESUME")
 
 	runModel := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -98,15 +98,15 @@ func TestRealtimeRunStreamInvalidResumeClassificationParity(t *testing.T) {
 	runEngine := New(runModel, WithRuntimeManager(mgr))
 	streamEngine := New(streamModel, WithRuntimeManager(mgr))
 	req := types.RunRequest{
-		RunID:     "run-a68-invalid-resume",
-		SessionID: "session-a68-invalid-resume",
+		RunID:     "run-realtime-invalid-resume",
+		SessionID: "session-realtime-invalid-resume",
 		Input:     "resume",
 		Realtime: &types.RealtimeRunRequest{
 			Events: []types.RealtimeEventEnvelope{
 				newRealtimeControlEvent(
 					"resume-invalid",
-					"session-a68-invalid-resume",
-					"run-a68-invalid-resume",
+					"session-realtime-invalid-resume",
+					"run-realtime-invalid-resume",
 					1,
 					types.RealtimeEventTypeResume,
 					map[string]any{"cursor": "bad-cursor"},
@@ -146,8 +146,8 @@ func TestRealtimeSequenceGapAndOrderClassification(t *testing.T) {
 	engine := New(&fakeModel{})
 	session := &realtimeSessionRuntime{
 		engine:    engine,
-		runID:     "run-a68-gap",
-		sessionID: "session-a68-gap",
+		runID:     "run-realtime-sequence-gap",
+		sessionID: "session-realtime-sequence-gap",
 		cfg: runtimeconfig.RuntimeRealtimeConfig{
 			Protocol: runtimeconfig.RuntimeRealtimeProtocolConfig{
 				Enabled:           true,
@@ -164,8 +164,8 @@ func TestRealtimeSequenceGapAndOrderClassification(t *testing.T) {
 	}
 
 	err := session.ingestControlEvents(context.Background(), &eventCollector{}, 0, []types.RealtimeEventEnvelope{
-		newRealtimeControlEvent("evt-1", "session-a68-gap", "run-a68-gap", 1, types.RealtimeEventTypeRequest, map[string]any{"input": "x"}),
-		newRealtimeControlEvent("evt-2", "session-a68-gap", "run-a68-gap", 3, types.RealtimeEventTypeDelta, map[string]any{"delta": "y"}),
+		newRealtimeControlEvent("evt-1", "session-realtime-sequence-gap", "run-realtime-sequence-gap", 1, types.RealtimeEventTypeRequest, map[string]any{"input": "x"}),
+		newRealtimeControlEvent("evt-2", "session-realtime-sequence-gap", "run-realtime-sequence-gap", 3, types.RealtimeEventTypeDelta, map[string]any{"delta": "y"}),
 	})
 	if err == nil || !strings.Contains(err.Error(), "sequence gap") {
 		t.Fatalf("expected sequence gap error, got %v", err)
@@ -176,14 +176,14 @@ func TestRealtimeSequenceGapAndOrderClassification(t *testing.T) {
 
 	session2 := &realtimeSessionRuntime{
 		engine:    engine,
-		runID:     "run-a68-order",
-		sessionID: "session-a68-order",
+		runID:     "run-realtime-order",
+		sessionID: "session-realtime-order",
 		cfg:       session.cfg,
 		seenDedup: map[string]struct{}{},
 	}
 	err = session2.ingestControlEvents(context.Background(), &eventCollector{}, 0, []types.RealtimeEventEnvelope{
-		newRealtimeControlEvent("evt-1", "session-a68-order", "run-a68-order", 2, types.RealtimeEventTypeRequest, map[string]any{"input": "x"}),
-		newRealtimeControlEvent("evt-2", "session-a68-order", "run-a68-order", 1, types.RealtimeEventTypeDelta, map[string]any{"delta": "y"}),
+		newRealtimeControlEvent("evt-1", "session-realtime-order", "run-realtime-order", 2, types.RealtimeEventTypeRequest, map[string]any{"input": "x"}),
+		newRealtimeControlEvent("evt-2", "session-realtime-order", "run-realtime-order", 1, types.RealtimeEventTypeDelta, map[string]any{"delta": "y"}),
 	})
 	if err == nil || !strings.Contains(err.Error(), "out of order") {
 		t.Fatalf("expected out-of-order error, got %v", err)
@@ -196,8 +196,8 @@ func TestRealtimeSequenceGapAndOrderClassification(t *testing.T) {
 func TestRealtimeResumeBoundaryStableWithContextJITSwapBackTiering(t *testing.T) {
 	dir := t.TempDir()
 	spillPath := filepath.Join(dir, "spill.jsonl")
-	writeRealtimeSpillFixture(t, spillPath, "run-a68-ctx-boundary")
-	mgr := newRealtimeRuntimeManagerWithContextJITForTest(t, "BAYMAX_A68_CTX_BOUNDARY", spillPath)
+	writeRealtimeSpillFixture(t, spillPath, "run-realtime-context-boundary")
+	mgr := newRealtimeRuntimeManagerWithContextJITForTest(t, "BAYMAX_RUNTIME_REALTIME_CONTEXT_BOUNDARY", spillPath)
 
 	runModel := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -218,18 +218,18 @@ func TestRealtimeResumeBoundaryStableWithContextJITSwapBackTiering(t *testing.T)
 	runEngine := New(runModel, WithRuntimeManager(mgr))
 	streamEngine := New(streamModel, WithRuntimeManager(mgr))
 	req := types.RunRequest{
-		RunID:     "run-a68-ctx-boundary",
-		SessionID: "session-a68-ctx-boundary",
+		RunID:     "run-realtime-context-boundary",
+		SessionID: "session-realtime-context-boundary",
 		Input:     "resume boundary status",
 		Realtime: &types.RealtimeRunRequest{
 			Events: []types.RealtimeEventEnvelope{
-				newRealtimeControlEvent("interrupt-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
-				newRealtimeControlEvent("interrupt-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
-				newRealtimeControlEvent("resume-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
-					"cursor": "session-a68-ctx-boundary:run-a68-ctx-boundary:1",
+				newRealtimeControlEvent("interrupt-ctx-1", "session-realtime-context-boundary", "run-realtime-context-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("interrupt-ctx-1", "session-realtime-context-boundary", "run-realtime-context-boundary", 1, types.RealtimeEventTypeInterrupt, map[string]any{}),
+				newRealtimeControlEvent("resume-ctx-1", "session-realtime-context-boundary", "run-realtime-context-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-realtime-context-boundary:run-realtime-context-boundary:1",
 				}),
-				newRealtimeControlEvent("resume-ctx-1", "session-a68-ctx-boundary", "run-a68-ctx-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
-					"cursor": "session-a68-ctx-boundary:run-a68-ctx-boundary:1",
+				newRealtimeControlEvent("resume-ctx-1", "session-realtime-context-boundary", "run-realtime-context-boundary", 2, types.RealtimeEventTypeResume, map[string]any{
+					"cursor": "session-realtime-context-boundary:run-realtime-context-boundary:1",
 				}),
 			},
 		},

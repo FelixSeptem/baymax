@@ -68,6 +68,24 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] go file line budget governance"
+if ! bash scripts/check-go-file-line-budget.sh; then
+  echo "[quality-gate][go-file-line-budget] go file line budget governance failed"
+  exit 1
+fi
+
+echo "[quality-gate] go split semantic equivalence strong checks"
+if ! bash scripts/check-go-split-semantic-equivalence.sh; then
+  echo "[quality-gate][go-split-strong-check] go split semantic equivalence strong checks failed"
+  exit 1
+fi
+
+echo "[quality-gate] semantic labeling governance"
+if ! bash scripts/check-semantic-labeling-governance.sh; then
+  echo "[quality-gate][semantic-labeling-governance] semantic labeling governance failed"
+  exit 1
+fi
+
 echo "[quality-gate] canonical mailbox entrypoints"
 if ! bash scripts/check-canonical-mailbox-entrypoints.sh; then
   echo "[quality-gate][canonical-mailbox-entrypoints] canonical mailbox invoke guard failed"
@@ -87,19 +105,19 @@ if ! bash scripts/check-state-snapshot-contract.sh; then
 fi
 
 echo "[quality-gate] runtime readiness + explainability + version governance contract suites"
-if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1; then
+if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault|RuntimeRecorderArbitrationExplainabilityParserCompatibilityAdditiveNullableDefault|RuntimeRecorderArbitrationVersionGovernanceParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1; then
   echo "[quality-gate][runtime-readiness] runtime readiness contract suites failed"
   exit 1
 fi
 
 echo "[quality-gate] diagnostics cardinality contract suites"
-if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1; then
+if ! go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderDiagnosticsCardinalityParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1; then
   echo "[quality-gate][diagnostics-cardinality] diagnostics cardinality contract suites failed"
   exit 1
 fi
 
 echo "[quality-gate] adapter-health contract suites"
-if ! go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA46ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1; then
+if ! go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault|RuntimeRecorderAdapterHealthGovernanceParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1; then
   echo "[quality-gate][adapter-health] adapter-health contract suites failed"
   exit 1
 fi
@@ -265,8 +283,8 @@ fi
 echo "[quality-gate] golangci-lint"
 golangci-lint run --config .golangci.yml
 
-echo "[quality-gate] CA4 benchmark regression"
-bash scripts/check-ca4-benchmark-regression.sh
+echo "[quality-gate] context production hardening benchmark regression"
+bash scripts/check-context-production-hardening-benchmark-regression.sh
 
 echo "[quality-gate] multi-agent mainline benchmark regression"
 bash scripts/check-multi-agent-performance-regression.sh

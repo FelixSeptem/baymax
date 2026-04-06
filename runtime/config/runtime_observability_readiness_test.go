@@ -22,7 +22,7 @@ runtime:
       queue_capacity: 128
       on_error: degrade_and_record
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A55_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager non-strict failed: %v", err)
 	}
@@ -56,7 +56,7 @@ runtime:
       queue_capacity: 128
       on_error: degrade_and_record
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A55_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager strict failed: %v", err)
 	}
@@ -98,7 +98,7 @@ runtime:
       max_size_mb: 64
       include_sections: [timeline, diagnostics]
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A55_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager non-strict failed: %v", err)
 	}
@@ -124,7 +124,7 @@ runtime:
       max_size_mb: 64
       include_sections: [timeline, diagnostics]
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A55_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager strict failed: %v", err)
 	}
@@ -164,7 +164,7 @@ runtime:
       queue_capacity: 128
       on_error: degrade_and_record
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A55_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

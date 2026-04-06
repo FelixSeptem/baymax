@@ -9,6 +9,8 @@
 - 热更新监听、原子切换与失败回滚
 - 对外提供策略解析与脱敏辅助接口
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 核心对象是 `Manager`：
@@ -64,11 +66,16 @@
 - `runtime/config` 不依赖 `mcp/http` 或 `mcp/stdio` 传输实现。
 - 非法配置和非法热更新必须 fail-fast，并保持旧快照可回滚。
 - 配置字段变更需要同步更新 `docs/runtime-config-diagnostics.md` 与契约测试。
-- A41 新增 operation profile 配置域：`runtime.operation_profiles.default_profile` 与四个 profile timeout（`legacy|interactive|background|batch`）。
-- A41 timeout 解析器固定三层优先级：`profile -> domain -> request`，并输出来源标签与 trace（`v1`）。
-- A58 新增 policy precedence 配置域：`runtime.policy.precedence.*`、`runtime.policy.tie_breaker.*`、`runtime.policy.explainability.*`；
+- operation profile 配置域：`runtime.operation_profiles.default_profile` 与四个 profile timeout（`legacy|interactive|background|batch`）。
+- timeout 解析器固定三层优先级：`profile -> domain -> request`，并输出来源标签与 trace（`v1`）。
+- policy precedence 配置域：`runtime.policy.precedence.*`、`runtime.policy.tie_breaker.*`、`runtime.policy.explainability.*`；
   固定 canonical stage 顺序 `action_gate -> security_s2 -> sandbox_action -> sandbox_egress -> adapter_allowlist -> readiness_admission`。
-- A60 新增 budget admission 配置域：`runtime.admission.budget.*`、`runtime.admission.degrade_policy.*`；阈值非法或策略非法时启动/热更新必须 fail-fast，并保持旧快照回滚。
+- budget admission 配置域：`runtime.admission.budget.*`、`runtime.admission.degrade_policy.*`；阈值非法或策略非法时启动/热更新必须 fail-fast，并保持旧快照回滚。
+- 命名迁移窗口：`context_assembler.stage2_routing_and_disclosure` / `context_assembler.pressure_compaction_and_swapback` 作为语义主名，
+  保持对 legacy 编号化 stage alias 的兼容读取；mixed 输入冲突时语义主名优先。
+- 迁移提示输出：当语义主名参与加载时会输出 migration hint 日志；若 mixed 输入冲突，日志会明确“semantic primary takes precedence”，
+  便于迁移期定位与回滚。
+- 回滚路径：发生回归时可回退为 legacy alias-only 配置，行为语义保持不变（兼容桥接仍可读取并生效）。
 
 ## 配置与默认值
 
@@ -81,13 +88,13 @@
   - `interactive.timeout=10s`
   - `background.timeout=30s`
   - `batch.timeout=2m`
-- policy precedence 默认值（A58）：
+- policy precedence 默认值：
   - `precedence.version=policy_stack.v1`
   - `precedence.matrix` 使用 canonical rank `1..6`
   - `tie_breaker.mode=lexical_code_then_source_order`
   - `tie_breaker.source_order` 使用 canonical stage 顺序
   - `explainability.enabled=true`
-- budget admission 默认值（A60）：
+- budget admission 默认值：
   - `budget.cost.degrade_threshold=0.75`
   - `budget.cost.hard_threshold=1.0`
   - `budget.latency.degrade_threshold=1200ms`

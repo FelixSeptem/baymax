@@ -11,6 +11,9 @@
 - `mailbox`：统一消息协调契约（command/event/result + lifecycle/query）
 - `invoke`：A2A 调用桥接层（仅保留 mailbox bridge 作为公开 canonical 入口）
 - `collab`：协作原语（handoff/delegation/aggregation）统一抽象
+- `snapshot`：统一 state/session snapshot 导入导出合同
+
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
 ## 架构设计
 
@@ -22,8 +25,8 @@
 - `scheduler` 负责任务生命周期状态机与治理策略
   - async-await 路径支持 `awaiting_report` + callback/poll 双来源终态收敛；
     poll fallback 仅作为 callback 缺失时的补偿路径，仲裁规则固定 `first_terminal_wins + record_conflict`。
-  - A41 子任务路径统一遵循 timeout resolver（`profile -> domain -> request`），并执行父子预算收敛 `min(parent_remaining, child_resolved)`。
-- `composer` managed 入口在 A44 支持 readiness admission guard：
+  - 子任务路径统一遵循 timeout resolver（`profile -> domain -> request`），并执行父子预算收敛 `min(parent_remaining, child_resolved)`。
+- `composer` managed 入口支持 readiness admission guard：
   - `blocked` 默认 fail-fast 拒绝；
   - `degraded` 按策略 `allow_and_record|fail_fast` 控制；
   - deny 路径不触发 enqueue / mailbox publish / lifecycle mutation。
@@ -31,7 +34,8 @@
   并提供可选 lifecycle worker 原语（`consume -> handler -> ack|nack|requeue`）
 - `invoke` 负责与 mailbox 对齐的 A2A 调用桥接；公开入口固定为 `MailboxBridge`
 - `collab` 负责跨路径一致的 handoff/delegation/aggregation 语义
-  - A33：支持默认关闭、可显式开启的有界 primitive retry（sync delegation + async submit）
+  - 支持默认关闭、可显式开启的有界 primitive retry（sync delegation + async submit）
+- `snapshot` 负责版本化 manifest、digest 校验、strict/compatible 恢复决策与 operation 幂等收敛。
 
 所有编排路径通过标准 `action.timeline` / `run.finished` 事件暴露状态。
 
@@ -44,12 +48,15 @@
 - `mailbox/mailbox.go`
 - `invoke/mailbox_bridge.go`
 - `collab/primitives.go`
+- `snapshot/manifest.go`
+- `snapshot/contract.go`
 
 ## 边界与依赖
 
 - 编排层不承载 provider 协议或 MCP transport 细节。
 - 编排层不直接依赖 `runtime/diagnostics` 包；run/timeline 汇总仍经 `observability/event.RuntimeRecorder` 单写收口。
-- mailbox publish/lifecycle 诊断（A35/A36）通过 `runtime/config.Manager.RecordMailboxDiagnostic` 写入，保持配置域边界与可查询性。
+- mailbox publish/lifecycle 诊断通过 `runtime/config.Manager.RecordMailboxDiagnostic` 写入，保持配置域边界与可查询性。
+- `snapshot` 只定义合同层语义，不重写既有 checkpoint/snapshot 存储事实源。
 - reason namespace（如 `team.*`、`workflow.*`、`scheduler.*`、`subagent.*`）需保持稳定以支持契约测试。
 
 ## 配置与默认值
@@ -64,6 +71,7 @@
 - async-await reconcile 默认关闭（`scheduler.async_await.reconcile.enabled=false`），启用后按 `interval/batch_size/jitter_ratio` 节流对账。
 - readiness admission 默认关闭（`runtime.readiness.admission.enabled=false`），启用后在 managed Run/Stream 执行前统一准入。
 - workflow graph composability 默认关闭，需显式开启。
+- unified snapshot 默认关闭（`runtime.state.snapshot.enabled=false`），默认恢复模式为 `strict`，兼容窗口默认 `1`。
 
 ## 当前非目标
 
@@ -73,6 +81,7 @@
 ## 可观测性与验证
 
 - 关键验证：`go test ./orchestration/... -count=1` 与 `go test ./integration -run 'TestComposer|TestScheduler|TestWorkflow' -count=1`。
+- snapshot 合同回归：`go test ./orchestration/snapshot -count=1` 与 `go test ./integration -run '^TestUnifiedSnapshot' -count=1`。
 - 质量门禁中覆盖多代理性能基线、full-chain smoke、shared contract suites。
 - 关键观测字段：dispatch reason、attempt id、recovery replay counters。
 

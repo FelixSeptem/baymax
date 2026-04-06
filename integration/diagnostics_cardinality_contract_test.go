@@ -160,7 +160,7 @@ func newDiagnosticsCardinalityStore(policy string) *runtimediag.Store {
 		32,
 		32,
 		runtimediag.TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute},
-		runtimediag.CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute},
+		runtimediag.ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute},
 	)
 	store.SetCardinalityConfig(runtimediag.CardinalityConfig{
 		Enabled:        true,

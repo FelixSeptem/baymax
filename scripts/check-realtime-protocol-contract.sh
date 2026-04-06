@@ -40,9 +40,9 @@ assert_absent_regex() {
   fi
 }
 
-assert_no_parallel_a68_changes() {
+assert_no_parallel_realtime_protocol_changes() {
   local assertion="$1"
-  local canonical_change="introduce-realtime-event-protocol-and-interrupt-resume-contract-a68"
+  local canonical_change_hint="introduce-realtime-event-protocol-and-interrupt-resume-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +51,7 @@ assert_no_parallel_a68_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${name}" != "${canonical_change}" &&
+    if [[ "${lower}" != *"${canonical_change_hint}"* &&
       "${lower}" == *realtime* &&
       ( "${lower}" == *interrupt* || "${lower}" == *resume* || "${lower}" == *protocol* ) ]]; then
       violations+=("${name}")
@@ -65,16 +65,17 @@ assert_no_parallel_a68_changes() {
   fi
 }
 
-resolve_a68_change_dir() {
-  local active="openspec/changes/introduce-realtime-event-protocol-and-interrupt-resume-contract-a68"
-  if [[ -d "${active}" ]]; then
-    echo "${active}"
-    return 0
-  fi
-
+resolve_realtime_protocol_change_dir() {
   local candidate
   shopt -s nullglob
-  for candidate in openspec/changes/archive/*introduce-realtime-event-protocol-and-interrupt-resume-contract-a68; do
+  for candidate in openspec/changes/*introduce-realtime-event-protocol-and-interrupt-resume-contract*; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  for candidate in openspec/changes/archive/*introduce-realtime-event-protocol-and-interrupt-resume-contract*; do
     if [[ -d "${candidate}" ]]; then
       echo "${candidate}"
       shopt -u nullglob
@@ -83,7 +84,7 @@ resolve_a68_change_dir() {
   done
   shopt -u nullglob
 
-  echo "[realtime-protocol-contract-gate] unable to locate A68 change directory in active or archive paths" >&2
+  echo "[realtime-protocol-contract-gate] unable to locate realtime protocol change directory in active or archive paths" >&2
   exit 1
 }
 
@@ -122,40 +123,40 @@ run_step() {
   "$@"
 }
 
-A68_CHANGE_DIR="$(resolve_a68_change_dir)"
+REALTIME_PROTOCOL_CHANGE_DIR="$(resolve_realtime_protocol_change_dir)"
 
 run_step "assertion realtime_control_plane_absent: design marker" \
   assert_contains_literal "realtime_control_plane_absent" \
-  "${A68_CHANGE_DIR}/design.md" \
+  "${REALTIME_PROTOCOL_CHANGE_DIR}/design.md" \
   "不引入平台化控制面。"
 
 run_step "assertion realtime_control_plane_absent: gate spec marker" \
   assert_contains_literal "realtime_control_plane_absent" \
-  "${A68_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${REALTIME_PROTOCOL_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "realtime_control_plane_absent"
 
 run_step "assertion realtime_control_plane_absent: active change set closure" \
-  assert_no_parallel_a68_changes "realtime_control_plane_absent"
+  assert_no_parallel_realtime_protocol_changes "realtime_control_plane_absent"
 
 run_step "assertion realtime_control_plane_absent: reject hosted realtime control-plane config drift" \
   assert_absent_regex "realtime_control_plane_absent" \
   "runtime\.realtime\.[a-zA-Z0-9_.-]*(control_plane|controlplane|gateway|connection_router|session_router|managed_connection|hosted_realtime|realtime_service)"
 
-run_step "assertion a68_same_domain_closure: roadmap marker" \
-  assert_contains_literal "a68_same_domain_closure" \
+run_step "assertion realtime_same_domain_closure: roadmap marker" \
+  assert_contains_literal "realtime_same_domain_closure" \
   "docs/development-roadmap.md" \
-  "A68 realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在 A68 内以增量任务吸收，不再新增平行 realtime 提案。"
+  "Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。"
 
-run_step "a68 runtime config governance suites" \
+run_step "realtime runtime config governance suites" \
   go test ./runtime/config -run 'Test(RuntimeRealtimeConfig|ManagerRuntimeRealtime)' -count=1
 
-run_step "a68 realtime envelope + runner parity suites" \
+run_step "realtime envelope + runner parity suites" \
   go test ./core/types ./core/runner -run 'Test(ParseRealtimeEventEnvelope|RealtimeEventEnvelope|RealtimeRunStream|RealtimeSequenceGapAndOrderClassification)' -count=1
 
-run_step "a68 diagnostics recorder additive suites" \
-  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA68|RuntimeRecorderParsesA68RealtimeAdditiveFields|RuntimeRecorderA68ParserCompatibilityAdditiveNullableDefault)' -count=1
+run_step "realtime diagnostics recorder additive suites" \
+  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunRealtimeProtocol|RuntimeRecorderParsesRealtimeProtocolAdditiveFields|RuntimeRecorderRealtimeProtocolParserCompatibilityAdditiveNullableDefault)' -count=1
 
-run_step "a68 replay fixture + drift taxonomy suites" \
+run_step "realtime replay fixture + drift taxonomy suites" \
   go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
 
 changed_files=()

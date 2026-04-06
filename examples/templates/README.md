@@ -1,10 +1,10 @@
-# Adapter Templates (A21)
+# Adapter Templates (adapter template + migration mapping contract)
 
 这些模板用于外部集成接入的最小骨架示例，优先级固定为：
 1. `MCP adapter`
 2. `Model provider adapter`
 3. `Tool adapter`
-4. `Memory adapter`（A54）
+4. `Memory adapter`（memory provider SPI + builtin filesystem engine contract）
 
 模板定位：
 - 用于 onboarding 与迁移对照。

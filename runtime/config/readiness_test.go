@@ -34,7 +34,7 @@ func (f *fakeSandboxExecutor) Execute(ctx context.Context, spec types.SandboxExe
 }
 
 func TestManagerReadinessPreflightClassificationMatrix(t *testing.T) {
-	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A40_TEST"})
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_READINESS_BASELINE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -89,7 +89,7 @@ runtime:
     strict: true
     remote_probe_enabled: false
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A40_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_READINESS_BASELINE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -126,7 +126,7 @@ runtime:
 		summary.SecondaryReasonCount != 1 ||
 		len(summary.SecondaryReasonCodes) != 1 ||
 		summary.SecondaryReasonCodes[0] != ReadinessCodeSchedulerFallback ||
-		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		summary.RemediationHintCode != "runtime.relax_strict_mode" ||
 		summary.RemediationHintDomain != ReadinessDomainRuntime {
 		t.Fatalf("summary primary arbitration mismatch: %#v", summary)
@@ -134,7 +134,7 @@ runtime:
 }
 
 func TestManagerReadinessPreflightDeterministicForEquivalentSnapshot(t *testing.T) {
-	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A40_TEST"})
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_READINESS_BASELINE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -182,7 +182,7 @@ adapter:
     probe_timeout: 500ms
     cache_ttl: 30s
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_READINESS_TIMEOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -235,7 +235,7 @@ adapter:
 		len(summary.SecondaryReasonCodes) != 2 ||
 		summary.SecondaryReasonCodes[0] != ReadinessCodeAdapterDegraded ||
 		summary.SecondaryReasonCodes[1] != ReadinessCodeAdapterOptionalUnavailable ||
-		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+		summary.ArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		summary.RemediationHintCode != "adapter.restore_required" ||
 		summary.RemediationHintDomain != ReadinessDomainAdapter {
 		t.Fatalf("adapter arbitration summary mismatch: %#v", summary)
@@ -257,7 +257,7 @@ adapter:
     probe_timeout: 500ms
     cache_ttl: 30s
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_READINESS_TIMEOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -300,7 +300,7 @@ adapter:
     probe_timeout: 500ms
     cache_ttl: 30s
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A43_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_READINESS_TIMEOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -356,7 +356,7 @@ adapter:
       half_open_max_probe: 1
       half_open_success_threshold: 2
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A46_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_ADAPTER_HEALTH_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager strict failed: %v", err)
 	}
@@ -406,7 +406,7 @@ adapter:
       half_open_max_probe: 1
       half_open_success_threshold: 2
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A46_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_ADAPTER_HEALTH_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager non-strict failed: %v", err)
 	}
@@ -458,7 +458,7 @@ adapter:
       half_open_max_probe: 1
       half_open_success_threshold: 2
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A46_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_ADAPTER_HEALTH_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -521,7 +521,7 @@ security:
       profile: default
       fallback_action: deny
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_EXECUTION_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -564,7 +564,7 @@ security:
       profile: default
       fallback_action: allow_and_record
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A51_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_SANDBOX_EXECUTION_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager non-strict failed: %v", err)
 	}
@@ -597,7 +597,7 @@ security:
       profile: default
       fallback_action: allow_and_record
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A51_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_SANDBOX_EXECUTION_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager strict failed: %v", err)
 	}
@@ -628,7 +628,7 @@ security:
       profile: missing-profile
       fallback_action: allow_and_record
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A53_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_ADAPTER_ALLOWLIST_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager non-strict failed: %v", err)
 	}
@@ -656,7 +656,7 @@ security:
       profile: missing-profile
       fallback_action: allow_and_record
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A53_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_ADAPTER_ALLOWLIST_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager strict failed: %v", err)
 	}
@@ -691,7 +691,7 @@ security:
       backend: %s
       session_mode: per_call
 `, unsupportedBackend))
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A53_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_ADAPTER_ALLOWLIST_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -728,7 +728,7 @@ security:
       session_mode: per_session
       required_capabilities: [network_off, stdout_stderr_capture]
 `, backend))
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_EXECUTION_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -783,7 +783,7 @@ security:
       profile: default
       fallback_action: deny
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_EXECUTION_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -827,7 +827,7 @@ security:
       profile: default
       fallback_action: deny
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A58_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_POLICY_DECISION_PATH_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -909,7 +909,7 @@ security:
       profile: default
       fallback_action: deny
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A58_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_POLICY_DECISION_PATH_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -948,7 +948,7 @@ security:
     rollout:
       phase: frozen
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -973,7 +973,7 @@ security:
   sandbox:
     enabled: true
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1003,7 +1003,7 @@ security:
   sandbox:
     enabled: true
 `)
-	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	nonStrictMgr, err := NewManager(ManagerOptions{FilePath: nonStrictFile, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1027,7 +1027,7 @@ security:
   sandbox:
     enabled: true
 `)
-	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	strictMgr, err := NewManager(ManagerOptions{FilePath: strictFile, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1061,7 +1061,7 @@ security:
     rollout:
       phase: frozen
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1095,7 +1095,7 @@ security:
     capacity:
       degraded_policy: allow_and_record
 `)
-	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1128,7 +1128,7 @@ security:
     capacity:
       degraded_policy: fail_fast
 `)
-	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1143,7 +1143,7 @@ security:
 		t.Fatalf("fail_fast policy reason_code=%q, want %q", denyDecision.ReasonCode, ReadinessAdmissionCodeSandboxThrottledDeny)
 	}
 
-	capacityDenyMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A52_TEST"})
+	capacityDenyMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_SANDBOX_ROLLOUT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1172,7 +1172,7 @@ runtime:
       block_on: blocked_only
       degraded_policy: allow_and_record
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A44_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_READINESS_ADMISSION_CONTRACT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1210,8 +1210,8 @@ runtime:
 	if first.ReadinessSecondaryReasonCount != 0 || len(first.ReadinessSecondaryReasonCodes) != 0 {
 		t.Fatalf("blocked admission should have empty secondary reasons, got %#v", first)
 	}
-	if first.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 {
-		t.Fatalf("readiness_arbitration_rule_version = %q, want %q", first.ReadinessArbitrationRuleVersion, RuntimeArbitrationRuleVersionA49V1)
+	if first.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 {
+		t.Fatalf("readiness_arbitration_rule_version = %q, want %q", first.ReadinessArbitrationRuleVersion, RuntimeArbitrationRuleVersionExplainabilityV1)
 	}
 	if first.ReadinessRemediationHintCode != "recovery.fix_activation" || first.ReadinessRemediationHintDomain != ReadinessDomainRecovery {
 		t.Fatalf("readiness remediation hint mismatch: %#v", first)
@@ -1235,7 +1235,7 @@ runtime:
       block_on: blocked_only
       degraded_policy: allow_and_record
 `)
-	readyMgr, err := NewManager(ManagerOptions{FilePath: readyFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	readyMgr, err := NewManager(ManagerOptions{FilePath: readyFile, EnvPrefix: "BAYMAX_READINESS_ADMISSION_CONTRACT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1262,7 +1262,7 @@ runtime:
       block_on: blocked_only
       degraded_policy: allow_and_record
 `)
-	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	allowMgr, err := NewManager(ManagerOptions{FilePath: allowFile, EnvPrefix: "BAYMAX_READINESS_ADMISSION_CONTRACT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1290,7 +1290,7 @@ runtime:
 		allowDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
 		t.Fatalf("degraded allow primary metadata mismatch: %#v", allowDecision)
 	}
-	if allowDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+	if allowDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		allowDecision.ReadinessRemediationHintCode != "scheduler.recover_backend" ||
 		allowDecision.ReadinessRemediationHintDomain != ReadinessDomainScheduler {
 		t.Fatalf("degraded allow explainability mismatch: %#v", allowDecision)
@@ -1309,7 +1309,7 @@ runtime:
       block_on: blocked_only
       degraded_policy: fail_fast
 `)
-	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_A44_TEST"})
+	denyMgr, err := NewManager(ManagerOptions{FilePath: denyFile, EnvPrefix: "BAYMAX_READINESS_ADMISSION_CONTRACT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1337,7 +1337,7 @@ runtime:
 		denyDecision.ReadinessPrimarySource != RuntimePrimarySourceReadiness {
 		t.Fatalf("degraded fail_fast primary metadata mismatch: %#v", denyDecision)
 	}
-	if denyDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+	if denyDecision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		denyDecision.ReadinessRemediationHintCode != "scheduler.recover_backend" ||
 		denyDecision.ReadinessRemediationHintDomain != ReadinessDomainScheduler {
 		t.Fatalf("degraded deny explainability mismatch: %#v", denyDecision)
@@ -1345,7 +1345,7 @@ runtime:
 }
 
 func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
-	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A44_TEST"})
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_READINESS_ADMISSION_CONTRACT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1366,7 +1366,7 @@ func TestManagerReadinessAdmissionDisabledBypass(t *testing.T) {
 		decision.ReadinessPrimarySource != RuntimePrimarySourceAdmission {
 		t.Fatalf("disabled bypass decision primary metadata mismatch: %#v", decision)
 	}
-	if decision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionA49V1 ||
+	if decision.ReadinessArbitrationRuleVersion != RuntimeArbitrationRuleVersionExplainabilityV1 ||
 		decision.ReadinessRemediationHintCode != "readiness.admission_enable_if_required" ||
 		decision.ReadinessRemediationHintDomain != ReadinessDomainRuntime {
 		t.Fatalf("disabled bypass explainability mismatch: %#v", decision)
@@ -1399,7 +1399,7 @@ runtime:
       action_order: [trim_memory_context, reduce_tool_call_limit]
       conflict_policy: first_action
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A60_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_MEMORY_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1481,7 +1481,7 @@ runtime:
       block_on: blocked_only
       degraded_policy: allow_and_record
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A60_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_MEMORY_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1515,7 +1515,7 @@ runtime:
 }
 
 func TestManagerReadinessPreflightWithRequestArbitrationVersionUnsupported(t *testing.T) {
-	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_A50_TEST"})
+	mgr, err := NewManager(ManagerOptions{EnvPrefix: "BAYMAX_ARBITRATION_VERSION_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1562,13 +1562,13 @@ runtime:
       on_unsupported: fail_fast
       on_mismatch: fail_fast
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A50_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_ARBITRATION_VERSION_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
 	defer func() { _ = mgr.Close() }()
 
-	decision := mgr.EvaluateReadinessAdmissionWithRequest(RuntimeArbitrationRuleVersionA48V1)
+	decision := mgr.EvaluateReadinessAdmissionWithRequest(RuntimeArbitrationRuleVersionPrimaryReasonV1)
 	if decision.Outcome != ReadinessAdmissionOutcomeDeny ||
 		decision.ReasonCode != ReadinessCodeArbitrationVersionMismatch ||
 		decision.ReadinessStatus != ReadinessStatusBlocked ||
@@ -1576,7 +1576,7 @@ runtime:
 		decision.ReadinessPrimaryCode != ReadinessCodeArbitrationVersionMismatch ||
 		decision.ReadinessPrimarySource != RuntimePrimarySourceArbitration ||
 		decision.ReadinessArbitrationRuleVersion != "" ||
-		decision.ReadinessArbitrationRuleRequestedVersion != RuntimeArbitrationRuleVersionA48V1 ||
+		decision.ReadinessArbitrationRuleRequestedVersion != RuntimeArbitrationRuleVersionPrimaryReasonV1 ||
 		decision.ReadinessArbitrationRuleEffectiveVersion != "" ||
 		decision.ReadinessArbitrationRuleVersionSource != RuntimeArbitrationVersionSourceRequested ||
 		decision.ReadinessArbitrationRulePolicyAction != RuntimeArbitrationPolicyActionFailFastMismatch ||
@@ -1653,7 +1653,7 @@ security:
       default_action: deny
       on_violation: deny
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SECURITY_EVENT_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1693,7 +1693,7 @@ adapter:
     on_unknown_signature: allow_and_record
     entries: []
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SECURITY_EVENT_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1736,7 +1736,7 @@ adapter:
     on_unknown_signature: deny
     entries: []
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A57_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_SECURITY_EVENT_GOVERNANCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

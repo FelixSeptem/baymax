@@ -18,24 +18,24 @@ import (
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 )
 
-func TestA66UnifiedSnapshotRecoveryRunStreamEquivalenceAfterRestore(t *testing.T) {
+func TestUnifiedSnapshotRecoveryRunStreamEquivalenceAfterRestore(t *testing.T) {
 	ctx := context.Background()
-	runID := "run-a66-restore-run-stream-equivalence"
+	runID := "run-unified-snapshot-restore-run-stream-equivalence"
 
-	sourceMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_SOURCE_82"})
-	source := newA66UnifiedSnapshotComposer(t, sourceMgr, nil)
-	seedA66UnifiedSnapshotSourceState(t, source, runID)
+	sourceMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_SOURCE_82"})
+	source := newUnifiedSnapshotComposer(t, sourceMgr, nil)
+	seedUnifiedSnapshotSourceState(t, source, runID)
 
 	exported, err := source.ExportUnifiedSnapshot(ctx, composer.UnifiedSnapshotExportRequest{RunID: runID})
 	if err != nil {
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	runMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_RUN_82"})
-	runComposer := newA66UnifiedSnapshotComposer(t, runMgr, nil)
+	runMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_RUN_82"})
+	runComposer := newUnifiedSnapshotComposer(t, runMgr, nil)
 	if _, err := runComposer.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-restore-run",
+		OperationID:  "op-unified-snapshot-restore-run",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	}); err != nil {
@@ -46,11 +46,11 @@ func TestA66UnifiedSnapshotRecoveryRunStreamEquivalenceAfterRestore(t *testing.T
 	}
 	runRecord := findRunRecord(t, runMgr.RecentRuns(10), runID)
 
-	streamMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_STREAM_82"})
-	streamComposer := newA66UnifiedSnapshotComposer(t, streamMgr, nil)
+	streamMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_STREAM_82"})
+	streamComposer := newUnifiedSnapshotComposer(t, streamMgr, nil)
 	if _, err := streamComposer.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-restore-stream",
+		OperationID:  "op-unified-snapshot-restore-stream",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	}); err != nil {
@@ -61,42 +61,42 @@ func TestA66UnifiedSnapshotRecoveryRunStreamEquivalenceAfterRestore(t *testing.T
 	}
 	streamRecord := findRunRecord(t, streamMgr.RecentRuns(10), runID)
 
-	assertA66RunRecordRestoreEquivalence(t, runRecord, streamRecord)
+	assertRunRecordRestoreEquivalence(t, runRecord, streamRecord)
 }
 
-func TestA66UnifiedSnapshotRestoreMemoryFileBackendParity(t *testing.T) {
+func TestUnifiedSnapshotRestoreMemoryFileBackendParity(t *testing.T) {
 	ctx := context.Background()
-	runID := "run-a66-restore-backend-parity"
+	runID := "run-unified-snapshot-restore-backend-parity"
 
-	sourceMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_SOURCE_83"})
-	source := newA66UnifiedSnapshotComposer(t, sourceMgr, nil)
-	seedA66UnifiedSnapshotSourceState(t, source, runID)
+	sourceMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_SOURCE_83"})
+	source := newUnifiedSnapshotComposer(t, sourceMgr, nil)
+	seedUnifiedSnapshotSourceState(t, source, runID)
 
 	exported, err := source.ExportUnifiedSnapshot(ctx, composer.UnifiedSnapshotExportRequest{RunID: runID})
 	if err != nil {
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	memoryMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_MEMORY_83"})
-	memoryComposer := newA66UnifiedSnapshotComposer(t, memoryMgr, scheduler.NewMemoryStore())
+	memoryMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_MEMORY_83"})
+	memoryComposer := newUnifiedSnapshotComposer(t, memoryMgr, scheduler.NewMemoryStore())
 	if _, err := memoryComposer.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-memory-backend",
+		OperationID:  "op-unified-snapshot-memory-backend",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	}); err != nil {
 		t.Fatalf("memory backend import failed: %v", err)
 	}
 
-	fileMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_FILE_83"})
+	fileMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_FILE_83"})
 	fileStore, err := scheduler.NewFileStore(filepath.Join(t.TempDir(), "scheduler-state.json"))
 	if err != nil {
 		t.Fatalf("new file scheduler store failed: %v", err)
 	}
-	fileComposer := newA66UnifiedSnapshotComposer(t, fileMgr, fileStore)
+	fileComposer := newUnifiedSnapshotComposer(t, fileMgr, fileStore)
 	if _, err := fileComposer.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-file-backend",
+		OperationID:  "op-unified-snapshot-file-backend",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	}); err != nil {
@@ -111,7 +111,7 @@ func TestA66UnifiedSnapshotRestoreMemoryFileBackendParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot file backend failed: %v", err)
 	}
-	assertA66SchedulerSnapshotSemanticParity(t, memorySnapshot, fileSnapshot)
+	assertSchedulerSnapshotSemanticParity(t, memorySnapshot, fileSnapshot)
 
 	if _, err := memoryComposer.Run(ctx, types.RunRequest{RunID: runID, Input: "resume-memory"}, nil); err != nil {
 		t.Fatalf("memory backend run failed: %v", err)
@@ -121,28 +121,28 @@ func TestA66UnifiedSnapshotRestoreMemoryFileBackendParity(t *testing.T) {
 	}
 	memoryRecord := findRunRecord(t, memoryMgr.RecentRuns(10), runID)
 	fileRecord := findRunRecord(t, fileMgr.RecentRuns(10), runID)
-	assertA66RunRecordRestoreEquivalence(t, memoryRecord, fileRecord)
+	assertRunRecordRestoreEquivalence(t, memoryRecord, fileRecord)
 }
 
-func TestA66UnifiedSnapshotDuplicateImportIdempotentNoSideEffect(t *testing.T) {
+func TestUnifiedSnapshotDuplicateImportIdempotentNoSideEffect(t *testing.T) {
 	ctx := context.Background()
-	runID := "run-a66-duplicate-import-idempotent"
+	runID := "run-unified-snapshot-duplicate-import-idempotent"
 
-	sourceMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_SOURCE_84"})
-	source := newA66UnifiedSnapshotComposer(t, sourceMgr, nil)
-	seedA66UnifiedSnapshotSourceState(t, source, runID)
+	sourceMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_SOURCE_84"})
+	source := newUnifiedSnapshotComposer(t, sourceMgr, nil)
+	seedUnifiedSnapshotSourceState(t, source, runID)
 
 	exported, err := source.ExportUnifiedSnapshot(ctx, composer.UnifiedSnapshotExportRequest{RunID: runID})
 	if err != nil {
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	targetMgr := newA66UnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_INT_TARGET_84"})
-	target := newA66UnifiedSnapshotComposer(t, targetMgr, scheduler.NewMemoryStore())
+	targetMgr := newUnifiedSnapshotManager(t, runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_INT_TARGET_84"})
+	target := newUnifiedSnapshotComposer(t, targetMgr, scheduler.NewMemoryStore())
 
 	first, err := target.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-idempotent-import",
+		OperationID:  "op-unified-snapshot-idempotent-import",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -159,7 +159,7 @@ func TestA66UnifiedSnapshotDuplicateImportIdempotentNoSideEffect(t *testing.T) {
 
 	second, err := target.ImportUnifiedSnapshot(ctx, composer.UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-idempotent-import",
+		OperationID:  "op-unified-snapshot-idempotent-import",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -176,7 +176,7 @@ func TestA66UnifiedSnapshotDuplicateImportIdempotentNoSideEffect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scheduler stats after second import failed: %v", err)
 	}
-	assertA66SchedulerStatsNoInflation(t, statsAfterFirst, statsAfterSecond)
+	assertSchedulerStatsNoInflation(t, statsAfterFirst, statsAfterSecond)
 
 	if _, err := target.Run(ctx, types.RunRequest{RunID: runID, Input: "resume-idempotent"}, nil); err != nil {
 		t.Fatalf("run after duplicate import failed: %v", err)
@@ -190,7 +190,7 @@ func TestA66UnifiedSnapshotDuplicateImportIdempotentNoSideEffect(t *testing.T) {
 	}
 }
 
-func newA66UnifiedSnapshotManager(t *testing.T, opts runtimeconfig.ManagerOptions) *runtimeconfig.Manager {
+func newUnifiedSnapshotManager(t *testing.T, opts runtimeconfig.ManagerOptions) *runtimeconfig.Manager {
 	t.Helper()
 	mgr, err := runtimeconfig.NewManager(opts)
 	if err != nil {
@@ -200,7 +200,7 @@ func newA66UnifiedSnapshotManager(t *testing.T, opts runtimeconfig.ManagerOption
 	return mgr
 }
 
-func newA66UnifiedSnapshotComposer(t *testing.T, mgr *runtimeconfig.Manager, store scheduler.QueueStore) *composer.Composer {
+func newUnifiedSnapshotComposer(t *testing.T, mgr *runtimeconfig.Manager, store scheduler.QueueStore) *composer.Composer {
 	t.Helper()
 	model := fakes.NewModel([]fakes.ModelStep{
 		{Response: types.ModelResponse{FinalAnswer: "ok"}},
@@ -223,7 +223,7 @@ func newA66UnifiedSnapshotComposer(t *testing.T, mgr *runtimeconfig.Manager, sto
 	return comp
 }
 
-func seedA66UnifiedSnapshotSourceState(t *testing.T, comp *composer.Composer, runID string) {
+func seedUnifiedSnapshotSourceState(t *testing.T, comp *composer.Composer, runID string) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := comp.DispatchChild(ctx, composer.ChildDispatchRequest{
@@ -252,7 +252,7 @@ func seedA66UnifiedSnapshotSourceState(t *testing.T, comp *composer.Composer, ru
 	}
 }
 
-func assertA66RunRecordRestoreEquivalence(t *testing.T, left, right runtimediag.RunRecord) {
+func assertRunRecordRestoreEquivalence(t *testing.T, left, right runtimediag.RunRecord) {
 	t.Helper()
 	if left.Status != right.Status {
 		t.Fatalf("terminal classification mismatch: left=%q right=%q", left.Status, right.Status)
@@ -270,22 +270,22 @@ func assertA66RunRecordRestoreEquivalence(t *testing.T, left, right runtimediag.
 	}
 }
 
-func assertA66SchedulerSnapshotSemanticParity(t *testing.T, left, right scheduler.StoreSnapshot) {
+func assertSchedulerSnapshotSemanticParity(t *testing.T, left, right scheduler.StoreSnapshot) {
 	t.Helper()
-	leftTasks := make(map[string]a66SchedulerTaskSemantic, len(left.Tasks))
+	leftTasks := make(map[string]schedulerTaskSemantic, len(left.Tasks))
 	for i := range left.Tasks {
 		item := left.Tasks[i]
-		leftTasks[strings.TrimSpace(item.Task.TaskID)] = a66SchedulerTaskSemantic{
+		leftTasks[strings.TrimSpace(item.Task.TaskID)] = schedulerTaskSemantic{
 			State:          item.State,
 			RunID:          strings.TrimSpace(item.Task.RunID),
 			CurrentAttempt: strings.TrimSpace(item.CurrentAttempt),
 			AttemptTotal:   len(item.Attempts),
 		}
 	}
-	rightTasks := make(map[string]a66SchedulerTaskSemantic, len(right.Tasks))
+	rightTasks := make(map[string]schedulerTaskSemantic, len(right.Tasks))
 	for i := range right.Tasks {
 		item := right.Tasks[i]
-		rightTasks[strings.TrimSpace(item.Task.TaskID)] = a66SchedulerTaskSemantic{
+		rightTasks[strings.TrimSpace(item.Task.TaskID)] = schedulerTaskSemantic{
 			State:          item.State,
 			RunID:          strings.TrimSpace(item.Task.RunID),
 			CurrentAttempt: strings.TrimSpace(item.CurrentAttempt),
@@ -325,7 +325,7 @@ func assertA66SchedulerSnapshotSemanticParity(t *testing.T, left, right schedule
 	}
 }
 
-func assertA66SchedulerStatsNoInflation(t *testing.T, first, second scheduler.Stats) {
+func assertSchedulerStatsNoInflation(t *testing.T, first, second scheduler.Stats) {
 	t.Helper()
 	if first.QueueTotal != second.QueueTotal ||
 		first.ClaimTotal != second.ClaimTotal ||
@@ -337,7 +337,7 @@ func assertA66SchedulerStatsNoInflation(t *testing.T, first, second scheduler.St
 	}
 }
 
-type a66SchedulerTaskSemantic struct {
+type schedulerTaskSemantic struct {
 	State          scheduler.TaskState
 	RunID          string
 	CurrentAttempt string

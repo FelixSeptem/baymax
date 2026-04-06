@@ -26,8 +26,8 @@ func TestHooksMiddlewareGateScriptParity(t *testing.T) {
 	requiredTokens := []string{
 		"control_plane_absent",
 		"control_plane|controlplane|orchestrator|controller|service_endpoint|remote_hook|hosted_hook|managed_middleware",
-		"TestReplayContractA65HooksMiddleware",
-		"A65 hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在 A65 内以增量任务吸收，不再新开平行提案。",
+		"TestReplayContractHooksMiddleware",
+		"Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -37,10 +37,10 @@ func TestHooksMiddlewareGateScriptParity(t *testing.T) {
 			t.Fatalf("powershell hooks/middleware gate missing token %q", token)
 		}
 	}
-	if !strings.Contains(shell, "assert_no_parallel_a65_changes") {
+	if !strings.Contains(shell, "assert_no_parallel_hooks_middleware_changes") {
 		t.Fatalf("shell hooks/middleware gate missing assertion helper for parallel proposal closure")
 	}
-	if !strings.Contains(ps, "Assert-NoParallelA65Changes") {
+	if !strings.Contains(ps, "Assert-NoParallelHooksMiddlewareChanges") {
 		t.Fatalf("powershell hooks/middleware gate missing assertion helper for parallel proposal closure")
 	}
 	if !strings.Contains(shell, "set -euo pipefail") {
@@ -100,20 +100,20 @@ func TestHooksMiddlewareRoadmapAndContractIndexClosureMarkers(t *testing.T) {
 
 	roadmap := string(roadmapRaw)
 	index := string(indexRaw)
-	requiredRoadmap := "A65 hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在 A65 内以增量任务吸收，不再新开平行提案。"
+	requiredRoadmap := "Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 	requiredIndexRows := []string{
-		"A65 Hooks + Middleware/Skill Replay Fixtures",
-		"A65 Hooks + Middleware Contract Gate",
-		"A65 Hooks + Middleware Contract Gate CI Required-Check 候选",
-		"A65 Hooks + Middleware Contract Gate Quality Path",
+		"Hooks + Middleware/Skill Replay Fixtures",
+		"Hooks + Middleware Contract Gate",
+		"Hooks + Middleware Contract Gate CI Required-Check 候选",
+		"Hooks + Middleware Contract Gate Quality Path",
 	}
 
 	if !strings.Contains(roadmap, requiredRoadmap) {
-		t.Fatalf("roadmap must include A65 same-domain closure marker: %q", requiredRoadmap)
+		t.Fatalf("roadmap must include hooks/middleware same-domain closure marker: %q", requiredRoadmap)
 	}
 	for _, row := range requiredIndexRows {
 		if !strings.Contains(index, row) {
-			t.Fatalf("mainline contract index missing A65 row: %q", row)
+			t.Fatalf("mainline contract index missing hooks/middleware row: %q", row)
 		}
 	}
 }

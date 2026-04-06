@@ -43,11 +43,11 @@
   - 保留并透传组合编排关联字段（`workflow_id/team_id/step_id/task_id/agent_id/peer_id`）
   - 通过标准事件发射 A2A timeline/摘要元数据（不直接写 diagnostics store）
 - `adapter/manifest`
-  - 外部 adapter manifest 合同解析、字段校验与兼容范围判定（A26）
+  - 外部 adapter manifest 合同解析、字段校验与兼容范围判定（manifest template contract）
   - 激活边界 fail-fast（missing/invalid/compat-mismatch/required-missing）
   - 输出 deterministic 合同错误分类，供 conformance 与 gate 回归复用
 - `adapter/capability`
-  - requested vs declared capability 协商（A27）
+  - requested vs declared capability 协商（capability negotiation contract）
   - 策略收敛：`fail_fast|best_effort` 与 override 语义
   - reason taxonomy 收敛：`adapter.capability.*` 命名空间
 - `adapter/scaffold`
@@ -60,6 +60,11 @@
   - 维护 task/attempt/lease 状态机与 terminal commit 幂等语义（`task_id+attempt_id`）
   - parent-child guardrail（`max_depth|max_active_children|child_timeout_budget`）fail-fast 拒绝
   - 通过标准事件发射 Scheduler/Subagent timeline（`scheduler.*` / `subagent.*`，不直接写 diagnostics store）
+- `orchestration/snapshot`
+  - 统一 state/session snapshot manifest 合同（schema/version/segment/digest）
+  - 导入策略固定为 `strict|compatible` + `compat_window`，冲突场景 fail-fast
+  - operation 级幂等导入语义（duplicate import -> no-op）只在合同层实现
+  - 不直接写 diagnostics store；观测仍经标准事件单写路径收口
 - `mcp/profile`
   - MCP profile 常量与策略解析（仅 MCP 语义）
 - `mcp/retry`

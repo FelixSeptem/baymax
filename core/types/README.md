@@ -9,6 +9,8 @@
 - 事件与 timeline 语义
 - 错误分类与可重试语义
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 该包保持“纯契约、零业务逻辑”定位：

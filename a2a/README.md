@@ -12,6 +12,8 @@
 - 同步/异步/延后协作统一由 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge` 收口。
 - `a2a` 继续提供 submit/status/result 互联语义与互操作契约。
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 当前实现采用“客户端策略 + 服务端任务状态机”结构：

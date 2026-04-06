@@ -10,7 +10,8 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
-// TODO(r3-m2): split provider-specific model errors into finer ErrorClass dimensions.
+// Provider-specific finer ErrorClass split remains deferred; current classification
+// is kept stable for contract/replay compatibility.
 type Classified struct {
 	Class     types.ErrorClass
 	Reason    string

@@ -25,8 +25,9 @@ func TestReactPlanNotebookGateScriptParity(t *testing.T) {
 	ps := string(psRaw)
 	requiredTokens := []string{
 		"Test(ReactPlan|ReactPlanNotebookDoesNotBypass)",
-		"StoreRunA67",
-		"RuntimeRecorderParsesA67",
+		"StoreRunReactPlanNotebook",
+		"RuntimeRecorderParsesReactPlanNotebookAdditiveFields",
+		"RuntimeRecorderReactPlanNotebookParserCompatibilityAdditiveNullableDefault",
 		"check-policy-precedence-contract",
 		"check-sandbox-egress-allowlist-contract",
 		"check-diagnostics-replay-contract",

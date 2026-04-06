@@ -365,7 +365,7 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 		code   string
 		marker string
 	}{
-		{code: "missing_runtime_doc_compatibility_window_title", marker: "Compatibility Window (A12/A13)"},
+		{code: "missing_runtime_doc_compatibility_window_title", marker: "Compatibility Window (additive summary fields)"},
 		{code: "missing_runtime_doc_compatibility_window_rule", marker: "additive + nullable + default"},
 		{code: "missing_runtime_doc_compatibility_window_default_rule", marker: "missing additive fields resolve to documented default values"},
 		{code: "missing_runtime_doc_compatibility_window_ignore_unknown_rule", marker: "unknown future additive fields are safely ignored"},
@@ -436,13 +436,14 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 	if !strings.Contains(snapshot.V1AcceptanceDoc, "compatibility window") {
 		violations = append(violations, Violation{
 			Code:    "missing_v1_acceptance_compatibility_window_marker",
-			Message: "v1 acceptance doc must mention A12/A13 compatibility window semantics",
+			Message: "v1 acceptance doc must mention additive compatibility window semantics",
 		})
 	}
-	if !strings.Contains(snapshot.V1AcceptanceDoc, "A12/A13 additive summary fields") {
+	if !strings.Contains(snapshot.V1AcceptanceDoc, "Additive summary fields follow a compatibility window") &&
+		!strings.Contains(snapshot.V1AcceptanceDoc, "additive summary fields compatibility window") {
 		violations = append(violations, Violation{
-			Code:    "missing_v1_acceptance_a12_a13_compatibility_marker",
-			Message: "v1 acceptance doc must pin compatibility window to A12/A13 additive summary fields",
+			Code:    "missing_v1_acceptance_additive_summary_compatibility_marker",
+			Message: "v1 acceptance doc must pin compatibility window to additive summary field contract",
 		})
 	}
 	requiredUnifiedQuerySpecMarkers := []struct {
@@ -494,7 +495,7 @@ func ValidateMultiAgentSharedContractSnapshot(snapshot MultiAgentContractSnapsho
 			Message: "shared quality gate spec must include unified query contract suites",
 		})
 	}
-	if !strings.Contains(snapshot.MainlineContractIndexDoc, "Unified Query A18") ||
+	if !strings.Contains(snapshot.MainlineContractIndexDoc, "Unified Query Filters + Empty Task Semantics") ||
 		!strings.Contains(snapshot.MainlineContractIndexDoc, "TestUnifiedQueryContractUnmatchedTaskIDEmptySet") ||
 		!strings.Contains(snapshot.MainlineContractIndexDoc, "TestUnifiedQueryContractReplayIdempotentSummaries") {
 		violations = append(violations, Violation{

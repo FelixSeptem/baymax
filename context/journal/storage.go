@@ -34,7 +34,7 @@ func NewStorage(backend, path string) (Storage, error) {
 	case "", "file":
 		return NewFileStorage(path), nil
 	case "db":
-		return nil, fmt.Errorf("%w: db backend is not implemented in CA1", ErrBackendNotReady)
+		return nil, fmt.Errorf("%w: db backend is not implemented in context-prefix-and-journal-baseline", ErrBackendNotReady)
 	default:
 		return nil, fmt.Errorf("unsupported context journal backend %q", backend)
 	}

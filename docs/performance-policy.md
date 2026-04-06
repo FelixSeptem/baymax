@@ -36,9 +36,9 @@
 - `BenchmarkDiagnosticsQueryRuns`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkDiagnosticsQueryMailbox`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
 - `BenchmarkDiagnosticsMailboxAggregates`（需同时关注 `ns/op`、`p95-ns/op`、`allocs/op`）
-- `BenchmarkCA4PressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
-- `BenchmarkCA3SemanticCompactionLatency`（需同时关注 `ns/op` 与 `p95-ns/op`）
-- `BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled`（需同时关注 `ns/op` 与 `p95-ns/op`）
+- `BenchmarkContextProductionHardeningPressureEvaluation`（需同时关注 `ns/op` 与 `p95-ns/op`）
+- `BenchmarkContextPressureSemanticCompactionLatency`（需同时关注 `ns/op` 与 `p95-ns/op`）
+- `BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled`（需同时关注 `ns/op` 与 `p95-ns/op`）
 - 现有关键基准（iteration latency、MCP reconnect overhead）
 
 Multi-agent 主链路回归门禁（本地/CI 一致）：
@@ -84,19 +84,19 @@ pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 - 阈值参数非法（空值、非数值、非正数）
 - benchmark 输出缺少 `ns/op`、`p95-ns/op`、`allocs/op` 任一指标
 
-CA4 回归门禁（本地/CI 一致）：
+Context production hardening 回归门禁（本地/CI 一致）：
 
 ```bash
-bash scripts/check-ca4-benchmark-regression.sh
+bash scripts/check-context-production-hardening-benchmark-regression.sh
 ```
 
 ```powershell
-pwsh -File scripts/check-ca4-benchmark-regression.ps1
+pwsh -File scripts/check-context-production-hardening-benchmark-regression.ps1
 ```
 
 默认阈值（可通过环境变量覆盖）：
-- `BAYMAX_CA4_BENCH_MAX_DEGRADATION_PCT=5`
-- `BAYMAX_CA4_BENCH_MAX_P95_DEGRADATION_PCT=8`
+- `BAYMAX_CONTEXT_PRODUCTION_HARDENING_BENCH_MAX_DEGRADATION_PCT=5`
+- `BAYMAX_CONTEXT_PRODUCTION_HARDENING_BENCH_MAX_P95_DEGRADATION_PCT=8`
 
 ## Reporting
 

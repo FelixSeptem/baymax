@@ -16,12 +16,12 @@ import (
 )
 
 func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSideEffects(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-blocked.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-readiness-admission-blocked.yaml")
 	writeRuntimeReadinessAdmissionConfig(t, cfgPath, true, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -53,7 +53,7 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 	mailboxBefore := len(mgr.RecentMailbox(10))
 
 	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
-		RunID: "run-a44-integration-blocked-run",
+		RunID: "run-readiness-admission-blocked-run",
 		Input: "blocked-run",
 	}, nil)
 	if runErr == nil {
@@ -62,7 +62,7 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 	assertAdmissionContractDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
 
 	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a44-integration-blocked-stream",
+		RunID: "run-readiness-admission-blocked-stream",
 		Input: "blocked-stream",
 	}, nil)
 	if streamErr == nil {
@@ -81,7 +81,7 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
 	}
 
-	assertAdmissionRunRecord(t, mgr, "run-a44-integration-blocked-run", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-readiness-admission-blocked-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
@@ -94,13 +94,13 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "recovery.fix_activation" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRecovery {
 			t.Fatalf("blocked admission run record mismatch: %#v", rec)
 		}
 	})
-	assertAdmissionRunRecord(t, mgr, "run-a44-integration-blocked-stream", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-readiness-admission-blocked-stream", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
@@ -113,7 +113,7 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "recovery.fix_activation" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRecovery {
 			t.Fatalf("blocked stream admission run record mismatch: %#v", rec)
@@ -122,11 +122,11 @@ func TestRuntimeReadinessAdmissionContractBlockedDenyRunStreamEquivalentAndNoSid
 }
 
 func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatibility(t *testing.T) {
-	allowCfg := filepath.Join(t.TempDir(), "runtime-a44-degraded-allow.yaml")
+	allowCfg := filepath.Join(t.TempDir(), "runtime-readiness-admission-degraded-allow.yaml")
 	writeRuntimeReadinessAdmissionConfig(t, allowCfg, true, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
 	allowMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  allowCfg,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -151,18 +151,18 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 		},
 	})
 	if runRes, runErr := allowComp.Run(context.Background(), types.RunRequest{
-		RunID: "run-a44-integration-degraded-allow-run",
+		RunID: "run-readiness-admission-degraded-allow-run",
 		Input: "allow-run",
 	}, nil); runErr != nil || runRes.Error != nil {
 		t.Fatalf("degraded allow run should succeed, err=%v result=%#v", runErr, runRes)
 	}
 	if streamRes, streamErr := allowComp.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a44-integration-degraded-allow-stream",
+		RunID: "run-readiness-admission-degraded-allow-stream",
 		Input: "allow-stream",
 	}, nil); streamErr != nil || streamRes.Error != nil {
 		t.Fatalf("degraded allow stream should succeed, err=%v result=%#v", streamErr, streamRes)
 	}
-	assertAdmissionRunRecord(t, allowMgr, "run-a44-integration-degraded-allow-run", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, allowMgr, "run-readiness-admission-degraded-allow-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 1 ||
@@ -174,13 +174,13 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "scheduler.recover_backend" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainScheduler {
 			t.Fatalf("degraded allow run record mismatch: %#v", rec)
 		}
 	})
-	assertAdmissionRunRecord(t, allowMgr, "run-a44-integration-degraded-allow-stream", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, allowMgr, "run-readiness-admission-degraded-allow-stream", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 1 ||
@@ -192,18 +192,18 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "scheduler.recover_backend" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainScheduler {
 			t.Fatalf("degraded allow stream run record mismatch: %#v", rec)
 		}
 	})
 
-	bypassCfg := filepath.Join(t.TempDir(), "runtime-a44-bypass.yaml")
+	bypassCfg := filepath.Join(t.TempDir(), "runtime-readiness-admission-bypass.yaml")
 	writeRuntimeReadinessAdmissionConfig(t, bypassCfg, false, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
 	bypassMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  bypassCfg,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -219,12 +219,12 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 		t.Fatalf("new composer: %v", err)
 	}
 	if runRes, runErr := bypassComp.Run(context.Background(), types.RunRequest{
-		RunID: "run-a44-integration-bypass-run",
+		RunID: "run-readiness-admission-bypass-run",
 		Input: "bypass-run",
 	}, nil); runErr != nil || runRes.Error != nil {
 		t.Fatalf("bypass run should succeed, err=%v result=%#v", runErr, runRes)
 	}
-	assertAdmissionRunRecord(t, bypassMgr, "run-a44-integration-bypass-run", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, bypassMgr, "run-readiness-admission-bypass-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 0 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 0 ||
 			rec.RuntimeReadinessAdmissionDegradedAllowTotal != 0 ||
@@ -236,7 +236,7 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "" ||
 			rec.RuntimeRemediationHintDomain != "" {
 			t.Fatalf("bypass run record mismatch: %#v", rec)
@@ -245,7 +245,7 @@ func TestRuntimeReadinessAdmissionContractDegradedPolicyMappingAndBypassCompatib
 }
 
 func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a46-circuit-open.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-adapter-health-circuit-open.yaml")
 	cfg := strings.Join([]string{
 		"runtime:",
 		"  readiness:",
@@ -274,7 +274,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A46_TEST",
+		EnvPrefix: "BAYMAX_ADAPTER_HEALTH_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -308,7 +308,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 	})
 
 	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
-		RunID: "run-a46-admission-circuit-open-run",
+		RunID: "run-adapter-health-circuit-open-run",
 		Input: "blocked-run",
 	}, nil)
 	if runErr == nil {
@@ -317,7 +317,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 	assertAdmissionContractDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
 
 	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a46-admission-circuit-open-stream",
+		RunID: "run-adapter-health-circuit-open-stream",
 		Input: "blocked-stream",
 	}, nil)
 	if streamErr == nil {
@@ -325,7 +325,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 	}
 	assertAdmissionContractDeniedResult(t, streamRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
 
-	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-run", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-adapter-health-circuit-open-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
@@ -335,13 +335,13 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "adapter.restore_required" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("run admission record mismatch: %#v", rec)
 		}
 	})
-	assertAdmissionRunRecord(t, mgr, "run-a46-admission-circuit-open-stream", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-adapter-health-circuit-open-stream", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
@@ -351,7 +351,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "adapter.restore_required" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("stream admission record mismatch: %#v", rec)
@@ -360,7 +360,7 @@ func TestRuntimeReadinessAdmissionContractAdapterCircuitOpenRunStreamParity(t *t
 }
 
 func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a57-allowlist-missing.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-adapter-allowlist-missing.yaml")
 	cfg := strings.Join([]string{
 		"runtime:",
 		"  readiness:",
@@ -389,7 +389,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A57_TEST",
+		EnvPrefix: "BAYMAX_ADAPTER_ALLOWLIST_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -397,7 +397,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 	defer func() { _ = mgr.Close() }()
 	mgr.SetAdapterHealthTargets([]runtimeconfig.AdapterHealthTarget{
 		{
-			Name:     "required-adapter-a57",
+			Name:     "required-adapter-allowlist",
 			Required: true,
 			Probe: adapterhealth.ProbeFunc(func(context.Context) (adapterhealth.Result, error) {
 				return adapterhealth.Result{
@@ -425,7 +425,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 	mailboxBefore := len(mgr.RecentMailbox(10))
 
 	runRes, runErr := comp.Run(context.Background(), types.RunRequest{
-		RunID: "run-a57-admission-allowlist-missing-run",
+		RunID: "run-adapter-allowlist-missing-run",
 		Input: "blocked-run",
 	}, nil)
 	if runErr == nil {
@@ -434,7 +434,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 	assertAdmissionContractDeniedResult(t, runRes, runtimeconfig.ReadinessAdmissionCodeBlocked)
 
 	streamRes, streamErr := comp.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a57-admission-allowlist-missing-stream",
+		RunID: "run-adapter-allowlist-missing-stream",
 		Input: "blocked-stream",
 	}, nil)
 	if streamErr == nil {
@@ -453,7 +453,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 		t.Fatalf("deny path should not mutate mailbox diagnostics: before=%d after=%d", mailboxBefore, len(mgr.RecentMailbox(10)))
 	}
 
-	assertAdmissionRunRecord(t, mgr, "run-a57-admission-allowlist-missing-run", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-adapter-allowlist-missing-run", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
@@ -463,13 +463,13 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 			rec.AdapterAllowlistDecision != "deny" ||
 			rec.AdapterAllowlistBlockTotal != 1 ||
 			rec.AdapterAllowlistPrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "adapter.allowlist.add_required_entry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("run admission record mismatch: %#v", rec)
 		}
 	})
-	assertAdmissionRunRecord(t, mgr, "run-a57-admission-allowlist-missing-stream", func(rec mapRunRecord) {
+	assertAdmissionRunRecord(t, mgr, "run-adapter-allowlist-missing-stream", func(rec mapRunRecord) {
 		if rec.RuntimeReadinessAdmissionTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBlockedTotal != 1 ||
 			rec.RuntimeReadinessAdmissionBypassTotal != 0 ||
@@ -479,7 +479,7 @@ func TestRuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamP
 			rec.AdapterAllowlistDecision != "deny" ||
 			rec.AdapterAllowlistBlockTotal != 1 ||
 			rec.AdapterAllowlistPrimaryCode != runtimeconfig.ReadinessCodeAdapterAllowlistMissingEntry ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "adapter.allowlist.add_required_entry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainAdapter {
 			t.Fatalf("stream admission record mismatch: %#v", rec)
@@ -562,8 +562,8 @@ func assertAdmissionContractDeniedResult(t *testing.T, result types.RunResult, w
 		t.Fatalf("deny details missing readiness_secondary_reason_count: %#v", result.Error.Details)
 	}
 	version, _ := result.Error.Details["readiness_arbitration_rule_version"].(string)
-	if strings.TrimSpace(version) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
-		t.Fatalf("deny details readiness_arbitration_rule_version = %q, want %q", version, runtimeconfig.RuntimeArbitrationRuleVersionA49V1)
+	if strings.TrimSpace(version) != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 {
+		t.Fatalf("deny details readiness_arbitration_rule_version = %q, want %q", version, runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1)
 	}
 	hintCode, _ := result.Error.Details["readiness_remediation_hint_code"].(string)
 	hintDomain, _ := result.Error.Details["readiness_remediation_hint_domain"].(string)

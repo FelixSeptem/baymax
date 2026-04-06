@@ -89,7 +89,7 @@ func TestRuntimeReadinessAdmissionReactBlockedDenyRunStreamEquivalentAndNoSideEf
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.select_tool_calling_provider" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("blocked react run record mismatch: %#v", rec)
@@ -108,7 +108,7 @@ func TestRuntimeReadinessAdmissionReactBlockedDenyRunStreamEquivalentAndNoSideEf
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.select_tool_calling_provider" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("blocked react stream record mismatch: %#v", rec)
@@ -167,7 +167,7 @@ func TestRuntimeReadinessAdmissionReactDegradedPolicyMappingRunStreamEquivalent(
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.restore_tool_registry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("degraded allow run record mismatch: %#v", rec)
@@ -185,7 +185,7 @@ func TestRuntimeReadinessAdmissionReactDegradedPolicyMappingRunStreamEquivalent(
 			rec.RuntimePrimaryConflictTotal != 0 ||
 			rec.RuntimeSecondaryReasonCount != 0 ||
 			len(rec.RuntimeSecondaryReasonCodes) != 0 ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.restore_tool_registry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("degraded allow stream record mismatch: %#v", rec)
@@ -261,7 +261,7 @@ func TestRuntimeReadinessAdmissionReactDegradedPolicyMappingRunStreamEquivalent(
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRuntime ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeReactToolRegistryUnavailable ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.restore_tool_registry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("degraded deny run record mismatch: %#v", rec)
@@ -276,7 +276,7 @@ func TestRuntimeReadinessAdmissionReactDegradedPolicyMappingRunStreamEquivalent(
 			rec.RuntimePrimaryDomain != runtimeconfig.ReadinessDomainRuntime ||
 			rec.RuntimePrimaryCode != runtimeconfig.ReadinessCodeReactToolRegistryUnavailable ||
 			rec.RuntimePrimarySource != runtimeconfig.RuntimePrimarySourceReadiness ||
-			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 ||
+			rec.RuntimeArbitrationRuleVersion != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 ||
 			rec.RuntimeRemediationHintCode != "react.restore_tool_registry" ||
 			rec.RuntimeRemediationHintDomain != runtimeconfig.ReadinessDomainRuntime {
 			t.Fatalf("degraded deny stream record mismatch: %#v", rec)

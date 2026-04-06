@@ -332,7 +332,7 @@ reload:
 	}
 }
 
-func TestManagerCA2ExternalTrendsAPIAndReloadRollback(t *testing.T) {
+func TestManagerContextStage2ExternalTrendsAPIAndReloadRollback(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
 mcp:
@@ -347,7 +347,7 @@ mcp:
       read_pool_size: 4
       write_pool_size: 1
 diagnostics:
-  ca2_external_trend:
+  context_stage2_external_trend:
     enabled: true
     window: 1m
     thresholds:
@@ -367,16 +367,16 @@ reload:
 	base := time.Now()
 	mgr.RecordRun(runtimediag.RunRecord{
 		Time:             base.Add(10 * time.Millisecond),
-		RunID:            "run-ca2-1",
+		RunID:            "run-context-stage2-1",
 		Stage2Provider:   "http",
 		Stage2LatencyMs:  80,
 		Stage2HitCount:   0,
 		Stage2ReasonCode: "timeout",
 		Stage2ErrorLayer: "transport",
 	})
-	items := mgr.CA2ExternalTrends(runtimediag.CA2ExternalTrendQuery{})
+	items := mgr.ContextStage2ExternalTrends(runtimediag.ContextStage2ExternalTrendQuery{})
 	if len(items) != 1 {
-		t.Fatalf("ca2 external trends len = %d, want 1", len(items))
+		t.Fatalf("context stage2 external trends len = %d, want 1", len(items))
 	}
 	if items[0].Provider != "http" {
 		t.Fatalf("provider = %q, want http", items[0].Provider)
@@ -392,7 +392,7 @@ mcp:
     default:
       retry: 1
 diagnostics:
-  ca2_external_trend:
+  context_stage2_external_trend:
     enabled: true
     window: 0s
 reload:
@@ -400,8 +400,8 @@ reload:
   debounce: 20ms
 `)
 	time.Sleep(250 * time.Millisecond)
-	if mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend.Window != 1*time.Minute {
-		t.Fatalf("invalid reload should rollback CA2 trend config, got %#v", mgr.EffectiveConfig().Diagnostics.CA2ExternalTrend)
+	if mgr.EffectiveConfig().Diagnostics.ContextStage2ExternalTrend.Window != 1*time.Minute {
+		t.Fatalf("invalid reload should rollback context stage2 trend config, got %#v", mgr.EffectiveConfig().Diagnostics.ContextStage2ExternalTrend)
 	}
 }
 
@@ -550,7 +550,7 @@ mcp:
 	}
 }
 
-func TestManagerCA2AgenticInvalidReloadRollsBack(t *testing.T) {
+func TestManagerContextStage2AgenticInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	stage2File := filepath.ToSlash(filepath.Join(t.TempDir(), "stage2.jsonl"))
 	writeConfig(t, file, fmt.Sprintf(`
@@ -599,7 +599,7 @@ reload:
 	time.Sleep(250 * time.Millisecond)
 	after := mgr.EffectiveConfig().ContextAssembler.CA2.Agentic.FailurePolicy
 	if after != before {
-		t.Fatalf("invalid ca2 agentic reload should rollback, failure_policy = %q, want %q", after, before)
+		t.Fatalf("invalid context stage2 agentic reload should rollback, failure_policy = %q, want %q", after, before)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

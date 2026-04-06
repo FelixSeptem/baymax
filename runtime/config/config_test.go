@@ -188,25 +188,25 @@ func TestDiagnosticsTimelineTrendValidationRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-func TestDiagnosticsCA2ExternalTrendDefaults(t *testing.T) {
+func TestDiagnosticsContextStage2ExternalTrendDefaults(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.Diagnostics.CA2ExternalTrend.Enabled {
-		t.Fatal("diagnostics.ca2_external_trend.enabled = false, want true")
+	if !cfg.Diagnostics.ContextStage2ExternalTrend.Enabled {
+		t.Fatal("diagnostics.context_stage2_external_trend.enabled = false, want true")
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Window != 15*time.Minute {
-		t.Fatalf("diagnostics.ca2_external_trend.window = %v, want 15m", cfg.Diagnostics.CA2ExternalTrend.Window)
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Window != 15*time.Minute {
+		t.Fatalf("diagnostics.context_stage2_external_trend.window = %v, want 15m", cfg.Diagnostics.ContextStage2ExternalTrend.Window)
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
-		t.Fatalf("diagnostics.ca2_external_trend.thresholds.p95_latency_ms = %d, want > 0", cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
+		t.Fatalf("diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms = %d, want > 0", cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs)
 	}
 }
 
-func TestDiagnosticsCA2ExternalTrendEnvOverridePrecedence(t *testing.T) {
-	t.Setenv("BAYMAX_DIAGNOSTICS_CA2_EXTERNAL_TREND_WINDOW", "25m")
+func TestDiagnosticsContextStage2ExternalTrendEnvOverridePrecedence(t *testing.T) {
+	t.Setenv("BAYMAX_DIAGNOSTICS_CONTEXT_STAGE2_EXTERNAL_TREND_WINDOW", "25m")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 diagnostics:
-  ca2_external_trend:
+  context_stage2_external_trend:
     enabled: true
     window: 10m
     thresholds:
@@ -221,29 +221,29 @@ diagnostics:
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Window != 25*time.Minute {
-		t.Fatalf("diagnostics.ca2_external_trend.window = %v, want 25m", cfg.Diagnostics.CA2ExternalTrend.Window)
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Window != 25*time.Minute {
+		t.Fatalf("diagnostics.context_stage2_external_trend.window = %v, want 25m", cfg.Diagnostics.ContextStage2ExternalTrend.Window)
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs != 900 {
-		t.Fatalf("diagnostics.ca2_external_trend.thresholds.p95_latency_ms = %d, want 900", cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs != 900 {
+		t.Fatalf("diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms = %d, want 900", cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs)
 	}
 }
 
-func TestDiagnosticsCA2ExternalTrendValidationRejectsInvalidValue(t *testing.T) {
+func TestDiagnosticsContextStage2ExternalTrendValidationRejectsInvalidValue(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Diagnostics.CA2ExternalTrend.Window = 0
+	cfg.Diagnostics.ContextStage2ExternalTrend.Window = 0
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for diagnostics.ca2_external_trend.window")
+		t.Fatal("expected validation error for diagnostics.context_stage2_external_trend.window")
 	}
 	cfg = DefaultConfig()
-	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = 1.2
+	cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate = 1.2
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for diagnostics.ca2_external_trend.thresholds.error_rate")
+		t.Fatal("expected validation error for diagnostics.context_stage2_external_trend.thresholds.error_rate")
 	}
 	cfg = DefaultConfig()
-	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = -0.1
+	cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate = -0.1
 	if err := Validate(cfg); err == nil {
-		t.Fatal("expected validation error for diagnostics.ca2_external_trend.thresholds.hit_rate")
+		t.Fatal("expected validation error for diagnostics.context_stage2_external_trend.thresholds.hit_rate")
 	}
 }
 
@@ -2082,7 +2082,7 @@ func TestContextAssemblerValidateRejectsInvalidBackend(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2Defaults(t *testing.T) {
+func TestContextAssemblerContextStage2Defaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.ContextAssembler.CA2.Enabled {
 		t.Fatal("context_assembler.ca2.enabled = true, want false by default")
@@ -2101,7 +2101,7 @@ func TestContextAssemblerCA2Defaults(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2ValidationRejectsInvalidMode(t *testing.T) {
+func TestContextAssemblerContextStage2ValidationRejectsInvalidMode(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.RoutingMode = "invalid"
@@ -2110,7 +2110,7 @@ func TestContextAssemblerCA2ValidationRejectsInvalidMode(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2EnvOverride(t *testing.T) {
+func TestContextAssemblerContextStage2EnvOverride(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ENABLED", "true")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_ROUTING_MODE", "rules")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_AGENTIC_DECISION_TIMEOUT", "150ms")
@@ -2136,7 +2136,7 @@ func TestContextAssemblerCA2EnvOverride(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2ValidationRejectsInvalidAgenticTimeout(t *testing.T) {
+func TestContextAssemblerContextStage2ValidationRejectsInvalidAgenticTimeout(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Agentic.DecisionTimeout = 0
@@ -2145,7 +2145,7 @@ func TestContextAssemblerCA2ValidationRejectsInvalidAgenticTimeout(t *testing.T)
 	}
 }
 
-func TestContextAssemblerCA2ValidationRejectsInvalidAgenticFailurePolicy(t *testing.T) {
+func TestContextAssemblerContextStage2ValidationRejectsInvalidAgenticFailurePolicy(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Agentic.FailurePolicy = "deny"
@@ -2811,7 +2811,7 @@ func TestValidateRejectsInvalidModelIOFilterBlockAction(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2ProviderEnumAcceptsExternalProviders(t *testing.T) {
+func TestContextAssemblerContextStage2ProviderEnumAcceptsExternalProviders(t *testing.T) {
 	for _, provider := range []string{"http", "rag", "db", "elasticsearch"} {
 		cfg := DefaultConfig()
 		cfg.ContextAssembler.CA2.Enabled = true
@@ -2825,7 +2825,7 @@ func TestContextAssemblerCA2ProviderEnumAcceptsExternalProviders(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA2ExternalValidationRejectsMissingEndpoint(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalValidationRejectsMissingEndpoint(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
@@ -2835,7 +2835,7 @@ func TestContextAssemblerCA2ExternalValidationRejectsMissingEndpoint(t *testing.
 	}
 }
 
-func TestContextAssemblerCA2ExternalValidationRejectsInvalidMappingMode(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalValidationRejectsInvalidMappingMode(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
@@ -2846,7 +2846,7 @@ func TestContextAssemblerCA2ExternalValidationRejectsInvalidMappingMode(t *testi
 	}
 }
 
-func TestContextAssemblerCA2ExternalValidationRejectsMissingQueryOrChunksMapping(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalValidationRejectsMissingQueryOrChunksMapping(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = "http"
@@ -2868,7 +2868,7 @@ func TestContextAssemblerCA2ExternalValidationRejectsMissingQueryOrChunksMapping
 	}
 }
 
-func TestContextAssemblerCA2ExternalConfigLoadPrecedenceAndHeaders(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalConfigLoadPrecedenceAndHeaders(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA2_STAGE2_EXTERNAL_ENDPOINT", "http://env.example/retrieve")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -2921,7 +2921,7 @@ context_assembler:
 	}
 }
 
-func TestContextAssemblerCA2ExternalProfileDefaultsAndExplicitOverrides(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalProfileDefaultsAndExplicitOverrides(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 context_assembler:
@@ -2963,7 +2963,7 @@ context_assembler:
 	}
 }
 
-func TestContextAssemblerCA2ExternalExplicitOnlyProfileAccepted(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalExplicitOnlyProfileAccepted(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 context_assembler:
@@ -3003,7 +3003,7 @@ context_assembler:
 	}
 }
 
-func TestContextAssemblerCA2ExternalHintsValidation(t *testing.T) {
+func TestContextAssemblerContextStage2ExternalHintsValidation(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA2.Enabled = true
 	cfg.ContextAssembler.CA2.Stage2.Provider = ContextStage2ProviderHTTP
@@ -3046,7 +3046,7 @@ func TestPrecheckStage2ExternalWarningAndError(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA3Defaults(t *testing.T) {
+func TestContextAssemblerContextPressureDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.ContextAssembler.CA3.Enabled {
 		t.Fatal("context_assembler.ca3.enabled = false, want true")
@@ -3087,7 +3087,7 @@ func TestContextAssemblerCA3Defaults(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) {
+func TestContextAssemblerContextPressureValidationFailFastOnInvalidThresholds(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.PercentThresholds.Warning = 10
 	cfg.ContextAssembler.CA3.PercentThresholds.Comfort = 20
@@ -3096,7 +3096,7 @@ func TestContextAssemblerCA3ValidationFailFastOnInvalidThresholds(t *testing.T) 
 	}
 }
 
-func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
+func TestContextAssemblerContextPressureEnvOverrideTokenizer(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_PROVIDER", "gemini")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_SMALL_DELTA_TOKENS", "64")
 	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
@@ -3111,7 +3111,7 @@ func TestContextAssemblerCA3EnvOverrideTokenizer(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionEnvOverride(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_MODE", "semantic")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_SEMANTIC_TIMEOUT", "1200ms")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_COMPACTION_QUALITY_THRESHOLD", "0.75")
@@ -3169,7 +3169,7 @@ func TestContextAssemblerCA3CompactionEnvOverride(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA3CompactionValidationRejectsInvalidMode(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionValidationRejectsInvalidMode(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Mode = "custom"
 	if err := Validate(cfg); err == nil {
@@ -3177,7 +3177,7 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidMode(t *testing.T)
 	}
 }
 
-func TestContextAssemblerCA3CompactionValidationRejectsInvalidQualityThreshold(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionValidationRejectsInvalidQualityThreshold(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Quality.Threshold = 1.5
 	if err := Validate(cfg); err == nil {
@@ -3185,7 +3185,7 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidQualityThreshold(t
 	}
 }
 
-func TestContextAssemblerCA3CompactionValidationRejectsInvalidTemplatePlaceholder(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionValidationRejectsInvalidTemplatePlaceholder(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.SemanticTemplate.Prompt = "compact {{source}} and {{unknown}}"
 	if err := Validate(cfg); err == nil {
@@ -3193,7 +3193,7 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidTemplatePlaceholde
 	}
 }
 
-func TestContextAssemblerCA3CompactionValidationRejectsInvalidEmbeddingProvider(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionValidationRejectsInvalidEmbeddingProvider(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
@@ -3205,7 +3205,7 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidEmbeddingProvider(
 	}
 }
 
-func TestContextAssemblerCA3CompactionValidationRejectsInvalidSimilarityMetric(t *testing.T) {
+func TestContextAssemblerContextPressureCompactionValidationRejectsInvalidSimilarityMetric(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Embedding.SimilarityMetric = "dot"
 	if err := Validate(cfg); err == nil {
@@ -3213,7 +3213,7 @@ func TestContextAssemblerCA3CompactionValidationRejectsInvalidSimilarityMetric(t
 	}
 }
 
-func TestContextAssemblerCA3RerankerValidationRejectsMissingProfile(t *testing.T) {
+func TestContextAssemblerContextPressureRerankerValidationRejectsMissingProfile(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
@@ -3230,7 +3230,7 @@ func TestContextAssemblerCA3RerankerValidationRejectsMissingProfile(t *testing.T
 	}
 }
 
-func TestContextAssemblerCA3RerankerEnvOverride(t *testing.T) {
+func TestContextAssemblerContextPressureRerankerEnvOverride(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
 context_assembler:
@@ -3282,7 +3282,7 @@ context_assembler:
 	}
 }
 
-func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidMode(t *testing.T) {
+func TestContextAssemblerContextPressureRerankerGovernanceValidationRejectsInvalidMode(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
@@ -3299,7 +3299,7 @@ func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidMode(t *te
 	}
 }
 
-func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidRolloutKey(t *testing.T) {
+func TestContextAssemblerContextPressureRerankerGovernanceValidationRejectsInvalidRolloutKey(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Enabled = true
 	cfg.ContextAssembler.CA3.Compaction.Embedding.Selector = "default"
@@ -3317,7 +3317,7 @@ func TestContextAssemblerCA3RerankerGovernanceValidationRejectsInvalidRolloutKey
 	}
 }
 
-func TestContextAssemblerCA3ValidateRejectsPartialStageOverride(t *testing.T) {
+func TestContextAssemblerContextPressureValidateRejectsPartialStageOverride(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Stage1.PercentThresholds = ContextAssemblerCA3Thresholds{
 		Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 0,
@@ -3327,7 +3327,7 @@ func TestContextAssemblerCA3ValidateRejectsPartialStageOverride(t *testing.T) {
 	}
 }
 
-func TestContextAssemblerCA3ValidateAcceptsCompleteStageOverride(t *testing.T) {
+func TestContextAssemblerContextPressureValidateAcceptsCompleteStageOverride(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ContextAssembler.CA3.Stage2.PercentThresholds = ContextAssemblerCA3Thresholds{
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,

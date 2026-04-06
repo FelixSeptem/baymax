@@ -19,10 +19,6 @@ required_markers=(
   "CHECKPOINT recovery_replayed=true"
   "CHECKPOINT correlation "
   "CHECKPOINT run_stream_aligned=true"
-  "A20_RUN_TERMINAL"
-  "A20_STREAM_TERMINAL"
-  "A20_TERMINAL_SUMMARY="
-  "A20_SUCCESS"
 )
 
 for marker in "${required_markers[@]}"; do
@@ -31,5 +27,19 @@ for marker in "${required_markers[@]}"; do
     exit 1
   fi
 done
+
+require_marker() {
+  local marker="$1"
+  if grep -Fq "${marker}" <<<"${output}"; then
+    return 0
+  fi
+  echo "[example-smoke] missing required marker: ${marker}"
+  exit 1
+}
+
+require_marker "FULL_CHAIN_RUN_TERMINAL"
+require_marker "FULL_CHAIN_STREAM_TERMINAL"
+require_marker "FULL_CHAIN_TERMINAL_SUMMARY="
+require_marker "FULL_CHAIN_SUCCESS"
 
 echo "[example-smoke] passed"

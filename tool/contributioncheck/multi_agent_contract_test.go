@@ -386,7 +386,7 @@ func TestValidateMultiAgentSharedContractDetectsViolations(t *testing.T) {
 		"missing_v1_acceptance_marker_recovery_*",
 		"missing_v1_acceptance_marker_recovery_enabled",
 		"missing_v1_acceptance_compatibility_window_marker",
-		"missing_v1_acceptance_a12_a13_compatibility_marker",
+		"missing_v1_acceptance_additive_summary_compatibility_marker",
 		"unified_query_semantic_drift_missing_and_semantics",
 		"unified_query_semantic_drift_missing_default_page_size",
 		"unified_query_semantic_drift_missing_page_size_limit",

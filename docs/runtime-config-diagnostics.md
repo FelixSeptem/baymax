@@ -250,7 +250,7 @@ diagnostics:
     enabled: true
     last_n_runs: 100
     time_window: 15m
-  ca2_external_trend:
+  context_stage2_external_trend:
     enabled: true
     window: 15m
     thresholds:
@@ -260,34 +260,34 @@ diagnostics:
 
 runtime:
   react:
-    enabled: true                     # A56 默认开启
+    enabled: true                     # ReAct Loop + Tool-Calling Parity 默认开启
     max_iterations: 12                # 必须 > 0
     tool_call_limit: 64               # 必须 > 0
     stream_tool_dispatch_enabled: true # stream 路径 ReAct 工具分发
     on_budget_exhausted: fail_fast    # 当前仅支持 fail_fast
     plan_notebook:
-      enabled: false                  # A67 默认关闭
+      enabled: false                  # ReAct Plan Notebook + Plan Change Hook 默认关闭
       max_history: 32                 # 必须 > 0
       on_recover_conflict: reject     # reject|prefer_latest
     plan_change_hook:
-      enabled: false                  # A67 默认关闭
+      enabled: false                  # ReAct Plan Notebook + Plan Change Hook 默认关闭
       fail_mode: fail_fast            # fail_fast|degrade
       timeout_ms: 2000                # 必须 > 0；开启时要求 plan_notebook.enabled=true
   realtime:
     protocol:
-      enabled: false                  # A68 默认关闭
-      version: realtime_event_protocol.v1 # A68 固定协议版本
+      enabled: false                  # Realtime Protocol + Interrupt/Resume 默认关闭
+      version: realtime_event_protocol.v1 # Realtime Protocol + Interrupt/Resume 固定协议版本
       max_buffered_events: 64         # 必须 > 0
     interrupt_resume:
-      enabled: false                  # A68 默认关闭
+      enabled: false                  # Realtime Protocol + Interrupt/Resume 默认关闭
       resume_cursor_ttl_ms: 300000    # 必须 > 0；resume cursor 过期窗口
       idempotency_window_ms: 30000    # 必须 > 0；幂等吸收窗口
   readiness:
-    enabled: true               # A40 默认开启
-    strict: false               # A40 默认不升级 degraded
-    remote_probe_enabled: false # A40 默认关闭远程探测（离线友好）
+    enabled: true               # Runtime Readiness Preflight + Degradation 默认开启
+    strict: false               # Runtime Readiness Preflight + Degradation 默认不升级 degraded
+    remote_probe_enabled: false # Runtime Readiness Preflight + Degradation 默认关闭远程探测（离线友好）
     admission:
-      enabled: false            # A44 默认关闭，保持历史执行路径
+      enabled: false            # Readiness Admission Guard + Degradation Policy 默认关闭，保持历史执行路径
       mode: fail_fast           # 当前仅支持 fail_fast
       block_on: blocked_only    # 当前仅支持 blocked_only
       degraded_policy: allow_and_record # allow_and_record|fail_fast
@@ -305,14 +305,14 @@ runtime:
       conflict_policy: first_action # first_action|fail_fast
   arbitration:
     version:
-      enabled: true             # A50 默认开启
-      default: a49.v1           # A50 默认裁决版本
-      compat_window: 1          # A50 兼容窗口（>=0）
+      enabled: true             # Arbitration Version Governance 默认开启
+      default: Arbitration Explainability + Secondary Reason.v1           # Arbitration Version Governance 默认裁决版本
+      compat_window: 1          # Arbitration Version Governance 兼容窗口（>=0）
       on_unsupported: fail_fast # 当前仅支持 fail_fast
       on_mismatch: fail_fast    # 当前仅支持 fail_fast
   policy:
     precedence:
-      version: policy_stack.v1  # A58 固定 policy stack 契约版本
+      version: policy_stack.v1  # Policy Precedence + Decision Trace 固定 policy stack 契约版本
       matrix:
         action_gate: 1
         security_s2: 2
@@ -326,7 +326,7 @@ runtime:
     explainability:
       enabled: true
   operation_profiles:
-    default_profile: legacy     # A41 默认 legacy
+    default_profile: legacy     # Operation Profile + Timeout Resolution 默认 legacy
     legacy:
       timeout: 3s               # 必须 > 0
     interactive:
@@ -384,34 +384,34 @@ runtime:
       drift_recovery_policy: incremental_then_full # incremental_then_full|full_rebuild
   observability:
     export:
-      enabled: false            # A55 默认关闭
+      enabled: false            # Observability Export + Diagnostics Bundle 默认关闭
       profile: none             # none|otlp|langfuse|custom
       endpoint: ""              # enabled=true 且 profile!=none 时必填
       queue_capacity: 256       # 必须 > 0
       on_error: degrade_and_record # fail_fast|degrade_and_record
   diagnostics:
     bundle:
-      enabled: false            # A55 默认关闭
+      enabled: false            # Observability Export + Diagnostics Bundle 默认关闭
       output_dir: /tmp/baymax/diagnostics-bundles
       max_size_mb: 64           # 必须 > 0
       include_sections: [timeline, diagnostics, effective_config, replay_hints, gate_fingerprint]
 
 adapter:
   allowlist:
-    enabled: false              # A57 默认关闭，按 adapter 接入分批启用
+    enabled: false              # Sandbox Egress + Adapter Allowlist 默认关闭，按 adapter 接入分批启用
     enforcement_mode: enforce   # observe|enforce
     entries: []                 # adapter_id/publisher/version/signature_status
     on_unknown_signature: deny  # deny|allow_and_record
   health:
-    enabled: false              # A43 默认关闭，逐步启用
-    strict: false               # A43 默认不强制 required unavailable 直接阻断
+    enabled: false              # Adapter Runtime Health Probe + Readiness Integration 默认关闭，逐步启用
+    strict: false               # Adapter Runtime Health Probe + Readiness Integration 默认不强制 required unavailable 直接阻断
     probe_timeout: 500ms        # 必须 > 0
     cache_ttl: 30s              # 必须 > 0（TTL 内复用探测结果）
 
 security:
   sandbox:
     egress:
-      enabled: true             # A57 默认启用，deny-first
+      enabled: true             # Sandbox Egress + Adapter Allowlist 默认启用，deny-first
       default_action: deny      # deny|allow|allow_and_record
       by_tool: {}               # selector -> action
       allowlist: []             # host/domain pattern allowlist
@@ -429,11 +429,11 @@ provider_fallback:
 
 composer:
   collab:
-    enabled: false                   # A16 feature flag，默认关闭
+    enabled: false                   # Multi-Agent Feature Flag feature flag，默认关闭
     default_aggregation: all_settled # all_settled|first_success
     failure_policy: fail_fast        # fail_fast|best_effort
     retry:
-      enabled: false                 # A33：默认关闭，显式开启后生效
+      enabled: false                 # Collaboration Primitive Retry：默认关闭，显式开启后生效
       max_attempts: 3                # 必须 > 0
       backoff_initial: 100ms         # 必须 > 0
       backoff_max: 2s                # 必须 >= backoff_initial
@@ -460,7 +460,7 @@ workflow:
   checkpoint_backend: memory      # memory|file
   checkpoint_path: /tmp/baymax/workflow-checkpoints # backend=file 时必填
   graph_composability:
-    enabled: false                # A15，默认关闭；开启后启用 subgraphs/use_subgraph/condition_templates 编译展开
+    enabled: false                # Graph Compile Expansion，默认关闭；开启后启用 subgraphs/use_subgraph/condition_templates 编译展开
   remote:
     enabled: false                # 启用 a2a remote step 时，要求 workflow.enabled=true
     require_peer_id: true         # a2a step 是否强制 peer_id
@@ -632,6 +632,12 @@ context_assembler:
   enabled: true # 默认 true
   journal_path: /tmp/baymax/context-journal.jsonl # 默认值由 os.TempDir() + /baymax/context-journal.jsonl 计算
   prefix_version: ca1
+  # 命名迁移窗口（语义主名 + legacy alias 双读）：
+  # - semantic primary: context_assembler.stage2_routing_and_disclosure
+  # - semantic primary: context_assembler.pressure_compaction_and_swapback
+  # - legacy alias: 编号化 stage key（兼容读取）
+  # - mixed 输入冲突时 semantic primary 优先
+  # - 加载时会输出 migration hint；冲突日志会显式提示 semantic primary 优先，便于迁移期回滚定位
   storage:
     backend: file # CA1 支持 file；db 会 fail-fast 返回 unsupported
   guard:
@@ -794,7 +800,7 @@ security:
 CA4 阈值解析顺序：
 1. 若 stage1/stage2 覆盖阈值被配置（且校验通过），该 stage 使用覆盖值，不与全局阈值混用。
 2. percent 与 absolute 阈值并行计算分区。
-3. 两者冲突时选取更高压力分区，并写入 `ca3_pressure_reason` + `ca3_pressure_trigger`。
+3. 两者冲突时选取更高压力分区，并写入 `context_pressure_reason` + `context_pressure_trigger`（迁移窗口仍兼容 legacy 编号字段）。
 
 Skill trigger scoring 校验语义：
 1. `strategy` 仅支持 `lexical_weighted_keywords|lexical_plus_embedding`。
@@ -825,14 +831,14 @@ timeline_trend 校验语义：
 2. `diagnostics.timeline_trend.time_window` 必须 `> 0`。
 3. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
-ca2_external_trend 校验语义：
-1. `diagnostics.ca2_external_trend.window` 必须 `> 0`。
-2. `diagnostics.ca2_external_trend.thresholds.p95_latency_ms` 必须 `> 0`。
-3. `diagnostics.ca2_external_trend.thresholds.error_rate` 必须在 `[0,1]`。
-4. `diagnostics.ca2_external_trend.thresholds.hit_rate` 必须在 `[0,1]`。
+context_stage2_external_trend 校验语义：
+1. `diagnostics.context_stage2_external_trend.window` 必须 `> 0`。
+2. `diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms` 必须 `> 0`。
+3. `diagnostics.context_stage2_external_trend.thresholds.error_rate` 必须在 `[0,1]`。
+4. `diagnostics.context_stage2_external_trend.thresholds.hit_rate` 必须在 `[0,1]`。
 5. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
-diagnostics cardinality（A45）校验语义：
+diagnostics cardinality（Diagnostics Cardinality Budget + Truncation Governance）校验语义：
 1. `diagnostics.cardinality.max_map_entries` 必须 `> 0`。
 2. `diagnostics.cardinality.max_list_entries` 必须 `> 0`。
 3. `diagnostics.cardinality.max_string_bytes` 必须 `> 0`。
@@ -846,7 +852,7 @@ ca2 stage2 external hint/template 校验语义：
 3. `hints.capabilities[*]` 必须使用小写并满足字符集 `[a-z0-9._/-]`。
 4. 非法 hint/template 配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
-collaboration primitive retry（A33）校验语义：
+collaboration primitive retry（Collaboration Primitive Retry）校验语义：
 1. `composer.collab.retry.max_attempts` 必须 `> 0`。
 2. `composer.collab.retry.backoff_initial` 必须 `> 0`。
 3. `composer.collab.retry.backoff_max` 必须 `>= composer.collab.retry.backoff_initial`。
@@ -905,7 +911,7 @@ mailbox baseline 校验语义：
 16. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
 17. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
 
-mailbox 诊断查询入口（A30）：
+mailbox 诊断查询入口（Mailbox Unified Coordination）：
 1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。
 2. `runtime/config.Manager.MailboxAggregates(filter)`：返回聚合计数（`by_kind/by_state/retry_total/dead_letter_total/expired_total/reason_code_totals`），用于与 run/task 视图组合排障。
 3. mailbox 诊断记录保留关联键：`run_id/task_id/workflow_id/team_id`。
@@ -914,12 +920,12 @@ mailbox 诊断查询入口（A30）：
 6. lifecycle reason taxonomy 采用 canonical 集合：`retry_exhausted`、`expired`、`consumer_mismatch`、`message_not_found`、`handler_error`、`lease_expired`。
 7. reclaim/panic-recover 观测为 additive 字段：`reclaimed`、`panic_recovered`；用于区分 lease reclaim 与 panic recover 路径。
 
-a2a 同步调用契约（A11）：
+a2a 同步调用契约（A2A Sync Invocation）：
 1. orchestration 统一复用 `orchestration/invoke` 的 `submit + wait + normalize` 调用路径。
 2. `poll_interval` 缺省使用兼容默认值 `20ms`，调用方可按路径覆盖。
 3. 同步调用以调用方 `context` 为单一权威，取消/超时优先于轮询等待。
 4. 失败输出统一归一为 `transport|protocol|semantic` 错误层与 `retryable` 提示。
-5. A11 不新增破坏性配置键；保持既有 `a2a.*`、`teams.*`、`workflow.*`、`scheduler.*` 配置兼容。
+5. A2A Sync Invocation 不新增破坏性配置键；保持既有 `a2a.*`、`teams.*`、`workflow.*`、`scheduler.*` 配置兼容。
 
 scheduler/subagent baseline 校验语义：
 1. `scheduler.backend` 仅支持 `memory|file`。
@@ -945,18 +951,18 @@ scheduler/subagent baseline 校验语义：
 21. `subagent.max_depth`、`subagent.max_active_children`、`subagent.child_timeout_budget` 必须 `> 0`。
 22. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
-runtime readiness（A40）校验语义：
+runtime readiness（Runtime Readiness Preflight + Degradation）校验语义：
 1. `runtime.readiness.enabled|strict|remote_probe_enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. 启动加载与热更新都遵循 fail-fast，非法布尔表达会拒绝生效并保留上一有效快照。
 
-runtime arbitration version governance（A50）校验语义：
+runtime arbitration version governance（Arbitration Version Governance）校验语义：
 1. `runtime.arbitration.version.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
-2. `runtime.arbitration.version.default` 必须为已注册规则版本（当前注册表：`a48.v1|a49.v1`）。
+2. `runtime.arbitration.version.default` 必须为已注册规则版本（当前注册表：`Cross-Domain Primary Reason Arbitration.v1|Arbitration Explainability + Secondary Reason.v1`）。
 3. `runtime.arbitration.version.compat_window` 必须 `>= 0`。
 4. `runtime.arbitration.version.on_unsupported|on_mismatch` 当前仅支持 `fail_fast`。
 5. 启动加载与热更新都遵循 fail-fast，非法版本治理配置会拒绝生效并保留上一有效快照。
 
-runtime react plan notebook（A67）校验语义：
+runtime react plan notebook（ReAct Plan Notebook + Plan Change Hook）校验语义：
 1. `runtime.react.plan_notebook.enabled` 与 `runtime.react.plan_change_hook.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `runtime.react.plan_notebook.max_history` 必须 `> 0`。
 3. `runtime.react.plan_notebook.on_recover_conflict` 仅支持 `reject|prefer_latest`。
@@ -965,7 +971,7 @@ runtime react plan notebook（A67）校验语义：
 6. 组合约束：`runtime.react.plan_change_hook.enabled=true` 时必须满足 `runtime.react.plan_notebook.enabled=true`。
 7. 启动加载与热更新都遵循 fail-fast；非法配置会拒绝生效并保留上一有效快照。
 
-runtime realtime protocol（A68）校验语义：
+runtime realtime protocol（Realtime Protocol + Interrupt/Resume）校验语义：
 1. `runtime.realtime.protocol.enabled` 与 `runtime.realtime.interrupt_resume.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `runtime.realtime.protocol.version` 当前固定为 `realtime_event_protocol.v1`。
 3. `runtime.realtime.protocol.max_buffered_events` 必须 `> 0`。
@@ -974,14 +980,14 @@ runtime realtime protocol（A68）校验语义：
 6. 组合约束：`runtime.realtime.interrupt_resume.enabled=true` 时必须满足 `runtime.realtime.protocol.enabled=true`。
 7. 启动加载与热更新都遵循 fail-fast；非法配置会拒绝生效并保留上一有效快照。
 
-adapter health（A43/A46）校验语义：
+adapter health（Adapter Runtime Health Probe + Readiness Integration/Adapter Health Backoff + Circuit Governance）校验语义：
 1. `adapter.health.enabled|strict|backoff.enabled|circuit.enabled` 必须是合法布尔值（支持 YAML bool / 可解析布尔字符串）。
 2. `adapter.health.probe_timeout` 与 `adapter.health.cache_ttl` 必须 `> 0`。
 3. `adapter.health.backoff.initial` 必须 `> 0`，`adapter.health.backoff.max` 必须 `>= initial`，`adapter.health.backoff.multiplier` 必须 `> 1`，`adapter.health.backoff.jitter_ratio` 必须在 `[0,1]`。
 4. `adapter.health.circuit.failure_threshold`、`adapter.health.circuit.half_open_max_probe`、`adapter.health.circuit.half_open_success_threshold` 必须 `> 0`；`adapter.health.circuit.open_duration` 必须 `> 0`。
 5. 启动加载与热更新均遵循 fail-fast；非法布尔/非法阈值会拒绝生效并保留上一有效快照。
 
-operation profiles 与 timeout 解析（A41）校验语义：
+operation profiles 与 timeout 解析（Operation Profile + Timeout Resolution）校验语义：
 1. `runtime.operation_profiles.default_profile` 仅允许 `legacy|interactive|background|batch`。
 2. `runtime.operation_profiles.{legacy|interactive|background|batch}.timeout` 必须 `> 0`。
 3. timeout 解析优先级固定：`profile baseline -> domain override -> request override`。
@@ -989,7 +995,7 @@ operation profiles 与 timeout 解析（A41）校验语义：
 5. `parent_remaining_budget <= 0` 时必须以 canonical 分类拒绝：`parent_budget_exhausted`。
 6. 启动加载与热更新均遵循 fail-fast，非法 profile/timeout 更新会拒绝生效并保留上一有效快照。
 
-recovery boundary（A17）校验语义：
+recovery boundary（Recovery Boundary）校验语义：
 1. `recovery.conflict_policy` 当前仅支持 `fail_fast`。
 2. `recovery.resume_boundary` 当前仅支持 `next_attempt_only`。
 3. `recovery.inflight_policy` 当前仅支持 `no_rewind`。
@@ -1055,12 +1061,12 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `QueryMailbox(query)`
 - `MailboxAggregates(filter)`
 - `TimelineTrends(query)`
-- `CA2ExternalTrends(query)`
+- `ContextStage2ExternalTrends(query)`
 - `EffectiveConfigSanitized()`
 - `PrecheckStage2External(provider, external)`
-- `ReadinessPreflight()`（A40：返回 `ready|degraded|blocked` + canonical findings）
-- `EvaluateReadinessAdmission()`（A44：返回 `allow|deny` 决策、reason code 与 primary code 摘要）
-- `SetAdapterHealthTargets(targets)` / `RegisterAdapterHealthTarget(target)` / `RemoveAdapterHealthTarget(name)`（A43：注册 runtime adapter health probe 目标）
+- `ReadinessPreflight()`（Runtime Readiness Preflight + Degradation：返回 `ready|degraded|blocked` + canonical findings）
+- `EvaluateReadinessAdmission()`（Readiness Admission Guard + Degradation Policy：返回 `allow|deny` 决策、reason code 与 primary code 摘要）
+- `SetAdapterHealthTargets(targets)` / `RegisterAdapterHealthTarget(target)` / `RemoveAdapterHealthTarget(name)`（Adapter Runtime Health Probe + Readiness Integration：注册 runtime adapter health probe 目标）
 
 `orchestration/scheduler.Scheduler` 额外提供任务看板只读查询：
 
@@ -1114,7 +1120,7 @@ client := httpmcp.NewClient(httpmcp.Config{
   - `resolution_source`（`callback|reconcile_poll|timeout`）
   - `remote_task_id`
   - `terminal_conflict_recorded`（可空）
-- A41 timeout-resolution additive 观测字段（`task.timeout_resolution.*`）：
+- Operation Profile + Timeout Resolution timeout-resolution additive 观测字段（`task.timeout_resolution.*`）：
   - `effective_operation_profile`
   - `timeout_resolution_source`
   - `timeout_resolution_trace`
@@ -1151,7 +1157,7 @@ client := httpmcp.NewClient(httpmcp.Config{
 - `expired_total`
 - `reason_code_totals`
 
-Mailbox diagnostics additive 字段（A35）：
+Mailbox diagnostics additive 字段（Mailbox Runtime Wiring）：
 - `backend`
 - `configured_backend`
 - `backend_fallback`
@@ -1166,24 +1172,24 @@ Mailbox diagnostics additive 字段（A35）：
 
 - 基础运行摘要：`run_id/status/iterations/tool_calls/latency_ms/error_class`
 - Provider 与降级：`model_provider/fallback_* / required_capabilities`
-- Context Assembler：`prefix_hash`、`assemble_*`、`stage2_*`、`ca3_*`、`recap_status`
+- Context Assembler：`prefix_hash`、`assemble_*`、`stage2_*`、`context_pressure_*`、`context_compaction_*`、`recap_status`（迁移窗口兼容 legacy 编号字段读取）
 - 编排聚合：`team_*`、`workflow_*`、`a2a_*`、`scheduler_*`、`subagent_*`、`collab_*`
-  - A31 additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
-  - A32 additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
-  - A39 additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
-  - A41 additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
-  - A45 additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
+  - Async Await Lifecycle additive 字段：`async_await_total`、`async_timeout_total`、`async_late_report_total`、`async_report_dedup_total`
+  - Async Await Poll Reconcile additive 字段：`async_reconcile_poll_total`、`async_reconcile_terminal_by_poll_total`、`async_reconcile_error_total`、`async_terminal_conflict_total`
+  - Task Board Control + Manual Recovery additive 字段：`task_board_manual_control_total`、`task_board_manual_control_success_total`、`task_board_manual_control_rejected_total`、`task_board_manual_control_idempotent_dedup_total`、`task_board_manual_control_by_action`、`task_board_manual_control_by_reason`
+  - Operation Profile + Timeout Resolution additive 字段：`effective_operation_profile`、`timeout_resolution_source`、`timeout_resolution_trace`、`timeout_parent_budget_clamp_total`、`timeout_parent_budget_reject_total`
+  - Diagnostics Cardinality Budget + Truncation Governance additive 字段：`diagnostics_cardinality_budget_hit_total`、`diagnostics_cardinality_truncated_total`、`diagnostics_cardinality_fail_fast_reject_total`、`diagnostics_cardinality_overflow_policy`、`diagnostics_cardinality_truncated_field_summary`
 - 恢复与治理：`recovery_*`、`gate_*`、`await_count/resume_count/cancel_by_user_count`
-- Runtime Readiness（A40/A44/A48/A49/A50）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
-- ReAct（A56）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
-- ReAct Plan Notebook + Plan Change Hook（A67）：`react_plan_id`、`react_plan_version`、`react_plan_change_total`、`react_plan_last_action`、`react_plan_change_reason`、`react_plan_recover_count`、`react_plan_hook_status`
-- Realtime Protocol + Interrupt/Resume（A68）：`realtime_protocol_version`、`realtime_event_seq_max`、`realtime_interrupt_total`、`realtime_resume_total`、`realtime_resume_source`、`realtime_idempotency_dedup_total`、`realtime_last_error_code`
-- Sandbox Egress + Adapter Allowlist（A57）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
-- Policy Precedence + Decision Trace（A58）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
-- Budget Admission（A60）：`budget_snapshot`、`budget_decision`、`degrade_action`
-- Memory（A54/A59）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`、`memory_scope_selected`、`memory_budget_used`、`memory_hits`、`memory_rerank_stats`、`memory_lifecycle_action`
-- Observability Export + Diagnostics Bundle（A55）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
-- Adapter Health（A43/A46）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
+- Runtime Readiness（Runtime Readiness Preflight + Degradation/Readiness Admission Guard + Degradation Policy/Cross-Domain Primary Reason Arbitration/Arbitration Explainability + Secondary Reason/Arbitration Version Governance）：`runtime_readiness_status`、`runtime_readiness_finding_total`、`runtime_readiness_blocking_total`、`runtime_readiness_degraded_total`、`runtime_readiness_primary_code`、`runtime_primary_domain`、`runtime_primary_code`、`runtime_primary_source`、`runtime_primary_conflict_total`、`runtime_secondary_reason_codes`、`runtime_secondary_reason_count`、`runtime_arbitration_rule_version`、`runtime_arbitration_rule_requested_version`、`runtime_arbitration_rule_effective_version`、`runtime_arbitration_rule_version_source`、`runtime_arbitration_rule_policy_action`、`runtime_arbitration_rule_unsupported_total`、`runtime_arbitration_rule_mismatch_total`、`runtime_remediation_hint_code`、`runtime_remediation_hint_domain`、`runtime_readiness_admission_total`、`runtime_readiness_admission_blocked_total`、`runtime_readiness_admission_degraded_allow_total`、`runtime_readiness_admission_bypass_total`、`runtime_readiness_admission_mode`、`runtime_readiness_admission_primary_code`
+- ReAct（ReAct Loop + Tool-Calling Parity）：`react_enabled`、`react_iteration_total`、`react_tool_call_total`、`react_tool_call_budget_hit_total`、`react_iteration_budget_hit_total`、`react_termination_reason`、`react_stream_dispatch_enabled`
+- ReAct Plan Notebook + Plan Change Hook（ReAct Plan Notebook + Plan Change Hook）：`react_plan_id`、`react_plan_version`、`react_plan_change_total`、`react_plan_last_action`、`react_plan_change_reason`、`react_plan_recover_count`、`react_plan_hook_status`
+- Realtime Protocol + Interrupt/Resume（Realtime Protocol + Interrupt/Resume）：`realtime_protocol_version`、`realtime_event_seq_max`、`realtime_interrupt_total`、`realtime_resume_total`、`realtime_resume_source`、`realtime_idempotency_dedup_total`、`realtime_last_error_code`
+- Sandbox Egress + Adapter Allowlist（Sandbox Egress + Adapter Allowlist）：`sandbox_egress_action`、`sandbox_egress_violation_total`、`sandbox_egress_policy_source`、`adapter_allowlist_decision`、`adapter_allowlist_block_total`、`adapter_allowlist_primary_code`
+- Policy Precedence + Decision Trace（Policy Precedence + Decision Trace）：`policy_precedence_version`、`winner_stage`、`deny_source`、`tie_break_reason`、`policy_decision_path`
+- Budget Admission（Runtime Budget Admission）：`budget_snapshot`、`budget_decision`、`degrade_action`
+- Memory（Memory Provider SPI + Builtin Filesystem/Memory Governance）：`memory_mode`、`memory_provider`、`memory_profile`、`memory_contract_version`、`memory_query_total`、`memory_upsert_total`、`memory_delete_total`、`memory_error_total`、`memory_fallback_total`、`memory_fallback_reason_code`、`memory_scope_selected`、`memory_budget_used`、`memory_hits`、`memory_rerank_stats`、`memory_lifecycle_action`
+- Observability Export + Diagnostics Bundle（Observability Export + Diagnostics Bundle）：`observability_export_profile`、`observability_export_status`、`observability_export_error_total`、`observability_export_drop_total`、`observability_export_queue_depth_peak`、`diagnostics_bundle_total`、`diagnostics_bundle_last_status`、`diagnostics_bundle_last_reason_code`、`diagnostics_bundle_last_schema_version`
+- Adapter Health（Adapter Runtime Health Probe + Readiness Integration/Adapter Health Backoff + Circuit Governance）：`adapter_health_status`、`adapter_health_probe_total`、`adapter_health_degraded_total`、`adapter_health_unavailable_total`、`adapter_health_primary_code`、`adapter_health_backoff_applied_total`、`adapter_health_circuit_open_total`、`adapter_health_circuit_half_open_total`、`adapter_health_circuit_recover_total`、`adapter_health_circuit_state`、`adapter_health_governance_primary_code`
 - 并发与背压：`cancel_propagated_count`、`backpressure_drop_count*`、`inflight_peak`
 - Timeline 聚合：`timeline_phases.<phase>.*`
 
@@ -1192,7 +1198,7 @@ Mailbox diagnostics additive 字段（A35）：
 - 缺失字段按约定默认值解释（`0`/`false`/空字符串）。
 - 未识别新增字段应被安全忽略。
 
-Compatibility Window (A12/A13)
+Compatibility Window (additive summary fields)
 - 兼容窗口规则：`additive + nullable + default`
 - missing additive fields resolve to documented default values
 - unknown future additive fields are safely ignored
@@ -1331,7 +1337,7 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + A47 + A48 + A49 + A50 + A54 + A55 + A56 + A57 + A58 + A59 + A60 + A65 + A66 + A67 + A68）
+## 诊断回放（D1 + Readiness-Timeout-Health Replay Fixture + Cross-Domain Primary Reason Arbitration + Arbitration Explainability + Secondary Reason + Arbitration Version Governance + Memory Provider SPI + Builtin Filesystem + Observability Export + Diagnostics Bundle + ReAct Loop + Tool-Calling Parity + Sandbox Egress + Adapter Allowlist + Policy Precedence + Decision Trace + Memory Governance + Runtime Budget Admission + Lifecycle Hooks + Tool Middleware + Unified State/Session Snapshot + ReAct Plan Notebook + Plan Change Hook + Realtime Protocol + Interrupt/Resume）
 
 离线回放命令：
 
@@ -1344,8 +1350,8 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
 - 输出：精简 timeline 视图（`run_id/sequence/phase/status/reason/timestamp`）
 - 目标：离线排障与契约回归，不依赖在线 runtime API
 
-语义（A47 组合模式）：
-- 输入：版本化 fixture（`version=a47.v1`），场景维度覆盖 readiness/timeout/adapter-health
+语义（Readiness-Timeout-Health Replay Fixture 组合模式）：
+- 输入：版本化 fixture（`version=Readiness-Timeout-Health Replay Fixture.v1`），场景维度覆盖 readiness/timeout/adapter-health
 - 输出：deterministic normalized semantic output（按 case name 稳定排序）
 - 强约束字段：
   - readiness: `status/strict/primary_code/reason_taxonomy`
@@ -1359,19 +1365,19 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `semantic_drift`（taxonomy/source/state/idempotency 漂移）
   - `ordering_drift`（ordering 非确定性漂移）
 
-语义（A48/A49/A50 arbitration 模式）：
-- 输入：版本化 fixture（`version=a48.v1|a49.v1|a50.v1`），每个 case 包含 `run/stream/expected/idempotency`：
+语义（Cross-Domain Primary Reason Arbitration/Arbitration Explainability + Secondary Reason/Arbitration Version Governance arbitration 模式）：
+- 输入：版本化 fixture（`version=Cross-Domain Primary Reason Arbitration.v1|Arbitration Explainability + Secondary Reason.v1|Arbitration Version Governance.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `runtime_primary_domain`
   - `runtime_primary_code`
   - `runtime_primary_source`
   - `runtime_primary_conflict_total`
-- A49 explainability 额外字段：
+- Arbitration Explainability + Secondary Reason explainability 额外字段：
   - `runtime_secondary_reason_codes`
   - `runtime_secondary_reason_count`
   - `runtime_arbitration_rule_version`
   - `runtime_remediation_hint_code`
   - `runtime_remediation_hint_domain`
-- A50 version governance 额外字段：
+- Arbitration Version Governance version governance 额外字段：
   - `runtime_arbitration_rule_requested_version`
   - `runtime_arbitration_rule_effective_version`
   - `runtime_arbitration_rule_version_source`
@@ -1379,7 +1385,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `runtime_arbitration_rule_unsupported_total`
   - `runtime_arbitration_rule_mismatch_total`
 - 输出：按 case name 排序后的 canonical arbitration 输出。
-- drift 分类（A48/A49/A50 blocking）：
+- drift 分类（Cross-Domain Primary Reason Arbitration/Arbitration Explainability + Secondary Reason/Arbitration Version Governance blocking）：
   - `precedence_drift`：timeout/reject 与 blocked/required/degraded 层级被破坏。
   - `tie_break_drift`：同层候选 lexical tie-break 或 conflict_total 漂移。
   - `taxonomy_drift`：primary code/source/domain 非 canonical 或语义不一致。
@@ -1391,7 +1397,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `unsupported_version`：unsupported version fail-fast 语义漂移。
   - `cross_version_semantic_drift`：跨版本输出语义漂移（requested/effective/source/policy）。
 
-语义（A56 ReAct arbitration 模式）：
+语义（ReAct Loop + Tool-Calling Parity ReAct arbitration 模式）：
 - 输入：版本化 fixture（`version=react.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `model_provider`
   - `react_enabled`
@@ -1402,7 +1408,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `react_termination_reason`
   - `react_stream_dispatch_enabled`
 - 输出：按 case name 排序后的 canonical ReAct arbitration 输出。
-- drift 分类（A56 blocking）：
+- drift 分类（ReAct Loop + Tool-Calling Parity blocking）：
   - `react_loop_step_drift`
   - `react_tool_call_budget_drift`
   - `react_iteration_budget_drift`
@@ -1410,7 +1416,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `react_stream_dispatch_drift`
   - `react_provider_mapping_drift`
 
-语义（A57 sandbox egress + adapter allowlist arbitration 模式）：
+语义（Sandbox Egress + Adapter Allowlist sandbox egress + adapter allowlist arbitration 模式）：
 - 输入：版本化 fixture（`version=sandbox_egress.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `sandbox_egress_action`
   - `sandbox_egress_violation_total`
@@ -1419,15 +1425,15 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `adapter_allowlist_block_total`
   - `adapter_allowlist_primary_code`
 - 输出：按 case name 排序后的 canonical sandbox/allowlist arbitration 输出。
-- drift 分类（A57 blocking）：
+- drift 分类（Sandbox Egress + Adapter Allowlist blocking）：
   - `sandbox_egress_action_drift`
   - `sandbox_egress_policy_source_drift`
   - `sandbox_egress_violation_taxonomy_drift`
   - `adapter_allowlist_decision_drift`
   - `adapter_allowlist_taxonomy_drift`
-- mixed fixture 兼容要求：A57 gate 必须与 `sandbox.v1` + `memory.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility`）。
+- mixed fixture 兼容要求：Sandbox Egress + Adapter Allowlist gate 必须与 `sandbox.v1` + `memory.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `react.v1` 混合回放保持向后兼容（`TestReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility`）。
 
-语义（A58 policy precedence + decision trace 模式）：
+语义（Policy Precedence + Decision Trace policy precedence + decision trace 模式）：
 - 输入：版本化 fixture（`version=policy_stack.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `policy_precedence_version`
   - `winner_stage`
@@ -1435,13 +1441,13 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `tie_break_reason`
   - `policy_decision_path`（`stage/code/source/decision`）
 - 输出：按 case name 排序后的 canonical policy stack 输出。
-- drift 分类（A58 blocking）：
+- drift 分类（Policy Precedence + Decision Trace blocking）：
   - `precedence_conflict`
   - `tie_break_drift`
   - `deny_source_mismatch`
-- mixed fixture 兼容要求：A58 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
+- mixed fixture 兼容要求：Policy Precedence + Decision Trace gate 必须与 `Arbitration Version Governance.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` 混合回放保持向后兼容（`TestReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility`）。
 
-语义（A60 runtime budget admission 模式）：
+语义（Runtime Budget Admission runtime budget admission 模式）：
 - 输入：版本化 fixture（`version=budget_admission.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `budget_snapshot.version`（固定 `budget_admission.v1`）
   - `budget_snapshot.cost_estimate.{token,tool,sandbox,memory,total}`
@@ -1449,13 +1455,13 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `budget_decision`（`allow|degrade|deny`）
   - `degrade_action`（`degrade` 决策下必须为 canonical action）
 - 输出：按 case name 排序后的 canonical budget admission 输出。
-- drift 分类（A60 blocking）：
+- drift 分类（Runtime Budget Admission blocking）：
   - `budget_threshold_drift`
   - `admission_decision_drift`
   - `degrade_policy_drift`
-- mixed fixture 兼容要求：A60 gate 必须与 `a50.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `budget_admission.v1` 混合回放保持向后兼容（`TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility`）。
+- mixed fixture 兼容要求：Runtime Budget Admission gate 必须与 `Arbitration Version Governance.v1` + `react.v1` + `sandbox_egress.v1` + `policy_stack.v1` + `memory_scope.v1` + `memory_search.v1` + `memory_lifecycle.v1` + `budget_admission.v1` 混合回放保持向后兼容（`TestReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility`）。
 
-语义（A54 memory arbitration 模式）：
+语义（Memory Provider SPI + Builtin Filesystem memory arbitration 模式）：
 - 输入：版本化 fixture（`version=memory.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `memory_mode`
   - `memory_provider`
@@ -1469,7 +1475,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `memory_fallback_reason_code`
   - `memory_reason_code`
 - 输出：按 case name 排序后的 canonical memory arbitration 输出。
-- drift 分类（A54 blocking）：
+- drift 分类（Memory Provider SPI + Builtin Filesystem blocking）：
   - `memory_mode_drift`
   - `memory_profile_drift`
   - `memory_contract_version_drift`
@@ -1477,7 +1483,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `memory_error_taxonomy_drift`
   - `memory_operation_aggregate_drift`
 
-语义（A59 memory governance arbitration 模式）：
+语义（Memory Governance memory governance arbitration 模式）：
 - 输入：版本化 fixture（`version=memory_scope.v1|memory_search.v1|memory_lifecycle.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `memory_scope_selected`
   - `memory_budget_used`
@@ -1485,13 +1491,13 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `memory_rerank_stats`
   - `memory_lifecycle_action`
 - 输出：按 case name 排序后的 canonical memory governance 输出。
-- drift 分类（A59 blocking）：
+- drift 分类（Memory Governance blocking）：
   - `scope_resolution_drift`
   - `retrieval_quality_regression`
   - `lifecycle_policy_drift`
   - `recovery_consistency_drift`
 
-语义（A55 observability arbitration 模式）：
+语义（Observability Export + Diagnostics Bundle observability arbitration 模式）：
 - 输入：版本化 fixture（`version=observability.v1`），每个 case 包含 `run/stream/expected/idempotency`：
   - `observability_export_profile`
   - `observability_export_status`
@@ -1502,7 +1508,7 @@ go run ./cmd/diagnostics-replay -input diagnostics.json
   - `diagnostics_bundle_redaction_status`
   - `diagnostics_bundle_gate_fingerprint`
 - 输出：按 case name 排序后的 canonical observability 输出。
-- drift 分类（A55 blocking）：
+- drift 分类（Observability Export + Diagnostics Bundle blocking）：
   - `observability_export_profile_drift`
   - `observability_export_status_drift`
   - `observability_export_reason_drift`
@@ -1692,9 +1698,9 @@ security:
 - Windows: `pwsh -File scripts/check-security-delivery-contract.ps1`
 - CI Job: `security-delivery-gate`（仅 PR 触发）
 
-## 安全执行隔离（A51）
+## 安全执行隔离（Sandbox Execution Isolation）
 
-A51 在 S2/S3/S4 基础上新增 sandbox execution isolation 契约：统一 `host|sandbox|deny` 动作决策、capability negotiation、session lifecycle 与 fallback 语义，并在 Run/Stream、diagnostics、replay、gate 侧保持一致。
+Sandbox Execution Isolation 在 S2/S3/S4 基础上新增 sandbox execution isolation 契约：统一 `host|sandbox|deny` 动作决策、capability negotiation、session lifecycle 与 fallback 语义，并在 Run/Stream、diagnostics、replay、gate 侧保持一致。
 
 ```yaml
 security:
@@ -1715,7 +1721,7 @@ security:
         - stdout_stderr_capture
 ```
 
-A52 在 A51 基础上新增 sandbox rollout/health-budget/capacity 治理配置，继续沿用统一优先级：`env > file > default`。
+Sandbox Rollout + Health/Capacity Governance 在 Sandbox Execution Isolation 基础上新增 sandbox rollout/health-budget/capacity 治理配置，继续沿用统一优先级：`env > file > default`。
 
 ```yaml
 security:
@@ -1736,7 +1742,7 @@ security:
       degraded_policy: allow_and_record # allow_and_record|fail_fast
 ```
 
-A52 配置 fail-fast 规则（startup + hot reload）：
+Sandbox Rollout + Health/Capacity Governance 配置 fail-fast 规则（startup + hot reload）：
 
 - 非法枚举值直接失败：`rollout.phase`、`capacity.degraded_policy`。
 - 非法范围直接失败：`rollout.traffic_ratio`、`rollout.error_budget`。
@@ -1749,19 +1755,19 @@ A52 配置 fail-fast 规则（startup + hot reload）：
 - fallback 与失败计数：`sandbox_fallback_used`、`sandbox_fallback_reason`、`sandbox_timeout_total`、`sandbox_launch_failed_total`、`sandbox_capability_mismatch_total`
 - 资源与时延：`sandbox_exec_latency_ms_p95`、`sandbox_exit_code_last`、`sandbox_oom_total`、`sandbox_resource_cpu_ms_total`、`sandbox_resource_memory_peak_bytes_p95`
 
-A52 追加 rollout-governance diagnostics 字段（additive + nullable + default）：
+Sandbox Rollout + Health/Capacity Governance 追加 rollout-governance diagnostics 字段（additive + nullable + default）：
 
 - rollout：`sandbox_rollout_phase`、`sandbox_rollout_effective_ratio`
 - health budget：`sandbox_health_budget_status`、`sandbox_health_budget_breach_total`
 - freeze：`sandbox_freeze_state`、`sandbox_freeze_reason_code`
 - capacity：`sandbox_capacity_action`、`sandbox_capacity_queue_depth`、`sandbox_capacity_inflight`
 
-A51/A52 门禁与 required-check 暴露：
+Sandbox Execution Isolation/Sandbox Rollout + Health/Capacity Governance 门禁与 required-check 暴露：
 
 - sandbox contract gate：
   - Linux/macOS: `bash scripts/check-security-sandbox-contract.sh`
   - Windows: `pwsh -File scripts/check-security-sandbox-contract.ps1`
-- sandbox rollout governance gate（A52）：
+- sandbox rollout governance gate（Sandbox Rollout + Health/Capacity Governance）：
   - Linux/macOS: `bash scripts/check-sandbox-rollout-governance-contract.sh`
   - Windows: `pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1`
 - sandbox executor offline conformance harness：
@@ -1771,9 +1777,9 @@ A51/A52 门禁与 required-check 暴露：
 - CI Job: `sandbox-rollout-governance-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-security-sandbox-contract.*` 与 `check-sandbox-rollout-governance-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
-A57 在 A51/A52 基础上补齐 sandbox egress 治理与 adapter allowlist 准入合同，继续沿用配置优先级 `env > file > default`，并保持启动/热更新 fail-fast + 原子回滚。
+Sandbox Egress + Adapter Allowlist 在 Sandbox Execution Isolation/Sandbox Rollout + Health/Capacity Governance 基础上补齐 sandbox egress 治理与 adapter allowlist 准入合同，继续沿用配置优先级 `env > file > default`，并保持启动/热更新 fail-fast + 原子回滚。
 
-A57 配置域：
+Sandbox Egress + Adapter Allowlist 配置域：
 - `security.sandbox.egress.enabled`
 - `security.sandbox.egress.default_action`（`deny|allow|allow_and_record`）
 - `security.sandbox.egress.by_tool`
@@ -1784,7 +1790,7 @@ A57 配置域：
 - `adapter.allowlist.entries`（`adapter_id/publisher/version/signature_status`）
 - `adapter.allowlist.on_unknown_signature`（`deny|allow_and_record`）
 
-A57 readiness/admission canonical findings：
+Sandbox Egress + Adapter Allowlist readiness/admission canonical findings：
 - `sandbox.egress.policy_invalid`
 - `sandbox.egress.allowlist_invalid`
 - `sandbox.egress.rule_conflict`
@@ -1793,7 +1799,7 @@ A57 readiness/admission canonical findings：
 - `adapter.allowlist.signature_invalid`
 - `adapter.allowlist.policy_conflict`
 
-A57 additive diagnostics 字段（`additive + nullable + default`）：
+Sandbox Egress + Adapter Allowlist additive diagnostics 字段（`additive + nullable + default`）：
 - `sandbox_egress_action`
 - `sandbox_egress_violation_total`
 - `sandbox_egress_policy_source`
@@ -1801,37 +1807,37 @@ A57 additive diagnostics 字段（`additive + nullable + default`）：
 - `adapter_allowlist_block_total`
 - `adapter_allowlist_primary_code`
 
-A57 gate 与 required-check 暴露：
+Sandbox Egress + Adapter Allowlist gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-sandbox-egress-allowlist-contract.sh`
 - Windows: `pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1`
 - CI Job: `sandbox-egress-allowlist-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-sandbox-egress-allowlist-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
-A58 在 A57 基础上冻结跨策略层 precedence matrix 与 decision trace 合同，统一 action/s2/sandbox/egress/allowlist/admission 的 winner 解释链路。
+Policy Precedence + Decision Trace 在 Sandbox Egress + Adapter Allowlist 基础上冻结跨策略层 precedence matrix 与 decision trace 合同，统一 action/s2/sandbox/egress/allowlist/admission 的 winner 解释链路。
 
-A58 配置域：
+Policy Precedence + Decision Trace 配置域：
 - `runtime.policy.precedence.version`（当前固定 `policy_stack.v1`）
 - `runtime.policy.precedence.matrix.*`
 - `runtime.policy.tie_breaker.mode`（当前固定 `lexical_code_then_source_order`）
 - `runtime.policy.tie_breaker.source_order`
 - `runtime.policy.explainability.enabled`
 
-A58 additive diagnostics 字段（`additive + nullable + default`）：
+Policy Precedence + Decision Trace additive diagnostics 字段（`additive + nullable + default`）：
 - `policy_precedence_version`
 - `winner_stage`
 - `deny_source`
 - `tie_break_reason`
 - `policy_decision_path`
 
-A58 gate 与 required-check 暴露：
+Policy Precedence + Decision Trace gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-policy-precedence-contract.sh`
 - Windows: `pwsh -File scripts/check-policy-precedence-contract.ps1`
 - CI Job: `policy-precedence-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-policy-precedence-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
-A60 在 A58/A59 基础上冻结 runtime 成本/时延预算 admission 合同，统一 `allow|degrade|deny` 判定、降级动作选择、回放与门禁口径。
+Runtime Budget Admission 在 Policy Precedence + Decision Trace/Memory Governance 基础上冻结 runtime 成本/时延预算 admission 合同，统一 `allow|degrade|deny` 判定、降级动作选择、回放与门禁口径。
 
-A60 配置域：
+Runtime Budget Admission 配置域：
 - `runtime.admission.budget.cost.degrade_threshold`
 - `runtime.admission.budget.cost.hard_threshold`
 - `runtime.admission.budget.latency.degrade_threshold`
@@ -1840,20 +1846,20 @@ A60 配置域：
 - `runtime.admission.degrade_policy.action_order`
 - `runtime.admission.degrade_policy.conflict_policy`（`first_action|fail_fast`）
 
-A60 additive diagnostics 字段（`additive + nullable + default`）：
+Runtime Budget Admission additive diagnostics 字段（`additive + nullable + default`）：
 - `budget_snapshot`
 - `budget_decision`
 - `degrade_action`
 
-A60 gate 与 required-check 暴露：
+Runtime Budget Admission gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-runtime-budget-admission-contract.sh`
 - Windows: `pwsh -File scripts/check-runtime-budget-admission-contract.ps1`
 - CI Job: `runtime-budget-admission-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-runtime-budget-admission-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
-A61 在 A55/A58/A59/A60 基础上冻结 OTel tracing + agent eval 互操作 contract，并继续保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
+OTel Tracing + Agent Eval Interop 在 Observability Export + Diagnostics Bundle/Policy Precedence + Decision Trace/Memory Governance/Runtime Budget Admission 基础上冻结 OTel tracing + agent eval 互操作 contract，并继续保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
 
-A61 配置域：
+OTel Tracing + Agent Eval Interop 配置域：
 - `runtime.observability.tracing.otel.enabled`
 - `runtime.observability.tracing.otel.protocol`（`grpc|http/protobuf`）
 - `runtime.observability.tracing.otel.endpoint`
@@ -1876,7 +1882,7 @@ A61 配置域：
 - `runtime.eval.execution.resume.max_count`
 - `runtime.eval.execution.aggregation`（`weighted_mean|worst_case`）
 
-A61 tracing 导出状态与原因分类（最小集）：
+OTel Tracing + Agent Eval Interop tracing 导出状态与原因分类（最小集）：
 - `trace_export_status`：`disabled|success|degraded|failed`
 - `trace.export.collector_unreachable`
 - `trace.export.timeout`
@@ -1884,7 +1890,7 @@ A61 tracing 导出状态与原因分类（最小集）：
 - `trace.export.canceled`
 - `trace.export.error`
 
-A61 additive diagnostics 字段（`additive + nullable + default`）：
+OTel Tracing + Agent Eval Interop additive diagnostics 字段（`additive + nullable + default`）：
 - `trace_export_status`
 - `trace_schema_version`
 - `eval_suite_id`
@@ -1894,16 +1900,16 @@ A61 additive diagnostics 字段（`additive + nullable + default`）：
 - `eval_shard_total`
 - `eval_resume_count`
 
-A61 gate 与 required-check 暴露：
+OTel Tracing + Agent Eval Interop gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-agent-eval-and-tracing-interop-contract.sh`
 - Windows: `pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1`
 - CI Job: `agent-eval-tracing-interop-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-agent-eval-and-tracing-interop-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：`control_plane_absent`（distributed eval 仅允许库内嵌入式执行治理，不引入托管控制面）
 
-A65 在 A56/A57/A58/A61 基础上冻结 lifecycle hooks + tool middleware + skill discovery/preprocess/mapping 合同，保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
+Lifecycle Hooks + Tool Middleware 在 ReAct Loop + Tool-Calling Parity/Sandbox Egress + Adapter Allowlist/Policy Precedence + Decision Trace/OTel Tracing + Agent Eval Interop 基础上冻结 lifecycle hooks + tool middleware + skill discovery/preprocess/mapping 合同，保持 `env > file > default` 与热更新 fail-fast + 原子回滚。
 
-A65 配置域（默认值）：
+Lifecycle Hooks + Tool Middleware 配置域（默认值）：
 - `runtime.hooks.enabled`（`false`）
 - `runtime.hooks.phases`（`before_reasoning,after_reasoning,before_acting,after_acting,before_reply,after_reply`）
 - `runtime.hooks.fail_mode`（`fail_fast`）
@@ -1920,26 +1926,26 @@ A65 配置域（默认值）：
 - `runtime.skill.bundle_mapping.whitelist_mode`（`disabled`，可选 `disabled|merge`）
 - `runtime.skill.bundle_mapping.conflict_policy`（`fail_fast`，可选 `fail_fast|first_win`）
 
-A65 fail-fast/降级语义：
+Lifecycle Hooks + Tool Middleware fail-fast/降级语义：
 - hooks 与 middleware 在 `fail_fast` 下返回 deterministic classified error，在 `degrade` 下继续执行并写入 warning + 诊断 reason。
 - skill preprocess 在 `fail_fast` 下于模型/工具执行前终止；`degrade` 下继续执行并写入 `skill_preprocess_status=degraded` 与 canonical reason。
-- `SkillBundle -> tool whitelist` 受 A57 sandbox/allowlist 上界约束，超界条目在 `fail_fast` 下阻断，在 `first_win` 下过滤并记录拒绝计数。
+- `SkillBundle -> tool whitelist` 受 Sandbox Egress + Adapter Allowlist sandbox/allowlist 上界约束，超界条目在 `fail_fast` 下阻断，在 `first_win` 下过滤并记录拒绝计数。
 
-A65 additive diagnostics 字段（`additive + nullable + default`）：
+Lifecycle Hooks + Tool Middleware additive diagnostics 字段（`additive + nullable + default`）：
 - hooks/middleware：`hooks_enabled`、`hooks_fail_mode`、`hooks_phases`、`tool_middleware_enabled`、`tool_middleware_fail_mode`
 - discovery/preprocess：`skill_discovery_mode`、`skill_discovery_roots`、`skill_preprocess_enabled`、`skill_preprocess_phase`、`skill_preprocess_fail_mode`、`skill_preprocess_status`、`skill_preprocess_reason_code`、`skill_preprocess_spec_count`
 - bundle mapping：`skill_bundle_prompt_mode`、`skill_bundle_whitelist_mode`、`skill_bundle_conflict_policy`、`skill_bundle_prompt_total`、`skill_bundle_whitelist_total`、`skill_bundle_whitelist_rejected_total`
 
-A65 gate 与 required-check 暴露：
+Lifecycle Hooks + Tool Middleware gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-hooks-middleware-contract.sh`
 - Windows: `pwsh -File scripts/check-hooks-middleware-contract.ps1`
 - CI Job: `hooks-middleware-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-hooks-middleware-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：`control_plane_absent`（禁止托管 hooks/middleware 控制面）
 
-A66 在 A59/A60/A61/A65 基础上冻结 unified state/session snapshot 合同，统一 state 导入导出、恢复兼容窗口、幂等导入与回放门禁口径。
+Unified State/Session Snapshot 在 Memory Governance/Runtime Budget Admission/OTel Tracing + Agent Eval Interop/Lifecycle Hooks + Tool Middleware 基础上冻结 unified state/session snapshot 合同，统一 state 导入导出、恢复兼容窗口、幂等导入与回放门禁口径。
 
-A66 配置域（默认值）：
+Unified State/Session Snapshot 配置域（默认值）：
 - `runtime.state.snapshot.enabled`（`false`）
 - `runtime.state.snapshot.restore_mode`（`strict`，可选 `strict|compatible`）
 - `runtime.state.snapshot.compat_window`（`1`，`>= 0`）
@@ -1947,24 +1953,24 @@ A66 配置域（默认值）：
 - `runtime.session.state.enabled`（`false`）
 - `runtime.session.state.partial_restore_policy`（`reject`，可选 `reject|allow`）
 
-A66 additive diagnostics 字段（`additive + nullable + default`）：
+Unified State/Session Snapshot additive diagnostics 字段（`additive + nullable + default`）：
 - `state_snapshot_version`
 - `state_restore_action`
 - `state_restore_conflict_code`
 - `state_restore_source`
 
-A66 gate 与 required-check 暴露：
+Unified State/Session Snapshot gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-state-snapshot-contract.sh`
 - Windows: `pwsh -File scripts/check-state-snapshot-contract.ps1`
 - CI Job: `state-snapshot-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-state-snapshot-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：
   - `state_control_plane_absent`（禁止托管状态控制面）
-  - `state_source_of_truth_reuse_required`（不得重写 A59 memory 事实源）
+  - `state_source_of_truth_reuse_required`（不得重写 Memory Governance memory 事实源）
 
-A67 在 A56/A65/A66 基础上冻结 ReAct plan notebook + plan-change hook 合同，统一计划生命周期、计划变更 hook 失败语义与回放门禁口径。
+ReAct Plan Notebook + Plan Change Hook 在 ReAct Loop + Tool-Calling Parity/Lifecycle Hooks + Tool Middleware/Unified State/Session Snapshot 基础上冻结 ReAct plan notebook + plan-change hook 合同，统一计划生命周期、计划变更 hook 失败语义与回放门禁口径。
 
-A67 配置域（默认值）：
+ReAct Plan Notebook + Plan Change Hook 配置域（默认值）：
 - `runtime.react.plan_notebook.enabled`（`false`）
 - `runtime.react.plan_notebook.max_history`（`32`，`> 0`）
 - `runtime.react.plan_notebook.on_recover_conflict`（`reject`，可选 `reject|prefer_latest`）
@@ -1972,13 +1978,13 @@ A67 配置域（默认值）：
 - `runtime.react.plan_change_hook.fail_mode`（`fail_fast`，可选 `fail_fast|degrade`）
 - `runtime.react.plan_change_hook.timeout_ms`（`2000`，`> 0`）
 
-A67 fail-fast/降级语义：
+ReAct Plan Notebook + Plan Change Hook fail-fast/降级语义：
 - notebook action taxonomy 固定为 `create|revise|complete|recover`，版本号必须单调递增，`complete` 后计划分支冻结（拒绝后续 mutate）。
 - `plan_change_hook.fail_mode=fail_fast`：`before_plan_change`/`after_plan_change` 任一失败即阻断当前计划变更并按既有 ReAct taxonomy 终止。
 - `plan_change_hook.fail_mode=degrade`：跳过当前计划变更并继续执行，且写入 `react_plan_hook_status=degraded`。
 - 组合约束：`runtime.react.plan_change_hook.enabled=true` 时必须满足 `runtime.react.plan_notebook.enabled=true`。
 
-A67 additive diagnostics 字段（`additive + nullable + default`）：
+ReAct Plan Notebook + Plan Change Hook additive diagnostics 字段（`additive + nullable + default`）：
 - `react_plan_id`
 - `react_plan_version`
 - `react_plan_change_total`
@@ -1987,19 +1993,19 @@ A67 additive diagnostics 字段（`additive + nullable + default`）：
 - `react_plan_recover_count`
 - `react_plan_hook_status`（`ok|degraded|failed|disabled`）
 
-A67 replay fixture 与 drift 分类：
+ReAct Plan Notebook + Plan Change Hook replay fixture 与 drift 分类：
 - fixture：`react_plan_notebook.v1`
 - drift：`react_plan_version_drift`、`react_plan_change_reason_drift`、`react_plan_hook_semantic_drift`、`react_plan_recover_drift`
 
-A67 gate 与 required-check 暴露：
+ReAct Plan Notebook + Plan Change Hook gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-react-plan-notebook-contract.sh`
 - Windows: `pwsh -File scripts/check-react-plan-notebook-contract.ps1`
 - CI Job: `react-plan-notebook-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-react-plan-notebook-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 
-A67-CTX 在 A56/A57/A58/A67/A68 兼容边界上冻结 JIT context organization 合同，统一 reference-first、isolate handoff、edit gate、swap-back relevance、lifecycle tiering 与 task-aware recap 的可观测与回放口径。
+Context JIT Organization 在 ReAct Loop + Tool-Calling Parity/Sandbox Egress + Adapter Allowlist/Policy Precedence + Decision Trace/ReAct Plan Notebook + Plan Change Hook/Realtime Protocol + Interrupt/Resume 兼容边界上冻结 JIT context organization 合同，统一 reference-first、isolate handoff、edit gate、swap-back relevance、lifecycle tiering 与 task-aware recap 的可观测与回放口径。
 
-A67-CTX 配置域（默认值）：
+Context JIT Organization 配置域（默认值）：
 - `runtime.context.jit.reference_first.enabled`（`false`）
 - `runtime.context.jit.reference_first.max_refs`（`8`，`> 0`）
 - `runtime.context.jit.reference_first.max_resolve_tokens`（`4096`，`> 0`）
@@ -2016,14 +2022,14 @@ A67-CTX 配置域（默认值）：
 - `runtime.context.jit.lifecycle_tiering.warm_ttl_ms`（`1800000`，`> 0`）
 - `runtime.context.jit.lifecycle_tiering.cold_ttl_ms`（`7200000`，`> 0`）
 
-A67-CTX fail-fast/降级语义：
+Context JIT Organization fail-fast/降级语义：
 - `reference_first` 固定两段式 `discover_refs -> resolve_selected_refs`；resolve 预算越界与非法 locator 在 fail-fast 策略下阻断，best-effort 下写入 deterministic `stage2_skip_reason`。
 - `isolate_handoff` 固定 payload（`summary/artifacts/evidence_refs/confidence/ttl`）；confidence/ttl/evidence refs 非法时按 stage policy 触发 fail-fast 或降级记录。
 - `edit_gate` 在 `clear_at_least_tokens + min_gain_ratio` 未达阈值时只记录 `context_edit_gate_decision`，不得隐式清理上下文。
 - `swap_back + lifecycle_tiering` 仅在相关性阈值命中后回填，分层迁移固定 `hot|warm|cold|pruned` 统计与 canonical reason。
 - `tail recap` 固定来源标记 `context_recap_source=task_aware.stage_actions.v1`，避免模板化无关摘要注入。
 
-A67-CTX additive diagnostics 字段（`additive + nullable + default`）：
+Context JIT Organization additive diagnostics 字段（`additive + nullable + default`）：
 - `context_ref_discover_count`
 - `context_ref_resolve_count`
 - `context_edit_estimated_saved_tokens`
@@ -2034,20 +2040,20 @@ A67-CTX additive diagnostics 字段（`additive + nullable + default`）：
 - `stage2_skip_reason`
 - `stage2_reason_code`
 
-A67-CTX replay fixture 与 drift 分类：
+Context JIT Organization replay fixture 与 drift 分类：
 - fixture：`context_reference_first.v1`、`context_isolate_handoff.v1`、`context_edit_gate.v1`、`context_relevance_swapback.v1`、`context_lifecycle_tiering.v1`
 - drift：`reference_resolution_drift`、`isolate_handoff_drift`、`edit_gate_threshold_drift`、`swapback_relevance_drift`、`lifecycle_tiering_drift`、`recap_semantic_drift`
 
-A67-CTX gate 与 required-check 暴露：
+Context JIT Organization gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-context-jit-organization-contract.sh`
 - Windows: `pwsh -File scripts/check-context-jit-organization-contract.ps1`
 - CI Job: `context-jit-organization-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-context-jit-organization-contract.*` 已纳入 `check-quality-gate.sh/.ps1`
 - 边界断言：`context_provider_sdk_absent`（禁止 `context/*` 直连 provider 官方 SDK）
 
-A68 在 A56/A58/A67 基础上冻结 realtime event protocol + interrupt/resume 合同，统一事件信封、序列推进、去重幂等与恢复游标语义，并保持 Run/Stream 语义等价。
+Realtime Protocol + Interrupt/Resume 在 ReAct Loop + Tool-Calling Parity/Policy Precedence + Decision Trace/ReAct Plan Notebook + Plan Change Hook 基础上冻结 realtime event protocol + interrupt/resume 合同，统一事件信封、序列推进、去重幂等与恢复游标语义，并保持 Run/Stream 语义等价。
 
-A68 配置域（默认值）：
+Realtime Protocol + Interrupt/Resume 配置域（默认值）：
 - `runtime.realtime.protocol.enabled`（`false`）
 - `runtime.realtime.protocol.version`（`realtime_event_protocol.v1`）
 - `runtime.realtime.protocol.max_buffered_events`（`64`，`> 0`）
@@ -2055,14 +2061,14 @@ A68 配置域（默认值）：
 - `runtime.realtime.interrupt_resume.resume_cursor_ttl_ms`（`300000`，`> 0`）
 - `runtime.realtime.interrupt_resume.idempotency_window_ms`（`30000`，`> 0`）
 
-A68 fail-fast/降级语义：
+Realtime Protocol + Interrupt/Resume fail-fast/降级语义：
 - protocol event taxonomy 固定为 `request|delta|interrupt|resume|ack|error|complete`，非法类型在协议层 fail-fast。
 - realtime control-event 序列固定为单调递增 `seq`，乱序与 gap 必须产生 deterministic 分类（`realtime.event_order_drift|realtime.sequence_gap`）。
 - interrupt 进入受控冻结边界并记录 resume cursor；resume 必须校验 cursor 合法性，非法 cursor 直接拒绝（`realtime.resume.invalid_cursor`）。
 - 重复 event（event_id/dedup key）必须幂等吸收，不允许膨胀 interrupt/resume/logical counters。
 - 组合约束：`runtime.realtime.interrupt_resume.enabled=true` 时必须满足 `runtime.realtime.protocol.enabled=true`。
 
-A68 additive diagnostics 字段（`additive + nullable + default`）：
+Realtime Protocol + Interrupt/Resume additive diagnostics 字段（`additive + nullable + default`）：
 - `realtime_protocol_version`
 - `realtime_event_seq_max`
 - `realtime_interrupt_total`
@@ -2071,11 +2077,11 @@ A68 additive diagnostics 字段（`additive + nullable + default`）：
 - `realtime_idempotency_dedup_total`
 - `realtime_last_error_code`
 
-A68 replay fixture 与 drift 分类：
+Realtime Protocol + Interrupt/Resume replay fixture 与 drift 分类：
 - fixture：`realtime_event_protocol.v1`
 - drift：`realtime_event_order_drift`、`realtime_interrupt_semantic_drift`、`realtime_resume_semantic_drift`、`realtime_idempotency_drift`、`realtime_sequence_gap_drift`
 
-A68 gate 与 required-check 暴露：
+Realtime Protocol + Interrupt/Resume gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-realtime-protocol-contract.sh`
 - Windows: `pwsh -File scripts/check-realtime-protocol-contract.ps1`
 - CI Job: `realtime-protocol-contract-gate`（仅 PR 触发，可配置 branch-protection required check）
@@ -2111,4 +2117,8 @@ A68 gate 与 required-check 暴露：
 ```go
 mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: "runtime.yaml"})
 ```
+
+
+
+
 

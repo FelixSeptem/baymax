@@ -269,34 +269,34 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			Stage2Reason:                                payloadString(payload, "stage2_reason"),
 			Stage2ReasonCode:                            payloadString(payload, "stage2_reason_code"),
 			Stage2ErrorLayer:                            payloadString(payload, "stage2_error_layer"),
-			CA3PressureZone:                             payloadString(payload, "ca3_pressure_zone"),
-			CA3PressureReason:                           payloadString(payload, "ca3_pressure_reason"),
-			CA3PressureTrigger:                          payloadString(payload, "ca3_pressure_trigger"),
-			CA3ZoneResidencyMs:                          payloadInt64Map(payload, "ca3_zone_residency_ms"),
-			CA3TriggerCounts:                            payloadIntMap(payload, "ca3_trigger_counts"),
-			CA3CompressionRatio:                         payloadFloat64(payload, "ca3_compression_ratio"),
-			CA3SpillCount:                               payloadInt(payload, "ca3_spill_count"),
-			CA3SwapBackCount:                            payloadInt(payload, "ca3_swap_back_count"),
-			CA3CompactionMode:                           payloadString(payload, "ca3_compaction_mode"),
-			CA3CompactionFallback:                       payloadBool(payload, "ca3_compaction_fallback"),
-			CA3CompactionFallbackReason:                 payloadString(payload, "ca3_compaction_fallback_reason"),
-			CA3CompactionQualityScore:                   payloadFloat64(payload, "ca3_compaction_quality_score"),
-			CA3CompactionQualityReason:                  payloadString(payload, "ca3_compaction_quality_reason"),
-			CA3CompactionEmbeddingProvider:              payloadString(payload, "ca3_compaction_embedding_provider"),
-			CA3CompactionEmbeddingSimilarity:            payloadFloat64(payload, "ca3_compaction_embedding_similarity"),
-			CA3CompactionEmbeddingContribution:          payloadFloat64(payload, "ca3_compaction_embedding_contribution"),
-			CA3CompactionEmbeddingStatus:                payloadString(payload, "ca3_compaction_embedding_status"),
-			CA3CompactionEmbeddingFallbackReason:        payloadString(payload, "ca3_compaction_embedding_fallback_reason"),
-			CA3CompactionRerankerUsed:                   payloadBool(payload, "ca3_compaction_reranker_used"),
-			CA3CompactionRerankerProvider:               payloadString(payload, "ca3_compaction_reranker_provider"),
-			CA3CompactionRerankerModel:                  payloadString(payload, "ca3_compaction_reranker_model"),
-			CA3CompactionRerankerThresholdSource:        payloadString(payload, "ca3_compaction_reranker_threshold_source"),
-			CA3CompactionRerankerThresholdHit:           payloadBool(payload, "ca3_compaction_reranker_threshold_hit"),
-			CA3CompactionRerankerFallbackReason:         payloadString(payload, "ca3_compaction_reranker_fallback_reason"),
-			CA3CompactionRerankerProfileVersion:         payloadString(payload, "ca3_compaction_reranker_profile_version"),
-			CA3CompactionRerankerRolloutHit:             payloadBool(payload, "ca3_compaction_reranker_rollout_hit"),
-			CA3CompactionRerankerThresholdDrift:         payloadFloat64(payload, "ca3_compaction_reranker_threshold_drift"),
-			CA3RetainedEvidence:                         payloadInt(payload, "ca3_compaction_retained_evidence_count"),
+			CA3PressureZone:                             payloadStringCompat(payload, "context_pressure_zone", "ca3_pressure_zone"),
+			CA3PressureReason:                           payloadStringCompat(payload, "context_pressure_reason", "ca3_pressure_reason"),
+			CA3PressureTrigger:                          payloadStringCompat(payload, "context_pressure_trigger", "ca3_pressure_trigger"),
+			CA3ZoneResidencyMs:                          payloadInt64MapCompat(payload, "context_pressure_zone_residency_ms", "ca3_zone_residency_ms"),
+			CA3TriggerCounts:                            payloadIntMapCompat(payload, "context_pressure_trigger_counts", "ca3_trigger_counts"),
+			CA3CompressionRatio:                         payloadFloat64Compat(payload, "context_compaction_compression_ratio", "ca3_compression_ratio"),
+			CA3SpillCount:                               payloadIntCompat(payload, "context_spill_count", "ca3_spill_count"),
+			CA3SwapBackCount:                            payloadIntCompat(payload, "context_swap_back_count", "ca3_swap_back_count"),
+			CA3CompactionMode:                           payloadStringCompat(payload, "context_compaction_mode", "ca3_compaction_mode"),
+			CA3CompactionFallback:                       payloadBoolCompat(payload, "context_compaction_fallback", "ca3_compaction_fallback"),
+			CA3CompactionFallbackReason:                 payloadStringCompat(payload, "context_compaction_fallback_reason", "ca3_compaction_fallback_reason"),
+			CA3CompactionQualityScore:                   payloadFloat64Compat(payload, "context_compaction_quality_score", "ca3_compaction_quality_score"),
+			CA3CompactionQualityReason:                  payloadStringCompat(payload, "context_compaction_quality_reason", "ca3_compaction_quality_reason"),
+			CA3CompactionEmbeddingProvider:              payloadStringCompat(payload, "context_compaction_embedding_provider", "ca3_compaction_embedding_provider"),
+			CA3CompactionEmbeddingSimilarity:            payloadFloat64Compat(payload, "context_compaction_embedding_similarity", "ca3_compaction_embedding_similarity"),
+			CA3CompactionEmbeddingContribution:          payloadFloat64Compat(payload, "context_compaction_embedding_contribution", "ca3_compaction_embedding_contribution"),
+			CA3CompactionEmbeddingStatus:                payloadStringCompat(payload, "context_compaction_embedding_status", "ca3_compaction_embedding_status"),
+			CA3CompactionEmbeddingFallbackReason:        payloadStringCompat(payload, "context_compaction_embedding_fallback_reason", "ca3_compaction_embedding_fallback_reason"),
+			CA3CompactionRerankerUsed:                   payloadBoolCompat(payload, "context_compaction_reranker_used", "ca3_compaction_reranker_used"),
+			CA3CompactionRerankerProvider:               payloadStringCompat(payload, "context_compaction_reranker_provider", "ca3_compaction_reranker_provider"),
+			CA3CompactionRerankerModel:                  payloadStringCompat(payload, "context_compaction_reranker_model", "ca3_compaction_reranker_model"),
+			CA3CompactionRerankerThresholdSource:        payloadStringCompat(payload, "context_compaction_reranker_threshold_source", "ca3_compaction_reranker_threshold_source"),
+			CA3CompactionRerankerThresholdHit:           payloadBoolCompat(payload, "context_compaction_reranker_threshold_hit", "ca3_compaction_reranker_threshold_hit"),
+			CA3CompactionRerankerFallbackReason:         payloadStringCompat(payload, "context_compaction_reranker_fallback_reason", "ca3_compaction_reranker_fallback_reason"),
+			CA3CompactionRerankerProfileVersion:         payloadStringCompat(payload, "context_compaction_reranker_profile_version", "ca3_compaction_reranker_profile_version"),
+			CA3CompactionRerankerRolloutHit:             payloadBoolCompat(payload, "context_compaction_reranker_rollout_hit", "ca3_compaction_reranker_rollout_hit"),
+			CA3CompactionRerankerThresholdDrift:         payloadFloat64Compat(payload, "context_compaction_reranker_threshold_drift", "ca3_compaction_reranker_threshold_drift"),
+			CA3RetainedEvidence:                         payloadIntCompat(payload, "context_compaction_retained_evidence_count", "ca3_compaction_retained_evidence_count"),
 			ContextRefDiscoverCount:                     payloadInt(payload, "context_ref_discover_count"),
 			ContextRefResolveCount:                      payloadInt(payload, "context_ref_resolve_count"),
 			ContextEditEstimatedSavedTokens:             payloadInt(payload, "context_edit_estimated_saved_tokens"),
@@ -386,10 +386,10 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			RecoveryTimeoutReentryExhaustedTotal:        payloadInt(payload, "recovery_timeout_reentry_exhausted_total"),
 			RecoveryConflict:                            payloadBool(payload, "recovery_conflict"),
 			RecoveryConflictCode:                        payloadString(payload, "recovery_conflict_code"),
-			StateSnapshotVersion:                        normalizeA66StateSnapshotVersion(payloadString(payload, "state_snapshot_version")),
-			StateRestoreAction:                          normalizeA66StateRestoreAction(payloadString(payload, "state_restore_action")),
-			StateRestoreConflictCode:                    normalizeA66StateRestoreConflictCode(payloadString(payload, "state_restore_conflict_code")),
-			StateRestoreSource:                          normalizeA66StateRestoreSource(payloadString(payload, "state_restore_source")),
+			StateSnapshotVersion:                        normalizeStateSnapshotVersion(payloadString(payload, "state_snapshot_version")),
+			StateRestoreAction:                          normalizeStateRestoreAction(payloadString(payload, "state_restore_action")),
+			StateRestoreConflictCode:                    normalizeStateRestoreConflictCode(payloadString(payload, "state_restore_conflict_code")),
+			StateRestoreSource:                          normalizeStateRestoreSource(payloadString(payload, "state_restore_source")),
 			RecoveryFallbackUsed:                        payloadBool(payload, "recovery_fallback_used"),
 			RecoveryFallbackReason:                      payloadString(payload, "recovery_fallback_reason"),
 			RuntimeReadinessStatus:                      payloadString(payload, "runtime_readiness_status"),
@@ -480,10 +480,10 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			ReactPlanID:                                 payloadString(payload, "react_plan_id"),
 			ReactPlanVersion:                            payloadInt(payload, "react_plan_version"),
 			ReactPlanChangeTotal:                        payloadInt(payload, "react_plan_change_total"),
-			ReactPlanLastAction:                         normalizeA67PlanAction(payloadString(payload, "react_plan_last_action")),
+			ReactPlanLastAction:                         normalizeReactPlanAction(payloadString(payload, "react_plan_last_action")),
 			ReactPlanChangeReason:                       payloadString(payload, "react_plan_change_reason"),
 			ReactPlanRecoverCount:                       payloadInt(payload, "react_plan_recover_count"),
-			ReactPlanHookStatus:                         normalizeA67PlanHookStatus(payloadString(payload, "react_plan_hook_status")),
+			ReactPlanHookStatus:                         normalizeReactPlanHookStatus(payloadString(payload, "react_plan_hook_status")),
 			RealtimeProtocolVersion:                     payloadString(payload, "realtime_protocol_version"),
 			RealtimeEventSeqMax:                         payloadInt64(payload, "realtime_event_seq_max"),
 			RealtimeInterruptTotal:                      payloadInt(payload, "realtime_interrupt_total"),
@@ -492,21 +492,21 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			RealtimeIdempotencyDedupTotal:               payloadInt(payload, "realtime_idempotency_dedup_total"),
 			RealtimeLastErrorCode:                       payloadString(payload, "realtime_last_error_code"),
 			HooksEnabled:                                payloadBool(payload, "hooks_enabled"),
-			HooksFailMode:                               normalizeA65HooksFailMode(payloadString(payload, "hooks_fail_mode")),
+			HooksFailMode:                               normalizeHooksFailMode(payloadString(payload, "hooks_fail_mode")),
 			HooksPhases:                                 payloadStringSliceCSV(payload, "hooks_phases"),
 			ToolMiddlewareEnabled:                       payloadBool(payload, "tool_middleware_enabled"),
-			ToolMiddlewareFailMode:                      normalizeA65ToolMiddlewareFailMode(payloadString(payload, "tool_middleware_fail_mode")),
-			SkillDiscoveryMode:                          normalizeA65SkillDiscoveryMode(payloadString(payload, "skill_discovery_mode")),
+			ToolMiddlewareFailMode:                      normalizeToolMiddlewareFailMode(payloadString(payload, "tool_middleware_fail_mode")),
+			SkillDiscoveryMode:                          normalizeSkillDiscoveryMode(payloadString(payload, "skill_discovery_mode")),
 			SkillDiscoveryRoots:                         payloadStringSlice(payload, "skill_discovery_roots"),
 			SkillPreprocessEnabled:                      payloadBool(payload, "skill_preprocess_enabled"),
-			SkillPreprocessPhase:                        normalizeA65SkillPreprocessPhase(payloadString(payload, "skill_preprocess_phase")),
-			SkillPreprocessFailMode:                     normalizeA65SkillPreprocessFailMode(payloadString(payload, "skill_preprocess_fail_mode")),
-			SkillPreprocessStatus:                       normalizeA65SkillPreprocessStatus(payloadString(payload, "skill_preprocess_status")),
-			SkillPreprocessReasonCode:                   normalizeA65SkillPreprocessReasonCode(payloadString(payload, "skill_preprocess_reason_code")),
+			SkillPreprocessPhase:                        normalizeSkillPreprocessPhase(payloadString(payload, "skill_preprocess_phase")),
+			SkillPreprocessFailMode:                     normalizeSkillPreprocessFailMode(payloadString(payload, "skill_preprocess_fail_mode")),
+			SkillPreprocessStatus:                       normalizeSkillPreprocessStatus(payloadString(payload, "skill_preprocess_status")),
+			SkillPreprocessReasonCode:                   normalizeSkillPreprocessReasonCode(payloadString(payload, "skill_preprocess_reason_code")),
 			SkillPreprocessSpecCount:                    payloadInt(payload, "skill_preprocess_spec_count"),
-			SkillBundlePromptMode:                       normalizeA65SkillBundlePromptMode(payloadString(payload, "skill_bundle_prompt_mode")),
-			SkillBundleWhitelistMode:                    normalizeA65SkillBundleWhitelistMode(payloadString(payload, "skill_bundle_whitelist_mode")),
-			SkillBundleConflictPolicy:                   normalizeA65SkillBundleConflictPolicy(payloadString(payload, "skill_bundle_conflict_policy")),
+			SkillBundlePromptMode:                       normalizeSkillBundlePromptMode(payloadString(payload, "skill_bundle_prompt_mode")),
+			SkillBundleWhitelistMode:                    normalizeSkillBundleWhitelistMode(payloadString(payload, "skill_bundle_whitelist_mode")),
+			SkillBundleConflictPolicy:                   normalizeSkillBundleConflictPolicy(payloadString(payload, "skill_bundle_conflict_policy")),
 			SkillBundlePromptTotal:                      payloadInt(payload, "skill_bundle_prompt_total"),
 			SkillBundleWhitelistTotal:                   payloadInt(payload, "skill_bundle_whitelist_total"),
 			SkillBundleWhitelistRejectedTotal:           payloadInt(payload, "skill_bundle_whitelist_rejected_total"),
@@ -579,6 +579,21 @@ func payloadString(m map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
+func payloadHasKey(m map[string]any, key string) bool {
+	if len(m) == 0 {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
+func payloadStringCompat(m map[string]any, primary string, legacy string) string {
+	if payloadHasKey(m, primary) {
+		return payloadString(m, primary)
+	}
+	return payloadString(m, legacy)
+}
+
 func payloadInt64(m map[string]any, key string) int64 {
 	if len(m) == 0 {
 		return 0
@@ -603,6 +618,13 @@ func payloadInt(m map[string]any, key string) int {
 	return int(payloadInt64(m, key))
 }
 
+func payloadIntCompat(m map[string]any, primary string, legacy string) int {
+	if payloadHasKey(m, primary) {
+		return payloadInt(m, primary)
+	}
+	return payloadInt(m, legacy)
+}
+
 func payloadFloat64(m map[string]any, key string) float64 {
 	if len(m) == 0 {
 		return 0
@@ -623,6 +645,13 @@ func payloadFloat64(m map[string]any, key string) float64 {
 	default:
 		return 0
 	}
+}
+
+func payloadFloat64Compat(m map[string]any, primary string, legacy string) float64 {
+	if payloadHasKey(m, primary) {
+		return payloadFloat64(m, primary)
+	}
+	return payloadFloat64(m, legacy)
 }
 
 func payloadInt64Map(m map[string]any, key string) map[string]int64 {
@@ -673,6 +702,20 @@ func payloadIntMap(m map[string]any, key string) map[string]int {
 		out[k] = int(v)
 	}
 	return out
+}
+
+func payloadInt64MapCompat(m map[string]any, primary string, legacy string) map[string]int64 {
+	if payloadHasKey(m, primary) {
+		return payloadInt64Map(m, primary)
+	}
+	return payloadInt64Map(m, legacy)
+}
+
+func payloadIntMapCompat(m map[string]any, primary string, legacy string) map[string]int {
+	if payloadHasKey(m, primary) {
+		return payloadIntMap(m, primary)
+	}
+	return payloadIntMap(m, legacy)
 }
 
 func payloadAnyMap(m map[string]any, key string) map[string]any {
@@ -874,6 +917,13 @@ func payloadBool(m map[string]any, key string) bool {
 	return v
 }
 
+func payloadBoolCompat(m map[string]any, primary string, legacy string) bool {
+	if payloadHasKey(m, primary) {
+		return payloadBool(m, primary)
+	}
+	return payloadBool(m, legacy)
+}
+
 func eventTime(ts time.Time) time.Time {
 	if ts.IsZero() {
 		return time.Now()
@@ -995,7 +1045,7 @@ func normalizeRuntimeDiagnosticsBundleSchemaVersion(raw string) string {
 	}
 }
 
-func normalizeA67PlanAction(raw string) string {
+func normalizeReactPlanAction(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "create":
 		return "create"
@@ -1010,7 +1060,7 @@ func normalizeA67PlanAction(raw string) string {
 	}
 }
 
-func normalizeA67PlanHookStatus(raw string) string {
+func normalizeReactPlanHookStatus(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "ok":
 		return "ok"
@@ -1025,7 +1075,7 @@ func normalizeA67PlanHookStatus(raw string) string {
 	}
 }
 
-func normalizeA65HooksFailMode(raw string) string {
+func normalizeHooksFailMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeHooksFailModeFailFast:
 		return runtimeconfig.RuntimeHooksFailModeFailFast
@@ -1036,7 +1086,7 @@ func normalizeA65HooksFailMode(raw string) string {
 	}
 }
 
-func normalizeA65ToolMiddlewareFailMode(raw string) string {
+func normalizeToolMiddlewareFailMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeToolMiddlewareFailModeFailFast:
 		return runtimeconfig.RuntimeToolMiddlewareFailModeFailFast
@@ -1047,7 +1097,7 @@ func normalizeA65ToolMiddlewareFailMode(raw string) string {
 	}
 }
 
-func normalizeA65SkillDiscoveryMode(raw string) string {
+func normalizeSkillDiscoveryMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD:
 		return runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD
@@ -1060,7 +1110,7 @@ func normalizeA65SkillDiscoveryMode(raw string) string {
 	}
 }
 
-func normalizeA65SkillPreprocessPhase(raw string) string {
+func normalizeSkillPreprocessPhase(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream:
 		return runtimeconfig.RuntimeSkillPreprocessPhaseBeforeRunStream
@@ -1069,7 +1119,7 @@ func normalizeA65SkillPreprocessPhase(raw string) string {
 	}
 }
 
-func normalizeA65SkillPreprocessFailMode(raw string) string {
+func normalizeSkillPreprocessFailMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillPreprocessFailModeFailFast:
 		return runtimeconfig.RuntimeSkillPreprocessFailModeFailFast
@@ -1080,7 +1130,7 @@ func normalizeA65SkillPreprocessFailMode(raw string) string {
 	}
 }
 
-func normalizeA65SkillPreprocessStatus(raw string) string {
+func normalizeSkillPreprocessStatus(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "success":
 		return "success"
@@ -1095,7 +1145,7 @@ func normalizeA65SkillPreprocessStatus(raw string) string {
 	}
 }
 
-func normalizeA65SkillPreprocessReasonCode(raw string) string {
+func normalizeSkillPreprocessReasonCode(raw string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
 	case "":
@@ -1114,7 +1164,7 @@ func normalizeA65SkillPreprocessReasonCode(raw string) string {
 	}
 }
 
-func normalizeA65SkillBundlePromptMode(raw string) string {
+func normalizeSkillBundlePromptMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled:
 		return runtimeconfig.RuntimeSkillBundleMappingPromptModeDisabled
@@ -1125,7 +1175,7 @@ func normalizeA65SkillBundlePromptMode(raw string) string {
 	}
 }
 
-func normalizeA65SkillBundleWhitelistMode(raw string) string {
+func normalizeSkillBundleWhitelistMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled:
 		return runtimeconfig.RuntimeSkillBundleMappingWhitelistModeDisabled
@@ -1136,7 +1186,7 @@ func normalizeA65SkillBundleWhitelistMode(raw string) string {
 	}
 }
 
-func normalizeA65SkillBundleConflictPolicy(raw string) string {
+func normalizeSkillBundleConflictPolicy(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast:
 		return runtimeconfig.RuntimeSkillBundleMappingConflictPolicyFailFast
@@ -1147,7 +1197,7 @@ func normalizeA65SkillBundleConflictPolicy(raw string) string {
 	}
 }
 
-func normalizeA66StateSnapshotVersion(raw string) string {
+func normalizeStateSnapshotVersion(raw string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
 	case "", "state_session_snapshot.v1":
@@ -1158,7 +1208,7 @@ func normalizeA66StateSnapshotVersion(raw string) string {
 	}
 }
 
-func normalizeA66StateRestoreAction(raw string) string {
+func normalizeStateRestoreAction(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
 		return ""
@@ -1176,7 +1226,7 @@ func normalizeA66StateRestoreAction(raw string) string {
 	}
 }
 
-func normalizeA66StateRestoreConflictCode(raw string) string {
+func normalizeStateRestoreConflictCode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
 		return ""
@@ -1200,7 +1250,7 @@ func normalizeA66StateRestoreConflictCode(raw string) string {
 	}
 }
 
-func normalizeA66StateRestoreSource(raw string) string {
+func normalizeStateRestoreSource(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 

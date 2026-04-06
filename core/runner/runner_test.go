@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -788,7 +789,7 @@ func TestWithSandboxExecutorBindsIntoRuntimeManagerRegardlessOfOptionOrder(t *te
 		},
 	}
 	t.Run("runtime-manager-then-sandbox", func(t *testing.T) {
-		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A51_RUNNER_TEST"})
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_RUNNER_TEST"})
 		if err != nil {
 			t.Fatalf("NewManager failed: %v", err)
 		}
@@ -800,7 +801,7 @@ func TestWithSandboxExecutorBindsIntoRuntimeManagerRegardlessOfOptionOrder(t *te
 		}
 	})
 	t.Run("sandbox-then-runtime-manager", func(t *testing.T) {
-		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A51_RUNNER_TEST"})
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_RUNNER_TEST"})
 		if err != nil {
 			t.Fatalf("NewManager failed: %v", err)
 		}
@@ -874,7 +875,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -968,7 +969,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A57_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_SECURITY_EVENT_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1059,7 +1060,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1179,7 +1180,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1301,7 +1302,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1430,7 +1431,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1542,7 +1543,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1657,7 +1658,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1758,7 +1759,7 @@ security:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A51_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_POLICY_PRECEDENCE_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1936,7 +1937,7 @@ security:
 
 func TestSecurityPolicyContractRateLimitDeny(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
-	cfg := `
+	cfg := fmt.Sprintf(`
 security:
   tool_governance:
     enabled: true
@@ -1950,9 +1951,9 @@ security:
       window: 1m
       limit: 1
       by_tool_limit:
-        local+echo: 1
+        %s: 1
       exceed_action: deny
-`
+`, "local+echo-rate-limit-deny")
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -1961,11 +1962,10 @@ security:
 		t.Fatalf("NewManager failed: %v", err)
 	}
 	t.Cleanup(func() { _ = mgr.Close() })
-
 	reg := local.NewRegistry()
 	invoked := 0
 	_, _ = reg.Register(&fakeTool{
-		name: "echo",
+		name: "echo-rate-limit-deny",
 		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
 			invoked++
 			return types.ToolResult{Content: "ok"}, nil
@@ -1977,9 +1977,9 @@ security:
 			turn++
 			switch turn {
 			case 1:
-				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo"}}}, nil
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c1", Name: "local.echo-rate-limit-deny"}}}, nil
 			case 2:
-				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c2", Name: "local.echo"}}}, nil
+				return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "c2", Name: "local.echo-rate-limit-deny"}}}, nil
 			default:
 				return types.ModelResponse{FinalAnswer: "done"}, nil
 			}
@@ -2001,14 +2001,13 @@ security:
 	if !ok {
 		t.Fatal("missing run.finished")
 	}
-	if finished.Payload["policy_kind"] != "rate_limit" || finished.Payload["namespace_tool"] != "local+echo" {
+	if finished.Payload["policy_kind"] != "rate_limit" || finished.Payload["namespace_tool"] != "local+echo-rate-limit-deny" {
 		t.Fatalf("unexpected rate-limit diagnostics payload: %#v", finished.Payload)
 	}
 	if finished.Payload["decision"] != "deny" || finished.Payload["reason_code"] != "security.rate_limit_exceeded" {
 		t.Fatalf("unexpected rate-limit decision payload: %#v", finished.Payload)
 	}
 }
-
 func TestSecurityPolicyContractRequireRegisteredInputFilter(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
@@ -2984,7 +2983,7 @@ provider_fallback:
 	}
 }
 
-func TestRunProviderFallbackUsesSelectedTokenCounterForCA3(t *testing.T) {
+func TestRunProviderFallbackUsesSelectedTokenCounterForContextPressure(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 provider_fallback:
@@ -3179,7 +3178,7 @@ provider_fallback:
 	}
 }
 
-func TestStreamProviderFallbackUsesSelectedTokenCounterForCA3(t *testing.T) {
+func TestStreamProviderFallbackUsesSelectedTokenCounterForContextPressure(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 provider_fallback:
@@ -3295,7 +3294,7 @@ context_assembler:
 	}
 }
 
-func TestRunCA2BestEffortKeepsModelPath(t *testing.T) {
+func TestRunContextStage2BestEffortKeepsModelPath(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 context_assembler:
@@ -3345,7 +3344,7 @@ context_assembler:
 	}
 }
 
-func TestStreamCA2FailFastStopsBeforeModel(t *testing.T) {
+func TestStreamContextStage2FailFastStopsBeforeModel(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 context_assembler:
@@ -3619,7 +3618,7 @@ mcp:
 	}
 }
 
-func TestRunAndStreamCA3PressureSemanticsEquivalent(t *testing.T) {
+func TestRunAndStreamContextPressureSemanticsEquivalent(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 context_assembler:
@@ -3733,9 +3732,46 @@ context_assembler:
 	if runFinished.Payload["ca3_compaction_embedding_provider"] != streamFinished.Payload["ca3_compaction_embedding_provider"] {
 		t.Fatalf("run/stream ca3 compaction embedding provider mismatch: run=%v stream=%v", runFinished.Payload["ca3_compaction_embedding_provider"], streamFinished.Payload["ca3_compaction_embedding_provider"])
 	}
+	for semanticKey, legacyKey := range map[string]string{
+		"context_pressure_zone":                        "ca3_pressure_zone",
+		"context_pressure_reason":                      "ca3_pressure_reason",
+		"context_pressure_trigger":                     "ca3_pressure_trigger",
+		"context_pressure_zone_residency_ms":           "ca3_zone_residency_ms",
+		"context_pressure_trigger_counts":              "ca3_trigger_counts",
+		"context_compaction_compression_ratio":         "ca3_compression_ratio",
+		"context_spill_count":                          "ca3_spill_count",
+		"context_swap_back_count":                      "ca3_swap_back_count",
+		"context_compaction_mode":                      "ca3_compaction_mode",
+		"context_compaction_fallback":                  "ca3_compaction_fallback",
+		"context_compaction_fallback_reason":           "ca3_compaction_fallback_reason",
+		"context_compaction_quality_score":             "ca3_compaction_quality_score",
+		"context_compaction_quality_reason":            "ca3_compaction_quality_reason",
+		"context_compaction_embedding_provider":        "ca3_compaction_embedding_provider",
+		"context_compaction_embedding_similarity":      "ca3_compaction_embedding_similarity",
+		"context_compaction_embedding_contribution":    "ca3_compaction_embedding_contribution",
+		"context_compaction_embedding_status":          "ca3_compaction_embedding_status",
+		"context_compaction_embedding_fallback_reason": "ca3_compaction_embedding_fallback_reason",
+		"context_compaction_reranker_used":             "ca3_compaction_reranker_used",
+		"context_compaction_reranker_provider":         "ca3_compaction_reranker_provider",
+		"context_compaction_reranker_model":            "ca3_compaction_reranker_model",
+		"context_compaction_reranker_threshold_source": "ca3_compaction_reranker_threshold_source",
+		"context_compaction_reranker_threshold_hit":    "ca3_compaction_reranker_threshold_hit",
+		"context_compaction_reranker_fallback_reason":  "ca3_compaction_reranker_fallback_reason",
+		"context_compaction_reranker_profile_version":  "ca3_compaction_reranker_profile_version",
+		"context_compaction_reranker_rollout_hit":      "ca3_compaction_reranker_rollout_hit",
+		"context_compaction_reranker_threshold_drift":  "ca3_compaction_reranker_threshold_drift",
+		"context_compaction_retained_evidence_count":   "ca3_compaction_retained_evidence_count",
+	} {
+		if !reflect.DeepEqual(runFinished.Payload[semanticKey], runFinished.Payload[legacyKey]) {
+			t.Fatalf("run payload semantic/legacy mismatch key=%s legacy=%s semantic=%#v legacy=%#v", semanticKey, legacyKey, runFinished.Payload[semanticKey], runFinished.Payload[legacyKey])
+		}
+		if !reflect.DeepEqual(streamFinished.Payload[semanticKey], streamFinished.Payload[legacyKey]) {
+			t.Fatalf("stream payload semantic/legacy mismatch key=%s legacy=%s semantic=%#v legacy=%#v", semanticKey, legacyKey, streamFinished.Payload[semanticKey], streamFinished.Payload[legacyKey])
+		}
+	}
 }
 
-func TestRunAndStreamCA3GovernanceSemanticsEquivalent(t *testing.T) {
+func TestRunAndStreamContextPressureGovernanceSemanticsEquivalent(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
 context_assembler:
@@ -3842,6 +3878,10 @@ context_assembler:
 		"ca3_compaction_reranker_threshold_hit",
 		"ca3_compaction_reranker_profile_version",
 		"ca3_compaction_reranker_rollout_hit",
+		"context_compaction_reranker_threshold_source",
+		"context_compaction_reranker_threshold_hit",
+		"context_compaction_reranker_profile_version",
+		"context_compaction_reranker_rollout_hit",
 	} {
 		if runFinished.Payload[key] != streamFinished.Payload[key] {
 			t.Fatalf("run/stream governance payload mismatch for %s: run=%v stream=%v", key, runFinished.Payload[key], streamFinished.Payload[key])
@@ -4736,7 +4776,7 @@ action_gate:
 	}
 }
 
-func TestCA2AgenticRoutingRunAndStreamSemanticEquivalent(t *testing.T) {
+func TestContextStage2AgenticRoutingRunAndStreamSemanticEquivalent(t *testing.T) {
 	dir := t.TempDir()
 	stage2File := filepath.Join(dir, "stage2.jsonl")
 	if err := os.WriteFile(stage2File, []byte(`{"session_id":"session-1","content":"agentic-ctx"}`), 0o600); err != nil {
@@ -4834,7 +4874,7 @@ context_assembler:
 	}
 }
 
-func TestCA2AgenticRoutingFallbackRunAndStreamSemanticEquivalent(t *testing.T) {
+func TestContextStage2AgenticRoutingFallbackRunAndStreamSemanticEquivalent(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runtime.yaml")
 	cfg := fmt.Sprintf(`
@@ -4929,8 +4969,8 @@ context_assembler:
 
 func TestContextJITRunAndStreamSemanticEquivalent(t *testing.T) {
 	dir := t.TempDir()
-	runID := "run-a67-ctx-parity"
-	sessionID := "session-a67-ctx-parity"
+	runID := "run-context-jit-parity"
+	sessionID := "session-context-jit-parity"
 	stage2File := filepath.Join(dir, "stage2.jsonl")
 	stage2Rows := strings.Join([]string{
 		`{"session_id":"` + sessionID + `","content":"search docs reference alpha"}`,
@@ -5008,7 +5048,7 @@ context_assembler:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A67_CTX_PARITY"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_CONTEXT_JIT_PARITY_TEST"})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -5080,10 +5120,10 @@ context_assembler:
 		t.Fatalf("react termination taxonomy drift: %#v", runFinished.Payload["react_termination_reason"])
 	}
 	if _, exists := runFinished.Payload["policy_decision_path"]; exists {
-		t.Fatalf("A58 decision path should not be injected on success path: %#v", runFinished.Payload["policy_decision_path"])
+		t.Fatalf("admission decision path should not be injected on success path: %#v", runFinished.Payload["policy_decision_path"])
 	}
 	if _, exists := streamFinished.Payload["policy_decision_path"]; exists {
-		t.Fatalf("A58 decision path should not be injected on success path: %#v", streamFinished.Payload["policy_decision_path"])
+		t.Fatalf("admission decision path should not be injected on success path: %#v", streamFinished.Payload["policy_decision_path"])
 	}
 
 	runStats := contextTierStatsFromPayload(runFinished.Payload["context_lifecycle_tier_stats"])
@@ -5150,7 +5190,7 @@ context_assembler:
 	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A67_CTX_A57"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_CONTEXT_JIT_SECURITY_EVENT_TEST"})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -5200,8 +5240,8 @@ context_assembler:
 	runCollector := &eventCollector{}
 	streamCollector := &eventCollector{}
 	req := types.RunRequest{
-		RunID:     "run-a67-ctx-a57-run",
-		SessionID: "session-a67-ctx-a57",
+		RunID:     "run-context-jit-security-event-run",
+		SessionID: "session-context-jit-sandbox-egress",
 		Input:     "trigger egress deny with context jit",
 	}
 
@@ -6234,11 +6274,11 @@ func TestLifecycleHooksRunAndStreamPhaseOrderParity(t *testing.T) {
 	streamEngine := New(streamModel, WithLocalRegistry(reg), WithLifecycleHooks(streamHook))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-parity-run",
+		RunID: "run-hooks-middleware-hooks-parity-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-parity-stream",
+		RunID: "run-hooks-middleware-hooks-parity-stream",
 		Input: "x",
 	}, nil)
 	if runErr != nil || streamErr != nil {
@@ -6285,11 +6325,11 @@ func TestLifecycleHooksFailFastStopsRunAndStream(t *testing.T) {
 	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-fail-fast-run",
+		RunID: "run-hooks-middleware-hooks-fail-fast-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-fail-fast-stream",
+		RunID: "run-hooks-middleware-hooks-fail-fast-stream",
 		Input: "x",
 	}, nil)
 	if runErr == nil || streamErr == nil {
@@ -6332,11 +6372,11 @@ func TestLifecycleHooksDegradeContinuesRunAndStream(t *testing.T) {
 	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-degrade-run",
+		RunID: "run-hooks-middleware-hooks-degrade-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-hooks-degrade-stream",
+		RunID: "run-hooks-middleware-hooks-degrade-stream",
 		Input: "x",
 	}, nil)
 	if runErr != nil || streamErr != nil {
@@ -6367,7 +6407,7 @@ runtime:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A65_MIDDLEWARE_TEST",
+		EnvPrefix: "BAYMAX_HOOKS_MIDDLEWARE_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
@@ -6417,11 +6457,11 @@ runtime:
 	}, WithRuntimeManager(mgr), WithLocalRegistry(reg), WithToolMiddlewares(middleware))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-middleware-timeout-run",
+		RunID: "run-hooks-middleware-middleware-timeout-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-middleware-timeout-stream",
+		RunID: "run-hooks-middleware-middleware-timeout-stream",
 		Input: "x",
 	}, nil)
 	if runErr == nil || streamErr == nil {
@@ -6502,11 +6542,11 @@ func TestSkillPreprocessRunsBeforeRunAndStreamModelLoop(t *testing.T) {
 	}, WithRuntimeManager(mgr), WithSkillLoader(streamLoader))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-preprocess-run",
+		RunID: "run-hooks-middleware-preprocess-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-preprocess-stream",
+		RunID: "run-hooks-middleware-preprocess-stream",
 		Input: "x",
 	}, nil)
 	if runErr != nil || streamErr != nil {
@@ -6549,8 +6589,8 @@ func TestSkillPreprocessFailFastAbortsRunAndStream(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-failfast-run", Input: "x"}, nil)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-failfast-stream", Input: "x"}, nil)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-hooks-middleware-preprocess-failfast-run", Input: "x"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-hooks-middleware-preprocess-failfast-stream", Input: "x"}, nil)
 	if runErr == nil || streamErr == nil {
 		t.Fatalf("expected preprocess fail-fast errors, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -6585,8 +6625,8 @@ func TestSkillPreprocessDegradeContinuesRunAndStream(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-degrade-run", Input: "x"}, nil)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a65-preprocess-degrade-stream", Input: "x"}, nil)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-hooks-middleware-preprocess-degrade-run", Input: "x"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-hooks-middleware-preprocess-degrade-stream", Input: "x"}, nil)
 	if runErr != nil || streamErr != nil {
 		t.Fatalf("preprocess degrade should continue, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -6648,13 +6688,13 @@ func TestSkillBundlePromptMappingAppendDeterministicForRunAndStream(t *testing.T
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
 	baseReq := types.RunRequest{
-		RunID:    "run-a65-bundle-prompt-map",
+		RunID:    "run-hooks-middleware-bundle-prompt-map",
 		Input:    "x",
 		Messages: []types.Message{{Role: "user", Content: "hello"}},
 	}
 	runRes, runErr := runEngine.Run(context.Background(), baseReq, nil)
 	streamReq := baseReq
-	streamReq.RunID = "run-a65-bundle-prompt-map-stream"
+	streamReq.RunID = "run-hooks-middleware-bundle-prompt-map-stream"
 	streamRes, streamErr := streamEngine.Stream(context.Background(), streamReq, nil)
 	if runErr != nil || streamErr != nil {
 		t.Fatalf("prompt mapping should succeed, runErr=%v streamErr=%v", runErr, streamErr)
@@ -6720,12 +6760,12 @@ func TestSkillBundlePromptMappingConflictFailFastForRunAndStream(t *testing.T) {
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID:    "run-a65-bundle-prompt-conflict-run",
+		RunID:    "run-hooks-middleware-bundle-prompt-conflict-run",
 		Input:    "x",
 		Messages: []types.Message{{Role: "system", Content: "duplicate"}},
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID:    "run-a65-bundle-prompt-conflict-stream",
+		RunID:    "run-hooks-middleware-bundle-prompt-conflict-stream",
 		Input:    "x",
 		Messages: []types.Message{{Role: "system", Content: "duplicate"}},
 	}, nil)
@@ -6799,11 +6839,11 @@ func TestSkillBundleWhitelistFailFastRejectsBlockedToolForRunAndStream(t *testin
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-failfast-run",
+		RunID: "run-hooks-middleware-bundle-whitelist-failfast-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-failfast-stream",
+		RunID: "run-hooks-middleware-bundle-whitelist-failfast-stream",
 		Input: "x",
 	}, nil)
 	if runErr == nil || streamErr == nil {
@@ -6877,11 +6917,11 @@ security:
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-sandbox-upper-bound-run",
+		RunID: "run-hooks-middleware-bundle-whitelist-sandbox-upper-bound-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-sandbox-upper-bound-stream",
+		RunID: "run-hooks-middleware-bundle-whitelist-sandbox-upper-bound-stream",
 		Input: "x",
 	}, nil)
 	if runErr == nil || streamErr == nil {
@@ -6996,11 +7036,11 @@ func TestSkillBundleWhitelistFirstWinFiltersBlockedToolForRunAndStream(t *testin
 	}, WithRuntimeManager(mgr), WithSkillLoader(loader), WithLocalRegistry(reg))
 
 	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-first-win-run",
+		RunID: "run-hooks-middleware-bundle-whitelist-first-win-run",
 		Input: "x",
 	}, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{
-		RunID: "run-a65-bundle-whitelist-first-win-stream",
+		RunID: "run-hooks-middleware-bundle-whitelist-first-win-stream",
 		Input: "x",
 	}, nil)
 	if runErr != nil || streamErr != nil {
@@ -7055,7 +7095,7 @@ runtime:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A65_HOOK_TEST",
+		EnvPrefix: "BAYMAX_HOOK_PHASE_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
@@ -7079,7 +7119,7 @@ runtime:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A65_SKILL_PREPROCESS_TEST",
+		EnvPrefix: "BAYMAX_SKILL_PREPROCESS_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
@@ -7121,7 +7161,7 @@ runtime:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A65_SKILL_BUNDLE_MAPPING_TEST",
+		EnvPrefix: "BAYMAX_SKILL_BUNDLE_MAPPING_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)

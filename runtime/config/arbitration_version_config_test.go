@@ -13,8 +13,8 @@ func TestRuntimeArbitrationVersionConfigDefaults(t *testing.T) {
 	if !got.Enabled {
 		t.Fatal("runtime.arbitration.version.enabled = false, want true")
 	}
-	if got.Default != RuntimeArbitrationRuleVersionA49V1 {
-		t.Fatalf("runtime.arbitration.version.default = %q, want %q", got.Default, RuntimeArbitrationRuleVersionA49V1)
+	if got.Default != RuntimeArbitrationRuleVersionExplainabilityV1 {
+		t.Fatalf("runtime.arbitration.version.default = %q, want %q", got.Default, RuntimeArbitrationRuleVersionExplainabilityV1)
 	}
 	if got.CompatWindow != 1 {
 		t.Fatalf("runtime.arbitration.version.compat_window = %d, want 1", got.CompatWindow)
@@ -36,7 +36,7 @@ func TestRuntimeArbitrationVersionConfigDefaults(t *testing.T) {
 }
 
 func TestRuntimeArbitrationVersionConfigEnvOverridePrecedence(t *testing.T) {
-	t.Setenv("BAYMAX_RUNTIME_ARBITRATION_VERSION_DEFAULT", RuntimeArbitrationRuleVersionA48V1)
+	t.Setenv("BAYMAX_RUNTIME_ARBITRATION_VERSION_DEFAULT", RuntimeArbitrationRuleVersionPrimaryReasonV1)
 	t.Setenv("BAYMAX_RUNTIME_ARBITRATION_VERSION_COMPAT_WINDOW", "0")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -56,8 +56,8 @@ runtime:
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if cfg.Runtime.Arbitration.Version.Default != RuntimeArbitrationRuleVersionA48V1 {
-		t.Fatalf("runtime.arbitration.version.default = %q, want %q", cfg.Runtime.Arbitration.Version.Default, RuntimeArbitrationRuleVersionA48V1)
+	if cfg.Runtime.Arbitration.Version.Default != RuntimeArbitrationRuleVersionPrimaryReasonV1 {
+		t.Fatalf("runtime.arbitration.version.default = %q, want %q", cfg.Runtime.Arbitration.Version.Default, RuntimeArbitrationRuleVersionPrimaryReasonV1)
 	}
 	if cfg.Runtime.Arbitration.Version.CompatWindow != 0 {
 		t.Fatalf("runtime.arbitration.version.compat_window = %d, want 0", cfg.Runtime.Arbitration.Version.CompatWindow)

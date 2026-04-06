@@ -74,20 +74,20 @@ has_changed_prefix() {
   return 1
 }
 
-run_step "a67-ctx runtime config governance suites" \
+run_step "context jit runtime config governance suites" \
   go test ./runtime/config -run 'Test(RuntimeContextJITConfig|ManagerRuntimeContextJIT)' -count=1
 
-run_step "a67-ctx context assembler organization suites" \
-  go test ./context/assembler -run 'Test(DiscoverStage2References|ResolveSelectedStage2References|AssemblerCA2ReferenceFirstInjectsRefsBeforeBody|IngestIsolateHandoffChunks|AssemblerCA2IsolateHandoff(DefaultConsumption|ReplayIdempotent)|ApplyContextEditGate|AssemblerCA2EditGateDenyKeepsSemantics|SwapBackIfNeededUsesRelevanceThreshold|ApplyLifecycleTieringTransitionsAndPrune|AssemblerCA3SwapBackAndTieringCombination|AssemblerCA2RecapAppended|BuildTaskAwareTailRecapStableOrdering)' -count=1
+run_step "context jit context assembler organization suites" \
+  go test ./context/assembler -run 'Test(DiscoverStage2References|ResolveSelectedStage2References|AssemblerContextStage2ReferenceFirstInjectsRefsBeforeBody|IngestIsolateHandoffChunks|AssemblerContextStage2IsolateHandoff(DefaultConsumption|ReplayIdempotent)|ApplyContextEditGate|AssemblerContextStage2EditGateDenyKeepsSemantics|SwapBackIfNeededUsesRelevanceThreshold|ApplyLifecycleTieringTransitionsAndPrune|AssemblerContextPressureSwapBackAndTieringCombination|AssemblerContextStage2RecapAppended|BuildTaskAwareTailRecapStableOrdering)' -count=1
 
-run_step "a67-ctx run/stream parity + boundary regression suites" \
+run_step "context jit run/stream parity + boundary regression suites" \
   go test ./core/runner -run 'Test(ContextJITRunAndStreamSemanticEquivalent|ContextJITDoesNotBypassSandboxEgressRunAndStreamParity)' -count=1
 
-run_step "a67-ctx diagnostics + recorder additive suites" \
-  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA67CTX|RuntimeRecorderParsesA67ContextJITOrganizationAdditiveFields|RuntimeRecorderA67ContextJITParserCompatibilityAdditiveNullableDefault)' -count=1
+run_step "context jit diagnostics + recorder additive suites" \
+  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunContextJIT|RuntimeRecorderParsesContextJITOrganizationAdditiveFields|RuntimeRecorderContextJITParserCompatibilityAdditiveNullableDefault)' -count=1
 
-run_step "a67-ctx replay fixture + drift taxonomy suites" \
-  go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility|ReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibility|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast|ReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility)' -count=1
+run_step "context jit replay fixture + drift taxonomy suites" \
+  go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility|ReplayContractArbitrationMixedPolicyPrecedenceReactSandboxEgressCompatibility|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast|ReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility)' -count=1
 
 run_step "assertion context_provider_sdk_absent" \
   go test ./tool/contributioncheck -run '^TestContextPackagesDoNotDirectlyImportProviderSDKs$' -count=1
@@ -151,3 +151,4 @@ run_step "contributioncheck parity suites for context-jit-organization gate" \
   go test ./tool/contributioncheck -run 'Test(ContextJITOrganizationGateScriptParity|QualityGateIncludesContextJITOrganizationGate|CIIncludesContextJITOrganizationRequiredCheckCandidate|ContextJITOrganizationRoadmapAndContractIndexClosureMarkers)' -count=1
 
 echo "[context-jit-organization-contract-gate] done"
+

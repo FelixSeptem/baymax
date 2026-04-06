@@ -12,13 +12,13 @@ import (
 )
 
 func TestReadinessTimeoutHealthReplayContractCompositeFixtureSuite(t *testing.T) {
-	raw := mustReadA47ReplayFixture(t, "composite-success.json")
+	raw := mustReadReadinessTimeoutHealthReplayFixture(t, "composite-success.json")
 	out, err := diagnosticsreplay.EvaluateCompositeFixtureJSON(raw)
 	if err != nil {
 		t.Fatalf("EvaluateCompositeFixtureJSON success fixture failed: %v", err)
 	}
-	if strings.TrimSpace(out.Version) != diagnosticsreplay.CompositeFixtureVersionA47V1 {
-		t.Fatalf("fixture version = %q, want %q", out.Version, diagnosticsreplay.CompositeFixtureVersionA47V1)
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.CompositeFixtureVersionReadinessTimeoutHealthV1 {
+		t.Fatalf("fixture version = %q, want %q", out.Version, diagnosticsreplay.CompositeFixtureVersionReadinessTimeoutHealthV1)
 	}
 	if len(out.Cases) < 3 {
 		t.Fatalf("normalized cases len = %d, want >= 3", len(out.Cases))
@@ -52,7 +52,7 @@ func TestReadinessTimeoutHealthReplayContractDriftGuardFailFast(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			raw := mustReadA47ReplayFixture(t, tc.fixture)
+			raw := mustReadReadinessTimeoutHealthReplayFixture(t, tc.fixture)
 			_, err := diagnosticsreplay.EvaluateCompositeFixtureJSON(raw)
 			if err == nil {
 				t.Fatalf("fixture %s should fail fast", tc.fixture)
@@ -71,9 +71,9 @@ func TestReadinessTimeoutHealthReplayContractDriftGuardFailFast(t *testing.T) {
 	}
 }
 
-func mustReadA47ReplayFixture(t *testing.T, name string) []byte {
+func mustReadReadinessTimeoutHealthReplayFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join(repoRootForA47Replay(t), "integration", "testdata", "diagnostics-replay", "a47", "v1", name)
+	path := filepath.Join(repoRootForReadinessTimeoutHealthReplay(t), "integration", "testdata", "diagnostics-replay", "readiness-timeout-health", "v1", name)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)
@@ -81,7 +81,7 @@ func mustReadA47ReplayFixture(t *testing.T, name string) []byte {
 	return raw
 }
 
-func repoRootForA47Replay(t *testing.T) string {
+func repoRootForReadinessTimeoutHealthReplay(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

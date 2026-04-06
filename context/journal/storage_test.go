@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestNewStorageRejectsDBBackendInCA1(t *testing.T) {
+func TestNewStorageRejectsDBBackendInContextPrefixBaseline(t *testing.T) {
 	_, err := NewStorage("db", filepath.Join(t.TempDir(), "journal.jsonl"))
 	if !errors.Is(err, ErrBackendNotReady) {
 		t.Fatalf("err = %v, want ErrBackendNotReady", err)

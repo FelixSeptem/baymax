@@ -42,7 +42,7 @@ func TestComposerSchedulerReloadAppliesOnNextAttemptOnly(t *testing.T) {
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:        cfgPath,
-		EnvPrefix:       "BAYMAX_A8_TEST",
+		EnvPrefix:       "BAYMAX_COMPOSER_SCHEDULER_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func TestComposerSchedulerReloadAppliesOnNextAttemptOnly(t *testing.T) {
 }
 
 func TestComposerGuardrailFailFastEmitsBudgetRejectAndSummary(t *testing.T) {
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A8_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_COMPOSER_SCHEDULER_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestComposerGuardrailFailFastEmitsBudgetRejectAndSummary(t *testing.T) {
 }
 
 func TestComposerSpawnChildRejectsUnsupportedOperationProfile(t *testing.T) {
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A41_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_COMPOSER_TIMEOUT_RESOLUTION_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -217,12 +217,12 @@ func TestComposerSpawnChildRejectsUnsupportedOperationProfile(t *testing.T) {
 }
 
 func TestComposerSpawnChildTimeoutResolutionPrecedenceAndSummary(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a41.yaml")
-	writeComposerA41RuntimeConfig(t, cfgPath)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-timeout-resolution.yaml")
+	writeComposerTimeoutResolutionRuntimeConfig(t, cfgPath)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A41_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_TIMEOUT_RESOLUTION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -343,7 +343,7 @@ func TestComposerSpawnChildTimeoutResolutionPrecedenceAndSummary(t *testing.T) {
 }
 
 func TestComposerSpawnChildPassesNotBeforeThrough(t *testing.T) {
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A13_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_COMPOSER_NOT_BEFORE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestComposerReadinessPreflightRequiresRuntimeManager(t *testing.T) {
 }
 
 func TestComposerReadinessPreflightPassthroughAndReadOnly(t *testing.T) {
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A40_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_COMPOSER_READINESS_PREFLIGHT_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -438,12 +438,12 @@ func TestComposerReadinessPreflightPassthroughAndReadOnly(t *testing.T) {
 }
 
 func TestComposerReadinessAdmissionBlockedDenyRunAndStreamNoSideEffects(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a44.yaml")
-	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-readiness-admission.yaml")
+	writeComposerReadinessAdmissionRuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -504,12 +504,12 @@ func TestComposerReadinessAdmissionBlockedDenyRunAndStreamNoSideEffects(t *testi
 }
 
 func TestComposerReadinessAdmissionSandboxRequiredDenyRunAndStreamEquivalent(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a51-blocked.yaml")
-	writeComposerA51RuntimeConfig(t, cfgPath)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-required-blocked.yaml")
+	writeComposerSandboxRequiredRuntimeConfig(t, cfgPath)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A51_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_REQUIRED_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -595,12 +595,12 @@ func TestComposerReadinessAdmissionSandboxRequiredDenyRunAndStreamEquivalent(t *
 }
 
 func TestComposerReadinessAdmissionSandboxRolloutFrozenRunAndStreamEquivalent(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a52-frozen.yaml")
-	writeComposerA52RuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-rollout-frozen.yaml")
+	writeComposerSandboxRolloutRuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A52_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_ROLLOUT_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -655,11 +655,11 @@ func TestComposerReadinessAdmissionSandboxRolloutFrozenRunAndStreamEquivalent(t 
 }
 
 func TestComposerReadinessAdmissionSandboxCapacityThrottlePolicyParity(t *testing.T) {
-	allowCfg := filepath.Join(t.TempDir(), "runtime-a52-throttle-allow.yaml")
-	writeComposerA52RuntimeConfig(t, allowCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	allowCfg := filepath.Join(t.TempDir(), "runtime-sandbox-rollout-throttle-allow.yaml")
+	writeComposerSandboxRolloutRuntimeConfig(t, allowCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
 	allowMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  allowCfg,
-		EnvPrefix: "BAYMAX_A52_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_ROLLOUT_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -688,11 +688,11 @@ func TestComposerReadinessAdmissionSandboxCapacityThrottlePolicyParity(t *testin
 		t.Fatalf("stream should be allowed under throttle allow policy, err=%v result=%#v", allowStreamErr, allowStreamRes.Error)
 	}
 
-	denyCfg := filepath.Join(t.TempDir(), "runtime-a52-throttle-deny.yaml")
-	writeComposerA52RuntimeConfig(t, denyCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyFailFast)
+	denyCfg := filepath.Join(t.TempDir(), "runtime-sandbox-rollout-throttle-deny.yaml")
+	writeComposerSandboxRolloutRuntimeConfig(t, denyCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyFailFast)
 	denyMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  denyCfg,
-		EnvPrefix: "BAYMAX_A52_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_ROLLOUT_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -740,11 +740,11 @@ func TestComposerReadinessAdmissionSandboxCapacityThrottlePolicyParity(t *testin
 }
 
 func TestComposerReadinessAdmissionSandboxRolloutTimelineReasonParity(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a52-timeline-frozen.yaml")
-	writeComposerA52RuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-sandbox-rollout-timeline-frozen.yaml")
+	writeComposerSandboxRolloutRuntimeConfig(t, cfgPath, runtimeconfig.SecuritySandboxRolloutPhaseFrozen, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A52_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_ROLLOUT_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -780,11 +780,11 @@ func TestComposerReadinessAdmissionSandboxRolloutTimelineReasonParity(t *testing
 		t.Fatalf("stream timeline missing reason sandbox.rollout.phase_frozen: %#v", streamCollector.events)
 	}
 
-	throttleCfg := filepath.Join(t.TempDir(), "runtime-a52-timeline-throttle.yaml")
-	writeComposerA52RuntimeConfig(t, throttleCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
+	throttleCfg := filepath.Join(t.TempDir(), "runtime-sandbox-rollout-timeline-throttle.yaml")
+	writeComposerSandboxRolloutRuntimeConfig(t, throttleCfg, runtimeconfig.SecuritySandboxRolloutPhaseCanary, runtimeconfig.SecuritySandboxCapacityDegradedPolicyAllowAndRecord)
 	throttleMgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  throttleCfg,
-		EnvPrefix: "BAYMAX_A52_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_SANDBOX_ROLLOUT_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -820,12 +820,12 @@ func TestComposerReadinessAdmissionSandboxRolloutTimelineReasonParity(t *testing
 }
 
 func TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-allow.yaml")
-	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-readiness-admission-allow.yaml")
+	writeComposerReadinessAdmissionRuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyAllowAndRecord)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -871,12 +871,12 @@ func TestComposerReadinessAdmissionDegradedPolicyAllowRunAndStreamEquivalent(t *
 }
 
 func TestComposerReadinessAdmissionDegradedFailFastDeny(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a44-deny.yaml")
-	writeComposerA44RuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyFailFast)
+	cfgPath := filepath.Join(t.TempDir(), "runtime-readiness-admission-deny.yaml")
+	writeComposerReadinessAdmissionRuntimeConfig(t, cfgPath, runtimeconfig.ReadinessAdmissionDegradedPolicyFailFast)
 
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A44_TEST",
+		EnvPrefix: "BAYMAX_COMPOSER_READINESS_ADMISSION_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
@@ -941,7 +941,7 @@ func writeComposerRuntimeConfig(t *testing.T, path string, leaseTimeout time.Dur
 	}
 }
 
-func writeComposerA41RuntimeConfig(t *testing.T, path string) {
+func writeComposerTimeoutResolutionRuntimeConfig(t *testing.T, path string) {
 	t.Helper()
 	cfg := strings.Join([]string{
 		"reload:",
@@ -975,7 +975,7 @@ func writeComposerA41RuntimeConfig(t *testing.T, path string) {
 	}
 }
 
-func writeComposerA44RuntimeConfig(t *testing.T, path, degradedPolicy string) {
+func writeComposerReadinessAdmissionRuntimeConfig(t *testing.T, path, degradedPolicy string) {
 	t.Helper()
 	cfg := strings.Join([]string{
 		"runtime:",
@@ -998,7 +998,7 @@ func writeComposerA44RuntimeConfig(t *testing.T, path, degradedPolicy string) {
 	}
 }
 
-func writeComposerA51RuntimeConfig(t *testing.T, path string) {
+func writeComposerSandboxRequiredRuntimeConfig(t *testing.T, path string) {
 	t.Helper()
 	cfg := strings.Join([]string{
 		"runtime:",
@@ -1030,7 +1030,7 @@ func writeComposerA51RuntimeConfig(t *testing.T, path string) {
 	}
 }
 
-func writeComposerA52RuntimeConfig(t *testing.T, path, phase, degradedPolicy string) {
+func writeComposerSandboxRolloutRuntimeConfig(t *testing.T, path, phase, degradedPolicy string) {
 	t.Helper()
 	cfg := strings.Join([]string{
 		"runtime:",

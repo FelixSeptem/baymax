@@ -39,28 +39,28 @@
 - Library-first composer entrypoint is available as independent module (`orchestration/composer`) and can execute Run/Stream without host-side manual wiring of runner/workflow/teams/a2a/scheduler internals.
 - Composer-managed runs expose additive summary fields `composer_managed`, `scheduler_backend_fallback`, `scheduler_backend_fallback_reason` with compatibility-window semantics.
 - Scheduler/Subagent hot-reload in composer path applies on `next_attempt_only` boundaries and does not retroactively mutate in-flight attempt lease semantics.
-- A12/A13 additive summary fields follow a compatibility window (`additive + nullable + default`); legacy consumers can ignore missing new fields and rely on nullable fallback defaults.
+- Additive summary fields follow a compatibility window (`additive + nullable + default`); legacy consumers can ignore missing new fields and rely on nullable fallback defaults.
 - Skill trigger scoring defaults to lexical weighted-keyword strategy with `highest_priority` tie-break and low-confidence suppression enabled.
 - Skill trigger scoring supports optional `lexical_plus_embedding` enhancement via host embedding scorer extension, linear weighted fusion, and best-effort lexical fallback.
 - Skill trigger scoring lexical path supports deterministic `mixed_cjk_en` tokenization and dual semantic budget modes (`fixed|adaptive`), with default `adaptive` (`min_k=1/max_k=5/min_score_margin=0.08`) and fixed-mode top-k compatibility via `max_semantic_candidates`.
 - Runtime config exposes `skill.trigger_scoring.*` with `env > file > default` precedence and fail-fast validation.
-- Context Assembler CA1 runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
-- Run diagnostics include Context Assembler CA1 baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
-- Context Assembler CA2 supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
-- Run diagnostics include Context Assembler CA2 fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
-- Context Assembler CA2 `agentic` routing is available via host callback, and callback failure classes (`missing|timeout|error|invalid`) fallback to `rules` under `best_effort_rules`.
-- Run diagnostics include CA2 agentic routing additive fields: `stage2_router_mode`, `stage2_router_decision`, `stage2_router_reason`, `stage2_router_latency_ms`, `stage2_router_error`.
-- CA2 external retriever supports capability-hint SPI extension and template-pack resolution with deterministic precedence (`profile defaults -> explicit overrides`) and `explicit_only` compatibility mode.
-- Run diagnostics include CA2 hint/template additive fields: `stage2_template_profile`, `stage2_template_resolution_source`, `stage2_hint_applied`, `stage2_hint_mismatch_reason`.
-- Runtime diagnostics expose CA2 external provider-scoped trend API with fields `provider/window_start/window_end/p95_latency_ms/error_rate/hit_rate`.
-- CA2 external trend threshold-hit signals are observational only and do not trigger automatic strategy actions in v1.
-- Context Assembler CA3 memory pressure control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.
-- Context Assembler CA3 compaction supports `truncate|semantic` with default `truncate`; semantic path uses current model client and preserves `best_effort` fallback / `fail_fast` terminate semantics.
-- Context Assembler CA3 semantic compaction quality gate and template controls are enabled (rule-based score + runtime template + embedding adapter for `openai|gemini|anthropic`, cosine-only in v1).
-- Context Assembler CA3 reranker stage is available (default-off), supports provider-specific extension registration, and enforces provider/model threshold profile presence when enabled.
-- CA3 reranker threshold governance supports `enforce|dry_run` mode and deterministic `provider:model` rollout matching.
-- Run diagnostics include CA3 compaction fields: `ca3_compaction_mode`, `ca3_compaction_fallback`, `ca3_compaction_fallback_reason`, `ca3_compaction_quality_score`, `ca3_compaction_quality_reason`, `ca3_compaction_embedding_provider`, `ca3_compaction_embedding_similarity`, `ca3_compaction_embedding_contribution`, `ca3_compaction_embedding_status`, `ca3_compaction_embedding_fallback_reason`, `ca3_compaction_reranker_used`, `ca3_compaction_reranker_provider`, `ca3_compaction_reranker_model`, `ca3_compaction_reranker_threshold_source`, `ca3_compaction_reranker_threshold_hit`, `ca3_compaction_reranker_fallback_reason`, `ca3_compaction_reranker_profile_version`, `ca3_compaction_reranker_rollout_hit`, `ca3_compaction_reranker_threshold_drift`, `ca3_compaction_retained_evidence_count`.
-- Offline CA3 threshold tuning toolkit is available via `cmd/ca3-threshold-tuning` with stable schema version and minimal markdown report output.
+- Context Assembler baseline stage runs as pre-model hook on Run/Stream, enforces immutable prefix drift fail-fast, and writes append-only file journal.
+- Run diagnostics include baseline fields: `prefix_hash`, `assemble_latency_ms`, `assemble_status`, `guard_violation`.
+- Context Assembler supports staged routing (Stage1 -> conditional Stage2), configurable stage failure policy, and tail recap append semantics.
+- Run diagnostics include staged-routing fields: `assemble_stage_status`, `stage2_skip_reason`, `stage1_latency_ms`, `stage2_latency_ms`, `stage2_provider`, `recap_status`.
+- Context Assembler `agentic` routing is available via host callback, and callback failure classes (`missing|timeout|error|invalid`) fallback to `rules` under `best_effort_rules`.
+- Run diagnostics include agentic-routing additive fields: `stage2_router_mode`, `stage2_router_decision`, `stage2_router_reason`, `stage2_router_latency_ms`, `stage2_router_error`.
+- Stage2 external retriever supports capability-hint SPI extension and template-pack resolution with deterministic precedence (`profile defaults -> explicit overrides`) and `explicit_only` compatibility mode.
+- Run diagnostics include hint/template additive fields: `stage2_template_profile`, `stage2_template_resolution_source`, `stage2_hint_applied`, `stage2_hint_mismatch_reason`.
+- Runtime diagnostics expose Stage2 external provider-scoped trend API with fields `provider/window_start/window_end/p95_latency_ms/error_rate/hit_rate`.
+- Stage2 external trend threshold-hit signals are observational only and do not trigger automatic strategy actions in v1.
+- Context Assembler context-pressure memory control is enabled with tiered zones, dual thresholds, squash/prune/spill-swap behaviors, and Run/Stream semantic consistency checks.
+- Context Assembler context-pressure compaction supports `truncate|semantic` with default `truncate`; semantic path uses current model client and preserves `best_effort` fallback / `fail_fast` terminate semantics.
+- Context Assembler context-pressure semantic compaction quality gate and template controls are enabled (rule-based score + runtime template + embedding adapter for `openai|gemini|anthropic`, cosine-only in v1).
+- Context Assembler context-pressure reranker stage is available (default-off), supports provider-specific extension registration, and enforces provider/model threshold profile presence when enabled.
+- Context-pressure reranker threshold governance supports `enforce|dry_run` mode and deterministic `provider:model` rollout matching.
+- Run diagnostics include context-pressure compaction additive fields（完整字段矩阵见 `docs/runtime-config-diagnostics.md`）。
+- Offline context threshold-governance tuning toolkit is available via `cmd/context-threshold-governance-tuning` with stable schema version and minimal markdown report output.
 - Action Gate HITL H2 is enabled with default `require_confirm`, timeout-deny semantics, and Run/Stream equivalent deny/timeout behavior.
 - Clarification HITL H3 is enabled with native `await_user -> resumed -> canceled_by_user` lifecycle, structured `clarification_request` payload, and Run/Stream equivalent timeout-cancel behavior.
 - Action Gate H4 parameter-schema rules are enabled with operator + composite conditions (`AND/OR`), deterministic priority over keyword/tool decisions, and Run/Stream semantic equivalence.
@@ -71,7 +71,7 @@
 - Timeline trend output is grouped by `phase+status` and includes `count_total`, `failed_total`, `canceled_total`, `skipped_total`, `latency_avg_ms`, and `latency_p95_ms`.
 - Runtime concurrency config includes `concurrency.cancel_propagation_timeout` with fail-fast validation and `env > file > default` precedence.
 - Cancel-storm benchmark output includes both `p95-ns/op` and `goroutine-peak` signals for regression comparison.
-- CA3 semantic compaction benchmark output includes latency baseline signals (`ns/op` + `p95-ns/op`) for relative regression comparison, including reranker-threshold-governance-enabled path.
+- Context-pressure semantic compaction benchmark output includes latency baseline signals (`ns/op` + `p95-ns/op`) for relative regression comparison, including reranker-threshold-governance-enabled path.
 - R3 advanced tutorial examples (`05` to `08`) are present, runnable, and aligned with README/docs pattern navigation.
 - Quality gate includes repository hygiene checks (reject temp backup artifacts), and mainline contract test coverage is indexed for traceability.
 
@@ -88,7 +88,7 @@
 - Concurrency safety gate in CI is baseline and will be tightened with benchmark percentage thresholds in next phases.
 - Tool-call argument fragments are buffered internally and not exposed externally (complete-only contract).
 - Provider fallback is scoped to model-step boundary and does not support mid-stream provider switching.
-- Context Assembler CA2 Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
-- Context Assembler CA2 `agentic` 路由需要宿主注册 callback；未注册或 callback 失败时会按 `best_effort_rules` 回退到 `rules`。
+- Context Assembler Stage2 supports `file/http/rag/db/elasticsearch` via unified retriever SPI + HTTP adapter; provider-specific SDK adapters are deferred.
+- Context Assembler `agentic` 路由需要宿主注册 callback；未注册或 callback 失败时会按 `best_effort_rules` 回退到 `rules`。
 - Anthropic embedding path uses deterministic adapter fallback implementation in v1 baseline; quality may differ from official provider embeddings and should be tuned with corpus evidence.
 - Action Gate 参数规则当前为本地配置引擎（library-first）；未接入外部策略引擎（如 OPA），未提供 schema 自动推断。

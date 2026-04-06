@@ -7,8 +7,8 @@ go test ./runtime/config -run 'Test(SandboxRolloutPhaseTransitionValidation|Mana
 echo "[sandbox-rollout-governance-gate] composer run/stream rollout parity contracts"
 go test ./orchestration/composer -run 'TestComposerReadinessAdmissionSandbox(RolloutFrozenRunAndStreamEquivalent|CapacityThrottlePolicyParity|RolloutTimelineReasonParity)' -count=1
 
-echo "[sandbox-rollout-governance-gate] runtime recorder a52 additive contracts"
-go test ./observability/event -run 'TestRuntimeRecorder(A52ParserCompatibilityAdditiveNullableDefault|ParsesA52RolloutGovernanceFields)' -count=1
+echo "[sandbox-rollout-governance-gate] runtime recorder sandbox rollout additive contracts"
+go test ./observability/event -run 'TestRuntimeRecorder(SandboxRolloutParserCompatibilityAdditiveNullableDefault|ParsesSandboxRolloutGovernanceFields)' -count=1
 
-echo "[sandbox-rollout-governance-gate] diagnostics replay a52 fixture drift contracts"
-go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedA51A52Compatibility)' -count=1
+echo "[sandbox-rollout-governance-gate] diagnostics replay sandbox rollout fixture drift contracts"
+go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility)' -count=1

@@ -26,7 +26,7 @@ func TestContextJITOrganizationGateScriptParity(t *testing.T) {
 	requiredTokens := []string{
 		"context_provider_sdk_absent",
 		"Test(RuntimeContextJITConfig|ManagerRuntimeContextJIT)",
-		"Test(StoreRunA67CTX|RuntimeRecorderParsesA67ContextJITOrganizationAdditiveFields|RuntimeRecorderA67ContextJITParserCompatibilityAdditiveNullableDefault)",
+		"Test(StoreRunContextJIT|RuntimeRecorderParsesContextJITOrganizationAdditiveFields|RuntimeRecorderContextJITParserCompatibilityAdditiveNullableDefault)",
 		"Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification",
 		"check-react-plan-notebook-contract",
 		"check-realtime-protocol-contract",
@@ -117,20 +117,20 @@ func TestContextJITOrganizationRoadmapAndContractIndexClosureMarkers(t *testing.
 
 	roadmap := string(roadmapRaw)
 	index := string(indexRaw)
-	requiredRoadmap := "A67-CTX 上下文组织同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 A67-CTX 内增量吸收，不再新增平行 context 组织提案。"
+	requiredRoadmap := "Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。"
 	requiredIndexRows := []string{
-		"A67-CTX JIT Context Organization Replay Fixture (`context_reference_first.v1`/`context_isolate_handoff.v1`/`context_edit_gate.v1`/`context_relevance_swapback.v1`/`context_lifecycle_tiering.v1`)",
-		"A67-CTX JIT Context Organization Contract Gate",
-		"A67-CTX JIT Context Organization Contract Gate CI Required-Check 候选",
-		"A67-CTX JIT Context Organization Contract Gate Quality Path",
+		"Context JIT Organization Replay Fixture (`context_reference_first.v1`/`context_isolate_handoff.v1`/`context_edit_gate.v1`/`context_relevance_swapback.v1`/`context_lifecycle_tiering.v1`)",
+		"Context JIT Organization Contract Gate",
+		"Context JIT Organization Contract Gate CI Required-Check 候选",
+		"Context JIT Organization Contract Gate Quality Path",
 	}
 
 	if !strings.Contains(roadmap, requiredRoadmap) {
-		t.Fatalf("roadmap must include A67-CTX same-domain closure marker: %q", requiredRoadmap)
+		t.Fatalf("roadmap must include context-organization same-domain closure marker: %q", requiredRoadmap)
 	}
 	for _, row := range requiredIndexRows {
 		if !strings.Contains(index, row) {
-			t.Fatalf("mainline contract index missing A67-CTX row: %q", row)
+			t.Fatalf("mainline contract index missing context-jit row: %q", row)
 		}
 	}
 }

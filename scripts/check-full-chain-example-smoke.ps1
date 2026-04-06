@@ -19,11 +19,7 @@ $requiredMarkers = @(
     "CHECKPOINT delayed_dispatch_claimed=true",
     "CHECKPOINT recovery_replayed=true",
     "CHECKPOINT correlation ",
-    "CHECKPOINT run_stream_aligned=true",
-    "A20_RUN_TERMINAL",
-    "A20_STREAM_TERMINAL",
-    "A20_TERMINAL_SUMMARY=",
-    "A20_SUCCESS"
+    "CHECKPOINT run_stream_aligned=true"
 )
 
 foreach ($marker in $requiredMarkers) {
@@ -31,5 +27,20 @@ foreach ($marker in $requiredMarkers) {
         throw "[example-smoke] missing required marker: $marker"
     }
 }
+
+function Assert-Marker {
+    param(
+        [Parameter(Mandatory = $true)][string]$Marker
+    )
+    if ($output | Where-Object { $_ -like "*$Marker*" } | Select-Object -First 1) {
+        return
+    }
+    throw "[example-smoke] missing required marker: $Marker"
+}
+
+Assert-Marker -Marker "FULL_CHAIN_RUN_TERMINAL"
+Assert-Marker -Marker "FULL_CHAIN_STREAM_TERMINAL"
+Assert-Marker -Marker "FULL_CHAIN_TERMINAL_SUMMARY="
+Assert-Marker -Marker "FULL_CHAIN_SUCCESS"
 
 Write-Host "[example-smoke] passed"

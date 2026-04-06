@@ -82,19 +82,19 @@ Invoke-NativeStrict -Label "go test ./integration -run '^TestComposerContractMai
     go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 }
 
-Write-Host "[multi-agent-shared-contract-gate] a14 closure matrix suite"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestTailGovernanceA14' -count=1" -Command {
-    go test ./integration -run '^TestTailGovernanceA14' -count=1
+Write-Host "[multi-agent-shared-contract-gate] tail governance closure matrix suite"
+Invoke-NativeStrict -Label "go test ./integration -run '^TestTailGovernance' -count=1" -Command {
+    go test ./integration -run '^TestTailGovernance' -count=1
 }
 
 Write-Host "[multi-agent-shared-contract-gate] workflow graph composability suite"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1" -Command {
-    go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1
+Invoke-NativeStrict -Label "go test ./integration -run '^TestWorkflowGraphComposability' -count=1" -Command {
+    go test ./integration -run '^TestWorkflowGraphComposability' -count=1
 }
 
 Write-Host "[multi-agent-shared-contract-gate] collaboration primitives suite"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1" -Command {
-    go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1
+Invoke-NativeStrict -Label "go test ./integration -run '^TestCollaborationPrimitives' -count=1" -Command {
+    go test ./integration -run '^TestCollaborationPrimitives' -count=1
 }
 
 Write-Host "[multi-agent-shared-contract-gate] collaboration retry suite"
@@ -103,8 +103,8 @@ Invoke-NativeStrict -Label "go test ./integration -run '^TestCollaborationRetryC
 }
 
 Write-Host "[multi-agent-shared-contract-gate] recovery boundary suite"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestRecoveryBoundaryA17' -count=1" -Command {
-    go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
+Invoke-NativeStrict -Label "go test ./integration -run '^TestRecoveryBoundary' -count=1" -Command {
+    go test ./integration -run '^TestRecoveryBoundary' -count=1
 }
 
 Write-Host "[multi-agent-shared-contract-gate] unified query suite"

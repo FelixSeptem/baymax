@@ -5,7 +5,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - 统一 Run/Stream 主循环
 - 本地工具与 MCP 双传输（HTTP/STDIO）
 - 多模型 Provider 适配（OpenAI/Anthropic/Gemini）
-- Context Assembler（CA1-CA4）
+- Context Assembler（prefix baseline / stage2 routing / pressure compaction / production hardening）
 - A2A / Workflow / Teams / Scheduler / Composer 组合编排
 - 结构化可观测性（timeline + diagnostics + RuntimeRecorder 单写）
 
@@ -13,12 +13,14 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-04-04）：
-- 已归档并稳定：A4-A68（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+当前里程碑快照（2026-04-06）：
+- 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
+- 已完成待归档：
+  - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
 - 进行中：
-  - A63（Introduce Codebase Consolidation And Semantic Labeling Contract）进行中。
+  - `introduce-engineering-and-performance-optimization-contract-a64`（engineering and performance optimization）进行中。
 - 已归档：
-  - A67-CTX（Introduce JIT Context Organization And Reference-First Assembly Contract）已归档。
+  - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization and reference-first assembly）已归档并稳定。
 
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
@@ -60,17 +62,18 @@ runtime/config + runtime/diagnostics
 | --- | --- | --- |
 | Runner Core | `core/runner` | Run/Stream 状态机与终止语义 |
 | Core Types | `core/types` | 跨模块 DTO、错误分类、契约接口 |
-| Model Adapters | `model/openai` `model/anthropic` `model/gemini` | Provider 适配与能力探测 |
+| Model Adapters | `model/openai` `model/anthropic` `model/gemini` `model/providererror` `model/toolcontract` | Provider 适配、错误归类与工具结果输入合同 |
 | Local Tool Runtime | `tool/local` | 本地工具注册、schema 校验、调度执行 |
 | MCP Runtime | `mcp/http` `mcp/stdio` `mcp/profile` `mcp/retry` `mcp/diag` | 远程工具传输与可靠性治理 |
 | Context Assembler | `context/assembler` `context/journal` `context/guard` `context/provider` | 上下文装配、检索与守卫 |
-| Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` | 工作流、多代理协作、调度与组合入口 |
+| Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` `orchestration/mailbox` `orchestration/invoke` `orchestration/collab` `orchestration/snapshot` | 工作流、多代理协作、调度、调用桥接与快照合同 |
 | A2A Interop | `a2a` | Agent-to-Agent 互联契约（submit/status/result） |
 | Adapter Contracts | `adapter/manifest` `adapter/capability` `adapter/scaffold` | 外部适配契约、能力协商与脚手架治理 |
 | Runtime Config | `runtime/config` | 配置加载、校验、热更新、回滚 |
 | Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 可观测性、诊断存储与查询（当前以 `Recent* + Trends` 为主） |
 | Skill Loader | `skill/loader` | AGENTS/SKILL 发现、评分、bundle 组装 |
 | Runtime Security | `runtime/security` | 脱敏与安全治理基础能力 |
+| Integration Contracts | `integration` `integration/adapterconformance` `integration/adaptercontractreplay` `integration/sandboxconformance` | 主干合同回归、适配一致性与回放验证 |
 
 ## 组件说明索引
 
@@ -80,14 +83,19 @@ runtime/config + runtime/diagnostics
 - [Local Tool Runtime 说明](tool/local/README.md)
 - [MCP Runtime 说明](mcp/README.md)
 - [Model Adapters 说明](model/README.md)
+- [Model Provider Error 说明](model/providererror/README.md)
+- [Model Tool Contract 说明](model/toolcontract/README.md)
 - [Context Assembler 说明](context/README.md)
 - [Orchestration 说明](orchestration/README.md)
+- [Orchestration Snapshot 说明](orchestration/snapshot/README.md)
 - [Adapter Contracts 说明](adapter/README.md)
 - [Runtime Config 说明](runtime/config/README.md)
 - [Runtime Diagnostics 说明](runtime/diagnostics/README.md)
 - [Runtime Security 说明](runtime/security/README.md)
+- [Runtime Security Redaction 说明](runtime/security/redaction/README.md)
 - [Observability 说明](observability/README.md)
 - [Skill Loader 说明](skill/loader/README.md)
+- [Integration Contracts 说明](integration/README.md)
 
 ## 设计哲学
 
@@ -204,7 +212,7 @@ _ = err
 
 主线调用入口统一为 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge`。
 
-### 7) Mailbox Lifecycle Worker（A36）
+### 7) Mailbox Lifecycle Worker（Lifecycle Contract）
 
 - 默认值：
   - `mailbox.worker.enabled=false`
@@ -221,32 +229,35 @@ _ = err
 ### 8) 能力状态
 
 稳定能力清单（已归档）：
-- Runtime 主干：Run/Stream、工具闭环、Context Assembler（CA1-CA4）、Security（S1-S4）。
+- Runtime 主干：Run/Stream、工具闭环、Context Assembler（语义分层）、Security（S1-S4）。
 - 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
 - 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、全链路 smoke gate、文档一致性 gate。
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前主线能力状态（最新）：
-- A63 `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约。
-- A67-CTX `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
+- `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约（已完成待归档，OpenSpec `all_done`）。
+- `introduce-engineering-and-performance-optimization-contract-a64`：engineering and performance optimization 契约（进行中）。
+- `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
 
 近期已归档能力：
-- A51-A68 已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+- 近期主线提案已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
 
 ### 当前主线能力（现状）
 
 - 进行中：
-  - A63：codebase consolidation + semantic labeling
+  - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization
+- 已完成待归档：
+  - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
 - 已归档：
-  - A67-CTX：JIT context organization + reference-first assembly
-- 已归档稳定：A51-A68（包含 hooks/middleware、state/session snapshot、react plan notebook、realtime event protocol 等能力）
+  - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：JIT context organization + reference-first assembly
+- 已归档稳定：主线多代理能力（包含 hooks/middleware、state/session snapshot、react plan notebook、realtime event protocol 等能力）
 
 当前主线建议优先关注：
 - 运行时配置与诊断字段：`docs/runtime-config-diagnostics.md`
 - 合同测试与门禁映射：`docs/mainline-contract-test-index.md`
 - 提案状态与范围边界：`docs/development-roadmap.md`
 
-A68 专项门禁：
+Realtime Protocol 专项门禁：
 
 ```bash
 bash scripts/check-realtime-protocol-contract.sh
@@ -256,7 +267,7 @@ bash scripts/check-realtime-protocol-contract.sh
 pwsh -File scripts/check-realtime-protocol-contract.ps1
 ```
 
-A67-CTX 专项门禁：
+JIT Context Organization 专项门禁：
 
 ```bash
 bash scripts/check-context-jit-organization-contract.sh
@@ -311,7 +322,7 @@ pwsh -File scripts/check-state-snapshot-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
 ```
 
-PowerShell 门禁治理语义（A37）：
+PowerShell 门禁治理语义（Strict Native Helper）：
 - required native command 默认 strict fail-fast（非零即阻断）。
 - 唯一非阻断例外为 `govulncheck` 在 `BAYMAX_SECURITY_SCAN_MODE=warn` 时的告警放行。
 
@@ -339,6 +350,7 @@ PowerShell 门禁治理语义（A37）：
 - sandbox adapter conformance 校验：`scripts/check-sandbox-adapter-conformance-contract.sh` / `scripts/check-sandbox-adapter-conformance-contract.ps1`
 - 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
+- Runtime Harness 架构总览：`docs/runtime-harness-architecture.md`
 - 模块边界约束：`docs/runtime-module-boundaries.md`
 - 核心模块语义映射：`docs/core-module-semantic-alignment.md`
 - 主干契约测试索引：`docs/mainline-contract-test-index.md`

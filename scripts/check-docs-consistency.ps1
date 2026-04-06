@@ -33,6 +33,49 @@ if ($boundaryDoc -notmatch "依赖方向") {
     Write-Error "docs/runtime-module-boundaries.md must include dependency direction section."
 }
 
+Invoke-NativeStrict -Label "pwsh -File scripts/check-semantic-labeling-governance.ps1" -Command {
+    pwsh -File scripts/check-semantic-labeling-governance.ps1
+}
+
+$offlineCacheIssues = New-Object 'System.Collections.Generic.List[string]'
+$offlineTracked = @(Invoke-NativeCaptureStrict -Label "git ls-files -- examples/adapters/_a23-offline-work" -Command {
+        git ls-files -- examples/adapters/_a23-offline-work
+    })
+foreach ($path in $offlineTracked) {
+    $normalized = ([string]$path).Trim()
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        continue
+    }
+    $normalized = $normalized.Replace('\', '/')
+    if ($normalized -in @(
+            "examples/adapters/_a23-offline-work/.gitkeep",
+            "examples/adapters/_a23-offline-work/README.md"
+        )) {
+        continue
+    }
+    $offlineCacheIssues.Add($normalized) | Out-Null
+}
+if ($offlineCacheIssues.Count -gt 0) {
+    Write-Error ("[offline-scaffold-cache] tracked offline cache artifacts must be removed: " + ($offlineCacheIssues -join ", "))
+}
+
+$repoHygieneIssues = New-Object 'System.Collections.Generic.List[string]'
+$untrackedPaths = @(Invoke-NativeCaptureStrict -Label "git ls-files --others --exclude-standard" -Command {
+        git ls-files --others --exclude-standard
+    })
+foreach ($path in $untrackedPaths) {
+    $normalized = ([string]$path).Trim()
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        continue
+    }
+    if ($normalized -match '(\.go\.[0-9]+|\.tmp|\.bak|~)$') {
+        $repoHygieneIssues.Add($normalized) | Out-Null
+    }
+}
+if ($repoHygieneIssues.Count -gt 0) {
+    Write-Error ("[repo-hygiene] temporary artifacts must be removed: " + ($repoHygieneIssues -join ", "))
+}
+
 $pre1Issues = @()
 $roadmapDoc = Get-Content -Raw docs/development-roadmap.md
 $versioningDoc = Get-Content -Raw docs/versioning-and-compatibility.md
@@ -193,7 +236,7 @@ if ($adapterIssues.Count -gt 0) {
 }
 
 Invoke-NativeStrict -Label "go test ./tool/contributioncheck (docs consistency suite)" -Command {
-    go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection)$' -count=1
+    go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts)$' -count=1
 }
 
 Write-Host "Docs consistency check passed."

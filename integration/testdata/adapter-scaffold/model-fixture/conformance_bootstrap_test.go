@@ -11,7 +11,7 @@ func TestConformanceBootstrapAlignment(t *testing.T) {
 		t.Fatalf("minimum matrix invalid: %v", err)
 	}
 
-	// A22 mapping hint for this scaffold category.
+	// Adapter conformance mapping hint for this scaffold category.
 	const expectedScenarioID = "model-run-stream-downgrade"
 	found := false
 	for _, row := range adapterconformance.MinimumMatrix {
@@ -25,7 +25,7 @@ func TestConformanceBootstrapAlignment(t *testing.T) {
 		break
 	}
 	if !found {
-		t.Fatalf("missing A22 scenario mapping: %s", expectedScenarioID)
+		t.Fatalf("missing adapter conformance scenario mapping: %s", expectedScenarioID)
 	}
 
 	if err := adapterconformance.ValidateManifestProfileAlignmentForScaffold(".", expectedScenarioID); err != nil {

@@ -33,10 +33,10 @@ go run ./examples/09-multi-agent-full-chain-reference -mode both
 - `CHECKPOINT recovery_replayed=true`
 - `CHECKPOINT correlation ...`
 - `CHECKPOINT run_stream_aligned=true`（`-mode both`）
-- `A20_RUN_TERMINAL ...`
-- `A20_STREAM_TERMINAL ...`
-- `A20_TERMINAL_SUMMARY=...`
-- `A20_SUCCESS`
+- `FULL_CHAIN_RUN_TERMINAL ...`
+- `FULL_CHAIN_STREAM_TERMINAL ...`
+- `FULL_CHAIN_TERMINAL_SUMMARY=...`
+- `FULL_CHAIN_SUCCESS`
 
 ## Checkpoint Meanings
 

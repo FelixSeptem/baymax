@@ -26,8 +26,8 @@ func TestRealtimeProtocolGateScriptParity(t *testing.T) {
 	requiredTokens := []string{
 		"realtime_control_plane_absent",
 		"runtime\\.realtime\\.[a-zA-Z0-9_.-]*(control_plane|controlplane|gateway|connection_router|session_router|managed_connection|hosted_realtime|realtime_service)",
-		"Test(StoreRunA68|RuntimeRecorderParsesA68RealtimeAdditiveFields|RuntimeRecorderA68ParserCompatibilityAdditiveNullableDefault)",
-		"A68 realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在 A68 内以增量任务吸收，不再新增平行 realtime 提案。",
+		"Test(StoreRunRealtimeProtocol|RuntimeRecorderParsesRealtimeProtocolAdditiveFields|RuntimeRecorderRealtimeProtocolParserCompatibilityAdditiveNullableDefault)",
+		"Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -37,10 +37,10 @@ func TestRealtimeProtocolGateScriptParity(t *testing.T) {
 			t.Fatalf("powershell realtime protocol gate missing token %q", token)
 		}
 	}
-	if !strings.Contains(shell, "assert_no_parallel_a68_changes") {
+	if !strings.Contains(shell, "assert_no_parallel_realtime_protocol_changes") {
 		t.Fatalf("shell realtime protocol gate missing assertion helper for parallel proposal closure")
 	}
-	if !strings.Contains(ps, "Assert-NoParallelA68Changes") {
+	if !strings.Contains(ps, "Assert-NoParallelRealtimeProtocolChanges") {
 		t.Fatalf("powershell realtime protocol gate missing assertion helper for parallel proposal closure")
 	}
 	if !strings.Contains(shell, "set -euo pipefail") {
@@ -120,20 +120,20 @@ func TestRealtimeProtocolRoadmapAndContractIndexClosureMarkers(t *testing.T) {
 
 	roadmap := string(roadmapRaw)
 	index := string(indexRaw)
-	requiredRoadmap := "A68 realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在 A68 内以增量任务吸收，不再新增平行 realtime 提案。"
+	requiredRoadmap := "Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。"
 	requiredIndexRows := []string{
-		"A68 Realtime Protocol Replay Fixture (`realtime_event_protocol.v1`)",
-		"A68 Realtime Protocol Contract Gate",
-		"A68 Realtime Protocol Contract Gate CI Required-Check 候选",
-		"A68 Realtime Protocol Contract Gate Quality Path",
+		"Realtime Protocol Replay Fixture (`realtime_event_protocol.v1`)",
+		"Realtime Protocol Contract Gate",
+		"Realtime Protocol Contract Gate CI Required-Check 候选",
+		"Realtime Protocol Contract Gate Quality Path",
 	}
 
 	if !strings.Contains(roadmap, requiredRoadmap) {
-		t.Fatalf("roadmap must include A68 same-domain closure marker: %q", requiredRoadmap)
+		t.Fatalf("roadmap must include realtime same-domain closure marker: %q", requiredRoadmap)
 	}
 	for _, row := range requiredIndexRows {
 		if !strings.Contains(index, row) {
-			t.Fatalf("mainline contract index missing A68 row: %q", row)
+			t.Fatalf("mainline contract index missing realtime row: %q", row)
 		}
 	}
 }

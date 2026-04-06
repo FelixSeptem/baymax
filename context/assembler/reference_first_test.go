@@ -122,7 +122,7 @@ func TestResolveSelectedStage2ReferencesMissingPolicy(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2ReferenceFirstInjectsRefsBeforeBody(t *testing.T) {
+func TestAssemblerContextStage2ReferenceFirstInjectsRefsBeforeBody(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -153,7 +153,7 @@ func TestAssemblerCA2ReferenceFirstInjectsRefsBeforeBody(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-ref-first-1",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{

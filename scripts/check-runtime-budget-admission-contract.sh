@@ -42,7 +42,7 @@ assert_absent_regex() {
 
 assert_no_parallel_budget_admission_changes() {
   local assertion="$1"
-  local canonical_change="introduce-runtime-cost-latency-budget-and-admission-contract-a60"
+  local canonical_change_pattern="runtime-cost-latency-budget-and-admission-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +51,7 @@ assert_no_parallel_budget_admission_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${lower}" == *budget* && "${lower}" == *admission* && "${name}" != "${canonical_change}" ]]; then
+    if [[ "${lower}" == *budget* && "${lower}" == *admission* && "${lower}" != *"${canonical_change_pattern}"* ]]; then
       violations+=("${name}")
     fi
   done
@@ -63,16 +63,17 @@ assert_no_parallel_budget_admission_changes() {
   fi
 }
 
-resolve_budget_a60_change_dir() {
-  local active="openspec/changes/introduce-runtime-cost-latency-budget-and-admission-contract-a60"
-  if [[ -d "${active}" ]]; then
-    echo "${active}"
-    return 0
-  fi
-
+resolve_budget_admission_change_dir() {
   local candidate
   shopt -s nullglob
-  for candidate in openspec/changes/archive/*introduce-runtime-cost-latency-budget-and-admission-contract-a60; do
+  for candidate in openspec/changes/*runtime-cost-latency-budget-and-admission-contract*; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  for candidate in openspec/changes/archive/*runtime-cost-latency-budget-and-admission-contract*; do
     if [[ -d "${candidate}" ]]; then
       echo "${candidate}"
       shopt -u nullglob
@@ -81,7 +82,7 @@ resolve_budget_a60_change_dir() {
   done
   shopt -u nullglob
 
-  echo "[runtime-budget-admission-gate] unable to locate A60 change directory in active or archive paths" >&2
+  echo "[runtime-budget-admission-gate] unable to locate runtime budget admission change directory in active or archive paths" >&2
   exit 1
 }
 
@@ -92,16 +93,16 @@ run_step() {
   "$@"
 }
 
-BUDGET_A60_CHANGE_DIR="$(resolve_budget_a60_change_dir)"
+BUDGET_ADMISSION_CHANGE_DIR="$(resolve_budget_admission_change_dir)"
 
 run_step "assertion budget_control_plane_absent: contract markers + no parallel control-plane config key" \
   assert_contains_literal "budget_control_plane_absent" \
-  "${BUDGET_A60_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
+  "${BUDGET_ADMISSION_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
   "MUST NOT require hosted control-plane services"
 
 run_step "assertion budget_control_plane_absent: gate spec marker" \
   assert_contains_literal "budget_control_plane_absent" \
-  "${BUDGET_A60_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${BUDGET_ADMISSION_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "budget_control_plane_absent"
 
 run_step "assertion budget_control_plane_absent: active change set closure" \
@@ -113,18 +114,18 @@ run_step "assertion budget_control_plane_absent: reject runtime admission contro
 
 run_step "assertion budget_field_reuse_required: canonical field reuse marker" \
   assert_contains_literal "budget_field_reuse_required" \
-  "${BUDGET_A60_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
+  "${BUDGET_ADMISSION_CHANGE_DIR}/specs/runtime-cost-latency-budget-and-admission-contract/spec.md" \
   "policy_decision_path"
 
 run_step "assertion budget_field_reuse_required: gate spec marker" \
   assert_contains_literal "budget_field_reuse_required" \
-  "${BUDGET_A60_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${BUDGET_ADMISSION_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "budget_field_reuse_required"
 
 run_step "assertion budget_field_reuse_required: roadmap closure marker" \
   assert_contains_literal "budget_field_reuse_required" \
   "docs/development-roadmap.md" \
-  "A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。"
+  "Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 
 run_step "assertion budget_field_reuse_required: reject duplicated upstream field aliases" \
   assert_absent_regex "budget_field_reuse_required" \

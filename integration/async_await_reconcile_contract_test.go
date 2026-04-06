@@ -19,7 +19,7 @@ func TestAsyncAwaitReconcileContractCallbackLossFallbackConvergence(t *testing.T
 	taskID := "a32-fallback-task"
 	claimed := seedAwaitingWithRemote(t, s, taskID, "run-a32-fallback", "remote-a32-fallback")
 
-	poller := fakeA32ReconcilePollClient{
+	poller := fakeReconcilePollClient{
 		statusFn: func(_ context.Context, remoteTaskID string) (a2a.TaskRecord, error) {
 			return a2a.TaskRecord{TaskID: remoteTaskID, Status: a2a.StatusSucceeded}, nil
 		},
@@ -58,21 +58,21 @@ func TestAsyncAwaitReconcileContractCallbackLossFallbackConvergence(t *testing.T
 }
 
 func TestAsyncAwaitReconcileContractRunStreamSemanticEquivalence(t *testing.T) {
-	runSummary := executeA32ReconcileFlow(t, scheduler.NewMemoryStore(), "a32-run-equivalent")
-	streamSummary := executeA32ReconcileFlow(t, scheduler.NewMemoryStore(), "a32-stream-equivalent")
+	runSummary := executeReconcileFlow(t, scheduler.NewMemoryStore(), "a32-run-equivalent")
+	streamSummary := executeReconcileFlow(t, scheduler.NewMemoryStore(), "a32-stream-equivalent")
 	if runSummary != streamSummary {
 		t.Fatalf("run/stream reconcile summary mismatch: run=%#v stream=%#v", runSummary, streamSummary)
 	}
 }
 
 func TestAsyncAwaitReconcileContractMemoryFileParity(t *testing.T) {
-	memSummary := executeA32ReconcileFlow(t, scheduler.NewMemoryStore(), "a32-memory")
+	memSummary := executeReconcileFlow(t, scheduler.NewMemoryStore(), "a32-memory")
 
 	fileStore, err := scheduler.NewFileStore(filepath.Join(t.TempDir(), "scheduler-a32-state.json"))
 	if err != nil {
 		t.Fatalf("new file store failed: %v", err)
 	}
-	fileSummary := executeA32ReconcileFlow(t, fileStore, "a32-file")
+	fileSummary := executeReconcileFlow(t, fileStore, "a32-file")
 	if memSummary != fileSummary {
 		t.Fatalf("memory/file reconcile summary mismatch: memory=%#v file=%#v", memSummary, fileSummary)
 	}
@@ -158,7 +158,7 @@ func TestAsyncAwaitReconcileContractReplayIdempotencyForMixedCallbackPollEvents(
 	}
 }
 
-type a32ReconcileSummary struct {
+type reconcileSummary struct {
 	State            scheduler.TaskState
 	ResolutionSource string
 	PollTotal        int
@@ -166,7 +166,7 @@ type a32ReconcileSummary struct {
 	ErrorTotal       int
 }
 
-func executeA32ReconcileFlow(t *testing.T, store scheduler.QueueStore, suffix string) a32ReconcileSummary {
+func executeReconcileFlow(t *testing.T, store scheduler.QueueStore, suffix string) reconcileSummary {
 	t.Helper()
 	s, err := newAsyncAwaitReconcileScheduler(t, store)
 	if err != nil {
@@ -175,7 +175,7 @@ func executeA32ReconcileFlow(t *testing.T, store scheduler.QueueStore, suffix st
 	taskID := "a32-flow-" + suffix
 	seedAwaitingWithRemote(t, s, taskID, "run-"+suffix, "remote-"+suffix)
 
-	poller := fakeA32ReconcilePollClient{
+	poller := fakeReconcilePollClient{
 		statusFn: func(_ context.Context, remoteTaskID string) (a2a.TaskRecord, error) {
 			return a2a.TaskRecord{TaskID: remoteTaskID, Status: a2a.StatusSucceeded}, nil
 		},
@@ -191,7 +191,7 @@ func executeA32ReconcileFlow(t *testing.T, store scheduler.QueueStore, suffix st
 	if err != nil || !found {
 		t.Fatalf("get reconciled task failed: found=%v err=%v", found, err)
 	}
-	return a32ReconcileSummary{
+	return reconcileSummary{
 		State:            record.State,
 		ResolutionSource: record.ResolutionSource,
 		PollTotal:        cycle.PollTotal,
@@ -246,19 +246,19 @@ func seedAwaitingWithRemote(
 	return claimed
 }
 
-type fakeA32ReconcilePollClient struct {
+type fakeReconcilePollClient struct {
 	statusFn func(context.Context, string) (a2a.TaskRecord, error)
 	resultFn func(context.Context, string) (a2a.TaskRecord, error)
 }
 
-func (c fakeA32ReconcilePollClient) Status(ctx context.Context, taskID string) (a2a.TaskRecord, error) {
+func (c fakeReconcilePollClient) Status(ctx context.Context, taskID string) (a2a.TaskRecord, error) {
 	if c.statusFn != nil {
 		return c.statusFn(ctx, taskID)
 	}
 	return a2a.TaskRecord{}, nil
 }
 
-func (c fakeA32ReconcilePollClient) Result(ctx context.Context, taskID string) (a2a.TaskRecord, error) {
+func (c fakeReconcilePollClient) Result(ctx context.Context, taskID string) (a2a.TaskRecord, error) {
 	if c.resultFn != nil {
 		return c.resultFn(ctx, taskID)
 	}

@@ -11,6 +11,26 @@ import (
 	"github.com/FelixSeptem/baymax/tool/diagnosticsreplay"
 )
 
+var semanticFixtureLegacyAliases = map[string]string{
+	"context_reference_first_success_input.json":    "a67_ctx_reference_first_success_input.json",
+	"context_isolate_handoff_success_input.json":    "a67_ctx_isolate_handoff_success_input.json",
+	"context_edit_gate_success_input.json":          "a67_ctx_edit_gate_success_input.json",
+	"context_relevance_swapback_success_input.json": "a67_ctx_swapback_success_input.json",
+	"context_lifecycle_tiering_success_input.json":  "a67_ctx_lifecycle_tiering_success_input.json",
+	"context_reference_resolution_drift_input.json": "a67_ctx_reference_resolution_drift_input.json",
+	"context_isolate_handoff_drift_input.json":      "a67_ctx_isolate_handoff_drift_input.json",
+	"context_edit_gate_threshold_drift_input.json":  "a67_ctx_edit_gate_threshold_drift_input.json",
+	"context_relevance_swapback_drift_input.json":   "a67_ctx_swapback_relevance_drift_input.json",
+	"context_lifecycle_tiering_drift_input.json":    "a67_ctx_lifecycle_tiering_drift_input.json",
+	"context_recap_semantic_drift_input.json":       "a67_ctx_recap_semantic_drift_input.json",
+	"realtime_event_protocol_success_input.json":    "a68_realtime_event_protocol_success_input.json",
+	"realtime_event_order_drift_input.json":         "a68_realtime_event_order_drift_input.json",
+	"realtime_interrupt_semantic_drift_input.json":  "a68_realtime_interrupt_semantic_drift_input.json",
+	"realtime_resume_semantic_drift_input.json":     "a68_realtime_resume_semantic_drift_input.json",
+	"realtime_idempotency_drift_input.json":         "a68_realtime_idempotency_drift_input.json",
+	"realtime_sequence_gap_drift_input.json":        "a68_realtime_sequence_gap_drift_input.json",
+}
+
 func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -22,25 +42,25 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			name:          "a49",
 			versionFolder: "a49",
 			fixture:       "success.json",
-			expected:      diagnosticsreplay.ArbitrationFixtureVersionA49V1,
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionExplainabilityV1,
 		},
 		{
 			name:          "a50",
 			versionFolder: "a50",
 			fixture:       "success.json",
-			expected:      diagnosticsreplay.ArbitrationFixtureVersionA50V1,
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionVersionGovernanceV1,
 		},
 		{
 			name:          "a51",
 			versionFolder: "tool",
 			fixture:       "a51_sandbox_success_input.json",
-			expected:      diagnosticsreplay.ArbitrationFixtureVersionA51V1,
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionSandboxExecutionV1,
 		},
 		{
 			name:          "a57-sandbox-egress",
 			versionFolder: "tool",
 			fixture:       "a57_sandbox_egress_success_input.json",
-			expected:      diagnosticsreplay.ArbitrationFixtureVersionA57V1,
+			expected:      diagnosticsreplay.ArbitrationFixtureVersionSandboxEgressV1,
 		},
 		{
 			name:          "a58-policy-stack",
@@ -109,39 +129,39 @@ func TestPrimaryReasonArbitrationReplayContractFixtureSuite(t *testing.T) {
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionSkillMappingV1,
 		},
 		{
-			name:          "a68-realtime-protocol",
+			name:          "realtime-protocol",
 			versionFolder: "tool",
-			fixture:       "a68_realtime_event_protocol_success_input.json",
+			fixture:       "realtime_event_protocol_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionRealtimeProtocolV1,
 		},
 		{
-			name:          "a67-ctx-reference-first",
+			name:          "context-reference-first",
 			versionFolder: "tool",
-			fixture:       "a67_ctx_reference_first_success_input.json",
+			fixture:       "context_reference_first_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextRefFirstV1,
 		},
 		{
-			name:          "a67-ctx-isolate-handoff",
+			name:          "context-isolate-handoff",
 			versionFolder: "tool",
-			fixture:       "a67_ctx_isolate_handoff_success_input.json",
+			fixture:       "context_isolate_handoff_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextHandoffV1,
 		},
 		{
-			name:          "a67-ctx-edit-gate",
+			name:          "context-edit-gate",
 			versionFolder: "tool",
-			fixture:       "a67_ctx_edit_gate_success_input.json",
+			fixture:       "context_edit_gate_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextEditGateV1,
 		},
 		{
-			name:          "a67-ctx-swapback",
+			name:          "context-swapback",
 			versionFolder: "tool",
-			fixture:       "a67_ctx_swapback_success_input.json",
+			fixture:       "context_relevance_swapback_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextSwapBackV1,
 		},
 		{
-			name:          "a67-ctx-lifecycle-tiering",
+			name:          "context-lifecycle-tiering",
 			versionFolder: "tool",
-			fixture:       "a67_ctx_lifecycle_tiering_success_input.json",
+			fixture:       "context_lifecycle_tiering_success_input.json",
 			expected:      diagnosticsreplay.ArbitrationFixtureVersionContextTieringV1,
 		},
 	}
@@ -463,79 +483,79 @@ func TestPrimaryReasonArbitrationReplayContractDriftGuardFailFast(t *testing.T) 
 			messageHas: "skill preprocess/mapping drift",
 		},
 		{
-			name:       "a68-realtime-event-order-drift",
+			name:       "realtime-event-order-drift",
 			versionDir: "tool",
-			fixture:    "a68_realtime_event_order_drift_input.json",
+			fixture:    "realtime_event_order_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeEventOrderDrift,
 			messageHas: "realtime event order drift",
 		},
 		{
-			name:       "a68-realtime-interrupt-semantic-drift",
+			name:       "realtime-interrupt-semantic-drift",
 			versionDir: "tool",
-			fixture:    "a68_realtime_interrupt_semantic_drift_input.json",
+			fixture:    "realtime_interrupt_semantic_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeInterruptSemanticDrift,
 			messageHas: "realtime interrupt semantic drift",
 		},
 		{
-			name:       "a68-realtime-resume-semantic-drift",
+			name:       "realtime-resume-semantic-drift",
 			versionDir: "tool",
-			fixture:    "a68_realtime_resume_semantic_drift_input.json",
+			fixture:    "realtime_resume_semantic_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeResumeSemanticDrift,
 			messageHas: "realtime resume semantic drift",
 		},
 		{
-			name:       "a68-realtime-idempotency-drift",
+			name:       "realtime-idempotency-drift",
 			versionDir: "tool",
-			fixture:    "a68_realtime_idempotency_drift_input.json",
+			fixture:    "realtime_idempotency_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeIdempotencyDrift,
 			messageHas: "realtime idempotency drift",
 		},
 		{
-			name:       "a68-realtime-sequence-gap-drift",
+			name:       "realtime-sequence-gap-drift",
 			versionDir: "tool",
-			fixture:    "a68_realtime_sequence_gap_drift_input.json",
+			fixture:    "realtime_sequence_gap_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRealtimeSequenceGapDrift,
 			messageHas: "realtime sequence gap drift",
 		},
 		{
-			name:       "a67-ctx-reference-resolution-drift",
+			name:       "context-reference-resolution-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_reference_resolution_drift_input.json",
+			fixture:    "context_reference_resolution_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeReferenceResolutionDrift,
 			messageHas: "reference resolution drift",
 		},
 		{
-			name:       "a67-ctx-isolate-handoff-drift",
+			name:       "context-isolate-handoff-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_isolate_handoff_drift_input.json",
+			fixture:    "context_isolate_handoff_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeIsolateHandoffDrift,
 			messageHas: "isolate handoff drift",
 		},
 		{
-			name:       "a67-ctx-edit-gate-threshold-drift",
+			name:       "context-edit-gate-threshold-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_edit_gate_threshold_drift_input.json",
+			fixture:    "context_edit_gate_threshold_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeEditGateThresholdDrift,
 			messageHas: "edit gate threshold drift",
 		},
 		{
-			name:       "a67-ctx-swapback-relevance-drift",
+			name:       "context-swapback-relevance-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_swapback_relevance_drift_input.json",
+			fixture:    "context_relevance_swapback_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeSwapbackRelevanceDrift,
 			messageHas: "swapback relevance drift",
 		},
 		{
-			name:       "a67-ctx-lifecycle-tiering-drift",
+			name:       "context-lifecycle-tiering-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_lifecycle_tiering_drift_input.json",
+			fixture:    "context_lifecycle_tiering_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeLifecycleTieringDrift,
 			messageHas: "lifecycle tiering drift",
 		},
 		{
-			name:       "a67-ctx-recap-semantic-drift",
+			name:       "context-recap-semantic-drift",
 			versionDir: "tool",
-			fixture:    "a67_ctx_recap_semantic_drift_input.json",
+			fixture:    "context_recap_semantic_drift_input.json",
 			wantCode:   diagnosticsreplay.ReasonCodeRecapSemanticDrift,
 			messageHas: "recap semantic drift",
 		},
@@ -569,8 +589,8 @@ func TestReplayContractSandboxEgressAllowlistFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
 	}
-	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionA57V1 {
-		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionA57V1)
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionSandboxEgressV1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionSandboxEgressV1)
 	}
 	if len(out.Cases) == 0 {
 		t.Fatal("normalized output cases should not be empty")
@@ -633,7 +653,7 @@ func TestReplayContractPolicyPrecedenceFixture(t *testing.T) {
 	}
 }
 
-func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *testing.T) {
+func TestReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a50_arbitration_success_input.json",
 		"a56_react_success_input.json",
@@ -649,12 +669,12 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
-		"a68_realtime_event_protocol_success_input.json",
-		"a67_ctx_reference_first_success_input.json",
-		"a67_ctx_isolate_handoff_success_input.json",
-		"a67_ctx_edit_gate_success_input.json",
-		"a67_ctx_swapback_success_input.json",
-		"a67_ctx_lifecycle_tiering_success_input.json",
+		"realtime_event_protocol_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_isolate_handoff_success_input.json",
+		"context_edit_gate_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -668,7 +688,7 @@ func TestReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility(t *tes
 	}
 }
 
-func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
+func TestReplayContractTracingEvalFixtureSuite(t *testing.T) {
 	fixtures := []string{
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
@@ -680,13 +700,13 @@ func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
 			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
 				mustReadArbitrationReplayFixture(t, "tool", fixture),
 			); err != nil {
-				t.Fatalf("A61 fixture %q should pass: %v", fixture, err)
+				t.Fatalf("tracing/eval fixture %q should pass: %v", fixture, err)
 			}
 		})
 	}
 }
 
-func TestReplayContractA61OtelEvalDriftGuardFailFast(t *testing.T) {
+func TestReplayContractTracingEvalDriftGuardFailFast(t *testing.T) {
 	tests := []struct {
 		fixture  string
 		wantCode string
@@ -732,7 +752,7 @@ func TestReplayContractA61OtelEvalDriftGuardFailFast(t *testing.T) {
 	}
 }
 
-func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
+func TestReplayContractHooksMiddlewareFixtureSuite(t *testing.T) {
 	fixtures := []string{
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
@@ -744,13 +764,13 @@ func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
 			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
 				mustReadArbitrationReplayFixture(t, "tool", fixture),
 			); err != nil {
-				t.Fatalf("A65 fixture %q should pass: %v", fixture, err)
+				t.Fatalf("hooks/middleware fixture %q should pass: %v", fixture, err)
 			}
 		})
 	}
 }
 
-func TestReplayContractA65HooksMiddlewareDriftGuardFailFast(t *testing.T) {
+func TestReplayContractHooksMiddlewareDriftGuardFailFast(t *testing.T) {
 	tests := []struct {
 		fixture  string
 		wantCode string
@@ -791,26 +811,44 @@ func TestReplayContractA65HooksMiddlewareDriftGuardFailFast(t *testing.T) {
 func mustReadArbitrationReplayFixture(t *testing.T, versionDir, name string) []byte {
 	t.Helper()
 	root := repoRootForArbitrationReplay(t)
-	path := ""
 	if strings.EqualFold(strings.TrimSpace(versionDir), "tool") {
-		path = filepath.Join(
+		path := filepath.Join(
 			root,
 			"tool",
 			"diagnosticsreplay",
 			"testdata",
 			name,
 		)
-	} else {
-		path = filepath.Join(
-			root,
-			"integration",
-			"testdata",
-			"diagnostics-replay",
-			versionDir,
-			"v1",
-			name,
-		)
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			return raw
+		}
+		if alias, ok := semanticFixtureLegacyAliases[name]; ok {
+			aliasPath := filepath.Join(
+				root,
+				"tool",
+				"diagnosticsreplay",
+				"testdata",
+				alias,
+			)
+			raw, aliasErr := os.ReadFile(aliasPath)
+			if aliasErr == nil {
+				return raw
+			}
+			t.Fatalf("read fixture %s via alias %s: %v", path, aliasPath, aliasErr)
+		}
+		t.Fatalf("read fixture %s: %v", path, err)
 	}
+
+	path := filepath.Join(
+		root,
+		"integration",
+		"testdata",
+		"diagnostics-replay",
+		versionDir,
+		"v1",
+		name,
+	)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)

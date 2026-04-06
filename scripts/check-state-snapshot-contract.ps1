@@ -82,18 +82,18 @@ function Assert-PatternAbsentAcrossRepo {
     }
 }
 
-function Assert-NoParallelA66SnapshotChanges {
+function Assert-NoParallelStateSnapshotChanges {
     param(
         [Parameter(Mandatory = $true)][string]$Assertion
     )
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
-    $canonical = "introduce-unified-state-and-session-snapshot-contract-a66"
+    $canonicalHint = "introduce-unified-state-and-session-snapshot-contract"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if ($dir.Name -ne $canonical -and $lower.Contains("snapshot") -and ($lower.Contains("state") -or $lower.Contains("session"))) {
+        if (-not $lower.Contains($canonicalHint) -and $lower.Contains("snapshot") -and ($lower.Contains("state") -or $lower.Contains("session"))) {
             $violations += $dir.Name
         }
     }
@@ -102,24 +102,28 @@ function Assert-NoParallelA66SnapshotChanges {
     }
 }
 
-function Resolve-A66ChangeDir {
-    $active = "openspec/changes/introduce-unified-state-and-session-snapshot-contract-a66"
-    $activeFull = Join-Path $repoRoot $active
-    if (Test-Path -LiteralPath $activeFull -PathType Container) {
-        return $active
+function Resolve-StateSnapshotChangeDir {
+    $activeRoot = Join-Path $repoRoot "openspec/changes"
+    if (Test-Path -LiteralPath $activeRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $activeRoot -Directory |
+            Where-Object { $_.Name -ne "archive" -and $_.Name -like "*introduce-unified-state-and-session-snapshot-contract*" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/$($candidate.Name)"
+        }
     }
 
     $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
     if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
         $candidate = Get-ChildItem -Path $archiveRoot -Directory |
-            Where-Object { $_.Name -like "*introduce-unified-state-and-session-snapshot-contract-a66" } |
+            Where-Object { $_.Name -like "*introduce-unified-state-and-session-snapshot-contract*" } |
             Select-Object -First 1
         if ($candidate) {
             return "openspec/changes/archive/$($candidate.Name)"
         }
     }
 
-    throw "[state-snapshot-contract-gate] unable to locate A66 change directory in active or archive paths"
+    throw "[state-snapshot-contract-gate] unable to locate state/session snapshot change directory in active or archive paths"
 }
 
 function Invoke-StateSnapshotStep {
@@ -131,18 +135,18 @@ function Invoke-StateSnapshotStep {
     & $Command
 }
 
-$a66ChangeDir = Resolve-A66ChangeDir
+$stateSnapshotChangeDir = Resolve-StateSnapshotChangeDir
 
 Invoke-StateSnapshotStep -Label "assertion state_control_plane_absent: design marker" -Command {
-    Assert-ContainsLiteral -Assertion "state_control_plane_absent" -FilePath "$a66ChangeDir/design.md" -Literal "不引入托管状态控制面、远程恢复调度服务或平台化迁移中心。"
+    Assert-ContainsLiteral -Assertion "state_control_plane_absent" -FilePath "$stateSnapshotChangeDir/design.md" -Literal "不引入托管状态控制面、远程恢复调度服务或平台化迁移中心。"
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_control_plane_absent: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "state_control_plane_absent" -FilePath "$a66ChangeDir/specs/go-quality-gate/spec.md" -Literal "check-state-snapshot-contract.sh/.ps1"
+    Assert-ContainsLiteral -Assertion "state_control_plane_absent" -FilePath "$stateSnapshotChangeDir/specs/go-quality-gate/spec.md" -Literal "check-state-snapshot-contract.sh/.ps1"
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_control_plane_absent: active change set closure" -Command {
-    Assert-NoParallelA66SnapshotChanges -Assertion "state_control_plane_absent"
+    Assert-NoParallelStateSnapshotChanges -Assertion "state_control_plane_absent"
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_control_plane_absent: reject hosted control-plane config drift" -Command {
@@ -150,11 +154,11 @@ Invoke-StateSnapshotStep -Label "assertion state_control_plane_absent: reject ho
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_source_of_truth_reuse_required: canonical source-of-truth marker" -Command {
-    Assert-ContainsLiteral -Assertion "state_source_of_truth_reuse_required" -FilePath "$a66ChangeDir/specs/memory-scope-and-builtin-filesystem-v2-governance-contract/spec.md" -Literal "MUST NOT redefine memory source-of-truth behavior."
+    Assert-ContainsLiteral -Assertion "state_source_of_truth_reuse_required" -FilePath "$stateSnapshotChangeDir/specs/memory-scope-and-builtin-filesystem-v2-governance-contract/spec.md" -Literal "MUST NOT redefine memory source-of-truth behavior."
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_source_of_truth_reuse_required: roadmap closure marker" -Command {
-    Assert-ContainsLiteral -Assertion "state_source_of_truth_reuse_required" -FilePath "docs/development-roadmap.md" -Literal "A66 必须复用现有 checkpoint/snapshot 语义与 A59 memory lifecycle，不得重写存储层事实源。"
+    Assert-ContainsLiteral -Assertion "state_source_of_truth_reuse_required" -FilePath "docs/development-roadmap.md" -Literal "State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。"
 }
 
 Invoke-StateSnapshotStep -Label "assertion state_source_of_truth_reuse_required: reject duplicated memory source aliases in snapshot config" -Command {
@@ -176,9 +180,9 @@ Invoke-NativeStrict -Label "go test ./orchestration/composer -run '^TestComposer
     go test ./orchestration/composer -run '^TestComposerUnifiedSnapshot' -count=1
 }
 
-Write-Host "[state-snapshot-contract-gate] a66 restore integration suites"
-Invoke-NativeStrict -Label "go test ./integration -run '^TestA66UnifiedSnapshot' -count=1" -Command {
-    go test ./integration -run '^TestA66UnifiedSnapshot' -count=1
+Write-Host "[state-snapshot-contract-gate] state/session snapshot restore integration suites"
+Invoke-NativeStrict -Label "go test ./integration -run '^TestUnifiedSnapshot' -count=1" -Command {
+    go test ./integration -run '^TestUnifiedSnapshot' -count=1
 }
 
 Write-Host "[state-snapshot-contract-gate] shared recovery suites for impacted scope"

@@ -107,7 +107,7 @@ security:
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
 		Time:    time.Now(),
-		RunID:   "run-a55-redact",
+		RunID:   "run-export-redact",
 		Payload: map[string]any{
 			"status":        "success",
 			"latency_ms":    int64(10),
@@ -160,7 +160,7 @@ runtime:
 			Version:   types.EventSchemaVersionV1,
 			Type:      "run.finished",
 			Time:      time.Now(),
-			RunID:     "run-a55-overflow",
+			RunID:     "run-export-overflow",
 			Iteration: i,
 			Payload: map[string]any{
 				"status":     "success",
@@ -203,7 +203,7 @@ runtime:
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
 		Time:    time.Now(),
-		RunID:   "run-a55-fail-fast",
+		RunID:   "run-export-fail-fast",
 		Payload: map[string]any{"status": "success"},
 	})
 	waitForRuntimeCondition(t, 2*time.Second, func() bool {
@@ -215,7 +215,7 @@ runtime:
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
 		Time:    time.Now(),
-		RunID:   "run-a55-fail-fast-2",
+		RunID:   "run-export-fail-fast-2",
 		Payload: map[string]any{"status": "success"},
 	})
 	time.Sleep(80 * time.Millisecond)
@@ -247,7 +247,7 @@ runtime:
 		Version: types.EventSchemaVersionV1,
 		Type:    "run.finished",
 		Time:    time.Now(),
-		RunID:   "run-a55-auth",
+		RunID:   "run-export-auth",
 		Payload: map[string]any{"status": "success"},
 	})
 	waitForRuntimeCondition(t, 2*time.Second, func() bool {
@@ -290,7 +290,7 @@ runtime:
 					Version:   types.EventSchemaVersionV1,
 					Type:      "run.finished",
 					Time:      time.Now(),
-					RunID:     "run-a55-concurrent",
+					RunID:     "run-export-concurrent",
 					Iteration: i*perWorker + j,
 					Payload:   map[string]any{"status": "success"},
 				})
@@ -355,7 +355,7 @@ func newRuntimeRecorderTestManager(t *testing.T, content string) *runtimeconfig.
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A55_EXPORT_TEST",
+		EnvPrefix: "BAYMAX_RUNTIME_EXPORTER_TEST",
 	})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)

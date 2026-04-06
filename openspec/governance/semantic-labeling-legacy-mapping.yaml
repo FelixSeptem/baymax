@@ -1,0 +1,77 @@
+version: 1
+id: semantic-labeling-legacy-mapping
+owner_change: introduce-codebase-consolidation-and-semantic-labeling-contract-a63
+last_updated: 2026-04-05
+
+context_assembler_stage_mapping:
+  prefix_and_append_baseline:
+    semantic_label: context-prefix-and-journal-baseline
+    legacy_aliases:
+      - CA1
+      - ca1
+  stage2_routing_and_disclosure:
+    semantic_label: context-stage2-routing-and-disclosure
+    legacy_aliases:
+      - CA2
+      - ca2
+  pressure_compaction_and_swapback:
+    semantic_label: context-pressure-compaction-and-swapback
+    legacy_aliases:
+      - CA3
+      - ca3
+  production_hardening_and_threshold_governance:
+    semantic_label: context-production-hardening-and-threshold-governance
+    legacy_aliases:
+      - CA4
+      - ca4
+
+change_identifier_mapping:
+  codebase-consolidation-and-semantic-labeling-contract:
+    legacy_aliases:
+      - A63
+  engineering-and-performance-optimization-contract:
+    legacy_aliases:
+      - A64
+  delivery-usability-agent-mode-example-pack-contract:
+    legacy_aliases:
+      - A62
+  react-plan-notebook-and-plan-change-hook-contract:
+    legacy_aliases:
+      - A67
+  realtime-event-protocol-and-interrupt-resume-contract:
+    legacy_aliases:
+      - A68
+  jit-context-organization-and-reference-first-assembly-contract:
+    legacy_aliases:
+      - A67-CTX
+
+fixture_and_gate_legacy_prefixes:
+  diagnostics-replay-a47-composite:
+    legacy_aliases:
+      - a47
+  diagnostics-replay-a48-primary-reason-arbitration:
+    legacy_aliases:
+      - a48
+  diagnostics-replay-a49-secondary-reason-arbitration:
+    legacy_aliases:
+      - a49
+  diagnostics-replay-a50-rule-version-governance:
+    legacy_aliases:
+      - a50
+  diagnostics-replay-a67-react-plan-notebook:
+    legacy_aliases:
+      - a67
+  diagnostics-replay-a67-ctx-jit-context-organization:
+    legacy_aliases:
+      - a67_ctx
+  diagnostics-replay-a68-realtime-event-protocol:
+    legacy_aliases:
+      - a68
+  adapter-offline-a23-bulk-samples:
+    legacy_aliases:
+      - a23
+
+usage:
+  - This file is the only canonical semantic<->legacy mapping source for A63.
+  - Active docs, script help text, tests, and gates should reference this file
+    instead of creating parallel local mapping tables.

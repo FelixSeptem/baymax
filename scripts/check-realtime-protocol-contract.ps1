@@ -97,18 +97,18 @@ function Assert-PatternAbsentAcrossRepo {
     }
 }
 
-function Assert-NoParallelA68Changes {
+function Assert-NoParallelRealtimeProtocolChanges {
     param(
         [Parameter(Mandatory = $true)][string]$Assertion
     )
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
-    $canonical = "introduce-realtime-event-protocol-and-interrupt-resume-contract-a68"
+    $canonicalHint = "introduce-realtime-event-protocol-and-interrupt-resume-contract"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if ($dir.Name -ne $canonical -and
+        if (-not $lower.Contains($canonicalHint) -and
             $lower.Contains("realtime") -and
             ($lower.Contains("interrupt") -or $lower.Contains("resume") -or $lower.Contains("protocol"))) {
             $violations += $dir.Name
@@ -119,24 +119,28 @@ function Assert-NoParallelA68Changes {
     }
 }
 
-function Resolve-A68ChangeDir {
-    $active = "openspec/changes/introduce-realtime-event-protocol-and-interrupt-resume-contract-a68"
-    $activeFull = Join-Path $repoRoot $active
-    if (Test-Path -LiteralPath $activeFull -PathType Container) {
-        return $active
+function Resolve-RealtimeProtocolChangeDir {
+    $activeRoot = Join-Path $repoRoot "openspec/changes"
+    if (Test-Path -LiteralPath $activeRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $activeRoot -Directory |
+            Where-Object { $_.Name -ne "archive" -and $_.Name -like "*introduce-realtime-event-protocol-and-interrupt-resume-contract*" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/$($candidate.Name)"
+        }
     }
 
     $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
     if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
         $candidate = Get-ChildItem -Path $archiveRoot -Directory |
-            Where-Object { $_.Name -like "*introduce-realtime-event-protocol-and-interrupt-resume-contract-a68" } |
+            Where-Object { $_.Name -like "*introduce-realtime-event-protocol-and-interrupt-resume-contract*" } |
             Select-Object -First 1
         if ($candidate) {
             return "openspec/changes/archive/$($candidate.Name)"
         }
     }
 
-    throw "[realtime-protocol-contract-gate] unable to locate A68 change directory in active or archive paths"
+    throw "[realtime-protocol-contract-gate] unable to locate realtime protocol change directory in active or archive paths"
 }
 
 function Get-ChangedFiles {
@@ -176,44 +180,44 @@ function Invoke-RealtimeStep {
     & $Command
 }
 
-$a68ChangeDir = Resolve-A68ChangeDir
+$realtimeProtocolChangeDir = Resolve-RealtimeProtocolChangeDir
 
 Invoke-RealtimeStep -Label "assertion realtime_control_plane_absent: design marker" -Command {
-    Assert-ContainsLiteral -Assertion "realtime_control_plane_absent" -FilePath "$a68ChangeDir/design.md" -Literal "不引入平台化控制面。"
+    Assert-ContainsLiteral -Assertion "realtime_control_plane_absent" -FilePath "$realtimeProtocolChangeDir/design.md" -Literal "不引入平台化控制面。"
 }
 
 Invoke-RealtimeStep -Label "assertion realtime_control_plane_absent: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "realtime_control_plane_absent" -FilePath "$a68ChangeDir/specs/go-quality-gate/spec.md" -Literal "realtime_control_plane_absent"
+    Assert-ContainsLiteral -Assertion "realtime_control_plane_absent" -FilePath "$realtimeProtocolChangeDir/specs/go-quality-gate/spec.md" -Literal "realtime_control_plane_absent"
 }
 
 Invoke-RealtimeStep -Label "assertion realtime_control_plane_absent: active change set closure" -Command {
-    Assert-NoParallelA68Changes -Assertion "realtime_control_plane_absent"
+    Assert-NoParallelRealtimeProtocolChanges -Assertion "realtime_control_plane_absent"
 }
 
 Invoke-RealtimeStep -Label "assertion realtime_control_plane_absent: reject hosted realtime control-plane config drift" -Command {
     Assert-PatternAbsentAcrossRepo -Assertion "realtime_control_plane_absent" -Pattern "runtime\.realtime\.[a-zA-Z0-9_.-]*(control_plane|controlplane|gateway|connection_router|session_router|managed_connection|hosted_realtime|realtime_service)"
 }
 
-Invoke-RealtimeStep -Label "assertion a68_same_domain_closure: roadmap marker" -Command {
-    Assert-ContainsLiteral -Assertion "a68_same_domain_closure" -FilePath "docs/development-roadmap.md" -Literal "A68 realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在 A68 内以增量任务吸收，不再新增平行 realtime 提案。"
+Invoke-RealtimeStep -Label "assertion realtime_same_domain_closure: roadmap marker" -Command {
+    Assert-ContainsLiteral -Assertion "realtime_same_domain_closure" -FilePath "docs/development-roadmap.md" -Literal "Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。"
 }
 
-Write-Host "[realtime-protocol-contract-gate] a68 runtime config governance suites"
+Write-Host "[realtime-protocol-contract-gate] realtime runtime config governance suites"
 Invoke-NativeStrict -Label "go test ./runtime/config -run 'Test(RuntimeRealtimeConfig|ManagerRuntimeRealtime)' -count=1" -Command {
     go test ./runtime/config -run 'Test(RuntimeRealtimeConfig|ManagerRuntimeRealtime)' -count=1
 }
 
-Write-Host "[realtime-protocol-contract-gate] a68 realtime envelope + runner parity suites"
+Write-Host "[realtime-protocol-contract-gate] realtime envelope + runner parity suites"
 Invoke-NativeStrict -Label "go test ./core/types ./core/runner -run 'Test(ParseRealtimeEventEnvelope|RealtimeEventEnvelope|RealtimeRunStream|RealtimeSequenceGapAndOrderClassification)' -count=1" -Command {
     go test ./core/types ./core/runner -run 'Test(ParseRealtimeEventEnvelope|RealtimeEventEnvelope|RealtimeRunStream|RealtimeSequenceGapAndOrderClassification)' -count=1
 }
 
-Write-Host "[realtime-protocol-contract-gate] a68 diagnostics recorder additive suites"
-Invoke-NativeStrict -Label "go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA68|RuntimeRecorderParsesA68RealtimeAdditiveFields|RuntimeRecorderA68ParserCompatibilityAdditiveNullableDefault)' -count=1" -Command {
-    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA68|RuntimeRecorderParsesA68RealtimeAdditiveFields|RuntimeRecorderA68ParserCompatibilityAdditiveNullableDefault)' -count=1
+Write-Host "[realtime-protocol-contract-gate] realtime diagnostics recorder additive suites"
+Invoke-NativeStrict -Label "go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunRealtimeProtocol|RuntimeRecorderParsesRealtimeProtocolAdditiveFields|RuntimeRecorderRealtimeProtocolParserCompatibilityAdditiveNullableDefault)' -count=1" -Command {
+    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunRealtimeProtocol|RuntimeRecorderParsesRealtimeProtocolAdditiveFields|RuntimeRecorderRealtimeProtocolParserCompatibilityAdditiveNullableDefault)' -count=1
 }
 
-Write-Host "[realtime-protocol-contract-gate] a68 replay fixture + drift taxonomy suites"
+Write-Host "[realtime-protocol-contract-gate] realtime replay fixture + drift taxonomy suites"
 Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1" -Command {
     go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
 }

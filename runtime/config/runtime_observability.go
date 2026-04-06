@@ -37,9 +37,9 @@ const (
 )
 
 const (
-	RuntimeDiagnosticsBundleSchemaVersionV1 = "bundle.v1"
-	RuntimeDiagnosticsReplayHintSchemaV1    = "observability.v1"
-	RuntimeDiagnosticsGateFingerprintA55V1  = "gate.a55.v1"
+	RuntimeDiagnosticsBundleSchemaVersionV1                = "bundle.v1"
+	RuntimeDiagnosticsReplayHintSchemaV1                   = "observability.v1"
+	RuntimeDiagnosticsGateFingerprintObservabilityBundleV1 = "gate.a55.v1"
 )
 
 const (

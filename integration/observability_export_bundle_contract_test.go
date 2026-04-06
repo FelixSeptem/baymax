@@ -16,11 +16,11 @@ import (
 )
 
 func TestObservabilityExportBundleContractRunStreamSemanticEquivalenceSuccess(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-run-stream-success.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "runtime-observability-run-stream-success.yaml")
 	outputDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
-	writeA55ObservabilityBundleRuntimeConfig(t, cfgPath, outputDir, true, "http://127.0.0.1:4318")
+	writeObservabilityBundleRuntimeConfig(t, cfgPath, outputDir, true, "http://127.0.0.1:4318")
 
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_OBSERVABILITY_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -42,8 +42,8 @@ func TestObservabilityExportBundleContractRunStreamSemanticEquivalenceSuccess(t 
 		t.Fatalf("new composer: %v", err)
 	}
 
-	runReq := types.RunRequest{RunID: "run-a55-observability-run", Input: "ping"}
-	streamReq := types.RunRequest{RunID: "run-a55-observability-stream", Input: "ping"}
+	runReq := types.RunRequest{RunID: "run-observability-export-run", Input: "ping"}
+	streamReq := types.RunRequest{RunID: "run-observability-export-stream", Input: "ping"}
 	if _, err := comp.Run(context.Background(), runReq, nil); err != nil {
 		t.Fatalf("composer run failed: %v", err)
 	}
@@ -82,11 +82,11 @@ func TestObservabilityExportBundleContractRunStreamBundleFailureTaxonomyEquivale
 	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write blocked marker failed: %v", err)
 	}
-	cfgPath := filepath.Join(tmp, "runtime-a55-run-stream-bundle-failure.yaml")
+	cfgPath := filepath.Join(tmp, "runtime-observability-run-stream-bundle-failure.yaml")
 	outputDir := filepath.ToSlash(filepath.Join(blocked, "bundles"))
-	writeA55ObservabilityBundleRuntimeConfig(t, cfgPath, outputDir, false, "")
+	writeObservabilityBundleRuntimeConfig(t, cfgPath, outputDir, false, "")
 
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_OBSERVABILITY_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
@@ -108,8 +108,8 @@ func TestObservabilityExportBundleContractRunStreamBundleFailureTaxonomyEquivale
 		t.Fatalf("new composer: %v", err)
 	}
 
-	runReq := types.RunRequest{RunID: "run-a55-bundle-failure-run", Input: "ping"}
-	streamReq := types.RunRequest{RunID: "run-a55-bundle-failure-stream", Input: "ping"}
+	runReq := types.RunRequest{RunID: "run-observability-bundle-failure-run", Input: "ping"}
+	streamReq := types.RunRequest{RunID: "run-observability-bundle-failure-stream", Input: "ping"}
 	if _, err := comp.Run(context.Background(), runReq, nil); err != nil {
 		t.Fatalf("composer run failed: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestObservabilityExportBundleContractRunStreamBundleFailureTaxonomyEquivale
 	}
 }
 
-func writeA55ObservabilityBundleRuntimeConfig(t *testing.T, path, outputDir string, exportEnabled bool, endpoint string) {
+func writeObservabilityBundleRuntimeConfig(t *testing.T, path, outputDir string, exportEnabled bool, endpoint string) {
 	t.Helper()
 	endpoint = strings.TrimSpace(endpoint)
 	profile := runtimeconfig.RuntimeObservabilityExportProfileNone

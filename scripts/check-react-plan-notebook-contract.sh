@@ -74,13 +74,13 @@ has_changed_prefix() {
   return 1
 }
 
-run_step "a67 runner lifecycle + hook + boundary suites" \
+run_step "react plan notebook runner lifecycle + hook + boundary suites" \
   go test ./core/runner -run 'Test(ReactPlan|ReactPlanNotebookDoesNotBypass)' -count=1
 
-run_step "a67 config + diagnostics + recorder additive suites" \
-  go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(RuntimeReactPlanNotebook|ManagerRuntimeReactPlanNotebook|StoreRunA67|RuntimeRecorderParsesA67|RuntimeRecorderA67)' -count=1
+run_step "react plan notebook config + diagnostics + recorder additive suites" \
+  go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(RuntimeReactPlanNotebook|ManagerRuntimeReactPlanNotebook|StoreRunReactPlanNotebook|RuntimeRecorderParsesReactPlanNotebookAdditiveFields|RuntimeRecorderReactPlanNotebookParserCompatibilityAdditiveNullableDefault)' -count=1
 
-run_step "a67 replay fixture + drift taxonomy suites" \
+run_step "react plan notebook replay fixture + drift taxonomy suites" \
   go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
 
 changed_files=()

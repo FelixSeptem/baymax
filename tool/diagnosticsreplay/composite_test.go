@@ -7,8 +7,8 @@ import (
 )
 
 func TestReplayContractCompositeFixtureSuccessAndDeterministicNormalizedOutput(t *testing.T) {
-	input := mustReadFixture(t, "a47_composite_success_input.json")
-	expectedRaw := mustReadFixture(t, "a47_composite_success_expected.json")
+	input := mustReadFixture(t, "readiness_timeout_health_composite_success_input.json")
+	expectedRaw := mustReadFixture(t, "readiness_timeout_health_composite_success_expected.json")
 
 	got, err := EvaluateCompositeFixtureJSON(input)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestReplayContractCompositeFixtureSuccessAndDeterministicNormalizedOutput(t
 }
 
 func TestReplayContractCompositeFixtureMissingAxisSchemaMismatch(t *testing.T) {
-	input := mustReadFixture(t, "a47_composite_missing_axis_input.json")
+	input := mustReadFixture(t, "readiness_timeout_health_composite_missing_axis_input.json")
 	_, err := EvaluateCompositeFixtureJSON(input)
 	if err == nil {
 		t.Fatal("expected schema mismatch when matrix coverage axes are missing")
@@ -48,7 +48,7 @@ func TestReplayContractCompositeFixtureMissingAxisSchemaMismatch(t *testing.T) {
 }
 
 func TestReplayContractCompositeFixtureSemanticDrift(t *testing.T) {
-	input := mustReadFixture(t, "a47_composite_semantic_drift_input.json")
+	input := mustReadFixture(t, "readiness_timeout_health_composite_semantic_drift_input.json")
 	_, err := EvaluateCompositeFixtureJSON(input)
 	if err == nil {
 		t.Fatal("expected semantic drift failure")
@@ -63,7 +63,7 @@ func TestReplayContractCompositeFixtureSemanticDrift(t *testing.T) {
 }
 
 func TestReplayContractCompositeFixtureOrderingDrift(t *testing.T) {
-	input := mustReadFixture(t, "a47_composite_ordering_drift_input.json")
+	input := mustReadFixture(t, "readiness_timeout_health_composite_ordering_drift_input.json")
 	_, err := EvaluateCompositeFixtureJSON(input)
 	if err == nil {
 		t.Fatal("expected ordering drift failure")
@@ -78,7 +78,7 @@ func TestReplayContractCompositeFixtureOrderingDrift(t *testing.T) {
 }
 
 func TestReplayContractCompositeFixtureIdempotencyDrift(t *testing.T) {
-	input := mustReadFixture(t, "a47_composite_idempotency_drift_input.json")
+	input := mustReadFixture(t, "readiness_timeout_health_composite_idempotency_drift_input.json")
 	_, err := EvaluateCompositeFixtureJSON(input)
 	if err == nil {
 		t.Fatal("expected idempotency drift failure")

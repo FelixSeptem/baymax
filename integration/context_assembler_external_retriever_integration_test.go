@@ -17,7 +17,7 @@ import (
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
-func TestCA2ExternalRetrieverHTTPIntegration(t *testing.T) {
+func TestContextStage2ExternalRetrieverHTTPIntegration(t *testing.T) {
 	retriever := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -119,7 +119,7 @@ context_assembler:
 	}
 }
 
-func TestCA2ExternalRetrieverRunStreamSemanticEquivalenceHintApplied(t *testing.T) {
+func TestContextStage2ExternalRetrieverRunStreamSemanticEquivalenceHintApplied(t *testing.T) {
 	retriever := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"chunks": []string{"external-ctx-1"},
@@ -195,7 +195,7 @@ context_assembler:
 	}
 }
 
-func TestCA2ExternalRetrieverRunStreamSemanticEquivalenceHintMismatch(t *testing.T) {
+func TestContextStage2ExternalRetrieverRunStreamSemanticEquivalenceHintMismatch(t *testing.T) {
 	retriever := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"chunks": []string{"external-ctx-1"},

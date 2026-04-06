@@ -10,7 +10,7 @@ import (
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
-type a14ModeSummary struct {
+type tailGovernanceModeSummary struct {
 	state          scheduler.TaskState
 	queueTotal     int
 	claimTotal     int
@@ -20,9 +20,9 @@ type a14ModeSummary struct {
 	delayedWaitP95 int64
 }
 
-func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
+func TestTailGovernanceCrossModeMatrixRunStream(t *testing.T) {
 	t.Helper()
-	assertEquivalent := func(mode string, run, stream a14ModeSummary) {
+	assertEquivalent := func(mode string, run, stream tailGovernanceModeSummary) {
 		t.Helper()
 		if run.state != stream.state {
 			t.Fatalf("%s terminal mismatch run=%q stream=%q", mode, run.state, stream.state)
@@ -45,18 +45,18 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 		}
 	}
 
-	syncExec := func(taskID string) (a14ModeSummary, error) {
+	syncExec := func(taskID string) (tailGovernanceModeSummary, error) {
 		ctx := context.Background()
 		s, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		if _, err := s.Enqueue(ctx, scheduler.Task{TaskID: taskID, RunID: "run-a14-sync"}); err != nil {
-			return a14ModeSummary{}, err
+		if _, err := s.Enqueue(ctx, scheduler.Task{TaskID: taskID, RunID: "run-tail-governance-sync"}); err != nil {
+			return tailGovernanceModeSummary{}, err
 		}
-		claimed, ok, err := s.Claim(ctx, "worker-a14-sync")
+		claimed, ok, err := s.Claim(ctx, "worker-tail-governance-sync")
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("sync claim failed")
+			return tailGovernanceModeSummary{}, errors.New("sync claim failed")
 		}
 		if _, err := s.Complete(ctx, scheduler.TerminalCommit{
 			TaskID:      claimed.Record.Task.TaskID,
@@ -65,17 +65,17 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 			Result:      map[string]any{"ok": true},
 			CommittedAt: time.Now(),
 		}); err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
 		record, ok, err := s.Get(ctx, taskID)
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("sync get failed")
+			return tailGovernanceModeSummary{}, errors.New("sync get failed")
 		}
 		stats, err := s.Stats(ctx)
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		return a14ModeSummary{
+		return tailGovernanceModeSummary{
 			state:         record.State,
 			queueTotal:    stats.QueueTotal,
 			claimTotal:    stats.ClaimTotal,
@@ -83,18 +83,18 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 		}, nil
 	}
 
-	asyncExec := func(taskID string) (a14ModeSummary, error) {
+	asyncExec := func(taskID string) (tailGovernanceModeSummary, error) {
 		ctx := context.Background()
 		s, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		if _, err := s.Enqueue(ctx, scheduler.Task{TaskID: taskID, RunID: "run-a14-async"}); err != nil {
-			return a14ModeSummary{}, err
+		if _, err := s.Enqueue(ctx, scheduler.Task{TaskID: taskID, RunID: "run-tail-governance-async"}); err != nil {
+			return tailGovernanceModeSummary{}, err
 		}
-		claimed, ok, err := s.Claim(ctx, "worker-a14-async")
+		claimed, ok, err := s.Claim(ctx, "worker-tail-governance-async")
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("async claim failed")
+			return tailGovernanceModeSummary{}, errors.New("async claim failed")
 		}
 		exec, err := scheduler.ExecutionFromAsyncReport(claimed, a2a.AsyncReport{
 			ReportKey:  "report-" + taskID,
@@ -105,20 +105,20 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 			Result:     map[string]any{"ok": true},
 		})
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
 		if _, err := s.Complete(ctx, exec.Commit); err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
 		record, ok, err := s.Get(ctx, taskID)
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("async get failed")
+			return tailGovernanceModeSummary{}, errors.New("async get failed")
 		}
 		stats, err := s.Stats(ctx)
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		return a14ModeSummary{
+		return tailGovernanceModeSummary{
 			state:         record.State,
 			queueTotal:    stats.QueueTotal,
 			claimTotal:    stats.ClaimTotal,
@@ -126,28 +126,28 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 		}, nil
 	}
 
-	delayedExec := func(taskID string) (a14ModeSummary, error) {
+	delayedExec := func(taskID string) (tailGovernanceModeSummary, error) {
 		ctx := context.Background()
 		s, err := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithLeaseTimeout(500*time.Millisecond))
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
 		if _, err := s.Enqueue(ctx, scheduler.Task{
 			TaskID:    taskID,
-			RunID:     "run-a14-delayed",
+			RunID:     "run-tail-governance-delayed",
 			NotBefore: time.Now().Add(90 * time.Millisecond),
 		}); err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		if _, ok, err := s.Claim(ctx, "worker-a14-delayed"); err != nil {
-			return a14ModeSummary{}, err
+		if _, ok, err := s.Claim(ctx, "worker-tail-governance-delayed"); err != nil {
+			return tailGovernanceModeSummary{}, err
 		} else if ok {
-			return a14ModeSummary{}, errors.New("delayed task claimed before not_before")
+			return tailGovernanceModeSummary{}, errors.New("delayed task claimed before not_before")
 		}
 		time.Sleep(120 * time.Millisecond)
-		claimed, ok, err := s.Claim(ctx, "worker-a14-delayed")
+		claimed, ok, err := s.Claim(ctx, "worker-tail-governance-delayed")
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("delayed claim failed after boundary")
+			return tailGovernanceModeSummary{}, errors.New("delayed claim failed after boundary")
 		}
 		if _, err := s.Complete(ctx, scheduler.TerminalCommit{
 			TaskID:      claimed.Record.Task.TaskID,
@@ -156,17 +156,17 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 			Result:      map[string]any{"ok": true},
 			CommittedAt: time.Now(),
 		}); err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
 		record, ok, err := s.Get(ctx, taskID)
 		if err != nil || !ok {
-			return a14ModeSummary{}, errors.New("delayed get failed")
+			return tailGovernanceModeSummary{}, errors.New("delayed get failed")
 		}
 		stats, err := s.Stats(ctx)
 		if err != nil {
-			return a14ModeSummary{}, err
+			return tailGovernanceModeSummary{}, err
 		}
-		return a14ModeSummary{
+		return tailGovernanceModeSummary{
 			state:          record.State,
 			queueTotal:     stats.QueueTotal,
 			claimTotal:     stats.ClaimTotal,
@@ -177,38 +177,38 @@ func TestTailGovernanceA14CrossModeMatrixRunStream(t *testing.T) {
 		}, nil
 	}
 
-	syncRun, err := syncExec("task-a14-sync-run")
+	syncRun, err := syncExec("task-tail-governance-sync-run")
 	if err != nil {
 		t.Fatalf("sync run failed: %v", err)
 	}
-	syncStream, err := syncExec("task-a14-sync-stream")
+	syncStream, err := syncExec("task-tail-governance-sync-stream")
 	if err != nil {
 		t.Fatalf("sync stream failed: %v", err)
 	}
 	assertEquivalent("sync", syncRun, syncStream)
 
-	asyncRun, err := asyncExec("task-a14-async-run")
+	asyncRun, err := asyncExec("task-tail-governance-async-run")
 	if err != nil {
 		t.Fatalf("async run failed: %v", err)
 	}
-	asyncStream, err := asyncExec("task-a14-async-stream")
+	asyncStream, err := asyncExec("task-tail-governance-async-stream")
 	if err != nil {
 		t.Fatalf("async stream failed: %v", err)
 	}
 	assertEquivalent("async", asyncRun, asyncStream)
 
-	delayedRun, err := delayedExec("task-a14-delayed-run")
+	delayedRun, err := delayedExec("task-tail-governance-delayed-run")
 	if err != nil {
 		t.Fatalf("delayed run failed: %v", err)
 	}
-	delayedStream, err := delayedExec("task-a14-delayed-stream")
+	delayedStream, err := delayedExec("task-tail-governance-delayed-stream")
 	if err != nil {
 		t.Fatalf("delayed stream failed: %v", err)
 	}
 	assertEquivalent("delayed", delayedRun, delayedStream)
 }
 
-type a14QoSRecoverySummary struct {
+type tailGovernanceQoSRecoverySummary struct {
 	qosMode                  string
 	priorityClaimTotal       int
 	fairnessYieldTotal       int
@@ -216,8 +216,8 @@ type a14QoSRecoverySummary struct {
 	duplicateTerminalCommits int
 }
 
-func TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence(t *testing.T) {
-	exec := func(label string) (a14QoSRecoverySummary, error) {
+func TestTailGovernanceQoSRecoveryRunStreamSemanticEquivalence(t *testing.T) {
+	exec := func(label string) (tailGovernanceQoSRecoverySummary, error) {
 		ctx := context.Background()
 		governance := scheduler.GovernanceConfig{
 			QoS: scheduler.QoSModePriority,
@@ -231,26 +231,26 @@ func TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence(t *testing.T) 
 			scheduler.WithGovernance(governance),
 		)
 		if err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		if _, err := s.Enqueue(ctx, scheduler.Task{
-			TaskID:   "task-a14-qos-high-" + label,
-			RunID:    "run-a14-qos-" + label,
+			TaskID:   "task-tail-governance-qos-high-" + label,
+			RunID:    "run-tail-governance-qos-" + label,
 			Priority: scheduler.TaskPriorityHigh,
 		}); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		if _, err := s.Enqueue(ctx, scheduler.Task{
-			TaskID:   "task-a14-qos-low-" + label,
-			RunID:    "run-a14-qos-" + label,
+			TaskID:   "task-tail-governance-qos-low-" + label,
+			RunID:    "run-tail-governance-qos-" + label,
 			Priority: scheduler.TaskPriorityLow,
 		}); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 
-		first, ok, err := s.Claim(ctx, "worker-a14-qos-"+label)
+		first, ok, err := s.Claim(ctx, "worker-tail-governance-qos-"+label)
 		if err != nil || !ok {
-			return a14QoSRecoverySummary{}, errors.New("qos first claim failed")
+			return tailGovernanceQoSRecoverySummary{}, errors.New("qos first claim failed")
 		}
 		if _, err := s.Complete(ctx, scheduler.TerminalCommit{
 			TaskID:      first.Record.Task.TaskID,
@@ -259,12 +259,12 @@ func TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence(t *testing.T) 
 			Result:      map[string]any{"ok": true},
 			CommittedAt: time.Now(),
 		}); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 
 		snap, err := s.Snapshot(ctx)
 		if err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		restored, err := scheduler.New(
 			scheduler.NewMemoryStore(),
@@ -272,14 +272,14 @@ func TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence(t *testing.T) 
 			scheduler.WithGovernance(governance),
 		)
 		if err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		if err := restored.Restore(ctx, snap); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
-		second, ok, err := restored.Claim(ctx, "worker-a14-qos-restored-"+label)
+		second, ok, err := restored.Claim(ctx, "worker-tail-governance-qos-restored-"+label)
 		if err != nil || !ok {
-			return a14QoSRecoverySummary{}, errors.New("qos restored claim failed")
+			return tailGovernanceQoSRecoverySummary{}, errors.New("qos restored claim failed")
 		}
 		commit := scheduler.TerminalCommit{
 			TaskID:      second.Record.Task.TaskID,
@@ -289,16 +289,16 @@ func TestTailGovernanceA14QoSRecoveryRunStreamSemanticEquivalence(t *testing.T) 
 			CommittedAt: time.Now(),
 		}
 		if _, err := restored.Complete(ctx, commit); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		if _, err := restored.Complete(ctx, commit); err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
 		stats, err := restored.Stats(ctx)
 		if err != nil {
-			return a14QoSRecoverySummary{}, err
+			return tailGovernanceQoSRecoverySummary{}, err
 		}
-		return a14QoSRecoverySummary{
+		return tailGovernanceQoSRecoverySummary{
 			qosMode:                  stats.QoSMode,
 			priorityClaimTotal:       stats.PriorityClaimTotal,
 			fairnessYieldTotal:       stats.FairnessYieldTotal,

@@ -89,24 +89,24 @@ function Test-ChangedPrefix {
     return $false
 }
 
-Invoke-ContextJITStep -Label "a67-ctx runtime config governance suites" -Command {
+Invoke-ContextJITStep -Label "context jit runtime config governance suites" -Command {
     go test ./runtime/config -run 'Test(RuntimeContextJITConfig|ManagerRuntimeContextJIT)' -count=1
 }
 
-Invoke-ContextJITStep -Label "a67-ctx context assembler organization suites" -Command {
-    go test ./context/assembler -run 'Test(DiscoverStage2References|ResolveSelectedStage2References|AssemblerCA2ReferenceFirstInjectsRefsBeforeBody|IngestIsolateHandoffChunks|AssemblerCA2IsolateHandoff(DefaultConsumption|ReplayIdempotent)|ApplyContextEditGate|AssemblerCA2EditGateDenyKeepsSemantics|SwapBackIfNeededUsesRelevanceThreshold|ApplyLifecycleTieringTransitionsAndPrune|AssemblerCA3SwapBackAndTieringCombination|AssemblerCA2RecapAppended|BuildTaskAwareTailRecapStableOrdering)' -count=1
+Invoke-ContextJITStep -Label "context jit context assembler organization suites" -Command {
+    go test ./context/assembler -run 'Test(DiscoverStage2References|ResolveSelectedStage2References|AssemblerContextStage2ReferenceFirstInjectsRefsBeforeBody|IngestIsolateHandoffChunks|AssemblerContextStage2IsolateHandoff(DefaultConsumption|ReplayIdempotent)|ApplyContextEditGate|AssemblerContextStage2EditGateDenyKeepsSemantics|SwapBackIfNeededUsesRelevanceThreshold|ApplyLifecycleTieringTransitionsAndPrune|AssemblerContextPressureSwapBackAndTieringCombination|AssemblerContextStage2RecapAppended|BuildTaskAwareTailRecapStableOrdering)' -count=1
 }
 
-Invoke-ContextJITStep -Label "a67-ctx run/stream parity + boundary regression suites" -Command {
+Invoke-ContextJITStep -Label "context jit run/stream parity + boundary regression suites" -Command {
     go test ./core/runner -run 'Test(ContextJITRunAndStreamSemanticEquivalent|ContextJITDoesNotBypassSandboxEgressRunAndStreamParity)' -count=1
 }
 
-Invoke-ContextJITStep -Label "a67-ctx diagnostics + recorder additive suites" -Command {
-    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA67CTX|RuntimeRecorderParsesA67ContextJITOrganizationAdditiveFields|RuntimeRecorderA67ContextJITParserCompatibilityAdditiveNullableDefault)' -count=1
+Invoke-ContextJITStep -Label "context jit diagnostics + recorder additive suites" -Command {
+    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunContextJIT|RuntimeRecorderParsesContextJITOrganizationAdditiveFields|RuntimeRecorderContextJITParserCompatibilityAdditiveNullableDefault)' -count=1
 }
 
-Invoke-ContextJITStep -Label "a67-ctx replay fixture + drift taxonomy suites" -Command {
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility|ReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibility|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast|ReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility)' -count=1
+Invoke-ContextJITStep -Label "context jit replay fixture + drift taxonomy suites" -Command {
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility|ReplayContractArbitrationMixedPolicyPrecedenceReactSandboxEgressCompatibility|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast|ReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility)' -count=1
 }
 
 Invoke-ContextJITStep -Label "assertion context_provider_sdk_absent" -Command {
@@ -175,3 +175,4 @@ Invoke-ContextJITStep -Label "contributioncheck parity suites for context-jit-or
 }
 
 Write-Host "[context-jit-organization-contract-gate] done"
+

@@ -48,20 +48,20 @@ go test ./integration -run '^TestMailboxContractMemoryFileParityAndRestoreReplay
 echo "[multi-agent-shared-contract-gate] mailbox runtime wiring suite"
 go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -count=1
 
-echo "[multi-agent-shared-contract-gate] a14 closure matrix suite"
-go test ./integration -run '^TestTailGovernanceA14' -count=1
+echo "[multi-agent-shared-contract-gate] tail governance closure matrix suite"
+go test ./integration -run '^TestTailGovernance' -count=1
 
 echo "[multi-agent-shared-contract-gate] workflow graph composability suite"
-go test ./integration -run '^TestWorkflowGraphComposabilityA15' -count=1
+go test ./integration -run '^TestWorkflowGraphComposability' -count=1
 
 echo "[multi-agent-shared-contract-gate] collaboration primitives suite"
-go test ./integration -run '^TestCollaborationPrimitivesA16' -count=1
+go test ./integration -run '^TestCollaborationPrimitives' -count=1
 
 echo "[multi-agent-shared-contract-gate] collaboration retry suite"
 go test ./integration -run '^TestCollaborationRetryContract' -count=1
 
 echo "[multi-agent-shared-contract-gate] recovery boundary suite"
-go test ./integration -run '^TestRecoveryBoundaryA17' -count=1
+go test ./integration -run '^TestRecoveryBoundary' -count=1
 
 echo "[multi-agent-shared-contract-gate] unified query suite"
 go test ./integration -run '^TestUnifiedQueryContract' -count=1

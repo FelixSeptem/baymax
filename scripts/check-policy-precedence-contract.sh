@@ -53,12 +53,13 @@ run_step "runner run/stream parity and deny side-effect-free suites" \
   go test ./core/runner -run 'Test(ActionGateRunAndStreamDenySemanticsEquivalent|ActionGateRunAndStreamTimeoutSemanticsEquivalent|SecurityEventContractSandboxPolicyDenyRunAndStreamEquivalent)' -count=1
 
 run_step "diagnostics and recorder additive/replay-idempotent suites" \
-  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent|StoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality|RuntimeRecorderParsesA58AdditiveFields|RuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault)' -count=1
+  go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent|StoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality|RuntimeRecorderParsesPolicyPrecedenceAdditiveFields|RuntimeRecorderPolicyPrecedenceParserCompatibilityAdditiveNullableDefault)' -count=1
 
 run_step "policy stack replay and drift taxonomy suites" \
-  go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPolicyPrecedenceFixture|ReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
+  go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPolicyPrecedenceFixture|ReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
 
 run_step "docs parity suites" \
   bash scripts/check-docs-consistency.sh
 
 echo "[policy-precedence-gate] done"
+

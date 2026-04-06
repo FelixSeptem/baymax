@@ -70,11 +70,11 @@ Invoke-PolicyPrecedenceStep -Label "runner run/stream parity and deny side-effec
 }
 
 Invoke-PolicyPrecedenceStep -Label "diagnostics and recorder additive/replay-idempotent suites" -Command {
-    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent|StoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality|RuntimeRecorderParsesA58AdditiveFields|RuntimeRecorderA58ParserCompatibilityAdditiveNullableDefault)' -count=1
+    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent|StoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality|RuntimeRecorderParsesPolicyPrecedenceAdditiveFields|RuntimeRecorderPolicyPrecedenceParserCompatibilityAdditiveNullableDefault)' -count=1
 }
 
 Invoke-PolicyPrecedenceStep -Label "policy stack replay and drift taxonomy suites" -Command {
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPolicyPrecedenceFixture|ReplayContractMixedA50ReactSandboxEgressPolicyStackCompatibility|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPolicyPrecedenceFixture|ReplayContractMixedPolicyPrecedenceReactSandboxEgressCompatibility|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
 }
 
 Invoke-PolicyPrecedenceStep -Label "docs parity suites" -Command {
@@ -82,3 +82,4 @@ Invoke-PolicyPrecedenceStep -Label "docs parity suites" -Command {
 }
 
 Write-Host "[policy-precedence-gate] done"
+

@@ -8,7 +8,7 @@ if (-not $env:GOCACHE) {
     $env:GOCACHE = Join-Path $repoRoot ".gocache"
 }
 
-Write-Host "[sandbox-egress-allowlist-gate] runtime config + readiness + admission A57 contracts"
+Write-Host "[sandbox-egress-allowlist-gate] runtime config + readiness + admission contracts"
 Invoke-NativeStrict -Label "go test ./runtime/config -run 'Test(SecuritySandboxEgress|AdapterAllowlist|SandboxEgressReadiness|ManagerReadinessPreflightSandboxEgress|ManagerReadinessPreflightAdapterAllowlist|ManagerReadinessAdmissionAdapterAllowlist|ArbitratePrimaryReasonSandboxEgress|ArbitratePrimaryReasonAdapterAllowlist)' -count=1" -Command {
     go test ./runtime/config -run 'Test(SecuritySandboxEgress|AdapterAllowlist|SandboxEgressReadiness|ManagerReadinessPreflightSandboxEgress|ManagerReadinessPreflightAdapterAllowlist|ManagerReadinessAdmissionAdapterAllowlist|ArbitratePrimaryReasonSandboxEgress|ArbitratePrimaryReasonAdapterAllowlist)' -count=1
 }
@@ -24,11 +24,11 @@ Invoke-NativeStrict -Label "go test ./integration/adapterconformance -run 'TestS
 }
 
 Write-Host "[sandbox-egress-allowlist-gate] diagnostics additive fields and run/stream parity"
-Invoke-NativeStrict -Label "go test ./runtime/diagnostics ./observability/event ./core/runner ./integration -run 'Test(StoreRunA57AdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesA57AdditiveFields|RunSandboxEgressAdditiveFieldsPropagateToRunFinishedPayload|RuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity)' -count=1" -Command {
-    go test ./runtime/diagnostics ./observability/event ./core/runner ./integration -run 'Test(StoreRunA57AdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesA57AdditiveFields|RunSandboxEgressAdditiveFieldsPropagateToRunFinishedPayload|RuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity)' -count=1
+Invoke-NativeStrict -Label "go test ./runtime/diagnostics ./observability/event ./core/runner ./integration -run 'Test(StoreRunSandboxEgressAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesSandboxEgressAdditiveFields|RunSandboxEgressAdditiveFieldsPropagateToRunFinishedPayload|RuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity)' -count=1" -Command {
+    go test ./runtime/diagnostics ./observability/event ./core/runner ./integration -run 'Test(StoreRunSandboxEgressAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesSandboxEgressAdditiveFields|RunSandboxEgressAdditiveFieldsPropagateToRunFinishedPayload|RuntimeReadinessAdmissionContractAdapterAllowlistMissingEntryRunStreamParity)' -count=1
 }
 
 Write-Host "[sandbox-egress-allowlist-gate] replay fixture + drift classification"
-Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility|ReplayContractSandboxEgressAllowlistFixture|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1" -Command {
-    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility|ReplayContractSandboxEgressAllowlistFixture|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
+Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility|ReplayContractSandboxEgressAllowlistFixture|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1" -Command {
+    go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|ReplayContractPrimaryReasonArbitrationFixtureDriftClassification|ReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility|ReplayContractSandboxEgressAllowlistFixture|PrimaryReasonArbitrationReplayContractFixtureSuite|PrimaryReasonArbitrationReplayContractDriftGuardFailFast)' -count=1
 }

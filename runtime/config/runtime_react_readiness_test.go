@@ -30,7 +30,7 @@ runtime:
     enabled: true
     stream_tool_dispatch_enabled: true
 `)
-			mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A56_TEST"})
+			mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_REACT_READINESS_TEST"})
 			if err != nil {
 				t.Fatalf("NewManager failed: %v", err)
 			}
@@ -75,7 +75,7 @@ runtime:
   react:
     enabled: true
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A56_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_REACT_READINESS_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -114,7 +114,7 @@ runtime:
     enabled: true
     stream_tool_dispatch_enabled: false
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A56_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_REACT_READINESS_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -176,7 +176,7 @@ runtime:
     enabled: false
     stream_tool_dispatch_enabled: false
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A56_TEST"})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_REACT_READINESS_TEST"})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}

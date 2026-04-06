@@ -541,10 +541,10 @@ type Store struct {
 
 	runTimesStrictAscending bool
 
-	timelineStates map[string]*timelineRunState
-	trendConfig    TimelineTrendConfig
-	ca2TrendConfig CA2ExternalTrendConfig
-	cardinality    CardinalityConfig
+	timelineStates           map[string]*timelineRunState
+	trendConfig              TimelineTrendConfig
+	contextStage2TrendConfig ContextStage2ExternalTrendConfig
+	cardinality              CardinalityConfig
 }
 
 type timelineRunState struct {
@@ -570,13 +570,13 @@ type TimelineTrendConfig struct {
 	TimeWindow time.Duration
 }
 
-type CA2ExternalTrendConfig struct {
+type ContextStage2ExternalTrendConfig struct {
 	Enabled    bool
 	Window     time.Duration
-	Thresholds CA2ExternalThresholds
+	Thresholds ContextStage2ExternalThresholds
 }
 
-type CA2ExternalThresholds struct {
+type ContextStage2ExternalThresholds struct {
 	P95LatencyMs int64
 	ErrorRate    float64
 	HitRate      float64
@@ -590,11 +590,11 @@ type CardinalityConfig struct {
 	OverflowPolicy string
 }
 
-type CA2ExternalTrendQuery struct {
+type ContextStage2ExternalTrendQuery struct {
 	Window time.Duration
 }
 
-type CA2ExternalTrendRecord struct {
+type ContextStage2ExternalTrendRecord struct {
 	Provider               string         `json:"provider"`
 	WindowStart            time.Time      `json:"window_start"`
 	WindowEnd              time.Time      `json:"window_end"`
@@ -691,7 +691,11 @@ type mailboxQueryCursor struct {
 	QueryHash string `json:"query_hash"`
 }
 
-func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendConfig, ca2 CA2ExternalTrendConfig) *Store {
+func NewStore(
+	maxCalls, maxRuns, maxReloads, maxSkills int,
+	trend TimelineTrendConfig,
+	contextStage2 ContextStage2ExternalTrendConfig,
+) *Store {
 	if maxCalls <= 0 {
 		maxCalls = 200
 	}
@@ -710,36 +714,36 @@ func NewStore(maxCalls, maxRuns, maxReloads, maxSkills int, trend TimelineTrendC
 	if trend.TimeWindow <= 0 {
 		trend.TimeWindow = 15 * time.Minute
 	}
-	if ca2.Window <= 0 {
-		ca2.Window = 15 * time.Minute
+	if contextStage2.Window <= 0 {
+		contextStage2.Window = 15 * time.Minute
 	}
-	if ca2.Thresholds.P95LatencyMs <= 0 {
-		ca2.Thresholds.P95LatencyMs = 1500
+	if contextStage2.Thresholds.P95LatencyMs <= 0 {
+		contextStage2.Thresholds.P95LatencyMs = 1500
 	}
-	if ca2.Thresholds.ErrorRate < 0 || ca2.Thresholds.ErrorRate > 1 {
-		ca2.Thresholds.ErrorRate = 0.1
+	if contextStage2.Thresholds.ErrorRate < 0 || contextStage2.Thresholds.ErrorRate > 1 {
+		contextStage2.Thresholds.ErrorRate = 0.1
 	}
-	if ca2.Thresholds.HitRate < 0 || ca2.Thresholds.HitRate > 1 {
-		ca2.Thresholds.HitRate = 0.2
+	if contextStage2.Thresholds.HitRate < 0 || contextStage2.Thresholds.HitRate > 1 {
+		contextStage2.Thresholds.HitRate = 0.2
 	}
 	return &Store{
-		maxCallRecords:          maxCalls,
-		maxRunRecords:           maxRuns,
-		maxReloadErrors:         maxReloads,
-		maxSkillRecords:         maxSkills,
-		calls:                   make([]CallRecord, 0, maxCalls),
-		runs:                    make([]RunRecord, 0, maxRuns),
-		mailbox:                 make([]MailboxRecord, 0, maxRuns),
-		reloads:                 make([]ReloadRecord, 0, maxReloads),
-		skills:                  make([]SkillRecord, 0, maxSkills),
-		runKeys:                 make(map[string]int, maxRuns),
-		mbxKeys:                 make(map[string]int, maxRuns),
-		sklKeys:                 make(map[string]int, maxSkills),
-		runTimesStrictAscending: true,
-		timelineStates:          make(map[string]*timelineRunState, maxRuns),
-		trendConfig:             trend,
-		ca2TrendConfig:          ca2,
-		cardinality:             normalizeCardinalityConfig(CardinalityConfig{}),
+		maxCallRecords:           maxCalls,
+		maxRunRecords:            maxRuns,
+		maxReloadErrors:          maxReloads,
+		maxSkillRecords:          maxSkills,
+		calls:                    make([]CallRecord, 0, maxCalls),
+		runs:                     make([]RunRecord, 0, maxRuns),
+		mailbox:                  make([]MailboxRecord, 0, maxRuns),
+		reloads:                  make([]ReloadRecord, 0, maxReloads),
+		skills:                   make([]SkillRecord, 0, maxSkills),
+		runKeys:                  make(map[string]int, maxRuns),
+		mbxKeys:                  make(map[string]int, maxRuns),
+		sklKeys:                  make(map[string]int, maxSkills),
+		runTimesStrictAscending:  true,
+		timelineStates:           make(map[string]*timelineRunState, maxRuns),
+		trendConfig:              trend,
+		contextStage2TrendConfig: contextStage2,
+		cardinality:              normalizeCardinalityConfig(CardinalityConfig{}),
 	}
 }
 
@@ -781,7 +785,7 @@ func (d *Store) SetTrendConfig(cfg TimelineTrendConfig) {
 	d.trendConfig = cfg
 }
 
-func (d *Store) SetCA2ExternalTrendConfig(cfg CA2ExternalTrendConfig) {
+func (d *Store) SetContextStage2ExternalTrendConfig(cfg ContextStage2ExternalTrendConfig) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if cfg.Window <= 0 {
@@ -796,7 +800,7 @@ func (d *Store) SetCA2ExternalTrendConfig(cfg CA2ExternalTrendConfig) {
 	if cfg.Thresholds.HitRate < 0 || cfg.Thresholds.HitRate > 1 {
 		cfg.Thresholds.HitRate = 0.2
 	}
-	d.ca2TrendConfig = cfg
+	d.contextStage2TrendConfig = cfg
 }
 
 func (d *Store) SetCardinalityConfig(cfg CardinalityConfig) {
@@ -1606,15 +1610,15 @@ func (d *Store) TimelineTrends(query TimelineTrendQuery) []TimelineTrendRecord {
 	return out
 }
 
-func (d *Store) CA2ExternalTrends(query CA2ExternalTrendQuery) []CA2ExternalTrendRecord {
+func (d *Store) ContextStage2ExternalTrends(query ContextStage2ExternalTrendQuery) []ContextStage2ExternalTrendRecord {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	if !d.ca2TrendConfig.Enabled {
-		return []CA2ExternalTrendRecord{}
+	if !d.contextStage2TrendConfig.Enabled {
+		return []ContextStage2ExternalTrendRecord{}
 	}
-	selected, start, end := d.selectCA2Runs(query)
+	selected, start, end := d.selectContextStage2Runs(query)
 	if len(selected) == 0 {
-		return []CA2ExternalTrendRecord{}
+		return []ContextStage2ExternalTrendRecord{}
 	}
 	type agg struct {
 		total      int
@@ -1641,7 +1645,7 @@ func (d *Store) CA2ExternalTrends(query CA2ExternalTrendQuery) []CA2ExternalTren
 		if selected[i].Stage2HitCount > 0 {
 			item.hits++
 		}
-		if isCA2ExternalError(selected[i]) {
+		if isContextStage2ExternalError(selected[i]) {
 			item.errors++
 			layer := strings.ToLower(strings.TrimSpace(selected[i].Stage2ErrorLayer))
 			if layer == "" {
@@ -1651,9 +1655,9 @@ func (d *Store) CA2ExternalTrends(query CA2ExternalTrendQuery) []CA2ExternalTren
 		}
 	}
 	if len(byProvider) == 0 {
-		return []CA2ExternalTrendRecord{}
+		return []ContextStage2ExternalTrendRecord{}
 	}
-	out := make([]CA2ExternalTrendRecord, 0, len(byProvider))
+	out := make([]ContextStage2ExternalTrendRecord, 0, len(byProvider))
 	for provider, item := range byProvider {
 		if item.total == 0 {
 			continue
@@ -1662,17 +1666,17 @@ func (d *Store) CA2ExternalTrends(query CA2ExternalTrendQuery) []CA2ExternalTren
 		hitRate := float64(item.hits) / float64(item.total)
 		p95 := percentileP95(item.latencies)
 		thresholdHits := make([]string, 0, 3)
-		if p95 > d.ca2TrendConfig.Thresholds.P95LatencyMs {
+		if p95 > d.contextStage2TrendConfig.Thresholds.P95LatencyMs {
 			thresholdHits = append(thresholdHits, "p95_latency_ms")
 		}
-		if errorRate > d.ca2TrendConfig.Thresholds.ErrorRate {
+		if errorRate > d.contextStage2TrendConfig.Thresholds.ErrorRate {
 			thresholdHits = append(thresholdHits, "error_rate")
 		}
-		if hitRate < d.ca2TrendConfig.Thresholds.HitRate {
+		if hitRate < d.contextStage2TrendConfig.Thresholds.HitRate {
 			thresholdHits = append(thresholdHits, "hit_rate")
 		}
 		sort.Strings(thresholdHits)
-		out = append(out, CA2ExternalTrendRecord{
+		out = append(out, ContextStage2ExternalTrendRecord{
 			Provider:               provider,
 			WindowStart:            start,
 			WindowEnd:              end,
@@ -2262,13 +2266,13 @@ func (d *Store) selectTrendRuns(query TimelineTrendQuery) ([]RunRecord, time.Tim
 	}
 }
 
-func (d *Store) selectCA2Runs(query CA2ExternalTrendQuery) ([]RunRecord, time.Time, time.Time) {
+func (d *Store) selectContextStage2Runs(query ContextStage2ExternalTrendQuery) ([]RunRecord, time.Time, time.Time) {
 	if len(d.runs) == 0 {
 		return nil, time.Time{}, time.Time{}
 	}
 	window := query.Window
 	if window <= 0 {
-		window = d.ca2TrendConfig.Window
+		window = d.contextStage2TrendConfig.Window
 	}
 	if window <= 0 {
 		return nil, time.Time{}, time.Time{}
@@ -2308,7 +2312,7 @@ func splitTrendBucketKey(key string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func isCA2ExternalError(rec RunRecord) bool {
+func isContextStage2ExternalError(rec RunRecord) bool {
 	if strings.TrimSpace(rec.Stage2ErrorLayer) != "" {
 		return true
 	}

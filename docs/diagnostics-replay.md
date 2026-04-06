@@ -1,4 +1,4 @@
-# Diagnostics JSON Replay（精简 + A47/A48/A49 组合模式）
+# Diagnostics JSON Replay（精简 + readiness-timeout-health + arbitration 组合模式）
 
 更新时间：2026-03-26
 
@@ -24,7 +24,7 @@
 - `status`
 - `timestamp`（或 `time`，RFC3339）
 
-### 2) A47 组合模式（readiness-timeout-health）
+### 2) Readiness-Timeout-Health 组合模式
 
 组合模式用于跨域语义回放门禁（quality-gate blocking check），输入为版本化 fixture：
 
@@ -37,18 +37,18 @@
   - `run/stream/expected` 强约束字段：`status/primary_code/reason_taxonomy/timeout source + budget outcome + trace/circuit_state`
   - `idempotency`：`first_logical_ingest_total` 与 `replay_logical_ingest_total` 必须保持稳定
 
-### 3) A48/A49 组合模式（cross-domain arbitration）
+### 3) Cross-Domain Arbitration 组合模式
 
 跨域 arbitration 模式用于验证 timeout/readiness/adapter-health 竞争下的固定裁决与 explainability 语义。
 
 - `version`：支持 `a48.v1`（primary only）与 `a49.v1`（primary + explainability）
 - `cases[]`：每个 case 必须包含 `run`、`stream`、`expected`、`idempotency`
-- A48 强约束字段：
+- primary arbitration 强约束字段：
   - `runtime_primary_domain`
   - `runtime_primary_code`
   - `runtime_primary_source`
   - `runtime_primary_conflict_total`
-- A49 额外强约束字段：
+- explainability 扩展强约束字段：
   - `runtime_secondary_reason_codes`（有界，最多 3 条，顺序稳定）
   - `runtime_secondary_reason_count`（保留截断前规模）
   - `runtime_arbitration_rule_version`
@@ -103,13 +103,13 @@ _ = out // deterministic normalized output
 - `schema_mismatch`（fixture 结构/版本/矩阵覆盖缺失）
 - `semantic_drift`（taxonomy/source/state/idempotency 漂移）
 - `ordering_drift`（ordering 非确定性漂移）
-- `precedence_drift`（A48：timeout/reject 与 blocked/required/degraded 层级漂移）
-- `tie_break_drift`（A48：同层 lexical tie-break 或 conflict_total 漂移）
-- `taxonomy_drift`（A48：primary code/source/domain taxonomy 漂移）
-- `secondary_order_drift`（A49：secondary reason 排序/去重语义漂移）
-- `secondary_count_drift`（A49：secondary reason 规模语义漂移）
-- `hint_taxonomy_drift`（A49：remediation hint taxonomy 漂移）
-- `rule_version_drift`（A49：arbitration rule version 漂移）
+- `precedence_drift`（primary arbitration：timeout/reject 与 blocked/required/degraded 层级漂移）
+- `tie_break_drift`（primary arbitration：同层 lexical tie-break 或 conflict_total 漂移）
+- `taxonomy_drift`（primary arbitration：primary code/source/domain taxonomy 漂移）
+- `secondary_order_drift`（explainability extension：secondary reason 排序/去重语义漂移）
+- `secondary_count_drift`（explainability extension：secondary reason 规模语义漂移）
+- `hint_taxonomy_drift`（explainability extension：remediation hint taxonomy 漂移）
+- `rule_version_drift`（explainability extension：arbitration rule version 漂移）
 
 这些错误码用于 CI 契约回归和脚本自动判定，除非显式版本化，不应随意变更。
 
@@ -117,7 +117,7 @@ _ = out // deterministic normalized output
 
 - Linux: `bash scripts/check-diagnostics-replay-contract.sh`
 - PowerShell: `pwsh -File scripts/check-diagnostics-replay-contract.ps1`
-- A47 组合回放（blocking）：
+- readiness-timeout-health 组合回放（blocking）：
   - Linux/PowerShell 统一由 `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1` 执行
   - 目标套件：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1`
 

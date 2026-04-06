@@ -64,7 +64,7 @@ bundle, _ := ldr.Compile(ctx, specs, types.SkillInput{UserInput: userInput})
 - 以上清单中的 API 若有语义变化，应在同一 PR 更新本文档或附带明确 follow-up。
 - README 的“文档”入口必须包含本文件链接。
 
-## Adapter Onboarding Navigation（A21）
+## Adapter Onboarding Navigation（adapter template + migration mapping contract）
 
 外部适配接入入口：
 - 模板索引：`docs/external-adapter-template-index.md`

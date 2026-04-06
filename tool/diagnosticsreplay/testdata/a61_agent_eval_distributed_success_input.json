@@ -6,7 +6,7 @@
       "run": {
         "eval_suite_id": "agent_eval.v1",
         "eval_execution_mode": "DISTRIBUTED",
-        "eval_job_id": "EVAL-JOB-A61",
+        "eval_job_id": "EVAL-JOB-a61",
         "eval_shard_total": 4,
         "eval_resume_count": 1,
         "eval_summary": {

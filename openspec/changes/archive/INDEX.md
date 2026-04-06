@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-05 11:42:03
+Updated: 2026-04-06 22:57:29
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -116,3 +116,4 @@ Updated: 2026-04-05 11:42:03
 - 112 -> introduce-react-plan-notebook-and-plan-change-hook-contract-a67
 - 113 -> introduce-realtime-event-protocol-and-interrupt-resume-contract-a68
 - 114 -> introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx
+- 115 -> introduce-codebase-consolidation-and-semantic-labeling-contract-a63

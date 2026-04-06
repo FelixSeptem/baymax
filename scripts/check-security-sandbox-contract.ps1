@@ -11,8 +11,8 @@ Invoke-NativeStrict -Label "go test ./core/types ./tool/local ./mcp/stdio -run '
 }
 
 Write-Host "[security-sandbox-gate] sandbox runtime config, readiness, diagnostics contracts"
-Invoke-NativeStrict -Label "go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(SecuritySandbox|ValidateRejectsInvalidSandbox|ManagerReadinessPreflightSandbox|ManagerReadinessAdmissionSandbox|ArbitratePrimaryReasonSandbox|StoreRunSandbox|RuntimeRecorderA51)' -count=1" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(SecuritySandbox|ValidateRejectsInvalidSandbox|ManagerReadinessPreflightSandbox|ManagerReadinessAdmissionSandbox|ArbitratePrimaryReasonSandbox|StoreRunSandbox|RuntimeRecorderA51)' -count=1
+Invoke-NativeStrict -Label "go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(SecuritySandbox|ValidateRejectsInvalidSandbox|ManagerReadinessPreflightSandbox|ManagerReadinessAdmissionSandbox|ArbitratePrimaryReasonSandbox|StoreRunSandbox|RuntimeRecorderSandboxExecutionParserCompatibilityAdditiveNullableDefault)' -count=1" -Command {
+    go test ./runtime/config ./runtime/diagnostics ./observability/event -run 'Test(SecuritySandbox|ValidateRejectsInvalidSandbox|ManagerReadinessPreflightSandbox|ManagerReadinessAdmissionSandbox|ArbitratePrimaryReasonSandbox|StoreRunSandbox|RuntimeRecorderSandboxExecutionParserCompatibilityAdditiveNullableDefault)' -count=1
 }
 
 Write-Host "[security-sandbox-gate] sandbox runner, replay, integration parity contracts"

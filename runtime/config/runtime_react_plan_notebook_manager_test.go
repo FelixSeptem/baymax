@@ -26,7 +26,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A67_PLAN_NOTEBOOK_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ reload:
 }
 
 func TestManagerRuntimeReactPlanNotebookInvalidReloadRollsBackWithEnvPrecedence(t *testing.T) {
-	t.Setenv("BAYMAX_A67_PLAN_NOTEBOOK_ENV_TEST_RUNTIME_REACT_PLAN_NOTEBOOK_MAX_HISTORY", "99")
+	t.Setenv("BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_ENV_TEST_RUNTIME_REACT_PLAN_NOTEBOOK_MAX_HISTORY", "99")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
 runtime:
@@ -98,7 +98,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A67_PLAN_NOTEBOOK_ENV_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_REACT_PLAN_NOTEBOOK_ENV_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {

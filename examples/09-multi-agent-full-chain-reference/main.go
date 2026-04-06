@@ -24,7 +24,7 @@ type stubModel struct{}
 func (stubModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
 	_ = ctx
 	_ = req
-	return types.ModelResponse{FinalAnswer: "a20 full-chain local child-run completed"}, nil
+	return types.ModelResponse{FinalAnswer: "full-chain local child-run completed"}, nil
 }
 
 func (stubModel) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
@@ -32,7 +32,7 @@ func (stubModel) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	_ = req
 	return onEvent(types.ModelEvent{
 		Type:      types.ModelEventTypeFinalAnswer,
-		TextDelta: "a20 full-chain stream local child-run completed",
+		TextDelta: "full-chain stream local child-run completed",
 	})
 }
 
@@ -68,15 +68,15 @@ type summary struct {
 }
 
 const (
-	runWorkflowRunID    = "a20-run-workflow"
-	runTeamsRunID       = "a20-run-teams"
-	streamWorkflowRunID = "a20-stream-workflow"
-	streamTeamsRunID    = "a20-stream-teams"
-	asyncTaskID         = "a20-async-task"
-	delayedTaskID       = "a20-delayed-task"
-	delayedRunID        = "a20-delayed-run"
-	recoveryRunID       = "a20-recovery-run"
-	recoveryTaskID      = "a20-recovery-task"
+	runWorkflowRunID    = "full-chain-run-workflow"
+	runTeamsRunID       = "full-chain-run-teams"
+	streamWorkflowRunID = "full-chain-stream-workflow"
+	streamTeamsRunID    = "full-chain-stream-teams"
+	asyncTaskID         = "full-chain-async-task"
+	delayedTaskID       = "full-chain-delayed-task"
+	delayedRunID        = "full-chain-delayed-run"
+	recoveryRunID       = "full-chain-recovery-run"
+	recoveryTaskID      = "full-chain-recovery-task"
 )
 
 func main() {
@@ -94,7 +94,7 @@ func main() {
 	client := newInMemoryClient()
 	result, err := execute(ctx, client, strings.TrimSpace(strings.ToLower(*mode)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[a20] full-chain example failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[full-chain] example failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -115,7 +115,7 @@ func main() {
 		fmt.Printf("CHECKPOINT run_stream_aligned=%t\n", result.RunStreamAligned)
 	}
 	fmt.Printf(
-		"A20_RUN_TERMINAL workflow_remote_total=%d workflow_remote_failed=%d teams_remote_total=%d teams_remote_failed=%d winner_vote=%s\n",
+		"FULL_CHAIN_RUN_TERMINAL workflow_remote_total=%d workflow_remote_failed=%d teams_remote_total=%d teams_remote_failed=%d winner_vote=%s\n",
 		result.RunPath.WorkflowRemoteTotal,
 		result.RunPath.WorkflowRemoteFailed,
 		result.RunPath.TeamsRemoteTotal,
@@ -123,7 +123,7 @@ func main() {
 		result.RunPath.TeamsWinnerVote,
 	)
 	fmt.Printf(
-		"A20_STREAM_TERMINAL workflow_remote_total=%d workflow_remote_failed=%d teams_remote_total=%d teams_remote_failed=%d winner_vote=%s stream_events=%d\n",
+		"FULL_CHAIN_STREAM_TERMINAL workflow_remote_total=%d workflow_remote_failed=%d teams_remote_total=%d teams_remote_failed=%d winner_vote=%s stream_events=%d\n",
 		result.StreamPath.WorkflowRemoteTotal,
 		result.StreamPath.WorkflowRemoteFailed,
 		result.StreamPath.TeamsRemoteTotal,
@@ -134,11 +134,11 @@ func main() {
 
 	payload, err := json.Marshal(result)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[a20] marshal summary failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[full-chain] marshal summary failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("A20_TERMINAL_SUMMARY=%s\n", payload)
-	fmt.Println("A20_SUCCESS")
+	fmt.Printf("FULL_CHAIN_TERMINAL_SUMMARY=%s\n", payload)
+	fmt.Println("FULL_CHAIN_SUCCESS")
 }
 
 func execute(ctx context.Context, client *a2a.Client, mode string) (summary, error) {
@@ -222,13 +222,13 @@ func executeRunPath(ctx context.Context, client *a2a.Client) (pathSummary, error
 	workflowRes, err := workflowEngine.Run(ctx, workflow.RunRequest{
 		RunID: runWorkflowRunID,
 		DSL: workflow.Definition{
-			WorkflowID: "a20-workflow",
+			WorkflowID: "full-chain-workflow",
 			Steps: []workflow.Step{
 				{
 					StepID:  "remote-step-run",
 					TaskID:  "remote-task-run",
 					Kind:    workflow.StepKindA2A,
-					TeamID:  "a20-team",
+					TeamID:  "full-chain-team",
 					AgentID: "agent-main",
 					PeerID:  "peer-remote",
 				},
@@ -242,8 +242,8 @@ func executeRunPath(ctx context.Context, client *a2a.Client) (pathSummary, error
 	teamsEngine := teams.New()
 	teamsRes, err := teamsEngine.Run(ctx, teams.Plan{
 		RunID:      runTeamsRunID,
-		TeamID:     "a20-team",
-		WorkflowID: "a20-workflow",
+		TeamID:     "full-chain-team",
+		WorkflowID: "full-chain-workflow",
 		StepID:     "remote-step-run",
 		Strategy:   teams.StrategyVote,
 		Tasks: []teams.Task{
@@ -297,13 +297,13 @@ func executeStreamPath(ctx context.Context, client *a2a.Client) (pathSummary, in
 	workflowRes, err := workflowEngine.Stream(ctx, workflow.RunRequest{
 		RunID: streamWorkflowRunID,
 		DSL: workflow.Definition{
-			WorkflowID: "a20-workflow",
+			WorkflowID: "full-chain-workflow",
 			Steps: []workflow.Step{
 				{
 					StepID:  "remote-step-stream",
 					TaskID:  "remote-task-stream",
 					Kind:    workflow.StepKindA2A,
-					TeamID:  "a20-team",
+					TeamID:  "full-chain-team",
 					AgentID: "agent-main",
 					PeerID:  "peer-remote",
 				},
@@ -320,8 +320,8 @@ func executeStreamPath(ctx context.Context, client *a2a.Client) (pathSummary, in
 	teamsEngine := teams.New()
 	teamsRes, err := teamsEngine.Stream(ctx, teams.Plan{
 		RunID:      streamTeamsRunID,
-		TeamID:     "a20-team",
-		WorkflowID: "a20-workflow",
+		TeamID:     "full-chain-team",
+		WorkflowID: "full-chain-workflow",
 		StepID:     "remote-step-stream",
 		Strategy:   teams.StrategyVote,
 		Tasks: []teams.Task{
@@ -371,7 +371,7 @@ func executeAsyncCheckpoint(ctx context.Context, client *a2a.Client) (bool, erro
 		TaskID:  asyncTaskID,
 		AgentID: "agent-main",
 		PeerID:  "peer-remote",
-		Method:  "a20.async",
+		Method:  "full-chain.async",
 	}, sink)
 	if err != nil {
 		return false, fmt.Errorf("async submit failed: %w", err)
@@ -400,14 +400,14 @@ func executeDelayedCheckpoint(ctx context.Context) (bool, error) {
 	}); err != nil {
 		return false, fmt.Errorf("enqueue delayed task failed: %w", err)
 	}
-	if _, ok, err := s.Claim(ctx, "a20-delayed-worker"); err != nil {
+	if _, ok, err := s.Claim(ctx, "full-chain-delayed-worker"); err != nil {
 		return false, fmt.Errorf("early claim failed: %w", err)
 	} else if ok {
 		return false, nil
 	}
 
 	time.Sleep(450 * time.Millisecond)
-	claimed, ok, err := s.Claim(ctx, "a20-delayed-worker")
+	claimed, ok, err := s.Claim(ctx, "full-chain-delayed-worker")
 	if err != nil {
 		return false, fmt.Errorf("delayed claim failed: %w", err)
 	}
@@ -427,17 +427,17 @@ func executeDelayedCheckpoint(ctx context.Context) (bool, error) {
 }
 
 func executeRecoveryCheckpoint(ctx context.Context) (int, error) {
-	root := filepath.Join(os.TempDir(), "baymax-a20")
+	root := filepath.Join(os.TempDir(), "baymax-full-chain")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return 0, fmt.Errorf("create temp root failed: %w", err)
 	}
-	cfgPath := filepath.Join(root, "runtime-a20.yaml")
+	cfgPath := filepath.Join(root, "runtime-full-chain.yaml")
 	recoveryPath := filepath.Join(root, "recovery")
 	if err := writeRecoveryRuntimeConfig(cfgPath, recoveryPath); err != nil {
 		return 0, err
 	}
 
-	mgr1, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A20"})
+	mgr1, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_FULL_CHAIN"})
 	if err != nil {
 		return 0, fmt.Errorf("new runtime manager #1 failed: %w", err)
 	}
@@ -466,7 +466,7 @@ func executeRecoveryCheckpoint(ctx context.Context) (int, error) {
 	}
 	_ = mgr1.Close()
 
-	mgr2, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A20"})
+	mgr2, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_FULL_CHAIN"})
 	if err != nil {
 		return 0, fmt.Errorf("new runtime manager #2 failed: %w", err)
 	}

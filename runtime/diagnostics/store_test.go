@@ -10,7 +10,7 @@ import (
 )
 
 func TestStoreConcurrentAccess(t *testing.T) {
-	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -65,7 +65,7 @@ func TestSanitizeMap(t *testing.T) {
 }
 
 func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -88,7 +88,7 @@ func TestStoreRunDedupByIdempotencyKey(t *testing.T) {
 }
 
 func TestStoreRunCardinalityTruncateAndRecordDeterministic(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  2,
@@ -164,7 +164,7 @@ func TestStoreRunCardinalityTruncateAndRecordDeterministic(t *testing.T) {
 }
 
 func TestStoreRunCardinalityFailFastRejectsOverflowPayload(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  2,
@@ -254,7 +254,7 @@ func TestCardinalityListGovernanceDeterministic(t *testing.T) {
 }
 
 func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                                        time.Now(),
 		RunID:                                       "run-a40-readiness",
@@ -408,8 +408,8 @@ func TestStoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent(t *testing.T)
 	}
 }
 
-func TestStoreRunA57AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunSandboxEgressAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                        time.Now(),
 		RunID:                       "run-a57-additive",
@@ -434,7 +434,7 @@ func TestStoreRunA57AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		items[0].AdapterAllowlistDecision != "deny" ||
 		items[0].AdapterAllowlistBlockTotal != 1 ||
 		items[0].AdapterAllowlistPrimaryCode != "adapter.allowlist.missing_entry" {
-		t.Fatalf("A57 additive fields mismatch after dedup: %#v", items[0])
+		t.Fatalf("sandbox egress additive fields mismatch after dedup: %#v", items[0])
 	}
 
 	rec.SandboxEgressAction = "allow_and_record"
@@ -455,12 +455,12 @@ func TestStoreRunA57AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		items[0].AdapterAllowlistDecision != "allow" ||
 		items[0].AdapterAllowlistBlockTotal != 0 ||
 		items[0].AdapterAllowlistPrimaryCode != "adapter.allowlist.signature_invalid" {
-		t.Fatalf("A57 additive fields mismatch after replay replacement: %#v", items[0])
+		t.Fatalf("sandbox egress additive fields mismatch after replay replacement: %#v", items[0])
 	}
 }
 
-func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunMemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                  time.Now(),
 		RunID:                 "run-a59-memory-governance",
@@ -484,7 +484,7 @@ func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *
 		items[0].MemoryRerankStats["input_total"] != 4 ||
 		items[0].MemoryRerankStats["output_total"] != 3 ||
 		items[0].MemoryLifecycleAction != "ttl_expired" {
-		t.Fatalf("A59 additive fields mismatch after dedup: %#v", items[0])
+		t.Fatalf("memory governance additive fields mismatch after dedup: %#v", items[0])
 	}
 
 	rec.MemoryScopeSelected = "project"
@@ -504,7 +504,7 @@ func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *
 		items[0].MemoryRerankStats["input_total"] != 2 ||
 		items[0].MemoryRerankStats["output_total"] != 2 ||
 		items[0].MemoryLifecycleAction != "forget_applied" {
-		t.Fatalf("A59 additive fields mismatch after replay replacement: %#v", items[0])
+		t.Fatalf("memory governance additive fields mismatch after replay replacement: %#v", items[0])
 	}
 
 	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a59-memory-governance"})
@@ -519,12 +519,12 @@ func TestStoreRunA59MemoryGovernanceAdditiveFieldsPersistAndReplayIdempotent(t *
 		page.Items[0].MemoryHits != 2 ||
 		page.Items[0].MemoryRerankStats["input_total"] != 2 ||
 		page.Items[0].MemoryLifecycleAction != "forget_applied" {
-		t.Fatalf("A59 query mapping mismatch: %#v", page.Items[0])
+		t.Fatalf("memory governance query mapping mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunHooksMiddlewareAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                              time.Now(),
 		RunID:                             "run-a65-hooks-middleware",
@@ -580,7 +580,7 @@ func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		got.SkillBundlePromptTotal != 1 ||
 		got.SkillBundleWhitelistTotal != 3 ||
 		got.SkillBundleWhitelistRejectedTotal != 1 {
-		t.Fatalf("A65 additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("hooks/middleware additive fields mismatch after dedup: %#v", got)
 	}
 
 	rec.SkillPreprocessStatus = "failed"
@@ -598,7 +598,7 @@ func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		got.SkillPreprocessReasonCode != "skill_bundle_whitelist_violation" ||
 		got.SkillBundlePromptTotal != 2 ||
 		got.SkillBundleWhitelistRejectedTotal != 2 {
-		t.Fatalf("A65 additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("hooks/middleware additive fields mismatch after replay replacement: %#v", got)
 	}
 
 	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a65-hooks-middleware"})
@@ -612,17 +612,17 @@ func TestStoreRunA65AdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		page.Items[0].SkillPreprocessReasonCode != "skill_bundle_whitelist_violation" ||
 		page.Items[0].SkillBundlePromptTotal != 2 ||
 		page.Items[0].SkillBundleWhitelistRejectedTotal != 2 {
-		t.Fatalf("A65 QueryRuns additive parse mismatch: %#v", page.Items[0])
+		t.Fatalf("hooks/middleware QueryRuns additive parse mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA67PlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunReactPlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                  time.Now(),
-		RunID:                 "run-a67-plan-notebook",
+		RunID:                 "run-react-plan-notebook",
 		Status:                "success",
-		ReactPlanID:           "run-a67-plan-notebook",
+		ReactPlanID:           "run-react-plan-notebook",
 		ReactPlanVersion:      3,
 		ReactPlanChangeTotal:  3,
 		ReactPlanLastAction:   "complete",
@@ -638,14 +638,14 @@ func TestStoreRunA67PlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *test
 		t.Fatalf("run records len=%d, want 1", len(items))
 	}
 	got := items[0]
-	if got.ReactPlanID != "run-a67-plan-notebook" ||
+	if got.ReactPlanID != "run-react-plan-notebook" ||
 		got.ReactPlanVersion != 3 ||
 		got.ReactPlanChangeTotal != 3 ||
 		got.ReactPlanLastAction != "complete" ||
 		got.ReactPlanChangeReason != "run_completed" ||
 		got.ReactPlanRecoverCount != 1 ||
 		got.ReactPlanHookStatus != "ok" {
-		t.Fatalf("A67 additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("react plan notebook additive fields mismatch after dedup: %#v", got)
 	}
 
 	rec.ReactPlanVersion = 4
@@ -667,10 +667,10 @@ func TestStoreRunA67PlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *test
 		got.ReactPlanChangeReason != "session_resume" ||
 		got.ReactPlanRecoverCount != 2 ||
 		got.ReactPlanHookStatus != "degraded" {
-		t.Fatalf("A67 additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("react plan notebook additive fields mismatch after replay replacement: %#v", got)
 	}
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-plan-notebook"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-react-plan-notebook"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -682,20 +682,20 @@ func TestStoreRunA67PlanNotebookAdditiveFieldsPersistAndReplayIdempotent(t *test
 		page.Items[0].ReactPlanLastAction != "recover" ||
 		page.Items[0].ReactPlanRecoverCount != 2 ||
 		page.Items[0].ReactPlanHookStatus != "degraded" {
-		t.Fatalf("A67 QueryRuns additive parse mismatch: %#v", page.Items[0])
+		t.Fatalf("react plan notebook QueryRuns additive parse mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA67QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunReactPlanNotebookQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.AddRun(RunRecord{
 		Time:      time.Now(),
-		RunID:     "run-a67-compat",
+		RunID:     "run-react-plan-compat",
 		Status:    "success",
 		LatencyMs: 21,
 	})
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-compat"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-react-plan-compat"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -713,15 +713,15 @@ func TestStoreRunA67QueryRunsParserCompatibilityAdditiveNullableDefault(t *testi
 		got.ReactPlanChangeReason != "" ||
 		got.ReactPlanRecoverCount != 0 ||
 		got.ReactPlanHookStatus != "" {
-		t.Fatalf("missing A67 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing react plan notebook additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestStoreRunA67CTXAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                            time.Now(),
-		RunID:                           "run-a67-ctx",
+		RunID:                           "run-context-jit",
 		Status:                          "success",
 		ContextRefDiscoverCount:         6,
 		ContextRefResolveCount:          4,
@@ -746,7 +746,7 @@ func TestStoreRunA67CTXAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		got.ContextSwapbackRelevanceScore != 0.82 ||
 		got.ContextLifecycleTierStats["warm"] != 3 ||
 		got.ContextRecapSource != "task_aware.stage_actions.v1" {
-		t.Fatalf("A67-CTX additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("context jit additive fields mismatch after dedup: %#v", got)
 	}
 
 	rec.ContextRefResolveCount = 5
@@ -767,10 +767,10 @@ func TestStoreRunA67CTXAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		got.ContextEditGateDecision != "deny.gain_ratio_below_threshold" ||
 		got.ContextSwapbackRelevanceScore != 0.65 ||
 		got.ContextLifecycleTierStats["pruned"] != 1 {
-		t.Fatalf("A67-CTX additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("context jit additive fields mismatch after replay replacement: %#v", got)
 	}
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-ctx"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-context-jit"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -784,20 +784,20 @@ func TestStoreRunA67CTXAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		page.Items[0].ContextSwapbackRelevanceScore != 0.65 ||
 		page.Items[0].ContextLifecycleTierStats["hot"] != 1 ||
 		page.Items[0].ContextRecapSource != "task_aware.stage_actions.v1" {
-		t.Fatalf("A67-CTX QueryRuns additive parse mismatch: %#v", page.Items[0])
+		t.Fatalf("context jit QueryRuns additive parse mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA67CTXQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunContextJITQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.AddRun(RunRecord{
 		Time:      time.Now(),
-		RunID:     "run-a67-ctx-compat",
+		RunID:     "run-context-jit-compat",
 		Status:    "success",
 		LatencyMs: 21,
 	})
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a67-ctx-compat"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-context-jit-compat"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -815,15 +815,15 @@ func TestStoreRunA67CTXQueryRunsParserCompatibilityAdditiveNullableDefault(t *te
 		got.ContextSwapbackRelevanceScore != 0 ||
 		len(got.ContextLifecycleTierStats) != 0 ||
 		got.ContextRecapSource != "" {
-		t.Fatalf("missing A67-CTX additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing context jit additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                          time.Now(),
-		RunID:                         "run-a68-realtime",
+		RunID:                         "run-realtime-protocol",
 		Status:                        "success",
 		RealtimeProtocolVersion:       "realtime_event_protocol.v1",
 		RealtimeEventSeqMax:           12,
@@ -847,7 +847,7 @@ func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 		got.RealtimeResumeTotal != 1 ||
 		got.RealtimeResumeSource != "cursor" ||
 		got.RealtimeIdempotencyDedupTotal != 2 {
-		t.Fatalf("A68 additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("realtime protocol additive fields mismatch after dedup: %#v", got)
 	}
 
 	rec.RealtimeEventSeqMax = 24
@@ -869,10 +869,10 @@ func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 		got.RealtimeResumeSource != "persisted_cursor" ||
 		got.RealtimeIdempotencyDedupTotal != 4 ||
 		got.RealtimeLastErrorCode != "realtime.sequence_gap" {
-		t.Fatalf("A68 additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("realtime protocol additive fields mismatch after replay replacement: %#v", got)
 	}
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a68-realtime"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-realtime-protocol"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -885,20 +885,20 @@ func TestStoreRunA68RealtimeAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 		page.Items[0].RealtimeResumeSource != "persisted_cursor" ||
 		page.Items[0].RealtimeIdempotencyDedupTotal != 4 ||
 		page.Items[0].RealtimeLastErrorCode != "realtime.sequence_gap" {
-		t.Fatalf("A68 QueryRuns additive parse mismatch: %#v", page.Items[0])
+		t.Fatalf("realtime protocol QueryRuns additive parse mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA68QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunRealtimeProtocolQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.AddRun(RunRecord{
 		Time:      time.Now(),
-		RunID:     "run-a68-compat",
+		RunID:     "run-realtime-protocol-compat",
 		Status:    "success",
 		LatencyMs: 21,
 	})
 
-	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a68-compat"})
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-realtime-protocol-compat"})
 	if err != nil {
 		t.Fatalf("QueryRuns failed: %v", err)
 	}
@@ -916,12 +916,12 @@ func TestStoreRunA68QueryRunsParserCompatibilityAdditiveNullableDefault(t *testi
 		got.RealtimeResumeSource != "" ||
 		got.RealtimeIdempotencyDedupTotal != 0 ||
 		got.RealtimeLastErrorCode != "" {
-		t.Fatalf("missing A68 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing realtime protocol additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
-func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunRuntimeBudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:           time.Now(),
 		RunID:          "run-a60-budget-admission",
@@ -956,7 +956,7 @@ func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *t
 	if items[0].BudgetDecision != "degrade" ||
 		items[0].DegradeAction != "trim_memory_context" ||
 		items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
-		t.Fatalf("A60 additive fields mismatch after dedup: %#v", items[0])
+		t.Fatalf("runtime budget admission additive fields mismatch after dedup: %#v", items[0])
 	}
 
 	rec.BudgetDecision = "deny"
@@ -987,7 +987,7 @@ func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *t
 	if items[0].BudgetDecision != "deny" ||
 		items[0].DegradeAction != "" ||
 		items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
-		t.Fatalf("A60 additive fields mismatch after replay replacement: %#v", items[0])
+		t.Fatalf("runtime budget admission additive fields mismatch after replay replacement: %#v", items[0])
 	}
 
 	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a60-budget-admission"})
@@ -1000,12 +1000,12 @@ func TestStoreRunA60BudgetAdmissionAdditiveFieldsPersistAndReplayIdempotent(t *t
 	if page.Items[0].BudgetDecision != "deny" ||
 		page.Items[0].DegradeAction != "" ||
 		page.Items[0].BudgetSnapshot["version"] != "budget_admission.v1" {
-		t.Fatalf("A60 query mapping mismatch: %#v", page.Items[0])
+		t.Fatalf("runtime budget admission query mapping mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:               time.Now(),
 		RunID:              "run-a61-tracing-eval",
@@ -1037,10 +1037,10 @@ func TestStoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testi
 		got.EvalJobID != "eval-job-a61" ||
 		got.EvalShardTotal != 4 ||
 		got.EvalResumeCount != 1 {
-		t.Fatalf("A61 additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("tracing+eval additive fields mismatch after dedup: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.92 {
-		t.Fatalf("A61 eval_summary parse mismatch after dedup: %#v", got.EvalSummary)
+		t.Fatalf("tracing+eval eval_summary parse mismatch after dedup: %#v", got.EvalSummary)
 	}
 
 	rec.TraceExportStatus = "failed"
@@ -1059,10 +1059,10 @@ func TestStoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testi
 	if got.TraceExportStatus != "failed" ||
 		got.EvalExecutionMode != "local" ||
 		got.EvalResumeCount != 0 {
-		t.Fatalf("A61 additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("tracing+eval additive fields mismatch after replay replacement: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.81 {
-		t.Fatalf("A61 eval_summary parse mismatch after replay replacement: %#v", got.EvalSummary)
+		t.Fatalf("tracing+eval eval_summary parse mismatch after replay replacement: %#v", got.EvalSummary)
 	}
 
 	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a61-tracing-eval"})
@@ -1074,12 +1074,12 @@ func TestStoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testi
 	}
 	if page.Items[0].TraceExportStatus != "failed" ||
 		page.Items[0].EvalExecutionMode != "local" {
-		t.Fatalf("A61 query mapping mismatch: %#v", page.Items[0])
+		t.Fatalf("tracing+eval query mapping mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA61TracingEvalAdditiveFieldsBoundedCardinality(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunTracingEvalAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  2,
@@ -1110,21 +1110,21 @@ func TestStoreRunA61TracingEvalAdditiveFieldsBoundedCardinality(t *testing.T) {
 	if len([]byte(got.TraceExportStatus)) > 24 ||
 		len([]byte(got.TraceSchemaVersion)) > 24 ||
 		len([]byte(got.EvalExecutionMode)) > 24 {
-		t.Fatalf("A61 string fields should be bounded by cardinality config, got %#v", got)
+		t.Fatalf("tracing+eval string fields should be bounded by cardinality config, got %#v", got)
 	}
 	if len(got.EvalSummary) > 2 {
-		t.Fatalf("A61 eval_summary map should be bounded by cardinality config, got %#v", got.EvalSummary)
+		t.Fatalf("tracing+eval eval_summary map should be bounded by cardinality config, got %#v", got.EvalSummary)
 	}
 	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "trace_export_status") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "trace_schema_version") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "eval_execution_mode") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "eval_summary") {
-		t.Fatalf("A61 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+		t.Fatalf("tracing+eval bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
 	}
 }
 
-func TestStoreRunA66SnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunStateSnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                     time.Now(),
 		RunID:                    "run-a66-snapshot-restore",
@@ -1146,7 +1146,7 @@ func TestStoreRunA66SnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *t
 		got.StateRestoreAction != "compatible_bounded_restore" ||
 		got.StateRestoreConflictCode != "snapshot_memory_search_policy_mismatch" ||
 		got.StateRestoreSource != "composer" {
-		t.Fatalf("A66 additive fields mismatch after dedup: %#v", got)
+		t.Fatalf("state snapshot restore additive fields mismatch after dedup: %#v", got)
 	}
 
 	rec.StateRestoreAction = "strict_exact_restore"
@@ -1162,7 +1162,7 @@ func TestStoreRunA66SnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *t
 	if got.StateRestoreAction != "strict_exact_restore" ||
 		got.StateRestoreConflictCode != "state_snapshot_strict_incompatible" ||
 		got.StateRestoreSource != "scheduler" {
-		t.Fatalf("A66 additive fields mismatch after replay replacement: %#v", got)
+		t.Fatalf("state snapshot restore additive fields mismatch after replay replacement: %#v", got)
 	}
 
 	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a66-snapshot-restore"})
@@ -1176,12 +1176,12 @@ func TestStoreRunA66SnapshotRestoreAdditiveFieldsPersistAndReplayIdempotent(t *t
 		page.Items[0].StateRestoreAction != "strict_exact_restore" ||
 		page.Items[0].StateRestoreConflictCode != "state_snapshot_strict_incompatible" ||
 		page.Items[0].StateRestoreSource != "scheduler" {
-		t.Fatalf("A66 query mapping mismatch: %#v", page.Items[0])
+		t.Fatalf("state snapshot restore query mapping mismatch: %#v", page.Items[0])
 	}
 }
 
-func TestStoreRunA66QueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+func TestStoreRunStateSnapshotQueryRunsParserCompatibilityAdditiveNullableDefault(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.AddRun(RunRecord{
 		Time:      time.Now(),
 		RunID:     "run-a66-compat",
@@ -1204,12 +1204,12 @@ func TestStoreRunA66QueryRunsParserCompatibilityAdditiveNullableDefault(t *testi
 		got.StateRestoreAction != "" ||
 		got.StateRestoreConflictCode != "" ||
 		got.StateRestoreSource != "" {
-		t.Fatalf("missing A66 additive fields must resolve to documented defaults: %#v", got)
+		t.Fatalf("missing state snapshot restore additive fields must resolve to documented defaults: %#v", got)
 	}
 }
 
 func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                                   time.Now(),
 		RunID:                                  "run-a50-governance",
@@ -1263,7 +1263,7 @@ func TestStoreRunArbitrationVersionGovernanceAdditiveFieldsReplayIdempotent(t *t
 }
 
 func TestStoreRunMemoryAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                     time.Now(),
 		RunID:                    "run-a54-memory",
@@ -1298,7 +1298,7 @@ func TestStoreRunMemoryAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		items[0].MemoryFallbackTotal != 1 ||
 		items[0].MemoryFallbackReasonCode != "memory.fallback.used" ||
 		items[0].MemoryLatencyMsP95 != 25 {
-		t.Fatalf("A54 memory fields mismatch after dedup: %#v", items[0])
+		t.Fatalf("memory diagnostics fields mismatch after dedup: %#v", items[0])
 	}
 
 	rec.MemoryProvider = "zep"
@@ -1323,12 +1323,12 @@ func TestStoreRunMemoryAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 		items[0].MemoryFallbackTotal != 0 ||
 		items[0].MemoryFallbackReasonCode != "" ||
 		items[0].MemoryLatencyMsP95 != 19 {
-		t.Fatalf("A54 memory fields mismatch after replay replacement: %#v", items[0])
+		t.Fatalf("memory diagnostics fields mismatch after replay replacement: %#v", items[0])
 	}
 }
 
 func TestStoreRunObservabilityAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                               time.Now(),
 		RunID:                              "run-a55-observability",
@@ -1359,7 +1359,7 @@ func TestStoreRunObservabilityAdditiveFieldsPersistAndReplayIdempotent(t *testin
 		items[0].DiagnosticsBundleLastStatus != "failed" ||
 		items[0].DiagnosticsBundleLastReasonCode != "diagnostics.bundle.output_unavailable" ||
 		items[0].DiagnosticsBundleLastSchemaVersion != "bundle.v1" {
-		t.Fatalf("A55 observability fields mismatch after dedup: %#v", items[0])
+		t.Fatalf("observability diagnostics fields mismatch after dedup: %#v", items[0])
 	}
 
 	rec.ObservabilityExportProfile = "langfuse"
@@ -1386,12 +1386,12 @@ func TestStoreRunObservabilityAdditiveFieldsPersistAndReplayIdempotent(t *testin
 		items[0].DiagnosticsBundleLastStatus != "degraded" ||
 		items[0].DiagnosticsBundleLastReasonCode != "diagnostics.bundle.policy_invalid" ||
 		items[0].DiagnosticsBundleLastSchemaVersion != "bundle.v2" {
-		t.Fatalf("A55 observability fields mismatch after replay replacement: %#v", items[0])
+		t.Fatalf("observability diagnostics fields mismatch after replay replacement: %#v", items[0])
 	}
 }
 
 func TestStoreRunObservabilityAdditiveFieldsBoundedCardinality(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  8,
@@ -1419,17 +1419,17 @@ func TestStoreRunObservabilityAdditiveFieldsBoundedCardinality(t *testing.T) {
 	if len([]byte(got.ObservabilityExportProfile)) > 24 ||
 		len([]byte(got.DiagnosticsBundleLastReasonCode)) > 24 ||
 		len([]byte(got.DiagnosticsBundleLastSchemaVersion)) > 24 {
-		t.Fatalf("A55 string fields should be bounded by cardinality config, got %#v", got)
+		t.Fatalf("observability diagnostics string fields should be bounded by cardinality config, got %#v", got)
 	}
 	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "observability_export_profile") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "diagnostics_bundle_last_reason_code") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "diagnostics_bundle_last_schema_version") {
-		t.Fatalf("A55 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+		t.Fatalf("observability diagnostics bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
 	}
 }
 
 func TestStoreRunReactAdditiveFieldsBoundedCardinality(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  8,
@@ -1470,7 +1470,7 @@ func TestStoreRunReactAdditiveFieldsBoundedCardinality(t *testing.T) {
 }
 
 func TestStoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                    time.Now(),
 		RunID:                   "run-a58-policy",
@@ -1499,7 +1499,7 @@ func TestStoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent(t *tes
 		got.TieBreakReason != "lexical_code_then_source_order" ||
 		len(got.PolicyDecisionPath) != 3 ||
 		got.PolicyDecisionPath[1].Stage != "sandbox_action" {
-		t.Fatalf("A58 policy fields mismatch: %#v", got)
+		t.Fatalf("policy precedence fields mismatch: %#v", got)
 	}
 
 	rec.PolicyDecisionPath = []RuntimePolicyDecisionPathEntry{
@@ -1517,7 +1517,7 @@ func TestStoreRunPolicyPrecedenceAdditiveFieldsPersistAndReplayIdempotent(t *tes
 }
 
 func TestStoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	d.SetCardinalityConfig(CardinalityConfig{
 		Enabled:        true,
 		MaxMapEntries:  8,
@@ -1552,16 +1552,16 @@ func TestStoreRunPolicyPrecedenceAdditiveFieldsBoundedCardinality(t *testing.T) 
 		len([]byte(got.WinnerStage)) > 16 ||
 		len([]byte(got.DenySource)) > 16 ||
 		len([]byte(got.TieBreakReason)) > 16 {
-		t.Fatalf("A58 policy string fields should be bounded by cardinality config, got %#v", got)
+		t.Fatalf("policy precedence string fields should be bounded by cardinality config, got %#v", got)
 	}
 	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "policy_decision_path") ||
 		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "policy_precedence_version") {
-		t.Fatalf("A58 bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
+		t.Fatalf("policy precedence bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
 	}
 }
 
 func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                              time.Now(),
 		RunID:                             "run-a51-sandbox",
@@ -1653,7 +1653,7 @@ func TestStoreRunSandboxAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 }
 
 func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                 time.Now(),
 		RunID:                "run-team-1",
@@ -1680,7 +1680,7 @@ func TestStoreRunTeamsAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                           time.Now(),
 		RunID:                          "run-workflow-1",
@@ -1712,7 +1712,7 @@ func TestStoreRunWorkflowAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                        time.Now(),
 		RunID:                       "run-a2a-1",
@@ -1750,7 +1750,7 @@ func TestStoreRunA2AAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                       time.Now(),
 		RunID:                      "run-a14-async-delayed",
@@ -1790,7 +1790,7 @@ func TestStoreRunAsyncDelayedAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                           time.Now(),
 		RunID:                          "run-scheduler-1",
@@ -1838,7 +1838,7 @@ func TestStoreRunSchedulerSubagentAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunTimeoutResolutionFieldsQueryCompatibility(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                           time.Now(),
 		RunID:                          "run-a41-query",
@@ -1870,7 +1870,7 @@ func TestStoreRunTimeoutResolutionFieldsQueryCompatibility(t *testing.T) {
 }
 
 func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                                 time.Now(),
 		RunID:                                "run-recovery-1",
@@ -1908,7 +1908,7 @@ func TestStoreRunRecoveryAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
 		Time:                      time.Now(),
 		RunID:                     "run-collab-1",
@@ -1942,7 +1942,7 @@ func TestStoreRunCollabAggregateReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreUnifiedRunQueryAndSemantics(t *testing.T) {
-	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 	d.AddRun(RunRecord{
 		Time:       base.Add(1 * time.Second),
@@ -2016,7 +2016,7 @@ func TestStoreUnifiedRunQueryAndSemantics(t *testing.T) {
 }
 
 func TestStoreUnifiedRunQueryValidationAndPagingBounds(t *testing.T) {
-	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 	for i := 0; i < 5; i++ {
 		d.AddRun(RunRecord{
@@ -2072,7 +2072,7 @@ func TestStoreUnifiedRunQueryValidationAndPagingBounds(t *testing.T) {
 }
 
 func TestStoreMailboxReplayIsIdempotent(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := MailboxRecord{
 		Time:      time.Now(),
 		MessageID: "msg-mailbox-1",
@@ -2091,7 +2091,7 @@ func TestStoreMailboxReplayIsIdempotent(t *testing.T) {
 }
 
 func TestStoreMailboxQueryAndAggregates(t *testing.T) {
-	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now().UTC()
 	d.AddMailbox(MailboxRecord{
 		Time:       base.Add(1 * time.Second),
@@ -2147,7 +2147,7 @@ func TestStoreMailboxQueryAndAggregates(t *testing.T) {
 }
 
 func TestStoreMailboxQueryValidationAndCursorDeterminism(t *testing.T) {
-	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now().UTC()
 	for i := 0; i < 3; i++ {
 		d.AddMailbox(MailboxRecord{
@@ -2236,7 +2236,7 @@ func TestStoreMailboxQueryValidationAndCursorDeterminism(t *testing.T) {
 }
 
 func TestStoreUnifiedRunQueryCursorDeterministicAndFailFast(t *testing.T) {
-	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 32, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 	for i := 0; i < 3; i++ {
 		d.AddRun(RunRecord{
@@ -2317,7 +2317,7 @@ func TestStoreUnifiedRunQueryCursorDeterministicAndFailFast(t *testing.T) {
 }
 
 func TestStoreSkillDedupConcurrent(t *testing.T) {
-	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 16, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := SkillRecord{
 		Time:       time.Now(),
 		RunID:      "run-1",
@@ -2374,7 +2374,7 @@ func TestIdempotencyKeyDeterministic(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationWithP95(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "model", "running", 1, base)
@@ -2416,7 +2416,7 @@ func TestStoreTimelineAggregationWithP95(t *testing.T) {
 }
 
 func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
-	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now()
 
 	d.AddTimelineEvent("run-1", "run", "running", 1, base)
@@ -2439,7 +2439,7 @@ func TestStoreTimelineAggregationIdempotentReplay(t *testing.T) {
 }
 
 func TestStoreTimelineTrendsLastNRunsAndTimeWindow(t *testing.T) {
-	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 2, TimeWindow: 15 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 2, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	base := time.Now().Add(-2 * time.Minute)
 
 	addRunTimeline := func(runID string, seq int64, started, ended time.Time, status string) {
@@ -2495,7 +2495,7 @@ func TestStoreTimelineTrendsLastNRunsAndTimeWindow(t *testing.T) {
 }
 
 func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
-	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
+	d := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
 	base := time.Now()
 	d.AddTimelineEvent("run-1", "tool", "running", 1, base)
 	d.AddTimelineEvent("run-1", "tool", "failed", 2, base.Add(10*time.Millisecond))
@@ -2511,7 +2511,7 @@ func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
 		t.Fatalf("duplicate replay should not increase trend counts: %#v", trends[0])
 	}
 
-	d2 := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
+	d2 := NewStore(16, 16, 8, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 1 * time.Minute})
 	d2.AddTimelineEvent("run-zero", "tool", "running", 1, base)
 	d2.AddTimelineEvent("run-zero", "tool", "failed", 2, base.Add(5*time.Millisecond))
 	d2.AddRun(RunRecord{RunID: "run-zero", Status: "failed"})
@@ -2521,13 +2521,13 @@ func TestStoreTimelineTrendsIdempotentReplayAndEmptyWindow(t *testing.T) {
 	}
 }
 
-func TestStoreCA2ExternalTrendsThresholdSignalsAndErrorLayerExtension(t *testing.T) {
+func TestStoreContextStage2ExternalTrendsThresholdSignalsAndErrorLayerExtension(t *testing.T) {
 	d := NewStore(16, 64, 8, 8,
 		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 15 * time.Minute},
-		CA2ExternalTrendConfig{
+		ContextStage2ExternalTrendConfig{
 			Enabled: true,
 			Window:  15 * time.Minute,
-			Thresholds: CA2ExternalThresholds{
+			Thresholds: ContextStage2ExternalThresholds{
 				P95LatencyMs: 50,
 				ErrorRate:    0.25,
 				HitRate:      0.80,
@@ -2562,7 +2562,7 @@ func TestStoreCA2ExternalTrendsThresholdSignalsAndErrorLayerExtension(t *testing
 		Stage2ReasonCode: "ok",
 	})
 
-	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{})
+	items := d.ContextStage2ExternalTrends(ContextStage2ExternalTrendQuery{})
 	if len(items) != 1 {
 		t.Fatalf("trend len = %d, want 1", len(items))
 	}
@@ -2591,10 +2591,10 @@ func TestStoreCA2ExternalTrendsThresholdSignalsAndErrorLayerExtension(t *testing
 	}
 }
 
-func TestStoreCA2ExternalTrendsEmptyWindow(t *testing.T) {
+func TestStoreContextStage2ExternalTrendsEmptyWindow(t *testing.T) {
 	d := NewStore(8, 16, 8, 8,
 		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 1 * time.Minute},
-		CA2ExternalTrendConfig{Enabled: true, Window: 1 * time.Second},
+		ContextStage2ExternalTrendConfig{Enabled: true, Window: 1 * time.Second},
 	)
 	base := time.Now()
 	d.AddRun(RunRecord{
@@ -2610,19 +2610,19 @@ func TestStoreCA2ExternalTrendsEmptyWindow(t *testing.T) {
 		Stage2LatencyMs:  10,
 		Stage2ReasonCode: "ok",
 	})
-	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{Window: 30 * time.Second})
+	items := d.ContextStage2ExternalTrends(ContextStage2ExternalTrendQuery{Window: 30 * time.Second})
 	if len(items) != 0 {
 		t.Fatalf("expected empty CA2 trend for window, got %#v", items)
 	}
 }
 
-func TestStoreCA2ExternalTrendsRunStreamSemanticEquivalent(t *testing.T) {
+func TestStoreContextStage2ExternalTrendsRunStreamSemanticEquivalent(t *testing.T) {
 	d := NewStore(8, 32, 8, 8,
 		TimelineTrendConfig{Enabled: true, LastNRuns: 10, TimeWindow: 15 * time.Minute},
-		CA2ExternalTrendConfig{
+		ContextStage2ExternalTrendConfig{
 			Enabled: true,
 			Window:  15 * time.Minute,
-			Thresholds: CA2ExternalThresholds{
+			Thresholds: ContextStage2ExternalThresholds{
 				P95LatencyMs: 200,
 				ErrorRate:    0.8,
 				HitRate:      0.1,
@@ -2647,7 +2647,7 @@ func TestStoreCA2ExternalTrendsRunStreamSemanticEquivalent(t *testing.T) {
 		Stage2ReasonCode: "ok",
 	})
 
-	items := d.CA2ExternalTrends(CA2ExternalTrendQuery{})
+	items := d.ContextStage2ExternalTrends(ContextStage2ExternalTrendQuery{})
 	if len(items) != 1 {
 		t.Fatalf("trend len = %d, want 1", len(items))
 	}

@@ -39,7 +39,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A67_CTX_JIT_MANAGER_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_CONTEXT_JIT_MANAGER_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {
@@ -97,7 +97,7 @@ reload:
 }
 
 func TestManagerRuntimeContextJITInvalidReloadRollsBackWithEnvPrecedence(t *testing.T) {
-	t.Setenv("BAYMAX_A67_CTX_JIT_ENV_TEST_RUNTIME_CONTEXT_JIT_REFERENCE_FIRST_MAX_REFS", "19")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_ENV_TEST_RUNTIME_CONTEXT_JIT_REFERENCE_FIRST_MAX_REFS", "19")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
 runtime:
@@ -130,7 +130,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A67_CTX_JIT_ENV_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_CONTEXT_JIT_ENV_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {

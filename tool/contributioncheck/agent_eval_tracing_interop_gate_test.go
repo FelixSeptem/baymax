@@ -25,34 +25,38 @@ func TestAgentEvalTracingInteropGateScriptParity(t *testing.T) {
 	ps := string(psRaw)
 	requiredTokens := []string{
 		"control_plane_absent",
-		"a61_field_reuse_required",
+		"tracing_eval_field_reuse_required",
 		"runtime\\.eval\\.execution\\.[a-zA-Z0-9_.-]*(control_plane|controlplane|scheduler_service|orchestrator_endpoint|controller_endpoint|hosted_scheduler|remote_scheduler)",
 		"runtime\\.eval\\.[a-zA-Z0-9_.-]*(policy_decision_path|deny_source|winner_stage|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action|budget_snapshot|budget_decision|degrade_action)",
-		"A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。",
+		"RuntimeRecorderParsesTracingEvalAdditiveFields",
+		"RuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault",
+		"StoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent",
+		"StoreRunTracingEvalAdditiveFieldsBoundedCardinality",
+		"Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
-			t.Fatalf("shell A61 gate missing token %q", token)
+			t.Fatalf("shell tracing+eval interop gate missing token %q", token)
 		}
 		if !strings.Contains(ps, token) {
-			t.Fatalf("powershell A61 gate missing token %q", token)
+			t.Fatalf("powershell tracing+eval interop gate missing token %q", token)
 		}
 	}
-	if !strings.Contains(shell, "assert_no_parallel_a61_changes") {
-		t.Fatalf("shell A61 gate missing assertion helper for parallel proposal closure")
+	if !strings.Contains(shell, "assert_no_parallel_tracing_eval_changes") {
+		t.Fatalf("shell tracing+eval interop gate missing assertion helper for parallel proposal closure")
 	}
-	if !strings.Contains(ps, "Assert-NoParallelA61Changes") {
-		t.Fatalf("powershell A61 gate missing assertion helper for parallel proposal closure")
+	if !strings.Contains(ps, "Assert-NoParallelTracingEvalChanges") {
+		t.Fatalf("powershell tracing+eval interop gate missing assertion helper for parallel proposal closure")
 	}
 
 	if !strings.Contains(shell, "set -euo pipefail") {
-		t.Fatalf("shell A61 gate must use set -euo pipefail")
+		t.Fatalf("shell tracing+eval interop gate must use set -euo pipefail")
 	}
 	if !strings.Contains(ps, "lib/native-strict.ps1") || !strings.Contains(ps, "Invoke-NativeStrict") {
-		t.Fatalf("powershell A61 gate must use strict native helper")
+		t.Fatalf("powershell tracing+eval interop gate must use strict native helper")
 	}
 	if strings.Contains(ps, "AllowFailure") {
-		t.Fatalf("powershell A61 gate must not add AllowFailure exceptions")
+		t.Fatalf("powershell tracing+eval interop gate must not add AllowFailure exceptions")
 	}
 }
 
@@ -73,16 +77,16 @@ func TestQualityGateIncludesAgentEvalTracingInteropGate(t *testing.T) {
 	shell := string(shellRaw)
 	ps := string(psRaw)
 	if !strings.Contains(shell, "check-agent-eval-and-tracing-interop-contract.sh") {
-		t.Fatalf("shell quality gate must invoke A61 interop gate")
+		t.Fatalf("shell quality gate must invoke tracing+eval interop gate")
 	}
 	if !strings.Contains(shell, "[quality-gate][agent-eval-tracing-interop-contract]") {
-		t.Fatalf("shell quality gate must expose blocking A61 interop gate failure label")
+		t.Fatalf("shell quality gate must expose blocking tracing+eval interop gate failure label")
 	}
 	if !strings.Contains(ps, "check-agent-eval-and-tracing-interop-contract.ps1") {
-		t.Fatalf("powershell quality gate must invoke A61 interop gate")
+		t.Fatalf("powershell quality gate must invoke tracing+eval interop gate")
 	}
 	if !strings.Contains(ps, "[quality-gate] agent eval and tracing interop contract suites") {
-		t.Fatalf("powershell quality gate must expose A61 interop step label")
+		t.Fatalf("powershell quality gate must expose tracing+eval interop step label")
 	}
 }
 
@@ -102,20 +106,20 @@ func TestAgentEvalTracingInteropRoadmapAndContractIndexClosureMarkers(t *testing
 
 	roadmap := string(roadmapRaw)
 	index := string(indexRaw)
-	requiredRoadmap := "A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。"
+	requiredRoadmap := "Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 	requiredIndexRows := []string{
-		"A61 OTel/Eval Replay Fixture (`otel_semconv.v1`/`agent_eval.v1`/`agent_eval_distributed.v1`)",
-		"A61 Tracing + Eval Interop Gate",
-		"A61 Tracing + Eval Interop Gate CI Required-Check 候选",
-		"A61 Tracing + Eval Interop Gate Quality Path",
+		"Tracing + Eval Replay Fixture (`otel_semconv.v1`/`agent_eval.v1`/`agent_eval_distributed.v1`)",
+		"Tracing + Eval Interop Gate",
+		"Tracing + Eval Interop Gate CI Required-Check 候选",
+		"Tracing + Eval Interop Gate Quality Path",
 	}
 
 	if !strings.Contains(roadmap, requiredRoadmap) {
-		t.Fatalf("roadmap must include A61 same-domain closure marker: %q", requiredRoadmap)
+		t.Fatalf("roadmap must include tracing+eval same-domain closure marker: %q", requiredRoadmap)
 	}
 	for _, row := range requiredIndexRows {
 		if !strings.Contains(index, row) {
-			t.Fatalf("mainline contract index missing A61 row: %q", row)
+			t.Fatalf("mainline contract index missing tracing+eval row: %q", row)
 		}
 	}
 }

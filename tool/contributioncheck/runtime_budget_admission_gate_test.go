@@ -27,7 +27,7 @@ func TestRuntimeBudgetAdmissionGateScriptParity(t *testing.T) {
 		"budget_control_plane_absent",
 		"budget_field_reuse_required",
 		"policy_decision_path|deny_source|winner_stage|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action",
-		"A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。",
+		"Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -101,18 +101,18 @@ func TestRuntimeBudgetAdmissionRoadmapAndContractIndexClosureMarkers(t *testing.
 
 	roadmap := string(roadmapRaw)
 	index := string(indexRaw)
-	requiredRoadmap := "A60 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在 A60 内以增量任务吸收，不再新开平行提案。"
+	requiredRoadmap := "Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 	requiredIndexRows := []string{
-		"Runtime Budget + Admission A60 Gate Assertion",
-		"Runtime Budget + Admission A60 Quality Path",
+		"Runtime Budget + Admission Gate Assertion",
+		"Runtime Budget + Admission Quality Path",
 	}
 
 	if !strings.Contains(roadmap, requiredRoadmap) {
-		t.Fatalf("roadmap must include A60 same-domain closure marker: %q", requiredRoadmap)
+		t.Fatalf("roadmap must include runtime budget admission same-domain closure marker: %q", requiredRoadmap)
 	}
 	for _, row := range requiredIndexRows {
 		if !strings.Contains(index, row) {
-			t.Fatalf("mainline contract index missing A60 row: %q", row)
+			t.Fatalf("mainline contract index missing runtime budget admission row: %q", row)
 		}
 	}
 }

@@ -153,7 +153,7 @@ func TestIngestIsolateHandoffValidation(t *testing.T) {
 	})
 }
 
-func TestAssemblerCA2IsolateHandoffDefaultConsumption(t *testing.T) {
+func TestAssemblerContextStage2IsolateHandoffDefaultConsumption(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -205,7 +205,7 @@ func TestAssemblerCA2IsolateHandoffDefaultConsumption(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-handoff-default-consume",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup context",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{
@@ -235,7 +235,7 @@ func TestAssemblerCA2IsolateHandoffDefaultConsumption(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA2IsolateHandoffReplayIdempotent(t *testing.T) {
+func TestAssemblerContextStage2IsolateHandoffReplayIdempotent(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = true
@@ -283,7 +283,7 @@ func TestAssemblerCA2IsolateHandoffReplayIdempotent(t *testing.T) {
 	req := types.ContextAssembleRequest{
 		RunID:         "run-handoff-replay",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "lookup context",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}

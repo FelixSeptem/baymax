@@ -40,9 +40,9 @@ assert_absent_regex() {
   fi
 }
 
-assert_no_parallel_a66_snapshot_changes() {
+assert_no_parallel_state_snapshot_changes() {
   local assertion="$1"
-  local canonical_change="introduce-unified-state-and-session-snapshot-contract-a66"
+  local canonical_change_hint="introduce-unified-state-and-session-snapshot-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +51,7 @@ assert_no_parallel_a66_snapshot_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${name}" != "${canonical_change}" &&
+    if [[ "${lower}" != *"${canonical_change_hint}"* &&
       "${lower}" == *snapshot* &&
       ( "${lower}" == *state* || "${lower}" == *session* ) ]]; then
       violations+=("${name}")
@@ -65,16 +65,17 @@ assert_no_parallel_a66_snapshot_changes() {
   fi
 }
 
-resolve_a66_change_dir() {
-  local active="openspec/changes/introduce-unified-state-and-session-snapshot-contract-a66"
-  if [[ -d "${active}" ]]; then
-    echo "${active}"
-    return 0
-  fi
-
+resolve_state_snapshot_change_dir() {
   local candidate
   shopt -s nullglob
-  for candidate in openspec/changes/archive/*introduce-unified-state-and-session-snapshot-contract-a66; do
+  for candidate in openspec/changes/*introduce-unified-state-and-session-snapshot-contract*; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  for candidate in openspec/changes/archive/*introduce-unified-state-and-session-snapshot-contract*; do
     if [[ -d "${candidate}" ]]; then
       echo "${candidate}"
       shopt -u nullglob
@@ -83,7 +84,7 @@ resolve_a66_change_dir() {
   done
   shopt -u nullglob
 
-  echo "[state-snapshot-contract-gate] unable to locate A66 change directory in active or archive paths" >&2
+  echo "[state-snapshot-contract-gate] unable to locate state/session snapshot change directory in active or archive paths" >&2
   exit 1
 }
 
@@ -94,20 +95,20 @@ run_step() {
   "$@"
 }
 
-A66_CHANGE_DIR="$(resolve_a66_change_dir)"
+STATE_SNAPSHOT_CHANGE_DIR="$(resolve_state_snapshot_change_dir)"
 
 run_step "assertion state_control_plane_absent: design marker" \
   assert_contains_literal "state_control_plane_absent" \
-  "${A66_CHANGE_DIR}/design.md" \
+  "${STATE_SNAPSHOT_CHANGE_DIR}/design.md" \
   "不引入托管状态控制面、远程恢复调度服务或平台化迁移中心。"
 
 run_step "assertion state_control_plane_absent: gate spec marker" \
   assert_contains_literal "state_control_plane_absent" \
-  "${A66_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${STATE_SNAPSHOT_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "check-state-snapshot-contract.sh/.ps1"
 
 run_step "assertion state_control_plane_absent: active change set closure" \
-  assert_no_parallel_a66_snapshot_changes "state_control_plane_absent"
+  assert_no_parallel_state_snapshot_changes "state_control_plane_absent"
 
 run_step "assertion state_control_plane_absent: reject hosted control-plane config drift" \
   assert_absent_regex "state_control_plane_absent" \
@@ -115,13 +116,13 @@ run_step "assertion state_control_plane_absent: reject hosted control-plane conf
 
 run_step "assertion state_source_of_truth_reuse_required: canonical source-of-truth marker" \
   assert_contains_literal "state_source_of_truth_reuse_required" \
-  "${A66_CHANGE_DIR}/specs/memory-scope-and-builtin-filesystem-v2-governance-contract/spec.md" \
+  "${STATE_SNAPSHOT_CHANGE_DIR}/specs/memory-scope-and-builtin-filesystem-v2-governance-contract/spec.md" \
   "MUST NOT redefine memory source-of-truth behavior."
 
 run_step "assertion state_source_of_truth_reuse_required: roadmap closure marker" \
   assert_contains_literal "state_source_of_truth_reuse_required" \
   "docs/development-roadmap.md" \
-  "A66 必须复用现有 checkpoint/snapshot 语义与 A59 memory lifecycle，不得重写存储层事实源。"
+  "State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。"
 
 run_step "assertion state_source_of_truth_reuse_required: reject duplicated memory source aliases in snapshot config" \
   assert_absent_regex "state_source_of_truth_reuse_required" \
@@ -136,8 +137,8 @@ run_step "unified snapshot manifest contract suites" \
 run_step "composer unified snapshot runtime suites" \
   go test ./orchestration/composer -run '^TestComposerUnifiedSnapshot' -count=1
 
-run_step "a66 restore integration suites" \
-  go test ./integration -run '^TestA66UnifiedSnapshot' -count=1
+run_step "state/session snapshot restore integration suites" \
+  go test ./integration -run '^TestUnifiedSnapshot' -count=1
 
 run_step "shared recovery suites for impacted scope" \
   go test ./integration -run '^Test(SchedulerRecovery|ComposerRecovery)' -count=1

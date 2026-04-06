@@ -87,7 +87,7 @@ func RunThresholdTuning(req ThresholdTuningRequest) (ThresholdTuningReport, erro
 
 func RenderThresholdTuningMarkdown(report ThresholdTuningReport) string {
 	var b strings.Builder
-	b.WriteString("# CA3 Threshold Tuning Report\n\n")
+	b.WriteString("# Context Pressure Threshold Tuning Report\n\n")
 	_, _ = fmt.Fprintf(&b, "- Schema: `%s`\n", report.SchemaVersion)
 	_, _ = fmt.Fprintf(&b, "- Corpus readiness: `%s`\n", report.CorpusReadiness)
 	_, _ = fmt.Fprintf(&b, "- Readiness guidance: %s\n\n", report.CorpusReadinessMsg)

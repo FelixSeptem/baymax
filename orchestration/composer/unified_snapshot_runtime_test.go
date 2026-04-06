@@ -16,11 +16,11 @@ import (
 )
 
 func TestComposerUnifiedSnapshotImportStrictConflictFailFast(t *testing.T) {
-	source := newA66TestComposer(t)
-	runID := "run-a66-strict-conflict"
+	source := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-strict-conflict"
 	if _, err := source.DispatchChild(context.Background(), ChildDispatchRequest{
 		Task: scheduler.Task{
-			TaskID: "task-a66-source",
+			TaskID: "task-unified-snapshot-source",
 			RunID:  runID,
 		},
 		Target:               ChildTargetLocal,
@@ -40,9 +40,9 @@ func TestComposerUnifiedSnapshotImportStrictConflictFailFast(t *testing.T) {
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	target := newA66TestComposer(t)
+	target := newUnifiedSnapshotTestComposer(t)
 	if _, err := target.Scheduler().Enqueue(context.Background(), scheduler.Task{
-		TaskID: "task-a66-target-existing",
+		TaskID: "task-unified-snapshot-target-existing",
 		RunID:  runID,
 	}); err != nil {
 		t.Fatalf("preload conflicting scheduler state failed: %v", err)
@@ -50,7 +50,7 @@ func TestComposerUnifiedSnapshotImportStrictConflictFailFast(t *testing.T) {
 
 	_, err = target.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-strict-conflict",
+		OperationID:  "op-unified-snapshot-strict-conflict",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -67,11 +67,11 @@ func TestComposerUnifiedSnapshotImportStrictConflictFailFast(t *testing.T) {
 }
 
 func TestComposerUnifiedSnapshotImportCompatibleConflictHasBoundedAction(t *testing.T) {
-	source := newA66TestComposer(t)
-	runID := "run-a66-compatible-conflict"
+	source := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-compatible-conflict"
 	if _, err := source.DispatchChild(context.Background(), ChildDispatchRequest{
 		Task: scheduler.Task{
-			TaskID: "task-a66-compatible-source",
+			TaskID: "task-unified-snapshot-compatible-source",
 			RunID:  runID,
 		},
 		Target:               ChildTargetLocal,
@@ -91,8 +91,8 @@ func TestComposerUnifiedSnapshotImportCompatibleConflictHasBoundedAction(t *test
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	target := newA66TestComposer(t)
-	existingTaskID := "task-a66-compatible-target-existing"
+	target := newUnifiedSnapshotTestComposer(t)
+	existingTaskID := "task-unified-snapshot-compatible-target-existing"
 	if _, err := target.Scheduler().Enqueue(context.Background(), scheduler.Task{
 		TaskID: existingTaskID,
 		RunID:  runID,
@@ -102,7 +102,7 @@ func TestComposerUnifiedSnapshotImportCompatibleConflictHasBoundedAction(t *test
 
 	result, err := target.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-compatible-conflict",
+		OperationID:  "op-unified-snapshot-compatible-conflict",
 		RestoreMode:  orchestrationsnapshot.RestoreModeCompatible,
 		CompatWindow: 1,
 	})
@@ -123,9 +123,9 @@ func TestComposerUnifiedSnapshotImportCompatibleConflictHasBoundedAction(t *test
 	}
 }
 
-func TestComposerUnifiedSnapshotMemorySegmentAlignsWithA59Lifecycle(t *testing.T) {
-	comp := newA66TestComposer(t)
-	runID := "run-a66-memory-export"
+func TestComposerUnifiedSnapshotMemorySegmentAlignsWithMemoryLifecycle(t *testing.T) {
+	comp := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-memory-export"
 	comp.runtimeMgr.RecordRun(runtimediag.RunRecord{
 		Time:                time.Now().UTC(),
 		RunID:               runID,
@@ -174,17 +174,17 @@ func TestComposerUnifiedSnapshotMemorySegmentAlignsWithA59Lifecycle(t *testing.T
 }
 
 func TestComposerUnifiedSnapshotMemoryRestoreIdempotentNoInflation(t *testing.T) {
-	source := newA66TestComposer(t)
-	runID := "run-a66-memory-idempotent"
+	source := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-memory-idempotent"
 	exported, err := source.ExportUnifiedSnapshot(context.Background(), UnifiedSnapshotExportRequest{RunID: runID})
 	if err != nil {
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	target := newA66TestComposer(t)
+	target := newUnifiedSnapshotTestComposer(t)
 	first, err := target.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-memory-idempotent",
+		OperationID:  "op-unified-snapshot-memory-idempotent",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -197,7 +197,7 @@ func TestComposerUnifiedSnapshotMemoryRestoreIdempotentNoInflation(t *testing.T)
 	}
 	second, err := target.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-memory-idempotent",
+		OperationID:  "op-unified-snapshot-memory-idempotent",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -226,8 +226,8 @@ func TestComposerUnifiedSnapshotMemoryRestoreIdempotentNoInflation(t *testing.T)
 }
 
 func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRestore(t *testing.T) {
-	source := newA66TestComposer(t)
-	runID := "run-a66-memory-retrieval-stability"
+	source := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-memory-retrieval-stability"
 	source.runtimeMgr.RecordRun(runtimediag.RunRecord{
 		Time:                time.Now().UTC(),
 		RunID:               runID,
@@ -245,7 +245,7 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 		t.Fatalf("export unified snapshot failed: %v", err)
 	}
 
-	strictTarget := newA66TestComposer(t)
+	strictTarget := newUnifiedSnapshotTestComposer(t)
 	strictTarget.runtimeMgr.RecordRun(runtimediag.RunRecord{
 		Time:                time.Now().UTC(),
 		RunID:               runID,
@@ -257,7 +257,7 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 	})
 	_, err = strictTarget.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-memory-retrieval-strict",
+		OperationID:  "op-unified-snapshot-memory-retrieval-strict",
 		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
 		CompatWindow: 1,
 	})
@@ -265,7 +265,7 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 		t.Fatal("strict restore should fail on retrieval quality drift")
 	}
 
-	compatibleTarget := newA66TestComposer(t)
+	compatibleTarget := newUnifiedSnapshotTestComposer(t)
 	compatibleTarget.runtimeMgr.RecordRun(runtimediag.RunRecord{
 		Time:                time.Now().UTC(),
 		RunID:               runID,
@@ -277,7 +277,7 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 	})
 	result, err := compatibleTarget.ImportUnifiedSnapshot(context.Background(), UnifiedSnapshotImportRequest{
 		Payload:      exported.Payload,
-		OperationID:  "op-a66-memory-retrieval-compatible",
+		OperationID:  "op-unified-snapshot-memory-retrieval-compatible",
 		RestoreMode:  orchestrationsnapshot.RestoreModeCompatible,
 		CompatWindow: 1,
 	})
@@ -295,9 +295,9 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 	}
 }
 
-func newA66TestComposer(t *testing.T) *Composer {
+func newUnifiedSnapshotTestComposer(t *testing.T) *Composer {
 	t.Helper()
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_A66_TEST"})
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}

@@ -8,6 +8,8 @@
 - 参数 schema 校验
 - 并发分发、重试、背压治理
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 核心由 `Registry + Dispatcher` 组成：

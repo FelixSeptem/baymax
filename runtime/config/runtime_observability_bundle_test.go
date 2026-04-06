@@ -13,8 +13,8 @@ import (
 
 func TestManagerGenerateDiagnosticsBundleManifestAndRedaction(t *testing.T) {
 	outputDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-bundle-success.yaml")
-	writeA55BundleRuntimeConfig(
+	cfgPath := filepath.Join(t.TempDir(), "runtime-diagnostics-bundle-success.yaml")
+	writeDiagnosticsBundleRuntimeConfig(
 		t,
 		cfgPath,
 		outputDir,
@@ -28,7 +28,7 @@ func TestManagerGenerateDiagnosticsBundleManifestAndRedaction(t *testing.T) {
 		},
 	)
 
-	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_BUNDLE"})
+	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_DIAGNOSTICS_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestManagerGenerateDiagnosticsBundleManifestAndRedaction(t *testing.T) {
 	result, err := mgr.GenerateDiagnosticsBundle(context.Background(), DiagnosticsBundleGenerateRequest{
 		RunID:           "run-a55-bundle-success",
 		GeneratedAt:     time.Date(2026, 3, 31, 8, 0, 0, 0, time.UTC),
-		GateFingerprint: RuntimeDiagnosticsGateFingerprintA55V1,
+		GateFingerprint: RuntimeDiagnosticsGateFingerprintObservabilityBundleV1,
 		RunFinishedPayload: map[string]any{
 			"client_secret": "raw-secret",
 			"status":        "success",
@@ -66,7 +66,7 @@ func TestManagerGenerateDiagnosticsBundleManifestAndRedaction(t *testing.T) {
 	}
 	if manifest.Metadata.RedactionStatus != "redacted" ||
 		manifest.Metadata.ReplayHintSchema != RuntimeDiagnosticsReplayHintSchemaV1 ||
-		manifest.Metadata.GateFingerprint != RuntimeDiagnosticsGateFingerprintA55V1 {
+		manifest.Metadata.GateFingerprint != RuntimeDiagnosticsGateFingerprintObservabilityBundleV1 {
 		t.Fatalf("manifest metadata mismatch: %#v", manifest.Metadata)
 	}
 	if len(manifest.Sections) != 5 {
@@ -105,8 +105,8 @@ func TestManagerGenerateDiagnosticsBundleOutputUnavailable(t *testing.T) {
 		t.Fatalf("write blocked marker failed: %v", err)
 	}
 	outputDir := filepath.ToSlash(filepath.Join(blocked, "bundles"))
-	cfgPath := filepath.Join(tmp, "runtime-a55-bundle-output-unavailable.yaml")
-	writeA55BundleRuntimeConfig(
+	cfgPath := filepath.Join(tmp, "runtime-diagnostics-bundle-output-unavailable.yaml")
+	writeDiagnosticsBundleRuntimeConfig(
 		t,
 		cfgPath,
 		outputDir,
@@ -120,7 +120,7 @@ func TestManagerGenerateDiagnosticsBundleOutputUnavailable(t *testing.T) {
 		},
 	)
 
-	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_BUNDLE"})
+	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_DIAGNOSTICS_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
 	}
@@ -140,8 +140,8 @@ func TestManagerGenerateDiagnosticsBundleOutputUnavailable(t *testing.T) {
 
 func TestManagerGenerateDiagnosticsBundleMaxSizeExceeded(t *testing.T) {
 	outputDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-bundle-max-size.yaml")
-	writeA55BundleRuntimeConfig(
+	cfgPath := filepath.Join(t.TempDir(), "runtime-diagnostics-bundle-max-size.yaml")
+	writeDiagnosticsBundleRuntimeConfig(
 		t,
 		cfgPath,
 		outputDir,
@@ -155,7 +155,7 @@ func TestManagerGenerateDiagnosticsBundleMaxSizeExceeded(t *testing.T) {
 		},
 	)
 
-	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_BUNDLE"})
+	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_DIAGNOSTICS_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
 	}
@@ -181,8 +181,8 @@ func TestManagerGenerateDiagnosticsBundleMaxSizeExceeded(t *testing.T) {
 
 func TestManagerGenerateDiagnosticsBundleMissingRequiredSection(t *testing.T) {
 	outputDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a55-bundle-missing-section.yaml")
-	writeA55BundleRuntimeConfig(
+	cfgPath := filepath.Join(t.TempDir(), "runtime-diagnostics-bundle-missing-section.yaml")
+	writeDiagnosticsBundleRuntimeConfig(
 		t,
 		cfgPath,
 		outputDir,
@@ -193,7 +193,7 @@ func TestManagerGenerateDiagnosticsBundleMissingRequiredSection(t *testing.T) {
 		},
 	)
 
-	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A55_BUNDLE"})
+	mgr, err := NewManager(ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_DIAGNOSTICS_BUNDLE_TEST"})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestManagerGenerateDiagnosticsBundleMissingRequiredSection(t *testing.T) {
 	}
 }
 
-func writeA55BundleRuntimeConfig(t *testing.T, path, outputDir string, maxSizeMB int, includeSections []string) {
+func writeDiagnosticsBundleRuntimeConfig(t *testing.T, path, outputDir string, maxSizeMB int, includeSections []string) {
 	t.Helper()
 	sections := make([]string, 0, len(includeSections))
 	for _, section := range includeSections {

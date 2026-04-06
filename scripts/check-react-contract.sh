@@ -59,6 +59,7 @@ run_step "provider tool-calling canonicalization suites" \
   go test ./model/openai ./model/anthropic ./model/gemini ./model/providererror ./model/toolcontract -count=1
 
 run_step "diagnostics replay react.v1 suites" \
-  go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedA48A52MemoryCompatibility)' -count=1
+  go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility)' -count=1
 
 echo "[react-contract-gate] done"
+

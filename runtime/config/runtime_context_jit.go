@@ -50,48 +50,6 @@ type RuntimeContextJITLifecycleTieringConfig struct {
 	ColdTTLMS int  `json:"cold_ttl_ms"`
 }
 
-func normalizeRuntimeContextConfig(in RuntimeContextConfig) RuntimeContextConfig {
-	out := in
-	out.JIT = normalizeRuntimeContextJITConfig(out.JIT)
-	return out
-}
-
-func normalizeRuntimeContextJITConfig(in RuntimeContextJITConfig) RuntimeContextJITConfig {
-	base := DefaultConfig().Runtime.Context.JIT
-	out := in
-	if out.ReferenceFirst.MaxRefs <= 0 {
-		out.ReferenceFirst.MaxRefs = base.ReferenceFirst.MaxRefs
-	}
-	if out.ReferenceFirst.MaxResolveTokens <= 0 {
-		out.ReferenceFirst.MaxResolveTokens = base.ReferenceFirst.MaxResolveTokens
-	}
-	if out.IsolateHandoff.DefaultTTLMS <= 0 {
-		out.IsolateHandoff.DefaultTTLMS = base.IsolateHandoff.DefaultTTLMS
-	}
-	if out.IsolateHandoff.MinConfidence <= 0 {
-		out.IsolateHandoff.MinConfidence = base.IsolateHandoff.MinConfidence
-	}
-	if out.EditGate.ClearAtLeastTokens <= 0 {
-		out.EditGate.ClearAtLeastTokens = base.EditGate.ClearAtLeastTokens
-	}
-	if out.EditGate.MinGainRatio <= 0 {
-		out.EditGate.MinGainRatio = base.EditGate.MinGainRatio
-	}
-	if out.SwapBack.MinRelevanceScore <= 0 {
-		out.SwapBack.MinRelevanceScore = base.SwapBack.MinRelevanceScore
-	}
-	if out.LifecycleTiering.HotTTLMS <= 0 {
-		out.LifecycleTiering.HotTTLMS = base.LifecycleTiering.HotTTLMS
-	}
-	if out.LifecycleTiering.WarmTTLMS <= 0 {
-		out.LifecycleTiering.WarmTTLMS = base.LifecycleTiering.WarmTTLMS
-	}
-	if out.LifecycleTiering.ColdTTLMS <= 0 {
-		out.LifecycleTiering.ColdTTLMS = base.LifecycleTiering.ColdTTLMS
-	}
-	return out
-}
-
 func ValidateRuntimeContextConfig(cfg RuntimeContextConfig) error {
 	return ValidateRuntimeContextJITConfig(cfg.JIT)
 }

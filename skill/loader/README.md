@@ -8,6 +8,8 @@
 - 评分：显式触发 + 语义触发（词法/embedding）
 - 组装：生成 system prompt 片段、启用工具集合与 workflow hints
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 `Loader` 通过两个阶段工作：
@@ -39,7 +41,7 @@
 - 未注入 embedding scorer 时会降级到词法评分路径并记录原因码。
 - 默认预算策略支持 `fixed` 与 `adaptive`，按配置生效。
 
-A65 新增与 loader 协作的 runtime skill 子域（由 runner 在 Run/Stream 前统一接线）：
+runtime skill 子域（由 runner 在 Run/Stream 前统一接线）：
 
 - discovery：
   - `runtime.skill.discovery.mode=agents_md|folder|hybrid`

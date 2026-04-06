@@ -33,7 +33,7 @@ func TestSwapBackIfNeededUsesRelevanceThreshold(t *testing.T) {
 			SpilledAt:    now,
 		},
 	})
-	state := a.ca3StateFor("run-swapback-relevance")
+	state := a.pressureStateFor("run-swapback-relevance")
 	req := types.ContextAssembleRequest{
 		RunID: "run-swapback-relevance",
 		Input: "weather summary",
@@ -73,7 +73,7 @@ func TestSwapBackIfNeededUsesRelevanceThreshold(t *testing.T) {
 
 func TestApplyLifecycleTieringTransitionsAndPrune(t *testing.T) {
 	now := time.Now().UTC()
-	state := &ca3RunState{
+	state := &pressureRunState{
 		SpilledByRun: map[string]spillRecord{
 			"hot-ref": {
 				OriginRef: "hot-ref",
@@ -126,7 +126,7 @@ func TestApplyLifecycleTieringTransitionsAndPrune(t *testing.T) {
 	}
 }
 
-func TestAssemblerCA3SwapBackAndTieringCombination(t *testing.T) {
+func TestAssemblerContextPressureSwapBackAndTieringCombination(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
 	cfg.CA2.Enabled = false
@@ -170,7 +170,7 @@ func TestAssemblerCA3SwapBackAndTieringCombination(t *testing.T) {
 		}),
 	)
 	a.now = func() time.Time { return now }
-	state := a.ca3StateFor("run-tier-combo")
+	state := a.pressureStateFor("run-tier-combo")
 	state.SpilledByRun["expired-in-memory"] = spillRecord{
 		RunID:        "run-tier-combo",
 		OriginRef:    "expired-in-memory",
@@ -183,7 +183,7 @@ func TestAssemblerCA3SwapBackAndTieringCombination(t *testing.T) {
 	outReq, result, err := a.Assemble(context.Background(), types.ContextAssembleRequest{
 		RunID:         "run-tier-combo",
 		SessionID:     "session-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: semanticPrefixVersion,
 		Input:         "invoice payment status",
 		Messages:      []types.Message{{Role: "system", Content: "s"}},
 	}, types.ModelRequest{

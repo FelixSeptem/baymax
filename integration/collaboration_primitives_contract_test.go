@@ -41,13 +41,13 @@ func (c *collabTimelineCollector) snapshot() []types.Event {
 	return out
 }
 
-func TestCollaborationPrimitivesA16SyncMode(t *testing.T) {
-	mgr := newA16Manager(t, "BAYMAX_A16_SYNC")
+func TestCollaborationPrimitivesSyncMode(t *testing.T) {
+	mgr := newCollabManager(t, "BAYMAX_COLLAB_SYNC")
 	defer func() { _ = mgr.Close() }()
 
-	model := newA16Model()
+	model := newCollabModel()
 	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
-	client := newA16A2AClient(t)
+	client := newCollabA2AClient(t)
 	comp, err := composer.NewBuilder(model).
 		WithRuntimeManager(mgr).
 		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
@@ -123,13 +123,13 @@ func TestCollaborationPrimitivesA16SyncMode(t *testing.T) {
 	}
 }
 
-func TestCollaborationPrimitivesA16AsyncReportingMode(t *testing.T) {
-	mgr := newA16Manager(t, "BAYMAX_A16_ASYNC")
+func TestCollaborationPrimitivesAsyncReportingMode(t *testing.T) {
+	mgr := newCollabManager(t, "BAYMAX_COLLAB_ASYNC")
 	defer func() { _ = mgr.Close() }()
 
-	model := newA16Model()
+	model := newCollabModel()
 	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
-	client := newA16A2AClient(t)
+	client := newCollabA2AClient(t)
 	comp, err := composer.NewBuilder(model).
 		WithRuntimeManager(mgr).
 		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
@@ -182,11 +182,11 @@ func TestCollaborationPrimitivesA16AsyncReportingMode(t *testing.T) {
 	}
 }
 
-func TestCollaborationPrimitivesA16DelayedDispatchMode(t *testing.T) {
-	mgr := newA16Manager(t, "BAYMAX_A16_DELAYED")
+func TestCollaborationPrimitivesDelayedDispatchMode(t *testing.T) {
+	mgr := newCollabManager(t, "BAYMAX_COLLAB_DELAYED")
 	defer func() { _ = mgr.Close() }()
 
-	model := newA16Model()
+	model := newCollabModel()
 	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
 	comp, err := composer.NewBuilder(model).
 		WithRuntimeManager(mgr).
@@ -240,12 +240,12 @@ func TestCollaborationPrimitivesA16DelayedDispatchMode(t *testing.T) {
 	}
 }
 
-func TestCollaborationPrimitivesA16RunStreamEquivalence(t *testing.T) {
+func TestCollaborationPrimitivesRunStreamEquivalence(t *testing.T) {
 	exec := func(stream bool, runID string) (runtimediag.RunRecord, error) {
-		mgr := newA16Manager(t, "BAYMAX_A16_EQ")
+		mgr := newCollabManager(t, "BAYMAX_COLLAB_EQ")
 		defer func() { _ = mgr.Close() }()
 
-		model := newA16Model()
+		model := newCollabModel()
 		dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
 		comp, err := composer.NewBuilder(model).
 			WithRuntimeManager(mgr).
@@ -320,18 +320,18 @@ func TestCollaborationPrimitivesA16RunStreamEquivalence(t *testing.T) {
 	}
 }
 
-func TestCollaborationPrimitivesA16ReplayRecoveryConsistency(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "runtime-a16.yaml")
-	recoveryPath := filepath.Join(t.TempDir(), "recovery-a16")
-	writeA16RecoveryRuntimeConfig(t, cfgPath, recoveryPath)
+func TestCollaborationPrimitivesReplayRecoveryConsistency(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-collab.yaml")
+	recoveryPath := filepath.Join(t.TempDir(), "recovery-collab")
+	writeCollabRecoveryRuntimeConfig(t, cfgPath, recoveryPath)
 
-	mgr1, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A16_RECOVERY"})
+	mgr1, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_COLLAB_RECOVERY"})
 	if err != nil {
 		t.Fatalf("new runtime manager #1: %v", err)
 	}
 	defer func() { _ = mgr1.Close() }()
 
-	model := newA16Model()
+	model := newCollabModel()
 	dispatcher1 := event.NewDispatcher(event.NewRuntimeRecorder(mgr1))
 	comp1, err := composer.NewBuilder(model).
 		WithRuntimeManager(mgr1).
@@ -372,7 +372,7 @@ func TestCollaborationPrimitivesA16ReplayRecoveryConsistency(t *testing.T) {
 	}
 	before := findRunRecord(t, mgr1.RecentRuns(20), runID)
 
-	mgr2, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_A16_RECOVERY"})
+	mgr2, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_COLLAB_RECOVERY"})
 	if err != nil {
 		t.Fatalf("new runtime manager #2: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestCollaborationPrimitivesA16ReplayRecoveryConsistency(t *testing.T) {
 	}
 }
 
-func TestCollaborationPrimitivesA16TimelineReasonAndCorrelation(t *testing.T) {
+func TestCollaborationPrimitivesTimelineReasonAndCorrelation(t *testing.T) {
 	collector := &collabTimelineCollector{}
 
 	teamEngine := teams.New(teams.WithTimelineEmitter(collector))
@@ -508,7 +508,7 @@ func TestCollaborationPrimitivesA16TimelineReasonAndCorrelation(t *testing.T) {
 	}
 }
 
-func newA16Manager(t *testing.T, envPrefix string) *runtimeconfig.Manager {
+func newCollabManager(t *testing.T, envPrefix string) *runtimeconfig.Manager {
 	t.Helper()
 	t.Setenv(envPrefix+"_COMPOSER_COLLAB_ENABLED", "true")
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: envPrefix})
@@ -518,13 +518,13 @@ func newA16Manager(t *testing.T, envPrefix string) *runtimeconfig.Manager {
 	return mgr
 }
 
-func newA16Model() *fakes.Model {
+func newCollabModel() *fakes.Model {
 	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
 	model.SetStream([]types.ModelEvent{{Type: types.ModelEventTypeFinalAnswer, TextDelta: "ok"}}, nil)
 	return model
 }
 
-func newA16A2AClient(t *testing.T) *a2a.Client {
+func newCollabA2AClient(t *testing.T) *a2a.Client {
 	t.Helper()
 	server := a2a.NewInMemoryServer(a2a.HandlerFunc(func(context.Context, a2a.TaskRequest) (map[string]any, error) {
 		return map[string]any{"ok": true}, nil
@@ -562,7 +562,7 @@ func waitForTaskTerminalState(t *testing.T, s *scheduler.Scheduler, taskID strin
 	t.Fatalf("timed out waiting for task %s to reach state %q", taskID, expected)
 }
 
-func writeA16RecoveryRuntimeConfig(t *testing.T, path, recoveryPath string) {
+func writeCollabRecoveryRuntimeConfig(t *testing.T, path, recoveryPath string) {
 	t.Helper()
 	content := strings.Join([]string{
 		"reload:",

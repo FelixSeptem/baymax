@@ -169,7 +169,7 @@ func (m *Manager) GenerateDiagnosticsBundle(ctx context.Context, req Diagnostics
 	runID := strings.TrimSpace(req.RunID)
 	fingerprint := strings.TrimSpace(req.GateFingerprint)
 	if fingerprint == "" {
-		fingerprint = RuntimeDiagnosticsGateFingerprintA55V1
+		fingerprint = RuntimeDiagnosticsGateFingerprintObservabilityBundleV1
 	}
 
 	sectionFiles, err := m.buildDiagnosticsBundleSections(sections, runID, now, fingerprint, req.RunFinishedPayload)

@@ -109,13 +109,13 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 				LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
 				TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
 			},
-			runtimediag.CA2ExternalTrendConfig{
-				Enabled: cfg.Diagnostics.CA2ExternalTrend.Enabled,
-				Window:  cfg.Diagnostics.CA2ExternalTrend.Window,
-				Thresholds: runtimediag.CA2ExternalThresholds{
-					P95LatencyMs: cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs,
-					ErrorRate:    cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate,
-					HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
+			runtimediag.ContextStage2ExternalTrendConfig{
+				Enabled: cfg.Diagnostics.ContextStage2ExternalTrend.Enabled,
+				Window:  cfg.Diagnostics.ContextStage2ExternalTrend.Window,
+				Thresholds: runtimediag.ContextStage2ExternalThresholds{
+					P95LatencyMs: cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs,
+					ErrorRate:    cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate,
+					HitRate:      cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate,
 				},
 			},
 		),
@@ -267,13 +267,13 @@ func (m *Manager) reload() {
 		LastNRuns:  cfg.Diagnostics.TimelineTrend.LastNRuns,
 		TimeWindow: cfg.Diagnostics.TimelineTrend.TimeWindow,
 	})
-	m.diag.SetCA2ExternalTrendConfig(runtimediag.CA2ExternalTrendConfig{
-		Enabled: cfg.Diagnostics.CA2ExternalTrend.Enabled,
-		Window:  cfg.Diagnostics.CA2ExternalTrend.Window,
-		Thresholds: runtimediag.CA2ExternalThresholds{
-			P95LatencyMs: cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs,
-			ErrorRate:    cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate,
-			HitRate:      cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate,
+	m.diag.SetContextStage2ExternalTrendConfig(runtimediag.ContextStage2ExternalTrendConfig{
+		Enabled: cfg.Diagnostics.ContextStage2ExternalTrend.Enabled,
+		Window:  cfg.Diagnostics.ContextStage2ExternalTrend.Window,
+		Thresholds: runtimediag.ContextStage2ExternalThresholds{
+			P95LatencyMs: cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs,
+			ErrorRate:    cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate,
+			HitRate:      cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate,
 		},
 	})
 	m.diag.SetCardinalityConfig(runtimediag.CardinalityConfig{
@@ -421,9 +421,9 @@ func (m *Manager) TimelineTrends(query runtimediag.TimelineTrendQuery) []runtime
 	return m.diag.TimelineTrends(query)
 }
 
-// CA2ExternalTrends returns provider-scoped CA2 external retriever trend aggregates.
-func (m *Manager) CA2ExternalTrends(query runtimediag.CA2ExternalTrendQuery) []runtimediag.CA2ExternalTrendRecord {
-	return m.diag.CA2ExternalTrends(query)
+// ContextStage2ExternalTrends returns provider-scoped context stage2 external retriever trend aggregates.
+func (m *Manager) ContextStage2ExternalTrends(query runtimediag.ContextStage2ExternalTrendQuery) []runtimediag.ContextStage2ExternalTrendRecord {
+	return m.diag.ContextStage2ExternalTrends(query)
 }
 
 // RecentReloads returns recent hot-reload diagnostics records.

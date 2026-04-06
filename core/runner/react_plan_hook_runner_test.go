@@ -91,7 +91,7 @@ func TestReactPlanHookRunStreamParityAndContext(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithLocalRegistry(reg), WithLifecycleHooks(streamHook))
 
-	req := types.RunRequest{RunID: "run-a67-plan-parity", Input: "x"}
+	req := types.RunRequest{RunID: "run-react-plan-parity", Input: "x"}
 	runRes, runErr := runEngine.Run(context.Background(), req, nil)
 	streamRes, streamErr := streamEngine.Stream(context.Background(), req, nil)
 	if runErr != nil || streamErr != nil {
@@ -150,8 +150,8 @@ func TestReactPlanHookFailFastStopsRunAndStream(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a67-plan-failfast-run", Input: "x"}, runCollector)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a67-plan-failfast-stream", Input: "x"}, streamCollector)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-react-plan-failfast-run", Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-react-plan-failfast-stream", Input: "x"}, streamCollector)
 	if runErr == nil || streamErr == nil {
 		t.Fatalf("expected run/stream fail-fast errors, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -203,8 +203,8 @@ func TestReactPlanHookDegradeSkipsMutationAndContinuesRunStream(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a67-plan-degrade-run", Input: "x"}, runCollector)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a67-plan-degrade-stream", Input: "x"}, streamCollector)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-react-plan-degrade-run", Input: "x"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-react-plan-degrade-stream", Input: "x"}, streamCollector)
 	if runErr != nil || streamErr != nil {
 		t.Fatalf("degrade should continue run/stream, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -255,8 +255,8 @@ func TestReactPlanHookTimeoutClassifiedAsPolicyTimeout(t *testing.T) {
 		},
 	}, WithRuntimeManager(mgr), WithLifecycleHooks(hook))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a67-plan-timeout-run", Input: "x"}, nil)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a67-plan-timeout-stream", Input: "x"}, nil)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-react-plan-timeout-run", Input: "x"}, nil)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-react-plan-timeout-stream", Input: "x"}, nil)
 	if runErr == nil || streamErr == nil {
 		t.Fatalf("expected run/stream timeout errors, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -298,8 +298,8 @@ func TestReactPlanRecoveryRunStreamParityAcrossBackends(t *testing.T) {
 			}, WithRuntimeManager(mgr))
 
 			req := types.RunRequest{
-				RunID:     "run-a67-recovery-parity",
-				SessionID: "session-a67-recovery",
+				RunID:     "run-react-plan-recovery-parity",
+				SessionID: "session-react-plan-recovery",
 				Input:     "resume",
 				Messages:  []types.Message{{Role: "user", Content: "resume context"}},
 			}
@@ -368,8 +368,8 @@ func TestReactPlanNotebookDoesNotBypassActionGatePrecedence(t *testing.T) {
 	streamCollector := &eventCollector{}
 	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithActionGateMatcher(denyMatcher))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a67-a58-boundary-run", Input: "danger"}, runCollector)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a67-a58-boundary-stream", Input: "danger"}, streamCollector)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-react-plan-policy-precedence-boundary-run", Input: "danger"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-react-plan-policy-precedence-boundary-stream", Input: "danger"}, streamCollector)
 	if runErr == nil || streamErr == nil {
 		t.Fatalf("run/stream should both be denied by action gate, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -442,8 +442,8 @@ func TestReactPlanNotebookDoesNotBypassSandboxSecurityChain(t *testing.T) {
 	streamCollector := &eventCollector{}
 	streamEngine := New(streamModel, WithRuntimeManager(mgr), WithLocalRegistry(reg))
 
-	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-a67-a57-boundary-run", Input: "trigger egress deny"}, runCollector)
-	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-a67-a57-boundary-stream", Input: "trigger egress deny"}, streamCollector)
+	runRes, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-react-plan-sandbox-egress-boundary-run", Input: "trigger egress deny"}, runCollector)
+	streamRes, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-react-plan-sandbox-egress-boundary-stream", Input: "trigger egress deny"}, streamCollector)
 	if runErr == nil || streamErr == nil {
 		t.Fatalf("run/stream should both be denied by sandbox egress, runErr=%v streamErr=%v", runErr, streamErr)
 	}
@@ -510,7 +510,7 @@ runtime:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A67_PLAN_HOOK_TEST",
+		EnvPrefix: "BAYMAX_RUNTIME_REACT_PLAN_HOOK_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
@@ -554,7 +554,7 @@ recovery:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A67_PLAN_RECOVERY_TEST",
+		EnvPrefix: "BAYMAX_RUNTIME_REACT_PLAN_RECOVERY_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)
@@ -597,7 +597,7 @@ security:
 	}
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
 		FilePath:  cfgPath,
-		EnvPrefix: "BAYMAX_A67_PLAN_SECURITY_TEST",
+		EnvPrefix: "BAYMAX_RUNTIME_REACT_PLAN_SECURITY_TEST",
 	})
 	if err != nil {
 		t.Fatalf("new runtime manager failed: %v", err)

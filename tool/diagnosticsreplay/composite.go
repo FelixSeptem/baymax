@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	CompositeFixtureVersionA47V1 = "a47.v1"
+	CompositeFixtureVersionReadinessTimeoutHealthV1 = "readiness_timeout_health.v1"
 
 	ReasonCodeSchemaMismatch = "schema_mismatch"
 	ReasonCodeSemanticDrift  = "semantic_drift"
 	ReasonCodeOrderingDrift  = "ordering_drift"
 )
 
-// CompositeFixture is the versioned fixture envelope for A47 cross-domain replay assertions.
+// CompositeFixture is the versioned fixture envelope for readiness-timeout-health cross-domain replay assertions.
 type CompositeFixture struct {
 	Version string                 `json:"version"`
 	Cases   []CompositeFixtureCase `json:"cases"`
@@ -109,7 +109,7 @@ type CompositeNormalizedOutput struct {
 	Idempotency CompositeIdempotency       `json:"idempotency"`
 }
 
-// ParseCompositeFixtureJSON parses a versioned A47 fixture with deterministic schema checks.
+// ParseCompositeFixtureJSON parses a versioned readiness-timeout-health fixture with deterministic schema checks.
 func ParseCompositeFixtureJSON(raw []byte) (CompositeFixture, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -126,7 +126,7 @@ func ParseCompositeFixtureJSON(raw []byte) (CompositeFixture, error) {
 			Message: "version is required",
 		}
 	}
-	if strings.TrimSpace(fixture.Version) != CompositeFixtureVersionA47V1 {
+	if strings.TrimSpace(fixture.Version) != CompositeFixtureVersionReadinessTimeoutHealthV1 {
 		return CompositeFixture{}, &ValidationError{
 			Code:    ReasonCodeSchemaMismatch,
 			Message: fmt.Sprintf("unsupported fixture version %q", fixture.Version),
@@ -144,7 +144,7 @@ func ParseCompositeFixtureJSON(raw []byte) (CompositeFixture, error) {
 	return fixture, nil
 }
 
-// EvaluateCompositeFixtureJSON evaluates an A47 fixture payload into deterministic normalized output.
+// EvaluateCompositeFixtureJSON evaluates a readiness-timeout-health fixture payload into deterministic normalized output.
 func EvaluateCompositeFixtureJSON(raw []byte) (CompositeReplayOutput, error) {
 	fixture, err := ParseCompositeFixtureJSON(raw)
 	if err != nil {

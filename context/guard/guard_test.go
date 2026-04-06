@@ -12,7 +12,7 @@ func TestGuardFailFastOnSchemaViolation(t *testing.T) {
 	g := New(true)
 	_, err := g.Apply(types.ContextAssembleRequest{
 		RunID:         "",
-		PrefixVersion: "ca1",
+		PrefixVersion: "context-prefix-and-journal-baseline",
 	}, "hash", "")
 	if !errors.Is(err, ErrGuardViolation) {
 		t.Fatalf("err = %v, want ErrGuardViolation", err)
@@ -23,7 +23,7 @@ func TestGuardSanitizeSensitiveText(t *testing.T) {
 	g := New(true)
 	out, err := g.Apply(types.ContextAssembleRequest{
 		RunID:         "run-1",
-		PrefixVersion: "ca1",
+		PrefixVersion: "context-prefix-and-journal-baseline",
 		Input:         "token=abc123",
 		Messages: []types.Message{
 			{Role: "user", Content: "api_key: sk-xxxx"},

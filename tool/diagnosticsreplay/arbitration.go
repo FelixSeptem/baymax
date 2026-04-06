@@ -11,34 +11,34 @@ import (
 )
 
 const (
-	ArbitrationFixtureVersionA48V1              = "a48.v1"
-	ArbitrationFixtureVersionA49V1              = "a49.v1"
-	ArbitrationFixtureVersionA50V1              = "a50.v1"
-	ArbitrationFixtureVersionA51V1              = "a51.v1"
-	ArbitrationFixtureVersionA52V1              = "a52.v1"
-	ArbitrationFixtureVersionHooksMiddlewareV1  = "hooks_middleware.v1"
-	ArbitrationFixtureVersionSkillDiscoveryV1   = "skill_discovery_sources.v1"
-	ArbitrationFixtureVersionSkillMappingV1     = "skill_preprocess_and_mapping.v1"
-	ArbitrationFixtureVersionA57V1              = "sandbox_egress.v1"
-	ArbitrationFixtureVersionBudgetAdmissionV1  = "budget_admission.v1"
-	ArbitrationFixtureVersionPolicyV1           = "policy_stack.v1"
-	ArbitrationFixtureVersionMemoryV1           = "memory.v1"
-	ArbitrationFixtureVersionMemoryScopeV1      = "memory_scope.v1"
-	ArbitrationFixtureVersionMemorySearchV1     = "memory_search.v1"
-	ArbitrationFixtureVersionMemoryLifecycleV1  = "memory_lifecycle.v1"
-	ArbitrationFixtureVersionObsV1              = "observability.v1"
-	ArbitrationFixtureVersionReactV1            = "react.v1"
-	ArbitrationFixtureVersionReactPlanV1        = "react_plan_notebook.v1"
-	ArbitrationFixtureVersionRealtimeProtocolV1 = "realtime_event_protocol.v1"
-	ArbitrationFixtureVersionContextRefFirstV1  = "context_reference_first.v1"
-	ArbitrationFixtureVersionContextHandoffV1   = "context_isolate_handoff.v1"
-	ArbitrationFixtureVersionContextEditGateV1  = "context_edit_gate.v1"
-	ArbitrationFixtureVersionContextSwapBackV1  = "context_relevance_swapback.v1"
-	ArbitrationFixtureVersionContextTieringV1   = "context_lifecycle_tiering.v1"
-	ArbitrationFixtureVersionOTelSemconvV1      = "otel_semconv.v1"
-	ArbitrationFixtureVersionAgentEvalV1        = "agent_eval.v1"
-	ArbitrationFixtureVersionAgentEvalDistV1    = "agent_eval_distributed.v1"
-	ArbitrationFixtureVersionStateSnapshotV1    = "state_session_snapshot.v1"
+	ArbitrationFixtureVersionPrimaryReasonV1     = "a48.v1"
+	ArbitrationFixtureVersionExplainabilityV1    = "a49.v1"
+	ArbitrationFixtureVersionVersionGovernanceV1 = "a50.v1"
+	ArbitrationFixtureVersionSandboxExecutionV1  = "a51.v1"
+	ArbitrationFixtureVersionSandboxRolloutV1    = "a52.v1"
+	ArbitrationFixtureVersionHooksMiddlewareV1   = "hooks_middleware.v1"
+	ArbitrationFixtureVersionSkillDiscoveryV1    = "skill_discovery_sources.v1"
+	ArbitrationFixtureVersionSkillMappingV1      = "skill_preprocess_and_mapping.v1"
+	ArbitrationFixtureVersionSandboxEgressV1     = "sandbox_egress.v1"
+	ArbitrationFixtureVersionBudgetAdmissionV1   = "budget_admission.v1"
+	ArbitrationFixtureVersionPolicyV1            = "policy_stack.v1"
+	ArbitrationFixtureVersionMemoryV1            = "memory.v1"
+	ArbitrationFixtureVersionMemoryScopeV1       = "memory_scope.v1"
+	ArbitrationFixtureVersionMemorySearchV1      = "memory_search.v1"
+	ArbitrationFixtureVersionMemoryLifecycleV1   = "memory_lifecycle.v1"
+	ArbitrationFixtureVersionObsV1               = "observability.v1"
+	ArbitrationFixtureVersionReactV1             = "react.v1"
+	ArbitrationFixtureVersionReactPlanV1         = "react_plan_notebook.v1"
+	ArbitrationFixtureVersionRealtimeProtocolV1  = "realtime_event_protocol.v1"
+	ArbitrationFixtureVersionContextRefFirstV1   = "context_reference_first.v1"
+	ArbitrationFixtureVersionContextHandoffV1    = "context_isolate_handoff.v1"
+	ArbitrationFixtureVersionContextEditGateV1   = "context_edit_gate.v1"
+	ArbitrationFixtureVersionContextSwapBackV1   = "context_relevance_swapback.v1"
+	ArbitrationFixtureVersionContextTieringV1    = "context_lifecycle_tiering.v1"
+	ArbitrationFixtureVersionOTelSemconvV1       = "otel_semconv.v1"
+	ArbitrationFixtureVersionAgentEvalV1         = "agent_eval.v1"
+	ArbitrationFixtureVersionAgentEvalDistV1     = "agent_eval_distributed.v1"
+	ArbitrationFixtureVersionStateSnapshotV1     = "state_session_snapshot.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -329,15 +329,15 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 	if version == "" {
 		return ArbitrationFixture{}, &ValidationError{Code: ReasonCodeSchemaMismatch, Message: "version is required"}
 	}
-	if version != ArbitrationFixtureVersionA48V1 &&
-		version != ArbitrationFixtureVersionA49V1 &&
-		version != ArbitrationFixtureVersionA50V1 &&
-		version != ArbitrationFixtureVersionA51V1 &&
-		version != ArbitrationFixtureVersionA52V1 &&
+	if version != ArbitrationFixtureVersionPrimaryReasonV1 &&
+		version != ArbitrationFixtureVersionExplainabilityV1 &&
+		version != ArbitrationFixtureVersionVersionGovernanceV1 &&
+		version != ArbitrationFixtureVersionSandboxExecutionV1 &&
+		version != ArbitrationFixtureVersionSandboxRolloutV1 &&
 		version != ArbitrationFixtureVersionHooksMiddlewareV1 &&
 		version != ArbitrationFixtureVersionSkillDiscoveryV1 &&
 		version != ArbitrationFixtureVersionSkillMappingV1 &&
-		version != ArbitrationFixtureVersionA57V1 &&
+		version != ArbitrationFixtureVersionSandboxEgressV1 &&
 		version != ArbitrationFixtureVersionBudgetAdmissionV1 &&
 		version != ArbitrationFixtureVersionPolicyV1 &&
 		version != ArbitrationFixtureVersionMemoryV1 &&
@@ -884,7 +884,7 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	if version == ArbitrationFixtureVersionContextTieringV1 {
 		return validateContextLifecycleTieringArbitrationObservation(caseName, lane, obs)
 	}
-	if version == ArbitrationFixtureVersionA57V1 {
+	if version == ArbitrationFixtureVersionSandboxEgressV1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionBudgetAdmissionV1 {
@@ -911,20 +911,20 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s non-canonical primary code %q", caseName, lane, obs.RuntimePrimaryCode),
 		}
 	}
-	if version == ArbitrationFixtureVersionA48V1 {
+	if version == ArbitrationFixtureVersionPrimaryReasonV1 {
 		return nil
 	}
-	if version == ArbitrationFixtureVersionA49V1 {
+	if version == ArbitrationFixtureVersionExplainabilityV1 {
 		if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) == "" {
 			return &ValidationError{
 				Code:    ReasonCodeSchemaMismatch,
 				Message: fmt.Sprintf("case %q %s.runtime_arbitration_rule_version is required", caseName, lane),
 			}
 		}
-		if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) != runtimeconfig.RuntimeArbitrationRuleVersionA49V1 {
+		if strings.TrimSpace(obs.RuntimeArbitrationRuleVersion) != runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1 {
 			return &ValidationError{
 				Code:    ReasonCodeRuleVersionDrift,
-				Message: fmt.Sprintf("case %q %s rule version drift want=%q got=%q", caseName, lane, runtimeconfig.RuntimeArbitrationRuleVersionA49V1, obs.RuntimeArbitrationRuleVersion),
+				Message: fmt.Sprintf("case %q %s rule version drift want=%q got=%q", caseName, lane, runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1, obs.RuntimeArbitrationRuleVersion),
 			}
 		}
 	}
@@ -982,7 +982,7 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s hint taxonomy drift want=%s/%s got=%s/%s", caseName, lane, hintDomain, hintCode, obs.RuntimeRemediationHintDomain, obs.RuntimeRemediationHintCode),
 		}
 	}
-	if version != ArbitrationFixtureVersionA50V1 && version != ArbitrationFixtureVersionA51V1 && version != ArbitrationFixtureVersionA52V1 {
+	if version != ArbitrationFixtureVersionVersionGovernanceV1 && version != ArbitrationFixtureVersionSandboxExecutionV1 && version != ArbitrationFixtureVersionSandboxRolloutV1 {
 		return nil
 	}
 	if obs.RuntimeArbitrationRuleVersionSource != runtimeconfig.RuntimeArbitrationVersionSourceDefault &&
@@ -1003,14 +1003,14 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_policy_action is invalid", caseName, lane),
 		}
 	}
-	if effective := strings.TrimSpace(obs.RuntimeArbitrationRuleEffectiveVersion); effective != "" && !isSupportedA50Version(effective) {
+	if effective := strings.TrimSpace(obs.RuntimeArbitrationRuleEffectiveVersion); effective != "" && !isSupportedVersionGovernanceFixture(effective) {
 		return &ValidationError{
 			Code:    ReasonCodeRuleVersionDrift,
 			Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_effective_version=%q is not registered", caseName, lane, effective),
 		}
 	}
 	if ruleVersion := strings.TrimSpace(obs.RuntimeArbitrationRuleVersion); ruleVersion != "" {
-		if !isSupportedA50Version(ruleVersion) {
+		if !isSupportedVersionGovernanceFixture(ruleVersion) {
 			return &ValidationError{
 				Code:    ReasonCodeRuleVersionDrift,
 				Message: fmt.Sprintf("case %q %s runtime_arbitration_rule_version=%q is not registered", caseName, lane, ruleVersion),
@@ -1024,7 +1024,7 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 		}
 	}
 	if requested := strings.TrimSpace(obs.RuntimeArbitrationRuleRequestedVersion); requested != "" &&
-		!isSupportedA50Version(requested) &&
+		!isSupportedVersionGovernanceFixture(requested) &&
 		obs.RuntimePrimaryCode != runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
 		return &ValidationError{
 			Code:    ReasonCodeUnsupportedVersion,
@@ -1062,12 +1062,12 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionSandboxExecutionV1 || version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if err := validateSandboxArbitrationObservation(caseName, lane, obs); err != nil {
 			return err
 		}
 	}
-	if version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if err := validateSandboxRolloutArbitrationObservation(caseName, lane, obs); err != nil {
 			return err
 		}
@@ -1139,7 +1139,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	if version == ArbitrationFixtureVersionMemoryLifecycleV1 {
 		return assertMemoryLifecycleArbitrationEquivalent(caseName, lane, expected, actual)
 	}
-	if version == ArbitrationFixtureVersionA57V1 {
+	if version == ArbitrationFixtureVersionSandboxEgressV1 {
 		return assertSandboxEgressArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionBudgetAdmissionV1 {
@@ -1148,7 +1148,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	if version == ArbitrationFixtureVersionPolicyV1 {
 		return assertPolicyStackArbitrationEquivalent(caseName, lane, expected, actual)
 	}
-	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionVersionGovernanceV1 || version == ArbitrationFixtureVersionSandboxExecutionV1 || version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if expected.RuntimePrimaryCode != actual.RuntimePrimaryCode {
 			if expected.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported ||
 				actual.RuntimePrimaryCode == runtimeconfig.ReadinessCodeArbitrationVersionUnsupported {
@@ -1222,12 +1222,12 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionSandboxExecutionV1 || version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if err := assertSandboxArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
 			return err
 		}
 	}
-	if version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if err := assertSandboxRolloutArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
 			return err
 		}
@@ -1244,7 +1244,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			),
 		}
 	}
-	if version == ArbitrationFixtureVersionA49V1 {
+	if version == ArbitrationFixtureVersionExplainabilityV1 {
 		if expected.RuntimeArbitrationRuleVersion != actual.RuntimeArbitrationRuleVersion {
 			return &ValidationError{
 				Code: ReasonCodeRuleVersionDrift,
@@ -1282,7 +1282,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			}
 		}
 	}
-	if version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1 {
+	if version == ArbitrationFixtureVersionVersionGovernanceV1 || version == ArbitrationFixtureVersionSandboxExecutionV1 || version == ArbitrationFixtureVersionSandboxRolloutV1 {
 		if expected.RuntimeSecondaryReasonCount != actual.RuntimeSecondaryReasonCount {
 			return &ValidationError{
 				Code: ReasonCodeSecondaryCountDrift,
@@ -1321,7 +1321,7 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 			),
 		}
 	}
-	if (version == ArbitrationFixtureVersionA49V1 || version == ArbitrationFixtureVersionA50V1 || version == ArbitrationFixtureVersionA51V1 || version == ArbitrationFixtureVersionA52V1) &&
+	if (version == ArbitrationFixtureVersionExplainabilityV1 || version == ArbitrationFixtureVersionVersionGovernanceV1 || version == ArbitrationFixtureVersionSandboxExecutionV1 || version == ArbitrationFixtureVersionSandboxRolloutV1) &&
 		(expected.RuntimeRemediationHintCode != actual.RuntimeRemediationHintCode ||
 			expected.RuntimeRemediationHintDomain != actual.RuntimeRemediationHintDomain) {
 		return &ValidationError{
@@ -2856,7 +2856,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		return equalIntMap(left.ContextLifecycleTierStats, right.ContextLifecycleTierStats) &&
 			left.ContextRecapSource == right.ContextRecapSource
 	}
-	if version == ArbitrationFixtureVersionA57V1 {
+	if version == ArbitrationFixtureVersionSandboxEgressV1 {
 		return left.SandboxEgressAction == right.SandboxEgressAction &&
 			left.SandboxEgressPolicySource == right.SandboxEgressPolicySource &&
 			left.SandboxEgressViolationTotal == right.SandboxEgressViolationTotal &&
@@ -2882,7 +2882,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.RuntimePrimaryConflictTotal != right.RuntimePrimaryConflictTotal {
 		return false
 	}
-	if version == ArbitrationFixtureVersionA48V1 {
+	if version == ArbitrationFixtureVersionPrimaryReasonV1 {
 		return true
 	}
 	if left.RuntimeSecondaryReasonCount != right.RuntimeSecondaryReasonCount ||
@@ -2894,7 +2894,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 	if !equalStringSlice(left.RuntimeSecondaryReasonCodes, right.RuntimeSecondaryReasonCodes) {
 		return false
 	}
-	if version == ArbitrationFixtureVersionA49V1 {
+	if version == ArbitrationFixtureVersionExplainabilityV1 {
 		return true
 	}
 	if left.RuntimeArbitrationRuleRequestedVersion != right.RuntimeArbitrationRuleRequestedVersion ||
@@ -2905,7 +2905,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.RuntimeArbitrationRuleMismatchTotal != right.RuntimeArbitrationRuleMismatchTotal {
 		return false
 	}
-	if version == ArbitrationFixtureVersionA50V1 {
+	if version == ArbitrationFixtureVersionVersionGovernanceV1 {
 		return true
 	}
 	if left.SandboxMode != right.SandboxMode ||
@@ -2928,7 +2928,7 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 		left.SandboxResourceMemoryPeakBytesP95 != right.SandboxResourceMemoryPeakBytesP95 {
 		return false
 	}
-	if version == ArbitrationFixtureVersionA51V1 {
+	if version == ArbitrationFixtureVersionSandboxExecutionV1 {
 		return true
 	}
 	if left.SandboxRolloutPhase != right.SandboxRolloutPhase ||
@@ -4014,7 +4014,7 @@ func precedenceForArbitrationCode(code string) int {
 	}
 }
 
-func isSupportedA50Version(version string) bool {
+func isSupportedVersionGovernanceFixture(version string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(version))
 	if normalized == "" {
 		return false

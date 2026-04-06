@@ -26,7 +26,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A68_REALTIME_MANAGER_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_REALTIME_MANAGER_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {
@@ -71,7 +71,7 @@ reload:
 }
 
 func TestManagerRuntimeRealtimeInvalidReloadRollsBackWithEnvPrecedence(t *testing.T) {
-	t.Setenv("BAYMAX_A68_REALTIME_ENV_TEST_RUNTIME_REALTIME_PROTOCOL_MAX_BUFFERED_EVENTS", "777")
+	t.Setenv("BAYMAX_RUNTIME_REALTIME_ENV_TEST_RUNTIME_REALTIME_PROTOCOL_MAX_BUFFERED_EVENTS", "777")
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
 runtime:
@@ -91,7 +91,7 @@ reload:
 
 	mgr, err := NewManager(ManagerOptions{
 		FilePath:        file,
-		EnvPrefix:       "BAYMAX_A68_REALTIME_ENV_TEST",
+		EnvPrefix:       "BAYMAX_RUNTIME_REALTIME_ENV_TEST",
 		EnableHotReload: true,
 	})
 	if err != nil {

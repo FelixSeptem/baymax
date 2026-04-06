@@ -9,6 +9,8 @@
 - 重试语义：`mcp/retry`
 - 调用摘要模型：`mcp/diag`
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 整体采用“传输实现 + 语义子域 + internal 共享骨架”：

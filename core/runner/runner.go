@@ -186,7 +186,7 @@ func WithSandboxExecutor(executor types.SandboxExecutor) Option {
 	}
 }
 
-// WithContextAssemblerAgenticRouter injects host callback for CA2 agentic routing decisions.
+// WithContextAssemblerAgenticRouter injects host callback for stage-2 agentic routing decisions.
 func WithContextAssemblerAgenticRouter(router assembler.AgenticRouter) Option {
 	return func(e *Engine) {
 		if e.assembler != nil {
@@ -783,7 +783,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 				ReactTermination:                  reactTerminationReason,
 				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-				A67Recorded:                       true,
+				ReactPlanNotebookRecorded:         true,
 				ReactPlanID:                       planSnapshot.PlanID,
 				ReactPlanVersion:                  planSnapshot.Version,
 				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
@@ -791,7 +791,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ReactPlanChangeReason:             planSnapshot.LastReason,
 				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
 				ReactPlanHookStatus:               planSnapshot.HookStatus,
-				A65Recorded:                       true,
+				HooksMiddlewareRecorded:           true,
 				HooksEnabled:                      hooksCfg.Enabled,
 				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
 				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
@@ -922,7 +922,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 				ReactTermination:                  reactTerminationReason,
 				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-				A67Recorded:                       true,
+				ReactPlanNotebookRecorded:         true,
 				ReactPlanID:                       planSnapshot.PlanID,
 				ReactPlanVersion:                  planSnapshot.Version,
 				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
@@ -930,7 +930,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				ReactPlanChangeReason:             planSnapshot.LastReason,
 				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
 				ReactPlanHookStatus:               planSnapshot.HookStatus,
-				A65Recorded:                       true,
+				HooksMiddlewareRecorded:           true,
 				HooksEnabled:                      hooksCfg.Enabled,
 				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
 				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
@@ -1800,7 +1800,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 				ReactTermination:                  reactTerminationReason,
 				ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-				A67Recorded:                       true,
+				ReactPlanNotebookRecorded:         true,
 				ReactPlanID:                       planSnapshot.PlanID,
 				ReactPlanVersion:                  planSnapshot.Version,
 				ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
@@ -1808,7 +1808,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				ReactPlanChangeReason:             planSnapshot.LastReason,
 				ReactPlanRecoverCount:             planSnapshot.RecoverCount,
 				ReactPlanHookStatus:               planSnapshot.HookStatus,
-				A65Recorded:                       true,
+				HooksMiddlewareRecorded:           true,
 				HooksEnabled:                      hooksCfg.Enabled,
 				HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
 				HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
@@ -2017,7 +2017,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		ReactIterBudgetHit:                reactIterationBudgetHitTotal,
 		ReactTermination:                  reactTerminationReason,
 		ReactStreamDispatch:               reactCfg.StreamToolDispatchEnabled,
-		A67Recorded:                       true,
+		ReactPlanNotebookRecorded:         true,
 		ReactPlanID:                       planSnapshot.PlanID,
 		ReactPlanVersion:                  planSnapshot.Version,
 		ReactPlanChangeTotal:              planSnapshot.ChangeTotal,
@@ -2025,7 +2025,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		ReactPlanChangeReason:             planSnapshot.LastReason,
 		ReactPlanRecoverCount:             planSnapshot.RecoverCount,
 		ReactPlanHookStatus:               planSnapshot.HookStatus,
-		A65Recorded:                       true,
+		HooksMiddlewareRecorded:           true,
 		HooksEnabled:                      hooksCfg.Enabled,
 		HooksFailMode:                     strings.ToLower(strings.TrimSpace(hooksCfg.FailMode)),
 		HooksPhases:                       append([]string(nil), hooksCfg.Phases...),
@@ -2869,7 +2869,7 @@ type runFinishMeta struct {
 	ReactIterBudgetHit                int
 	ReactTermination                  string
 	ReactStreamDispatch               bool
-	A67Recorded                       bool
+	ReactPlanNotebookRecorded         bool
 	ReactPlanID                       string
 	ReactPlanVersion                  int
 	ReactPlanChangeTotal              int
@@ -2877,7 +2877,7 @@ type runFinishMeta struct {
 	ReactPlanChangeReason             string
 	ReactPlanRecoverCount             int
 	ReactPlanHookStatus               string
-	A65Recorded                       bool
+	HooksMiddlewareRecorded           bool
 	HooksEnabled                      bool
 	HooksFailMode                     string
 	HooksPhases                       []string
@@ -3030,81 +3030,109 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["context_recap_source"] = meta.Assemble.Stage.ContextRecapSource
 	}
 	if meta.Assemble.Stage.PressureZone != "" {
+		payload["context_pressure_zone"] = meta.Assemble.Stage.PressureZone
 		payload["ca3_pressure_zone"] = meta.Assemble.Stage.PressureZone
 	}
 	if meta.Assemble.Stage.PressureReason != "" {
+		payload["context_pressure_reason"] = meta.Assemble.Stage.PressureReason
 		payload["ca3_pressure_reason"] = meta.Assemble.Stage.PressureReason
 	}
 	if meta.Assemble.Stage.PressureTriggerSource != "" {
+		payload["context_pressure_trigger"] = meta.Assemble.Stage.PressureTriggerSource
 		payload["ca3_pressure_trigger"] = meta.Assemble.Stage.PressureTriggerSource
 	}
 	if len(meta.Assemble.Stage.ZoneResidencyMs) > 0 {
+		payload["context_pressure_zone_residency_ms"] = meta.Assemble.Stage.ZoneResidencyMs
 		payload["ca3_zone_residency_ms"] = meta.Assemble.Stage.ZoneResidencyMs
 	}
 	if len(meta.Assemble.Stage.TriggerCounts) > 0 {
+		payload["context_pressure_trigger_counts"] = meta.Assemble.Stage.TriggerCounts
 		payload["ca3_trigger_counts"] = meta.Assemble.Stage.TriggerCounts
 	}
 	if meta.Assemble.Stage.CompressionRatio > 0 {
+		payload["context_compaction_compression_ratio"] = meta.Assemble.Stage.CompressionRatio
 		payload["ca3_compression_ratio"] = meta.Assemble.Stage.CompressionRatio
 	}
 	if meta.Assemble.Stage.SpillCount > 0 {
+		payload["context_spill_count"] = meta.Assemble.Stage.SpillCount
 		payload["ca3_spill_count"] = meta.Assemble.Stage.SpillCount
 	}
 	if meta.Assemble.Stage.SwapBackCount > 0 {
+		payload["context_swap_back_count"] = meta.Assemble.Stage.SwapBackCount
 		payload["ca3_swap_back_count"] = meta.Assemble.Stage.SwapBackCount
 	}
 	if meta.Assemble.Stage.CompactionMode != "" {
+		payload["context_compaction_mode"] = meta.Assemble.Stage.CompactionMode
 		payload["ca3_compaction_mode"] = meta.Assemble.Stage.CompactionMode
 	}
 	if meta.Assemble.Stage.CompactionFallback {
+		payload["context_compaction_fallback"] = meta.Assemble.Stage.CompactionFallback
 		payload["ca3_compaction_fallback"] = meta.Assemble.Stage.CompactionFallback
 	}
 	if meta.Assemble.Stage.CompactionFallbackReason != "" {
+		payload["context_compaction_fallback_reason"] = meta.Assemble.Stage.CompactionFallbackReason
 		payload["ca3_compaction_fallback_reason"] = meta.Assemble.Stage.CompactionFallbackReason
 	}
 	if meta.Assemble.Stage.CompactionQualityScore > 0 {
+		payload["context_compaction_quality_score"] = meta.Assemble.Stage.CompactionQualityScore
 		payload["ca3_compaction_quality_score"] = meta.Assemble.Stage.CompactionQualityScore
 	}
 	if meta.Assemble.Stage.CompactionQualityReason != "" {
+		payload["context_compaction_quality_reason"] = meta.Assemble.Stage.CompactionQualityReason
 		payload["ca3_compaction_quality_reason"] = meta.Assemble.Stage.CompactionQualityReason
 	}
 	if meta.Assemble.Stage.CompactionEmbeddingProvider != "" {
+		payload["context_compaction_embedding_provider"] = meta.Assemble.Stage.CompactionEmbeddingProvider
 		payload["ca3_compaction_embedding_provider"] = meta.Assemble.Stage.CompactionEmbeddingProvider
 	}
 	if meta.Assemble.Stage.CompactionEmbeddingSimilarity > 0 {
+		payload["context_compaction_embedding_similarity"] = meta.Assemble.Stage.CompactionEmbeddingSimilarity
 		payload["ca3_compaction_embedding_similarity"] = meta.Assemble.Stage.CompactionEmbeddingSimilarity
 	}
 	if meta.Assemble.Stage.CompactionEmbeddingContribution > 0 {
+		payload["context_compaction_embedding_contribution"] = meta.Assemble.Stage.CompactionEmbeddingContribution
 		payload["ca3_compaction_embedding_contribution"] = meta.Assemble.Stage.CompactionEmbeddingContribution
 	}
 	if meta.Assemble.Stage.CompactionEmbeddingStatus != "" {
+		payload["context_compaction_embedding_status"] = meta.Assemble.Stage.CompactionEmbeddingStatus
 		payload["ca3_compaction_embedding_status"] = meta.Assemble.Stage.CompactionEmbeddingStatus
 	}
 	if meta.Assemble.Stage.CompactionEmbeddingFallbackReason != "" {
+		payload["context_compaction_embedding_fallback_reason"] = meta.Assemble.Stage.CompactionEmbeddingFallbackReason
 		payload["ca3_compaction_embedding_fallback_reason"] = meta.Assemble.Stage.CompactionEmbeddingFallbackReason
 	}
+	payload["context_compaction_reranker_used"] = meta.Assemble.Stage.CompactionRerankerUsed
 	payload["ca3_compaction_reranker_used"] = meta.Assemble.Stage.CompactionRerankerUsed
 	if meta.Assemble.Stage.CompactionRerankerProvider != "" {
+		payload["context_compaction_reranker_provider"] = meta.Assemble.Stage.CompactionRerankerProvider
 		payload["ca3_compaction_reranker_provider"] = meta.Assemble.Stage.CompactionRerankerProvider
 	}
 	if meta.Assemble.Stage.CompactionRerankerModel != "" {
+		payload["context_compaction_reranker_model"] = meta.Assemble.Stage.CompactionRerankerModel
 		payload["ca3_compaction_reranker_model"] = meta.Assemble.Stage.CompactionRerankerModel
 	}
 	if meta.Assemble.Stage.CompactionRerankerThresholdSource != "" {
+		payload["context_compaction_reranker_threshold_source"] = meta.Assemble.Stage.CompactionRerankerThresholdSource
 		payload["ca3_compaction_reranker_threshold_source"] = meta.Assemble.Stage.CompactionRerankerThresholdSource
 	}
+	payload["context_compaction_reranker_threshold_hit"] = meta.Assemble.Stage.CompactionRerankerThresholdHit
 	payload["ca3_compaction_reranker_threshold_hit"] = meta.Assemble.Stage.CompactionRerankerThresholdHit
 	if meta.Assemble.Stage.CompactionRerankerFallbackReason != "" {
+		payload["context_compaction_reranker_fallback_reason"] = meta.Assemble.Stage.CompactionRerankerFallbackReason
 		payload["ca3_compaction_reranker_fallback_reason"] = meta.Assemble.Stage.CompactionRerankerFallbackReason
 	}
 	if meta.Assemble.Stage.CompactionRerankerProfileVersion != "" {
+		payload["context_compaction_reranker_profile_version"] = meta.Assemble.Stage.CompactionRerankerProfileVersion
 		payload["ca3_compaction_reranker_profile_version"] = meta.Assemble.Stage.CompactionRerankerProfileVersion
 	}
+	payload["context_compaction_reranker_rollout_hit"] = meta.Assemble.Stage.CompactionRerankerRolloutHit
 	payload["ca3_compaction_reranker_rollout_hit"] = meta.Assemble.Stage.CompactionRerankerRolloutHit
 	if meta.Assemble.Stage.CompactionRerankerThresholdDrift > 0 {
+		payload["context_compaction_reranker_threshold_drift"] = meta.Assemble.Stage.CompactionRerankerThresholdDrift
 		payload["ca3_compaction_reranker_threshold_drift"] = meta.Assemble.Stage.CompactionRerankerThresholdDrift
 	}
 	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
+		payload["context_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 		payload["ca3_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
 	}
 	if meta.Assemble.Recap.Status != "" {
@@ -3173,7 +3201,7 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.ReactTermination != "" {
 		payload["react_termination_reason"] = meta.ReactTermination
 	}
-	if meta.A67Recorded {
+	if meta.ReactPlanNotebookRecorded {
 		if strings.TrimSpace(meta.ReactPlanID) != "" {
 			payload["react_plan_id"] = strings.TrimSpace(meta.ReactPlanID)
 		}
@@ -3190,7 +3218,7 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 			payload["react_plan_hook_status"] = strings.ToLower(strings.TrimSpace(meta.ReactPlanHookStatus))
 		}
 	}
-	if meta.A65Recorded {
+	if meta.HooksMiddlewareRecorded {
 		payload["hooks_enabled"] = meta.HooksEnabled
 		if strings.TrimSpace(meta.HooksFailMode) != "" {
 			payload["hooks_fail_mode"] = strings.ToLower(strings.TrimSpace(meta.HooksFailMode))

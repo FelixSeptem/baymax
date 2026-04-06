@@ -82,18 +82,18 @@ function Assert-PatternAbsentAcrossRepo {
     }
 }
 
-function Assert-NoParallelA61Changes {
+function Assert-NoParallelTracingEvalChanges {
     param(
         [Parameter(Mandatory = $true)][string]$Assertion
     )
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
-    $canonical = "introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
+    $canonicalHint = "introduce-otel-tracing-and-agent-eval-interoperability-contract"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if ($dir.Name -ne $canonical -and $lower.Contains("eval") -and ($lower.Contains("otel") -or $lower.Contains("tracing"))) {
+        if (-not $lower.Contains($canonicalHint) -and $lower.Contains("eval") -and ($lower.Contains("otel") -or $lower.Contains("tracing"))) {
             $violations += $dir.Name
         }
     }
@@ -102,24 +102,28 @@ function Assert-NoParallelA61Changes {
     }
 }
 
-function Resolve-A61ChangeDir {
-    $active = "openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
-    $activeFull = Join-Path $repoRoot $active
-    if (Test-Path -LiteralPath $activeFull -PathType Container) {
-        return $active
+function Resolve-TracingEvalChangeDir {
+    $activeRoot = Join-Path $repoRoot "openspec/changes"
+    if (Test-Path -LiteralPath $activeRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $activeRoot -Directory |
+            Where-Object { $_.Name -ne "archive" -and $_.Name -like "*introduce-otel-tracing-and-agent-eval-interoperability-contract*" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/$($candidate.Name)"
+        }
     }
 
     $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
     if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
         $candidate = Get-ChildItem -Path $archiveRoot -Directory |
-            Where-Object { $_.Name -like "*introduce-otel-tracing-and-agent-eval-interoperability-contract-a61" } |
+            Where-Object { $_.Name -like "*introduce-otel-tracing-and-agent-eval-interoperability-contract*" } |
             Select-Object -First 1
         if ($candidate) {
             return "openspec/changes/archive/$($candidate.Name)"
         }
     }
 
-    throw "[agent-eval-tracing-interop-gate] unable to locate A61 change directory in active or archive paths"
+    throw "[agent-eval-tracing-interop-gate] unable to locate tracing/eval interop change directory in active or archive paths"
 }
 
 function Invoke-AgentEvalTracingStep {
@@ -131,38 +135,38 @@ function Invoke-AgentEvalTracingStep {
     & $Command
 }
 
-$a61ChangeDir = Resolve-A61ChangeDir
+$tracingEvalChangeDir = Resolve-TracingEvalChangeDir
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: contract marker" -Command {
-    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a61ChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "embedded library behavior"
+    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$tracingEvalChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "embedded library behavior"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a61ChangeDir/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
+    Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$tracingEvalChangeDir/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: active change set closure" -Command {
-    Assert-NoParallelA61Changes -Assertion "control_plane_absent"
+    Assert-NoParallelTracingEvalChanges -Assertion "control_plane_absent"
 }
 
 Invoke-AgentEvalTracingStep -Label "assertion control_plane_absent: reject eval execution control-plane key drift" -Command {
     Assert-PatternAbsentAcrossRepo -Assertion "control_plane_absent" -Pattern "runtime\.eval\.execution\.[a-zA-Z0-9_.-]*(control_plane|controlplane|scheduler_service|orchestrator_endpoint|controller_endpoint|hosted_scheduler|remote_scheduler)"
 }
 
-Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: upstream reuse marker" -Command {
-    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "$a61ChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
+Invoke-AgentEvalTracingStep -Label "assertion tracing_eval_field_reuse_required: upstream reuse marker" -Command {
+    Assert-ContainsLiteral -Assertion "tracing_eval_field_reuse_required" -FilePath "$tracingEvalChangeDir/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" -Literal "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
 }
 
-Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: gate spec marker" -Command {
-    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "$a61ChangeDir/specs/go-quality-gate/spec.md" -Literal "Quality gate SHALL include tracing and eval interoperability contract checks"
+Invoke-AgentEvalTracingStep -Label "assertion tracing_eval_field_reuse_required: gate spec marker" -Command {
+    Assert-ContainsLiteral -Assertion "tracing_eval_field_reuse_required" -FilePath "$tracingEvalChangeDir/specs/go-quality-gate/spec.md" -Literal "Quality gate SHALL include tracing and eval interoperability contract checks"
 }
 
-Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: roadmap closure marker" -Command {
-    Assert-ContainsLiteral -Assertion "a61_field_reuse_required" -FilePath "docs/development-roadmap.md" -Literal "A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。"
+Invoke-AgentEvalTracingStep -Label "assertion tracing_eval_field_reuse_required: roadmap closure marker" -Command {
+    Assert-ContainsLiteral -Assertion "tracing_eval_field_reuse_required" -FilePath "docs/development-roadmap.md" -Literal "Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 }
 
-Invoke-AgentEvalTracingStep -Label "assertion a61_field_reuse_required: reject duplicated upstream alias fields" -Command {
-    Assert-PatternAbsentAcrossRepo -Assertion "a61_field_reuse_required" -Pattern "runtime\.eval\.[a-zA-Z0-9_.-]*(policy_decision_path|deny_source|winner_stage|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action|budget_snapshot|budget_decision|degrade_action)"
+Invoke-AgentEvalTracingStep -Label "assertion tracing_eval_field_reuse_required: reject duplicated upstream alias fields" -Command {
+    Assert-PatternAbsentAcrossRepo -Assertion "tracing_eval_field_reuse_required" -Pattern "runtime\.eval\.[a-zA-Z0-9_.-]*(policy_decision_path|deny_source|winner_stage|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action|budget_snapshot|budget_decision|degrade_action)"
 }
 
 Invoke-AgentEvalTracingStep -Label "runtime config tracing+eval schema and rollback suites" -Command {
@@ -172,18 +176,18 @@ Invoke-AgentEvalTracingStep -Label "runtime config tracing+eval schema and rollb
 }
 
 Invoke-AgentEvalTracingStep -Label "tracing semconv/export + diagnostics additive suites" -Command {
-    Invoke-NativeStrict -Label "go test ./observability/trace ./observability/event ./runtime/diagnostics -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesA61TracingEvalAdditiveFields|RuntimeRecorderA61ParserCompatibilityAdditiveNullableDefault|StoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunA61TracingEvalAdditiveFieldsBoundedCardinality)' -count=1" -Command {
-        go test ./observability/trace ./observability/event ./runtime/diagnostics -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesA61TracingEvalAdditiveFields|RuntimeRecorderA61ParserCompatibilityAdditiveNullableDefault|StoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunA61TracingEvalAdditiveFieldsBoundedCardinality)' -count=1
+    Invoke-NativeStrict -Label "go test ./observability/trace ./observability/event ./runtime/diagnostics -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesTracingEvalAdditiveFields|RuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault|StoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunTracingEvalAdditiveFieldsBoundedCardinality)' -count=1" -Command {
+        go test ./observability/trace ./observability/event ./runtime/diagnostics -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesTracingEvalAdditiveFields|RuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault|StoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunTracingEvalAdditiveFieldsBoundedCardinality)' -count=1
     }
 }
 
-Invoke-AgentEvalTracingStep -Label "replay fixtures and drift taxonomy suites (A61)" -Command {
-    Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract.*(Otel|Eval|A61)' -count=1" -Command {
-        go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract.*(Otel|Eval|A61)' -count=1
+Invoke-AgentEvalTracingStep -Label "replay fixtures and drift taxonomy suites (tracing+eval)" -Command {
+    Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' -count=1" -Command {
+        go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' -count=1
     }
 }
 
-Write-Host "[agent-eval-tracing-interop-gate] contributioncheck parity suites for A61 gate"
+Write-Host "[agent-eval-tracing-interop-gate] contributioncheck parity suites for tracing+eval interop gate"
 Invoke-NativeStrict -Label "go test ./tool/contributioncheck -run 'Test(AgentEvalTracingInteropGateScriptParity|QualityGateIncludesAgentEvalTracingInteropGate|AgentEvalTracingInteropRoadmapAndContractIndexClosureMarkers)' -count=1" -Command {
     go test ./tool/contributioncheck -run 'Test(AgentEvalTracingInteropGateScriptParity|QualityGateIncludesAgentEvalTracingInteropGate|AgentEvalTracingInteropRoadmapAndContractIndexClosureMarkers)' -count=1
 }

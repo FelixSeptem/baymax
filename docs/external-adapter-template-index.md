@@ -1,4 +1,4 @@
-# External Adapter Template Index (A21/A53/A54)
+# External Adapter Template Index (adapter template + sandbox profile-pack + memory SPI)
 
 更新时间：2026-03-30
 
@@ -15,8 +15,8 @@
 模板边界：
 - 仅用于 onboarding skeleton 和迁移参考。
 - 不提供生产级运行保障（多租户隔离、SLO、审计、全量安全策略）。
-- A26 起，模板默认携带 `adapter-manifest.json`，用于接入前 compatibility contract 校验。
-- A27 起，脚手架默认携带 `capability_negotiation_test.go`，用于协商与回退契约 baseline。
+- 在 manifest contract 主线下，模板默认携带 `adapter-manifest.json`，用于接入前 compatibility contract 校验。
+- 在 capability negotiation 主线下，脚手架默认携带 `capability_negotiation_test.go`，用于协商与回退契约 baseline。
 
 ## 模板导航
 
@@ -27,7 +27,7 @@
 | P3 | Tool adapter template | `examples/templates/tool-adapter-template/main.go` | `go run ./examples/templates/tool-adapter-template` |
 | P4 | Memory adapter template | `examples/templates/memory-adapter-template/main.go` | `go run ./examples/templates/memory-adapter-template` |
 
-## Mainstream Sandbox Backend Onboarding Templates（A53）
+## Mainstream Sandbox Backend Onboarding Templates（sandbox conformance 主线）
 
 适用 backend（固定）：
 - `linux_nsjail`
@@ -117,9 +117,9 @@ manifest 片段（profile declaration + manifest snippet）：
 - API 参考入口：`docs/api-reference-d1.md`
 - 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
 
-## Manifest Template Guidance（A26）
+## Manifest Template Guidance（manifest contract 主线）
 
-从 A26 起，脚手架模板默认生成 `adapter-manifest.json`，字段包含：
+在 manifest contract 主线下，脚手架模板默认生成 `adapter-manifest.json`，字段包含：
 - `type`
 - `name`
 - `version`
@@ -135,9 +135,9 @@ manifest 片段（profile declaration + manifest snippet）：
 - `optional` 能力缺失允许降级，但必须输出 deterministic downgrade reason。
 - `conformance_profile` 必须与 conformance bootstrap 场景 ID 一致（避免模板漂移）。
 
-## Conformance 验收入口（A22）
+## Conformance 验收入口（adapter conformance 主线）
 
-模板交付后，必须通过 A22 一致性验收：
+模板交付后，必须通过 adapter conformance 一致性验收：
 
 ```bash
 bash scripts/check-adapter-conformance.sh
@@ -162,9 +162,9 @@ pwsh -File scripts/check-adapter-manifest-contract.ps1
 - 错误分类与 reason taxonomy 归一
 - mandatory input fail-fast
 
-## Capability Negotiation Scaffold Guidance（A27）
+## Capability Negotiation Scaffold Guidance（capability negotiation 主线）
 
-从 A27 起，脚手架在保留 `adapter-manifest.json` 的同时，新增：
+在 capability negotiation 主线下，脚手架在保留 `adapter-manifest.json` 的同时，新增：
 - `capability_negotiation_test.go`：覆盖 fail-fast、best-effort override、run/stream 协商等价基线。
 - manifest `negotiation` 段默认值：
   - `default_strategy: fail_fast`
@@ -175,7 +175,7 @@ pwsh -File scripts/check-adapter-manifest-contract.ps1
 - optional capability 在 `best_effort` 下允许降级（`adapter.capability.optional_downgraded`）。
 - 请求策略覆盖生效时记录 `adapter.capability.strategy_override_applied`。
 
-A27 契约验收入口：
+capability negotiation 契约验收入口：
 
 ```bash
 bash scripts/check-adapter-capability-contract.sh
@@ -185,9 +185,9 @@ bash scripts/check-adapter-capability-contract.sh
 pwsh -File scripts/check-adapter-capability-contract.ps1
 ```
 
-## Profile Versioning & Replay Guidance（A28）
+## Profile Versioning & Replay Guidance（profile versioning + replay 主线）
 
-A28 在 adapter 合同链路补齐了 profile version 与 replay gate：
+profile versioning + replay 主线在 adapter 合同链路补齐了 profile version 与 replay gate：
 - 在 manifest/conformance/negotiation 链路统一引入 `contract_profile_version`。
 - runtime 侧执行 profile 支持窗口校验（默认 `current + previous`，不命中 fail-fast）。
 - 增加 replay 基线用于识别契约语义漂移（manifest/compat/negotiation/reason taxonomy）。
@@ -202,7 +202,7 @@ bash scripts/check-adapter-contract-replay.sh
 pwsh -File scripts/check-adapter-contract-replay.ps1
 ```
 
-Sandbox adapter conformance gate（A53）：
+Sandbox adapter conformance gate（mainstream sandbox backend）：
 
 ```bash
 bash scripts/check-sandbox-adapter-conformance-contract.sh
@@ -212,7 +212,7 @@ bash scripts/check-sandbox-adapter-conformance-contract.sh
 pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
 ```
 
-## Mainstream Memory Adapter Onboarding Templates（A54）
+## Mainstream Memory Adapter Onboarding Templates（memory provider SPI 主线）
 
 适用 profile（固定）：
 - `mem0`
@@ -240,7 +240,7 @@ memory profile 模板映射（onboarding skeleton）：
 - readiness finding：`memory.mode_invalid`、`memory.profile_missing`、`memory.provider_not_supported`、`memory.spi_unavailable`、`memory.filesystem_path_invalid`、`memory.contract_version_mismatch`、`memory.fallback_policy_conflict`、`memory.fallback_target_unavailable`。
 - conformance suite：`integration/adapterconformance/memory_matrix_test.go`。
 
-## Sandbox Egress + Allowlist Onboarding Templates（A57）
+## Sandbox Egress + Allowlist Onboarding Templates（sandbox egress + adapter allowlist 主线）
 
 推荐将 sandbox-governed adapter onboarding skeleton 增补以下字段：
 
@@ -254,7 +254,7 @@ memory profile 模板映射（onboarding skeleton）：
 - `adapter.allowlist.entries`
 - `adapter.allowlist.on_unknown_signature`
 
-A57 conformance case id 绑定：
+sandbox egress + adapter allowlist conformance case id 绑定：
 
 | 分类 | case id | 说明 |
 | --- | --- | --- |
@@ -267,7 +267,7 @@ A57 conformance case id 绑定：
 | allowlist allowed path | `adapter-allowlist-allowed-path-enforce` | 命中 allowlist 正常激活 |
 | allowlist policy conflict | `adapter-allowlist-policy-conflict` | 非法 enforcement/on_unknown_signature 组合阻断 |
 
-A57 gate 命令：
+sandbox egress + adapter allowlist gate 命令：
 
 ```bash
 bash scripts/check-sandbox-egress-allowlist-contract.sh

@@ -11,7 +11,7 @@
         "diagnostics_bundle_last_reason_code": "DIAGNOSTICS.BUNDLE.OUTPUT_UNAVAILABLE",
         "diagnostics_bundle_last_schema_version": "BUNDLE.V1",
         "diagnostics_bundle_redaction_status": "REDACTED",
-        "diagnostics_bundle_gate_fingerprint": "GATE.A55.V1"
+        "diagnostics_bundle_gate_fingerprint": "GATE.a55.V1"
       },
       "stream": {
         "observability_export_profile": "otlp",

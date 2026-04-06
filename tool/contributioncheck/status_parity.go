@@ -74,39 +74,43 @@ func ValidateStatusParity(activeChanges, archivedChanges []string, roadmap, read
 
 	readmeStatuses := parseReadmeMilestoneStatus(readme)
 	for _, change := range activeChanges {
-		changeID := extractChangeID(change)
-		if changeID == "" {
-			continue
+		status, ok := readmeStatuses[change]
+		if !ok {
+			changeID := extractChangeID(change)
+			if changeID != "" {
+				status, ok = readmeStatuses[changeID]
+			}
 		}
-		status, ok := readmeStatuses[changeID]
 		if !ok {
 			issues = append(issues, StatusParityIssue{
 				Code:    "status-parity.snapshot-missing-active-milestone",
-				Message: "README milestone snapshot missing active change id: " + changeID,
+				Message: "README milestone snapshot missing active change: " + change,
 			})
 			continue
 		}
 		if status != "进行中" {
 			issues = append(issues, StatusParityIssue{
 				Code:    "status-parity.stale-snapshot-mismatch",
-				Message: "README milestone status must be 进行中 for active change " + changeID + ", got " + status,
+				Message: "README milestone status must be 进行中 for active change " + change + ", got " + status,
 			})
 		}
 	}
 
 	for _, change := range archivedChanges {
-		changeID := extractChangeID(change)
-		if changeID == "" {
-			continue
+		status, ok := readmeStatuses[change]
+		if !ok {
+			changeID := extractChangeID(change)
+			if changeID != "" {
+				status, ok = readmeStatuses[changeID]
+			}
 		}
-		status, ok := readmeStatuses[changeID]
 		if !ok {
 			continue
 		}
 		if status == "进行中" {
 			issues = append(issues, StatusParityIssue{
 				Code:    "status-parity.active-vs-archived-mismatch",
-				Message: "README marks archived change as in-progress: " + changeID,
+				Message: "README marks archived change as in-progress: " + change,
 			})
 		}
 	}
@@ -200,21 +204,39 @@ func parseReadmeMilestoneStatus(readme string) map[string]string {
 	status := map[string]string{}
 	for _, raw := range strings.Split(readme, "\n") {
 		line := strings.TrimSpace(raw)
-		if !strings.HasPrefix(line, "- A") {
+		if !strings.HasPrefix(line, "- ") {
 			continue
 		}
-		id := ""
-		if idx := strings.Index(line, "（"); idx > 0 {
-			id = strings.TrimSpace(strings.TrimPrefix(line[:idx], "- "))
-		}
-		if id == "" {
-			continue
-		}
+		milestoneStatus := ""
 		switch {
 		case strings.Contains(line, "进行中"):
-			status[id] = "进行中"
+			milestoneStatus = "进行中"
 		case strings.Contains(line, "已归档并稳定"):
-			status[id] = "已归档并稳定"
+			milestoneStatus = "已归档并稳定"
+		default:
+			continue
+		}
+
+		// Prefer slug-based canonical snapshot format: - `change-name`（进行中）
+		if firstTick := strings.Index(line, "`"); firstTick >= 0 {
+			rest := line[firstTick+1:]
+			if secondTick := strings.Index(rest, "`"); secondTick >= 0 {
+				changeName := strings.TrimSpace(rest[:secondTick])
+				if changeName != "" {
+					status[changeName] = milestoneStatus
+				}
+			}
+		}
+
+		// Backward compatibility: numbered milestone snapshot format.
+		if strings.HasPrefix(line, "- A") {
+			id := ""
+			if idx := strings.Index(line, "（"); idx > 0 {
+				id = strings.TrimSpace(strings.TrimPrefix(line[:idx], "- "))
+			}
+			if id != "" {
+				status[id] = milestoneStatus
+			}
 		}
 	}
 	return status

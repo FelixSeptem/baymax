@@ -78,7 +78,8 @@ Invoke-ReactStep -Label "provider tool-calling canonicalization suites" -Command
 }
 
 Invoke-ReactStep -Label "diagnostics replay react.v1 suites" -Command {
-    go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedA48A52MemoryCompatibility)' -count=1
+    go test ./tool/diagnosticsreplay -run 'TestReplayContract(PrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationFixtureDriftClassification|ArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility)' -count=1
 }
 
 Write-Host "[react-contract-gate] done"
+

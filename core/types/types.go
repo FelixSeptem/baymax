@@ -677,7 +677,7 @@ type AssembleStage struct {
 	MemoryLifecycleAction          string              `json:"memory_lifecycle_action,omitempty"`
 	PressureZone                   string              `json:"pressure_zone,omitempty"`
 	PressureReason                 string              `json:"pressure_reason,omitempty"`
-	// PressureTriggerSource stores the concrete trigger branch selected by CA3/CA4 logic.
+	// PressureTriggerSource stores the concrete trigger branch selected by pressure governance logic.
 	PressureTriggerSource             string           `json:"pressure_trigger_source,omitempty"`
 	ZoneResidencyMs                   map[string]int64 `json:"zone_residency_ms,omitempty"`
 	TriggerCounts                     map[string]int   `json:"trigger_counts,omitempty"`

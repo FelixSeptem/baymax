@@ -10,6 +10,8 @@
 - 技能记录：`SkillRecord`
 - 热更新记录：`ReloadRecord`
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 当前稳定查询接口：
 - `RecentCalls`
 - `RecentRuns`
@@ -20,7 +22,7 @@
 - `QueryRuns`
 - `RecentSkills`
 - `TimelineTrends`
-- `CA2ExternalTrends`
+- `ContextStage2ExternalTrends`
 
 ## 架构设计
 
@@ -30,15 +32,15 @@
 - 幂等去重（run/skill idempotency key）
 - 统一 run 查询（`QueryRuns`：多维过滤 + 分页 + 排序 + opaque cursor）
 - timeline 聚合（phase 统计、P95 延迟）
-- 趋势查询（`TimelineTrends`、`CA2ExternalTrends`）
+- 趋势查询（`TimelineTrends`、`ContextStage2ExternalTrends`）
 - 多代理 additive 摘要字段（含 `async_await_*`、`async_reconcile_*`、`collab_*`、`scheduler_*`、`mailbox_*`）
-- A41 timeout-resolution additive 字段：
+- timeout-resolution additive 字段：
   - `effective_operation_profile`
   - `timeout_resolution_source`
   - `timeout_resolution_trace`
   - `timeout_parent_budget_clamp_total`
   - `timeout_parent_budget_reject_total`
-- A60 budget admission additive 字段：
+- budget admission additive 字段：
   - `budget_snapshot`
   - `budget_decision`
   - `degrade_action`
@@ -66,8 +68,10 @@
 
 - 关键验证：`go test ./runtime/diagnostics -count=1`。
 - 回归重点：幂等写入、重复事件收敛、趋势聚合确定性。
-- A41 回归重点：timeout-resolution 字段在 replay/重复写入下保持逻辑幂等，不膨胀聚合计数。
-- A60 回归重点：`budget_snapshot/budget_decision/degrade_action` 保持 `additive + nullable + default` 兼容，不破坏历史 QueryRuns 消费端。
+- 回归重点：timeout-resolution 字段在 replay/重复写入下保持逻辑幂等，不膨胀聚合计数。
+- 回归重点：`budget_snapshot/budget_decision/degrade_action` 保持 `additive + nullable + default` 兼容，不破坏历史 QueryRuns 消费端。
+- 回归重点：Context Assembler 压力/压缩字段支持语义主名
+  （`context_pressure_*`、`context_compaction_*`）并兼容 legacy `ca3_*` 输入，不引入语义漂移。
 - 与 integration 契约共同验证 run/team/workflow/task 查询语义。
 
 ## 扩展点与常见误用

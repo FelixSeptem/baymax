@@ -28,7 +28,7 @@ func TestStateSnapshotGateScriptParity(t *testing.T) {
 		"state_source_of_truth_reuse_required",
 		"runtime\\.(state\\.snapshot|session\\.state)\\.[a-zA-Z0-9_.-]*(control_plane|controlplane|state_service|orchestrator|controller|managed_state|hosted_state|remote_state|migration_center)",
 		"runtime\\.state\\.snapshot\\.[a-zA-Z0-9_.-]*(memory_mode|memory_provider|memory_profile|memory_contract_version|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action)",
-		"A66 必须复用现有 checkpoint/snapshot 语义与 A59 memory lifecycle，不得重写存储层事实源。",
+		"State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -38,10 +38,10 @@ func TestStateSnapshotGateScriptParity(t *testing.T) {
 			t.Fatalf("powershell state snapshot gate missing token %q", token)
 		}
 	}
-	if !strings.Contains(shell, "assert_no_parallel_a66_snapshot_changes") {
+	if !strings.Contains(shell, "assert_no_parallel_state_snapshot_changes") {
 		t.Fatalf("shell state snapshot gate missing assertion helper for parallel proposal closure")
 	}
-	if !strings.Contains(ps, "Assert-NoParallelA66SnapshotChanges") {
+	if !strings.Contains(ps, "Assert-NoParallelStateSnapshotChanges") {
 		t.Fatalf("powershell state snapshot gate missing assertion helper for parallel proposal closure")
 	}
 	if !strings.Contains(shell, "set -euo pipefail") {

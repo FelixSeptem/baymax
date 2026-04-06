@@ -34,8 +34,8 @@ func TestValidateStatusParityDetectsConflict(t *testing.T) {
 		"  - `change-bar-a24`",
 	}, "\n")
 	readme := strings.Join([]string{
-		"- A24（bar）进行中。",
-		"- A25（foo）已归档并稳定。",
+		"- `change-bar-a24`（bar）进行中。",
+		"- `change-foo-a25`（foo）已归档并稳定。",
 	}, "\n")
 
 	issues := ValidateStatusParity(active, archived, roadmap, readme)
@@ -57,5 +57,23 @@ func TestValidateStatusParityDetectsConflict(t *testing.T) {
 		if !seen {
 			t.Fatalf("expected issue code %s, got %#v", code, issues)
 		}
+	}
+}
+
+func TestValidateStatusParitySupportsSlugSnapshotFormat(t *testing.T) {
+	active := []string{"introduce-foo-contract-a25"}
+	archived := []string{"introduce-bar-contract-a24"}
+	roadmap := strings.Join([]string{
+		"- 进行中：",
+		"  - `introduce-foo-contract-a25`",
+	}, "\n")
+	readme := strings.Join([]string{
+		"- `introduce-foo-contract-a25`（foo）进行中。",
+		"- `introduce-bar-contract-a24`（bar）已归档并稳定。",
+	}, "\n")
+
+	issues := ValidateStatusParity(active, archived, roadmap, readme)
+	if len(issues) > 0 {
+		t.Fatalf("expected no parity issues for slug snapshot format, got %#v", issues)
 	}
 }

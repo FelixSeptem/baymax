@@ -81,18 +81,18 @@ function Assert-PatternAbsentAcrossRepo {
     }
 }
 
-function Assert-NoParallelA65Changes {
+function Assert-NoParallelHooksMiddlewareChanges {
     param(
         [Parameter(Mandatory = $true)][string]$Assertion
     )
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
-    $canonical = "introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65"
+    $canonicalHint = "introduce-agent-lifecycle-hooks-and-tool-middleware-contract"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if ($dir.Name -ne $canonical -and $lower.Contains("hook") -and $lower.Contains("middleware")) {
+        if (-not $lower.Contains($canonicalHint) -and $lower.Contains("hook") -and $lower.Contains("middleware")) {
             $violations += $dir.Name
         }
     }
@@ -101,24 +101,28 @@ function Assert-NoParallelA65Changes {
     }
 }
 
-function Resolve-A65ChangeDir {
-    $active = "openspec/changes/introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65"
-    $activeFull = Join-Path $repoRoot $active
-    if (Test-Path -LiteralPath $activeFull -PathType Container) {
-        return $active
+function Resolve-HooksMiddlewareChangeDir {
+    $activeRoot = Join-Path $repoRoot "openspec/changes"
+    if (Test-Path -LiteralPath $activeRoot -PathType Container) {
+        $candidate = Get-ChildItem -Path $activeRoot -Directory |
+            Where-Object { $_.Name -ne "archive" -and $_.Name -like "*introduce-agent-lifecycle-hooks-and-tool-middleware-contract*" } |
+            Select-Object -First 1
+        if ($candidate) {
+            return "openspec/changes/$($candidate.Name)"
+        }
     }
 
     $archiveRoot = Join-Path $repoRoot "openspec/changes/archive"
     if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
         $candidate = Get-ChildItem -Path $archiveRoot -Directory |
-            Where-Object { $_.Name -like "*introduce-agent-lifecycle-hooks-and-tool-middleware-contract-a65" } |
+            Where-Object { $_.Name -like "*introduce-agent-lifecycle-hooks-and-tool-middleware-contract*" } |
             Select-Object -First 1
         if ($candidate) {
             return "openspec/changes/archive/$($candidate.Name)"
         }
     }
 
-    throw "[hooks-middleware-contract-gate] unable to locate A65 change directory in active or archive paths"
+    throw "[hooks-middleware-contract-gate] unable to locate hooks/middleware change directory in active or archive paths"
 }
 
 function Get-ChangedFiles {
@@ -158,33 +162,33 @@ function Invoke-HooksMiddlewareStep {
     [void](Invoke-NativeStrict -Label $Label -Command $Command)
 }
 
-$a65ChangeDir = Resolve-A65ChangeDir
+$hooksMiddlewareChangeDir = Resolve-HooksMiddlewareChangeDir
 
 Write-Host "[hooks-middleware-contract-gate] assertion control_plane_absent: contract marker"
-Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a65ChangeDir/specs/agent-lifecycle-hooks-and-tool-middleware-contract/spec.md" -Literal "MUST NOT require hosted control-plane services"
+Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$hooksMiddlewareChangeDir/specs/agent-lifecycle-hooks-and-tool-middleware-contract/spec.md" -Literal "MUST NOT require hosted control-plane services"
 
 Write-Host "[hooks-middleware-contract-gate] assertion control_plane_absent: gate spec marker"
-Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$a65ChangeDir/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
+Assert-ContainsLiteral -Assertion "control_plane_absent" -FilePath "$hooksMiddlewareChangeDir/specs/go-quality-gate/spec.md" -Literal "control_plane_absent"
 
 Write-Host "[hooks-middleware-contract-gate] assertion control_plane_absent: active change set closure"
-Assert-NoParallelA65Changes -Assertion "control_plane_absent"
+Assert-NoParallelHooksMiddlewareChanges -Assertion "control_plane_absent"
 
 Write-Host "[hooks-middleware-contract-gate] assertion control_plane_absent: reject hooks/middleware control-plane key drift"
 Assert-PatternAbsentAcrossRepo -Assertion "control_plane_absent" -Pattern "runtime\.(hooks|tool_middleware)\.[a-zA-Z0-9_.-]*(control_plane|controlplane|orchestrator|controller|service_endpoint|remote_hook|hosted_hook|managed_middleware)"
 
-Write-Host "[hooks-middleware-contract-gate] assertion a65_same_domain_closure: roadmap marker"
-Assert-ContainsLiteral -Assertion "a65_same_domain_closure" -FilePath "docs/development-roadmap.md" -Literal "A65 hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在 A65 内以增量任务吸收，不再新开平行提案。"
+Write-Host "[hooks-middleware-contract-gate] assertion hooks_middleware_same_domain_closure: roadmap marker"
+Assert-ContainsLiteral -Assertion "hooks_middleware_same_domain_closure" -FilePath "docs/development-roadmap.md" -Literal "Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 
-Invoke-HooksMiddlewareStep -Label "a65 runner hooks/middleware run-stream parity suites" -Command {
+Invoke-HooksMiddlewareStep -Label "hooks/middleware run-stream parity suites" -Command {
     go test ./core/runner -run 'Test(LifecycleHooksRunAndStreamPhaseOrderParity|LifecycleHooksFailFastStopsRunAndStream|LifecycleHooksDegradeContinuesRunAndStream|ToolMiddlewareTimeoutClassifiedAsPolicyTimeoutInRunAndStream|SkillPreprocessRunsBeforeRunAndStreamModelLoop|SkillPreprocessFailFastAbortsRunAndStream|SkillPreprocessDegradeContinuesRunAndStream|SkillBundlePromptMappingAppendDeterministicForRunAndStream|SkillBundlePromptMappingConflictFailFastForRunAndStream|SkillBundleWhitelistFailFastRejectsBlockedToolForRunAndStream|SkillBundleWhitelistUpperBoundSandboxRejectsDuringPreprocess|SkillBundleWhitelistFirstWinFiltersBlockedToolForRunAndStream)' -count=1
 }
 
-Invoke-HooksMiddlewareStep -Label "a65 diagnostics additive compatibility suites" -Command {
-    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunA65AdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesA65HooksMiddlewareSkillAdditiveFields|RuntimeRecorderA65ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA65ReasonTaxonomyDriftGuardCanonicalFallback)' -count=1
+Invoke-HooksMiddlewareStep -Label "hooks/middleware diagnostics additive compatibility suites" -Command {
+    go test ./runtime/diagnostics ./observability/event -run 'Test(StoreRunHooksMiddlewareAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderParsesHooksMiddlewareSkillAdditiveFields|RuntimeRecorderHooksMiddlewareParserCompatibilityAdditiveNullableDefault|RuntimeRecorderHooksMiddlewareReasonTaxonomyDriftGuardCanonicalFallback)' -count=1
 }
 
-Invoke-HooksMiddlewareStep -Label "a65 replay fixture + drift suites" -Command {
-    go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractA65HooksMiddleware(FixtureSuite|DriftClassification|DriftGuardFailFast)' -count=1
+Invoke-HooksMiddlewareStep -Label "hooks/middleware replay fixture + drift suites" -Command {
+    go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContractHooksMiddleware(FixtureSuite|DriftClassification|DriftGuardFailFast)' -count=1
 }
 
 $changedFiles = @(Get-ChangedFiles)
@@ -228,7 +232,7 @@ if ($skillImpacted) {
         go test ./skill/loader ./runtime/config -run 'Test(Compile|RuntimeHooksToolMiddlewareSkillConfig|ManagerRuntimeHooksAndSkillInvalidReloadRollsBack)' -count=1
     }
     Invoke-HooksMiddlewareStep -Label "impacted-contract suites (skill scope): replay/contract compatibility suites" -Command {
-        go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractA65HooksMiddleware|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
+        go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractHooksMiddleware|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput|PrimaryReasonArbitrationReplayContractFixtureSuite)' -count=1
     }
 }
 
@@ -237,7 +241,7 @@ if ($observabilityImpacted) {
         pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
     }
     Invoke-HooksMiddlewareStep -Label "impacted-contract suites (observability scope): diagnostics replay compatibility suites" -Command {
-        go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractA65HooksMiddleware|ReplayContractA61|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput)' -count=1
+        go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractHooksMiddleware|ReplayContractTracingEval|ReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOutput)' -count=1
     }
 }
 

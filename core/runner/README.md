@@ -8,6 +8,8 @@
 - `Stream` 流式执行
 - 模型调用、工具调用、终态收敛
 
+Canonical 架构入口：`docs/runtime-harness-architecture.md`
+
 ## 架构设计
 
 `Engine` 以状态机推进一次 run：
@@ -21,7 +23,7 @@
 
 - `runtime/config.Manager`：策略与热更新快照
 - `tool/local.Dispatcher`：本地工具调度
-- `context/assembler.Assembler`：CA1-CA4 上下文装配
+- `context/assembler.Assembler`：上下文装配语义阶段编排
 - 安全治理：Action Gate、Model IO Filter、Security Alert
 
 ## 关键入口

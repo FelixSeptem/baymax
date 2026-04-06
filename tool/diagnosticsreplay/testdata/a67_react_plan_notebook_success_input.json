@@ -12,7 +12,7 @@
         "react_iteration_budget_hit_total": 0,
         "react_termination_reason": "REACT.COMPLETED",
         "react_stream_dispatch_enabled": true,
-        "react_plan_id": "RUN-A67-PLAN",
+        "react_plan_id": "RUN-a67-PLAN",
         "react_plan_version": 4,
         "react_plan_change_total": 4,
         "react_plan_last_action": "COMPLETE",

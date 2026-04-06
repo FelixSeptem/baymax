@@ -498,6 +498,10 @@ try {
             pwsh -File scripts/check-docs-consistency.ps1
         }
 
+        Invoke-RequiredStep -StepLabel "[quality-gate] semantic labeling governance" -Command {
+            pwsh -File scripts/check-semantic-labeling-governance.ps1
+        }
+
         Invoke-RequiredStep -StepLabel "[quality-gate] go test ./..." -Command {
             go test ./...
         }
@@ -529,6 +533,18 @@ Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] go file line budget governance" -Command {
+    pwsh -File scripts/check-go-file-line-budget.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] go split semantic equivalence strong checks" -Command {
+    pwsh -File scripts/check-go-split-semantic-equivalence.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] semantic labeling governance" -Command {
+    pwsh -File scripts/check-semantic-labeling-governance.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] canonical mailbox entrypoints" -Command {
     pwsh -File scripts/check-canonical-mailbox-entrypoints.ps1
 }
@@ -542,15 +558,15 @@ Invoke-RequiredStep -StepLabel "[quality-gate] state snapshot contract suites" -
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] runtime readiness + explainability + version governance contract suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderA40ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA49ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA50ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesA50ArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./orchestration/composer ./integration -run 'Test(RuntimeReadiness|ReadinessAdmission|ArbitrationVersionGovernanceContract|StoreRunReadiness|StoreRunArbitrationVersionGovernance|RuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault|RuntimeRecorderArbitrationExplainabilityParserCompatibilityAdditiveNullableDefault|RuntimeRecorderArbitrationVersionGovernanceParserCompatibilityAdditiveNullableDefault|RuntimeRecorderParsesArbitrationVersionGovernanceFields|ComposerReadiness)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics cardinality contract suites" -Command {
-    go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderA45ParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1
+    go test ./runtime/config ./runtime/diagnostics ./observability/event ./integration -run 'Test(DiagnosticsCardinality|ManagerDiagnosticsCardinality|StoreRunCardinality|CardinalityListGovernance|RuntimeRecorderDiagnosticsCardinalityParserCompatibilityAdditiveNullableDefault|DiagnosticsCardinalityContract)' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {
-    go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderA14ParserCompatibilityAdditiveNullableDefault|RuntimeRecorderA46ParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1
+    go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault|RuntimeRecorderAdapterHealthGovernanceParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] mailbox runtime wiring regression" -Command {
@@ -667,8 +683,8 @@ Invoke-RequiredStep -StepLabel "[quality-gate] golangci-lint --config .golangci.
     golangci-lint run --config .golangci.yml
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] CA4 benchmark regression" -Command {
-    pwsh -File scripts/check-ca4-benchmark-regression.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] context production hardening benchmark regression" -Command {
+    pwsh -File scripts/check-context-production-hardening-benchmark-regression.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent mainline benchmark regression" -Command {

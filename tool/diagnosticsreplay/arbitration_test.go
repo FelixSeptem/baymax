@@ -49,39 +49,39 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			expected: "a56_react_success_expected.json",
 		},
 		{
-			name:     "a67-react-plan-notebook",
-			input:    "a67_react_plan_notebook_success_input.json",
-			expected: "a67_react_plan_notebook_success_expected.json",
+			name:     "react-plan-notebook",
+			input:    "react_plan_notebook_success_input.json",
+			expected: "react_plan_notebook_success_expected.json",
 		},
 		{
-			name:     "a68-realtime-protocol",
-			input:    "a68_realtime_event_protocol_success_input.json",
-			expected: "a68_realtime_event_protocol_success_expected.json",
+			name:     "realtime-protocol",
+			input:    "realtime_event_protocol_success_input.json",
+			expected: "realtime_event_protocol_success_expected.json",
 		},
 		{
-			name:     "a67-ctx-reference-first",
-			input:    "a67_ctx_reference_first_success_input.json",
-			expected: "a67_ctx_reference_first_success_expected.json",
+			name:     "context-reference-first",
+			input:    "context_reference_first_success_input.json",
+			expected: "context_reference_first_success_expected.json",
 		},
 		{
-			name:     "a67-ctx-isolate-handoff",
-			input:    "a67_ctx_isolate_handoff_success_input.json",
-			expected: "a67_ctx_isolate_handoff_success_expected.json",
+			name:     "context-isolate-handoff",
+			input:    "context_isolate_handoff_success_input.json",
+			expected: "context_isolate_handoff_success_expected.json",
 		},
 		{
-			name:     "a67-ctx-edit-gate",
-			input:    "a67_ctx_edit_gate_success_input.json",
-			expected: "a67_ctx_edit_gate_success_expected.json",
+			name:     "context-edit-gate",
+			input:    "context_edit_gate_success_input.json",
+			expected: "context_edit_gate_success_expected.json",
 		},
 		{
-			name:     "a67-ctx-swapback",
-			input:    "a67_ctx_swapback_success_input.json",
-			expected: "a67_ctx_swapback_success_expected.json",
+			name:     "context-swapback",
+			input:    "context_relevance_swapback_success_input.json",
+			expected: "context_relevance_swapback_success_expected.json",
 		},
 		{
-			name:     "a67-ctx-lifecycle-tiering",
-			input:    "a67_ctx_lifecycle_tiering_success_input.json",
-			expected: "a67_ctx_lifecycle_tiering_success_expected.json",
+			name:     "context-lifecycle-tiering",
+			input:    "context_lifecycle_tiering_success_input.json",
+			expected: "context_lifecycle_tiering_success_expected.json",
 		},
 		{
 			name:     "a57-sandbox-egress-allowlist",
@@ -418,92 +418,92 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantInText: "react provider mapping drift",
 		},
 		{
-			name:       "a67-react-plan-version-drift",
-			fixture:    "a67_react_plan_version_drift_input.json",
+			name:       "react-plan-version-drift",
+			fixture:    "react_plan_version_drift_input.json",
 			wantCode:   ReasonCodeReactPlanVersionDrift,
 			wantInText: "react plan version drift",
 		},
 		{
-			name:       "a67-react-plan-change-reason-drift",
-			fixture:    "a67_react_plan_change_reason_drift_input.json",
+			name:       "react-plan-change-reason-drift",
+			fixture:    "react_plan_change_reason_drift_input.json",
 			wantCode:   ReasonCodeReactPlanChangeReasonDrift,
 			wantInText: "react plan change reason drift",
 		},
 		{
-			name:       "a67-react-plan-hook-semantic-drift",
-			fixture:    "a67_react_plan_hook_semantic_drift_input.json",
+			name:       "react-plan-hook-semantic-drift",
+			fixture:    "react_plan_hook_semantic_drift_input.json",
 			wantCode:   ReasonCodeReactPlanHookSemanticDrift,
 			wantInText: "react plan hook semantic drift",
 		},
 		{
-			name:       "a67-react-plan-recover-drift",
-			fixture:    "a67_react_plan_recover_drift_input.json",
+			name:       "react-plan-recover-drift",
+			fixture:    "react_plan_recover_drift_input.json",
 			wantCode:   ReasonCodeReactPlanRecoverDrift,
 			wantInText: "react plan recover drift",
 		},
 		{
-			name:       "a68-realtime-event-order-drift",
-			fixture:    "a68_realtime_event_order_drift_input.json",
+			name:       "realtime-event-order-drift",
+			fixture:    "realtime_event_order_drift_input.json",
 			wantCode:   ReasonCodeRealtimeEventOrderDrift,
 			wantInText: "realtime event order drift",
 		},
 		{
-			name:       "a68-realtime-interrupt-semantic-drift",
-			fixture:    "a68_realtime_interrupt_semantic_drift_input.json",
+			name:       "realtime-interrupt-semantic-drift",
+			fixture:    "realtime_interrupt_semantic_drift_input.json",
 			wantCode:   ReasonCodeRealtimeInterruptSemanticDrift,
 			wantInText: "realtime interrupt semantic drift",
 		},
 		{
-			name:       "a68-realtime-resume-semantic-drift",
-			fixture:    "a68_realtime_resume_semantic_drift_input.json",
+			name:       "realtime-resume-semantic-drift",
+			fixture:    "realtime_resume_semantic_drift_input.json",
 			wantCode:   ReasonCodeRealtimeResumeSemanticDrift,
 			wantInText: "realtime resume semantic drift",
 		},
 		{
-			name:       "a68-realtime-idempotency-drift",
-			fixture:    "a68_realtime_idempotency_drift_input.json",
+			name:       "realtime-idempotency-drift",
+			fixture:    "realtime_idempotency_drift_input.json",
 			wantCode:   ReasonCodeRealtimeIdempotencyDrift,
 			wantInText: "realtime idempotency drift",
 		},
 		{
-			name:       "a68-realtime-sequence-gap-drift",
-			fixture:    "a68_realtime_sequence_gap_drift_input.json",
+			name:       "realtime-sequence-gap-drift",
+			fixture:    "realtime_sequence_gap_drift_input.json",
 			wantCode:   ReasonCodeRealtimeSequenceGapDrift,
 			wantInText: "realtime sequence gap drift",
 		},
 		{
-			name:       "a67-ctx-reference-resolution-drift",
-			fixture:    "a67_ctx_reference_resolution_drift_input.json",
+			name:       "context-reference-resolution-drift",
+			fixture:    "context_reference_resolution_drift_input.json",
 			wantCode:   ReasonCodeReferenceResolutionDrift,
 			wantInText: "reference resolution drift",
 		},
 		{
-			name:       "a67-ctx-isolate-handoff-drift",
-			fixture:    "a67_ctx_isolate_handoff_drift_input.json",
+			name:       "context-isolate-handoff-drift",
+			fixture:    "context_isolate_handoff_drift_input.json",
 			wantCode:   ReasonCodeIsolateHandoffDrift,
 			wantInText: "isolate handoff drift",
 		},
 		{
-			name:       "a67-ctx-edit-gate-threshold-drift",
-			fixture:    "a67_ctx_edit_gate_threshold_drift_input.json",
+			name:       "context-edit-gate-threshold-drift",
+			fixture:    "context_edit_gate_threshold_drift_input.json",
 			wantCode:   ReasonCodeEditGateThresholdDrift,
 			wantInText: "edit gate threshold drift",
 		},
 		{
-			name:       "a67-ctx-swapback-relevance-drift",
-			fixture:    "a67_ctx_swapback_relevance_drift_input.json",
+			name:       "context-swapback-relevance-drift",
+			fixture:    "context_relevance_swapback_drift_input.json",
 			wantCode:   ReasonCodeSwapbackRelevanceDrift,
 			wantInText: "swapback relevance drift",
 		},
 		{
-			name:       "a67-ctx-lifecycle-tiering-drift",
-			fixture:    "a67_ctx_lifecycle_tiering_drift_input.json",
+			name:       "context-lifecycle-tiering-drift",
+			fixture:    "context_lifecycle_tiering_drift_input.json",
 			wantCode:   ReasonCodeLifecycleTieringDrift,
 			wantInText: "lifecycle tiering drift",
 		},
 		{
-			name:       "a67-ctx-recap-semantic-drift",
-			fixture:    "a67_ctx_recap_semantic_drift_input.json",
+			name:       "context-recap-semantic-drift",
+			fixture:    "context_recap_semantic_drift_input.json",
 			wantCode:   ReasonCodeRecapSemanticDrift,
 			wantInText: "recap semantic drift",
 		},
@@ -743,7 +743,7 @@ func TestReplayContractBudgetAdmissionFixtureAndDriftClassification(t *testing.T
 	}
 }
 
-func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(t *testing.T) {
+func TestReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a52_sandbox_rollout_success_input.json",
 		"a54_memory_success_input.json",
@@ -758,12 +758,12 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
-		"a68_realtime_event_protocol_success_input.json",
-		"a67_ctx_reference_first_success_input.json",
-		"a67_ctx_isolate_handoff_success_input.json",
-		"a67_ctx_edit_gate_success_input.json",
-		"a67_ctx_swapback_success_input.json",
-		"a67_ctx_lifecycle_tiering_success_input.json",
+		"realtime_event_protocol_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_isolate_handoff_success_input.json",
+		"context_edit_gate_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
 		"a56_react_success_input.json",
 		"a57_sandbox_egress_success_input.json",
 	}
@@ -777,7 +777,7 @@ func TestReplayContractArbitrationMixedA52MemoryReactSandboxEgressCompatibility(
 	}
 }
 
-func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibility(t *testing.T) {
+func TestReplayContractArbitrationMixedPolicyPrecedenceReactSandboxEgressCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a50_arbitration_success_input.json",
 		"a56_react_success_input.json",
@@ -791,12 +791,12 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
-		"a68_realtime_event_protocol_success_input.json",
-		"a67_ctx_reference_first_success_input.json",
-		"a67_ctx_isolate_handoff_success_input.json",
-		"a67_ctx_edit_gate_success_input.json",
-		"a67_ctx_swapback_success_input.json",
-		"a67_ctx_lifecycle_tiering_success_input.json",
+		"realtime_event_protocol_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_isolate_handoff_success_input.json",
+		"context_edit_gate_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
 	}
 	for _, name := range fixtures {
 		name := name
@@ -808,7 +808,122 @@ func TestReplayContractArbitrationMixedA50ReactSandboxEgressPolicyStackCompatibi
 	}
 }
 
-func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
+func TestReplayContractContextSemanticFixtureAliasCompatibility(t *testing.T) {
+	fixtures := []string{
+		"context_reference_first_success_input.json",
+		"context_isolate_handoff_success_input.json",
+		"context_edit_gate_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
+	}
+	for _, name := range fixtures {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, name)); err != nil {
+				t.Fatalf("semantic fixture alias %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestReplayContractNamingMigrationDriftTaxonomyStability(t *testing.T) {
+	cases := []struct {
+		legacyFixture   string
+		semanticFixture string
+	}{
+		{
+			legacyFixture:   "a" + "67_react_plan_version_drift_input.json",
+			semanticFixture: "react_plan_version_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_react_plan_change_reason_drift_input.json",
+			semanticFixture: "react_plan_change_reason_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_react_plan_hook_semantic_drift_input.json",
+			semanticFixture: "react_plan_hook_semantic_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_react_plan_recover_drift_input.json",
+			semanticFixture: "react_plan_recover_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_reference_resolution_drift_input.json",
+			semanticFixture: "context_reference_resolution_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_isolate_handoff_drift_input.json",
+			semanticFixture: "context_isolate_handoff_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_edit_gate_threshold_drift_input.json",
+			semanticFixture: "context_edit_gate_threshold_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_swapback_relevance_drift_input.json",
+			semanticFixture: "context_relevance_swapback_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_lifecycle_tiering_drift_input.json",
+			semanticFixture: "context_lifecycle_tiering_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "67_ctx_recap_semantic_drift_input.json",
+			semanticFixture: "context_recap_semantic_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "68_realtime_event_order_drift_input.json",
+			semanticFixture: "realtime_event_order_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "68_realtime_interrupt_semantic_drift_input.json",
+			semanticFixture: "realtime_interrupt_semantic_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "68_realtime_resume_semantic_drift_input.json",
+			semanticFixture: "realtime_resume_semantic_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "68_realtime_idempotency_drift_input.json",
+			semanticFixture: "realtime_idempotency_drift_input.json",
+		},
+		{
+			legacyFixture:   "a" + "68_realtime_sequence_gap_drift_input.json",
+			semanticFixture: "realtime_sequence_gap_drift_input.json",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.semanticFixture, func(t *testing.T) {
+			_, legacyErr := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.legacyFixture))
+			if legacyErr == nil {
+				t.Fatalf("legacy drift fixture %q should fail", tc.legacyFixture)
+			}
+			legacyValidationErr, ok := legacyErr.(*ValidationError)
+			if !ok {
+				t.Fatalf("legacy drift error type=%T, want *ValidationError", legacyErr)
+			}
+			_, semanticErr := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.semanticFixture))
+			if semanticErr == nil {
+				t.Fatalf("semantic drift fixture %q should fail", tc.semanticFixture)
+			}
+			semanticValidationErr, ok := semanticErr.(*ValidationError)
+			if !ok {
+				t.Fatalf("semantic drift error type=%T, want *ValidationError", semanticErr)
+			}
+			if semanticValidationErr.Code != legacyValidationErr.Code {
+				t.Fatalf(
+					"drift taxonomy changed for %q: legacy=%q semantic=%q",
+					tc.semanticFixture,
+					legacyValidationErr.Code,
+					semanticValidationErr.Code,
+				)
+			}
+		})
+	}
+}
+
+func TestReplayContractTracingEvalFixtureSuite(t *testing.T) {
 	fixtures := []string{
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
@@ -818,13 +933,13 @@ func TestReplayContractA61OtelEvalFixtureSuite(t *testing.T) {
 		fixture := fixture
 		t.Run(fixture, func(t *testing.T) {
 			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
-				t.Fatalf("A61 fixture %q should pass: %v", fixture, err)
+				t.Fatalf("tracing/eval fixture %q should pass: %v", fixture, err)
 			}
 		})
 	}
 }
 
-func TestReplayContractA61OtelEvalDriftClassification(t *testing.T) {
+func TestReplayContractTracingEvalDriftClassification(t *testing.T) {
 	tests := []struct {
 		fixture  string
 		wantCode string
@@ -868,7 +983,7 @@ func TestReplayContractA61OtelEvalDriftClassification(t *testing.T) {
 	}
 }
 
-func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
+func TestReplayContractHooksMiddlewareFixtureSuite(t *testing.T) {
 	fixtures := []string{
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
@@ -878,13 +993,13 @@ func TestReplayContractA65HooksMiddlewareFixtureSuite(t *testing.T) {
 		fixture := fixture
 		t.Run(fixture, func(t *testing.T) {
 			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
-				t.Fatalf("A65 fixture %q should pass: %v", fixture, err)
+				t.Fatalf("hooks/middleware fixture %q should pass: %v", fixture, err)
 			}
 		})
 	}
 }
 
-func TestReplayContractA65HooksMiddlewareDriftClassification(t *testing.T) {
+func TestReplayContractHooksMiddlewareDriftClassification(t *testing.T) {
 	tests := []struct {
 		fixture  string
 		wantCode string
@@ -924,7 +1039,7 @@ func TestReplayContractA65HooksMiddlewareDriftClassification(t *testing.T) {
 	}
 }
 
-func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
+func TestReplayContractTracingEvalMixedFixtureBackwardCompatibility(t *testing.T) {
 	fixtures := []string{
 		"a50_arbitration_success_input.json",
 		"a55_observability_success_input.json",
@@ -937,12 +1052,12 @@ func TestReplayContractA61MixedFixtureBackwardCompatibility(t *testing.T) {
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
 		"a66_state_session_snapshot_success_input.json",
-		"a68_realtime_event_protocol_success_input.json",
-		"a67_ctx_reference_first_success_input.json",
-		"a67_ctx_isolate_handoff_success_input.json",
-		"a67_ctx_edit_gate_success_input.json",
-		"a67_ctx_swapback_success_input.json",
-		"a67_ctx_lifecycle_tiering_success_input.json",
+		"realtime_event_protocol_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_isolate_handoff_success_input.json",
+		"context_edit_gate_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture

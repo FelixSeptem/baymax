@@ -1,0 +1,78 @@
+version: 1
+id: semantic-labeling-governed-path-matrix
+owner_change: introduce-codebase-consolidation-and-semantic-labeling-contract-a63
+last_updated: 2026-04-05
+
+policy:
+  summary: >
+    Axx historical identifiers are allowed only under openspec/** for historical
+    traceability. Non-openspec paths are fully governed and must not introduce Axx
+    in content, path, or filename.
+  invariants:
+    - openspec/** is the only directory scope where legacy Axx wording is allowed.
+    - non-openspec/** forbids Axx wording in content, path, and filename.
+    - governed active surface must not reintroduce ca1|ca2|ca3|ca4 wording.
+
+scope:
+  allowed:
+    - openspec/**
+  governed:
+    - a2a/**
+    - adapter/**
+    - cmd/**
+    - context/**
+    - core/**
+    - docs/**
+    - examples/**
+    - integration/**
+    - mcp/**
+    - memory/**
+    - model/**
+    - observability/**
+    - orchestration/**
+    - runtime/**
+    - scripts/**
+    - skill/**
+    - tool/**
+    - AGENTS.md
+    - CHANGELOG.md
+    - CONTRIBUTING.md
+    - README.md
+
+checks:
+  - id: legacy-axx-content
+    applies_to:
+      - content
+    regex: "\\bA[0-9]{2,3}\\b"
+    case_sensitive: true
+    allowed_scope:
+      - openspec/**
+    forbidden_scope:
+      - non-openspec/**
+
+  - id: legacy-axx-path
+    applies_to:
+      - path
+      - file_name
+    regex: "A[0-9]{2,3}"
+    case_sensitive: true
+    allowed_scope:
+      - openspec/**
+    forbidden_scope:
+      - non-openspec/**
+
+  - id: legacy-context-stage-wording
+    applies_to:
+      - content
+      - path
+      - file_name
+    regex: "(?i)\\bca(1|2|3|4)\\b"
+    case_sensitive: false
+    allowed_scope: []
+    forbidden_scope:
+      - non-openspec/**
+
+notes:
+  - This matrix is the single policy input for A63 naming-regression checks.
+  - Lowercase axx tokens (for example a67, a68) are tracked as migration debt and
+    are handled by later A63 tasks for fixture/env/script semanticization.

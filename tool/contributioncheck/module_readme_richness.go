@@ -37,8 +37,27 @@ var requiredModuleSections = []string{
 	"## 扩展点与常见误用",
 }
 
+const runtimeHarnessCanonicalDoc = "docs/runtime-harness-architecture.md"
+
+var requiredRootCanonicalDocs = []string{
+	"docs/development-roadmap.md",
+	"docs/runtime-module-boundaries.md",
+	"docs/mainline-contract-test-index.md",
+	"docs/runtime-config-diagnostics.md",
+	runtimeHarnessCanonicalDoc,
+}
+
 func ValidateCoreModuleReadmeRichness(rootReadme string, moduleReadmes map[string]string) []ModuleReadmeIssue {
 	issues := make([]ModuleReadmeIssue, 0)
+
+	for _, doc := range requiredRootCanonicalDocs {
+		if !strings.Contains(rootReadme, doc) {
+			issues = append(issues, ModuleReadmeIssue{
+				Code:    "module-readme-richness.root-canonical-doc-missing",
+				Message: "root README missing canonical doc link: " + doc,
+			})
+		}
+	}
 
 	for _, rel := range coveredModuleReadmes {
 		if !strings.Contains(rootReadme, rel) {
@@ -54,6 +73,12 @@ func ValidateCoreModuleReadmeRichness(rootReadme string, moduleReadmes map[strin
 				Message: "covered module README missing: " + rel,
 			})
 			continue
+		}
+		if !strings.Contains(content, runtimeHarnessCanonicalDoc) {
+			issues = append(issues, ModuleReadmeIssue{
+				Code:    "module-readme-richness.module-canonical-doc-missing",
+				Message: rel + " missing canonical runtime harness doc link: " + runtimeHarnessCanonicalDoc,
+			})
 		}
 		for _, section := range requiredModuleSections {
 			if !strings.Contains(content, section) {

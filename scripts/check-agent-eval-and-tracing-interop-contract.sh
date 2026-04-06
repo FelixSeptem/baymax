@@ -40,9 +40,9 @@ assert_absent_regex() {
   fi
 }
 
-assert_no_parallel_a61_changes() {
+assert_no_parallel_tracing_eval_changes() {
   local assertion="$1"
-  local canonical_change="introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
+  local canonical_change_hint="introduce-otel-tracing-and-agent-eval-interoperability-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +51,7 @@ assert_no_parallel_a61_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${name}" != "${canonical_change}" && "${lower}" == *eval* && ( "${lower}" == *otel* || "${lower}" == *tracing* ) ]]; then
+    if [[ "${lower}" != *"${canonical_change_hint}"* && "${lower}" == *eval* && ( "${lower}" == *otel* || "${lower}" == *tracing* ) ]]; then
       violations+=("${name}")
     fi
   done
@@ -63,16 +63,17 @@ assert_no_parallel_a61_changes() {
   fi
 }
 
-resolve_a61_change_dir() {
-  local active="openspec/changes/introduce-otel-tracing-and-agent-eval-interoperability-contract-a61"
-  if [[ -d "${active}" ]]; then
-    echo "${active}"
-    return 0
-  fi
-
+resolve_tracing_eval_change_dir() {
   local candidate
   shopt -s nullglob
-  for candidate in openspec/changes/archive/*introduce-otel-tracing-and-agent-eval-interoperability-contract-a61; do
+  for candidate in openspec/changes/*introduce-otel-tracing-and-agent-eval-interoperability-contract*; do
+    if [[ -d "${candidate}" ]]; then
+      echo "${candidate}"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  for candidate in openspec/changes/archive/*introduce-otel-tracing-and-agent-eval-interoperability-contract*; do
     if [[ -d "${candidate}" ]]; then
       echo "${candidate}"
       shopt -u nullglob
@@ -81,7 +82,7 @@ resolve_a61_change_dir() {
   done
   shopt -u nullglob
 
-  echo "[agent-eval-tracing-interop-gate] unable to locate A61 change directory in active or archive paths" >&2
+  echo "[agent-eval-tracing-interop-gate] unable to locate tracing/eval interop change directory in active or archive paths" >&2
   exit 1
 }
 
@@ -92,42 +93,42 @@ run_step() {
   "$@"
 }
 
-A61_CHANGE_DIR="$(resolve_a61_change_dir)"
+TRACING_EVAL_CHANGE_DIR="$(resolve_tracing_eval_change_dir)"
 
 run_step "assertion control_plane_absent: contract marker" \
   assert_contains_literal "control_plane_absent" \
-  "${A61_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
+  "${TRACING_EVAL_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
   "embedded library behavior"
 
 run_step "assertion control_plane_absent: gate spec marker" \
   assert_contains_literal "control_plane_absent" \
-  "${A61_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+  "${TRACING_EVAL_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "control_plane_absent"
 
 run_step "assertion control_plane_absent: active change set closure" \
-  assert_no_parallel_a61_changes "control_plane_absent"
+  assert_no_parallel_tracing_eval_changes "control_plane_absent"
 
 run_step "assertion control_plane_absent: reject eval execution control-plane key drift" \
   assert_absent_regex "control_plane_absent" \
   "runtime\.eval\.execution\.[a-zA-Z0-9_.-]*(control_plane|controlplane|scheduler_service|orchestrator_endpoint|controller_endpoint|hosted_scheduler|remote_scheduler)"
 
-run_step "assertion a61_field_reuse_required: upstream reuse marker" \
-  assert_contains_literal "a61_field_reuse_required" \
-  "${A61_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
+run_step "assertion tracing_eval_field_reuse_required: upstream reuse marker" \
+  assert_contains_literal "tracing_eval_field_reuse_required" \
+  "${TRACING_EVAL_CHANGE_DIR}/specs/runtime-otel-tracing-and-agent-eval-interoperability-contract/spec.md" \
   "Tracing and eval outputs SHALL reuse canonical upstream explainability fields"
 
-run_step "assertion a61_field_reuse_required: gate spec marker" \
-  assert_contains_literal "a61_field_reuse_required" \
-  "${A61_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
+run_step "assertion tracing_eval_field_reuse_required: gate spec marker" \
+  assert_contains_literal "tracing_eval_field_reuse_required" \
+  "${TRACING_EVAL_CHANGE_DIR}/specs/go-quality-gate/spec.md" \
   "Quality gate SHALL include tracing and eval interoperability contract checks"
 
-run_step "assertion a61_field_reuse_required: roadmap closure marker" \
-  assert_contains_literal "a61_field_reuse_required" \
+run_step "assertion tracing_eval_field_reuse_required: roadmap closure marker" \
+  assert_contains_literal "tracing_eval_field_reuse_required" \
   "docs/development-roadmap.md" \
-  "A61 tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在 A61 内以增量任务吸收，不再新开平行提案。"
+  "Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。"
 
-run_step "assertion a61_field_reuse_required: reject duplicated upstream alias fields" \
-  assert_absent_regex "a61_field_reuse_required" \
+run_step "assertion tracing_eval_field_reuse_required: reject duplicated upstream alias fields" \
+  assert_absent_regex "tracing_eval_field_reuse_required" \
   "runtime\.eval\.[a-zA-Z0-9_.-]*(policy_decision_path|deny_source|winner_stage|memory_scope_selected|memory_budget_used|memory_hits|memory_rerank_stats|memory_lifecycle_action|budget_snapshot|budget_decision|degrade_action)"
 
 run_step "runtime config tracing+eval schema and rollback suites" \
@@ -137,15 +138,15 @@ run_step "runtime config tracing+eval schema and rollback suites" \
 
 run_step "tracing semconv/export + diagnostics additive suites" \
   go test ./observability/trace ./observability/event ./runtime/diagnostics \
-    -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesA61TracingEvalAdditiveFields|RuntimeRecorderA61ParserCompatibilityAdditiveNullableDefault|StoreRunA61TracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunA61TracingEvalAdditiveFieldsBoundedCardinality)' \
+    -run 'Test(CanonicalSemconvTopologyV1CoversCoreDomains|CanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys|RunStreamSemanticEquivalenceAllowsOrderingDifferences|RunStreamSemanticEquivalenceDetectsTopologyDrift|ExportRuntime.*|RuntimeRecorderParsesTracingEvalAdditiveFields|RuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault|StoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent|StoreRunTracingEvalAdditiveFieldsBoundedCardinality)' \
     -count=1
 
-run_step "replay fixtures and drift taxonomy suites (A61)" \
+run_step "replay fixtures and drift taxonomy suites (tracing+eval)" \
   go test ./tool/diagnosticsreplay ./integration \
-    -run 'TestReplayContract.*(Otel|Eval|A61)' \
+    -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' \
     -count=1
 
-run_step "contributioncheck parity suites for A61 gate" \
+run_step "contributioncheck parity suites for tracing+eval interop gate" \
   go test ./tool/contributioncheck \
     -run 'Test(AgentEvalTracingInteropGateScriptParity|QualityGateIncludesAgentEvalTracingInteropGate|AgentEvalTracingInteropRoadmapAndContractIndexClosureMarkers)' \
     -count=1

@@ -43,7 +43,7 @@ var MinimumMatrix = []Scenario{
 		Category:               CategoryMCP,
 		PriorityTier:           1,
 		TemplatePath:           "examples/templates/mcp-adapter-template/main.go",
-		TraceComment:           "A21 template linkage: MCP adapter template baseline and fail-fast boundary",
+		TraceComment:           "adapter template linkage: MCP adapter template baseline and fail-fast boundary",
 		RequiredCapabilities:   []string{"mcp.invoke.required_input", "mcp.response.normalized"},
 		OptionalCapabilities:   []string{"mcp.transport.sse"},
 		ConformanceProfile:     "mcp-normalization-fail-fast",
@@ -56,7 +56,7 @@ var MinimumMatrix = []Scenario{
 		Category:               CategoryModel,
 		PriorityTier:           2,
 		TemplatePath:           "examples/templates/model-adapter-template/main.go",
-		TraceComment:           "A21 template linkage: Model adapter template run/stream equivalence and downgrade semantics",
+		TraceComment:           "adapter template linkage: Model adapter template run/stream equivalence and downgrade semantics",
 		RequiredCapabilities:   []string{"model.run_stream.semantic_equivalent", "model.response.mandatory_fields"},
 		OptionalCapabilities:   []string{"model.capability.token_count"},
 		ConformanceProfile:     "model-run-stream-downgrade",
@@ -69,7 +69,7 @@ var MinimumMatrix = []Scenario{
 		Category:               CategoryTool,
 		PriorityTier:           3,
 		TemplatePath:           "examples/templates/tool-adapter-template/main.go",
-		TraceComment:           "A21 template linkage: Tool adapter template invocation and mandatory-input fail-fast",
+		TraceComment:           "adapter template linkage: Tool adapter template invocation and mandatory-input fail-fast",
 		RequiredCapabilities:   []string{"tool.invoke.required_input"},
 		OptionalCapabilities:   []string{"tool.schema.rich_validation"},
 		ConformanceProfile:     "tool-invoke-fail-fast",
@@ -124,7 +124,7 @@ func ValidateMinimumMatrix(matrix []Scenario) error {
 		if row.TemplatePath == "" {
 			return fmt.Errorf("scenario %q missing template path mapping", row.ID)
 		}
-		if !strings.Contains(row.TraceComment, "A21 template linkage") {
+		if !strings.Contains(row.TraceComment, "adapter template linkage") {
 			return fmt.Errorf("scenario %q missing trace comment marker", row.ID)
 		}
 		if strings.TrimSpace(row.ConformanceProfile) == "" {

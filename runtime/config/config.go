@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -443,13 +444,13 @@ type DropLowPriorityConfig struct {
 }
 
 type DiagnosticsConfig struct {
-	MaxCallRecords   int                               `json:"max_call_records"`
-	MaxRunRecords    int                               `json:"max_run_records"`
-	MaxReloadErrors  int                               `json:"max_reload_errors"`
-	MaxSkillRecords  int                               `json:"max_skill_records"`
-	Cardinality      DiagnosticsCardinalityConfig      `json:"cardinality"`
-	TimelineTrend    DiagnosticsTimelineTrendConfig    `json:"timeline_trend"`
-	CA2ExternalTrend DiagnosticsCA2ExternalTrendConfig `json:"ca2_external_trend"`
+	MaxCallRecords             int                                         `json:"max_call_records"`
+	MaxRunRecords              int                                         `json:"max_run_records"`
+	MaxReloadErrors            int                                         `json:"max_reload_errors"`
+	MaxSkillRecords            int                                         `json:"max_skill_records"`
+	Cardinality                DiagnosticsCardinalityConfig                `json:"cardinality"`
+	TimelineTrend              DiagnosticsTimelineTrendConfig              `json:"timeline_trend"`
+	ContextStage2ExternalTrend DiagnosticsContextStage2ExternalTrendConfig `json:"context_stage2_external_trend"`
 }
 
 type DiagnosticsCardinalityConfig struct {
@@ -466,13 +467,13 @@ type DiagnosticsTimelineTrendConfig struct {
 	TimeWindow time.Duration `json:"time_window"`
 }
 
-type DiagnosticsCA2ExternalTrendConfig struct {
-	Enabled    bool                                  `json:"enabled"`
-	Window     time.Duration                         `json:"window"`
-	Thresholds DiagnosticsCA2ExternalTrendThresholds `json:"thresholds"`
+type DiagnosticsContextStage2ExternalTrendConfig struct {
+	Enabled    bool                                            `json:"enabled"`
+	Window     time.Duration                                   `json:"window"`
+	Thresholds DiagnosticsContextStage2ExternalTrendThresholds `json:"thresholds"`
 }
 
-type DiagnosticsCA2ExternalTrendThresholds struct {
+type DiagnosticsContextStage2ExternalTrendThresholds struct {
 	P95LatencyMs int64   `json:"p95_latency_ms"`
 	ErrorRate    float64 `json:"error_rate"`
 	HitRate      float64 `json:"hit_rate"`
@@ -1236,10 +1237,10 @@ func DefaultConfig() Config {
 				LastNRuns:  100,
 				TimeWindow: 15 * time.Minute,
 			},
-			CA2ExternalTrend: DiagnosticsCA2ExternalTrendConfig{
+			ContextStage2ExternalTrend: DiagnosticsContextStage2ExternalTrendConfig{
 				Enabled: true,
 				Window:  15 * time.Minute,
-				Thresholds: DiagnosticsCA2ExternalTrendThresholds{
+				Thresholds: DiagnosticsContextStage2ExternalTrendThresholds{
 					P95LatencyMs: 1500,
 					ErrorRate:    0.10,
 					HitRate:      0.20,
@@ -1388,7 +1389,7 @@ func DefaultConfig() Config {
 			Arbitration: RuntimeArbitrationConfig{
 				Version: RuntimeArbitrationVersionConfig{
 					Enabled:       true,
-					Default:       RuntimeArbitrationRuleVersionA49V1,
+					Default:       RuntimeArbitrationRuleVersionExplainabilityV1,
 					CompatWindow:  1,
 					OnUnsupported: RuntimeArbitrationVersionUnsupportedPolicyFailFast,
 					OnMismatch:    RuntimeArbitrationVersionMismatchPolicyFailFast,
@@ -2153,6 +2154,7 @@ func loadWithSnapshot(opts LoadOptions) (Config, map[string]any, error) {
 			return Config{}, nil, fmt.Errorf("read runtime config: %w", err)
 		}
 	}
+	applyContextAssemblerSemanticAliasCompatibility(v)
 
 	cfg, err := buildConfig(v)
 	if err != nil {
@@ -2277,17 +2279,17 @@ func Validate(cfg Config) error {
 	if cfg.Diagnostics.TimelineTrend.TimeWindow <= 0 {
 		return errors.New("diagnostics.timeline_trend.time_window must be > 0")
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Window <= 0 {
-		return errors.New("diagnostics.ca2_external_trend.window must be > 0")
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Window <= 0 {
+		return errors.New("diagnostics.context_stage2_external_trend.window must be > 0")
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
-		return errors.New("diagnostics.ca2_external_trend.thresholds.p95_latency_ms must be > 0")
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs <= 0 {
+		return errors.New("diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms must be > 0")
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate > 1 {
-		return errors.New("diagnostics.ca2_external_trend.thresholds.error_rate must be in [0,1]")
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate < 0 || cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate > 1 {
+		return errors.New("diagnostics.context_stage2_external_trend.thresholds.error_rate must be in [0,1]")
 	}
-	if cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate < 0 || cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate > 1 {
-		return errors.New("diagnostics.ca2_external_trend.thresholds.hit_rate must be in [0,1]")
+	if cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate < 0 || cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate > 1 {
+		return errors.New("diagnostics.context_stage2_external_trend.thresholds.hit_rate must be in [0,1]")
 	}
 	if err := validateRuntimeReact(cfg.Runtime.React); err != nil {
 		return err
@@ -4327,11 +4329,11 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("diagnostics.timeline_trend.enabled", base.Diagnostics.TimelineTrend.Enabled)
 	v.SetDefault("diagnostics.timeline_trend.last_n_runs", base.Diagnostics.TimelineTrend.LastNRuns)
 	v.SetDefault("diagnostics.timeline_trend.time_window", base.Diagnostics.TimelineTrend.TimeWindow)
-	v.SetDefault("diagnostics.ca2_external_trend.enabled", base.Diagnostics.CA2ExternalTrend.Enabled)
-	v.SetDefault("diagnostics.ca2_external_trend.window", base.Diagnostics.CA2ExternalTrend.Window)
-	v.SetDefault("diagnostics.ca2_external_trend.thresholds.p95_latency_ms", base.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs)
-	v.SetDefault("diagnostics.ca2_external_trend.thresholds.error_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate)
-	v.SetDefault("diagnostics.ca2_external_trend.thresholds.hit_rate", base.Diagnostics.CA2ExternalTrend.Thresholds.HitRate)
+	v.SetDefault("diagnostics.context_stage2_external_trend.enabled", base.Diagnostics.ContextStage2ExternalTrend.Enabled)
+	v.SetDefault("diagnostics.context_stage2_external_trend.window", base.Diagnostics.ContextStage2ExternalTrend.Window)
+	v.SetDefault("diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms", base.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs)
+	v.SetDefault("diagnostics.context_stage2_external_trend.thresholds.error_rate", base.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate)
+	v.SetDefault("diagnostics.context_stage2_external_trend.thresholds.hit_rate", base.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate)
 	v.SetDefault("runtime.react.enabled", base.Runtime.React.Enabled)
 	v.SetDefault("runtime.react.max_iterations", base.Runtime.React.MaxIterations)
 	v.SetDefault("runtime.react.tool_call_limit", base.Runtime.React.ToolCallLimit)
@@ -4803,6 +4805,135 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.security_event.severity.by_reason_code", base.Security.SecurityEvent.Severity.ByReasonCode)
 }
 
+func applyContextAssemblerSemanticAliasCompatibility(v *viper.Viper) {
+	if v == nil {
+		return
+	}
+	legacyStage2Key := "context_assembler.c" + "a2"
+	legacyStage3Key := "context_assembler.c" + "a3"
+	mergeSemanticContextAssemblerStage(v, "context_assembler.stage2_routing_and_disclosure", legacyStage2Key)
+	mergeSemanticContextAssemblerStage(v, "context_assembler.pressure_compaction_and_swapback", legacyStage3Key)
+}
+
+func mergeSemanticContextAssemblerStage(v *viper.Viper, semanticKey string, legacyKey string) {
+	semantic := v.GetStringMap(semanticKey)
+	if len(semantic) == 0 {
+		return
+	}
+	legacy := v.GetStringMap(legacyKey)
+	hasConflict := hasConfigMergeConflict(legacy, semantic)
+	v.Set(legacyKey, deepMergeStringAnyMap(legacy, semantic))
+	if hasConflict {
+		log.Printf(
+			"[runtime/config] migration hint: semantic key %q and legacy alias %q both provided with conflicting values; semantic key takes precedence on overlapping fields",
+			semanticKey,
+			legacyKey,
+		)
+		return
+	}
+	log.Printf(
+		"[runtime/config] migration hint: semantic key %q mapped through legacy alias %q during migration window compatibility",
+		semanticKey,
+		legacyKey,
+	)
+}
+
+func hasConfigMergeConflict(base map[string]any, override map[string]any) bool {
+	if len(base) == 0 || len(override) == 0 {
+		return false
+	}
+	for key, overrideValue := range override {
+		baseValue, ok := base[key]
+		if !ok {
+			continue
+		}
+		baseMap, baseIsMap := asStringAnyMap(baseValue)
+		overrideMap, overrideIsMap := asStringAnyMap(overrideValue)
+		switch {
+		case baseIsMap && overrideIsMap:
+			if hasConfigMergeConflict(baseMap, overrideMap) {
+				return true
+			}
+		case baseIsMap != overrideIsMap:
+			return true
+		default:
+			if !equalConfigScalar(baseValue, overrideValue) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func equalConfigScalar(left any, right any) bool {
+	leftJSON, leftErr := json.Marshal(cloneConfigAny(left))
+	rightJSON, rightErr := json.Marshal(cloneConfigAny(right))
+	if leftErr == nil && rightErr == nil {
+		return string(leftJSON) == string(rightJSON)
+	}
+	return fmt.Sprint(left) == fmt.Sprint(right)
+}
+
+func deepMergeStringAnyMap(base map[string]any, override map[string]any) map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(base)+len(override))
+	for key, value := range base {
+		out[key] = cloneConfigAny(value)
+	}
+	for key, value := range override {
+		overrideMap, overrideIsMap := asStringAnyMap(value)
+		if overrideIsMap {
+			baseMap, baseIsMap := asStringAnyMap(out[key])
+			if baseIsMap {
+				out[key] = deepMergeStringAnyMap(baseMap, overrideMap)
+				continue
+			}
+		}
+		out[key] = cloneConfigAny(value)
+	}
+	return out
+}
+
+func asStringAnyMap(raw any) (map[string]any, bool) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		return typed, true
+	case map[any]any:
+		out := make(map[string]any, len(typed))
+		for key, value := range typed {
+			name := strings.TrimSpace(fmt.Sprint(key))
+			if name == "" {
+				continue
+			}
+			out[name] = value
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+func cloneConfigAny(raw any) any {
+	switch typed := raw.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, value := range typed {
+			out[key] = cloneConfigAny(value)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i := range typed {
+			out[i] = cloneConfigAny(typed[i])
+		}
+		return out
+	default:
+		return typed
+	}
+}
+
 func buildConfig(v *viper.Viper) (Config, error) {
 	cfg := DefaultConfig()
 	cfg.MCP.ActiveProfile = strings.TrimSpace(v.GetString("mcp.active_profile"))
@@ -4829,11 +4960,11 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Diagnostics.TimelineTrend.Enabled = v.GetBool("diagnostics.timeline_trend.enabled")
 	cfg.Diagnostics.TimelineTrend.LastNRuns = v.GetInt("diagnostics.timeline_trend.last_n_runs")
 	cfg.Diagnostics.TimelineTrend.TimeWindow = v.GetDuration("diagnostics.timeline_trend.time_window")
-	cfg.Diagnostics.CA2ExternalTrend.Enabled = v.GetBool("diagnostics.ca2_external_trend.enabled")
-	cfg.Diagnostics.CA2ExternalTrend.Window = v.GetDuration("diagnostics.ca2_external_trend.window")
-	cfg.Diagnostics.CA2ExternalTrend.Thresholds.P95LatencyMs = v.GetInt64("diagnostics.ca2_external_trend.thresholds.p95_latency_ms")
-	cfg.Diagnostics.CA2ExternalTrend.Thresholds.ErrorRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.error_rate")
-	cfg.Diagnostics.CA2ExternalTrend.Thresholds.HitRate = v.GetFloat64("diagnostics.ca2_external_trend.thresholds.hit_rate")
+	cfg.Diagnostics.ContextStage2ExternalTrend.Enabled = v.GetBool("diagnostics.context_stage2_external_trend.enabled")
+	cfg.Diagnostics.ContextStage2ExternalTrend.Window = v.GetDuration("diagnostics.context_stage2_external_trend.window")
+	cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.P95LatencyMs = v.GetInt64("diagnostics.context_stage2_external_trend.thresholds.p95_latency_ms")
+	cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.ErrorRate = v.GetFloat64("diagnostics.context_stage2_external_trend.thresholds.error_rate")
+	cfg.Diagnostics.ContextStage2ExternalTrend.Thresholds.HitRate = v.GetFloat64("diagnostics.context_stage2_external_trend.thresholds.hit_rate")
 	reactEnabled, err := strictBoolConfigValue(v, "runtime.react.enabled")
 	if err != nil {
 		return Config{}, err

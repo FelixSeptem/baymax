@@ -655,7 +655,7 @@ func BenchmarkMCPProfileHighReliabilityUnderFailure(b *testing.B) {
 	}
 }
 
-func BenchmarkCA4PressureEvaluation(b *testing.B) {
+func BenchmarkContextProductionHardeningPressureEvaluation(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.Enabled = true
 	cfg.CA3.Enabled = true
@@ -669,7 +669,7 @@ func BenchmarkCA4PressureEvaluation(b *testing.B) {
 	}
 	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
 	req := types.ContextAssembleRequest{
-		RunID:         "bench-ca4",
+		RunID:         "bench-context-production-hardening",
 		SessionID:     "bench-session",
 		PrefixVersion: "ca1",
 		Messages: []types.Message{
@@ -700,7 +700,7 @@ func BenchmarkCA4PressureEvaluation(b *testing.B) {
 	}
 }
 
-func BenchmarkCA3SemanticCompactionLatency(b *testing.B) {
+func BenchmarkContextPressureSemanticCompactionLatency(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.Enabled = true
 	cfg.CA3.Enabled = true
@@ -715,7 +715,7 @@ func BenchmarkCA3SemanticCompactionLatency(b *testing.B) {
 		{Response: types.ModelResponse{FinalAnswer: "decision preserved with compact risk summary"}},
 	})
 	req := types.ContextAssembleRequest{
-		RunID:         "bench-ca3-semantic",
+		RunID:         "bench-context-pressure-semantic",
 		SessionID:     "bench-session",
 		PrefixVersion: "ca1",
 		Input:         strings.Repeat("input payload ", 80),
@@ -760,7 +760,7 @@ func (f benchReranker) Rerank(ctx context.Context, req assembler.SemanticRerankR
 	return f(ctx, req)
 }
 
-func BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
+func BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.Enabled = true
 	cfg.CA3.Enabled = true
@@ -789,7 +789,7 @@ func BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
 		{Response: types.ModelResponse{FinalAnswer: "decision preserved with compact risk summary"}},
 	})
 	req := types.ContextAssembleRequest{
-		RunID:         "bench-ca3-semantic-embedding",
+		RunID:         "bench-context-pressure-semantic-embedding",
 		SessionID:     "bench-session",
 		PrefixVersion: "ca1",
 		Input:         strings.Repeat("input payload ", 80),
@@ -822,7 +822,7 @@ func BenchmarkCA3SemanticCompactionLatencyEmbeddingEnabled(b *testing.B) {
 	}
 }
 
-func BenchmarkCA3SemanticCompactionLatencyRerankerGovernanceEnabled(b *testing.B) {
+func BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.Enabled = true
 	cfg.CA3.Enabled = true
@@ -858,7 +858,7 @@ func BenchmarkCA3SemanticCompactionLatencyRerankerGovernanceEnabled(b *testing.B
 		{Response: types.ModelResponse{FinalAnswer: "decision preserved with compact risk summary"}},
 	})
 	req := types.ContextAssembleRequest{
-		RunID:         "bench-ca3-semantic-reranker-governance",
+		RunID:         "bench-context-pressure-semantic-reranker-governance",
 		SessionID:     "bench-session",
 		PrefixVersion: "ca1",
 		Input:         strings.Repeat("input payload ", 80),
@@ -896,7 +896,7 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 		Enabled:    true,
 		LastNRuns:  100,
 		TimeWindow: 15 * time.Minute,
-	}, runtimediag.CA2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	}, runtimediag.ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	now := time.Now()
 	for i := 0; i < 400; i++ {
 		runID := fmt.Sprintf("bench-run-%d", i)
@@ -962,7 +962,7 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 		Enabled:    true,
 		LastNRuns:  100,
 		TimeWindow: 15 * time.Minute,
-	}, runtimediag.CA2ExternalTrendConfig{
+	}, runtimediag.ContextStage2ExternalTrendConfig{
 		Enabled: true,
 		Window:  15 * time.Minute,
 	})
@@ -1070,7 +1070,7 @@ func newDiagnosticsQueryBenchmarkFixture() diagnosticsQueryBenchmarkFixture {
 			RuntimePrimaryConflictTotal:       0,
 			RuntimeSecondaryReasonCodes:       []string{},
 			RuntimeSecondaryReasonCount:       0,
-			RuntimeArbitrationRuleVersion:     runtimeconfig.RuntimeArbitrationRuleVersionA49V1,
+			RuntimeArbitrationRuleVersion:     runtimeconfig.RuntimeArbitrationRuleVersionExplainabilityV1,
 			RuntimeRemediationHintCode:        "scheduler.recover_backend",
 			RuntimeRemediationHintDomain:      "scheduler",
 		})
@@ -1241,7 +1241,7 @@ func BenchmarkDiagnosticsQueryRunsSandboxEnriched(b *testing.B) {
 				b.Fatalf("sandbox-enriched record missing mandatory fields: %#v", item)
 			}
 			if item.SandboxRolloutPhase == "" || item.SandboxCapacityAction == "" || item.SandboxHealthBudgetStatus == "" {
-				b.Fatalf("sandbox rollout governance record missing A52 additive fields: %#v", item)
+				b.Fatalf("sandbox rollout governance record missing additive fields: %#v", item)
 			}
 			phaseSeen[item.SandboxRolloutPhase] = struct{}{}
 			capacityActionSeen[item.SandboxCapacityAction] = struct{}{}
@@ -1352,13 +1352,13 @@ func BenchmarkDiagnosticsMailboxAggregates(b *testing.B) {
 	}
 }
 
-func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
+func BenchmarkContextStage2ExternalRetrieverTrendAggregation(b *testing.B) {
 	store := runtimediag.NewStore(64, 1024, 16, 32,
 		runtimediag.TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute},
-		runtimediag.CA2ExternalTrendConfig{
+		runtimediag.ContextStage2ExternalTrendConfig{
 			Enabled: true,
 			Window:  15 * time.Minute,
-			Thresholds: runtimediag.CA2ExternalThresholds{
+			Thresholds: runtimediag.ContextStage2ExternalThresholds{
 				P95LatencyMs: 1000,
 				ErrorRate:    0.15,
 				HitRate:      0.30,
@@ -1381,7 +1381,7 @@ func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
 		}
 		store.AddRun(runtimediag.RunRecord{
 			Time:             now.Add(time.Duration(i) * time.Millisecond),
-			RunID:            fmt.Sprintf("ca2-run-%d", i),
+			RunID:            fmt.Sprintf("context-stage2-run-%d", i),
 			Stage2Provider:   provider,
 			Stage2LatencyMs:  int64((i%11)+1) * 35,
 			Stage2HitCount:   hitCount,
@@ -1393,9 +1393,9 @@ func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
-		items := store.CA2ExternalTrends(runtimediag.CA2ExternalTrendQuery{})
+		items := store.ContextStage2ExternalTrends(runtimediag.ContextStage2ExternalTrendQuery{})
 		if len(items) == 0 {
-			b.Fatalf("ca2 external trend result is empty")
+			b.Fatalf("context stage2 external trend result is empty")
 		}
 		for _, item := range items {
 			if item.P95LatencyMs < 0 || item.ErrorRate < 0 || item.HitRate < 0 {
@@ -1410,7 +1410,7 @@ func BenchmarkCA2ExternalRetrieverTrendAggregation(b *testing.B) {
 	}
 }
 
-func BenchmarkCA2HintTemplateResolution(b *testing.B) {
+func BenchmarkContextStage2HintTemplateResolution(b *testing.B) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA2.Stage2.External
 	cfg.Profile = runtimeconfig.ContextStage2ExternalProfileRAGFlowLike
 	cfg.Endpoint = "http://127.0.0.1:8080/retrieve"

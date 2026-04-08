@@ -1,0 +1,42 @@
+{
+  "version": "agent_eval_distributed.v1",
+  "cases": [
+    {
+      "name": "a61_inferential_advisory_distributed_success_case",
+      "canonical": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_summary": {
+          "aggregation": "worst_case",
+          "cost_estimate": 0.84,
+          "deny_intercept_rate": 0.95,
+          "latency_estimate": 1600000000,
+          "task_success_rate": 0.86,
+          "tool_correctness_rate": 0.83,
+          "version": "agent_eval_distributed.v1"
+        },
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61",
+        "eval_shard_total": 6,
+        "eval_resume_count": 2,
+        "inferential_advisory_status": "critical",
+        "inferential_advisory_score": 0.31,
+        "inferential_advisory_signals": {
+          "cost_within_budget": 0,
+          "latency_within_slo": 0,
+          "runtime_admission_budget_deny": 1,
+          "runtime_policy_decision_deny": 1
+        },
+        "inferential_advisory_reasons": [
+          "eval.cost_budget_exceeded",
+          "eval.latency_budget_exceeded",
+          "runtime.admission.budget_deny",
+          "runtime.policy.deny"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

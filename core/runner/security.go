@@ -123,14 +123,14 @@ func (e *Engine) securityToolGovernanceConfig() runtimeconfig.SecurityToolGovern
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.ToolGovernance
 	}
-	return e.runtimeMgr.EffectiveConfig().Security.ToolGovernance
+	return e.runtimeMgr.EffectiveConfigRef().Security.ToolGovernance
 }
 
 func (e *Engine) runtimePolicyConfig() runtimeconfig.RuntimePolicyConfig {
 	if e == nil || e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Runtime.Policy
 	}
-	return e.runtimeMgr.EffectiveConfig().Runtime.Policy
+	return e.runtimeMgr.EffectiveConfigRef().Runtime.Policy
 }
 
 func (e *Engine) evaluateRuntimePolicyTrace(candidates []runtimeconfig.RuntimePolicyCandidate) (runtimeconfig.RuntimePolicyDecisionResult, bool) {
@@ -160,21 +160,21 @@ func (e *Engine) securitySandboxConfig() runtimeconfig.SecuritySandboxConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.Sandbox
 	}
-	return e.runtimeMgr.EffectiveConfig().Security.Sandbox
+	return e.runtimeMgr.EffectiveConfigRef().Security.Sandbox
 }
 
 func (e *Engine) securityModelIOFilteringConfig() runtimeconfig.SecurityModelIOFilteringConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.ModelIOFiltering
 	}
-	return e.runtimeMgr.EffectiveConfig().Security.ModelIOFiltering
+	return e.runtimeMgr.EffectiveConfigRef().Security.ModelIOFiltering
 }
 
 func (e *Engine) securityEventConfig() runtimeconfig.SecurityEventConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Security.SecurityEvent
 	}
-	return e.runtimeMgr.EffectiveConfig().Security.SecurityEvent
+	return e.runtimeMgr.EffectiveConfigRef().Security.SecurityEvent
 }
 
 func (e *Engine) enforceToolSecurityForCalls(

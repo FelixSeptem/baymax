@@ -79,6 +79,7 @@ const (
 	ReasonCodeEvalMetricDrift                     = "eval_metric_drift"
 	ReasonCodeEvalAggregationDrift                = "eval_aggregation_drift"
 	ReasonCodeEvalShardResumeDrift                = "eval_shard_resume_drift"
+	ReasonCodeEvalInferentialAdvisoryDrift        = "eval_inferential_advisory_drift"
 	ReasonCodeReactLoopStepDrift                  = "react_loop_step_drift"
 	ReasonCodeReactToolCallBudgetDrift            = "react_tool_call_budget_drift"
 	ReasonCodeReactIterationBudgetDrift           = "react_iteration_budget_drift"
@@ -263,6 +264,10 @@ type ArbitrationObservation struct {
 	EvalJobID                              string                    `json:"eval_job_id,omitempty"`
 	EvalShardTotal                         int                       `json:"eval_shard_total,omitempty"`
 	EvalResumeCount                        int                       `json:"eval_resume_count,omitempty"`
+	InferentialAdvisoryStatus              string                    `json:"inferential_advisory_status,omitempty"`
+	InferentialAdvisoryScore               float64                   `json:"inferential_advisory_score,omitempty"`
+	InferentialAdvisorySignals             map[string]float64        `json:"inferential_advisory_signals,omitempty"`
+	InferentialAdvisoryReasons             []string                  `json:"inferential_advisory_reasons,omitempty"`
 	StateSnapshotVersion                   string                    `json:"state_snapshot_version,omitempty"`
 	StateRestoreAction                     string                    `json:"state_restore_action,omitempty"`
 	StateRestoreConflictCode               string                    `json:"state_restore_conflict_code,omitempty"`
@@ -574,6 +579,8 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		EvalJobID:                              strings.ToLower(strings.TrimSpace(in.EvalJobID)),
 		EvalShardTotal:                         in.EvalShardTotal,
 		EvalResumeCount:                        in.EvalResumeCount,
+		InferentialAdvisoryStatus:              strings.ToLower(strings.TrimSpace(in.InferentialAdvisoryStatus)),
+		InferentialAdvisoryScore:               clampUnitFloat64(in.InferentialAdvisoryScore),
 		StateSnapshotVersion:                   strings.ToLower(strings.TrimSpace(in.StateSnapshotVersion)),
 		StateRestoreAction:                     strings.ToLower(strings.TrimSpace(in.StateRestoreAction)),
 		StateRestoreConflictCode:               strings.ToLower(strings.TrimSpace(in.StateRestoreConflictCode)),
@@ -747,6 +754,34 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	}
 	if len(out.ContextLifecycleTierStats) == 0 {
 		out.ContextLifecycleTierStats = nil
+	}
+	for key, value := range in.InferentialAdvisorySignals {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" {
+			continue
+		}
+		if out.InferentialAdvisorySignals == nil {
+			out.InferentialAdvisorySignals = map[string]float64{}
+		}
+		out.InferentialAdvisorySignals[normalizedKey] = clampUnitFloat64(value)
+	}
+	if len(out.InferentialAdvisorySignals) == 0 {
+		out.InferentialAdvisorySignals = nil
+	}
+	inferentialReasonSet := map[string]struct{}{}
+	for i := range in.InferentialAdvisoryReasons {
+		reason := strings.ToLower(strings.TrimSpace(in.InferentialAdvisoryReasons[i]))
+		if reason == "" {
+			continue
+		}
+		inferentialReasonSet[reason] = struct{}{}
+	}
+	if len(inferentialReasonSet) > 0 {
+		out.InferentialAdvisoryReasons = make([]string, 0, len(inferentialReasonSet))
+		for reason := range inferentialReasonSet {
+			out.InferentialAdvisoryReasons = append(out.InferentialAdvisoryReasons, reason)
+		}
+		sort.Strings(out.InferentialAdvisoryReasons)
 	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
@@ -2679,6 +2714,16 @@ func isCanonicalBudgetDegradeAction(action string) bool {
 	}
 }
 
+func clampUnitFloat64(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
 func approxFloat64(left, right float64) bool {
 	diff := left - right
 	if diff < 0 {
@@ -2736,7 +2781,11 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 	if version == ArbitrationFixtureVersionAgentEvalV1 {
 		return left.EvalSuiteID == right.EvalSuiteID &&
 			left.EvalExecutionMode == right.EvalExecutionMode &&
-			equalAnyMap(left.EvalSummary, right.EvalSummary)
+			equalAnyMap(left.EvalSummary, right.EvalSummary) &&
+			left.InferentialAdvisoryStatus == right.InferentialAdvisoryStatus &&
+			approxFloat64(left.InferentialAdvisoryScore, right.InferentialAdvisoryScore) &&
+			equalFloat64Map(left.InferentialAdvisorySignals, right.InferentialAdvisorySignals) &&
+			equalStringSlice(left.InferentialAdvisoryReasons, right.InferentialAdvisoryReasons)
 	}
 	if version == ArbitrationFixtureVersionAgentEvalDistV1 {
 		return left.EvalSuiteID == right.EvalSuiteID &&
@@ -2744,7 +2793,11 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 			left.EvalJobID == right.EvalJobID &&
 			left.EvalShardTotal == right.EvalShardTotal &&
 			left.EvalResumeCount == right.EvalResumeCount &&
-			equalAnyMap(left.EvalSummary, right.EvalSummary)
+			equalAnyMap(left.EvalSummary, right.EvalSummary) &&
+			left.InferentialAdvisoryStatus == right.InferentialAdvisoryStatus &&
+			approxFloat64(left.InferentialAdvisoryScore, right.InferentialAdvisoryScore) &&
+			equalFloat64Map(left.InferentialAdvisorySignals, right.InferentialAdvisorySignals) &&
+			equalStringSlice(left.InferentialAdvisoryReasons, right.InferentialAdvisoryReasons)
 	}
 	if version == ArbitrationFixtureVersionStateSnapshotV1 {
 		return left.StateSnapshotVersion == right.StateSnapshotVersion &&
@@ -2974,6 +3027,22 @@ func equalIntMap(left, right map[string]int) bool {
 	}
 	for key, leftValue := range left {
 		if right[key] != leftValue {
+			return false
+		}
+	}
+	return true
+}
+
+func equalFloat64Map(left, right map[string]float64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		rightValue, ok := right[key]
+		if !ok {
+			return false
+		}
+		if !approxFloat64(leftValue, rightValue) {
 			return false
 		}
 	}
@@ -3658,6 +3727,96 @@ func assertOTelSemconvArbitrationEquivalent(caseName, lane string, expected, act
 	}
 }
 
+func validateInferentialAdvisoryArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	hasInferentialPayload := strings.TrimSpace(obs.InferentialAdvisoryStatus) != "" ||
+		obs.InferentialAdvisoryScore > 0 ||
+		len(obs.InferentialAdvisorySignals) > 0 ||
+		len(obs.InferentialAdvisoryReasons) > 0
+	if !hasInferentialPayload {
+		return nil
+	}
+	if !isInferentialAdvisoryStatus(obs.InferentialAdvisoryStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential_advisory_status must be healthy|watch|critical", caseName, lane),
+		}
+	}
+	if obs.InferentialAdvisoryScore < 0 || obs.InferentialAdvisoryScore > 1 {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential_advisory_score must be within [0,1]", caseName, lane),
+		}
+	}
+	for key, value := range obs.InferentialAdvisorySignals {
+		if strings.TrimSpace(key) == "" {
+			return &ValidationError{
+				Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+				Message: fmt.Sprintf("case %q %s inferential_advisory_signals contains empty key", caseName, lane),
+			}
+		}
+		if value < 0 || value > 1 {
+			return &ValidationError{
+				Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+				Message: fmt.Sprintf("case %q %s inferential_advisory_signals.%s must be within [0,1]", caseName, lane, key),
+			}
+		}
+	}
+	seenReasons := map[string]struct{}{}
+	prev := ""
+	for i := range obs.InferentialAdvisoryReasons {
+		reason := strings.TrimSpace(obs.InferentialAdvisoryReasons[i])
+		if reason == "" {
+			return &ValidationError{
+				Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+				Message: fmt.Sprintf("case %q %s inferential_advisory_reasons contains empty reason", caseName, lane),
+			}
+		}
+		if _, ok := seenReasons[reason]; ok {
+			return &ValidationError{
+				Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+				Message: fmt.Sprintf("case %q %s inferential_advisory_reasons contains duplicate %q", caseName, lane, reason),
+			}
+		}
+		if prev != "" && reason < prev {
+			return &ValidationError{
+				Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+				Message: fmt.Sprintf("case %q %s inferential_advisory_reasons must be sorted for deterministic replay", caseName, lane),
+			}
+		}
+		seenReasons[reason] = struct{}{}
+		prev = reason
+	}
+	return nil
+}
+
+func assertInferentialAdvisoryArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.InferentialAdvisoryStatus != actual.InferentialAdvisoryStatus {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential advisory status drift expected=%q actual=%q", caseName, lane, expected.InferentialAdvisoryStatus, actual.InferentialAdvisoryStatus),
+		}
+	}
+	if !approxFloat64(expected.InferentialAdvisoryScore, actual.InferentialAdvisoryScore) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential advisory score drift expected=%v actual=%v", caseName, lane, expected.InferentialAdvisoryScore, actual.InferentialAdvisoryScore),
+		}
+	}
+	if !equalFloat64Map(expected.InferentialAdvisorySignals, actual.InferentialAdvisorySignals) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential advisory signals drift expected=%#v actual=%#v", caseName, lane, expected.InferentialAdvisorySignals, actual.InferentialAdvisorySignals),
+		}
+	}
+	if !equalStringSlice(expected.InferentialAdvisoryReasons, actual.InferentialAdvisoryReasons) {
+		return &ValidationError{
+			Code:    ReasonCodeEvalInferentialAdvisoryDrift,
+			Message: fmt.Sprintf("case %q %s inferential advisory reasons drift expected=%#v actual=%#v", caseName, lane, expected.InferentialAdvisoryReasons, actual.InferentialAdvisoryReasons),
+		}
+	}
+	return nil
+}
+
 func validateAgentEvalArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
 	if strings.TrimSpace(obs.EvalSuiteID) == "" {
 		return &ValidationError{
@@ -3693,7 +3852,7 @@ func validateAgentEvalArbitrationObservation(caseName, lane string, obs Arbitrat
 			}
 		}
 	}
-	return nil
+	return validateInferentialAdvisoryArbitrationObservation(caseName, lane, obs)
 }
 
 func assertAgentEvalArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
@@ -3714,6 +3873,9 @@ func assertAgentEvalArbitrationEquivalent(caseName, lane string, expected, actua
 			Code:    ReasonCodeEvalMetricDrift,
 			Message: fmt.Sprintf("case %q %s eval metric drift expected=%#v actual=%#v", caseName, lane, expected.EvalSummary, actual.EvalSummary),
 		}
+	}
+	if err := assertInferentialAdvisoryArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+		return err
 	}
 	return &ValidationError{
 		Code:    ReasonCodeSemanticDrift,
@@ -3789,7 +3951,7 @@ func validateAgentEvalDistributedArbitrationObservation(caseName, lane string, o
 			}
 		}
 	}
-	return nil
+	return validateInferentialAdvisoryArbitrationObservation(caseName, lane, obs)
 }
 
 func assertAgentEvalDistributedArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
@@ -3818,6 +3980,9 @@ func assertAgentEvalDistributedArbitrationEquivalent(caseName, lane string, expe
 			Code:    ReasonCodeEvalMetricDrift,
 			Message: fmt.Sprintf("case %q %s eval metric drift expected=%#v actual=%#v", caseName, lane, expected, actual),
 		}
+	}
+	if err := assertInferentialAdvisoryArbitrationEquivalent(caseName, lane, expected, actual); err != nil {
+		return err
 	}
 	return &ValidationError{
 		Code:    ReasonCodeSemanticDrift,
@@ -3962,6 +4127,15 @@ func isObservabilityStatus(status string) bool {
 func isDiagnosticsBundleStatus(status string) bool {
 	switch strings.TrimSpace(status) {
 	case "disabled", "success", "degraded", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func isInferentialAdvisoryStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "healthy", "watch", "critical":
 		return true
 	default:
 		return false

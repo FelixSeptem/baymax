@@ -159,3 +159,44 @@ func TestMailboxQueryValidationAndCursorDeterminism(t *testing.T) {
 		t.Fatal("expected fail-fast for query boundary mismatch cursor")
 	}
 }
+
+func TestMailboxQueryCacheInvalidatesOnMutation(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	clock := now
+	mb := newTestMailboxWithClock(t, Policy{}, func() time.Time { return clock })
+
+	publish := func(id string) {
+		t.Helper()
+		if _, err := mb.Publish(ctx, Envelope{
+			MessageID:      id,
+			IdempotencyKey: "idem-" + id,
+			Kind:           KindCommand,
+			RunID:          "run-cache",
+		}); err != nil {
+			t.Fatalf("publish %q failed: %v", id, err)
+		}
+	}
+
+	publish("msg-cache-1")
+	clock = clock.Add(time.Millisecond)
+	publish("msg-cache-2")
+	first, err := mb.Query(ctx, QueryRequest{RunID: "run-cache"})
+	if err != nil {
+		t.Fatalf("first query failed: %v", err)
+	}
+	firstCount := len(first.Items)
+	if firstCount != 2 {
+		t.Fatalf("first query count=%d, want 2", firstCount)
+	}
+
+	clock = clock.Add(time.Millisecond)
+	publish("msg-cache-3")
+	second, err := mb.Query(ctx, QueryRequest{RunID: "run-cache"})
+	if err != nil {
+		t.Fatalf("second query failed: %v", err)
+	}
+	if len(second.Items) != firstCount+1 {
+		t.Fatalf("query cache should invalidate after mutation: first=%d second=%d", firstCount, len(second.Items))
+	}
+}

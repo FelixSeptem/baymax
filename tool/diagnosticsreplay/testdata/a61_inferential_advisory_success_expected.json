@@ -1,0 +1,58 @@
+{
+  "version": "agent_eval.v1",
+  "cases": [
+    {
+      "name": "a61_inferential_advisory_success_case",
+      "canonical": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_summary": {
+          "all_constraints_pass": true,
+          "cost_latency": {
+            "constraint_passed": true,
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true
+          },
+          "deny_intercept": {
+            "passed": true,
+            "rate": 0.97,
+            "threshold": 0.95,
+            "total": 40
+          },
+          "task_success": {
+            "passed": true,
+            "rate": 0.93,
+            "threshold": 0.9,
+            "total": 100
+          },
+          "tool_correctness": {
+            "passed": true,
+            "rate": 0.9,
+            "threshold": 0.85,
+            "total": 100
+          },
+          "version": "agent_eval.v1"
+        },
+        "eval_execution_mode": "local",
+        "inferential_advisory_status": "watch",
+        "inferential_advisory_score": 0.67,
+        "inferential_advisory_signals": {
+          "cost_within_budget": 1,
+          "runtime_readiness_degraded": 1,
+          "task_success_rate": 0.93
+        },
+        "inferential_advisory_reasons": [
+          "eval.task_success_below_threshold",
+          "runtime.readiness.degraded"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

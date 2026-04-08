@@ -498,6 +498,14 @@ try {
             pwsh -File scripts/check-docs-consistency.ps1
         }
 
+        Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {
+            pwsh -File scripts/check-a64-impacted-gate-selection.ps1
+        }
+
+        Invoke-RequiredStep -StepLabel "[quality-gate] a64 harnessability scorecard" -Command {
+            pwsh -File scripts/check-a64-harnessability-scorecard.ps1
+        }
+
         Invoke-RequiredStep -StepLabel "[quality-gate] semantic labeling governance" -Command {
             pwsh -File scripts/check-semantic-labeling-governance.ps1
         }
@@ -531,6 +539,14 @@ Invoke-RequiredStep -StepLabel "[quality-gate] repo hygiene" -Command {
 
 Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {
+    pwsh -File scripts/check-a64-impacted-gate-selection.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] a64 harnessability scorecard" -Command {
+    pwsh -File scripts/check-a64-harnessability-scorecard.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] go file line budget governance" -Command {
@@ -592,7 +608,10 @@ Invoke-RequiredParallelSteps -Steps @(
     },
     @{
         StepLabel = "[quality-gate] context jit organization contract suites"
-        Command   = { pwsh -File scripts/check-context-jit-organization-contract.ps1 }
+        Command   = {
+            $env:BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES = "1"
+            pwsh -File scripts/check-context-jit-organization-contract.ps1
+        }
     },
     @{
         StepLabel = "[quality-gate] realtime protocol contract suites"
@@ -683,16 +702,12 @@ Invoke-RequiredStep -StepLabel "[quality-gate] golangci-lint --config .golangci.
     golangci-lint run --config .golangci.yml
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] context production hardening benchmark regression" -Command {
-    pwsh -File scripts/check-context-production-hardening-benchmark-regression.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] a64 semantic stability gate" -Command {
+    pwsh -File scripts/check-a64-semantic-stability-contract.ps1
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] multi-agent mainline benchmark regression" -Command {
-    pwsh -File scripts/check-multi-agent-performance-regression.ps1
-}
-
-Invoke-RequiredStep -StepLabel "[quality-gate] diagnostics query benchmark regression" -Command {
-    pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] a64 performance regression gate" -Command {
+    pwsh -File scripts/check-a64-performance-regression.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] full-chain example smoke" -Command {

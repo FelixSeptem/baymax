@@ -68,6 +68,18 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] a64 impacted gate selection"
+if ! bash scripts/check-a64-impacted-gate-selection.sh; then
+  echo "[quality-gate][a64-impacted-gate-selection] a64 impacted gate selection failed"
+  exit 1
+fi
+
+echo "[quality-gate] a64 harnessability scorecard"
+if ! bash scripts/check-a64-harnessability-scorecard.sh; then
+  echo "[quality-gate][a64-harnessability-scorecard] a64 harnessability scorecard failed"
+  exit 1
+fi
+
 echo "[quality-gate] go file line budget governance"
 if ! bash scripts/check-go-file-line-budget.sh; then
   echo "[quality-gate][go-file-line-budget] go file line budget governance failed"
@@ -153,7 +165,7 @@ if ! bash scripts/check-react-plan-notebook-contract.sh; then
 fi
 
 echo "[quality-gate] context jit organization contract suites"
-if ! bash scripts/check-context-jit-organization-contract.sh; then
+if ! BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES=1 bash scripts/check-context-jit-organization-contract.sh; then
   echo "[quality-gate][context-jit-organization-contract] context jit organization contract suites failed"
   exit 1
 fi
@@ -283,15 +295,15 @@ fi
 echo "[quality-gate] golangci-lint"
 golangci-lint run --config .golangci.yml
 
-echo "[quality-gate] context production hardening benchmark regression"
-bash scripts/check-context-production-hardening-benchmark-regression.sh
+echo "[quality-gate] a64 semantic stability gate"
+if ! bash scripts/check-a64-semantic-stability-contract.sh; then
+  echo "[quality-gate][a64-semantic-stability] a64 semantic stability gate failed"
+  exit 1
+fi
 
-echo "[quality-gate] multi-agent mainline benchmark regression"
-bash scripts/check-multi-agent-performance-regression.sh
-
-echo "[quality-gate] diagnostics query benchmark regression"
-if ! bash scripts/check-diagnostics-query-performance-regression.sh; then
-  echo "[quality-gate][diagnostics-query-bench] diagnostics query benchmark regression failed"
+echo "[quality-gate] a64 performance regression gate"
+if ! bash scripts/check-a64-performance-regression.sh; then
+  echo "[quality-gate][a64-performance-regression] a64 performance regression gate failed"
   exit 1
 fi
 

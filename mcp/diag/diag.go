@@ -23,31 +23,51 @@ type Store struct {
 	mu      sync.Mutex
 	maxKeep int
 	records []CallRecord
+	next    int
+	count   int
 }
 
 func NewStore(maxKeep int) *Store {
 	if maxKeep <= 0 {
 		maxKeep = 200
 	}
-	return &Store{maxKeep: maxKeep, records: make([]CallRecord, 0, maxKeep)}
+	return &Store{
+		maxKeep: maxKeep,
+		records: make([]CallRecord, maxKeep),
+	}
 }
 
 func (d *Store) Add(rec CallRecord) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.records = append(d.records, rec)
-	if len(d.records) > d.maxKeep {
-		d.records = append([]CallRecord(nil), d.records[len(d.records)-d.maxKeep:]...)
+	if d.maxKeep <= 0 || len(d.records) == 0 {
+		return
+	}
+	d.records[d.next] = rec
+	d.next = (d.next + 1) % d.maxKeep
+	if d.count < d.maxKeep {
+		d.count++
 	}
 }
 
 func (d *Store) Recent(n int) []CallRecord {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if n <= 0 || n > len(d.records) {
-		n = len(d.records)
+	if d.count == 0 {
+		return nil
+	}
+	if n <= 0 || n > d.count {
+		n = d.count
 	}
 	out := make([]CallRecord, n)
-	copy(out, d.records[len(d.records)-n:])
+	oldest := d.next - d.count
+	if oldest < 0 {
+		oldest += d.maxKeep
+	}
+	start := oldest + (d.count - n)
+	for i := 0; i < n; i++ {
+		idx := (start + i) % d.maxKeep
+		out[i] = d.records[idx]
+	}
 	return out
 }

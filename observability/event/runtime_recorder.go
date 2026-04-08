@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -162,7 +163,19 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 				}
 			}
 		}
-		r.manager.RecordRun(runtimediag.RunRecord{
+		decision := payloadString(payload, "decision")
+		runtimeReadinessStatus := payloadString(payload, "runtime_readiness_status")
+		budgetDecision := payloadString(payload, "budget_decision")
+		evalSummary := payloadAnyMap(payload, "eval_summary")
+		budgetSnapshot := payloadAnyMap(payload, "budget_snapshot")
+		inferentialAdvisory := buildInferentialAdvisory(
+			r.manager.EffectiveConfig().Runtime.Eval.Agent,
+			evalSummary,
+			runtimeReadinessStatus,
+			budgetDecision,
+			decision,
+		)
+		r.manager.RecordRunOwned(runtimediag.RunRecord{
 			Time:                                        ev.Time,
 			RunID:                                       ev.RunID,
 			Status:                                      status,
@@ -173,7 +186,7 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			PolicyKind:                                  payloadString(payload, "policy_kind"),
 			NamespaceTool:                               payloadString(payload, "namespace_tool"),
 			FilterStage:                                 payloadString(payload, "filter_stage"),
-			Decision:                                    payloadString(payload, "decision"),
+			Decision:                                    decision,
 			ReasonCode:                                  payloadString(payload, "reason_code"),
 			Severity:                                    payloadString(payload, "severity"),
 			AlertDispatchStatus:                         payloadString(payload, "alert_dispatch_status"),
@@ -390,9 +403,12 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			StateRestoreAction:                          normalizeStateRestoreAction(payloadString(payload, "state_restore_action")),
 			StateRestoreConflictCode:                    normalizeStateRestoreConflictCode(payloadString(payload, "state_restore_conflict_code")),
 			StateRestoreSource:                          normalizeStateRestoreSource(payloadString(payload, "state_restore_source")),
+			SnapshotEntropyRetention:                    payloadIntMap(payload, "snapshot_entropy_retention"),
+			SnapshotEntropyQuota:                        payloadIntMap(payload, "snapshot_entropy_quota"),
+			SnapshotEntropyCleanup:                      payloadIntMap(payload, "snapshot_entropy_cleanup"),
 			RecoveryFallbackUsed:                        payloadBool(payload, "recovery_fallback_used"),
 			RecoveryFallbackReason:                      payloadString(payload, "recovery_fallback_reason"),
-			RuntimeReadinessStatus:                      payloadString(payload, "runtime_readiness_status"),
+			RuntimeReadinessStatus:                      runtimeReadinessStatus,
 			RuntimeReadinessFindingTotal:                payloadInt(payload, "runtime_readiness_finding_total"),
 			RuntimeReadinessBlockingTotal:               payloadInt(payload, "runtime_readiness_blocking_total"),
 			RuntimeReadinessDegradedTotal:               payloadInt(payload, "runtime_readiness_degraded_total"),
@@ -421,13 +437,17 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			TraceExportStatus:                           payloadString(payload, "trace_export_status"),
 			TraceSchemaVersion:                          payloadString(payload, "trace_schema_version"),
 			EvalSuiteID:                                 payloadString(payload, "eval_suite_id"),
-			EvalSummary:                                 payloadAnyMap(payload, "eval_summary"),
+			EvalSummary:                                 evalSummary,
 			EvalExecutionMode:                           payloadString(payload, "eval_execution_mode"),
 			EvalJobID:                                   payloadString(payload, "eval_job_id"),
 			EvalShardTotal:                              payloadInt(payload, "eval_shard_total"),
 			EvalResumeCount:                             payloadInt(payload, "eval_resume_count"),
-			BudgetSnapshot:                              payloadAnyMap(payload, "budget_snapshot"),
-			BudgetDecision:                              payloadString(payload, "budget_decision"),
+			InferentialAdvisoryStatus:                   inferentialAdvisory.Status,
+			InferentialAdvisoryScore:                    inferentialAdvisory.Score,
+			InferentialAdvisorySignals:                  inferentialAdvisory.Signals,
+			InferentialAdvisoryReasons:                  inferentialAdvisory.Reasons,
+			BudgetSnapshot:                              budgetSnapshot,
+			BudgetDecision:                              budgetDecision,
 			DegradeAction:                               payloadString(payload, "degrade_action"),
 			PolicyPrecedenceVersion:                     payloadString(payload, "policy_precedence_version"),
 			WinnerStage:                                 payloadString(payload, "winner_stage"),
@@ -485,10 +505,12 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			ReactPlanRecoverCount:                       payloadInt(payload, "react_plan_recover_count"),
 			ReactPlanHookStatus:                         normalizeReactPlanHookStatus(payloadString(payload, "react_plan_hook_status")),
 			RealtimeProtocolVersion:                     payloadString(payload, "realtime_protocol_version"),
+			RealtimeSessionID:                           payloadString(payload, "realtime_session_id"),
 			RealtimeEventSeqMax:                         payloadInt64(payload, "realtime_event_seq_max"),
 			RealtimeInterruptTotal:                      payloadInt(payload, "realtime_interrupt_total"),
 			RealtimeResumeTotal:                         payloadInt(payload, "realtime_resume_total"),
 			RealtimeResumeSource:                        payloadString(payload, "realtime_resume_source"),
+			RealtimeResumeCursor:                        payloadString(payload, "realtime_resume_cursor"),
 			RealtimeIdempotencyDedupTotal:               payloadInt(payload, "realtime_idempotency_dedup_total"),
 			RealtimeLastErrorCode:                       payloadString(payload, "realtime_last_error_code"),
 			HooksEnabled:                                payloadBool(payload, "hooks_enabled"),
@@ -739,6 +761,252 @@ func payloadAnyMap(m map[string]any, key string) map[string]any {
 			return nil
 		}
 		return cloneAnyMap(decoded)
+	}
+}
+
+type inferentialAdvisory struct {
+	Status  string
+	Score   float64
+	Signals map[string]float64
+	Reasons []string
+}
+
+func buildInferentialAdvisory(
+	evalCfg runtimeconfig.RuntimeEvalAgentConfig,
+	evalSummary map[string]any,
+	readinessStatus string,
+	budgetDecision string,
+	decision string,
+) inferentialAdvisory {
+	signals := map[string]float64{}
+	reasonSet := map[string]struct{}{}
+	addSignal := func(key string, value float64) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return
+		}
+		signals[key] = clampInferentialSignal(value)
+	}
+	addReason := func(code string) {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			return
+		}
+		reasonSet[code] = struct{}{}
+	}
+
+	if rate, ok := evalSummaryMetricRate(evalSummary, "task_success"); ok {
+		addSignal("task_success_rate", rate)
+		if evalCfg.Enabled && rate < evalCfg.TaskSuccessThreshold {
+			addReason("eval.task_success_below_threshold")
+		}
+	}
+	if rate, ok := evalSummaryMetricRate(evalSummary, "tool_correctness"); ok {
+		addSignal("tool_correctness_rate", rate)
+		if evalCfg.Enabled && rate < evalCfg.ToolCorrectnessThreshold {
+			addReason("eval.tool_correctness_below_threshold")
+		}
+	}
+	if rate, ok := evalSummaryMetricRate(evalSummary, "deny_intercept"); ok {
+		addSignal("deny_intercept_rate", rate)
+		if evalCfg.Enabled && rate < evalCfg.DenyInterceptAccuracyThreshold {
+			addReason("eval.deny_intercept_below_threshold")
+		}
+	}
+	if within, ok := evalSummaryCostLatencyBool(evalSummary, "cost_within_budget"); ok {
+		if within {
+			addSignal("cost_within_budget", 1)
+		} else {
+			addSignal("cost_within_budget", 0)
+			if evalCfg.Enabled {
+				addReason("eval.cost_budget_exceeded")
+			}
+		}
+	}
+	if within, ok := evalSummaryCostLatencyBool(evalSummary, "latency_within_slo"); ok {
+		if within {
+			addSignal("latency_within_slo", 1)
+		} else {
+			addSignal("latency_within_slo", 0)
+			if evalCfg.Enabled {
+				addReason("eval.latency_budget_exceeded")
+			}
+		}
+	}
+
+	normalizedReadiness := strings.ToLower(strings.TrimSpace(readinessStatus))
+	switch normalizedReadiness {
+	case "degraded":
+		addSignal("runtime_readiness_degraded", 1)
+		addReason("runtime.readiness.degraded")
+	case "blocked":
+		addSignal("runtime_readiness_blocked", 1)
+		addReason("runtime.readiness.blocked")
+	}
+
+	normalizedBudgetDecision := strings.ToLower(strings.TrimSpace(budgetDecision))
+	switch normalizedBudgetDecision {
+	case string(runtimeconfig.RuntimeAdmissionBudgetDecisionDeny):
+		addSignal("runtime_admission_budget_deny", 1)
+		addReason("runtime.admission.budget_deny")
+	case string(runtimeconfig.RuntimeAdmissionBudgetDecisionDegrade):
+		addSignal("runtime_admission_budget_degrade", 1)
+		addReason("runtime.admission.budget_degrade")
+	}
+
+	normalizedDecision := strings.ToLower(strings.TrimSpace(decision))
+	if normalizedDecision == "deny" {
+		addSignal("runtime_policy_decision_deny", 1)
+		addReason("runtime.policy.deny")
+	}
+
+	score := 1.0
+	if len(signals) > 0 {
+		total := 0.0
+		for _, value := range signals {
+			total += clampInferentialSignal(value)
+		}
+		score = total / float64(len(signals))
+	}
+
+	reasons := make([]string, 0, len(reasonSet))
+	for code := range reasonSet {
+		reasons = append(reasons, code)
+	}
+	sort.Strings(reasons)
+	if len(reasons) == 0 {
+		reasons = nil
+	}
+	if len(signals) == 0 {
+		signals = nil
+	}
+
+	var status string
+	switch {
+	case len(reasons) == 0:
+		status = "healthy"
+	case normalizedDecision == "deny" || normalizedBudgetDecision == string(runtimeconfig.RuntimeAdmissionBudgetDecisionDeny) || normalizedReadiness == "blocked":
+		status = "critical"
+	default:
+		status = "watch"
+	}
+
+	return inferentialAdvisory{
+		Status:  status,
+		Score:   clampInferentialSignal(score),
+		Signals: signals,
+		Reasons: reasons,
+	}
+}
+
+func evalSummaryMetricRate(evalSummary map[string]any, metric string) (float64, bool) {
+	metricMap, ok := evalSummaryChildMap(evalSummary, metric)
+	if !ok {
+		return 0, false
+	}
+	if value, ok := metricMap["rate"]; ok {
+		if parsed, ok := anyFloat64(value); ok {
+			return clampInferentialSignal(parsed), true
+		}
+	}
+	if value, ok := metricMap["pass_rate"]; ok {
+		if parsed, ok := anyFloat64(value); ok {
+			return clampInferentialSignal(parsed), true
+		}
+	}
+	return 0, false
+}
+
+func evalSummaryCostLatencyBool(evalSummary map[string]any, key string) (bool, bool) {
+	costLatency, ok := evalSummaryChildMap(evalSummary, "cost_latency")
+	if !ok {
+		return false, false
+	}
+	raw, ok := costLatency[key]
+	if !ok {
+		return false, false
+	}
+	return anyBool(raw)
+}
+
+func evalSummaryChildMap(evalSummary map[string]any, key string) (map[string]any, bool) {
+	if len(evalSummary) == 0 {
+		return nil, false
+	}
+	raw, ok := evalSummary[key]
+	if !ok || raw == nil {
+		return nil, false
+	}
+	typed, ok := raw.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return typed, true
+}
+
+func anyFloat64(raw any) (float64, bool) {
+	switch value := raw.(type) {
+	case float64:
+		return value, true
+	case float32:
+		return float64(value), true
+	case int:
+		return float64(value), true
+	case int8:
+		return float64(value), true
+	case int16:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case uint:
+		return float64(value), true
+	case uint8:
+		return float64(value), true
+	case uint16:
+		return float64(value), true
+	case uint32:
+		return float64(value), true
+	case uint64:
+		return float64(value), true
+	case json.Number:
+		parsed, err := value.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func anyBool(raw any) (bool, bool) {
+	switch value := raw.(type) {
+	case bool:
+		return value, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true":
+			return true, true
+		case "false":
+			return false, true
+		default:
+			return false, false
+		}
+	default:
+		return false, false
+	}
+}
+
+func clampInferentialSignal(value float64) float64 {
+	switch {
+	case value < 0:
+		return 0
+	case value > 1:
+		return 1
+	default:
+		return value
 	}
 }
 

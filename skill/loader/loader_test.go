@@ -3,10 +3,12 @@ package loader
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	obsevent "github.com/FelixSeptem/baymax/observability/event"
@@ -166,6 +168,168 @@ func TestDiscoverModeFolderInvalidRootFailsFast(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "runtime.skill.discovery.roots[0]") {
 		t.Fatalf("unexpected discovery root error: %v", err)
+	}
+}
+
+func TestDiscoverModeAgentsFolderHybridParity(t *testing.T) {
+	root := t.TempDir()
+	sharedPath := filepath.Join(root, "shared", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(sharedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Join([]string{
+		"description: shared parity skill",
+		"- trigger: parity",
+		"priority: 7",
+		"- tool: local.shared",
+	}, "\n")
+	if err := os.WriteFile(sharedPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agents := "- shared: parity (file: " + filepath.ToSlash(sharedPath) + ")\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(agents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	collectShared := func(mode string) types.SkillSpec {
+		mgr := newLoaderDiscoveryManager(t, mode, []string{root})
+		defer func() { _ = mgr.Close() }()
+		l := NewWithRuntimeManager(nil, mgr)
+		specs, err := l.Discover(context.Background(), root)
+		if err != nil {
+			t.Fatalf("discover(%s) failed: %v", mode, err)
+		}
+		for _, spec := range specs {
+			if spec.Name == "shared" {
+				return spec
+			}
+		}
+		t.Fatalf("mode %s missing shared spec: %#v", mode, specs)
+		return types.SkillSpec{}
+	}
+
+	agentsSpec := collectShared(runtimeconfig.RuntimeSkillDiscoveryModeAgentsMD)
+	folderSpec := collectShared(runtimeconfig.RuntimeSkillDiscoveryModeFolder)
+	hybridSpec := collectShared(runtimeconfig.RuntimeSkillDiscoveryModeHybrid)
+
+	if agentsSpec.Path != folderSpec.Path || agentsSpec.Path != hybridSpec.Path {
+		t.Fatalf("shared path parity mismatch agents=%q folder=%q hybrid=%q", agentsSpec.Path, folderSpec.Path, hybridSpec.Path)
+	}
+	if agentsSpec.Description != folderSpec.Description || agentsSpec.Description != hybridSpec.Description {
+		t.Fatalf("shared description parity mismatch agents=%q folder=%q hybrid=%q", agentsSpec.Description, folderSpec.Description, hybridSpec.Description)
+	}
+	if len(agentsSpec.Triggers) != 1 || len(folderSpec.Triggers) != 1 || len(hybridSpec.Triggers) != 1 {
+		t.Fatalf("shared trigger parity mismatch agents=%#v folder=%#v hybrid=%#v", agentsSpec.Triggers, folderSpec.Triggers, hybridSpec.Triggers)
+	}
+	if agentsSpec.Triggers[0] != folderSpec.Triggers[0] || agentsSpec.Triggers[0] != hybridSpec.Triggers[0] {
+		t.Fatalf("shared trigger value parity mismatch agents=%#v folder=%#v hybrid=%#v", agentsSpec.Triggers, folderSpec.Triggers, hybridSpec.Triggers)
+	}
+	if agentsSpec.Priority != folderSpec.Priority || agentsSpec.Priority != hybridSpec.Priority {
+		t.Fatalf("shared priority parity mismatch agents=%d folder=%d hybrid=%d", agentsSpec.Priority, folderSpec.Priority, hybridSpec.Priority)
+	}
+
+	compileTools := func(spec types.SkillSpec) []string {
+		l := New(nil)
+		bundle, err := l.Compile(context.Background(), []types.SkillSpec{spec}, types.SkillInput{UserInput: "shared"})
+		if err != nil {
+			t.Fatalf("compile failed: %v", err)
+		}
+		return bundle.EnabledTools
+	}
+	agentsTools := compileTools(agentsSpec)
+	folderTools := compileTools(folderSpec)
+	hybridTools := compileTools(hybridSpec)
+	if len(agentsTools) != 1 || len(folderTools) != 1 || len(hybridTools) != 1 {
+		t.Fatalf("compile parity tool count mismatch agents=%#v folder=%#v hybrid=%#v", agentsTools, folderTools, hybridTools)
+	}
+	if agentsTools[0] != folderTools[0] || agentsTools[0] != hybridTools[0] {
+		t.Fatalf("compile parity tool mismatch agents=%#v folder=%#v hybrid=%#v", agentsTools, folderTools, hybridTools)
+	}
+}
+
+func TestDiscoverCacheInvalidatesOnMtimeChange(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "cache-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: first\n- tool: local.first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agents := "- cache-skill: test (file: " + filepath.ToSlash(skillPath) + ")\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(agents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	l := New(nil)
+	first, err := l.Discover(context.Background(), root)
+	if err != nil {
+		t.Fatalf("first discover failed: %v", err)
+	}
+	if len(first) != 1 || first[0].Description != "first" {
+		t.Fatalf("first discover metadata mismatch: %#v", first)
+	}
+
+	info, err := os.Stat(skillPath)
+	if err != nil {
+		t.Fatalf("stat skill file: %v", err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: second\n- tool: local.second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nextTime := info.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(skillPath, nextTime, nextTime); err != nil {
+		t.Fatalf("set skill mtime: %v", err)
+	}
+
+	second, err := l.Discover(context.Background(), root)
+	if err != nil {
+		t.Fatalf("second discover failed: %v", err)
+	}
+	if len(second) != 1 || second[0].Description != "second" {
+		t.Fatalf("discover cache should invalidate on mtime change, got %#v", second)
+	}
+}
+
+func TestCompileCacheInvalidatesOnSizeChangeWithSameMtime(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "compile-cache", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("description: stable\n- tool: local.one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(skillPath)
+	if err != nil {
+		t.Fatalf("stat skill file: %v", err)
+	}
+	fixedMTime := info.ModTime()
+
+	l := New(nil)
+	specs := []types.SkillSpec{{Name: "compile-cache", Path: skillPath, Description: "stable"}}
+	first, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "compile-cache"})
+	if err != nil {
+		t.Fatalf("first compile failed: %v", err)
+	}
+	if len(first.EnabledTools) != 1 || first.EnabledTools[0] != "local.one" {
+		t.Fatalf("first compile tools mismatch: %#v", first.EnabledTools)
+	}
+
+	updated := "description: stable\n- tool: local.two\n- tool: local.three"
+	if err := os.WriteFile(skillPath, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(skillPath, fixedMTime, fixedMTime); err != nil {
+		t.Fatalf("reset mtime: %v", err)
+	}
+
+	second, err := l.Compile(context.Background(), specs, types.SkillInput{UserInput: "compile-cache"})
+	if err != nil {
+		t.Fatalf("second compile failed: %v", err)
+	}
+	if len(second.EnabledTools) != 2 || second.EnabledTools[0] != "local.two" || second.EnabledTools[1] != "local.three" {
+		t.Fatalf("compile cache should invalidate on size change with same mtime, got %#v", second.EnabledTools)
 	}
 }
 
@@ -1243,7 +1407,148 @@ diagnostics:
 	}
 }
 
-func newLoaderDiscoveryManager(t *testing.T, mode string, roots []string) *runtimeconfig.Manager {
+func BenchmarkSkillLoaderDiscoverAgentsMD(b *testing.B) {
+	root := setupSkillLoaderBenchmarkFixture(b, 24)
+	l := New(nil)
+	warmup, err := l.Discover(context.Background(), root)
+	if err != nil {
+		b.Fatalf("discover warmup failed: %v", err)
+	}
+	if len(warmup) != 24 {
+		b.Fatalf("discover warmup len = %d, want 24", len(warmup))
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		specs, discoverErr := l.Discover(context.Background(), root)
+		if discoverErr != nil {
+			b.Fatalf("discover failed: %v", discoverErr)
+		}
+		if len(specs) != 24 {
+			b.Fatalf("discover len = %d, want 24", len(specs))
+		}
+	}
+}
+
+func BenchmarkSkillLoaderDiscoverHybrid(b *testing.B) {
+	root := setupSkillLoaderBenchmarkFixture(b, 24)
+	mgr := newLoaderDiscoveryManager(b, runtimeconfig.RuntimeSkillDiscoveryModeHybrid, []string{root})
+	defer func() { _ = mgr.Close() }()
+
+	l := NewWithRuntimeManager(nil, mgr)
+	warmup, err := l.Discover(context.Background(), root)
+	if err != nil {
+		b.Fatalf("discover warmup failed: %v", err)
+	}
+	if len(warmup) != 24 {
+		b.Fatalf("discover warmup len = %d, want 24", len(warmup))
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		specs, discoverErr := l.Discover(context.Background(), root)
+		if discoverErr != nil {
+			b.Fatalf("discover failed: %v", discoverErr)
+		}
+		if len(specs) != 24 {
+			b.Fatalf("discover len = %d, want 24", len(specs))
+		}
+	}
+}
+
+func BenchmarkSkillLoaderCompileLexical(b *testing.B) {
+	root := setupSkillLoaderBenchmarkFixture(b, 32)
+	l := New(nil)
+	specs, err := l.Discover(context.Background(), root)
+	if err != nil {
+		b.Fatalf("discover fixture failed: %v", err)
+	}
+	input := types.SkillInput{
+		UserInput: "please use skill-03 for migration and benchmark trigger bench-11 bench-17",
+		Context:   map[string]string{"run_id": "bench-skill-loader-compile"},
+	}
+	warmup, err := l.Compile(context.Background(), specs, input)
+	if err != nil {
+		b.Fatalf("compile warmup failed: %v", err)
+	}
+	if len(warmup.EnabledTools) == 0 {
+		b.Fatal("compile warmup selected no tools")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bundle, compileErr := l.Compile(context.Background(), specs, input)
+		if compileErr != nil {
+			b.Fatalf("compile failed: %v", compileErr)
+		}
+		if len(bundle.EnabledTools) == 0 {
+			b.Fatal("compile selected no tools")
+		}
+	}
+}
+
+func BenchmarkSkillSelectionScoreLexical(b *testing.B) {
+	specs := make([]types.SkillSpec, 0, 96)
+	for i := 0; i < 96; i++ {
+		specs = append(specs, types.SkillSpec{
+			Name:        fmt.Sprintf("skill-%02d", i),
+			Description: fmt.Sprintf("benchmark lexical candidate %02d", i),
+			Triggers: []string{
+				fmt.Sprintf("bench-%02d", i),
+				"database",
+				"migration",
+			},
+			Priority: i % 7,
+		})
+	}
+	l := New(nil)
+	input := "need database migration and bench-24 bench-72 benchmark lexical candidate"
+
+	_, semanticWarmup, _ := l.selectSkills(context.Background(), specs, input)
+	if len(semanticWarmup) == 0 {
+		b.Fatal("selection warmup produced no semantic candidates")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, semantic, _ := l.selectSkills(context.Background(), specs, input)
+		if len(semantic) == 0 {
+			b.Fatal("selection produced no semantic candidates")
+		}
+	}
+}
+
+func setupSkillLoaderBenchmarkFixture(b *testing.B, skillCount int) string {
+	b.Helper()
+	root := b.TempDir()
+	agentsLines := make([]string, 0, skillCount)
+	for i := 0; i < skillCount; i++ {
+		skillName := fmt.Sprintf("skill-%02d", i)
+		skillPath := filepath.Join(root, skillName, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+			b.Fatalf("mkdir skill path: %v", err)
+		}
+		content := strings.Join([]string{
+			fmt.Sprintf("description: benchmark skill %02d", i),
+			fmt.Sprintf("- trigger: bench-%02d", i),
+			"- trigger: migration",
+			fmt.Sprintf("- tool: local.bench_%02d", i),
+			fmt.Sprintf("priority: %d", i%9),
+		}, "\n")
+		if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+			b.Fatalf("write skill file: %v", err)
+		}
+		agentsLines = append(agentsLines,
+			fmt.Sprintf("- %s: benchmark (file: %s)", skillName, filepath.ToSlash(skillPath)),
+		)
+	}
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(strings.Join(agentsLines, "\n")), 0o644); err != nil {
+		b.Fatalf("write AGENTS.md: %v", err)
+	}
+	return root
+}
+
+func newLoaderDiscoveryManager(t testing.TB, mode string, roots []string) *runtimeconfig.Manager {
 	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "runtime-discovery.yaml")
 	rootLines := make([]string, 0, len(roots))

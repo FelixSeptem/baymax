@@ -344,17 +344,54 @@ type RunResult struct {
 }
 
 func (r RunResult) RunFinishedPayload() map[string]any {
-	return map[string]any{
-		"workflow_id":                       r.WorkflowID,
-		"workflow_status":                   r.WorkflowStatus,
-		"workflow_step_total":               r.WorkflowStepTotal,
-		"workflow_step_failed":              r.WorkflowStepFailed,
-		"workflow_remote_step_total":        r.WorkflowRemoteTotal,
-		"workflow_remote_step_failed":       r.WorkflowRemoteFailed,
-		"workflow_subgraph_expansion_total": r.WorkflowSubgraphExpansionTotal,
-		"workflow_condition_template_total": r.WorkflowConditionTemplateTotal,
-		"workflow_graph_compile_failed":     r.WorkflowGraphCompileFailed,
-		"workflow_resume_count":             r.WorkflowResumeCount,
+	payload := make(map[string]any, 10)
+	payload["workflow_id"] = r.WorkflowID
+	payload["workflow_status"] = r.WorkflowStatus
+	payload["workflow_step_total"] = r.WorkflowStepTotal
+	payload["workflow_step_failed"] = r.WorkflowStepFailed
+	payload["workflow_remote_step_total"] = r.WorkflowRemoteTotal
+	payload["workflow_remote_step_failed"] = r.WorkflowRemoteFailed
+	payload["workflow_subgraph_expansion_total"] = r.WorkflowSubgraphExpansionTotal
+	payload["workflow_condition_template_total"] = r.WorkflowConditionTemplateTotal
+	payload["workflow_graph_compile_failed"] = r.WorkflowGraphCompileFailed
+	payload["workflow_resume_count"] = r.WorkflowResumeCount
+	return payload
+}
+
+type workflowTimelineContext struct {
+	runID      string
+	workflowID string
+}
+
+type workflowStepTimelineContext struct {
+	stepID         string
+	taskID         string
+	teamID         string
+	agentID        string
+	peerID         string
+	dispatchReason string
+}
+
+func newWorkflowTimelineContext(runID, workflowID string) workflowTimelineContext {
+	return workflowTimelineContext{
+		runID:      strings.TrimSpace(runID),
+		workflowID: strings.TrimSpace(workflowID),
+	}
+}
+
+func newWorkflowStepTimelineContext(step Step) workflowStepTimelineContext {
+	stepID := strings.TrimSpace(step.StepID)
+	taskID := strings.TrimSpace(step.TaskID)
+	if taskID == "" {
+		taskID = stepID
+	}
+	return workflowStepTimelineContext{
+		stepID:         stepID,
+		taskID:         taskID,
+		teamID:         strings.TrimSpace(step.TeamID),
+		agentID:        strings.TrimSpace(step.AgentID),
+		peerID:         strings.TrimSpace(step.PeerID),
+		dispatchReason: reasonForStepDispatch(step),
 	}
 }
 
@@ -839,10 +876,13 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 	if errs := ValidateDefinition(def); len(errs) > 0 {
 		return RunResult{}, errs
 	}
+	timelineCtx := newWorkflowTimelineContext(req.RunID, def.WorkflowID)
 
 	stepsByID := map[string]Step{}
+	stepTimeline := map[string]workflowStepTimelineContext{}
 	for _, step := range def.Steps {
 		stepsByID[step.StepID] = step
+		stepTimeline[step.StepID] = newWorkflowStepTimelineContext(step)
 	}
 	results := map[string]*StepResult{}
 	for _, step := range def.Steps {
@@ -872,7 +912,11 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 				case StepStatusSucceeded, StepStatusSkipped:
 					current.Status = state.Status
 					current.Attempts = state.Attempts
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, stepsByID[stepID], state.Status, ReasonResume, &seq)
+					meta, ok := stepTimeline[stepID]
+					if !ok {
+						meta = newWorkflowStepTimelineContext(stepsByID[stepID])
+					}
+					e.emitTimeline(ctx, timelineCtx, meta, state.Status, ReasonResume, &seq)
 					if onEvent != nil {
 						snap := *current
 						if err := onEvent(StreamEvent{Kind: "workflow.resumed.step", Step: &snap}); err != nil {
@@ -899,12 +943,17 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 			if record.Status != StepStatusPending {
 				continue
 			}
+			meta := stepTimeline[step.StepID]
+			dispatchReason := meta.dispatchReason
+			if dispatchReason == "" {
+				dispatchReason = reasonForStepDispatch(step)
+			}
 			executionOrder = append(executionOrder, step.StepID)
 
 			if !conditionMatched(step, results) {
 				record.Status = StepStatusSkipped
 				record.Reason = "condition.not_matched"
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, record.Status, reasonForStepDispatch(step), &seq)
+				e.emitTimeline(ctx, timelineCtx, meta, record.Status, dispatchReason, &seq)
 				if onEvent != nil {
 					snap := *record
 					if err := onEvent(StreamEvent{Kind: "workflow.step", Step: &snap}); err != nil {
@@ -924,7 +973,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 			for attempt := 1; attempt <= maxAttempts; attempt++ {
 				record.Attempts = attempt
 				record.Status = StepStatusRunning
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusRunning, reasonForStepDispatch(step), &seq)
+				e.emitTimeline(ctx, timelineCtx, meta, StepStatusRunning, dispatchReason, &seq)
 
 				timeout := step.Timeout
 				if timeout <= 0 {
@@ -941,7 +990,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					record.Reason = ""
 					record.Error = ""
 					record.Output = output
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusSucceeded, reasonForStepDispatch(step), &seq)
+					e.emitTimeline(ctx, timelineCtx, meta, StepStatusSucceeded, dispatchReason, &seq)
 					break
 				}
 
@@ -950,7 +999,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 				if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					record.Status = StepStatusCanceled
 					record.Reason = "cancel.propagated"
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusCanceled, reasonForStepDispatch(step), &seq)
+					e.emitTimeline(ctx, timelineCtx, meta, StepStatusCanceled, dispatchReason, &seq)
 					break
 				}
 				if errors.Is(err, context.DeadlineExceeded) {
@@ -961,7 +1010,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					record.Reason = "step.error"
 				}
 				if attempt < maxAttempts {
-					e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, StepStatusPending, ReasonRetry, &seq)
+					e.emitTimeline(ctx, timelineCtx, meta, StepStatusPending, ReasonRetry, &seq)
 					if step.Retry.Backoff > 0 {
 						timer := time.NewTimer(step.Retry.Backoff)
 						select {
@@ -974,7 +1023,7 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					}
 					continue
 				}
-				e.emitTimeline(ctx, req.RunID, def.WorkflowID, step, record.Status, reasonForStepDispatch(step), &seq)
+				e.emitTimeline(ctx, timelineCtx, meta, record.Status, dispatchReason, &seq)
 			}
 
 			if onEvent != nil {
@@ -1162,8 +1211,8 @@ func (e *Engine) saveCheckpoint(
 
 func (e *Engine) emitTimeline(
 	ctx context.Context,
-	runID, workflowID string,
-	step Step,
+	timelineCtx workflowTimelineContext,
+	step workflowStepTimelineContext,
 	status StepStatus,
 	reason string,
 	seq *int64,
@@ -1172,37 +1221,31 @@ func (e *Engine) emitTimeline(
 		return
 	}
 	*seq++
-	stepID := strings.TrimSpace(step.StepID)
-	taskID := strings.TrimSpace(step.TaskID)
-	if taskID == "" {
-		taskID = stepID
+	payload := make(map[string]any, 10)
+	payload["phase"] = string(types.ActionPhaseRun)
+	payload["status"] = string(status)
+	payload["sequence"] = *seq
+	payload["reason"] = reason
+	payload["workflow_id"] = timelineCtx.workflowID
+	if step.stepID != "" {
+		payload["step_id"] = step.stepID
 	}
-	payload := map[string]any{
-		"phase":       string(types.ActionPhaseRun),
-		"status":      string(status),
-		"sequence":    *seq,
-		"reason":      reason,
-		"workflow_id": workflowID,
+	if step.taskID != "" {
+		payload["task_id"] = step.taskID
 	}
-	if stepID != "" {
-		payload["step_id"] = stepID
+	if step.teamID != "" {
+		payload["team_id"] = step.teamID
 	}
-	if taskID != "" {
-		payload["task_id"] = taskID
+	if step.agentID != "" {
+		payload["agent_id"] = step.agentID
 	}
-	if teamID := strings.TrimSpace(step.TeamID); teamID != "" {
-		payload["team_id"] = teamID
-	}
-	if agentID := strings.TrimSpace(step.AgentID); agentID != "" {
-		payload["agent_id"] = agentID
-	}
-	if peerID := strings.TrimSpace(step.PeerID); peerID != "" {
-		payload["peer_id"] = peerID
+	if step.peerID != "" {
+		payload["peer_id"] = step.peerID
 	}
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    types.EventTypeActionTimeline,
-		RunID:   strings.TrimSpace(runID),
+		RunID:   timelineCtx.runID,
 		Time:    e.now(),
 		Payload: payload,
 	})

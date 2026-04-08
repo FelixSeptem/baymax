@@ -37,6 +37,11 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 必要的 integration 用例
 - 对应 contract/replay/gate 覆盖（fixture、drift、脚本）
 
+5. 命名必须语义化（禁止提案标号渗透）
+- 代码标识、文件名、文件路径中禁止使用提案标号（如 `a62`、`a63`、`axx`）作为命名。
+- 统一使用语义化命名（按业务/能力/模块语义命名），避免编号驱动命名。
+- 例外：`openspec/changes/*` 与 `openspec/changes/archive/*` 的提案目录按 OpenSpec 工作流可保留提案标号。
+
 ## 架构硬约束（不可绕过）
 
 - `runtime/*` 禁止依赖 `mcp/http` 或 `mcp/stdio`

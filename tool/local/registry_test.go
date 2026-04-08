@@ -457,6 +457,57 @@ func TestDispatcherDropLowPriorityKeepsNonDroppableCalls(t *testing.T) {
 	}
 }
 
+func TestDispatcherDropLowPriorityRebuildsClassifierPerDispatch(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "slow",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "ok"}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	calls := []types.ToolCall{
+		{CallID: "c1", Name: "local.slow", Args: map[string]any{"q": "cache task"}},
+		{CallID: "c2", Name: "local.slow", Args: map[string]any{"q": "cache task"}},
+	}
+
+	lowCfg := DispatchConfig{
+		MaxCalls:     2,
+		Concurrency:  1,
+		QueueSize:    1,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityLow},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	}
+	lowOutcomes, err := dispatcher.Dispatch(context.Background(), calls, lowCfg)
+	if err != nil {
+		t.Fatalf("Dispatch with low priority policy failed: %v", err)
+	}
+	if lowOutcomes[0].Result.Error == nil || lowOutcomes[1].Result.Error == nil {
+		t.Fatalf("expected both calls dropped under low policy, got %#v", lowOutcomes)
+	}
+
+	highCfg := DispatchConfig{
+		MaxCalls:     2,
+		Concurrency:  1,
+		QueueSize:    1,
+		Backpressure: types.BackpressureDropLowPriority,
+		DropLowPriority: DropLowPriorityPolicy{
+			PriorityByKeyword:   map[string]string{"cache": runtimeconfig.DropPriorityHigh},
+			DroppablePriorities: []string{runtimeconfig.DropPriorityLow},
+		},
+	}
+	highOutcomes, err := dispatcher.Dispatch(context.Background(), calls, highCfg)
+	if err != nil {
+		t.Fatalf("Dispatch with high priority policy failed: %v", err)
+	}
+	if highOutcomes[0].Result.Error != nil || highOutcomes[1].Result.Error != nil {
+		t.Fatalf("expected calls to execute after policy change, got %#v", highOutcomes)
+	}
+}
+
 func TestDispatcherDropLowPriorityMarksMCPAndSkillPhase(t *testing.T) {
 	reg := NewRegistry()
 	_, _ = reg.Register(&fakeTool{

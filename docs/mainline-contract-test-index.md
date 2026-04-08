@@ -176,6 +176,14 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Multi-Agent Mainline Performance Gate Integration| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Diagnostics Query Performance Benchmark Matrix| `integration/benchmark_test.go::BenchmarkDiagnosticsQueryRuns`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryRunsSandboxEnriched`、`integration/benchmark_test.go::BenchmarkDiagnosticsQueryMailbox`、`integration/benchmark_test.go::BenchmarkDiagnosticsMailboxAggregates` | `scripts/check-diagnostics-query-performance-regression.sh`、`scripts/check-diagnostics-query-performance-regression.ps1` |
 | Diagnostics Query Performance Gate Integration| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| A64 Observability Pipeline Benchmark Matrix| `observability/event/benchmark_test.go::BenchmarkRuntimeExporterBatch`、`observability/event/benchmark_test.go::BenchmarkEventDispatcherFanout`、`observability/event/benchmark_test.go::BenchmarkJSONLoggerEmit` | `go test ./observability/event -run '^$' -bench 'BenchmarkRuntimeExporterBatch\|BenchmarkEventDispatcherFanout\|BenchmarkJSONLoggerEmit' -benchmem` |
+| A64 Semantic Stability Gate Path| `scripts/check-a64-semantic-stability-contract.sh` | `scripts/check-a64-semantic-stability-contract.ps1` |
+| A64 Performance Regression Gate Path| `scripts/check-a64-performance-regression.sh` | `scripts/check-a64-performance-regression.ps1` |
+| A64 Impacted Gate Selection Path| `scripts/check-a64-impacted-gate-selection.sh` | `scripts/check-a64-impacted-gate-selection.ps1` |
+| A64 Harnessability Scorecard Gate Path| `scripts/check-a64-harnessability-scorecard.sh` | `scripts/check-a64-harnessability-scorecard.ps1` |
+| A64 Harnessability Scorecard Baseline Profile| `scripts/a64-harnessability-scorecard-baseline.env` | `scripts/a64-harnessability-scorecard-baseline.env` |
+| A64 Gate Latency Budget Path| `scripts/check-a64-gate-latency-budget.sh` | `scripts/check-a64-gate-latency-budget.ps1` |
+| A64 Gate Latency Baseline Profile| `scripts/a64-gate-latency-baseline.env` | `scripts/a64-gate-latency-baseline.env` |
 | Full-Chain Reference Example Smoke Gate| `scripts/check-full-chain-example-smoke.sh` | `scripts/check-full-chain-example-smoke.ps1` |
 | Full-Chain Reference Example Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | External Adapter Template Docs Consistency| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |

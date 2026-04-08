@@ -74,6 +74,15 @@ has_changed_prefix() {
   return 1
 }
 
+is_truthy_env() {
+  local value="${1:-}"
+  value="$(echo "${value}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  case "${value}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_step "context jit runtime config governance suites" \
   go test ./runtime/config -run 'Test(RuntimeContextJITConfig|ManagerRuntimeContextJIT)' -count=1
 
@@ -126,25 +135,35 @@ else
   fi
 fi
 
-if [[ "${parity_impacted}" == "true" ]]; then
-  run_step "impacted-contract suites (runner scope): react contract baseline" \
-    bash scripts/check-react-contract.sh
-  run_step "impacted-contract suites (runner scope): react plan notebook gate" \
-    bash scripts/check-react-plan-notebook-contract.sh
-  run_step "impacted-contract suites (runner scope): realtime protocol gate" \
-    bash scripts/check-realtime-protocol-contract.sh
+skip_impacted_suites=false
+if is_truthy_env "${BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES:-}"; then
+  skip_impacted_suites=true
 fi
+echo "[context-jit-organization-contract-gate] impacted-evaluation parity=${parity_impacted} boundary=${boundary_impacted} replay=${replay_impacted} skip_impacted=${skip_impacted_suites}"
 
-if [[ "${boundary_impacted}" == "true" ]]; then
-  run_step "impacted-contract suites (boundary scope): policy precedence gate" \
-    bash scripts/check-policy-precedence-contract.sh
-  run_step "impacted-contract suites (boundary scope): sandbox egress + allowlist gate" \
-    bash scripts/check-sandbox-egress-allowlist-contract.sh
-fi
+if [[ "${skip_impacted_suites}" != "true" ]]; then
+  if [[ "${parity_impacted}" == "true" ]]; then
+    run_step "impacted-contract suites (runner scope): react contract baseline" \
+      bash scripts/check-react-contract.sh
+    run_step "impacted-contract suites (runner scope): react plan notebook gate" \
+      bash scripts/check-react-plan-notebook-contract.sh
+    run_step "impacted-contract suites (runner scope): realtime protocol gate" \
+      bash scripts/check-realtime-protocol-contract.sh
+  fi
 
-if [[ "${replay_impacted}" == "true" ]]; then
-  run_step "impacted-contract suites (replay scope): diagnostics replay contract gate" \
-    bash scripts/check-diagnostics-replay-contract.sh
+  if [[ "${boundary_impacted}" == "true" ]]; then
+    run_step "impacted-contract suites (boundary scope): policy precedence gate" \
+      bash scripts/check-policy-precedence-contract.sh
+    run_step "impacted-contract suites (boundary scope): sandbox egress + allowlist gate" \
+      bash scripts/check-sandbox-egress-allowlist-contract.sh
+  fi
+
+  if [[ "${replay_impacted}" == "true" ]]; then
+    run_step "impacted-contract suites (replay scope): diagnostics replay contract gate" \
+      bash scripts/check-diagnostics-replay-contract.sh
+  fi
+else
+  echo "[context-jit-organization-contract-gate] skip impacted-contract suites (BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES=${BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES:-})"
 fi
 
 run_step "contributioncheck parity suites for context-jit-organization gate" \

@@ -1,0 +1,174 @@
+{
+  "captured_at_utc": "2026-04-07T01:42:27Z",
+  "commit": "07bdef5cbd62d14cf67c8656a18903a4c3273f04",
+  "go_version": "go version go1.26.1 windows/amd64",
+  "os": "windows",
+  "arch": "amd64",
+  "cpu": "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics",
+  "command_profile": {
+    "benchtime": "200ms",
+    "benchmem": true,
+    "count": 3,
+    "gocache": ".gocache",
+    "go_test_timeout": "8m for runtime-mcp-runner-stable only",
+    "run": "^$"
+  },
+  "notes": [
+    "Excluded unstable benchmark set from runtime-mcp-runner.txt due long-tail outliers (captured separately).",
+    "Use median-of-3 for baseline bootstrap."
+  ],
+  "benchmarks": [
+    {
+      "benchmark": "BenchmarkContextPressureSemanticCompactionLatency",
+      "sample_count": 3,
+      "median_ns_op": 563488900.0,
+      "median_b_op": 60715992.0,
+      "median_allocs_op": 836667.0,
+      "sources": "context.txt"
+    },
+    {
+      "benchmark": "BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled",
+      "sample_count": 3,
+      "median_ns_op": 589714200.0,
+      "median_b_op": 60715976.0,
+      "median_allocs_op": 836665.0,
+      "sources": "context.txt"
+    },
+    {
+      "benchmark": "BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled",
+      "sample_count": 3,
+      "median_ns_op": 17006056.0,
+      "median_b_op": 5124087.0,
+      "median_allocs_op": 32570.0,
+      "sources": "context.txt"
+    },
+    {
+      "benchmark": "BenchmarkContextProductionHardeningPressureEvaluation",
+      "sample_count": 3,
+      "median_ns_op": 505624600.0,
+      "median_b_op": 59714184.0,
+      "median_allocs_op": 825039.0,
+      "sources": "context.txt"
+    },
+    {
+      "benchmark": "BenchmarkDiagnosticsMailboxAggregates",
+      "sample_count": 3,
+      "median_ns_op": 326171.0,
+      "median_b_op": 1643608.0,
+      "median_allocs_op": 258.0,
+      "sources": "diagnostics.txt"
+    },
+    {
+      "benchmark": "BenchmarkDiagnosticsQueryMailbox",
+      "sample_count": 3,
+      "median_ns_op": 779382.0,
+      "median_b_op": 3102800.0,
+      "median_allocs_op": 46.0,
+      "sources": "diagnostics.txt"
+    },
+    {
+      "benchmark": "BenchmarkDiagnosticsQueryRuns",
+      "sample_count": 3,
+      "median_ns_op": 408168.0,
+      "median_b_op": 345560.0,
+      "median_allocs_op": 33.0,
+      "sources": "diagnostics.txt"
+    },
+    {
+      "benchmark": "BenchmarkDiagnosticsQueryRunsSandboxEnriched",
+      "sample_count": 3,
+      "median_ns_op": 314823.0,
+      "median_b_op": 280303.0,
+      "median_allocs_op": 37.0,
+      "sources": "diagnostics.txt"
+    },
+    {
+      "benchmark": "BenchmarkIterationLatency",
+      "sample_count": 3,
+      "median_ns_op": 195638.0,
+      "median_b_op": 159886.0,
+      "median_allocs_op": 1030.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkMCPProfileHighReliabilityUnderFailure",
+      "sample_count": 3,
+      "median_ns_op": 561495900.0,
+      "median_b_op": 8384.0,
+      "median_allocs_op": 85.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkMCPReconnectOverhead",
+      "sample_count": 3,
+      "median_ns_op": 17023.0,
+      "median_b_op": 34228.0,
+      "median_allocs_op": 28.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkMultiAgentMainlineAsyncReporting",
+      "sample_count": 3,
+      "median_ns_op": 12307917.0,
+      "median_b_op": 6582.0,
+      "median_allocs_op": 70.0,
+      "sources": "multi-agent.txt"
+    },
+    {
+      "benchmark": "BenchmarkMultiAgentMainlineDelayedDispatch",
+      "sample_count": 3,
+      "median_ns_op": 583362.0,
+      "median_b_op": 4880.0,
+      "median_allocs_op": 42.0,
+      "sources": "multi-agent.txt"
+    },
+    {
+      "benchmark": "BenchmarkMultiAgentMainlineRecoveryReplay",
+      "sample_count": 3,
+      "median_ns_op": 8378.0,
+      "median_b_op": 4768.0,
+      "median_allocs_op": 30.0,
+      "sources": "multi-agent.txt"
+    },
+    {
+      "benchmark": "BenchmarkMultiAgentMainlineSyncInvocation",
+      "sample_count": 3,
+      "median_ns_op": 5481152.0,
+      "median_b_op": 13461.0,
+      "median_allocs_op": 121.0,
+      "sources": "multi-agent.txt"
+    },
+    {
+      "benchmark": "BenchmarkRuntimeBudgetAdmissionDecisionStability",
+      "sample_count": 3,
+      "median_ns_op": 1027354.0,
+      "median_b_op": 850073.0,
+      "median_allocs_op": 5718.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkToolFanOutCancelStorm",
+      "sample_count": 3,
+      "median_ns_op": 562490.0,
+      "median_b_op": 20676.0,
+      "median_allocs_op": 244.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkToolFanOutHighConcurrency",
+      "sample_count": 3,
+      "median_ns_op": 69695.0,
+      "median_b_op": 40554.0,
+      "median_allocs_op": 551.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    },
+    {
+      "benchmark": "BenchmarkToolFanOutSlowCall",
+      "sample_count": 3,
+      "median_ns_op": 1135320.0,
+      "median_b_op": 21746.0,
+      "median_allocs_op": 295.0,
+      "sources": "runtime-mcp-runner-stable.txt"
+    }
+  ]
+}

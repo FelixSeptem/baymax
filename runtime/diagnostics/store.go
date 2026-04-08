@@ -267,6 +267,9 @@ type RunRecord struct {
 	StateRestoreAction                          string                            `json:"state_restore_action,omitempty"`
 	StateRestoreConflictCode                    string                            `json:"state_restore_conflict_code,omitempty"`
 	StateRestoreSource                          string                            `json:"state_restore_source,omitempty"`
+	SnapshotEntropyRetention                    map[string]int                    `json:"snapshot_entropy_retention,omitempty"`
+	SnapshotEntropyQuota                        map[string]int                    `json:"snapshot_entropy_quota,omitempty"`
+	SnapshotEntropyCleanup                      map[string]int                    `json:"snapshot_entropy_cleanup,omitempty"`
 	RecoveryFallbackUsed                        bool                              `json:"recovery_fallback_used,omitempty"`
 	RecoveryFallbackReason                      string                            `json:"recovery_fallback_reason,omitempty"`
 	RuntimeReadinessStatus                      string                            `json:"runtime_readiness_status,omitempty"`
@@ -303,6 +306,10 @@ type RunRecord struct {
 	EvalJobID                                   string                            `json:"eval_job_id,omitempty"`
 	EvalShardTotal                              int                               `json:"eval_shard_total,omitempty"`
 	EvalResumeCount                             int                               `json:"eval_resume_count,omitempty"`
+	InferentialAdvisoryStatus                   string                            `json:"inferential_advisory_status,omitempty"`
+	InferentialAdvisoryScore                    float64                           `json:"inferential_advisory_score,omitempty"`
+	InferentialAdvisorySignals                  map[string]float64                `json:"inferential_advisory_signals,omitempty"`
+	InferentialAdvisoryReasons                  []string                          `json:"inferential_advisory_reasons,omitempty"`
 	BudgetSnapshot                              map[string]any                    `json:"budget_snapshot,omitempty"`
 	BudgetDecision                              string                            `json:"budget_decision,omitempty"`
 	DegradeAction                               string                            `json:"degrade_action,omitempty"`
@@ -357,10 +364,12 @@ type RunRecord struct {
 	ReactPlanRecoverCount                       int                               `json:"react_plan_recover_count,omitempty"`
 	ReactPlanHookStatus                         string                            `json:"react_plan_hook_status,omitempty"`
 	RealtimeProtocolVersion                     string                            `json:"realtime_protocol_version,omitempty"`
+	RealtimeSessionID                           string                            `json:"realtime_session_id,omitempty"`
 	RealtimeEventSeqMax                         int64                             `json:"realtime_event_seq_max,omitempty"`
 	RealtimeInterruptTotal                      int                               `json:"realtime_interrupt_total,omitempty"`
 	RealtimeResumeTotal                         int                               `json:"realtime_resume_total,omitempty"`
 	RealtimeResumeSource                        string                            `json:"realtime_resume_source,omitempty"`
+	RealtimeResumeCursor                        string                            `json:"realtime_resume_cursor,omitempty"`
 	RealtimeIdempotencyDedupTotal               int                               `json:"realtime_idempotency_dedup_total,omitempty"`
 	RealtimeLastErrorCode                       string                            `json:"realtime_last_error_code,omitempty"`
 	HooksEnabled                                bool                              `json:"hooks_enabled,omitempty"`
@@ -548,11 +557,12 @@ type Store struct {
 }
 
 type timelineRunState struct {
-	seen           map[string]struct{}
-	runningSince   map[string]time.Time
-	phaseLatencyMs map[string][]int64
-	phases         map[string]TimelinePhaseAggregate
-	buckets        map[string]timelineTrendBucket
+	seen            map[string]struct{}
+	runningSince    map[string]time.Time
+	phaseLatencyMs  map[string][]int64
+	phaseLatencyP95 map[string][]int64
+	phases          map[string]TimelinePhaseAggregate
+	buckets         map[string]timelineTrendBucket
 }
 
 type timelineTrendBucket struct {
@@ -817,19 +827,33 @@ func (d *Store) AddCall(rec CallRecord) {
 }
 
 func (d *Store) AddRun(rec RunRecord) {
+	d.addRun(rec, true)
+}
+
+// AddRunOwned records a run assuming rec owns its collection fields and will
+// not be mutated by the caller after the call returns.
+func (d *Store) AddRunOwned(rec RunRecord) {
+	d.addRun(rec, false)
+}
+
+func (d *Store) addRun(rec RunRecord, cloneCollections bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec.Status = normalizeRunStatus(rec.Status, rec.ErrorClass)
-	rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
-	rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
-	rec.MemoryRerankStats = cloneIntMap(rec.MemoryRerankStats)
-	rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
-	rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
-	rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
-	rec.HooksPhases = cloneStringSlice(rec.HooksPhases)
-	rec.SkillDiscoveryRoots = cloneStringSlice(rec.SkillDiscoveryRoots)
-	rec.BudgetSnapshot = cloneAnyMap(rec.BudgetSnapshot)
-	rec.EvalSummary = cloneAnyMap(rec.EvalSummary)
+	if cloneCollections {
+		rec.TaskBoardManualControlByAction = cloneIntMap(rec.TaskBoardManualControlByAction)
+		rec.TaskBoardManualControlByReason = cloneIntMap(rec.TaskBoardManualControlByReason)
+		rec.MemoryRerankStats = cloneIntMap(rec.MemoryRerankStats)
+		rec.RuntimeSecondaryReasonCodes = cloneStringSlice(rec.RuntimeSecondaryReasonCodes)
+		rec.PolicyDecisionPath = cloneRuntimePolicyDecisionPath(rec.PolicyDecisionPath)
+		rec.SandboxRequiredCapabilities = cloneStringSlice(rec.SandboxRequiredCapabilities)
+		rec.HooksPhases = cloneStringSlice(rec.HooksPhases)
+		rec.SkillDiscoveryRoots = cloneStringSlice(rec.SkillDiscoveryRoots)
+		rec.InferentialAdvisorySignals = cloneFloat64Map(rec.InferentialAdvisorySignals)
+		rec.InferentialAdvisoryReasons = cloneStringSlice(rec.InferentialAdvisoryReasons)
+		rec.BudgetSnapshot = cloneAnyMap(rec.BudgetSnapshot)
+		rec.EvalSummary = cloneAnyMap(rec.EvalSummary)
+	}
 	if len(rec.TimelinePhases) == 0 {
 		rec.TimelinePhases = d.timelinePhasesForRun(rec.RunID)
 	}
@@ -885,11 +909,12 @@ func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts
 	state := d.timelineStates[runID]
 	if state == nil {
 		state = &timelineRunState{
-			seen:           map[string]struct{}{},
-			runningSince:   map[string]time.Time{},
-			phaseLatencyMs: map[string][]int64{},
-			phases:         map[string]TimelinePhaseAggregate{},
-			buckets:        map[string]timelineTrendBucket{},
+			seen:            map[string]struct{}{},
+			runningSince:    map[string]time.Time{},
+			phaseLatencyMs:  map[string][]int64{},
+			phaseLatencyP95: map[string][]int64{},
+			phases:          map[string]TimelinePhaseAggregate{},
+			buckets:         map[string]timelineTrendBucket{},
 		}
 		d.timelineStates[runID] = state
 	}
@@ -924,7 +949,9 @@ func (d *Store) AddTimelineEvent(runID, phase, status string, sequence int64, ts
 			phaseSamples := state.phaseLatencyMs[phase]
 			phaseSamples = append(phaseSamples, lat)
 			state.phaseLatencyMs[phase] = phaseSamples
-			agg.LatencyP95Ms = percentileP95(phaseSamples)
+			phaseP95Samples := appendSortedLatencySample(state.phaseLatencyP95[phase], lat)
+			state.phaseLatencyP95[phase] = phaseP95Samples
+			agg.LatencyP95Ms = percentileP95FromSorted(phaseP95Samples)
 			delete(state.runningSince, phase)
 		}
 		state.phases[phase] = agg
@@ -1291,9 +1318,6 @@ func (d *Store) RecentMailbox(n int) []MailboxRecord {
 }
 
 func (d *Store) QueryMailbox(req MailboxQueryRequest) (MailboxQueryResult, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	q, err := normalizeMailboxQuery(req)
 	if err != nil {
 		return MailboxQueryResult{}, err
@@ -1304,10 +1328,14 @@ func (d *Store) QueryMailbox(req MailboxQueryRequest) (MailboxQueryResult, error
 		return MailboxQueryResult{}, err
 	}
 
-	filtered := make([]MailboxRecord, 0, len(d.mailbox))
-	for i := range d.mailbox {
-		if matchesMailboxQuery(d.mailbox[i], q) {
-			filtered = append(filtered, d.mailbox[i])
+	d.mu.RLock()
+	mailboxSnapshot := append([]MailboxRecord(nil), d.mailbox...)
+	d.mu.RUnlock()
+
+	filtered := make([]MailboxRecord, 0, len(mailboxSnapshot))
+	for i := range mailboxSnapshot {
+		if matchesMailboxQuery(mailboxSnapshot[i], q) {
+			filtered = append(filtered, mailboxSnapshot[i])
 		}
 	}
 	sortMailboxQuery(filtered, q.SortOrder)
@@ -1340,9 +1368,6 @@ func (d *Store) QueryMailbox(req MailboxQueryRequest) (MailboxQueryResult, error
 }
 
 func (d *Store) MailboxAggregates(req MailboxAggregateRequest) MailboxAggregate {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	q, err := normalizeMailboxQuery(MailboxQueryRequest{
 		Kind:       req.Kind,
 		State:      req.State,
@@ -1360,10 +1385,14 @@ func (d *Store) MailboxAggregates(req MailboxAggregateRequest) MailboxAggregate 
 		}
 	}
 
-	filtered := make([]MailboxRecord, 0, len(d.mailbox))
-	for i := range d.mailbox {
-		if matchesMailboxQuery(d.mailbox[i], q) {
-			filtered = append(filtered, d.mailbox[i])
+	d.mu.RLock()
+	mailboxSnapshot := append([]MailboxRecord(nil), d.mailbox...)
+	d.mu.RUnlock()
+
+	filtered := make([]MailboxRecord, 0, len(mailboxSnapshot))
+	for i := range mailboxSnapshot {
+		if matchesMailboxQuery(mailboxSnapshot[i], q) {
+			filtered = append(filtered, mailboxSnapshot[i])
 		}
 	}
 	latestByMessage := map[string]MailboxRecord{}
@@ -1410,9 +1439,6 @@ func (d *Store) MailboxAggregates(req MailboxAggregateRequest) MailboxAggregate 
 }
 
 func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	q, err := normalizeUnifiedRunQuery(req)
 	if err != nil {
 		return UnifiedRunQueryResult{}, err
@@ -1423,14 +1449,19 @@ func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, er
 		return UnifiedRunQueryResult{}, err
 	}
 
-	if d.runTimesStrictAscending && q.SortField == "time" {
-		return queryRunsFastTimeSorted(d.runs, q, start, queryHash)
+	d.mu.RLock()
+	runsSnapshot := append([]RunRecord(nil), d.runs...)
+	runTimesStrictAscending := d.runTimesStrictAscending
+	d.mu.RUnlock()
+
+	if runTimesStrictAscending && q.SortField == "time" {
+		return queryRunsFastTimeSorted(runsSnapshot, q, start, queryHash)
 	}
 
-	filtered := make([]RunRecord, 0, len(d.runs))
-	for i := range d.runs {
-		if matchesUnifiedRunQuery(d.runs[i], q) {
-			filtered = append(filtered, d.runs[i])
+	filtered := make([]RunRecord, 0, len(runsSnapshot))
+	for i := range runsSnapshot {
+		if matchesUnifiedRunQuery(runsSnapshot[i], q) {
+			filtered = append(filtered, runsSnapshot[i])
 		}
 	}
 	sortUnifiedRunQuery(filtered, q.SortOrder)
@@ -1596,7 +1627,7 @@ func (d *Store) TimelineTrends(query TimelineTrendQuery) []TimelineTrendRecord {
 			CanceledTotal: s.canceledTotal,
 			SkippedTotal:  s.skippedTotal,
 			LatencyAvgMs:  latAvg,
-			LatencyP95Ms:  percentileP95(s.latencies),
+			LatencyP95Ms:  percentileP95InPlace(s.latencies),
 			WindowStart:   start,
 			WindowEnd:     end,
 		})
@@ -1664,7 +1695,7 @@ func (d *Store) ContextStage2ExternalTrends(query ContextStage2ExternalTrendQuer
 		}
 		errorRate := float64(item.errors) / float64(item.total)
 		hitRate := float64(item.hits) / float64(item.total)
-		p95 := percentileP95(item.latencies)
+		p95 := percentileP95InPlace(item.latencies)
 		thresholdHits := make([]string, 0, 3)
 		if p95 > d.contextStage2TrendConfig.Thresholds.P95LatencyMs {
 			thresholdHits = append(thresholdHits, "p95_latency_ms")
@@ -2340,24 +2371,37 @@ func (d *Store) pruneTimelineStates() {
 	}
 }
 
-func percentileP95(samples []int64) int64 {
+func percentileP95InPlace(samples []int64) int64 {
 	if len(samples) == 0 {
 		return 0
 	}
 	if len(samples) == 1 {
 		return samples[0]
 	}
-	cp := make([]int64, len(samples))
-	copy(cp, samples)
-	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
-	idx := int(math.Ceil(0.95*float64(len(cp)))) - 1
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	return percentileP95FromSorted(samples)
+}
+
+func percentileP95FromSorted(samples []int64) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	idx := int(math.Ceil(0.95*float64(len(samples)))) - 1
 	if idx < 0 {
 		idx = 0
 	}
-	if idx >= len(cp) {
-		idx = len(cp) - 1
+	if idx >= len(samples) {
+		idx = len(samples) - 1
 	}
-	return cp[idx]
+	return samples[idx]
+}
+
+func appendSortedLatencySample(samples []int64, sample int64) []int64 {
+	idx := sort.Search(len(samples), func(i int) bool { return samples[i] >= sample })
+	samples = append(samples, 0)
+	copy(samples[idx+1:], samples[idx:])
+	samples[idx] = sample
+	return samples
 }
 
 func (d *Store) rebuildSkillKeys() {
@@ -2390,6 +2434,17 @@ func cloneIntMap(in map[string]int) map[string]int {
 		return nil
 	}
 	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneFloat64Map(in map[string]float64) map[string]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

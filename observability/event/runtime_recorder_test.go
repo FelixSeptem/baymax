@@ -2400,6 +2400,97 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderInferentialAdvisoryIsAdditiveAndKeepsDenySemantics(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+runtime:
+  eval:
+    agent:
+      enabled: true
+      task_success_threshold: 0.95
+      tool_correctness_threshold: 0.90
+      deny_intercept_accuracy_threshold: 0.95
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-a64-inferential-advisory",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                   "failed",
+			"decision":                 "deny",
+			"budget_decision":          "deny",
+			"runtime_readiness_status": "blocked",
+			"eval_summary": map[string]any{
+				"task_success":     map[string]any{"rate": 0.72},
+				"tool_correctness": map[string]any{"rate": 0.82},
+				"deny_intercept":   map[string]any{"rate": 0.88},
+				"cost_latency": map[string]any{
+					"cost_within_budget": false,
+					"latency_within_slo": false,
+				},
+			},
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.Decision != "deny" || got.BudgetDecision != "deny" || got.RuntimeReadinessStatus != "blocked" {
+		t.Fatalf("inferential advisory must not rewrite deny semantics: %#v", got)
+	}
+	if got.InferentialAdvisoryStatus != "critical" {
+		t.Fatalf("inferential advisory status=%q, want critical", got.InferentialAdvisoryStatus)
+	}
+	if got.InferentialAdvisoryScore <= 0 || got.InferentialAdvisoryScore > 1 {
+		t.Fatalf("inferential advisory score out of range: %v", got.InferentialAdvisoryScore)
+	}
+	if len(got.InferentialAdvisorySignals) == 0 {
+		t.Fatalf("inferential advisory signals should be populated")
+	}
+	reasons := map[string]struct{}{}
+	for _, code := range got.InferentialAdvisoryReasons {
+		reasons[code] = struct{}{}
+	}
+	for _, required := range []string{
+		"eval.task_success_below_threshold",
+		"eval.tool_correctness_below_threshold",
+		"eval.deny_intercept_below_threshold",
+		"eval.cost_budget_exceeded",
+		"eval.latency_budget_exceeded",
+		"runtime.readiness.blocked",
+		"runtime.admission.budget_deny",
+		"runtime.policy.deny",
+	} {
+		if _, ok := reasons[required]; !ok {
+			t.Fatalf("inferential advisory reasons missing %q: %#v", required, got.InferentialAdvisoryReasons)
+		}
+	}
+}
+
 func TestRuntimeRecorderTracingEvalParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `
@@ -2872,10 +2963,12 @@ mcp:
 		Payload: map[string]any{
 			"status":                           "success",
 			"realtime_protocol_version":        "realtime_event_protocol.v1",
+			"realtime_session_id":              "session-realtime-protocol-recorder",
 			"realtime_event_seq_max":           int64(18),
 			"realtime_interrupt_total":         2,
 			"realtime_resume_total":            1,
 			"realtime_resume_source":           "cursor",
+			"realtime_resume_cursor":           "session-realtime-protocol-recorder:run-realtime-protocol-recorder:17",
 			"realtime_idempotency_dedup_total": 3,
 			"realtime_last_error_code":         "realtime.sequence_gap",
 		},
@@ -2887,10 +2980,12 @@ mcp:
 	}
 	got := items[0]
 	if got.RealtimeProtocolVersion != "realtime_event_protocol.v1" ||
+		got.RealtimeSessionID != "session-realtime-protocol-recorder" ||
 		got.RealtimeEventSeqMax != 18 ||
 		got.RealtimeInterruptTotal != 2 ||
 		got.RealtimeResumeTotal != 1 ||
 		got.RealtimeResumeSource != "cursor" ||
+		got.RealtimeResumeCursor != "session-realtime-protocol-recorder:run-realtime-protocol-recorder:17" ||
 		got.RealtimeIdempotencyDedupTotal != 3 ||
 		got.RealtimeLastErrorCode != "realtime.sequence_gap" {
 		t.Fatalf("realtime protocol additive field parse mismatch: %#v", got)
@@ -2943,10 +3038,12 @@ mcp:
 		t.Fatalf("existing run fields should stay unchanged: %#v", got)
 	}
 	if got.RealtimeProtocolVersion != "" ||
+		got.RealtimeSessionID != "" ||
 		got.RealtimeEventSeqMax != 0 ||
 		got.RealtimeInterruptTotal != 0 ||
 		got.RealtimeResumeTotal != 0 ||
 		got.RealtimeResumeSource != "" ||
+		got.RealtimeResumeCursor != "" ||
 		got.RealtimeIdempotencyDedupTotal != 0 ||
 		got.RealtimeLastErrorCode != "" {
 		t.Fatalf("missing realtime protocol additive fields must resolve to documented defaults: %#v", got)
@@ -3035,6 +3132,18 @@ mcp:
 			"state_restore_action":        "compatible_exact_restore",
 			"state_restore_conflict_code": "state_snapshot_compat_window_exceeded",
 			"state_restore_source":        "Composer",
+			"snapshot_entropy_retention": map[string]any{
+				"max_snapshots": 64,
+				"active_count":  11,
+			},
+			"snapshot_entropy_quota": map[string]any{
+				"max_bytes":  1048576,
+				"used_bytes": 262144,
+			},
+			"snapshot_entropy_cleanup": map[string]any{
+				"batch_size":    8,
+				"deleted_count": 3,
+			},
 		},
 	})
 
@@ -3048,6 +3157,14 @@ mcp:
 		got.StateRestoreConflictCode != "state_snapshot_compat_window_exceeded" ||
 		got.StateRestoreSource != "composer" {
 		t.Fatalf("state snapshot restore additive field parse mismatch: %#v", got)
+	}
+	if got.SnapshotEntropyRetention["max_snapshots"] != 64 ||
+		got.SnapshotEntropyRetention["active_count"] != 11 ||
+		got.SnapshotEntropyQuota["max_bytes"] != 1048576 ||
+		got.SnapshotEntropyQuota["used_bytes"] != 262144 ||
+		got.SnapshotEntropyCleanup["batch_size"] != 8 ||
+		got.SnapshotEntropyCleanup["deleted_count"] != 3 {
+		t.Fatalf("snapshot entropy additive field parse mismatch: %#v", got)
 	}
 }
 
@@ -3099,7 +3216,10 @@ mcp:
 	if got.StateSnapshotVersion != "" ||
 		got.StateRestoreAction != "" ||
 		got.StateRestoreConflictCode != "" ||
-		got.StateRestoreSource != "" {
+		got.StateRestoreSource != "" ||
+		len(got.SnapshotEntropyRetention) != 0 ||
+		len(got.SnapshotEntropyQuota) != 0 ||
+		len(got.SnapshotEntropyCleanup) != 0 {
 		t.Fatalf("missing state snapshot restore additive fields must resolve to documented defaults: %#v", got)
 	}
 }

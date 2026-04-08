@@ -162,16 +162,32 @@ type Result struct {
 }
 
 func (r Result) RunFinishedPayload() map[string]any {
-	return map[string]any{
-		"team_id":                 r.TeamID,
-		"workflow_id":             r.WorkflowID,
-		"step_id":                 r.StepID,
-		"team_strategy":           string(r.Strategy),
-		"team_task_total":         r.TeamTaskTotal,
-		"team_task_failed":        r.TeamTaskFailed,
-		"team_task_canceled":      r.TeamTaskCanceled,
-		"team_remote_task_total":  r.TeamRemoteTotal,
-		"team_remote_task_failed": r.TeamRemoteFailed,
+	payload := make(map[string]any, 9)
+	payload["team_id"] = r.TeamID
+	payload["workflow_id"] = r.WorkflowID
+	payload["step_id"] = r.StepID
+	payload["team_strategy"] = string(r.Strategy)
+	payload["team_task_total"] = r.TeamTaskTotal
+	payload["team_task_failed"] = r.TeamTaskFailed
+	payload["team_task_canceled"] = r.TeamTaskCanceled
+	payload["team_remote_task_total"] = r.TeamRemoteTotal
+	payload["team_remote_task_failed"] = r.TeamRemoteFailed
+	return payload
+}
+
+type teamTimelineContext struct {
+	runID      string
+	teamID     string
+	workflowID string
+	stepID     string
+}
+
+func newTeamTimelineContext(plan Plan) teamTimelineContext {
+	return teamTimelineContext{
+		runID:      strings.TrimSpace(plan.RunID),
+		teamID:     strings.TrimSpace(plan.TeamID),
+		workflowID: strings.TrimSpace(plan.WorkflowID),
+		stepID:     strings.TrimSpace(plan.StepID),
 	}
 }
 
@@ -217,6 +233,7 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 	if err != nil {
 		return Result{}, err
 	}
+	timelineCtx := newTeamTimelineContext(plan)
 	records := make([]TaskRecord, len(plan.Tasks))
 	for i, task := range plan.Tasks {
 		records[i] = TaskRecord{
@@ -234,15 +251,15 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 	var seq int64
 	switch plan.Strategy {
 	case StrategySerial:
-		if err := e.runSerial(ctx, plan, &seq, records, onEvent); err != nil {
+		if err := e.runSerial(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
 			return Result{}, err
 		}
 	case StrategyParallel:
-		if err := e.runParallel(ctx, plan, &seq, records, onEvent); err != nil {
+		if err := e.runParallel(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
 			return Result{}, err
 		}
 	case StrategyVote:
-		if err := e.runParallel(ctx, plan, &seq, records, onEvent); err != nil {
+		if err := e.runParallel(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
 			return Result{}, err
 		}
 	default:
@@ -253,7 +270,7 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 	if plan.Strategy == StrategyVote {
 		result.WinnerVote = resolveVoteWinner(records, plan.VoteTieBreak)
 	}
-	e.emitTimeline(ctx, plan, &seq, resolveStatus(result), ReasonResolve, nil)
+	e.emitTimeline(ctx, timelineCtx, &seq, resolveStatus(result), ReasonResolve, nil)
 	if onEvent != nil {
 		if err := onEvent(StreamEvent{Kind: "team.resolved", Result: &result}); err != nil {
 			return Result{}, err
@@ -265,7 +282,14 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 	return result, nil
 }
 
-func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records []TaskRecord, onEvent func(StreamEvent) error) error {
+func (e *Engine) runSerial(
+	ctx context.Context,
+	plan Plan,
+	timelineCtx teamTimelineContext,
+	seq *int64,
+	records []TaskRecord,
+	onEvent func(StreamEvent) error,
+) error {
 	halt := false
 	for i := range plan.Tasks {
 		if halt {
@@ -274,7 +298,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 			if strings.EqualFold(strings.TrimSpace(records[i].CollabPrimitive), string(collab.PrimitiveHandoff)) {
 				records[i].Reason = ReasonHandoff
 			}
-			e.emitTimeline(ctx, plan, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
+			e.emitTimeline(ctx, timelineCtx, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
 			if onEvent != nil {
 				snap := records[i]
 				if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -285,7 +309,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		}
 
 		records[i].Status = TaskStatusRunning
-		e.emitTimeline(ctx, plan, seq, records[i].Status, dispatchReasonForRecord(records[i]), &records[i])
+		e.emitTimeline(ctx, timelineCtx, seq, records[i].Status, dispatchReasonForRecord(records[i]), &records[i])
 		if onEvent != nil {
 			snap := records[i]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -299,7 +323,7 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 		records[i].Error = result.Error
 		records[i].Vote = result.Vote
 		records[i].Output = result.Output
-		e.emitTimeline(ctx, plan, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
+		e.emitTimeline(ctx, timelineCtx, seq, records[i].Status, collectReasonForRecord(records[i]), &records[i])
 		if onEvent != nil {
 			snap := records[i]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -314,12 +338,19 @@ func (e *Engine) runSerial(ctx context.Context, plan Plan, seq *int64, records [
 	return nil
 }
 
-func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records []TaskRecord, onEvent func(StreamEvent) error) error {
+func (e *Engine) runParallel(
+	ctx context.Context,
+	plan Plan,
+	timelineCtx teamTimelineContext,
+	seq *int64,
+	records []TaskRecord,
+	onEvent func(StreamEvent) error,
+) error {
 	runIdx, skippedIdx, skipReason := selectParallelWork(plan)
 	for _, idx := range skippedIdx {
 		records[idx].Status = TaskStatusSkipped
 		records[idx].Reason = skipReason
-		e.emitTimeline(ctx, plan, seq, records[idx].Status, collectReasonForRecord(records[idx]), &records[idx])
+		e.emitTimeline(ctx, timelineCtx, seq, records[idx].Status, collectReasonForRecord(records[idx]), &records[idx])
 		if onEvent != nil {
 			snap := records[idx]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -333,7 +364,7 @@ func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records
 
 	for _, idx := range runIdx {
 		records[idx].Status = TaskStatusRunning
-		e.emitTimeline(ctx, plan, seq, records[idx].Status, dispatchReasonForRecord(records[idx]), &records[idx])
+		e.emitTimeline(ctx, timelineCtx, seq, records[idx].Status, dispatchReasonForRecord(records[idx]), &records[idx])
 		if onEvent != nil {
 			snap := records[idx]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -382,7 +413,7 @@ func (e *Engine) runParallel(ctx context.Context, plan Plan, seq *int64, records
 		records[it.index].Error = it.result.Error
 		records[it.index].Vote = it.result.Vote
 		records[it.index].Output = it.result.Output
-		e.emitTimeline(execCtx, plan, seq, records[it.index].Status, collectReasonForRecord(records[it.index]), &records[it.index])
+		e.emitTimeline(execCtx, timelineCtx, seq, records[it.index].Status, collectReasonForRecord(records[it.index]), &records[it.index])
 		if onEvent != nil {
 			snap := records[it.index]
 			if err := onEvent(StreamEvent{Kind: "task.updated", Task: &snap}); err != nil {
@@ -757,23 +788,29 @@ func normalizePlan(plan Plan) (Plan, error) {
 	return plan, nil
 }
 
-func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status TaskStatus, reason string, task *TaskRecord) {
+func (e *Engine) emitTimeline(
+	ctx context.Context,
+	timelineCtx teamTimelineContext,
+	seq *int64,
+	status TaskStatus,
+	reason string,
+	task *TaskRecord,
+) {
 	if e == nil || e.timelineEmitter == nil || seq == nil {
 		return
 	}
 	*seq++
-	payload := map[string]any{
-		"phase":    string(types.ActionPhaseRun),
-		"status":   string(status),
-		"sequence": *seq,
-		"reason":   reason,
-		"team_id":  plan.TeamID,
+	payload := make(map[string]any, 10)
+	payload["phase"] = string(types.ActionPhaseRun)
+	payload["status"] = string(status)
+	payload["sequence"] = *seq
+	payload["reason"] = reason
+	payload["team_id"] = timelineCtx.teamID
+	if timelineCtx.workflowID != "" {
+		payload["workflow_id"] = timelineCtx.workflowID
 	}
-	if plan.WorkflowID != "" {
-		payload["workflow_id"] = plan.WorkflowID
-	}
-	if plan.StepID != "" {
-		payload["step_id"] = plan.StepID
+	if timelineCtx.stepID != "" {
+		payload["step_id"] = timelineCtx.stepID
 	}
 	if task != nil {
 		payload["agent_id"] = task.AgentID
@@ -785,7 +822,7 @@ func (e *Engine) emitTimeline(ctx context.Context, plan Plan, seq *int64, status
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    types.EventTypeActionTimeline,
-		RunID:   strings.TrimSpace(plan.RunID),
+		RunID:   timelineCtx.runID,
 		Time:    e.now(),
 		Payload: payload,
 	})

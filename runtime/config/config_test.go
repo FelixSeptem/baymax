@@ -2072,6 +2072,27 @@ func TestContextAssemblerDefaultsEnabledAndFailFast(t *testing.T) {
 	if cfg.ContextAssembler.Storage.Backend != "file" {
 		t.Fatalf("context_assembler.storage.backend = %q, want file", cfg.ContextAssembler.Storage.Backend)
 	}
+	if cfg.ContextAssembler.Storage.File.ReuseHandle {
+		t.Fatal("context_assembler.storage.file.reuse_handle = true, want false")
+	}
+	if cfg.ContextAssembler.Storage.File.BatchFlushSize != 1 {
+		t.Fatalf("context_assembler.storage.file.batch_flush_size = %d, want 1", cfg.ContextAssembler.Storage.File.BatchFlushSize)
+	}
+	if !cfg.ContextAssembler.Cache.RunFinishedCleanup {
+		t.Fatal("context_assembler.cache.run_finished_cleanup = false, want true")
+	}
+	if cfg.ContextAssembler.Cache.PrefixCacheTTL != 30*time.Minute {
+		t.Fatalf("context_assembler.cache.prefix_cache_ttl = %v, want 30m", cfg.ContextAssembler.Cache.PrefixCacheTTL)
+	}
+	if cfg.ContextAssembler.Cache.PrefixCacheMaxSize != 2048 {
+		t.Fatalf("context_assembler.cache.prefix_cache_max_size = %d, want 2048", cfg.ContextAssembler.Cache.PrefixCacheMaxSize)
+	}
+	if cfg.ContextAssembler.Cache.CA3StateTTL != 30*time.Minute {
+		t.Fatalf("context_assembler.cache.ca3_state_ttl = %v, want 30m", cfg.ContextAssembler.Cache.CA3StateTTL)
+	}
+	if cfg.ContextAssembler.Cache.CA3StateMaxSize != 1024 {
+		t.Fatalf("context_assembler.cache.ca3_state_max_size = %d, want 1024", cfg.ContextAssembler.Cache.CA3StateMaxSize)
+	}
 }
 
 func TestContextAssemblerValidateRejectsInvalidBackend(t *testing.T) {
@@ -3085,6 +3106,15 @@ func TestContextAssemblerContextPressureDefaults(t *testing.T) {
 	if cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode != CA3RerankerGovernanceModeEnforce {
 		t.Fatalf("ca3.compaction.reranker.governance.mode = %q, want enforce", cfg.ContextAssembler.CA3.Compaction.Reranker.Governance.Mode)
 	}
+	if cfg.ContextAssembler.CA3.Spill.File.ReuseHandle {
+		t.Fatal("context_assembler.ca3.spill.file.reuse_handle = true, want false")
+	}
+	if cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize != 1 {
+		t.Fatalf("context_assembler.ca3.spill.file.batch_flush_size = %d, want 1", cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize)
+	}
+	if cfg.ContextAssembler.CA3.Stage2Pass.SkipNoDelta {
+		t.Fatal("context_assembler.ca3.stage2_pass.skip_no_delta = true, want false")
+	}
 }
 
 func TestContextAssemblerContextPressureValidationFailFastOnInvalidThresholds(t *testing.T) {
@@ -3099,6 +3129,7 @@ func TestContextAssemblerContextPressureValidationFailFastOnInvalidThresholds(t 
 func TestContextAssemblerContextPressureEnvOverrideTokenizer(t *testing.T) {
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_PROVIDER", "gemini")
 	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_TOKENIZER_SMALL_DELTA_TOKENS", "64")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_STAGE2_PASS_SKIP_NO_DELTA", "true")
 	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
@@ -3108,6 +3139,98 @@ func TestContextAssemblerContextPressureEnvOverrideTokenizer(t *testing.T) {
 	}
 	if cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens != 64 {
 		t.Fatalf("tokenizer.small_delta_tokens = %d, want 64", cfg.ContextAssembler.CA3.Tokenizer.SmallDeltaTokens)
+	}
+	if !cfg.ContextAssembler.CA3.Stage2Pass.SkipNoDelta {
+		t.Fatal("context_assembler.ca3.stage2_pass.skip_no_delta = false, want true")
+	}
+}
+
+func TestContextAssemblerStorageAndSpillFileIOEnvOverride(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_STORAGE_FILE_REUSE_HANDLE", "true")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_STORAGE_FILE_BATCH_FLUSH_SIZE", "3")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_SPILL_FILE_REUSE_HANDLE", "true")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CA3_SPILL_FILE_BATCH_FLUSH_SIZE", "4")
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.ContextAssembler.Storage.File.ReuseHandle {
+		t.Fatal("context_assembler.storage.file.reuse_handle = false, want true")
+	}
+	if cfg.ContextAssembler.Storage.File.BatchFlushSize != 3 {
+		t.Fatalf("context_assembler.storage.file.batch_flush_size = %d, want 3", cfg.ContextAssembler.Storage.File.BatchFlushSize)
+	}
+	if !cfg.ContextAssembler.CA3.Spill.File.ReuseHandle {
+		t.Fatal("context_assembler.ca3.spill.file.reuse_handle = false, want true")
+	}
+	if cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize != 4 {
+		t.Fatalf("context_assembler.ca3.spill.file.batch_flush_size = %d, want 4", cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize)
+	}
+}
+
+func TestContextAssemblerCacheGovernanceEnvOverride(t *testing.T) {
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CACHE_RUN_FINISHED_CLEANUP", "false")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CACHE_PREFIX_CACHE_TTL", "5m")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CACHE_PREFIX_CACHE_MAX_SIZE", "64")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CACHE_CA3_STATE_TTL", "7m")
+	t.Setenv("BAYMAX_CONTEXT_ASSEMBLER_CACHE_CA3_STATE_MAX_SIZE", "32")
+	cfg, err := Load(LoadOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.ContextAssembler.Cache.RunFinishedCleanup {
+		t.Fatal("context_assembler.cache.run_finished_cleanup = true, want false")
+	}
+	if cfg.ContextAssembler.Cache.PrefixCacheTTL != 5*time.Minute {
+		t.Fatalf("context_assembler.cache.prefix_cache_ttl = %v, want 5m", cfg.ContextAssembler.Cache.PrefixCacheTTL)
+	}
+	if cfg.ContextAssembler.Cache.PrefixCacheMaxSize != 64 {
+		t.Fatalf("context_assembler.cache.prefix_cache_max_size = %d, want 64", cfg.ContextAssembler.Cache.PrefixCacheMaxSize)
+	}
+	if cfg.ContextAssembler.Cache.CA3StateTTL != 7*time.Minute {
+		t.Fatalf("context_assembler.cache.ca3_state_ttl = %v, want 7m", cfg.ContextAssembler.Cache.CA3StateTTL)
+	}
+	if cfg.ContextAssembler.Cache.CA3StateMaxSize != 32 {
+		t.Fatalf("context_assembler.cache.ca3_state_max_size = %d, want 32", cfg.ContextAssembler.Cache.CA3StateMaxSize)
+	}
+}
+
+func TestContextAssemblerValidationRejectsInvalidFileBatchFlushSize(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.Storage.File.BatchFlushSize = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for context_assembler.storage.file.batch_flush_size")
+	}
+	cfg = DefaultConfig()
+	cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for context_assembler.ca3.spill.file.batch_flush_size")
+	}
+}
+
+func TestContextAssemblerValidationRejectsInvalidCacheGovernanceBounds(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ContextAssembler.Cache.PrefixCacheTTL = -time.Minute
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "context_assembler.cache.prefix_cache_ttl") {
+		t.Fatalf("expected validation error for context_assembler.cache.prefix_cache_ttl, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.ContextAssembler.Cache.PrefixCacheMaxSize = -1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "context_assembler.cache.prefix_cache_max_size") {
+		t.Fatalf("expected validation error for context_assembler.cache.prefix_cache_max_size, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.ContextAssembler.Cache.CA3StateTTL = -time.Second
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "context_assembler.cache.ca3_state_ttl") {
+		t.Fatalf("expected validation error for context_assembler.cache.ca3_state_ttl, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.ContextAssembler.Cache.CA3StateMaxSize = -2
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "context_assembler.cache.ca3_state_max_size") {
+		t.Fatalf("expected validation error for context_assembler.cache.ca3_state_max_size, got %v", err)
 	}
 }
 
@@ -3348,6 +3471,12 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Scheduler.Backend != SchedulerBackendMemory {
 		t.Fatalf("scheduler.backend = %q, want memory", cfg.Scheduler.Backend)
 	}
+	if cfg.Scheduler.Persistence.Debounce != 0 {
+		t.Fatalf("scheduler.persistence.debounce = %v, want 0", cfg.Scheduler.Persistence.Debounce)
+	}
+	if cfg.Scheduler.Persistence.BatchSize != 1 {
+		t.Fatalf("scheduler.persistence.batch_size = %d, want 1", cfg.Scheduler.Persistence.BatchSize)
+	}
 	if cfg.Scheduler.LeaseTimeout <= 0 {
 		t.Fatalf("scheduler.lease_timeout = %v, want > 0", cfg.Scheduler.LeaseTimeout)
 	}
@@ -3403,6 +3532,12 @@ func TestSchedulerAndSubagentConfigDefaults(t *testing.T) {
 	if cfg.Recovery.Backend != RecoveryBackendMemory {
 		t.Fatalf("recovery.backend = %q, want memory", cfg.Recovery.Backend)
 	}
+	if cfg.Recovery.Persistence.Debounce != 0 {
+		t.Fatalf("recovery.persistence.debounce = %v, want 0", cfg.Recovery.Persistence.Debounce)
+	}
+	if cfg.Recovery.Persistence.BatchSize != 1 {
+		t.Fatalf("recovery.persistence.batch_size = %d, want 1", cfg.Recovery.Persistence.BatchSize)
+	}
 	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
 		t.Fatalf("recovery.conflict_policy = %q, want fail_fast", cfg.Recovery.ConflictPolicy)
 	}
@@ -3427,6 +3562,8 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_SCHEDULER_ENABLED", "true")
 	t.Setenv("BAYMAX_SCHEDULER_BACKEND", SchedulerBackendFile)
 	t.Setenv("BAYMAX_SCHEDULER_PATH", "/tmp/scheduler-state-override.json")
+	t.Setenv("BAYMAX_SCHEDULER_PERSISTENCE_DEBOUNCE", "750ms")
+	t.Setenv("BAYMAX_SCHEDULER_PERSISTENCE_BATCH_SIZE", "16")
 	t.Setenv("BAYMAX_SCHEDULER_LEASE_TIMEOUT", "3s")
 	t.Setenv("BAYMAX_SCHEDULER_HEARTBEAT_INTERVAL", "800ms")
 	t.Setenv("BAYMAX_SCHEDULER_QUEUE_LIMIT", "2048")
@@ -3447,6 +3584,8 @@ func TestSchedulerAndSubagentEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RECOVERY_ENABLED", "true")
 	t.Setenv("BAYMAX_RECOVERY_BACKEND", RecoveryBackendFile)
 	t.Setenv("BAYMAX_RECOVERY_PATH", "/tmp/recovery-override")
+	t.Setenv("BAYMAX_RECOVERY_PERSISTENCE_DEBOUNCE", "2s")
+	t.Setenv("BAYMAX_RECOVERY_PERSISTENCE_BATCH_SIZE", "8")
 	t.Setenv("BAYMAX_RECOVERY_CONFLICT_POLICY", RecoveryConflictPolicyFailFast)
 	t.Setenv("BAYMAX_RECOVERY_RESUME_BOUNDARY", RecoveryResumeBoundaryNextAttemptOnly)
 	t.Setenv("BAYMAX_RECOVERY_INFLIGHT_POLICY", RecoveryInflightPolicyNoRewind)
@@ -3462,6 +3601,9 @@ scheduler:
   enabled: false
   backend: memory
   path: /tmp/scheduler-state-file.json
+  persistence:
+    debounce: 300ms
+    batch_size: 3
   lease_timeout: 2s
   heartbeat_interval: 400ms
   queue_limit: 128
@@ -3491,6 +3633,9 @@ recovery:
   enabled: false
   backend: memory
   path: /tmp/recovery-file
+  persistence:
+    debounce: 1s
+    batch_size: 2
   conflict_policy: fail_fast
   resume_boundary: next_attempt_only
   inflight_policy: no_rewind
@@ -3513,6 +3658,9 @@ subagent:
 	}
 	if cfg.Scheduler.Path != "/tmp/scheduler-state-override.json" {
 		t.Fatalf("scheduler.path = %q, want /tmp/scheduler-state-override.json", cfg.Scheduler.Path)
+	}
+	if cfg.Scheduler.Persistence.Debounce != 750*time.Millisecond || cfg.Scheduler.Persistence.BatchSize != 16 {
+		t.Fatalf("scheduler.persistence override mismatch: %#v", cfg.Scheduler.Persistence)
 	}
 	if cfg.Scheduler.LeaseTimeout != 3*time.Second || cfg.Scheduler.HeartbeatInterval != 800*time.Millisecond {
 		t.Fatalf("scheduler lease/heartbeat override mismatch: %#v", cfg.Scheduler)
@@ -3547,6 +3695,9 @@ subagent:
 	if !cfg.Recovery.Enabled || cfg.Recovery.Backend != RecoveryBackendFile || cfg.Recovery.Path != "/tmp/recovery-override" {
 		t.Fatalf("recovery override mismatch: %#v", cfg.Recovery)
 	}
+	if cfg.Recovery.Persistence.Debounce != 2*time.Second || cfg.Recovery.Persistence.BatchSize != 8 {
+		t.Fatalf("recovery.persistence override mismatch: %#v", cfg.Recovery.Persistence)
+	}
 	if cfg.Recovery.ConflictPolicy != RecoveryConflictPolicyFailFast {
 		t.Fatalf("recovery conflict_policy override mismatch: %#v", cfg.Recovery)
 	}
@@ -3573,6 +3724,18 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Scheduler.Path = ""
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for scheduler.path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Persistence.Debounce = -1 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.persistence.debounce")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Scheduler.Persistence.BatchSize = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for scheduler.persistence.batch_size")
 	}
 
 	cfg = DefaultConfig()
@@ -3666,6 +3829,18 @@ func TestSchedulerAndSubagentValidationRejectsInvalidValues(t *testing.T) {
 	}
 
 	cfg = DefaultConfig()
+	cfg.Recovery.Persistence.Debounce = -1 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.persistence.debounce")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Recovery.Persistence.BatchSize = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for recovery.persistence.batch_size")
+	}
+
+	cfg = DefaultConfig()
 	cfg.Recovery.ConflictPolicy = "merge"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for recovery.conflict_policy")
@@ -3709,6 +3884,12 @@ func TestMailboxConfigDefaults(t *testing.T) {
 	}
 	if cfg.Mailbox.Backend != MailboxBackendMemory {
 		t.Fatalf("mailbox.backend = %q, want %q", cfg.Mailbox.Backend, MailboxBackendMemory)
+	}
+	if cfg.Mailbox.Persistence.Debounce != 0 {
+		t.Fatalf("mailbox.persistence.debounce = %v, want 0", cfg.Mailbox.Persistence.Debounce)
+	}
+	if cfg.Mailbox.Persistence.BatchSize != 1 {
+		t.Fatalf("mailbox.persistence.batch_size = %d, want 1", cfg.Mailbox.Persistence.BatchSize)
 	}
 	if cfg.Mailbox.Retry.MaxAttempts != 3 {
 		t.Fatalf("mailbox.retry.max_attempts = %d, want 3", cfg.Mailbox.Retry.MaxAttempts)
@@ -3759,6 +3940,8 @@ func TestMailboxConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_MAILBOX_ENABLED", "true")
 	t.Setenv("BAYMAX_MAILBOX_BACKEND", MailboxBackendFile)
 	t.Setenv("BAYMAX_MAILBOX_PATH", "/tmp/mailbox-override.json")
+	t.Setenv("BAYMAX_MAILBOX_PERSISTENCE_DEBOUNCE", "900ms")
+	t.Setenv("BAYMAX_MAILBOX_PERSISTENCE_BATCH_SIZE", "12")
 	t.Setenv("BAYMAX_MAILBOX_RETRY_MAX_ATTEMPTS", "5")
 	t.Setenv("BAYMAX_MAILBOX_RETRY_BACKOFF_INITIAL", "80ms")
 	t.Setenv("BAYMAX_MAILBOX_RETRY_BACKOFF_MAX", "900ms")
@@ -3781,6 +3964,9 @@ mailbox:
   enabled: false
   backend: memory
   path: /tmp/mailbox-file.json
+  persistence:
+    debounce: 300ms
+    batch_size: 2
   retry:
     max_attempts: 2
     backoff_initial: 10ms
@@ -3813,6 +3999,9 @@ mailbox:
 	}
 	if cfg.Mailbox.Backend != MailboxBackendFile || cfg.Mailbox.Path != "/tmp/mailbox-override.json" {
 		t.Fatalf("mailbox backend/path override mismatch: %#v", cfg.Mailbox)
+	}
+	if cfg.Mailbox.Persistence.Debounce != 900*time.Millisecond || cfg.Mailbox.Persistence.BatchSize != 12 {
+		t.Fatalf("mailbox.persistence override mismatch: %#v", cfg.Mailbox.Persistence)
 	}
 	if cfg.Mailbox.Retry.MaxAttempts != 5 ||
 		cfg.Mailbox.Retry.BackoffInitial != 80*time.Millisecond ||
@@ -3865,6 +4054,18 @@ func TestMailboxConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Mailbox.Path = ""
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error for mailbox.path when backend=file")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Persistence.Debounce = -1 * time.Millisecond
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.persistence.debounce")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Mailbox.Persistence.BatchSize = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for mailbox.persistence.batch_size")
 	}
 
 	cfg = DefaultConfig()

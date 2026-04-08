@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/types"
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 )
 
@@ -145,6 +146,284 @@ reload:
 	})
 	close(stop)
 	wg.Wait()
+}
+
+func TestManagerEffectiveConfigRefProvidesSnapshotView(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+
+	mgr, err := NewManager(ManagerOptions{
+		FilePath:        file,
+		EnvPrefix:       "BAYMAX",
+		EnableHotReload: true,
+	})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	beforeRef := mgr.EffectiveConfigRef()
+	if beforeRef == nil {
+		t.Fatal("EffectiveConfigRef returned nil")
+	}
+	beforeRetry := beforeRef.MCP.Profiles["default"].Retry
+	if beforeRetry != 1 {
+		t.Fatalf("before retry = %d, want 1", beforeRetry)
+	}
+
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	waitFor(t, 2*time.Second, func() bool {
+		return mgr.EffectiveConfigRef().MCP.Profiles["default"].Retry == 3
+	})
+
+	afterRef := mgr.EffectiveConfigRef()
+	if afterRef == nil {
+		t.Fatal("EffectiveConfigRef after reload returned nil")
+	}
+	if beforeRef.MCP.Profiles["default"].Retry != beforeRetry {
+		t.Fatalf("previous snapshot should stay immutable, got retry=%d, want %d", beforeRef.MCP.Profiles["default"].Retry, beforeRetry)
+	}
+	if got := afterRef.MCP.Profiles["default"].Retry; got != 3 {
+		t.Fatalf("current snapshot retry = %d, want 3", got)
+	}
+}
+
+func TestManagerResolvePolicyCachesByProfileAndOverride(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 3s
+      retry: 1
+      backoff: 10ms
+      queue_size: 32
+      backpressure: block
+      read_pool_size: 4
+      write_pool_size: 1
+`)
+
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	overrideA := &types.MCPRuntimePolicy{
+		Retry:        2,
+		QueueSize:    64,
+		Backpressure: types.BackpressureReject,
+	}
+	policyA, err := mgr.ResolvePolicy("default", overrideA)
+	if err != nil {
+		t.Fatalf("ResolvePolicy overrideA failed: %v", err)
+	}
+	if policyA.Retry != 2 || policyA.QueueSize != 64 || policyA.Backpressure != types.BackpressureReject {
+		t.Fatalf("ResolvePolicy overrideA mismatch: %#v", policyA)
+	}
+	mgr.policyCacheMu.RLock()
+	cacheSizeAfterA := len(mgr.policyCache)
+	mgr.policyCacheMu.RUnlock()
+	if cacheSizeAfterA != 1 {
+		t.Fatalf("policy cache size after overrideA = %d, want 1", cacheSizeAfterA)
+	}
+
+	policyARepeat, err := mgr.ResolvePolicy("default", overrideA)
+	if err != nil {
+		t.Fatalf("ResolvePolicy overrideA repeat failed: %v", err)
+	}
+	if policyARepeat != policyA {
+		t.Fatalf("ResolvePolicy overrideA repeat mismatch: got %#v want %#v", policyARepeat, policyA)
+	}
+	mgr.policyCacheMu.RLock()
+	cacheSizeAfterARepeat := len(mgr.policyCache)
+	mgr.policyCacheMu.RUnlock()
+	if cacheSizeAfterARepeat != 1 {
+		t.Fatalf("policy cache size after overrideA repeat = %d, want 1", cacheSizeAfterARepeat)
+	}
+
+	overrideB := &types.MCPRuntimePolicy{
+		Retry:     4,
+		QueueSize: 16,
+	}
+	policyB, err := mgr.ResolvePolicy("default", overrideB)
+	if err != nil {
+		t.Fatalf("ResolvePolicy overrideB failed: %v", err)
+	}
+	if policyB.Retry != 4 || policyB.QueueSize != 16 {
+		t.Fatalf("ResolvePolicy overrideB mismatch: %#v", policyB)
+	}
+	mgr.policyCacheMu.RLock()
+	cacheSizeAfterB := len(mgr.policyCache)
+	mgr.policyCacheMu.RUnlock()
+	if cacheSizeAfterB != 2 {
+		t.Fatalf("policy cache size after overrideB = %d, want 2", cacheSizeAfterB)
+	}
+}
+
+func TestManagerResolvePolicyCacheInvalidatedAfterReload(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+
+	mgr, err := NewManager(ManagerOptions{
+		FilePath:        file,
+		EnvPrefix:       "BAYMAX",
+		EnableHotReload: true,
+	})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before, err := mgr.ResolvePolicy("default", nil)
+	if err != nil {
+		t.Fatalf("ResolvePolicy before reload failed: %v", err)
+	}
+	if before.Retry != 1 {
+		t.Fatalf("policy retry before reload = %d, want 1", before.Retry)
+	}
+	mgr.policyCacheMu.RLock()
+	cacheSizeBeforeReload := len(mgr.policyCache)
+	mgr.policyCacheMu.RUnlock()
+	if cacheSizeBeforeReload != 1 {
+		t.Fatalf("policy cache size before reload = %d, want 1", cacheSizeBeforeReload)
+	}
+
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 5
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	waitFor(t, 2*time.Second, func() bool {
+		return mgr.EffectiveConfigRef().MCP.Profiles["default"].Retry == 5
+	})
+	waitFor(t, 2*time.Second, func() bool {
+		mgr.policyCacheMu.RLock()
+		defer mgr.policyCacheMu.RUnlock()
+		return len(mgr.policyCache) == 0
+	})
+
+	after, err := mgr.ResolvePolicy("default", nil)
+	if err != nil {
+		t.Fatalf("ResolvePolicy after reload failed: %v", err)
+	}
+	if after.Retry != 5 {
+		t.Fatalf("policy retry after reload = %d, want 5", after.Retry)
+	}
+}
+
+func TestManagerResolvePolicyCachePreservesPrecedenceAndRollback(t *testing.T) {
+	t.Setenv("BAYMAX_MCP_PROFILES_DEFAULT_RETRY", "7")
+
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 1
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: truncate_and_record
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+
+	mgr, err := NewManager(ManagerOptions{
+		FilePath:        file,
+		EnvPrefix:       "BAYMAX",
+		EnableHotReload: true,
+	})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	policy, err := mgr.ResolvePolicy("default", nil)
+	if err != nil {
+		t.Fatalf("ResolvePolicy baseline failed: %v", err)
+	}
+	if policy.Retry != 7 {
+		t.Fatalf("policy retry should honor env > file precedence, got %d want 7", policy.Retry)
+	}
+	if policy.QueueSize != types.DefaultMCPRuntimePolicy().QueueSize {
+		t.Fatalf("policy queue_size should fall back to default, got %d want %d", policy.QueueSize, types.DefaultMCPRuntimePolicy().QueueSize)
+	}
+
+	writeConfig(t, file, `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      retry: 9
+diagnostics:
+  cardinality:
+    enabled: true
+    max_map_entries: 64
+    max_list_entries: 64
+    max_string_bytes: 2048
+    overflow_policy: drop_new
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+
+	afterFailedReload := mgr.EffectiveConfigRef().MCP.Profiles["default"].Retry
+	if afterFailedReload != 7 {
+		t.Fatalf("failed reload should rollback effective retry, got %d want 7", afterFailedReload)
+	}
+
+	policyAfterFailedReload, err := mgr.ResolvePolicy("default", nil)
+	if err != nil {
+		t.Fatalf("ResolvePolicy after failed reload failed: %v", err)
+	}
+	if policyAfterFailedReload.Retry != 7 {
+		t.Fatalf("policy retry after failed reload = %d, want 7", policyAfterFailedReload.Retry)
+	}
+
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
 }
 
 func TestManagerEffectiveConfigSanitizedUsesSecurityKeywords(t *testing.T) {
@@ -2136,6 +2415,61 @@ reload:
 	}
 }
 
+func TestManagerSchedulerPersistenceInvalidReloadRollsBackAtomically(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 120ms
+    batch_size: 4
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	beforeDebounce := mgr.EffectiveConfig().Scheduler.Persistence.Debounce
+	beforeBatch := mgr.EffectiveConfig().Scheduler.Persistence.BatchSize
+	if beforeDebounce != 120*time.Millisecond || beforeBatch != 4 {
+		t.Fatalf("before scheduler.persistence mismatch: %#v", mgr.EffectiveConfig().Scheduler.Persistence)
+	}
+
+	writeConfig(t, file, `
+scheduler:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 900ms
+    batch_size: 0
+  lease_timeout: 2s
+  heartbeat_interval: 500ms
+  queue_limit: 1024
+  retry_max_attempts: 3
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Scheduler.Persistence
+	if after.Debounce != beforeDebounce || after.BatchSize != beforeBatch {
+		t.Fatalf("invalid scheduler.persistence reload should rollback atomically, got %#v want debounce=%v batch=%d", after, beforeDebounce, beforeBatch)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
 func TestManagerRecoveryInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	writeConfig(t, file, `
@@ -2183,6 +2517,63 @@ reload:
 	after := mgr.EffectiveConfig().Recovery.ConflictPolicy
 	if after != before {
 		t.Fatalf("invalid recovery reload should rollback, conflict_policy = %q, want %q", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerRecoveryPersistenceInvalidReloadRollsBackAtomically(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 250ms
+    batch_size: 3
+  conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	beforeDebounce := mgr.EffectiveConfig().Recovery.Persistence.Debounce
+	beforeBatch := mgr.EffectiveConfig().Recovery.Persistence.BatchSize
+	if beforeDebounce != 250*time.Millisecond || beforeBatch != 3 {
+		t.Fatalf("before recovery.persistence mismatch: %#v", mgr.EffectiveConfig().Recovery.Persistence)
+	}
+
+	writeConfig(t, file, `
+recovery:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 900ms
+    batch_size: 0
+  conflict_policy: fail_fast
+  resume_boundary: next_attempt_only
+  inflight_policy: no_rewind
+  timeout_reentry_policy: single_reentry_then_fail
+  timeout_reentry_max_per_task: 1
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Recovery.Persistence
+	if after.Debounce != beforeDebounce || after.BatchSize != beforeBatch {
+		t.Fatalf("invalid recovery.persistence reload should rollback atomically, got %#v want debounce=%v batch=%d", after, beforeDebounce, beforeBatch)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {
@@ -2435,6 +2826,75 @@ reload:
 	after := mgr.EffectiveConfig().Mailbox.Query.PageSizeMax
 	if after != before {
 		t.Fatalf("invalid mailbox reload should rollback, page_size_max = %d, want %d", after, before)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}
+
+func TestManagerMailboxPersistenceInvalidReloadRollsBackAtomically(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 150ms
+    batch_size: 5
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	beforeDebounce := mgr.EffectiveConfig().Mailbox.Persistence.Debounce
+	beforeBatch := mgr.EffectiveConfig().Mailbox.Persistence.BatchSize
+	if beforeDebounce != 150*time.Millisecond || beforeBatch != 5 {
+		t.Fatalf("before mailbox.persistence mismatch: %#v", mgr.EffectiveConfig().Mailbox.Persistence)
+	}
+
+	writeConfig(t, file, `
+mailbox:
+  enabled: true
+  backend: memory
+  persistence:
+    debounce: 900ms
+    batch_size: 0
+  retry:
+    max_attempts: 3
+    backoff_initial: 50ms
+    backoff_max: 500ms
+    jitter_ratio: 0.2
+  ttl: 15m
+  dlq:
+    enabled: false
+  query:
+    page_size_default: 50
+    page_size_max: 200
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Mailbox.Persistence
+	if after.Debounce != beforeDebounce || after.BatchSize != beforeBatch {
+		t.Fatalf("invalid mailbox.persistence reload should rollback atomically, got %#v want debounce=%v batch=%d", after, beforeDebounce, beforeBatch)
 	}
 	reloads := mgr.RecentReloads(1)
 	if len(reloads) == 0 || reloads[0].Success {

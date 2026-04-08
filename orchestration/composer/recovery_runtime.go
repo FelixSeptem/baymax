@@ -72,7 +72,11 @@ func (c *Composer) initRecovery(cfg runtimeconfig.Config) error {
 	case store == nil:
 		switch configuredBackend {
 		case runtimeconfig.RecoveryBackendFile:
-			fileStore, err := NewFileRecoveryStore(path)
+			fileStore, err := NewFileRecoveryStore(
+				path,
+				WithRecoveryPersistDebounce(cfg.Recovery.Persistence.Debounce),
+				WithRecoveryPersistBatchSize(cfg.Recovery.Persistence.BatchSize),
+			)
 			if err != nil {
 				store = NewMemoryRecoveryStore()
 				backend = runtimeconfig.RecoveryBackendMemory
@@ -128,6 +132,8 @@ func (c *Composer) recoveryConfigSignature(cfg runtimeconfig.Config) string {
 		fmt.Sprintf("%t", cfg.Recovery.Enabled),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.Backend)),
 		strings.TrimSpace(cfg.Recovery.Path),
+		fmt.Sprintf("%d", cfg.Recovery.Persistence.Debounce.Milliseconds()),
+		fmt.Sprintf("%d", cfg.Recovery.Persistence.BatchSize),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.ConflictPolicy)),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.ResumeBoundary)),
 		strings.TrimSpace(strings.ToLower(cfg.Recovery.InflightPolicy)),
@@ -208,6 +214,7 @@ func (c *Composer) CaptureRecoverySnapshot(ctx context.Context, runID, workflowI
 		A2A: RecoveryA2ASnapshot{
 			InFlight: extractRecoveryA2AInFlightStates(schedulerSnapshot),
 		},
+		Interaction: c.captureRecoveryInteractionState(resolvedRunID),
 		Replay: RecoveryReplayCursor{
 			Sequence:            c.now().UnixNano(),
 			TerminalCommitCount: len(schedulerSnapshot.TerminalCommits),
@@ -378,6 +385,44 @@ func extractRecoveryA2AInFlightStates(snapshot scheduler.StoreSnapshot) []Recove
 		return left < right
 	})
 	return out
+}
+
+func (c *Composer) captureRecoveryInteractionState(runID string) RecoveryInteractionState {
+	if c == nil || c.runtimeMgr == nil {
+		return RecoveryInteractionState{}
+	}
+	key := strings.TrimSpace(runID)
+	if key == "" {
+		return RecoveryInteractionState{}
+	}
+	records := c.runtimeMgr.RecentRuns(256)
+	for i := len(records) - 1; i >= 0; i-- {
+		rec := records[i]
+		if strings.TrimSpace(rec.RunID) != key {
+			continue
+		}
+		return RecoveryInteractionState{
+			Realtime: RecoveryRealtimeInteractionState{
+				SessionID:      strings.TrimSpace(rec.RealtimeSessionID),
+				ResumeCursor:   strings.TrimSpace(rec.RealtimeResumeCursor),
+				EventSeqMax:    rec.RealtimeEventSeqMax,
+				InterruptTotal: rec.RealtimeInterruptTotal,
+				ResumeTotal:    rec.RealtimeResumeTotal,
+				ResumeSource:   strings.TrimSpace(rec.RealtimeResumeSource),
+			},
+			IsolateHandoff: RecoveryIsolateHandoffState{
+				Detected: containsIsolateHandoffMarker(
+					rec.Stage2ReasonCode,
+					rec.Stage2Reason,
+					rec.Stage2SkipReason,
+				),
+				Stage2ReasonCode: strings.TrimSpace(rec.Stage2ReasonCode),
+				Stage2Reason:     strings.TrimSpace(rec.Stage2Reason),
+				Stage2SkipReason: strings.TrimSpace(rec.Stage2SkipReason),
+			},
+		}
+	}
+	return RecoveryInteractionState{}
 }
 
 func reconcileA2AInFlight(inflight []RecoveryA2AInFlightState, snapshot scheduler.StoreSnapshot) error {

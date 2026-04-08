@@ -1,6 +1,7 @@
 package assembler
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -63,6 +64,10 @@ type SpillBackend interface {
 	LoadByRun(ctx context.Context, runID string, limit int) ([]spillRecord, error)
 }
 
+type spillBatchAppender interface {
+	AppendBatch(ctx context.Context, recs []spillRecord) error
+}
+
 // DBSpillBackend is a placeholder SPI for future DB implementations.
 type DBSpillBackend interface {
 	SpillBackend
@@ -74,33 +79,99 @@ type ObjectSpillBackend interface {
 }
 
 type fileSpillBackend struct {
-	path string
+	path   string
+	opts   fileSpillBackendOptions
+	mu     sync.Mutex
+	handle *os.File
 }
 
-func newFileSpillBackend(path string) *fileSpillBackend {
-	return &fileSpillBackend{path: strings.TrimSpace(path)}
+type fileSpillBackendOptions struct {
+	ReuseHandle bool
 }
 
-func (f *fileSpillBackend) Append(_ context.Context, rec spillRecord) error {
+func newFileSpillBackendWithOptions(path string, opts fileSpillBackendOptions) *fileSpillBackend {
+	return &fileSpillBackend{
+		path: strings.TrimSpace(path),
+		opts: opts,
+	}
+}
+
+func (f *fileSpillBackend) Append(ctx context.Context, rec spillRecord) error {
+	return f.AppendBatch(ctx, []spillRecord{rec})
+}
+
+func (f *fileSpillBackend) AppendBatch(ctx context.Context, recs []spillRecord) error {
+	if len(recs) == 0 {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(f.path) == "" {
 		return fmt.Errorf("context pressure spill path is required")
 	}
+	if err := f.ensurePathLocked(); err != nil {
+		return err
+	}
+	var output bytes.Buffer
+	for i := range recs {
+		row, err := json.Marshal(recs[i])
+		if err != nil {
+			return fmt.Errorf("marshal spill record: %w", err)
+		}
+		output.Write(row)
+		output.WriteByte('\n')
+	}
+	fd, release, err := f.acquireWriteHandleLocked()
+	if err != nil {
+		return err
+	}
+	if _, err := fd.Write(output.Bytes()); err != nil {
+		release()
+		return fmt.Errorf("write spill file: %w", err)
+	}
+	release()
+	return nil
+}
+
+func (f *fileSpillBackend) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.handle == nil {
+		return nil
+	}
+	if err := f.handle.Close(); err != nil {
+		return fmt.Errorf("close spill file: %w", err)
+	}
+	f.handle = nil
+	return nil
+}
+
+func (f *fileSpillBackend) ensurePathLocked() error {
 	if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil {
 		return fmt.Errorf("create spill dir: %w", err)
 	}
-	row, err := json.Marshal(rec)
-	if err != nil {
-		return fmt.Errorf("marshal spill record: %w", err)
+	return nil
+}
+
+func (f *fileSpillBackend) acquireWriteHandleLocked() (*os.File, func(), error) {
+	if f.opts.ReuseHandle {
+		if f.handle == nil {
+			fd, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil {
+				return nil, nil, fmt.Errorf("open spill file: %w", err)
+			}
+			f.handle = fd
+		}
+		return f.handle, func() {}, nil
 	}
 	fd, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("open spill file: %w", err)
+		return nil, nil, fmt.Errorf("open spill file: %w", err)
 	}
-	defer func() { _ = fd.Close() }()
-	if _, err := fd.Write(append(row, '\n')); err != nil {
-		return fmt.Errorf("write spill file: %w", err)
-	}
-	return nil
+	return fd, func() { _ = fd.Close() }, nil
 }
 
 func (f *fileSpillBackend) LoadByRun(_ context.Context, runID string, limit int) ([]spillRecord, error) {
@@ -591,7 +662,7 @@ func (a *Assembler) spillRecords(
 	if err != nil {
 		return 0, err
 	}
-	written := 0
+	pending := make([]spillRecord, 0, len(records))
 	for _, rec := range records {
 		rec.RunID = req.RunID
 		rec.SessionID = req.SessionID
@@ -601,16 +672,43 @@ func (a *Assembler) spillRecords(
 		if _, exists := state.SpillWrites[rec.OriginRef]; exists {
 			continue
 		}
-		if err := backend.Append(ctx, rec); err != nil {
-			return written, err
+		pending = append(pending, rec)
+	}
+	if len(pending) == 0 {
+		return 0, nil
+	}
+	batchSize := cfg.Spill.File.BatchFlushSize
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	written := 0
+	batchWriter, hasBatchWriter := backend.(spillBatchAppender)
+	for i := 0; i < len(pending); i += batchSize {
+		end := i + batchSize
+		if end > len(pending) {
+			end = len(pending)
 		}
-		state.SpillWrites[rec.OriginRef] = struct{}{}
-		state.SpilledByRun[rec.OriginRef] = rec
-		if state.SpillTierByRef == nil {
-			state.SpillTierByRef = map[string]string{}
+		chunk := pending[i:end]
+		if hasBatchWriter {
+			if err := batchWriter.AppendBatch(ctx, chunk); err != nil {
+				return written, err
+			}
+		} else {
+			for _, rec := range chunk {
+				if err := backend.Append(ctx, rec); err != nil {
+					return written, err
+				}
+			}
 		}
-		state.SpillTierByRef[rec.OriginRef] = "hot"
-		written++
+		for _, rec := range chunk {
+			state.SpillWrites[rec.OriginRef] = struct{}{}
+			state.SpilledByRun[rec.OriginRef] = rec
+			if state.SpillTierByRef == nil {
+				state.SpillTierByRef = map[string]string{}
+			}
+			state.SpillTierByRef[rec.OriginRef] = "hot"
+			written++
+		}
 	}
 	return written, nil
 }
@@ -875,15 +973,25 @@ func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Conf
 	if backend == "" {
 		backend = "file"
 	}
-	key := backend + "|" + strings.TrimSpace(cfg.Spill.Path)
+	key := strings.Join([]string{
+		backend,
+		strings.TrimSpace(cfg.Spill.Path),
+		fmt.Sprintf("reuse=%t", cfg.Spill.File.ReuseHandle),
+		fmt.Sprintf("batch=%d", cfg.Spill.File.BatchFlushSize),
+	}, "|")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.spillBackend != nil && a.spillBackendKey == key {
 		return a.spillBackend, nil
 	}
+	if closer, ok := a.spillBackend.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 	switch backend {
 	case "file":
-		a.spillBackend = newFileSpillBackend(cfg.Spill.Path)
+		a.spillBackend = newFileSpillBackendWithOptions(cfg.Spill.Path, fileSpillBackendOptions{
+			ReuseHandle: cfg.Spill.File.ReuseHandle,
+		})
 		a.spillBackendKey = key
 		return a.spillBackend, nil
 	case "db", "object":
@@ -894,19 +1002,23 @@ func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Conf
 }
 
 func (a *Assembler) pressureStateFor(runID string) *pressureRunState {
+	cfg := a.cacheConfigSnapshot()
+	now := a.now()
 	key := strings.TrimSpace(runID)
 	if key == "" {
 		key = "anon"
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.compactCachesLocked(now, cfg)
 	st := a.pressureState[key]
 	if st != nil {
+		a.pressureUsed[key] = now
 		return st
 	}
 	st = &pressureRunState{
 		CurrentZone:     pressureZoneSafe,
-		ZoneEnteredAt:   a.now(),
+		ZoneEnteredAt:   now,
 		ZoneResidencyMs: map[string]int64{},
 		TriggerCounts:   map[string]int{},
 		AccessFrequency: map[string]int{},
@@ -915,6 +1027,8 @@ func (a *Assembler) pressureStateFor(runID string) *pressureRunState {
 		SpillWrites:     map[string]struct{}{},
 	}
 	a.pressureState[key] = st
+	a.pressureUsed[key] = now
+	a.compactCachesLocked(now, cfg)
 	return st
 }
 
@@ -1059,6 +1173,26 @@ func pressureTokenSignature(req types.ModelRequest) string {
 		builder.WriteString(msg.Content)
 	}
 	return contentDigest(builder.String())
+}
+
+func shouldSkipStage2CA3Pass(
+	cfg runtimeconfig.ContextAssemblerCA3Config,
+	stage2Enabled bool,
+	stage2InputSignature string,
+	req types.ModelRequest,
+) bool {
+	if !stage2Enabled || !cfg.Stage2Pass.SkipNoDelta {
+		return false
+	}
+	before := strings.TrimSpace(stage2InputSignature)
+	if before == "" {
+		return false
+	}
+	after := strings.TrimSpace(pressureTokenSignature(req))
+	if after == "" {
+		return false
+	}
+	return before == after
 }
 
 func estimateContextTokens(req types.ModelRequest) int {

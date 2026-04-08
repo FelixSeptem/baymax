@@ -826,10 +826,12 @@ func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *tes
 		RunID:                         "run-realtime-protocol",
 		Status:                        "success",
 		RealtimeProtocolVersion:       "realtime_event_protocol.v1",
+		RealtimeSessionID:             "session-realtime-protocol",
 		RealtimeEventSeqMax:           12,
 		RealtimeInterruptTotal:        1,
 		RealtimeResumeTotal:           1,
 		RealtimeResumeSource:          "cursor",
+		RealtimeResumeCursor:          "session-realtime-protocol:run-realtime-protocol:1",
 		RealtimeIdempotencyDedupTotal: 2,
 		RealtimeLastErrorCode:         "",
 	}
@@ -842,10 +844,12 @@ func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *tes
 	}
 	got := items[0]
 	if got.RealtimeProtocolVersion != "realtime_event_protocol.v1" ||
+		got.RealtimeSessionID != "session-realtime-protocol" ||
 		got.RealtimeEventSeqMax != 12 ||
 		got.RealtimeInterruptTotal != 1 ||
 		got.RealtimeResumeTotal != 1 ||
 		got.RealtimeResumeSource != "cursor" ||
+		got.RealtimeResumeCursor != "session-realtime-protocol:run-realtime-protocol:1" ||
 		got.RealtimeIdempotencyDedupTotal != 2 {
 		t.Fatalf("realtime protocol additive fields mismatch after dedup: %#v", got)
 	}
@@ -854,6 +858,7 @@ func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *tes
 	rec.RealtimeInterruptTotal = 2
 	rec.RealtimeResumeTotal = 2
 	rec.RealtimeResumeSource = "persisted_cursor"
+	rec.RealtimeResumeCursor = "session-realtime-protocol:run-realtime-protocol:2"
 	rec.RealtimeIdempotencyDedupTotal = 4
 	rec.RealtimeLastErrorCode = "realtime.sequence_gap"
 	d.AddRun(rec)
@@ -863,10 +868,12 @@ func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *tes
 		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
 	}
 	got = items[0]
-	if got.RealtimeEventSeqMax != 24 ||
+	if got.RealtimeSessionID != "session-realtime-protocol" ||
+		got.RealtimeEventSeqMax != 24 ||
 		got.RealtimeInterruptTotal != 2 ||
 		got.RealtimeResumeTotal != 2 ||
 		got.RealtimeResumeSource != "persisted_cursor" ||
+		got.RealtimeResumeCursor != "session-realtime-protocol:run-realtime-protocol:2" ||
 		got.RealtimeIdempotencyDedupTotal != 4 ||
 		got.RealtimeLastErrorCode != "realtime.sequence_gap" {
 		t.Fatalf("realtime protocol additive fields mismatch after replay replacement: %#v", got)
@@ -879,10 +886,12 @@ func TestStoreRunRealtimeProtocolAdditiveFieldsPersistAndReplayIdempotent(t *tes
 	if len(page.Items) != 1 {
 		t.Fatalf("QueryRuns items len = %d, want 1", len(page.Items))
 	}
-	if page.Items[0].RealtimeEventSeqMax != 24 ||
+	if page.Items[0].RealtimeSessionID != "session-realtime-protocol" ||
+		page.Items[0].RealtimeEventSeqMax != 24 ||
 		page.Items[0].RealtimeInterruptTotal != 2 ||
 		page.Items[0].RealtimeResumeTotal != 2 ||
 		page.Items[0].RealtimeResumeSource != "persisted_cursor" ||
+		page.Items[0].RealtimeResumeCursor != "session-realtime-protocol:run-realtime-protocol:2" ||
 		page.Items[0].RealtimeIdempotencyDedupTotal != 4 ||
 		page.Items[0].RealtimeLastErrorCode != "realtime.sequence_gap" {
 		t.Fatalf("realtime protocol QueryRuns additive parse mismatch: %#v", page.Items[0])
@@ -910,10 +919,12 @@ func TestStoreRunRealtimeProtocolQueryRunsParserCompatibilityAdditiveNullableDef
 		t.Fatalf("existing fields mismatch: %#v", got)
 	}
 	if got.RealtimeProtocolVersion != "" ||
+		got.RealtimeSessionID != "" ||
 		got.RealtimeEventSeqMax != 0 ||
 		got.RealtimeInterruptTotal != 0 ||
 		got.RealtimeResumeTotal != 0 ||
 		got.RealtimeResumeSource != "" ||
+		got.RealtimeResumeCursor != "" ||
 		got.RealtimeIdempotencyDedupTotal != 0 ||
 		got.RealtimeLastErrorCode != "" {
 		t.Fatalf("missing realtime protocol additive fields must resolve to documented defaults: %#v", got)
@@ -1017,10 +1028,21 @@ func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 			"task_success":     map[string]any{"pass_rate": 0.92},
 			"tool_correctness": map[string]any{"pass_rate": 0.88},
 		},
-		EvalExecutionMode: "distributed",
-		EvalJobID:         "eval-job-a61",
-		EvalShardTotal:    4,
-		EvalResumeCount:   1,
+		EvalExecutionMode:         "distributed",
+		EvalJobID:                 "eval-job-a61",
+		EvalShardTotal:            4,
+		EvalResumeCount:           1,
+		InferentialAdvisoryStatus: "watch",
+		InferentialAdvisoryScore:  0.62,
+		InferentialAdvisorySignals: map[string]float64{
+			"task_success_rate":                0.92,
+			"tool_correctness_rate":            0.88,
+			"runtime_admission_budget_degrade": 1,
+		},
+		InferentialAdvisoryReasons: []string{
+			"eval.tool_correctness_below_threshold",
+			"runtime.admission.budget_degrade",
+		},
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -1036,11 +1058,16 @@ func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 		got.EvalExecutionMode != "distributed" ||
 		got.EvalJobID != "eval-job-a61" ||
 		got.EvalShardTotal != 4 ||
-		got.EvalResumeCount != 1 {
+		got.EvalResumeCount != 1 ||
+		got.InferentialAdvisoryStatus != "watch" ||
+		got.InferentialAdvisoryScore != 0.62 {
 		t.Fatalf("tracing+eval additive fields mismatch after dedup: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.92 {
 		t.Fatalf("tracing+eval eval_summary parse mismatch after dedup: %#v", got.EvalSummary)
+	}
+	if len(got.InferentialAdvisorySignals) != 3 || len(got.InferentialAdvisoryReasons) != 2 {
+		t.Fatalf("inferential advisory fields mismatch after dedup: %#v", got)
 	}
 
 	rec.TraceExportStatus = "failed"
@@ -1048,6 +1075,16 @@ func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 	rec.EvalResumeCount = 0
 	rec.EvalSummary = map[string]any{
 		"task_success": map[string]any{"pass_rate": 0.81},
+	}
+	rec.InferentialAdvisoryStatus = "critical"
+	rec.InferentialAdvisoryScore = 0.21
+	rec.InferentialAdvisorySignals = map[string]float64{
+		"task_success_rate":             0.81,
+		"runtime_admission_budget_deny": 1,
+	}
+	rec.InferentialAdvisoryReasons = []string{
+		"eval.task_success_below_threshold",
+		"runtime.admission.budget_deny",
 	}
 	d.AddRun(rec)
 
@@ -1058,7 +1095,9 @@ func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 	got = items[0]
 	if got.TraceExportStatus != "failed" ||
 		got.EvalExecutionMode != "local" ||
-		got.EvalResumeCount != 0 {
+		got.EvalResumeCount != 0 ||
+		got.InferentialAdvisoryStatus != "critical" ||
+		got.InferentialAdvisoryScore != 0.21 {
 		t.Fatalf("tracing+eval additive fields mismatch after replay replacement: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.81 {
@@ -1073,7 +1112,8 @@ func TestStoreRunTracingEvalAdditiveFieldsPersistAndReplayIdempotent(t *testing.
 		t.Fatalf("query items len=%d, want 1", len(page.Items))
 	}
 	if page.Items[0].TraceExportStatus != "failed" ||
-		page.Items[0].EvalExecutionMode != "local" {
+		page.Items[0].EvalExecutionMode != "local" ||
+		page.Items[0].InferentialAdvisoryStatus != "critical" {
 		t.Fatalf("tracing+eval query mapping mismatch: %#v", page.Items[0])
 	}
 }
@@ -1203,8 +1243,139 @@ func TestStoreRunStateSnapshotQueryRunsParserCompatibilityAdditiveNullableDefaul
 	if got.StateSnapshotVersion != "" ||
 		got.StateRestoreAction != "" ||
 		got.StateRestoreConflictCode != "" ||
-		got.StateRestoreSource != "" {
+		got.StateRestoreSource != "" ||
+		len(got.SnapshotEntropyRetention) != 0 ||
+		len(got.SnapshotEntropyQuota) != 0 ||
+		len(got.SnapshotEntropyCleanup) != 0 {
 		t.Fatalf("missing state snapshot restore additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestStoreRunSnapshotEntropyAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	rec := RunRecord{
+		Time:                 time.Now(),
+		RunID:                "run-a64-snapshot-entropy",
+		Status:               "success",
+		StateSnapshotVersion: "state_session_snapshot.v1",
+		SnapshotEntropyRetention: map[string]int{
+			"max_snapshots": 64,
+			"active_count":  7,
+		},
+		SnapshotEntropyQuota: map[string]int{
+			"max_bytes":  1048576,
+			"used_bytes": 524288,
+		},
+		SnapshotEntropyCleanup: map[string]int{
+			"batch_size":    8,
+			"deleted_count": 3,
+		},
+	}
+	d.AddRun(rec)
+	d.AddRun(rec)
+
+	items := d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if got.SnapshotEntropyRetention["max_snapshots"] != 64 ||
+		got.SnapshotEntropyRetention["active_count"] != 7 ||
+		got.SnapshotEntropyQuota["max_bytes"] != 1048576 ||
+		got.SnapshotEntropyQuota["used_bytes"] != 524288 ||
+		got.SnapshotEntropyCleanup["batch_size"] != 8 ||
+		got.SnapshotEntropyCleanup["deleted_count"] != 3 {
+		t.Fatalf("snapshot entropy additive fields mismatch after dedup: %#v", got)
+	}
+
+	rec.SnapshotEntropyRetention = map[string]int{
+		"max_snapshots": 48,
+		"active_count":  5,
+	}
+	rec.SnapshotEntropyQuota = map[string]int{
+		"max_bytes":  2097152,
+		"used_bytes": 786432,
+	}
+	rec.SnapshotEntropyCleanup = map[string]int{
+		"batch_size":    4,
+		"deleted_count": 2,
+	}
+	d.AddRun(rec)
+
+	items = d.RecentRuns(10)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d after replay replacement, want 1", len(items))
+	}
+	got = items[0]
+	if got.SnapshotEntropyRetention["max_snapshots"] != 48 ||
+		got.SnapshotEntropyRetention["active_count"] != 5 ||
+		got.SnapshotEntropyQuota["max_bytes"] != 2097152 ||
+		got.SnapshotEntropyQuota["used_bytes"] != 786432 ||
+		got.SnapshotEntropyCleanup["batch_size"] != 4 ||
+		got.SnapshotEntropyCleanup["deleted_count"] != 2 {
+		t.Fatalf("snapshot entropy additive fields mismatch after replay replacement: %#v", got)
+	}
+
+	page, err := d.QueryRuns(UnifiedRunQueryRequest{RunID: "run-a64-snapshot-entropy"})
+	if err != nil {
+		t.Fatalf("QueryRuns failed: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("query items len=%d, want 1", len(page.Items))
+	}
+	if page.Items[0].SnapshotEntropyRetention["max_snapshots"] != 48 ||
+		page.Items[0].SnapshotEntropyQuota["max_bytes"] != 2097152 ||
+		page.Items[0].SnapshotEntropyCleanup["batch_size"] != 4 {
+		t.Fatalf("snapshot entropy query mapping mismatch: %#v", page.Items[0])
+	}
+}
+
+func TestStoreRunSnapshotEntropyAdditiveFieldsBoundedCardinality(t *testing.T) {
+	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
+	d.SetCardinalityConfig(CardinalityConfig{
+		Enabled:        true,
+		MaxMapEntries:  1,
+		MaxListEntries: 8,
+		MaxStringBytes: 24,
+		OverflowPolicy: CardinalityOverflowTruncateAndRecord,
+	})
+	rec := RunRecord{
+		Time:                 time.Now(),
+		RunID:                "run-a64-snapshot-entropy-cardinality",
+		Status:               "failed",
+		StateSnapshotVersion: "state_session_snapshot.v1",
+		SnapshotEntropyRetention: map[string]int{
+			"max_snapshots": 64,
+			"active_count":  9,
+			"evicted_count": 3,
+		},
+		SnapshotEntropyQuota: map[string]int{
+			"max_bytes":   1048576,
+			"used_bytes":  786432,
+			"dropped_run": 2,
+		},
+		SnapshotEntropyCleanup: map[string]int{
+			"batch_size":    8,
+			"deleted_count": 6,
+			"error_count":   1,
+		},
+	}
+	d.AddRun(rec)
+
+	items := d.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len=%d, want 1", len(items))
+	}
+	got := items[0]
+	if len(got.SnapshotEntropyRetention) != 1 ||
+		len(got.SnapshotEntropyQuota) != 1 ||
+		len(got.SnapshotEntropyCleanup) != 1 {
+		t.Fatalf("snapshot entropy maps should be bounded by cardinality config, got %#v", got)
+	}
+	if !strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "snapshot_entropy_retention") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "snapshot_entropy_quota") ||
+		!strings.Contains(got.DiagnosticsCardinalityTruncatedFieldSummary, "snapshot_entropy_cleanup") {
+		t.Fatalf("snapshot entropy bounded-cardinality summary missing expected fields: %#v", got.DiagnosticsCardinalityTruncatedFieldSummary)
 	}
 }
 

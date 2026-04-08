@@ -11,20 +11,72 @@ import (
 	"time"
 )
 
-type FileStore struct {
-	mu    sync.Mutex
-	path  string
-	state mailboxState
+type FileStoreOption func(*fileStoreOptions)
+
+type fileStoreOptions struct {
+	PersistDebounce  time.Duration
+	PersistBatchSize int
 }
 
-func NewFileStore(path string, policy Policy) (*FileStore, error) {
+func WithPersistDebounce(debounce time.Duration) FileStoreOption {
+	return func(opts *fileStoreOptions) {
+		if opts == nil {
+			return
+		}
+		opts.PersistDebounce = debounce
+	}
+}
+
+func WithPersistBatchSize(size int) FileStoreOption {
+	return func(opts *fileStoreOptions) {
+		if opts == nil {
+			return
+		}
+		opts.PersistBatchSize = size
+	}
+}
+
+func normalizeFileStoreOptions(opts []FileStoreOption) fileStoreOptions {
+	normalized := fileStoreOptions{
+		PersistDebounce:  0,
+		PersistBatchSize: 1,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&normalized)
+		}
+	}
+	if normalized.PersistDebounce < 0 {
+		normalized.PersistDebounce = 0
+	}
+	if normalized.PersistBatchSize <= 0 {
+		normalized.PersistBatchSize = 1
+	}
+	return normalized
+}
+
+func (o fileStoreOptions) batchingEnabled() bool {
+	return o.PersistDebounce > 0 || o.PersistBatchSize > 1
+}
+
+type FileStore struct {
+	mu             sync.Mutex
+	path           string
+	state          mailboxState
+	persistOpts    fileStoreOptions
+	pendingPersist int
+	dirtySince     time.Time
+}
+
+func NewFileStore(path string, policy Policy, opts ...FileStoreOption) (*FileStore, error) {
 	cleaned := strings.TrimSpace(path)
 	if cleaned == "" {
 		return nil, fmt.Errorf("mailbox file backend path is required")
 	}
 	store := &FileStore{
-		path:  cleaned,
-		state: newMailboxState("file", policy),
+		path:        cleaned,
+		state:       newMailboxState("file", policy),
+		persistOpts: normalizeFileStoreOptions(opts),
 	}
 	if err := store.load(); err != nil {
 		return nil, err
@@ -49,7 +101,7 @@ func (s *FileStore) Publish(_ context.Context, envelope Envelope, now time.Time)
 	if err != nil {
 		return PublishResult{}, err
 	}
-	if err := s.persist(); err != nil {
+	if err := s.maybePersistLocked(false); err != nil {
 		return PublishResult{}, err
 	}
 	return result, nil
@@ -69,7 +121,7 @@ func (s *FileStore) Consume(
 		return record, ok, err
 	}
 	if ok || mutated {
-		if err := s.persist(); err != nil {
+		if err := s.maybePersistLocked(false); err != nil {
 			return Record{}, false, err
 		}
 	}
@@ -88,7 +140,7 @@ func (s *FileStore) Heartbeat(
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.persist(); err != nil {
+	if err := s.maybePersistLocked(false); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -101,7 +153,7 @@ func (s *FileStore) Ack(_ context.Context, messageID, consumerID string, now tim
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.persist(); err != nil {
+	if err := s.maybePersistLocked(false); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -119,7 +171,7 @@ func (s *FileStore) Nack(
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.persist(); err != nil {
+	if err := s.maybePersistLocked(false); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -137,7 +189,7 @@ func (s *FileStore) Requeue(
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.persist(); err != nil {
+	if err := s.maybePersistLocked(false); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -155,13 +207,21 @@ func (s *FileStore) Snapshot(_ context.Context) (Snapshot, error) {
 	return s.state.snapshot(), nil
 }
 
+// Flush forces pending batched mutations to be durably persisted.
+// It defines the explicit durability boundary when debounce/group-commit is enabled.
+func (s *FileStore) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.flushPersistLocked()
+}
+
 func (s *FileStore) Restore(_ context.Context, snapshot Snapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.state.restore(snapshot); err != nil {
 		return err
 	}
-	return s.persist()
+	return s.maybePersistLocked(true)
 }
 
 func (s *FileStore) DrainLifecycleEvents() []LifecycleEvent {
@@ -214,5 +274,37 @@ func (s *FileStore) persist() error {
 	if err := os.Rename(tmpPath, s.path); err != nil {
 		return fmt.Errorf("commit mailbox backend file: %w", err)
 	}
+	return nil
+}
+
+func (s *FileStore) maybePersistLocked(force bool) error {
+	if !s.persistOpts.batchingEnabled() {
+		return s.persist()
+	}
+	s.pendingPersist++
+	if s.dirtySince.IsZero() {
+		s.dirtySince = time.Now()
+	}
+	if force {
+		return s.flushPersistLocked()
+	}
+	if s.pendingPersist >= s.persistOpts.PersistBatchSize {
+		return s.flushPersistLocked()
+	}
+	if s.persistOpts.PersistDebounce > 0 && time.Since(s.dirtySince) >= s.persistOpts.PersistDebounce {
+		return s.flushPersistLocked()
+	}
+	return nil
+}
+
+func (s *FileStore) flushPersistLocked() error {
+	if s.persistOpts.batchingEnabled() && s.pendingPersist == 0 {
+		return nil
+	}
+	if err := s.persist(); err != nil {
+		return err
+	}
+	s.pendingPersist = 0
+	s.dirtySince = time.Time{}
 	return nil
 }

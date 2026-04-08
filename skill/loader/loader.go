@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -60,24 +61,46 @@ type Loader struct {
 	now             func() time.Time
 	scorer          skillTriggerScorer
 	embeddingScorer SkillTriggerEmbeddingScorer
+	cacheMu         sync.RWMutex
+	fileMetaCache   map[string]skillFileCacheEntry
+}
+
+type skillFileCacheEntry struct {
+	modTimeUnixNano int64
+	size            int64
+	content         string
+	description     string
+	triggers        []string
+	priority        int
+	enabledTools    []string
+}
+
+type skillFileSnapshot struct {
+	content      string
+	description  string
+	triggers     []string
+	priority     int
+	enabledTools []string
 }
 
 // New constructs a skill loader with event handler wiring and default lexical scorer.
 func New(eventHandler types.EventHandler) *Loader {
 	return &Loader{
-		eventHandler: eventHandler,
-		now:          time.Now,
-		scorer:       lexicalWeightedKeywordScorer{},
+		eventHandler:  eventHandler,
+		now:           time.Now,
+		scorer:        lexicalWeightedKeywordScorer{},
+		fileMetaCache: map[string]skillFileCacheEntry{},
 	}
 }
 
 // NewWithRuntimeManager constructs a skill loader that reads trigger scoring settings from runtime config manager.
 func NewWithRuntimeManager(eventHandler types.EventHandler, mgr *runtimeconfig.Manager) *Loader {
 	return &Loader{
-		eventHandler: eventHandler,
-		runtimeMgr:   mgr,
-		now:          time.Now,
-		scorer:       lexicalWeightedKeywordScorer{},
+		eventHandler:  eventHandler,
+		runtimeMgr:    mgr,
+		now:           time.Now,
+		scorer:        lexicalWeightedKeywordScorer{},
+		fileMetaCache: map[string]skillFileCacheEntry{},
 	}
 }
 
@@ -264,7 +287,9 @@ func (l *Loader) discoverFromAgentsRoot(ctx context.Context, root string) ([]typ
 		if !filepath.IsAbs(skillFile) {
 			skillFile = filepath.Join(root, skillFile)
 		}
-		if _, err := os.Stat(skillFile); err != nil {
+		skillFile = filepath.Clean(skillFile)
+		snapshot, err := l.skillFileSnapshot(skillFile)
+		if err != nil {
 			l.emit(ctx, "", "skill.warning", map[string]any{
 				"name":        name,
 				"action":      "discover",
@@ -275,13 +300,12 @@ func (l *Loader) discoverFromAgentsRoot(ctx context.Context, root string) ([]typ
 			})
 			continue
 		}
-		desc, triggers, priority := parseSkillMeta(skillFile)
 		specs = append(specs, types.SkillSpec{
 			Name:        name,
 			Path:        skillFile,
-			Description: desc,
-			Triggers:    triggers,
-			Priority:    priority,
+			Description: snapshot.description,
+			Triggers:    snapshot.triggers,
+			Priority:    snapshot.priority,
 			Metadata: map[string]string{
 				"source": "agents_md",
 			},
@@ -321,11 +345,20 @@ func (l *Loader) discoverFromFolderRoot(root string) ([]types.SkillSpec, error) 
 
 	specs := make([]types.SkillSpec, 0, len(paths))
 	for _, skillPath := range paths {
-		name := strings.TrimSpace(filepath.Base(filepath.Dir(skillPath)))
-		desc, triggers, priority := parseSkillMeta(skillPath)
+		normalizedPath := filepath.Clean(skillPath)
+		name := strings.TrimSpace(filepath.Base(filepath.Dir(normalizedPath)))
+		snapshot, err := l.skillFileSnapshot(normalizedPath)
+		desc := ""
+		var triggers []string
+		priority := 0
+		if err == nil {
+			desc = snapshot.description
+			triggers = snapshot.triggers
+			priority = snapshot.priority
+		}
 		specs = append(specs, types.SkillSpec{
 			Name:        name,
-			Path:        skillPath,
+			Path:        normalizedPath,
 			Description: desc,
 			Triggers:    triggers,
 			Priority:    priority,
@@ -356,6 +389,64 @@ func validateDiscoveryRoot(root string, i int) error {
 		return fmt.Errorf("runtime.skill.discovery.roots[%d] must be a directory: %q", i, trimmed)
 	}
 	return nil
+}
+
+func (l *Loader) skillFileSnapshot(path string) (skillFileSnapshot, error) {
+	cacheKey := filepath.Clean(path)
+	info, err := os.Stat(cacheKey)
+	if err != nil {
+		return skillFileSnapshot{}, err
+	}
+	modTimeUnixNano := info.ModTime().UnixNano()
+	size := info.Size()
+
+	if l != nil {
+		l.cacheMu.RLock()
+		cached, ok := l.fileMetaCache[cacheKey]
+		l.cacheMu.RUnlock()
+		if ok && cached.modTimeUnixNano == modTimeUnixNano && cached.size == size {
+			return skillFileSnapshot{
+				content:      cached.content,
+				description:  cached.description,
+				triggers:     cloneStrings(cached.triggers),
+				priority:     cached.priority,
+				enabledTools: cloneStrings(cached.enabledTools),
+			}, nil
+		}
+	}
+
+	data, err := os.ReadFile(cacheKey)
+	if err != nil {
+		return skillFileSnapshot{}, err
+	}
+	content := string(data)
+	desc, triggers, priority := parseSkillMetaContent(content)
+	enabledTools := parseEnabledTools(content)
+
+	if l != nil {
+		l.cacheMu.Lock()
+		if l.fileMetaCache == nil {
+			l.fileMetaCache = map[string]skillFileCacheEntry{}
+		}
+		l.fileMetaCache[cacheKey] = skillFileCacheEntry{
+			modTimeUnixNano: modTimeUnixNano,
+			size:            size,
+			content:         content,
+			description:     desc,
+			triggers:        cloneStrings(triggers),
+			priority:        priority,
+			enabledTools:    cloneStrings(enabledTools),
+		}
+		l.cacheMu.Unlock()
+	}
+
+	return skillFileSnapshot{
+		content:      content,
+		description:  desc,
+		triggers:     cloneStrings(triggers),
+		priority:     priority,
+		enabledTools: cloneStrings(enabledTools),
+	}, nil
 }
 
 // Compile resolves explicit and semantic skill matches and builds an executable skill bundle.
@@ -400,7 +491,7 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 			scorePayload["score_margin_top1_top2"] = selectionMeta.scoreMarginTop1Top2
 			scorePayload["budget_decision_reason"] = selectionMeta.budgetDecisionReason
 		}
-		content, err := os.ReadFile(spec.Path)
+		snapshot, err := l.skillFileSnapshot(spec.Path)
 		if err != nil {
 			payload := map[string]any{
 				"name":        spec.Name,
@@ -417,16 +508,15 @@ func (l *Loader) Compile(ctx context.Context, specs []types.SkillSpec, in types.
 			l.emit(ctx, runID, "skill.warning", payload)
 			continue
 		}
-		fragments = append(fragments, string(content))
+		fragments = append(fragments, snapshot.content)
 		workflowHints = append(workflowHints, spec.Description)
-		enabled := parseEnabledTools(string(content))
-		enabledTools = append(enabledTools, enabled...)
+		enabledTools = append(enabledTools, snapshot.enabledTools...)
 		payload := map[string]any{
 			"name":          spec.Name,
 			"path":          spec.Path,
 			"action":        "compile",
 			"status":        "success",
-			"enabled_tools": len(enabled),
+			"enabled_tools": len(snapshot.enabledTools),
 			"latency_ms":    l.now().Sub(stepStart).Milliseconds(),
 		}
 		for k, v := range scorePayload {
@@ -454,6 +544,17 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 	}
 	strategy := normalizedSkillTriggerStrategy(scoring.Strategy)
 	tokenizerMode := normalizedSkillTriggerTokenizerMode(scoring.Lexical.TokenizerMode)
+	lexicalScorer, hasLexicalFastPath := scorer.(lexicalWeightedKeywordScorer)
+	if !hasLexicalFastPath {
+		if ptr, ok := scorer.(*lexicalWeightedKeywordScorer); ok && ptr != nil {
+			lexicalScorer = *ptr
+			hasLexicalFastPath = true
+		}
+	}
+	precompiledLexical := lexicalPreparedInput{}
+	if hasLexicalFastPath {
+		precompiledLexical = precompileLexicalInput(lower, scoring)
+	}
 	candidates := make([]scoredSkill, 0, len(specs))
 	for i, s := range specs {
 		nameLower := strings.ToLower(s.Name)
@@ -461,7 +562,12 @@ func (l *Loader) selectSkills(ctx context.Context, specs []types.SkillSpec, inpu
 			explicit = append(explicit, s)
 			continue
 		}
-		lexicalScore := scorer.Score(lower, s, scoring)
+		lexicalScore := 0.0
+		if hasLexicalFastPath {
+			lexicalScore = lexicalScorer.ScorePrepared(precompiledLexical, precompileSkillSearchText(s))
+		} else {
+			lexicalScore = scorer.Score(lower, s, scoring)
+		}
 		finalScore := lexicalScore
 		embeddingScore := 0.0
 		fallbackReason := ""
@@ -687,12 +793,8 @@ func isCJKRune(r rune) bool {
 		unicode.Is(unicode.Hangul, r)
 }
 
-func parseSkillMeta(path string) (desc string, triggers []string, priority int) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", nil, 0
-	}
-	lines := strings.Split(string(data), "\n")
+func parseSkillMetaContent(content string) (desc string, triggers []string, priority int) {
+	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(strings.ToLower(t), "description:") {
@@ -708,6 +810,13 @@ func parseSkillMeta(path string) (desc string, triggers []string, priority int) 
 		}
 	}
 	return desc, triggers, priority
+}
+
+func cloneStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	return append([]string(nil), items...)
 }
 
 func parseEnabledTools(content string) []string {
@@ -783,35 +892,76 @@ type skillTriggerScorer interface {
 
 type lexicalWeightedKeywordScorer struct{}
 
+type lexicalPreparedToken struct {
+	token  string
+	weight float64
+}
+
+type lexicalPreparedInput struct {
+	tokens      []lexicalPreparedToken
+	totalWeight float64
+}
+
 func (lexicalWeightedKeywordScorer) Score(input string, s types.SkillSpec, cfg runtimeconfig.SkillTriggerScoringConfig) float64 {
 	if strings.TrimSpace(input) == "" {
 		return 0
 	}
-	hay := strings.ToLower(strings.Join([]string{s.Name, s.Description, strings.Join(s.Triggers, " ")}, " "))
-	if hay == "" {
+	precompiled := precompileLexicalInput(input, cfg)
+	return lexicalWeightedKeywordScorer{}.ScorePrepared(precompiled, precompileSkillSearchText(s))
+}
+
+func (lexicalWeightedKeywordScorer) ScorePrepared(precompiled lexicalPreparedInput, searchable string) float64 {
+	if strings.TrimSpace(searchable) == "" {
 		return 0
 	}
+	if len(precompiled.tokens) == 0 || precompiled.totalWeight <= 0 {
+		return 0
+	}
+	var hitWeight float64
+	for _, token := range precompiled.tokens {
+		if strings.Contains(searchable, token.token) {
+			hitWeight += token.weight
+		}
+	}
+	if precompiled.totalWeight <= 0 {
+		return 0
+	}
+	return hitWeight / precompiled.totalWeight
+}
+
+func precompileLexicalInput(input string, cfg runtimeconfig.SkillTriggerScoringConfig) lexicalPreparedInput {
 	inputTokens := tokenize(input, cfg.Lexical.TokenizerMode)
 	if len(inputTokens) == 0 {
-		return 0
+		return lexicalPreparedInput{}
+	}
+	precompiled := lexicalPreparedInput{
+		tokens: make([]lexicalPreparedToken, 0, len(inputTokens)),
 	}
 	weights := cfg.KeywordWeights
-	var totalWeight float64
-	var hitWeight float64
 	for _, token := range inputTokens {
 		weight := 1.0
 		if custom, ok := weights[token]; ok && custom > 0 {
 			weight = custom
 		}
-		totalWeight += weight
-		if strings.Contains(hay, token) {
-			hitWeight += weight
+		precompiled.tokens = append(precompiled.tokens, lexicalPreparedToken{
+			token:  token,
+			weight: weight,
+		})
+		precompiled.totalWeight += weight
+	}
+	sort.SliceStable(precompiled.tokens, func(i, j int) bool {
+		left := precompiled.tokens[i]
+		right := precompiled.tokens[j]
+		if left.weight != right.weight {
+			return left.weight > right.weight
 		}
-	}
-	if totalWeight <= 0 {
-		return 0
-	}
-	return hitWeight / totalWeight
+		return left.token < right.token
+	})
+	return precompiled
+}
+
+func precompileSkillSearchText(s types.SkillSpec) string {
+	return strings.ToLower(strings.Join([]string{s.Name, s.Description, strings.Join(s.Triggers, " ")}, " "))
 }
 
 type scoredSkill struct {

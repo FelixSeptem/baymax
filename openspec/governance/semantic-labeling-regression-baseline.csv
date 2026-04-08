@@ -1353,6 +1353,7 @@ legacy-axx-content,tool/diagnosticsreplay/arbitration_test.go,2
 legacy-axx-content,tool/diagnosticsreplay/composite.go,3
 legacy-axx-content,tool/diagnosticsreplay/testdata/a55_observability_success_input.json,1
 legacy-axx-content,tool/diagnosticsreplay/testdata/a61_agent_eval_distributed_success_input.json,1
+legacy-axx-content,tool/diagnosticsreplay/testdata/a61_inferential_advisory_distributed_success_input.json,1
 legacy-axx-content,tool/diagnosticsreplay/testdata/a67_react_plan_notebook_success_input.json,1
 legacy-context-stage-wording-content,context/assembler/assembler_test.go,229
 legacy-context-stage-wording-content,context/assembler/assembler.go,56
@@ -1381,13 +1382,13 @@ legacy-context-stage-wording-content,docs/performance-policy.md,3
 legacy-context-stage-wording-content,docs/runtime-config-diagnostics.md,25
 legacy-context-stage-wording-content,docs/runtime-module-boundaries.md,1
 legacy-context-stage-wording-content,docs/v1-acceptance.md,20
-legacy-context-stage-wording-content,integration/benchmark_test.go,54
+legacy-context-stage-wording-content,integration/benchmark_test.go,88
 legacy-context-stage-wording-content,integration/context_assembler_external_retriever_integration_test.go,3
 legacy-context-stage-wording-content,integration/security_redaction_integration_test.go,3
 legacy-context-stage-wording-content,observability/event/runtime_recorder_test.go,20
 legacy-context-stage-wording-content,README.md,2
-legacy-context-stage-wording-content,runtime/config/config_test.go,195
-legacy-context-stage-wording-content,runtime/config/config.go,272
+legacy-context-stage-wording-content,runtime/config/config_test.go,209
+legacy-context-stage-wording-content,runtime/config/config.go,279
 legacy-context-stage-wording-content,runtime/config/manager_test.go,9
 legacy-context-stage-wording-content,runtime/config/manager.go,1
 legacy-context-stage-wording-content,runtime/config/readiness.go,2
@@ -1404,3 +1405,6 @@ legacy-context-stage-wording-path,docs/ca2-external-retriever-evolution.md,1
 legacy-context-stage-wording-path,scripts/ca4-benchmark-baseline.env,1
 legacy-context-stage-wording-path,scripts/check-ca4-benchmark-regression.ps1,1
 legacy-context-stage-wording-path,scripts/check-ca4-benchmark-regression.sh,1
+legacy-axx-content,scripts/a64-gate-latency-baseline.env,1
+legacy-axx-content,scripts/a64-harnessability-scorecard-baseline.env,1
+legacy-axx-content,scripts/check-a64-harnessability-scorecard.ps1,1

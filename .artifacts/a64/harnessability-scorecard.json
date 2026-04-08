@@ -1,0 +1,159 @@
+{
+  "generated_at": "2026-04-08T16:23:55.6331298+08:00",
+  "complexity_tier": "standard",
+  "metrics": {
+    "contract_coverage_pct": 100.0,
+    "drift": {
+      "fixture_count": 91,
+      "min_fixture_count": 2,
+      "unclassified_count": 0,
+      "max_unclassified_count": 0,
+      "within_threshold": true
+    },
+    "gate_coverage_pct": 100.0,
+    "docs_consistency": {
+      "issue_count": 0,
+      "max_issue_count": 0,
+      "within_threshold": true
+    },
+    "roi": {
+      "baseline": {
+        "token": 1800.0,
+        "latency_ms": 1300.0,
+        "quality_score": 0.8
+      },
+      "measured": {
+        "token": 1800.0,
+        "latency_ms": 1300.0,
+        "quality_score": 0.8
+      },
+      "overhead_pct": {
+        "token": 0.0,
+        "latency": 0.0,
+        "quality": 0.0
+      },
+      "thresholds": {
+        "max_token_overhead_pct": 12.0,
+        "max_latency_overhead_pct": 18.0,
+        "min_quality_delta_pct": -2.0
+      },
+      "within_threshold": true,
+      "downgrade_recommendation": "standard"
+    }
+  },
+  "hierarchy": {
+    "objective_domains": [
+      "contract",
+      "replay",
+      "schema",
+      "taxonomy"
+    ],
+    "computational_suites": [
+      "scripts/check-a64-impacted-gate-selection.ps1",
+      "scripts/check-a64-semantic-stability-contract.ps1",
+      "scripts/check-a64-performance-regression.ps1"
+    ],
+    "computational_coverage_pct": 100.0,
+    "inferential_blocking_requested": false,
+    "computational_first_compliant": true
+  },
+  "inferential_evidence": {
+    "input_snapshot": "tool/diagnosticsreplay/testdata/a61_inferential_advisory_distributed_success_input.json",
+    "prompt_version": "a64-harnessability-v1",
+    "scoring_summary": "tier=standard; quality_delta_pct=0",
+    "uncertainty_pct": 15.0,
+    "max_uncertainty_pct": 35.0,
+    "uncertainty_within_threshold": true,
+    "evidence_complete": true
+  },
+  "gate_coverage_details": [
+    {
+      "gate": "a64 impacted gate selection",
+      "shell_token": "check-a64-impacted-gate-selection.sh",
+      "powershell_token": "check-a64-impacted-gate-selection.ps1",
+      "shell_found": true,
+      "powershell_found": true,
+      "covered": true
+    },
+    {
+      "gate": "a64 semantic stability gate",
+      "shell_token": "check-a64-semantic-stability-contract.sh",
+      "powershell_token": "check-a64-semantic-stability-contract.ps1",
+      "shell_found": true,
+      "powershell_found": true,
+      "covered": true
+    },
+    {
+      "gate": "a64 performance regression gate",
+      "shell_token": "check-a64-performance-regression.sh",
+      "powershell_token": "check-a64-performance-regression.ps1",
+      "shell_found": true,
+      "powershell_found": true,
+      "covered": true
+    },
+    {
+      "gate": "a64 harnessability scorecard",
+      "shell_token": "check-a64-harnessability-scorecard.sh",
+      "powershell_token": "check-a64-harnessability-scorecard.ps1",
+      "shell_found": true,
+      "powershell_found": true,
+      "covered": true
+    }
+  ],
+  "docs_check_details": [
+    {
+      "path": "docs/development-roadmap.md",
+      "marker": "harnessability scorecard",
+      "found": true
+    },
+    {
+      "path": "docs/development-roadmap.md",
+      "marker": "harness ROI/depth",
+      "found": true
+    },
+    {
+      "path": "docs/development-roadmap.md",
+      "marker": "computational-first, inferential-second",
+      "found": true
+    },
+    {
+      "path": "docs/development-roadmap.md",
+      "marker": "门禁耗时预算治理",
+      "found": true
+    },
+    {
+      "path": "docs/mainline-contract-test-index.md",
+      "marker": "check-a64-harnessability-scorecard.sh",
+      "found": true
+    },
+    {
+      "path": "docs/mainline-contract-test-index.md",
+      "marker": "check-a64-harnessability-scorecard.ps1",
+      "found": true
+    },
+    {
+      "path": "docs/mainline-contract-test-index.md",
+      "marker": "a64-harnessability-scorecard-baseline.env",
+      "found": true
+    },
+    {
+      "path": "docs/mainline-contract-test-index.md",
+      "marker": "a64-gate-latency-baseline.env",
+      "found": true
+    },
+    {
+      "path": "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md",
+      "marker": "Harnessability Scorecard",
+      "found": true
+    },
+    {
+      "path": "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md",
+      "marker": "门禁耗时基线",
+      "found": true
+    }
+  ],
+  "score": {
+    "pass": true,
+    "failed_checks": []
+  }
+}

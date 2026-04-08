@@ -45,6 +45,9 @@ type Manager struct {
 	snap atomic.Value // *Snapshot
 	diag *runtimediag.Store
 
+	policyCacheMu sync.RWMutex
+	policyCache   map[policyResolveCacheKey]types.MCPRuntimePolicy
+
 	readinessMu          sync.RWMutex
 	readinessComponents  RuntimeReadinessComponentSnapshot
 	reactReadiness       ReactReadinessDependencySnapshot
@@ -60,6 +63,20 @@ type Manager struct {
 	stopOnce     sync.Once
 	stopCh       chan struct{}
 }
+
+type policyResolveCacheKey struct {
+	profile       string
+	hasOverride   bool
+	callTimeout   time.Duration
+	retry         int
+	backoff       time.Duration
+	queueSize     int
+	backpressure  types.BackpressureMode
+	readPoolSize  int
+	writePoolSize int
+}
+
+var defaultConfigReadonly = DefaultConfig()
 
 // MailboxDiagnosticRecord is a runtime/config-level projection used by orchestration modules
 // to avoid direct dependency on runtime/diagnostics internals.
@@ -138,7 +155,8 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 				HalfOpenSuccessThreshold: cfg.Adapter.Health.Circuit.HalfOpenSuccessThreshold,
 			},
 		}, nil),
-		stopCh: make(chan struct{}),
+		policyCache: map[policyResolveCacheKey]types.MCPRuntimePolicy{},
+		stopCh:      make(chan struct{}),
 	}
 	m.diag.SetCardinalityConfig(runtimediag.CardinalityConfig{
 		Enabled:        cfg.Diagnostics.Cardinality.Enabled,
@@ -158,6 +176,7 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 			EnvPrefix: m.envPrefix,
 		},
 	})
+	m.invalidatePolicyResolveCache()
 	if opts.EnableHotReload || cfg.Reload.Enabled {
 		if err := m.Watch(context.Background()); err != nil {
 			return nil, err
@@ -209,7 +228,7 @@ func (m *Manager) watchLoop(ctx context.Context, events <-chan struct{}) {
 		case <-m.stopCh:
 			return
 		case <-events:
-			debounce := m.EffectiveConfig().Reload.Debounce
+			debounce := m.EffectiveConfigRef().Reload.Debounce
 			if debounce <= 0 {
 				debounce = 100 * time.Millisecond
 			}
@@ -234,7 +253,7 @@ func (m *Manager) reload() {
 		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
 		return
 	}
-	current := m.EffectiveConfig()
+	current := *m.EffectiveConfigRef()
 	if err := validateSandboxRolloutPhaseTransition(current.Security.Sandbox.Rollout.Phase, cfg.Security.Sandbox.Rollout.Phase); err != nil {
 		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
 		return
@@ -256,6 +275,7 @@ func (m *Manager) reload() {
 			EnvPrefix: m.envPrefix,
 		},
 	})
+	m.invalidatePolicyResolveCache()
 	m.diag.Resize(
 		cfg.Diagnostics.MaxCallRecords,
 		cfg.Diagnostics.MaxRunRecords,
@@ -296,6 +316,19 @@ func (m *Manager) EffectiveConfig() Config {
 	return s.Config
 }
 
+// EffectiveConfigRef returns a read-only pointer to the current effective runtime configuration.
+// Callers must treat the returned pointer as immutable.
+func (m *Manager) EffectiveConfigRef() *Config {
+	if m == nil {
+		return &defaultConfigReadonly
+	}
+	s := m.snapshot()
+	if s == nil {
+		return &defaultConfigReadonly
+	}
+	return &s.Config
+}
+
 // CurrentSnapshot returns the current immutable snapshot metadata.
 func (m *Manager) CurrentSnapshot() Snapshot {
 	s := m.snapshot()
@@ -321,7 +354,19 @@ func (m *Manager) EffectiveConfigSanitized() map[string]any {
 
 // ResolvePolicy resolves MCP runtime policy by profile and optional override.
 func (m *Manager) ResolvePolicy(profile string, override *types.MCPRuntimePolicy) (types.MCPRuntimePolicy, error) {
-	return ResolveMCPPolicyWithConfig(m.EffectiveConfig(), profile, override)
+	if m == nil {
+		return ResolveMCPPolicyWithConfig(DefaultConfig(), profile, override)
+	}
+	key := newPolicyResolveCacheKey(profile, override)
+	if cached, ok := m.lookupPolicyResolveCache(key); ok {
+		return cached, nil
+	}
+	resolved, err := ResolveMCPPolicyWithConfig(*m.EffectiveConfigRef(), profile, override)
+	if err != nil {
+		return types.MCPRuntimePolicy{}, err
+	}
+	m.storePolicyResolveCache(key, resolved)
+	return resolved, nil
 }
 
 // RecordCall appends an MCP call diagnostics record.
@@ -332,6 +377,13 @@ func (m *Manager) RecordCall(rec runtimediag.CallRecord) {
 // RecordRun appends a run diagnostics record.
 func (m *Manager) RecordRun(rec runtimediag.RunRecord) {
 	m.diag.AddRun(rec)
+	m.updateSandboxRolloutGovernanceFromRun(rec)
+}
+
+// RecordRunOwned appends a run diagnostics record and assumes mutable
+// collection fields in rec are owned by the caller.
+func (m *Manager) RecordRunOwned(rec runtimediag.RunRecord) {
+	m.diag.AddRunOwned(rec)
 	m.updateSandboxRolloutGovernanceFromRun(rec)
 }
 
@@ -445,6 +497,61 @@ func (m *Manager) snapshot() *Snapshot {
 	return s
 }
 
+func newPolicyResolveCacheKey(profile string, override *types.MCPRuntimePolicy) policyResolveCacheKey {
+	key := policyResolveCacheKey{
+		profile: strings.TrimSpace(profile),
+	}
+	if override == nil {
+		return key
+	}
+	key.hasOverride = true
+	key.callTimeout = override.CallTimeout
+	key.retry = override.Retry
+	key.backoff = override.Backoff
+	key.queueSize = override.QueueSize
+	key.backpressure = override.Backpressure
+	key.readPoolSize = override.ReadPoolSize
+	key.writePoolSize = override.WritePoolSize
+	return key
+}
+
+func (m *Manager) lookupPolicyResolveCache(key policyResolveCacheKey) (types.MCPRuntimePolicy, bool) {
+	if m == nil {
+		return types.MCPRuntimePolicy{}, false
+	}
+	m.policyCacheMu.RLock()
+	defer m.policyCacheMu.RUnlock()
+	if len(m.policyCache) == 0 {
+		return types.MCPRuntimePolicy{}, false
+	}
+	policy, ok := m.policyCache[key]
+	return policy, ok
+}
+
+func (m *Manager) storePolicyResolveCache(key policyResolveCacheKey, value types.MCPRuntimePolicy) {
+	if m == nil {
+		return
+	}
+	m.policyCacheMu.Lock()
+	defer m.policyCacheMu.Unlock()
+	if m.policyCache == nil {
+		m.policyCache = map[policyResolveCacheKey]types.MCPRuntimePolicy{}
+	}
+	m.policyCache[key] = value
+}
+
+func (m *Manager) invalidatePolicyResolveCache() {
+	if m == nil {
+		return
+	}
+	m.policyCacheMu.Lock()
+	defer m.policyCacheMu.Unlock()
+	if len(m.policyCache) == 0 {
+		return
+	}
+	clear(m.policyCache)
+}
+
 func (m *Manager) SetSandboxExecutor(executor types.SandboxExecutor) {
 	if m == nil {
 		return
@@ -467,7 +574,7 @@ func (m *Manager) updateSandboxRolloutGovernanceFromRun(rec runtimediag.RunRecor
 	if m == nil {
 		return
 	}
-	sandboxCfg := m.EffectiveConfig().Security.Sandbox
+	sandboxCfg := m.EffectiveConfigRef().Security.Sandbox
 	if !sandboxCfg.Enabled {
 		return
 	}

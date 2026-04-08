@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-04-06
+更新时间：2026-04-07
 
 ## 定位
 
@@ -15,14 +15,13 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-04-06：
+截至 2026-04-07：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
 - jit context organization and reference-first assembly contract
-- 已完成待归档：
-- `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation + semantic labeling，54/54，OpenSpec `all_done`）
 - 进行中：
-- `introduce-engineering-and-performance-optimization-contract-a64`（engineering and performance optimization）
+- `introduce-delivery-usability-agent-mode-example-pack-contract-a62`（delivery usability agent mode example pack）
+- `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -556,8 +555,9 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - Context JIT Organization：补齐 JIT context organization 合同（reference-first/progressive disclosure/write-compress-isolate），提升 ReAct 模式可用性与上下文效率；
   - codebase consolidation and semantic labeling contract：代码整合收敛专项（清理临时代码/文档、命名语义化、目录结构收敛），以“语义不变”为硬约束；
   - a64：工程优化&性能优化专项（goroutine pool、buffer/slice pool、批量导出、Context Assembler 热路径治理），以“语义不变”为硬约束；
+  - a69：context compression production hardening（语义压缩 + 冷热分层 + 冷存治理的生产可用收口）；
   - a62：补齐“交付易用性”example pack（主要 agent 模式一站式示例与可回归冒烟）；
-- 执行约束：policy + memory + budget + tracing baseline contracts 负责核心 runtime contract 缺口，hooks/snapshot/plan/realtime baseline contracts 负责 agent runtime 基座能力补齐（realtime event protocol + interrupt/resume contract 按实时交互需求触发），Context JIT Organization 负责 ReAct/JIT context 组织合同收敛，codebase consolidation and semantic labeling contract 负责代码整合收敛，a64 负责非语义性能工程化，a62 在前述能力相对稳定后承担交付易用性收口（example pack）；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
+- 执行约束：policy + memory + budget + tracing baseline contracts 负责核心 runtime contract 缺口，hooks/snapshot/plan/realtime baseline contracts 负责 agent runtime 基座能力补齐（realtime event protocol + interrupt/resume contract 按实时交互需求触发），Context JIT Organization 负责 ReAct/JIT context 组织合同收敛，codebase consolidation and semantic labeling contract 负责代码整合收敛，a64 负责非语义性能工程化，a69 负责 context 压缩与冷存生产可用治理，a62 在前述能力相对稳定后承担交付易用性收口（example pack）；除非战略边界变化，不再新增同域提案，避免重复提案与重复改造。
 
 参考链接（本轮核对，滚动更新）：
 - Claude Code docs（permissions/hooks/subagents/memory/MCP）：<https://docs.anthropic.com/en/docs/claude-code>
@@ -588,13 +588,14 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
 8. realtime event protocol + interrupt/resume contract（已归档，P2）：realtime event protocol + interrupt/resume contract。
 9. Context JIT Organization（已归档，P2）：jit context organization + reference-first assembly contract（ReAct 场景上下文组织专项）。
 10. codebase consolidation and semantic labeling contract（进行中，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
-11. a64（候选，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
-12. a62（候选，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
+11. a64（进行中，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+12. a69（候选，P2）：context compression production hardening contract（语义压缩 + 冷热分层 + 冷存治理生产化）。
+13. a62（进行中，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
 
 后续项目说明（避免“单一路线”误解）：
-- codebase consolidation and semantic labeling contract（进行中）与 Context JIT Organization（已归档）、realtime event protocol + interrupt/resume contract（已归档）、a64/a62（候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- codebase consolidation and semantic labeling contract（进行中）与 Context JIT Organization（已归档）、realtime event protocol + interrupt/resume contract（已归档）、a64/a69/a62（a64/a62 进行中，a69 候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
 - policy + memory + budget + tracing baseline contracts 已归档，用作稳定基线，不再作为当前推进主路径。
-- 前置切换仅在以下风险信号出现时触发：实时交互压力（realtime event protocol + interrupt/resume contract）、上下文组织漂移（Context JIT Organization）、命名/文档收敛压力（codebase consolidation and semantic labeling contract）、性能回归压力（a64）、交付易用性压力（a62）。
+- 前置切换仅在以下风险信号出现时触发：实时交互压力（realtime event protocol + interrupt/resume contract）、上下文组织漂移（Context JIT Organization）、context 压缩生产可用风险（a69）、命名/文档收敛压力（codebase consolidation and semantic labeling contract）、性能回归压力（a64）、交付易用性压力（a62）。
 - a64 前置时仍按 `a64-S1 -> ... -> a64-S10` 风险链路吸收，允许按瓶颈调整顺序。
 - 无论是否前置切换，均不得改写 react loop + tool-calling parity contract 已归档与 sandbox egress governance + adapter allowlist contract 已冻结范围，只允许在其完成后做增量扩展。
 
@@ -1000,9 +1001,30 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
   - 不绕过现有 contract gate 与 replay 约束；
   - 所有优化都必须可开关、可回滚。
-- 当前状态：进行中（a64-S1~S10 子项目按风险链路增量吸收）；详细 contract/fixture/gate 清单持续补齐。
+- 当前状态：进行中（a64-S1~S10 子项目按风险链路增量吸收）；S10 `11.1~11.4` 与 `12.1~12.4/12.7~12.18` 已落地，`12.5/12.6` 已执行并形成阻断风险记录（语义命名债与 lint 历史债需独立收口）。
 
-提案 a62（候选）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
+提案 a69（候选，建议前置于 a62）：`introduce-context-compression-production-hardening-contract-a69`
+- 目标（production-ready）：在不改写 Context JIT Organization 已归档语义的前提下，补齐 context pressure `semantic compaction + spill/swap-back + lifecycle tiering` 的生产可用治理闭环。
+- 范围（a69 内闭环，避免平行拆分）：
+  - a69-S1 语义压缩稳定性治理：固化 semantic compaction 的质量门槛、降级策略与失败分类；补齐 `ToolResult` 压力与可压缩对象边界一致性，避免“估算计入但压缩无收益”。
+  - a69-S2 冷热分层与回填策略治理：统一 `hot|warm|cold|pruned` 规则化迁移；swap-back 从“按文件顺序取前 N”升级为“相关性 + 新近性”优先。
+  - a69-S3 file 冷存生产治理：补齐 `retention/quota/cleanup/compact`，控制 `context-spill.jsonl` 无限增长；保持默认 file backend 可独立运行。
+  - a69-S4 一致性与恢复治理：补齐 crash/restart/replay 下的 spill/swap-back 幂等与去重一致性，不引入第二套状态事实源。
+  - a69-S5 观测与回放治理：新增/收敛 context 压缩生产化 additive 字段、fixture 与 drift 分类，保持 `additive + nullable + default`。
+  - a69-S6 强门禁治理：新增 `check-context-compression-production-contract.sh/.ps1` 并接入 `check-quality-gate.*`；与 `check-context-jit-organization-contract.*`、`check-context-production-hardening-benchmark-regression.*` 组成阻断集合。
+- 非目标：
+  - 不新增 context 能力族（reference-first/isolate/edit-gate/task-aware recap）语义，相关能力定义继续以 Context JIT Organization 为准。
+  - 不替代 a64 性能治理职责；a69 聚焦“生产可用合同稳定性”，a64 聚焦“语义不变性能优化”。
+- 与 a62 的排序关系（前置建议）：
+  - a69 建议前置到 a62 之前：先冻结 context 压缩/冷存生产语义，再收口 `a62-T15 context-governed-reference-first` 等示例，降低示例回滚成本。
+  - 已在进行中的 a62 非 context 主题任务可并行推进；涉及 context-governed 的完成判定以后置 a69 合同为准。
+- 退出条件（DoD）：
+  - context 压缩在长会话/高频工具调用场景下具备可预测收益与稳定回退；
+  - 冷存文件具备有界增长治理（retention/quota/cleanup）且回填语义稳定；
+  - Run/Stream/replay 无语义漂移，contract/perf gates 全绿。
+- 当前状态：候选（roadmap 已登记，待建立 OpenSpec change）。
+
+提案 a62（进行中）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
 - 模式覆盖（最低要求，PocketFlow + Baymax 扩展）：
   - PocketFlow 模式对齐：
@@ -1042,6 +1064,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - 提供模式级 `README` 与迁移指引（从旧示例到模式化示例的映射）。
   - 新增 `example -> production` 迁移手册（建议 `examples/agent-modes/PLAYBOOK.md`），统一 `config/permission/observability/capacity/rollback/gates` 上线检查项；
   - 每个 `production-ish` 示例 README 必须补齐 `prod delta` 章节，明确相对 `minimal` 的生产差异、风险边界与必跑门禁。
+  - 清理历史示例遗留占位：`examples/` 下既有示例中的 `TODO/TBD/FIXME/待补` 必须清零，未完项迁移到 `MATRIX.md`/`PLAYBOOK.md`/`tasks.md` 可追踪条目。
 - a62 范围内固化示例清单（执行优先级）：
   - P0（优先落地）：
     - `examples/agent-modes/rag-hybrid-retrieval`：memory + MCP 双来源检索、fallback、Run/Stream 等价；
@@ -1112,7 +1135,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
     - `a62-T36` `mainline-readiness-admission-degradation`：readiness 分类、strict/non-strict、admission 降级/阻断与无副作用断言；门禁对齐 `check-policy-precedence-contract.*`、`check-quality-gate.*`；
     - `a62-T37` `custom-adapter-mcp-model-tool-memory-pack`：自定义 adapter 四类接入（mcp/model/tool/memory）最小+production-ish 双档示例；门禁对齐 `check-adapter-conformance.*`、`check-adapter-manifest-contract.*`、`check-adapter-capability-contract.*`、`check-adapter-contract-replay.*`、`check-memory-contract-conformance.*`、`check-memory-scope-and-search-contract.*`；
     - `a62-T38` `custom-adapter-health-readiness-circuit`：adapter health probe、circuit 开关、readiness finding 映射与 admission 决策等价；门禁对齐 `check-adapter-conformance.*`、`check-quality-gate.*`。
-  - 阶段 D（统一收口，`a62-T90~T98`）：
+  - 阶段 D（统一收口，`a62-T90~T100`）：
     - `a62-T90`：每个模式补齐 `minimal/prod-ish` 运行说明与“边界不覆盖”声明；
     - `a62-T91`：示例统一注入 diagnostics/tracing 标记并补 replay fixture；
     - `a62-T92`：新增/更新 smoke 脚本以支持按模式子集执行（便于 CI 分片）；
@@ -1122,21 +1145,24 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
     - `a62-T96`：为每个 `production-ish` 示例补齐 `prod delta` 检查清单（配置/权限/容量/观测/回放/门禁）并与 `MATRIX.md` 对齐。
     - `a62-T97`：新增 `check-agent-mode-migration-playbook-consistency.sh/.ps1`，校验示例索引、`MATRIX.md` 与 playbook 的映射完整性。
     - `a62-T98`：将 `migration-playbook-consistency` 接入 `check-quality-gate.*`，并产出 `missing-checklist/missing-gate` 阻断分类。
+    - `a62-T99`：清理 `examples/` 历史示例中的 `TODO/TBD/FIXME/待补` 占位，并将未完项迁移至 `MATRIX.md`/`PLAYBOOK.md`/`tasks.md` 可追踪条目。
+    - `a62-T100`：新增 `check-agent-mode-legacy-todo-cleanup.sh/.ps1` 并接入 `check-quality-gate.*`，阻断 TODO 类占位回流。
 - Gate：
   - `check-agent-mode-examples-smoke.sh/.ps1`（按 PocketFlow+Baymax 模式矩阵执行最小冒烟）
   - `check-agent-mode-pattern-coverage.sh/.ps1`（校验模式覆盖矩阵完整性与文档索引一致性）
   - `check-agent-mode-migration-playbook-consistency.sh/.ps1`（校验 `example -> production` 迁移手册与示例索引、门禁映射一致）
+  - `check-agent-mode-legacy-todo-cleanup.sh/.ps1`（校验 `examples/` 历史示例不存在 `TODO/TBD/FIXME/待补` 占位）
   - required-check 候选：`agent-mode-examples-smoke-gate`
-- 依赖：sandbox egress governance + adapter allowlist contract-OTel tracing + agent eval interoperability contract 与 hooks/snapshot/plan/realtime baseline contracts 主链路冻结，并完成 Context JIT Organization（若启用）收敛，且 codebase consolidation and semantic labeling contract/a64 收敛完成后实施。
+- 依赖：sandbox egress governance + adapter allowlist contract-OTel tracing + agent eval interoperability contract 与 hooks/snapshot/plan/realtime baseline contracts 主链路冻结，并完成 Context JIT Organization（若启用）收敛，且 codebase consolidation and semantic labeling contract/a64/a69 收敛完成后实施（已开工的 a62 非 context 子项可并行，不受 a69 前置影响）。
 - 一次性补齐边界（a62 内闭环）：
-  - 交付易用性同域需求（模式补齐、示例索引、README 规范、smoke 矩阵、`example -> production` 迁移手册）统一在 a62 吸收，不再新增平行 example pack 提案。
+  - 交付易用性同域需求（模式补齐、示例索引、README 规范、smoke 矩阵、`example -> production` 迁移手册、历史示例 TODO 清理）统一在 a62 吸收，不再新增平行 example pack 提案。
 - 启动条件：新增团队接入成本偏高、PoC 转生产迁移慢、或示例与 contract 漂移信号出现。
 
 policy precedence + decision trace contract-a62 验收摘要（现状）：
 
 - policy + memory + budget + tracing baseline contracts：已归档并稳定；具体 contract/replay/gate 口径以
   `docs/mainline-contract-test-index.md` 与 `openspec/changes/archive/INDEX.md` 为准。
-- a62：候选后置收口项（delivery usability + example pack），在 codebase consolidation and semantic labeling contract/a64 后推进。
+- a62：进行中收口项（delivery usability + example pack），按 a64 主链路节奏分批推进。
 
 统一验收前提（当前主线共用）：
 - 配置治理：`env > file > default`，非法值 fail-fast，热更新失败原子回滚。
@@ -1187,12 +1213,13 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 - Realtime 事件协议必须复用 policy precedence 与 ReAct plan notebook 决策/计划解释字段，不得引入第二套 interrupt/resume 语义。
 - Realtime 合同仅定义协议与嵌入式接缝，不得新增平台化实时网关或托管连接控制面。
 - Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。
-- Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
+- Context organization 语义能力同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 Context JIT Organization 增量吸收；生产可用治理同域需求（压缩质量门控、冷存检索/清理、一致性回放、强门禁）统一在 a69 吸收，不再新增平行 context 压缩提案。
 - codebase consolidation and semantic labeling contract 的命名与文档整合必须复用现有契约字段，不得改写 contract 语义；并以“消除 `ca|ca2|ca3|ca4` 与 `Axx` 活动表述”为强制范围，映射集中维护于索引，不在多处重复定义。
 - codebase consolidation and semantic labeling contract 文档/命名同域新增需求（临时文档治理、编号语义化、README 对齐、索引集中化、命名回流阻断）仅允许在 codebase consolidation and semantic labeling contract 内增量吸收，不再新开平行整治提案。
 - 运行时 Harness 架构总览文档（`state surfaces/guides/sensors/tool mediation/entropy control`）仅允许在 codebase consolidation and semantic labeling contract 文档治理范围内增量吸收，不再新增平行文档提案。
 - a64 的优化实现必须复用 policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract 与 Context JIT Organization（若启用）既有契约字段与 reason taxonomy，禁止以性能优化引入语义分叉。
 - Context Assembler 循环热路径同域需求（cache 回收、journal 批写、CA3 stage2 pass 优化、stage2 file 读取优化）统一在 a64-S1 内增量吸收，不再新增平行性能提案。
+- Context Assembler 的生产可用合同治理（semantic 质量门槛、spill/swap-back 检索策略、冷存 retention/quota/cleanup、恢复一致性）统一在 a69 内增量吸收，与 a64-S1 性能优化边界分离，避免语义与性能改造交叉漂移。
 - RuntimeRecorder/diagnostics、scheduler-file/mailbox/composer recovery、MCP 调用链、skill loader、memory filesystem 引擎的同域性能需求统一在 a64-S2~S6 内增量吸收，不再新增平行性能提案。
 - Runner 循环、local dispatch、provider adapter、runtime config/policy resolve 的同域性能需求统一在 a64-S7~S9 内增量吸收，不再新增平行性能提案。
 - observability dispatcher/logger/exporter 事件管线的同域性能需求统一在 a64-S10 内增量吸收，不再新增平行性能提案。
@@ -1201,15 +1228,16 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 - 门禁执行效率同域需求（影响面映射 `fast/full`、mandatory suites 完备性、gate latency 预算与回归阻断）统一在 a64 横切门禁内增量吸收，不新增平行提案。
 - a64 所有子项必须通过 `semantic-stability + replay + perf-regression` 强门禁；任何 gate 漂移均按阻断处理，不得以“仅性能优化”为由豁免。
 - a62 的示例字段与观测语义必须引用 react loop + tool-calling parity contract-realtime event protocol + interrupt/resume contract 与 Context JIT Organization（若启用）既有 contract 输出，禁止在 examples 侧定义平行语义。
-- a62 交付易用性同域新增需求（PocketFlow `agent/workflow/rag/mapreduce/structured output/multi agents` 覆盖 + Baymax `mcp/skill/react/hitl/context/sandbox/realtime` 扩展、示例矩阵、README 规范、smoke/gate、`example -> production` 迁移手册）仅允许在 a62 内增量吸收，不再新开平行示例提案。
+- a62 交付易用性同域新增需求（PocketFlow `agent/workflow/rag/mapreduce/structured output/multi agents` 覆盖 + Baymax `mcp/skill/react/hitl/context/sandbox/realtime` 扩展、示例矩阵、README 规范、smoke/gate、`example -> production` 迁移手册、历史示例 TODO 清理）仅允许在 a62 内增量吸收，不再新开平行示例提案。
+- Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
 - 若出现新增需求，优先以 policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract 与 Context JIT Organization 的“增量任务”吸收，默认不新增 additional same-domain proposal series+ 同域提案。
 
-状态对齐说明（2026-04-04）：
+状态对齐说明（2026-04-07）：
 - 已归档并稳定：policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract（A4-sandbox egress governance + adapter allowlist contract 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：codebase consolidation and semantic labeling contract、a64。
+- 进行中：a62、a69。
 - 已归档：Context JIT Organization。
-- 候选未启动：a62。
-- 顺序约束保持不变：优先收口 codebase consolidation and semantic labeling contract 与 a64 的进行中任务，再做交付易用性示例收口（a62）。
+- 已完成待归档：a64（engineering/performance optimization）。
+- 顺序约束调整：优先收口 a64 性能工程化主链；a69 作为 a62 的 context 生产化前置，a62 其余示例子项可并行推进并在 a69 收敛后统一做 context 相关验收。
 
 ### P2：0.x 质量与治理持续收敛
 

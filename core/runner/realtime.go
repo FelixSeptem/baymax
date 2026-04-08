@@ -69,7 +69,7 @@ type realtimeSessionRuntime struct {
 func (e *Engine) runtimeRealtimeConfigSnapshot() runtimeconfig.RuntimeRealtimeConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.Realtime
 	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Realtime
+		cfg = e.runtimeMgr.EffectiveConfigRef().Runtime.Realtime
 	}
 	return cfg
 }
@@ -100,10 +100,12 @@ func (s *realtimeSessionRuntime) fillRunFinishMeta(meta *runFinishMeta) {
 		return
 	}
 	meta.RealtimeProtocolVersion = strings.TrimSpace(s.cfg.Protocol.Version)
+	meta.RealtimeSessionID = strings.TrimSpace(s.sessionID)
 	meta.RealtimeEventSeqMax = s.seqMax
 	meta.RealtimeInterruptTotal = s.interruptTotal
 	meta.RealtimeResumeTotal = s.resumeTotal
 	meta.RealtimeResumeSource = strings.TrimSpace(s.resumeSource)
+	meta.RealtimeResumeCursor = strings.TrimSpace(s.cursor)
 	meta.RealtimeIdempotencyDedupTotal = s.dedupTotal
 	meta.RealtimeLastErrorCode = strings.TrimSpace(s.lastErrorCode)
 	meta.RealtimeErrorLayer = strings.TrimSpace(s.lastErrorLayer)

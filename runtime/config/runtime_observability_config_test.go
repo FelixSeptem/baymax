@@ -23,6 +23,12 @@ func TestRuntimeObservabilityConfigDefaults(t *testing.T) {
 	if cfg.Runtime.Observability.Export.QueueCapacity <= 0 {
 		t.Fatalf("runtime.observability.export.queue_capacity = %d, want >0", cfg.Runtime.Observability.Export.QueueCapacity)
 	}
+	if cfg.Runtime.Observability.Export.MaxBatchSize <= 0 {
+		t.Fatalf("runtime.observability.export.max_batch_size = %d, want >0", cfg.Runtime.Observability.Export.MaxBatchSize)
+	}
+	if cfg.Runtime.Observability.Export.MaxFlushLatency <= 0 {
+		t.Fatalf("runtime.observability.export.max_flush_latency = %v, want >0", cfg.Runtime.Observability.Export.MaxFlushLatency)
+	}
 	if cfg.Runtime.Observability.Export.OnError != RuntimeObservabilityExportOnErrorDegradeAndRecord {
 		t.Fatalf(
 			"runtime.observability.export.on_error = %q, want %q",
@@ -83,6 +89,8 @@ func TestRuntimeObservabilityConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_PROFILE", RuntimeObservabilityExportProfileLangfuse)
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENDPOINT", "https://langfuse.env.test")
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_QUEUE_CAPACITY", "2048")
+	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_BATCH_SIZE", "16")
+	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_FLUSH_LATENCY", "250ms")
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ON_ERROR", RuntimeObservabilityExportOnErrorFailFast)
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_TRACING_OTEL_ENABLED", "true")
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_TRACING_OTEL_PROTOCOL", RuntimeObservabilityTracingOTelProtocolHTTPProtobuf)
@@ -105,6 +113,8 @@ runtime:
       profile: none
       endpoint: ""
       queue_capacity: 64
+      max_batch_size: 2
+      max_flush_latency: 80ms
       on_error: degrade_and_record
     tracing:
       otel:
@@ -151,6 +161,18 @@ runtime:
 		t.Fatalf(
 			"runtime.observability.export.queue_capacity = %d, want 2048 from env",
 			cfg.Runtime.Observability.Export.QueueCapacity,
+		)
+	}
+	if cfg.Runtime.Observability.Export.MaxBatchSize != 16 {
+		t.Fatalf(
+			"runtime.observability.export.max_batch_size = %d, want 16 from env",
+			cfg.Runtime.Observability.Export.MaxBatchSize,
+		)
+	}
+	if cfg.Runtime.Observability.Export.MaxFlushLatency != 250*time.Millisecond {
+		t.Fatalf(
+			"runtime.observability.export.max_flush_latency = %v, want 250ms from env",
+			cfg.Runtime.Observability.Export.MaxFlushLatency,
 		)
 	}
 	if cfg.Runtime.Observability.Export.OnError != RuntimeObservabilityExportOnErrorFailFast {
@@ -243,6 +265,18 @@ func TestRuntimeObservabilityConfigValidationRejectsInvalidValues(t *testing.T) 
 	}
 
 	cfg = DefaultConfig()
+	cfg.Runtime.Observability.Export.MaxBatchSize = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.observability.export.max_batch_size") {
+		t.Fatalf("expected runtime.observability.export.max_batch_size validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Observability.Export.MaxFlushLatency = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.observability.export.max_flush_latency") {
+		t.Fatalf("expected runtime.observability.export.max_flush_latency validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
 	cfg.Runtime.Diagnostics.Bundle.OutputDir = "."
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.diagnostics.bundle.output_dir") {
 		t.Fatalf("expected runtime.diagnostics.bundle.output_dir validation error, got %v", err)
@@ -314,6 +348,25 @@ func TestRuntimeObservabilityConfigInvalidBoolFailsFast(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_TRACING_OTEL_ENABLED", "definitely-not-bool")
 	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.observability.tracing.otel.enabled") {
 		t.Fatalf("expected strict bool parse error for runtime.observability.tracing.otel.enabled, got %v", err)
+	}
+}
+
+func TestRuntimeObservabilityExportMaxBatchSizeInvalidIntFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_BATCH_SIZE", "abc")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.observability.export.max_batch_size") {
+		t.Fatalf("expected strict int parse error for runtime.observability.export.max_batch_size, got %v", err)
+	}
+}
+
+func TestRuntimeObservabilityExportMaxFlushLatencyInvalidValueFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_FLUSH_LATENCY", "definitely-not-duration")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.observability.export.max_flush_latency") {
+		t.Fatalf("expected validation error for runtime.observability.export.max_flush_latency, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_FLUSH_LATENCY", "0s")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.observability.export.max_flush_latency") {
+		t.Fatalf("expected >0 validation error for runtime.observability.export.max_flush_latency, got %v", err)
 	}
 }
 

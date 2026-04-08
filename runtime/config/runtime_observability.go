@@ -63,11 +63,13 @@ type RuntimeObservabilityConfig struct {
 }
 
 type RuntimeObservabilityExportConfig struct {
-	Enabled       bool   `json:"enabled"`
-	Profile       string `json:"profile"`
-	Endpoint      string `json:"endpoint"`
-	QueueCapacity int    `json:"queue_capacity"`
-	OnError       string `json:"on_error"`
+	Enabled         bool          `json:"enabled"`
+	Profile         string        `json:"profile"`
+	Endpoint        string        `json:"endpoint"`
+	QueueCapacity   int           `json:"queue_capacity"`
+	MaxBatchSize    int           `json:"max_batch_size"`
+	MaxFlushLatency time.Duration `json:"max_flush_latency"`
+	OnError         string        `json:"on_error"`
 }
 
 type RuntimeObservabilityTracingConfig struct {
@@ -162,6 +164,12 @@ func ValidateRuntimeObservabilityExportConfig(cfg RuntimeObservabilityExportConf
 	}
 	if cfg.QueueCapacity <= 0 {
 		return fmt.Errorf("runtime.observability.export.queue_capacity must be > 0")
+	}
+	if cfg.MaxBatchSize <= 0 {
+		return fmt.Errorf("runtime.observability.export.max_batch_size must be > 0")
+	}
+	if cfg.MaxFlushLatency <= 0 {
+		return fmt.Errorf("runtime.observability.export.max_flush_latency must be > 0")
 	}
 	switch normalized.OnError {
 	case RuntimeObservabilityExportOnErrorFailFast, RuntimeObservabilityExportOnErrorDegradeAndRecord:

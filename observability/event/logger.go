@@ -15,6 +15,7 @@ import (
 type JSONLogger struct {
 	mu         sync.Mutex
 	out        io.Writer
+	encoder    *json.Encoder
 	runtimeMgr *runtimeconfig.Manager
 }
 
@@ -22,7 +23,10 @@ func NewJSONLogger(out io.Writer) *JSONLogger {
 	if out == nil {
 		out = os.Stdout
 	}
-	return &JSONLogger{out: out}
+	return &JSONLogger{
+		out:     out,
+		encoder: json.NewEncoder(out),
+	}
 }
 
 func NewJSONLoggerWithRuntimeManager(out io.Writer, mgr *runtimeconfig.Manager) *JSONLogger {
@@ -33,32 +37,56 @@ func NewJSONLoggerWithRuntimeManager(out io.Writer, mgr *runtimeconfig.Manager) 
 
 func (l *JSONLogger) OnEvent(ctx context.Context, ev types.Event) {
 	payload := ev.Payload
+	runtimeLoadedAt := ""
+	runtimeActiveProfile := ""
 	if l.runtimeMgr != nil && len(payload) > 0 {
 		payload = l.runtimeMgr.RedactPayload(payload)
 	}
-	entry := map[string]any{
-		"time":      ev.Time.Format(time.RFC3339Nano),
-		"version":   ev.Version,
-		"type":      ev.Type,
-		"run_id":    ev.RunID,
-		"iteration": ev.Iteration,
-		"call_id":   ev.CallID,
-		"trace_id":  ev.TraceID,
-		"span_id":   ev.SpanID,
-		"payload":   payload,
-	}
 	if l.runtimeMgr != nil {
 		s := l.runtimeMgr.CurrentSnapshot()
-		entry["runtime_loaded_at"] = s.LoadedAt.Format(time.RFC3339Nano)
-		entry["runtime_active_profile"] = s.Config.MCP.ActiveProfile
+		runtimeLoadedAt = s.LoadedAt.Format(time.RFC3339Nano)
+		runtimeActiveProfile = s.Config.MCP.ActiveProfile
 	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return
+	entry := jsonLogEntry{
+		Time:      ev.Time.Format(time.RFC3339Nano),
+		Version:   ev.Version,
+		Type:      ev.Type,
+		RunID:     ev.RunID,
+		Iteration: ev.Iteration,
+		CallID:    ev.CallID,
+		TraceID:   ev.TraceID,
+		SpanID:    ev.SpanID,
+		Payload:   payload,
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = l.out.Write(append(data, '\n'))
+	if l.runtimeMgr != nil {
+		_ = l.encoder.Encode(jsonLogEntryWithRuntime{
+			jsonLogEntry:         entry,
+			RuntimeLoadedAt:      runtimeLoadedAt,
+			RuntimeActiveProfile: runtimeActiveProfile,
+		})
+		return
+	}
+	_ = l.encoder.Encode(entry)
 }
 
 var _ types.EventHandler = (*JSONLogger)(nil)
+
+type jsonLogEntry struct {
+	Time      string         `json:"time"`
+	Version   string         `json:"version"`
+	Type      string         `json:"type"`
+	RunID     string         `json:"run_id"`
+	Iteration int            `json:"iteration"`
+	CallID    string         `json:"call_id"`
+	TraceID   string         `json:"trace_id"`
+	SpanID    string         `json:"span_id"`
+	Payload   map[string]any `json:"payload"`
+}
+
+type jsonLogEntryWithRuntime struct {
+	jsonLogEntry
+	RuntimeLoadedAt      string `json:"runtime_loaded_at"`
+	RuntimeActiveProfile string `json:"runtime_active_profile"`
+}

@@ -245,6 +245,176 @@ func TestMailboxSnapshotRestoreMemoryFileParity(t *testing.T) {
 	}
 }
 
+func TestMailboxFileStoreOptionalGroupCommitAndFlush(t *testing.T) {
+	ctx := context.Background()
+	policy := Policy{}
+	now := time.Now().UTC()
+	path := filepath.Join(t.TempDir(), "mailbox-group-commit.json")
+
+	store, err := NewFileStore(path, policy, WithPersistBatchSize(2), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-group-1",
+		IdempotencyKey: "idem-group-1",
+		Kind:           KindCommand,
+	}, now); err != nil {
+		t.Fatalf("publish msg-group-1 failed: %v", err)
+	}
+
+	restartedBefore, err := NewFileStore(path, policy)
+	if err != nil {
+		t.Fatalf("reopen before batch threshold failed: %v", err)
+	}
+	beforeSnapshot, err := restartedBefore.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot before threshold failed: %v", err)
+	}
+	if len(beforeSnapshot.Records) != 0 {
+		t.Fatalf("records before group commit=%d, want 0", len(beforeSnapshot.Records))
+	}
+
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-group-2",
+		IdempotencyKey: "idem-group-2",
+		Kind:           KindCommand,
+	}, now.Add(time.Millisecond)); err != nil {
+		t.Fatalf("publish msg-group-2 failed: %v", err)
+	}
+	restartedAfterBatch, err := NewFileStore(path, policy)
+	if err != nil {
+		t.Fatalf("reopen after batch threshold failed: %v", err)
+	}
+	afterBatchSnapshot, err := restartedAfterBatch.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after batch threshold failed: %v", err)
+	}
+	if len(afterBatchSnapshot.Records) != 2 {
+		t.Fatalf("records after group commit=%d, want 2", len(afterBatchSnapshot.Records))
+	}
+
+	pathFlush := filepath.Join(t.TempDir(), "mailbox-flush.json")
+	flushStore, err := NewFileStore(pathFlush, policy, WithPersistBatchSize(5), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new flush file store failed: %v", err)
+	}
+	if _, err := flushStore.Publish(ctx, Envelope{
+		MessageID:      "msg-flush-1",
+		IdempotencyKey: "idem-flush-1",
+		Kind:           KindCommand,
+	}, now); err != nil {
+		t.Fatalf("publish msg-flush-1 failed: %v", err)
+	}
+	if err := flushStore.Flush(); err != nil {
+		t.Fatalf("flush pending writes failed: %v", err)
+	}
+	restartedAfterFlush, err := NewFileStore(pathFlush, policy)
+	if err != nil {
+		t.Fatalf("reopen after flush failed: %v", err)
+	}
+	afterFlushSnapshot, err := restartedAfterFlush.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after flush failed: %v", err)
+	}
+	if len(afterFlushSnapshot.Records) != 1 {
+		t.Fatalf("records after explicit flush=%d, want 1", len(afterFlushSnapshot.Records))
+	}
+}
+
+func TestMailboxFileStoreOptionalDebounceCommit(t *testing.T) {
+	ctx := context.Background()
+	policy := Policy{}
+	now := time.Now().UTC()
+	path := filepath.Join(t.TempDir(), "mailbox-debounce.json")
+
+	store, err := NewFileStore(path, policy, WithPersistBatchSize(10), WithPersistDebounce(25*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new debounce file store failed: %v", err)
+	}
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-debounce-1",
+		IdempotencyKey: "idem-debounce-1",
+		Kind:           KindCommand,
+	}, now); err != nil {
+		t.Fatalf("publish msg-debounce-1 failed: %v", err)
+	}
+	time.Sleep(35 * time.Millisecond)
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-debounce-2",
+		IdempotencyKey: "idem-debounce-2",
+		Kind:           KindCommand,
+	}, now.Add(time.Millisecond)); err != nil {
+		t.Fatalf("publish msg-debounce-2 failed: %v", err)
+	}
+
+	restarted, err := NewFileStore(path, policy)
+	if err != nil {
+		t.Fatalf("reopen debounce file store failed: %v", err)
+	}
+	snapshot, err := restarted.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after debounce commit failed: %v", err)
+	}
+	if len(snapshot.Records) != 2 {
+		t.Fatalf("records after debounce commit=%d, want 2", len(snapshot.Records))
+	}
+}
+
+func TestMailboxFileStoreFlushBoundaryCrashRecoveryConsistency(t *testing.T) {
+	ctx := context.Background()
+	policy := Policy{}
+	now := time.Now().UTC()
+	path := filepath.Join(t.TempDir(), "mailbox-flush-boundary.json")
+	store, err := NewFileStore(path, policy, WithPersistBatchSize(10), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-durable",
+		IdempotencyKey: "idem-durable",
+		Kind:           KindCommand,
+	}, now); err != nil {
+		t.Fatalf("publish durable message failed: %v", err)
+	}
+	if err := store.Flush(); err != nil {
+		t.Fatalf("flush durable message failed: %v", err)
+	}
+	if _, err := store.Publish(ctx, Envelope{
+		MessageID:      "msg-pending",
+		IdempotencyKey: "idem-pending",
+		Kind:           KindCommand,
+	}, now.Add(time.Millisecond)); err != nil {
+		t.Fatalf("publish pending message failed: %v", err)
+	}
+
+	restarted, err := NewFileStore(path, policy)
+	if err != nil {
+		t.Fatalf("reopen mailbox file store failed: %v", err)
+	}
+	snapshot, err := restarted.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after restart failed: %v", err)
+	}
+	seenDurable := false
+	seenPending := false
+	for i := range snapshot.Records {
+		switch snapshot.Records[i].Envelope.MessageID {
+		case "msg-durable":
+			seenDurable = true
+		case "msg-pending":
+			seenPending = true
+		}
+	}
+	if !seenDurable {
+		t.Fatal("durable message should survive restart")
+	}
+	if seenPending {
+		t.Fatal("pending message should not survive restart before next flush")
+	}
+}
+
 func TestNewStoreWithFallbackToMemory(t *testing.T) {
 	result, err := NewStoreWithFallback("file", "", Policy{})
 	if err != nil {

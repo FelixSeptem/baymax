@@ -1,0 +1,18 @@
+goos: windows
+goarch: amd64
+pkg: github.com/FelixSeptem/baymax/integration
+cpu: AMD Ryzen 7 7840HS w/ Radeon 780M Graphics     
+BenchmarkDiagnosticsQueryRuns-16                   	     507	    408168 ns/op	   1554800 p95-ns/op	  345557 B/op	      33 allocs/op
+BenchmarkDiagnosticsQueryRuns-16                   	     541	    417028 ns/op	   1561300 p95-ns/op	  345563 B/op	      33 allocs/op
+BenchmarkDiagnosticsQueryRuns-16                   	     584	    396606 ns/op	   1568400 p95-ns/op	  345560 B/op	      33 allocs/op
+BenchmarkDiagnosticsQueryRunsSandboxEnriched-16    	     732	    314823 ns/op	   1551200 p95-ns/op	  280303 B/op	      37 allocs/op
+BenchmarkDiagnosticsQueryRunsSandboxEnriched-16    	     740	    314804 ns/op	   1558100 p95-ns/op	  280301 B/op	      37 allocs/op
+BenchmarkDiagnosticsQueryRunsSandboxEnriched-16    	     662	    326779 ns/op	   1557000 p95-ns/op	  280314 B/op	      37 allocs/op
+BenchmarkDiagnosticsQueryMailbox-16                	     321	    764140 ns/op	   2186800 p95-ns/op	 3102800 B/op	      46 allocs/op
+BenchmarkDiagnosticsQueryMailbox-16                	     292	    779382 ns/op	   2132500 p95-ns/op	 3102796 B/op	      46 allocs/op
+BenchmarkDiagnosticsQueryMailbox-16                	     289	    812126 ns/op	   2252600 p95-ns/op	 3102806 B/op	      46 allocs/op
+BenchmarkDiagnosticsMailboxAggregates-16           	     798	    316410 ns/op	   1561900 p95-ns/op	 1643608 B/op	     258 allocs/op
+BenchmarkDiagnosticsMailboxAggregates-16           	     790	    326171 ns/op	   1560600 p95-ns/op	 1643608 B/op	     258 allocs/op
+BenchmarkDiagnosticsMailboxAggregates-16           	     758	    345832 ns/op	   1555600 p95-ns/op	 1643608 B/op	     258 allocs/op
+PASS
+ok  	github.com/FelixSeptem/baymax/integration	7.067s

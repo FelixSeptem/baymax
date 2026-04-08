@@ -1,0 +1,18 @@
+goos: windows
+goarch: amd64
+pkg: github.com/FelixSeptem/baymax/integration
+cpu: AMD Ryzen 7 7840HS w/ Radeon 780M Graphics     
+BenchmarkContextProductionHardeningPressureEvaluation-16                         	       1	 838835600 ns/op	 838750200 p95-ns/op	94390216 B/op	 1426572 allocs/op
+BenchmarkContextProductionHardeningPressureEvaluation-16                         	       1	 505624600 ns/op	 504609200 p95-ns/op	59714184 B/op	  825039 allocs/op
+BenchmarkContextProductionHardeningPressureEvaluation-16                         	       1	 503601500 ns/op	 503767100 p95-ns/op	59714056 B/op	  825036 allocs/op
+BenchmarkContextPressureSemanticCompactionLatency-16                             	       1	 541701700 ns/op	 541725600 p95-ns/op	60716008 B/op	  836668 allocs/op
+BenchmarkContextPressureSemanticCompactionLatency-16                             	       1	 563488900 ns/op	 563495400 p95-ns/op	60715280 B/op	  836658 allocs/op
+BenchmarkContextPressureSemanticCompactionLatency-16                             	       1	 568804700 ns/op	 568182500 p95-ns/op	60715992 B/op	  836667 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled-16             	       1	 617771600 ns/op	 617882500 p95-ns/op	60715992 B/op	  836665 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled-16             	       1	 589714200 ns/op	 588865800 p95-ns/op	60715976 B/op	  836665 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled-16             	       1	 567167600 ns/op	 567452700 p95-ns/op	60715408 B/op	  836658 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled-16    	      13	  18522454 ns/op	  27533100 p95-ns/op	 5129346 B/op	   32573 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled-16    	      15	  16262473 ns/op	  22401900 p95-ns/op	 5121531 B/op	   32569 allocs/op
+BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled-16    	      18	  17006056 ns/op	  21800900 p95-ns/op	 5124087 B/op	   32570 allocs/op
+PASS
+ok  	github.com/FelixSeptem/baymax/integration	6.892s

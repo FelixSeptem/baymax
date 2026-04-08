@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-04-08T13:39:26.6007009+08:00",
+  "max_total_seconds": 1200,
+  "max_step_seconds": 600,
+  "total_seconds": 4.9,
+  "total_within": true,
+  "steps": [
+    {
+      "step": "a64 impacted gate selection",
+      "script": "scripts/check-a64-impacted-gate-selection.ps1",
+      "seconds": 1.839,
+      "max_step": 600,
+      "within": true
+    },
+    {
+      "step": "a64 semantic stability gate",
+      "script": "scripts/check-a64-semantic-stability-contract.ps1",
+      "seconds": 1.515,
+      "max_step": 600,
+      "within": true
+    },
+    {
+      "step": "a64 performance regression gate",
+      "script": "scripts/check-a64-performance-regression.ps1",
+      "seconds": 1.529,
+      "max_step": 600,
+      "within": true
+    }
+  ]
+}

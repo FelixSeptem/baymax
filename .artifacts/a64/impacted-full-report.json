@@ -1,0 +1,120 @@
+{
+  "mode": "full",
+  "changed_file_total": 166,
+  "impacted_s_items": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8",
+    "S9",
+    "S10"
+  ],
+  "mandatory_suite_map": {
+    "S4": {
+      "shell": [
+        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
+        "bash scripts/check-multi-agent-shared-contract.sh"
+      ],
+      "powershell": [
+        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
+        "pwsh -File scripts/check-multi-agent-shared-contract.ps1"
+      ]
+    },
+    "S8": {
+      "shell": [
+        "bash scripts/check-react-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-react-contract.ps1"
+      ]
+    },
+    "S6": {
+      "shell": [
+        "bash scripts/check-memory-contract-conformance.sh",
+        "bash scripts/check-memory-scope-and-search-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-memory-contract-conformance.ps1",
+        "pwsh -File scripts/check-memory-scope-and-search-contract.ps1"
+      ]
+    },
+    "S9": {
+      "shell": [
+        "bash scripts/check-policy-precedence-contract.sh",
+        "bash scripts/check-runtime-budget-admission-contract.sh",
+        "bash scripts/check-sandbox-rollout-governance-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-policy-precedence-contract.ps1",
+        "pwsh -File scripts/check-runtime-budget-admission-contract.ps1",
+        "pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1"
+      ]
+    },
+    "S10": {
+      "shell": [
+        "bash scripts/check-observability-export-and-bundle-contract.sh",
+        "bash scripts/check-diagnostics-replay-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-observability-export-and-bundle-contract.ps1",
+        "pwsh -File scripts/check-diagnostics-replay-contract.ps1"
+      ]
+    },
+    "S7": {
+      "shell": [
+        "bash scripts/check-security-policy-contract.sh",
+        "bash scripts/check-security-event-contract.sh",
+        "bash scripts/check-security-delivery-contract.sh",
+        "bash scripts/check-security-sandbox-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-security-policy-contract.ps1",
+        "pwsh -File scripts/check-security-event-contract.ps1",
+        "pwsh -File scripts/check-security-delivery-contract.ps1",
+        "pwsh -File scripts/check-security-sandbox-contract.ps1"
+      ]
+    },
+    "S5": {
+      "shell": [
+        "go test ./skill/loader ./runtime/config -count=1"
+      ],
+      "powershell": [
+        "go test ./skill/loader ./runtime/config -count=1"
+      ]
+    },
+    "S1": {
+      "shell": [
+        "go test ./context/assembler ./context/provider ./context/journal -count=1",
+        "bash scripts/check-diagnostics-replay-contract.sh"
+      ],
+      "powershell": [
+        "go test ./context/assembler ./context/provider ./context/journal -count=1",
+        "pwsh -File scripts/check-diagnostics-replay-contract.ps1"
+      ]
+    },
+    "S2": {
+      "shell": [
+        "bash scripts/check-diagnostics-replay-contract.sh",
+        "bash scripts/check-diagnostics-query-performance-regression.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-diagnostics-replay-contract.ps1",
+        "pwsh -File scripts/check-diagnostics-query-performance-regression.ps1"
+      ]
+    },
+    "S3": {
+      "shell": [
+        "bash scripts/check-multi-agent-shared-contract.sh",
+        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-multi-agent-shared-contract.ps1",
+        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
+      ]
+    }
+  }
+}

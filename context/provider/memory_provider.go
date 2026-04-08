@@ -46,9 +46,10 @@ func newMemoryProvider(cfg Config) (Provider, error) {
 		Builtin: memoryspi.BuiltinConfig{
 			RootDir: memoryCfg.Builtin.RootDir,
 			Compaction: memoryspi.FilesystemCompactionConfig{
-				Enabled:     memoryCfg.Builtin.Compaction.Enabled,
-				MinOps:      memoryCfg.Builtin.Compaction.MinOps,
-				MaxWALBytes: memoryCfg.Builtin.Compaction.MaxWALBytes,
+				Enabled:        memoryCfg.Builtin.Compaction.Enabled,
+				MinOps:         memoryCfg.Builtin.Compaction.MinOps,
+				MaxWALBytes:    memoryCfg.Builtin.Compaction.MaxWALBytes,
+				FsyncBatchSize: memoryCfg.Builtin.Compaction.FsyncBatchSize,
 			},
 		},
 		Fallback: memoryspi.FallbackConfig{

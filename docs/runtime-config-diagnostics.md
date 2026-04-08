@@ -196,6 +196,8 @@
   - `runtime.observability.export.profile` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_PROFILE`
   - `runtime.observability.export.endpoint` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ENDPOINT`
   - `runtime.observability.export.queue_capacity` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_QUEUE_CAPACITY`
+  - `runtime.observability.export.max_batch_size` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_BATCH_SIZE`
+  - `runtime.observability.export.max_flush_latency` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_MAX_FLUSH_LATENCY`
   - `runtime.observability.export.on_error` -> `BAYMAX_RUNTIME_OBSERVABILITY_EXPORT_ON_ERROR`
   - `runtime.diagnostics.bundle.enabled` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_ENABLED`
   - `runtime.diagnostics.bundle.output_dir` -> `BAYMAX_RUNTIME_DIAGNOSTICS_BUNDLE_OUTPUT_DIR`
@@ -388,6 +390,8 @@ runtime:
       profile: none             # none|otlp|langfuse|custom
       endpoint: ""              # enabled=true 且 profile!=none 时必填
       queue_capacity: 256       # 必须 > 0
+      max_batch_size: 1         # 必须 > 0；达到批次阈值立即导出
+      max_flush_latency: 50ms   # 必须 > 0；低流量下到达延迟阈值也会导出
       on_error: degrade_and_record # fail_fast|degrade_and_record
   diagnostics:
     bundle:

@@ -97,6 +97,8 @@ declare -A benchmark_alias=(
   [BenchmarkDiagnosticsQueryRunsSandboxEnriched]="QUERY_RUNS_SANDBOX_ENRICHED"
   [BenchmarkDiagnosticsQueryMailbox]="QUERY_MAILBOX"
   [BenchmarkDiagnosticsMailboxAggregates]="MAILBOX_AGGREGATES"
+  [BenchmarkRuntimeRecorderRunFinished]="RUN_FINISHED"
+  [BenchmarkRuntimeRecorderRunFinishedSandboxEnriched]="RUN_FINISHED_SANDBOX_ENRICHED"
 )
 
 benchmarks=(
@@ -104,6 +106,8 @@ benchmarks=(
   "BenchmarkDiagnosticsQueryRunsSandboxEnriched"
   "BenchmarkDiagnosticsQueryMailbox"
   "BenchmarkDiagnosticsMailboxAggregates"
+  "BenchmarkRuntimeRecorderRunFinished"
+  "BenchmarkRuntimeRecorderRunFinishedSandboxEnriched"
 )
 
 for bench in "${benchmarks[@]}"; do
@@ -154,13 +158,13 @@ median_of_values() {
 }
 
 echo "[diagnostics-query-bench] running benchmarks (benchtime=${benchtime}, count=${count})"
-output="$(go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryRunsSandboxEnriched|QueryMailbox|MailboxAggregates)$' -benchmem -benchtime="${benchtime}" -count="${count}" 2>&1)"
+output="$(go test ./integration -run '^$' -bench '^Benchmark(DiagnosticsQueryRuns|DiagnosticsQueryRunsSandboxEnriched|DiagnosticsQueryMailbox|DiagnosticsMailboxAggregates|RuntimeRecorderRunFinished|RuntimeRecorderRunFinishedSandboxEnriched)$' -benchmem -benchtime="${benchtime}" -count="${count}" 2>&1)"
 echo "${output}"
 
 failed=0
 for bench in "${benchmarks[@]}"; do
   path_key="${benchmark_alias[${bench}]}"
-  mapfile -t lines < <(echo "${output}" | grep "${bench}" || true)
+  mapfile -t lines < <(echo "${output}" | awk -v bench="${bench}" '$1 ~ ("^" bench "-[0-9]+$") { print $0 }')
   if [[ "${#lines[@]}" -eq 0 ]]; then
     echo "[diagnostics-query-bench] parse-failure benchmark=${bench} reason=missing_output_line"
     exit 1

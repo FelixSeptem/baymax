@@ -129,6 +129,16 @@ func TestReplayContractPrimaryReasonArbitrationFixtureSuccessAndDeterministicOut
 			expected: "a61_agent_eval_distributed_success_expected.json",
 		},
 		{
+			name:     "a61-inferential-advisory",
+			input:    "a61_inferential_advisory_success_input.json",
+			expected: "a61_inferential_advisory_success_expected.json",
+		},
+		{
+			name:     "a61-inferential-advisory-distributed",
+			input:    "a61_inferential_advisory_distributed_success_input.json",
+			expected: "a61_inferential_advisory_distributed_success_expected.json",
+		},
+		{
 			name:     "a65-hooks-middleware",
 			input:    "a65_hooks_middleware_success_input.json",
 			expected: "a65_hooks_middleware_success_expected.json",
@@ -634,6 +644,12 @@ func TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification(t *tes
 			wantInText: "eval shard/resume drift",
 		},
 		{
+			name:       "a61-inferential-advisory-drift",
+			fixture:    "a61_inferential_advisory_drift_input.json",
+			wantCode:   ReasonCodeEvalInferentialAdvisoryDrift,
+			wantInText: "inferential advisory status drift",
+		},
+		{
 			name:       "a65-hooks-order-drift",
 			fixture:    "a65_hooks_order_drift_input.json",
 			wantCode:   ReasonCodeHooksOrderDrift,
@@ -754,6 +770,8 @@ func TestReplayContractArbitrationMixedSandboxRolloutMemoryReactSandboxEgressCom
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a61_inferential_advisory_success_input.json",
+		"a61_inferential_advisory_distributed_success_input.json",
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
@@ -787,6 +805,8 @@ func TestReplayContractArbitrationMixedPolicyPrecedenceReactSandboxEgressCompati
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a61_inferential_advisory_success_input.json",
+		"a61_inferential_advisory_distributed_success_input.json",
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",
@@ -928,6 +948,8 @@ func TestReplayContractTracingEvalFixtureSuite(t *testing.T) {
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a61_inferential_advisory_success_input.json",
+		"a61_inferential_advisory_distributed_success_input.json",
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture
@@ -963,6 +985,10 @@ func TestReplayContractTracingEvalDriftClassification(t *testing.T) {
 		{
 			fixture:  "a61_eval_shard_resume_drift_input.json",
 			wantCode: ReasonCodeEvalShardResumeDrift,
+		},
+		{
+			fixture:  "a61_inferential_advisory_drift_input.json",
+			wantCode: ReasonCodeEvalInferentialAdvisoryDrift,
 		},
 	}
 	for _, tc := range tests {
@@ -1048,6 +1074,8 @@ func TestReplayContractTracingEvalMixedFixtureBackwardCompatibility(t *testing.T
 		"a61_otel_semconv_success_input.json",
 		"a61_agent_eval_success_input.json",
 		"a61_agent_eval_distributed_success_input.json",
+		"a61_inferential_advisory_success_input.json",
+		"a61_inferential_advisory_distributed_success_input.json",
 		"a65_hooks_middleware_success_input.json",
 		"a65_skill_discovery_sources_success_input.json",
 		"a65_skill_preprocess_and_mapping_success_input.json",

@@ -47,3 +47,22 @@ func TestExecuteTimeout(t *testing.T) {
 		t.Fatalf("err = %v, want deadline exceeded", err)
 	}
 }
+
+func TestExecuteTimeoutWithUncooperativeInvoke(t *testing.T) {
+	start := time.Now()
+	_, _, err := Execute(context.Background(), RetryConfig{
+		Attempts: 1,
+		Timeout:  10 * time.Millisecond,
+	}, RetryHooks[int]{
+		Invoke: func(ctx context.Context, attempt int) (int, error) {
+			time.Sleep(50 * time.Millisecond)
+			return 1, nil
+		},
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 45*time.Millisecond {
+		t.Fatalf("execute should timeout before invoke returns, elapsed=%s", elapsed)
+	}
+}

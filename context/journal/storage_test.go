@@ -56,3 +56,47 @@ func TestFileStorageAppendOnlyConcurrent(t *testing.T) {
 		t.Fatalf("line count = %d, want %d", len(lines), want)
 	}
 }
+
+func TestFileStorageAppendBatchWithReusableHandle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.jsonl")
+	s := NewFileStorageWithOptions(path, FileStorageOptions{
+		ReuseHandle:    true,
+		BatchFlushSize: 2,
+	})
+	t.Cleanup(func() { _ = s.Close() })
+	entries := []Entry{
+		{
+			Time:      time.Now(),
+			RunID:     "run-1",
+			SessionID: "s-1",
+			Phase:     "intent",
+			Status:    "success",
+		},
+		{
+			Time:      time.Now(),
+			RunID:     "run-1",
+			SessionID: "s-1",
+			Phase:     "commit",
+			Status:    "success",
+		},
+		{
+			Time:      time.Now(),
+			RunID:     "run-2",
+			SessionID: "s-2",
+			Phase:     "intent",
+			Status:    "success",
+		},
+	}
+	if err := s.AppendBatch(context.Background(), entries); err != nil {
+		t.Fatalf("append batch failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != len(entries) {
+		t.Fatalf("line count = %d, want %d", len(lines), len(entries))
+	}
+}

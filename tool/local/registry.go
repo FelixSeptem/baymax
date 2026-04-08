@@ -141,6 +141,18 @@ type DropLowPriorityPolicy struct {
 	DroppablePriorities []string
 }
 
+type dropLowPriorityKeywordRule struct {
+	keyword  string
+	priority string
+}
+
+type dropLowPriorityClassifier struct {
+	priorityByTool map[string]string
+	keywordRules   []dropLowPriorityKeywordRule
+	droppableSet   map[string]struct{}
+	priorityCache  map[string]string
+}
+
 type Dispatcher struct {
 	registry    *Registry
 	runtimeMgr  *runtimeconfig.Manager
@@ -199,6 +211,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg D
 	if len(calls) > cfg.MaxCalls {
 		return nil, fmt.Errorf("tool calls %d exceed max %d", len(calls), cfg.MaxCalls)
 	}
+	priorityClassifier := compileDropLowPriorityClassifier(cfg.DropLowPriority)
 
 	readIdx := make([]int, 0, len(calls))
 	writeIdx := make([]int, 0, len(calls))
@@ -220,7 +233,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg D
 		readIdx = append(readIdx, i)
 	}
 
-	readErr := d.dispatchReadOnly(ctx, calls, outcomes, readIdx, cfg)
+	readErr := d.dispatchReadOnly(ctx, calls, outcomes, readIdx, cfg, priorityClassifier)
 	if readErr != nil && cfg.FailFast {
 		return outcomes, readErr
 	}
@@ -237,7 +250,7 @@ func (d *Dispatcher) applyRuntimeDefaults(cfg DispatchConfig) DispatchConfig {
 	if d.runtimeMgr == nil {
 		return cfg
 	}
-	rc := d.runtimeMgr.EffectiveConfig().Concurrency
+	rc := d.runtimeMgr.EffectiveConfigRef().Concurrency
 	if cfg.Concurrency <= 0 && rc.LocalMaxWorkers > 0 {
 		cfg.Concurrency = rc.LocalMaxWorkers
 	}
@@ -259,15 +272,22 @@ func (d *Dispatcher) applyRuntimeDefaults(cfg DispatchConfig) DispatchConfig {
 	return cfg
 }
 
-func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCall, outcomes []types.ToolCallOutcome, idx []int, cfg DispatchConfig) error {
+func (d *Dispatcher) dispatchReadOnly(
+	ctx context.Context,
+	calls []types.ToolCall,
+	outcomes []types.ToolCallOutcome,
+	idx []int,
+	cfg DispatchConfig,
+	priorityClassifier *dropLowPriorityClassifier,
+) error {
 	if len(idx) == 0 {
 		return nil
 	}
 	if cfg.Backpressure == types.BackpressureDropLowPriority &&
 		len(idx) > cfg.QueueSize &&
-		allIndicesDroppable(calls, idx, cfg.DropLowPriority) {
+		allIndicesDroppable(calls, idx, cfg.DropLowPriority, priorityClassifier) {
 		for _, i := range idx {
-			priority := classifyPriority(calls[i], cfg.DropLowPriority)
+			priority := classifyPriority(calls[i], cfg.DropLowPriority, priorityClassifier)
 			phase := dispatchPhaseForCall(calls[i])
 			outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool call dropped by low-priority backpressure", true, map[string]any{
 				"reason":         "queue_full",
@@ -332,9 +352,9 @@ func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCal
 			case jobs <- i:
 				queued++
 			default:
-				priority := classifyPriority(calls[i], cfg.DropLowPriority)
+				priority := classifyPriority(calls[i], cfg.DropLowPriority, priorityClassifier)
 				phase := dispatchPhaseForCall(calls[i])
-				if canDropPriority(priority, cfg.DropLowPriority.DroppablePriorities) {
+				if canDropPriority(priority, cfg.DropLowPriority.DroppablePriorities, priorityClassifier) {
 					outcomes[i] = failedOutcome(calls[i], types.ErrTool, "tool call dropped by low-priority backpressure", true, map[string]any{
 						"reason":         "queue_full",
 						"drop_reason":    "low_priority_dropped",
@@ -377,27 +397,83 @@ func (d *Dispatcher) dispatchReadOnly(ctx context.Context, calls []types.ToolCal
 	return nil
 }
 
-func classifyPriority(call types.ToolCall, policy DropLowPriorityPolicy) string {
-	toolName := strings.ToLower(strings.TrimSpace(call.Name))
-	if v, ok := policy.PriorityByTool[toolName]; ok && strings.TrimSpace(v) != "" {
-		return strings.ToLower(strings.TrimSpace(v))
+func compileDropLowPriorityClassifier(policy DropLowPriorityPolicy) *dropLowPriorityClassifier {
+	classifier := &dropLowPriorityClassifier{
+		priorityByTool: make(map[string]string, len(policy.PriorityByTool)),
+		keywordRules:   make([]dropLowPriorityKeywordRule, 0, len(policy.PriorityByKeyword)),
+		droppableSet:   make(map[string]struct{}, len(policy.DroppablePriorities)),
+		priorityCache:  make(map[string]string),
+	}
+	for key, value := range policy.PriorityByTool {
+		k := normalizePriorityToken(key)
+		v := normalizePriorityToken(value)
+		if k == "" || v == "" {
+			continue
+		}
+		classifier.priorityByTool[k] = v
+	}
+	for key, value := range policy.PriorityByKeyword {
+		k := normalizePriorityToken(key)
+		v := normalizePriorityToken(value)
+		if k == "" || v == "" {
+			continue
+		}
+		classifier.keywordRules = append(classifier.keywordRules, dropLowPriorityKeywordRule{
+			keyword:  k,
+			priority: v,
+		})
+	}
+	sort.SliceStable(classifier.keywordRules, func(i, j int) bool {
+		if len(classifier.keywordRules[i].keyword) != len(classifier.keywordRules[j].keyword) {
+			return len(classifier.keywordRules[i].keyword) > len(classifier.keywordRules[j].keyword)
+		}
+		return classifier.keywordRules[i].keyword < classifier.keywordRules[j].keyword
+	})
+	for _, priority := range policy.DroppablePriorities {
+		if normalized := normalizePriorityToken(priority); normalized != "" {
+			classifier.droppableSet[normalized] = struct{}{}
+		}
+	}
+	return classifier
+}
+
+func classifyPriority(call types.ToolCall, policy DropLowPriorityPolicy, classifier *dropLowPriorityClassifier) string {
+	if classifier == nil {
+		classifier = compileDropLowPriorityClassifier(policy)
+	}
+	toolName := normalizePriorityToken(call.Name)
+	if priority, ok := classifier.priorityByTool[toolName]; ok {
+		return priority
+	}
+	if len(classifier.keywordRules) == 0 {
+		return runtimeconfig.DropPriorityNormal
 	}
 	payload := toolName
 	if len(call.Args) > 0 {
 		payload += " " + lowerArgsText(call.Args)
 	}
-	for _, keyword := range sortedKeywords(policy.PriorityByKeyword) {
-		if strings.Contains(payload, keyword) {
-			return strings.ToLower(strings.TrimSpace(policy.PriorityByKeyword[keyword]))
+	if cached, ok := classifier.priorityCache[payload]; ok {
+		return cached
+	}
+	priority := runtimeconfig.DropPriorityNormal
+	for i := range classifier.keywordRules {
+		if strings.Contains(payload, classifier.keywordRules[i].keyword) {
+			priority = classifier.keywordRules[i].priority
+			break
 		}
 	}
-	return runtimeconfig.DropPriorityNormal
+	classifier.priorityCache[payload] = priority
+	return priority
 }
 
-func canDropPriority(priority string, droppable []string) bool {
-	p := strings.ToLower(strings.TrimSpace(priority))
+func canDropPriority(priority string, droppable []string, classifier *dropLowPriorityClassifier) bool {
+	p := normalizePriorityToken(priority)
+	if classifier != nil && len(classifier.droppableSet) > 0 {
+		_, ok := classifier.droppableSet[p]
+		return ok
+	}
 	for _, v := range droppable {
-		if strings.ToLower(strings.TrimSpace(v)) == p {
+		if normalizePriorityToken(v) == p {
 			return true
 		}
 	}
@@ -413,24 +489,6 @@ func lowerArgsText(args map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
-func sortedKeywords(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		k := strings.ToLower(strings.TrimSpace(key))
-		if k == "" {
-			continue
-		}
-		keys = append(keys, k)
-	}
-	sort.SliceStable(keys, func(i, j int) bool {
-		if len(keys[i]) != len(keys[j]) {
-			return len(keys[i]) > len(keys[j])
-		}
-		return keys[i] < keys[j]
-	})
-	return keys
-}
-
 func copyStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return map[string]string{}
@@ -442,17 +500,26 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func allIndicesDroppable(calls []types.ToolCall, idx []int, policy DropLowPriorityPolicy) bool {
+func allIndicesDroppable(
+	calls []types.ToolCall,
+	idx []int,
+	policy DropLowPriorityPolicy,
+	classifier *dropLowPriorityClassifier,
+) bool {
 	if len(idx) == 0 {
 		return false
 	}
 	for _, i := range idx {
-		priority := classifyPriority(calls[i], policy)
-		if !canDropPriority(priority, policy.DroppablePriorities) {
+		priority := classifyPriority(calls[i], policy, classifier)
+		if !canDropPriority(priority, policy.DroppablePriorities, classifier) {
 			return false
 		}
 	}
 	return true
+}
+
+func normalizePriorityToken(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 func dispatchPhaseForCall(call types.ToolCall) types.ActionPhase {
@@ -544,7 +611,7 @@ func (d *Dispatcher) middlewareEnabled() bool {
 func (d *Dispatcher) runtimeToolMiddlewareConfig() runtimeconfig.RuntimeToolMiddlewareConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.ToolMiddleware
 	if d != nil && d.runtimeMgr != nil {
-		cfg = d.runtimeMgr.EffectiveConfig().Runtime.ToolMiddleware
+		cfg = d.runtimeMgr.EffectiveConfigRef().Runtime.ToolMiddleware
 	}
 	return cfg
 }
@@ -605,7 +672,7 @@ func (d *Dispatcher) trySandboxInvoke(
 	if d == nil || d.runtimeMgr == nil {
 		return false, nil
 	}
-	cfg := d.runtimeMgr.EffectiveConfig().Security.Sandbox
+	cfg := d.runtimeMgr.EffectiveConfigRef().Security.Sandbox
 	if !cfg.Enabled {
 		return false, nil
 	}

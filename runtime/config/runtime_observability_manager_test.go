@@ -12,9 +12,11 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	bundleDir := filepath.ToSlash(filepath.Join(t.TempDir(), "bundles"))
 	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
-		Profile:   RuntimeObservabilityExportProfileNone,
-		OnError:   RuntimeObservabilityExportOnErrorDegradeAndRecord,
-		OutputDir: bundleDir,
+		Profile:         RuntimeObservabilityExportProfileNone,
+		OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
+		MaxBatchSize:    8,
+		MaxFlushLatency: "80ms",
+		OutputDir:       bundleDir,
 	})
 
 	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_RUNTIME_OBSERVABILITY_TEST", EnableHotReload: true})
@@ -26,9 +28,11 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 	before := mgr.EffectiveConfig()
 
 	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
-		Profile:   "jaeger",
-		OnError:   RuntimeObservabilityExportOnErrorDegradeAndRecord,
-		OutputDir: bundleDir,
+		Profile:         "jaeger",
+		OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
+		MaxBatchSize:    8,
+		MaxFlushLatency: "80ms",
+		OutputDir:       bundleDir,
 	})
 	time.Sleep(250 * time.Millisecond)
 	afterProfile := mgr.EffectiveConfig()
@@ -42,9 +46,11 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 	assertLatestReloadFailed(t, mgr, "runtime.observability.export.profile")
 
 	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
-		Profile:   RuntimeObservabilityExportProfileNone,
-		OnError:   RuntimeObservabilityExportOnErrorDegradeAndRecord,
-		OutputDir: ".",
+		Profile:         RuntimeObservabilityExportProfileNone,
+		OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
+		MaxBatchSize:    8,
+		MaxFlushLatency: "80ms",
+		OutputDir:       ".",
 	})
 	time.Sleep(250 * time.Millisecond)
 	afterOutput := mgr.EffectiveConfig()
@@ -58,9 +64,11 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 	assertLatestReloadFailed(t, mgr, "runtime.diagnostics.bundle.output_dir")
 
 	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
-		Profile:   RuntimeObservabilityExportProfileNone,
-		OnError:   "explode",
-		OutputDir: bundleDir,
+		Profile:         RuntimeObservabilityExportProfileNone,
+		OnError:         "explode",
+		MaxBatchSize:    8,
+		MaxFlushLatency: "80ms",
+		OutputDir:       bundleDir,
 	})
 	time.Sleep(250 * time.Millisecond)
 	afterPolicy := mgr.EffectiveConfig()
@@ -72,6 +80,42 @@ func TestManagerRuntimeObservabilityInvalidReloadRollsBack(t *testing.T) {
 		)
 	}
 	assertLatestReloadFailed(t, mgr, "runtime.observability.export.on_error")
+
+	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
+		Profile:         RuntimeObservabilityExportProfileNone,
+		OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
+		MaxBatchSize:    0,
+		MaxFlushLatency: "80ms",
+		OutputDir:       bundleDir,
+	})
+	time.Sleep(250 * time.Millisecond)
+	afterBatch := mgr.EffectiveConfig()
+	if afterBatch.Runtime.Observability.Export.MaxBatchSize != before.Runtime.Observability.Export.MaxBatchSize {
+		t.Fatalf(
+			"invalid runtime.observability.export.max_batch_size should rollback, got %d want %d",
+			afterBatch.Runtime.Observability.Export.MaxBatchSize,
+			before.Runtime.Observability.Export.MaxBatchSize,
+		)
+	}
+	assertLatestReloadFailed(t, mgr, "runtime.observability.export.max_batch_size")
+
+	writeRuntimeObservabilityReloadConfig(t, file, runtimeObservabilityReloadInput{
+		Profile:         RuntimeObservabilityExportProfileNone,
+		OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
+		MaxBatchSize:    8,
+		MaxFlushLatency: "0s",
+		OutputDir:       bundleDir,
+	})
+	time.Sleep(250 * time.Millisecond)
+	afterLatency := mgr.EffectiveConfig()
+	if afterLatency.Runtime.Observability.Export.MaxFlushLatency != before.Runtime.Observability.Export.MaxFlushLatency {
+		t.Fatalf(
+			"invalid runtime.observability.export.max_flush_latency should rollback, got %v want %v",
+			afterLatency.Runtime.Observability.Export.MaxFlushLatency,
+			before.Runtime.Observability.Export.MaxFlushLatency,
+		)
+	}
+	assertLatestReloadFailed(t, mgr, "runtime.observability.export.max_flush_latency")
 }
 
 func TestManagerRuntimeObservabilityTracingInvalidReloadRollsBack(t *testing.T) {
@@ -153,9 +197,11 @@ reload:
 }
 
 type runtimeObservabilityReloadInput struct {
-	Profile   string
-	OnError   string
-	OutputDir string
+	Profile         string
+	OnError         string
+	MaxBatchSize    int
+	MaxFlushLatency string
+	OutputDir       string
 }
 
 func writeRuntimeObservabilityReloadConfig(t *testing.T, file string, in runtimeObservabilityReloadInput) {
@@ -168,6 +214,8 @@ runtime:
       profile: %q
       endpoint: ""
       queue_capacity: 128
+      max_batch_size: %d
+      max_flush_latency: %q
       on_error: %q
   diagnostics:
     bundle:
@@ -178,7 +226,13 @@ runtime:
 reload:
   enabled: true
   debounce: 20ms
-`, strings.TrimSpace(in.Profile), strings.TrimSpace(in.OnError), strings.TrimSpace(in.OutputDir)))
+`,
+		strings.TrimSpace(in.Profile),
+		in.MaxBatchSize,
+		strings.TrimSpace(in.MaxFlushLatency),
+		strings.TrimSpace(in.OnError),
+		strings.TrimSpace(in.OutputDir),
+	))
 }
 
 func assertLatestReloadFailed(t *testing.T, mgr *Manager, contains string) {

@@ -1,0 +1,150 @@
+{
+  "version": "agent_eval.v1",
+  "cases": [
+    {
+      "name": "a61_inferential_advisory_drift_case",
+      "run": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "local",
+        "eval_summary": {
+          "version": "agent_eval.v1",
+          "task_success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "tool_correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "deny_intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "cost_latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "all_constraints_pass": true
+        },
+        "inferential_advisory_status": "critical",
+        "inferential_advisory_score": 0.24,
+        "inferential_advisory_signals": {
+          "runtime_policy_decision_deny": 1,
+          "runtime_admission_budget_deny": 1,
+          "cost_within_budget": 0
+        },
+        "inferential_advisory_reasons": [
+          "eval.cost_budget_exceeded",
+          "runtime.admission.budget_deny",
+          "runtime.policy.deny"
+        ]
+      },
+      "stream": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "local",
+        "eval_summary": {
+          "version": "agent_eval.v1",
+          "task_success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "tool_correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "deny_intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "cost_latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "all_constraints_pass": true
+        },
+        "inferential_advisory_status": "critical",
+        "inferential_advisory_score": 0.24,
+        "inferential_advisory_signals": {
+          "runtime_policy_decision_deny": 1,
+          "runtime_admission_budget_deny": 1,
+          "cost_within_budget": 0
+        },
+        "inferential_advisory_reasons": [
+          "eval.cost_budget_exceeded",
+          "runtime.admission.budget_deny",
+          "runtime.policy.deny"
+        ]
+      },
+      "expected": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "local",
+        "eval_summary": {
+          "version": "agent_eval.v1",
+          "task_success": {
+            "rate": 0.93,
+            "threshold": 0.9,
+            "passed": true,
+            "total": 100
+          },
+          "tool_correctness": {
+            "rate": 0.9,
+            "threshold": 0.85,
+            "passed": true,
+            "total": 100
+          },
+          "deny_intercept": {
+            "rate": 0.97,
+            "threshold": 0.95,
+            "passed": true,
+            "total": 40
+          },
+          "cost_latency": {
+            "cost_estimate": 0.72,
+            "cost_threshold": 0.8,
+            "cost_within_budget": true,
+            "latency_estimate": 1200000000,
+            "latency_threshold": 1500000000,
+            "latency_within_slo": true,
+            "constraint_passed": true
+          },
+          "all_constraints_pass": true
+        },
+        "inferential_advisory_status": "watch",
+        "inferential_advisory_score": 0.74,
+        "inferential_advisory_signals": {
+          "cost_within_budget": 1,
+          "task_success_rate": 0.93
+        },
+        "inferential_advisory_reasons": [
+          "eval.task_success_below_threshold"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

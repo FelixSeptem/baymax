@@ -105,7 +105,7 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 	e.assembler = assembler.New(
 		func() runtimeconfig.ContextAssemblerConfig {
 			if e.runtimeMgr != nil {
-				return e.runtimeMgr.EffectiveConfig().ContextAssembler
+				return e.runtimeMgr.EffectiveConfigRef().ContextAssembler
 			}
 			// Keep legacy runner behavior when runtime manager is not provided.
 			cfg := runtimeconfig.DefaultConfig().ContextAssembler
@@ -114,19 +114,19 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 		},
 		assembler.WithRedactionConfigProvider(func() runtimeconfig.SecurityRedactionConfig {
 			if e.runtimeMgr != nil {
-				return e.runtimeMgr.EffectiveConfig().Security.Redaction
+				return e.runtimeMgr.EffectiveConfigRef().Security.Redaction
 			}
 			return runtimeconfig.DefaultConfig().Security.Redaction
 		}),
 		assembler.WithMemoryConfigProvider(func() runtimeconfig.RuntimeMemoryConfig {
 			if e.runtimeMgr != nil {
-				return e.runtimeMgr.EffectiveConfig().Runtime.Memory
+				return e.runtimeMgr.EffectiveConfigRef().Runtime.Memory
 			}
 			return runtimeconfig.DefaultConfig().Runtime.Memory
 		}),
 		assembler.WithRuntimeContextConfigProvider(func() runtimeconfig.RuntimeContextConfig {
 			if e.runtimeMgr != nil {
-				return e.runtimeMgr.EffectiveConfig().Runtime.Context
+				return e.runtimeMgr.EffectiveConfigRef().Runtime.Context
 			}
 			return runtimeconfig.DefaultConfig().Runtime.Context
 		}),
@@ -193,6 +193,13 @@ func WithContextAssemblerAgenticRouter(router assembler.AgenticRouter) Option {
 			e.assembler.SetAgenticRouter(router)
 		}
 	}
+}
+
+func (e *Engine) releaseContextAssemblerRunState(runID string) {
+	if e == nil || e.assembler == nil {
+		return
+	}
+	e.assembler.OnRunFinished(runID)
 }
 
 // WithProviderModels registers provider-name to model-client mapping for step-level fallback selection.
@@ -275,15 +282,17 @@ func WithSecurityAlertCallback(callback types.SecurityAlertCallback) Option {
 
 // Run executes a non-streaming agent loop and returns a final run result.
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	runtimeCfg := e.runtimeEffectiveConfigSnapshot()
 	policy := resolvePolicy(req.Policy)
-	policy = e.applyRuntimeDefaults(policy, req.Policy)
-	reactCfg := e.runtimeReactConfigSnapshot()
-	hooksCfg := e.runtimeHooksConfigSnapshot()
-	toolMiddlewareCfg := e.runtimeToolMiddlewareConfigSnapshot()
+	policy = e.applyRuntimeDefaults(policy, req.Policy, runtimeCfg)
+	reactCfg := runtimeCfg.Runtime.React
+	hooksCfg := runtimeCfg.Runtime.Hooks
+	toolMiddlewareCfg := runtimeCfg.Runtime.ToolMiddleware
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
 	}
+	defer e.releaseContextAssemblerRunState(runID)
 
 	start := e.now()
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
@@ -303,7 +312,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
-	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryRuntime := runtimeMemorySnapshotFromConfig(runtimeCfg.Runtime.Memory)
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
@@ -979,12 +988,14 @@ func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.Event
 
 //nolint:unused // kept as rollback path for non-react stream loop during staged migrations
 func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	runtimeCfg := e.runtimeEffectiveConfigSnapshot()
 	policy := resolvePolicy(req.Policy)
-	policy = e.applyRuntimeDefaults(policy, req.Policy)
+	policy = e.applyRuntimeDefaults(policy, req.Policy, runtimeCfg)
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
 	}
+	defer e.releaseContextAssemblerRunState(runID)
 	start := e.now()
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
 	defer runSpan.End()
@@ -997,7 +1008,7 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
-	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryRuntime := runtimeMemorySnapshotFromConfig(runtimeCfg.Runtime.Memory)
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	required := append(req.Capabilities.Normalized(), types.ModelCapabilityStreaming)
 	modelReq := toModelRequest(runID, req, nil, required)
@@ -1440,15 +1451,17 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 }
 
 func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	runtimeCfg := e.runtimeEffectiveConfigSnapshot()
 	policy := resolvePolicy(req.Policy)
-	policy = e.applyRuntimeDefaults(policy, req.Policy)
-	reactCfg := e.runtimeReactConfigSnapshot()
-	hooksCfg := e.runtimeHooksConfigSnapshot()
-	toolMiddlewareCfg := e.runtimeToolMiddlewareConfigSnapshot()
+	policy = e.applyRuntimeDefaults(policy, req.Policy, runtimeCfg)
+	reactCfg := runtimeCfg.Runtime.React
+	hooksCfg := runtimeCfg.Runtime.Hooks
+	toolMiddlewareCfg := runtimeCfg.Runtime.ToolMiddleware
 	runID := req.RunID
 	if runID == "" {
 		runID = e.newRunID()
 	}
+	defer e.releaseContextAssemblerRunState(runID)
 	start := e.now()
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
 	defer runSpan.End()
@@ -1468,7 +1481,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	hitlStats := clarificationStats{}
 	concurrencyStats := runtimeConcurrencyStats{}
 	lastSecurity := securityDecision{}
-	memoryRuntime := e.runtimeMemorySnapshot()
+	memoryRuntime := runtimeMemorySnapshotFromConfig(runtimeCfg.Runtime.Memory)
 	memoryAggregate := memoryRunDiagnosticsAccumulator{}
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
@@ -2595,11 +2608,14 @@ func (e *Engine) emitTimeline(
 	})
 }
 
-func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.LoopPolicy) types.LoopPolicy {
+func (e *Engine) applyRuntimeDefaults(
+	policy types.LoopPolicy,
+	input *types.LoopPolicy,
+	cfg runtimeconfig.Config,
+) types.LoopPolicy {
 	if e.runtimeMgr == nil || input != nil {
 		return policy
 	}
-	cfg := e.runtimeMgr.EffectiveConfig()
 	if cfg.Runtime.React.MaxIterations > 0 {
 		policy.MaxIterations = cfg.Runtime.React.MaxIterations
 	}
@@ -2616,6 +2632,13 @@ func (e *Engine) applyRuntimeDefaults(policy types.LoopPolicy, input *types.Loop
 		policy.LocalDispatch.Backpressure = cfg.Concurrency.Backpressure
 	}
 	return policy
+}
+
+func (e *Engine) runtimeEffectiveConfigSnapshot() runtimeconfig.Config {
+	if e == nil || e.runtimeMgr == nil {
+		return runtimeconfig.DefaultConfig()
+	}
+	return *e.runtimeMgr.EffectiveConfigRef()
 }
 
 func (e *Engine) registerModel(model types.ModelClient) {
@@ -2679,7 +2702,7 @@ func (e *Engine) selectModelForStep(ctx context.Context, req types.ModelRequest,
 	timeout := 1500 * time.Millisecond
 	cacheTTL := 5 * time.Minute
 	if e.runtimeMgr != nil {
-		cfg := e.runtimeMgr.EffectiveConfig()
+		cfg := e.runtimeMgr.EffectiveConfigRef()
 		if cfg.ProviderFallback.DiscoveryTimeout > 0 {
 			timeout = cfg.ProviderFallback.DiscoveryTimeout
 		}
@@ -2766,7 +2789,7 @@ func (e *Engine) resolveProviderOrder(primary string) []string {
 
 	enabled := false
 	if e.runtimeMgr != nil {
-		cfg := e.runtimeMgr.EffectiveConfig()
+		cfg := e.runtimeMgr.EffectiveConfigRef()
 		enabled = cfg.ProviderFallback.Enabled
 		if enabled && len(cfg.ProviderFallback.Providers) > 0 {
 			for _, provider := range cfg.ProviderFallback.Providers {
@@ -2788,7 +2811,7 @@ func (e *Engine) fallbackEnabled() bool {
 	if e.runtimeMgr == nil {
 		return false
 	}
-	return e.runtimeMgr.EffectiveConfig().ProviderFallback.Enabled
+	return e.runtimeMgr.EffectiveConfigRef().ProviderFallback.Enabled
 }
 
 func (e *Engine) discoverCapabilities(
@@ -2898,10 +2921,12 @@ type runFinishMeta struct {
 	SkillBundleWhitelistTotal         int
 	SkillBundleWhitelistRejectedTotal int
 	RealtimeProtocolVersion           string
+	RealtimeSessionID                 string
 	RealtimeEventSeqMax               int64
 	RealtimeInterruptTotal            int
 	RealtimeResumeTotal               int
 	RealtimeResumeSource              string
+	RealtimeResumeCursor              string
 	RealtimeIdempotencyDedupTotal     int
 	RealtimeLastErrorCode             string
 	RealtimeErrorLayer                string
@@ -2910,13 +2935,12 @@ type runFinishMeta struct {
 }
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
-	payload := map[string]any{
-		"status":      status,
-		"latency_ms":  result.LatencyMs,
-		"tool_calls":  len(result.ToolCalls),
-		"iterations":  result.Iterations,
-		"warning_cnt": len(result.Warnings),
-	}
+	payload := make(map[string]any, 128)
+	payload["status"] = status
+	payload["latency_ms"] = result.LatencyMs
+	payload["tool_calls"] = len(result.ToolCalls)
+	payload["iterations"] = result.Iterations
+	payload["warning_cnt"] = len(result.Warnings)
 	if errClass != "" {
 		payload["error_class"] = errClass
 	}
@@ -2931,11 +2955,7 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		payload["fallback_path"] = strings.Join(meta.Path, "->")
 	}
 	if len(meta.Required) > 0 {
-		required := make([]string, 0, len(meta.Required))
-		for _, cap := range meta.Required {
-			required = append(required, string(cap))
-		}
-		payload["required_capabilities"] = strings.Join(required, ",")
+		payload["required_capabilities"] = joinCapabilities(meta.Required)
 	}
 	if meta.Reason != "" {
 		payload["fallback_reason"] = meta.Reason
@@ -3265,11 +3285,17 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	}
 	if strings.TrimSpace(meta.RealtimeProtocolVersion) != "" {
 		payload["realtime_protocol_version"] = strings.TrimSpace(meta.RealtimeProtocolVersion)
+		if strings.TrimSpace(meta.RealtimeSessionID) != "" {
+			payload["realtime_session_id"] = strings.TrimSpace(meta.RealtimeSessionID)
+		}
 		payload["realtime_event_seq_max"] = meta.RealtimeEventSeqMax
 		payload["realtime_interrupt_total"] = meta.RealtimeInterruptTotal
 		payload["realtime_resume_total"] = meta.RealtimeResumeTotal
 		if strings.TrimSpace(meta.RealtimeResumeSource) != "" {
 			payload["realtime_resume_source"] = strings.TrimSpace(meta.RealtimeResumeSource)
+		}
+		if strings.TrimSpace(meta.RealtimeResumeCursor) != "" {
+			payload["realtime_resume_cursor"] = strings.TrimSpace(meta.RealtimeResumeCursor)
 		}
 		payload["realtime_idempotency_dedup_total"] = meta.RealtimeIdempotencyDedupTotal
 		if strings.TrimSpace(meta.RealtimeLastErrorCode) != "" {
@@ -3362,6 +3388,20 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		overlayRunFinishedPayloadFromErrorDetails(payload, result.Error.Details)
 	}
 	return payload
+}
+
+func joinCapabilities(required []types.ModelCapability) string {
+	if len(required) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i := range required {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(string(required[i]))
+	}
+	return b.String()
 }
 
 func overlayRunFinishedPayloadFromErrorDetails(payload map[string]any, details map[string]any) {
@@ -3558,14 +3598,14 @@ func (e *Engine) resolvePrefixVersion() string {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().ContextAssembler.PrefixVersion
 	}
-	return e.runtimeMgr.EffectiveConfig().ContextAssembler.PrefixVersion
+	return e.runtimeMgr.EffectiveConfigRef().ContextAssembler.PrefixVersion
 }
 
 func (e *Engine) contextAssemblerEnabled() bool {
 	if e.runtimeMgr == nil {
 		return false
 	}
-	return e.runtimeMgr.EffectiveConfig().ContextAssembler.Enabled
+	return e.runtimeMgr.EffectiveConfigRef().ContextAssembler.Enabled
 }
 
 type sandboxRuntimeSnapshot struct {
@@ -3633,7 +3673,7 @@ func (e *Engine) sandboxRuntimeSnapshot() sandboxRuntimeSnapshot {
 	if e == nil || e.runtimeMgr == nil {
 		return sandboxRuntimeSnapshot{}
 	}
-	cfg := e.runtimeMgr.EffectiveConfig().Security.Sandbox
+	cfg := e.runtimeMgr.EffectiveConfigRef().Security.Sandbox
 	return sandboxRuntimeSnapshot{
 		Enabled:              cfg.Enabled,
 		Mode:                 strings.ToLower(strings.TrimSpace(cfg.Mode)),
@@ -3644,11 +3684,7 @@ func (e *Engine) sandboxRuntimeSnapshot() sandboxRuntimeSnapshot {
 	}
 }
 
-func (e *Engine) runtimeMemorySnapshot() memoryRuntimeSnapshot {
-	cfg := runtimeconfig.DefaultConfig().Runtime.Memory
-	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Memory
-	}
+func runtimeMemorySnapshotFromConfig(cfg runtimeconfig.RuntimeMemoryConfig) memoryRuntimeSnapshot {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		mode = runtimeconfig.RuntimeMemoryModeBuiltinFilesystem
@@ -3675,26 +3711,10 @@ func (e *Engine) runtimeMemorySnapshot() memoryRuntimeSnapshot {
 	}
 }
 
-func (e *Engine) runtimeReactConfigSnapshot() runtimeconfig.RuntimeReactConfig {
-	cfg := runtimeconfig.DefaultConfig().Runtime.React
-	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.React
-	}
-	return cfg
-}
-
 func (e *Engine) runtimeHooksConfigSnapshot() runtimeconfig.RuntimeHooksConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.Hooks
 	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Hooks
-	}
-	return cfg
-}
-
-func (e *Engine) runtimeToolMiddlewareConfigSnapshot() runtimeconfig.RuntimeToolMiddlewareConfig {
-	cfg := runtimeconfig.DefaultConfig().Runtime.ToolMiddleware
-	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.ToolMiddleware
+		cfg = e.runtimeMgr.EffectiveConfigRef().Runtime.Hooks
 	}
 	return cfg
 }
@@ -3702,7 +3722,7 @@ func (e *Engine) runtimeToolMiddlewareConfigSnapshot() runtimeconfig.RuntimeTool
 func (e *Engine) runtimeSkillPreprocessConfigSnapshot() runtimeconfig.RuntimeSkillPreprocessConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.Preprocess
 	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.Preprocess
+		cfg = e.runtimeMgr.EffectiveConfigRef().Runtime.Skill.Preprocess
 	}
 	return cfg
 }
@@ -3710,7 +3730,7 @@ func (e *Engine) runtimeSkillPreprocessConfigSnapshot() runtimeconfig.RuntimeSki
 func (e *Engine) runtimeSkillDiscoveryConfigSnapshot() runtimeconfig.RuntimeSkillDiscoveryConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.Discovery
 	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.Discovery
+		cfg = e.runtimeMgr.EffectiveConfigRef().Runtime.Skill.Discovery
 	}
 	return cfg
 }
@@ -3718,7 +3738,7 @@ func (e *Engine) runtimeSkillDiscoveryConfigSnapshot() runtimeconfig.RuntimeSkil
 func (e *Engine) runtimeSkillBundleMappingConfigSnapshot() runtimeconfig.RuntimeSkillBundleMappingConfig {
 	cfg := runtimeconfig.DefaultConfig().Runtime.Skill.BundleMapping
 	if e != nil && e.runtimeMgr != nil {
-		cfg = e.runtimeMgr.EffectiveConfig().Runtime.Skill.BundleMapping
+		cfg = e.runtimeMgr.EffectiveConfigRef().Runtime.Skill.BundleMapping
 	}
 	return cfg
 }
@@ -3955,7 +3975,7 @@ func (e *Engine) skillWhitelistWithinSecurityUpperBound(name string) (bool, stri
 	if e == nil || e.runtimeMgr == nil {
 		return true, ""
 	}
-	allowlistCfg := e.runtimeMgr.EffectiveConfig().Adapter.Allowlist
+	allowlistCfg := e.runtimeMgr.EffectiveConfigRef().Adapter.Allowlist
 	if !allowlistCfg.Enabled || !strings.EqualFold(strings.TrimSpace(allowlistCfg.EnforcementMode), runtimeconfig.AdapterAllowlistEnforcementModeEnforce) {
 		return true, ""
 	}
@@ -5829,7 +5849,7 @@ func (e *Engine) actionGateConfig() runtimeconfig.ActionGateConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().ActionGate
 	}
-	return e.runtimeMgr.EffectiveConfig().ActionGate
+	return e.runtimeMgr.EffectiveConfigRef().ActionGate
 }
 
 func (e *Engine) actionGateTimeout() time.Duration {
@@ -5844,7 +5864,7 @@ func (e *Engine) clarificationConfig() runtimeconfig.ClarificationConfig {
 	if e.runtimeMgr == nil {
 		return runtimeconfig.DefaultConfig().Clarification
 	}
-	return e.runtimeMgr.EffectiveConfig().Clarification
+	return e.runtimeMgr.EffectiveConfigRef().Clarification
 }
 
 func (e *Engine) clarificationTimeout() time.Duration {

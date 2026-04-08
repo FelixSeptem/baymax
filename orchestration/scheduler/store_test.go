@@ -165,6 +165,121 @@ func TestFileStoreCorruptSnapshotFailsFast(t *testing.T) {
 	}
 }
 
+func TestFileStoreOptionalGroupCommitAndFlush(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "scheduler-group-commit.json")
+	base := time.Now()
+
+	store, err := NewFileStore(path, WithPersistBatchSize(2), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new file store: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-a", RunID: "run-group"}, base); err != nil {
+		t.Fatalf("enqueue task-a: %v", err)
+	}
+
+	restarted, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen before batch threshold: %v", err)
+	}
+	if _, exists, err := restarted.Get(ctx, "task-a"); err != nil || exists {
+		t.Fatalf("task-a should not be persisted before batch threshold: exists=%v err=%v", exists, err)
+	}
+
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-b", RunID: "run-group"}, base.Add(time.Millisecond)); err != nil {
+		t.Fatalf("enqueue task-b: %v", err)
+	}
+	restartedAfterBatch, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen after batch threshold: %v", err)
+	}
+	if _, exists, err := restartedAfterBatch.Get(ctx, "task-a"); err != nil || !exists {
+		t.Fatalf("task-a should be persisted after group commit: exists=%v err=%v", exists, err)
+	}
+	if _, exists, err := restartedAfterBatch.Get(ctx, "task-b"); err != nil || !exists {
+		t.Fatalf("task-b should be persisted after group commit: exists=%v err=%v", exists, err)
+	}
+
+	pathFlush := filepath.Join(t.TempDir(), "scheduler-flush.json")
+	flushStore, err := NewFileStore(pathFlush, WithPersistBatchSize(5), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new flush file store: %v", err)
+	}
+	if _, err := flushStore.Enqueue(ctx, Task{TaskID: "task-flush", RunID: "run-flush"}, base); err != nil {
+		t.Fatalf("enqueue task-flush: %v", err)
+	}
+	if err := flushStore.Flush(); err != nil {
+		t.Fatalf("flush pending writes: %v", err)
+	}
+	restartedAfterFlush, err := NewFileStore(pathFlush)
+	if err != nil {
+		t.Fatalf("reopen after explicit flush: %v", err)
+	}
+	if _, exists, err := restartedAfterFlush.Get(ctx, "task-flush"); err != nil || !exists {
+		t.Fatalf("task-flush should be persisted after explicit flush: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestFileStoreOptionalDebounceCommit(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "scheduler-debounce.json")
+	base := time.Now()
+
+	store, err := NewFileStore(path, WithPersistBatchSize(10), WithPersistDebounce(25*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new file store: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-debounce-1", RunID: "run-debounce"}, base); err != nil {
+		t.Fatalf("enqueue task-debounce-1: %v", err)
+	}
+	time.Sleep(35 * time.Millisecond)
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-debounce-2", RunID: "run-debounce"}, base.Add(time.Millisecond)); err != nil {
+		t.Fatalf("enqueue task-debounce-2: %v", err)
+	}
+
+	restarted, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen after debounce window: %v", err)
+	}
+	if _, exists, err := restarted.Get(ctx, "task-debounce-1"); err != nil || !exists {
+		t.Fatalf("task-debounce-1 should be persisted after debounce-triggered commit: exists=%v err=%v", exists, err)
+	}
+	if _, exists, err := restarted.Get(ctx, "task-debounce-2"); err != nil || !exists {
+		t.Fatalf("task-debounce-2 should be persisted after debounce-triggered commit: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestFileStoreFlushBoundaryCrashRecoveryConsistency(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "scheduler-flush-boundary.json")
+	store, err := NewFileStore(path, WithPersistBatchSize(10), WithPersistDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("new file store: %v", err)
+	}
+	base := time.Now()
+
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-durable", RunID: "run-flush-boundary"}, base); err != nil {
+		t.Fatalf("enqueue durable task: %v", err)
+	}
+	if err := store.Flush(); err != nil {
+		t.Fatalf("flush durable task: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task-pending", RunID: "run-flush-boundary"}, base.Add(time.Millisecond)); err != nil {
+		t.Fatalf("enqueue pending task: %v", err)
+	}
+
+	restarted, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen scheduler file store: %v", err)
+	}
+	if _, exists, err := restarted.Get(ctx, "task-durable"); err != nil || !exists {
+		t.Fatalf("durable task should survive restart: exists=%v err=%v", exists, err)
+	}
+	if _, exists, err := restarted.Get(ctx, "task-pending"); err != nil || exists {
+		t.Fatalf("pending task should not survive restart before next flush: exists=%v err=%v", exists, err)
+	}
+}
+
 func runStoreParitySuite(t *testing.T, store QueueStore) {
 	t.Helper()
 	ctx := context.Background()

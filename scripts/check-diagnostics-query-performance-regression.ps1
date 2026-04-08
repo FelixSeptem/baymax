@@ -118,7 +118,9 @@ $benchmarks = @(
     @{ Name = "BenchmarkDiagnosticsQueryRuns"; Key = "QUERY_RUNS" },
     @{ Name = "BenchmarkDiagnosticsQueryRunsSandboxEnriched"; Key = "QUERY_RUNS_SANDBOX_ENRICHED" },
     @{ Name = "BenchmarkDiagnosticsQueryMailbox"; Key = "QUERY_MAILBOX" },
-    @{ Name = "BenchmarkDiagnosticsMailboxAggregates"; Key = "MAILBOX_AGGREGATES" }
+    @{ Name = "BenchmarkDiagnosticsMailboxAggregates"; Key = "MAILBOX_AGGREGATES" },
+    @{ Name = "BenchmarkRuntimeRecorderRunFinished"; Key = "RUN_FINISHED" },
+    @{ Name = "BenchmarkRuntimeRecorderRunFinishedSandboxEnriched"; Key = "RUN_FINISHED_SANDBOX_ENRICHED" }
 )
 
 foreach ($bench in $benchmarks) {
@@ -130,12 +132,13 @@ foreach ($bench in $benchmarks) {
 }
 
 Write-Host "[diagnostics-query-bench] running benchmarks (benchtime=$benchtime, count=$count)"
-$output = & go test ./integration -run '^$' -bench '^BenchmarkDiagnostics(QueryRuns|QueryRunsSandboxEnriched|QueryMailbox|MailboxAggregates)$' -benchmem "-benchtime=$benchtime" "-count=$count" 2>&1
+$output = & go test ./integration -run '^$' -bench '^Benchmark(DiagnosticsQueryRuns|DiagnosticsQueryRunsSandboxEnriched|DiagnosticsQueryMailbox|DiagnosticsMailboxAggregates|RuntimeRecorderRunFinished|RuntimeRecorderRunFinishedSandboxEnriched)$' -benchmem "-benchtime=$benchtime" "-count=$count" 2>&1
 $output | ForEach-Object { Write-Host $_ }
 
 $failed = $false
 foreach ($bench in $benchmarks) {
-    $lines = @($output | Where-Object { $_ -match [regex]::Escape($bench.Name) })
+    $linePattern = '^' + [regex]::Escape($bench.Name) + '-\d+\s'
+    $lines = @($output | Where-Object { $_ -match $linePattern })
     if (-not $lines -or $lines.Count -eq 0) {
         throw "[diagnostics-query-bench] parse-failure benchmark=$($bench.Name) reason=missing_output_line"
     }

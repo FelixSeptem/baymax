@@ -194,4 +194,13 @@ if [[ "${failed}" == "1" ]]; then
   exit 1
 fi
 
+echo "[multi-agent-bench] running scheduler file-store persist benchmarks"
+go test ./orchestration/scheduler -run '^$' -bench '^BenchmarkSchedulerFileStorePersist' -benchmem -benchtime="${benchtime}" -count=1
+
+echo "[multi-agent-bench] running mailbox file-store persist benchmarks"
+go test ./orchestration/mailbox -run '^$' -bench '^BenchmarkMailboxFileStorePersist' -benchmem -benchtime="${benchtime}" -count=1
+
+echo "[multi-agent-bench] running multi-agent shared contract suites"
+bash scripts/check-multi-agent-shared-contract.sh
+
 echo "[multi-agent-bench] passed"

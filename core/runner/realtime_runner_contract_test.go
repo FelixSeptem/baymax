@@ -427,6 +427,12 @@ func assertRealtimePayloadCounters(t *testing.T, payload map[string]any) {
 	if payload["realtime_idempotency_dedup_total"] != 2 {
 		t.Fatalf("realtime_idempotency_dedup_total=%#v, want 2", payload["realtime_idempotency_dedup_total"])
 	}
+	if payload["realtime_session_id"] == "" {
+		t.Fatalf("realtime_session_id=%#v, want non-empty", payload["realtime_session_id"])
+	}
+	if payload["realtime_resume_cursor"] == "" {
+		t.Fatalf("realtime_resume_cursor=%#v, want non-empty", payload["realtime_resume_cursor"])
+	}
 }
 
 func assertCollectorContainsCanonicalRealtimeEnvelope(t *testing.T, collector *eventCollector) {

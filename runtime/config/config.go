@@ -587,14 +587,20 @@ type A2AAsyncReportingRetryConfig struct {
 }
 
 type MailboxConfig struct {
-	Enabled bool                `json:"enabled"`
-	Backend string              `json:"backend"`
-	Path    string              `json:"path"`
-	Retry   MailboxRetryConfig  `json:"retry"`
-	TTL     time.Duration       `json:"ttl"`
-	DLQ     MailboxDLQConfig    `json:"dlq"`
-	Query   MailboxQueryConfig  `json:"query"`
-	Worker  MailboxWorkerConfig `json:"worker"`
+	Enabled     bool                `json:"enabled"`
+	Backend     string              `json:"backend"`
+	Path        string              `json:"path"`
+	Persistence PersistenceConfig   `json:"persistence"`
+	Retry       MailboxRetryConfig  `json:"retry"`
+	TTL         time.Duration       `json:"ttl"`
+	DLQ         MailboxDLQConfig    `json:"dlq"`
+	Query       MailboxQueryConfig  `json:"query"`
+	Worker      MailboxWorkerConfig `json:"worker"`
+}
+
+type PersistenceConfig struct {
+	Debounce  time.Duration `json:"debounce"`
+	BatchSize int           `json:"batch_size"`
 }
 
 type MailboxRetryConfig struct {
@@ -627,6 +633,7 @@ type SchedulerConfig struct {
 	Enabled           bool                      `json:"enabled"`
 	Backend           string                    `json:"backend"`
 	Path              string                    `json:"path"`
+	Persistence       PersistenceConfig         `json:"persistence"`
 	LeaseTimeout      time.Duration             `json:"lease_timeout"`
 	HeartbeatInterval time.Duration             `json:"heartbeat_interval"`
 	QueueLimit        int                       `json:"queue_limit"`
@@ -688,14 +695,15 @@ type SchedulerRetryBackoffConfig struct {
 }
 
 type RecoveryConfig struct {
-	Enabled                  bool   `json:"enabled"`
-	Backend                  string `json:"backend"`
-	Path                     string `json:"path"`
-	ConflictPolicy           string `json:"conflict_policy"`
-	ResumeBoundary           string `json:"resume_boundary"`
-	InflightPolicy           string `json:"inflight_policy"`
-	TimeoutReentryPolicy     string `json:"timeout_reentry_policy"`
-	TimeoutReentryMaxPerTask int    `json:"timeout_reentry_max_per_task"`
+	Enabled                  bool              `json:"enabled"`
+	Backend                  string            `json:"backend"`
+	Path                     string            `json:"path"`
+	Persistence              PersistenceConfig `json:"persistence"`
+	ConflictPolicy           string            `json:"conflict_policy"`
+	ResumeBoundary           string            `json:"resume_boundary"`
+	InflightPolicy           string            `json:"inflight_policy"`
+	TimeoutReentryPolicy     string            `json:"timeout_reentry_policy"`
+	TimeoutReentryMaxPerTask int               `json:"timeout_reentry_max_per_task"`
 }
 
 type SubagentConfig struct {
@@ -767,17 +775,32 @@ type ContextAssemblerConfig struct {
 	JournalPath   string                        `json:"journal_path"`
 	PrefixVersion string                        `json:"prefix_version"`
 	Storage       ContextAssemblerStorageConfig `json:"storage"`
+	Cache         ContextAssemblerCacheConfig   `json:"cache"`
 	Guard         ContextAssemblerGuardConfig   `json:"guard"`
 	CA2           ContextAssemblerCA2Config     `json:"ca2"`
 	CA3           ContextAssemblerCA3Config     `json:"ca3"`
 }
 
 type ContextAssemblerStorageConfig struct {
-	Backend string `json:"backend"`
+	Backend string                       `json:"backend"`
+	File    ContextAssemblerFileIOConfig `json:"file"`
 }
 
 type ContextAssemblerGuardConfig struct {
 	FailFast bool `json:"fail_fast"`
+}
+
+type ContextAssemblerCacheConfig struct {
+	RunFinishedCleanup bool          `json:"run_finished_cleanup"`
+	PrefixCacheTTL     time.Duration `json:"prefix_cache_ttl"`
+	PrefixCacheMaxSize int           `json:"prefix_cache_max_size"`
+	CA3StateTTL        time.Duration `json:"ca3_state_ttl"`
+	CA3StateMaxSize    int           `json:"ca3_state_max_size"`
+}
+
+type ContextAssemblerFileIOConfig struct {
+	ReuseHandle    bool `json:"reuse_handle"`
+	BatchFlushSize int  `json:"batch_flush_size"`
 }
 
 type ContextAssemblerCA2Config struct {
@@ -877,6 +900,7 @@ type ContextAssemblerCA3Config struct {
 	AbsoluteThresholds   ContextAssemblerCA3Thresholds              `json:"absolute_thresholds"`
 	Stage1               ContextAssemblerCA3StageThresholdOverrides `json:"stage1"`
 	Stage2               ContextAssemblerCA3StageThresholdOverrides `json:"stage2"`
+	Stage2Pass           ContextAssemblerCA3Stage2PassConfig        `json:"stage2_pass"`
 	Protection           ContextAssemblerCA3ProtectionConfig        `json:"protection"`
 	Squash               ContextAssemblerCA3SquashConfig            `json:"squash"`
 	Prune                ContextAssemblerCA3PruneConfig             `json:"prune"`
@@ -897,6 +921,10 @@ type ContextAssemblerCA3Thresholds struct {
 type ContextAssemblerCA3StageThresholdOverrides struct {
 	PercentThresholds  ContextAssemblerCA3Thresholds `json:"percent_thresholds"`
 	AbsoluteThresholds ContextAssemblerCA3Thresholds `json:"absolute_thresholds"`
+}
+
+type ContextAssemblerCA3Stage2PassConfig struct {
+	SkipNoDelta bool `json:"skip_no_delta"`
 }
 
 type ContextAssemblerCA3ProtectionConfig struct {
@@ -921,10 +949,11 @@ type ContextAssemblerCA3EmergencyConfig struct {
 }
 
 type ContextAssemblerCA3SpillConfig struct {
-	Enabled       bool   `json:"enabled"`
-	Backend       string `json:"backend"`
-	Path          string `json:"path"`
-	SwapBackLimit int    `json:"swap_back_limit"`
+	Enabled       bool                         `json:"enabled"`
+	Backend       string                       `json:"backend"`
+	Path          string                       `json:"path"`
+	SwapBackLimit int                          `json:"swap_back_limit"`
+	File          ContextAssemblerFileIOConfig `json:"file"`
 }
 
 type ContextAssemblerCA3TokenizerConfig struct {
@@ -1344,6 +1373,18 @@ func DefaultConfig() Config {
 					RestoreMode:   RuntimeStateSnapshotRestoreModeStrict,
 					CompatWindow:  1,
 					SchemaVersion: RuntimeStateSnapshotSchemaVersionV1,
+					Entropy: RuntimeStateSnapshotEntropyConfig{
+						Retention: RuntimeStateSnapshotEntropyRetentionConfig{
+							MaxSnapshots: 0,
+						},
+						Quota: RuntimeStateSnapshotEntropyQuotaConfig{
+							MaxBytes: 0,
+						},
+						Cleanup: RuntimeStateSnapshotEntropyCleanupConfig{
+							Enabled:   false,
+							BatchSize: 0,
+						},
+					},
 				},
 			},
 			Session: RuntimeSessionConfig{
@@ -1425,11 +1466,13 @@ func DefaultConfig() Config {
 			},
 			Observability: RuntimeObservabilityConfig{
 				Export: RuntimeObservabilityExportConfig{
-					Enabled:       false,
-					Profile:       RuntimeObservabilityExportProfileNone,
-					Endpoint:      "",
-					QueueCapacity: 1024,
-					OnError:       RuntimeObservabilityExportOnErrorDegradeAndRecord,
+					Enabled:         false,
+					Profile:         RuntimeObservabilityExportProfileNone,
+					Endpoint:        "",
+					QueueCapacity:   1024,
+					MaxBatchSize:    1,
+					MaxFlushLatency: 50 * time.Millisecond,
+					OnError:         RuntimeObservabilityExportOnErrorDegradeAndRecord,
 				},
 				Tracing: RuntimeObservabilityTracingConfig{
 					OTel: RuntimeObservabilityTracingOTelConfig{
@@ -1496,9 +1539,10 @@ func DefaultConfig() Config {
 				Builtin: RuntimeMemoryBuiltinConfig{
 					RootDir: filepath.Join(os.TempDir(), "baymax", "memory-store"),
 					Compaction: RuntimeMemoryBuiltinCompactionConfig{
-						Enabled:     true,
-						MinOps:      32,
-						MaxWALBytes: 4 << 20,
+						Enabled:        true,
+						MinOps:         32,
+						MaxWALBytes:    4 << 20,
+						FsyncBatchSize: 1,
 					},
 				},
 				Fallback: RuntimeMemoryFallbackConfig{
@@ -1671,6 +1715,10 @@ func DefaultConfig() Config {
 			Enabled: false,
 			Backend: MailboxBackendMemory,
 			Path:    filepath.Join(os.TempDir(), "baymax", "mailbox-state.json"),
+			Persistence: PersistenceConfig{
+				Debounce:  0,
+				BatchSize: 1,
+			},
 			Retry: MailboxRetryConfig{
 				MaxAttempts:    3,
 				BackoffInitial: 50 * time.Millisecond,
@@ -1699,6 +1747,7 @@ func DefaultConfig() Config {
 			Enabled:           false,
 			Backend:           SchedulerBackendMemory,
 			Path:              filepath.Join(os.TempDir(), "baymax", "scheduler-state.json"),
+			Persistence:       PersistenceConfig{Debounce: 0, BatchSize: 1},
 			LeaseTimeout:      2 * time.Second,
 			HeartbeatInterval: 500 * time.Millisecond,
 			QueueLimit:        1024,
@@ -1744,6 +1793,7 @@ func DefaultConfig() Config {
 			Enabled:                  false,
 			Backend:                  RecoveryBackendMemory,
 			Path:                     filepath.Join(os.TempDir(), "baymax", "recovery"),
+			Persistence:              PersistenceConfig{Debounce: 0, BatchSize: 1},
 			ConflictPolicy:           RecoveryConflictPolicyFailFast,
 			ResumeBoundary:           RecoveryResumeBoundaryNextAttemptOnly,
 			InflightPolicy:           RecoveryInflightPolicyNoRewind,
@@ -1814,6 +1864,17 @@ func DefaultConfig() Config {
 			PrefixVersion: "ca1",
 			Storage: ContextAssemblerStorageConfig{
 				Backend: "file",
+				File: ContextAssemblerFileIOConfig{
+					ReuseHandle:    false,
+					BatchFlushSize: 1,
+				},
+			},
+			Cache: ContextAssemblerCacheConfig{
+				RunFinishedCleanup: true,
+				PrefixCacheTTL:     30 * time.Minute,
+				PrefixCacheMaxSize: 2048,
+				CA3StateTTL:        30 * time.Minute,
+				CA3StateMaxSize:    1024,
 			},
 			Guard: ContextAssemblerGuardConfig{
 				FailFast: true,
@@ -1902,6 +1963,9 @@ func DefaultConfig() Config {
 				},
 				Stage1: ContextAssemblerCA3StageThresholdOverrides{},
 				Stage2: ContextAssemblerCA3StageThresholdOverrides{},
+				Stage2Pass: ContextAssemblerCA3Stage2PassConfig{
+					SkipNoDelta: false,
+				},
 				Protection: ContextAssemblerCA3ProtectionConfig{
 					CriticalKeywords:  []string{"critical"},
 					ImmutableKeywords: []string{"immutable"},
@@ -1924,6 +1988,10 @@ func DefaultConfig() Config {
 					Backend:       "file",
 					Path:          filepath.Join(os.TempDir(), "baymax", "context-spill.jsonl"),
 					SwapBackLimit: 4,
+					File: ContextAssemblerFileIOConfig{
+						ReuseHandle:    false,
+						BatchFlushSize: 1,
+					},
 				},
 				Tokenizer: ContextAssemblerCA3TokenizerConfig{
 					Mode:               "sdk_preferred",
@@ -2574,6 +2642,12 @@ func Validate(cfg Config) error {
 			cfg.Mailbox.Backend,
 		)
 	}
+	if cfg.Mailbox.Persistence.Debounce < 0 {
+		return errors.New("mailbox.persistence.debounce must be >= 0")
+	}
+	if cfg.Mailbox.Persistence.BatchSize <= 0 {
+		return errors.New("mailbox.persistence.batch_size must be > 0")
+	}
 	if cfg.Mailbox.Retry.MaxAttempts <= 0 {
 		return errors.New("mailbox.retry.max_attempts must be > 0")
 	}
@@ -2645,6 +2719,12 @@ func Validate(cfg Config) error {
 			SchedulerBackendFile,
 			cfg.Scheduler.Backend,
 		)
+	}
+	if cfg.Scheduler.Persistence.Debounce < 0 {
+		return errors.New("scheduler.persistence.debounce must be >= 0")
+	}
+	if cfg.Scheduler.Persistence.BatchSize <= 0 {
+		return errors.New("scheduler.persistence.batch_size must be > 0")
 	}
 	if cfg.Scheduler.LeaseTimeout <= 0 {
 		return errors.New("scheduler.lease_timeout must be > 0")
@@ -2747,6 +2827,12 @@ func Validate(cfg Config) error {
 			RecoveryBackendFile,
 			cfg.Recovery.Backend,
 		)
+	}
+	if cfg.Recovery.Persistence.Debounce < 0 {
+		return errors.New("recovery.persistence.debounce must be >= 0")
+	}
+	if cfg.Recovery.Persistence.BatchSize <= 0 {
+		return errors.New("recovery.persistence.batch_size must be > 0")
 	}
 	switch policy := strings.ToLower(strings.TrimSpace(cfg.Recovery.ConflictPolicy)); policy {
 	case RecoveryConflictPolicyFailFast:
@@ -2962,6 +3048,12 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("context_assembler.storage.backend must be one of [file,db], got %q", cfg.ContextAssembler.Storage.Backend)
 		}
 		cfg.ContextAssembler.Storage.Backend = backend
+		if backend == "file" && cfg.ContextAssembler.Storage.File.BatchFlushSize <= 0 {
+			return errors.New("context_assembler.storage.file.batch_flush_size must be > 0")
+		}
+		if err := validateContextAssemblerCacheConfig(cfg.ContextAssembler.Cache); err != nil {
+			return err
+		}
 		if cfg.ContextAssembler.CA2.Enabled {
 			mode := strings.ToLower(strings.TrimSpace(cfg.ContextAssembler.CA2.RoutingMode))
 			switch mode {
@@ -3073,6 +3165,22 @@ func validateCA2AgenticFailurePolicy(v, field string) error {
 	default:
 		return fmt.Errorf("%s must be one of [%s]", field, ContextCA2AgenticFailurePolicyBestEffortRules)
 	}
+}
+
+func validateContextAssemblerCacheConfig(cfg ContextAssemblerCacheConfig) error {
+	if cfg.PrefixCacheTTL < 0 {
+		return errors.New("context_assembler.cache.prefix_cache_ttl must be >= 0")
+	}
+	if cfg.CA3StateTTL < 0 {
+		return errors.New("context_assembler.cache.ca3_state_ttl must be >= 0")
+	}
+	if cfg.PrefixCacheMaxSize < 0 {
+		return errors.New("context_assembler.cache.prefix_cache_max_size must be >= 0")
+	}
+	if cfg.CA3StateMaxSize < 0 {
+		return errors.New("context_assembler.cache.ca3_state_max_size must be >= 0")
+	}
+	return nil
 }
 
 func validateSkillTriggerEmbeddingConfig(scoring SkillTriggerScoringConfig, field string) error {
@@ -3890,6 +3998,9 @@ func validateCA3Config(cfg ContextAssemblerCA3Config) error {
 		if backend == "file" && strings.TrimSpace(cfg.Spill.Path) == "" {
 			return errors.New("context_assembler.ca3.spill.path is required when spill.backend=file")
 		}
+		if backend == "file" && cfg.Spill.File.BatchFlushSize <= 0 {
+			return errors.New("context_assembler.ca3.spill.file.batch_flush_size must be > 0")
+		}
 		if cfg.Spill.SwapBackLimit <= 0 {
 			return errors.New("context_assembler.ca3.spill.swap_back_limit must be > 0")
 		}
@@ -4384,6 +4495,10 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.state.snapshot.restore_mode", base.Runtime.State.Snapshot.RestoreMode)
 	v.SetDefault("runtime.state.snapshot.compat_window", base.Runtime.State.Snapshot.CompatWindow)
 	v.SetDefault("runtime.state.snapshot.schema_version", base.Runtime.State.Snapshot.SchemaVersion)
+	v.SetDefault("runtime.state.snapshot.entropy.retention.max_snapshots", base.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots)
+	v.SetDefault("runtime.state.snapshot.entropy.quota.max_bytes", base.Runtime.State.Snapshot.Entropy.Quota.MaxBytes)
+	v.SetDefault("runtime.state.snapshot.entropy.cleanup.enabled", base.Runtime.State.Snapshot.Entropy.Cleanup.Enabled)
+	v.SetDefault("runtime.state.snapshot.entropy.cleanup.batch_size", base.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize)
 	v.SetDefault("runtime.session.state.enabled", base.Runtime.Session.State.Enabled)
 	v.SetDefault("runtime.session.state.partial_restore_policy", base.Runtime.Session.State.PartialRestorePolicy)
 	v.SetDefault("runtime.hooks.enabled", base.Runtime.Hooks.Enabled)
@@ -4422,6 +4537,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.observability.export.profile", base.Runtime.Observability.Export.Profile)
 	v.SetDefault("runtime.observability.export.endpoint", base.Runtime.Observability.Export.Endpoint)
 	v.SetDefault("runtime.observability.export.queue_capacity", base.Runtime.Observability.Export.QueueCapacity)
+	v.SetDefault("runtime.observability.export.max_batch_size", base.Runtime.Observability.Export.MaxBatchSize)
+	v.SetDefault("runtime.observability.export.max_flush_latency", base.Runtime.Observability.Export.MaxFlushLatency)
 	v.SetDefault("runtime.observability.export.on_error", base.Runtime.Observability.Export.OnError)
 	v.SetDefault("runtime.observability.tracing.otel.enabled", base.Runtime.Observability.Tracing.OTel.Enabled)
 	v.SetDefault("runtime.observability.tracing.otel.protocol", base.Runtime.Observability.Tracing.OTel.Protocol)
@@ -4456,6 +4573,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.memory.builtin.compaction.enabled", base.Runtime.Memory.Builtin.Compaction.Enabled)
 	v.SetDefault("runtime.memory.builtin.compaction.min_ops", base.Runtime.Memory.Builtin.Compaction.MinOps)
 	v.SetDefault("runtime.memory.builtin.compaction.max_wal_bytes", base.Runtime.Memory.Builtin.Compaction.MaxWALBytes)
+	v.SetDefault("runtime.memory.builtin.compaction.fsync_batch_size", base.Runtime.Memory.Builtin.Compaction.FsyncBatchSize)
 	v.SetDefault("runtime.memory.fallback.policy", base.Runtime.Memory.Fallback.Policy)
 	v.SetDefault("runtime.memory.scope.default", base.Runtime.Memory.Scope.Default)
 	v.SetDefault("runtime.memory.scope.allowed", base.Runtime.Memory.Scope.Allowed)
@@ -4553,6 +4671,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("mailbox.enabled", base.Mailbox.Enabled)
 	v.SetDefault("mailbox.backend", base.Mailbox.Backend)
 	v.SetDefault("mailbox.path", base.Mailbox.Path)
+	v.SetDefault("mailbox.persistence.debounce", base.Mailbox.Persistence.Debounce)
+	v.SetDefault("mailbox.persistence.batch_size", base.Mailbox.Persistence.BatchSize)
 	v.SetDefault("mailbox.retry.max_attempts", base.Mailbox.Retry.MaxAttempts)
 	v.SetDefault("mailbox.retry.backoff_initial", base.Mailbox.Retry.BackoffInitial)
 	v.SetDefault("mailbox.retry.backoff_max", base.Mailbox.Retry.BackoffMax)
@@ -4571,6 +4691,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.enabled", base.Scheduler.Enabled)
 	v.SetDefault("scheduler.backend", base.Scheduler.Backend)
 	v.SetDefault("scheduler.path", base.Scheduler.Path)
+	v.SetDefault("scheduler.persistence.debounce", base.Scheduler.Persistence.Debounce)
+	v.SetDefault("scheduler.persistence.batch_size", base.Scheduler.Persistence.BatchSize)
 	v.SetDefault("scheduler.lease_timeout", base.Scheduler.LeaseTimeout)
 	v.SetDefault("scheduler.heartbeat_interval", base.Scheduler.HeartbeatInterval)
 	v.SetDefault("scheduler.queue_limit", base.Scheduler.QueueLimit)
@@ -4596,6 +4718,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("recovery.enabled", base.Recovery.Enabled)
 	v.SetDefault("recovery.backend", base.Recovery.Backend)
 	v.SetDefault("recovery.path", base.Recovery.Path)
+	v.SetDefault("recovery.persistence.debounce", base.Recovery.Persistence.Debounce)
+	v.SetDefault("recovery.persistence.batch_size", base.Recovery.Persistence.BatchSize)
 	v.SetDefault("recovery.conflict_policy", base.Recovery.ConflictPolicy)
 	v.SetDefault("recovery.resume_boundary", base.Recovery.ResumeBoundary)
 	v.SetDefault("recovery.inflight_policy", base.Recovery.InflightPolicy)
@@ -4637,6 +4761,13 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.journal_path", base.ContextAssembler.JournalPath)
 	v.SetDefault("context_assembler.prefix_version", base.ContextAssembler.PrefixVersion)
 	v.SetDefault("context_assembler.storage.backend", base.ContextAssembler.Storage.Backend)
+	v.SetDefault("context_assembler.storage.file.reuse_handle", base.ContextAssembler.Storage.File.ReuseHandle)
+	v.SetDefault("context_assembler.storage.file.batch_flush_size", base.ContextAssembler.Storage.File.BatchFlushSize)
+	v.SetDefault("context_assembler.cache.run_finished_cleanup", base.ContextAssembler.Cache.RunFinishedCleanup)
+	v.SetDefault("context_assembler.cache.prefix_cache_ttl", base.ContextAssembler.Cache.PrefixCacheTTL)
+	v.SetDefault("context_assembler.cache.prefix_cache_max_size", base.ContextAssembler.Cache.PrefixCacheMaxSize)
+	v.SetDefault("context_assembler.cache.ca3_state_ttl", base.ContextAssembler.Cache.CA3StateTTL)
+	v.SetDefault("context_assembler.cache.ca3_state_max_size", base.ContextAssembler.Cache.CA3StateMaxSize)
 	v.SetDefault("context_assembler.guard.fail_fast", base.ContextAssembler.Guard.FailFast)
 	v.SetDefault("context_assembler.ca2.enabled", base.ContextAssembler.CA2.Enabled)
 	v.SetDefault("context_assembler.ca2.routing_mode", base.ContextAssembler.CA2.RoutingMode)
@@ -4671,6 +4802,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.absolute_thresholds.warning", base.ContextAssembler.CA3.AbsoluteThresholds.Warning)
 	v.SetDefault("context_assembler.ca3.absolute_thresholds.danger", base.ContextAssembler.CA3.AbsoluteThresholds.Danger)
 	v.SetDefault("context_assembler.ca3.absolute_thresholds.emergency", base.ContextAssembler.CA3.AbsoluteThresholds.Emergency)
+	v.SetDefault("context_assembler.ca3.stage2_pass.skip_no_delta", base.ContextAssembler.CA3.Stage2Pass.SkipNoDelta)
 	v.SetDefault("context_assembler.ca3.protection.critical_keywords", base.ContextAssembler.CA3.Protection.CriticalKeywords)
 	v.SetDefault("context_assembler.ca3.protection.immutable_keywords", base.ContextAssembler.CA3.Protection.ImmutableKeywords)
 	v.SetDefault("context_assembler.ca3.squash.enabled", base.ContextAssembler.CA3.Squash.Enabled)
@@ -4684,6 +4816,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("context_assembler.ca3.spill.backend", base.ContextAssembler.CA3.Spill.Backend)
 	v.SetDefault("context_assembler.ca3.spill.path", base.ContextAssembler.CA3.Spill.Path)
 	v.SetDefault("context_assembler.ca3.spill.swap_back_limit", base.ContextAssembler.CA3.Spill.SwapBackLimit)
+	v.SetDefault("context_assembler.ca3.spill.file.reuse_handle", base.ContextAssembler.CA3.Spill.File.ReuseHandle)
+	v.SetDefault("context_assembler.ca3.spill.file.batch_flush_size", base.ContextAssembler.CA3.Spill.File.BatchFlushSize)
 	v.SetDefault("context_assembler.ca3.tokenizer.mode", base.ContextAssembler.CA3.Tokenizer.Mode)
 	v.SetDefault("context_assembler.ca3.tokenizer.provider", base.ContextAssembler.CA3.Tokenizer.Provider)
 	v.SetDefault("context_assembler.ca3.tokenizer.model", base.ContextAssembler.CA3.Tokenizer.Model)
@@ -5140,6 +5274,22 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	snapshotEntropyRetentionMaxSnapshots, err := strictIntConfigValue(v, "runtime.state.snapshot.entropy.retention.max_snapshots")
+	if err != nil {
+		return Config{}, err
+	}
+	snapshotEntropyQuotaMaxBytes, err := strictIntConfigValue(v, "runtime.state.snapshot.entropy.quota.max_bytes")
+	if err != nil {
+		return Config{}, err
+	}
+	snapshotEntropyCleanupEnabled, err := strictBoolConfigValue(v, "runtime.state.snapshot.entropy.cleanup.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	snapshotEntropyCleanupBatchSize, err := strictIntConfigValue(v, "runtime.state.snapshot.entropy.cleanup.batch_size")
+	if err != nil {
+		return Config{}, err
+	}
 	hooksEnabled, err := strictBoolConfigValue(v, "runtime.hooks.enabled")
 	if err != nil {
 		return Config{}, err
@@ -5163,6 +5313,10 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.State.Snapshot.RestoreMode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.state.snapshot.restore_mode")))
 	cfg.Runtime.State.Snapshot.CompatWindow = stateSnapshotCompatWindow
 	cfg.Runtime.State.Snapshot.SchemaVersion = strings.ToLower(strings.TrimSpace(v.GetString("runtime.state.snapshot.schema_version")))
+	cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots = snapshotEntropyRetentionMaxSnapshots
+	cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes = snapshotEntropyQuotaMaxBytes
+	cfg.Runtime.State.Snapshot.Entropy.Cleanup.Enabled = snapshotEntropyCleanupEnabled
+	cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize = snapshotEntropyCleanupBatchSize
 	cfg.Runtime.Session.State.Enabled = sessionStateEnabled
 	cfg.Runtime.Session.State.PartialRestorePolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.session.state.partial_restore_policy")))
 	cfg.Runtime.Hooks.Enabled = hooksEnabled
@@ -5219,10 +5373,16 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	exportMaxBatchSize, err := strictIntConfigValue(v, "runtime.observability.export.max_batch_size")
+	if err != nil {
+		return Config{}, err
+	}
 	cfg.Runtime.Observability.Export.Enabled = exportEnabled
 	cfg.Runtime.Observability.Export.Profile = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.export.profile")))
 	cfg.Runtime.Observability.Export.Endpoint = strings.TrimSpace(v.GetString("runtime.observability.export.endpoint"))
 	cfg.Runtime.Observability.Export.QueueCapacity = v.GetInt("runtime.observability.export.queue_capacity")
+	cfg.Runtime.Observability.Export.MaxBatchSize = exportMaxBatchSize
+	cfg.Runtime.Observability.Export.MaxFlushLatency = v.GetDuration("runtime.observability.export.max_flush_latency")
 	cfg.Runtime.Observability.Export.OnError = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.export.on_error")))
 	cfg.Runtime.Observability.Tracing.OTel.Enabled = traceOTelEnabled
 	cfg.Runtime.Observability.Tracing.OTel.Protocol = strings.ToLower(strings.TrimSpace(v.GetString("runtime.observability.tracing.otel.protocol")))
@@ -5277,6 +5437,7 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Memory.Builtin.Compaction.Enabled = memoryCompactionEnabled
 	cfg.Runtime.Memory.Builtin.Compaction.MinOps = v.GetInt("runtime.memory.builtin.compaction.min_ops")
 	cfg.Runtime.Memory.Builtin.Compaction.MaxWALBytes = v.GetInt64("runtime.memory.builtin.compaction.max_wal_bytes")
+	cfg.Runtime.Memory.Builtin.Compaction.FsyncBatchSize = v.GetInt("runtime.memory.builtin.compaction.fsync_batch_size")
 	cfg.Runtime.Memory.Fallback.Policy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.memory.fallback.policy")))
 	scopeAllowOverride, err := strictBoolConfigValue(v, "runtime.memory.scope.allow_override")
 	if err != nil {
@@ -5414,6 +5575,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Mailbox.Enabled = v.GetBool("mailbox.enabled")
 	cfg.Mailbox.Backend = strings.ToLower(strings.TrimSpace(v.GetString("mailbox.backend")))
 	cfg.Mailbox.Path = strings.TrimSpace(v.GetString("mailbox.path"))
+	cfg.Mailbox.Persistence.Debounce = v.GetDuration("mailbox.persistence.debounce")
+	cfg.Mailbox.Persistence.BatchSize = v.GetInt("mailbox.persistence.batch_size")
 	cfg.Mailbox.Retry.MaxAttempts = v.GetInt("mailbox.retry.max_attempts")
 	cfg.Mailbox.Retry.BackoffInitial = v.GetDuration("mailbox.retry.backoff_initial")
 	cfg.Mailbox.Retry.BackoffMax = v.GetDuration("mailbox.retry.backoff_max")
@@ -5432,6 +5595,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Scheduler.Enabled = v.GetBool("scheduler.enabled")
 	cfg.Scheduler.Backend = strings.ToLower(strings.TrimSpace(v.GetString("scheduler.backend")))
 	cfg.Scheduler.Path = strings.TrimSpace(v.GetString("scheduler.path"))
+	cfg.Scheduler.Persistence.Debounce = v.GetDuration("scheduler.persistence.debounce")
+	cfg.Scheduler.Persistence.BatchSize = v.GetInt("scheduler.persistence.batch_size")
 	cfg.Scheduler.LeaseTimeout = v.GetDuration("scheduler.lease_timeout")
 	cfg.Scheduler.HeartbeatInterval = v.GetDuration("scheduler.heartbeat_interval")
 	cfg.Scheduler.QueueLimit = v.GetInt("scheduler.queue_limit")
@@ -5457,6 +5622,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Recovery.Enabled = v.GetBool("recovery.enabled")
 	cfg.Recovery.Backend = strings.ToLower(strings.TrimSpace(v.GetString("recovery.backend")))
 	cfg.Recovery.Path = strings.TrimSpace(v.GetString("recovery.path"))
+	cfg.Recovery.Persistence.Debounce = v.GetDuration("recovery.persistence.debounce")
+	cfg.Recovery.Persistence.BatchSize = v.GetInt("recovery.persistence.batch_size")
 	cfg.Recovery.ConflictPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.conflict_policy")))
 	cfg.Recovery.ResumeBoundary = strings.ToLower(strings.TrimSpace(v.GetString("recovery.resume_boundary")))
 	cfg.Recovery.InflightPolicy = strings.ToLower(strings.TrimSpace(v.GetString("recovery.inflight_policy")))
@@ -5500,6 +5667,13 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.ContextAssembler.JournalPath = strings.TrimSpace(v.GetString("context_assembler.journal_path"))
 	cfg.ContextAssembler.PrefixVersion = strings.TrimSpace(v.GetString("context_assembler.prefix_version"))
 	cfg.ContextAssembler.Storage.Backend = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.storage.backend")))
+	cfg.ContextAssembler.Storage.File.ReuseHandle = v.GetBool("context_assembler.storage.file.reuse_handle")
+	cfg.ContextAssembler.Storage.File.BatchFlushSize = v.GetInt("context_assembler.storage.file.batch_flush_size")
+	cfg.ContextAssembler.Cache.RunFinishedCleanup = v.GetBool("context_assembler.cache.run_finished_cleanup")
+	cfg.ContextAssembler.Cache.PrefixCacheTTL = v.GetDuration("context_assembler.cache.prefix_cache_ttl")
+	cfg.ContextAssembler.Cache.PrefixCacheMaxSize = v.GetInt("context_assembler.cache.prefix_cache_max_size")
+	cfg.ContextAssembler.Cache.CA3StateTTL = v.GetDuration("context_assembler.cache.ca3_state_ttl")
+	cfg.ContextAssembler.Cache.CA3StateMaxSize = v.GetInt("context_assembler.cache.ca3_state_max_size")
 	cfg.ContextAssembler.Guard.FailFast = v.GetBool("context_assembler.guard.fail_fast")
 	cfg.ContextAssembler.CA2.Enabled = v.GetBool("context_assembler.ca2.enabled")
 	cfg.ContextAssembler.CA2.RoutingMode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca2.routing_mode")))
@@ -5528,6 +5702,7 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.ContextAssembler.CA3.Stage1.AbsoluteThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage1.absolute_thresholds")
 	cfg.ContextAssembler.CA3.Stage2.PercentThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage2.percent_thresholds")
 	cfg.ContextAssembler.CA3.Stage2.AbsoluteThresholds = buildCA3Thresholds(v, "context_assembler.ca3.stage2.absolute_thresholds")
+	cfg.ContextAssembler.CA3.Stage2Pass.SkipNoDelta = v.GetBool("context_assembler.ca3.stage2_pass.skip_no_delta")
 	cfg.ContextAssembler.CA3.Protection.CriticalKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.protection.critical_keywords"))
 	cfg.ContextAssembler.CA3.Protection.ImmutableKeywords = normalizeKeywords(v.GetStringSlice("context_assembler.ca3.protection.immutable_keywords"))
 	cfg.ContextAssembler.CA3.Squash.Enabled = v.GetBool("context_assembler.ca3.squash.enabled")
@@ -5541,6 +5716,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.ContextAssembler.CA3.Spill.Backend = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.spill.backend")))
 	cfg.ContextAssembler.CA3.Spill.Path = strings.TrimSpace(v.GetString("context_assembler.ca3.spill.path"))
 	cfg.ContextAssembler.CA3.Spill.SwapBackLimit = v.GetInt("context_assembler.ca3.spill.swap_back_limit")
+	cfg.ContextAssembler.CA3.Spill.File.ReuseHandle = v.GetBool("context_assembler.ca3.spill.file.reuse_handle")
+	cfg.ContextAssembler.CA3.Spill.File.BatchFlushSize = v.GetInt("context_assembler.ca3.spill.file.batch_flush_size")
 	cfg.ContextAssembler.CA3.Tokenizer.Mode = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.mode")))
 	cfg.ContextAssembler.CA3.Tokenizer.Provider = strings.ToLower(strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.provider")))
 	cfg.ContextAssembler.CA3.Tokenizer.Model = strings.TrimSpace(v.GetString("context_assembler.ca3.tokenizer.model"))

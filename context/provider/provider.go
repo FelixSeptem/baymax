@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	memoryspi "github.com/FelixSeptem/baymax/memory"
@@ -20,6 +21,14 @@ import (
 )
 
 var ErrProviderNotReady = errors.New("context stage2 provider not ready")
+
+const maxReusableProviderBufferCap = 256 << 10
+
+var providerBufferPool = sync.Pool{
+	New: func() any {
+		return bytes.NewBuffer(make([]byte, 0, 8<<10))
+	},
+}
 
 type ErrorLayer string
 
@@ -212,12 +221,12 @@ func (f *fileProvider) Fetch(ctx context.Context, req Request) (Response, error)
 		if err := ctx.Err(); err != nil {
 			return Response{}, err
 		}
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var entry row
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 		if entry.Content == "" {
@@ -275,7 +284,7 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 		}
 	}
 	payload := p.buildRequestPayload(req)
-	raw, err := json.Marshal(payload)
+	requestBody, err := encodeRequestBody(payload)
 	if err != nil {
 		return Response{}, &FetchError{
 			Layer:   ErrorLayerProtocol,
@@ -284,8 +293,9 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 			Cause:   err,
 		}
 	}
+	defer func() { _ = requestBody.Close() }()
 
-	httpReq, err := http.NewRequestWithContext(ctx, httpMethodOrDefault(p.cfg.Method), p.cfg.Endpoint, bytes.NewReader(raw))
+	httpReq, err := http.NewRequestWithContext(ctx, httpMethodOrDefault(p.cfg.Method), p.cfg.Endpoint, requestBody)
 	if err != nil {
 		return Response{}, &FetchError{
 			Layer:   ErrorLayerProtocol,
@@ -315,22 +325,24 @@ func (p *httpProvider) Fetch(ctx context.Context, req Request) (Response, error)
 	}
 	defer func() { _ = httpResp.Body.Close() }()
 
-	body, err := io.ReadAll(httpResp.Body)
+	decoded, err := decodeResponsePayload(httpResp.Body)
 	if err != nil {
-		return Response{}, &FetchError{
-			Layer:   ErrorLayerProtocol,
-			Code:    "response_read_failed",
-			Message: "read context stage2 external response failed",
-			Cause:   err,
+		code := "response_decode_failed"
+		msg := "decode context stage2 external response failed"
+		cause := err
+		var payloadErr *responsePayloadError
+		if errors.As(err, &payloadErr) {
+			cause = payloadErr.cause
+			if payloadErr.stage == "read" {
+				code = "response_read_failed"
+				msg = "read context stage2 external response failed"
+			}
 		}
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(body, &decoded); err != nil {
 		return Response{}, &FetchError{
 			Layer:   ErrorLayerProtocol,
-			Code:    "response_decode_failed",
-			Message: "decode context stage2 external response failed",
-			Cause:   err,
+			Code:    code,
+			Message: msg,
+			Cause:   cause,
 		}
 	}
 	if httpResp.StatusCode >= 400 {
@@ -586,4 +598,98 @@ func supportedHintCapabilities(providerName string) map[string]struct{} {
 
 func defaultHTTPClient() *http.Client {
 	return &http.Client{}
+}
+
+type pooledBytesBody struct {
+	reader *bytes.Reader
+	buffer *bytes.Buffer
+	closed bool
+}
+
+func (b *pooledBytesBody) Read(p []byte) (int, error) {
+	if b == nil || b.reader == nil {
+		return 0, io.EOF
+	}
+	return b.reader.Read(p)
+}
+
+func (b *pooledBytesBody) Close() error {
+	if b == nil || b.closed {
+		return nil
+	}
+	b.closed = true
+	if b.buffer != nil {
+		releaseProviderBuffer(b.buffer)
+		b.buffer = nil
+	}
+	b.reader = nil
+	return nil
+}
+
+type responsePayloadError struct {
+	stage string
+	cause error
+}
+
+func (e *responsePayloadError) Error() string {
+	if e == nil || e.cause == nil {
+		return ""
+	}
+	return e.cause.Error()
+}
+
+func (e *responsePayloadError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func encodeRequestBody(payload any) (*pooledBytesBody, error) {
+	buf := acquireProviderBuffer()
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(payload); err != nil {
+		releaseProviderBuffer(buf)
+		return nil, err
+	}
+	if n := buf.Len(); n > 0 && buf.Bytes()[n-1] == '\n' {
+		buf.Truncate(n - 1)
+	}
+	return &pooledBytesBody{
+		reader: bytes.NewReader(buf.Bytes()),
+		buffer: buf,
+	}, nil
+}
+
+func decodeResponsePayload(r io.Reader) (map[string]any, error) {
+	buf := acquireProviderBuffer()
+	defer releaseProviderBuffer(buf)
+	if _, err := buf.ReadFrom(r); err != nil {
+		return nil, &responsePayloadError{stage: "read", cause: err}
+	}
+	decoded := make(map[string]any)
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		return nil, &responsePayloadError{stage: "decode", cause: err}
+	}
+	return decoded, nil
+}
+
+func acquireProviderBuffer() *bytes.Buffer {
+	buf, _ := providerBufferPool.Get().(*bytes.Buffer)
+	if buf == nil {
+		buf = bytes.NewBuffer(make([]byte, 0, 8<<10))
+	}
+	buf.Reset()
+	return buf
+}
+
+func releaseProviderBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	if buf.Cap() > maxReusableProviderBufferCap {
+		return
+	}
+	buf.Reset()
+	providerBufferPool.Put(buf)
 }

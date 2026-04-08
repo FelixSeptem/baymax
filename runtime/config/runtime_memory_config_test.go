@@ -30,6 +30,9 @@ func TestRuntimeMemoryConfigDefaults(t *testing.T) {
 	if strings.TrimSpace(cfg.Runtime.Memory.Builtin.RootDir) == "" {
 		t.Fatal("runtime.memory.builtin.root_dir should not be empty by default")
 	}
+	if cfg.Runtime.Memory.Builtin.Compaction.FsyncBatchSize != 1 {
+		t.Fatalf("runtime.memory.builtin.compaction.fsync_batch_size = %d, want 1", cfg.Runtime.Memory.Builtin.Compaction.FsyncBatchSize)
+	}
 	if cfg.Runtime.Memory.Scope.Default != RuntimeMemoryScopeSession {
 		t.Fatalf("runtime.memory.scope.default = %q, want %q", cfg.Runtime.Memory.Scope.Default, RuntimeMemoryScopeSession)
 	}
@@ -68,6 +71,7 @@ func TestRuntimeMemoryConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_EXTERNAL_CONTRACT_VERSION", RuntimeMemoryContractVersionV1)
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_FALLBACK_POLICY", RuntimeMemoryFallbackPolicyDegradeWithoutMemory)
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_MEMORY_BUILTIN_COMPACTION_FSYNC_BATCH_SIZE", "5")
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_SCOPE_DEFAULT", RuntimeMemoryScopeProject)
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_SCOPE_ALLOWED", "project,global")
 	t.Setenv("BAYMAX_RUNTIME_MEMORY_SCOPE_ALLOW_OVERRIDE", "false")
@@ -107,6 +111,7 @@ runtime:
         enabled: true
         min_ops: 16
         max_wal_bytes: 2048
+        fsync_batch_size: 2
     fallback:
       policy: fail_fast
     scope:
@@ -161,6 +166,9 @@ runtime:
 	}
 	if cfg.Runtime.Memory.Builtin.Compaction.Enabled {
 		t.Fatalf("runtime.memory.builtin.compaction.enabled = true, want false from env")
+	}
+	if cfg.Runtime.Memory.Builtin.Compaction.FsyncBatchSize != 5 {
+		t.Fatalf("runtime.memory.builtin.compaction.fsync_batch_size = %d, want 5 from env", cfg.Runtime.Memory.Builtin.Compaction.FsyncBatchSize)
 	}
 	if cfg.Runtime.Memory.Scope.Default != RuntimeMemoryScopeProject {
 		t.Fatalf("runtime.memory.scope.default = %q, want %q", cfg.Runtime.Memory.Scope.Default, RuntimeMemoryScopeProject)

@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/FelixSeptem/baymax/integration
+cpu: AMD Ryzen 7 7840HS w/ Radeon 780M Graphics     
+BenchmarkIterationLatency-16                           	     751	    320568 ns/op	  159889 B/op	    1030 allocs/op
+BenchmarkIterationLatency-16                           	     750	    344308 ns/op	  159900 B/op	    1030 allocs/op
+BenchmarkIterationLatency-16                           	     787	    306793 ns/op	  159882 B/op	    1030 allocs/op
+BenchmarkRuntimeBudgetAdmissionDecisionStability-16    	     100	   2177202 ns/op	   2088300 a60-degrade-p95-ns/op	   7513400 a60-degrade-p99-ns/op	   2186500 a60-deny-p95-ns/op	   8964400 a60-deny-p99-ns/op	  850109 B/op	    5718 allocs/op
+BenchmarkRuntimeBudgetAdmissionDecisionStability-16    	     122	   1716422 ns/op	   2272500 a60-degrade-p95-ns/op	   2654700 a60-degrade-p99-ns/op	   2043000 a60-deny-p95-ns/op	   3103200 a60-deny-p99-ns/op	  850062 B/op	    5718 allocs/op
+BenchmarkRuntimeBudgetAdmissionDecisionStability-16    	     126	   1888619 ns/op	   2029700 a60-degrade-p95-ns/op	   6154600 a60-degrade-p99-ns/op	   2099100 a60-deny-p95-ns/op	   3511500 a60-deny-p99-ns/op	  850086 B/op	    5718 allocs/op
+BenchmarkToolFanOutHighConcurrency-16                  	    1947	    129707 ns/op	   40610 B/op	     552 allocs/op
+BenchmarkToolFanOutHighConcurrency-16                  	    2080	    161245 ns/op	   40532 B/op	     551 allocs/op
+BenchmarkToolFanOutHighConcurrency-16                  	    1761	    170436 ns/op	   40554 B/op	     551 allocs/op
+BenchmarkToolFanOutSlowCall-16                         	     201	   1254637 ns/op	   21747 B/op	     295 allocs/op
+BenchmarkToolFanOutSlowCall-16                         	     186	   1264363 ns/op	   21753 B/op	     295 allocs/op
+BenchmarkToolFanOutSlowCall-16                         	     190	   1246458 ns/op	   21747 B/op	     295 allocs/op
+BenchmarkToolFanOutCancelStorm-16                      	     378	    645044 ns/op	        29.00 goroutine-peak	   1021400 p95-ns/op	   20673 B/op	     244 allocs/op
+BenchmarkToolFanOutCancelStorm-16                      	     374	    642130 ns/op	        34.00 goroutine-peak	   1010800 p95-ns/op	   20696 B/op	     244 allocs/op
+BenchmarkToolFanOutCancelStorm-16                      	     361	    640421 ns/op	         5.000 goroutine-peak	   1015400 p95-ns/op	   20679 B/op	     244 allocs/op
+BenchmarkToolFanOutDropLowPriority-16                  	    4818	     67512 ns/op	         2.000 goroutine-peak	    520900 p95-ns/op	   17174 B/op	     363 allocs/op
+BenchmarkToolFanOutDropLowPriority-16                  	    4726	 472128220 ns/op	         2.000 goroutine-peak	    533600 p95-ns/op	   17170 B/op	     363 allocs/op
+BenchmarkToolFanOutDropLowPriority-16                  	    1350	    277916 ns/op	         2.000 goroutine-peak	   1014200 p95-ns/op	   17169 B/op	     363 allocs/op
+BenchmarkToolFanOutDropLowPriorityMCPAndSkill-16       	    1926	    144312 ns/op	         2.000 goroutine-peak	   1010200 p95-ns/op	   17556 B/op	     363 allocs/op
+BenchmarkToolFanOutDropLowPriorityMCPAndSkill-16       	    2457	     95518 ns/op	         2.000 goroutine-peak	    704500 p95-ns/op	   17558 B/op	     363 allocs/op
+BenchmarkToolFanOutDropLowPriorityMCPAndSkill-16       	    3048	     88560 ns/op	         2.000 goroutine-peak	   1006500 p95-ns/op	   17558 B/op	     363 allocs/op
+BenchmarkMCPReconnectOverhead-16                       	   10000	     37318 ns/op	   34054 B/op	      28 allocs/op
+BenchmarkMCPReconnectOverhead-16                       	   10000	     27501 ns/op	   34055 B/op	      28 allocs/op
+BenchmarkMCPReconnectOverhead-16                       	   10000	     29528 ns/op	   34055 B/op	      28 allocs/op
+BenchmarkMCPProfileDefaultUnderFailure-16              	    3988	 377658044 ns/op	   33030 B/op	      27 allocs/op
+BenchmarkMCPProfileDefaultUnderFailure-16              	     583	    472978 ns/op	   23549 B/op	      27 allocs/op
+BenchmarkMCPProfileDefaultUnderFailure-16              	    3952	     55826 ns/op	   33060 B/op	      28 allocs/op
+BenchmarkMCPProfileHighReliabilityUnderFailure-16      	       1	 564022100 ns/op	    8608 B/op	      87 allocs/op
+BenchmarkMCPProfileHighReliabilityUnderFailure-16      	       1	 561563700 ns/op	    8608 B/op	      87 allocs/op
+BenchmarkMCPProfileHighReliabilityUnderFailure-16      	       1	 561081800 ns/op	    8384 B/op	      85 allocs/op
+PASS
+ok  	github.com/FelixSeptem/baymax/integration	3753.811s

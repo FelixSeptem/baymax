@@ -6,9 +6,11 @@ cd "${repo_root}"
 
 banned_pattern='(\.go\.[0-9]+$|\.tmp$|\.bak$|~$)'
 
-candidates="$(git ls-files | grep -E "${banned_pattern}" || true)"
+tracked_candidates="$(git ls-files | grep -E "${banned_pattern}" || true)"
+untracked_candidates="$(git ls-files --others --exclude-standard | grep -E "${banned_pattern}" || true)"
+candidates="$(printf '%s\n%s\n' "${tracked_candidates}" "${untracked_candidates}" | sed '/^$/d' | sort -u || true)"
 if [[ -n "${candidates}" ]]; then
-  echo "[repo-hygiene] found banned temporary/backup artifacts:" >&2
+  echo "[repo-hygiene] found banned temporary/backup artifacts (tracked or untracked):" >&2
   echo "${candidates}" >&2
   exit 1
 fi

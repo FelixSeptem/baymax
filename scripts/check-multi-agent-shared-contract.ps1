@@ -102,6 +102,11 @@ Invoke-NativeStrict -Label "go test ./integration -run '^TestCollaborationRetryC
     go test ./integration -run '^TestCollaborationRetryContract' -count=1
 }
 
+Write-Host "[multi-agent-shared-contract-gate] emergent matrix drift suite"
+Invoke-NativeStrict -Label "go test ./integration -run '^TestMultiAgentEmergent' -count=1" -Command {
+    go test ./integration -run '^TestMultiAgentEmergent' -count=1
+}
+
 Write-Host "[multi-agent-shared-contract-gate] recovery boundary suite"
 Invoke-NativeStrict -Label "go test ./integration -run '^TestRecoveryBoundary' -count=1" -Command {
     go test ./integration -run '^TestRecoveryBoundary' -count=1

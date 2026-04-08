@@ -1107,9 +1107,10 @@ func newBuiltinEngine(cfg Config) (Engine, error) {
 	engine, err := NewFilesystemEngine(FilesystemEngineConfig{
 		RootDir: cfg.Builtin.RootDir,
 		Compaction: FilesystemCompactionConfig{
-			Enabled:     cfg.Builtin.Compaction.Enabled,
-			MinOps:      cfg.Builtin.Compaction.MinOps,
-			MaxWALBytes: cfg.Builtin.Compaction.MaxWALBytes,
+			Enabled:        cfg.Builtin.Compaction.Enabled,
+			MinOps:         cfg.Builtin.Compaction.MinOps,
+			MaxWALBytes:    cfg.Builtin.Compaction.MaxWALBytes,
+			FsyncBatchSize: cfg.Builtin.Compaction.FsyncBatchSize,
 		},
 		Lifecycle:          cfg.Lifecycle,
 		Search:             cfg.Search,

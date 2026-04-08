@@ -382,3 +382,66 @@ func TestHTTPProviderFetchCarriesHintOutcomeObservationally(t *testing.T) {
 		)
 	}
 }
+
+func TestHTTPProviderFetchClassifiesResponseReadError(t *testing.T) {
+	p := &httpProvider{
+		name: runtimeconfig.ContextStage2ProviderHTTP,
+		cfg: runtimeconfig.ContextAssemblerCA2ExternalConfig{
+			Endpoint: "http://example.invalid/retrieve",
+			Method:   "POST",
+			Mapping: runtimeconfig.ContextAssemblerCA2ExternalMappingConfig{
+				Request: runtimeconfig.ContextAssemblerCA2RequestMappingConfig{
+					Mode:       "plain",
+					QueryField: "query",
+				},
+				Response: runtimeconfig.ContextAssemblerCA2ResponseMappingConfig{
+					ChunksField: "chunks",
+				},
+			},
+		},
+		client: &http.Client{
+			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Status:     "200 OK",
+					Header:     make(http.Header),
+					Body:       &errorReadCloser{err: errors.New("read failed")},
+					Request:    r,
+				}, nil
+			}),
+		},
+	}
+
+	_, err := p.Fetch(context.Background(), Request{Input: "q"})
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	var fetchErr *FetchError
+	if !errors.As(err, &fetchErr) {
+		t.Fatalf("error = %T, want *FetchError", err)
+	}
+	if fetchErr.Layer != ErrorLayerProtocol || fetchErr.Code != "response_read_failed" {
+		t.Fatalf("fetchErr = %#v", fetchErr)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+type errorReadCloser struct {
+	err error
+}
+
+func (r *errorReadCloser) Read(_ []byte) (int, error) {
+	if r == nil || r.err == nil {
+		return 0, io.EOF
+	}
+	return 0, r.err
+}
+
+func (r *errorReadCloser) Close() error {
+	return nil
+}

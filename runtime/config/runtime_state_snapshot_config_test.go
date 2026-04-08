@@ -29,6 +29,18 @@ func TestRuntimeStateSnapshotSessionConfigDefaults(t *testing.T) {
 			RuntimeStateSnapshotSchemaVersionV1,
 		)
 	}
+	if cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots != 0 {
+		t.Fatalf("runtime.state.snapshot.entropy.retention.max_snapshots = %d, want 0", cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots)
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes != 0 {
+		t.Fatalf("runtime.state.snapshot.entropy.quota.max_bytes = %d, want 0", cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes)
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Cleanup.Enabled {
+		t.Fatal("runtime.state.snapshot.entropy.cleanup.enabled = true, want false")
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize != 0 {
+		t.Fatalf("runtime.state.snapshot.entropy.cleanup.batch_size = %d, want 0", cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize)
+	}
 	if cfg.Runtime.Session.State.Enabled {
 		t.Fatal("runtime.session.state.enabled = true, want false")
 	}
@@ -46,6 +58,10 @@ func TestRuntimeStateSnapshotSessionConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_RESTORE_MODE", RuntimeStateSnapshotRestoreModeCompatible)
 	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_COMPAT_WINDOW", "3")
 	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_SCHEMA_VERSION", RuntimeStateSnapshotSchemaVersionV1)
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_RETENTION_MAX_SNAPSHOTS", "64")
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_QUOTA_MAX_BYTES", "1048576")
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_CLEANUP_ENABLED", "true")
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_CLEANUP_BATCH_SIZE", "16")
 	t.Setenv("BAYMAX_RUNTIME_SESSION_STATE_ENABLED", "true")
 	t.Setenv("BAYMAX_RUNTIME_SESSION_STATE_PARTIAL_RESTORE_POLICY", RuntimeSessionStatePartialRestorePolicyAllow)
 
@@ -58,6 +74,14 @@ runtime:
       restore_mode: strict
       compat_window: 1
       schema_version: state_session_snapshot.v1
+      entropy:
+        retention:
+          max_snapshots: 12
+        quota:
+          max_bytes: 4096
+        cleanup:
+          enabled: false
+          batch_size: 4
   session:
     state:
       enabled: false
@@ -83,6 +107,18 @@ runtime:
 	}
 	if cfg.Runtime.State.Snapshot.CompatWindow != 3 {
 		t.Fatalf("runtime.state.snapshot.compat_window = %d, want 3 from env", cfg.Runtime.State.Snapshot.CompatWindow)
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots != 64 {
+		t.Fatalf("runtime.state.snapshot.entropy.retention.max_snapshots = %d, want 64 from env", cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots)
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes != 1048576 {
+		t.Fatalf("runtime.state.snapshot.entropy.quota.max_bytes = %d, want 1048576 from env", cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes)
+	}
+	if !cfg.Runtime.State.Snapshot.Entropy.Cleanup.Enabled {
+		t.Fatal("runtime.state.snapshot.entropy.cleanup.enabled = false, want true from env")
+	}
+	if cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize != 16 {
+		t.Fatalf("runtime.state.snapshot.entropy.cleanup.batch_size = %d, want 16 from env", cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize)
 	}
 	if !cfg.Runtime.Session.State.Enabled {
 		t.Fatal("runtime.session.state.enabled = false, want true from env")
@@ -113,6 +149,25 @@ func TestRuntimeStateSnapshotSessionConfigValidationRejectsInvalidValues(t *test
 	cfg.Runtime.State.Snapshot.SchemaVersion = "state_session_snapshot.v9"
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.schema_version") {
 		t.Fatalf("expected runtime.state.snapshot.schema_version validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.State.Snapshot.Entropy.Retention.MaxSnapshots = -1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.entropy.retention.max_snapshots") {
+		t.Fatalf("expected runtime.state.snapshot.entropy.retention.max_snapshots validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.State.Snapshot.Entropy.Quota.MaxBytes = -1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.entropy.quota.max_bytes") {
+		t.Fatalf("expected runtime.state.snapshot.entropy.quota.max_bytes validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.State.Snapshot.Entropy.Cleanup.Enabled = true
+	cfg.Runtime.State.Snapshot.Entropy.Cleanup.BatchSize = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.entropy.cleanup.batch_size") {
+		t.Fatalf("expected runtime.state.snapshot.entropy.cleanup.batch_size validation error, got %v", err)
 	}
 
 	cfg = DefaultConfig()
@@ -178,5 +233,18 @@ func TestRuntimeStateSnapshotConfigCompatWindowInvalidIntFailsFast(t *testing.T)
 	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_COMPAT_WINDOW", "abc")
 	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.compat_window") {
 		t.Fatalf("expected strict int parse error for runtime.state.snapshot.compat_window, got %v", err)
+	}
+}
+
+func TestRuntimeStateSnapshotEntropyConfigInvalidIntFailsFast(t *testing.T) {
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_RETENTION_MAX_SNAPSHOTS", "abc")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.entropy.retention.max_snapshots") {
+		t.Fatalf("expected strict int parse error for runtime.state.snapshot.entropy.retention.max_snapshots, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_RETENTION_MAX_SNAPSHOTS", "5")
+	t.Setenv("BAYMAX_RUNTIME_STATE_SNAPSHOT_ENTROPY_CLEANUP_BATCH_SIZE", "xyz")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.state.snapshot.entropy.cleanup.batch_size") {
+		t.Fatalf("expected strict int parse error for runtime.state.snapshot.entropy.cleanup.batch_size, got %v", err)
 	}
 }

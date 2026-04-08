@@ -84,46 +84,17 @@ func (s *Scheduler) QueryTasks(ctx context.Context, req TaskBoardQueryRequest) (
 		return TaskBoardQueryResult{}, err
 	}
 
-	snapshot, err := s.Snapshot(ctx)
-	if err != nil {
-		return TaskBoardQueryResult{}, err
-	}
-
-	filtered := make([]TaskRecord, 0, len(snapshot.Tasks))
-	for i := range snapshot.Tasks {
-		if matchesTaskBoardQuery(snapshot.Tasks[i], q) {
-			filtered = append(filtered, snapshot.Tasks[i])
+	epoch := s.taskBoardQueryEpoch()
+	filtered, ok := s.readTaskBoardQueryCache(epoch, queryHash)
+	if !ok {
+		snapshot, snapshotErr := s.Snapshot(ctx)
+		if snapshotErr != nil {
+			return TaskBoardQueryResult{}, snapshotErr
 		}
+		filtered = filterTaskBoardQueryRecords(snapshot.Tasks, q)
+		s.writeTaskBoardQueryCache(epoch, queryHash, filtered)
 	}
-	sortTaskBoardQuery(filtered, q.SortField, q.SortOrder)
-
-	if start > len(filtered) {
-		return TaskBoardQueryResult{}, fmt.Errorf("invalid query cursor")
-	}
-	end := start + q.PageSize
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-	items := append([]TaskRecord(nil), filtered[start:end]...)
-
-	nextCursor := ""
-	if end < len(filtered) {
-		nextCursor, err = encodeTaskBoardCursor(taskBoardQueryCursor{
-			Offset:    end,
-			QueryHash: queryHash,
-		})
-		if err != nil {
-			return TaskBoardQueryResult{}, err
-		}
-	}
-
-	return TaskBoardQueryResult{
-		Items:      items,
-		NextCursor: nextCursor,
-		PageSize:   q.PageSize,
-		SortField:  q.SortField,
-		SortOrder:  q.SortOrder,
-	}, nil
+	return buildTaskBoardQueryResult(filtered, q, start, queryHash)
 }
 
 func normalizeTaskBoardQuery(req TaskBoardQueryRequest) (normalizedTaskBoardQuery, error) {
@@ -299,6 +270,47 @@ func matchesTaskBoardQuery(record TaskRecord, q normalizedTaskBoardQuery) bool {
 		}
 	}
 	return true
+}
+
+func filterTaskBoardQueryRecords(records []TaskRecord, q normalizedTaskBoardQuery) []TaskRecord {
+	filtered := make([]TaskRecord, 0, len(records))
+	for i := range records {
+		if matchesTaskBoardQuery(records[i], q) {
+			filtered = append(filtered, records[i])
+		}
+	}
+	sortTaskBoardQuery(filtered, q.SortField, q.SortOrder)
+	return filtered
+}
+
+func buildTaskBoardQueryResult(filtered []TaskRecord, q normalizedTaskBoardQuery, start int, queryHash string) (TaskBoardQueryResult, error) {
+	if start > len(filtered) {
+		return TaskBoardQueryResult{}, fmt.Errorf("invalid query cursor")
+	}
+	end := start + q.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	items := append([]TaskRecord(nil), filtered[start:end]...)
+
+	nextCursor := ""
+	if end < len(filtered) {
+		encoded, err := encodeTaskBoardCursor(taskBoardQueryCursor{
+			Offset:    end,
+			QueryHash: queryHash,
+		})
+		if err != nil {
+			return TaskBoardQueryResult{}, err
+		}
+		nextCursor = encoded
+	}
+	return TaskBoardQueryResult{
+		Items:      items,
+		NextCursor: nextCursor,
+		PageSize:   q.PageSize,
+		SortField:  q.SortField,
+		SortOrder:  q.SortOrder,
+	}, nil
 }
 
 func sortTaskBoardQuery(items []TaskRecord, field, order string) {

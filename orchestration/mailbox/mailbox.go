@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,14 +30,18 @@ type StoreInitResult struct {
 	FallbackReason string `json:"fallback_reason,omitempty"`
 }
 
-func NewStoreWithFallback(backend, path string, policy Policy) (StoreInitResult, error) {
-	return newStoreWithFallback(backend, path, policy)
+func NewStoreWithFallback(backend, path string, policy Policy, opts ...FileStoreOption) (StoreInitResult, error) {
+	return newStoreWithFallback(backend, path, policy, opts...)
 }
 
 type Mailbox struct {
 	store     Store
 	now       func() time.Time
 	observers []LifecycleObserver
+
+	queryCacheMu    sync.RWMutex
+	queryCacheEpoch uint64
+	queryCache      map[string][]Record
 }
 
 type Option func(*Mailbox)
@@ -62,9 +67,10 @@ func New(store Store, opts ...Option) (*Mailbox, error) {
 		return nil, errors.New("mailbox store is required")
 	}
 	m := &Mailbox{
-		store:     store,
-		now:       time.Now,
-		observers: []LifecycleObserver{},
+		store:      store,
+		now:        time.Now,
+		observers:  []LifecycleObserver{},
+		queryCache: map[string][]Record{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -80,11 +86,19 @@ func New(store Store, opts ...Option) (*Mailbox, error) {
 }
 
 func (m *Mailbox) Publish(ctx context.Context, envelope Envelope) (PublishResult, error) {
-	return m.store.Publish(ctx, envelope, m.nowTime())
+	result, err := m.store.Publish(ctx, envelope, m.nowTime())
+	if err != nil {
+		return PublishResult{}, err
+	}
+	m.invalidateQueryCache()
+	return result, nil
 }
 
 func (m *Mailbox) Consume(ctx context.Context, consumerID string) (Record, bool, error) {
 	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime(), 0, false)
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, ok, err
 }
@@ -96,18 +110,27 @@ func (m *Mailbox) ConsumeWithLease(
 	reclaimOnConsume bool,
 ) (Record, bool, error) {
 	record, ok, err := m.store.Consume(ctx, consumerID, m.nowTime(), inflightTimeout, reclaimOnConsume)
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, ok, err
 }
 
 func (m *Mailbox) Ack(ctx context.Context, messageID, consumerID string) (Record, error) {
 	record, err := m.store.Ack(ctx, messageID, consumerID, m.nowTime())
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
 
 func (m *Mailbox) Nack(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
 	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime(), ActionOptions{})
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
@@ -118,12 +141,18 @@ func (m *Mailbox) NackWithOptions(
 	opts ActionOptions,
 ) (Record, error) {
 	record, err := m.store.Nack(ctx, messageID, consumerID, reason, m.nowTime(), opts)
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
 
 func (m *Mailbox) Requeue(ctx context.Context, messageID, consumerID, reason string) (Record, error) {
 	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime(), ActionOptions{})
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
@@ -134,6 +163,9 @@ func (m *Mailbox) RequeueWithOptions(
 	opts ActionOptions,
 ) (Record, error) {
 	record, err := m.store.Requeue(ctx, messageID, consumerID, reason, m.nowTime(), opts)
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
@@ -144,6 +176,9 @@ func (m *Mailbox) Heartbeat(
 	inflightTimeout time.Duration,
 ) (Record, error) {
 	record, err := m.store.Heartbeat(ctx, messageID, consumerID, m.nowTime(), inflightTimeout)
+	if err == nil {
+		m.invalidateQueryCache()
+	}
 	m.emitLifecycle(ctx)
 	return record, err
 }
@@ -157,15 +192,35 @@ func (m *Mailbox) Snapshot(ctx context.Context) (Snapshot, error) {
 }
 
 func (m *Mailbox) Restore(ctx context.Context, snapshot Snapshot) error {
-	return m.store.Restore(ctx, snapshot)
+	if err := m.store.Restore(ctx, snapshot); err != nil {
+		return err
+	}
+	m.invalidateQueryCache()
+	return nil
 }
 
 func (m *Mailbox) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
-	snapshot, err := m.store.Snapshot(ctx)
+	q, err := normalizeQuery(req)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	return querySnapshot(snapshot, req)
+	queryKey := queryHash(q)
+	start, err := decodeCursor(q.Cursor, queryKey)
+	if err != nil {
+		return QueryResult{}, err
+	}
+
+	epoch := m.queryEpoch()
+	filtered, ok := m.readQueryCache(epoch, queryKey)
+	if !ok {
+		snapshot, snapshotErr := m.store.Snapshot(ctx)
+		if snapshotErr != nil {
+			return QueryResult{}, snapshotErr
+		}
+		filtered = filterQueryRecords(snapshot.Records, q)
+		m.writeQueryCache(epoch, queryKey, filtered)
+	}
+	return buildQueryResult(filtered, q, start, queryKey)
 }
 
 func (m *Mailbox) PublishCommand(ctx context.Context, envelope Envelope) (PublishResult, error) {
@@ -254,4 +309,67 @@ func (m *Mailbox) emitLifecycle(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (m *Mailbox) queryEpoch() uint64 {
+	if m == nil {
+		return 0
+	}
+	m.queryCacheMu.RLock()
+	defer m.queryCacheMu.RUnlock()
+	return m.queryCacheEpoch
+}
+
+func (m *Mailbox) readQueryCache(epoch uint64, key string) ([]Record, bool) {
+	if m == nil || strings.TrimSpace(key) == "" {
+		return nil, false
+	}
+	m.queryCacheMu.RLock()
+	defer m.queryCacheMu.RUnlock()
+	if m.queryCacheEpoch != epoch {
+		return nil, false
+	}
+	items, ok := m.queryCache[key]
+	if !ok {
+		return nil, false
+	}
+	return cloneRecords(items), true
+}
+
+func (m *Mailbox) writeQueryCache(epoch uint64, key string, items []Record) {
+	if m == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	const maxEntries = 32
+	m.queryCacheMu.Lock()
+	defer m.queryCacheMu.Unlock()
+	if m.queryCacheEpoch != epoch {
+		return
+	}
+	if m.queryCache == nil {
+		m.queryCache = map[string][]Record{}
+	}
+	if len(m.queryCache) >= maxEntries {
+		clear(m.queryCache)
+	}
+	m.queryCache[key] = cloneRecords(items)
+}
+
+func (m *Mailbox) invalidateQueryCache() {
+	if m == nil {
+		return
+	}
+	m.queryCacheMu.Lock()
+	defer m.queryCacheMu.Unlock()
+	m.queryCacheEpoch++
+	clear(m.queryCache)
+}
+
+func cloneRecords(in []Record) []Record {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Record, len(in))
+	copy(out, in)
+	return out
 }

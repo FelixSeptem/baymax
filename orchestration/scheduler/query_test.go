@@ -208,6 +208,43 @@ func TestTaskBoardQueryValidationAndCursorDeterminism(t *testing.T) {
 	}
 }
 
+func TestTaskBoardQueryCacheInvalidatesOnMutation(t *testing.T) {
+	s := newTaskBoardQueryTestScheduler(t)
+	ctx := context.Background()
+	seedTaskBoardQueryFixture(t, s)
+
+	req := TaskBoardQueryRequest{TeamID: "team-a"}
+	first, err := s.QueryTasks(ctx, req)
+	if err != nil {
+		t.Fatalf("first query failed: %v", err)
+	}
+	firstCount := len(first.Items)
+	if firstCount == 0 {
+		t.Fatal("expected non-empty fixture for team-a")
+	}
+
+	if _, err := s.Enqueue(ctx, Task{
+		TaskID:      "task-cache-new",
+		RunID:       "run-a-cache",
+		WorkflowID:  "wf-a",
+		TeamID:      "team-a",
+		AgentID:     "agent-a",
+		PeerID:      "peer-a",
+		ParentRunID: "parent-a",
+		Priority:    TaskPriorityNormal,
+	}); err != nil {
+		t.Fatalf("enqueue cache invalidation task failed: %v", err)
+	}
+
+	second, err := s.QueryTasks(ctx, req)
+	if err != nil {
+		t.Fatalf("second query failed: %v", err)
+	}
+	if len(second.Items) != firstCount+1 {
+		t.Fatalf("query cache should invalidate after mutation: first=%d second=%d", firstCount, len(second.Items))
+	}
+}
+
 func newTaskBoardQueryTestScheduler(t *testing.T) *Scheduler {
 	t.Helper()
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -70,6 +71,10 @@ type Scheduler struct {
 	now              func() time.Time
 	seq              atomic.Int64
 	reconcileSeq     atomic.Int64
+
+	queryCacheMu    sync.RWMutex
+	queryCacheEpoch uint64
+	queryCache      map[string][]TaskRecord
 }
 
 func New(store QueueStore, opts ...Option) (*Scheduler, error) {
@@ -84,6 +89,7 @@ func New(store QueueStore, opts ...Option) (*Scheduler, error) {
 		taskBoardControl: defaultTaskBoardControlConfig(),
 		recoveryBoundary: defaultRecoveryBoundaryConfig(),
 		now:              time.Now,
+		queryCache:       map[string][]TaskRecord{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -125,6 +131,7 @@ func (s *Scheduler) Enqueue(ctx context.Context, task Task) (TaskRecord, error) 
 	if err != nil {
 		return TaskRecord{}, err
 	}
+	s.invalidateTaskBoardQueryCache()
 	s.emitTimeline(ctx, record, Attempt{}, types.ActionStatusPending, ReasonEnqueue)
 	if isTaskDelayed(record.Task, now) {
 		remainingMs := record.Task.NotBefore.Sub(now).Milliseconds()
@@ -189,6 +196,7 @@ func (s *Scheduler) Claim(ctx context.Context, workerID string) (ClaimedTask, bo
 	if err != nil || !ok {
 		return claimed, ok, err
 	}
+	s.invalidateTaskBoardQueryCache()
 	if isTaskDelayed(claimed.Record.Task, claimed.Record.CreatedAt) {
 		waitMs := now.Sub(claimed.Record.CreatedAt).Milliseconds()
 		if waitMs < 0 {
@@ -222,6 +230,7 @@ func (s *Scheduler) Heartbeat(ctx context.Context, taskID, attemptID, leaseToken
 	if err != nil {
 		return ClaimedTask{}, err
 	}
+	s.invalidateTaskBoardQueryCache()
 	s.emitTimeline(ctx, claimed.Record, claimed.Attempt, types.ActionStatusRunning, ReasonHeartbeat)
 	return claimed, nil
 }
@@ -282,6 +291,9 @@ func (s *Scheduler) ExpireLeases(ctx context.Context) ([]ClaimedTask, error) {
 	if len(awaitingExpired) > 0 {
 		expired = append(expired, awaitingExpired...)
 	}
+	if len(expired) > 0 {
+		s.invalidateTaskBoardQueryCache()
+	}
 	return expired, nil
 }
 
@@ -295,6 +307,7 @@ func (s *Scheduler) MarkAwaitingReport(ctx context.Context, taskID, attemptID st
 	if err != nil {
 		return TaskRecord{}, err
 	}
+	s.invalidateTaskBoardQueryCache()
 	attempt, _ := record.attemptByID(strings.TrimSpace(attemptID))
 	extras := map[string]any{
 		"report_timeout_ms": s.asyncAwait.ReportTimeout.Milliseconds(),
@@ -312,6 +325,7 @@ func (s *Scheduler) Requeue(ctx context.Context, taskID, reason string) (TaskRec
 	if err != nil {
 		return TaskRecord{}, err
 	}
+	s.invalidateTaskBoardQueryCache()
 	attempt := latestAttempt(record)
 	switch record.State {
 	case TaskStateQueued:
@@ -344,6 +358,7 @@ func (s *Scheduler) ControlTask(ctx context.Context, req TaskBoardControlRequest
 	if !result.Applied || result.Deduplicated {
 		return result, nil
 	}
+	s.invalidateTaskBoardQueryCache()
 	switch result.Action {
 	case TaskBoardControlActionCancel:
 		s.emitTimeline(ctx, result.Record, latestAttempt(result.Record), types.ActionStatusCanceled, ReasonManualCancel)
@@ -362,6 +377,7 @@ func (s *Scheduler) Complete(ctx context.Context, commit TerminalCommit) (Commit
 		return CommitResult{}, err
 	}
 	if !result.Duplicate {
+		s.invalidateTaskBoardQueryCache()
 		attempt, _ := result.Record.attemptByID(commit.AttemptID)
 		s.emitTimeline(ctx, result.Record, attempt, types.ActionStatusSucceeded, ReasonJoin)
 	}
@@ -377,6 +393,7 @@ func (s *Scheduler) Fail(ctx context.Context, commit TerminalCommit) (CommitResu
 		return CommitResult{}, err
 	}
 	if !result.Duplicate {
+		s.invalidateTaskBoardQueryCache()
 		attempt, _ := result.Record.attemptByID(commit.AttemptID)
 		s.emitTimeline(ctx, result.Record, attempt, types.ActionStatusFailed, ReasonJoin)
 	}
@@ -394,6 +411,7 @@ func (s *Scheduler) CommitAsyncReportTerminal(ctx context.Context, commit Termin
 	if result.Duplicate {
 		return result, nil
 	}
+	s.invalidateTaskBoardQueryCache()
 	attempt, _ := result.Record.attemptByID(commit.AttemptID)
 	switch commit.Status {
 	case TaskStateSucceeded:
@@ -431,7 +449,11 @@ func (s *Scheduler) Restore(ctx context.Context, snapshot StoreSnapshot) error {
 	if !ok {
 		return errors.New("scheduler store does not support restore")
 	}
-	return store.Restore(ctx, snapshot)
+	if err := store.Restore(ctx, snapshot); err != nil {
+		return err
+	}
+	s.invalidateTaskBoardQueryCache()
+	return nil
 }
 
 func (s *Scheduler) SnapshotEquivalent(ctx context.Context, snapshot StoreSnapshot) (bool, error) {
@@ -523,4 +545,67 @@ func (s *Scheduler) nowTime() time.Time {
 		return time.Now()
 	}
 	return s.now()
+}
+
+func (s *Scheduler) taskBoardQueryEpoch() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.queryCacheMu.RLock()
+	defer s.queryCacheMu.RUnlock()
+	return s.queryCacheEpoch
+}
+
+func (s *Scheduler) readTaskBoardQueryCache(epoch uint64, key string) ([]TaskRecord, bool) {
+	if s == nil || strings.TrimSpace(key) == "" {
+		return nil, false
+	}
+	s.queryCacheMu.RLock()
+	defer s.queryCacheMu.RUnlock()
+	if s.queryCacheEpoch != epoch {
+		return nil, false
+	}
+	items, ok := s.queryCache[key]
+	if !ok {
+		return nil, false
+	}
+	return cloneTaskRecords(items), true
+}
+
+func (s *Scheduler) writeTaskBoardQueryCache(epoch uint64, key string, items []TaskRecord) {
+	if s == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	const maxEntries = 32
+	s.queryCacheMu.Lock()
+	defer s.queryCacheMu.Unlock()
+	if s.queryCacheEpoch != epoch {
+		return
+	}
+	if s.queryCache == nil {
+		s.queryCache = map[string][]TaskRecord{}
+	}
+	if len(s.queryCache) >= maxEntries {
+		clear(s.queryCache)
+	}
+	s.queryCache[key] = cloneTaskRecords(items)
+}
+
+func (s *Scheduler) invalidateTaskBoardQueryCache() {
+	if s == nil {
+		return
+	}
+	s.queryCacheMu.Lock()
+	defer s.queryCacheMu.Unlock()
+	s.queryCacheEpoch++
+	clear(s.queryCache)
+}
+
+func cloneTaskRecords(in []TaskRecord) []TaskRecord {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]TaskRecord, len(in))
+	copy(out, in)
+	return out
 }

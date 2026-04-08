@@ -45,7 +45,10 @@ func (c *Composer) initMailbox(cfg runtimeconfig.Config) error {
 		JitterRatio:    cfg.Mailbox.Retry.JitterRatio,
 		TTL:            cfg.Mailbox.TTL,
 		DLQEnabled:     cfg.Mailbox.DLQ.Enabled,
-	})
+	},
+		mailbox.WithPersistDebounce(cfg.Mailbox.Persistence.Debounce),
+		mailbox.WithPersistBatchSize(cfg.Mailbox.Persistence.BatchSize),
+	)
 	if err != nil {
 		return err
 	}
@@ -105,10 +108,12 @@ func (c *Composer) refreshMailboxForNextAttempt() {
 
 func (c *Composer) mailboxConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%t|%s|%s|%d|%d|%.4f|%d|%t|%d|%d|%t|%d|%s|%d|%d|%t|%s",
+		"%t|%s|%s|%d|%d|%d|%d|%.4f|%d|%t|%d|%d|%t|%d|%s|%d|%d|%t|%s",
 		cfg.Mailbox.Enabled,
 		strings.TrimSpace(strings.ToLower(cfg.Mailbox.Backend)),
 		strings.TrimSpace(cfg.Mailbox.Path),
+		cfg.Mailbox.Persistence.Debounce.Milliseconds(),
+		cfg.Mailbox.Persistence.BatchSize,
 		cfg.Mailbox.Retry.MaxAttempts,
 		cfg.Mailbox.Retry.BackoffInitial.Milliseconds(),
 		cfg.Mailbox.Retry.JitterRatio,

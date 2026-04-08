@@ -59,6 +59,7 @@ type Client struct {
 	session   Session
 	sessionMu sync.Mutex
 	cfgErr    error
+	hasEvents bool
 
 	seq          atomic.Uint64
 	lastActivity atomic.Int64
@@ -80,7 +81,13 @@ func NewClient(cfg Config) *Client {
 	if cfg.HeartbeatTimeout <= 0 {
 		cfg.HeartbeatTimeout = cfg.CallTimeout
 	}
-	c := &Client{cfg: cfg, explicit: userCfg, cfgErr: policyErr, diag: mcpdiag.NewStore(200)}
+	c := &Client{
+		cfg:       cfg,
+		explicit:  userCfg,
+		cfgErr:    policyErr,
+		hasEvents: cfg.EventHandler != nil,
+		diag:      mcpdiag.NewStore(200),
+	}
 	if cfg.Connect != nil {
 		c.connect = cfg.Connect
 	} else {
@@ -174,11 +181,21 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	start := time.Now()
 	reconnectCount := 0
 	retryCount := 0
-	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.requested", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"tool": name}})
+	if c.hasEvents {
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.requested", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+			Payload: map[string]any{"tool": name},
+		})
+	}
 
 	if err := c.heartbeatIfNeeded(ctx, runCfg.CallTimeout, runCfg.Backoff); err != nil {
 		res := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: err.Error(), Retryable: true}}
-		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(res.Error.Class)}})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{"error_class": string(res.Error.Class)},
+			})
+		}
 		return res, err
 	}
 
@@ -199,7 +216,12 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 			class = types.ErrPolicyTimeout
 		}
 		res := types.ToolResult{Error: &types.ClassifiedError{Class: class, Message: err.Error(), Retryable: class == types.ErrPolicyTimeout}}
-		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(res.Error.Class)}})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{"error_class": string(res.Error.Class)},
+			})
+		}
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
@@ -214,7 +236,12 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		return res, err
 	}
 	if result.Error != nil {
-		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{"error_class": string(result.Error.Class)},
+			})
+		}
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "http",
@@ -228,7 +255,12 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		})
 		return result, nil
 	}
-	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"tool": name}})
+	if c.hasEvents {
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+			Payload: map[string]any{"tool": name},
+		})
+	}
 	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
 		Transport:      "http",
@@ -249,7 +281,7 @@ func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, in
 		Backoff:  runCfg.Backoff,
 	}, mcpreliability.RetryHooks[types.ToolResult]{
 		Invoke: func(stepCtx context.Context, attempt int) (types.ToolResult, error) {
-			return c.invokeAsync(stepCtx, invoke)
+			return invoke(stepCtx)
 		},
 		ShouldRetry: mcpretry.ShouldRetry,
 		OnRetry: func(retryCtx context.Context, attempt int, err error) error {
@@ -265,7 +297,7 @@ func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, in
 	}
 	if err == nil {
 		c.lastActivity.Store(time.Now().UnixNano())
-		if finalAttempt > 0 {
+		if c.hasEvents && finalAttempt > 0 {
 			c.emit(ctx, types.Event{
 				Version: "v1", Type: "mcp.retry", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
 				Payload: map[string]any{"retry_count": finalAttempt},
@@ -273,27 +305,6 @@ func (c *Client) withRetry(ctx context.Context, runCfg Config, callID string, in
 		}
 	}
 	return result, err
-}
-
-func (c *Client) invokeAsync(ctx context.Context, invoke func(stepCtx context.Context) (types.ToolResult, error)) (types.ToolResult, error) {
-	type asyncResult struct {
-		res types.ToolResult
-		err error
-	}
-	ch := make(chan asyncResult, 1)
-	go func() {
-		res, err := invoke(ctx)
-		select {
-		case ch <- asyncResult{res: res, err: err}:
-		case <-ctx.Done():
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		return types.ToolResult{}, ctx.Err()
-	case out := <-ch:
-		return out.res, out.err
-	}
 }
 
 func (c *Client) heartbeatIfNeeded(ctx context.Context, defaultTimeout time.Duration, backoff time.Duration) error {
@@ -345,7 +356,12 @@ func (c *Client) reconnect(ctx context.Context, reason error, backoff time.Durat
 		c.session = nil
 	}
 	c.sessionMu.Unlock()
-	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.reconnected", RunID: c.cfg.RunID, Time: time.Now(), Payload: map[string]any{"reason": reason.Error()}})
+	if c.hasEvents {
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.reconnected", RunID: c.cfg.RunID, Time: time.Now(),
+			Payload: map[string]any{"reason": reason.Error()},
+		})
+	}
 
 	var lastErr error
 	for i := 0; i <= maxReconnects; i++ {

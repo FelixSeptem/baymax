@@ -3,6 +3,7 @@ package composer
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -295,6 +296,135 @@ func TestComposerUnifiedSnapshotMemoryRetrievalQualityStableAcrossCompatibleRest
 	}
 }
 
+func TestComposerUnifiedSnapshotRecoveryInteractionStateAlignsWithRealtimeAndIsolateHandoff(t *testing.T) {
+	comp := newUnifiedSnapshotTestComposer(t)
+	runID := "run-unified-snapshot-interaction-state"
+	comp.runtimeMgr.RecordRun(runtimediag.RunRecord{
+		Time:                    time.Now().UTC(),
+		RunID:                   runID,
+		Status:                  "failed",
+		RealtimeProtocolVersion: "realtime_event_protocol.v1",
+		RealtimeSessionID:       "session-unified-snapshot-interaction",
+		RealtimeEventSeqMax:     7,
+		RealtimeInterruptTotal:  1,
+		RealtimeResumeTotal:     0,
+		RealtimeResumeCursor:    "session-unified-snapshot-interaction:run-unified-snapshot-interaction-state:3",
+		Stage2ReasonCode:        "isolate_handoff_rejected",
+		Stage2Reason:            "isolate_handoff_rejected",
+		Stage2SkipReason:        "stage2.isolate_handoff.empty",
+	})
+
+	exported, err := comp.ExportUnifiedSnapshot(context.Background(), UnifiedSnapshotExportRequest{
+		RunID: runID,
+	})
+	if err != nil {
+		t.Fatalf("export unified snapshot failed: %v", err)
+	}
+	manifest, err := orchestrationsnapshot.UnmarshalManifest(exported.Payload)
+	if err != nil {
+		t.Fatalf("decode exported manifest failed: %v", err)
+	}
+	recoveryPayload, err := decodeComposerRecoveryPayload(manifest.Segments.ComposerRecovery.Payload)
+	if err != nil {
+		t.Fatalf("decode recovery payload failed: %v", err)
+	}
+	interaction := recoveryPayload.Recovery.Interaction
+	if interaction.Realtime.SessionID != "session-unified-snapshot-interaction" ||
+		interaction.Realtime.ResumeCursor != "session-unified-snapshot-interaction:run-unified-snapshot-interaction-state:3" ||
+		interaction.Realtime.EventSeqMax != 7 ||
+		interaction.Realtime.InterruptTotal != 1 {
+		t.Fatalf("realtime interaction snapshot mismatch: %#v", interaction.Realtime)
+	}
+	if !interaction.IsolateHandoff.Detected ||
+		interaction.IsolateHandoff.Stage2ReasonCode != "isolate_handoff_rejected" ||
+		interaction.IsolateHandoff.Stage2SkipReason != "stage2.isolate_handoff.empty" {
+		t.Fatalf("isolate-handoff interaction snapshot mismatch: %#v", interaction.IsolateHandoff)
+	}
+}
+
+func TestComposerUnifiedSnapshotInteractionStateCrashRestartReplayConsistency(t *testing.T) {
+	ctx := context.Background()
+	runID := "run-unified-snapshot-interaction-crash-restart-replay"
+	source := newUnifiedSnapshotTestComposer(t)
+	source.runtimeMgr.RecordRun(runtimediag.RunRecord{
+		Time:                    time.Now().UTC(),
+		RunID:                   runID,
+		Status:                  "failed",
+		RealtimeProtocolVersion: "realtime_event_protocol.v1",
+		RealtimeSessionID:       "session-unified-snapshot-interaction-restart",
+		RealtimeEventSeqMax:     9,
+		RealtimeInterruptTotal:  1,
+		RealtimeResumeTotal:     0,
+		RealtimeResumeCursor:    "session-unified-snapshot-interaction-restart:run-unified-snapshot-interaction-crash-restart-replay:4",
+		Stage2ReasonCode:        "isolate_handoff_rejected",
+		Stage2Reason:            "isolate_handoff_rejected",
+		Stage2SkipReason:        "stage2.isolate_handoff.empty",
+	})
+	exported, err := source.ExportUnifiedSnapshot(ctx, UnifiedSnapshotExportRequest{RunID: runID})
+	if err != nil {
+		t.Fatalf("export unified snapshot failed: %v", err)
+	}
+
+	root := t.TempDir()
+	store, err := NewFileRecoveryStore(root)
+	if err != nil {
+		t.Fatalf("new file recovery store: %v", err)
+	}
+	target := newUnifiedSnapshotTestComposerWithRecoveryStore(t, store)
+	first, err := target.ImportUnifiedSnapshot(ctx, UnifiedSnapshotImportRequest{
+		Payload:      exported.Payload,
+		OperationID:  "op-unified-snapshot-interaction-crash-restart-replay",
+		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
+		CompatWindow: 1,
+	})
+	if err != nil {
+		t.Fatalf("first import failed: %v", err)
+	}
+	if !containsString(first.AppliedSegments, "composer_recovery") {
+		t.Fatalf("first import should apply composer_recovery segment, got %#v", first.AppliedSegments)
+	}
+	afterFirst, found, err := store.Load(ctx, runID)
+	if err != nil || !found {
+		t.Fatalf("load recovery snapshot after first import failed: found=%v err=%v", found, err)
+	}
+
+	second, err := target.ImportUnifiedSnapshot(ctx, UnifiedSnapshotImportRequest{
+		Payload:      exported.Payload,
+		OperationID:  "op-unified-snapshot-interaction-crash-restart-replay",
+		RestoreMode:  orchestrationsnapshot.RestoreModeStrict,
+		CompatWindow: 1,
+	})
+	if err != nil {
+		t.Fatalf("second import failed: %v", err)
+	}
+	if second.RestoreAction != orchestrationsnapshot.RestoreActionIdempotentNoop {
+		t.Fatalf("second restore action = %q, want %q", second.RestoreAction, orchestrationsnapshot.RestoreActionIdempotentNoop)
+	}
+	afterReplay, found, err := store.Load(ctx, runID)
+	if err != nil || !found {
+		t.Fatalf("load recovery snapshot after replay import failed: found=%v err=%v", found, err)
+	}
+	if !reflect.DeepEqual(afterFirst.Interaction, afterReplay.Interaction) {
+		t.Fatalf("interaction state drift after replay import: first=%#v replay=%#v", afterFirst.Interaction, afterReplay.Interaction)
+	}
+
+	restartedStore, err := NewFileRecoveryStore(root)
+	if err != nil {
+		t.Fatalf("reopen file recovery store failed: %v", err)
+	}
+	restarted := newUnifiedSnapshotTestComposerWithRecoveryStore(t, restartedStore)
+	persisted, found, err := restartedStore.Load(ctx, runID)
+	if err != nil || !found {
+		t.Fatalf("load recovery snapshot after restart failed: found=%v err=%v", found, err)
+	}
+	if !reflect.DeepEqual(afterFirst.Interaction, persisted.Interaction) {
+		t.Fatalf("interaction state drift after restart: first=%#v restart=%#v", afterFirst.Interaction, persisted.Interaction)
+	}
+	if _, err := restarted.Recover(ctx, RecoverRequest{RunID: runID}); err != nil {
+		t.Fatalf("recover after restart failed: %v", err)
+	}
+}
+
 func newUnifiedSnapshotTestComposer(t *testing.T) *Composer {
 	t.Helper()
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_TEST"})
@@ -304,6 +434,25 @@ func newUnifiedSnapshotTestComposer(t *testing.T) *Composer {
 	t.Cleanup(func() { _ = mgr.Close() })
 	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
 	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatalf("new composer: %v", err)
+	}
+	return comp
+}
+
+func newUnifiedSnapshotTestComposerWithRecoveryStore(t *testing.T, store RecoveryStore) *Composer {
+	t.Helper()
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_UNIFIED_SNAPSHOT_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "ok"}}})
+	builder := NewBuilder(model).WithRuntimeManager(mgr)
+	if store != nil {
+		builder = builder.WithRecoveryStore(store)
+	}
+	comp, err := builder.Build()
 	if err != nil {
 		t.Fatalf("new composer: %v", err)
 	}

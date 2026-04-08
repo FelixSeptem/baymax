@@ -52,10 +52,11 @@ function Get-Median {
     param(
         [Parameter(Mandatory = $true)][double[]]$Values
     )
-    if (-not $Values -or $Values.Count -eq 0) {
+    $valuesArray = @($Values)
+    if (-not $valuesArray -or $valuesArray.Count -eq 0) {
         throw "[multi-agent-bench] parse-failure reason=empty_samples"
     }
-    $sorted = $Values | Sort-Object
+    $sorted = @($valuesArray | Sort-Object)
     $count = $sorted.Count
     if ($count % 2 -eq 1) {
         $mid = [int][math]::Floor($count / 2)
@@ -125,7 +126,7 @@ $output | ForEach-Object { Write-Host $_ }
 
 $failed = $false
 foreach ($bench in $benchmarks) {
-    $lines = $output | Where-Object { $_ -match [regex]::Escape($bench.Name) }
+    $lines = @($output | Where-Object { $_ -match [regex]::Escape($bench.Name) })
     if (-not $lines -or $lines.Count -eq 0) {
         throw "[multi-agent-bench] parse-failure benchmark=$($bench.Name) reason=missing_output_line"
     }
@@ -173,5 +174,16 @@ foreach ($bench in $benchmarks) {
 if ($failed) {
     throw "[multi-agent-bench] failed"
 }
+
+Write-Host "[multi-agent-bench] running scheduler file-store persist benchmarks"
+$schedulerBenchOutput = & go test ./orchestration/scheduler -run '^$' -bench '^BenchmarkSchedulerFileStorePersist' -benchmem "-benchtime=$benchtime" -count=1 2>&1
+$schedulerBenchOutput | ForEach-Object { Write-Host $_ }
+
+Write-Host "[multi-agent-bench] running mailbox file-store persist benchmarks"
+$mailboxBenchOutput = & go test ./orchestration/mailbox -run '^$' -bench '^BenchmarkMailboxFileStorePersist' -benchmem "-benchtime=$benchtime" -count=1 2>&1
+$mailboxBenchOutput | ForEach-Object { Write-Host $_ }
+
+Write-Host "[multi-agent-bench] running multi-agent shared contract suites"
+& pwsh -File scripts/check-multi-agent-shared-contract.ps1
 
 Write-Host "[multi-agent-bench] passed"

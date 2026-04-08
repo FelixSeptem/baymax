@@ -37,6 +37,12 @@ func TestJSONLoggerIncludesCorrelationFields(t *testing.T) {
 	if got["run_id"] != "run-1" || got["trace_id"] != "trace-1" || got["span_id"] != "span-1" {
 		t.Fatalf("missing correlation fields: %#v", got)
 	}
+	if _, ok := got["runtime_loaded_at"]; ok {
+		t.Fatalf("runtime_loaded_at should be absent without runtime manager, got %#v", got["runtime_loaded_at"])
+	}
+	if _, ok := got["runtime_active_profile"]; ok {
+		t.Fatalf("runtime_active_profile should be absent without runtime manager, got %#v", got["runtime_active_profile"])
+	}
 }
 
 func TestJSONLoggerWithRuntimeManagerAddsMetadata(t *testing.T) {

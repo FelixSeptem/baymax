@@ -1653,7 +1653,11 @@ func (c *Composer) initScheduler(cfg runtimeconfig.Config) error {
 		var err error
 		switch backend {
 		case runtimeconfig.SchedulerBackendFile:
-			store, err = scheduler.NewFileStore(cfg.Scheduler.Path)
+			store, err = scheduler.NewFileStore(
+				cfg.Scheduler.Path,
+				scheduler.WithPersistDebounce(cfg.Scheduler.Persistence.Debounce),
+				scheduler.WithPersistBatchSize(cfg.Scheduler.Persistence.BatchSize),
+			)
 			if err != nil {
 				store = scheduler.NewMemoryStore()
 				fallback = true
@@ -1764,8 +1768,10 @@ func (c *Composer) refreshSchedulerForNextAttempt() {
 
 func (c *Composer) schedulerConfigSignature(cfg runtimeconfig.Config) string {
 	return fmt.Sprintf(
-		"%d|%d|%d|%d|%d|%d|%s|%d|%t|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%d|%d|%.4f|%s|%t|%s|%s|%s|%d",
+		"%d|%d|%d|%d|%d|%d|%d|%d|%s|%d|%t|%d|%t|%t|%d|%d|%.4f|%.4f|%d|%s|%s|%t|%d|%d|%.4f|%s|%t|%s|%s|%s|%d",
 		cfg.Scheduler.LeaseTimeout.Milliseconds(),
+		cfg.Scheduler.Persistence.Debounce.Milliseconds(),
+		cfg.Scheduler.Persistence.BatchSize,
 		cfg.Subagent.MaxDepth,
 		cfg.Subagent.MaxActiveChildren,
 		cfg.Subagent.ChildTimeoutBudget.Milliseconds(),

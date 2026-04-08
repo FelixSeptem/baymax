@@ -297,8 +297,25 @@ func (r *runtimeExporterRuntime) configureIfNeeded(cfg runtimeconfig.RuntimeObse
 	if queueCapacity <= 0 {
 		queueCapacity = runtimeconfig.DefaultConfig().Runtime.Observability.Export.QueueCapacity
 	}
+	maxBatchSize := cfg.MaxBatchSize
+	if maxBatchSize <= 0 {
+		maxBatchSize = runtimeconfig.DefaultConfig().Runtime.Observability.Export.MaxBatchSize
+	}
+	maxFlushLatency := cfg.MaxFlushLatency
+	if maxFlushLatency <= 0 {
+		maxFlushLatency = runtimeconfig.DefaultConfig().Runtime.Observability.Export.MaxFlushLatency
+	}
 	endpoint := strings.TrimSpace(cfg.Endpoint)
-	signature := fmt.Sprintf("%t|%s|%s|%d|%s", cfg.Enabled, profile, endpoint, queueCapacity, onError)
+	signature := fmt.Sprintf(
+		"%t|%s|%s|%d|%d|%d|%s",
+		cfg.Enabled,
+		profile,
+		endpoint,
+		queueCapacity,
+		maxBatchSize,
+		maxFlushLatency,
+		onError,
+	)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -326,11 +343,13 @@ func (r *runtimeExporterRuntime) configureIfNeeded(cfg runtimeconfig.RuntimeObse
 	}
 
 	exporter, err := r.resolver.Resolve(runtimeconfig.RuntimeObservabilityExportConfig{
-		Enabled:       cfg.Enabled,
-		Profile:       profile,
-		Endpoint:      endpoint,
-		QueueCapacity: queueCapacity,
-		OnError:       onError,
+		Enabled:         cfg.Enabled,
+		Profile:         profile,
+		Endpoint:        endpoint,
+		QueueCapacity:   queueCapacity,
+		MaxBatchSize:    maxBatchSize,
+		MaxFlushLatency: maxFlushLatency,
+		OnError:         onError,
 	})
 	if err != nil {
 		r.recordExportErrorLocked(canonicalizeRuntimeExportError(err, profile))
@@ -344,7 +363,7 @@ func (r *runtimeExporterRuntime) configureIfNeeded(cfg runtimeconfig.RuntimeObse
 	r.cancel = cancel
 	r.active = true
 	r.snapshot.Status = RuntimeExportStatusSuccess
-	go r.worker(ctx, exporter, q, profile)
+	go r.worker(ctx, exporter, q, profile, maxBatchSize, maxFlushLatency)
 	return prevCancel
 }
 
@@ -386,40 +405,138 @@ func (r *runtimeExporterRuntime) enqueue(ev types.Event) {
 	}
 }
 
-func (r *runtimeExporterRuntime) worker(ctx context.Context, exporter RuntimeExporter, queue <-chan types.Event, profile string) {
+func (r *runtimeExporterRuntime) worker(
+	ctx context.Context,
+	exporter RuntimeExporter,
+	queue <-chan types.Event,
+	profile string,
+	maxBatchSize int,
+	maxFlushLatency time.Duration,
+) {
+	if maxBatchSize <= 0 {
+		maxBatchSize = runtimeconfig.DefaultConfig().Runtime.Observability.Export.MaxBatchSize
+	}
+	if maxFlushLatency <= 0 {
+		maxFlushLatency = runtimeconfig.DefaultConfig().Runtime.Observability.Export.MaxFlushLatency
+	}
+
 	defer func() {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		_ = exporter.Flush(flushCtx)
 		cancel()
 		_ = exporter.Shutdown(context.Background())
 	}()
+
+	stopTimer := func(timer *time.Timer, active *bool) {
+		if !*active {
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		*active = false
+	}
+
+	batch := make([]types.Event, 0, maxBatchSize)
+	timer := time.NewTimer(maxFlushLatency)
+	timerActive := false
+	stopTimer(timer, &timerActive)
+	defer stopTimer(timer, &timerActive)
+
+	flushBatch := func(exportCtx context.Context) bool {
+		if len(batch) == 0 {
+			return false
+		}
+		exportBatch := append([]types.Event(nil), batch...)
+		batch = batch[:0]
+		err := exporter.ExportEvents(exportCtx, exportBatch)
+		if err == nil {
+			return false
+		}
+		canonical := canonicalizeRuntimeExportError(err, profile)
+		var cancel context.CancelFunc
+		r.mu.Lock()
+		if strings.TrimSpace(canonical.Code) == "" {
+			canonical.Code = RuntimeExportReasonUnknown
+		}
+		r.recordExportErrorLocked(canonical)
+		if r.onError == runtimeconfig.RuntimeObservabilityExportOnErrorFailFast {
+			r.active = false
+			cancel = r.cancel
+			r.cancel = nil
+			r.exporter = nil
+			r.queue = nil
+		}
+		r.mu.Unlock()
+		if cancel != nil {
+			cancel()
+			return true
+		}
+		return false
+	}
+
+	drainQueueAndFlush := func() bool {
+		for {
+			select {
+			case ev, ok := <-queue:
+				if !ok {
+					flushCtx, cancel := context.WithTimeout(context.Background(), maxFlushLatency)
+					shouldStop := flushBatch(flushCtx)
+					cancel()
+					return shouldStop
+				}
+				batch = append(batch, ev)
+				if len(batch) >= maxBatchSize {
+					flushCtx, cancel := context.WithTimeout(context.Background(), maxFlushLatency)
+					shouldStop := flushBatch(flushCtx)
+					cancel()
+					if shouldStop {
+						return true
+					}
+				}
+			default:
+				flushCtx, cancel := context.WithTimeout(context.Background(), maxFlushLatency)
+				shouldStop := flushBatch(flushCtx)
+				cancel()
+				return shouldStop
+			}
+		}
+	}
+
 	for {
+		timerCh := (<-chan time.Time)(nil)
+		if timerActive {
+			timerCh = timer.C
+		}
 		select {
 		case <-ctx.Done():
+			stopTimer(timer, &timerActive)
+			_ = drainQueueAndFlush()
 			return
-		case ev := <-queue:
-			err := exporter.ExportEvents(ctx, []types.Event{ev})
-			if err == nil {
-				continue
-			}
-			canonical := canonicalizeRuntimeExportError(err, profile)
-			var cancel context.CancelFunc
-			r.mu.Lock()
-			if strings.TrimSpace(canonical.Code) == "" {
-				canonical.Code = RuntimeExportReasonUnknown
-			}
-			r.recordExportErrorLocked(canonical)
-			if r.onError == runtimeconfig.RuntimeObservabilityExportOnErrorFailFast {
-				r.active = false
-				cancel = r.cancel
-				r.cancel = nil
-				r.exporter = nil
-				r.queue = nil
-			}
-			r.mu.Unlock()
-			if cancel != nil {
-				cancel()
+		case <-timerCh:
+			timerActive = false
+			if flushBatch(ctx) {
 				return
+			}
+		case ev, ok := <-queue:
+			if !ok {
+				stopTimer(timer, &timerActive)
+				_ = drainQueueAndFlush()
+				return
+			}
+			batch = append(batch, ev)
+			if len(batch) == 1 {
+				timer.Reset(maxFlushLatency)
+				timerActive = true
+			}
+			if len(batch) >= maxBatchSize {
+				stopTimer(timer, &timerActive)
+				if flushBatch(ctx) {
+					return
+				}
 			}
 		}
 	}

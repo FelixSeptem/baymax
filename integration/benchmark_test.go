@@ -15,11 +15,14 @@ import (
 
 	"github.com/FelixSeptem/baymax/a2a"
 	"github.com/FelixSeptem/baymax/context/assembler"
+	"github.com/FelixSeptem/baymax/context/provider"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	httpmcp "github.com/FelixSeptem/baymax/mcp/http"
 	mcpprofile "github.com/FelixSeptem/baymax/mcp/profile"
+	stdiomcp "github.com/FelixSeptem/baymax/mcp/stdio"
+	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -617,6 +620,114 @@ func BenchmarkMCPReconnectOverhead(b *testing.B) {
 	}
 }
 
+func BenchmarkMCPInvokePathHTTP(b *testing.B) {
+	client := httpmcp.NewClient(httpmcp.Config{
+		Retry: 0,
+		Connect: func(ctx context.Context) (httpmcp.Session, error) {
+			return &fakeHTTPSession{}, nil
+		},
+	})
+	if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+		b.Fatalf("http warmup call failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+			b.Fatalf("http invoke failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkMCPInvokePathSTDIO(b *testing.B) {
+	client := stdiomcp.NewClient(&benchmarkSTDIOTransport{}, stdiomcp.Config{
+		Retry:         0,
+		Backoff:       time.Microsecond,
+		ReadPoolSize:  1,
+		WritePoolSize: 1,
+	})
+	if err := client.Warmup(context.Background()); err != nil {
+		b.Fatalf("stdio warmup failed: %v", err)
+	}
+	if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+		b.Fatalf("stdio warmup call failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+			b.Fatalf("stdio invoke failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkMCPEventEmitHTTP(b *testing.B) {
+	b.Run("without_handler", func(b *testing.B) {
+		benchmarkMCPEventEmitHTTP(b, nil)
+	})
+	b.Run("with_handler", func(b *testing.B) {
+		benchmarkMCPEventEmitHTTP(b, noopMCPEventHandler{})
+	})
+}
+
+func benchmarkMCPEventEmitHTTP(b *testing.B, handler types.EventHandler) {
+	client := httpmcp.NewClient(httpmcp.Config{
+		Retry:        0,
+		EventHandler: handler,
+		RunID:        "bench-mcp-http-event",
+		Connect: func(ctx context.Context) (httpmcp.Session, error) {
+			return &fakeHTTPSession{}, nil
+		},
+	})
+	if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+		b.Fatalf("http event warmup failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+			b.Fatalf("http event emit failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkMCPEventEmitSTDIO(b *testing.B) {
+	b.Run("without_handler", func(b *testing.B) {
+		benchmarkMCPEventEmitSTDIO(b, nil)
+	})
+	b.Run("with_handler", func(b *testing.B) {
+		benchmarkMCPEventEmitSTDIO(b, noopMCPEventHandler{})
+	})
+}
+
+func benchmarkMCPEventEmitSTDIO(b *testing.B, handler types.EventHandler) {
+	client := stdiomcp.NewClient(&benchmarkSTDIOTransport{}, stdiomcp.Config{
+		Retry:         0,
+		Backoff:       time.Microsecond,
+		ReadPoolSize:  1,
+		WritePoolSize: 1,
+		EventHandler:  handler,
+		RunID:         "bench-mcp-stdio-event",
+	})
+	if err := client.Warmup(context.Background()); err != nil {
+		b.Fatalf("stdio event warmup failed: %v", err)
+	}
+	if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+		b.Fatalf("stdio event warmup call failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.CallTool(context.Background(), "tool", nil); err != nil {
+			b.Fatalf("stdio event emit failed: %v", err)
+		}
+	}
+}
+
 func BenchmarkMCPProfileDefaultUnderFailure(b *testing.B) {
 	attempt := 0
 	connector := func(ctx context.Context) (httpmcp.Session, error) {
@@ -698,6 +809,269 @@ func BenchmarkContextProductionHardeningPressureEvaluation(b *testing.B) {
 	if p95 := percentileNs(durations, 95); p95 > 0 {
 		b.ReportMetric(float64(p95), "p95-ns/op")
 	}
+}
+
+func BenchmarkContextAssemblerLoopStage1Only(b *testing.B) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA2.Enabled = false
+	cfg.CA3.Enabled = false
+	cfg.JournalPath = filepath.Join(b.TempDir(), "journal.jsonl")
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-context-loop-stage1",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         strings.Repeat("stage1 payload ", 40),
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("stage1 message ", 40)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkContextAssemblerLoopStage2File(b *testing.B) {
+	stage2Path := writeBenchmarkStage2File(b, b.TempDir(), "bench-session", 24)
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = runtimeconfig.ContextStage2ProviderFile
+	cfg.CA2.Stage2.FilePath = stage2Path
+	cfg.CA2.Routing.TriggerKeywords = []string{"lookup"}
+	cfg.CA2.Routing.MinInputChars = 9999
+	cfg.CA3.Enabled = false
+	cfg.JournalPath = filepath.Join(b.TempDir(), "journal.jsonl")
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-context-loop-stage2",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         "please lookup related context",
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("stage2 route message ", 24)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkCA3Stage2PassPressureOnly(b *testing.B) {
+	stage2Path := writeBenchmarkStage2File(b, b.TempDir(), "bench-session", 12)
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = runtimeconfig.ContextStage2ProviderFile
+	cfg.CA2.Stage2.FilePath = stage2Path
+	cfg.CA2.Routing.TriggerKeywords = []string{"lookup"}
+	cfg.CA2.Routing.MinInputChars = 9999
+	cfg.CA3.Enabled = true
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	cfg.CA3.MaxContextTokens = 2048
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 20, Comfort: 40, Warning: 60, Danger: 75, Emergency: 90,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 256, Comfort: 512, Warning: 1024, Danger: 1400, Emergency: 1800,
+	}
+	cfg.JournalPath = filepath.Join(b.TempDir(), "journal.jsonl")
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-ca3-stage2-pass",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         "lookup context for pressure pass",
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("context pressure payload ", 80)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		_, result, err := a.Assemble(context.Background(), req, modelReq)
+		if err != nil {
+			b.Fatalf("assemble failed: %v", err)
+		}
+		if strings.TrimSpace(result.Stage.PressureZone) == "" {
+			b.Fatalf("pressure zone should not be empty")
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkCA3Stage2PassSpillEnabled(b *testing.B) {
+	stage2Path := writeBenchmarkStage2File(b, b.TempDir(), "bench-session", 16)
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Enabled = true
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = runtimeconfig.ContextStage2ProviderFile
+	cfg.CA2.Stage2.FilePath = stage2Path
+	cfg.CA2.Routing.TriggerKeywords = []string{"lookup"}
+	cfg.CA2.Routing.MinInputChars = 9999
+	cfg.CA3.Enabled = true
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	cfg.CA3.MaxContextTokens = 256
+	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 5, Comfort: 10, Warning: 15, Danger: 20, Emergency: 25,
+	}
+	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+		Safe: 32, Comfort: 64, Warning: 96, Danger: 128, Emergency: 160,
+	}
+	cfg.CA3.Spill.Enabled = true
+	cfg.CA3.Spill.Backend = "file"
+	cfg.CA3.Spill.Path = filepath.Join(b.TempDir(), "spill.jsonl")
+	cfg.CA3.Spill.File.ReuseHandle = true
+	cfg.CA3.Spill.File.BatchFlushSize = 8
+	cfg.CA3.Prune.Enabled = true
+	cfg.JournalPath = filepath.Join(b.TempDir(), "journal.jsonl")
+	a := assembler.New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	req := types.ContextAssembleRequest{
+		RunID:         "bench-ca3-stage2-spill",
+		SessionID:     "bench-session",
+		PrefixVersion: "ca1",
+		Input:         "lookup context for spill path",
+		Messages: []types.Message{
+			{Role: "system", Content: "stable system prompt"},
+			{Role: "user", Content: strings.Repeat("spill candidate payload ", 120)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Model:    "gpt-4.1-mini",
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+			b.Fatalf("assemble failed: %v", err)
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func BenchmarkStage2FileProviderFetchSession(b *testing.B) {
+	stage2Path := writeBenchmarkStage2File(b, b.TempDir(), "bench-session", 400)
+	p, err := provider.New(runtimeconfig.ContextStage2ProviderFile, stage2Path)
+	if err != nil {
+		b.Fatalf("new file provider: %v", err)
+	}
+	req := provider.Request{
+		RunID:     "run-42",
+		SessionID: "bench-session",
+		Input:     "lookup provider",
+		MaxItems:  16,
+	}
+	durations := make([]int64, 0, b.N)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		resp, fetchErr := p.Fetch(context.Background(), req)
+		if fetchErr != nil {
+			b.Fatalf("file provider fetch failed: %v", fetchErr)
+		}
+		if len(resp.Chunks) == 0 {
+			b.Fatalf("chunks should not be empty")
+		}
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+}
+
+func writeBenchmarkStage2File(tb testing.TB, dir string, sessionID string, lines int) string {
+	tb.Helper()
+	if lines <= 0 {
+		lines = 1
+	}
+	path := filepath.Join(dir, "stage2.jsonl")
+	var sb strings.Builder
+	for i := 0; i < lines; i++ {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		currentSession := sessionID
+		if i%9 == 0 {
+			currentSession = "other-session"
+		}
+		_, _ = fmt.Fprintf(
+			&sb,
+			`{"run_id":"run-%d","session_id":"%s","content":"chunk-%d %s"}`,
+			i%13,
+			currentSession,
+			i,
+			strings.Repeat("x", 24),
+		)
+	}
+	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
+		tb.Fatalf("write benchmark stage2 file: %v", err)
+	}
+	return path
 }
 
 func BenchmarkContextPressureSemanticCompactionLatency(b *testing.B) {
@@ -933,6 +1307,158 @@ func BenchmarkDiagnosticsTimelineTrendQuery(b *testing.B) {
 	if p95 := percentileNs(durations, 95); p95 > 0 {
 		b.ReportMetric(float64(p95), "p95-ns/op")
 	}
+}
+
+type runtimeRecorderRunFinishedBenchmarkFixture struct {
+	manager  *runtimeconfig.Manager
+	recorder *obsevent.RuntimeRecorder
+	payload  map[string]any
+}
+
+func newRuntimeRecorderRunFinishedBenchmarkFixture(
+	b testing.TB,
+	sandboxEnriched bool,
+) runtimeRecorderRunFinishedBenchmarkFixture {
+	b.Helper()
+	manager, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{
+		EnvPrefix: "BAYMAX_A64_BENCH_RECORDER",
+	})
+	if err != nil {
+		b.Fatalf("new runtime manager for run.finished benchmark: %v", err)
+	}
+	recorder := obsevent.NewRuntimeRecorder(manager)
+	b.Cleanup(func() {
+		recorder.Close()
+		_ = manager.Close()
+	})
+
+	payload := map[string]any{
+		"status":                                         "success",
+		"tool_calls":                                     5,
+		"latency_ms":                                     220,
+		"model_provider":                                 "openai",
+		"decision":                                       "allow",
+		"reason_code":                                    "ok",
+		"memory_rerank_stats":                            map[string]any{"input_total": 4, "output_total": 3, "drop_total": 1},
+		"task_board_manual_control_by_action":            map[string]any{"pause": 2, "resume": 1},
+		"task_board_manual_control_by_reason":            map[string]any{"operator_request": 2},
+		"context_lifecycle_tier_stats":                   map[string]any{"hot": 2, "warm": 3, "cold": 1},
+		"runtime_secondary_reason_codes":                 []any{"runtime.readiness.ok", "runtime.admission.allow"},
+		"policy_decision_path":                           []any{map[string]any{"stage": "readiness", "code": "runtime.readiness.ok", "source": "runtime.readiness", "decision": "allow"}, map[string]any{"stage": "admission", "code": "runtime.admission.allow", "source": "runtime.admission", "decision": "allow"}},
+		"eval_summary":                                   map[string]any{"task_success": map[string]any{"pass_rate": 0.94}, "tool_correctness": map[string]any{"pass_rate": 0.91}},
+		"budget_snapshot":                                map[string]any{"decision": "allow", "cost_estimate": map[string]any{"token_cost": 0.23, "tool_cost": 0.11}, "latency_estimate": map[string]any{"token_latency_ms": 180, "tool_latency_ms": 70}},
+		"diagnostics_bundle_total":                       1,
+		"diagnostics_bundle_last_status":                 "succeeded",
+		"diagnostics_bundle_last_reason_code":            "ok",
+		"diagnostics_bundle_last_schema_version":         runtimeconfig.RuntimeDiagnosticsBundleSchemaVersionV1,
+		"observability_export_profile":                   "default",
+		"observability_export_status":                    "succeeded",
+		"diagnostics_cardinality_budget_hit_total":       0,
+		"diagnostics_cardinality_truncated_total":        0,
+		"diagnostics_cardinality_fail_fast_reject_total": 0,
+	}
+	if sandboxEnriched {
+		payload["policy_kind"] = "sandbox"
+		payload["sandbox_mode"] = "enforce"
+		payload["sandbox_backend"] = "windows_job"
+		payload["sandbox_profile"] = "default"
+		payload["sandbox_session_mode"] = "per_call"
+		payload["sandbox_required_capabilities"] = "stdout_stderr_capture,network_off"
+		payload["sandbox_decision"] = "sandbox"
+		payload["sandbox_reason_code"] = "sandbox.timeout"
+		payload["sandbox_rollout_phase"] = "canary"
+		payload["sandbox_rollout_effective_ratio"] = 0.1
+		payload["sandbox_health_budget_status"] = "near_budget"
+		payload["sandbox_health_budget_breach_total"] = 1
+		payload["sandbox_capacity_action"] = "throttle"
+		payload["sandbox_capacity_queue_depth"] = 72
+		payload["sandbox_capacity_inflight"] = 14
+	}
+
+	return runtimeRecorderRunFinishedBenchmarkFixture{
+		manager:  manager,
+		recorder: recorder,
+		payload:  payload,
+	}
+}
+
+func benchmarkRuntimeRecorderRunFinished(
+	b *testing.B,
+	fixture runtimeRecorderRunFinishedBenchmarkFixture,
+	runID string,
+	assertRecord func(testing.TB, runtimediag.RunRecord),
+) {
+	b.Helper()
+	durations := make([]int64, 0, b.N)
+	base := time.Date(2026, time.January, 3, 8, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		fixture.recorder.OnEvent(ctx, types.Event{
+			Type:      "run.finished",
+			RunID:     runID,
+			Iteration: i + 1,
+			Time:      base.Add(time.Duration(i) * time.Millisecond),
+			Payload:   fixture.payload,
+		})
+		durations = append(durations, time.Since(start).Nanoseconds())
+	}
+	b.StopTimer()
+	if p95 := percentileNs(durations, 95); p95 > 0 {
+		b.ReportMetric(float64(p95), "p95-ns/op")
+	}
+	items := fixture.manager.RecentRuns(1)
+	if len(items) != 1 {
+		b.Fatalf("runtime recorder run.finished benchmark expected 1 retained run, got %d", len(items))
+	}
+	assertRecord(b, items[0])
+}
+
+func BenchmarkRuntimeRecorderRunFinished(b *testing.B) {
+	fixture := newRuntimeRecorderRunFinishedBenchmarkFixture(b, false)
+	benchmarkRuntimeRecorderRunFinished(
+		b,
+		fixture,
+		"bench-runtime-recorder-run-finished",
+		func(tb testing.TB, rec runtimediag.RunRecord) {
+			tb.Helper()
+			if rec.RunID != "bench-runtime-recorder-run-finished" {
+				tb.Fatalf("unexpected run_id: %q", rec.RunID)
+			}
+			if rec.Decision != "allow" || rec.ReasonCode != "ok" {
+				tb.Fatalf("unexpected policy fields in run record: %#v", rec)
+			}
+			if len(rec.PolicyDecisionPath) != 2 {
+				tb.Fatalf("policy_decision_path len=%d, want 2", len(rec.PolicyDecisionPath))
+			}
+			if len(rec.MemoryRerankStats) == 0 || len(rec.ContextLifecycleTierStats) == 0 {
+				tb.Fatalf("expected rerank/context lifecycle maps to be recorded: %#v", rec)
+			}
+		},
+	)
+}
+
+func BenchmarkRuntimeRecorderRunFinishedSandboxEnriched(b *testing.B) {
+	fixture := newRuntimeRecorderRunFinishedBenchmarkFixture(b, true)
+	benchmarkRuntimeRecorderRunFinished(
+		b,
+		fixture,
+		"bench-runtime-recorder-run-finished-sandbox",
+		func(tb testing.TB, rec runtimediag.RunRecord) {
+			tb.Helper()
+			if rec.RunID != "bench-runtime-recorder-run-finished-sandbox" {
+				tb.Fatalf("unexpected run_id: %q", rec.RunID)
+			}
+			if rec.SandboxMode != "enforce" || rec.SandboxRolloutPhase != "canary" {
+				tb.Fatalf("sandbox enriched run record missing expected fields: %#v", rec)
+			}
+			if rec.SandboxCapacityAction != "throttle" || rec.SandboxCapacityQueueDepth != 72 {
+				tb.Fatalf("sandbox capacity fields mismatch: %#v", rec)
+			}
+		},
+	)
 }
 
 type diagnosticsQueryBenchmarkFixture struct {
@@ -1465,3 +1991,21 @@ func (s *fakeHTTPSession) CallTool(ctx context.Context, p *mcp.CallToolParams) (
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
 }
 func (s *fakeHTTPSession) Close() error { return nil }
+
+type benchmarkSTDIOTransport struct{}
+
+func (t *benchmarkSTDIOTransport) Initialize(ctx context.Context) error { return nil }
+
+func (t *benchmarkSTDIOTransport) ListTools(ctx context.Context) ([]types.MCPToolMeta, error) {
+	return []types.MCPToolMeta{{Name: "tool"}}, nil
+}
+
+func (t *benchmarkSTDIOTransport) CallTool(ctx context.Context, name string, args map[string]any) (stdiomcp.Response, error) {
+	return stdiomcp.Response{Content: "ok"}, nil
+}
+
+func (t *benchmarkSTDIOTransport) Close() error { return nil }
+
+type noopMCPEventHandler struct{}
+
+func (noopMCPEventHandler) OnEvent(ctx context.Context, ev types.Event) {}

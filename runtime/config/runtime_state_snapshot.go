@@ -24,10 +24,30 @@ type RuntimeStateConfig struct {
 }
 
 type RuntimeStateSnapshotConfig struct {
-	Enabled       bool   `json:"enabled"`
-	RestoreMode   string `json:"restore_mode"`
-	CompatWindow  int    `json:"compat_window"`
-	SchemaVersion string `json:"schema_version"`
+	Enabled       bool                              `json:"enabled"`
+	RestoreMode   string                            `json:"restore_mode"`
+	CompatWindow  int                               `json:"compat_window"`
+	SchemaVersion string                            `json:"schema_version"`
+	Entropy       RuntimeStateSnapshotEntropyConfig `json:"entropy"`
+}
+
+type RuntimeStateSnapshotEntropyConfig struct {
+	Retention RuntimeStateSnapshotEntropyRetentionConfig `json:"retention"`
+	Quota     RuntimeStateSnapshotEntropyQuotaConfig     `json:"quota"`
+	Cleanup   RuntimeStateSnapshotEntropyCleanupConfig   `json:"cleanup"`
+}
+
+type RuntimeStateSnapshotEntropyRetentionConfig struct {
+	MaxSnapshots int `json:"max_snapshots"`
+}
+
+type RuntimeStateSnapshotEntropyQuotaConfig struct {
+	MaxBytes int `json:"max_bytes"`
+}
+
+type RuntimeStateSnapshotEntropyCleanupConfig struct {
+	Enabled   bool `json:"enabled"`
+	BatchSize int  `json:"batch_size"`
 }
 
 type RuntimeSessionConfig struct {
@@ -86,6 +106,18 @@ func ValidateRuntimeStateSnapshotConfig(cfg RuntimeStateSnapshotConfig) error {
 			RuntimeStateSnapshotSchemaVersionV1,
 			cfg.SchemaVersion,
 		)
+	}
+	if normalized.Entropy.Retention.MaxSnapshots < 0 {
+		return fmt.Errorf("runtime.state.snapshot.entropy.retention.max_snapshots must be >= 0")
+	}
+	if normalized.Entropy.Quota.MaxBytes < 0 {
+		return fmt.Errorf("runtime.state.snapshot.entropy.quota.max_bytes must be >= 0")
+	}
+	if normalized.Entropy.Cleanup.BatchSize < 0 {
+		return fmt.Errorf("runtime.state.snapshot.entropy.cleanup.batch_size must be >= 0")
+	}
+	if normalized.Entropy.Cleanup.Enabled && normalized.Entropy.Cleanup.BatchSize <= 0 {
+		return fmt.Errorf("runtime.state.snapshot.entropy.cleanup.batch_size must be > 0 when runtime.state.snapshot.entropy.cleanup.enabled=true")
 	}
 	return nil
 }

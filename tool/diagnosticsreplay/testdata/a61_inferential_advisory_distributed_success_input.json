@@ -1,0 +1,102 @@
+{
+  "version": "agent_eval_distributed.v1",
+  "cases": [
+    {
+      "name": "a61_inferential_advisory_distributed_success_case",
+      "run": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "DISTRIBUTED",
+        "eval_job_id": "EVAL-JOB-A61",
+        "eval_shard_total": 6,
+        "eval_resume_count": 2,
+        "eval_summary": {
+          "Version": "agent_eval_distributed.v1",
+          "Aggregation": "worst_case",
+          "Task_Success_Rate": 0.86,
+          "Tool_Correctness_Rate": 0.83,
+          "Deny_Intercept_Rate": 0.95,
+          "Cost_Estimate": 0.84,
+          "Latency_Estimate": 1600000000
+        },
+        "inferential_advisory_status": "CRITICAL",
+        "inferential_advisory_score": 0.31,
+        "inferential_advisory_signals": {
+          "Runtime_Admission_Budget_Deny": 1,
+          "Runtime_Policy_Decision_Deny": 1,
+          "Cost_Within_Budget": 0,
+          "Latency_Within_SLO": 0
+        },
+        "inferential_advisory_reasons": [
+          "runtime.policy.deny",
+          "runtime.admission.budget_deny",
+          "eval.latency_budget_exceeded",
+          "eval.cost_budget_exceeded"
+        ]
+      },
+      "stream": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61",
+        "eval_shard_total": 6,
+        "eval_resume_count": 2,
+        "eval_summary": {
+          "version": "agent_eval_distributed.v1",
+          "aggregation": "worst_case",
+          "task_success_rate": 0.86,
+          "tool_correctness_rate": 0.83,
+          "deny_intercept_rate": 0.95,
+          "cost_estimate": 0.84,
+          "latency_estimate": 1600000000
+        },
+        "inferential_advisory_status": "critical",
+        "inferential_advisory_score": 0.31,
+        "inferential_advisory_signals": {
+          "runtime_admission_budget_deny": 1,
+          "runtime_policy_decision_deny": 1,
+          "cost_within_budget": 0,
+          "latency_within_slo": 0
+        },
+        "inferential_advisory_reasons": [
+          "eval.cost_budget_exceeded",
+          "eval.latency_budget_exceeded",
+          "runtime.admission.budget_deny",
+          "runtime.policy.deny"
+        ]
+      },
+      "expected": {
+        "eval_suite_id": "agent_eval.v1",
+        "eval_execution_mode": "distributed",
+        "eval_job_id": "eval-job-a61",
+        "eval_shard_total": 6,
+        "eval_resume_count": 2,
+        "eval_summary": {
+          "version": "agent_eval_distributed.v1",
+          "aggregation": "worst_case",
+          "task_success_rate": 0.86,
+          "tool_correctness_rate": 0.83,
+          "deny_intercept_rate": 0.95,
+          "cost_estimate": 0.84,
+          "latency_estimate": 1600000000
+        },
+        "inferential_advisory_status": "critical",
+        "inferential_advisory_score": 0.31,
+        "inferential_advisory_signals": {
+          "cost_within_budget": 0,
+          "latency_within_slo": 0,
+          "runtime_admission_budget_deny": 1,
+          "runtime_policy_decision_deny": 1
+        },
+        "inferential_advisory_reasons": [
+          "eval.cost_budget_exceeded",
+          "eval.latency_budget_exceeded",
+          "runtime.admission.budget_deny",
+          "runtime.policy.deny"
+        ]
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

@@ -75,9 +75,10 @@ type RuntimeMemoryBuiltinConfig struct {
 }
 
 type RuntimeMemoryBuiltinCompactionConfig struct {
-	Enabled     bool  `json:"enabled"`
-	MinOps      int   `json:"min_ops"`
-	MaxWALBytes int64 `json:"max_wal_bytes"`
+	Enabled        bool  `json:"enabled"`
+	MinOps         int   `json:"min_ops"`
+	MaxWALBytes    int64 `json:"max_wal_bytes"`
+	FsyncBatchSize int   `json:"fsync_batch_size"`
 }
 
 type RuntimeMemoryFallbackConfig struct {
@@ -155,6 +156,9 @@ func normalizeRuntimeMemoryConfig(in RuntimeMemoryConfig) RuntimeMemoryConfig {
 	}
 	if out.Builtin.Compaction.MaxWALBytes <= 0 {
 		out.Builtin.Compaction.MaxWALBytes = base.Builtin.Compaction.MaxWALBytes
+	}
+	if out.Builtin.Compaction.FsyncBatchSize <= 0 {
+		out.Builtin.Compaction.FsyncBatchSize = base.Builtin.Compaction.FsyncBatchSize
 	}
 	out.Fallback.Policy = strings.ToLower(strings.TrimSpace(out.Fallback.Policy))
 	if out.Fallback.Policy == "" {
@@ -292,6 +296,9 @@ func ValidateRuntimeMemoryConfig(cfg RuntimeMemoryConfig) error {
 	}
 	if normalized.Builtin.Compaction.MaxWALBytes <= 0 {
 		return errorsRuntimeMemory("runtime.memory.builtin.compaction.max_wal_bytes must be > 0")
+	}
+	if normalized.Builtin.Compaction.FsyncBatchSize <= 0 {
+		return errorsRuntimeMemory("runtime.memory.builtin.compaction.fsync_batch_size must be > 0")
 	}
 	if err := validateRuntimeMemoryScopeConfig(normalized.Scope); err != nil {
 		return err

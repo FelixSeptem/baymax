@@ -71,53 +71,6 @@ type queryCursor struct {
 	QueryHash string `json:"query_hash"`
 }
 
-func querySnapshot(snapshot Snapshot, req QueryRequest) (QueryResult, error) {
-	q, err := normalizeQuery(req)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	queryHash := queryHash(q)
-	start, err := decodeCursor(q.Cursor, queryHash)
-	if err != nil {
-		return QueryResult{}, err
-	}
-
-	filtered := make([]Record, 0, len(snapshot.Records))
-	for i := range snapshot.Records {
-		if matchesQuery(snapshot.Records[i], q) {
-			filtered = append(filtered, cloneRecord(snapshot.Records[i]))
-		}
-	}
-	sortQuery(filtered, q.SortField, q.SortOrder)
-
-	if start > len(filtered) {
-		return QueryResult{}, fmt.Errorf("invalid query cursor")
-	}
-	end := start + q.PageSize
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-	items := append([]Record(nil), filtered[start:end]...)
-	nextCursor := ""
-	if end < len(filtered) {
-		encoded, err := encodeCursor(queryCursor{
-			Offset:    end,
-			QueryHash: queryHash,
-		})
-		if err != nil {
-			return QueryResult{}, err
-		}
-		nextCursor = encoded
-	}
-	return QueryResult{
-		Items:      items,
-		NextCursor: nextCursor,
-		PageSize:   q.PageSize,
-		SortField:  q.SortField,
-		SortOrder:  q.SortOrder,
-	}, nil
-}
-
 func normalizeQuery(req QueryRequest) (normalizedQuery, error) {
 	pageSize := DefaultQueryPageSize
 	if req.PageSize != nil {
@@ -274,6 +227,46 @@ func matchesQuery(record Record, q normalizedQuery) bool {
 		}
 	}
 	return true
+}
+
+func filterQueryRecords(records []Record, q normalizedQuery) []Record {
+	filtered := make([]Record, 0, len(records))
+	for i := range records {
+		if matchesQuery(records[i], q) {
+			filtered = append(filtered, cloneRecord(records[i]))
+		}
+	}
+	sortQuery(filtered, q.SortField, q.SortOrder)
+	return filtered
+}
+
+func buildQueryResult(filtered []Record, q normalizedQuery, start int, queryHash string) (QueryResult, error) {
+	if start > len(filtered) {
+		return QueryResult{}, fmt.Errorf("invalid query cursor")
+	}
+	end := start + q.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	items := append([]Record(nil), filtered[start:end]...)
+	nextCursor := ""
+	if end < len(filtered) {
+		encoded, err := encodeCursor(queryCursor{
+			Offset:    end,
+			QueryHash: queryHash,
+		})
+		if err != nil {
+			return QueryResult{}, err
+		}
+		nextCursor = encoded
+	}
+	return QueryResult{
+		Items:      items,
+		NextCursor: nextCursor,
+		PageSize:   q.PageSize,
+		SortField:  q.SortField,
+		SortOrder:  q.SortOrder,
+	}, nil
 }
 
 func sortQuery(records []Record, field, order string) {

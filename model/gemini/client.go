@@ -140,7 +140,10 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 				break
 			}
 			if onEvent != nil {
-				_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: map[string]any{"provider": "gemini", "error": err.Error()}})
+				_ = onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeResponseError,
+					Meta: geminiErrorMeta(err.Error()),
+				})
 			}
 			return providererror.FromError(err)
 		}
@@ -155,7 +158,10 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	if onEvent != nil {
-		if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted, Meta: map[string]any{"provider": "gemini"}}); err != nil {
+		if err := onEvent(types.ModelEvent{
+			Type: types.ModelEventTypeResponseCompleted,
+			Meta: geminiCompletedMeta(),
+		}); err != nil {
 			return err
 		}
 	}
@@ -259,7 +265,7 @@ func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.M
 	if resp == nil {
 		return nil
 	}
-	events := make([]types.ModelEvent, 0, 2)
+	events := make([]types.ModelEvent, 0, estimateGeminiStreamEvents(resp))
 	for _, candidate := range resp.Candidates {
 		if candidate == nil || candidate.Content == nil {
 			continue
@@ -272,7 +278,7 @@ func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.M
 				events = append(events, types.ModelEvent{
 					Type:      types.ModelEventTypeOutputTextDelta,
 					TextDelta: part.Text,
-					Meta:      map[string]any{"provider": "gemini"},
+					Meta:      geminiProviderMeta(),
 				})
 			}
 			if part.FunctionCall != nil && part.FunctionCall.Name != "" {
@@ -292,16 +298,66 @@ func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.M
 						Name:   part.FunctionCall.Name,
 						Args:   args,
 					},
-					Meta: map[string]any{
-						"provider":     "gemini",
-						"tool_call_id": callID,
-						"tool_name":    part.FunctionCall.Name,
-					},
+					Meta: geminiToolCallMeta(callID, part.FunctionCall.Name),
 				})
 			}
 		}
 	}
 	return events
+}
+
+func estimateGeminiStreamEvents(resp *genai.GenerateContentResponse) int {
+	if resp == nil {
+		return 0
+	}
+	count := 0
+	for _, candidate := range resp.Candidates {
+		if candidate == nil || candidate.Content == nil {
+			continue
+		}
+		for _, part := range candidate.Content.Parts {
+			if part == nil {
+				continue
+			}
+			if strings.TrimSpace(part.Text) != "" {
+				count++
+			}
+			if part.FunctionCall != nil && part.FunctionCall.Name != "" {
+				count++
+			}
+		}
+	}
+	if count == 0 {
+		return 2
+	}
+	return count
+}
+
+func geminiErrorMeta(message string) map[string]any {
+	meta := make(map[string]any, 2)
+	meta["provider"] = "gemini"
+	meta["error"] = message
+	return meta
+}
+
+func geminiCompletedMeta() map[string]any {
+	meta := make(map[string]any, 1)
+	meta["provider"] = "gemini"
+	return meta
+}
+
+func geminiProviderMeta() map[string]any {
+	meta := make(map[string]any, 1)
+	meta["provider"] = "gemini"
+	return meta
+}
+
+func geminiToolCallMeta(callID, toolName string) map[string]any {
+	meta := make(map[string]any, 3)
+	meta["provider"] = "gemini"
+	meta["tool_call_id"] = callID
+	meta["tool_name"] = toolName
+	return meta
 }
 
 func (c *Client) streamWithSDK(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
@@ -317,6 +373,14 @@ func (c *Client) generateWithSDK(ctx context.Context, input string) (types.Model
 }
 
 func decodeGenerateResponse(resp any) types.ModelResponse {
+	switch typed := resp.(type) {
+	case *genai.GenerateContentResponse:
+		if typed != nil {
+			return decodeTypedGenerateResponse(typed)
+		}
+	case genai.GenerateContentResponse:
+		return decodeTypedGenerateResponse(&typed)
+	}
 	raw, _ := json.Marshal(resp)
 	text := strings.TrimSpace(gjson.GetBytes(raw, "text").String())
 	if text == "" {
@@ -336,6 +400,55 @@ func decodeGenerateResponse(resp any) types.ModelResponse {
 			TotalTokens:  total,
 		},
 	}
+}
+
+func decodeTypedGenerateResponse(resp *genai.GenerateContentResponse) types.ModelResponse {
+	text := strings.TrimSpace(resp.Text())
+	if text == "" {
+		text = decodeTypedCandidateText(resp.Candidates)
+	}
+	inputTokens := 0
+	outputTokens := 0
+	totalTokens := 0
+	if usage := resp.UsageMetadata; usage != nil {
+		inputTokens = int(usage.PromptTokenCount)
+		outputTokens = int(usage.CandidatesTokenCount)
+		totalTokens = inputTokens + outputTokens
+		if candidate := int(usage.TotalTokenCount); candidate > 0 {
+			totalTokens = candidate
+		}
+	}
+	return types.ModelResponse{
+		FinalAnswer: text,
+		Usage: types.TokenUsage{
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			TotalTokens:  totalTokens,
+		},
+	}
+}
+
+func decodeTypedCandidateText(candidates []*genai.Candidate) string {
+	var builder strings.Builder
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.Content == nil {
+			continue
+		}
+		for _, part := range candidate.Content.Parts {
+			if part == nil {
+				continue
+			}
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				continue
+			}
+			if builder.Len() > 0 {
+				builder.WriteString("\n")
+			}
+			builder.WriteString(text)
+		}
+	}
+	return builder.String()
 }
 
 func decodeCandidateText(raw []byte) string {

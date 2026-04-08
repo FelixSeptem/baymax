@@ -52,6 +52,7 @@ type Client struct {
 	transport Transport
 	cfg       Config
 	explicit  Config
+	hasEvents bool
 
 	initialized atomic.Bool
 	initMu      sync.Mutex
@@ -79,6 +80,7 @@ func NewClient(transport Transport, cfg Config) *Client {
 		transport: transport,
 		cfg:       cfg,
 		explicit:  userCfg,
+		hasEvents: cfg.EventHandler != nil,
 		initErr:   policyErr,
 		readPool:  make(chan struct{}, cfg.ReadPoolSize),
 		writePool: make(chan struct{}, cfg.WritePoolSize),
@@ -147,7 +149,12 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	callID := fmt.Sprintf("mcp-stdio-%d", time.Now().UnixNano())
 	start := time.Now()
 	retryCount := 0
-	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.requested", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"tool": name}})
+	if c.hasEvents {
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.requested", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+			Payload: map[string]any{"tool": name},
+		})
+	}
 
 	queueStart := time.Now()
 	release := c.acquirePool(ctx, isWriteCall(args), callID)
@@ -160,14 +167,16 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 			err = errors.New("queue rejected by backpressure policy")
 		}
 		res := failedTimeout(err)
-		c.emit(ctx, types.Event{
-			Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-			Payload: map[string]any{
-				"error_class":   string(res.Error.Class),
-				"queue_wait_ms": time.Since(queueStart).Milliseconds(),
-				"backpressure":  runCfg.Backpressure,
-			},
-		})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{
+					"error_class":   string(res.Error.Class),
+					"queue_wait_ms": time.Since(queueStart).Milliseconds(),
+					"backpressure":  runCfg.Backpressure,
+				},
+			})
+		}
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "stdio",
@@ -189,7 +198,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		Backoff:  runCfg.Backoff,
 	}, mcpreliability.RetryHooks[Response]{
 		Invoke: func(stepCtx context.Context, attempt int) (Response, error) {
-			return c.invokeAsync(stepCtx, name, args)
+			return c.transport.CallTool(stepCtx, name, args)
 		},
 		ShouldRetry: mcpretry.ShouldRetry,
 	})
@@ -197,15 +206,22 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	if err == nil {
 		result := normalizeResponse(resp)
 		if result.Error != nil {
-			c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
+			if c.hasEvents {
+				c.emit(ctx, types.Event{
+					Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+					Payload: map[string]any{"error_class": string(result.Error.Class)},
+				})
+			}
 			return result, nil
 		}
-		c.emit(ctx, types.Event{
-			Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-			Payload: map[string]any{
-				"tool": name, "retry_count": finalAttempt, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
-			},
-		})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.completed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{
+					"tool": name, "retry_count": finalAttempt, "queue_wait_ms": time.Since(queueStart).Milliseconds(),
+				},
+			})
+		}
 		c.recordCall(mcpdiag.CallRecord{
 			Time:           time.Now(),
 			Transport:      "stdio",
@@ -220,11 +236,21 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		result := failedTimeout(err)
-		c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
+		if c.hasEvents {
+			c.emit(ctx, types.Event{
+				Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+				Payload: map[string]any{"error_class": string(result.Error.Class)},
+			})
+		}
 		return result, err
 	}
 	result := types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrMCP, Message: err.Error(), Retryable: false}}
-	c.emit(ctx, types.Event{Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(), Payload: map[string]any{"error_class": string(result.Error.Class)}})
+	if c.hasEvents {
+		c.emit(ctx, types.Event{
+			Version: "v1", Type: "mcp.failed", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+			Payload: map[string]any{"error_class": string(result.Error.Class)},
+		})
+	}
 	c.recordCall(mcpdiag.CallRecord{
 		Time:           time.Now(),
 		Transport:      "stdio",
@@ -253,10 +279,12 @@ func (c *Client) acquirePool(ctx context.Context, isWrite bool, callID string) f
 		case pool <- struct{}{}:
 			return func() { <-pool }
 		default:
-			c.emit(ctx, types.Event{
-				Version: "v1", Type: "mcp.queue_rejected", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
-				Payload: map[string]any{"backpressure": runCfg.Backpressure},
-			})
+			if c.hasEvents {
+				c.emit(ctx, types.Event{
+					Version: "v1", Type: "mcp.queue_rejected", RunID: c.cfg.RunID, CallID: callID, Time: time.Now(),
+					Payload: map[string]any{"backpressure": runCfg.Backpressure},
+				})
+			}
 			return nil
 		}
 	}
@@ -265,27 +293,6 @@ func (c *Client) acquirePool(ctx context.Context, isWrite bool, callID string) f
 		return nil
 	case pool <- struct{}{}:
 		return func() { <-pool }
-	}
-}
-
-func (c *Client) invokeAsync(ctx context.Context, name string, args map[string]any) (Response, error) {
-	type callResult struct {
-		resp Response
-		err  error
-	}
-	ch := make(chan callResult, 1)
-	go func() {
-		resp, err := c.transport.CallTool(ctx, name, args)
-		select {
-		case ch <- callResult{resp: resp, err: err}:
-		case <-ctx.Done():
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		return Response{}, ctx.Err()
-	case out := <-ch:
-		return out.resp, out.err
 	}
 }
 

@@ -89,6 +89,22 @@ function Test-ChangedPrefix {
     return $false
 }
 
+function Test-TruthyEnv {
+    param(
+        [Parameter(Mandatory = $false)][string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+    switch ($Value.Trim().ToLowerInvariant()) {
+        "1" { return $true }
+        "true" { return $true }
+        "yes" { return $true }
+        "on" { return $true }
+        default { return $false }
+    }
+}
+
 Invoke-ContextJITStep -Label "context jit runtime config governance suites" -Command {
     go test ./runtime/config -run 'Test(RuntimeContextJITConfig|ManagerRuntimeContextJIT)' -count=1
 }
@@ -143,31 +159,39 @@ else {
     }
 }
 
-if ($parityImpacted) {
-    Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): react contract baseline" -Command {
-        pwsh -File scripts/check-react-contract.ps1
+$skipImpactedSuites = Test-TruthyEnv -Value $env:BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES
+Write-Host "[context-jit-organization-contract-gate] impacted-evaluation parity=$parityImpacted boundary=$boundaryImpacted replay=$replayImpacted skip_impacted=$skipImpactedSuites"
+
+if (-not $skipImpactedSuites) {
+    if ($parityImpacted) {
+        Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): react contract baseline" -Command {
+            pwsh -File scripts/check-react-contract.ps1
+        }
+        Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): react plan notebook gate" -Command {
+            pwsh -File scripts/check-react-plan-notebook-contract.ps1
+        }
+        Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): realtime protocol gate" -Command {
+            pwsh -File scripts/check-realtime-protocol-contract.ps1
+        }
     }
-    Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): react plan notebook gate" -Command {
-        pwsh -File scripts/check-react-plan-notebook-contract.ps1
+
+    if ($boundaryImpacted) {
+        Invoke-ContextJITStep -Label "impacted-contract suites (boundary scope): policy precedence gate" -Command {
+            pwsh -File scripts/check-policy-precedence-contract.ps1
+        }
+        Invoke-ContextJITStep -Label "impacted-contract suites (boundary scope): sandbox egress + allowlist gate" -Command {
+            pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
+        }
     }
-    Invoke-ContextJITStep -Label "impacted-contract suites (runner scope): realtime protocol gate" -Command {
-        pwsh -File scripts/check-realtime-protocol-contract.ps1
+
+    if ($replayImpacted) {
+        Invoke-ContextJITStep -Label "impacted-contract suites (replay scope): diagnostics replay contract gate" -Command {
+            pwsh -File scripts/check-diagnostics-replay-contract.ps1
+        }
     }
 }
-
-if ($boundaryImpacted) {
-    Invoke-ContextJITStep -Label "impacted-contract suites (boundary scope): policy precedence gate" -Command {
-        pwsh -File scripts/check-policy-precedence-contract.ps1
-    }
-    Invoke-ContextJITStep -Label "impacted-contract suites (boundary scope): sandbox egress + allowlist gate" -Command {
-        pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
-    }
-}
-
-if ($replayImpacted) {
-    Invoke-ContextJITStep -Label "impacted-contract suites (replay scope): diagnostics replay contract gate" -Command {
-        pwsh -File scripts/check-diagnostics-replay-contract.ps1
-    }
+else {
+    Write-Host "[context-jit-organization-contract-gate] skip impacted-contract suites (BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES=$($env:BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES))"
 }
 
 Invoke-ContextJITStep -Label "contributioncheck parity suites for context-jit-organization gate" -Command {

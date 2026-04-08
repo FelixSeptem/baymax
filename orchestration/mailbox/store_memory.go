@@ -116,7 +116,7 @@ func (s *MemoryStore) SetLifecycleTracing(enabled bool) {
 	s.state.setTraceEvents(enabled)
 }
 
-func newStoreWithFallback(backend, path string, policy Policy) (StoreInitResult, error) {
+func newStoreWithFallback(backend, path string, policy Policy, opts ...FileStoreOption) (StoreInitResult, error) {
 	normalizedBackend := strings.ToLower(strings.TrimSpace(backend))
 	switch normalizedBackend {
 	case "", "memory":
@@ -125,7 +125,7 @@ func newStoreWithFallback(backend, path string, policy Policy) (StoreInitResult,
 			Backend: "memory",
 		}, nil
 	case "file":
-		store, err := NewFileStore(path, policy)
+		store, err := NewFileStore(path, policy, opts...)
 		if err != nil {
 			fallback := NewMemoryStore(policy)
 			fallback.MarkFallback("mailbox.backend.file_init_failed")

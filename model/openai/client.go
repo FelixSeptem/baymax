@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -53,6 +54,15 @@ type toolCallState struct {
 
 type streamState struct {
 	toolCalls map[string]*toolCallState
+}
+
+const maxToolCallArgsDecodeBufferCap = 64 * 1024
+
+var openAIToolArgsDecodeBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, 256)
+		return &buf
+	},
 }
 
 func NewClient(cfg Config) *Client {
@@ -159,7 +169,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 			if onEvent != nil {
 				_ = onEvent(types.ModelEvent{
 					Type: types.ModelEventTypeResponseError,
-					Meta: map[string]any{"provider": "openai", "error": err.Error()},
+					Meta: openAIErrorMeta(err.Error()),
 				})
 			}
 			return err
@@ -177,7 +187,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		if onEvent != nil {
 			_ = onEvent(types.ModelEvent{
 				Type: types.ModelEventTypeResponseError,
-				Meta: map[string]any{"provider": "openai", "error": err.Error()},
+				Meta: openAIErrorMeta(err.Error()),
 			})
 		}
 		return err
@@ -239,14 +249,7 @@ func mapStreamEvent(ev responses.ResponseStreamEventUnion, state *streamState) (
 	}
 
 	events := make([]types.ModelEvent, 0, 2)
-	meta := map[string]any{
-		"openai_event_type": ev.Type,
-		"sequence_number":   ev.SequenceNumber,
-		"output_index":      ev.OutputIndex,
-	}
-	if ev.ItemID != "" {
-		meta["item_id"] = ev.ItemID
-	}
+	meta := openAIStreamMeta(ev)
 
 	switch ev.Type {
 	case "response.output_text.delta":
@@ -324,8 +327,8 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 	if raw == "" {
 		raw = "{}"
 	}
-	var args map[string]any
-	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+	args, err := decodeOpenAIToolCallArgs(raw)
+	if err != nil {
 		return nil, &providererror.Classified{
 			Class:     types.ErrModel,
 			Reason:    "request_invalid",
@@ -342,13 +345,63 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 	return &types.ModelEvent{
 		Type:     "tool_call",
 		ToolCall: &toolCall,
-		Meta: map[string]any{
-			"provider":     "openai",
-			"item_id":      itemID,
-			"tool_call_id": toolCall.CallID,
-			"tool_name":    toolCall.Name,
-		},
+		Meta:     openAIToolCallMeta(itemID, toolCall.CallID, toolCall.Name),
 	}, nil
+}
+
+func openAIErrorMeta(message string) map[string]any {
+	meta := make(map[string]any, 2)
+	meta["provider"] = "openai"
+	meta["error"] = message
+	return meta
+}
+
+func openAIStreamMeta(ev responses.ResponseStreamEventUnion) map[string]any {
+	size := 3
+	if ev.ItemID != "" {
+		size++
+	}
+	meta := make(map[string]any, size)
+	meta["openai_event_type"] = ev.Type
+	meta["sequence_number"] = ev.SequenceNumber
+	meta["output_index"] = ev.OutputIndex
+	if ev.ItemID != "" {
+		meta["item_id"] = ev.ItemID
+	}
+	return meta
+}
+
+func openAIToolCallMeta(itemID, callID, name string) map[string]any {
+	meta := make(map[string]any, 4)
+	meta["provider"] = "openai"
+	meta["item_id"] = itemID
+	meta["tool_call_id"] = callID
+	meta["tool_name"] = name
+	return meta
+}
+
+func decodeOpenAIToolCallArgs(raw string) (map[string]any, error) {
+	if raw == "{}" {
+		return map[string]any{}, nil
+	}
+	bufPtr := openAIToolArgsDecodeBufferPool.Get().(*[]byte)
+	buf := (*bufPtr)[:0]
+	buf = append(buf, raw...)
+
+	var args map[string]any
+	err := json.Unmarshal(buf, &args)
+
+	if cap(buf) > maxToolCallArgsDecodeBufferCap {
+		*bufPtr = make([]byte, 0, 256)
+	} else {
+		*bufPtr = buf[:0]
+	}
+	openAIToolArgsDecodeBufferPool.Put(bufPtr)
+
+	if err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 var _ types.ModelClient = (*Client)(nil)

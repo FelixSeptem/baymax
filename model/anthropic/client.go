@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -53,6 +54,15 @@ type toolCallState struct {
 type streamState struct {
 	toolByIndex map[int64]*toolCallState
 	toolSeq     int
+}
+
+const maxToolCallArgsDecodeBufferCap = 64 * 1024
+
+var anthropicToolArgsDecodeBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, 256)
+		return &buf
+	},
 }
 
 func NewClient(cfg Config) *Client {
@@ -136,7 +146,10 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		if err != nil {
 			classified := providererror.FromError(err)
 			if onEvent != nil {
-				_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: map[string]any{"provider": "anthropic", "error": err.Error()}})
+				_ = onEvent(types.ModelEvent{
+					Type: types.ModelEventTypeResponseError,
+					Meta: anthropicErrorMeta(err.Error()),
+				})
 			}
 			return classified
 		}
@@ -154,12 +167,18 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	}
 	if err := stream.Err(); err != nil {
 		if onEvent != nil {
-			_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: map[string]any{"provider": "anthropic", "error": err.Error()}})
+			_ = onEvent(types.ModelEvent{
+				Type: types.ModelEventTypeResponseError,
+				Meta: anthropicErrorMeta(err.Error()),
+			})
 		}
 		return providererror.FromError(err)
 	}
 	if onEvent != nil && !completed {
-		if err := onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseCompleted, Meta: map[string]any{"provider": "anthropic"}}); err != nil {
+		if err := onEvent(types.ModelEvent{
+			Type: types.ModelEventTypeResponseCompleted,
+			Meta: anthropicCompletedMeta(),
+		}); err != nil {
 			return err
 		}
 	}
@@ -242,7 +261,7 @@ func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.Provi
 
 func mapStreamEvent(ev anthropic.MessageStreamEventUnion, state *streamState) ([]types.ModelEvent, error) {
 	events := make([]types.ModelEvent, 0, 2)
-	meta := map[string]any{"provider": "anthropic", "event_type": ev.Type, "index": ev.Index}
+	meta := anthropicStreamMeta(ev)
 	switch ev.Type {
 	case "content_block_delta":
 		delta := ev.Delta
@@ -318,8 +337,8 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 	if raw == "" {
 		raw = "{}"
 	}
-	args := map[string]any{}
-	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+	args, err := decodeAnthropicToolCallArgs(raw)
+	if err != nil {
 		return nil, &providererror.Classified{
 			Class:     types.ErrModel,
 			Reason:    "request_invalid",
@@ -335,12 +354,61 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 			Name:   call.name,
 			Args:   args,
 		},
-		Meta: map[string]any{
-			"provider":     "anthropic",
-			"tool_call_id": call.id,
-			"tool_name":    call.name,
-		},
+		Meta: anthropicToolCallMeta(call.id, call.name),
 	}, nil
+}
+
+func anthropicErrorMeta(message string) map[string]any {
+	meta := make(map[string]any, 2)
+	meta["provider"] = "anthropic"
+	meta["error"] = message
+	return meta
+}
+
+func anthropicCompletedMeta() map[string]any {
+	meta := make(map[string]any, 1)
+	meta["provider"] = "anthropic"
+	return meta
+}
+
+func anthropicStreamMeta(ev anthropic.MessageStreamEventUnion) map[string]any {
+	meta := make(map[string]any, 3)
+	meta["provider"] = "anthropic"
+	meta["event_type"] = ev.Type
+	meta["index"] = ev.Index
+	return meta
+}
+
+func anthropicToolCallMeta(callID, toolName string) map[string]any {
+	meta := make(map[string]any, 3)
+	meta["provider"] = "anthropic"
+	meta["tool_call_id"] = callID
+	meta["tool_name"] = toolName
+	return meta
+}
+
+func decodeAnthropicToolCallArgs(raw string) (map[string]any, error) {
+	if raw == "{}" {
+		return map[string]any{}, nil
+	}
+	bufPtr := anthropicToolArgsDecodeBufferPool.Get().(*[]byte)
+	buf := (*bufPtr)[:0]
+	buf = append(buf, raw...)
+
+	var args map[string]any
+	err := json.Unmarshal(buf, &args)
+
+	if cap(buf) > maxToolCallArgsDecodeBufferCap {
+		*bufPtr = make([]byte, 0, 256)
+	} else {
+		*bufPtr = buf[:0]
+	}
+	anthropicToolArgsDecodeBufferPool.Put(bufPtr)
+
+	if err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 func (c *Client) generateWithSDK(ctx context.Context, input string) (types.ModelResponse, error) {
@@ -362,6 +430,14 @@ func (c *Client) generateWithSDK(ctx context.Context, input string) (types.Model
 }
 
 func decodeMessage(msg any) types.ModelResponse {
+	switch typed := msg.(type) {
+	case anthropic.Message:
+		return decodeTypedMessage(typed)
+	case *anthropic.Message:
+		if typed != nil {
+			return decodeTypedMessage(*typed)
+		}
+	}
 	raw, _ := json.Marshal(msg)
 	text := decodeFirstText(raw)
 	in := int(gjson.GetBytes(raw, "usage.input_tokens").Int())
@@ -378,6 +454,35 @@ func decodeMessage(msg any) types.ModelResponse {
 			TotalTokens:  total,
 		},
 	}
+}
+
+func decodeTypedMessage(msg anthropic.Message) types.ModelResponse {
+	in := int(msg.Usage.InputTokens)
+	out := int(msg.Usage.OutputTokens)
+	total := in + out
+	return types.ModelResponse{
+		FinalAnswer: decodeTypedMessageText(msg.Content),
+		Usage: types.TokenUsage{
+			InputTokens:  in,
+			OutputTokens: out,
+			TotalTokens:  total,
+		},
+	}
+}
+
+func decodeTypedMessageText(content []anthropic.ContentBlockUnion) string {
+	var builder strings.Builder
+	for i := range content {
+		text := strings.TrimSpace(content[i].Text)
+		if text == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(text)
+	}
+	return builder.String()
 }
 
 func decodeFirstText(raw []byte) string {

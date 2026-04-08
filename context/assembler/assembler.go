@@ -84,7 +84,10 @@ type Assembler struct {
 	stage2Key       string
 	stage2Provider  provider.Provider
 	prefixCache     map[string]string
+	prefixCacheUsed map[string]time.Time
+	prefixRunScoped map[string]string
 	pressureState   map[string]*pressureRunState
+	pressureUsed    map[string]time.Time
 	spillBackend    SpillBackend
 	spillBackendKey string
 	embeddingScorer SemanticEmbeddingScorer
@@ -172,7 +175,10 @@ func New(cfgProvider func() runtimeconfig.ContextAssemblerConfig, opts ...Option
 		},
 		now:             time.Now,
 		prefixCache:     map[string]string{},
+		prefixCacheUsed: map[string]time.Time{},
+		prefixRunScoped: map[string]string{},
 		pressureState:   map[string]*pressureRunState{},
+		pressureUsed:    map[string]time.Time{},
 		rerankers:       map[string]SemanticReranker{},
 		defaultReranker: &defaultSemanticReranker{},
 	}
@@ -277,7 +283,7 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 		outcome.Stage.Stage2SkipReason = "stage1.best_effort.guard_violation"
 	}
 
-	a.rememberHash(sessionKey, prefixHash)
+	a.rememberHash(req.RunID, req.SessionID, sessionKey, prefixHash)
 	modelReq.Input = guardResult.Input
 	modelReq.Messages = guardResult.Messages
 
@@ -303,6 +309,11 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 		pressureGateDecision = decision
 	}
 
+	stage2InputSignature := ""
+	if pressureConfig.Enabled && stage2Config.Enabled {
+		stage2InputSignature = pressureTokenSignature(modelReq)
+	}
+
 	if stage2Config.Enabled {
 		modelReq, outcome, err = a.applyStage2RoutingAndDisclosure(ctx, modelReq, req, cfg, outcome, pressureGateDecision)
 		if err != nil {
@@ -321,20 +332,22 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 		}
 	}
 	if pressureConfig.Enabled {
-		modelReq, outcome, _, err = a.applyPressureCompactionAndSwapback(ctx, req, modelReq, outcome, cfg, "stage2")
-		if err != nil {
-			commit := journal.Entry{
-				Time:          a.now(),
-				RunID:         req.RunID,
-				SessionID:     req.SessionID,
-				Phase:         "commit",
-				PrefixVersion: req.PrefixVersion,
-				PrefixHash:    prefixHash,
-				Status:        StatusFailed,
-				Violation:     err.Error(),
+		if !shouldSkipStage2CA3Pass(pressureConfig, stage2Config.Enabled, stage2InputSignature, modelReq) {
+			modelReq, outcome, _, err = a.applyPressureCompactionAndSwapback(ctx, req, modelReq, outcome, cfg, "stage2")
+			if err != nil {
+				commit := journal.Entry{
+					Time:          a.now(),
+					RunID:         req.RunID,
+					SessionID:     req.SessionID,
+					Phase:         "commit",
+					PrefixVersion: req.PrefixVersion,
+					PrefixHash:    prefixHash,
+					Status:        StatusFailed,
+					Violation:     err.Error(),
+				}
+				_ = storage.Append(ctx, commit)
+				return modelReq, failedResult(req, start, err.Error()), err
 			}
-			_ = storage.Append(ctx, commit)
-			return modelReq, failedResult(req, start, err.Error()), err
 		}
 	}
 
@@ -356,15 +369,30 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 }
 
 func (a *Assembler) ensureStorage(cfg runtimeconfig.ContextAssemblerConfig) (journal.Storage, error) {
-	key := strings.ToLower(strings.TrimSpace(cfg.Storage.Backend)) + "|" + strings.TrimSpace(cfg.JournalPath)
+	key := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(cfg.Storage.Backend)),
+		strings.TrimSpace(cfg.JournalPath),
+		fmt.Sprintf("reuse=%t", cfg.Storage.File.ReuseHandle),
+		fmt.Sprintf("batch=%d", cfg.Storage.File.BatchFlushSize),
+	}, "|")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.storage != nil && a.storageKey == key {
 		return a.storage, nil
 	}
-	s, err := journal.NewStorage(cfg.Storage.Backend, cfg.JournalPath)
+	s, err := journal.NewStorageWithOptions(
+		cfg.Storage.Backend,
+		cfg.JournalPath,
+		journal.FileStorageOptions{
+			ReuseHandle:    cfg.Storage.File.ReuseHandle,
+			BatchFlushSize: cfg.Storage.File.BatchFlushSize,
+		},
+	)
 	if err != nil {
 		return nil, err
+	}
+	if closer, ok := a.storage.(interface{ Close() error }); ok {
+		_ = closer.Close()
 	}
 	a.storage = s
 	a.storageKey = key
@@ -394,15 +422,152 @@ func (a *Assembler) ensureStage2Provider(cfg runtimeconfig.ContextAssemblerConfi
 }
 
 func (a *Assembler) cachedHash(key string) string {
+	cfg := a.cacheConfigSnapshot()
+	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.prefixCache[key]
+	a.compactCachesLocked(now, cfg)
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	value := a.prefixCache[key]
+	if value != "" {
+		a.prefixCacheUsed[key] = now
+	}
+	return value
 }
 
-func (a *Assembler) rememberHash(key, hash string) {
+func (a *Assembler) rememberHash(runID, sessionID, key, hash string) {
+	cfg := a.cacheConfigSnapshot()
+	now := a.now()
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.compactCachesLocked(now, cfg)
 	a.prefixCache[key] = hash
+	a.prefixCacheUsed[key] = now
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		a.compactCachesLocked(now, cfg)
+		return
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		a.prefixRunScoped[runID] = key
+		a.compactCachesLocked(now, cfg)
+		return
+	}
+	delete(a.prefixRunScoped, runID)
+	a.compactCachesLocked(now, cfg)
+}
+
+// OnRunFinished compacts run-scoped context assembler caches without changing external semantics.
+func (a *Assembler) OnRunFinished(runID string) {
+	key := strings.TrimSpace(runID)
+	if key == "" {
+		return
+	}
+	cfg := a.cacheConfigSnapshot()
+	now := a.now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if cfg.RunFinishedCleanup {
+		a.deletePressureStateLocked(key)
+		if prefixKey, ok := a.prefixRunScoped[key]; ok {
+			a.deletePrefixKeyLocked(prefixKey)
+		}
+	}
+	delete(a.prefixRunScoped, key)
+	a.compactCachesLocked(now, cfg)
+}
+
+func (a *Assembler) cacheConfigSnapshot() runtimeconfig.ContextAssemblerCacheConfig {
+	if a == nil || a.cfgProvider == nil {
+		return runtimeconfig.DefaultConfig().ContextAssembler.Cache
+	}
+	cfg := a.cfgProvider()
+	return cfg.Cache
+}
+
+func (a *Assembler) compactCachesLocked(now time.Time, cfg runtimeconfig.ContextAssemblerCacheConfig) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if cfg.PrefixCacheTTL > 0 {
+		for key := range a.prefixCache {
+			if now.Sub(a.prefixCacheUsed[key]) < cfg.PrefixCacheTTL {
+				continue
+			}
+			a.deletePrefixKeyLocked(key)
+		}
+	}
+	if cfg.CA3StateTTL > 0 {
+		for key := range a.pressureState {
+			if now.Sub(a.pressureUsed[key]) < cfg.CA3StateTTL {
+				continue
+			}
+			a.deletePressureStateLocked(key)
+		}
+	}
+	trimLRULocked(a.prefixCache, cfg.PrefixCacheMaxSize, a.prefixCacheUsed, a.deletePrefixKeyLocked)
+	trimLRULocked(a.pressureState, cfg.CA3StateMaxSize, a.pressureUsed, a.deletePressureStateLocked)
+}
+
+func (a *Assembler) deletePrefixKeyLocked(key string) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	delete(a.prefixCache, key)
+	delete(a.prefixCacheUsed, key)
+	for runID, cacheKey := range a.prefixRunScoped {
+		if cacheKey == key {
+			delete(a.prefixRunScoped, runID)
+		}
+	}
+}
+
+func (a *Assembler) deletePressureStateLocked(key string) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	delete(a.pressureState, key)
+	delete(a.pressureUsed, key)
+}
+
+type lruCacheItem struct {
+	key  string
+	used time.Time
+}
+
+func trimLRULocked[V any](cache map[string]V, maxSize int, used map[string]time.Time, remove func(string)) {
+	if maxSize <= 0 {
+		return
+	}
+	overflow := len(cache) - maxSize
+	if overflow <= 0 {
+		return
+	}
+	items := make([]lruCacheItem, 0, len(cache))
+	for key := range cache {
+		items = append(items, lruCacheItem{
+			key:  key,
+			used: used[key],
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].used.Equal(items[j].used) {
+			return items[i].key < items[j].key
+		}
+		return items[i].used.Before(items[j].used)
+	})
+	for i := 0; i < overflow && i < len(items); i++ {
+		remove(items[i].key)
+	}
 }
 
 func (a *Assembler) snapshotAgenticRouter() AgenticRouter {
@@ -1305,24 +1470,63 @@ func (a *Assembler) sanitizeStage2Chunks(chunks []string) []string {
 }
 
 func (a *Assembler) sanitizeRecap(recap types.TailRecap) types.TailRecap {
-	raw, err := json.Marshal(recap)
-	if err != nil {
-		return recap
-	}
-	payload := map[string]any{}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return recap
+	// Keep recap redaction behavior while avoiding JSON round-trips on hot path.
+	payload := map[string]any{
+		"status":    recap.Status,
+		"decisions": append([]string(nil), recap.Decisions...),
+		"todo":      append([]string(nil), recap.Todo...),
+		"risks":     append([]string(nil), recap.Risks...),
 	}
 	sanitized := a.newRedactor().SanitizeMap(payload)
-	nextRaw, err := json.Marshal(sanitized)
-	if err != nil {
+	status, ok := recapStringFromAny(sanitized["status"])
+	if !ok {
 		return recap
 	}
-	var out types.TailRecap
-	if err := json.Unmarshal(nextRaw, &out); err != nil {
+	decisions, ok := recapStringSliceFromAny(sanitized["decisions"])
+	if !ok {
 		return recap
 	}
-	return out
+	todo, ok := recapStringSliceFromAny(sanitized["todo"])
+	if !ok {
+		return recap
+	}
+	risks, ok := recapStringSliceFromAny(sanitized["risks"])
+	if !ok {
+		return recap
+	}
+	return types.TailRecap{
+		Status:    status,
+		Decisions: decisions,
+		Todo:      todo,
+		Risks:     risks,
+	}
+}
+
+func recapStringFromAny(v any) (string, bool) {
+	out, ok := v.(string)
+	return out, ok
+}
+
+func recapStringSliceFromAny(v any) ([]string, bool) {
+	if v == nil {
+		return nil, true
+	}
+	switch tv := v.(type) {
+	case []string:
+		return append([]string(nil), tv...), true
+	case []any:
+		out := make([]string, 0, len(tv))
+		for _, item := range tv {
+			str, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, str)
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }
 
 func (a *Assembler) newRedactor() *redaction.Redactor {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -665,6 +666,63 @@ func TestAssemblerContextStage2Stage2ContextRedacted(t *testing.T) {
 	}
 	if !foundMasked {
 		t.Fatalf("expected redacted stage2 content, got %#v", outReq.Messages)
+	}
+}
+
+func TestAssemblerSanitizeRecapMasksStatusWithKeyword(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithRedactionConfigProvider(func() runtimeconfig.SecurityRedactionConfig {
+			return runtimeconfig.SecurityRedactionConfig{
+				Enabled:  true,
+				Strategy: runtimeconfig.SecurityRedactionKeyword,
+				Keywords: []string{"status"},
+			}
+		}),
+	)
+	in := types.TailRecap{
+		Status:    "stage2_used",
+		Decisions: []string{"stage_status=stage2_used"},
+		Todo:      []string{"none"},
+		Risks:     []string{"none"},
+	}
+	got := a.sanitizeRecap(in)
+	if got.Status != "***" {
+		t.Fatalf("status = %q, want ***", got.Status)
+	}
+	if !reflect.DeepEqual(got.Decisions, in.Decisions) {
+		t.Fatalf("decisions changed unexpectedly: got=%#v want=%#v", got.Decisions, in.Decisions)
+	}
+	if !reflect.DeepEqual(got.Todo, in.Todo) {
+		t.Fatalf("todo changed unexpectedly: got=%#v want=%#v", got.Todo, in.Todo)
+	}
+	if !reflect.DeepEqual(got.Risks, in.Risks) {
+		t.Fatalf("risks changed unexpectedly: got=%#v want=%#v", got.Risks, in.Risks)
+	}
+}
+
+func TestAssemblerSanitizeRecapFallbackOnSliceMaskTypeMismatch(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	a := New(
+		func() runtimeconfig.ContextAssemblerConfig { return cfg },
+		WithRedactionConfigProvider(func() runtimeconfig.SecurityRedactionConfig {
+			return runtimeconfig.SecurityRedactionConfig{
+				Enabled:  true,
+				Strategy: runtimeconfig.SecurityRedactionKeyword,
+				Keywords: []string{"decisions"},
+			}
+		}),
+	)
+	in := types.TailRecap{
+		Status:    "stage2_used",
+		Decisions: []string{"stage_status=stage2_used"},
+		Todo:      []string{"none"},
+		Risks:     []string{"none"},
+	}
+	got := a.sanitizeRecap(in)
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("sanitizeRecap must fallback to original recap on type mismatch, got=%#v want=%#v", got, in)
 	}
 }
 
@@ -1957,5 +2015,302 @@ func TestAssemblerContextPressureRerankerGovernanceModeFailurePolicy(t *testing.
 	})
 	if err == nil {
 		t.Fatal("expected fail_fast governance mode error")
+	}
+}
+
+func TestAssemblerRunFinishedCleanupRemovesRunScopedCaches(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.Cache.RunFinishedCleanup = true
+	cfg.Cache.PrefixCacheTTL = 0
+	cfg.Cache.PrefixCacheMaxSize = 0
+	cfg.Cache.CA3StateTTL = 0
+	cfg.Cache.CA3StateMaxSize = 0
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	runID := "run-finish-cleanup"
+	req := types.ContextAssembleRequest{
+		RunID:         runID,
+		PrefixVersion: semanticPrefixVersion,
+		Input:         "hello",
+		Messages:      []types.Message{{Role: "system", Content: "stable"}},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    runID,
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+	if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+		t.Fatalf("assemble failed: %v", err)
+	}
+
+	runKey := stableSessionKey("", runID, semanticPrefixVersion)
+	if got := a.cachedHash(runKey); got == "" {
+		t.Fatalf("prefix cache missing run-scoped key %q before cleanup", runKey)
+	}
+	if _, ok := a.pressureState[runID]; !ok {
+		t.Fatalf("pressure state missing run key %q before cleanup", runID)
+	}
+
+	a.OnRunFinished(runID)
+
+	if got := a.cachedHash(runKey); got != "" {
+		t.Fatalf("run-scoped prefix cache should be removed, got %q", got)
+	}
+	if _, ok := a.pressureState[runID]; ok {
+		t.Fatalf("pressure state should be removed for run %q", runID)
+	}
+}
+
+func TestAssemblerRunFinishedCleanupKeepsSessionScopedPrefixCache(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.Cache.RunFinishedCleanup = true
+	cfg.Cache.PrefixCacheTTL = 0
+	cfg.Cache.PrefixCacheMaxSize = 0
+	cfg.Cache.CA3StateTTL = 0
+	cfg.Cache.CA3StateMaxSize = 0
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	runID := "run-session-cache"
+	sessionID := "session-cache"
+	req := types.ContextAssembleRequest{
+		RunID:         runID,
+		SessionID:     sessionID,
+		PrefixVersion: semanticPrefixVersion,
+		Input:         "hello",
+		Messages:      []types.Message{{Role: "system", Content: "stable"}},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    runID,
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+	if _, _, err := a.Assemble(context.Background(), req, modelReq); err != nil {
+		t.Fatalf("assemble failed: %v", err)
+	}
+
+	sessionKey := stableSessionKey(sessionID, runID, semanticPrefixVersion)
+	before := a.cachedHash(sessionKey)
+	if before == "" {
+		t.Fatalf("session-scoped prefix cache missing key %q before cleanup", sessionKey)
+	}
+
+	a.OnRunFinished(runID)
+
+	after := a.cachedHash(sessionKey)
+	if after == "" || after != before {
+		t.Fatalf("session-scoped prefix cache should remain, before=%q after=%q", before, after)
+	}
+	if _, ok := a.pressureState[runID]; ok {
+		t.Fatalf("pressure state should still be cleaned for run %q", runID)
+	}
+}
+
+func TestAssemblerCacheGovernanceTTLEvictsPrefixAndPressureState(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Cache.RunFinishedCleanup = false
+	cfg.Cache.PrefixCacheTTL = 2 * time.Second
+	cfg.Cache.PrefixCacheMaxSize = 0
+	cfg.Cache.CA3StateTTL = 2 * time.Second
+	cfg.Cache.CA3StateMaxSize = 0
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	now := time.Unix(1700000000, 0)
+	a.now = func() time.Time { return now }
+
+	key := stableSessionKey("", "run-ttl", semanticPrefixVersion)
+	a.rememberHash("run-ttl", "", key, "hash-ttl")
+	a.pressureStateFor("run-ttl")
+
+	now = now.Add(3 * time.Second)
+	_ = a.cachedHash("trigger-compact")
+
+	if got := a.cachedHash(key); got != "" {
+		t.Fatalf("prefix cache ttl eviction failed, got %q", got)
+	}
+	if _, ok := a.pressureState["run-ttl"]; ok {
+		t.Fatalf("pressure state ttl eviction failed for run-ttl")
+	}
+}
+
+func TestAssemblerCacheGovernanceLRUEvictsLeastRecentlyUsed(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.Cache.RunFinishedCleanup = false
+	cfg.Cache.PrefixCacheTTL = 0
+	cfg.Cache.PrefixCacheMaxSize = 2
+	cfg.Cache.CA3StateTTL = 0
+	cfg.Cache.CA3StateMaxSize = 2
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	now := time.Unix(1700000000, 0)
+	a.now = func() time.Time { return now }
+
+	keyA := stableSessionKey("", "run-a", semanticPrefixVersion)
+	keyB := stableSessionKey("", "run-b", semanticPrefixVersion)
+	keyC := stableSessionKey("", "run-c", semanticPrefixVersion)
+
+	a.rememberHash("run-a", "", keyA, "hash-a")
+	a.pressureStateFor("run-a")
+	now = now.Add(1 * time.Second)
+
+	a.rememberHash("run-b", "", keyB, "hash-b")
+	a.pressureStateFor("run-b")
+	now = now.Add(1 * time.Second)
+
+	if got := a.cachedHash(keyA); got == "" {
+		t.Fatalf("expected keyA present before LRU eviction")
+	}
+	_ = a.pressureStateFor("run-a")
+	now = now.Add(1 * time.Second)
+
+	a.rememberHash("run-c", "", keyC, "hash-c")
+	a.pressureStateFor("run-c")
+
+	if got := a.cachedHash(keyB); got != "" {
+		t.Fatalf("expected keyB evicted by LRU, got %q", got)
+	}
+	if got := a.cachedHash(keyA); got == "" {
+		t.Fatalf("expected keyA retained by LRU touch")
+	}
+	if got := a.cachedHash(keyC); got == "" {
+		t.Fatalf("expected keyC retained as latest insert")
+	}
+	if _, ok := a.pressureState["run-b"]; ok {
+		t.Fatalf("expected pressure state run-b evicted by LRU")
+	}
+	if _, ok := a.pressureState["run-a"]; !ok {
+		t.Fatalf("expected pressure state run-a retained by LRU touch")
+	}
+	if _, ok := a.pressureState["run-c"]; !ok {
+		t.Fatalf("expected pressure state run-c retained as latest insert")
+	}
+}
+
+func TestAssemblerCA3Stage2NoDeltaSkipToggleKeepsSemanticOutputs(t *testing.T) {
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	content := strings.Join([]string{
+		`{"session_id":"other-session","content":"ctx-1"}`,
+		`{"session_id":"other-session","content":"ctx-2"}`,
+	}, "\n")
+	if err := os.WriteFile(stage2File, []byte(content), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+
+	runWithToggle := func(skipNoDelta bool) (types.ModelRequest, types.ContextAssembleResult, error) {
+		cfg := runtimeconfig.DefaultConfig().ContextAssembler
+		cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+		cfg.CA2.Enabled = true
+		cfg.CA2.Stage2.Provider = "file"
+		cfg.CA2.Stage2.FilePath = stage2File
+		cfg.CA2.Routing.TriggerKeywords = []string{"lookup"}
+		cfg.CA2.Routing.MinInputChars = 9999
+		cfg.CA3.Enabled = true
+		cfg.CA3.Tokenizer.Mode = "estimate_only"
+		cfg.CA3.Stage2Pass.SkipNoDelta = skipNoDelta
+		a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+		fixedNow := time.Unix(1700000100, 0)
+		a.now = func() time.Time { return fixedNow }
+
+		req := types.ContextAssembleRequest{
+			RunID:         "run-no-delta",
+			SessionID:     "session-1",
+			PrefixVersion: semanticPrefixVersion,
+			Input:         "please lookup but get no match",
+			Messages: []types.Message{
+				{Role: "system", Content: "stable"},
+				{Role: "user", Content: strings.Repeat("payload ", 80)},
+			},
+		}
+		modelReq := types.ModelRequest{
+			RunID:    req.RunID,
+			Input:    req.Input,
+			Messages: append([]types.Message(nil), req.Messages...),
+		}
+		return a.Assemble(context.Background(), req, modelReq)
+	}
+
+	reqA, resultA, err := runWithToggle(false)
+	if err != nil {
+		t.Fatalf("assemble without skip failed: %v", err)
+	}
+	reqB, resultB, err := runWithToggle(true)
+	if err != nil {
+		t.Fatalf("assemble with skip failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(reqA.Messages, reqB.Messages) {
+		t.Fatalf("messages drift under skip toggle: without=%#v with=%#v", reqA.Messages, reqB.Messages)
+	}
+	if resultA.Status != resultB.Status {
+		t.Fatalf("status drift under skip toggle: without=%q with=%q", resultA.Status, resultB.Status)
+	}
+	if resultA.Stage.Status != resultB.Stage.Status {
+		t.Fatalf("stage.status drift under skip toggle: without=%q with=%q", resultA.Stage.Status, resultB.Stage.Status)
+	}
+	if resultA.Stage.Stage2SkipReason != resultB.Stage.Stage2SkipReason {
+		t.Fatalf("stage2_skip_reason drift under skip toggle: without=%q with=%q", resultA.Stage.Stage2SkipReason, resultB.Stage.Stage2SkipReason)
+	}
+	if resultA.Stage.Stage2ReasonCode != resultB.Stage.Stage2ReasonCode {
+		t.Fatalf("stage2_reason_code drift under skip toggle: without=%q with=%q", resultA.Stage.Stage2ReasonCode, resultB.Stage.Stage2ReasonCode)
+	}
+	if resultA.Stage.PressureZone != resultB.Stage.PressureZone {
+		t.Fatalf("pressure_zone drift under skip toggle: without=%q with=%q", resultA.Stage.PressureZone, resultB.Stage.PressureZone)
+	}
+}
+
+func TestAssemblerCA3Stage2NoDeltaSkipOnlyWhenSignatureUnchanged(t *testing.T) {
+	stage2File := filepath.Join(t.TempDir(), "stage2.jsonl")
+	content := strings.Join([]string{
+		`{"session_id":"session-1","content":"external-ctx"}`,
+	}, "\n")
+	if err := os.WriteFile(stage2File, []byte(content), 0o600); err != nil {
+		t.Fatalf("write stage2 file: %v", err)
+	}
+
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	cfg.CA2.Enabled = true
+	cfg.CA2.Stage2.Provider = "file"
+	cfg.CA2.Stage2.FilePath = stage2File
+	cfg.CA2.Routing.TriggerKeywords = []string{"lookup"}
+	cfg.CA2.Routing.MinInputChars = 9999
+	cfg.CA3.Enabled = true
+	cfg.CA3.Tokenizer.Mode = "estimate_only"
+	cfg.CA3.Stage2Pass.SkipNoDelta = true
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+
+	clock := time.Unix(1700000200, 0)
+	a.now = func() time.Time {
+		clock = clock.Add(time.Millisecond)
+		return clock
+	}
+
+	req := types.ContextAssembleRequest{
+		RunID:         "run-signature-changed",
+		SessionID:     "session-1",
+		PrefixVersion: semanticPrefixVersion,
+		Input:         "please lookup context",
+		Messages: []types.Message{
+			{Role: "system", Content: "stable"},
+			{Role: "user", Content: strings.Repeat("payload ", 80)},
+		},
+	}
+	modelReq := types.ModelRequest{
+		RunID:    req.RunID,
+		Input:    req.Input,
+		Messages: append([]types.Message(nil), req.Messages...),
+	}
+
+	_, result, err := a.Assemble(context.Background(), req, modelReq)
+	if err != nil {
+		t.Fatalf("assemble failed: %v", err)
+	}
+	totalTriggers := 0
+	for _, value := range result.Stage.TriggerCounts {
+		totalTriggers += value
+	}
+	if totalTriggers < 2 {
+		t.Fatalf("expected stage2 pass to run when signature changes, trigger_counts=%#v", result.Stage.TriggerCounts)
 	}
 }

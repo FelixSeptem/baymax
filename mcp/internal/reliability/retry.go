@@ -34,19 +34,13 @@ func Execute[T any](ctx context.Context, cfg RetryConfig, hooks RetryHooks[T]) (
 
 	var lastErr error
 	for attempt := 0; attempt < cfg.Attempts; attempt++ {
-		stepCtx := ctx
-		cancel := func() {}
-		if cfg.Timeout > 0 {
-			stepCtx, cancel = context.WithTimeout(ctx, cfg.Timeout)
-		}
-		res, err := hooks.Invoke(stepCtx, attempt)
-		cancel()
+		res, err := invokeWithTimeout(ctx, cfg.Timeout, attempt, hooks.Invoke)
 		if err == nil {
 			return res, attempt, nil
 		}
 
 		lastErr = err
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return zero, attempt, context.DeadlineExceeded
 		}
 		if attempt >= cfg.Attempts-1 || !hooks.ShouldRetry(err) {
@@ -64,4 +58,31 @@ func Execute[T any](ctx context.Context, cfg RetryConfig, hooks RetryHooks[T]) (
 		}
 	}
 	return zero, cfg.Attempts - 1, lastErr
+}
+
+func invokeWithTimeout[T any](ctx context.Context, timeout time.Duration, attempt int, invoke func(context.Context, int) (T, error)) (T, error) {
+	var zero T
+	if timeout <= 0 {
+		return invoke(ctx, attempt)
+	}
+
+	stepCtx, cancel := context.WithTimeout(ctx, timeout)
+	type invokeResult struct {
+		value T
+		err   error
+	}
+	done := make(chan invokeResult, 1)
+	go func() {
+		res, err := invoke(stepCtx, attempt)
+		done <- invokeResult{value: res, err: err}
+	}()
+
+	select {
+	case result := <-done:
+		cancel()
+		return result.value, result.err
+	case <-stepCtx.Done():
+		cancel()
+		return zero, stepCtx.Err()
+	}
 }

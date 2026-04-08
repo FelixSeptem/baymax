@@ -1,0 +1,18 @@
+goos: windows
+goarch: amd64
+pkg: github.com/FelixSeptem/baymax/integration
+cpu: AMD Ryzen 7 7840HS w/ Radeon 780M Graphics     
+BenchmarkMultiAgentMainlineSyncInvocation-16     	      43	   5614130 ns/op	   6100400 p95-ns/op	   13487 B/op	     122 allocs/op
+BenchmarkMultiAgentMainlineSyncInvocation-16     	      42	   5481152 ns/op	   5972300 p95-ns/op	   13461 B/op	     121 allocs/op
+BenchmarkMultiAgentMainlineSyncInvocation-16     	      43	   5222084 ns/op	   5765600 p95-ns/op	   13422 B/op	     121 allocs/op
+BenchmarkMultiAgentMainlineAsyncReporting-16     	     100	  16203045 ns/op	  20810500 p95-ns/op	    6582 B/op	      72 allocs/op
+BenchmarkMultiAgentMainlineAsyncReporting-16     	     100	  12307917 ns/op	  20780900 p95-ns/op	    6474 B/op	      70 allocs/op
+BenchmarkMultiAgentMainlineAsyncReporting-16     	      19	  10707984 ns/op	  20930600 p95-ns/op	    6638 B/op	      70 allocs/op
+BenchmarkMultiAgentMainlineDelayedDispatch-16    	     410	    583362 ns/op	   1010200 p95-ns/op	    4880 B/op	      42 allocs/op
+BenchmarkMultiAgentMainlineDelayedDispatch-16    	     432	    571478 ns/op	   1005600 p95-ns/op	    4880 B/op	      42 allocs/op
+BenchmarkMultiAgentMainlineDelayedDispatch-16    	     399	    586852 ns/op	   1026200 p95-ns/op	    4880 B/op	      42 allocs/op
+BenchmarkMultiAgentMainlineRecoveryReplay-16     	   28348	      8378 ns/op	      8378 p95-ns/op	    4768 B/op	      30 allocs/op
+BenchmarkMultiAgentMainlineRecoveryReplay-16     	   33398	      6649 ns/op	      6648 p95-ns/op	    4768 B/op	      30 allocs/op
+BenchmarkMultiAgentMainlineRecoveryReplay-16     	   30685	      8468 ns/op	      8468 p95-ns/op	    4768 B/op	      30 allocs/op
+PASS
+ok  	github.com/FelixSeptem/baymax/integration	6.106s

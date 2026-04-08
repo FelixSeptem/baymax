@@ -60,6 +60,9 @@ go test ./integration -run '^TestCollaborationPrimitives' -count=1
 echo "[multi-agent-shared-contract-gate] collaboration retry suite"
 go test ./integration -run '^TestCollaborationRetryContract' -count=1
 
+echo "[multi-agent-shared-contract-gate] emergent matrix drift suite"
+go test ./integration -run '^TestMultiAgentEmergent' -count=1
+
 echo "[multi-agent-shared-contract-gate] recovery boundary suite"
 go test ./integration -run '^TestRecoveryBoundary' -count=1
 

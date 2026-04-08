@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,9 +27,10 @@ const (
 )
 
 type FilesystemCompactionConfig struct {
-	Enabled     bool  `json:"enabled"`
-	MinOps      int   `json:"min_ops"`
-	MaxWALBytes int64 `json:"max_wal_bytes"`
+	Enabled        bool  `json:"enabled"`
+	MinOps         int   `json:"min_ops"`
+	MaxWALBytes    int64 `json:"max_wal_bytes"`
+	FsyncBatchSize int   `json:"fsync_batch_size"`
 }
 
 type FilesystemEngineConfig struct {
@@ -47,6 +49,7 @@ type FilesystemEngine struct {
 	records             map[string]map[string]Record
 	lastSeq             int64
 	walFile             *os.File
+	pendingFsyncOps     int
 	opsSinceCompaction  int
 	lastLifecycleAction string
 	recoveryDrift       bool
@@ -127,7 +130,17 @@ func (e *FilesystemEngine) Close() error {
 	if e.walFile == nil {
 		return nil
 	}
-	err := e.walFile.Close()
+	var err error
+	if e.pendingFsyncOps > 0 {
+		if syncErr := e.walFile.Sync(); syncErr != nil {
+			err = syncErr
+		} else {
+			e.pendingFsyncOps = 0
+		}
+	}
+	if closeErr := e.walFile.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
 	e.walFile = nil
 	return err
 }
@@ -143,25 +156,17 @@ func (e *FilesystemEngine) Query(req QueryRequest) (QueryResponse, error) {
 			Message:   "query namespace is required",
 		}
 	}
-	e.mu.Lock()
+	now := start.UTC()
+	e.mu.RLock()
 	lifecycleAction := LifecycleActionNone
-	if expired := e.applyTTLLocked(start.UTC()); expired > 0 {
+	items, expired := e.collectQueryRecordsReadLocked(namespace, req, now)
+	if expired > 0 {
 		lifecycleAction = LifecycleActionTTL
-	}
-	items := make([]Record, 0)
-	byID := e.records[namespace]
-	if len(byID) > 0 {
-		for _, item := range byID {
-			if !matchRecord(item, req) {
-				continue
-			}
-			items = append(items, cloneRecord(item))
-		}
 	}
 	if lifecycleAction == LifecycleActionNone && e.recoveryDrift {
 		lifecycleAction = LifecycleActionRecoveryConsistencyDrift
 	}
-	e.mu.Unlock()
+	e.mu.RUnlock()
 
 	sort.Slice(items, func(i, j int) bool {
 		if !items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
@@ -181,6 +186,26 @@ func (e *FilesystemEngine) Query(req QueryRequest) (QueryResponse, error) {
 		LatencyMs:             time.Since(start).Milliseconds(),
 		MemoryLifecycleAction: lifecycleAction,
 	}, nil
+}
+
+func (e *FilesystemEngine) collectQueryRecordsReadLocked(namespace string, req QueryRequest, now time.Time) ([]Record, int) {
+	items := make([]Record, 0)
+	expired := 0
+	byID := e.records[namespace]
+	if len(byID) == 0 {
+		return items, expired
+	}
+	for _, item := range byID {
+		if e.isExpiredRecord(item, now) {
+			expired++
+			continue
+		}
+		if !matchRecord(item, req) {
+			continue
+		}
+		items = append(items, cloneRecord(item))
+	}
+	return items, expired
 }
 
 func (e *FilesystemEngine) Upsert(req UpsertRequest) (UpsertResponse, error) {
@@ -595,8 +620,20 @@ func (e *FilesystemEngine) writeIndexState() error {
 		RecoveryPolicy: strings.TrimSpace(e.cfg.Search.DriftRecoveryPolicy),
 		UpdatedAt:      time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	raw, err := json.Marshal(state)
+	indexFile, err := os.OpenFile(e.indexPath(), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write index state failed",
+			Cause:     err,
+		}
+	}
+	defer func() { _ = indexFile.Close() }()
+	writer := bufio.NewWriter(indexFile)
+	encoder := json.NewEncoder(writer)
+	if err := encoder.Encode(state); err != nil {
 		return &Error{
 			Operation: OperationQuery,
 			Code:      ReasonCodeStorageUnavailable,
@@ -605,7 +642,16 @@ func (e *FilesystemEngine) writeIndexState() error {
 			Cause:     err,
 		}
 	}
-	if err := os.WriteFile(e.indexPath(), raw, 0o600); err != nil {
+	if err := writer.Flush(); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write index state failed",
+			Cause:     err,
+		}
+	}
+	if err := indexFile.Sync(); err != nil {
 		return &Error{
 			Operation: OperationQuery,
 			Code:      ReasonCodeStorageUnavailable,
@@ -717,37 +763,59 @@ func (e *FilesystemEngine) appendWALEntryLocked(entry walEntry) error {
 			Cause:     err,
 		}
 	}
+	e.opsSinceCompaction++
+	e.pendingFsyncOps++
+	batchSize := e.cfg.Compaction.FsyncBatchSize
+	if batchSize <= 1 {
+		return e.syncWALLocked(entry.Op)
+	}
+	if e.pendingFsyncOps >= batchSize {
+		if err := e.syncWALLocked(entry.Op); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *FilesystemEngine) syncWALLocked(operation string) error {
+	if e.walFile == nil || e.pendingFsyncOps <= 0 {
+		return nil
+	}
 	if err := e.walFile.Sync(); err != nil {
 		return &Error{
-			Operation: entry.Op,
+			Operation: operation,
 			Code:      ReasonCodeStorageUnavailable,
 			Layer:     LayerStorage,
 			Message:   "sync WAL entry failed",
 			Cause:     err,
 		}
 	}
-	e.opsSinceCompaction++
+	e.pendingFsyncOps = 0
 	return nil
 }
 
 func (e *FilesystemEngine) applyTTLLocked(now time.Time) int {
-	if !e.cfg.Lifecycle.TTLEnabled || e.cfg.Lifecycle.TTL <= 0 {
-		return 0
-	}
-	expiredBefore := now.Add(-e.cfg.Lifecycle.TTL)
 	removed := 0
 	for namespace := range e.records {
 		for id, record := range e.records[namespace] {
-			if record.UpdatedAt.IsZero() {
-				continue
-			}
-			if record.UpdatedAt.Before(expiredBefore) {
+			if e.isExpiredRecord(record, now) {
 				delete(e.records[namespace], id)
 				removed++
 			}
 		}
 	}
 	return removed
+}
+
+func (e *FilesystemEngine) isExpiredRecord(record Record, now time.Time) bool {
+	if !e.cfg.Lifecycle.TTLEnabled || e.cfg.Lifecycle.TTL <= 0 {
+		return false
+	}
+	if record.UpdatedAt.IsZero() {
+		return false
+	}
+	expiredBefore := now.Add(-e.cfg.Lifecycle.TTL)
+	return record.UpdatedAt.Before(expiredBefore)
 }
 
 func (e *FilesystemEngine) applyRetentionLocked(namespace string) []string {
@@ -817,50 +885,9 @@ func (e *FilesystemEngine) maybeCompactLocked() error {
 }
 
 func (e *FilesystemEngine) compactLocked() error {
-	state := snapshotState{
-		LastSeq: e.lastSeq,
-		Records: make([]Record, 0),
-	}
-	namespaces := make([]string, 0, len(e.records))
-	for namespace := range e.records {
-		namespaces = append(namespaces, namespace)
-	}
-	sort.Strings(namespaces)
-	for _, namespace := range namespaces {
-		ids := make([]string, 0, len(e.records[namespace]))
-		for id := range e.records[namespace] {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
-			state.Records = append(state.Records, cloneRecord(e.records[namespace][id]))
-		}
-	}
-
-	raw, err := json.Marshal(state)
-	if err != nil {
-		return &Error{
-			Operation: OperationQuery,
-			Code:      ReasonCodeStorageUnavailable,
-			Layer:     LayerStorage,
-			Message:   "encode snapshot failed",
-			Cause:     err,
-		}
-	}
 	nextPath := e.snapshotNextPath()
-	if err := os.WriteFile(nextPath, raw, 0o600); err != nil {
-		return &Error{
-			Operation: OperationQuery,
-			Code:      ReasonCodeStorageUnavailable,
-			Layer:     LayerStorage,
-			Message:   "write snapshot.next failed",
-			Cause:     err,
-		}
-	}
-	nextFile, err := os.OpenFile(nextPath, os.O_RDWR, 0o600)
-	if err == nil {
-		_ = nextFile.Sync()
-		_ = nextFile.Close()
+	if err := e.writeSnapshotNextLocked(nextPath); err != nil {
+		return err
 	}
 
 	snapshotPath := e.snapshotPath()
@@ -911,8 +938,128 @@ func (e *FilesystemEngine) compactLocked() error {
 		}
 	}
 	e.walFile = walFile
+	e.pendingFsyncOps = 0
 	e.opsSinceCompaction = 0
 	return e.writeIndexState()
+}
+
+func (e *FilesystemEngine) writeSnapshotNextLocked(nextPath string) error {
+	snapshotFile, err := os.OpenFile(nextPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	defer func() { _ = snapshotFile.Close() }()
+
+	writer := bufio.NewWriter(snapshotFile)
+	if _, err := writer.WriteString(`{"last_seq":`); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	if _, err := writer.WriteString(strconv.FormatInt(e.lastSeq, 10)); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	if _, err := writer.WriteString(`,"records":[`); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+
+	first := true
+	namespaces := make([]string, 0, len(e.records))
+	for namespace := range e.records {
+		namespaces = append(namespaces, namespace)
+	}
+	sort.Strings(namespaces)
+	for _, namespace := range namespaces {
+		ids := make([]string, 0, len(e.records[namespace]))
+		for id := range e.records[namespace] {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			raw, marshalErr := json.Marshal(cloneRecord(e.records[namespace][id]))
+			if marshalErr != nil {
+				return &Error{
+					Operation: OperationQuery,
+					Code:      ReasonCodeStorageUnavailable,
+					Layer:     LayerStorage,
+					Message:   "encode snapshot failed",
+					Cause:     marshalErr,
+				}
+			}
+			if !first {
+				if err := writer.WriteByte(','); err != nil {
+					return &Error{
+						Operation: OperationQuery,
+						Code:      ReasonCodeStorageUnavailable,
+						Layer:     LayerStorage,
+						Message:   "write snapshot.next failed",
+						Cause:     err,
+					}
+				}
+			}
+			first = false
+			if _, err := writer.Write(raw); err != nil {
+				return &Error{
+					Operation: OperationQuery,
+					Code:      ReasonCodeStorageUnavailable,
+					Layer:     LayerStorage,
+					Message:   "write snapshot.next failed",
+					Cause:     err,
+				}
+			}
+		}
+	}
+
+	if _, err := writer.WriteString(`]}`); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	if err := snapshotFile.Sync(); err != nil {
+		return &Error{
+			Operation: OperationQuery,
+			Code:      ReasonCodeStorageUnavailable,
+			Layer:     LayerStorage,
+			Message:   "write snapshot.next failed",
+			Cause:     err,
+		}
+	}
+	return nil
 }
 
 func (e *FilesystemEngine) snapshotPath() string {
@@ -943,6 +1090,9 @@ func normalizeFilesystemConfig(cfg FilesystemEngineConfig) FilesystemEngineConfi
 	}
 	if out.Compaction.MaxWALBytes <= 0 {
 		out.Compaction.MaxWALBytes = defaultCompactionMaxWALBytes
+	}
+	if out.Compaction.FsyncBatchSize <= 0 {
+		out.Compaction.FsyncBatchSize = 1
 	}
 	if out.Lifecycle.RetentionDays <= 0 {
 		out.Lifecycle.RetentionDays = 30

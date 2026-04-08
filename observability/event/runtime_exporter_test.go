@@ -307,15 +307,143 @@ runtime:
 	}
 }
 
+func TestRuntimeRecorderExporterFlushesByMaxBatchSize(t *testing.T) {
+	mgr := newRuntimeRecorderTestManager(t, `
+runtime:
+  observability:
+    export:
+      enabled: true
+      profile: custom
+      endpoint: custom://sink
+      queue_capacity: 64
+      max_batch_size: 3
+      max_flush_latency: 2s
+      on_error: degrade_and_record
+`)
+	exp := &fakeRuntimeExporter{}
+	rec := NewRuntimeRecorder(mgr, WithRuntimeExporterFactory(runtimeconfig.RuntimeObservabilityExportProfileCustom, func(_ runtimeconfig.RuntimeObservabilityExportConfig) (RuntimeExporter, error) {
+		return exp, nil
+	}))
+	t.Cleanup(rec.Close)
+
+	for i := 0; i < 3; i++ {
+		rec.OnEvent(context.Background(), types.Event{
+			Version:   types.EventSchemaVersionV1,
+			Type:      "run.finished",
+			Time:      time.Now(),
+			RunID:     "run-export-batch-size",
+			Iteration: i,
+			Payload:   map[string]any{"status": "success"},
+		})
+	}
+
+	waitForRuntimeCondition(t, 2*time.Second, func() bool {
+		return exp.ExportBatchCallTotal() > 0
+	})
+	if got := exp.ExportBatchCallTotal(); got != 1 {
+		t.Fatalf("batch export call total=%d, want 1", got)
+	}
+	if got := exp.FirstBatchSize(); got != 3 {
+		t.Fatalf("first batch size=%d, want 3", got)
+	}
+}
+
+func TestRuntimeRecorderExporterFlushesByMaxFlushLatency(t *testing.T) {
+	mgr := newRuntimeRecorderTestManager(t, `
+runtime:
+  observability:
+    export:
+      enabled: true
+      profile: custom
+      endpoint: custom://sink
+      queue_capacity: 64
+      max_batch_size: 8
+      max_flush_latency: 80ms
+      on_error: degrade_and_record
+`)
+	exp := &fakeRuntimeExporter{}
+	rec := NewRuntimeRecorder(mgr, WithRuntimeExporterFactory(runtimeconfig.RuntimeObservabilityExportProfileCustom, func(_ runtimeconfig.RuntimeObservabilityExportConfig) (RuntimeExporter, error) {
+		return exp, nil
+	}))
+	t.Cleanup(rec.Close)
+
+	start := time.Now()
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		Time:    time.Now(),
+		RunID:   "run-export-batch-latency",
+		Payload: map[string]any{"status": "success"},
+	})
+
+	waitForRuntimeCondition(t, 2*time.Second, func() bool {
+		return exp.ExportBatchCallTotal() > 0
+	})
+	elapsed := time.Since(start)
+	if elapsed < 30*time.Millisecond {
+		t.Fatalf("latency-based flush elapsed=%v, want >=30ms", elapsed)
+	}
+	if got := exp.ExportBatchCallTotal(); got != 1 {
+		t.Fatalf("batch export call total=%d, want 1", got)
+	}
+	if got := exp.FirstBatchSize(); got != 1 {
+		t.Fatalf("first batch size=%d, want 1", got)
+	}
+}
+
+func TestRuntimeRecorderExporterCloseDrainsPendingQueue(t *testing.T) {
+	mgr := newRuntimeRecorderTestManager(t, `
+runtime:
+  observability:
+    export:
+      enabled: true
+      profile: custom
+      endpoint: custom://sink
+      queue_capacity: 64
+      max_batch_size: 16
+      max_flush_latency: 5s
+      on_error: degrade_and_record
+`)
+	exp := &fakeRuntimeExporter{}
+	rec := NewRuntimeRecorder(mgr, WithRuntimeExporterFactory(runtimeconfig.RuntimeObservabilityExportProfileCustom, func(_ runtimeconfig.RuntimeObservabilityExportConfig) (RuntimeExporter, error) {
+		return exp, nil
+	}))
+
+	const pending = 5
+	for i := 0; i < pending; i++ {
+		rec.OnEvent(context.Background(), types.Event{
+			Version:   types.EventSchemaVersionV1,
+			Type:      "run.finished",
+			Time:      time.Now(),
+			RunID:     "run-export-close-drain",
+			Iteration: i,
+			Payload:   map[string]any{"status": "success"},
+		})
+	}
+	rec.Close()
+
+	waitForRuntimeCondition(t, 2*time.Second, func() bool {
+		return exp.ExportCallTotal() == pending
+	})
+	if got := exp.ExportBatchCallTotal(); got != 1 {
+		t.Fatalf("batch export call total=%d, want 1", got)
+	}
+	if got := exp.FirstBatchSize(); got != pending {
+		t.Fatalf("first batch size=%d, want %d", got, pending)
+	}
+}
+
 type fakeRuntimeExporter struct {
-	mu       sync.Mutex
-	events   []types.Event
-	exportFn func(events []types.Event) error
+	mu         sync.Mutex
+	events     []types.Event
+	batchSizes []int
+	exportFn   func(events []types.Event) error
 }
 
 func (e *fakeRuntimeExporter) ExportEvents(_ context.Context, events []types.Event) error {
 	e.mu.Lock()
 	e.events = append(e.events, events...)
+	e.batchSizes = append(e.batchSizes, len(events))
 	fn := e.exportFn
 	e.mu.Unlock()
 	if fn != nil {
@@ -345,6 +473,21 @@ func (e *fakeRuntimeExporter) FirstEvent() types.Event {
 		return types.Event{}
 	}
 	return e.events[0]
+}
+
+func (e *fakeRuntimeExporter) ExportBatchCallTotal() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.batchSizes)
+}
+
+func (e *fakeRuntimeExporter) FirstBatchSize() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.batchSizes) == 0 {
+		return 0
+	}
+	return e.batchSizes[0]
 }
 
 func newRuntimeRecorderTestManager(t *testing.T, content string) *runtimeconfig.Manager {

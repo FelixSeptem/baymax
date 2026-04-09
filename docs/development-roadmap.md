@@ -21,7 +21,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - jit context organization and reference-first assembly contract
 - 进行中：
 - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`（delivery usability agent mode example pack）
-- `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）
+- `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）
 
 ## 版本阶段口径（延续 0.x）
 
@@ -1234,7 +1234,7 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 
 状态对齐说明（2026-04-07）：
 - 已归档并稳定：policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract（A4-sandbox egress governance + adapter allowlist contract 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：a62、a69。
+- 进行中：a62、a70。
 - 已归档：Context JIT Organization。
 - 已完成待归档：a64（engineering/performance optimization）。
 - 顺序约束调整：优先收口 a64 性能工程化主链；a69 作为 a62 的 context 生产化前置，a62 其余示例子项可并行推进并在 a69 收敛后统一做 context 相关验收。

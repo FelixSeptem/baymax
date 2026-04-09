@@ -295,8 +295,17 @@ check_doc_marker "docs/mainline-contract-test-index.md" "check-a64-harnessabilit
 check_doc_marker "docs/mainline-contract-test-index.md" "check-a64-harnessability-scorecard.ps1"
 check_doc_marker "docs/mainline-contract-test-index.md" "a64-harnessability-scorecard-baseline.env"
 check_doc_marker "docs/mainline-contract-test-index.md" "a64-gate-latency-baseline.env"
-check_doc_marker "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md" "Harnessability Scorecard"
-check_doc_marker "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md" "门禁耗时基线"
+
+governance_index_path="openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md"
+if [[ ! -f "${governance_index_path}" ]]; then
+  archived_governance_dir="$(find "openspec/changes/archive" -maxdepth 1 -type d -name "*introduce-engineering-and-performance-optimization-contract-a64" | sort | tail -n 1 || true)"
+  if [[ -n "${archived_governance_dir}" ]]; then
+    governance_index_path="${archived_governance_dir}/a64-governance-index.md"
+  fi
+fi
+
+check_doc_marker "${governance_index_path}" "Harnessability Scorecard"
+check_doc_marker "${governance_index_path}" "门禁耗时基线"
 
 max_docs_issue_count="$(get_env_or_default "BAYMAX_A64_HARNESS_SCORECARD_MAX_DOCS_ISSUE_COUNT" "0")"
 require_non_negative_int "BAYMAX_A64_HARNESS_SCORECARD_MAX_DOCS_ISSUE_COUNT" "${max_docs_issue_count}"

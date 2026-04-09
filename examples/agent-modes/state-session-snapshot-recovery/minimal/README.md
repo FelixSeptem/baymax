@@ -1,0 +1,32 @@
+# state-session-snapshot-recovery (minimal)
+
+## Purpose
+snapshot export and deterministic restore path for state and session.
+
+## Run
+go run ./examples/agent-modes/state-session-snapshot-recovery/minimal
+
+## Prerequisites
+- Go 1.22+ and module dependencies resolved (go mod tidy).
+- Writable local cache for Go build artifacts (for deterministic smoke runs).
+- No external network service is required; execution is fully local.
+
+## Real Runtime Path
+- core/runner: executes model/tool loop and returns final run result.
+- tool/local: dispatches local.mode_step deterministic tool calls.
+- runtime/config: runtime manager wiring for policy/config runtime path.
+
+## Contract Mapping
+- contracts: `unified-state-and-session-snapshot-contract`
+- gates: `check-state-snapshot-contract.*`
+- replay: `state_session_snapshot.v1`
+
+## Diagnostics And Tracing Signals
+- diagnostics marker: `agent_mode.state_session_snapshot_recovery.minimal`
+- tracing marker: `agent_mode.state_session_snapshot_recovery.minimal`
+
+## Expected Output/Verification
+- Output must include verification.mainline_runtime_path=ok.
+- Output must include result.final_answer= and result.signature= markers.
+- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+

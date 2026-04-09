@@ -1,0 +1,25 @@
+{
+  "recorded_at_utc": "2026-04-09T09:50:00Z",
+  "scope": {
+    "patterns": "all-required",
+    "variants": [
+      "minimal"
+    ]
+  },
+  "metrics": {
+    "p50_ms": 297,
+    "p95_ms": 329,
+    "failure_rate": 0.0,
+    "retry_rate": 0.0,
+    "flaky_rate": 0.0
+  },
+  "thresholds": {
+    "max_p95_ms": 5000,
+    "max_flaky_rate": 0.050000,
+    "max_retry_rate": 0.100000
+  },
+  "classification": {
+    "latency_regression": "example-smoke-latency-regression",
+    "flaky_regression": "example-smoke-flaky-regression"
+  }
+}

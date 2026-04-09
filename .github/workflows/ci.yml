@@ -431,6 +431,38 @@ jobs:
       - name: Agent Eval + Tracing Interop Gate
         run: bash scripts/check-agent-eval-and-tracing-interop-contract.sh
 
+  agent-mode-examples-smoke-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Agent Mode Examples Smoke Gate
+        run: bash scripts/check-agent-mode-examples-smoke.sh
+
+  agent-mode-legacy-todo-cleanup-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Agent Mode Legacy TODO Cleanup Gate
+        run: bash scripts/check-agent-mode-legacy-todo-cleanup.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

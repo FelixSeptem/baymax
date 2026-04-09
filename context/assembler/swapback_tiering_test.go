@@ -17,7 +17,7 @@ func TestSwapBackIfNeededUsesRelevanceThreshold(t *testing.T) {
 	a := New(func() runtimeconfig.ContextAssemblerConfig {
 		return runtimeconfig.DefaultConfig().ContextAssembler
 	})
-	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg := stageThreeConfigSnapshotForTest(t)
 	cfg.Spill.Enabled = true
 	cfg.Spill.Backend = "file"
 	cfg.Spill.SwapBackLimit = 8
@@ -75,7 +75,7 @@ func TestSwapBackIfNeededRelevanceThenRecencyDeterministicOrder(t *testing.T) {
 	a := New(func() runtimeconfig.ContextAssemblerConfig {
 		return runtimeconfig.DefaultConfig().ContextAssembler
 	})
-	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg := stageThreeConfigSnapshotForTest(t)
 	cfg.Spill.Enabled = true
 	cfg.Spill.Backend = "file"
 	cfg.Spill.SwapBackLimit = 2
@@ -139,7 +139,7 @@ func TestSwapBackIfNeededCandidateWindowLimitsSelection(t *testing.T) {
 	a := New(func() runtimeconfig.ContextAssemblerConfig {
 		return runtimeconfig.DefaultConfig().ContextAssembler
 	})
-	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg := stageThreeConfigSnapshotForTest(t)
 	cfg.Spill.Enabled = true
 	cfg.Spill.Backend = "file"
 	cfg.Spill.SwapBackLimit = 3
@@ -289,16 +289,18 @@ func TestApplyLifecycleTieringConflictBoundaryPrefersCanonicalTierOrder(t *testi
 func TestAssemblerContextPressureSwapBackAndTieringCombination(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
-	cfg.CA2.Enabled = false
-	cfg.CA3.Enabled = true
-	cfg.CA3.Spill.Enabled = true
-	cfg.CA3.Spill.Backend = "file"
-	cfg.CA3.Spill.SwapBackLimit = 8
-	cfg.CA3.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
-	cfg.CA3.MaxContextTokens = 4096
+	stageTwo := stageTwoConfigPointerForTest(t, &cfg)
+	stageThree := stageThreeConfigPointerForTest(t, &cfg)
+	stageTwo.Enabled = false
+	stageThree.Enabled = true
+	stageThree.Spill.Enabled = true
+	stageThree.Spill.Backend = "file"
+	stageThree.Spill.SwapBackLimit = 8
+	stageThree.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
+	stageThree.MaxContextTokens = 4096
 
 	now := time.Now().UTC()
-	writeSpillRecordsForTest(t, cfg.CA3.Spill.Path, []spillRecord{
+	writeSpillRecordsForTest(t, stageThree.Spill.Path, []spillRecord{
 		{
 			RunID:        "run-tier-combo",
 			OriginRef:    "cold-relevant",

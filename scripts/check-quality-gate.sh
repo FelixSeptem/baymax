@@ -68,6 +68,48 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] agent mode pattern coverage"
+if ! bash scripts/check-agent-mode-pattern-coverage.sh; then
+  echo "[quality-gate][agent-mode-pattern-coverage] agent mode pattern coverage failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode examples smoke"
+if ! bash scripts/check-agent-mode-examples-smoke.sh; then
+  echo "[quality-gate][agent-mode-examples-smoke] agent mode examples smoke failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode smoke stability governance"
+if ! bash scripts/check-agent-mode-smoke-stability-governance.sh; then
+  echo "[quality-gate][agent-mode-smoke-stability-governance] agent mode smoke stability governance failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode migration playbook consistency"
+if ! bash scripts/check-agent-mode-migration-playbook-consistency.sh; then
+  echo "[quality-gate][agent-mode-migration-playbook-consistency] agent mode migration playbook consistency failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode legacy todo cleanup"
+if ! bash scripts/check-agent-mode-legacy-todo-cleanup.sh; then
+  echo "[quality-gate][agent-mode-legacy-todo-cleanup] agent mode legacy todo cleanup failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode real logic contract"
+if ! bash scripts/check-agent-mode-real-logic-contract.sh; then
+  echo "[quality-gate][agent-mode-real-logic-contract] agent mode real logic contract failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode readme sync contract"
+if ! bash scripts/check-agent-mode-readme-sync-contract.sh; then
+  echo "[quality-gate][agent-mode-readme-sync-contract] agent mode README sync contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] a64 impacted gate selection"
 if ! bash scripts/check-a64-impacted-gate-selection.sh; then
   echo "[quality-gate][a64-impacted-gate-selection] a64 impacted gate selection failed"

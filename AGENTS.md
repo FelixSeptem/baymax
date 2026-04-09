@@ -42,6 +42,11 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 统一使用语义化命名（按业务/能力/模块语义命名），避免编号驱动命名。
 - 例外：`openspec/changes/*` 与 `openspec/changes/archive/*` 的提案目录按 OpenSpec 工作流可保留提案标号。
 
+6. 提案必须声明 Example Impact Assessment（行为/配置/契约变更）
+- 当提案涉及运行时行为、配置语义、诊断 schema 或 contract 预期变化时，`proposal/design/tasks` 必须显式声明示例影响评估。
+- 声明值限定为三选一：`新增示例`、`修改示例`、`无需示例变更（附理由）`。
+- 缺少声明或声明值不合法，视为提案不完整，禁止进入实施阶段。
+
 ## 架构硬约束（不可绕过）
 
 - `runtime/*` 禁止依赖 `mcp/http` 或 `mcp/stdio`

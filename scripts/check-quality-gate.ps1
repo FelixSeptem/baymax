@@ -541,6 +541,34 @@ Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode pattern coverage" -Command {
+    pwsh -File scripts/check-agent-mode-pattern-coverage.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode examples smoke" -Command {
+    pwsh -File scripts/check-agent-mode-examples-smoke.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode smoke stability governance" -Command {
+    pwsh -File scripts/check-agent-mode-smoke-stability-governance.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode migration playbook consistency" -Command {
+    pwsh -File scripts/check-agent-mode-migration-playbook-consistency.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode legacy todo cleanup" -Command {
+    pwsh -File scripts/check-agent-mode-legacy-todo-cleanup.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode real logic contract" -Command {
+    pwsh -File scripts/check-agent-mode-real-logic-contract.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode readme sync contract" -Command {
+    pwsh -File scripts/check-agent-mode-readme-sync-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {
     pwsh -File scripts/check-a64-impacted-gate-selection.ps1
 }

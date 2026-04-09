@@ -17,16 +17,18 @@ import (
 func TestAssemblerContextPressureRuntimeFallbackPolicyFailFastOverridesBestEffort(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
-	cfg.CA3.Enabled = true
-	cfg.CA3.MaxContextTokens = 120
-	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+	stageThree := stageThreeConfigPointerForTest(t, &cfg)
+	stageTwo := stageTwoConfigPointerForTest(t, &cfg)
+	stageThree.Enabled = true
+	stageThree.MaxContextTokens = 120
+	stageThree.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
-	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+	stageThree.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
-	cfg.CA3.Compaction.Mode = "semantic"
-	cfg.CA2.StagePolicy.Stage1 = "best_effort"
+	stageThree.Compaction.Mode = "semantic"
+	stageTwo.StagePolicy.Stage1 = "best_effort"
 
 	runtimeCtx := runtimeconfig.DefaultConfig().Runtime.Context
 	runtimeCtx.JIT.Compaction.FallbackPolicy = runtimeconfig.RuntimeContextJITCompactionFallbackPolicyFailFast
@@ -66,18 +68,20 @@ func TestAssemblerContextPressureRuntimeFallbackPolicyFailFastOverridesBestEffor
 func TestAssemblerContextPressureRuntimeQualityThresholdOverridesCA3(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
-	cfg.CA3.Enabled = true
-	cfg.CA3.MaxContextTokens = 120
-	cfg.CA3.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+	stageThree := stageThreeConfigPointerForTest(t, &cfg)
+	stageTwo := stageTwoConfigPointerForTest(t, &cfg)
+	stageThree.Enabled = true
+	stageThree.MaxContextTokens = 120
+	stageThree.PercentThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
-	cfg.CA3.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
+	stageThree.AbsoluteThresholds = runtimeconfig.ContextAssemblerCA3Thresholds{
 		Safe: 10, Comfort: 20, Warning: 30, Danger: 40, Emergency: 50,
 	}
-	cfg.CA3.Compaction.Mode = "semantic"
-	cfg.CA3.Compaction.Quality.Threshold = 0.10
-	cfg.CA3.Compaction.Evidence.Keywords = []string{"mustkeep"}
-	cfg.CA2.StagePolicy.Stage1 = "best_effort"
+	stageThree.Compaction.Mode = "semantic"
+	stageThree.Compaction.Quality.Threshold = 0.10
+	stageThree.Compaction.Evidence.Keywords = []string{"mustkeep"}
+	stageTwo.StagePolicy.Stage1 = "best_effort"
 
 	runtimeCtx := runtimeconfig.DefaultConfig().Runtime.Context
 	runtimeCtx.JIT.Compaction.QualityThreshold = 0.95
@@ -125,7 +129,7 @@ func TestAssemblerContextPressureRuntimeQualityThresholdOverridesCA3(t *testing.
 }
 
 func TestSelectPruneCandidateRespectsOldestToolResultEligibility(t *testing.T) {
-	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg := stageThreeConfigSnapshotForTest(t)
 	state := &pressureRunState{AccessFrequency: map[string]int{}}
 	messages := []types.Message{
 		{Role: "system", Content: "base"},
@@ -166,7 +170,7 @@ func TestSelectPruneCandidateRespectsOldestToolResultEligibility(t *testing.T) {
 }
 
 func TestSelectPruneCandidateRespectsMinimumRetainedEvidence(t *testing.T) {
-	cfg := runtimeconfig.DefaultConfig().ContextAssembler.CA3
+	cfg := stageThreeConfigSnapshotForTest(t)
 	state := &pressureRunState{AccessFrequency: map[string]int{}}
 	evidence := cfg.Compaction.Evidence
 	evidence.Keywords = []string{"mustkeep"}
@@ -304,16 +308,18 @@ func TestFileSpillBackendAppendBatchAppliesRetentionMaxRecords(t *testing.T) {
 func TestAssemblerSwapBackIdempotentDeduplicatesOnRepeatedAssemble(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
-	cfg.CA2.Enabled = false
-	cfg.CA3.Enabled = true
-	cfg.CA3.Spill.Enabled = true
-	cfg.CA3.Spill.Backend = "file"
-	cfg.CA3.Spill.SwapBackLimit = 4
-	cfg.CA3.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
-	cfg.CA3.MaxContextTokens = 4096
+	stageTwo := stageTwoConfigPointerForTest(t, &cfg)
+	stageThree := stageThreeConfigPointerForTest(t, &cfg)
+	stageTwo.Enabled = false
+	stageThree.Enabled = true
+	stageThree.Spill.Enabled = true
+	stageThree.Spill.Backend = "file"
+	stageThree.Spill.SwapBackLimit = 4
+	stageThree.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
+	stageThree.MaxContextTokens = 4096
 
 	now := time.Now().UTC()
-	writeSpillRecordsForTest(t, cfg.CA3.Spill.Path, []spillRecord{
+	writeSpillRecordsForTest(t, stageThree.Spill.Path, []spillRecord{
 		{
 			RunID:        "run-swapback-idempotent",
 			OriginRef:    "cold-1",
@@ -378,16 +384,18 @@ func TestAssemblerSwapBackIdempotentDeduplicatesOnRepeatedAssemble(t *testing.T)
 func TestAssemblerSwapBackDeterministicAcrossRestart(t *testing.T) {
 	cfg := runtimeconfig.DefaultConfig().ContextAssembler
 	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
-	cfg.CA2.Enabled = false
-	cfg.CA3.Enabled = true
-	cfg.CA3.Spill.Enabled = true
-	cfg.CA3.Spill.Backend = "file"
-	cfg.CA3.Spill.SwapBackLimit = 2
-	cfg.CA3.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
-	cfg.CA3.MaxContextTokens = 4096
+	stageTwo := stageTwoConfigPointerForTest(t, &cfg)
+	stageThree := stageThreeConfigPointerForTest(t, &cfg)
+	stageTwo.Enabled = false
+	stageThree.Enabled = true
+	stageThree.Spill.Enabled = true
+	stageThree.Spill.Backend = "file"
+	stageThree.Spill.SwapBackLimit = 2
+	stageThree.Spill.Path = filepath.Join(t.TempDir(), "spill.jsonl")
+	stageThree.MaxContextTokens = 4096
 
 	now := time.Now().UTC()
-	writeSpillRecordsForTest(t, cfg.CA3.Spill.Path, []spillRecord{
+	writeSpillRecordsForTest(t, stageThree.Spill.Path, []spillRecord{
 		{
 			RunID:        "run-swapback-restart",
 			OriginRef:    "cold-older",

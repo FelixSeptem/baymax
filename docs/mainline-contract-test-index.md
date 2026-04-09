@@ -293,6 +293,18 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Context Pressure Governance Run/Stream Equivalence E5| `core/runner/runner_test.go::TestRunAndStreamContextPressureGovernanceSemanticsEquivalent` | `context/assembler/assembler_test.go::TestAssemblerContextPressureRerankerGovernanceRolloutMatchDeterministic` |
 | Context Pressure Threshold Tuning Toolkit E4| `context/assembler/threshold_tuning_test.go::TestRunThresholdTuningProducesDeterministicRecommendation` | `context/assembler/threshold_tuning_test.go::TestRunThresholdTuningRejectsUnsupportedSchema` |
 
+## Agent Mode Example Pack Mapping
+
+- Matrix entrypoint: `examples/agent-modes/MATRIX.md`
+- Unified example root: `examples/agent-modes/`
+- Pattern coverage gate: `scripts/check-agent-mode-pattern-coverage.sh` / `scripts/check-agent-mode-pattern-coverage.ps1`
+- Examples smoke gate: `scripts/check-agent-mode-examples-smoke.sh` / `scripts/check-agent-mode-examples-smoke.ps1`
+- Smoke stability governance gate: `scripts/check-agent-mode-smoke-stability-governance.sh` / `scripts/check-agent-mode-smoke-stability-governance.ps1`
+- Migration playbook consistency gate: `scripts/check-agent-mode-migration-playbook-consistency.sh` / `scripts/check-agent-mode-migration-playbook-consistency.ps1`
+- Legacy TODO cleanup gate: `scripts/check-agent-mode-legacy-todo-cleanup.sh` / `scripts/check-agent-mode-legacy-todo-cleanup.ps1`
+- CI required-check candidates: `.github/workflows/ci.yml::agent-mode-examples-smoke-gate` / `.github/workflows/ci.yml::agent-mode-legacy-todo-cleanup-gate`
+- Quality gate path: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
+
 ## 使用方式
 
 1. 变更完成前，确保以上用例在 `go test ./...` 中通过。

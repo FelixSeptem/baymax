@@ -264,6 +264,15 @@ if (-not $gateCoverageWithin) {
 
 # Docs consistency: marker-driven, machine-auditable checks.
 $docsIssueCount = 0
+$governanceIndexPath = "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md"
+if (-not (Test-Path -LiteralPath $governanceIndexPath)) {
+    $archived = Get-ChildItem -Path "openspec/changes/archive" -Directory -Filter "*introduce-engineering-and-performance-optimization-contract-a64" -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($archived) {
+        $governanceIndexPath = Join-Path "openspec/changes/archive" "$($archived.Name)/a64-governance-index.md"
+    }
+}
 $docChecks = @(
     @{
         Path    = "docs/development-roadmap.md"
@@ -274,7 +283,7 @@ $docChecks = @(
         Markers = @("check-a64-harnessability-scorecard.sh", "check-a64-harnessability-scorecard.ps1", "a64-harnessability-scorecard-baseline.env", "a64-gate-latency-baseline.env")
     },
     @{
-        Path    = "openspec/changes/introduce-engineering-and-performance-optimization-contract-a64/a64-governance-index.md"
+        Path    = $governanceIndexPath
         Markers = @("Harnessability Scorecard", "门禁耗时基线")
     }
 )

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-04-07
+更新时间：2026-04-09
 
 ## 定位
 
@@ -15,13 +15,15 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-04-07：
+截至 2026-04-09：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
-- jit context organization and reference-first assembly contract
+  - `introduce-governance-automation-and-consistency-gate-contract-a70`
+  - `introduce-context-compression-production-hardening-contract-a69`
+  - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`
 - 进行中：
-- `introduce-delivery-usability-agent-mode-example-pack-contract-a62`（delivery usability agent mode example pack）
-- `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）
+  - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
+- 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -49,6 +51,31 @@ Baymax 主线保持 `library-first + contract-first`：
 - scaffold + conformance bootstrap contract scaffold + conformance bootstrap（已归档）。
 
 ## 近期收口优先级（0.x）
+
+### P0：governance automation and consistency gate（A70，已归档）
+
+治理自动化与一致性门禁（A70）目标：
+- 固化 `openspec list --json`、`openspec/changes/archive/INDEX.md`、`docs/development-roadmap.md` 的状态一致性检查，阻断 roadmap 状态漂移。
+- 固化后续提案 `Example Impact Assessment` 声明校验，输出稳定分类码：
+  - `missing-example-impact-declaration`
+  - `invalid-example-impact-value`
+- 在 docs/quality 双门禁接线并保持 shell/PowerShell parity：
+  - `scripts/check-openspec-roadmap-status-consistency.sh/.ps1`
+  - `scripts/check-openspec-example-impact-declaration.sh/.ps1`
+  - `scripts/check-docs-consistency.sh/.ps1`
+  - `scripts/check-quality-gate.sh/.ps1`
+
+A70 边界（不做）：
+- 不修改 runtime/context/model/mcp 行为语义与公开 API。
+- 不引入外部治理服务或平台化控制面。
+- 不替代各能力提案原有 contract/replay/perf 验证职责。
+
+A70 DoD：
+- 新增治理脚本接线完成并在门禁中阻断漂移。
+- CI 暴露 required-check 候选：
+  - `.github/workflows/ci.yml::openspec-roadmap-status-consistency-gate`
+  - `.github/workflows/ci.yml::openspec-example-impact-declaration-gate`
+- 文档索引与协作规范同步到位（roadmap/mainline index/AGENTS）。
 
 ### P0：async-await poll reconcile fallback contract 收口（已归档）
 
@@ -590,10 +617,10 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
 10. codebase consolidation and semantic labeling contract（进行中，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
 11. a64（进行中，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
 12. a69（候选，P2）：context compression production hardening contract（语义压缩 + 冷热分层 + 冷存治理生产化）。
-13. a62（进行中，P2）：delivery usability example pack contract（主要 agent 模式示例收口）。
+13. a71（进行中，P2）：real runtime agent mode examples contract（真实示例全量替换与收口）。
 
 后续项目说明（避免“单一路线”误解）：
-- codebase consolidation and semantic labeling contract（进行中）与 Context JIT Organization（已归档）、realtime event protocol + interrupt/resume contract（已归档）、a64/a69/a62（a64/a62 进行中，a69 候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- codebase consolidation and semantic labeling contract（进行中）与 Context JIT Organization（已归档）、realtime event protocol + interrupt/resume contract（已归档）、a64/a69/a71（a64/a71 进行中，a69 候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
 - policy + memory + budget + tracing baseline contracts 已归档，用作稳定基线，不再作为当前推进主路径。
 - 前置切换仅在以下风险信号出现时触发：实时交互压力（realtime event protocol + interrupt/resume contract）、上下文组织漂移（Context JIT Organization）、context 压缩生产可用风险（a69）、命名/文档收敛压力（codebase consolidation and semantic labeling contract）、性能回归压力（a64）、交付易用性压力（a62）。
 - a64 前置时仍按 `a64-S1 -> ... -> a64-S10` 风险链路吸收，允许按瓶颈调整顺序。
@@ -1024,7 +1051,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - Run/Stream/replay 无语义漂移，contract/perf gates 全绿。
 - 当前状态：候选（roadmap 已登记，待建立 OpenSpec change）。
 
-提案 a62（进行中）：`introduce-delivery-usability-agent-mode-example-pack-contract-a62`
+提案 a71（进行中）：`introduce-real-runtime-agent-mode-examples-contract-a71`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
 - 模式覆盖（最低要求，PocketFlow + Baymax 扩展）：
   - PocketFlow 模式对齐：
@@ -1232,12 +1259,11 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 - Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
 - 若出现新增需求，优先以 policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract 与 Context JIT Organization 的“增量任务”吸收，默认不新增 additional same-domain proposal series+ 同域提案。
 
-状态对齐说明（2026-04-07）：
+状态对齐说明（2026-04-09）：
 - 已归档并稳定：policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract（A4-sandbox egress governance + adapter allowlist contract 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：a62、a70。
-- 已归档：Context JIT Organization。
-- 已完成待归档：a64（engineering/performance optimization）。
-- 顺序约束调整：优先收口 a64 性能工程化主链；a69 作为 a62 的 context 生产化前置，a62 其余示例子项可并行推进并在 a69 收敛后统一做 context 相关验收。
+- 进行中：a71。
+- 已归档：Context JIT Organization、a70、a64、a69、a62（详细清单见 `openspec/changes/archive/INDEX.md`）。
+- 顺序约束调整：继续推进 a71 示例真实化，保持 docs/quality gate 同步收敛。
 
 ### P2：0.x 质量与治理持续收敛
 

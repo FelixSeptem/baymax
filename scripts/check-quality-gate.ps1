@@ -498,6 +498,10 @@ try {
             pwsh -File scripts/check-docs-consistency.ps1
         }
 
+        Invoke-RequiredStep -StepLabel "[quality-gate] openspec example impact declaration" -Command {
+            pwsh -File scripts/check-openspec-example-impact-declaration.ps1
+        }
+
         Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {
             pwsh -File scripts/check-a64-impacted-gate-selection.ps1
         }
@@ -539,6 +543,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] repo hygiene" -Command {
 
 Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] openspec example impact declaration" -Command {
+    pwsh -File scripts/check-openspec-example-impact-declaration.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] agent mode pattern coverage" -Command {

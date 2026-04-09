@@ -14,6 +14,10 @@
 - 为每个示例 README 增加强制章节并与代码同 PR 同步：`Run`、`Prerequisites`、`Real Runtime Path`、`Expected Output/Verification`、`Failure/Rollback Notes`。
 - 建立“模式 -> 真实能力点 -> 契约 -> 门禁 -> 回放夹具”的对照矩阵，并纳入 CI 阻断。
 
+## Example Impact Assessment
+
+- 修改示例
+
 ## Capabilities
 
 ### New Capabilities

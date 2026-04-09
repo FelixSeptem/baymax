@@ -463,6 +463,44 @@ jobs:
       - name: Agent Mode Legacy TODO Cleanup Gate
         run: bash scripts/check-agent-mode-legacy-todo-cleanup.sh
 
+  openspec-roadmap-status-consistency-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: OpenSpec Roadmap Status Consistency Gate
+        run: bash scripts/check-openspec-roadmap-status-consistency.sh
+
+  openspec-example-impact-declaration-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: OpenSpec Example Impact Declaration Gate
+        run: bash scripts/check-openspec-example-impact-declaration.sh
+
   test-and-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

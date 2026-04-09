@@ -68,6 +68,12 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] openspec example impact declaration"
+if ! bash scripts/check-openspec-example-impact-declaration.sh; then
+  echo "[quality-gate][openspec-example-impact-declaration] openspec example impact declaration failed"
+  exit 1
+fi
+
 echo "[quality-gate] agent mode pattern coverage"
 if ! bash scripts/check-agent-mode-pattern-coverage.sh; then
   echo "[quality-gate][agent-mode-pattern-coverage] agent mode pattern coverage failed"

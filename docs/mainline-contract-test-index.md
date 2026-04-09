@@ -281,6 +281,14 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Pre-1 Governance Gate Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Status Parity Governance| `tool/contributioncheck/status_parity_test.go::TestReleaseStatusParityDocsConsistency` | `tool/contributioncheck/status_parity_test.go::TestValidateStatusParityDetectsConflict` |
+| OpenSpec Roadmap Status Consistency Governance| `tool/contributioncheck/governance_automation_test.go::TestValidateRoadmapStatusConsistencyPass` | `tool/contributioncheck/governance_automation_test.go::TestValidateRoadmapStatusConsistencyDetectsDrift` |
+| OpenSpec Roadmap Status Consistency Gate Path| `scripts/check-openspec-roadmap-status-consistency.sh` | `scripts/check-openspec-roadmap-status-consistency.ps1` |
+| OpenSpec Roadmap Status Consistency Docs Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
+| OpenSpec Roadmap Status Consistency CI Required-Check 候选| `.github/workflows/ci.yml::openspec-roadmap-status-consistency-gate` | `.github/workflows/ci.yml::openspec-roadmap-status-consistency-gate` |
+| Proposal Example Impact Declaration Governance| `tool/contributioncheck/governance_automation_test.go::TestValidateProposalExampleImpactDeclarationPass` | `tool/contributioncheck/governance_automation_test.go::TestValidateProposalExampleImpactDeclarationInvalidValue` |
+| Proposal Example Impact Declaration Gate Path| `scripts/check-openspec-example-impact-declaration.sh` | `scripts/check-openspec-example-impact-declaration.ps1` |
+| Proposal Example Impact Declaration Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Proposal Example Impact Declaration CI Required-Check 候选| `.github/workflows/ci.yml::openspec-example-impact-declaration-gate` | `.github/workflows/ci.yml::openspec-example-impact-declaration-gate` |
 | Core Module README Richness| `tool/contributioncheck/module_readme_richness_test.go::TestCoreModuleReadmeRichnessBaseline` | `tool/contributioncheck/module_readme_richness_test.go::TestValidateCoreModuleReadmeRichnessDetectsMissingSection` |
 | Status Parity + README Richness Gate Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | PowerShell Gate Fail-Fast Governance Strict Helper Guard| `tool/contributioncheck/powershell_gate_test.go::TestPowerShellGateScriptsUseStrictNativePath` | `tool/contributioncheck/powershell_gate_test.go::TestPowerShellQualityGateGovernanceWarnExceptionOnly` |

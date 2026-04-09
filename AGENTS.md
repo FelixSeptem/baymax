@@ -46,6 +46,10 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 当提案涉及运行时行为、配置语义、诊断 schema 或 contract 预期变化时，`proposal/design/tasks` 必须显式声明示例影响评估。
 - 声明值限定为三选一：`新增示例`、`修改示例`、`无需示例变更（附理由）`。
 - 缺少声明或声明值不合法，视为提案不完整，禁止进入实施阶段。
+- 治理自动化校验路径（roadmap 状态一致性 + proposal 示例影响声明）：
+  - docs 侧：`scripts/check-openspec-roadmap-status-consistency.sh/.ps1`（接入 `check-docs-consistency.*`）
+  - quality 侧：`scripts/check-openspec-example-impact-declaration.sh/.ps1`（接入 `check-quality-gate.*`）
+  - 失败分类码：`roadmap-status-drift`、`missing-example-impact-declaration`、`invalid-example-impact-value`
 
 ## 架构硬约束（不可绕过）
 

@@ -41,6 +41,12 @@ if ! bash scripts/check-semantic-labeling-governance.sh; then
   exit 1
 fi
 
+echo "[docs-consistency] openspec roadmap status consistency"
+if ! bash scripts/check-openspec-roadmap-status-consistency.sh; then
+  echo "[docs-consistency][openspec-roadmap-status-consistency] openspec roadmap status consistency failed"
+  exit 1
+fi
+
 offline_cache_issues=()
 mapfile -t offline_tracked < <(git ls-files -- examples/adapters/_a23-offline-work || true)
 for path in "${offline_tracked[@]}"; do
@@ -172,6 +178,6 @@ if (( ${#adapter_issues[@]} > 0 )); then
   exit 1
 fi
 
-go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts)$' -count=1
+go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts|TestRoadmapStatusConsistencyGateScriptParity|TestExampleImpactDeclarationGateScriptParity|TestDocsConsistencyIncludesRoadmapStatusConsistencyGate|TestQualityGateIncludesExampleImpactDeclarationGate|TestCIGovernanceRequiredCheckCandidates)$' -count=1
 
 echo "Docs consistency check passed."

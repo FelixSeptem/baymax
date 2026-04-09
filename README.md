@@ -13,14 +13,14 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - `docs/development-roadmap.md`
 - `openspec list --json`
 
-当前里程碑快照（2026-04-07）：
+当前里程碑快照（2026-04-09）：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
 - 进行中：
-  - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`（delivery usability agent mode example pack）进行中。
-  - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）进行中。
+  - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）进行中。
 - 已归档：
+  - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）已归档并稳定。
   - `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）已归档并稳定。
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization and reference-first assembly）已归档并稳定。
 
@@ -238,8 +238,8 @@ _ = err
 
 当前主线能力状态（最新）：
 - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约（已完成待归档，OpenSpec `all_done`）。
-- `introduce-delivery-usability-agent-mode-example-pack-contract-a62`：delivery usability agent mode example pack 契约（进行中）。
-- `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate 契约（进行中）。
+- `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate 契约（已归档并稳定）。
+- `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples 契约（进行中）。
 - `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening 契约（已归档并稳定）。
 - `introduce-engineering-and-performance-optimization-contract-a64`：engineering and performance optimization 契约（已完成待归档，OpenSpec `all_done`）。
 - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
@@ -250,12 +250,12 @@ _ = err
 ### 当前主线能力（现状）
 
 - 进行中：
-  - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`：delivery usability agent mode example pack
-  - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate
+  - `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
   - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization
 - 已归档：
+  - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate
   - `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：JIT context organization + reference-first assembly
 - 已归档稳定：主线多代理能力（包含 hooks/middleware、state/session snapshot、react plan notebook、realtime event protocol 等能力）

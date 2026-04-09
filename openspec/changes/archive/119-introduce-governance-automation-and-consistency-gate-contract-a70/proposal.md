@@ -23,6 +23,10 @@
 - 将上述校验接入 `check-quality-gate.*` 与 `check-docs-consistency.*`，保持 shell/PowerShell parity。
 - 新增治理文档映射，明确“提案声明 -> 门禁脚本 -> CI required-check 候选”的追踪关系。
 
+## Example Impact Assessment
+
+- 无需示例变更（附理由）：本提案仅新增治理自动化脚本、门禁接线与文档追踪映射，不引入运行时行为变更。
+
 ## Capabilities
 
 ### New Capabilities

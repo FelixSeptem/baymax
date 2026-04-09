@@ -37,6 +37,10 @@ Invoke-NativeStrict -Label "pwsh -File scripts/check-semantic-labeling-governanc
     pwsh -File scripts/check-semantic-labeling-governance.ps1
 }
 
+Invoke-NativeStrict -Label "[docs-consistency] openspec roadmap status consistency" -Command {
+    pwsh -File scripts/check-openspec-roadmap-status-consistency.ps1
+}
+
 $offlineCacheIssues = New-Object 'System.Collections.Generic.List[string]'
 $offlineTracked = @(Invoke-NativeCaptureStrict -Label "git ls-files -- examples/adapters/_a23-offline-work" -Command {
         git ls-files -- examples/adapters/_a23-offline-work
@@ -236,7 +240,7 @@ if ($adapterIssues.Count -gt 0) {
 }
 
 Invoke-NativeStrict -Label "go test ./tool/contributioncheck (docs consistency suite)" -Command {
-    go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts)$' -count=1
+    go test ./tool/contributioncheck -run '^(TestMainlineContractIndexReferencesExistingTests|TestAdapterOnboardingDocsConsistency|TestPre1GovernanceDocsConsistency|TestValidatePre1GovernanceDocsDetectsStageConflict|TestReleaseStatusParityDocsConsistency|TestValidateStatusParityDetectsConflict|TestCoreModuleReadmeRichnessBaseline|TestValidateCoreModuleReadmeRichnessDetectsMissingSection|TestValidateCoreModuleReadmeRichnessDetectsCanonicalPathDrift|TestValidateStatusParitySupportsSlugSnapshotFormat|TestDocsConsistencyRepoHygieneTempArtifacts|TestRoadmapStatusConsistencyGateScriptParity|TestExampleImpactDeclarationGateScriptParity|TestDocsConsistencyIncludesRoadmapStatusConsistencyGate|TestQualityGateIncludesExampleImpactDeclarationGate|TestCIGovernanceRequiredCheckCandidates)$' -count=1
 }
 
 Write-Host "Docs consistency check passed."

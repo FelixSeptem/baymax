@@ -569,12 +569,12 @@ Invoke-RequiredStep -StepLabel "[quality-gate] agent mode legacy todo cleanup" -
     pwsh -File scripts/check-agent-mode-legacy-todo-cleanup.ps1
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] agent mode real logic contract" -Command {
-    pwsh -File scripts/check-agent-mode-real-logic-contract.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode real runtime semantic contract" -Command {
+    pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1
 }
 
-Invoke-RequiredStep -StepLabel "[quality-gate] agent mode readme sync contract" -Command {
-    pwsh -File scripts/check-agent-mode-readme-sync-contract.ps1
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode readme runtime sync contract" -Command {
+    pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {

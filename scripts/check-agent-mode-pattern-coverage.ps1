@@ -62,7 +62,7 @@ if (-not (Test-Path -LiteralPath $matrixPath -PathType Leaf)) {
 
 $matrixRaw = Get-Content -Path $matrixPath -Raw
 $matrixLines = Get-Content -Path $matrixPath
-if (-not $matrixRaw.Contains("pattern -> minimal -> production-ish -> contracts -> gates -> replay")) {
+if (-not $matrixRaw.Contains("pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay")) {
     throw "[agent-mode-pattern-coverage] matrix missing canonical column declaration"
 }
 
@@ -73,11 +73,18 @@ foreach ($family in $requiredFamilies) {
 
 $missingMatrixRows = New-Object 'System.Collections.Generic.List[string]'
 $missingFiles = New-Object 'System.Collections.Generic.List[string]'
+$missingSemanticEvidence = New-Object 'System.Collections.Generic.List[string]'
 
 foreach ($pattern in $requiredPatterns) {
     $rowToken = "| ``$pattern`` |"
-    if (-not ($matrixLines | Where-Object { $_.Contains($rowToken) })) {
+    $row = $matrixLines | Where-Object { $_.Contains($rowToken) } | Select-Object -First 1
+    if ($null -eq $row) {
         $missingMatrixRows.Add($pattern) | Out-Null
+    }
+    else {
+        if (-not $row.Contains("runtime/config") -or -not $row.Contains("minimal:") -or -not $row.Contains("production-ish:")) {
+            $missingSemanticEvidence.Add($pattern) | Out-Null
+        }
     }
     foreach ($variant in @("minimal", "production-ish")) {
         $base = Join-Path $rootPath "$pattern/$variant"
@@ -158,8 +165,14 @@ if ($missingFamilies.Count -gt 0) {
         Write-Host "  - $item"
     }
 }
+if ($missingSemanticEvidence.Count -gt 0) {
+    Write-Host "[agent-mode-pattern-coverage] rows missing semantic/runtime evidence columns:"
+    foreach ($item in $missingSemanticEvidence) {
+        Write-Host "  - $item"
+    }
+}
 
-if ($missingMatrixRows.Count -gt 0 -or $missingFiles.Count -gt 0 -or $missingFamilies.Count -gt 0) {
+if ($missingMatrixRows.Count -gt 0 -or $missingFiles.Count -gt 0 -or $missingFamilies.Count -gt 0 -or $missingSemanticEvidence.Count -gt 0) {
     exit 1
 }
 

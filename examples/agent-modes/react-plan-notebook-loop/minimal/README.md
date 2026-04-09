@@ -1,32 +1,37 @@
 # react-plan-notebook-loop (minimal)
 
 ## Purpose
-react loop with plan-notebook synchronization in local run path.
+Real runtime semantic example for `react-plan-notebook-loop` with `minimal` evidence profile.
 
 ## Run
 go run ./examples/agent-modes/react-plan-notebook-loop/minimal
 
 ## Prerequisites
-- Go 1.22+ and module dependencies resolved (go mod tidy).
-- Writable local cache for Go build artifacts (for deterministic smoke runs).
-- No external network service is required; execution is fully local.
+- Go 1.22+ and module dependencies resolved (`go mod tidy`).
+- Writable local cache for Go build artifacts (`GOCACHE`).
+- No external network service is required.
 
 ## Real Runtime Path
-- core/runner: executes model/tool loop and returns final run result.
-- tool/local: dispatches local.mode_step deterministic tool calls.
-- runtime/config: runtime manager wiring for policy/config runtime path.
-
-## Contract Mapping
-- contracts: `react-plan-notebook-and-plan-change-hook-contract`
-- gates: `check-react-plan-notebook-contract.*`
-- replay: `react_plan_notebook.v1`
-
-## Diagnostics And Tracing Signals
-- diagnostics marker: `agent_mode.react_plan_notebook_loop.minimal`
-- tracing marker: `agent_mode.react_plan_notebook_loop.minimal`
+- Semantic anchor: `react.plan_notebook_change_hooks`.
+- Classification: `react.plan_notebook_loop`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,runtime/diagnostics`.
+- Related contracts: `react-plan-notebook-and-plan-change-hook-contract`.
+- Required gates: `check-react-plan-notebook-contract.*`.
+- Replay fixtures: `react_plan_notebook.v1`.
 
 ## Expected Output/Verification
-- Output must include verification.mainline_runtime_path=ok.
-- Output must include result.final_answer= and result.signature= markers.
-- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+- `verification.mainline_runtime_path=ok`
+- `verification.semantic.phase=P1`
+- `verification.semantic.anchor=react.plan_notebook_change_hooks`
+- `verification.semantic.classification=react.plan_notebook_loop`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,runtime/diagnostics`
+- `verification.semantic.governance=baseline`
+- `verification.semantic.expected_markers=react_plan_notebook_synced,react_change_hook_emitted,react_tool_loop_closed`
+- one line per marker: `verification.semantic.marker.<token>=ok`
+- `result.final_answer=` and `result.signature=`
 
+## Failure/Rollback Notes
+- If runtime path check fails, verify local registry wiring and rerun this variant.
+- If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
+- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

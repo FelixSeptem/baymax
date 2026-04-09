@@ -1,32 +1,37 @@
 # sandbox-governed-toolchain (minimal)
 
 ## Purpose
-allowlist admit and deny decisions for sandbox tool invocation.
+Real runtime semantic example for `sandbox-governed-toolchain` with `minimal` evidence profile.
 
 ## Run
 go run ./examples/agent-modes/sandbox-governed-toolchain/minimal
 
 ## Prerequisites
-- Go 1.22+ and module dependencies resolved (go mod tidy).
-- Writable local cache for Go build artifacts (for deterministic smoke runs).
-- No external network service is required; execution is fully local.
+- Go 1.22+ and module dependencies resolved (`go mod tidy`).
+- Writable local cache for Go build artifacts (`GOCACHE`).
+- No external network service is required.
 
 ## Real Runtime Path
-- core/runner: executes model/tool loop and returns final run result.
-- tool/local: dispatches local.mode_step deterministic tool calls.
-- runtime/config: runtime manager wiring for policy/config runtime path.
-
-## Contract Mapping
-- contracts: `security-sandbox-contract`
-- gates: `check-security-sandbox-contract.*` + `check-sandbox-egress-allowlist-contract.*`
-- replay: `sandbox_egress.v1`
-
-## Diagnostics And Tracing Signals
-- diagnostics marker: `agent_mode.sandbox_governed_toolchain.minimal`
-- tracing marker: `agent_mode.sandbox_governed_toolchain.minimal`
+- Semantic anchor: `sandbox.allow_deny_egress_fallback`.
+- Classification: `sandbox.toolchain_governance`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,runtime/security`.
+- Related contracts: `security-sandbox-contract`.
+- Required gates: `check-security-sandbox-contract.*; check-sandbox-egress-allowlist-contract.*`.
+- Replay fixtures: `sandbox_egress.v1`.
 
 ## Expected Output/Verification
-- Output must include verification.mainline_runtime_path=ok.
-- Output must include result.final_answer= and result.signature= markers.
-- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+- `verification.mainline_runtime_path=ok`
+- `verification.semantic.phase=P0`
+- `verification.semantic.anchor=sandbox.allow_deny_egress_fallback`
+- `verification.semantic.classification=sandbox.toolchain_governance`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,runtime/security`
+- `verification.semantic.governance=baseline`
+- `verification.semantic.expected_markers=sandbox_allow_deny_classified,sandbox_egress_allowlist_checked,sandbox_fallback_path_emitted`
+- one line per marker: `verification.semantic.marker.<token>=ok`
+- `result.final_answer=` and `result.signature=`
 
+## Failure/Rollback Notes
+- If runtime path check fails, verify local registry wiring and rerun this variant.
+- If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
+- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

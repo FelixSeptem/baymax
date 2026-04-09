@@ -7,6 +7,14 @@ The quality gate SHALL execute `check-agent-mode-real-runtime-semantic-contract.
 - **WHEN** real-runtime-semantic gate detects template-only implementation without mode-specific semantic anchors
 - **THEN** quality gate exits non-zero and blocks merge with `agent-mode-semantic-template-regression` classification
 
+#### Scenario: Shared semantic engine blocks gate
+- **WHEN** real-runtime-semantic gate detects that mode business semantics are implemented in a shared cross-mode semantic engine and mode entries are wrapper-only
+- **THEN** quality gate exits non-zero and blocks merge with `agent-mode-shared-semantic-engine-detected` classification
+
+#### Scenario: Missing per-mode semantic ownership blocks gate
+- **WHEN** real-runtime-semantic gate detects missing mode-scoped business-semantic implementation
+- **THEN** quality gate exits non-zero and blocks merge with `agent-mode-semantic-ownership-missing` classification
+
 #### Scenario: Missing runtime path evidence blocks gate
 - **WHEN** real-runtime-semantic gate detects missing mode-required runtime path evidence in execution output
 - **THEN** quality gate exits non-zero and blocks merge with `agent-mode-missing-runtime-path-evidence` classification

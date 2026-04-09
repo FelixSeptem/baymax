@@ -25,10 +25,11 @@ func TestAgentModePatternCoverageGateScriptParity(t *testing.T) {
 	ps := string(psRaw)
 	requiredTokens := []string{
 		"examples/agent-modes/MATRIX.md",
+		"pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay",
 		"context-governed-reference-first",
 		"custom-adapter-health-readiness-circuit",
 		"missing matrix rows",
-		"missing required mode families",
+		"rows missing semantic/runtime evidence columns",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -65,10 +66,13 @@ func TestAgentModeExamplesSmokeGateScriptParity(t *testing.T) {
 	requiredTokens := []string{
 		"BAYMAX_AGENT_MODE_SMOKE_PATTERNS",
 		"BAYMAX_AGENT_MODE_SMOKE_VARIANTS",
-		"no patterns selected",
+		"agent-mode-smoke-semantic-evidence-missing",
 		"unsupported variant",
 		"go run",
 		"verification.mainline_runtime_path=ok",
+		"verification.semantic.anchor=",
+		"verification.semantic.governance=",
+		"verification.semantic.expected_markers=",
 		"result.final_answer=",
 		"result.signature=",
 		"production-ish",
@@ -116,7 +120,8 @@ func TestAgentModeMigrationPlaybookConsistencyGateScriptParity(t *testing.T) {
 		"examples/agent-modes/PLAYBOOK.md",
 		"missing-checklist",
 		"missing-gate",
-		"Prod Delta Checklist",
+		"## Failure/Rollback Notes",
+		"Production Migration Checklist",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
@@ -211,82 +216,87 @@ func TestAgentModeLegacyTodoCleanupGateScriptParity(t *testing.T) {
 	}
 }
 
-func TestAgentModeRealLogicContractGateScriptParity(t *testing.T) {
+func TestAgentModeRealRuntimeSemanticContractGateScriptParity(t *testing.T) {
 	root := repoRoot(t)
-	shellPath := filepath.Join(root, "scripts", "check-agent-mode-real-logic-contract.sh")
-	psPath := filepath.Join(root, "scripts", "check-agent-mode-real-logic-contract.ps1")
+	shellPath := filepath.Join(root, "scripts", "check-agent-mode-real-runtime-semantic-contract.sh")
+	psPath := filepath.Join(root, "scripts", "check-agent-mode-real-runtime-semantic-contract.ps1")
 
 	shellRaw, err := os.ReadFile(shellPath)
 	if err != nil {
-		t.Fatalf("read shell real logic gate: %v", err)
+		t.Fatalf("read shell real runtime semantic gate: %v", err)
 	}
 	psRaw, err := os.ReadFile(psPath)
 	if err != nil {
-		t.Fatalf("read powershell real logic gate: %v", err)
+		t.Fatalf("read powershell real runtime semantic gate: %v", err)
 	}
 
 	shell := string(shellRaw)
 	ps := string(psRaw)
 	requiredTokens := []string{
-		"agent-mode-simulated-engine-dependency",
-		"agent-mode-placeholder-output-regression",
-		"agent-mode-missing-mainline-runtime-path",
-		"verification.mainline_runtime_path=",
-		"result.signature=",
+		"agent-mode-shared-semantic-engine-detected",
+		"agent-mode-semantic-ownership-missing",
+		"agent-mode-missing-runtime-path-evidence",
+		"semantic_example.go",
+		"modeimpl.RunMinimal()",
+		"modeimpl.RunProduction()",
+		"verification.semantic.runtime_path=",
+		"verification.semantic.expected_markers=",
+		"runtimeexample.MustRun",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
-			t.Fatalf("shell real logic gate missing token %q", token)
+			t.Fatalf("shell real runtime semantic gate missing token %q", token)
 		}
 		if !strings.Contains(ps, token) {
-			t.Fatalf("powershell real logic gate missing token %q", token)
+			t.Fatalf("powershell real runtime semantic gate missing token %q", token)
 		}
 	}
 	if !strings.Contains(shell, "set -euo pipefail") {
-		t.Fatalf("shell real logic gate must use set -euo pipefail")
+		t.Fatalf("shell real runtime semantic gate must use set -euo pipefail")
 	}
 	if !strings.Contains(ps, "Set-StrictMode -Version Latest") {
-		t.Fatalf("powershell real logic gate must use strict mode")
+		t.Fatalf("powershell real runtime semantic gate must use strict mode")
 	}
 }
 
-func TestAgentModeReadmeSyncContractGateScriptParity(t *testing.T) {
+func TestAgentModeReadmeRuntimeSyncContractGateScriptParity(t *testing.T) {
 	root := repoRoot(t)
-	shellPath := filepath.Join(root, "scripts", "check-agent-mode-readme-sync-contract.sh")
-	psPath := filepath.Join(root, "scripts", "check-agent-mode-readme-sync-contract.ps1")
+	shellPath := filepath.Join(root, "scripts", "check-agent-mode-readme-runtime-sync-contract.sh")
+	psPath := filepath.Join(root, "scripts", "check-agent-mode-readme-runtime-sync-contract.ps1")
 
 	shellRaw, err := os.ReadFile(shellPath)
 	if err != nil {
-		t.Fatalf("read shell readme sync gate: %v", err)
+		t.Fatalf("read shell readme runtime sync gate: %v", err)
 	}
 	psRaw, err := os.ReadFile(psPath)
 	if err != nil {
-		t.Fatalf("read powershell readme sync gate: %v", err)
+		t.Fatalf("read powershell readme runtime sync gate: %v", err)
 	}
 
 	shell := string(shellRaw)
 	ps := string(psRaw)
 	requiredTokens := []string{
-		"agent-mode-readme-not-updated",
-		"agent-mode-readme-missing-required-sections",
+		"agent-mode-readme-runtime-desync",
+		"agent-mode-readme-required-sections-missing",
 		"## Run",
 		"## Prerequisites",
 		"## Real Runtime Path",
 		"## Expected Output/Verification",
+		"## Failure/Rollback Notes",
 	}
 	for _, token := range requiredTokens {
 		if !strings.Contains(shell, token) {
-			t.Fatalf("shell readme sync gate missing token %q", token)
+			t.Fatalf("shell readme runtime sync gate missing token %q", token)
 		}
 		if !strings.Contains(ps, token) {
-			t.Fatalf("powershell readme sync gate missing token %q", token)
+			t.Fatalf("powershell readme runtime sync gate missing token %q", token)
 		}
 	}
 	if !strings.Contains(shell, "set -euo pipefail") {
-		t.Fatalf("shell readme sync gate must use set -euo pipefail")
+		t.Fatalf("shell readme runtime sync gate must use set -euo pipefail")
 	}
 	if !strings.Contains(ps, "Set-StrictMode -Version Latest") {
-		t.Fatalf("powershell readme sync gate must use strict mode")
+		t.Fatalf("powershell readme runtime sync gate must use strict mode")
 	}
 }
 
@@ -318,35 +328,17 @@ func TestQualityGateIncludesAgentModeCoverageAndSmoke(t *testing.T) {
 	if !strings.Contains(shell, "[quality-gate][agent-mode-examples-smoke]") {
 		t.Fatalf("shell quality gate must expose examples smoke blocking label")
 	}
-	if !strings.Contains(shell, "check-agent-mode-smoke-stability-governance.sh") {
-		t.Fatalf("shell quality gate must invoke agent mode smoke stability governance")
+	if !strings.Contains(shell, "check-agent-mode-real-runtime-semantic-contract.sh") {
+		t.Fatalf("shell quality gate must invoke agent mode real runtime semantic contract")
 	}
-	if !strings.Contains(shell, "[quality-gate][agent-mode-smoke-stability-governance]") {
-		t.Fatalf("shell quality gate must expose smoke stability governance blocking label")
+	if !strings.Contains(shell, "[quality-gate][agent-mode-real-runtime-semantic-contract]") {
+		t.Fatalf("shell quality gate must expose real runtime semantic contract blocking label")
 	}
-	if !strings.Contains(shell, "check-agent-mode-migration-playbook-consistency.sh") {
-		t.Fatalf("shell quality gate must invoke agent mode migration playbook consistency")
+	if !strings.Contains(shell, "check-agent-mode-readme-runtime-sync-contract.sh") {
+		t.Fatalf("shell quality gate must invoke agent mode readme runtime sync contract")
 	}
-	if !strings.Contains(shell, "[quality-gate][agent-mode-migration-playbook-consistency]") {
-		t.Fatalf("shell quality gate must expose migration playbook consistency blocking label")
-	}
-	if !strings.Contains(shell, "check-agent-mode-legacy-todo-cleanup.sh") {
-		t.Fatalf("shell quality gate must invoke agent mode legacy todo cleanup")
-	}
-	if !strings.Contains(shell, "[quality-gate][agent-mode-legacy-todo-cleanup]") {
-		t.Fatalf("shell quality gate must expose legacy todo cleanup blocking label")
-	}
-	if !strings.Contains(shell, "check-agent-mode-real-logic-contract.sh") {
-		t.Fatalf("shell quality gate must invoke agent mode real logic contract")
-	}
-	if !strings.Contains(shell, "[quality-gate][agent-mode-real-logic-contract]") {
-		t.Fatalf("shell quality gate must expose real logic contract blocking label")
-	}
-	if !strings.Contains(shell, "check-agent-mode-readme-sync-contract.sh") {
-		t.Fatalf("shell quality gate must invoke agent mode readme sync contract")
-	}
-	if !strings.Contains(shell, "[quality-gate][agent-mode-readme-sync-contract]") {
-		t.Fatalf("shell quality gate must expose readme sync contract blocking label")
+	if !strings.Contains(shell, "[quality-gate][agent-mode-readme-runtime-sync-contract]") {
+		t.Fatalf("shell quality gate must expose readme runtime sync contract blocking label")
 	}
 
 	if !strings.Contains(ps, "check-agent-mode-pattern-coverage.ps1") {
@@ -361,35 +353,17 @@ func TestQualityGateIncludesAgentModeCoverageAndSmoke(t *testing.T) {
 	if !strings.Contains(ps, "[quality-gate] agent mode examples smoke") {
 		t.Fatalf("powershell quality gate must expose examples smoke step label")
 	}
-	if !strings.Contains(ps, "check-agent-mode-smoke-stability-governance.ps1") {
-		t.Fatalf("powershell quality gate must invoke agent mode smoke stability governance")
+	if !strings.Contains(ps, "check-agent-mode-real-runtime-semantic-contract.ps1") {
+		t.Fatalf("powershell quality gate must invoke agent mode real runtime semantic contract")
 	}
-	if !strings.Contains(ps, "[quality-gate] agent mode smoke stability governance") {
-		t.Fatalf("powershell quality gate must expose smoke stability governance step label")
+	if !strings.Contains(ps, "[quality-gate] agent mode real runtime semantic contract") {
+		t.Fatalf("powershell quality gate must expose real runtime semantic contract step label")
 	}
-	if !strings.Contains(ps, "check-agent-mode-migration-playbook-consistency.ps1") {
-		t.Fatalf("powershell quality gate must invoke agent mode migration playbook consistency")
+	if !strings.Contains(ps, "check-agent-mode-readme-runtime-sync-contract.ps1") {
+		t.Fatalf("powershell quality gate must invoke agent mode readme runtime sync contract")
 	}
-	if !strings.Contains(ps, "[quality-gate] agent mode migration playbook consistency") {
-		t.Fatalf("powershell quality gate must expose migration playbook consistency step label")
-	}
-	if !strings.Contains(ps, "check-agent-mode-legacy-todo-cleanup.ps1") {
-		t.Fatalf("powershell quality gate must invoke agent mode legacy todo cleanup")
-	}
-	if !strings.Contains(ps, "[quality-gate] agent mode legacy todo cleanup") {
-		t.Fatalf("powershell quality gate must expose legacy todo cleanup step label")
-	}
-	if !strings.Contains(ps, "check-agent-mode-real-logic-contract.ps1") {
-		t.Fatalf("powershell quality gate must invoke agent mode real logic contract")
-	}
-	if !strings.Contains(ps, "[quality-gate] agent mode real logic contract") {
-		t.Fatalf("powershell quality gate must expose real logic contract step label")
-	}
-	if !strings.Contains(ps, "check-agent-mode-readme-sync-contract.ps1") {
-		t.Fatalf("powershell quality gate must invoke agent mode readme sync contract")
-	}
-	if !strings.Contains(ps, "[quality-gate] agent mode readme sync contract") {
-		t.Fatalf("powershell quality gate must expose readme sync contract step label")
+	if !strings.Contains(ps, "[quality-gate] agent mode readme runtime sync contract") {
+		t.Fatalf("powershell quality gate must expose readme runtime sync step label")
 	}
 }
 
@@ -441,10 +415,12 @@ func TestAgentModeMatrixAndDocMappingsExist(t *testing.T) {
 	index := string(indexRaw)
 
 	requiredMatrixTokens := []string{
-		"pattern -> minimal -> production-ish -> contracts -> gates -> replay",
+		"pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay",
 		"| `rag-hybrid-retrieval` |",
 		"| `context-governed-reference-first` |",
 		"| `custom-adapter-health-readiness-circuit` |",
+		"minimal:",
+		"production-ish:",
 	}
 	for _, token := range requiredMatrixTokens {
 		if !strings.Contains(matrix, token) {
@@ -457,11 +433,14 @@ func TestAgentModeMatrixAndDocMappingsExist(t *testing.T) {
 	if !strings.Contains(legacy, "No unresolved `TODO/TBD/FIXME/待补` markers") {
 		t.Fatalf("legacy TODO baseline summary missing expected marker")
 	}
-	if !strings.Contains(playbook, "## Mode Mapping") {
-		t.Fatalf("playbook must include mode mapping section")
+	if !strings.Contains(playbook, "## Variant Distinction Rules") {
+		t.Fatalf("playbook must include variant distinction section")
 	}
-	if !strings.Contains(playbook, "`context-governed-reference-first`") {
-		t.Fatalf("playbook must include context-governed pattern mapping")
+	if !strings.Contains(playbook, "## Semantic Evidence Fields") {
+		t.Fatalf("playbook must include semantic evidence fields section")
+	}
+	if !strings.Contains(playbook, "## Production Migration Checklist") {
+		t.Fatalf("playbook must include production migration checklist")
 	}
 	if !strings.Contains(stability, "\"max_p95_ms\"") {
 		t.Fatalf("stability baseline must include max_p95_ms threshold")
@@ -469,10 +448,92 @@ func TestAgentModeMatrixAndDocMappingsExist(t *testing.T) {
 	if !strings.Contains(stability, "\"max_flaky_rate\"") {
 		t.Fatalf("stability baseline must include max_flaky_rate threshold")
 	}
-	if !strings.Contains(repoReadme, "examples/agent-modes") {
-		t.Fatalf("repository README must include agent mode example pack entry")
+	if !strings.Contains(repoReadme, "check-agent-mode-real-runtime-semantic-contract") {
+		t.Fatalf("repository README must include agent mode real runtime semantic gate")
+	}
+	if !strings.Contains(repoReadme, "check-agent-mode-readme-runtime-sync-contract") {
+		t.Fatalf("repository README must include agent mode readme runtime sync gate")
 	}
 	if !strings.Contains(index, "Agent Mode Example Pack Mapping") {
 		t.Fatalf("mainline contract index must include agent mode mapping section")
+	}
+	if !strings.Contains(index, "check-agent-mode-real-runtime-semantic-contract") {
+		t.Fatalf("mainline contract index must include real runtime semantic gate mapping")
+	}
+	if !strings.Contains(index, "check-agent-mode-readme-runtime-sync-contract") {
+		t.Fatalf("mainline contract index must include readme runtime sync gate mapping")
+	}
+}
+
+func TestAgentModeMatrixRowCoverageAndReplayGateMapping(t *testing.T) {
+	root := repoRoot(t)
+	matrixPath := filepath.Join(root, "examples", "agent-modes", "MATRIX.md")
+	raw, err := os.ReadFile(matrixPath)
+	if err != nil {
+		t.Fatalf("read matrix: %v", err)
+	}
+
+	lines := strings.Split(string(raw), "\n")
+	rowCount := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "| `") {
+			continue
+		}
+		parts := strings.Split(trimmed, "|")
+		if len(parts) < 13 {
+			t.Fatalf("matrix row has insufficient columns: %q", trimmed)
+		}
+		rowCount++
+
+		pattern := strings.TrimSpace(parts[1])
+		runtimePathEvidence := strings.TrimSpace(parts[6])
+		expectedMarkers := strings.TrimSpace(parts[7])
+		contracts := strings.TrimSpace(parts[10])
+		gates := strings.TrimSpace(parts[11])
+		replay := strings.TrimSpace(parts[12])
+
+		if runtimePathEvidence == "" || runtimePathEvidence == "-" {
+			t.Fatalf("pattern %s missing runtime path evidence", pattern)
+		}
+		if expectedMarkers == "" || expectedMarkers == "-" {
+			t.Fatalf("pattern %s missing expected verification markers", pattern)
+		}
+		if !strings.Contains(expectedMarkers, "minimal:") || !strings.Contains(expectedMarkers, "production-ish:") {
+			t.Fatalf("pattern %s expected markers must include minimal and production-ish markers", pattern)
+		}
+		if contracts == "" || contracts == "-" {
+			t.Fatalf("pattern %s missing contracts mapping", pattern)
+		}
+		if gates == "" || gates == "-" {
+			t.Fatalf("pattern %s missing gates mapping", pattern)
+		}
+		if replay == "" || replay == "-" {
+			t.Fatalf("pattern %s missing replay mapping", pattern)
+		}
+
+		gateTokens := strings.Split(gates, ";")
+		for _, gateToken := range gateTokens {
+			gateToken = strings.TrimSpace(gateToken)
+			gateToken = strings.Trim(gateToken, "`")
+			if gateToken == "" || gateToken == "-" {
+				continue
+			}
+			if !strings.HasSuffix(gateToken, ".*") {
+				t.Fatalf("pattern %s gate token must use wildcard suffix: %q", pattern, gateToken)
+			}
+			base := strings.TrimSuffix(gateToken, ".*")
+			shellPath := filepath.Join(root, "scripts", base+".sh")
+			psPath := filepath.Join(root, "scripts", base+".ps1")
+			if _, err := os.Stat(shellPath); err != nil {
+				t.Fatalf("pattern %s gate shell script missing for token %q: %v", pattern, gateToken, err)
+			}
+			if _, err := os.Stat(psPath); err != nil {
+				t.Fatalf("pattern %s gate powershell script missing for token %q: %v", pattern, gateToken, err)
+			}
+		}
+	}
+	if rowCount != 28 {
+		t.Fatalf("expected 28 mode rows in matrix, got %d", rowCount)
 	}
 }

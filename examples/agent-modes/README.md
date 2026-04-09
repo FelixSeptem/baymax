@@ -1,32 +1,34 @@
 # Agent Modes Example Pack
 
 ## Purpose
-runtime demonstration for examples in agent-modes mode.
+Real runtime semantic examples for 28 agent modes with auditable minimal/production-ish variant evidence.
 
 ## Run
-go run ./examples/agent-modes/examples/agent-modes
+- Single variant: `go run ./examples/agent-modes/<pattern>/<minimal|production-ish>`
+- Batch smoke: `pwsh -File scripts/check-agent-mode-examples-smoke.ps1`
 
 ## Prerequisites
-- Go 1.22+ and module dependencies resolved (go mod tidy).
-- Writable local cache for Go build artifacts (for deterministic smoke runs).
-- No external network service is required; execution is fully local.
+- Go 1.22+ and module dependencies resolved (`go mod tidy`).
+- Writable local `GOCACHE` for deterministic smoke execution.
+- No external network service is required for these examples.
 
 ## Real Runtime Path
-- core/runner: executes model/tool loop and returns final run result.
-- tool/local: dispatches local.mode_step deterministic tool calls.
-- runtime/config: runtime manager wiring for policy/config runtime path.
-
-## Contract Mapping
-- contracts: see examples/agent-modes/MATRIX.md
-- gates: see examples/agent-modes/MATRIX.md
-- replay: see examples/agent-modes/MATRIX.md
-
-## Diagnostics And Tracing Signals
-- diagnostics marker: agent_mode.examples.agent_modes
-- tracing marker: agent_mode.examples.agent_modes
+- Shared runtime path baseline: `core/runner,tool/local,runtime/config`.
+- Pattern-specific domain paths are recorded in `examples/agent-modes/MATRIX.md`.
 
 ## Expected Output/Verification
-- Output must include verification.mainline_runtime_path=ok.
-- Output must include result.final_answer= and result.signature= markers.
-- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+- Output must include `verification.mainline_runtime_path=ok`.
+- Output must include semantic evidence fields under `verification.semantic.*`.
+- Output must include `result.final_answer=` and `result.signature=`.
+- Production-ish output must include `verification.semantic.governance=enforced`.
 
+## Failure/Rollback Notes
+- If smoke fails, run the target variant directly and inspect missing `verification.semantic.*` markers.
+- For semantic drift, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- For README drift, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
+- If rollback is required, revert the affected mode directory and regenerate docs from mode specs.
+
+## Contract Mapping
+- Matrix: `examples/agent-modes/MATRIX.md`
+- Migration playbook: `examples/agent-modes/PLAYBOOK.md`
+- Pattern count: `28`

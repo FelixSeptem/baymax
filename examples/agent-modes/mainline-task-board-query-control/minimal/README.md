@@ -1,32 +1,37 @@
 # mainline-task-board-query-control (minimal)
 
 ## Purpose
-task-board query filter and control action baseline path.
+Real runtime semantic example for `mainline-task-board-query-control` with `minimal` evidence profile.
 
 ## Run
 go run ./examples/agent-modes/mainline-task-board-query-control/minimal
 
 ## Prerequisites
-- Go 1.22+ and module dependencies resolved (go mod tidy).
-- Writable local cache for Go build artifacts (for deterministic smoke runs).
-- No external network service is required; execution is fully local.
+- Go 1.22+ and module dependencies resolved (`go mod tidy`).
+- Writable local cache for Go build artifacts (`GOCACHE`).
+- No external network service is required.
 
 ## Real Runtime Path
-- core/runner: executes model/tool loop and returns final run result.
-- tool/local: dispatches local.mode_step deterministic tool calls.
-- runtime/config: runtime manager wiring for policy/config runtime path.
-
-## Contract Mapping
-- contracts: `multi-agent-task-board-control-contract`
-- gates: `check-multi-agent-shared-contract.*`
-- replay: `cross-domain primary reason arbitration contract.v1`
-
-## Diagnostics And Tracing Signals
-- diagnostics marker: `agent_mode.mainline_task_board_query_control.minimal`
-- tracing marker: `agent_mode.mainline_task_board_query_control.minimal`
+- Semantic anchor: `taskboard.query_control_idempotency`.
+- Classification: `mainline.taskboard_control`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,orchestration/scheduler,runtime/diagnostics`.
+- Related contracts: `multi-agent-task-board-control-contract`.
+- Required gates: `check-multi-agent-shared-contract.*`.
+- Replay fixtures: `cross-domain-primary-reason-arbitration-contract.v1`.
 
 ## Expected Output/Verification
-- Output must include verification.mainline_runtime_path=ok.
-- Output must include result.final_answer= and result.signature= markers.
-- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+- `verification.mainline_runtime_path=ok`
+- `verification.semantic.phase=P2`
+- `verification.semantic.anchor=taskboard.query_control_idempotency`
+- `verification.semantic.classification=mainline.taskboard_control`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,orchestration/scheduler,runtime/diagnostics`
+- `verification.semantic.governance=baseline`
+- `verification.semantic.expected_markers=taskboard_query_filtered,taskboard_control_validated,taskboard_operation_idempotent`
+- one line per marker: `verification.semantic.marker.<token>=ok`
+- `result.final_answer=` and `result.signature=`
 
+## Failure/Rollback Notes
+- If runtime path check fails, verify local registry wiring and rerun this variant.
+- If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
+- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

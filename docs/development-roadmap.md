@@ -21,8 +21,9 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-governance-automation-and-consistency-gate-contract-a70`
   - `introduce-context-compression-production-hardening-contract-a69`
   - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`
-- 进行中：
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
+- 进行中：
+  - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`
 - 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
 
 ## 版本阶段口径（延续 0.x）

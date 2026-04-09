@@ -16,33 +16,48 @@ if (-not (Test-Path -LiteralPath $playbookPath -PathType Leaf)) {
     throw "[agent-mode-migration-playbook-consistency][missing-checklist] missing playbook: $playbookPath"
 }
 
+$requiredSections = @(
+    "## Run",
+    "## Prerequisites",
+    "## Real Runtime Path",
+    "## Expected Output/Verification",
+    "## Failure/Rollback Notes"
+)
+
 $matrixLines = Get-Content -Path $matrixPath
 $playbookRaw = Get-Content -Path $playbookPath -Raw
 
 $missingChecklist = New-Object 'System.Collections.Generic.List[string]'
 $missingGate = New-Object 'System.Collections.Generic.List[string]'
 
+if (-not $playbookRaw.Contains("## Production Migration Checklist")) {
+    $missingChecklist.Add("playbook:missing-production-migration-checklist") | Out-Null
+}
+
 foreach ($line in $matrixLines) {
     if ($line -notmatch '^\| `[^`]+` \|') {
         continue
     }
     $parts = $line.Split('|')
-    if ($parts.Count -lt 7) {
+    if ($parts.Count -lt 13) {
         continue
     }
 
     $pattern = $parts[1].Trim().Trim('`')
-    $gatesCell = $parts[5].Trim()
+    $gatesCell = $parts[11].Trim()
     $readmePath = Join-Path $repoRoot "examples/agent-modes/$pattern/production-ish/README.md"
     $readmeRaw = ""
-    if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
-        $readmeRaw = Get-Content -Path $readmePath -Raw
-        if (-not $readmeRaw.Contains("## Prod Delta Checklist")) {
-            $missingChecklist.Add("$pattern:missing-prod-delta-checklist") | Out-Null
-        }
+
+    if (-not (Test-Path -LiteralPath $readmePath -PathType Leaf)) {
+        $missingChecklist.Add("$pattern:missing-production-ish-readme") | Out-Null
     }
     else {
-        $missingChecklist.Add("$pattern:missing-production-ish-readme") | Out-Null
+        $readmeRaw = Get-Content -Path $readmePath -Raw
+        foreach ($section in $requiredSections) {
+            if (-not $readmeRaw.Contains($section)) {
+                $missingChecklist.Add("$pattern:missing-section:$section") | Out-Null
+            }
+        }
     }
 
     $patternToken = ('`{0}`' -f $pattern)
@@ -50,10 +65,10 @@ foreach ($line in $matrixLines) {
         $missingChecklist.Add("$pattern:missing-playbook-pattern-mapping") | Out-Null
     }
 
-    $gateMatches = [Regex]::Matches($gatesCell, '`([^`]+)`')
-    foreach ($match in $gateMatches) {
-        $gate = $match.Groups[1].Value
-        if ([string]::IsNullOrWhiteSpace($gate)) {
+    $gateTokens = $gatesCell.Split(';')
+    foreach ($rawGate in $gateTokens) {
+        $gate = $rawGate.Trim()
+        if ([string]::IsNullOrWhiteSpace($gate) -or $gate -eq "-") {
             continue
         }
         if (-not $playbookRaw.Contains($gate)) {

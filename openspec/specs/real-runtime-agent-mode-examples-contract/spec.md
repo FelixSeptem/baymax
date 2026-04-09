@@ -1,7 +1,17 @@
-## ADDED Requirements
+# real-runtime-agent-mode-examples-contract Specification
 
+## Purpose
+TBD - created by archiving change introduce-real-runtime-agent-mode-examples-contract-a71. Update Purpose after archive.
+## Requirements
 ### Requirement: Agent Mode Examples SHALL Implement Real Runtime Semantics
-`examples/agent-modes/*/{minimal,production-ish}` MUST execute mode-specific runtime semantics, and MUST NOT rely on a single generic template implementation to represent all modes.
+`examples/agent-modes/*/{minimal,production-ish}` MUST implement mode-specific business semantics and MUST execute real runtime behavior aligned to that mode's domain intent.
+
+Shared helper code MAY be reused for non-semantic concerns (logging, output formatting, common test harness), but shared code MUST NOT host mode business decision logic, mode semantic markers, or mode-specific state-transition logic.
+
+#### Scenario: Every mode implements its own business semantic path
+- **WHEN** maintainers review a mode implementation
+- **THEN** the mode contains explicit business-semantic logic for that mode (not only generic dispatch/wrapper calls)
+- **AND** runtime output/diagnostics evidence can be traced back to mode-owned semantic logic
 
 #### Scenario: Mode-specific semantic anchor exists
 - **WHEN** maintainers review a mode implementation
@@ -10,6 +20,21 @@
 #### Scenario: Generic template-only implementation is rejected
 - **WHEN** a mode implementation only provides shared template behavior without mode-specific semantic logic
 - **THEN** validation fails and the change is blocked
+
+#### Scenario: Shared semantic engine is rejected
+- **WHEN** mode business semantics are centralized in a shared generic engine that multiple modes only parameterize
+- **THEN** validation fails and the change is blocked
+
+### Requirement: Semantic Ownership SHALL Be Per-Mode
+Each mode MUST own its business-semantic implementation in mode-scoped code paths, and MUST NOT outsource semantic behavior to a single cross-mode semantic engine.
+
+#### Scenario: Mode-scoped semantic ownership is enforced
+- **WHEN** semantic ownership validation runs for all required modes
+- **THEN** each mode has mode-scoped semantic implementation and evidence mapping
+
+#### Scenario: Wrapper-only mode entrypoint fails ownership validation
+- **WHEN** a mode entrypoint only calls a shared semantic executor with pattern/variant parameters and no mode-scoped business logic
+- **THEN** ownership validation fails and blocks merge
 
 ### Requirement: Agent Mode Examples SHALL Cover Full Mode Matrix With Dual Variants
 The repository MUST provide real runtime examples for all required mode families and each mode MUST provide both `minimal` and `production-ish` variants with non-identical semantic behavior.
@@ -54,3 +79,4 @@ For each mode, mapping among semantic anchors, related contracts, required gates
 #### Scenario: Mapping drift is blocked
 - **WHEN** a mode implementation changes but mapping artifacts are not updated
 - **THEN** consistency validation fails and blocks merge
+

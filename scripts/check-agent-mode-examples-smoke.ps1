@@ -44,6 +44,29 @@ $requiredPatterns = @(
     "custom-adapter-health-readiness-circuit"
 )
 
+function Assert-Contains {
+    param(
+        [Parameter(Mandatory = $true)][string]$Output,
+        [Parameter(Mandatory = $true)][string]$Token,
+        [Parameter(Mandatory = $true)][string]$Entry
+    )
+    if (-not $Output.Contains($Token)) {
+        throw "[agent-mode-examples-smoke][agent-mode-smoke-semantic-evidence-missing] missing token '$Token': $Entry"
+    }
+}
+
+function Get-Value {
+    param(
+        [Parameter(Mandatory = $true)][string]$Output,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $line = ($Output -split "`r?`n" | Where-Object { $_.StartsWith($Key + "=") } | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($line)) {
+        return ""
+    }
+    return $line.Substring($Key.Length + 1)
+}
+
 $selectedPatterns = New-Object 'System.Collections.Generic.List[string]'
 if (-not [string]::IsNullOrWhiteSpace($env:BAYMAX_AGENT_MODE_SMOKE_PATTERNS)) {
     $requested = $env:BAYMAX_AGENT_MODE_SMOKE_PATTERNS.Split(",")
@@ -93,6 +116,8 @@ if ($selectedVariants.Count -eq 0) {
 Write-Host "[agent-mode-examples-smoke] running smoke checks for $($selectedPatterns.Count) patterns and $($selectedVariants.Count) variants"
 
 foreach ($pattern in $selectedPatterns) {
+    $variantOutput = @{}
+
     foreach ($variant in $selectedVariants) {
         $entryRelative = "./examples/agent-modes/$pattern/$variant"
         $entryFull = Join-Path $repoRoot "examples/agent-modes/$pattern/$variant"
@@ -122,14 +147,47 @@ foreach ($pattern in $selectedPatterns) {
                 }
                 return [string]$_
             }) -join "`n"
-        if (-not $joined.Contains("verification.mainline_runtime_path=ok")) {
-            throw "[agent-mode-examples-smoke] missing runtime path verification marker: $entryRelative"
+
+        Assert-Contains -Output $joined -Token "verification.mainline_runtime_path=ok" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.anchor=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.classification=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.runtime_path=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.expected_markers=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.governance=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.marker_count=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "verification.semantic.marker." -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "result.final_answer=" -Entry $entryRelative
+        Assert-Contains -Output $joined -Token "result.signature=" -Entry $entryRelative
+
+        $variantOutput[$variant] = $joined
+    }
+
+    $hasMinimal = $selectedVariants -contains "minimal"
+    $hasProduction = $selectedVariants -contains "production-ish"
+    if ($hasMinimal -and $hasProduction) {
+        $minimalOutput = if ($variantOutput.ContainsKey("minimal")) { [string]$variantOutput["minimal"] } else { "" }
+        $productionOutput = if ($variantOutput.ContainsKey("production-ish")) { [string]$variantOutput["production-ish"] } else { "" }
+
+        if ([string]::IsNullOrWhiteSpace($minimalOutput) -or [string]::IsNullOrWhiteSpace($productionOutput)) {
+            throw "[agent-mode-examples-smoke][agent-mode-smoke-semantic-evidence-missing] missing dual-variant output for pattern=$pattern"
         }
-        if (-not $joined.Contains("result.final_answer=")) {
-            throw "[agent-mode-examples-smoke] missing final answer marker: $entryRelative"
+
+        $minimalExpected = Get-Value -Output $minimalOutput -Key "verification.semantic.expected_markers"
+        $productionExpected = Get-Value -Output $productionOutput -Key "verification.semantic.expected_markers"
+        if ([string]::IsNullOrWhiteSpace($minimalExpected) -or [string]::IsNullOrWhiteSpace($productionExpected) -or $minimalExpected -eq $productionExpected) {
+            throw "[agent-mode-examples-smoke][agent-mode-smoke-semantic-evidence-missing] expected marker set did not diverge for pattern=$pattern"
         }
-        if (-not $joined.Contains("result.signature=")) {
-            throw "[agent-mode-examples-smoke] missing signature marker: $entryRelative"
+
+        $minimalGovernance = Get-Value -Output $minimalOutput -Key "verification.semantic.governance"
+        $productionGovernance = Get-Value -Output $productionOutput -Key "verification.semantic.governance"
+        if ($minimalGovernance -ne "baseline" -or $productionGovernance -ne "enforced") {
+            throw "[agent-mode-examples-smoke][agent-mode-smoke-semantic-evidence-missing] governance marker mismatch for pattern=$pattern minimal=$minimalGovernance production-ish=$productionGovernance"
+        }
+
+        $minimalSignature = Get-Value -Output $minimalOutput -Key "result.signature"
+        $productionSignature = Get-Value -Output $productionOutput -Key "result.signature"
+        if ([string]::IsNullOrWhiteSpace($minimalSignature) -or [string]::IsNullOrWhiteSpace($productionSignature) -or $minimalSignature -eq $productionSignature) {
+            throw "[agent-mode-examples-smoke][agent-mode-smoke-semantic-evidence-missing] result.signature must differ between variants for pattern=$pattern"
         }
     }
 }

@@ -18,8 +18,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
 - 进行中：
-  - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）进行中。
+  - （当前无）
 - 已归档：
+  - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）已归档并稳定。
   - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）已归档并稳定。
   - `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）已归档并稳定。
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization and reference-first assembly）已归档并稳定。
@@ -239,7 +240,7 @@ _ = err
 当前主线能力状态（最新）：
 - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约（已完成待归档，OpenSpec `all_done`）。
 - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate 契约（已归档并稳定）。
-- `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples 契约（进行中）。
+- `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples 契约（已归档并稳定）。
 - `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening 契约（已归档并稳定）。
 - `introduce-engineering-and-performance-optimization-contract-a64`：engineering and performance optimization 契约（已完成待归档，OpenSpec `all_done`）。
 - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
@@ -250,11 +251,12 @@ _ = err
 ### 当前主线能力（现状）
 
 - 进行中：
-  - `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples
+  - （当前无）
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
   - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization
 - 已归档：
+  - `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples
   - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate
   - `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：JIT context organization + reference-first assembly
@@ -346,6 +348,9 @@ PowerShell 门禁治理语义（Strict Native Helper）：
 - `examples/08-multi-agent-network-bridge`：Composer + Scheduler(A2A)
 - `examples/09-multi-agent-full-chain-reference`：Teams + Workflow + A2A + Scheduler + Recovery（Run/Stream + async/delayed/recovery）
 - `examples/agent-modes`：统一模式矩阵入口（`MATRIX.md` + `PLAYBOOK.md` + `STABILITY_BASELINE.json` + `minimal/production-ish` 双档示例）
+- `scripts/check-agent-mode-examples-smoke.sh` / `scripts/check-agent-mode-examples-smoke.ps1`：`agent-modes` 双变体语义 smoke
+- `scripts/check-agent-mode-real-runtime-semantic-contract.sh` / `scripts/check-agent-mode-real-runtime-semantic-contract.ps1`：A71 真实语义门禁
+- `scripts/check-agent-mode-readme-runtime-sync-contract.sh` / `scripts/check-agent-mode-readme-runtime-sync-contract.ps1`：A71 README 运行时同步门禁
 
 ## 文档入口
 

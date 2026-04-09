@@ -61,7 +61,7 @@ if [[ ! -f "${MATRIX_PATH}" ]]; then
   echo "[agent-mode-pattern-coverage] missing matrix: ${MATRIX_PATH}" >&2
   exit 1
 fi
-if ! grep -q "pattern -> minimal -> production-ish -> contracts -> gates -> replay" "${MATRIX_PATH}"; then
+if ! grep -q "pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay" "${MATRIX_PATH}"; then
   echo "[agent-mode-pattern-coverage] matrix missing canonical column declaration" >&2
   exit 1
 fi
@@ -73,10 +73,16 @@ done
 
 missing_matrix_rows=()
 missing_files=()
+missing_semantic_evidence=()
 
 for pattern in "${required_patterns[@]}"; do
-  if ! grep -Eq "^\\| \`${pattern}\` \\|" "${MATRIX_PATH}"; then
+  row="$(grep -E "^\\| \`${pattern}\` \\|" "${MATRIX_PATH}" || true)"
+  if [[ -z "${row}" ]]; then
     missing_matrix_rows+=("${pattern}")
+  else
+    if [[ "${row}" != *"runtime/config"* || "${row}" != *"minimal:"* || "${row}" != *"production-ish:"* ]]; then
+      missing_semantic_evidence+=("${pattern}")
+    fi
   fi
   for variant in minimal production-ish; do
     base="${ROOT_PATH}/${pattern}/${variant}"
@@ -147,8 +153,12 @@ if (( ${#missing_families[@]} > 0 )); then
   echo "[agent-mode-pattern-coverage] missing required mode families:" >&2
   printf '  - %s\n' "${missing_families[@]}" >&2
 fi
+if (( ${#missing_semantic_evidence[@]} > 0 )); then
+  echo "[agent-mode-pattern-coverage] rows missing semantic/runtime evidence columns:" >&2
+  printf '  - %s\n' "${missing_semantic_evidence[@]}" >&2
+fi
 
-if (( ${#missing_matrix_rows[@]} > 0 || ${#missing_files[@]} > 0 || ${#missing_families[@]} > 0 )); then
+if (( ${#missing_matrix_rows[@]} > 0 || ${#missing_files[@]} > 0 || ${#missing_families[@]} > 0 || ${#missing_semantic_evidence[@]} > 0 )); then
   exit 1
 fi
 

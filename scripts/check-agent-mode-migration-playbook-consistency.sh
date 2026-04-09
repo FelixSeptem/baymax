@@ -19,32 +19,50 @@ if [[ ! -f "${PLAYBOOK_PATH}" ]]; then
   exit 1
 fi
 
+required_sections=(
+  "## Run"
+  "## Prerequisites"
+  "## Real Runtime Path"
+  "## Expected Output/Verification"
+  "## Failure/Rollback Notes"
+)
+
 missing_checklist=()
 missing_gate=()
+
+if ! grep -Fq "## Production Migration Checklist" "${PLAYBOOK_PATH}"; then
+  missing_checklist+=("playbook:missing-production-migration-checklist")
+fi
 
 while IFS= read -r row; do
   [[ -n "${row}" ]] || continue
   pattern="$(echo "${row}" | awk -F '|' '{print $2}' | xargs)"
   pattern="${pattern#\`}"
   pattern="${pattern%\`}"
-  gates_cell="$(echo "${row}" | awk -F '|' '{print $6}' | xargs)"
+  gates_cell="$(echo "${row}" | awk -F '|' '{print $12}' | xargs)"
   readme_path="examples/agent-modes/${pattern}/production-ish/README.md"
 
   if [[ ! -f "${readme_path}" ]]; then
     missing_checklist+=("${pattern}:missing-production-ish-readme")
   else
-    if ! grep -q "^## Prod Delta Checklist$" "${readme_path}"; then
-      missing_checklist+=("${pattern}:missing-prod-delta-checklist")
-    fi
+    for section in "${required_sections[@]}"; do
+      if ! grep -Fq "${section}" "${readme_path}"; then
+        missing_checklist+=("${pattern}:missing-section:${section}")
+      fi
+    done
   fi
 
   if ! grep -Fq "\`${pattern}\`" "${PLAYBOOK_PATH}"; then
     missing_checklist+=("${pattern}:missing-playbook-pattern-mapping")
   fi
 
-  mapfile -t gate_tokens < <(echo "${gates_cell}" | grep -oE '`[^`]+`' | tr -d '`')
+  IFS=';' read -r -a gate_tokens <<<"${gates_cell}"
   for gate in "${gate_tokens[@]}"; do
+    gate="$(echo "${gate}" | xargs)"
     [[ -n "${gate}" ]] || continue
+    if [[ "${gate}" == "-" ]]; then
+      continue
+    fi
     if ! grep -Fq "${gate}" "${PLAYBOOK_PATH}"; then
       missing_gate+=("${pattern}:playbook-missing-gate:${gate}")
     fi

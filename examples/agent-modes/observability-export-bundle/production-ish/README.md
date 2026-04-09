@@ -1,40 +1,37 @@
 # observability-export-bundle (production-ish)
 
 ## Purpose
-observability export bundle with replay-aware package boundary and drift-safe fields.
+Real runtime semantic example for `observability-export-bundle` with `production-ish` evidence profile.
 
 ## Run
 go run ./examples/agent-modes/observability-export-bundle/production-ish
 
 ## Prerequisites
-- Go 1.22+ and module dependencies resolved (go mod tidy).
-- Writable local cache for Go build artifacts (for deterministic smoke runs).
-- No external network service is required; execution is fully local.
+- Go 1.22+ and module dependencies resolved (`go mod tidy`).
+- Writable local cache for Go build artifacts (`GOCACHE`).
+- No external network service is required.
 
 ## Real Runtime Path
-- core/runner: executes model/tool loop and returns final run result.
-- tool/local: dispatches local.mode_step deterministic tool calls.
-- runtime/config: runtime manager wiring for policy/config runtime path.
-
-## Contract Mapping
-- contracts: `observability-export-and-diagnostics-bundle-contract`
-- gates: `check-observability-export-and-bundle-contract.*`
-- replay: `observability.v1`
-
-## Diagnostics And Tracing Signals
-- diagnostics marker: `agent_mode.observability_export_bundle.production_ish`
-- tracing marker: `agent_mode.observability_export_bundle.production_ish`
+- Semantic anchor: `observability.export_bundle_replay`.
+- Classification: `observability.export_bundle`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,observability/event,runtime/diagnostics`.
+- Related contracts: `observability-export-and-diagnostics-bundle-contract`.
+- Required gates: `check-observability-export-and-bundle-contract.*`.
+- Replay fixtures: `observability.v1`.
 
 ## Expected Output/Verification
-- Output must include verification.mainline_runtime_path=ok.
-- Output must include result.final_answer= and result.signature= markers.
-- Verify with smoke gate: pwsh -File scripts/check-agent-mode-examples-smoke.ps1.
+- `verification.mainline_runtime_path=ok`
+- `verification.semantic.phase=P1`
+- `verification.semantic.anchor=observability.export_bundle_replay`
+- `verification.semantic.classification=observability.export_bundle`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,observability/event,runtime/diagnostics`
+- `verification.semantic.governance=enforced`
+- `verification.semantic.expected_markers=observability_export_collected,observability_bundle_emitted,observability_replay_linked,governance_observability_gate_enforced,governance_observability_replay_bound`
+- one line per marker: `verification.semantic.marker.<token>=ok`
+- `result.final_answer=` and `result.signature=`
 
-## Prod Delta Checklist
-- [ ] config: validate env > file > default precedence and invalid reload rollback path.
-- [ ] permissions: confirm sandbox and allowlist policy matrix for target environment.
-- [ ] capacity: define concurrency, retry budget, and timeout envelope for sustained load.
-- [ ] observability: wire diagnostics and tracing export into runtime recorder pathways.
-- [ ] replay: maintain replay fixture compatibility and additive parser expectations.
-- [ ] gates: run mapped contract gates plus quality gate path before promotion.
-
+## Failure/Rollback Notes
+- If runtime path check fails, verify local registry wiring and rerun this variant.
+- If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
+- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

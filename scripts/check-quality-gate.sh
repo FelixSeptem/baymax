@@ -104,15 +104,15 @@ if ! bash scripts/check-agent-mode-legacy-todo-cleanup.sh; then
   exit 1
 fi
 
-echo "[quality-gate] agent mode real logic contract"
-if ! bash scripts/check-agent-mode-real-logic-contract.sh; then
-  echo "[quality-gate][agent-mode-real-logic-contract] agent mode real logic contract failed"
+echo "[quality-gate] agent mode real runtime semantic contract"
+if ! bash scripts/check-agent-mode-real-runtime-semantic-contract.sh; then
+  echo "[quality-gate][agent-mode-real-runtime-semantic-contract] agent mode real runtime semantic contract failed"
   exit 1
 fi
 
-echo "[quality-gate] agent mode readme sync contract"
-if ! bash scripts/check-agent-mode-readme-sync-contract.sh; then
-  echo "[quality-gate][agent-mode-readme-sync-contract] agent mode README sync contract failed"
+echo "[quality-gate] agent mode readme runtime sync contract"
+if ! bash scripts/check-agent-mode-readme-runtime-sync-contract.sh; then
+  echo "[quality-gate][agent-mode-readme-runtime-sync-contract] agent mode README runtime sync contract failed"
   exit 1
 fi
 

@@ -266,6 +266,12 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Context JIT Organization Contract Gate| `scripts/check-context-jit-organization-contract.sh` | `scripts/check-context-jit-organization-contract.ps1` |
 | Context JIT Organization Contract Gate CI Required-Check 候选| `.github/workflows/ci.yml::context-jit-organization-contract-gate` | `.github/workflows/ci.yml::context-jit-organization-contract-gate` |
 | Context JIT Organization Contract Gate Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Context Compression Production Replay Fixture (`context_compression_production.v1`)| `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractContextCompressionProductionFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractContextCompressionProductionDriftClassification` |
+| Context Compression Production Benchmark Regression Gate| `scripts/check-context-production-hardening-benchmark-regression.sh` | `scripts/check-context-production-hardening-benchmark-regression.ps1` |
+| Context Compression Production Contract Gate| `scripts/check-context-compression-production-contract.sh` | `scripts/check-context-compression-production-contract.ps1` |
+| Context Compression Production Contract Gate CI Required-Check 候选| `.github/workflows/ci.yml::context-compression-production-contract-gate` | `.github/workflows/ci.yml::context-compression-production-contract-gate` |
+| Context Compression Production Contract Gate Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
+| Context Compression Production Additive Diagnostics Mapping| `core/runner/runner_test.go::TestRunFinishedPayloadIncludesContextCompressionProductionAdditiveFields` | `runtime/diagnostics/store_test.go::TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent` |
 | Realtime Protocol + Interrupt/Resume Run/Stream Parity| `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamResumeParityAndIdempotency` | `core/runner/realtime_runner_contract_test.go::TestRealtimeRunStreamInvalidResumeClassificationParity` |
 | Realtime Protocol Replay Fixture (`realtime_event_protocol.v1`)| `integration/primary_reason_arbitration_replay_contract_test.go::TestPrimaryReasonArbitrationReplayContractFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractPrimaryReasonArbitrationFixtureDriftClassification` |
 | Realtime Protocol Contract Gate| `scripts/check-realtime-protocol-contract.sh` | `scripts/check-realtime-protocol-contract.ps1` |

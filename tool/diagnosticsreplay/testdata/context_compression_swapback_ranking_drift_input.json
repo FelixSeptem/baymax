@@ -1,0 +1,90 @@
+{
+  "version": "context_compression_production.v1",
+  "cases": [
+    {
+      "name": "context_swapback_ranking_drift_case",
+      "run": {
+        "context_compaction_outcome_class": "applied",
+        "context_compaction_quality_score": 0.87,
+        "context_compaction_fallback_chain": [
+          "rule.tool_result_oldest",
+          "truncate.tail"
+        ],
+        "context_rule_eligibility_oldest_tool_result": true,
+        "context_rule_eligibility_evidence_retained": true,
+        "context_tier_transition_reason": "pressure_budget_exceeded",
+        "context_lifecycle_tier_stats": {
+          "hot": 3,
+          "warm": 2,
+          "cold": 4,
+          "pruned": 1,
+          "migrate_hot_to_warm": 1
+        },
+        "context_swapback_ranking_strategy": "relevance_then_recency",
+        "context_swapback_candidate_window": 2,
+        "context_swapback_relevance_score": 0.64,
+        "context_cold_store_governance_action": "quota_cleanup",
+        "context_cold_store_cleanup_count": 2,
+        "context_recovery_idempotency_status": "idempotent",
+        "context_recovery_dedup_count": 0,
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "stream": {
+        "context_compaction_outcome_class": "applied",
+        "context_compaction_quality_score": 0.87,
+        "context_compaction_fallback_chain": [
+          "rule.tool_result_oldest",
+          "truncate.tail"
+        ],
+        "context_rule_eligibility_oldest_tool_result": true,
+        "context_rule_eligibility_evidence_retained": true,
+        "context_tier_transition_reason": "pressure_budget_exceeded",
+        "context_lifecycle_tier_stats": {
+          "hot": 3,
+          "warm": 2,
+          "cold": 4,
+          "pruned": 1,
+          "migrate_hot_to_warm": 1
+        },
+        "context_swapback_ranking_strategy": "relevance_then_recency",
+        "context_swapback_candidate_window": 6,
+        "context_swapback_relevance_score": 0.79,
+        "context_cold_store_governance_action": "quota_cleanup",
+        "context_cold_store_cleanup_count": 2,
+        "context_recovery_idempotency_status": "idempotent",
+        "context_recovery_dedup_count": 0,
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "expected": {
+        "context_compaction_outcome_class": "applied",
+        "context_compaction_quality_score": 0.87,
+        "context_compaction_fallback_chain": [
+          "rule.tool_result_oldest",
+          "truncate.tail"
+        ],
+        "context_rule_eligibility_oldest_tool_result": true,
+        "context_rule_eligibility_evidence_retained": true,
+        "context_tier_transition_reason": "pressure_budget_exceeded",
+        "context_lifecycle_tier_stats": {
+          "hot": 3,
+          "warm": 2,
+          "cold": 4,
+          "pruned": 1,
+          "migrate_hot_to_warm": 1
+        },
+        "context_swapback_ranking_strategy": "relevance_then_recency",
+        "context_swapback_candidate_window": 6,
+        "context_swapback_relevance_score": 0.79,
+        "context_cold_store_governance_action": "quota_cleanup",
+        "context_cold_store_cleanup_count": 2,
+        "context_recovery_idempotency_status": "idempotent",
+        "context_recovery_dedup_count": 0,
+        "context_recap_source": "task_aware.stage_actions.v1"
+      },
+      "idempotency": {
+        "first_logical_ingest_total": 1,
+        "replay_logical_ingest_total": 1
+      }
+    }
+  ]
+}

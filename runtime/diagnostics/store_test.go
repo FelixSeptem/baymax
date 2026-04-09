@@ -720,16 +720,22 @@ func TestStoreRunReactPlanNotebookQueryRunsParserCompatibilityAdditiveNullableDe
 func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T) {
 	d := NewStore(8, 8, 4, 8, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})
 	rec := RunRecord{
-		Time:                            time.Now(),
-		RunID:                           "run-context-jit",
-		Status:                          "success",
-		ContextRefDiscoverCount:         6,
-		ContextRefResolveCount:          4,
-		ContextEditEstimatedSavedTokens: 128,
-		ContextEditGateDecision:         "allow.threshold_met",
-		ContextSwapbackRelevanceScore:   0.82,
-		ContextLifecycleTierStats:       map[string]int{"hot": 2, "warm": 3, "cold": 1, "pruned": 0},
-		ContextRecapSource:              "task_aware.stage_actions.v1",
+		Time:                             time.Now(),
+		RunID:                            "run-context-jit",
+		Status:                           "success",
+		ContextCompactionOutcomeClass:    "applied",
+		ContextRefDiscoverCount:          6,
+		ContextRefResolveCount:           4,
+		ContextEditEstimatedSavedTokens:  128,
+		ContextEditGateDecision:          "allow.threshold_met",
+		ContextSwapbackRelevanceScore:    0.82,
+		ContextSwapbackRankingStrategy:   "relevance_then_recency",
+		ContextSwapbackCandidateWindow:   8,
+		ContextLifecycleTierStats:        map[string]int{"hot": 2, "warm": 3, "cold": 1, "pruned": 0},
+		ContextTierTransitionReason:      "spill",
+		ContextColdStoreGovernanceAction: "spill",
+		ContextRecoveryConsistencyMarker: "recovery_consistency_ok",
+		ContextRecapSource:               "task_aware.stage_actions.v1",
 	}
 	d.AddRun(rec)
 	d.AddRun(rec)
@@ -739,12 +745,18 @@ func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T
 		t.Fatalf("run records len=%d, want 1", len(items))
 	}
 	got := items[0]
-	if got.ContextRefDiscoverCount != 6 ||
+	if got.ContextCompactionOutcomeClass != "applied" ||
+		got.ContextRefDiscoverCount != 6 ||
 		got.ContextRefResolveCount != 4 ||
 		got.ContextEditEstimatedSavedTokens != 128 ||
 		got.ContextEditGateDecision != "allow.threshold_met" ||
 		got.ContextSwapbackRelevanceScore != 0.82 ||
+		got.ContextSwapbackRankingStrategy != "relevance_then_recency" ||
+		got.ContextSwapbackCandidateWindow != 8 ||
 		got.ContextLifecycleTierStats["warm"] != 3 ||
+		got.ContextTierTransitionReason != "spill" ||
+		got.ContextColdStoreGovernanceAction != "spill" ||
+		got.ContextRecoveryConsistencyMarker != "recovery_consistency_ok" ||
 		got.ContextRecapSource != "task_aware.stage_actions.v1" {
 		t.Fatalf("context jit additive fields mismatch after dedup: %#v", got)
 	}
@@ -753,7 +765,12 @@ func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T
 	rec.ContextEditEstimatedSavedTokens = 96
 	rec.ContextEditGateDecision = "deny.gain_ratio_below_threshold"
 	rec.ContextSwapbackRelevanceScore = 0.65
+	rec.ContextSwapbackRankingStrategy = "recency_only"
+	rec.ContextSwapbackCandidateWindow = 12
 	rec.ContextLifecycleTierStats = map[string]int{"hot": 1, "warm": 2, "cold": 2, "pruned": 1}
+	rec.ContextTierTransitionReason = "spill|prune"
+	rec.ContextColdStoreGovernanceAction = "cleanup|compact"
+	rec.ContextRecoveryConsistencyMarker = "recovery_consistency_drift"
 	rec.ContextRecapSource = "task_aware.stage_actions.v1"
 	d.AddRun(rec)
 
@@ -766,6 +783,8 @@ func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T
 		got.ContextEditEstimatedSavedTokens != 96 ||
 		got.ContextEditGateDecision != "deny.gain_ratio_below_threshold" ||
 		got.ContextSwapbackRelevanceScore != 0.65 ||
+		got.ContextSwapbackRankingStrategy != "recency_only" ||
+		got.ContextSwapbackCandidateWindow != 12 ||
 		got.ContextLifecycleTierStats["pruned"] != 1 {
 		t.Fatalf("context jit additive fields mismatch after replay replacement: %#v", got)
 	}
@@ -782,7 +801,12 @@ func TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent(t *testing.T
 		page.Items[0].ContextEditEstimatedSavedTokens != 96 ||
 		page.Items[0].ContextEditGateDecision != "deny.gain_ratio_below_threshold" ||
 		page.Items[0].ContextSwapbackRelevanceScore != 0.65 ||
+		page.Items[0].ContextSwapbackRankingStrategy != "recency_only" ||
+		page.Items[0].ContextSwapbackCandidateWindow != 12 ||
 		page.Items[0].ContextLifecycleTierStats["hot"] != 1 ||
+		page.Items[0].ContextTierTransitionReason != "spill|prune" ||
+		page.Items[0].ContextColdStoreGovernanceAction != "cleanup|compact" ||
+		page.Items[0].ContextRecoveryConsistencyMarker != "recovery_consistency_drift" ||
 		page.Items[0].ContextRecapSource != "task_aware.stage_actions.v1" {
 		t.Fatalf("context jit QueryRuns additive parse mismatch: %#v", page.Items[0])
 	}
@@ -808,12 +832,18 @@ func TestStoreRunContextJITQueryRunsParserCompatibilityAdditiveNullableDefault(t
 	if got.Status != "success" || got.LatencyMs != 21 {
 		t.Fatalf("existing fields mismatch: %#v", got)
 	}
-	if got.ContextRefDiscoverCount != 0 ||
+	if got.ContextCompactionOutcomeClass != "" ||
+		got.ContextRefDiscoverCount != 0 ||
 		got.ContextRefResolveCount != 0 ||
 		got.ContextEditEstimatedSavedTokens != 0 ||
 		got.ContextEditGateDecision != "" ||
 		got.ContextSwapbackRelevanceScore != 0 ||
+		got.ContextSwapbackRankingStrategy != "" ||
+		got.ContextSwapbackCandidateWindow != 0 ||
 		len(got.ContextLifecycleTierStats) != 0 ||
+		got.ContextTierTransitionReason != "" ||
+		got.ContextColdStoreGovernanceAction != "" ||
+		got.ContextRecoveryConsistencyMarker != "" ||
 		got.ContextRecapSource != "" {
 		t.Fatalf("missing context jit additive fields must resolve to documented defaults: %#v", got)
 	}

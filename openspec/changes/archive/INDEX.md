@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-08 16:39:14
+Updated: 2026-04-09 09:42:11
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -118,3 +118,4 @@ Updated: 2026-04-08 16:39:14
 - 114 -> introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx
 - 115 -> introduce-codebase-consolidation-and-semantic-labeling-contract-a63
 - 116 -> introduce-engineering-and-performance-optimization-contract-a64
+- 117 -> introduce-context-compression-production-hardening-contract-a69

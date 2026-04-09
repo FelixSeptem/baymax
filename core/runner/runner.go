@@ -3043,8 +3043,23 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.ContextSwapbackRelevanceScore > 0 {
 		payload["context_swapback_relevance_score"] = meta.Assemble.Stage.ContextSwapbackRelevanceScore
 	}
+	if meta.Assemble.Stage.ContextSwapbackRankingStrategy != "" {
+		payload["context_swapback_ranking_strategy"] = meta.Assemble.Stage.ContextSwapbackRankingStrategy
+	}
+	if meta.Assemble.Stage.ContextSwapbackCandidateWindow > 0 {
+		payload["context_swapback_candidate_window"] = meta.Assemble.Stage.ContextSwapbackCandidateWindow
+	}
 	if len(meta.Assemble.Stage.ContextLifecycleTierStats) > 0 {
 		payload["context_lifecycle_tier_stats"] = meta.Assemble.Stage.ContextLifecycleTierStats
+	}
+	if meta.Assemble.Stage.ContextTierTransitionReason != "" {
+		payload["context_tier_transition_reason"] = meta.Assemble.Stage.ContextTierTransitionReason
+	}
+	if meta.Assemble.Stage.ContextColdStoreGovernanceAction != "" {
+		payload["context_cold_store_governance_action"] = meta.Assemble.Stage.ContextColdStoreGovernanceAction
+	}
+	if meta.Assemble.Stage.ContextRecoveryConsistencyMarker != "" {
+		payload["context_recovery_consistency_marker"] = meta.Assemble.Stage.ContextRecoveryConsistencyMarker
 	}
 	if meta.Assemble.Stage.ContextRecapSource != "" {
 		payload["context_recap_source"] = meta.Assemble.Stage.ContextRecapSource
@@ -3150,6 +3165,9 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	if meta.Assemble.Stage.CompactionRerankerThresholdDrift > 0 {
 		payload["context_compaction_reranker_threshold_drift"] = meta.Assemble.Stage.CompactionRerankerThresholdDrift
 		payload["ca3_compaction_reranker_threshold_drift"] = meta.Assemble.Stage.CompactionRerankerThresholdDrift
+	}
+	if meta.Assemble.Stage.CompactionOutcomeClass != "" {
+		payload["context_compaction_outcome_class"] = meta.Assemble.Stage.CompactionOutcomeClass
 	}
 	if meta.Assemble.Stage.RetainedEvidenceCount > 0 {
 		payload["context_compaction_retained_evidence_count"] = meta.Assemble.Stage.RetainedEvidenceCount
@@ -3337,6 +3355,10 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 		}
 		if meta.Memory.LifecycleAction != "" {
 			payload["memory_lifecycle_action"] = meta.Memory.LifecycleAction
+			if _, exists := payload["context_recovery_consistency_marker"]; !exists &&
+				strings.Contains(strings.ToLower(meta.Memory.LifecycleAction), "recovery") {
+				payload["context_recovery_consistency_marker"] = meta.Memory.LifecycleAction
+			}
 		}
 	}
 	if meta.Sandbox.Observed {

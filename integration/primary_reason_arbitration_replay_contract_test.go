@@ -808,6 +808,115 @@ func TestReplayContractHooksMiddlewareDriftGuardFailFast(t *testing.T) {
 	}
 }
 
+func TestReplayContractPrimaryReasonArbitrationA69ContextCompressionFixtureSuite(t *testing.T) {
+	raw := mustReadArbitrationReplayFixture(t, "tool", "context_compression_production_success_input.json")
+	out, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON success fixture failed: %v", err)
+	}
+	if strings.TrimSpace(out.Version) != diagnosticsreplay.ArbitrationFixtureVersionContextCompressionV1 {
+		t.Fatalf("fixture version=%q, want %q", out.Version, diagnosticsreplay.ArbitrationFixtureVersionContextCompressionV1)
+	}
+	if len(out.Cases) == 0 {
+		t.Fatal("normalized output cases should not be empty")
+	}
+	replayOut, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("EvaluateArbitrationFixtureJSON replay failed: %v", err)
+	}
+	if !reflect.DeepEqual(out, replayOut) {
+		t.Fatalf("replay output drift first=%#v replay=%#v", out, replayOut)
+	}
+}
+
+func TestPrimaryReasonArbitrationReplayContractA69ContextCompressionDriftGuard(t *testing.T) {
+	tests := []struct {
+		fixture    string
+		wantCode   string
+		messageHas string
+	}{
+		{
+			fixture:    "context_compression_compaction_quality_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextCompactionQualityDrift,
+			messageHas: "compaction quality drift",
+		},
+		{
+			fixture:    "context_compression_rule_eligibility_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextRuleEligibilityDrift,
+			messageHas: "rule eligibility drift",
+		},
+		{
+			fixture:    "context_compression_tier_transition_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextTierTransitionDrift,
+			messageHas: "tier transition drift",
+		},
+		{
+			fixture:    "context_compression_swapback_ranking_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextSwapbackRankingDrift,
+			messageHas: "swapback ranking drift",
+		},
+		{
+			fixture:    "context_compression_cold_store_governance_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextColdStoreGovernanceDrift,
+			messageHas: "cold-store governance drift",
+		},
+		{
+			fixture:    "context_compression_recovery_idempotency_drift_input.json",
+			wantCode:   diagnosticsreplay.ReasonCodeContextRecoveryIdempotencyDrift,
+			messageHas: "recovery idempotency drift",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", tc.fixture),
+			)
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*diagnosticsreplay.ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+			if !strings.Contains(strings.ToLower(vErr.Message), strings.ToLower(tc.messageHas)) {
+				t.Fatalf("error message=%q, want contains %q", vErr.Message, tc.messageHas)
+			}
+		})
+	}
+}
+
+func TestReplayContractA69ContextCompressionMixedFixtureBackwardCompatibility(t *testing.T) {
+	fixtures := []string{
+		"a50_arbitration_success_input.json",
+		"a56_react_success_input.json",
+		"a57_sandbox_egress_success_input.json",
+		"a58_policy_stack_success_input.json",
+		"a59_memory_scope_success_input.json",
+		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a66_state_session_snapshot_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
+		"context_compression_production_success_input.json",
+	}
+	for _, name := range fixtures {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			if _, err := diagnosticsreplay.EvaluateArbitrationFixtureJSON(
+				mustReadArbitrationReplayFixture(t, "tool", name),
+			); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", name, err)
+			}
+		})
+	}
+}
+
 func mustReadArbitrationReplayFixture(t *testing.T, versionDir, name string) []byte {
 	t.Helper()
 	root := repoRootForArbitrationReplay(t)

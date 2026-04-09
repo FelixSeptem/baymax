@@ -703,13 +703,19 @@ type AssembleStage struct {
 	CompactionRerankerProfileVersion  string           `json:"compaction_reranker_profile_version,omitempty"`
 	CompactionRerankerRolloutHit      bool             `json:"compaction_reranker_rollout_hit,omitempty"`
 	CompactionRerankerThresholdDrift  float64          `json:"compaction_reranker_threshold_drift,omitempty"`
+	CompactionOutcomeClass            string           `json:"compaction_outcome_class,omitempty"`
 	RetainedEvidenceCount             int              `json:"retained_evidence_count,omitempty"`
 	ContextRefDiscoverCount           int              `json:"context_ref_discover_count,omitempty"`
 	ContextRefResolveCount            int              `json:"context_ref_resolve_count,omitempty"`
 	ContextEditEstimatedSavedTokens   int              `json:"context_edit_estimated_saved_tokens,omitempty"`
 	ContextEditGateDecision           string           `json:"context_edit_gate_decision,omitempty"`
 	ContextSwapbackRelevanceScore     float64          `json:"context_swapback_relevance_score,omitempty"`
+	ContextSwapbackRankingStrategy    string           `json:"context_swapback_ranking_strategy,omitempty"`
+	ContextSwapbackCandidateWindow    int              `json:"context_swapback_candidate_window,omitempty"`
 	ContextLifecycleTierStats         map[string]int   `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextTierTransitionReason       string           `json:"context_tier_transition_reason,omitempty"`
+	ContextColdStoreGovernanceAction  string           `json:"context_cold_store_governance_action,omitempty"`
+	ContextRecoveryConsistencyMarker  string           `json:"context_recovery_consistency_marker,omitempty"`
 	ContextRecapSource                string           `json:"context_recap_source,omitempty"`
 }
 

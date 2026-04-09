@@ -614,6 +614,13 @@ Invoke-RequiredParallelSteps -Steps @(
         }
     },
     @{
+        StepLabel = "[quality-gate] context compression production contract suites"
+        Command   = {
+            $env:BAYMAX_CONTEXT_COMPRESSION_SKIP_IMPACTED_CONTRACT_SUITES = "1"
+            pwsh -File scripts/check-context-compression-production-contract.ps1
+        }
+    },
+    @{
         StepLabel = "[quality-gate] realtime protocol contract suites"
         Command   = { pwsh -File scripts/check-realtime-protocol-contract.ps1 }
     },

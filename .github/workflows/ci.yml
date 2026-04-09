@@ -317,6 +317,25 @@ jobs:
       - name: Context JIT Organization Contract Gate
         run: bash scripts/check-context-jit-organization-contract.sh
 
+  context-compression-production-contract-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Context Compression Production Contract Gate
+        run: bash scripts/check-context-compression-production-contract.sh
+
   realtime-protocol-contract-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

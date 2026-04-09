@@ -1096,3 +1096,127 @@ func TestReplayContractTracingEvalMixedFixtureBackwardCompatibility(t *testing.T
 		})
 	}
 }
+
+func TestReplayContractContextCompressionProductionFixtureSuite(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "context-compression-production",
+			input:    "context_compression_production_success_input.json",
+			expected: "context_compression_production_success_expected.json",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			input := mustReadFixture(t, tc.input)
+			expectedRaw := mustReadFixture(t, tc.expected)
+			got, err := EvaluateArbitrationFixtureJSON(input)
+			if err != nil {
+				t.Fatalf("EvaluateArbitrationFixtureJSON error: %v", err)
+			}
+			var want ArbitrationReplayOutput
+			if err := json.Unmarshal(expectedRaw, &want); err != nil {
+				t.Fatalf("unmarshal expected fixture: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("arbitration replay output mismatch\ngot=%#v\nwant=%#v", got, want)
+			}
+			replay, err := EvaluateArbitrationFixtureJSON(input)
+			if err != nil {
+				t.Fatalf("EvaluateArbitrationFixtureJSON replay error: %v", err)
+			}
+			if !reflect.DeepEqual(got, replay) {
+				t.Fatalf("arbitration replay output should be deterministic: first=%#v replay=%#v", got, replay)
+			}
+		})
+	}
+}
+
+func TestReplayContractContextCompressionProductionDriftClassification(t *testing.T) {
+	tests := []struct {
+		fixture    string
+		wantCode   string
+		wantInText string
+	}{
+		{
+			fixture:    "context_compression_compaction_quality_drift_input.json",
+			wantCode:   ReasonCodeContextCompactionQualityDrift,
+			wantInText: "compaction quality drift",
+		},
+		{
+			fixture:    "context_compression_rule_eligibility_drift_input.json",
+			wantCode:   ReasonCodeContextRuleEligibilityDrift,
+			wantInText: "rule eligibility drift",
+		},
+		{
+			fixture:    "context_compression_tier_transition_drift_input.json",
+			wantCode:   ReasonCodeContextTierTransitionDrift,
+			wantInText: "tier transition drift",
+		},
+		{
+			fixture:    "context_compression_swapback_ranking_drift_input.json",
+			wantCode:   ReasonCodeContextSwapbackRankingDrift,
+			wantInText: "swapback ranking drift",
+		},
+		{
+			fixture:    "context_compression_cold_store_governance_drift_input.json",
+			wantCode:   ReasonCodeContextColdStoreGovernanceDrift,
+			wantInText: "cold-store governance drift",
+		},
+		{
+			fixture:    "context_compression_recovery_idempotency_drift_input.json",
+			wantCode:   ReasonCodeContextRecoveryIdempotencyDrift,
+			wantInText: "recovery idempotency drift",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.fixture, func(t *testing.T) {
+			_, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, tc.fixture))
+			if err == nil {
+				t.Fatalf("fixture %q should fail", tc.fixture)
+			}
+			vErr, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("error type=%T, want *ValidationError", err)
+			}
+			if vErr.Code != tc.wantCode {
+				t.Fatalf("error code=%q, want %q", vErr.Code, tc.wantCode)
+			}
+			if tc.wantInText != "" && !strings.Contains(strings.ToLower(vErr.Message), strings.ToLower(tc.wantInText)) {
+				t.Fatalf("error message=%q, want contains %q", vErr.Message, tc.wantInText)
+			}
+		})
+	}
+}
+
+func TestReplayContractContextCompressionProductionMixedFixtureBackwardCompatibility(t *testing.T) {
+	fixtures := []string{
+		"a50_arbitration_success_input.json",
+		"a55_observability_success_input.json",
+		"a56_react_success_input.json",
+		"a57_sandbox_egress_success_input.json",
+		"a58_policy_stack_success_input.json",
+		"a59_memory_scope_success_input.json",
+		"a60_budget_admission_success_input.json",
+		"a61_otel_semconv_success_input.json",
+		"a65_hooks_middleware_success_input.json",
+		"a66_state_session_snapshot_success_input.json",
+		"context_reference_first_success_input.json",
+		"context_relevance_swapback_success_input.json",
+		"context_lifecycle_tiering_success_input.json",
+		"context_compression_production_success_input.json",
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture, func(t *testing.T) {
+			if _, err := EvaluateArbitrationFixtureJSON(mustReadFixture(t, fixture)); err != nil {
+				t.Fatalf("fixture %q should parse and evaluate without regression: %v", fixture, err)
+			}
+		})
+	}
+}

@@ -174,12 +174,18 @@ type RunRecord struct {
 	CA3CompactionRerankerRolloutHit             bool                              `json:"ca3_compaction_reranker_rollout_hit,omitempty"`
 	CA3CompactionRerankerThresholdDrift         float64                           `json:"ca3_compaction_reranker_threshold_drift,omitempty"`
 	CA3RetainedEvidence                         int                               `json:"ca3_compaction_retained_evidence_count,omitempty"`
+	ContextCompactionOutcomeClass               string                            `json:"context_compaction_outcome_class,omitempty"`
 	ContextRefDiscoverCount                     int                               `json:"context_ref_discover_count,omitempty"`
 	ContextRefResolveCount                      int                               `json:"context_ref_resolve_count,omitempty"`
 	ContextEditEstimatedSavedTokens             int                               `json:"context_edit_estimated_saved_tokens,omitempty"`
 	ContextEditGateDecision                     string                            `json:"context_edit_gate_decision,omitempty"`
 	ContextSwapbackRelevanceScore               float64                           `json:"context_swapback_relevance_score,omitempty"`
+	ContextSwapbackRankingStrategy              string                            `json:"context_swapback_ranking_strategy,omitempty"`
+	ContextSwapbackCandidateWindow              int                               `json:"context_swapback_candidate_window,omitempty"`
 	ContextLifecycleTierStats                   map[string]int                    `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextTierTransitionReason                 string                            `json:"context_tier_transition_reason,omitempty"`
+	ContextColdStoreGovernanceAction            string                            `json:"context_cold_store_governance_action,omitempty"`
+	ContextRecoveryConsistencyMarker            string                            `json:"context_recovery_consistency_marker,omitempty"`
 	ContextRecapSource                          string                            `json:"context_recap_source,omitempty"`
 	RecapStatus                                 string                            `json:"recap_status,omitempty"`
 	TeamID                                      string                            `json:"team_id,omitempty"`

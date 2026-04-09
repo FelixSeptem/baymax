@@ -170,6 +170,12 @@ if ! BAYMAX_CONTEXT_JIT_SKIP_IMPACTED_CONTRACT_SUITES=1 bash scripts/check-conte
   exit 1
 fi
 
+echo "[quality-gate] context compression production contract suites"
+if ! BAYMAX_CONTEXT_COMPRESSION_SKIP_IMPACTED_CONTRACT_SUITES=1 bash scripts/check-context-compression-production-contract.sh; then
+  echo "[quality-gate][context-compression-production-contract] context compression production contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] realtime protocol contract suites"
 if ! bash scripts/check-realtime-protocol-contract.sh; then
   echo "[quality-gate][realtime-protocol-contract] realtime protocol contract suites failed"

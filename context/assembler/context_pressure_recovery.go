@@ -59,6 +59,11 @@ type spillRecord struct {
 	SpilledAt    time.Time `json:"spilled_at"`
 }
 
+type swapBackCandidate struct {
+	rec       spillRecord
+	relevance float64
+}
+
 type SpillBackend interface {
 	Append(ctx context.Context, rec spillRecord) error
 	LoadByRun(ctx context.Context, runID string, limit int) ([]spillRecord, error)
@@ -79,14 +84,22 @@ type ObjectSpillBackend interface {
 }
 
 type fileSpillBackend struct {
-	path   string
-	opts   fileSpillBackendOptions
-	mu     sync.Mutex
-	handle *os.File
+	path               string
+	opts               fileSpillBackendOptions
+	mu                 sync.Mutex
+	handle             *os.File
+	lastGovernance     string
+	lastRecoveryMarker string
 }
 
 type fileSpillBackendOptions struct {
 	ReuseHandle bool
+	ColdStore   runtimeconfig.RuntimeContextJITColdStoreConfig
+}
+
+type spillGovernanceReporter interface {
+	LastGovernanceAction() string
+	LastRecoveryMarker() string
 }
 
 func newFileSpillBackendWithOptions(path string, opts fileSpillBackendOptions) *fileSpillBackend {
@@ -106,6 +119,8 @@ func (f *fileSpillBackend) AppendBatch(ctx context.Context, recs []spillRecord) 
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastGovernance = ""
+	f.lastRecoveryMarker = ""
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -115,16 +130,69 @@ func (f *fileSpillBackend) AppendBatch(ctx context.Context, recs []spillRecord) 
 	if err := f.ensurePathLocked(); err != nil {
 		return err
 	}
+
+	working, malformed, err := f.readRecordsLocked()
+	if err != nil {
+		return err
+	}
+	if malformed > 0 {
+		f.lastRecoveryMarker = "cold_store_recovered_malformed_lines"
+		if f.opts.ColdStore.Cleanup.Enabled {
+			f.lastGovernance = mergeGovernanceAction(f.lastGovernance, "cleanup")
+		}
+	}
+
+	working = append(working, recs...)
+	countAfterAppend := len(working)
+	working = applyColdStoreRetention(working, f.opts.ColdStore.Retention)
+	if len(working) < countAfterAppend {
+		f.lastGovernance = mergeGovernanceAction(f.lastGovernance, "retention")
+	}
+	beforeQuota := len(working)
+	working = applyColdStoreQuota(working, f.opts.ColdStore.Quota.MaxBytes)
+	if len(working) < beforeQuota {
+		f.lastGovernance = mergeGovernanceAction(f.lastGovernance, "quota")
+	}
+	if f.opts.ColdStore.Compact.Enabled {
+		denom := countAfterAppend
+		if denom > 0 {
+			fragmentation := float64(denom-len(working)) / float64(denom)
+			if fragmentation >= f.opts.ColdStore.Compact.MinFragmentationRatio {
+				f.lastGovernance = mergeGovernanceAction(f.lastGovernance, "compact")
+			}
+		}
+	}
+
+	return f.rewriteRecordsLocked(working)
+}
+
+func (f *fileSpillBackend) LastGovernanceAction() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return strings.TrimSpace(f.lastGovernance)
+}
+
+func (f *fileSpillBackend) LastRecoveryMarker() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return strings.TrimSpace(f.lastRecoveryMarker)
+}
+
+func (f *fileSpillBackend) rewriteRecordsLocked(records []spillRecord) error {
+	if f.handle != nil {
+		_ = f.handle.Close()
+		f.handle = nil
+	}
 	var output bytes.Buffer
-	for i := range recs {
-		row, err := json.Marshal(recs[i])
+	for i := range records {
+		row, err := json.Marshal(records[i])
 		if err != nil {
 			return fmt.Errorf("marshal spill record: %w", err)
 		}
 		output.Write(row)
 		output.WriteByte('\n')
 	}
-	fd, release, err := f.acquireWriteHandleLocked()
+	fd, release, err := f.acquireWriteRewriteHandleLocked()
 	if err != nil {
 		return err
 	}
@@ -156,40 +224,36 @@ func (f *fileSpillBackend) ensurePathLocked() error {
 	return nil
 }
 
-func (f *fileSpillBackend) acquireWriteHandleLocked() (*os.File, func(), error) {
+func (f *fileSpillBackend) acquireWriteRewriteHandleLocked() (*os.File, func(), error) {
 	if f.opts.ReuseHandle {
-		if f.handle == nil {
-			fd, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-			if err != nil {
-				return nil, nil, fmt.Errorf("open spill file: %w", err)
-			}
-			f.handle = fd
+		fd, err := os.OpenFile(f.path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open spill file: %w", err)
 		}
-		return f.handle, func() {}, nil
+		return fd, func() { _ = fd.Close() }, nil
 	}
-	fd, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	fd, err := os.OpenFile(f.path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open spill file: %w", err)
 	}
 	return fd, func() { _ = fd.Close() }, nil
 }
 
-func (f *fileSpillBackend) LoadByRun(_ context.Context, runID string, limit int) ([]spillRecord, error) {
-	if strings.TrimSpace(f.path) == "" {
-		return nil, nil
-	}
+func (f *fileSpillBackend) readRecordsLocked() ([]spillRecord, int, error) {
 	raw, err := os.ReadFile(f.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, 0, nil
 		}
-		return nil, fmt.Errorf("read spill file: %w", err)
+		return nil, 0, fmt.Errorf("read spill file: %w", err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	if len(lines) == 1 && strings.TrimSpace(lines[0]) == "" {
-		return nil, nil
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil, 0, nil
 	}
+	lines := strings.Split(trimmed, "\n")
 	out := make([]spillRecord, 0, len(lines))
+	malformed := 0
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -197,8 +261,132 @@ func (f *fileSpillBackend) LoadByRun(_ context.Context, runID string, limit int)
 		}
 		var rec spillRecord
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			malformed++
 			continue
 		}
+		out = append(out, rec)
+	}
+	return out, malformed, nil
+}
+
+func mergeGovernanceAction(current string, candidate string) string {
+	currentNormalized := normalizeGovernanceAction(current)
+	candidateNormalized := normalizeGovernanceAction(candidate)
+	if candidateNormalized == "" {
+		return currentNormalized
+	}
+	if currentNormalized == "" {
+		return candidateNormalized
+	}
+	priority := map[string]int{
+		"retention_applied": 1,
+		"cleanup_applied":   2,
+		"compact_applied":   3,
+		"quota_cleanup":     4,
+	}
+	if priority[candidateNormalized] >= priority[currentNormalized] {
+		return candidateNormalized
+	}
+	return currentNormalized
+}
+
+func normalizeGovernanceAction(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "retention", "retention_applied":
+		return "retention_applied"
+	case "cleanup", "cleanup_applied":
+		return "cleanup_applied"
+	case "compact", "compact_applied":
+		return "compact_applied"
+	case "quota", "quota_cleanup":
+		return "quota_cleanup"
+	default:
+		return ""
+	}
+}
+
+func applyColdStoreRetention(
+	records []spillRecord,
+	cfg runtimeconfig.RuntimeContextJITColdStoreRetentionConfig,
+) []spillRecord {
+	if len(records) == 0 {
+		return records
+	}
+	working := append([]spillRecord(nil), records...)
+	if cfg.MaxAgeMS > 0 {
+		cutoff := time.Now().UTC().Add(-time.Duration(cfg.MaxAgeMS) * time.Millisecond)
+		filtered := make([]spillRecord, 0, len(working))
+		for i := range working {
+			rec := working[i]
+			if !rec.SpilledAt.IsZero() && rec.SpilledAt.Before(cutoff) {
+				continue
+			}
+			filtered = append(filtered, rec)
+		}
+		working = filtered
+	}
+	if cfg.MaxRecords > 0 && len(working) > cfg.MaxRecords {
+		working = append([]spillRecord(nil), working[len(working)-cfg.MaxRecords:]...)
+	}
+	return working
+}
+
+func applyColdStoreQuota(records []spillRecord, maxBytes int) []spillRecord {
+	if len(records) == 0 {
+		return records
+	}
+	if maxBytes <= 0 {
+		return nil
+	}
+	sizes := make([]int, len(records))
+	total := 0
+	for i := range records {
+		sizes[i] = estimatedSpillRecordBytes(records[i])
+		total += sizes[i]
+	}
+	start := 0
+	for total > maxBytes && start < len(records) {
+		total -= sizes[start]
+		start++
+	}
+	if start >= len(records) {
+		return nil
+	}
+	return append([]spillRecord(nil), records[start:]...)
+}
+
+func estimatedSpillRecordBytes(rec spillRecord) int {
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		return len([]byte(rec.Content)) + 128
+	}
+	return len(raw) + 1
+}
+
+func (f *fileSpillBackend) LoadByRun(_ context.Context, runID string, limit int) ([]spillRecord, error) {
+	if strings.TrimSpace(f.path) == "" {
+		return nil, nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastGovernance = ""
+	f.lastRecoveryMarker = ""
+	records, malformed, err := f.readRecordsLocked()
+	if err != nil {
+		return nil, err
+	}
+	if malformed > 0 {
+		f.lastRecoveryMarker = "cold_store_recovered_malformed_lines"
+		if f.opts.ColdStore.Cleanup.Enabled {
+			f.lastGovernance = mergeGovernanceAction(f.lastGovernance, "cleanup")
+			if rewriteErr := f.rewriteRecordsLocked(records); rewriteErr != nil {
+				return nil, rewriteErr
+			}
+		}
+	}
+	out := make([]spillRecord, 0, len(records))
+	for i := range records {
+		rec := records[i]
 		if strings.TrimSpace(rec.RunID) != strings.TrimSpace(runID) {
 			continue
 		}
@@ -207,7 +395,7 @@ func (f *fileSpillBackend) LoadByRun(_ context.Context, runID string, limit int)
 	if limit <= 0 || len(out) <= limit {
 		return out, nil
 	}
-	return out[:limit], nil
+	return out[len(out)-limit:], nil
 }
 
 func (a *Assembler) applyPressureCompactionAndSwapback(
@@ -228,11 +416,22 @@ func (a *Assembler) applyPressureCompactionAndSwapback(
 	if a.runtimeContextConfig != nil {
 		runtimeContextCfg = a.runtimeContextConfig()
 	}
+	outcome.Stage.ContextSwapbackRankingStrategy = strings.ToLower(strings.TrimSpace(runtimeContextCfg.JIT.SwapBack.RankingStrategy))
+	outcome.Stage.ContextSwapbackCandidateWindow = runtimeContextCfg.JIT.SwapBack.CandidateWindow
 
-	swapBackCount, swapBackRelevance, err := a.swapBackIfNeeded(ctx, req, &modelReq, pressureConfig, runtimeContextCfg, state)
+	swapBackCount, swapBackRelevance, swapBackGovernanceAction, swapBackRecoveryMarker, err := a.swapBackIfNeeded(
+		ctx,
+		req,
+		&modelReq,
+		pressureConfig,
+		runtimeContextCfg,
+		state,
+	)
 	if err != nil {
 		return modelReq, outcome, decision, err
 	}
+	coldStoreGovernanceAction := swapBackGovernanceAction
+	recoveryConsistencyMarker := swapBackRecoveryMarker
 
 	usageTokens := a.countContextTokens(ctx, req, modelReq, pressureConfig, state)
 	thresholdsPercent, thresholdsTokens := resolvePressureThresholds(pressureConfig, stage)
@@ -322,7 +521,12 @@ func (a *Assembler) applyPressureCompactionAndSwapback(
 		}
 		if pressureConfig.Prune.Enabled {
 			var pruned []spillRecord
-			modelReq.Messages, pruned, retainedEvidenceCount = pruneMessages(modelReq.Messages, pressureConfig, state)
+			modelReq.Messages, pruned, retainedEvidenceCount = pruneMessages(
+				modelReq.Messages,
+				pressureConfig,
+				state,
+				runtimeContextCfg.JIT.Compaction.RuleEligibility,
+			)
 			_ = pruned
 		}
 	case pressureZoneEmergency:
@@ -354,13 +558,30 @@ func (a *Assembler) applyPressureCompactionAndSwapback(
 			rerankerThresholdDrift = compaction.RerankerThresholdDrift
 		}
 		if pressureConfig.Prune.Enabled {
-			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(modelReq.Messages, pressureConfig, state)
+			modelReq.Messages, removed, retainedEvidenceCount = pruneMessages(
+				modelReq.Messages,
+				pressureConfig,
+				state,
+				runtimeContextCfg.JIT.Compaction.RuleEligibility,
+			)
 		}
 		if pressureConfig.Spill.Enabled {
-			spillCount, err = a.spillRecords(ctx, req, stage, removed, pressureConfig, state)
+			var spillGovernanceAction string
+			var spillRecoveryMarker string
+			spillCount, spillGovernanceAction, spillRecoveryMarker, err = a.spillRecords(
+				ctx,
+				req,
+				stage,
+				removed,
+				pressureConfig,
+				runtimeContextCfg.JIT.ColdStore,
+				state,
+			)
 			if err != nil {
 				return modelReq, outcome, decision, err
 			}
+			coldStoreGovernanceAction = mergeGovernanceAction(coldStoreGovernanceAction, spillGovernanceAction)
+			recoveryConsistencyMarker = mergeRecoveryMarker(recoveryConsistencyMarker, spillRecoveryMarker)
 		}
 	}
 
@@ -427,11 +648,23 @@ func (a *Assembler) applyPressureCompactionAndSwapback(
 	if rerankerThresholdDrift > 0 {
 		outcome.Stage.CompactionRerankerThresholdDrift = rerankerThresholdDrift
 	}
+	outcome.Stage.CompactionOutcomeClass = classifyCompactionOutcomeClass(
+		outcome.Stage.CompactionMode,
+		outcome.Stage.CompactionFallback,
+		outcome.Stage.CompactionFallbackReason,
+		outcome.Stage.CompactionQualityScore,
+	)
 	if retainedEvidenceCount > 0 {
 		outcome.Stage.RetainedEvidenceCount += retainedEvidenceCount
 	}
 	if swapBackRelevance > 0 {
 		outcome.Stage.ContextSwapbackRelevanceScore = swapBackRelevance
+	}
+	if strings.TrimSpace(coldStoreGovernanceAction) != "" {
+		outcome.Stage.ContextColdStoreGovernanceAction = coldStoreGovernanceAction
+	}
+	if strings.TrimSpace(recoveryConsistencyMarker) != "" {
+		outcome.Stage.ContextRecoveryConsistencyMarker = recoveryConsistencyMarker
 	}
 	if runtimeContextCfg.JIT.LifecycleTiering.Enabled {
 		tierStats, lifecycleAction := applyLifecycleTiering(state, now, runtimeContextCfg.JIT.LifecycleTiering)
@@ -445,6 +678,7 @@ func (a *Assembler) applyPressureCompactionAndSwapback(
 		}
 		if strings.TrimSpace(lifecycleAction) != "" {
 			outcome.Stage.MemoryLifecycleAction = lifecycleAction
+			outcome.Stage.ContextTierTransitionReason = lifecycleAction
 		}
 	}
 	return modelReq, outcome, decision, nil
@@ -459,11 +693,17 @@ func (a *Assembler) applyCompaction(
 	stage string,
 ) (pressureCompactionResult, error) {
 	pressureConfig := cfg.CA3
+	runtimeContextCfg := runtimeconfig.DefaultConfig().Runtime.Context
+	if a.runtimeContextConfig != nil {
+		runtimeContextCfg = a.runtimeContextConfig()
+	}
+	stagePolicy := resolveCompactionStagePolicy(pressureStagePolicy(cfg, stage), runtimeContextCfg.JIT.Compaction.FallbackPolicy)
+	pressureConfig.Compaction.Quality.Threshold = runtimeContextCfg.JIT.Compaction.QualityThreshold
 	request := pressureCompactionRequest{
 		AssembleReq: assembleReq,
 		ModelReq:    modelReq,
 		Config:      pressureConfig,
-		StagePolicy: pressureStagePolicy(cfg, stage),
+		StagePolicy: stagePolicy,
 	}
 	mode := normalizeCompactionMode(pressureConfig.Compaction.Mode)
 	primary, err := a.compactorFor(mode, assembleReq, pressureConfig.Compaction.Embedding, pressureConfig.Compaction.Reranker)
@@ -490,7 +730,7 @@ func (a *Assembler) applyCompaction(
 		recordCompactionAccess(result.Messages, state)
 		return result, nil
 	}
-	if mode != "semantic" || !isBestEffortPolicy(pressureStagePolicy(cfg, stage)) {
+	if mode != "semantic" || !isBestEffortPolicy(stagePolicy) {
 		return pressureCompactionResult{}, err
 	}
 	fallback := (&truncateCompactor{})
@@ -637,6 +877,42 @@ func normalizeCompactionMode(mode string) string {
 	return out
 }
 
+func resolveCompactionStagePolicy(stagePolicy string, runtimeFallbackPolicy string) string {
+	stagePolicy = strings.ToLower(strings.TrimSpace(stagePolicy))
+	fallbackPolicy := strings.ToLower(strings.TrimSpace(runtimeFallbackPolicy))
+	if fallbackPolicy == runtimeconfig.RuntimeContextJITCompactionFallbackPolicyFailFast {
+		return runtimeconfig.RuntimeContextJITCompactionFallbackPolicyFailFast
+	}
+	if stagePolicy != "" {
+		return stagePolicy
+	}
+	if fallbackPolicy != "" {
+		return fallbackPolicy
+	}
+	return runtimeconfig.RuntimeContextJITCompactionFallbackPolicyBestEffort
+}
+
+func classifyCompactionOutcomeClass(mode string, fallback bool, fallbackReason string, qualityScore float64) string {
+	normalizedMode := strings.ToLower(strings.TrimSpace(mode))
+	if normalizedMode == "" && !fallback && qualityScore <= 0 {
+		return ""
+	}
+	if !fallback {
+		return "applied"
+	}
+	reason := strings.ToLower(strings.TrimSpace(fallbackReason))
+	if reason == "quality_below_threshold" {
+		return "degraded"
+	}
+	if reason == "semantic_compaction_error" {
+		return "fallback"
+	}
+	if strings.Contains(reason, "error") {
+		return "fallback"
+	}
+	return "fallback"
+}
+
 func recordCompactionAccess(messages []types.Message, state *pressureRunState) {
 	if state == nil {
 		return
@@ -653,14 +929,15 @@ func (a *Assembler) spillRecords(
 	stage string,
 	records []spillRecord,
 	cfg runtimeconfig.ContextAssemblerCA3Config,
+	coldStoreCfg runtimeconfig.RuntimeContextJITColdStoreConfig,
 	state *pressureRunState,
-) (int, error) {
+) (int, string, string, error) {
 	if len(records) == 0 {
-		return 0, nil
+		return 0, "", "", nil
 	}
-	backend, err := a.ensureSpillBackend(cfg)
+	backend, err := a.ensureSpillBackend(cfg, coldStoreCfg)
 	if err != nil {
-		return 0, err
+		return 0, "", "", err
 	}
 	pending := make([]spillRecord, 0, len(records))
 	for _, rec := range records {
@@ -675,7 +952,7 @@ func (a *Assembler) spillRecords(
 		pending = append(pending, rec)
 	}
 	if len(pending) == 0 {
-		return 0, nil
+		return 0, "", "", nil
 	}
 	batchSize := cfg.Spill.File.BatchFlushSize
 	if batchSize <= 0 {
@@ -691,12 +968,12 @@ func (a *Assembler) spillRecords(
 		chunk := pending[i:end]
 		if hasBatchWriter {
 			if err := batchWriter.AppendBatch(ctx, chunk); err != nil {
-				return written, err
+				return written, "", "", err
 			}
 		} else {
 			for _, rec := range chunk {
 				if err := backend.Append(ctx, rec); err != nil {
-					return written, err
+					return written, "", "", err
 				}
 			}
 		}
@@ -710,7 +987,11 @@ func (a *Assembler) spillRecords(
 			written++
 		}
 	}
-	return written, nil
+	governanceAction, recoveryMarker := coldStoreBackendReport(backend)
+	if recoveryMarker == "" {
+		recoveryMarker = "idempotent"
+	}
+	return written, governanceAction, recoveryMarker, nil
 }
 
 func (a *Assembler) swapBackIfNeeded(
@@ -720,20 +1001,28 @@ func (a *Assembler) swapBackIfNeeded(
 	cfg runtimeconfig.ContextAssemblerCA3Config,
 	runtimeContextCfg runtimeconfig.RuntimeContextConfig,
 	state *pressureRunState,
-) (int, float64, error) {
+) (int, float64, string, string, error) {
 	if !cfg.Spill.Enabled || strings.ToLower(strings.TrimSpace(cfg.Spill.Backend)) != "file" {
-		return 0, 0, nil
+		return 0, 0, "", "", nil
 	}
 	if cfg.Spill.SwapBackLimit <= 0 {
-		return 0, 0, nil
+		return 0, 0, "", "", nil
 	}
-	backend, err := a.ensureSpillBackend(cfg)
+	backend, err := a.ensureSpillBackend(cfg, runtimeContextCfg.JIT.ColdStore)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", "", err
 	}
-	recs, err := backend.LoadByRun(ctx, req.RunID, cfg.Spill.SwapBackLimit)
+	candidateWindow := runtimeContextCfg.JIT.SwapBack.CandidateWindow
+	if candidateWindow <= 0 {
+		candidateWindow = cfg.Spill.SwapBackLimit
+	}
+	loadLimit := candidateWindow
+	if loadLimit < cfg.Spill.SwapBackLimit {
+		loadLimit = cfg.Spill.SwapBackLimit
+	}
+	recs, err := backend.LoadByRun(ctx, req.RunID, loadLimit)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", "", err
 	}
 	appended := 0
 	maxRelevance := 0.0
@@ -742,6 +1031,8 @@ func (a *Assembler) swapBackIfNeeded(
 		minScore = runtimeContextCfg.JIT.SwapBack.MinRelevanceScore
 	}
 	now := a.now()
+	candidates := make([]swapBackCandidate, 0, len(recs))
+	dedupCount := 0
 	for _, rec := range recs {
 		if runtimeContextCfg.JIT.LifecycleTiering.Enabled &&
 			runtimeContextCfg.JIT.LifecycleTiering.ColdTTLMS > 0 &&
@@ -750,27 +1041,101 @@ func (a *Assembler) swapBackIfNeeded(
 			continue
 		}
 		if _, ok := state.SpilledByRun[rec.OriginRef]; ok {
+			dedupCount++
 			continue
 		}
 		relevance := scoreSwapBackRelevance(req.Input, rec)
 		if relevance > maxRelevance {
 			maxRelevance = relevance
 		}
-		if relevance < minScore {
+		candidates = append(candidates, swapBackCandidate{rec: rec, relevance: relevance})
+	}
+	sortSwapBackCandidates(candidates, runtimeContextCfg.JIT.SwapBack.RankingStrategy)
+	if candidateWindow > 0 && len(candidates) > candidateWindow {
+		candidates = candidates[:candidateWindow]
+	}
+	for _, candidate := range candidates {
+		if candidate.relevance < minScore {
 			continue
 		}
 		modelReq.Messages = append(modelReq.Messages, types.Message{
 			Role:    "system",
-			Content: "swap_back_context:" + rec.Content,
+			Content: "swap_back_context:" + candidate.rec.Content,
 		})
-		state.SpilledByRun[rec.OriginRef] = rec
+		state.SpilledByRun[candidate.rec.OriginRef] = candidate.rec
 		if state.SpillTierByRef == nil {
 			state.SpillTierByRef = map[string]string{}
 		}
-		state.SpillTierByRef[rec.OriginRef] = "cold"
+		state.SpillTierByRef[candidate.rec.OriginRef] = "cold"
 		appended++
+		if appended >= cfg.Spill.SwapBackLimit {
+			break
+		}
 	}
-	return appended, maxRelevance, nil
+	governanceAction, recoveryMarker := coldStoreBackendReport(backend)
+	if strings.TrimSpace(recoveryMarker) == "" {
+		if dedupCount > 0 {
+			recoveryMarker = "deduplicated"
+		} else {
+			recoveryMarker = "idempotent"
+		}
+	}
+	return appended, maxRelevance, governanceAction, recoveryMarker, nil
+}
+
+func coldStoreBackendReport(backend SpillBackend) (string, string) {
+	reporter, ok := backend.(spillGovernanceReporter)
+	if !ok {
+		return "", ""
+	}
+	return strings.TrimSpace(reporter.LastGovernanceAction()), strings.TrimSpace(reporter.LastRecoveryMarker())
+}
+
+func mergeRecoveryMarker(current string, candidate string) string {
+	current = strings.ToLower(strings.TrimSpace(current))
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	if candidate == "" {
+		return current
+	}
+	if current == "" {
+		return candidate
+	}
+	priority := map[string]int{
+		"idempotent":                           1,
+		"deduplicated":                         2,
+		"cold_store_recovered_malformed_lines": 3,
+	}
+	if priority[candidate] >= priority[current] {
+		return candidate
+	}
+	return current
+}
+
+func sortSwapBackCandidates(candidates []swapBackCandidate, strategy string) {
+	resolved := normalizeSwapBackRankingStrategy(strategy)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if resolved == runtimeconfig.RuntimeContextJITSwapBackRankingStrategyRelevanceThenRecency {
+			if left.relevance != right.relevance {
+				return left.relevance > right.relevance
+			}
+		}
+		if !left.rec.SpilledAt.Equal(right.rec.SpilledAt) {
+			return left.rec.SpilledAt.After(right.rec.SpilledAt)
+		}
+		return strings.Compare(strings.TrimSpace(left.rec.OriginRef), strings.TrimSpace(right.rec.OriginRef)) < 0
+	})
+}
+
+func normalizeSwapBackRankingStrategy(strategy string) string {
+	normalized := strings.ToLower(strings.TrimSpace(strategy))
+	switch normalized {
+	case runtimeconfig.RuntimeContextJITSwapBackRankingStrategyRecencyOnly:
+		return runtimeconfig.RuntimeContextJITSwapBackRankingStrategyRecencyOnly
+	default:
+		return runtimeconfig.RuntimeContextJITSwapBackRankingStrategyRelevanceThenRecency
+	}
 }
 
 func applyLifecycleTiering(
@@ -968,7 +1333,10 @@ func mergeLifecycleAction(current string, candidate string) string {
 	return strings.TrimSpace(current)
 }
 
-func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Config) (SpillBackend, error) {
+func (a *Assembler) ensureSpillBackend(
+	cfg runtimeconfig.ContextAssemblerCA3Config,
+	coldStoreCfg runtimeconfig.RuntimeContextJITColdStoreConfig,
+) (SpillBackend, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.Spill.Backend))
 	if backend == "" {
 		backend = "file"
@@ -978,6 +1346,13 @@ func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Conf
 		strings.TrimSpace(cfg.Spill.Path),
 		fmt.Sprintf("reuse=%t", cfg.Spill.File.ReuseHandle),
 		fmt.Sprintf("batch=%d", cfg.Spill.File.BatchFlushSize),
+		fmt.Sprintf("retention_age_ms=%d", coldStoreCfg.Retention.MaxAgeMS),
+		fmt.Sprintf("retention_max_records=%d", coldStoreCfg.Retention.MaxRecords),
+		fmt.Sprintf("quota_max_bytes=%d", coldStoreCfg.Quota.MaxBytes),
+		fmt.Sprintf("cleanup_enabled=%t", coldStoreCfg.Cleanup.Enabled),
+		fmt.Sprintf("cleanup_batch=%d", coldStoreCfg.Cleanup.BatchSize),
+		fmt.Sprintf("compact_enabled=%t", coldStoreCfg.Compact.Enabled),
+		fmt.Sprintf("compact_min_frag=%.6f", coldStoreCfg.Compact.MinFragmentationRatio),
 	}, "|")
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -991,6 +1366,7 @@ func (a *Assembler) ensureSpillBackend(cfg runtimeconfig.ContextAssemblerCA3Conf
 	case "file":
 		a.spillBackend = newFileSpillBackendWithOptions(cfg.Spill.Path, fileSpillBackendOptions{
 			ReuseHandle: cfg.Spill.File.ReuseHandle,
+			ColdStore:   coldStoreCfg,
 		})
 		a.spillBackendKey = key
 		return a.spillBackend, nil
@@ -1260,7 +1636,12 @@ func tokenizerForEstimate(model string) (*tiktoken.Tiktoken, error) {
 	return nil, tiktokenDefaultErr
 }
 
-func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerCA3Config, state *pressureRunState) ([]types.Message, []spillRecord, int) {
+func pruneMessages(
+	messages []types.Message,
+	cfg runtimeconfig.ContextAssemblerCA3Config,
+	state *pressureRunState,
+	ruleEligibility runtimeconfig.RuntimeContextJITCompactionRuleEligibility,
+) ([]types.Message, []spillRecord, int) {
 	if len(messages) == 0 {
 		return messages, nil, 0
 	}
@@ -1273,11 +1654,21 @@ func pruneMessages(messages []types.Message, cfg runtimeconfig.ContextAssemblerC
 	removed := make([]spillRecord, 0)
 	retained := retainedEvidenceCount(working, cfg.Compaction.Evidence)
 	for estimateContextTokens(types.ModelRequest{Messages: working}) > targetTokens {
-		idx := selectPruneCandidate(working, cfg, state, cfg.Compaction.Evidence)
+		idx := selectPruneCandidate(
+			working,
+			cfg,
+			state,
+			cfg.Compaction.Evidence,
+			ruleEligibility,
+			retained,
+		)
 		if idx < 0 {
 			break
 		}
 		msg := working[idx]
+		if shouldRetainEvidence(idx, len(working), msg.Content, cfg.Compaction.Evidence) && retained > 0 {
+			retained--
+		}
 		removed = append(removed, spillRecord{
 			OriginRef: contentDigest(msg.Role + ":" + msg.Content),
 			Content:   msg.Content,
@@ -1292,6 +1683,8 @@ func selectPruneCandidate(
 	cfg runtimeconfig.ContextAssemblerCA3Config,
 	state *pressureRunState,
 	evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig,
+	ruleEligibility runtimeconfig.RuntimeContextJITCompactionRuleEligibility,
+	currentRetainedEvidence int,
 ) int {
 	type candidate struct {
 		idx   int
@@ -1305,7 +1698,11 @@ func selectPruneCandidate(
 		if isProtectedMessage(msg.Content, cfg.Protection) {
 			continue
 		}
-		if shouldRetainEvidence(i, len(messages), msg.Content, evidence) {
+		evidenceRetained := shouldRetainEvidence(i, len(messages), msg.Content, evidence)
+		if evidenceRetained && currentRetainedEvidence <= ruleEligibility.MinRetainedEvidence {
+			continue
+		}
+		if !ruleEligibility.AllowOldestToolResult && isOldestToolResultCandidate(messages, i) {
 			continue
 		}
 		score := i
@@ -1315,14 +1712,42 @@ func selectPruneCandidate(
 				score += 200
 			}
 		}
+		if evidenceRetained {
+			score += 300
+		}
 		score += state.AccessFrequency[contentDigest(msg.Content)]
 		candidates = append(candidates, candidate{idx: i, score: score})
 	}
 	if len(candidates) == 0 {
 		return -1
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score < candidates[j].score })
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score != candidates[j].score {
+			return candidates[i].score < candidates[j].score
+		}
+		return candidates[i].idx < candidates[j].idx
+	})
 	return candidates[0].idx
+}
+
+func isOldestToolResultCandidate(messages []types.Message, idx int) bool {
+	oldestToolResultIdx := -1
+	for i := range messages {
+		if isToolResultMessage(messages[i]) {
+			oldestToolResultIdx = i
+			break
+		}
+	}
+	return oldestToolResultIdx >= 0 && idx == oldestToolResultIdx
+}
+
+func isToolResultMessage(msg types.Message) bool {
+	role := strings.ToLower(strings.TrimSpace(msg.Role))
+	if role == "tool" {
+		return true
+	}
+	content := strings.ToLower(strings.TrimSpace(msg.Content))
+	return strings.HasPrefix(content, "tool_result:") || strings.HasPrefix(content, "tool_call_result:")
 }
 
 func retainedEvidenceCount(messages []types.Message, evidence runtimeconfig.ContextAssemblerCA3CompactionEvidenceConfig) int {

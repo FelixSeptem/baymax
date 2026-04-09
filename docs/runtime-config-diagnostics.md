@@ -2019,12 +2019,25 @@ Context JIT Organization 配置域（默认值）：
 - `runtime.context.jit.edit_gate.enabled`（`false`）
 - `runtime.context.jit.edit_gate.clear_at_least_tokens`（`1024`，`> 0`）
 - `runtime.context.jit.edit_gate.min_gain_ratio`（`0.2`，`> 0`）
+- `runtime.context.jit.compaction.quality_threshold`（`0.6`，`[0,1]`）
+- `runtime.context.jit.compaction.fallback_policy`（`best_effort`，可选 `best_effort|fail_fast`）
+- `runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result`（`true`）
+- `runtime.context.jit.compaction.rule_eligibility.min_retained_evidence`（`1`，`>= 0`）
 - `runtime.context.jit.swap_back.enabled`（`false`）
 - `runtime.context.jit.swap_back.min_relevance_score`（`0.6`，`[0,1]`）
+- `runtime.context.jit.swap_back.ranking_strategy`（`relevance_then_recency`，可选 `relevance_then_recency|recency_only`）
+- `runtime.context.jit.swap_back.candidate_window`（`8`，`> 0`）
 - `runtime.context.jit.lifecycle_tiering.enabled`（`false`）
 - `runtime.context.jit.lifecycle_tiering.hot_ttl_ms`（`300000`，`> 0`）
 - `runtime.context.jit.lifecycle_tiering.warm_ttl_ms`（`1800000`，`> 0`）
 - `runtime.context.jit.lifecycle_tiering.cold_ttl_ms`（`7200000`，`> 0`）
+- `runtime.context.jit.cold_store.retention.max_age_ms`（`604800000`，`> 0`）
+- `runtime.context.jit.cold_store.retention.max_records`（`10000`，`> 0`）
+- `runtime.context.jit.cold_store.quota.max_bytes`（`67108864`，`> 0`）
+- `runtime.context.jit.cold_store.cleanup.enabled`（`true`）
+- `runtime.context.jit.cold_store.cleanup.batch_size`（`128`，`> 0`）
+- `runtime.context.jit.cold_store.compact.enabled`（`true`）
+- `runtime.context.jit.cold_store.compact.min_fragmentation_ratio`（`0.3`，`[0,1]`）
 
 Context JIT Organization fail-fast/降级语义：
 - `reference_first` 固定两段式 `discover_refs -> resolve_selected_refs`；resolve 预算越界与非法 locator 在 fail-fast 策略下阻断，best-effort 下写入 deterministic `stage2_skip_reason`。
@@ -2038,8 +2051,14 @@ Context JIT Organization additive diagnostics 字段（`additive + nullable + de
 - `context_ref_resolve_count`
 - `context_edit_estimated_saved_tokens`
 - `context_edit_gate_decision`
+- `context_compaction_outcome_class`
 - `context_swapback_relevance_score`
+- `context_swapback_ranking_strategy`
+- `context_swapback_candidate_window`
 - `context_lifecycle_tier_stats`
+- `context_tier_transition_reason`
+- `context_cold_store_governance_action`
+- `context_recovery_consistency_marker`
 - `context_recap_source`
 - `stage2_skip_reason`
 - `stage2_reason_code`

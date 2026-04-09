@@ -5099,6 +5099,12 @@ context_assembler:
 		"context_edit_estimated_saved_tokens",
 		"context_edit_gate_decision",
 		"context_swapback_relevance_score",
+		"context_swapback_ranking_strategy",
+		"context_swapback_candidate_window",
+		"context_tier_transition_reason",
+		"context_cold_store_governance_action",
+		"context_compaction_outcome_class",
+		"context_recovery_consistency_marker",
 		"context_recap_source",
 		"react_termination_reason",
 	}
@@ -5925,6 +5931,42 @@ func TestRunFinishedPayloadIncludesMemoryAdditiveFields(t *testing.T) {
 	}, "success", "", runFinishMeta{})
 	if _, ok := withoutObserved["memory_mode"]; ok {
 		t.Fatalf("memory fields should be omitted when not observed: %#v", withoutObserved)
+	}
+}
+
+func TestRunFinishedPayloadIncludesContextCompressionProductionAdditiveFields(t *testing.T) {
+	payload := runFinishedPayload(types.RunResult{
+		RunID:      "run-context-compression-finished",
+		Iterations: 2,
+		LatencyMs:  90,
+	}, "success", "", runFinishMeta{
+		Assemble: types.ContextAssembleResult{
+			Stage: types.AssembleStage{
+				CompactionOutcomeClass:           "degraded",
+				ContextSwapbackRelevanceScore:    0.81,
+				ContextSwapbackRankingStrategy:   "relevance_then_recency",
+				ContextSwapbackCandidateWindow:   12,
+				ContextLifecycleTierStats:        map[string]int{"hot": 1, "warm": 2, "cold": 1},
+				ContextTierTransitionReason:      "spill|prune",
+				ContextColdStoreGovernanceAction: "cleanup|compact",
+				ContextRecapSource:               "task_aware.stage_actions.v1",
+			},
+		},
+		Memory: memoryRunDiagnostics{
+			Observed:        true,
+			LifecycleAction: "recovery_consistency_drift",
+		},
+	})
+
+	if payload["context_compaction_outcome_class"] != "degraded" ||
+		payload["context_swapback_relevance_score"] != 0.81 ||
+		payload["context_swapback_ranking_strategy"] != "relevance_then_recency" ||
+		payload["context_swapback_candidate_window"] != 12 ||
+		payload["context_tier_transition_reason"] != "spill|prune" ||
+		payload["context_cold_store_governance_action"] != "cleanup|compact" ||
+		payload["context_recovery_consistency_marker"] != "recovery_consistency_drift" ||
+		payload["context_recap_source"] != "task_aware.stage_actions.v1" {
+		t.Fatalf("context compression additive payload mismatch: %#v", payload)
 	}
 }
 

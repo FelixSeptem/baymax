@@ -11,34 +11,35 @@ import (
 )
 
 const (
-	ArbitrationFixtureVersionPrimaryReasonV1     = "a48.v1"
-	ArbitrationFixtureVersionExplainabilityV1    = "a49.v1"
-	ArbitrationFixtureVersionVersionGovernanceV1 = "a50.v1"
-	ArbitrationFixtureVersionSandboxExecutionV1  = "a51.v1"
-	ArbitrationFixtureVersionSandboxRolloutV1    = "a52.v1"
-	ArbitrationFixtureVersionHooksMiddlewareV1   = "hooks_middleware.v1"
-	ArbitrationFixtureVersionSkillDiscoveryV1    = "skill_discovery_sources.v1"
-	ArbitrationFixtureVersionSkillMappingV1      = "skill_preprocess_and_mapping.v1"
-	ArbitrationFixtureVersionSandboxEgressV1     = "sandbox_egress.v1"
-	ArbitrationFixtureVersionBudgetAdmissionV1   = "budget_admission.v1"
-	ArbitrationFixtureVersionPolicyV1            = "policy_stack.v1"
-	ArbitrationFixtureVersionMemoryV1            = "memory.v1"
-	ArbitrationFixtureVersionMemoryScopeV1       = "memory_scope.v1"
-	ArbitrationFixtureVersionMemorySearchV1      = "memory_search.v1"
-	ArbitrationFixtureVersionMemoryLifecycleV1   = "memory_lifecycle.v1"
-	ArbitrationFixtureVersionObsV1               = "observability.v1"
-	ArbitrationFixtureVersionReactV1             = "react.v1"
-	ArbitrationFixtureVersionReactPlanV1         = "react_plan_notebook.v1"
-	ArbitrationFixtureVersionRealtimeProtocolV1  = "realtime_event_protocol.v1"
-	ArbitrationFixtureVersionContextRefFirstV1   = "context_reference_first.v1"
-	ArbitrationFixtureVersionContextHandoffV1    = "context_isolate_handoff.v1"
-	ArbitrationFixtureVersionContextEditGateV1   = "context_edit_gate.v1"
-	ArbitrationFixtureVersionContextSwapBackV1   = "context_relevance_swapback.v1"
-	ArbitrationFixtureVersionContextTieringV1    = "context_lifecycle_tiering.v1"
-	ArbitrationFixtureVersionOTelSemconvV1       = "otel_semconv.v1"
-	ArbitrationFixtureVersionAgentEvalV1         = "agent_eval.v1"
-	ArbitrationFixtureVersionAgentEvalDistV1     = "agent_eval_distributed.v1"
-	ArbitrationFixtureVersionStateSnapshotV1     = "state_session_snapshot.v1"
+	ArbitrationFixtureVersionPrimaryReasonV1      = "a48.v1"
+	ArbitrationFixtureVersionExplainabilityV1     = "a49.v1"
+	ArbitrationFixtureVersionVersionGovernanceV1  = "a50.v1"
+	ArbitrationFixtureVersionSandboxExecutionV1   = "a51.v1"
+	ArbitrationFixtureVersionSandboxRolloutV1     = "a52.v1"
+	ArbitrationFixtureVersionHooksMiddlewareV1    = "hooks_middleware.v1"
+	ArbitrationFixtureVersionSkillDiscoveryV1     = "skill_discovery_sources.v1"
+	ArbitrationFixtureVersionSkillMappingV1       = "skill_preprocess_and_mapping.v1"
+	ArbitrationFixtureVersionSandboxEgressV1      = "sandbox_egress.v1"
+	ArbitrationFixtureVersionBudgetAdmissionV1    = "budget_admission.v1"
+	ArbitrationFixtureVersionPolicyV1             = "policy_stack.v1"
+	ArbitrationFixtureVersionMemoryV1             = "memory.v1"
+	ArbitrationFixtureVersionMemoryScopeV1        = "memory_scope.v1"
+	ArbitrationFixtureVersionMemorySearchV1       = "memory_search.v1"
+	ArbitrationFixtureVersionMemoryLifecycleV1    = "memory_lifecycle.v1"
+	ArbitrationFixtureVersionObsV1                = "observability.v1"
+	ArbitrationFixtureVersionReactV1              = "react.v1"
+	ArbitrationFixtureVersionReactPlanV1          = "react_plan_notebook.v1"
+	ArbitrationFixtureVersionRealtimeProtocolV1   = "realtime_event_protocol.v1"
+	ArbitrationFixtureVersionContextRefFirstV1    = "context_reference_first.v1"
+	ArbitrationFixtureVersionContextHandoffV1     = "context_isolate_handoff.v1"
+	ArbitrationFixtureVersionContextEditGateV1    = "context_edit_gate.v1"
+	ArbitrationFixtureVersionContextSwapBackV1    = "context_relevance_swapback.v1"
+	ArbitrationFixtureVersionContextTieringV1     = "context_lifecycle_tiering.v1"
+	ArbitrationFixtureVersionContextCompressionV1 = "context_compression_production.v1"
+	ArbitrationFixtureVersionOTelSemconvV1        = "otel_semconv.v1"
+	ArbitrationFixtureVersionAgentEvalV1          = "agent_eval.v1"
+	ArbitrationFixtureVersionAgentEvalDistV1      = "agent_eval_distributed.v1"
+	ArbitrationFixtureVersionStateSnapshotV1      = "state_session_snapshot.v1"
 
 	ReasonCodePrecedenceConflict                  = "precedence_conflict"
 	ReasonCodePrecedenceDrift                     = "precedence_drift"
@@ -101,6 +102,12 @@ const (
 	ReasonCodeSwapbackRelevanceDrift              = "swapback_relevance_drift"
 	ReasonCodeLifecycleTieringDrift               = "lifecycle_tiering_drift"
 	ReasonCodeRecapSemanticDrift                  = "recap_semantic_drift"
+	ReasonCodeContextCompactionQualityDrift       = "context_compaction_quality_drift"
+	ReasonCodeContextRuleEligibilityDrift         = "context_rule_eligibility_drift"
+	ReasonCodeContextTierTransitionDrift          = "context_tier_transition_drift"
+	ReasonCodeContextSwapbackRankingDrift         = "context_swapback_ranking_drift"
+	ReasonCodeContextColdStoreGovernanceDrift     = "context_cold_store_governance_drift"
+	ReasonCodeContextRecoveryIdempotencyDrift     = "context_recovery_idempotency_drift"
 	ReasonCodeSandboxEgressActionDrift            = "sandbox_egress_action_drift"
 	ReasonCodeSandboxEgressPolicySourceDrift      = "sandbox_egress_policy_source_drift"
 	ReasonCodeSandboxEgressViolationTaxonomyDrift = "sandbox_egress_violation_taxonomy_drift"
@@ -280,6 +287,18 @@ type ArbitrationObservation struct {
 	ContextEditGateDecision                string                    `json:"context_edit_gate_decision,omitempty"`
 	ContextSwapbackRelevanceScore          float64                   `json:"context_swapback_relevance_score,omitempty"`
 	ContextLifecycleTierStats              map[string]int            `json:"context_lifecycle_tier_stats,omitempty"`
+	ContextCompactionOutcomeClass          string                    `json:"context_compaction_outcome_class,omitempty"`
+	ContextCompactionQualityScore          float64                   `json:"context_compaction_quality_score,omitempty"`
+	ContextCompactionFallbackChain         []string                  `json:"context_compaction_fallback_chain,omitempty"`
+	ContextRuleEligibilityOldestToolResult bool                      `json:"context_rule_eligibility_oldest_tool_result,omitempty"`
+	ContextRuleEligibilityEvidenceRetained bool                      `json:"context_rule_eligibility_evidence_retained,omitempty"`
+	ContextTierTransitionReason            string                    `json:"context_tier_transition_reason,omitempty"`
+	ContextSwapbackRankingStrategy         string                    `json:"context_swapback_ranking_strategy,omitempty"`
+	ContextSwapbackCandidateWindow         int                       `json:"context_swapback_candidate_window,omitempty"`
+	ContextColdStoreGovernanceAction       string                    `json:"context_cold_store_governance_action,omitempty"`
+	ContextColdStoreCleanupCount           int                       `json:"context_cold_store_cleanup_count,omitempty"`
+	ContextRecoveryIdempotencyStatus       string                    `json:"context_recovery_idempotency_status,omitempty"`
+	ContextRecoveryDedupCount              int                       `json:"context_recovery_dedup_count,omitempty"`
 	ContextRecapSource                     string                    `json:"context_recap_source,omitempty"`
 }
 
@@ -358,6 +377,7 @@ func ParseArbitrationFixtureJSON(raw []byte) (ArbitrationFixture, error) {
 		version != ArbitrationFixtureVersionContextEditGateV1 &&
 		version != ArbitrationFixtureVersionContextSwapBackV1 &&
 		version != ArbitrationFixtureVersionContextTieringV1 &&
+		version != ArbitrationFixtureVersionContextCompressionV1 &&
 		version != ArbitrationFixtureVersionOTelSemconvV1 &&
 		version != ArbitrationFixtureVersionAgentEvalV1 &&
 		version != ArbitrationFixtureVersionAgentEvalDistV1 &&
@@ -592,6 +612,17 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 		ContextEditEstimatedSavedTokens:        in.ContextEditEstimatedSavedTokens,
 		ContextEditGateDecision:                strings.ToLower(strings.TrimSpace(in.ContextEditGateDecision)),
 		ContextSwapbackRelevanceScore:          in.ContextSwapbackRelevanceScore,
+		ContextCompactionOutcomeClass:          strings.ToLower(strings.TrimSpace(in.ContextCompactionOutcomeClass)),
+		ContextCompactionQualityScore:          clampUnitFloat64(in.ContextCompactionQualityScore),
+		ContextRuleEligibilityOldestToolResult: in.ContextRuleEligibilityOldestToolResult,
+		ContextRuleEligibilityEvidenceRetained: in.ContextRuleEligibilityEvidenceRetained,
+		ContextTierTransitionReason:            strings.ToLower(strings.TrimSpace(in.ContextTierTransitionReason)),
+		ContextSwapbackRankingStrategy:         strings.ToLower(strings.TrimSpace(in.ContextSwapbackRankingStrategy)),
+		ContextSwapbackCandidateWindow:         in.ContextSwapbackCandidateWindow,
+		ContextColdStoreGovernanceAction:       strings.ToLower(strings.TrimSpace(in.ContextColdStoreGovernanceAction)),
+		ContextColdStoreCleanupCount:           in.ContextColdStoreCleanupCount,
+		ContextRecoveryIdempotencyStatus:       strings.ToLower(strings.TrimSpace(in.ContextRecoveryIdempotencyStatus)),
+		ContextRecoveryDedupCount:              in.ContextRecoveryDedupCount,
 		ContextRecapSource:                     strings.ToLower(strings.TrimSpace(in.ContextRecapSource)),
 	}
 	if out.RuntimePrimaryConflictTotal < 0 {
@@ -723,6 +754,15 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 	if out.ContextSwapbackRelevanceScore > 1 {
 		out.ContextSwapbackRelevanceScore = 1
 	}
+	if out.ContextSwapbackCandidateWindow < 0 {
+		out.ContextSwapbackCandidateWindow = 0
+	}
+	if out.ContextColdStoreCleanupCount < 0 {
+		out.ContextColdStoreCleanupCount = 0
+	}
+	if out.ContextRecoveryDedupCount < 0 {
+		out.ContextRecoveryDedupCount = 0
+	}
 	for key, value := range in.MemoryRerankStats {
 		normalizedKey := strings.ToLower(strings.TrimSpace(key))
 		if normalizedKey == "" {
@@ -782,6 +822,13 @@ func canonicalizeArbitrationObservation(in ArbitrationObservation) ArbitrationOb
 			out.InferentialAdvisoryReasons = append(out.InferentialAdvisoryReasons, reason)
 		}
 		sort.Strings(out.InferentialAdvisoryReasons)
+	}
+	for i := range in.ContextCompactionFallbackChain {
+		item := strings.ToLower(strings.TrimSpace(in.ContextCompactionFallbackChain[i]))
+		if item == "" {
+			continue
+		}
+		out.ContextCompactionFallbackChain = append(out.ContextCompactionFallbackChain, item)
 	}
 	for i := range in.RuntimeSecondaryReasonCodes {
 		code := strings.TrimSpace(in.RuntimeSecondaryReasonCodes[i])
@@ -918,6 +965,9 @@ func validateArbitrationObservation(version, caseName, lane string, obs Arbitrat
 	}
 	if version == ArbitrationFixtureVersionContextTieringV1 {
 		return validateContextLifecycleTieringArbitrationObservation(caseName, lane, obs)
+	}
+	if version == ArbitrationFixtureVersionContextCompressionV1 {
+		return validateContextCompressionArbitrationObservation(caseName, lane, obs)
 	}
 	if version == ArbitrationFixtureVersionSandboxEgressV1 {
 		return validateSandboxEgressArbitrationObservation(caseName, lane, obs)
@@ -1158,6 +1208,9 @@ func assertArbitrationEquivalent(version, caseName string, expected, actual Arbi
 	}
 	if version == ArbitrationFixtureVersionContextTieringV1 {
 		return assertContextLifecycleTieringArbitrationEquivalent(caseName, lane, expected, actual)
+	}
+	if version == ArbitrationFixtureVersionContextCompressionV1 {
+		return assertContextCompressionArbitrationEquivalent(caseName, lane, expected, actual)
 	}
 	if version == ArbitrationFixtureVersionObsV1 {
 		return assertObservabilityArbitrationEquivalent(caseName, lane, expected, actual)
@@ -2058,6 +2111,176 @@ func assertContextLifecycleTieringArbitrationEquivalent(caseName, lane string, e
 	}
 }
 
+func validateContextCompressionArbitrationObservation(caseName, lane string, obs ArbitrationObservation) error {
+	if !isContextCompactionOutcomeClass(obs.ContextCompactionOutcomeClass) {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_compaction_outcome_class must be applied|degraded|fallback|failed", caseName, lane),
+		}
+	}
+	if obs.ContextCompactionQualityScore < 0 || obs.ContextCompactionQualityScore > 1 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_compaction_quality_score must be in [0,1]", caseName, lane),
+		}
+	}
+	if (obs.ContextCompactionOutcomeClass == "degraded" || obs.ContextCompactionOutcomeClass == "fallback") &&
+		len(obs.ContextCompactionFallbackChain) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeContextCompactionQualityDrift,
+			Message: fmt.Sprintf("case %q %s fallback/degraded outcome requires context_compaction_fallback_chain", caseName, lane),
+		}
+	}
+	for i := range obs.ContextCompactionFallbackChain {
+		if strings.TrimSpace(obs.ContextCompactionFallbackChain[i]) == "" {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s context_compaction_fallback_chain contains empty item", caseName, lane),
+			}
+		}
+	}
+	if !obs.ContextRuleEligibilityEvidenceRetained {
+		return &ValidationError{
+			Code:    ReasonCodeContextRuleEligibilityDrift,
+			Message: fmt.Sprintf("case %q %s context_rule_eligibility_evidence_retained must be true", caseName, lane),
+		}
+	}
+	if strings.TrimSpace(obs.ContextTierTransitionReason) == "" {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_tier_transition_reason is required", caseName, lane),
+		}
+	}
+	if len(obs.ContextLifecycleTierStats) == 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats must not be empty", caseName, lane),
+		}
+	}
+	for key, value := range obs.ContextLifecycleTierStats {
+		if !isContextLifecycleTierStatKey(key) {
+			return &ValidationError{
+				Code:    ReasonCodeContextTierTransitionDrift,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats contains invalid key %q", caseName, lane, key),
+			}
+		}
+		if value < 0 {
+			return &ValidationError{
+				Code:    ReasonCodeSchemaMismatch,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats[%s] must be >= 0", caseName, lane, key),
+			}
+		}
+	}
+	for _, required := range []string{"hot", "warm", "cold", "pruned"} {
+		if _, ok := obs.ContextLifecycleTierStats[required]; !ok {
+			return &ValidationError{
+				Code:    ReasonCodeContextTierTransitionDrift,
+				Message: fmt.Sprintf("case %q %s context_lifecycle_tier_stats missing required key %q", caseName, lane, required),
+			}
+		}
+	}
+	if !isContextSwapbackRankingStrategy(obs.ContextSwapbackRankingStrategy) {
+		return &ValidationError{
+			Code:    ReasonCodeContextSwapbackRankingDrift,
+			Message: fmt.Sprintf("case %q %s context_swapback_ranking_strategy must be relevance_then_recency", caseName, lane),
+		}
+	}
+	if obs.ContextSwapbackCandidateWindow <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_swapback_candidate_window must be > 0", caseName, lane),
+		}
+	}
+	if obs.ContextSwapbackRelevanceScore <= 0 || obs.ContextSwapbackRelevanceScore > 1 {
+		return &ValidationError{
+			Code:    ReasonCodeContextSwapbackRankingDrift,
+			Message: fmt.Sprintf("case %q %s context_swapback_relevance_score must be within (0,1]", caseName, lane),
+		}
+	}
+	if !isContextColdStoreGovernanceAction(obs.ContextColdStoreGovernanceAction) {
+		return &ValidationError{
+			Code:    ReasonCodeContextColdStoreGovernanceDrift,
+			Message: fmt.Sprintf("case %q %s context_cold_store_governance_action is invalid: %q", caseName, lane, obs.ContextColdStoreGovernanceAction),
+		}
+	}
+	if obs.ContextColdStoreCleanupCount < 0 {
+		return &ValidationError{
+			Code:    ReasonCodeSchemaMismatch,
+			Message: fmt.Sprintf("case %q %s context_cold_store_cleanup_count must be >= 0", caseName, lane),
+		}
+	}
+	if !isContextRecoveryIdempotencyStatus(obs.ContextRecoveryIdempotencyStatus) {
+		return &ValidationError{
+			Code:    ReasonCodeContextRecoveryIdempotencyDrift,
+			Message: fmt.Sprintf("case %q %s context_recovery_idempotency_status is invalid: %q", caseName, lane, obs.ContextRecoveryIdempotencyStatus),
+		}
+	}
+	if obs.ContextRecoveryIdempotencyStatus == "deduplicated" && obs.ContextRecoveryDedupCount <= 0 {
+		return &ValidationError{
+			Code:    ReasonCodeContextRecoveryIdempotencyDrift,
+			Message: fmt.Sprintf("case %q %s context_recovery_dedup_count must be > 0 when status is deduplicated", caseName, lane),
+		}
+	}
+	return validateContextRecapSource(caseName, lane, obs)
+}
+
+func assertContextCompressionArbitrationEquivalent(caseName, lane string, expected, actual ArbitrationObservation) error {
+	if expected.ContextCompactionOutcomeClass != actual.ContextCompactionOutcomeClass ||
+		!approxFloat64(expected.ContextCompactionQualityScore, actual.ContextCompactionQualityScore) ||
+		!equalStringSlice(expected.ContextCompactionFallbackChain, actual.ContextCompactionFallbackChain) {
+		return &ValidationError{
+			Code:    ReasonCodeContextCompactionQualityDrift,
+			Message: fmt.Sprintf("case %q %s context compaction quality drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRuleEligibilityOldestToolResult != actual.ContextRuleEligibilityOldestToolResult ||
+		expected.ContextRuleEligibilityEvidenceRetained != actual.ContextRuleEligibilityEvidenceRetained {
+		return &ValidationError{
+			Code:    ReasonCodeContextRuleEligibilityDrift,
+			Message: fmt.Sprintf("case %q %s context rule eligibility drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextTierTransitionReason != actual.ContextTierTransitionReason ||
+		!equalIntMap(expected.ContextLifecycleTierStats, actual.ContextLifecycleTierStats) {
+		return &ValidationError{
+			Code:    ReasonCodeContextTierTransitionDrift,
+			Message: fmt.Sprintf("case %q %s context tier transition drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextSwapbackRankingStrategy != actual.ContextSwapbackRankingStrategy ||
+		expected.ContextSwapbackCandidateWindow != actual.ContextSwapbackCandidateWindow ||
+		!approxFloat64(expected.ContextSwapbackRelevanceScore, actual.ContextSwapbackRelevanceScore) {
+		return &ValidationError{
+			Code:    ReasonCodeContextSwapbackRankingDrift,
+			Message: fmt.Sprintf("case %q %s context swapback ranking drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextColdStoreGovernanceAction != actual.ContextColdStoreGovernanceAction ||
+		expected.ContextColdStoreCleanupCount != actual.ContextColdStoreCleanupCount {
+		return &ValidationError{
+			Code:    ReasonCodeContextColdStoreGovernanceDrift,
+			Message: fmt.Sprintf("case %q %s context cold-store governance drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRecoveryIdempotencyStatus != actual.ContextRecoveryIdempotencyStatus ||
+		expected.ContextRecoveryDedupCount != actual.ContextRecoveryDedupCount {
+		return &ValidationError{
+			Code:    ReasonCodeContextRecoveryIdempotencyDrift,
+			Message: fmt.Sprintf("case %q %s context recovery idempotency drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+		}
+	}
+	if expected.ContextRecapSource != actual.ContextRecapSource {
+		return &ValidationError{
+			Code:    ReasonCodeRecapSemanticDrift,
+			Message: fmt.Sprintf("case %q %s recap semantic drift expected=%q actual=%q", caseName, lane, expected.ContextRecapSource, actual.ContextRecapSource),
+		}
+	}
+	return &ValidationError{
+		Code:    ReasonCodeSemanticDrift,
+		Message: fmt.Sprintf("case %q %s context compression semantic drift expected=%#v actual=%#v", caseName, lane, expected, actual),
+	}
+}
+
 func validateContextRecapSource(caseName, lane string, obs ArbitrationObservation) error {
 	if strings.TrimSpace(obs.ContextRecapSource) == "" {
 		return &ValidationError{
@@ -2089,6 +2312,42 @@ func isContextLifecycleTierStatKey(key string) bool {
 		return true
 	default:
 		return strings.Contains(strings.TrimSpace(key), "migrate_") && strings.Contains(strings.TrimSpace(key), "_to_")
+	}
+}
+
+func isContextCompactionOutcomeClass(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "applied", "degraded", "fallback", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContextSwapbackRankingStrategy(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "relevance_then_recency":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContextColdStoreGovernanceAction(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "retention_applied", "quota_cleanup", "cleanup_applied", "compact_applied":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContextRecoveryIdempotencyStatus(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "idempotent", "deduplicated":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -2907,6 +3166,23 @@ func arbitrationObservationsEqual(version string, left, right ArbitrationObserva
 	}
 	if version == ArbitrationFixtureVersionContextTieringV1 {
 		return equalIntMap(left.ContextLifecycleTierStats, right.ContextLifecycleTierStats) &&
+			left.ContextRecapSource == right.ContextRecapSource
+	}
+	if version == ArbitrationFixtureVersionContextCompressionV1 {
+		return left.ContextCompactionOutcomeClass == right.ContextCompactionOutcomeClass &&
+			approxFloat64(left.ContextCompactionQualityScore, right.ContextCompactionQualityScore) &&
+			equalStringSlice(left.ContextCompactionFallbackChain, right.ContextCompactionFallbackChain) &&
+			left.ContextRuleEligibilityOldestToolResult == right.ContextRuleEligibilityOldestToolResult &&
+			left.ContextRuleEligibilityEvidenceRetained == right.ContextRuleEligibilityEvidenceRetained &&
+			left.ContextTierTransitionReason == right.ContextTierTransitionReason &&
+			equalIntMap(left.ContextLifecycleTierStats, right.ContextLifecycleTierStats) &&
+			left.ContextSwapbackRankingStrategy == right.ContextSwapbackRankingStrategy &&
+			left.ContextSwapbackCandidateWindow == right.ContextSwapbackCandidateWindow &&
+			approxFloat64(left.ContextSwapbackRelevanceScore, right.ContextSwapbackRelevanceScore) &&
+			left.ContextColdStoreGovernanceAction == right.ContextColdStoreGovernanceAction &&
+			left.ContextColdStoreCleanupCount == right.ContextColdStoreCleanupCount &&
+			left.ContextRecoveryIdempotencyStatus == right.ContextRecoveryIdempotencyStatus &&
+			left.ContextRecoveryDedupCount == right.ContextRecoveryDedupCount &&
 			left.ContextRecapSource == right.ContextRecapSource
 	}
 	if version == ArbitrationFixtureVersionSandboxEgressV1 {

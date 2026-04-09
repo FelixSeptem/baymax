@@ -36,11 +36,40 @@ func TestRuntimeContextJITConfigDefaults(t *testing.T) {
 	if cfg.Runtime.Context.JIT.EditGate.MinGainRatio != 0.20 {
 		t.Fatalf("runtime.context.jit.edit_gate.min_gain_ratio = %f, want 0.20", cfg.Runtime.Context.JIT.EditGate.MinGainRatio)
 	}
+	if cfg.Runtime.Context.JIT.Compaction.QualityThreshold != 0.60 {
+		t.Fatalf("runtime.context.jit.compaction.quality_threshold = %f, want 0.60", cfg.Runtime.Context.JIT.Compaction.QualityThreshold)
+	}
+	if cfg.Runtime.Context.JIT.Compaction.FallbackPolicy != RuntimeContextJITCompactionFallbackPolicyBestEffort {
+		t.Fatalf(
+			"runtime.context.jit.compaction.fallback_policy = %q, want %q",
+			cfg.Runtime.Context.JIT.Compaction.FallbackPolicy,
+			RuntimeContextJITCompactionFallbackPolicyBestEffort,
+		)
+	}
+	if !cfg.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult {
+		t.Fatal("runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result = false, want true")
+	}
+	if cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence != 1 {
+		t.Fatalf(
+			"runtime.context.jit.compaction.rule_eligibility.min_retained_evidence = %d, want 1",
+			cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence,
+		)
+	}
 	if cfg.Runtime.Context.JIT.SwapBack.Enabled {
 		t.Fatal("runtime.context.jit.swap_back.enabled = true, want false")
 	}
 	if cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore != 0.60 {
 		t.Fatalf("runtime.context.jit.swap_back.min_relevance_score = %f, want 0.60", cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore)
+	}
+	if cfg.Runtime.Context.JIT.SwapBack.RankingStrategy != RuntimeContextJITSwapBackRankingStrategyRelevanceThenRecency {
+		t.Fatalf(
+			"runtime.context.jit.swap_back.ranking_strategy = %q, want %q",
+			cfg.Runtime.Context.JIT.SwapBack.RankingStrategy,
+			RuntimeContextJITSwapBackRankingStrategyRelevanceThenRecency,
+		)
+	}
+	if cfg.Runtime.Context.JIT.SwapBack.CandidateWindow != 8 {
+		t.Fatalf("runtime.context.jit.swap_back.candidate_window = %d, want 8", cfg.Runtime.Context.JIT.SwapBack.CandidateWindow)
 	}
 	if cfg.Runtime.Context.JIT.LifecycleTiering.Enabled {
 		t.Fatal("runtime.context.jit.lifecycle_tiering.enabled = true, want false")
@@ -54,6 +83,30 @@ func TestRuntimeContextJITConfigDefaults(t *testing.T) {
 	if cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS != 7200000 {
 		t.Fatalf("runtime.context.jit.lifecycle_tiering.cold_ttl_ms = %d, want 7200000", cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS)
 	}
+	if cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS != 604800000 {
+		t.Fatalf("runtime.context.jit.cold_store.retention.max_age_ms = %d, want 604800000", cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords != 10000 {
+		t.Fatalf("runtime.context.jit.cold_store.retention.max_records = %d, want 10000", cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes != 64*1024*1024 {
+		t.Fatalf("runtime.context.jit.cold_store.quota.max_bytes = %d, want %d", cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes, 64*1024*1024)
+	}
+	if !cfg.Runtime.Context.JIT.ColdStore.Cleanup.Enabled {
+		t.Fatal("runtime.context.jit.cold_store.cleanup.enabled = false, want true")
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize != 128 {
+		t.Fatalf("runtime.context.jit.cold_store.cleanup.batch_size = %d, want 128", cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize)
+	}
+	if !cfg.Runtime.Context.JIT.ColdStore.Compact.Enabled {
+		t.Fatal("runtime.context.jit.cold_store.compact.enabled = false, want true")
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio != 0.30 {
+		t.Fatalf(
+			"runtime.context.jit.cold_store.compact.min_fragmentation_ratio = %f, want 0.30",
+			cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio,
+		)
+	}
 }
 
 func TestRuntimeContextJITConfigEnvOverridePrecedence(t *testing.T) {
@@ -66,12 +119,25 @@ func TestRuntimeContextJITConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_EDIT_GATE_ENABLED", "true")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_EDIT_GATE_CLEAR_AT_LEAST_TOKENS", "1536")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_EDIT_GATE_MIN_GAIN_RATIO", "0.35")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COMPACTION_QUALITY_THRESHOLD", "0.75")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COMPACTION_FALLBACK_POLICY", "fail_fast")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COMPACTION_RULE_ELIGIBILITY_ALLOW_OLDEST_TOOL_RESULT", "false")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COMPACTION_RULE_ELIGIBILITY_MIN_RETAINED_EVIDENCE", "4")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_ENABLED", "true")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_MIN_RELEVANCE_SCORE", "0.70")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_RANKING_STRATEGY", "recency_only")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_CANDIDATE_WINDOW", "12")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_LIFECYCLE_TIERING_ENABLED", "true")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_LIFECYCLE_TIERING_HOT_TTL_MS", "200000")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_LIFECYCLE_TIERING_WARM_TTL_MS", "800000")
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_LIFECYCLE_TIERING_COLD_TTL_MS", "1600000")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_RETENTION_MAX_AGE_MS", "86400000")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_RETENTION_MAX_RECORDS", "500")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_QUOTA_MAX_BYTES", "2097152")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_CLEANUP_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_CLEANUP_BATCH_SIZE", "32")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_COMPACT_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_COMPACT_MIN_FRAGMENTATION_RATIO", "0.55")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -90,14 +156,34 @@ runtime:
         enabled: false
         clear_at_least_tokens: 512
         min_gain_ratio: 0.10
+      compaction:
+        quality_threshold: 0.20
+        fallback_policy: best_effort
+        rule_eligibility:
+          allow_oldest_tool_result: true
+          min_retained_evidence: 1
       swap_back:
         enabled: false
         min_relevance_score: 0.50
+        ranking_strategy: relevance_then_recency
+        candidate_window: 4
       lifecycle_tiering:
         enabled: false
         hot_ttl_ms: 100000
         warm_ttl_ms: 200000
         cold_ttl_ms: 300000
+      cold_store:
+        retention:
+          max_age_ms: 3600000
+          max_records: 100
+        quota:
+          max_bytes: 65536
+        cleanup:
+          enabled: true
+          batch_size: 8
+        compact:
+          enabled: true
+          min_fragmentation_ratio: 0.25
 `
 	if err := os.WriteFile(file, []byte(strings.TrimSpace(content)), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -133,11 +219,40 @@ runtime:
 	if cfg.Runtime.Context.JIT.EditGate.MinGainRatio != 0.35 {
 		t.Fatalf("runtime.context.jit.edit_gate.min_gain_ratio = %f, want 0.35 from env", cfg.Runtime.Context.JIT.EditGate.MinGainRatio)
 	}
+	if cfg.Runtime.Context.JIT.Compaction.QualityThreshold != 0.75 {
+		t.Fatalf("runtime.context.jit.compaction.quality_threshold = %f, want 0.75 from env", cfg.Runtime.Context.JIT.Compaction.QualityThreshold)
+	}
+	if cfg.Runtime.Context.JIT.Compaction.FallbackPolicy != RuntimeContextJITCompactionFallbackPolicyFailFast {
+		t.Fatalf(
+			"runtime.context.jit.compaction.fallback_policy = %q, want %q from env",
+			cfg.Runtime.Context.JIT.Compaction.FallbackPolicy,
+			RuntimeContextJITCompactionFallbackPolicyFailFast,
+		)
+	}
+	if cfg.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult {
+		t.Fatal("runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result = true, want false from env")
+	}
+	if cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence != 4 {
+		t.Fatalf(
+			"runtime.context.jit.compaction.rule_eligibility.min_retained_evidence = %d, want 4 from env",
+			cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence,
+		)
+	}
 	if !cfg.Runtime.Context.JIT.SwapBack.Enabled {
 		t.Fatal("runtime.context.jit.swap_back.enabled = false, want true from env")
 	}
 	if cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore != 0.70 {
 		t.Fatalf("runtime.context.jit.swap_back.min_relevance_score = %f, want 0.70 from env", cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore)
+	}
+	if cfg.Runtime.Context.JIT.SwapBack.RankingStrategy != RuntimeContextJITSwapBackRankingStrategyRecencyOnly {
+		t.Fatalf(
+			"runtime.context.jit.swap_back.ranking_strategy = %q, want %q from env",
+			cfg.Runtime.Context.JIT.SwapBack.RankingStrategy,
+			RuntimeContextJITSwapBackRankingStrategyRecencyOnly,
+		)
+	}
+	if cfg.Runtime.Context.JIT.SwapBack.CandidateWindow != 12 {
+		t.Fatalf("runtime.context.jit.swap_back.candidate_window = %d, want 12 from env", cfg.Runtime.Context.JIT.SwapBack.CandidateWindow)
 	}
 	if !cfg.Runtime.Context.JIT.LifecycleTiering.Enabled {
 		t.Fatal("runtime.context.jit.lifecycle_tiering.enabled = false, want true from env")
@@ -150,6 +265,30 @@ runtime:
 	}
 	if cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS != 1600000 {
 		t.Fatalf("runtime.context.jit.lifecycle_tiering.cold_ttl_ms = %d, want 1600000 from env", cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS != 86400000 {
+		t.Fatalf("runtime.context.jit.cold_store.retention.max_age_ms = %d, want 86400000 from env", cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords != 500 {
+		t.Fatalf("runtime.context.jit.cold_store.retention.max_records = %d, want 500 from env", cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes != 2097152 {
+		t.Fatalf("runtime.context.jit.cold_store.quota.max_bytes = %d, want 2097152 from env", cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Cleanup.Enabled {
+		t.Fatal("runtime.context.jit.cold_store.cleanup.enabled = true, want false from env")
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize != 32 {
+		t.Fatalf("runtime.context.jit.cold_store.cleanup.batch_size = %d, want 32 from env", cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize)
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Compact.Enabled {
+		t.Fatal("runtime.context.jit.cold_store.compact.enabled = true, want false from env")
+	}
+	if cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio != 0.55 {
+		t.Fatalf(
+			"runtime.context.jit.cold_store.compact.min_fragmentation_ratio = %f, want 0.55 from env",
+			cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio,
+		)
 	}
 }
 
@@ -197,6 +336,36 @@ func TestRuntimeContextJITConfigValidationRejectsInvalidValues(t *testing.T) {
 	}
 
 	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.Compaction.QualityThreshold = 1.1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.compaction.quality_threshold") {
+		t.Fatalf("expected runtime.context.jit.compaction.quality_threshold validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.Compaction.FallbackPolicy = "invalid_policy"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.compaction.fallback_policy") {
+		t.Fatalf("expected runtime.context.jit.compaction.fallback_policy validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence = -1
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.compaction.rule_eligibility.min_retained_evidence") {
+		t.Fatalf("expected runtime.context.jit.compaction.rule_eligibility.min_retained_evidence validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.SwapBack.RankingStrategy = "random"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.swap_back.ranking_strategy") {
+		t.Fatalf("expected runtime.context.jit.swap_back.ranking_strategy validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.SwapBack.CandidateWindow = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.swap_back.candidate_window") {
+		t.Fatalf("expected runtime.context.jit.swap_back.candidate_window validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
 	cfg.Runtime.Context.JIT.LifecycleTiering.HotTTLMS = 700000
 	cfg.Runtime.Context.JIT.LifecycleTiering.WarmTTLMS = 600000
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.lifecycle_tiering.hot_ttl_ms") {
@@ -208,6 +377,36 @@ func TestRuntimeContextJITConfigValidationRejectsInvalidValues(t *testing.T) {
 	cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS = 8000000
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.lifecycle_tiering.warm_ttl_ms") {
 		t.Fatalf("expected lifecycle ordering validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.retention.max_age_ms") {
+		t.Fatalf("expected runtime.context.jit.cold_store.retention.max_age_ms validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.retention.max_records") {
+		t.Fatalf("expected runtime.context.jit.cold_store.retention.max_records validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.quota.max_bytes") {
+		t.Fatalf("expected runtime.context.jit.cold_store.quota.max_bytes validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize = 0
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.cleanup.batch_size") {
+		t.Fatalf("expected runtime.context.jit.cold_store.cleanup.batch_size validation error, got %v", err)
+	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio = 1.2
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.compact.min_fragmentation_ratio") {
+		t.Fatalf("expected runtime.context.jit.cold_store.compact.min_fragmentation_ratio validation error, got %v", err)
 	}
 }
 
@@ -233,5 +432,23 @@ func TestRuntimeContextJITConfigInvalidPrimitiveFailsFast(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_EDIT_GATE_MIN_GAIN_RATIO", "bad-ratio")
 	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.edit_gate.min_gain_ratio") {
 		t.Fatalf("expected strict float parse error for runtime.context.jit.edit_gate.min_gain_ratio, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_EDIT_GATE_MIN_GAIN_RATIO", "0.2")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_CANDIDATE_WINDOW", "bad-window")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.swap_back.candidate_window") {
+		t.Fatalf("expected strict int parse error for runtime.context.jit.swap_back.candidate_window, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_SWAP_BACK_CANDIDATE_WINDOW", "8")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_CLEANUP_ENABLED", "not-bool")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.cleanup.enabled") {
+		t.Fatalf("expected strict bool parse error for runtime.context.jit.cold_store.cleanup.enabled, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_CLEANUP_ENABLED", "true")
+	t.Setenv("BAYMAX_RUNTIME_CONTEXT_JIT_COLD_STORE_COMPACT_MIN_FRAGMENTATION_RATIO", "bad-ratio")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.context.jit.cold_store.compact.min_fragmentation_ratio") {
+		t.Fatalf("expected strict float parse error for runtime.context.jit.cold_store.compact.min_fragmentation_ratio, got %v", err)
 	}
 }

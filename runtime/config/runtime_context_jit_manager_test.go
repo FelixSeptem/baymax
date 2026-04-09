@@ -189,3 +189,137 @@ reload:
 		t.Fatalf("expected failed reload record, got %#v", reloads)
 	}
 }
+
+func TestManagerRuntimeContextJITInvalidCompactionReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  context:
+    jit:
+      reference_first:
+        enabled: true
+        max_refs: 8
+        max_resolve_tokens: 4096
+      isolate_handoff:
+        enabled: true
+        default_ttl_ms: 300000
+        min_confidence: 0.60
+      edit_gate:
+        enabled: true
+        clear_at_least_tokens: 1024
+        min_gain_ratio: 0.20
+      compaction:
+        quality_threshold: 0.60
+        fallback_policy: best_effort
+        rule_eligibility:
+          allow_oldest_tool_result: true
+          min_retained_evidence: 1
+      swap_back:
+        enabled: true
+        min_relevance_score: 0.60
+        ranking_strategy: relevance_then_recency
+        candidate_window: 8
+      lifecycle_tiering:
+        enabled: true
+        hot_ttl_ms: 300000
+        warm_ttl_ms: 1800000
+        cold_ttl_ms: 7200000
+      cold_store:
+        retention:
+          max_age_ms: 604800000
+          max_records: 10000
+        quota:
+          max_bytes: 67108864
+        cleanup:
+          enabled: true
+          batch_size: 128
+        compact:
+          enabled: true
+          min_fragmentation_ratio: 0.30
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+
+	mgr, err := NewManager(ManagerOptions{
+		FilePath:        file,
+		EnvPrefix:       "BAYMAX_RUNTIME_CONTEXT_JIT_MANAGER_TEST",
+		EnableHotReload: true,
+	})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+
+	before := mgr.EffectiveConfig().Runtime.Context.JIT
+	if before.Compaction.FallbackPolicy != RuntimeContextJITCompactionFallbackPolicyBestEffort {
+		t.Fatalf(
+			"expected runtime.context.jit.compaction.fallback_policy=%q before reload, got %q",
+			RuntimeContextJITCompactionFallbackPolicyBestEffort,
+			before.Compaction.FallbackPolicy,
+		)
+	}
+
+	writeConfig(t, file, `
+runtime:
+  context:
+    jit:
+      reference_first:
+        enabled: true
+        max_refs: 8
+        max_resolve_tokens: 4096
+      isolate_handoff:
+        enabled: true
+        default_ttl_ms: 300000
+        min_confidence: 0.60
+      edit_gate:
+        enabled: true
+        clear_at_least_tokens: 1024
+        min_gain_ratio: 0.20
+      compaction:
+        quality_threshold: 0.60
+        fallback_policy: unknown_policy
+        rule_eligibility:
+          allow_oldest_tool_result: true
+          min_retained_evidence: 1
+      swap_back:
+        enabled: true
+        min_relevance_score: 0.60
+        ranking_strategy: relevance_then_recency
+        candidate_window: 8
+      lifecycle_tiering:
+        enabled: true
+        hot_ttl_ms: 300000
+        warm_ttl_ms: 1800000
+        cold_ttl_ms: 7200000
+      cold_store:
+        retention:
+          max_age_ms: 604800000
+          max_records: 10000
+        quota:
+          max_bytes: 67108864
+        cleanup:
+          enabled: true
+          batch_size: 128
+        compact:
+          enabled: true
+          min_fragmentation_ratio: 0.30
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+
+	after := mgr.EffectiveConfig().Runtime.Context.JIT
+	if after.Compaction.FallbackPolicy != before.Compaction.FallbackPolicy {
+		t.Fatalf(
+			"invalid runtime.context.jit.compaction.fallback_policy should rollback, got %q want %q",
+			after.Compaction.FallbackPolicy,
+			before.Compaction.FallbackPolicy,
+		)
+	}
+	reloads := mgr.RecentReloads(1)
+	if len(reloads) == 0 || reloads[0].Success {
+		t.Fatalf("expected failed reload record, got %#v", reloads)
+	}
+}

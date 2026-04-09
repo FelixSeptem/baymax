@@ -1323,15 +1323,42 @@ func DefaultConfig() Config {
 						ClearAtLeastTokens: 1024,
 						MinGainRatio:       0.20,
 					},
+					Compaction: RuntimeContextJITCompactionConfig{
+						QualityThreshold: 0.60,
+						FallbackPolicy:   RuntimeContextJITCompactionFallbackPolicyBestEffort,
+						RuleEligibility: RuntimeContextJITCompactionRuleEligibility{
+							AllowOldestToolResult: true,
+							MinRetainedEvidence:   1,
+						},
+					},
 					SwapBack: RuntimeContextJITSwapBackConfig{
 						Enabled:           false,
 						MinRelevanceScore: 0.60,
+						RankingStrategy:   RuntimeContextJITSwapBackRankingStrategyRelevanceThenRecency,
+						CandidateWindow:   8,
 					},
 					LifecycleTiering: RuntimeContextJITLifecycleTieringConfig{
 						Enabled:   false,
 						HotTTLMS:  300000,
 						WarmTTLMS: 1800000,
 						ColdTTLMS: 7200000,
+					},
+					ColdStore: RuntimeContextJITColdStoreConfig{
+						Retention: RuntimeContextJITColdStoreRetentionConfig{
+							MaxAgeMS:   604800000,
+							MaxRecords: 10000,
+						},
+						Quota: RuntimeContextJITColdStoreQuotaConfig{
+							MaxBytes: 64 * 1024 * 1024,
+						},
+						Cleanup: RuntimeContextJITColdStoreCleanupConfig{
+							Enabled:   true,
+							BatchSize: 128,
+						},
+						Compact: RuntimeContextJITColdStoreCompactConfig{
+							Enabled:               true,
+							MinFragmentationRatio: 0.30,
+						},
 					},
 				},
 			},
@@ -4471,12 +4498,25 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.context.jit.edit_gate.enabled", base.Runtime.Context.JIT.EditGate.Enabled)
 	v.SetDefault("runtime.context.jit.edit_gate.clear_at_least_tokens", base.Runtime.Context.JIT.EditGate.ClearAtLeastTokens)
 	v.SetDefault("runtime.context.jit.edit_gate.min_gain_ratio", base.Runtime.Context.JIT.EditGate.MinGainRatio)
+	v.SetDefault("runtime.context.jit.compaction.quality_threshold", base.Runtime.Context.JIT.Compaction.QualityThreshold)
+	v.SetDefault("runtime.context.jit.compaction.fallback_policy", base.Runtime.Context.JIT.Compaction.FallbackPolicy)
+	v.SetDefault("runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result", base.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult)
+	v.SetDefault("runtime.context.jit.compaction.rule_eligibility.min_retained_evidence", base.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence)
 	v.SetDefault("runtime.context.jit.swap_back.enabled", base.Runtime.Context.JIT.SwapBack.Enabled)
 	v.SetDefault("runtime.context.jit.swap_back.min_relevance_score", base.Runtime.Context.JIT.SwapBack.MinRelevanceScore)
+	v.SetDefault("runtime.context.jit.swap_back.ranking_strategy", base.Runtime.Context.JIT.SwapBack.RankingStrategy)
+	v.SetDefault("runtime.context.jit.swap_back.candidate_window", base.Runtime.Context.JIT.SwapBack.CandidateWindow)
 	v.SetDefault("runtime.context.jit.lifecycle_tiering.enabled", base.Runtime.Context.JIT.LifecycleTiering.Enabled)
 	v.SetDefault("runtime.context.jit.lifecycle_tiering.hot_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.HotTTLMS)
 	v.SetDefault("runtime.context.jit.lifecycle_tiering.warm_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.WarmTTLMS)
 	v.SetDefault("runtime.context.jit.lifecycle_tiering.cold_ttl_ms", base.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS)
+	v.SetDefault("runtime.context.jit.cold_store.retention.max_age_ms", base.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS)
+	v.SetDefault("runtime.context.jit.cold_store.retention.max_records", base.Runtime.Context.JIT.ColdStore.Retention.MaxRecords)
+	v.SetDefault("runtime.context.jit.cold_store.quota.max_bytes", base.Runtime.Context.JIT.ColdStore.Quota.MaxBytes)
+	v.SetDefault("runtime.context.jit.cold_store.cleanup.enabled", base.Runtime.Context.JIT.ColdStore.Cleanup.Enabled)
+	v.SetDefault("runtime.context.jit.cold_store.cleanup.batch_size", base.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize)
+	v.SetDefault("runtime.context.jit.cold_store.compact.enabled", base.Runtime.Context.JIT.ColdStore.Compact.Enabled)
+	v.SetDefault("runtime.context.jit.cold_store.compact.min_fragmentation_ratio", base.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio)
 	v.SetDefault("runtime.readiness.enabled", base.Runtime.Readiness.Enabled)
 	v.SetDefault("runtime.readiness.strict", base.Runtime.Readiness.Strict)
 	v.SetDefault("runtime.readiness.remote_probe_enabled", base.Runtime.Readiness.RemoteProbeEnabled)
@@ -5179,11 +5219,27 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	contextJITCompactionQualityThreshold, err := strictFloatConfigValue(v, "runtime.context.jit.compaction.quality_threshold")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITCompactionRuleAllowOldestToolResult, err := strictBoolConfigValue(v, "runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITCompactionRuleMinRetainedEvidence, err := strictIntConfigValue(v, "runtime.context.jit.compaction.rule_eligibility.min_retained_evidence")
+	if err != nil {
+		return Config{}, err
+	}
 	contextJITSwapBackEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.swap_back.enabled")
 	if err != nil {
 		return Config{}, err
 	}
 	contextJITSwapBackMinRelevanceScore, err := strictFloatConfigValue(v, "runtime.context.jit.swap_back.min_relevance_score")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITSwapBackCandidateWindow, err := strictIntConfigValue(v, "runtime.context.jit.swap_back.candidate_window")
 	if err != nil {
 		return Config{}, err
 	}
@@ -5200,6 +5256,34 @@ func buildConfig(v *viper.Viper) (Config, error) {
 		return Config{}, err
 	}
 	contextJITLifecycleTieringColdTTLMS, err := strictIntConfigValue(v, "runtime.context.jit.lifecycle_tiering.cold_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreRetentionMaxAgeMS, err := strictIntConfigValue(v, "runtime.context.jit.cold_store.retention.max_age_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreRetentionMaxRecords, err := strictIntConfigValue(v, "runtime.context.jit.cold_store.retention.max_records")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreQuotaMaxBytes, err := strictIntConfigValue(v, "runtime.context.jit.cold_store.quota.max_bytes")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreCleanupEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.cold_store.cleanup.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreCleanupBatchSize, err := strictIntConfigValue(v, "runtime.context.jit.cold_store.cleanup.batch_size")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreCompactEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.cold_store.compact.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	contextJITColdStoreCompactMinFragmentationRatio, err := strictFloatConfigValue(v, "runtime.context.jit.cold_store.compact.min_fragmentation_ratio")
 	if err != nil {
 		return Config{}, err
 	}
@@ -5229,12 +5313,25 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Context.JIT.EditGate.Enabled = contextJITEditGateEnabled
 	cfg.Runtime.Context.JIT.EditGate.ClearAtLeastTokens = contextJITEditGateClearAtLeastTokens
 	cfg.Runtime.Context.JIT.EditGate.MinGainRatio = contextJITEditGateMinGainRatio
+	cfg.Runtime.Context.JIT.Compaction.QualityThreshold = contextJITCompactionQualityThreshold
+	cfg.Runtime.Context.JIT.Compaction.FallbackPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.context.jit.compaction.fallback_policy")))
+	cfg.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult = contextJITCompactionRuleAllowOldestToolResult
+	cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence = contextJITCompactionRuleMinRetainedEvidence
 	cfg.Runtime.Context.JIT.SwapBack.Enabled = contextJITSwapBackEnabled
 	cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore = contextJITSwapBackMinRelevanceScore
+	cfg.Runtime.Context.JIT.SwapBack.RankingStrategy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.context.jit.swap_back.ranking_strategy")))
+	cfg.Runtime.Context.JIT.SwapBack.CandidateWindow = contextJITSwapBackCandidateWindow
 	cfg.Runtime.Context.JIT.LifecycleTiering.Enabled = contextJITLifecycleTieringEnabled
 	cfg.Runtime.Context.JIT.LifecycleTiering.HotTTLMS = contextJITLifecycleTieringHotTTLMS
 	cfg.Runtime.Context.JIT.LifecycleTiering.WarmTTLMS = contextJITLifecycleTieringWarmTTLMS
 	cfg.Runtime.Context.JIT.LifecycleTiering.ColdTTLMS = contextJITLifecycleTieringColdTTLMS
+	cfg.Runtime.Context.JIT.ColdStore.Retention.MaxAgeMS = contextJITColdStoreRetentionMaxAgeMS
+	cfg.Runtime.Context.JIT.ColdStore.Retention.MaxRecords = contextJITColdStoreRetentionMaxRecords
+	cfg.Runtime.Context.JIT.ColdStore.Quota.MaxBytes = contextJITColdStoreQuotaMaxBytes
+	cfg.Runtime.Context.JIT.ColdStore.Cleanup.Enabled = contextJITColdStoreCleanupEnabled
+	cfg.Runtime.Context.JIT.ColdStore.Cleanup.BatchSize = contextJITColdStoreCleanupBatchSize
+	cfg.Runtime.Context.JIT.ColdStore.Compact.Enabled = contextJITColdStoreCompactEnabled
+	cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio = contextJITColdStoreCompactMinFragmentationRatio
 	readinessEnabled, err := strictBoolConfigValue(v, "runtime.readiness.enabled")
 	if err != nil {
 		return Config{}, err

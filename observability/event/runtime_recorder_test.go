@@ -2847,14 +2847,20 @@ mcp:
 		RunID:   "run-context-jit-recorder",
 		Time:    time.Now(),
 		Payload: map[string]any{
-			"status":                              "success",
-			"context_ref_discover_count":          7,
-			"context_ref_resolve_count":           5,
-			"context_edit_estimated_saved_tokens": 88,
-			"context_edit_gate_decision":          "allow.threshold_met",
-			"context_swapback_relevance_score":    0.77,
-			"context_lifecycle_tier_stats":        map[string]any{"hot": 2, "warm": 3, "cold": 1},
-			"context_recap_source":                "task_aware.stage_actions.v1",
+			"status":                               "success",
+			"context_compaction_outcome_class":     "applied",
+			"context_ref_discover_count":           7,
+			"context_ref_resolve_count":            5,
+			"context_edit_estimated_saved_tokens":  88,
+			"context_edit_gate_decision":           "allow.threshold_met",
+			"context_swapback_relevance_score":     0.77,
+			"context_swapback_ranking_strategy":    "relevance_then_recency",
+			"context_swapback_candidate_window":    8,
+			"context_lifecycle_tier_stats":         map[string]any{"hot": 2, "warm": 3, "cold": 1},
+			"context_tier_transition_reason":       "spill",
+			"context_cold_store_governance_action": "spill",
+			"context_recovery_consistency_marker":  "recovery_consistency_ok",
+			"context_recap_source":                 "task_aware.stage_actions.v1",
 		},
 	})
 
@@ -2863,12 +2869,18 @@ mcp:
 		t.Fatalf("run records len = %d, want 1", len(items))
 	}
 	got := items[0]
-	if got.ContextRefDiscoverCount != 7 ||
+	if got.ContextCompactionOutcomeClass != "applied" ||
+		got.ContextRefDiscoverCount != 7 ||
 		got.ContextRefResolveCount != 5 ||
 		got.ContextEditEstimatedSavedTokens != 88 ||
 		got.ContextEditGateDecision != "allow.threshold_met" ||
 		got.ContextSwapbackRelevanceScore != 0.77 ||
+		got.ContextSwapbackRankingStrategy != "relevance_then_recency" ||
+		got.ContextSwapbackCandidateWindow != 8 ||
 		got.ContextLifecycleTierStats["warm"] != 3 ||
+		got.ContextTierTransitionReason != "spill" ||
+		got.ContextColdStoreGovernanceAction != "spill" ||
+		got.ContextRecoveryConsistencyMarker != "recovery_consistency_ok" ||
 		got.ContextRecapSource != "task_aware.stage_actions.v1" {
 		t.Fatalf("context jit additive field parse mismatch: %#v", got)
 	}
@@ -2919,12 +2931,18 @@ mcp:
 	if got.Status != "success" || got.LatencyMs != 31 {
 		t.Fatalf("existing run fields should stay unchanged: %#v", got)
 	}
-	if got.ContextRefDiscoverCount != 0 ||
+	if got.ContextCompactionOutcomeClass != "" ||
+		got.ContextRefDiscoverCount != 0 ||
 		got.ContextRefResolveCount != 0 ||
 		got.ContextEditEstimatedSavedTokens != 0 ||
 		got.ContextEditGateDecision != "" ||
 		got.ContextSwapbackRelevanceScore != 0 ||
+		got.ContextSwapbackRankingStrategy != "" ||
+		got.ContextSwapbackCandidateWindow != 0 ||
 		len(got.ContextLifecycleTierStats) != 0 ||
+		got.ContextTierTransitionReason != "" ||
+		got.ContextColdStoreGovernanceAction != "" ||
+		got.ContextRecoveryConsistencyMarker != "" ||
 		got.ContextRecapSource != "" {
 		t.Fatalf("missing context jit additive fields must resolve to documented defaults: %#v", got)
 	}

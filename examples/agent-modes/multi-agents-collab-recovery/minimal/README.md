@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `multi-agents-collab-recovery` with `minimal` evidence profile.
+This variant executes a concrete collaboration recovery chain: mailbox orchestration, task-board reconciliation, and retry-based continuation.
 
 ## Run
 go run ./examples/agent-modes/multi-agents-collab-recovery/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/multi-agents-collab-recovery/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If mailbox/task-board/recovery outputs are unexpected, inspect mailbox/task fixtures in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

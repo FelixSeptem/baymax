@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `custom-adapter-health-readiness-circuit` with `minimal` evidence profile.
+This variant demonstrates adapter health probe sampling and readiness/circuit transition under healthy signals.
 
 ## Run
 go run ./examples/agent-modes/custom-adapter-health-readiness-circuit/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/custom-adapter-health-readiness-circuit/minimal
 - `verification.semantic.expected_markers=adapter_health_probe_sampled,adapter_readiness_circuit_transitioned,adapter_backoff_recovery_classified`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes health/circuit fields: `latency_ms`, `error_rate_pct`, `health_score`, `readiness`, `circuit`, `backoff_ms`, `recovery_class`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If circuit/backoff behavior diverges, inspect marker handlers for `adapter_readiness_circuit_transitioned` and `adapter_backoff_recovery_classified`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `mainline-task-board-query-control` with `minimal` evidence profile.
+This variant demonstrates task-board query filtering, control validation, and idempotent operation execution.
 
 ## Run
 go run ./examples/agent-modes/mainline-task-board-query-control/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/mainline-task-board-query-control/minimal
 - `verification.semantic.expected_markers=taskboard_query_filtered,taskboard_control_validated,taskboard_operation_idempotent`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes control/idempotency fields: `query`, `filter`, `control_action`, `control_valid`, `operation_key`, `duplicate_attempts`, `idempotent`, `applied`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If idempotency behavior diverges, inspect marker handlers for `taskboard_control_validated` and `taskboard_operation_idempotent`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

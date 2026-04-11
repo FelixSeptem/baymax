@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `rag-hybrid-retrieval` with `minimal` evidence profile.
+This variant executes a three-stage retrieval workflow: lexical candidate build, freshness-based rerank, and fallback route classification.
 
 ## Run
 go run ./examples/agent-modes/rag-hybrid-retrieval/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/rag-hybrid-retrieval/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If candidate build/rerank output is empty, verify corpus inputs in `semantic_example.go` and rerun this variant.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

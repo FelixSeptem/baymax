@@ -577,6 +577,14 @@ Invoke-RequiredStep -StepLabel "[quality-gate] agent mode readme runtime sync co
     pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode anti-template contract" -Command {
+    pwsh -File scripts/check-agent-mode-anti-template-contract.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] agent mode doc-first delivery contract" -Command {
+    pwsh -File scripts/check-agent-mode-doc-first-delivery-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] a64 impacted gate selection" -Command {
     pwsh -File scripts/check-a64-impacted-gate-selection.ps1
 }

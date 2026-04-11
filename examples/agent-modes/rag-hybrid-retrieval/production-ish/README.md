@@ -3,6 +3,13 @@
 ## Purpose
 Real runtime semantic example for `rag-hybrid-retrieval` with `production-ish` evidence profile.
 
+## Variant Delta (vs minimal)
+- Reuses the same semantic anchor and runtime path baseline as minimal.
+- Adds `governance_retrieval_budget_gate`: apply candidate budget limit before answer synthesis.
+- Adds `governance_retrieval_replay_bound`: emit replay signature derived from ranked IDs + fallback route.
+- Requires verification.semantic.governance=enforced.
+- Requires verification.semantic.expected_markers and result.signature to differ from minimal.
+
 ## Run
 go run ./examples/agent-modes/rag-hybrid-retrieval/production-ish
 
@@ -33,5 +40,8 @@ go run ./examples/agent-modes/rag-hybrid-retrieval/production-ish
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If governance markers are missing, verify budget/replay branches in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+
+

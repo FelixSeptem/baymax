@@ -3,6 +3,12 @@
 ## Purpose
 Real runtime semantic example for `mainline-task-board-query-control` with `production-ish` evidence profile.
 
+## Variant Delta (vs minimal)
+- Reuses the same semantic anchor and runtime path baseline as minimal.
+- Uses higher-pressure query/control scenario and duplicate-retry path, while maintaining idempotent application.
+- Adds governance branch (`governance_taskboard_gate_enforced`, `governance_taskboard_replay_bound`) to classify control decision and replay trace.
+- Requires verification.semantic.governance=enforced and a different `result.signature` from minimal.
+
 ## Run
 go run ./examples/agent-modes/mainline-task-board-query-control/production-ish
 
@@ -29,9 +35,13 @@ go run ./examples/agent-modes/mainline-task-board-query-control/production-ish
 - `verification.semantic.expected_markers=taskboard_query_filtered,taskboard_control_validated,taskboard_operation_idempotent,governance_taskboard_gate_enforced,governance_taskboard_replay_bound`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes governance fields: `governance`, `ticket`, `replay`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If governance fields are missing, inspect marker handlers for `governance_taskboard_gate_enforced` and `governance_taskboard_replay_bound`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+
+

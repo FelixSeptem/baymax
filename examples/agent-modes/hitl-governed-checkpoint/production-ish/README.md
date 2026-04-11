@@ -3,6 +3,14 @@
 ## Purpose
 Real runtime semantic example for `hitl-governed-checkpoint` with `production-ish` evidence profile.
 
+## Variant Delta (vs minimal)
+- Reuses the same semantic anchor and runtime path baseline as minimal.
+- Adds `governance_hitl_gate_enforced`: classify `allow|allow_with_record|allow_with_recovery|block` from decision + timeout + recovery plan.
+- Adds `governance_hitl_replay_bound`: bind replay signature from ticket version and governance result.
+- Preserves minimal checkpoint flow and appends governance enforcement.
+- Requires verification.semantic.governance=enforced.
+- Requires verification.semantic.expected_markers and result.signature to differ from minimal.
+
 ## Run
 go run ./examples/agent-modes/hitl-governed-checkpoint/production-ish
 
@@ -33,5 +41,8 @@ go run ./examples/agent-modes/hitl-governed-checkpoint/production-ish
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If governance or replay output is unexpected, inspect `governance_hitl_*` branches in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+
+

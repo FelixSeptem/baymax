@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `workflow-routing-strategy-switch` with `minimal` evidence profile.
+This variant demonstrates concrete route selection and confidence-based switch commit in `orchestration/workflow`.
 
 ## Run
 go run ./examples/agent-modes/workflow-routing-strategy-switch/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/workflow-routing-strategy-switch/minimal
 - `verification.semantic.expected_markers=routing_strategy_selected,routing_confidence_evaluated,routing_switch_committed`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes concrete routing fields: `route_version`, `candidate`, `threshold`, `confidence`, `switch_committed`, `active`, `fallback`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If switch behavior looks wrong, inspect `routing_confidence_evaluated` / `routing_switch_committed` marker handlers and confirm threshold/score branch.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

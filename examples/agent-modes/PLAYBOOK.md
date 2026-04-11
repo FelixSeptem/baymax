@@ -14,6 +14,18 @@ This playbook defines how to promote each `agent-modes` example from `minimal` t
 - `production-ish` MUST include all minimal markers plus governance semantic evidence (`verification.semantic.governance=enforced`).
 - `production-ish` MUST NOT be a no-op copy of `minimal`; marker set and final answer signature must differ.
 
+## Doc-First Delivery Flow
+1. **Doc baseline first**: update `MATRIX.md` and the mode `README.md` files first, including semantic anchor, runtime path evidence, expected markers, and rollback notes.
+2. **Implementation second**: only after doc baseline is complete, update mode code paths.
+3. **Gate validation third**: run agent-mode semantic/readme/smoke/quality gates before task completion.
+4. **Task completion rule**: mark a task done only when code/test/documentation/gate evidence are all present.
+
+## Rollback Steps (Doc-First Scope)
+1. Revert affected mode directory (`main.go`, `README.md`, semantic implementation file) as one unit.
+2. Revert corresponding row updates in `MATRIX.md` and this playbook mapping section.
+3. Re-run semantic/readme/smoke gates to confirm rollback returns to a stable baseline.
+4. Record rollback reason and impacted pattern list in change-level acceptance notes.
+
 ## Semantic Evidence Fields
 - `verification.mainline_runtime_path`: `ok|failed`, runtime entry health.
 - `verification.semantic.phase`: rollout phase (`P0|P1|P2`).

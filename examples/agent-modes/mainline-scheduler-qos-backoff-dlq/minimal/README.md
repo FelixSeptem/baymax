@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `mainline-scheduler-qos-backoff-dlq` with `minimal` evidence profile.
+This variant demonstrates scheduler fairness, bounded backoff usage, and DLQ classification.
 
 ## Run
 go run ./examples/agent-modes/mainline-scheduler-qos-backoff-dlq/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/mainline-scheduler-qos-backoff-dlq/minimal
 - `verification.semantic.expected_markers=scheduler_qos_fairness_applied,scheduler_backoff_budgeted,scheduler_dlq_classified`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes scheduler fields: `qos_policy`, `fair_window_sec`, `backoff_budget_ms`, `backoff_used_ms`, `retry`, `dlq_class`, `dlq_count`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If qos/backoff behavior diverges, inspect marker handlers for `scheduler_backoff_budgeted` and `scheduler_dlq_classified`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

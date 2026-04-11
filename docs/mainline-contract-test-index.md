@@ -309,6 +309,8 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 - Examples smoke gate: `scripts/check-agent-mode-examples-smoke.sh` / `scripts/check-agent-mode-examples-smoke.ps1`
 - Real runtime semantic gate: `scripts/check-agent-mode-real-runtime-semantic-contract.sh` / `scripts/check-agent-mode-real-runtime-semantic-contract.ps1`
 - README runtime sync gate: `scripts/check-agent-mode-readme-runtime-sync-contract.sh` / `scripts/check-agent-mode-readme-runtime-sync-contract.ps1`
+- Anti-template gate: `scripts/check-agent-mode-anti-template-contract.sh` / `scripts/check-agent-mode-anti-template-contract.ps1`
+- Doc-first delivery gate: `scripts/check-agent-mode-doc-first-delivery-contract.sh` / `scripts/check-agent-mode-doc-first-delivery-contract.ps1`
 - Smoke stability governance gate: `scripts/check-agent-mode-smoke-stability-governance.sh` / `scripts/check-agent-mode-smoke-stability-governance.ps1`
 - Migration playbook consistency gate: `scripts/check-agent-mode-migration-playbook-consistency.sh` / `scripts/check-agent-mode-migration-playbook-consistency.ps1`
 - Legacy TODO cleanup gate: `scripts/check-agent-mode-legacy-todo-cleanup.sh` / `scripts/check-agent-mode-legacy-todo-cleanup.ps1`

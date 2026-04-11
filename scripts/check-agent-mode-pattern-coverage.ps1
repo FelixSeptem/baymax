@@ -62,7 +62,7 @@ if (-not (Test-Path -LiteralPath $matrixPath -PathType Leaf)) {
 
 $matrixRaw = Get-Content -Path $matrixPath -Raw
 $matrixLines = Get-Content -Path $matrixPath
-if (-not $matrixRaw.Contains("pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay")) {
+if (-not $matrixRaw.Contains("pattern -> phase -> a71_scope -> a71_status -> doc-baseline-ready -> impl-ready -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> failure_rollback_ref -> minimal -> production-ish -> contracts -> gates -> replay")) {
     throw "[agent-mode-pattern-coverage] matrix missing canonical column declaration"
 }
 
@@ -82,7 +82,7 @@ foreach ($pattern in $requiredPatterns) {
         $missingMatrixRows.Add($pattern) | Out-Null
     }
     else {
-        if (-not $row.Contains("runtime/config") -or -not $row.Contains("minimal:") -or -not $row.Contains("production-ish:")) {
+        if (-not $row.Contains("| yes | yes |") -or -not $row.Contains("runtime/config") -or -not $row.Contains("minimal:") -or -not $row.Contains("production-ish:")) {
             $missingSemanticEvidence.Add($pattern) | Out-Null
         }
     }

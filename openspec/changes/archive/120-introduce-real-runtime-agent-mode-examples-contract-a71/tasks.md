@@ -64,7 +64,7 @@
 - [x] 6.6 （a71-T75）执行最小验证：`go test ./...`、`go test -race ./...`、`golangci-lint run --config .golangci.yml`。
 - [x] 6.7 （a71-T76）执行 `pwsh -File scripts/check-docs-consistency.ps1` 并记录未执行项/风险（如有）。
 - [ ] 6.8 （a71-T77）执行 `pwsh -File scripts/check-quality-gate.ps1` 全绿后标记 a71 完成。
-  - T77 说明：`scope=full` 下已执行到 `a64 performance regression gate`，因总预算超时触发 kill；`scope=general` 与 a71 专项门禁均已全绿，待单独补跑 full-scope。
+  - T77 说明：`scope=full` 在 `BAYMAX_SECURITY_SCAN_MODE=strict` 下唯一阻断为 `govulncheck`（Go 标准库 `crypto/x509` / `crypto/tls` / `html/template`，本机 `go1.26.1`，修复版本 `go1.26.2`）；`scope=full` 在 `BAYMAX_SECURITY_SCAN_MODE=warn` 下已全流程通过。
 - [x] 6.9 （a71-T78）归档前复核：28 模式全部通过“真实语义 + README 同步 + gate/replay 映射”验收。
 - [x] 6.10 （a71-T79）固化 a71 验收报告到变更目录（含失败分类、回归统计与覆盖矩阵）。
 - [x] 6.11 （a71-T80）完成 OpenSpec 归档前检查并准备归档任务。

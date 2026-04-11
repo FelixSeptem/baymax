@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `hitl-governed-checkpoint` with `minimal` evidence profile.
+This variant executes a concrete HITL checkpoint path: await reviewer decision, classify resume/reject, and evaluate timeout recovery plan.
 
 ## Run
 go run ./examples/agent-modes/hitl-governed-checkpoint/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/hitl-governed-checkpoint/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If decision classification is unexpected, inspect ticket/decision fixtures and timeout threshold in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `mainline-mailbox-async-delayed-reconcile` with `minimal` evidence profile.
+This variant demonstrates delayed mailbox dispatch and reconcile with timeline reason emission.
 
 ## Run
 go run ./examples/agent-modes/mainline-mailbox-async-delayed-reconcile/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/mainline-mailbox-async-delayed-reconcile/minimal
 - `verification.semantic.expected_markers=mailbox_async_delayed_dispatched,mailbox_reconcile_triggered,mailbox_timeline_reason_emitted`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes dispatch/reconcile fields: `delay_sec`, `pending`, `reconcile_batch`, `reconciled`, `late`, `timeline_reason`, `primary_reason`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If reconcile/timeline behavior diverges, inspect marker handlers for `mailbox_reconcile_triggered` and `mailbox_timeline_reason_emitted`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

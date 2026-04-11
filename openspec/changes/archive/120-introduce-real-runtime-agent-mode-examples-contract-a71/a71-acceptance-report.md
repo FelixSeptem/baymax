@@ -46,17 +46,19 @@ Change: introduce-real-runtime-agent-mode-examples-contract-a71
 ### Quality gate
 
 - PASS: `BAYMAX_QUALITY_GATE_SCOPE=general pwsh -File scripts/check-quality-gate.ps1`
-- PARTIAL (non-a71 blocker): `pwsh -File scripts/check-quality-gate.ps1` (`scope=full`)
-  - Failure class: `[quality-gate] step timeout`
-  - Failing step: `[quality-gate] a64 performance regression gate`
-  - Cause: total timeout budget exhausted, timed-out process tree was killed by gate script
+- PASS: `BAYMAX_QUALITY_GATE_TOTAL_TIMEOUT_SECONDS=2400 BAYMAX_QUALITY_GATE_STEP_TIMEOUT_SECONDS=1800 BAYMAX_SECURITY_SCAN_MODE=warn pwsh -File scripts/check-quality-gate.ps1` (`scope=full`)
+- BLOCKED (non-a71 blocker): `BAYMAX_QUALITY_GATE_TOTAL_TIMEOUT_SECONDS=2400 BAYMAX_QUALITY_GATE_STEP_TIMEOUT_SECONDS=1800 pwsh -File scripts/check-quality-gate.ps1` (`scope=full`, strict)
+  - Failure class: `[native-strict] command failed: govulncheck ./... (exit=3)`
+  - Cause: Go stdlib vulnerabilities detected on local toolchain `go1.26.1`
+  - Affected packages: `crypto/x509`, `crypto/tls`, `html/template`
+  - Upstream fix version reported by scanner: `go1.26.2`
 
 ## 4. Failure Classification Summary
 
 - `agent-mode-shared-semantic-engine-detected`: no hit after migration
 - `agent-mode-semantic-ownership-missing`: no hit after migration
 - `agent-mode-missing-runtime-path-evidence`: no hit after migration
-- `[quality-gate] step timeout` in full scope: hit on a64 performance gate only
+- strict full-scope `govulncheck` blocker: hit on Go stdlib vulnerability scan only
 
 ## 5. Coverage Matrix Summary
 
@@ -68,5 +70,5 @@ Change: introduce-real-runtime-agent-mode-examples-contract-a71
 ## 6. Residual Risk and Follow-up
 
 - Residual item for full closure:
-  - Re-run `pwsh -File scripts/check-quality-gate.ps1` with larger timeout budget (or isolated a64 performance gate run) to fully satisfy T77.
-- This residual does not indicate a71 semantic regression; it is a gate budget exhaustion in an a64 performance section.
+  - Upgrade local/CI Go toolchain from `go1.26.1` to at least `go1.26.2`, then re-run strict `pwsh -File scripts/check-quality-gate.ps1`.
+- This residual does not indicate a71 semantic regression; it is a strict security scan blocker from Go stdlib CVEs on the local toolchain version.

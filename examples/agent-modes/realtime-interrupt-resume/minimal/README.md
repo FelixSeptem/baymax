@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `realtime-interrupt-resume` with `minimal` evidence profile.
+This variant executes a concrete realtime recovery chain: cursor idempotency dedupe, interrupt capture, and checkpoint resume recovery.
 
 ## Run
 go run ./examples/agent-modes/realtime-interrupt-resume/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/realtime-interrupt-resume/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If cursor/interrupt/resume outputs are unexpected, inspect event/signal fixtures in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

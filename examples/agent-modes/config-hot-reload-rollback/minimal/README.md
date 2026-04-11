@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `config-hot-reload-rollback` with `minimal` evidence profile.
+This variant demonstrates a concrete `runtime/config` reload candidate that is rejected by validation and rolled back atomically.
 
 ## Run
 go run ./examples/agent-modes/config-hot-reload-rollback/minimal
@@ -29,9 +30,11 @@ go run ./examples/agent-modes/config-hot-reload-rollback/minimal
 - `verification.semantic.expected_markers=config_reload_attempted,config_invalid_failfast,config_atomic_rollback_verified`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes concrete state fields: `reload`, `candidate_version`, `validation`, `fail_fast`, `rollback`, `effective_digest`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If `validation=rejected_fail_fast` or `rollback=true` is missing, inspect `semantic_example.go` marker handlers for `config_invalid_failfast` / `config_atomic_rollback_verified`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

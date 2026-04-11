@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `structured-output-schema-contract` with `minimal` evidence profile.
+This variant executes schema contract load, compatibility window check, and drift classification without governance admission steps.
 
 ## Run
 go run ./examples/agent-modes/structured-output-schema-contract/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/structured-output-schema-contract/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If drift classification is unexpected, inspect `required_fields` and `payload_field_keys` logic in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

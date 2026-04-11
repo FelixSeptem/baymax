@@ -61,7 +61,7 @@ if [[ ! -f "${MATRIX_PATH}" ]]; then
   echo "[agent-mode-pattern-coverage] missing matrix: ${MATRIX_PATH}" >&2
   exit 1
 fi
-if ! grep -q "pattern -> phase -> a71_scope -> a71_status -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> minimal -> production-ish -> contracts -> gates -> replay" "${MATRIX_PATH}"; then
+if ! grep -q "pattern -> phase -> a71_scope -> a71_status -> doc-baseline-ready -> impl-ready -> semantic_anchor -> runtime_path_evidence -> expected_verification_markers -> failure_rollback_ref -> minimal -> production-ish -> contracts -> gates -> replay" "${MATRIX_PATH}"; then
   echo "[agent-mode-pattern-coverage] matrix missing canonical column declaration" >&2
   exit 1
 fi
@@ -80,7 +80,7 @@ for pattern in "${required_patterns[@]}"; do
   if [[ -z "${row}" ]]; then
     missing_matrix_rows+=("${pattern}")
   else
-    if [[ "${row}" != *"runtime/config"* || "${row}" != *"minimal:"* || "${row}" != *"production-ish:"* ]]; then
+    if [[ "${row}" != *"| yes | yes |"* || "${row}" != *"runtime/config"* || "${row}" != *"minimal:"* || "${row}" != *"production-ish:"* ]]; then
       missing_semantic_evidence+=("${pattern}")
     fi
   fi

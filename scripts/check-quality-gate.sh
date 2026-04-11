@@ -116,6 +116,18 @@ if ! bash scripts/check-agent-mode-readme-runtime-sync-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] agent mode anti-template contract"
+if ! bash scripts/check-agent-mode-anti-template-contract.sh; then
+  echo "[quality-gate][agent-mode-anti-template-contract] agent mode anti-template contract failed"
+  exit 1
+fi
+
+echo "[quality-gate] agent mode doc-first delivery contract"
+if ! bash scripts/check-agent-mode-doc-first-delivery-contract.sh; then
+  echo "[quality-gate][agent-mode-doc-first-delivery-contract] agent mode doc-first delivery contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] a64 impacted gate selection"
 if ! bash scripts/check-a64-impacted-gate-selection.sh; then
   echo "[quality-gate][a64-impacted-gate-selection] a64 impacted gate selection failed"

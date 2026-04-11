@@ -51,6 +51,11 @@ pwsh -File scripts/check-docs-consistency.ps1
   - quality 侧：`scripts/check-openspec-example-impact-declaration.sh/.ps1`（接入 `check-quality-gate.*`）
   - 失败分类码：`roadmap-status-drift`、`missing-example-impact-declaration`、`invalid-example-impact-value`
 
+7. `examples/agent-modes` 变更必须文档先行（强制）
+- 先完成文档基线：`MATRIX.md` + 对应模式 `README.md`（含 semantic anchor、runtime path、expected markers、rollback notes）。
+- 文档基线未完成前，禁止进入该模式代码实现与任务勾选。
+- 任务勾选必须同时具备代码/测试/文档/门禁四类证据，不得仅凭占位实现或文档更新勾选。
+
 ## 架构硬约束（不可绕过）
 
 - `runtime/*` 禁止依赖 `mcp/http` 或 `mcp/stdio`

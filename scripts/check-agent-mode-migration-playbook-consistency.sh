@@ -30,16 +30,49 @@ required_sections=(
 missing_checklist=()
 missing_gate=()
 
+header_line="$(grep -E '^\|[[:space:]]*pattern[[:space:]]*\|' "${MATRIX_PATH}" | head -n 1 || true)"
+if [[ -z "${header_line}" ]]; then
+  echo "[agent-mode-migration-playbook-consistency][missing-checklist] missing matrix header row: ${MATRIX_PATH}" >&2
+  exit 1
+fi
+
+IFS='|' read -r -a header_cols <<<"${header_line}"
+pattern_idx=-1
+gates_idx=-1
+for i in "${!header_cols[@]}"; do
+  col_name="$(echo "${header_cols[$i]}" | xargs)"
+  if [[ "${col_name}" == "pattern" ]]; then
+    pattern_idx="${i}"
+  fi
+  if [[ "${col_name}" == "gates" ]]; then
+    gates_idx="${i}"
+  fi
+done
+
+if (( pattern_idx < 0 || gates_idx < 0 )); then
+  echo "[agent-mode-migration-playbook-consistency][missing-checklist] missing required columns in matrix header (pattern/gates)" >&2
+  exit 1
+fi
+
 if ! grep -Fq "## Production Migration Checklist" "${PLAYBOOK_PATH}"; then
   missing_checklist+=("playbook:missing-production-migration-checklist")
 fi
 
 while IFS= read -r row; do
   [[ -n "${row}" ]] || continue
-  pattern="$(echo "${row}" | awk -F '|' '{print $2}' | xargs)"
+  IFS='|' read -r -a row_cols <<<"${row}"
+  if (( ${#row_cols[@]} <= pattern_idx || ${#row_cols[@]} <= gates_idx )); then
+    continue
+  fi
+
+  pattern="$(echo "${row_cols[$pattern_idx]}" | xargs)"
   pattern="${pattern#\`}"
   pattern="${pattern%\`}"
-  gates_cell="$(echo "${row}" | awk -F '|' '{print $12}' | xargs)"
+  [[ -n "${pattern}" ]] || continue
+
+  gates_cell="$(echo "${row_cols[$gates_idx]}" | xargs)"
+  gates_cell="${gates_cell#\`}"
+  gates_cell="${gates_cell%\`}"
   readme_path="examples/agent-modes/${pattern}/production-ish/README.md"
 
   if [[ ! -f "${readme_path}" ]]; then

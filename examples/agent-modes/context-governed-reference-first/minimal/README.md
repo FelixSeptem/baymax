@@ -2,6 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `context-governed-reference-first` with `minimal` evidence profile.
+This variant executes a concrete reference-first chain: candidate selection, isolated handoff trimming, and edit-gate evaluation.
 
 ## Run
 go run ./examples/agent-modes/context-governed-reference-first/minimal
@@ -33,5 +34,6 @@ go run ./examples/agent-modes/context-governed-reference-first/minimal
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- If isolated references or edit-gate decisions are unexpected, inspect reference/edit fixtures in `semantic_example.go`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

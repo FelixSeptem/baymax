@@ -3,6 +3,12 @@
 ## Purpose
 Real runtime semantic example for `custom-adapter-mcp-model-tool-memory-pack` with `production-ish` evidence profile.
 
+## Variant Delta (vs minimal)
+- Reuses the same semantic anchor and runtime path baseline as minimal.
+- Uses richer pack manifest (multi-transport, multi-provider, guarded tool profile) and tenant-scoped memory binding.
+- Adds governance branch (`governance_adapter_pack_gate_enforced`, `governance_adapter_pack_replay_bound`) for pack decision and replay trace.
+- Requires verification.semantic.governance=enforced and a different `result.signature` from minimal.
+
 ## Run
 go run ./examples/agent-modes/custom-adapter-mcp-model-tool-memory-pack/production-ish
 
@@ -29,9 +35,13 @@ go run ./examples/agent-modes/custom-adapter-mcp-model-tool-memory-pack/producti
 - `verification.semantic.expected_markers=adapter_pack_manifest_resolved,adapter_pack_capability_fallback,adapter_pack_memory_scope_bound,governance_adapter_pack_gate_enforced,governance_adapter_pack_replay_bound`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes governance fields: `governance`, `ticket`, `replay`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If governance fields are missing, inspect marker handlers for `governance_adapter_pack_gate_enforced` and `governance_adapter_pack_replay_bound`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+
+

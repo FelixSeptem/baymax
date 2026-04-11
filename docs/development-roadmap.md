@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-04-09
+更新时间：2026-04-11
 
 ## 定位
 
@@ -15,15 +15,15 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-04-09：
+截至 2026-04-11：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
   - `introduce-governance-automation-and-consistency-gate-contract-a70`
   - `introduce-context-compression-production-hardening-contract-a69`
   - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
-- 进行中：
-  - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`
+  - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）
+- 进行中：无活跃 change。
 - 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
 
 ## 版本阶段口径（延续 0.x）

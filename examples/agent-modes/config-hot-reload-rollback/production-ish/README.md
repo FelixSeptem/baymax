@@ -3,6 +3,12 @@
 ## Purpose
 Real runtime semantic example for `config-hot-reload-rollback` with `production-ish` evidence profile.
 
+## Variant Delta (vs minimal)
+- Reuses the same semantic anchor and runtime path baseline as minimal.
+- Keeps the same fail-fast + atomic rollback mainline but upgrades diagnostics severity (`critical`) and policy failure code.
+- Adds governance branch (`governance_config_gate_enforced`, `governance_config_replay_bound`) to produce release decision, governance ticket and replay signature.
+- Requires verification.semantic.governance=enforced and a different `result.signature` from minimal.
+
 ## Run
 go run ./examples/agent-modes/config-hot-reload-rollback/production-ish
 
@@ -29,9 +35,13 @@ go run ./examples/agent-modes/config-hot-reload-rollback/production-ish
 - `verification.semantic.expected_markers=config_reload_attempted,config_invalid_failfast,config_atomic_rollback_verified,governance_config_gate_enforced,governance_config_replay_bound`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
+- `result.final_answer` includes governance fields: `governance`, `ticket`, `replay`.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
+- If governance fields are missing, inspect marker handlers for `governance_config_gate_enforced` and `governance_config_replay_bound`.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+
+

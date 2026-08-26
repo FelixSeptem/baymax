@@ -8,7 +8,7 @@ observability/event/runtime_recorder_test.go,observability,A63 staged split back
 runtime/config/manager_test.go,runtime-config,A63 staged split backlog,2026-09-30,2899,false
 runtime/config/readiness.go,runtime-config,A63 staged split backlog,2026-09-30,2749,false
 runtime/diagnostics/store_test.go,runtime-diagnostics,A63 staged split backlog,2026-09-30,2509,false
-runtime/diagnostics/store.go,runtime-diagnostics,A63 staged split backlog,2026-09-30,2376,false
+runtime/diagnostics/store.go,runtime-diagnostics,A63 staged split backlog; additive Agent Runtime Protocol diagnostics fields,2026-09-30,2387,false
 context/assembler/assembler_test.go,context-assembler,A63 staged split backlog,2026-09-30,1872,false
 orchestration/composer/composer.go,orchestration-composer,A63 staged split backlog,2026-09-30,1787,false
 runtime/config/readiness_test.go,runtime-config,A63 staged split backlog,2026-09-30,1739,false

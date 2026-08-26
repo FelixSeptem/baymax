@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-04-11 14:49:26
+Updated: 2026-08-25 23:02:12
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -123,3 +123,5 @@ Updated: 2026-04-11 14:49:26
 - 119 -> introduce-governance-automation-and-consistency-gate-contract-a70
 - 120 -> introduce-real-runtime-agent-mode-examples-contract-a71
 - 121 -> introduce-agent-mode-anti-template-doc-first-delivery-contract-a72
+- 122 -> introduce-agent-runtime-protocol-contract
+- 123 -> extend-agent-runtime-protocol-capability-context-and-concurrency-contract

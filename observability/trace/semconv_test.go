@@ -2,6 +2,26 @@ package trace
 
 import "testing"
 
+func TestProtocolAttributesAreAdditiveAndNullable(t *testing.T) {
+	attrs := ProtocolAttributes("run-1", "step-1", "runner", "run-0", "artifact-1", "checkpoint-1")
+	if attrs[AttrRunID] != "run-1" || attrs[AttrStepID] != "step-1" || attrs[AttrProtocolSource] != "runner" || attrs[AttrCausationID] != "run-0" || attrs[AttrArtifactID] != "artifact-1" || attrs[AttrCheckpointID] != "checkpoint-1" {
+		t.Fatalf("attrs = %#v", attrs)
+	}
+	if got := ProtocolAttributes("run-1", "", "", "", "", ""); len(got) != 1 || got[AttrRunID] != "run-1" {
+		t.Fatalf("nullable attrs = %#v", got)
+	}
+}
+
+func TestProtocolDecisionAttributesPreserveAdditiveCorrelation(t *testing.T) {
+	attrs := ProtocolDecisionAttributes("v1", "accepted", "", "serialize", "queued", "scheduler.session_busy")
+	if attrs[AttrProtocolProfileVersion] != "v1" || attrs[AttrProtocolCapabilityDecision] != "accepted" || attrs[AttrProtocolAdmissionPolicy] != "serialize" || attrs[AttrProtocolAdmissionDecision] != "queued" || attrs[AttrProtocolAdmissionReason] != "scheduler.session_busy" {
+		t.Fatalf("unexpected decision attributes: %#v", attrs)
+	}
+	if _, ok := attrs[AttrProtocolCapabilityReason]; ok {
+		t.Fatal("empty capability reason must be omitted")
+	}
+}
+
 func TestCanonicalSemconvTopologyV1CoversCoreDomains(t *testing.T) {
 	topology := CanonicalSemconvTopologyV1()
 	required := []string{

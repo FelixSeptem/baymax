@@ -3068,6 +3068,43 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesAgentRuntimeProtocolAdditiveFields(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-protocol-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                       "success",
+			"protocol_session_id":          "session-protocol-recorder",
+			"protocol_state":               "completed",
+			"protocol_source":              "runner",
+			"protocol_profile_version":     "v1",
+			"protocol_capability_decision": "accepted",
+			"protocol_capability_reason":   "protocol.capability.optional_downgraded",
+			"protocol_admission_policy":    "serialize",
+			"protocol_admission_decision":  "queued",
+			"protocol_admission_reason":    "scheduler.session_busy",
+			"protocol_checkpoint_id":       "checkpoint-1",
+			"protocol_artifact_ids":        []string{"artifact-1"},
+		},
+	})
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ProtocolSessionID != "session-protocol-recorder" || got.ProtocolState != "completed" || got.ProtocolSource != "runner" || got.ProtocolProfileVersion != "v1" || got.ProtocolCapabilityDecision != "accepted" || got.ProtocolCapabilityReason != "protocol.capability.optional_downgraded" || got.ProtocolAdmissionPolicy != "serialize" || got.ProtocolAdmissionDecision != "queued" || got.ProtocolAdmissionReason != "scheduler.session_busy" || got.ProtocolCheckpointID != "checkpoint-1" || len(got.ProtocolArtifactIDs) != 1 || got.ProtocolArtifactIDs[0] != "artifact-1" {
+		t.Fatalf("protocol additive fields mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderHooksMiddlewareReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

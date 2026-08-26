@@ -1343,6 +1343,18 @@ Composed summary additive fields（contract markers）：
 
 ## 诊断回放（D1 + Readiness-Timeout-Health Replay Fixture + Cross-Domain Primary Reason Arbitration + Arbitration Explainability + Secondary Reason + Arbitration Version Governance + Memory Provider SPI + Builtin Filesystem + Observability Export + Diagnostics Bundle + ReAct Loop + Tool-Calling Parity + Sandbox Egress + Adapter Allowlist + Policy Precedence + Decision Trace + Memory Governance + Runtime Budget Admission + Lifecycle Hooks + Tool Middleware + Unified State/Session Snapshot + ReAct Plan Notebook + Plan Change Hook + Realtime Protocol + Interrupt/Resume）
 
+Agent Runtime Protocol additive projection（`agent_runtime_protocol.v1`）：
+- canonical references: `session_id`、`run_id`、`step_id`、`parent_step_id`、`event_id`、`causation_id`、`artifact_id`、`checkpoint_id`；
+- Run states: `submitted`、`working`、`input_required`、`completed`、`failed`、`canceled`；
+- Event mapping preserves realtime `seq`/dedup/cursor only for `source=realtime`; standard/timeline events never receive synthetic realtime sequence;
+- Artifact/Checkpoint are reference-only and reuse isolate-handoff and `state_session_snapshot.v1` source-of-truth semantics;
+- replay fixture: `integration/testdata/diagnostics-replay/agent-runtime-protocol/success.json`；drift classifications: `agent_runtime_protocol_schema_mismatch`、`agent_runtime_protocol_drift`、`agent_runtime_protocol_lineage_drift`；
+- capability/context/admission fields are additive and nullable: `protocol_profile_version`、`protocol_capability_decision`、`protocol_capability_reason`、`protocol_admission_policy`、`protocol_admission_decision`、`protocol_admission_reason`；they are parsed only by `observability/event.RuntimeRecorder`;
+- capability negotiation defaults to `fail_fast`, reuses adapter required/optional semantics, and classifies profile mismatch as `protocol.capability.profile_mismatch`;
+- Session context is reference-only and bounded by participant/agent count, allowlisted scalar metadata, key/value length, and serialized-size limits; same-Session admission is a source-owned `reject|serialize|branch|optimistic|unknown` projection and never creates a queue, lock, branch, cancellation policy, or persistence store;
+- OTel adds `agent.protocol.profile_version`、`agent.protocol.capability_decision` and `agent.protocol.admission_*` attributes with empty values omitted; diagnostics still use the single RuntimeRecorder write path.
+- gate: `scripts/check-agent-runtime-protocol-contract.sh/.ps1`，并已接入 `check-quality-gate.sh/.ps1`；`control_plane_absent` 是阻断断言。
+
 离线回放命令：
 
 ```bash

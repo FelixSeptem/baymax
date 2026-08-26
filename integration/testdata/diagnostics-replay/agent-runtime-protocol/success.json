@@ -1,0 +1,48 @@
+{
+  "version": "agent_runtime_protocol.v1",
+  "cases": [
+    {
+      "name": "run_stream_success",
+      "run": {
+        "run_id": "run-protocol-1",
+        "session_id": "session-protocol-1",
+        "state": "completed",
+        "step_ids": ["step-tool-1"],
+        "event_ids": ["event-1"],
+        "event_sequence": [1],
+        "artifact_ids": ["artifact-1"],
+        "checkpoint_id": "checkpoint-1",
+        "descriptor": {"profile_version": "v1", "capability_decision": "accepted", "supported_actions": ["cancel", "retry"]},
+        "context": {"scope": "session", "metadata_keys": ["requester"]},
+        "admission": {"policy": "serialize", "decision": "admitted", "reason_code": "scheduler.session_available"}
+      },
+      "stream": {
+        "run_id": "run-protocol-1",
+        "session_id": "session-protocol-1",
+        "state": "completed",
+        "step_ids": ["step-tool-1"],
+        "event_ids": ["event-1"],
+        "event_sequence": [1],
+        "artifact_ids": ["artifact-1"],
+        "checkpoint_id": "checkpoint-1",
+        "descriptor": {"profile_version": "v1", "capability_decision": "accepted", "supported_actions": ["cancel", "retry"]},
+        "context": {"scope": "session", "metadata_keys": ["requester"]},
+        "admission": {"policy": "serialize", "decision": "admitted", "reason_code": "scheduler.session_available"}
+      },
+      "expected": {
+        "run_id": "run-protocol-1",
+        "session_id": "session-protocol-1",
+        "state": "completed",
+        "step_ids": ["step-tool-1"],
+        "event_ids": ["event-1"],
+        "event_sequence": [1],
+        "artifact_ids": ["artifact-1"],
+        "checkpoint_id": "checkpoint-1",
+        "descriptor": {"profile_version": "v1", "capability_decision": "accepted", "supported_actions": ["cancel", "retry"]},
+        "context": {"scope": "session", "metadata_keys": ["requester"]},
+        "admission": {"policy": "serialize", "decision": "admitted", "reason_code": "scheduler.session_available"}
+      },
+      "idempotency": {"first_logical_ingest_total": 1, "replay_logical_ingest_total": 1}
+    }
+  ]
+}

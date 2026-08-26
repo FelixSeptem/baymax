@@ -22,6 +22,7 @@ $requiredPatterns = @(
     "context-governed-reference-first",
     "sandbox-governed-toolchain",
     "realtime-interrupt-resume",
+    "agent-runtime-protocol-projection",
     "multi-agents-collab-recovery",
     "workflow-branch-retry-failfast",
     "mapreduce-large-batch",

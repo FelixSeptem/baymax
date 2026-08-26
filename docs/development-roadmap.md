@@ -15,9 +15,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-04-11：
+截至 2026-08-25：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
+  - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
+  - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract
   - `introduce-governance-automation-and-consistency-gate-contract-a70`
   - `introduce-context-compression-production-hardening-contract-a69`
   - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`
@@ -550,7 +552,108 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
 - 审查结论：上述链路已形成同一 contract 语义闭环，当前没有必须再拆分的 ReAct 后续子提案。
 - 剩余动作：执行全量回归验证（`go test`/`race`/`lint`/gate/docs consistency）并完成提案归档流程。
 
-### P1/P2：post-policy baseline proposal pool 候选提案池（全局视角）
+### 已归档交付记录
+
+### Agent Runtime Protocol contract（已归档）
+
+目标：将已稳定的 Baymax Runtime 能力投影为跨框架、可嵌入的任务生命周期协议对象，降低宿主、前端、审计、评测和 peer Runtime 对内部模块实现的耦合。该项只统一外部语义边界，不引入新的托管 Agent 平台。
+
+Why now：
+- `Run/Stream`、A2A Task、Realtime interrupt/resume、统一 state/session snapshot、OTel tracing/eval、MCP 与多 Agent 编排已完成各自 contract 收敛，但对象命名、关联字段与事件表面仍分散在模块内。
+- 外部系统若要理解一次 Baymax Agent 执行，当前需要同时掌握 `RunID`、Scheduler Task、A2A Task、timeline、realtime envelope、snapshot manifest 和 diagnostics 字段，缺少稳定的协议投影视图。
+- 该提案已于 2026-08-16 完成并归档；其最小合同为后续宿主接入和跨框架互操作提供稳定基础。
+
+范围与边界：
+- 新增稳定协议对象：`SessionRef`、`RunRef`、`StepRef`、`EventEnvelope`、`ArtifactRef`、`CheckpointRef`，统一携带 `session_id`、`run_id`、`step_id`、`parent_step_id`、`event_id`、`causation_id`、`artifact_id`、`checkpoint_id` 等关联字段。
+- 冻结最小 Run 状态机：`submitted -> working -> input_required -> working -> completed|failed|canceled`，并明确 `cancel`、`retry`、`resume` 的合法迁移、幂等和 Run/Stream 对等语义。
+- 复用既有 Runner、Workflow、Teams、Scheduler、A2A、Realtime、Snapshot、RuntimeRecorder 与 OTel 输出；新增 mapping adapter，不以 Protocol 名义重写其 source-of-truth 或平行 reason taxonomy。
+- `ArtifactRef` 仅定义可追溯引用（`id/type/locator/digest/produced_by_run/produced_by_step`），不在第一期新增 artifact store、文件托管或大内容内嵌。
+- 可恢复工具/业务错误可作为 Step/Event outcome 表达；配置、权限/安全、协议校验和模块边界违规继续遵循 fail-fast + 原子回滚，禁止用 Error-as-Data 稀释既有安全约束。
+- 不引入 REST/SSE 网关、Redis Stream、托管会话服务、平台 UI/RBAC/多租户、跨租户控制面或新的多 Agent 执行拓扑；网络传输仅作为宿主可选 adapter 的后续议题。
+
+任务拆分与依赖：
+- P1-APR-01（协议对象与状态机）：在新 OpenSpec 中冻结 `Session/Run/Step/Event/Artifact/Checkpoint` 最小对象、关联字段、状态迁移、取消/重试/恢复语义与 Error-as-Data 边界；先补对象/状态机契约测试，再实现 DTO 与校验。
+- P1-APR-02（现有 Runtime 映射）：为 Runner Run/Stream、Workflow step、Teams task、Scheduler attempt、A2A Task、Realtime interrupt/resume 建立单向 mapping adapter；保证不新增平行状态机，且 Run/Stream/A2A 等价输入归一后语义一致。
+- P1-APR-03（事件与观测关联）：将 `types.Event`、timeline、realtime envelope 和 A2A 生命周期映射到 canonical `EventEnvelope`；贯通 `event_id/causation_id/run_id/step_id` 至 RuntimeRecorder、OTel span 与 diagnostics 查询，保持单写入口。
+- P1-APR-04（产物与检查点引用）：在不新增存储服务的条件下，为既有 isolate handoff artifact 与 snapshot manifest 提供 `ArtifactRef`、`CheckpointRef` 和 producing Run/Step lineage；保持 snapshot segment owner 与 strict|compatible 导入语义不变。
+- P1-APR-05（回放、门禁与示例）：新增 `agent_runtime_protocol.v1` fixture、正向/负向/drift replay、跨模块 integration、shell/PowerShell parity gate 和 agent-mode 真实运行示例；先完成示例文档基线，再实现示例代码。
+- P1-APR-06（文档与验收）：更新 README、runtime config/diagnostics、module boundaries、contract index 和 roadmap；执行全量测试、race、lint、quality/docs gates，并按 OpenSpec 证据完成任务勾选与归档准备。
+
+验收口径：
+- Protocol 对象和状态机有可回放的 schema/fixture，非法状态迁移、关联字段缺失、事件乱序/重复和跨域 mapping drift 均产生 deterministic 分类并被 gate 阻断。
+- `runtime/*` 不依赖 `mcp/http` 或 `mcp/stdio`，非 `mcp/*` 不依赖 `mcp/internal/*`，诊断仍仅由 `RuntimeRecorder` 写入。
+- 既有 A2A、Realtime、Snapshot、OTel/Eval 和 Run/Stream 合同保持 additive + nullable + default 兼容，且不引入平台化控制面依赖。
+- 必跑：`go test ./...`、`go test -race ./...`、`golangci-lint run --config .golangci.yml`、`pwsh -File scripts/check-quality-gate.ps1`、`pwsh -File scripts/check-docs-consistency.ps1`。
+
+归档入口：`openspec/changes/archive/122-introduce-agent-runtime-protocol-contract/`。
+
+### Agent Runtime Protocol 后续路线（文章对照，候选）
+
+本文档以《相比层出不穷的 Agent 框架，不变的 Agent Protocol 是什么》的结论作为后续判断框架：框架 API、Runtime Loop 承载方式和多 Agent 拓扑可以演进；跨框架稳定的外部边界应持续围绕 `Session/Thread`、`Run/Task`、`Step`、`Event`、`Artifact`、`Checkpoint` 及 `stream/interrupt/resume/cancel/retry` 生命周期操作收敛。
+
+当前基线与文章逐章对照：
+
+| 文章结论 | Baymax 已有基线 | 后续缺口与路线判断 |
+| --- | --- | --- |
+| Protocol 是 Runtime 的稳定外部边界，六个生命周期对象应一等化 | 已归档 Agent Runtime Protocol contract 提供 `SessionRef`、`RunRef`、`StepRef`、`EventEnvelope`、`ArtifactRef`、`CheckpointRef` 与最小 Run 状态机；已归档扩展新增 `ProtocolDescriptor`、bounded context、action availability 与 admission projection | 对象、能力、上下文和同 Session admission 的投影已保持 additive；实际授权、队列、分支和恢复仍由 source runtime 拥有 |
+| Loop 承载方式不必统一，协议对象与关联必须稳定 | Runner、Workflow、Teams、Scheduler、A2A 与 Realtime 已单向映射，且不替代各模块 source-of-truth | 保持该分层；不新增强制 Graph/Code/Managed loop 或统一多 Agent 拓扑 |
+| 生产状态需要持久化、版本、恢复和并发 Run 语义 | snapshot 已具备 schema、`strict|compatible` 导入与恢复；Protocol 仅暴露 reference-only `CheckpointRef` | 缺 checkpoint history/branch/replay 与同 Session 并发 Run admission 语义 |
+| HITL 依赖 snapshot、interrupt payload、resume command 和权限上下文 | Realtime 已有 interrupt/resume、cursor、幂等、`input_required` 映射 | 缺 host 可发现的 resume/action capability、授权上下文与可执行动作声明 |
+| Recoverable error 应作为数据，安全和配置边界仍须 fail-fast | 工具/业务错误可投影为 Step/Event outcome；配置、安全、校验、兼容性和模块边界继续 fail-fast | 已收口；后续扩展不得以 Error-as-Data 绕过既有 policy/sandbox/configuration 合同 |
+| 工具协议应独立于 loop，MCP 是工具层标准化 | MCP、tool policy、adapter capability 与安全 contract 已存在 | 不重复建设 Tool/MCP 模型；新 Protocol capability 必须复用既有协商与失败分类 |
+| Streaming 是可恢复任务事件流，不是 token 打字机 | Realtime 已有 event ID、sequence、dedupe、cursor、interrupt/resume；Protocol 保留 source-scoped 顺序 | 缺 host-facing subscription、catch-up、live tail、retention、backpressure 与可替换 binding |
+| 多 Agent 拓扑不应过早标准化 | Teams、Scheduler、mailbox、A2A 保留各自编排语义 | 保持不统一拓扑；仅补 Run/Message/Artifact 的跨边界关联能力 |
+| Observability 与 Eval 应形成质量闭环 | OTel topology、protocol correlation、最小 eval metric、local/distributed eval 已有 | 缺版本化 evaluation corpus、Badcase、experiment comparison 和人工审批的反馈闭环 |
+
+路线原则：P2-P4 是后续 OpenSpec 候选，不表示存在活跃 change。每项启动前必须建立 `proposal.md`、`design.md`、`tasks.md` 和 spec delta，并按 Example Impact Assessment、contract/replay/gate、Run/Stream 对等、文档先行示例等既有治理执行。P1 保留为已归档交付记录。
+
+#### P1：Capability、Context 与 Concurrent-Run Admission Contract（已归档）
+
+已归档 change：`extend-agent-runtime-protocol-capability-context-and-concurrency-contract`（见 `openspec/changes/archive/123-extend-agent-runtime-protocol-capability-context-and-concurrency-contract/`）。
+
+- 文章对应：上下文对象一等化、发现与能力声明分离、Thread 不是锁而 Run 是执行边界。
+- 范围：增加库级 `ProtocolDescriptor`（版本兼容与 required/optional capability）、Session participants/agent identity、受控 context metadata、host 可执行动作，以及同 Session `reject|serialize|branch|optimistic` admission policy 的声明与结果表达。
+- 复用：adapter manifest/profile 的 capability negotiation、policy precedence、readiness admission、既有 `SessionRef/RunRef`；不得创建第二套 capability taxonomy 或 Session repository。
+- 非目标：不引入全局 Session 锁、远程 scheduler、RBAC、tenant model 或托管控制面；各 Runtime 继续拥有实际排队、冲突与恢复实现。
+- 验收与归档：capability/context schema、未知 capability/不兼容版本/非法 admission 的负向 replay、跨源 mapping、Run/Stream 语义测试、diagnostics/OTel additive correlation、独立 gate 与文档均已由该 change 的 `tasks.md` 跟踪并验证；归档脚本已完成执行。
+- Example Impact Assessment：`修改示例`，更新 `agent-runtime-protocol-projection` 的 MATRIX/README 基线和运行断言。
+
+#### P2：Durable Runtime Event Stream Binding Contract
+
+候选 change：`extend-realtime-event-protocol-with-durable-runtime-stream-binding`。
+
+- 文章对应：生产 streaming 是任务事件流；断线后以 cursor 补收历史并切换 live tail；协议 binding 可替换。
+- 范围：在既有 realtime `event_id/sequence/dedupe/cursor/interrupt/resume` 上定义 transport-neutral 的 `subscribe`、catch-up、live tail、event channel、retention/expiry、backpressure 与授权交接语义。
+- 复用：realtime event protocol + interrupt/resume contract 的事件顺序、幂等、cursor 和 policy/reason taxonomy；不得生成第二套 interrupt/resume 或 event ordering 语义。
+- 非目标：首期不引入 REST/SSE/WebSocket/JSON-RPC/gRPC gateway、Redis Stream 或托管连接控制面；可选 SSE binding 只在真实宿主需求出现后另行评审。
+- 准入与 DoD：重放覆盖 cursor 恢复、catch-up/live-tail 去重、retention 过期、背压、断连继续与 Run/Stream 等价；保留 `runtime/*` 不依赖传输实现的边界，并接入 realtime contract gate。
+- Example Impact Assessment：`修改示例`，在 `realtime-interrupt-resume` 文档先行基线后补订阅恢复的真实运行验证。
+
+#### P3：Checkpoint History 与 Workspace Provenance Contract
+
+候选 change：`extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`。
+
+- 文章对应：长任务恢复、schema 演进、checkpoint 分叉、Workspace/Sandbox 作为状态、Artifact 副作用可审计。
+- 范围：基于现有 snapshot manifest 增加 checkpoint lineage/history/branch/replay 引用语义；将 workspace change-set、前后 integrity reference、产生 Run/Step、Artifact 与 sandbox/policy decision 关联为 protocol-visible provenance。
+- 依赖：P1 的 concurrent-Run admission 先冻结，避免在分支、乐观并发和冲突拒绝之间形成不可解释的 checkpoint 归属。
+- 复用与非目标：snapshot 保持唯一存储事实源，Sandbox 保持副作用 owner；不建设第二套 state store、虚拟文件系统、Artifact content service、ACL 或垃圾回收。
+- 准入与 DoD：覆盖 lineage 缺失、schema incompatibility、branch conflict、workspace digest drift、strict/compatible restore 与 replay idempotency；所有新增观测仍走 `RuntimeRecorder` 单写入口。
+- Example Impact Assessment：`新增示例`，先完成 checkpoint/workspace provenance 示例的 MATRIX/README，再添加可回归运行态代码与 smoke/gate。
+
+#### P4：Evaluation Corpus、Badcase 与 Experiment Contract
+
+候选 change：`extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`。
+
+- 文章对应：从 Trace/Event/Snapshot 的可观测性，走到可复现评测、归因、对比实验和质量反馈闭环。
+- 范围：增加 versioned evaluation corpus、scenario/input/tool/policy/runtime snapshot reference、metric/rubric declaration、Badcase 分类与复现链接、experiment comparison 与人工审批的 feedback recommendation。
+- 复用：必须作为 `runtime-otel-tracing-and-agent-eval-interoperability-contract` 的同域增量；使用现有 `run_id/step_id`、Trace、Artifact、Checkpoint 与 policy/memory/budget 输出，不建设平行观测数据面。
+- 非目标：不得自动修改 prompt、tool、policy 或 runtime configuration；不得演变成托管评测控制面或服务化调度平台。
+- 准入与 DoD：覆盖 corpus 版本不兼容、Badcase 可复现性、实验聚合幂等、指标/rubric drift、人工审批缺失与 local/distributed parity，并更新 eval replay 和 quality gate。
+- Example Impact Assessment：`修改示例`，扩展 `tracing-eval-smoke` 的文档和 fixture，证明从 protocol correlation 到 evaluation result 的关联链路。
+
+#### 明确延后：Remote Runtime Gateway 与持久化平台 Profile
+
+文章中的 REST/SSE/WebSocket/JSON-RPC/gRPC Runtime API、hosted session/artifact persistence、RBAC、multi-tenant control plane、跨租户调度和运营 UI，均是可选平台化方向。在 P1-P4 尚未完成并且没有明确宿主/产品需求前，不进入 0.x 近期主线；后续若启动，必须拆分 gateway、persistence profile、artifact resolver、authorization/governance profile，不能以一个提案混合交付。
 
 前提约束（冻结）：
 - 不调整 react loop + tool-calling parity contract/sandbox egress governance + adapter allowlist contract 的既有范围、完成条件与验收口径；后续提案仅做增量扩展。
@@ -615,13 +718,13 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
 7. react plan notebook + plan-change hook contract（已归档，P2）：react plan notebook + plan-change hook contract。
 8. realtime event protocol + interrupt/resume contract（已归档，P2）：realtime event protocol + interrupt/resume contract。
 9. Context JIT Organization（已归档，P2）：jit context organization + reference-first assembly contract（ReAct 场景上下文组织专项）。
-10. codebase consolidation and semantic labeling contract（进行中，P2）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
-11. a64（进行中，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
-12. a69（候选，P2）：context compression production hardening contract（语义压缩 + 冷热分层 + 冷存治理生产化）。
-13. a71（进行中，P2）：real runtime agent mode examples contract（真实示例全量替换与收口）。
+10. codebase consolidation and semantic labeling contract（历史候选，未作为当前活跃 change）：codebase consolidation and semantic labeling contract（代码收敛与语义化整顿）。
+11. a64（已归档，P2）：engineering/performance optimization contract（语义不变前提下性能收敛）。
+12. a69（已归档，P2）：context compression production hardening contract（语义压缩 + 冷热分层 + 冷存治理生产化）。
+13. a71（已归档，P2）：real runtime agent mode examples contract（真实示例全量替换与收口）。
 
 后续项目说明（避免“单一路线”误解）：
-- codebase consolidation and semantic labeling contract（进行中）与 Context JIT Organization（已归档）、realtime event protocol + interrupt/resume contract（已归档）、a64/a69/a71（a64/a71 进行中，a69 候选）构成后续提案池，默认按上方顺序推进，但允许按风险信号前置切换，不要求机械串行实施。
+- 该段为历史提案池：Context JIT Organization、realtime event protocol + interrupt/resume contract、a64、a69、a71 均已归档；codebase consolidation and semantic labeling contract 未作为当前活跃 change。当前与后续优先级以“Agent Runtime Protocol 后续路线（文章对照，候选）”及文件开头的 OpenSpec 状态快照为准。
 - policy + memory + budget + tracing baseline contracts 已归档，用作稳定基线，不再作为当前推进主路径。
 - 前置切换仅在以下风险信号出现时触发：实时交互压力（realtime event protocol + interrupt/resume contract）、上下文组织漂移（Context JIT Organization）、context 压缩生产可用风险（a69）、命名/文档收敛压力（codebase consolidation and semantic labeling contract）、性能回归压力（a64）、交付易用性压力（a62）。
 - a64 前置时仍按 `a64-S1 -> ... -> a64-S10` 风险链路吸收，允许按瓶颈调整顺序。
@@ -739,7 +842,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - 计划治理不得绕过 policy precedence + decision trace contract 决策链与 sandbox egress governance + adapter allowlist contract 安全链路。
 - 当前状态：已归档（详见 `openspec/changes/archive/112-introduce-react-plan-notebook-and-plan-change-hook-contract-react plan notebook + plan-change hook contract`）。
 
-提案 realtime event protocol + interrupt/resume contract（进行中）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-realtime event protocol + interrupt/resume contract`
+提案 realtime event protocol + interrupt/resume contract（已归档历史记录）：`introduce-realtime-event-protocol-and-interrupt-resume-contract-realtime event protocol + interrupt/resume contract`
 - 目标（简版）：补齐实时双向事件协议（server/client）与 interrupt/resume 合同，支撑实时交互场景。
 - 范围（简版）：
   - 事件协议：请求、增量输出、取消、恢复、确认、错误的 canonical event taxonomy；
@@ -757,7 +860,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
 - 退出条件（DoD）：
   - interrupt/resume 在 Run/Stream 与 replay 下语义等价，事件顺序/幂等断言稳定通过；
   - realtime contract 的增量需求可在 realtime event protocol + interrupt/resume contract tasks 内吸收，不再拆分 realtime event protocol + interrupt/resume contract 平行子提案。
-- 当前状态：进行中（OpenSpec `in-progress`）。
+- 当前状态：已归档；后续 event stream 需求按 P2 作为该 contract 的增量扩展评审。
 
 提案 Context JIT Organization（已归档）：`introduce-jit-context-organization-and-reference-first-assembly-contract-react plan notebook + plan-change hook contract-ctx`
 - 目标：以“顺滑支撑 ReAct 模式”为导向，在不破坏既有 CA 合同语义前提下，一次性补齐 JIT context organization 的核心契约，降低上下文噪声与膨胀风险。
@@ -825,7 +928,7 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - 命名治理 gate 持续阻断旧命名回流，且不改变既有 contract/replay 语义。
 - 当前状态：已完成（OpenSpec `all_done`，待归档）；与 a64 并行推进阶段的语义不变约束已完成闭环验证。
 
-提案 a64（进行中）：`introduce-engineering-and-performance-optimization-contract-a64`
+提案 a64（已归档历史记录）：`introduce-engineering-and-performance-optimization-contract-a64`
 - 目标（简版）：在“语义不变”前提下推进工程优化与性能优化（如 goroutine pool、buffer/slice pool、导出批处理等常规路径）。
 - 一次性补齐边界（a64 内闭环）：
   - 性能同域需求统一按 a64-S1~S10 子项吸收；新增热点必须映射到现有子项或其增量任务，不再新增平行性能提案；
@@ -1029,9 +1132,9 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - 不改变 Run/Stream、backpressure、fail_fast、timeout/cancel、reason taxonomy、decision trace 语义；
   - 不绕过现有 contract gate 与 replay 约束；
   - 所有优化都必须可开关、可回滚。
-- 当前状态：进行中（a64-S1~S10 子项目按风险链路增量吸收）；S10 `11.1~11.4` 与 `12.1~12.4/12.7~12.18` 已落地，`12.5/12.6` 已执行并形成阻断风险记录（语义命名债与 lint 历史债需独立收口）。
+- 当前状态：已归档；本段保留归档前的交付与风险记录，后续性能问题按现有 performance/replay gate 和独立 OpenSpec 准入。
 
-提案 a69（候选，建议前置于 a62）：`introduce-context-compression-production-hardening-contract-a69`
+提案 a69（已归档历史记录）：`introduce-context-compression-production-hardening-contract-a69`
 - 目标（production-ready）：在不改写 Context JIT Organization 已归档语义的前提下，补齐 context pressure `semantic compaction + spill/swap-back + lifecycle tiering` 的生产可用治理闭环。
 - 范围（a69 内闭环，避免平行拆分）：
   - a69-S1 语义压缩稳定性治理：固化 semantic compaction 的质量门槛、降级策略与失败分类；补齐 `ToolResult` 压力与可压缩对象边界一致性，避免“估算计入但压缩无收益”。
@@ -1050,9 +1153,9 @@ react loop + tool-calling parity contract 一次性闭环审查（10.4）：
   - context 压缩在长会话/高频工具调用场景下具备可预测收益与稳定回退；
   - 冷存文件具备有界增长治理（retention/quota/cleanup）且回填语义稳定；
   - Run/Stream/replay 无语义漂移，contract/perf gates 全绿。
-- 当前状态：候选（roadmap 已登记，待建立 OpenSpec change）。
+- 当前状态：已归档；本段“前置”描述仅保留原始排序原因，不代表当前待建 change。
 
-提案 a71（进行中）：`introduce-real-runtime-agent-mode-examples-contract-a71`
+提案 a71（已归档历史记录）：`introduce-real-runtime-agent-mode-examples-contract-a71`
 - 目标：将“主要 agent 模式”沉淀为可直接复用、可回归验证、与主线 contract 同步的 example pack，提升交付易用性与迁移效率。
 - 模式覆盖（最低要求，PocketFlow + Baymax 扩展）：
   - PocketFlow 模式对齐：
@@ -1190,7 +1293,7 @@ policy precedence + decision trace contract-a62 验收摘要（现状）：
 
 - policy + memory + budget + tracing baseline contracts：已归档并稳定；具体 contract/replay/gate 口径以
   `docs/mainline-contract-test-index.md` 与 `openspec/changes/archive/INDEX.md` 为准。
-- a62：进行中收口项（delivery usability + example pack），按 a64 主链路节奏分批推进。
+- a62：已归档交付项（delivery usability + example pack）；本段保留历史收口语境，新增示例仍须按现行 agent-mode 文档先行与门禁规则执行。
 
 统一验收前提（当前主线共用）：
 - 配置治理：`env > file > default`，非法值 fail-fast，热更新失败原子回滚。
@@ -1260,11 +1363,11 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 - Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
 - 若出现新增需求，优先以 policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract 与 Context JIT Organization 的“增量任务”吸收，默认不新增 additional same-domain proposal series+ 同域提案。
 
-状态对齐说明（2026-04-09）：
+历史状态对齐说明（2026-04-09，已由文件开头 2026-08-17 快照取代）：
 - 已归档并稳定：policy precedence + decision trace contract-realtime event protocol + interrupt/resume contract（A4-sandbox egress governance + adapter allowlist contract 归档历史见 `openspec/changes/archive/INDEX.md`）。
-- 进行中：a71。
-- 已归档：Context JIT Organization、a70、a64、a69、a62（详细清单见 `openspec/changes/archive/INDEX.md`）。
-- 顺序约束调整：继续推进 a71 示例真实化，保持 docs/quality gate 同步收敛。
+- 当时的在研状态不再生效；截至 2026-08-17，当前活跃 change 为 `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`。
+- 已归档：Context JIT Organization、a70、a64、a69、a62、a71（详细清单见 `openspec/changes/archive/INDEX.md`）。
+- 后续顺序以本文件“Agent Runtime Protocol 后续路线（文章对照，候选）”和每次 `openspec list --json` 结果为准。
 
 ### P2：0.x 质量与治理持续收敛
 

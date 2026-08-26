@@ -3441,6 +3441,36 @@ func TestRunAndStreamTimelineSemanticEquivalence(t *testing.T) {
 	}
 }
 
+func TestRunAndStreamProtocolProjectionSemanticEquivalence(t *testing.T) {
+	runModel := &fakeModel{generate: func(context.Context, types.ModelRequest) (types.ModelResponse, error) {
+		return types.ModelResponse{FinalAnswer: "ok"}, nil
+	}}
+	streamModel := &fakeModel{stream: func(_ context.Context, _ types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+		return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+	}}
+	runEngine := New(runModel)
+	streamEngine := New(streamModel)
+	runResult, err := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-protocol", SessionID: "session-protocol", Input: "hello"}, nil)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	streamResult, err := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-protocol", SessionID: "session-protocol", Input: "hello"}, nil)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+	runRef, runSteps, err := types.MapRunnerResultToProtocol(runResult, "session-protocol")
+	if err != nil {
+		t.Fatalf("map Run: %v", err)
+	}
+	streamRef, streamSteps, err := types.MapRunnerResultToProtocol(streamResult, "session-protocol")
+	if err != nil {
+		t.Fatalf("map Stream: %v", err)
+	}
+	if runRef.State != streamRef.State || runRef.RunID != streamRef.RunID || len(runSteps) != len(streamSteps) {
+		t.Fatalf("protocol Run/Stream mismatch run=%#v/%#v stream=%#v/%#v", runRef, runSteps, streamRef, streamSteps)
+	}
+}
+
 func TestTimelineSequenceIsMonotonic(t *testing.T) {
 	model := &fakeModel{
 		generate: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {

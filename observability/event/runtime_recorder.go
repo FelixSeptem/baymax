@@ -176,8 +176,8 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			decision,
 		)
 		r.manager.RecordRunOwned(runtimediag.RunRecord{
-			Time:                                        ev.Time,
-			RunID:                                       ev.RunID,
+			Time: ev.Time, RunID: ev.RunID,
+			ProtocolSessionID: payloadString(payload, "protocol_session_id"), ProtocolState: payloadString(payload, "protocol_state"), ProtocolSource: payloadString(payload, "protocol_source"), ProtocolProfileVersion: payloadString(payload, "protocol_profile_version"), ProtocolCapabilityDecision: payloadString(payload, "protocol_capability_decision"), ProtocolCapabilityReason: payloadString(payload, "protocol_capability_reason"), ProtocolAdmissionPolicy: payloadString(payload, "protocol_admission_policy"), ProtocolAdmissionDecision: payloadString(payload, "protocol_admission_decision"), ProtocolAdmissionReason: payloadString(payload, "protocol_admission_reason"), ProtocolCheckpointID: payloadString(payload, "protocol_checkpoint_id"), ProtocolArtifactIDs: payloadStringSlice(payload, "protocol_artifact_ids"),
 			Status:                                      status,
 			Iterations:                                  ev.Iteration,
 			ToolCalls:                                   payloadInt(payload, "tool_calls"),

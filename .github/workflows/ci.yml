@@ -355,6 +355,19 @@ jobs:
       - name: Realtime Protocol Contract Gate
         run: bash scripts/check-realtime-protocol-contract.sh
 
+  agent-runtime-protocol-contract-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Agent Runtime Protocol Contract Gate
+        run: bash scripts/check-agent-runtime-protocol-contract.sh
+
   hooks-middleware-contract-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -42,6 +42,17 @@ type RuntimePolicyDecisionPathEntry struct {
 type RunRecord struct {
 	Time                                        time.Time                         `json:"time"`
 	RunID                                       string                            `json:"run_id"`
+	ProtocolSessionID                           string                            `json:"protocol_session_id,omitempty"`
+	ProtocolState                               string                            `json:"protocol_state,omitempty"`
+	ProtocolSource                              string                            `json:"protocol_source,omitempty"`
+	ProtocolProfileVersion                      string                            `json:"protocol_profile_version,omitempty"`
+	ProtocolCapabilityDecision                  string                            `json:"protocol_capability_decision,omitempty"`
+	ProtocolCapabilityReason                    string                            `json:"protocol_capability_reason,omitempty"`
+	ProtocolAdmissionPolicy                     string                            `json:"protocol_admission_policy,omitempty"`
+	ProtocolAdmissionDecision                   string                            `json:"protocol_admission_decision,omitempty"`
+	ProtocolAdmissionReason                     string                            `json:"protocol_admission_reason,omitempty"`
+	ProtocolCheckpointID                        string                            `json:"protocol_checkpoint_id,omitempty"`
+	ProtocolArtifactIDs                         []string                          `json:"protocol_artifact_ids,omitempty"`
 	Status                                      string                            `json:"status,omitempty"`
 	Iterations                                  int                               `json:"iterations"`
 	ToolCalls                                   int                               `json:"tool_calls"`
@@ -404,7 +415,6 @@ type RunRecord struct {
 	DiagnosticsCardinalityTruncatedFieldSummary string                            `json:"diagnostics_cardinality_truncated_field_summary,omitempty"`
 	TimelinePhases                              map[string]TimelinePhaseAggregate `json:"timeline_phases,omitempty"`
 }
-
 type MailboxRecord struct {
 	Time                  time.Time `json:"time"`
 	MessageID             string    `json:"message_id"`
@@ -429,17 +439,14 @@ type MailboxRecord struct {
 	Reclaimed             bool      `json:"reclaimed,omitempty"`
 	PanicRecovered        bool      `json:"panic_recovered,omitempty"`
 }
-
 type MailboxQueryTimeRange struct {
 	Start time.Time `json:"start,omitempty"`
 	End   time.Time `json:"end,omitempty"`
 }
-
 type MailboxQuerySort struct {
 	Field string `json:"field,omitempty"`
 	Order string `json:"order,omitempty"`
 }
-
 type MailboxQueryRequest struct {
 	MessageID      string                 `json:"message_id,omitempty"`
 	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
@@ -455,7 +462,6 @@ type MailboxQueryRequest struct {
 	Sort           MailboxQuerySort       `json:"sort,omitempty"`
 	Cursor         string                 `json:"cursor,omitempty"`
 }
-
 type MailboxQueryResult struct {
 	Items      []MailboxRecord `json:"items"`
 	NextCursor string          `json:"next_cursor,omitempty"`
@@ -463,7 +469,6 @@ type MailboxQueryResult struct {
 	SortField  string          `json:"sort_field"`
 	SortOrder  string          `json:"sort_order"`
 }
-
 type MailboxAggregateRequest struct {
 	Kind       string                 `json:"kind,omitempty"`
 	State      string                 `json:"state,omitempty"`
@@ -473,7 +478,6 @@ type MailboxAggregateRequest struct {
 	TeamID     string                 `json:"team_id,omitempty"`
 	TimeRange  *MailboxQueryTimeRange `json:"time_range,omitempty"`
 }
-
 type MailboxAggregate struct {
 	TotalRecords     int            `json:"total_records"`
 	TotalMessages    int            `json:"total_messages"`
@@ -484,7 +488,6 @@ type MailboxAggregate struct {
 	ExpiredTotal     int            `json:"expired_total,omitempty"`
 	ReasonCodeTotals map[string]int `json:"reason_code_totals,omitempty"`
 }
-
 type TimelinePhaseAggregate struct {
 	CountTotal    int   `json:"count_total,omitempty"`
 	FailedTotal   int   `json:"failed_total,omitempty"`
@@ -493,7 +496,6 @@ type TimelinePhaseAggregate struct {
 	LatencyMs     int64 `json:"latency_ms,omitempty"`
 	LatencyP95Ms  int64 `json:"latency_p95_ms,omitempty"`
 }
-
 type TimelineTrendMode string
 
 const (
@@ -506,7 +508,6 @@ type TimelineTrendQuery struct {
 	LastNRuns  int
 	TimeWindow time.Duration
 }
-
 type TimelineTrendRecord struct {
 	Phase         string    `json:"phase"`
 	Status        string    `json:"status"`
@@ -519,7 +520,6 @@ type TimelineTrendRecord struct {
 	WindowStart   time.Time `json:"window_start"`
 	WindowEnd     time.Time `json:"window_end"`
 }
-
 type SkillRecord struct {
 	Time       time.Time      `json:"time"`
 	RunID      string         `json:"run_id,omitempty"`
@@ -530,32 +530,26 @@ type SkillRecord struct {
 	ErrorClass string         `json:"error_class,omitempty"`
 	Payload    map[string]any `json:"payload,omitempty"`
 }
-
 type ReloadRecord struct {
 	Time    time.Time `json:"time"`
 	Success bool      `json:"success"`
 	Error   string    `json:"error,omitempty"`
 }
-
 type Store struct {
-	mu sync.RWMutex
-
-	maxCallRecords  int
-	maxRunRecords   int
-	maxReloadErrors int
-	maxSkillRecords int
-
-	calls   []CallRecord
-	runs    []RunRecord
-	mailbox []MailboxRecord
-	reloads []ReloadRecord
-	skills  []SkillRecord
-	runKeys map[string]int
-	mbxKeys map[string]int
-	sklKeys map[string]int
-
-	runTimesStrictAscending bool
-
+	mu                       sync.RWMutex
+	maxCallRecords           int
+	maxRunRecords            int
+	maxReloadErrors          int
+	maxSkillRecords          int
+	calls                    []CallRecord
+	runs                     []RunRecord
+	mailbox                  []MailboxRecord
+	reloads                  []ReloadRecord
+	skills                   []SkillRecord
+	runKeys                  map[string]int
+	mbxKeys                  map[string]int
+	sklKeys                  map[string]int
+	runTimesStrictAscending  bool
 	timelineStates           map[string]*timelineRunState
 	trendConfig              TimelineTrendConfig
 	contextStage2TrendConfig ContextStage2ExternalTrendConfig

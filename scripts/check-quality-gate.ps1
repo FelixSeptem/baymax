@@ -669,6 +669,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-realtime-protocol-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] agent runtime protocol contract suites"
+        Command   = { pwsh -File scripts/check-agent-runtime-protocol-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] hooks + middleware contract suites"
         Command   = { pwsh -File scripts/check-hooks-middleware-contract.ps1 }
     },

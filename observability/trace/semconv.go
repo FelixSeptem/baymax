@@ -27,17 +27,65 @@ const (
 )
 
 const (
-	AttrTraceSchemaVersion = "trace.schema_version"
-	AttrDomain             = "trace.domain"
-	AttrRunID              = "run.id"
-	AttrMode               = "run.mode"
-	AttrStepID             = "step.id"
-	AttrToolName           = "tool.name"
-	AttrMCPTransport       = "mcp.transport"
-	AttrMemoryScope        = "memory_scope_selected"
-	AttrBudgetDecision     = "budget_decision"
-	AttrPolicyDecisionPath = "policy_decision_path"
+	AttrTraceSchemaVersion         = "trace.schema_version"
+	AttrDomain                     = "trace.domain"
+	AttrRunID                      = "run.id"
+	AttrMode                       = "run.mode"
+	AttrStepID                     = "step.id"
+	AttrProtocolSource             = "agent.protocol.source"
+	AttrCausationID                = "agent.protocol.causation_id"
+	AttrArtifactID                 = "agent.protocol.artifact_id"
+	AttrCheckpointID               = "agent.protocol.checkpoint_id"
+	AttrProtocolProfileVersion     = "agent.protocol.profile_version"
+	AttrProtocolCapabilityDecision = "agent.protocol.capability_decision"
+	AttrProtocolCapabilityReason   = "agent.protocol.capability_reason"
+	AttrProtocolAdmissionPolicy    = "agent.protocol.admission_policy"
+	AttrProtocolAdmissionDecision  = "agent.protocol.admission_decision"
+	AttrProtocolAdmissionReason    = "agent.protocol.admission_reason"
+	AttrToolName                   = "tool.name"
+	AttrMCPTransport               = "mcp.transport"
+	AttrMemoryScope                = "memory_scope_selected"
+	AttrBudgetDecision             = "budget_decision"
+	AttrPolicyDecisionPath         = "policy_decision_path"
 )
+
+// ProtocolAttributes returns additive protocol correlation attributes while
+// preserving the existing semantic-convention topology and attribute names.
+func ProtocolAttributes(runID, stepID, source, causationID, artifactID, checkpointID string) map[string]string {
+	attrs := map[string]string{
+		AttrRunID:          strings.TrimSpace(runID),
+		AttrStepID:         strings.TrimSpace(stepID),
+		AttrProtocolSource: strings.TrimSpace(source),
+		AttrCausationID:    strings.TrimSpace(causationID),
+		AttrArtifactID:     strings.TrimSpace(artifactID),
+		AttrCheckpointID:   strings.TrimSpace(checkpointID),
+	}
+	for key, value := range attrs {
+		if value == "" {
+			delete(attrs, key)
+		}
+	}
+	return attrs
+}
+
+// ProtocolDecisionAttributes adds bounded descriptor/admission correlation
+// without changing the existing trace topology or authorization semantics.
+func ProtocolDecisionAttributes(profileVersion, capabilityDecision, capabilityReason, admissionPolicy, admissionDecision, admissionReason string) map[string]string {
+	attrs := map[string]string{
+		AttrProtocolProfileVersion:     strings.TrimSpace(profileVersion),
+		AttrProtocolCapabilityDecision: strings.TrimSpace(capabilityDecision),
+		AttrProtocolCapabilityReason:   strings.TrimSpace(capabilityReason),
+		AttrProtocolAdmissionPolicy:    strings.TrimSpace(admissionPolicy),
+		AttrProtocolAdmissionDecision:  strings.TrimSpace(admissionDecision),
+		AttrProtocolAdmissionReason:    strings.TrimSpace(admissionReason),
+	}
+	for key, value := range attrs {
+		if value == "" {
+			delete(attrs, key)
+		}
+	}
+	return attrs
+}
 
 type SpanTopologySpec struct {
 	Domain            string

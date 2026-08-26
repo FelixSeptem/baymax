@@ -242,6 +242,12 @@ if ! bash scripts/check-realtime-protocol-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] agent runtime protocol contract suites"
+if ! bash scripts/check-agent-runtime-protocol-contract.sh; then
+  echo "[quality-gate][agent-runtime-protocol-contract] agent runtime protocol contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] hooks + middleware contract suites"
 if ! bash scripts/check-hooks-middleware-contract.sh; then
   echo "[quality-gate][hooks-middleware-contract] hooks + middleware contract suites failed"

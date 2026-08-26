@@ -128,6 +128,21 @@ R4 多代理共享契约前置门禁（阻断级）：
 
 ## 扩展约束
 
+## Agent Runtime Protocol 投影边界
+
+`core/types` 中的 Agent Runtime Protocol 对象（Session/Run/Step/Event/Artifact/Checkpoint）只提供面向嵌入宿主的稳定引用和关联字段，不拥有第二套执行状态、存储或传输实现。映射必须单向保留 source module：
+
+- `core/runner` 负责 Run/Stream、模型/工具步骤与终止语义；
+- `orchestration/workflow`、`teams`、`scheduler` 分别负责 DAG、协作和 attempt/lease 状态；
+- `a2a` 负责 peer Task、Agent Card、delivery/version 协商；
+- `core/types` realtime 与 `core/runner` 负责 realtime event、cursor、seq、dedup、interrupt/resume；
+- `orchestration/snapshot` 负责 checkpoint manifest、schema、digest、restore policy 和 import idempotency；
+- `observability/event.RuntimeRecorder` 继续是 diagnostics 唯一写入入口，protocol 映射只能复用标准事件路径。
+- `ProtocolDescriptor`、bounded Session context 与 same-Session admission outcome 是 opt-in、side-effect-free projection；Runner、Composer/Workflow、Teams、Scheduler、A2A、Realtime 继续拥有授权、队列、锁、分支、取消与持久化事实。
+- capability negotiation 复用 adapter 的 required/optional、`fail_fast|best_effort` 与 reason taxonomy；descriptor 的 action availability 不等于 authorization。
+
+该投影不得引入 hosted REST/SSE 网关、session/artifact store、Redis Stream 或其他平台控制面依赖；也不得把 A2A、MCP、Realtime、Snapshot 的 source-of-truth 语义改写为平行协议。
+
 - 新增全局配置字段时，必须同步：
   - `runtime/config` schema + validation
   - `docs/runtime-config-diagnostics.md` 字段索引

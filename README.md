@@ -8,6 +8,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - Context Assembler（prefix baseline / stage2 routing / pressure compaction / production hardening）
 - A2A / Workflow / Teams / Scheduler / Composer 组合编排
 - 结构化可观测性（timeline + diagnostics + RuntimeRecorder 单写）
+- Agent Runtime Protocol 投影（Session/Run/Step/Event/Artifact/Checkpoint；复用既有 Runtime source-of-truth）
 
 最新进度请查看：
 - `docs/development-roadmap.md`
@@ -15,13 +16,15 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-04-11）：
+当前里程碑快照（2026-08-25）：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
 - 进行中：
   - 当前无活跃 change（`openspec list --json` 为空）。
 - 已归档：
+  - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）已归档并稳定。
+  - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract 已归档并稳定。
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）已归档并稳定。
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）已归档并稳定。
   - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）已归档并稳定。
@@ -34,6 +37,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - 提案准入规则与边界以 `docs/development-roadmap.md`、`docs/versioning-and-compatibility.md` 为准。
 
 ## 架构设计
+
+Agent Runtime Protocol 是面向嵌入宿主的引用与生命周期投影，不是新的执行引擎或托管控制面。对象映射由 `core/types` 提供，Runner、Workflow、Teams、Scheduler、A2A、Realtime、Snapshot 与 RuntimeRecorder 继续分别拥有执行、恢复、事件和诊断事实源。当前扩展以 additive `ProtocolDescriptor`、bounded Session context、显式 host-action availability 和 source-owned same-Session admission outcome 暴露能力，不引入队列、锁、分支引擎、会话服务或 provider-specific context schema。
 
 Baymax 采用分层组合与单向依赖，核心结构如下：
 
@@ -241,6 +246,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前主线能力状态（最新）：
+- `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（已归档并稳定；冻结跨框架任务生命周期协议投影，不引入托管控制面）。
+- `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract（已归档并稳定；扩展 descriptor、bounded context、host-action 与 source-owned admission projection）。
 - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`：agent mode anti-template doc-first delivery 契约（已归档并稳定）。
 - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约（已完成待归档，OpenSpec `all_done`）。
 - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate 契约（已归档并稳定）。
@@ -260,6 +267,8 @@ _ = err
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
   - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization
 - 已归档：
+  - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
+  - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`：agent mode anti-template doc-first delivery
   - `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples
   - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate

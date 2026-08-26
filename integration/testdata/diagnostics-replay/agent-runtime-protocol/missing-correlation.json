@@ -1,0 +1,1 @@
+{"version":"agent_runtime_protocol.v1","cases":[{"name":"missing-correlation","run":{"run_id":"run-1","session_id":"session-1","state":"completed"},"stream":{"run_id":"run-1","session_id":"","state":"completed"},"expected":{"run_id":"run-1","session_id":"session-1","state":"completed"},"idempotency":{"first_logical_ingest_total":1,"replay_logical_ingest_total":1}}]}

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-08-25 23:02:12
+Updated: 2026-08-29 08:24:49
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -125,3 +125,4 @@ Updated: 2026-08-25 23:02:12
 - 121 -> introduce-agent-mode-anti-template-doc-first-delivery-contract-a72
 - 122 -> introduce-agent-runtime-protocol-contract
 - 123 -> extend-agent-runtime-protocol-capability-context-and-concurrency-contract
+- 124 -> extend-realtime-event-protocol-with-durable-runtime-stream-binding

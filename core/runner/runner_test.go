@@ -3619,6 +3619,7 @@ mcp:
 	}
 	if runRec == nil || streamRec == nil {
 		t.Fatalf("missing diagnostics records: %#v", runs)
+		return
 	}
 	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "run")
 	assertPhaseDistEqual(t, runRec.TimelinePhases, streamRec.TimelinePhases, "model")

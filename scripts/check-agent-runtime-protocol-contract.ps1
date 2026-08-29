@@ -7,7 +7,7 @@ Set-Location $repoRoot
 
 Write-Host "[agent-runtime-protocol-contract-gate] replay suites"
 Invoke-NativeStrict -Label "go test protocol replay suites" -Command {
-    go test ./core/types ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes)' -count=1
+    go test ./core/types ./core/runner ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|EventStreamBinding|RealtimeEventStreamBinding)' -count=1
 }
 
 Write-Host "[agent-runtime-protocol-contract-gate] capability context action admission Run/Stream parity"
@@ -23,6 +23,15 @@ if ($LASTEXITCODE -eq 0 -and $matches.Count -gt 0) {
 }
 if ($LASTEXITCODE -gt 1) {
     throw "[agent-runtime-protocol-contract-gate] rg scan failed (exit=$LASTEXITCODE)"
+}
+
+Write-Host "[agent-runtime-protocol-contract-gate] stream_binding_control_plane_absent"
+$bindingMatches = @(rg -n --glob '!openspec/changes/archive/**' 'stream[_-]?binding.*(listener|connection[_-]?manager|event[_-]?store|global[_-]?queue|hosted[_-]?service|gateway)' . 2>$null)
+if ($LASTEXITCODE -eq 0 -and $bindingMatches.Count -gt 0) {
+    throw "[agent-runtime-protocol-contract-gate][stream_binding_control_plane_absent] hosted binding dependency detected"
+}
+if ($LASTEXITCODE -gt 1) {
+    throw "[agent-runtime-protocol-contract-gate] stream binding rg scan failed (exit=$LASTEXITCODE)"
 }
 
 Write-Host "[agent-runtime-protocol-contract-gate] passed"

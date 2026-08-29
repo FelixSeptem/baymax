@@ -389,6 +389,12 @@ type RunRecord struct {
 	RealtimeResumeCursor                        string                            `json:"realtime_resume_cursor,omitempty"`
 	RealtimeIdempotencyDedupTotal               int                               `json:"realtime_idempotency_dedup_total,omitempty"`
 	RealtimeLastErrorCode                       string                            `json:"realtime_last_error_code,omitempty"`
+	StreamSubscriptionID                        string                            `json:"stream_subscription_id,omitempty"`
+	StreamBindingPhase                          string                            `json:"stream_binding_phase,omitempty"`
+	StreamBindingDecision                       string                            `json:"stream_binding_decision,omitempty"`
+	StreamBindingReason                         string                            `json:"stream_binding_reason,omitempty"`
+	StreamBindingCursorMode                     string                            `json:"stream_binding_cursor_mode,omitempty"`
+	StreamBindingSequenceBoundary               int64                             `json:"stream_binding_sequence_boundary,omitempty"`
 	HooksEnabled                                bool                              `json:"hooks_enabled,omitempty"`
 	HooksFailMode                               string                            `json:"hooks_fail_mode,omitempty"`
 	HooksPhases                                 []string                          `json:"hooks_phases,omitempty"`

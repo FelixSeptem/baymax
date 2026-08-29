@@ -13,21 +13,21 @@ go run ./examples/agent-modes/realtime-interrupt-resume/minimal
 - No external network service is required.
 
 ## Real Runtime Path
-- Semantic anchor: `realtime.cursor_idempotent_interrupt_resume`.
+- Semantic anchor: `realtime.durable_runtime_stream_binding`.
 - Classification: `realtime.resume_recovery`.
-- Runtime path evidence: `core/runner,tool/local,runtime/config,runtime/diagnostics`.
-- Related contracts: `realtime-event-protocol-and-interrupt-resume-contract`.
-- Required gates: `check-realtime-protocol-contract.*`.
-- Replay fixtures: `realtime_event_protocol.v1`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,core/types,observability/event,observability/trace,runtime/diagnostics`.
+- Related contracts: `realtime-event-protocol-and-interrupt-resume-contract; durable-runtime-event-stream-binding`.
+- Required gates: `check-realtime-protocol-contract.*; check-agent-runtime-protocol-contract.*`.
+- Replay fixtures: `realtime_event_protocol.v1; agent_runtime_protocol.v1/stream-binding.json`.
 
 ## Expected Output/Verification
 - `verification.mainline_runtime_path=ok`
-- `verification.semantic.phase=P0`
-- `verification.semantic.anchor=realtime.cursor_idempotent_interrupt_resume`
+- `verification.semantic.phase=P2`
+- `verification.semantic.anchor=realtime.durable_runtime_stream_binding`
 - `verification.semantic.classification=realtime.resume_recovery`
-- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,runtime/diagnostics`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,core/types,observability/event,observability/trace,runtime/diagnostics`
 - `verification.semantic.governance=baseline`
-- `verification.semantic.expected_markers=realtime_cursor_idempotent,realtime_interrupt_captured,realtime_resume_recovered`
+- `verification.semantic.expected_markers=realtime_cursor_idempotent,realtime_interrupt_captured,realtime_resume_recovered,realtime_stream_binding_live,realtime_stream_binding_catch_up,realtime_stream_binding_handoff_dedup`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
 

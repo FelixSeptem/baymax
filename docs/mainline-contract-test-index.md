@@ -1,6 +1,6 @@
 # Mainline Contract Test Index
 
-更新时间：2026-04-06
+更新时间：2026-08-28
 
 ## 目标
 
@@ -287,6 +287,10 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Agent Runtime Protocol Capability/Profile/Context/Action/Admission Projection | `core/types/protocol_test.go::TestProtocolDescriptorNegotiatesCapabilities`、`core/types/protocol_test.go::TestProtocolDescriptorForSourcePreservesOwnership`、`core/types/protocol_test.go::TestProjectProtocolSessionContextClonesReferencesAndMetadata`、`core/types/protocol_test.go::TestConcurrentRunAdmissionValidatesPolicyOutcomePairs` | `core/types/protocol_test.go::TestProtocolDescriptorActionsDoNotImplyAuthorization`、`integration/agent_runtime_protocol_projection_test.go::TestAgentRuntimeProtocolSourceDescriptorsAreOptInAndOwned` |
 | Agent Runtime Protocol Descriptor/Context/Admission Replay Drift | `tool/diagnosticsreplay/protocol_test.go::TestEvaluateProtocolFixturePreservesDescriptorContextAndAdmissionParity`、`integration/agent_runtime_protocol_contract_test.go::TestAgentRuntimeProtocolReplayFixtureDriftTaxonomy` | `tool/diagnosticsreplay/protocol_test.go::TestEvaluateProtocolFixtureClassifiesProfileDrift` |
 | Agent Runtime Protocol Diagnostics/OTel Correlation | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderParsesAgentRuntimeProtocolAdditiveFields`、`observability/trace/semconv_test.go::TestProtocolDecisionAttributesPreserveAdditiveCorrelation` | `docs/runtime-config-diagnostics.md` |
+| Durable Runtime Event-Stream Binding Projection/Run-Stream Parity | `core/types/event_stream_binding_test.go::TestProjectEventStreamBindingDeduplicatesHandoffOverlap`、`core/runner/event_stream_binding_test.go::TestRealtimeRunAndStreamBindingProjectionParity` | `core/runner/event_stream_binding_test.go::TestRealtimeEventStreamBindingIsPureAndDoesNotOwnControlPlaneState` |
+| Durable Runtime Event-Stream Binding Replay Fixture | `integration/agent_runtime_protocol_contract_test.go::TestAgentRuntimeProtocolReplayFixtureEventStreamBindingSuite`、`tool/diagnosticsreplay/protocol_test.go::TestEvaluateProtocolFixturePreservesEventStreamBindingParity` | `tool/diagnosticsreplay/protocol_test.go::TestEvaluateProtocolFixtureClassifiesEventStreamBindingDrift` |
+| Durable Runtime Event-Stream Binding Diagnostics/OTel | `observability/event/event_stream_binding_test.go::TestRuntimeRecorderParsesBoundedEventStreamBindingFields`、`observability/trace/semconv_test.go::TestEventStreamBindingAttributesAreBoundedAndNullable` | `runtime/diagnostics/event_stream_binding_test.go::TestRunRecordRoundTripsNullableEventStreamBindingFields` |
+| Durable Runtime Event-Stream Binding Contract Gates | `scripts/check-agent-runtime-protocol-contract.sh` | `scripts/check-agent-runtime-protocol-contract.ps1` |
 | Pre-1 Governance Docs Consistency| `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance Gate Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

@@ -138,6 +138,7 @@ R4 多代理共享契约前置门禁（阻断级）：
 - `core/types` realtime 与 `core/runner` 负责 realtime event、cursor、seq、dedup、interrupt/resume；
 - `orchestration/snapshot` 负责 checkpoint manifest、schema、digest、restore policy 和 import idempotency；
 - `observability/event.RuntimeRecorder` 继续是 diagnostics 唯一写入入口，protocol 映射只能复用标准事件路径。
+- Durable runtime event-stream binding 仅由 `core/types`/`core/runner` 做 transport-neutral source projection；Realtime 保持 cursor/history/sequence/dedup/interrupt-resume 所有权。禁止在 binding 层新增 listener、connection manager、hosted Event/Session service、external event store、global queue 或 control plane。
 - `ProtocolDescriptor`、bounded Session context 与 same-Session admission outcome 是 opt-in、side-effect-free projection；Runner、Composer/Workflow、Teams、Scheduler、A2A、Realtime 继续拥有授权、队列、锁、分支、取消与持久化事实。
 - capability negotiation 复用 adapter 的 required/optional、`fail_fast|best_effort` 与 reason taxonomy；descriptor 的 action availability 不等于 authorization。
 

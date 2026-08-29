@@ -16,13 +16,12 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-08-25）：
+当前里程碑快照（2026-08-29）：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
-- 进行中：
-  - 当前无活跃 change（`openspec list --json` 为空）。
 - 已归档：
+  - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`：Durable Runtime Event Stream Binding Contract 已归档并稳定。
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）已归档并稳定。
   - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract 已归档并稳定。
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）已归档并稳定。
@@ -39,6 +38,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 ## 架构设计
 
 Agent Runtime Protocol 是面向嵌入宿主的引用与生命周期投影，不是新的执行引擎或托管控制面。对象映射由 `core/types` 提供，Runner、Workflow、Teams、Scheduler、A2A、Realtime、Snapshot 与 RuntimeRecorder 继续分别拥有执行、恢复、事件和诊断事实源。当前扩展以 additive `ProtocolDescriptor`、bounded Session context、显式 host-action availability 和 source-owned same-Session admission outcome 暴露能力，不引入队列、锁、分支引擎、会话服务或 provider-specific context schema。
+
+Durable runtime event-stream binding 是可选的 transport-neutral 投影：支持有界 `latest`/`after_cursor`、source-owned catch-up/live-tail handoff、重叠去重、过期、断连与 backpressure 分类；不提供 transport gateway、托管 Event/Session service、外部 event store 或 binding-owned queue。
 
 Baymax 采用分层组合与单向依赖，核心结构如下：
 
@@ -262,7 +263,7 @@ _ = err
 ### 当前主线能力（现状）
 
 - 进行中：
-  - 当前无活跃 change（`openspec list --json` 为空）
+  - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`：Durable Runtime Event Stream Binding Contract
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
   - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization

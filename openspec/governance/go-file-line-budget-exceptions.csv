@@ -8,7 +8,7 @@ observability/event/runtime_recorder_test.go,observability,A63 staged split back
 runtime/config/manager_test.go,runtime-config,A63 staged split backlog,2026-09-30,2899,false
 runtime/config/readiness.go,runtime-config,A63 staged split backlog,2026-09-30,2749,false
 runtime/diagnostics/store_test.go,runtime-diagnostics,A63 staged split backlog,2026-09-30,2509,false
-runtime/diagnostics/store.go,runtime-diagnostics,A63 staged split backlog; additive Agent Runtime Protocol diagnostics fields,2026-09-30,2387,false
+runtime/diagnostics/store.go,runtime-diagnostics,Durable event-stream binding additive diagnostics fields; staged split backlog,2026-09-30,2387,true
 context/assembler/assembler_test.go,context-assembler,A63 staged split backlog,2026-09-30,1872,false
 orchestration/composer/composer.go,orchestration-composer,A63 staged split backlog,2026-09-30,1787,false
 runtime/config/readiness_test.go,runtime-config,A63 staged split backlog,2026-09-30,1739,false
@@ -18,6 +18,6 @@ orchestration/scheduler/state.go,orchestration-scheduler,A63 staged split backlo
 integration/benchmark_test.go,integration,A63 staged split backlog,2026-09-30,1404,false
 context/assembler/assembler.go,context-assembler,A63 staged split backlog,2026-09-30,1480,false
 context/assembler/context_pressure_recovery.go,context-assembler,A63 staged split backlog,2026-09-30,1745,false
-observability/event/runtime_recorder.go,observability,A63 staged split backlog,2026-09-30,1458,false
+observability/event/runtime_recorder.go,observability,Durable event-stream binding additive recorder fields; staged split backlog,2026-09-30,1458,true
 tool/local/registry.go,tool-local,A63 staged split backlog,2026-09-30,1203,false
 skill/loader/loader_test.go,skill-loader,A63 staged split backlog,2026-09-30,1201,false

@@ -1054,6 +1054,10 @@ client := httpmcp.NewClient(httpmcp.Config{
 
 ## 诊断 API（Library Only）
 
+### Durable event-stream binding（additive）
+
+Run diagnostics may include nullable `stream_subscription_id`, `stream_binding_phase`, `stream_binding_decision`, `stream_binding_reason`, `stream_binding_cursor_mode`, and `stream_binding_sequence_boundary`. These fields are emitted only through `observability/event.RuntimeRecorder`; cursor bodies, event payloads, and arbitrary subscriber metadata remain excluded from OTel/high-cardinality attributes.
+
 `runtime/config.Manager` 对外提供诊断读取与观测辅助接口（只读）：
 
 - `RecentCalls(n)`

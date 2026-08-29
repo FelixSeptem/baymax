@@ -22,6 +22,21 @@ func TestProtocolDecisionAttributesPreserveAdditiveCorrelation(t *testing.T) {
 	}
 }
 
+func TestEventStreamBindingAttributesAreBoundedAndNullable(t *testing.T) {
+	attrs := EventStreamBindingAttributes("sub-1", "live", "accepted", "realtime.binding.live", "after_cursor", 42)
+	if attrs[AttrStreamSubscriptionID] != "sub-1" || attrs[AttrStreamBindingPhase] != "live" || attrs[AttrStreamBindingDecision] != "accepted" || attrs[AttrStreamBindingReason] != "realtime.binding.live" || attrs[AttrStreamBindingCursorMode] != "after_cursor" || attrs[AttrStreamBindingSequenceBoundary] != "42" {
+		t.Fatalf("unexpected binding attributes: %#v", attrs)
+	}
+	for _, key := range []string{"stream.cursor", "stream.payload", "stream.subscriber_metadata"} {
+		if _, ok := attrs[key]; ok {
+			t.Fatalf("unbounded attribute %q must not be emitted", key)
+		}
+	}
+	if got := EventStreamBindingAttributes("", "", "", "", "", 0); len(got) != 0 {
+		t.Fatalf("empty binding correlation must be omitted: %#v", got)
+	}
+}
+
 func TestCanonicalSemconvTopologyV1CoversCoreDomains(t *testing.T) {
 	topology := CanonicalSemconvTopologyV1()
 	required := []string{

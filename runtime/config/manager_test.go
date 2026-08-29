@@ -174,6 +174,7 @@ reload:
 	beforeRef := mgr.EffectiveConfigRef()
 	if beforeRef == nil {
 		t.Fatal("EffectiveConfigRef returned nil")
+		return
 	}
 	beforeRetry := beforeRef.MCP.Profiles["default"].Retry
 	if beforeRetry != 1 {
@@ -197,6 +198,7 @@ reload:
 	afterRef := mgr.EffectiveConfigRef()
 	if afterRef == nil {
 		t.Fatal("EffectiveConfigRef after reload returned nil")
+		return
 	}
 	if beforeRef.MCP.Profiles["default"].Retry != beforeRetry {
 		t.Fatalf("previous snapshot should stay immutable, got retry=%d, want %d", beforeRef.MCP.Profiles["default"].Retry, beforeRetry)

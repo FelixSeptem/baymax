@@ -20,6 +20,20 @@ func TestAgentRuntimeProtocolReplayFixtureSuccess(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeProtocolReplayFixtureEventStreamBindingSuite(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "diagnostics-replay", "agent-runtime-protocol", "stream-binding.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	out, err := diagnosticsreplay.EvaluateProtocolFixtureJSON(raw)
+	if err != nil {
+		t.Fatalf("evaluate binding fixture: %v", err)
+	}
+	if len(out.Cases) != 10 {
+		t.Fatalf("binding fixture cases = %d, want 10", len(out.Cases))
+	}
+}
+
 func TestAgentRuntimeProtocolReplayFixtureRejectsMappingDrift(t *testing.T) {
 	raw := []byte(`{"version":"agent_runtime_protocol.v1","cases":[{"name":"drift","run":{"run_id":"run-1","state":"completed"},"stream":{"run_id":"run-1","state":"failed"},"expected":{"run_id":"run-1","state":"completed"},"idempotency":{"first_logical_ingest_total":1,"replay_logical_ingest_total":1}}]}`)
 	_, err := diagnosticsreplay.EvaluateProtocolFixtureJSON(raw)

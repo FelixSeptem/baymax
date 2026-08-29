@@ -43,6 +43,7 @@ assert_absent_regex() {
 assert_no_parallel_realtime_protocol_changes() {
   local assertion="$1"
   local canonical_change_hint="introduce-realtime-event-protocol-and-interrupt-resume-contract"
+  local durable_binding_change_hint="extend-realtime-event-protocol-with-durable-runtime-stream-binding"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +52,7 @@ assert_no_parallel_realtime_protocol_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${lower}" != *"${canonical_change_hint}"* &&
+    if [[ "${lower}" != *"${canonical_change_hint}"* && "${lower}" != *"${durable_binding_change_hint}"* &&
       "${lower}" == *realtime* &&
       ( "${lower}" == *interrupt* || "${lower}" == *resume* || "${lower}" == *protocol* ) ]]; then
       violations+=("${name}")

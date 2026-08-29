@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-04-11
+更新时间：2026-08-29
 
 ## 定位
 
@@ -15,7 +15,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-08-25：
+截至 2026-08-29：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
@@ -25,7 +25,9 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-delivery-usability-agent-mode-example-pack-contract-a62`
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）
-- 进行中：无活跃 change。
+  - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`（Durable Runtime Event Stream Binding Contract）
+- 进行中：
+  - 当前无活动 change；以 OpenSpec 状态为准。
 - 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
 
 ## 版本阶段口径（延续 0.x）
@@ -618,9 +620,9 @@ Why now：
 - 验收与归档：capability/context schema、未知 capability/不兼容版本/非法 admission 的负向 replay、跨源 mapping、Run/Stream 语义测试、diagnostics/OTel additive correlation、独立 gate 与文档均已由该 change 的 `tasks.md` 跟踪并验证；归档脚本已完成执行。
 - Example Impact Assessment：`修改示例`，更新 `agent-runtime-protocol-projection` 的 MATRIX/README 基线和运行断言。
 
-#### P2：Durable Runtime Event Stream Binding Contract
+## P2：Durable Runtime Event Stream Binding Contract（已归档）
 
-候选 change：`extend-realtime-event-protocol-with-durable-runtime-stream-binding`。
+已归档 change：`extend-realtime-event-protocol-with-durable-runtime-stream-binding`。
 
 - 文章对应：生产 streaming 是任务事件流；断线后以 cursor 补收历史并切换 live tail；协议 binding 可替换。
 - 范围：在既有 realtime `event_id/sequence/dedupe/cursor/interrupt/resume` 上定义 transport-neutral 的 `subscribe`、catch-up、live tail、event channel、retention/expiry、backpressure 与授权交接语义。

@@ -104,11 +104,12 @@ function Assert-NoParallelRealtimeProtocolChanges {
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
     $canonicalHint = "introduce-realtime-event-protocol-and-interrupt-resume-contract"
+    $durableBindingHint = "extend-realtime-event-protocol-with-durable-runtime-stream-binding"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if (-not $lower.Contains($canonicalHint) -and
+        if (-not $lower.Contains($canonicalHint) -and -not $lower.Contains($durableBindingHint) -and
             $lower.Contains("realtime") -and
             ($lower.Contains("interrupt") -or $lower.Contains("resume") -or $lower.Contains("protocol"))) {
             $violations += $dir.Name

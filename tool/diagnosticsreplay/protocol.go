@@ -9,15 +9,16 @@ import (
 )
 
 const (
-	AgentRuntimeProtocolFixtureV1      = "agent_runtime_protocol.v1"
-	ReasonCodeProtocolDrift            = "agent_runtime_protocol_drift"
-	ReasonCodeProtocolSchema           = "agent_runtime_protocol_schema_mismatch"
-	ReasonCodeProtocolLineage          = "agent_runtime_protocol_lineage_drift"
-	ReasonCodeProtocolProfileDrift     = "agent_runtime_protocol_profile_drift"
-	ReasonCodeProtocolCapabilityDrift  = "agent_runtime_protocol_capability_drift"
-	ReasonCodeProtocolContextDrift     = "agent_runtime_protocol_context_limit_drift"
-	ReasonCodeProtocolAdmissionDrift   = "agent_runtime_protocol_admission_drift"
-	ReasonCodeProtocolCorrelationDrift = "agent_runtime_protocol_correlation_drift"
+	AgentRuntimeProtocolFixtureV1        = "agent_runtime_protocol.v1"
+	ReasonCodeProtocolDrift              = "agent_runtime_protocol_drift"
+	ReasonCodeProtocolSchema             = "agent_runtime_protocol_schema_mismatch"
+	ReasonCodeProtocolLineage            = "agent_runtime_protocol_lineage_drift"
+	ReasonCodeProtocolProfileDrift       = "agent_runtime_protocol_profile_drift"
+	ReasonCodeProtocolCapabilityDrift    = "agent_runtime_protocol_capability_drift"
+	ReasonCodeProtocolContextDrift       = "agent_runtime_protocol_context_limit_drift"
+	ReasonCodeProtocolAdmissionDrift     = "agent_runtime_protocol_admission_drift"
+	ReasonCodeProtocolCorrelationDrift   = "agent_runtime_protocol_correlation_drift"
+	ReasonCodeProtocolStreamBindingDrift = "agent_runtime_protocol_stream_binding_drift"
 )
 
 type ProtocolFixture struct {
@@ -34,17 +35,26 @@ type ProtocolFixtureCase struct {
 }
 
 type ProtocolObservation struct {
-	RunID         string                         `json:"run_id"`
-	SessionID     string                         `json:"session_id,omitempty"`
-	State         string                         `json:"state"`
-	StepIDs       []string                       `json:"step_ids,omitempty"`
-	EventIDs      []string                       `json:"event_ids,omitempty"`
-	ArtifactIDs   []string                       `json:"artifact_ids,omitempty"`
-	CheckpointID  string                         `json:"checkpoint_id,omitempty"`
-	EventSequence []int64                        `json:"event_sequence,omitempty"`
-	Descriptor    *ProtocolDescriptorObservation `json:"descriptor,omitempty"`
-	Context       *ProtocolContextObservation    `json:"context,omitempty"`
-	Admission     *ProtocolAdmissionObservation  `json:"admission,omitempty"`
+	RunID         string                            `json:"run_id"`
+	SessionID     string                            `json:"session_id,omitempty"`
+	State         string                            `json:"state"`
+	StepIDs       []string                          `json:"step_ids,omitempty"`
+	EventIDs      []string                          `json:"event_ids,omitempty"`
+	ArtifactIDs   []string                          `json:"artifact_ids,omitempty"`
+	CheckpointID  string                            `json:"checkpoint_id,omitempty"`
+	EventSequence []int64                           `json:"event_sequence,omitempty"`
+	Descriptor    *ProtocolDescriptorObservation    `json:"descriptor,omitempty"`
+	Context       *ProtocolContextObservation       `json:"context,omitempty"`
+	Admission     *ProtocolAdmissionObservation     `json:"admission,omitempty"`
+	StreamBinding *ProtocolStreamBindingObservation `json:"stream_binding,omitempty"`
+}
+
+type ProtocolStreamBindingObservation struct {
+	SubscriptionID   string `json:"subscription_id,omitempty"`
+	Phase            string `json:"phase,omitempty"`
+	ReasonCode       string `json:"reason_code,omitempty"`
+	CursorMode       string `json:"cursor_mode,omitempty"`
+	SequenceBoundary int64  `json:"sequence_boundary,omitempty"`
 }
 
 type ProtocolDescriptorObservation struct {
@@ -158,6 +168,8 @@ func protocolObservationDrift(name string, expected, actual ProtocolObservation)
 			code = ReasonCodeProtocolContextDrift
 		case !protocolAdmissionEqual(expected.Admission, actual.Admission):
 			code = ReasonCodeProtocolAdmissionDrift
+		case !protocolStreamBindingEqual(expected.StreamBinding, actual.StreamBinding):
+			code = ReasonCodeProtocolStreamBindingDrift
 		case expected.RunID != actual.RunID || expected.SessionID != actual.SessionID:
 			code = ReasonCodeProtocolCorrelationDrift
 		}
@@ -176,11 +188,19 @@ func validateProtocolObservation(obs ProtocolObservation, name, label string) er
 	if len(obs.ArtifactIDs) > 0 && strings.TrimSpace(obs.CheckpointID) == "" {
 		return &ValidationError{Code: ReasonCodeProtocolLineage, Message: fmt.Sprintf("case %q %s artifact lineage requires checkpoint", name, label)}
 	}
+	if obs.StreamBinding != nil {
+		if strings.TrimSpace(obs.StreamBinding.SubscriptionID) == "" || strings.TrimSpace(obs.StreamBinding.Phase) == "" || strings.TrimSpace(obs.StreamBinding.ReasonCode) == "" || strings.TrimSpace(obs.StreamBinding.CursorMode) == "" {
+			return &ValidationError{Code: ReasonCodeProtocolSchema, Message: fmt.Sprintf("case %q %s stream_binding fields are required", name, label)}
+		}
+		if obs.StreamBinding.SequenceBoundary < 0 {
+			return &ValidationError{Code: ReasonCodeProtocolSchema, Message: fmt.Sprintf("case %q %s stream_binding sequence boundary must not be negative", name, label)}
+		}
+	}
 	return nil
 }
 
 func protocolObservationEqual(a, b ProtocolObservation) bool {
-	return a.RunID == b.RunID && a.SessionID == b.SessionID && a.State == b.State && stringSliceEqual(a.StepIDs, b.StepIDs) && stringSliceEqual(a.EventIDs, b.EventIDs) && stringSliceEqual(a.ArtifactIDs, b.ArtifactIDs) && a.CheckpointID == b.CheckpointID && int64SliceEqual(a.EventSequence, b.EventSequence) && protocolDescriptorEqual(a.Descriptor, b.Descriptor) && protocolContextEqual(a.Context, b.Context) && protocolAdmissionEqual(a.Admission, b.Admission)
+	return a.RunID == b.RunID && a.SessionID == b.SessionID && a.State == b.State && stringSliceEqual(a.StepIDs, b.StepIDs) && stringSliceEqual(a.EventIDs, b.EventIDs) && stringSliceEqual(a.ArtifactIDs, b.ArtifactIDs) && a.CheckpointID == b.CheckpointID && int64SliceEqual(a.EventSequence, b.EventSequence) && protocolDescriptorEqual(a.Descriptor, b.Descriptor) && protocolContextEqual(a.Context, b.Context) && protocolAdmissionEqual(a.Admission, b.Admission) && protocolStreamBindingEqual(a.StreamBinding, b.StreamBinding)
 }
 
 func protocolDescriptorEqual(a, b *ProtocolDescriptorObservation) bool {
@@ -202,6 +222,13 @@ func protocolAdmissionEqual(a, b *ProtocolAdmissionObservation) bool {
 		return a == b
 	}
 	return a.Policy == b.Policy && a.Decision == b.Decision && a.ReasonCode == b.ReasonCode && a.BranchRunID == b.BranchRunID && stringSliceEqual(a.ConflictingRunIDs, b.ConflictingRunIDs)
+}
+
+func protocolStreamBindingEqual(a, b *ProtocolStreamBindingObservation) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.SubscriptionID == b.SubscriptionID && a.Phase == b.Phase && a.ReasonCode == b.ReasonCode && a.CursorMode == b.CursorMode && a.SequenceBoundary == b.SequenceBoundary
 }
 
 func stringSliceEqual(a, b []string) bool { return strings.Join(a, "\x00") == strings.Join(b, "\x00") }

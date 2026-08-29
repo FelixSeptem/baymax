@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
@@ -15,8 +16,8 @@ import (
 
 const (
 	patternName      = "realtime-interrupt-resume"
-	phase            = "P0"
-	semanticAnchor   = "realtime.cursor_idempotent_interrupt_resume"
+	phase            = "P2"
+	semanticAnchor   = "realtime.durable_runtime_stream_binding"
 	classification   = "realtime.resume_recovery"
 	semanticToolName = "mode_realtime_interrupt_resume_semantic_step"
 )
@@ -68,7 +69,7 @@ type realtimeState struct {
 	TotalScore         int
 }
 
-var runtimeDomains = []string{"core/runner", "runtime/diagnostics"}
+var runtimeDomains = []string{"core/types", "core/runner", "observability/event", "observability/trace", "runtime/diagnostics"}
 
 var minimalSemanticSteps = []realtimeStep{
 	{
@@ -89,6 +90,24 @@ var minimalSemanticSteps = []realtimeStep{
 		Intent:        "resume from checkpoint and recover replayable events under policy limits",
 		Outcome:       "resume status, recovered cursor, and fallback path are emitted",
 	},
+	{
+		Marker:        "realtime_stream_binding_live",
+		RuntimeDomain: "core/runner",
+		Intent:        "project a latest subscription onto the source-owned live tail",
+		Outcome:       "bounded live binding phase and subscription correlation are emitted",
+	},
+	{
+		Marker:        "realtime_stream_binding_catch_up",
+		RuntimeDomain: "core/types",
+		Intent:        "project after-cursor history without synthesizing source state",
+		Outcome:       "catch-up phase preserves cursor sequence and source correlation",
+	},
+	{
+		Marker:        "realtime_stream_binding_handoff_dedup",
+		RuntimeDomain: "core/types",
+		Intent:        "normalize bounded catch-up/live overlap using canonical event deduplication",
+		Outcome:       "handoff overlap is removed while sequence ordering remains source-owned",
+	},
 }
 
 var productionGovernanceSteps = []realtimeStep{
@@ -103,6 +122,24 @@ var productionGovernanceSteps = []realtimeStep{
 		RuntimeDomain: "runtime/diagnostics",
 		Intent:        "bind replay signature to cursor trajectory and governance decision",
 		Outcome:       "deterministic replay signature is generated",
+	},
+	{
+		Marker:        "realtime_stream_binding_expired",
+		RuntimeDomain: "core/types",
+		Intent:        "classify an out-of-retention cursor without falling back to latest",
+		Outcome:       "expired cursor remains an explicit source-owned outcome",
+	},
+	{
+		Marker:        "realtime_stream_binding_backpressure",
+		RuntimeDomain: "core/types",
+		Intent:        "classify compatible source backpressure without allocating a binding queue",
+		Outcome:       "backpressure phase and reason are projected additively",
+	},
+	{
+		Marker:        "realtime_stream_binding_disconnect_recovery",
+		RuntimeDomain: "core/runner",
+		Intent:        "retain subscription correlation across a recoverable disconnect",
+		Outcome:       "disconnect classification preserves the existing cursor boundary",
 	},
 }
 
@@ -575,6 +612,17 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 		default:
 			risk = "degraded_path"
 		}
+	case "realtime_stream_binding_live", "realtime_stream_binding_catch_up", "realtime_stream_binding_handoff_dedup", "realtime_stream_binding_expired", "realtime_stream_binding_backpressure", "realtime_stream_binding_disconnect_recovery":
+		binding, bindingErr := projectExampleBinding(marker, sessionID)
+		if bindingErr != nil {
+			return types.ToolResult{}, bindingErr
+		}
+		result["stream_subscription_id"] = binding.Subscription.SubscriptionID
+		result["stream_binding_phase"] = string(binding.Outcome.Phase)
+		result["stream_binding_reason"] = binding.Outcome.ReasonCode
+		result["stream_binding_sequence_boundary"] = binding.Outcome.LastSequence
+		result["stream_binding_event_count"] = len(binding.Events)
+		risk = "stream_binding_" + strings.TrimPrefix(marker, "realtime_stream_binding_")
 	case "governance_realtime_gate_enforced":
 		governanceDecision = "allow"
 		switch {
@@ -652,6 +700,50 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 		risk,
 	)
 	return types.ToolResult{Content: content, Structured: result}, nil
+}
+
+func projectExampleBinding(marker, sessionID string) (types.EventStreamBindingProjection, error) {
+	subscription := types.EventStreamSubscription{
+		Version: types.DurableEventStreamBindingVersionV1, SubscriptionID: "example-" + marker,
+		Source: types.ProtocolSourceRealtime, SessionID: sessionID, RunID: "example-run",
+		StartMode: types.EventStreamStartLatest, DeliveryPolicy: types.EventStreamDeliveryPolicyUnknown, MaxBatchSize: 8,
+	}
+	outcome := types.EventStreamBindingOutcome{SubscriptionID: subscription.SubscriptionID, Phase: types.EventStreamBindingPhaseLive, ReasonCode: "realtime.binding.live", SourceOutcomeDeclared: true}
+	var history, live []types.RealtimeEventEnvelope
+	switch marker {
+	case "realtime_stream_binding_catch_up":
+		subscription.StartMode = types.EventStreamStartAfterCursor
+		subscription.Cursor = types.EventStreamCursor{Value: "example-cursor", Sequence: 1}
+		outcome.Phase = types.EventStreamBindingPhaseCatchingUp
+		outcome.ReasonCode = "realtime.binding.catch_up"
+		history = []types.RealtimeEventEnvelope{exampleBindingEvent("example-event-2", sessionID, 2)}
+	case "realtime_stream_binding_handoff_dedup":
+		subscription.StartMode = types.EventStreamStartAfterCursor
+		subscription.Cursor = types.EventStreamCursor{Value: "example-cursor", Sequence: 2}
+		history = []types.RealtimeEventEnvelope{exampleBindingEvent("example-event-3", sessionID, 3)}
+		live = []types.RealtimeEventEnvelope{exampleBindingEvent("example-event-3", sessionID, 3), exampleBindingEvent("example-event-4", sessionID, 4)}
+		outcome.LastSequence = 4
+	case "realtime_stream_binding_expired":
+		subscription.StartMode = types.EventStreamStartAfterCursor
+		subscription.Cursor = types.EventStreamCursor{Value: "expired-cursor", Sequence: 99}
+		outcome.Phase = types.EventStreamBindingPhaseExpired
+		outcome.ReasonCode = "realtime.cursor.expired"
+	case "realtime_stream_binding_backpressure":
+		subscription.DeliveryPolicy = types.EventStreamDeliveryPolicyPauseSource
+		outcome.Phase = types.EventStreamBindingPhaseBackpressured
+		outcome.ReasonCode = "realtime.backpressure.pause_source"
+	case "realtime_stream_binding_disconnect_recovery":
+		subscription.StartMode = types.EventStreamStartAfterCursor
+		subscription.Cursor = types.EventStreamCursor{Value: "disconnect-cursor", Sequence: 4}
+		outcome.Phase = types.EventStreamBindingPhaseDisconnected
+		outcome.ReasonCode = "realtime.binding.disconnected"
+		outcome.LastSequence = 4
+	}
+	return types.ProjectEventStreamBinding(subscription, outcome, history, live)
+}
+
+func exampleBindingEvent(id, sessionID string, sequence int64) types.RealtimeEventEnvelope {
+	return types.RealtimeEventEnvelope{EventID: id, SessionID: sessionID, RunID: "example-run", Seq: sequence, Type: types.RealtimeEventTypeDelta, TS: time.Unix(sequence, 0).UTC(), Payload: map[string]any{"delta": id}}
 }
 
 func sessionIDForVariant(variant string) string {

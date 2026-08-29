@@ -487,16 +487,28 @@ type StepRef struct {
 // EventEnvelope is the normalized event view. Sequence is meaningful only
 // when the source is realtime.
 type EventEnvelope struct {
-	EventID     string            `json:"event_id"`
-	RunID       string            `json:"run_id,omitempty"`
-	SessionID   string            `json:"session_id,omitempty"`
-	StepID      string            `json:"step_id,omitempty"`
-	CausationID string            `json:"causation_id,omitempty"`
-	Source      ProtocolSource    `json:"source"`
-	Kind        ProtocolEventKind `json:"kind"`
-	Time        time.Time         `json:"time"`
-	Sequence    int64             `json:"sequence,omitempty"`
-	Payload     map[string]any    `json:"payload,omitempty"`
+	EventID       string                      `json:"event_id"`
+	RunID         string                      `json:"run_id,omitempty"`
+	SessionID     string                      `json:"session_id,omitempty"`
+	StepID        string                      `json:"step_id,omitempty"`
+	CausationID   string                      `json:"causation_id,omitempty"`
+	Source        ProtocolSource              `json:"source"`
+	Kind          ProtocolEventKind           `json:"kind"`
+	Time          time.Time                   `json:"time"`
+	Sequence      int64                       `json:"sequence,omitempty"`
+	Payload       map[string]any              `json:"payload,omitempty"`
+	StreamBinding *ProtocolEventStreamBinding `json:"stream_binding,omitempty"`
+}
+
+// ProtocolEventStreamBinding carries additive subscription correlation on a
+// protocol event. It describes source-owned binding state and is not an
+// authorization or transport object.
+type ProtocolEventStreamBinding struct {
+	SubscriptionID   string                  `json:"subscription_id"`
+	Phase            EventStreamBindingPhase `json:"phase"`
+	ReasonCode       string                  `json:"reason_code"`
+	CursorMode       EventStreamStartMode    `json:"cursor_mode"`
+	SequenceBoundary int64                   `json:"sequence_boundary,omitempty"`
 }
 
 // ArtifactRef describes a produced artifact without copying or owning content.
@@ -774,6 +786,35 @@ func MapRealtimeEventToProtocol(ev RealtimeEventEnvelope) (EventEnvelope, error)
 		return EventEnvelope{}, err
 	}
 	return envelope, nil
+}
+
+// MapEventStreamBindingToProtocol projects source-owned binding events to
+// canonical protocol envelopes while retaining subscription correlation.
+func MapEventStreamBindingToProtocol(projection EventStreamBindingProjection) ([]EventEnvelope, error) {
+	if err := projection.Subscription.Validate(); err != nil {
+		return nil, err
+	}
+	if err := projection.Outcome.Validate(projection.Subscription); err != nil {
+		return nil, err
+	}
+	binding := &ProtocolEventStreamBinding{
+		SubscriptionID:   strings.TrimSpace(projection.Subscription.SubscriptionID),
+		Phase:            projection.Outcome.Phase,
+		ReasonCode:       strings.TrimSpace(projection.Outcome.ReasonCode),
+		CursorMode:       projection.Subscription.StartMode,
+		SequenceBoundary: projection.Outcome.LastSequence,
+	}
+	events := make([]EventEnvelope, 0, len(projection.Events))
+	for _, event := range projection.Events {
+		mapped, err := MapRealtimeEventToProtocol(event)
+		if err != nil {
+			return nil, err
+		}
+		clonedBinding := *binding
+		mapped.StreamBinding = &clonedBinding
+		events = append(events, mapped)
+	}
+	return events, nil
 }
 
 // MapHandoffArtifactToProtocol projects a deferred context artifact without

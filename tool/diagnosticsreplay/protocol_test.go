@@ -36,3 +36,19 @@ func TestEvaluateProtocolFixtureClassifiesProfileDrift(t *testing.T) {
 		t.Fatalf("error=%v, want %s", err, ReasonCodeProtocolProfileDrift)
 	}
 }
+
+func TestEvaluateProtocolFixturePreservesEventStreamBindingParity(t *testing.T) {
+	raw := []byte(`{"version":"agent_runtime_protocol.v1","cases":[{"name":"stream-binding","run":{"run_id":"run-1","session_id":"session-1","state":"working","event_ids":["event-1"],"event_sequence":[1],"stream_binding":{"subscription_id":"sub-1","phase":"live","reason_code":"realtime.binding.live","cursor_mode":"after_cursor","sequence_boundary":1}},"stream":{"run_id":"run-1","session_id":"session-1","state":"working","event_ids":["event-1"],"event_sequence":[1],"stream_binding":{"subscription_id":"sub-1","phase":"live","reason_code":"realtime.binding.live","cursor_mode":"after_cursor","sequence_boundary":1}},"expected":{"run_id":"run-1","session_id":"session-1","state":"working","event_ids":["event-1"],"event_sequence":[1],"stream_binding":{"subscription_id":"sub-1","phase":"live","reason_code":"realtime.binding.live","cursor_mode":"after_cursor","sequence_boundary":1}},"idempotency":{"first_logical_ingest_total":1,"replay_logical_ingest_total":1}}]}`)
+	out, err := EvaluateProtocolFixtureJSON(raw)
+	if err != nil || len(out.Cases) != 1 || out.Cases[0].Canonical.StreamBinding == nil {
+		t.Fatalf("out=%#v err=%v", out, err)
+	}
+}
+
+func TestEvaluateProtocolFixtureClassifiesEventStreamBindingDrift(t *testing.T) {
+	raw := []byte(`{"version":"agent_runtime_protocol.v1","cases":[{"name":"stream-binding-drift","run":{"run_id":"run-1","state":"working","stream_binding":{"subscription_id":"sub-1","phase":"expired","reason_code":"realtime.cursor.expired","cursor_mode":"after_cursor"}},"stream":{"run_id":"run-1","state":"working","stream_binding":{"subscription_id":"sub-1","phase":"live","reason_code":"realtime.binding.live","cursor_mode":"after_cursor"}},"expected":{"run_id":"run-1","state":"working","stream_binding":{"subscription_id":"sub-1","phase":"live","reason_code":"realtime.binding.live","cursor_mode":"after_cursor"}},"idempotency":{"first_logical_ingest_total":1,"replay_logical_ingest_total":1}}]}`)
+	_, err := EvaluateProtocolFixtureJSON(raw)
+	if err == nil || !strings.Contains(err.Error(), ReasonCodeProtocolStreamBindingDrift) {
+		t.Fatalf("error=%v, want %s", err, ReasonCodeProtocolStreamBindingDrift)
+	}
+}

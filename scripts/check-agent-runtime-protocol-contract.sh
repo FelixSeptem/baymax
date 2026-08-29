@@ -6,11 +6,17 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 echo "[agent-runtime-protocol-contract-gate] replay suites"
-go test ./core/types ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes)' -count=1
+go test ./core/types ./core/runner ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|EventStreamBinding|RealtimeEventStreamBinding)' -count=1
 
 echo "[agent-runtime-protocol-contract-gate] capability context action admission Run/Stream parity"
 if ! rg -n 'ProtocolDescriptor|ProtocolSessionContext|ProtocolRunAdmission|TestRunAndStreamProtocolProjectionSemanticEquivalence' core/types orchestration a2a integration; then
   echo "[agent-runtime-protocol-contract-gate][projection_surface] required capability/context/action/admission/Run/Stream assertions missing" >&2
+  exit 1
+fi
+
+echo "[agent-runtime-protocol-contract-gate] stream_binding_control_plane_absent"
+if rg -n --glob '!openspec/changes/archive/**' 'stream[_-]?binding.*(listener|connection[_-]?manager|event[_-]?store|global[_-]?queue|hosted[_-]?service|gateway)' .; then
+  echo "[agent-runtime-protocol-contract-gate][stream_binding_control_plane_absent] hosted binding dependency detected" >&2
   exit 1
 fi
 

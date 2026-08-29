@@ -3,6 +3,7 @@ package trace
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -27,26 +28,32 @@ const (
 )
 
 const (
-	AttrTraceSchemaVersion         = "trace.schema_version"
-	AttrDomain                     = "trace.domain"
-	AttrRunID                      = "run.id"
-	AttrMode                       = "run.mode"
-	AttrStepID                     = "step.id"
-	AttrProtocolSource             = "agent.protocol.source"
-	AttrCausationID                = "agent.protocol.causation_id"
-	AttrArtifactID                 = "agent.protocol.artifact_id"
-	AttrCheckpointID               = "agent.protocol.checkpoint_id"
-	AttrProtocolProfileVersion     = "agent.protocol.profile_version"
-	AttrProtocolCapabilityDecision = "agent.protocol.capability_decision"
-	AttrProtocolCapabilityReason   = "agent.protocol.capability_reason"
-	AttrProtocolAdmissionPolicy    = "agent.protocol.admission_policy"
-	AttrProtocolAdmissionDecision  = "agent.protocol.admission_decision"
-	AttrProtocolAdmissionReason    = "agent.protocol.admission_reason"
-	AttrToolName                   = "tool.name"
-	AttrMCPTransport               = "mcp.transport"
-	AttrMemoryScope                = "memory_scope_selected"
-	AttrBudgetDecision             = "budget_decision"
-	AttrPolicyDecisionPath         = "policy_decision_path"
+	AttrTraceSchemaVersion            = "trace.schema_version"
+	AttrDomain                        = "trace.domain"
+	AttrRunID                         = "run.id"
+	AttrMode                          = "run.mode"
+	AttrStepID                        = "step.id"
+	AttrProtocolSource                = "agent.protocol.source"
+	AttrCausationID                   = "agent.protocol.causation_id"
+	AttrArtifactID                    = "agent.protocol.artifact_id"
+	AttrCheckpointID                  = "agent.protocol.checkpoint_id"
+	AttrProtocolProfileVersion        = "agent.protocol.profile_version"
+	AttrProtocolCapabilityDecision    = "agent.protocol.capability_decision"
+	AttrProtocolCapabilityReason      = "agent.protocol.capability_reason"
+	AttrProtocolAdmissionPolicy       = "agent.protocol.admission_policy"
+	AttrProtocolAdmissionDecision     = "agent.protocol.admission_decision"
+	AttrProtocolAdmissionReason       = "agent.protocol.admission_reason"
+	AttrToolName                      = "tool.name"
+	AttrMCPTransport                  = "mcp.transport"
+	AttrMemoryScope                   = "memory_scope_selected"
+	AttrBudgetDecision                = "budget_decision"
+	AttrPolicyDecisionPath            = "policy_decision_path"
+	AttrStreamSubscriptionID          = "agent.stream.subscription_id"
+	AttrStreamBindingPhase            = "agent.stream.binding_phase"
+	AttrStreamBindingDecision         = "agent.stream.binding_decision"
+	AttrStreamBindingReason           = "agent.stream.binding_reason"
+	AttrStreamBindingCursorMode       = "agent.stream.cursor_mode"
+	AttrStreamBindingSequenceBoundary = "agent.stream.sequence_boundary"
 )
 
 // ProtocolAttributes returns additive protocol correlation attributes while
@@ -59,6 +66,28 @@ func ProtocolAttributes(runID, stepID, source, causationID, artifactID, checkpoi
 		AttrCausationID:    strings.TrimSpace(causationID),
 		AttrArtifactID:     strings.TrimSpace(artifactID),
 		AttrCheckpointID:   strings.TrimSpace(checkpointID),
+	}
+	for key, value := range attrs {
+		if value == "" {
+			delete(attrs, key)
+		}
+	}
+	return attrs
+}
+
+// EventStreamBindingAttributes returns additive, bounded stream correlation.
+// Cursor bodies, event payloads, and arbitrary subscriber metadata are
+// intentionally excluded to keep OTel cardinality bounded.
+func EventStreamBindingAttributes(subscriptionID, phase, decision, reason, cursorMode string, sequenceBoundary int64) map[string]string {
+	attrs := map[string]string{
+		AttrStreamSubscriptionID:    strings.TrimSpace(subscriptionID),
+		AttrStreamBindingPhase:      strings.TrimSpace(phase),
+		AttrStreamBindingDecision:   strings.TrimSpace(decision),
+		AttrStreamBindingReason:     strings.TrimSpace(reason),
+		AttrStreamBindingCursorMode: strings.TrimSpace(cursorMode),
+	}
+	if sequenceBoundary > 0 {
+		attrs[AttrStreamBindingSequenceBoundary] = strconv.FormatInt(sequenceBoundary, 10)
 	}
 	for key, value := range attrs {
 		if value == "" {

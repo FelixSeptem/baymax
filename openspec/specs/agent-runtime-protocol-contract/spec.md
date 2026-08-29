@@ -50,15 +50,20 @@ Runtime MUST map existing standard events, timeline events, realtime envelopes, 
 - **THEN** the canonical Event records its source and does not assign a synthetic realtime sequence
 
 ### Requirement: Runtime SHALL expose artifact and checkpoint lineage as references
-Runtime MUST expose `ArtifactRef` and `CheckpointRef` as reference-only protocol objects. An Artifact reference MUST retain `id`, `type`, `locator`, optional digest, and producing Run/Step correlation when known. A Checkpoint reference MUST retain identifier, schema version, source component, optional Run/Session correlation, and integrity reference. Existing snapshot manifest segment ownership and restore semantics MUST remain unchanged.
 
-#### Scenario: Isolate handoff artifact is mapped without copying body content
-- **WHEN** an isolate handoff artifact is projected to an Artifact reference
-- **THEN** the reference preserves its ID, type, locator, and producing correlation while avoiding duplication of deferred artifact body content
+Runtime MUST expose `ArtifactRef` and `CheckpointRef` as reference-only protocol objects. An Artifact reference MUST retain `id`, `type`, `locator`, optional digest, and producing Run/Step correlation when known. A Checkpoint reference MUST retain identifier, schema version, source component, optional Run/Session correlation, and integrity reference, and MAY include additive parent, branch, history, restore-source, replay, and workspace provenance references. Existing snapshot manifest segment ownership and restore semantics MUST remain unchanged.
 
-#### Scenario: Snapshot import remains module-owned
-- **WHEN** a caller imports a checkpoint reference backed by an existing snapshot manifest
-- **THEN** `strict|compatible` policy, compatibility window, digest validation, and idempotent import remain enforced by the snapshot contract
+#### Scenario: Snapshot checkpoint exposes optional lineage
+- **WHEN** a valid snapshot manifest is projected with root, derived, branch, or replay context
+- **THEN** the checkpoint reference preserves manifest fields and validates optional lineage without changing the manifest
+
+#### Scenario: Missing lineage parent is rejected
+- **WHEN** a derived or branch checkpoint lacks a valid parent reference
+- **THEN** protocol validation returns deterministic lineage classification and does not mutate source state
+
+#### Scenario: Existing reference remains backward compatible
+- **WHEN** an existing `agent_runtime_protocol.v1` mapping contains only the original checkpoint fields
+- **THEN** validation and replay succeed with all new fields omitted or defaulted
 
 ### Requirement: Runtime SHALL preserve fail-fast boundaries while representing recoverable outcomes
 Protocol mapping MAY represent a recoverable tool or business failure as a failed Step outcome or error Event only when the owning Runtime path already allows recovery. Configuration validation, security/permission denial, protocol validation, snapshot compatibility conflict, and module-boundary violations MUST retain their existing fail-fast behavior and deterministic classifications.
@@ -181,29 +186,15 @@ The projection MUST validate policy/outcome compatibility: `reject` MUST NOT pro
 
 ### Requirement: Capability, context, and admission projections SHALL preserve compatibility and observability contracts
 
-All new protocol fields MUST be additive, nullable or defaultable, and associated with an explicit profile version. Existing `agent_runtime_protocol.v1` fixtures and six-object mappings MUST remain valid. New descriptor, context, action, and admission events MUST preserve `run_id`, `session_id`, source, causation, and available trace correlation; diagnostics writes MUST continue through `observability/event.RuntimeRecorder`.
+All new protocol fields MUST be additive, nullable or defaultable, and associated with an explicit profile version. Checkpoint history and workspace provenance fields MUST preserve `run_id`, `session_id`, source, causation, and available trace correlation; diagnostics writes MUST continue through `observability/event.RuntimeRecorder`. Equivalent Run and Stream inputs MUST normalize to semantically equivalent provenance outcomes after permitted event-order normalization.
 
-Equivalent Run and Stream inputs MUST normalize to semantically equivalent descriptor negotiation, context validation, action availability, and admission outcomes after permitted event-order normalization.
+#### Scenario: Provenance diagnostics use the single write path
+- **WHEN** a lineage, replay, or workspace drift projection emits an observable decision
+- **THEN** its bounded additive fields are recorded through `RuntimeRecorder` without a parallel diagnostics writer
 
-#### Scenario: Old v1 mapping remains valid without new fields
-
-- **WHEN** an existing `agent_runtime_protocol.v1` fixture contains only the original lifecycle references
-- **THEN** replay succeeds and optional descriptor/context/admission fields are absent or defaulted
-
-#### Scenario: Profile drift is detected by replay
-
-- **WHEN** a descriptor, capability reason, context limit, or admission outcome changes for the same declared profile version
-- **THEN** protocol replay classifies deterministic drift and the contract gate fails
-
-#### Scenario: Diagnostics correlation uses the single write path
-
-- **WHEN** a descriptor or admission projection emits an observable decision
-- **THEN** its additive fields are recorded through `RuntimeRecorder` with protocol correlation and no parallel diagnostics writer
-
-#### Scenario: Run and Stream preserve admission parity
-
-- **WHEN** equivalent Run and Stream requests receive the same source descriptor and concurrent-Run outcome
-- **THEN** normalized protocol output preserves equivalent decision, reason, capability, and context semantics
+#### Scenario: Run and Stream preserve provenance parity
+- **WHEN** equivalent Run and Stream requests receive the same checkpoint and workspace context
+- **THEN** normalized decision, reason, lineage, and restore-source fields remain equivalent
 
 ### Requirement: Runtime Protocol SHALL project durable event-stream binding correlation additively
 

@@ -1357,6 +1357,8 @@ Agent Runtime Protocol additive projection（`agent_runtime_protocol.v1`）：
 - capability negotiation defaults to `fail_fast`, reuses adapter required/optional semantics, and classifies profile mismatch as `protocol.capability.profile_mismatch`;
 - Session context is reference-only and bounded by participant/agent count, allowlisted scalar metadata, key/value length, and serialized-size limits; same-Session admission is a source-owned `reject|serialize|branch|optimistic|unknown` projection and never creates a queue, lock, branch, cancellation policy, or persistence store;
 - OTel adds `agent.protocol.profile_version`、`agent.protocol.capability_decision` and `agent.protocol.admission_*` attributes with empty values omitted; diagnostics still use the single RuntimeRecorder write path.
+- checkpoint/workspace provenance adds nullable `protocol_checkpoint_relation`、`protocol_checkpoint_parent_id`、`protocol_checkpoint_branch_id`、`protocol_checkpoint_restore_source`、`protocol_checkpoint_replay_key`、`protocol_workspace_id`、`protocol_workspace_change_set_id` 和 `protocol_workspace_integrity_drift_reason`; OTel only records bounded relation/restore/provenance state and drift reason, never workspace contents or raw integrity values.
+- provenance replay fixture: `agent_runtime_protocol_checkpoint_provenance.v1`; canonical drift classes include lineage/schema/branch/replay drift, workspace provenance/integrity drift, and Run/Stream provenance parity drift.
 - gate: `scripts/check-agent-runtime-protocol-contract.sh/.ps1`，并已接入 `check-quality-gate.sh/.ps1`；`control_plane_absent` 是阻断断言。
 
 离线回放命令：

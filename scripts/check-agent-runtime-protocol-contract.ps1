@@ -7,7 +7,7 @@ Set-Location $repoRoot
 
 Write-Host "[agent-runtime-protocol-contract-gate] replay suites"
 Invoke-NativeStrict -Label "go test protocol replay suites" -Command {
-    go test ./core/types ./core/runner ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|EventStreamBinding|RealtimeEventStreamBinding)' -count=1
+    go test ./core/types ./core/runner ./orchestration/snapshot ./orchestration/composer ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace ./examples/agent-modes/internal/runtimeexample -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|Checkpoint|Provenance|EventStreamBinding|RealtimeEventStreamBinding|ModeSpec)' -count=1
 }
 
 Write-Host "[agent-runtime-protocol-contract-gate] capability context action admission Run/Stream parity"
@@ -23,6 +23,12 @@ if ($LASTEXITCODE -eq 0 -and $matches.Count -gt 0) {
 }
 if ($LASTEXITCODE -gt 1) {
     throw "[agent-runtime-protocol-contract-gate] rg scan failed (exit=$LASTEXITCODE)"
+}
+
+Write-Host "[agent-runtime-protocol-contract-gate] checkpoint_workspace_provenance_surface"
+$provenanceMatches = @(rg -n 'CheckpointProvenance|ValidateCheckpointHistory|ValidateWorkspaceIntegrity|agent_runtime_protocol_checkpoint_provenance.v1' core/types orchestration tool examples 2>$null)
+if ($LASTEXITCODE -ne 0 -or $provenanceMatches.Count -eq 0) {
+    throw "[agent-runtime-protocol-contract-gate][checkpoint_workspace_provenance_surface] required provenance assertions missing"
 }
 
 Write-Host "[agent-runtime-protocol-contract-gate] stream_binding_control_plane_absent"

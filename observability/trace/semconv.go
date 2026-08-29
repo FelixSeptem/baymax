@@ -28,32 +28,36 @@ const (
 )
 
 const (
-	AttrTraceSchemaVersion            = "trace.schema_version"
-	AttrDomain                        = "trace.domain"
-	AttrRunID                         = "run.id"
-	AttrMode                          = "run.mode"
-	AttrStepID                        = "step.id"
-	AttrProtocolSource                = "agent.protocol.source"
-	AttrCausationID                   = "agent.protocol.causation_id"
-	AttrArtifactID                    = "agent.protocol.artifact_id"
-	AttrCheckpointID                  = "agent.protocol.checkpoint_id"
-	AttrProtocolProfileVersion        = "agent.protocol.profile_version"
-	AttrProtocolCapabilityDecision    = "agent.protocol.capability_decision"
-	AttrProtocolCapabilityReason      = "agent.protocol.capability_reason"
-	AttrProtocolAdmissionPolicy       = "agent.protocol.admission_policy"
-	AttrProtocolAdmissionDecision     = "agent.protocol.admission_decision"
-	AttrProtocolAdmissionReason       = "agent.protocol.admission_reason"
-	AttrToolName                      = "tool.name"
-	AttrMCPTransport                  = "mcp.transport"
-	AttrMemoryScope                   = "memory_scope_selected"
-	AttrBudgetDecision                = "budget_decision"
-	AttrPolicyDecisionPath            = "policy_decision_path"
-	AttrStreamSubscriptionID          = "agent.stream.subscription_id"
-	AttrStreamBindingPhase            = "agent.stream.binding_phase"
-	AttrStreamBindingDecision         = "agent.stream.binding_decision"
-	AttrStreamBindingReason           = "agent.stream.binding_reason"
-	AttrStreamBindingCursorMode       = "agent.stream.cursor_mode"
-	AttrStreamBindingSequenceBoundary = "agent.stream.sequence_boundary"
+	AttrTraceSchemaVersion              = "trace.schema_version"
+	AttrDomain                          = "trace.domain"
+	AttrRunID                           = "run.id"
+	AttrMode                            = "run.mode"
+	AttrStepID                          = "step.id"
+	AttrProtocolSource                  = "agent.protocol.source"
+	AttrCausationID                     = "agent.protocol.causation_id"
+	AttrArtifactID                      = "agent.protocol.artifact_id"
+	AttrCheckpointID                    = "agent.protocol.checkpoint_id"
+	AttrProtocolProfileVersion          = "agent.protocol.profile_version"
+	AttrProtocolCapabilityDecision      = "agent.protocol.capability_decision"
+	AttrProtocolCapabilityReason        = "agent.protocol.capability_reason"
+	AttrProtocolAdmissionPolicy         = "agent.protocol.admission_policy"
+	AttrProtocolAdmissionDecision       = "agent.protocol.admission_decision"
+	AttrProtocolAdmissionReason         = "agent.protocol.admission_reason"
+	AttrToolName                        = "tool.name"
+	AttrMCPTransport                    = "mcp.transport"
+	AttrMemoryScope                     = "memory_scope_selected"
+	AttrBudgetDecision                  = "budget_decision"
+	AttrPolicyDecisionPath              = "policy_decision_path"
+	AttrStreamSubscriptionID            = "agent.stream.subscription_id"
+	AttrStreamBindingPhase              = "agent.stream.binding_phase"
+	AttrStreamBindingDecision           = "agent.stream.binding_decision"
+	AttrStreamBindingReason             = "agent.stream.binding_reason"
+	AttrStreamBindingCursorMode         = "agent.stream.cursor_mode"
+	AttrStreamBindingSequenceBoundary   = "agent.stream.sequence_boundary"
+	AttrProtocolCheckpointRelation      = "agent.protocol.checkpoint_relation"
+	AttrProtocolCheckpointRestoreSource = "agent.protocol.checkpoint_restore_source"
+	AttrProtocolWorkspaceProvenance     = "agent.protocol.workspace_provenance"
+	AttrProtocolWorkspaceDriftReason    = "agent.protocol.workspace_drift_reason"
 )
 
 // ProtocolAttributes returns additive protocol correlation attributes while
@@ -107,6 +111,24 @@ func ProtocolDecisionAttributes(profileVersion, capabilityDecision, capabilityRe
 		AttrProtocolAdmissionPolicy:    strings.TrimSpace(admissionPolicy),
 		AttrProtocolAdmissionDecision:  strings.TrimSpace(admissionDecision),
 		AttrProtocolAdmissionReason:    strings.TrimSpace(admissionReason),
+	}
+	for key, value := range attrs {
+		if value == "" {
+			delete(attrs, key)
+		}
+	}
+	return attrs
+}
+
+// CheckpointProvenanceAttributes returns bounded provenance state/reason
+// attributes; checkpoint/workspace identifiers and integrity values are not
+// emitted to avoid high-cardinality telemetry.
+func CheckpointProvenanceAttributes(relation, restoreSource, provenanceState, driftReason string) map[string]string {
+	attrs := map[string]string{
+		AttrProtocolCheckpointRelation:      strings.TrimSpace(relation),
+		AttrProtocolCheckpointRestoreSource: strings.TrimSpace(restoreSource),
+		AttrProtocolWorkspaceProvenance:     strings.TrimSpace(provenanceState),
+		AttrProtocolWorkspaceDriftReason:    strings.TrimSpace(driftReason),
 	}
 	for key, value := range attrs {
 		if value == "" {

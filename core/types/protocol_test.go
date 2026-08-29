@@ -56,6 +56,52 @@ func TestProtocolReferencesRejectMissingRequiredIdentifiers(t *testing.T) {
 	}
 }
 
+func TestCheckpointHistoryAndWorkspaceProvenanceValidation(t *testing.T) {
+	root := CheckpointRef{CheckpointID: "checkpoint-root", SchemaVersion: "state_session_snapshot.v1", SourceComponent: "composer", Digest: "digest-root", SessionID: "session-1", Relation: CheckpointRelationRoot, HistoryIndex: 0}
+	derived := root
+	derived.CheckpointID = "checkpoint-derived"
+	derived.Digest = "digest-derived"
+	derived.Relation = CheckpointRelationDerived
+	derived.ParentCheckpointID = root.CheckpointID
+	derived.HistoryIndex = 1
+	derived.WorkspaceProvenance = &WorkspaceProvenance{WorkspaceID: "workspace-1", ChangeSetID: "change-1", BeforeIntegrity: "before-1", AfterIntegrity: "after-1", ProducedByRunID: "run-1", ProducedByStepID: "step-1", CheckpointID: derived.CheckpointID}
+	if err := ValidateCheckpointHistory([]CheckpointRef{root, derived}); err != nil {
+		t.Fatalf("ValidateCheckpointHistory() error = %v", err)
+	}
+	if err := derived.ValidateProtocolReference(); err != nil {
+		t.Fatalf("derived.ValidateProtocolReference() error = %v", err)
+	}
+	broken := derived
+	broken.ParentCheckpointID = "missing"
+	if err := ValidateCheckpointHistory([]CheckpointRef{root, broken}); err == nil || !strings.Contains(err.Error(), "history_disconnected") {
+		t.Fatalf("missing parent error = %v, want history_disconnected", err)
+	}
+	conflict := derived
+	conflict.ReplayKey = "replay-1"
+	other := conflict
+	other.Digest = "different"
+	if err := ValidateCheckpointReplay(conflict, other); err == nil || !strings.Contains(err.Error(), "replay_conflict") {
+		t.Fatalf("replay conflict error = %v, want replay_conflict", err)
+	}
+	if err := ValidateWorkspaceIntegrity("different", *derived.WorkspaceProvenance); err == nil || !strings.Contains(err.Error(), "integrity_drift") {
+		t.Fatalf("workspace drift error = %v, want integrity_drift", err)
+	}
+}
+
+func TestCheckpointReferenceRemainsBackwardCompatibleWithoutProvenance(t *testing.T) {
+	ref := CheckpointRef{CheckpointID: "checkpoint-1", SchemaVersion: "v1", SourceComponent: "runner", Digest: "digest"}
+	if err := ref.ValidateProtocolReference(); err != nil {
+		t.Fatalf("legacy checkpoint validation error = %v", err)
+	}
+	raw, err := json.Marshal(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "workspace_provenance") || strings.Contains(string(raw), "relation") {
+		t.Fatalf("legacy checkpoint unexpectedly serialized optional fields: %s", raw)
+	}
+}
+
 func TestRunLifecycleValidatesTransitions(t *testing.T) {
 	tests := []struct {
 		name string

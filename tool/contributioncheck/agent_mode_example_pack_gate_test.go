@@ -676,8 +676,8 @@ func TestAgentModeMatrixRowCoverageAndReplayGateMapping(t *testing.T) {
 			}
 		}
 	}
-	if rowCount != 29 {
-		t.Fatalf("expected 29 mode rows in matrix, got %d", rowCount)
+	if rowCount != 30 {
+		t.Fatalf("expected 30 mode rows in matrix, got %d", rowCount)
 	}
 }
 

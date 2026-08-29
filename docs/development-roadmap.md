@@ -26,8 +26,8 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）
   - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`（Durable Runtime Event Stream Binding Contract）
-- 进行中：
-  - 当前无活动 change；以 OpenSpec 状态为准。
+- `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
+- 进行中：当前无已登记 active change（以 `openspec list --json` 为准）。
 - 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
 
 ## 版本阶段口径（延续 0.x）
@@ -607,7 +607,7 @@ Why now：
 | 多 Agent 拓扑不应过早标准化 | Teams、Scheduler、mailbox、A2A 保留各自编排语义 | 保持不统一拓扑；仅补 Run/Message/Artifact 的跨边界关联能力 |
 | Observability 与 Eval 应形成质量闭环 | OTel topology、protocol correlation、最小 eval metric、local/distributed eval 已有 | 缺版本化 evaluation corpus、Badcase、experiment comparison 和人工审批的反馈闭环 |
 
-路线原则：P2-P4 是后续 OpenSpec 候选，不表示存在活跃 change。每项启动前必须建立 `proposal.md`、`design.md`、`tasks.md` 和 spec delta，并按 Example Impact Assessment、contract/replay/gate、Run/Stream 对等、文档先行示例等既有治理执行。P1 保留为已归档交付记录。
+路线原则：P2-P4 是后续 OpenSpec 路线；P3 `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance` 已完成并归档。每项启动前必须建立 `proposal.md`、`design.md`、`tasks.md` 和 spec delta，并按 Example Impact Assessment、contract/replay/gate、Run/Stream 对等、文档先行示例等既有治理执行。P1/P2/P3 保留为已归档交付记录。
 
 #### P1：Capability、Context 与 Concurrent-Run Admission Contract（已归档）
 
@@ -633,7 +633,7 @@ Why now：
 
 #### P3：Checkpoint History 与 Workspace Provenance Contract
 
-候选 change：`extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`。
+已归档 change：`extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`（见 `openspec/changes/archive/125-extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance/`）。
 
 - 文章对应：长任务恢复、schema 演进、checkpoint 分叉、Workspace/Sandbox 作为状态、Artifact 副作用可审计。
 - 范围：基于现有 snapshot manifest 增加 checkpoint lineage/history/branch/replay 引用语义；将 workspace change-set、前后 integrity reference、产生 Run/Step、Artifact 与 sandbox/policy decision 关联为 protocol-visible provenance。

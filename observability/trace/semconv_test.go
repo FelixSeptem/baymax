@@ -37,6 +37,21 @@ func TestEventStreamBindingAttributesAreBoundedAndNullable(t *testing.T) {
 	}
 }
 
+func TestCheckpointProvenanceAttributesAreBoundedAndNullable(t *testing.T) {
+	attrs := CheckpointProvenanceAttributes("derived", "resume", "associated", "")
+	if attrs[AttrProtocolCheckpointRelation] != "derived" || attrs[AttrProtocolCheckpointRestoreSource] != "resume" || attrs[AttrProtocolWorkspaceProvenance] != "associated" {
+		t.Fatalf("unexpected provenance attrs: %#v", attrs)
+	}
+	if _, ok := attrs[AttrProtocolWorkspaceDriftReason]; ok {
+		t.Fatal("empty drift reason must be omitted")
+	}
+	for _, key := range []string{"agent.protocol.workspace_id", "agent.protocol.integrity", "workspace.contents"} {
+		if _, ok := attrs[key]; ok {
+			t.Fatalf("high-cardinality key %q emitted", key)
+		}
+	}
+}
+
 func TestCanonicalSemconvTopologyV1CoversCoreDomains(t *testing.T) {
 	topology := CanonicalSemconvTopologyV1()
 	required := []string{

@@ -78,12 +78,18 @@ const (
 const AgentRuntimeProtocolName = "agent_runtime_protocol"
 
 const (
-	ProtocolReasonCapabilityMissingRequired    = "protocol.capability.missing_required"
-	ProtocolReasonCapabilityOptionalDowngraded = "protocol.capability.optional_downgraded"
-	ProtocolReasonCapabilityProfileMismatch    = "protocol.capability.profile_mismatch"
-	ProtocolReasonActionUnsupported            = "protocol.action.unsupported"
-	ProtocolReasonAdmissionIncompatibleOutcome = "protocol.admission.incompatible_outcome"
-	ProtocolReasonAdmissionPolicyUnknown       = "protocol.admission.policy_unknown"
+	ProtocolReasonCapabilityMissingRequired      = "protocol.capability.missing_required"
+	ProtocolReasonCapabilityOptionalDowngraded   = "protocol.capability.optional_downgraded"
+	ProtocolReasonCapabilityProfileMismatch      = "protocol.capability.profile_mismatch"
+	ProtocolReasonActionUnsupported              = "protocol.action.unsupported"
+	ProtocolReasonAdmissionIncompatibleOutcome   = "protocol.admission.incompatible_outcome"
+	ProtocolReasonAdmissionPolicyUnknown         = "protocol.admission.policy_unknown"
+	ProtocolReasonCheckpointLineageMissingParent = "checkpoint.lineage_missing_parent"
+	ProtocolReasonCheckpointHistoryDisconnected  = "checkpoint.history_disconnected"
+	ProtocolReasonCheckpointReplayConflict       = "checkpoint.replay_conflict"
+	ProtocolReasonWorkspaceProvenanceMissing     = "workspace.provenance_missing"
+	ProtocolReasonWorkspaceAssociationMismatch   = "workspace.association_mismatch"
+	ProtocolReasonWorkspaceIntegrityDrift        = "workspace.integrity_drift"
 )
 
 // ProtocolCapabilityStrategy uses the same request semantics as adapter
@@ -524,12 +530,60 @@ type ArtifactRef struct {
 // CheckpointRef describes a recoverable state reference without owning its
 // manifest structure or import behavior.
 type CheckpointRef struct {
-	CheckpointID    string `json:"checkpoint_id"`
-	SchemaVersion   string `json:"schema_version"`
-	SourceComponent string `json:"source_component"`
-	Digest          string `json:"digest"`
-	RunID           string `json:"run_id,omitempty"`
-	SessionID       string `json:"session_id,omitempty"`
+	CheckpointID        string                  `json:"checkpoint_id"`
+	SchemaVersion       string                  `json:"schema_version"`
+	SourceComponent     string                  `json:"source_component"`
+	Digest              string                  `json:"digest"`
+	RunID               string                  `json:"run_id,omitempty"`
+	SessionID           string                  `json:"session_id,omitempty"`
+	Relation            CheckpointRelation      `json:"relation,omitempty"`
+	ParentCheckpointID  string                  `json:"parent_checkpoint_id,omitempty"`
+	BranchID            string                  `json:"branch_id,omitempty"`
+	HistoryIndex        int                     `json:"history_index,omitempty"`
+	RestoreSource       CheckpointRestoreSource `json:"restore_source,omitempty"`
+	ReplayKey           string                  `json:"replay_key,omitempty"`
+	WorkspaceProvenance *WorkspaceProvenance    `json:"workspace_provenance,omitempty"`
+}
+
+// CheckpointRelation describes how a checkpoint relates to its history.
+type CheckpointRelation string
+
+const (
+	CheckpointRelationRoot    CheckpointRelation = "root"
+	CheckpointRelationDerived CheckpointRelation = "derived"
+	CheckpointRelationBranch  CheckpointRelation = "branch"
+	CheckpointRelationReplay  CheckpointRelation = "replay"
+)
+
+// CheckpointRestoreSource identifies the source of a recovery projection.
+type CheckpointRestoreSource string
+
+const (
+	CheckpointRestoreSourceFresh        CheckpointRestoreSource = "fresh"
+	CheckpointRestoreSourceResume       CheckpointRestoreSource = "resume"
+	CheckpointRestoreSourceCrossSession CheckpointRestoreSource = "cross_session"
+)
+
+// WorkspaceProvenance references a bounded workspace change without owning
+// workspace contents or policy decisions.
+type WorkspaceProvenance struct {
+	WorkspaceID      string `json:"workspace_id"`
+	ChangeSetID      string `json:"change_set_id"`
+	BeforeIntegrity  string `json:"before_integrity"`
+	AfterIntegrity   string `json:"after_integrity"`
+	ProducedByRunID  string `json:"produced_by_run_id"`
+	ProducedByStepID string `json:"produced_by_step_id"`
+	CheckpointID     string `json:"checkpoint_id,omitempty"`
+}
+
+func (p WorkspaceProvenance) Validate() error {
+	if strings.TrimSpace(p.WorkspaceID) == "" || strings.TrimSpace(p.ChangeSetID) == "" || strings.TrimSpace(p.BeforeIntegrity) == "" || strings.TrimSpace(p.AfterIntegrity) == "" {
+		return protocolValidationError("%s", ProtocolReasonWorkspaceProvenanceMissing)
+	}
+	if strings.TrimSpace(p.ProducedByRunID) == "" || strings.TrimSpace(p.ProducedByStepID) == "" {
+		return protocolValidationError("%s", ProtocolReasonWorkspaceAssociationMismatch)
+	}
+	return nil
 }
 
 func (r SessionRef) ValidateProtocolReference() error {
@@ -609,6 +663,97 @@ func (r CheckpointRef) ValidateProtocolReference() error {
 	}
 	if strings.TrimSpace(r.Digest) == "" {
 		return protocolValidationError("checkpoint digest is required")
+	}
+	relation := r.Relation
+	if relation == "" {
+		relation = CheckpointRelationRoot
+	}
+	switch relation {
+	case CheckpointRelationRoot, CheckpointRelationDerived, CheckpointRelationBranch, CheckpointRelationReplay:
+	default:
+		return protocolValidationError("unsupported checkpoint relation %q", relation)
+	}
+	if r.HistoryIndex < 0 {
+		return protocolValidationError("checkpoint history_index must be >= 0")
+	}
+	if relation != CheckpointRelationRoot && strings.TrimSpace(r.ParentCheckpointID) == "" {
+		return protocolValidationError("%s", ProtocolReasonCheckpointLineageMissingParent)
+	}
+	if relation == CheckpointRelationBranch && strings.TrimSpace(r.BranchID) == "" {
+		return protocolValidationError("checkpoint branch_id is required")
+	}
+	if relation == CheckpointRelationReplay && strings.TrimSpace(r.ReplayKey) == "" {
+		return protocolValidationError("checkpoint replay_key is required")
+	}
+	if r.RestoreSource != "" {
+		switch r.RestoreSource {
+		case CheckpointRestoreSourceFresh, CheckpointRestoreSourceResume, CheckpointRestoreSourceCrossSession:
+		default:
+			return protocolValidationError("unsupported checkpoint restore_source %q", r.RestoreSource)
+		}
+	}
+	if r.WorkspaceProvenance != nil {
+		if err := r.WorkspaceProvenance.Validate(); err != nil {
+			return err
+		}
+		if id := strings.TrimSpace(r.WorkspaceProvenance.CheckpointID); id != "" && id != strings.TrimSpace(r.CheckpointID) {
+			return protocolValidationError("%s", ProtocolReasonWorkspaceAssociationMismatch)
+		}
+	}
+	return nil
+}
+
+// ValidateWorkspaceIntegrity compares an observed pre-restore integrity
+// reference with the source-owned provenance reference.
+func ValidateWorkspaceIntegrity(observedBefore string, provenance WorkspaceProvenance) error {
+	if err := provenance.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(observedBefore) != strings.TrimSpace(provenance.BeforeIntegrity) {
+		return protocolValidationError("%s", ProtocolReasonWorkspaceIntegrityDrift)
+	}
+	return nil
+}
+
+// ValidateCheckpointHistory validates an ordered, caller-provided history
+// without creating or mutating a checkpoint store.
+func ValidateCheckpointHistory(history []CheckpointRef) error {
+	seen := make(map[string]struct{}, len(history))
+	for index, checkpoint := range history {
+		if err := checkpoint.ValidateProtocolReference(); err != nil {
+			return err
+		}
+		id := strings.TrimSpace(checkpoint.CheckpointID)
+		if _, exists := seen[id]; exists {
+			return protocolValidationError("%s", ProtocolReasonCheckpointHistoryDisconnected)
+		}
+		seen[id] = struct{}{}
+		if checkpoint.HistoryIndex != index {
+			return protocolValidationError("%s", ProtocolReasonCheckpointHistoryDisconnected)
+		}
+		if index == 0 {
+			if checkpoint.Relation != "" && checkpoint.Relation != CheckpointRelationRoot {
+				return protocolValidationError("%s", ProtocolReasonCheckpointHistoryDisconnected)
+			}
+			continue
+		}
+		if strings.TrimSpace(checkpoint.ParentCheckpointID) == "" {
+			return protocolValidationError("%s", ProtocolReasonCheckpointHistoryDisconnected)
+		}
+		if _, exists := seen[strings.TrimSpace(checkpoint.ParentCheckpointID)]; !exists {
+			return protocolValidationError("%s", ProtocolReasonCheckpointHistoryDisconnected)
+		}
+	}
+	return nil
+}
+
+// ValidateCheckpointReplay checks that a replay key maps to equivalent data.
+func ValidateCheckpointReplay(existing, candidate CheckpointRef) error {
+	if strings.TrimSpace(existing.ReplayKey) == "" || strings.TrimSpace(candidate.ReplayKey) == "" || strings.TrimSpace(existing.ReplayKey) != strings.TrimSpace(candidate.ReplayKey) {
+		return protocolValidationError("%s", ProtocolReasonCheckpointReplayConflict)
+	}
+	if existing.CheckpointID != candidate.CheckpointID || existing.SchemaVersion != candidate.SchemaVersion || existing.SourceComponent != candidate.SourceComponent || existing.Digest != candidate.Digest || existing.ParentCheckpointID != candidate.ParentCheckpointID || existing.BranchID != candidate.BranchID || existing.HistoryIndex != candidate.HistoryIndex {
+		return protocolValidationError("%s", ProtocolReasonCheckpointReplayConflict)
 	}
 	return nil
 }

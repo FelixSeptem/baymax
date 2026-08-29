@@ -53,6 +53,14 @@ type RunRecord struct {
 	ProtocolAdmissionReason                     string                            `json:"protocol_admission_reason,omitempty"`
 	ProtocolCheckpointID                        string                            `json:"protocol_checkpoint_id,omitempty"`
 	ProtocolArtifactIDs                         []string                          `json:"protocol_artifact_ids,omitempty"`
+	ProtocolCheckpointRelation                  string                            `json:"protocol_checkpoint_relation,omitempty"`
+	ProtocolCheckpointParentID                  string                            `json:"protocol_checkpoint_parent_id,omitempty"`
+	ProtocolCheckpointBranchID                  string                            `json:"protocol_checkpoint_branch_id,omitempty"`
+	ProtocolCheckpointRestoreSource             string                            `json:"protocol_checkpoint_restore_source,omitempty"`
+	ProtocolCheckpointReplayKey                 string                            `json:"protocol_checkpoint_replay_key,omitempty"`
+	ProtocolWorkspaceID                         string                            `json:"protocol_workspace_id,omitempty"`
+	ProtocolWorkspaceChangeSetID                string                            `json:"protocol_workspace_change_set_id,omitempty"`
+	ProtocolWorkspaceIntegrityDriftReason       string                            `json:"protocol_workspace_integrity_drift_reason,omitempty"`
 	Status                                      string                            `json:"status,omitempty"`
 	Iterations                                  int                               `json:"iterations"`
 	ToolCalls                                   int                               `json:"tool_calls"`
@@ -1456,13 +1464,14 @@ func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, er
 	}
 
 	d.mu.RLock()
-	runsSnapshot := append([]RunRecord(nil), d.runs...)
 	runTimesStrictAscending := d.runTimesStrictAscending
-	d.mu.RUnlock()
-
 	if runTimesStrictAscending && q.SortField == "time" {
-		return queryRunsFastTimeSorted(runsSnapshot, q, start, queryHash)
+		result, queryErr := d.queryRunsFastTimeSortedLocked(q, start, queryHash)
+		d.mu.RUnlock()
+		return result, queryErr
 	}
+	runsSnapshot := append([]RunRecord(nil), d.runs...)
+	d.mu.RUnlock()
 
 	filtered := make([]RunRecord, 0, len(runsSnapshot))
 	for i := range runsSnapshot {
@@ -1497,6 +1506,13 @@ func (d *Store) QueryRuns(req UnifiedRunQueryRequest) (UnifiedRunQueryResult, er
 		SortField:  q.SortField,
 		SortOrder:  q.SortOrder,
 	}, nil
+}
+
+// queryRunsFastTimeSortedLocked evaluates the time-sorted query while the
+// caller holds d.mu.RLock. It copies only the requested page into the result;
+// the full run history is never cloned for this common path.
+func (d *Store) queryRunsFastTimeSortedLocked(q normalizedUnifiedRunQuery, start int, queryHash string) (UnifiedRunQueryResult, error) {
+	return queryRunsFastTimeSorted(d.runs, q, start, queryHash)
 }
 
 func queryRunsFastTimeSorted(runs []RunRecord, q normalizedUnifiedRunQuery, start int, queryHash string) (UnifiedRunQueryResult, error) {

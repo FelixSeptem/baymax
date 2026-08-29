@@ -35,6 +35,7 @@ var expectedPatterns = []string{
 	"mainline-readiness-admission-degradation",
 	"custom-adapter-mcp-model-tool-memory-pack",
 	"custom-adapter-health-readiness-circuit",
+	"checkpoint-workspace-provenance",
 }
 
 func TestRequiredPatternsCoverage(t *testing.T) {
@@ -67,7 +68,7 @@ func TestModeSpecSemanticContracts(t *testing.T) {
 			t.Fatalf("spec pattern mismatch: got=%s want=%s", spec.Pattern, pattern)
 		}
 		switch spec.Phase {
-		case "P0", "P1", "P2":
+		case "P0", "P1", "P2", "P3":
 		default:
 			t.Fatalf("pattern %s uses unsupported phase %q", pattern, spec.Phase)
 		}

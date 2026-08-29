@@ -1,6 +1,6 @@
 {
   "mode": "full",
-  "changed_file_total": 70,
+  "changed_file_total": 65,
   "impacted_s_items": [
     "S1",
     "S2",
@@ -14,34 +14,14 @@
     "S10"
   ],
   "mandatory_suite_map": {
-    "S9": {
+    "S4": {
       "shell": [
-        "bash scripts/check-policy-precedence-contract.sh",
-        "bash scripts/check-runtime-budget-admission-contract.sh",
-        "bash scripts/check-sandbox-rollout-governance-contract.sh"
+        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
+        "bash scripts/check-multi-agent-shared-contract.sh"
       ],
       "powershell": [
-        "pwsh -File scripts/check-policy-precedence-contract.ps1",
-        "pwsh -File scripts/check-runtime-budget-admission-contract.ps1",
-        "pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1"
-      ]
-    },
-    "S8": {
-      "shell": [
-        "bash scripts/check-react-contract.sh"
-      ],
-      "powershell": [
-        "pwsh -File scripts/check-react-contract.ps1"
-      ]
-    },
-    "S3": {
-      "shell": [
-        "bash scripts/check-multi-agent-shared-contract.sh",
-        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
-      ],
-      "powershell": [
-        "pwsh -File scripts/check-multi-agent-shared-contract.ps1",
-        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
+        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
+        "pwsh -File scripts/check-multi-agent-shared-contract.ps1"
       ]
     },
     "S6": {
@@ -64,14 +44,12 @@
         "pwsh -File scripts/check-diagnostics-query-performance-regression.ps1"
       ]
     },
-    "S1": {
+    "S5": {
       "shell": [
-        "go test ./context/assembler ./context/provider ./context/journal -count=1",
-        "bash scripts/check-diagnostics-replay-contract.sh"
+        "go test ./skill/loader ./runtime/config -count=1"
       ],
       "powershell": [
-        "go test ./context/assembler ./context/provider ./context/journal -count=1",
-        "pwsh -File scripts/check-diagnostics-replay-contract.ps1"
+        "go test ./skill/loader ./runtime/config -count=1"
       ]
     },
     "S10": {
@@ -84,22 +62,44 @@
         "pwsh -File scripts/check-diagnostics-replay-contract.ps1"
       ]
     },
-    "S5": {
+    "S3": {
       "shell": [
-        "go test ./skill/loader ./runtime/config -count=1"
+        "bash scripts/check-multi-agent-shared-contract.sh",
+        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
       ],
       "powershell": [
-        "go test ./skill/loader ./runtime/config -count=1"
+        "pwsh -File scripts/check-multi-agent-shared-contract.ps1",
+        "go test ./orchestration/scheduler ./orchestration/composer -count=1"
       ]
     },
-    "S4": {
+    "S1": {
       "shell": [
-        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
-        "bash scripts/check-multi-agent-shared-contract.sh"
+        "go test ./context/assembler ./context/provider ./context/journal -count=1",
+        "bash scripts/check-diagnostics-replay-contract.sh"
       ],
       "powershell": [
-        "go test ./mcp/http ./mcp/stdio ./mcp/retry -count=1",
-        "pwsh -File scripts/check-multi-agent-shared-contract.ps1"
+        "go test ./context/assembler ./context/provider ./context/journal -count=1",
+        "pwsh -File scripts/check-diagnostics-replay-contract.ps1"
+      ]
+    },
+    "S9": {
+      "shell": [
+        "bash scripts/check-policy-precedence-contract.sh",
+        "bash scripts/check-runtime-budget-admission-contract.sh",
+        "bash scripts/check-sandbox-rollout-governance-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-policy-precedence-contract.ps1",
+        "pwsh -File scripts/check-runtime-budget-admission-contract.ps1",
+        "pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1"
+      ]
+    },
+    "S8": {
+      "shell": [
+        "bash scripts/check-react-contract.sh"
+      ],
+      "powershell": [
+        "pwsh -File scripts/check-react-contract.ps1"
       ]
     },
     "S7": {

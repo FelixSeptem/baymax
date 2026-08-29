@@ -223,6 +223,18 @@ var modeSpecs = map[string]ModeSpec{
 		Gates:             []string{"check-state-snapshot-contract.*"},
 		Replay:            []string{"state_session_snapshot.v1"},
 	},
+	"checkpoint-workspace-provenance": {
+		Pattern:           "checkpoint-workspace-provenance",
+		Phase:             "P3",
+		SemanticAnchor:    "agent_runtime_protocol.checkpoint_history_workspace_provenance",
+		Classification:    "agent_runtime_protocol.checkpoint_workspace_provenance",
+		RuntimeDomains:    []string{"core/types", "orchestration/snapshot", "orchestration/composer", "observability/event", "tool/diagnosticsreplay"},
+		MinimalMarkers:    []string{"checkpoint_history_projected", "checkpoint_lineage_validated", "workspace_provenance_projected"},
+		ProductionMarkers: []string{"checkpoint_replay_idempotent", "workspace_integrity_drift_classified", "governance_checkpoint_provenance_replay_bound"},
+		Contracts:         []string{"checkpoint-history-and-workspace-provenance", "agent-runtime-protocol-contract", "unified-state-and-session-snapshot-contract", "diagnostics-replay-tooling"},
+		Gates:             []string{"check-agent-runtime-protocol-contract.*", "check-state-snapshot-contract.*"},
+		Replay:            []string{"agent_runtime_protocol_checkpoint_provenance.v1"},
+	},
 	"policy-budget-admission": {
 		Pattern:           "policy-budget-admission",
 		Phase:             "P1",

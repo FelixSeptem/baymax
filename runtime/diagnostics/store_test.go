@@ -1,6 +1,8 @@
 package diagnostics
 
 import (
+	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -8,6 +10,33 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+func TestStoreQueryRunsFastTimeSortedLockedMatchesPublicSemantics(t *testing.T) {
+	d := NewStore(16, 16, 8, 20, TimelineTrendConfig{}, ContextStage2ExternalTrendConfig{})
+	base := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 6; i++ {
+		d.AddRun(RunRecord{Time: base.Add(time.Duration(i) * time.Minute), RunID: fmt.Sprintf("run-%d", i), Status: "success", PolicyKind: "sandbox", SandboxMode: "enforce"})
+	}
+	pageSize := 2
+	request := UnifiedRunQueryRequest{PageSize: &pageSize, Sort: UnifiedQuerySort{Field: "time", Order: "asc"}, Status: "success"}
+	q, err := normalizeUnifiedRunQuery(request)
+	if err != nil {
+		t.Fatalf("normalize query: %v", err)
+	}
+	want, err := d.QueryRuns(request)
+	if err != nil {
+		t.Fatalf("public QueryRuns: %v", err)
+	}
+	d.mu.RLock()
+	got, gotErr := d.queryRunsFastTimeSortedLocked(q, 0, unifiedRunQueryHash(q))
+	d.mu.RUnlock()
+	if gotErr != nil {
+		t.Fatalf("locked fast path: %v", gotErr)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("locked fast path mismatch: got=%#v want=%#v", got, want)
+	}
+}
 
 func TestStoreConcurrentAccess(t *testing.T) {
 	d := NewStore(32, 16, 8, 20, TimelineTrendConfig{Enabled: true, LastNRuns: 100, TimeWindow: 15 * time.Minute}, ContextStage2ExternalTrendConfig{Enabled: true, Window: 15 * time.Minute})

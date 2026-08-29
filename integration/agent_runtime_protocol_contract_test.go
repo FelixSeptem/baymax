@@ -62,3 +62,34 @@ func TestAgentRuntimeProtocolReplayFixtureDriftTaxonomy(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentRuntimeProtocolCheckpointProvenanceFixtures(t *testing.T) {
+	tests := []struct {
+		name       string
+		file       string
+		wantReason string
+		wantCases  int
+	}{
+		{name: "success", file: "agent_runtime_protocol_checkpoint_provenance_success_input.json", wantCases: 1},
+		{name: "workspace-integrity-drift", file: "agent_runtime_protocol_checkpoint_provenance_workspace_drift_input.json", wantReason: diagnosticsreplay.ReasonCodeWorkspaceIntegrityDrift},
+		{name: "malformed", file: "agent_runtime_protocol_checkpoint_provenance_malformed_input.json", wantReason: diagnosticsreplay.ReasonCodeProtocolSchema},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "tool", "diagnosticsreplay", "testdata", tc.file))
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			out, err := diagnosticsreplay.EvaluateProtocolFixtureJSON(raw)
+			if tc.wantReason == "" {
+				if err != nil || len(out.Cases) != tc.wantCases {
+					t.Fatalf("out=%#v err=%v", out, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantReason) {
+				t.Fatalf("error=%v, want %s", err, tc.wantReason)
+			}
+		})
+	}
+}

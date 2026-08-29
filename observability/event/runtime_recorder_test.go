@@ -3105,6 +3105,41 @@ func TestRuntimeRecorderParsesAgentRuntimeProtocolAdditiveFields(t *testing.T) {
 	}
 }
 
+func TestRuntimeRecorderParsesCheckpointWorkspaceProvenanceFields(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-provenance-recorder",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                                    "failed",
+			"protocol_checkpoint_id":                    "checkpoint-2",
+			"protocol_checkpoint_relation":              "derived",
+			"protocol_checkpoint_parent_id":             "checkpoint-1",
+			"protocol_checkpoint_branch_id":             "branch-1",
+			"protocol_checkpoint_restore_source":        "cross_session",
+			"protocol_checkpoint_replay_key":            "replay-2",
+			"protocol_workspace_id":                     "workspace-1",
+			"protocol_workspace_change_set_id":          "change-2",
+			"protocol_workspace_integrity_drift_reason": "workspace.integrity_drift",
+		},
+	})
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.ProtocolCheckpointID != "checkpoint-2" || got.ProtocolCheckpointRelation != "derived" || got.ProtocolCheckpointParentID != "checkpoint-1" || got.ProtocolCheckpointBranchID != "branch-1" || got.ProtocolCheckpointRestoreSource != "cross_session" || got.ProtocolCheckpointReplayKey != "replay-2" || got.ProtocolWorkspaceID != "workspace-1" || got.ProtocolWorkspaceChangeSetID != "change-2" || got.ProtocolWorkspaceIntegrityDriftReason != "workspace.integrity_drift" {
+		t.Fatalf("provenance fields mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderHooksMiddlewareReasonTaxonomyDriftGuardCanonicalFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

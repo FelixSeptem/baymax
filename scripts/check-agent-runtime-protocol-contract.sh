@@ -6,11 +6,17 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 echo "[agent-runtime-protocol-contract-gate] replay suites"
-go test ./core/types ./core/runner ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|EventStreamBinding|RealtimeEventStreamBinding)' -count=1
+go test ./core/types ./core/runner ./orchestration/snapshot ./orchestration/composer ./tool/diagnosticsreplay ./integration ./observability/event ./observability/trace ./examples/agent-modes/internal/runtimeexample -run 'Test(AgentRuntimeProtocol|EvaluateProtocolFixture|ProtocolDescriptor|ProjectProtocol|ConcurrentRunAdmission|RuntimeRecorderParses|ProtocolDecisionAttributes|Checkpoint|Provenance|EventStreamBinding|RealtimeEventStreamBinding|ModeSpec)' -count=1
 
 echo "[agent-runtime-protocol-contract-gate] capability context action admission Run/Stream parity"
 if ! rg -n 'ProtocolDescriptor|ProtocolSessionContext|ProtocolRunAdmission|TestRunAndStreamProtocolProjectionSemanticEquivalence' core/types orchestration a2a integration; then
   echo "[agent-runtime-protocol-contract-gate][projection_surface] required capability/context/action/admission/Run/Stream assertions missing" >&2
+  exit 1
+fi
+
+echo "[agent-runtime-protocol-contract-gate] checkpoint_workspace_provenance_surface"
+if ! rg -n 'CheckpointProvenance|ValidateCheckpointHistory|ValidateWorkspaceIntegrity|agent_runtime_protocol_checkpoint_provenance.v1' core/types orchestration tool examples; then
+  echo "[agent-runtime-protocol-contract-gate][checkpoint_workspace_provenance_surface] required provenance assertions missing" >&2
   exit 1
 fi
 

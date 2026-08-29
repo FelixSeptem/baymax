@@ -23,7 +23,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 - 已归档：
   - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`：Durable Runtime Event Stream Binding Contract 已归档并稳定。
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）已归档并稳定。
-  - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract 已归档并稳定。
+- `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract 已归档并稳定。
+- `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history、lineage、branch/replay 与 workspace provenance，保持 snapshot/workspace source ownership 与 additive compatibility，已归档并稳定。
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）已归档并稳定。
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）已归档并稳定。
   - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）已归档并稳定。
@@ -262,8 +263,7 @@ _ = err
 
 ### 当前主线能力（现状）
 
-- 进行中：
-  - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`：Durable Runtime Event Stream Binding Contract
+- 进行中：当前无已登记 active change（以 `openspec list --json` 为准）。
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
   - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization

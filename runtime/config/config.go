@@ -1541,6 +1541,7 @@ func DefaultConfig() Config {
 					},
 					Aggregation: RuntimeEvalExecutionAggregationWeightedMean,
 				},
+				Extension: RuntimeEvalExtensionConfig{CorpusVersion: "evaluation_corpus.v1", RequireApproval: true},
 			},
 			Diagnostics: RuntimeDiagnosticsConfig{
 				Bundle: RuntimeDiagnosticsBundleConfig{
@@ -5466,6 +5467,14 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	evalExtensionEnabled, err := strictBoolConfigValue(v, "runtime.eval.extension.enabled")
+	if err != nil {
+		return Config{}, err
+	}
+	evalExtensionRequireApproval, err := strictBoolConfigValue(v, "runtime.eval.extension.require_approval")
+	if err != nil {
+		return Config{}, err
+	}
 	bundleEnabled, err := strictBoolConfigValue(v, "runtime.diagnostics.bundle.enabled")
 	if err != nil {
 		return Config{}, err
@@ -5513,6 +5522,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Eval.Execution.Resume.Enabled = evalResumeEnabled
 	cfg.Runtime.Eval.Execution.Resume.MaxCount = v.GetInt("runtime.eval.execution.resume.max_count")
 	cfg.Runtime.Eval.Execution.Aggregation = strings.ToLower(strings.TrimSpace(v.GetString("runtime.eval.execution.aggregation")))
+	cfg.Runtime.Eval.Extension.Enabled, cfg.Runtime.Eval.Extension.RequireApproval = evalExtensionEnabled, evalExtensionRequireApproval
+	cfg.Runtime.Eval.Extension.CorpusVersion = strings.ToLower(strings.TrimSpace(v.GetString("runtime.eval.extension.corpus_version")))
 	cfg.Runtime.Hooks = normalizeRuntimeHooksConfig(cfg.Runtime.Hooks)
 	cfg.Runtime.ToolMiddleware = normalizeRuntimeToolMiddlewareConfig(cfg.Runtime.ToolMiddleware)
 	cfg.Runtime.Skill = normalizeRuntimeSkillConfig(cfg.Runtime.Skill)

@@ -50,6 +50,9 @@ func TestRuntimeEvalConfigDefaults(t *testing.T) {
 			RuntimeEvalExecutionAggregationWeightedMean,
 		)
 	}
+	if cfg.Runtime.Eval.Extension.Enabled || cfg.Runtime.Eval.Extension.CorpusVersion != "evaluation_corpus.v1" || !cfg.Runtime.Eval.Extension.RequireApproval {
+		t.Fatalf("unexpected evaluation extension defaults: %#v", cfg.Runtime.Eval.Extension)
+	}
 }
 
 func TestRuntimeEvalConfigEnvOverridePrecedence(t *testing.T) {
@@ -66,6 +69,9 @@ func TestRuntimeEvalConfigEnvOverridePrecedence(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_EVAL_EXECUTION_RESUME_ENABLED", "false")
 	t.Setenv("BAYMAX_RUNTIME_EVAL_EXECUTION_RESUME_MAX_COUNT", "5")
 	t.Setenv("BAYMAX_RUNTIME_EVAL_EXECUTION_AGGREGATION", RuntimeEvalExecutionAggregationWorstCase)
+	t.Setenv("BAYMAX_RUNTIME_EVAL_EXTENSION_ENABLED", "true")
+	t.Setenv("BAYMAX_RUNTIME_EVAL_EXTENSION_CORPUS_VERSION", "evaluation_corpus.v1")
+	t.Setenv("BAYMAX_RUNTIME_EVAL_EXTENSION_REQUIRE_APPROVAL", "false")
 
 	file := filepath.Join(t.TempDir(), "runtime.yaml")
 	content := `
@@ -140,6 +146,9 @@ runtime:
 			RuntimeEvalExecutionAggregationWorstCase,
 		)
 	}
+	if !cfg.Runtime.Eval.Extension.Enabled || cfg.Runtime.Eval.Extension.RequireApproval {
+		t.Fatalf("evaluation extension env override mismatch: %#v", cfg.Runtime.Eval.Extension)
+	}
 }
 
 func TestRuntimeEvalConfigValidationRejectsInvalidValues(t *testing.T) {
@@ -202,6 +211,12 @@ func TestRuntimeEvalConfigValidationRejectsInvalidValues(t *testing.T) {
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.eval.execution.aggregation") {
 		t.Fatalf("expected runtime.eval.execution.aggregation validation error, got %v", err)
 	}
+
+	cfg = DefaultConfig()
+	cfg.Runtime.Eval.Extension.CorpusVersion = "evaluation_corpus.v2"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime.eval.extension.corpus_version") {
+		t.Fatalf("expected corpus version validation error, got %v", err)
+	}
 }
 
 func TestRuntimeEvalConfigInvalidBoolFailsFast(t *testing.T) {
@@ -214,5 +229,11 @@ func TestRuntimeEvalConfigInvalidBoolFailsFast(t *testing.T) {
 	t.Setenv("BAYMAX_RUNTIME_EVAL_EXECUTION_RESUME_ENABLED", "not-a-bool")
 	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.eval.execution.resume.enabled") {
 		t.Fatalf("expected strict bool parse error for runtime.eval.execution.resume.enabled, got %v", err)
+	}
+
+	t.Setenv("BAYMAX_RUNTIME_EVAL_EXECUTION_RESUME_ENABLED", "false")
+	t.Setenv("BAYMAX_RUNTIME_EVAL_EXTENSION_ENABLED", "not-a-bool")
+	if _, err := Load(LoadOptions{EnvPrefix: "BAYMAX"}); err == nil || !strings.Contains(err.Error(), "runtime.eval.extension.enabled") {
+		t.Fatalf("expected strict bool parse error for extension enabled, got %v", err)
 	}
 }

@@ -21,7 +21,8 @@ go run ./examples/agent-modes/tracing-eval-smoke/minimal
   - `trace_eval_loop_closed`: 根据 eval 信号选择反馈动作并闭环。
 - Related contracts: `otel-tracing-and-agent-eval-interoperability-contract`.
 - Required gates: `check-agent-eval-and-tracing-interop-contract.*`.
-- Replay fixtures: `otel_semconv.v1; agent_eval.v1`.
+- Replay fixtures: `otel_semconv.v1; agent_eval.v1; evaluation_contract.v1`.
+- Evaluation extension markers: `corpus_versioned`, `badcase_replayable`, `experiment_compared`, `feedback_review_only`.
 
 ## Expected Output/Verification
 - `verification.mainline_runtime_path=ok`
@@ -34,6 +35,7 @@ go run ./examples/agent-modes/tracing-eval-smoke/minimal
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
 - `result.final_answer` 包含 `p95/error_permille/eval_score/eval_signal/action` 等真实闭环字段。
+- Evaluation extension verification: corpus/rubric digests are stable, Badcase replay is deterministic, experiment comparison is idempotent, and feedback remains review-only.
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.

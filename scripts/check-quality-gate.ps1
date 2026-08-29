@@ -47,7 +47,7 @@ Ensure-WritableCacheEnv -EnvName "GOLANGCI_LINT_CACHE" -FallbackPath (Join-Path 
 if (-not $env:GOPROXY) {
     $env:GOPROXY = "https://proxy.golang.org,direct"
 }
-if (-not $env:GOSUMDB) {
+if (-not $env:GOSUMDB -or $env:GOSUMDB.Trim().ToLowerInvariant() -eq "off") {
     $env:GOSUMDB = "sum.golang.org"
 }
 if (-not $env:GOVULNDB) {
@@ -777,6 +777,12 @@ if ($govulncheckEnabled -eq "true") {
     $proxyVars = @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY")
     $savedProxy = @{}
     $needsDirect = $false
+    $savedGoSumDb = [Environment]::GetEnvironmentVariable("GOSUMDB")
+    $needsGoSumDb = [string]::IsNullOrWhiteSpace($savedGoSumDb) -or $savedGoSumDb.Trim().ToLowerInvariant() -eq "off"
+    if ($needsGoSumDb) {
+        # Toolchain auto-downloads must be checksum-verified so the pinned patched Go release is reproducible.
+        $env:GOSUMDB = "sum.golang.org"
+    }
     foreach ($name in $proxyVars) {
         $value = [Environment]::GetEnvironmentVariable($name)
         if ([string]::IsNullOrWhiteSpace($value)) {
@@ -817,6 +823,14 @@ if ($govulncheckEnabled -eq "true") {
         if ($needsDirect) {
             foreach ($name in $savedProxy.Keys) {
                 Set-Item -Path ("Env:" + $name) -Value $savedProxy[$name]
+            }
+        }
+        if ($needsGoSumDb) {
+            if ([string]::IsNullOrWhiteSpace($savedGoSumDb)) {
+                Remove-Item -Path "Env:GOSUMDB" -ErrorAction SilentlyContinue
+            }
+            else {
+                Set-Item -Path "Env:GOSUMDB" -Value $savedGoSumDb
             }
         }
     }

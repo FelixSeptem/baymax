@@ -42,7 +42,7 @@ ensure_writable_cache_env "GOLANGCI_LINT_CACHE" "${REPO_ROOT}/.gocache/golangci-
 if [[ -z "${GOPROXY:-}" ]]; then
   export GOPROXY="https://proxy.golang.org,direct"
 fi
-if [[ -z "${GOSUMDB:-}" ]]; then
+if [[ -z "${GOSUMDB:-}" || "${GOSUMDB,,}" == "off" ]]; then
   export GOSUMDB="sum.golang.org"
 fi
 if [[ -z "${GOVULNDB:-}" ]]; then
@@ -400,6 +400,13 @@ if [[ "${govulncheck_enabled}" == "true" ]]; then
     should_bypass_proxy_for_govulncheck "${all_proxy:-}"; then
     echo "[quality-gate] detected placeholder proxy for govulncheck; run with direct connection"
     govuln_env_prefix=(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u GIT_HTTP_PROXY -u GIT_HTTPS_PROXY)
+  fi
+  if [[ -z "${GOSUMDB:-}" || "${GOSUMDB,,}" == "off" ]]; then
+    # Toolchain auto-downloads must be checksum-verified so the pinned patched Go release is reproducible.
+    if [[ "${#govuln_env_prefix[@]}" -eq 0 ]]; then
+      govuln_env_prefix=(env)
+    fi
+    govuln_env_prefix+=(GOSUMDB=sum.golang.org)
   fi
   govuln_cmd=(govulncheck ./...)
   if ! command -v govulncheck >/dev/null 2>&1; then

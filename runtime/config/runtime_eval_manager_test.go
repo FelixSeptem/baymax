@@ -88,3 +88,40 @@ reload:
 		t.Fatalf("expected reload error for invalid runtime.eval.execution.mode")
 	}
 }
+
+func TestManagerRuntimeEvalExtensionInvalidReloadRollsBack(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "runtime.yaml")
+	writeConfig(t, file, `
+runtime:
+  eval:
+    extension:
+      enabled: true
+      corpus_version: evaluation_corpus.v1
+      require_approval: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_EVAL_EXTENSION_TEST", EnableHotReload: true})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	before := mgr.EffectiveConfig().Runtime.Eval.Extension
+	writeConfig(t, file, `
+runtime:
+  eval:
+    extension:
+      enabled: true
+      corpus_version: evaluation_corpus.v2
+      require_approval: true
+reload:
+  enabled: true
+  debounce: 20ms
+`)
+	time.Sleep(250 * time.Millisecond)
+	after := mgr.EffectiveConfig().Runtime.Eval.Extension
+	if after != before {
+		t.Fatalf("invalid extension reload should rollback: before=%#v after=%#v", before, after)
+	}
+}

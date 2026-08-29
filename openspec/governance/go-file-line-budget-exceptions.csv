@@ -1,6 +1,6 @@
 path,owner,reason,expiry,baseline_lines,allow_growth
 core/runner/runner_test.go,core-runner,A63 staged split backlog,2026-09-30,6805,false
-runtime/config/config.go,runtime-config,A63 staged split backlog,2026-09-30,6338,false
+runtime/config/config.go,runtime-config,eval extension config additive fields; split backlog remains tracked,2026-09-30,6349,false
 core/runner/runner.go,core-runner,A63 staged split backlog,2026-09-30,5840,false
 tool/diagnosticsreplay/arbitration.go,diagnostics-replay,A63 staged split backlog,2026-09-30,4346,false
 runtime/config/config_test.go,runtime-config,A63 staged split backlog,2026-09-30,3695,false

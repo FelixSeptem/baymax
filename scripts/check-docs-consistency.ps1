@@ -7,6 +7,9 @@ Set-Location $repoRoot
 if (-not $env:GOCACHE) {
     $env:GOCACHE = Join-Path $repoRoot ".gocache"
 }
+if (-not $env:GOSUMDB -or $env:GOSUMDB.Trim().ToLowerInvariant() -eq "off") {
+    $env:GOSUMDB = "sum.golang.org"
+}
 
 $readme = Get-Content -Raw README.md
 $docMatches = [regex]::Matches($readme, "docs/[A-Za-z0-9\-]+\.md")

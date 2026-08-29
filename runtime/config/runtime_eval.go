@@ -20,6 +20,13 @@ const (
 type RuntimeEvalConfig struct {
 	Agent     RuntimeEvalAgentConfig     `json:"agent"`
 	Execution RuntimeEvalExecutionConfig `json:"execution"`
+	Extension RuntimeEvalExtensionConfig `json:"extension"`
+}
+
+type RuntimeEvalExtensionConfig struct {
+	Enabled         bool   `json:"enabled"`
+	CorpusVersion   string `json:"corpus_version"`
+	RequireApproval bool   `json:"require_approval"`
 }
 
 type RuntimeEvalAgentConfig struct {
@@ -118,6 +125,10 @@ func normalizeRuntimeEvalConfig(in RuntimeEvalConfig) RuntimeEvalConfig {
 	if out.Execution.Aggregation == "" {
 		out.Execution.Aggregation = strings.ToLower(strings.TrimSpace(base.Execution.Aggregation))
 	}
+	out.Extension.CorpusVersion = strings.ToLower(strings.TrimSpace(out.Extension.CorpusVersion))
+	if out.Extension.CorpusVersion == "" {
+		out.Extension.CorpusVersion = "evaluation_corpus.v1"
+	}
 	return out
 }
 
@@ -126,6 +137,9 @@ func ValidateRuntimeEvalConfig(cfg RuntimeEvalConfig) error {
 
 	if strings.TrimSpace(normalized.Agent.SuiteID) == "" {
 		return fmt.Errorf("runtime.eval.agent.suite_id is required")
+	}
+	if normalized.Extension.CorpusVersion != "evaluation_corpus.v1" {
+		return fmt.Errorf("runtime.eval.extension.corpus_version must be evaluation_corpus.v1, got %q", cfg.Extension.CorpusVersion)
 	}
 	if normalized.Agent.TaskSuccessThreshold < 0 || normalized.Agent.TaskSuccessThreshold > 1 {
 		return fmt.Errorf("runtime.eval.agent.task_success_threshold must be in [0,1], got %v", cfg.Agent.TaskSuccessThreshold)

@@ -43,6 +43,7 @@ assert_absent_regex() {
 assert_no_parallel_tracing_eval_changes() {
   local assertion="$1"
   local canonical_change_hint="introduce-otel-tracing-and-agent-eval-interoperability-contract"
+  local allowed_increment="extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract"
   local violations=()
 
   shopt -s nullglob
@@ -51,7 +52,7 @@ assert_no_parallel_tracing_eval_changes() {
     name="${name##*/}"
     [[ "${name}" == "archive" ]] && continue
     local lower="${name,,}"
-    if [[ "${lower}" != *"${canonical_change_hint}"* && "${lower}" == *eval* && ( "${lower}" == *otel* || "${lower}" == *tracing* ) ]]; then
+    if [[ "${lower}" != *"${canonical_change_hint}"* && "${lower}" != "${allowed_increment}" && "${lower}" == *eval* && ( "${lower}" == *otel* || "${lower}" == *tracing* ) ]]; then
       violations+=("${name}")
     fi
   done
@@ -144,6 +145,11 @@ run_step "tracing semconv/export + diagnostics additive suites" \
 run_step "replay fixtures and drift taxonomy suites (tracing+eval)" \
   go test ./tool/diagnosticsreplay ./integration \
     -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' \
+    -count=1
+
+run_step "evaluation corpus/badcase/experiment contract suites" \
+  go test ./runtime/evalcontract ./tool/diagnosticsreplay \
+    -run 'Test(NormalizeCorpus|BadcaseClassification|CompareExperiments|FeedbackRequiresApproval|EvalContractFixture|EvalContractApprovalMissing)' \
     -count=1
 
 run_step "contributioncheck parity suites for tracing+eval interop gate" \

@@ -26,9 +26,10 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）
   - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）
   - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`（Durable Runtime Event Stream Binding Contract）
+  - `extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`（P4 Evaluation Corpus、Badcase 与 Experiment Contract）
 - `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
-- 进行中：当前无已登记 active change（以 `openspec list --json` 为准）。
-- 候选：以 openspec list --json 为准（当前无独立候选快照条目）。
+- 进行中：当前无活跃 change。
+- 候选：以 openspec list --json 为准（当前 P4 已完成并归档，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -642,9 +643,9 @@ Why now：
 - 准入与 DoD：覆盖 lineage 缺失、schema incompatibility、branch conflict、workspace digest drift、strict/compatible restore 与 replay idempotency；所有新增观测仍走 `RuntimeRecorder` 单写入口。
 - Example Impact Assessment：`新增示例`，先完成 checkpoint/workspace provenance 示例的 MATRIX/README，再添加可回归运行态代码与 smoke/gate。
 
-#### P4：Evaluation Corpus、Badcase 与 Experiment Contract
+#### P4：Evaluation Corpus、Badcase 与 Experiment Contract（已归档）
 
-候选 change：`extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`。
+已归档 change：`extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`（归档目录：`openspec/changes/archive/126-extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`）。
 
 - 文章对应：从 Trace/Event/Snapshot 的可观测性，走到可复现评测、归因、对比实验和质量反馈闭环。
 - 范围：增加 versioned evaluation corpus、scenario/input/tool/policy/runtime snapshot reference、metric/rubric declaration、Badcase 分类与复现链接、experiment comparison 与人工审批的 feedback recommendation。

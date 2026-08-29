@@ -331,6 +331,13 @@ type RunRecord struct {
 	EvalJobID                                   string                            `json:"eval_job_id,omitempty"`
 	EvalShardTotal                              int                               `json:"eval_shard_total,omitempty"`
 	EvalResumeCount                             int                               `json:"eval_resume_count,omitempty"`
+	EvalCorpusVersion                           string                            `json:"eval_corpus_version,omitempty"`
+	EvalCorpusItemID                            string                            `json:"eval_corpus_item_id,omitempty"`
+	EvalBadcaseID                               string                            `json:"eval_badcase_id,omitempty"`
+	EvalExperimentID                            string                            `json:"eval_experiment_id,omitempty"`
+	EvalRubricVersion                           string                            `json:"eval_rubric_version,omitempty"`
+	EvalComparisonStatus                        string                            `json:"eval_comparison_status,omitempty"`
+	EvalFeedbackStatus                          string                            `json:"eval_feedback_status,omitempty"`
 	InferentialAdvisoryStatus                   string                            `json:"inferential_advisory_status,omitempty"`
 	InferentialAdvisoryScore                    float64                           `json:"inferential_advisory_score,omitempty"`
 	InferentialAdvisorySignals                  map[string]float64                `json:"inferential_advisory_signals,omitempty"`

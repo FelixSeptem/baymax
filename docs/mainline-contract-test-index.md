@@ -17,6 +17,7 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | 主干流程| 正向场景 | 异常/降级场景 |
 | ---| --- | --- |
 | Run| `core/runner/runner_test.go::TestRunNormalCompletionAndEvents` | `core/runner/runner_test.go::TestRunTimeoutAbort` |
+| Evaluation Corpus/Badcase/Experiment| `runtime/evalcontract/contract_test.go::TestNormalizeCorpusDeterministicAndSorted`, `tool/diagnosticsreplay/eval_contract_test.go::TestEvalContractFixtureSuccessAndLegacyShape` | `runtime/evalcontract/contract_test.go::TestCompareExperimentsIdempotentAndConflict`, `tool/diagnosticsreplay/eval_contract_test.go::TestEvalContractFixtureDriftClassification` |
 | Stream| `core/runner/runner_test.go::TestStreamForwardsDelta` | `core/runner/runner_test.go::TestStreamFailFastWithErrModel` |
 | Tool Loop| `core/runner/runner_test.go::TestRunToolLoopSuccess` | `core/runner/runner_test.go::TestRunToolFailurePolicy` |
 | Context Stage2| `core/runner/runner_test.go::TestRunContextStage2BestEffortKeepsModelPath` | `core/runner/runner_test.go::TestStreamContextStage2FailFastStopsBeforeModel` |

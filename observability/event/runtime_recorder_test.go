@@ -2374,10 +2374,17 @@ mcp:
 			"eval_summary": map[string]any{
 				"task_success": map[string]any{"pass_rate": 0.94},
 			},
-			"eval_execution_mode": "distributed",
-			"eval_job_id":         "eval-job-recorder-a61",
-			"eval_shard_total":    8,
-			"eval_resume_count":   2,
+			"eval_execution_mode":    "distributed",
+			"eval_job_id":            "eval-job-recorder-a61",
+			"eval_shard_total":       8,
+			"eval_resume_count":      2,
+			"eval_corpus_version":    "evaluation_corpus.v1",
+			"eval_corpus_item_id":    "item-1",
+			"eval_badcase_id":        "badcase-1",
+			"eval_experiment_id":     "experiment-1",
+			"eval_rubric_version":    "rubric-1",
+			"eval_comparison_status": "compared",
+			"eval_feedback_status":   "approved",
 		},
 	})
 
@@ -2392,7 +2399,14 @@ mcp:
 		got.EvalExecutionMode != "distributed" ||
 		got.EvalJobID != "eval-job-recorder-a61" ||
 		got.EvalShardTotal != 8 ||
-		got.EvalResumeCount != 2 {
+		got.EvalResumeCount != 2 ||
+		got.EvalCorpusVersion != "evaluation_corpus.v1" ||
+		got.EvalCorpusItemID != "item-1" ||
+		got.EvalBadcaseID != "badcase-1" ||
+		got.EvalExperimentID != "experiment-1" ||
+		got.EvalRubricVersion != "rubric-1" ||
+		got.EvalComparisonStatus != "compared" ||
+		got.EvalFeedbackStatus != "approved" {
 		t.Fatalf("tracing+eval additive field parse mismatch: %#v", got)
 	}
 	if summary, ok := got.EvalSummary["task_success"].(map[string]any); !ok || summary["pass_rate"] != 0.94 {

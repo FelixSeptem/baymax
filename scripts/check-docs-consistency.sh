@@ -6,6 +6,9 @@ cd "${repo_root}"
 if [[ -z "${GOCACHE:-}" ]]; then
   export GOCACHE="${repo_root}/.gocache"
 fi
+if [[ -z "${GOSUMDB:-}" || "${GOSUMDB,,}" == "off" ]]; then
+  export GOSUMDB="sum.golang.org"
+fi
 
 readme="$(cat README.md)"
 mapfile -t readme_doc_refs < <(grep -oE 'docs/[A-Za-z0-9\-]+\.md' README.md || true)

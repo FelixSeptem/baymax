@@ -1,0 +1,1 @@
+{"version":"evaluation_contract.v1","cases":[{"name":"metric-rubric-drift","expected":{"rubric_digest":"expected"},"observed":{"rubric_digest":"observed"}}]}

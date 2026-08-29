@@ -89,11 +89,12 @@ function Assert-NoParallelTracingEvalChanges {
 
     $changeRoot = Join-Path $repoRoot "openspec/changes"
     $canonicalHint = "introduce-otel-tracing-and-agent-eval-interoperability-contract"
+    $allowedIncrement = "extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract"
     $violations = @()
     $dirs = Get-ChildItem -Path $changeRoot -Directory | Where-Object { $_.Name -ne "archive" }
     foreach ($dir in $dirs) {
         $lower = $dir.Name.ToLowerInvariant()
-        if (-not $lower.Contains($canonicalHint) -and $lower.Contains("eval") -and ($lower.Contains("otel") -or $lower.Contains("tracing"))) {
+        if (-not $lower.Contains($canonicalHint) -and $lower -ne $allowedIncrement -and $lower.Contains("eval") -and ($lower.Contains("otel") -or $lower.Contains("tracing"))) {
             $violations += $dir.Name
         }
     }
@@ -184,6 +185,12 @@ Invoke-AgentEvalTracingStep -Label "tracing semconv/export + diagnostics additiv
 Invoke-AgentEvalTracingStep -Label "replay fixtures and drift taxonomy suites (tracing+eval)" -Command {
     Invoke-NativeStrict -Label "go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' -count=1" -Command {
         go test ./tool/diagnosticsreplay ./integration -run 'TestReplayContract(TracingEvalFixtureSuite|TracingEvalDriftClassification|TracingEvalDriftGuardFailFast|TracingEvalMixedFixtureBackwardCompatibility)' -count=1
+    }
+}
+
+Invoke-AgentEvalTracingStep -Label "evaluation corpus/badcase/experiment contract suites" -Command {
+    Invoke-NativeStrict -Label "go test ./runtime/evalcontract ./tool/diagnosticsreplay" -Command {
+        go test ./runtime/evalcontract ./tool/diagnosticsreplay -run 'Test(NormalizeCorpus|BadcaseClassification|CompareExperiments|FeedbackRequiresApproval|EvalContractFixture|EvalContractApprovalMissing)' -count=1
     }
 }
 

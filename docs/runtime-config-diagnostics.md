@@ -1921,6 +1921,15 @@ OTel Tracing + Agent Eval Interop additive diagnostics 字段（`additive + null
 - `eval_job_id`
 - `eval_shard_total`
 - `eval_resume_count`
+- `eval_corpus_version`
+- `eval_corpus_item_id`
+- `eval_badcase_id`
+- `eval_experiment_id`
+- `eval_rubric_version`
+- `eval_comparison_status`
+- `eval_feedback_status`
+
+Evaluation Corpus/Badcase/Experiment 扩展使用 `evaluation_corpus.v1`、`experiment_comparison.v1` 与 `feedback_recommendation.v1` 版本标识。只记录 bounded reference/digest；不可复现、版本漂移、聚合冲突和审批缺失分别通过 replay reason code 暴露，feedback 仅为 review-only recommendation，不自动改写 prompt/tool/policy/config。
 
 OTel Tracing + Agent Eval Interop gate 与 required-check 暴露：
 - Linux/macOS: `bash scripts/check-agent-eval-and-tracing-interop-contract.sh`

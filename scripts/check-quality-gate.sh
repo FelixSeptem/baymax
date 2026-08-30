@@ -338,6 +338,12 @@ if ! bash scripts/check-observability-export-and-bundle-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] terminal outcome contract"
+if ! bash scripts/check-terminal-outcome-contract.sh; then
+  echo "[quality-gate][terminal-outcome-contract] terminal outcome contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,6 +155,39 @@ func TestDispatcherWriteToolsAreSerializedInOrder(t *testing.T) {
 	}
 }
 
+func TestDispatcherParallelOutcomesPreserveInputCallIDOrder(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "read",
+		invoke: func(ctx context.Context, args map[string]any) (types.ToolResult, error) {
+			switch args["delay"] {
+			case 1:
+				time.Sleep(25 * time.Millisecond)
+			case 2:
+				time.Sleep(5 * time.Millisecond)
+			}
+			return types.ToolResult{Content: fmt.Sprint(args["value"])}, nil
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	calls := []types.ToolCall{
+		{CallID: "call-a", Name: "local.read", Args: map[string]any{"delay": 1, "value": "a"}},
+		{CallID: "call-b", Name: "local.read", Args: map[string]any{"delay": 2, "value": "b"}},
+	}
+	outcomes, err := dispatcher.Dispatch(context.Background(), calls, DispatchConfig{MaxCalls: 2, Concurrency: 2, FailFast: false})
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+	if len(outcomes) != len(calls) {
+		t.Fatalf("outcomes len = %d, want %d", len(outcomes), len(calls))
+	}
+	for i, want := range calls {
+		if outcomes[i].CallID != want.CallID || outcomes[i].Name != want.Name {
+			t.Fatalf("outcome[%d] = %#v, want call identity from input %#v", i, outcomes[i], want)
+		}
+	}
+}
+
 func TestDispatcherFailFastBehavior(t *testing.T) {
 	reg := NewRegistry()
 	_, _ = reg.Register(&fakeTool{
@@ -290,6 +324,39 @@ func TestDispatcherToolMiddlewareErrorBubblesWithFailFast(t *testing.T) {
 	}
 	if !strings.Contains(outcomes[0].Result.Error.Message, "middleware boom") {
 		t.Fatalf("middleware error message mismatch: %#v", outcomes[0].Result.Error)
+	}
+	if outcomes[0].Result.Error.Retryable {
+		t.Fatal("middleware must not synthesize retryability")
+	}
+}
+
+func TestDispatcherToolPanicBecomesPostStartFailureAndRunsCleanup(t *testing.T) {
+	reg := NewRegistry()
+	_, _ = reg.Register(&fakeTool{
+		name: "panic",
+		invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+			panic("tool panic")
+		},
+	})
+	dispatcher := NewDispatcher(reg)
+	cleaned := false
+	dispatcher.SetMiddlewares(types.ToolMiddlewareFunc(func(ctx context.Context, call types.ToolCall, next types.ToolInvokeFunc) (types.ToolResult, error) {
+		defer func() { cleaned = true }()
+		return next(ctx, call)
+	}))
+
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{{CallID: "panic-call", Name: "local.panic"}}, DispatchConfig{MaxCalls: 1, FailFast: true})
+	if err == nil {
+		t.Fatal("expected panic to become an error")
+	}
+	if !cleaned {
+		t.Fatal("middleware cleanup did not run")
+	}
+	if len(outcomes) != 1 || outcomes[0].CallID != "panic-call" {
+		t.Fatalf("outcomes = %#v, want preserved call id", outcomes)
+	}
+	if outcomes[0].Result.Error == nil || !strings.Contains(outcomes[0].Result.Error.Message, "tool panic") {
+		t.Fatalf("panic outcome = %#v", outcomes[0].Result.Error)
 	}
 }
 

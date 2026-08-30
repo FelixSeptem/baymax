@@ -577,7 +577,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		invoker = buildToolMiddlewareChain(d.middlewares, baseInvoke)
 	}
 
-	result, err := invoker(invokeCtx, call)
+	result, err := invokeWithPanicRecovery(invokeCtx, invoker, call)
 	if err == nil {
 		if strings.TrimSpace(hostMarker.ReasonCode) != "" {
 			result.Structured = annotateSandboxStructured(result.Structured, hostMarker)
@@ -589,7 +589,7 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		d.recordToolDiag(call, start, outcomes[i].Result.Error)
 		return nil
 	}
-	outcomes[i] = failedOutcome(call, types.ErrTool, err.Error(), false, map[string]any{"retry_count": retryCount})
+	outcomes[i] = failedOutcome(call, types.ErrTool, err.Error(), false, toolFailureDetails(err, retryCount))
 	d.recordToolDiag(call, start, outcomes[i].Result.Error)
 	return err
 }

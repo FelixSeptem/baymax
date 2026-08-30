@@ -58,7 +58,43 @@ const (
 	AttrProtocolCheckpointRestoreSource = "agent.protocol.checkpoint_restore_source"
 	AttrProtocolWorkspaceProvenance     = "agent.protocol.workspace_provenance"
 	AttrProtocolWorkspaceDriftReason    = "agent.protocol.workspace_drift_reason"
+	AttrTerminalState                   = "agent.terminal.state"
+	AttrTerminalFailureFamily           = "agent.terminal.failure_family"
+	AttrTerminalPhase                   = "agent.terminal.phase"
+	AttrTerminalSourceReason            = "agent.terminal.source_reason"
+	AttrTerminalRetryable               = "agent.terminal.retryable"
+	AttrTerminalResumable               = "agent.terminal.resumable"
+	AttrTerminalAttempt                 = "agent.terminal.attempt"
+	AttrTerminalAttemptLimit            = "agent.terminal.attempt_limit"
+	// Causation IDs are intentionally not emitted as terminal attributes here;
+	// they remain available in bounded protocol correlation fields.
+	AttrTerminalCausationID = "agent.terminal.causation_id"
 )
+
+// TerminalOutcomeAttributes projects bounded terminal scalar fields. Causal
+// identifiers are excluded to avoid high-cardinality OTel attributes.
+func TerminalOutcomeAttributes(state, family, phase, sourceReason string, retryable, resumable bool, attempt, attemptLimit int, causationID string) map[string]string {
+	attrs := map[string]string{
+		AttrTerminalState:         strings.TrimSpace(state),
+		AttrTerminalFailureFamily: strings.TrimSpace(family),
+		AttrTerminalPhase:         strings.TrimSpace(phase),
+		AttrTerminalSourceReason:  strings.TrimSpace(sourceReason),
+		AttrTerminalRetryable:     strconv.FormatBool(retryable),
+		AttrTerminalResumable:     strconv.FormatBool(resumable),
+	}
+	if attempt > 0 {
+		attrs[AttrTerminalAttempt] = strconv.Itoa(attempt)
+	}
+	if attemptLimit > 0 {
+		attrs[AttrTerminalAttemptLimit] = strconv.Itoa(attemptLimit)
+	}
+	for key, value := range attrs {
+		if strings.TrimSpace(value) == "" {
+			delete(attrs, key)
+		}
+	}
+	return attrs
+}
 
 // ProtocolAttributes returns additive protocol correlation attributes while
 // preserving the existing semantic-convention topology and attribute names.
@@ -163,6 +199,14 @@ var semconvTopologyV1 = map[string]SpanTopologySpec{
 			AttrMode,
 			AttrBudgetDecision,
 			AttrPolicyDecisionPath,
+			AttrTerminalState,
+			AttrTerminalFailureFamily,
+			AttrTerminalPhase,
+			AttrTerminalSourceReason,
+			AttrTerminalRetryable,
+			AttrTerminalResumable,
+			AttrTerminalAttempt,
+			AttrTerminalAttemptLimit,
 		},
 	},
 	TraceDomainModel: {

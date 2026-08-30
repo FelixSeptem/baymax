@@ -280,6 +280,9 @@ func TestRunNormalCompletionAndEvents(t *testing.T) {
 	if res.FinalAnswer != "ok" {
 		t.Fatalf("FinalAnswer = %q, want ok", res.FinalAnswer)
 	}
+	if res.TerminalOutcome == nil || res.TerminalOutcome.State != types.RunStateCompleted || res.TerminalOutcome.FailureFamily != types.FailureFamilyNone {
+		t.Fatalf("TerminalOutcome = %#v, want completed/none", res.TerminalOutcome)
+	}
 	nonTimeline := collector.nonTimelineTypes()
 	if len(nonTimeline) != 4 {
 		t.Fatalf("event count = %d, want 4", len(nonTimeline))
@@ -289,6 +292,17 @@ func TestRunNormalCompletionAndEvents(t *testing.T) {
 		if nonTimeline[i] != want[i] {
 			t.Fatalf("event[%d] = %q, want %q", i, nonTimeline[i], want[i])
 		}
+	}
+	last, ok := collector.lastNonTimelineEvent()
+	if !ok || last.Type != "run.finished" {
+		t.Fatalf("last event = %#v, want run.finished", last)
+	}
+	if last.Payload["terminal_outcome"] == nil {
+		t.Fatalf("run.finished payload missing terminal_outcome: %#v", last.Payload)
+	}
+	terminal, ok := last.Payload["terminal_outcome"].(map[string]any)
+	if !ok || terminal["state"] != string(types.RunStateCompleted) || terminal["failure_family"] != string(types.FailureFamilyNone) {
+		t.Fatalf("run.finished terminal_outcome = %#v, want completed/none", last.Payload["terminal_outcome"])
 	}
 }
 
@@ -403,6 +417,12 @@ func TestStreamFailFastWithErrModel(t *testing.T) {
 	}
 	if res.Error == nil || res.Error.Class != types.ErrModel {
 		t.Fatalf("error class = %#v, want ErrModel", res.Error)
+	}
+	if res.FinalAnswer != "partial" {
+		t.Fatalf("FinalAnswer = %q, want preserved partial output", res.FinalAnswer)
+	}
+	if res.TerminalOutcome == nil || res.TerminalOutcome.Phase != types.ExecutionPhasePostStart || res.TerminalOutcome.FailureFamily != types.FailureFamilyRuntimeFailed {
+		t.Fatalf("TerminalOutcome = %#v, want post_start/runtime_failed", res.TerminalOutcome)
 	}
 	nonTimeline := collector.nonTimelineTypes()
 	if nonTimeline[len(nonTimeline)-1] != "run.finished" {

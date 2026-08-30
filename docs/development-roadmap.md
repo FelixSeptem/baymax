@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-08-29
+更新时间：2026-08-30
 
 ## 定位
 
@@ -15,7 +15,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-08-29：
+截至 2026-08-30：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
@@ -28,7 +28,8 @@ Baymax 主线保持 `library-first + contract-first`：
   - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`（Durable Runtime Event Stream Binding Contract）
   - `extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`（P4 Evaluation Corpus、Badcase 与 Experiment Contract）
 - `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
-- 进行中：当前无活跃 change。
+- 已归档：
+  - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`（运行失败分类与权威终态合同，proposal/design/specs/tasks 与实现已完成）
 - 候选：以 openspec list --json 为准（当前 P4 已完成并归档，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）
@@ -653,6 +654,65 @@ Why now：
 - 非目标：不得自动修改 prompt、tool、policy 或 runtime configuration；不得演变成托管评测控制面或服务化调度平台。
 - 准入与 DoD：覆盖 corpus 版本不兼容、Badcase 可复现性、实验聚合幂等、指标/rubric drift、人工审批缺失与 local/distributed parity，并更新 eval replay 和 quality gate。
 - Example Impact Assessment：`修改示例`，扩展 `tracing-eval-smoke` 的文档和 fixture，证明从 protocol correlation 到 evaluation result 的关联链路。
+
+#### PDF 对照后的候选路线（待审计、待立项）
+
+本节记录阅读《用 Go 编写 Pi Agent》后的 Baymax 适配候选。候选项只表达需要验证的缺口，不表示 Baymax 已与 pigo 完全等价，也不把 pigo 的内部 API、CLI 装配、JSONL 存储或 npm 包管理方案直接引入主线。每项在进入 OpenSpec 前必须先完成现状审计，并在提案中补齐 `Why now`、风险、回滚点、文档影响、Example Impact Assessment、contract/replay/gate 和 Run/Stream 对等证据。
+
+1. **运行失败分类与权威终态合同（P1，优先审计）**
+   - **目标**：统一区分 build/admission failure、policy denial、runtime failure、timeout、cancel、retry exhaustion、recovery conflict 与 succeeded，并明确每类是否返回 Go error、产生 terminal outcome、回填模型、允许 retry/resume 或仅写 diagnostics。
+   - **为什么值得做**：pigo 的“流建立前返回 error、流建立后以终止事件保留事实”只适用于部分运行域；Baymax 还包含 scheduler、mailbox、workflow、admission、recovery 和 security policy，必须按运行域定义分层语义。
+   - **验收方向**：错误分类表、唯一终态写入、已产生事实保留、取消/超时边界、Run/Stream parity、replay 幂等和 diagnostics additive schema。
+   - **复用与边界**：复用 `ClassifiedError`、既有 reason taxonomy、`RuntimeRecorder` 和 source-owned recovery；不把所有错误强制改成成功返回，不新增第二套终止状态机。
+   - **启动信号**：出现跨入口错误分类漂移、Stream 断连丢终态、重试/恢复语义冲突或外部调用方无法区分拒绝与失败。
+   - **Example Impact Assessment（未来提案必填）**：`修改示例` 或 `新增示例`，取决于是否改变现有运行结果字段；候选阶段不预先替代提案判断。
+
+2. **事件流与权威终态可恢复性审计（P1）**
+   - **目标**：验证每条 Run/Stream 路径都能在观察者停止消费、连接断开、取消或 Provider 流异常后取得唯一权威终态，并能通过 source-owned cursor/replay 补收已产生事实。
+   - **为什么值得做**：pigo 将过程事件与最终结果分离；Baymax 已有事件、sequence、cursor、durable binding 和 diagnostics 构件，但完整语义仍需逐路径证明。
+   - **验收方向**：终态只写一次、catch-up/live-tail 去重、断连继续、retention/backpressure 边界、部分输出保留、Run/Stream 等价和 gate fixture。
+   - **复用与边界**：复用 realtime event protocol、durable stream binding、现有 cursor/dedupe；不新增平行 interrupt/resume 或平台化网关。
+   - **启动信号**：出现消费端退出导致生产者泄漏、断线无法恢复终态、终态重复或事件与查询结果不一致。
+   - **Example Impact Assessment（未来提案必填）**：`修改示例`，扩展 `realtime-interrupt-resume` 或等价示例以覆盖断连、补收和终态查询。
+
+3. **工具生命周期与失败隔离合同（P1）**
+   - **目标**：审计并固化 `prepare → validate → authorize/before → execute → after/finalize` 的阶段边界，统一 Schema 错误、策略拒绝、sandbox 失败、panic、超时、重试、取消和结果排序语义。
+   - **为什么值得做**：Baymax 已有 dispatcher、JSON Schema、middleware、sandbox 和 allowlist，但尚未证明所有工具路径都具有 pigo 所描述的显式五阶段生命周期。
+   - **验收方向**：阶段事件与耗时、panic recover、拒绝与执行失败区分、并行调用按原始顺序回填、call id 关联、资源释放和 Run/Stream parity。
+   - **复用与边界**：复用 `tool/local`、`ToolMiddleware`、policy precedence、sandbox egress 和 `RuntimeRecorder`；不新增第二套 Tool/MCP 模型。
+   - **启动信号**：工具错误无法回填、并行结果顺序漂移、middleware 绕过安全链路或异常路径未 finalize。
+   - **Example Impact Assessment（未来提案必填）**：`修改示例`，在 `02-tool-loop-basic` 或 agent mode 工具示例中增加拒绝、panic、超时和并行排序断言。
+
+4. **上下文压缩运行交接单合同（P1/P2）**
+   - **目标**：确认压缩产物在受限 token 预算下仍保留任务目标、已完成/未完成事项、失败尝试、文件变更、工具结果、策略状态和可恢复引用。
+   - **为什么值得做**：Baymax 已有 truncate/semantic compaction、质量门控和 fallback；pigo 的可迁移重点是“压缩后仍可交接”，而不是某个摘要模板。
+   - **验收方向**：合法消息切点、受保护消息、结构化摘要 schema、事实/推断区分、artifact/checkpoint 引用、压缩失败不影响主 run、质量阈值和 replay 稳定性。
+   - **复用与边界**：复用 Context Assembler、a69 压缩生产治理和 reference-first 组织；不引入粗略 token 换算或第二套上下文存储。
+   - **启动信号**：长任务恢复后缺少下一步信息、文件操作事实丢失、压缩质量漂移或摘要无法被 replay 验证。
+   - **Example Impact Assessment（未来提案必填）**：`修改示例`，扩展 context/recovery 示例展示压缩前后交接字段和 fallback。
+
+5. **会话历史、Checkpoint 与回放边界合同（P2）**
+   - **目标**：明确消息级 session history、运行级 checkpoint、诊断 replay 和 snapshot restore 的 owner、关联方式及 branch/fork 语义。
+   - **为什么值得做**：pigo 的 JSONL parent tree 支持从任意 leaf 分支；Baymax 已有 checkpoint lineage、branch/replay reference 和 snapshot import/export，但不应直接假定它们等价。
+   - **验收方向**：历史链完整性、branch/fork 关系、版本迁移、原子写入、restore 幂等、冲突分类、离线回放安全转义和跨后端一致性。
+   - **复用与边界**：复用现有 checkpoint/snapshot 事实源与 provenance；不建设第二套 session repository、Artifact content service 或平台化存储。
+   - **启动信号**：用户级会话分支无法表达、snapshot 与消息历史错位、恢复后 lineage 丢失或 replay 结果不确定。
+   - **Example Impact Assessment（未来提案必填）**：`新增示例`，先建立 session/checkpoint branch 的文档基线和离线回放 fixture。
+
+6. **扩展生态治理与隔离评估（P2，按需求触发）**
+   - **目标**：在现有 Skill Loader 之上评估是否需要 manifest、capability、digest、版本兼容、加载隔离、失败恢复和可重复安装；只有真实宿主需求出现时才考虑 Plugin/Package Manager。
+   - **为什么值得做**：pigo 的 Skill/Plugin/Package Manager 分层有参考价值，但 Baymax 当前只有 Skill discovery/compile 证据，不能为生态建设而建设。
+   - **验收方向**：坏扩展局部失败、路径和能力校验、版本/摘要稳定、超时与资源上限、回滚、Run/Stream parity、供应链风险说明。
+   - **复用与边界**：复用 `skill/loader`、sandbox/allowlist、adapter manifest 和 RuntimeRecorder；不直接引入 npm、不复制 pigo 的 CLI 自启动子 Agent，也不建设托管扩展市场。
+   - **启动信号**：外部 Skill/Plugin 数量和来源增长，出现版本漂移、供应链审计或扩展故障隔离需求。
+   - **Example Impact Assessment（未来提案必填）**：`新增示例`，先增加 manifest/compatibility 的离线 fixture，再决定是否进入运行时实现。
+
+候选路线的共同硬约束：
+
+- 保持 `library-first`，不引入平台化控制面、跨租户调度或托管 Agent Gateway。
+- 复用现有 `runtime/config`（`env > file > default`、fail-fast、热更新原子回滚）、`RuntimeRecorder` 单写入口、diagnostics replay 和 quality gate。
+- 新增或修改 contract 必须同步 spec、正负边界测试、integration/replay/gate、文档和示例影响评估。
+- 任何“与 pigo 等价”的判断都必须有行为证据；仅有同名模块、相邻类型或目录结构不构成等价证明。
 
 #### 明确延后：Remote Runtime Gateway 与持久化平台 Profile
 

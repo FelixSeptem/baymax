@@ -38,7 +38,6 @@ const (
 	reactPlanHookStatusDisabled = "disabled"
 )
 
-// Option customizes engine wiring such as tool runtime, tracing, runtime config, and HITL hooks.
 type Option func(*Engine)
 
 // Engine orchestrates run/stream model loop, tool dispatch, context assembly, and diagnostics emission.
@@ -836,7 +835,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Time:      e.now(),
 				Payload:   runFinishedPayload(result, "success", "", meta),
 			})
-			return result, nil
+			return terminalResult(result, req.SessionID), nil
 		case StateAbort:
 			hookTerminal, hookErr := e.runLifecycleHooks(
 				ctx,
@@ -976,12 +975,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				Time:      e.now(),
 				Payload:   runFinishedPayload(result, "failed", errClass, meta),
 			})
-			return result, runErr
+			return terminalResult(result, req.SessionID), runErr
 		}
 	}
 }
 
-// Stream executes a streaming agent loop while preserving timeline/error semantics with Run.
 func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	return e.streamReact(ctx, req, h)
 }
@@ -1641,6 +1639,9 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			&lastSecurity,
 			realtimeRuntime,
 		)
+		if stepErr != nil && stepResult.Text != "" {
+			final = stepResult.Text
+		}
 		if stepErr != nil {
 			var classifiedErr classifiedModelError
 			var gateErr *actionGateViolationError
@@ -1857,7 +1858,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				Time:      e.now(),
 				Payload:   runFinishedPayload(result, "success", "", meta),
 			})
-			return result, nil
+			return terminalResult(result, req.SessionID), nil
 		}
 
 		if policy.ToolCallLimit > 0 && reactToolCallTotal+len(stepResult.ToolCalls) > policy.ToolCallLimit {
@@ -2075,25 +2076,20 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		Time:      e.now(),
 		Payload:   runFinishedPayload(result, "failed", errClass, meta),
 	})
-	return result, runErr
+	return terminalResult(result, req.SessionID), runErr
 }
 
 type streamModelStepResult struct {
 	Text      string
 	ToolCalls []types.ToolCall
 }
-
 type reactPreparedModelStep struct {
 	SelectedModel  types.ModelClient
 	ModelRequest   types.ModelRequest
 	Selection      stepModelSelection
 	AssembleResult types.ContextAssembleResult
 }
-
-type reactToolDispatchOptions struct {
-	FailOnToolRuntimeDisabled bool
-}
-
+type reactToolDispatchOptions struct{ FailOnToolRuntimeDisabled bool }
 type reactToolDispatchResult struct {
 	Outcomes   []types.ToolCallOutcome
 	Dispatched bool
@@ -2120,7 +2116,6 @@ func (e *Engine) prepareReactModelStep(
 	if selErr != nil {
 		return reactPreparedModelStep{}, selErr, errors.New(selErr.Message)
 	}
-
 	contextPhaseEnabled := e.contextAssemblerEnabled()
 	if contextPhaseEnabled {
 		e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseContextAssembler, types.ActionStatusPending, "")
@@ -2303,7 +2298,7 @@ func (e *Engine) streamModelStep(
 		return nil
 	})
 	if streamErr != nil {
-		return streamModelStepResult{}, streamErr
+		return streamModelStepResult{Text: stepText.String(), ToolCalls: stepToolCalls}, streamErr
 	}
 
 	e.emit(ctx, h, types.Event{Version: "v1", Type: "model.completed", RunID: runID, Iteration: iteration, Time: e.now()})
@@ -2936,6 +2931,7 @@ type runFinishMeta struct {
 
 func runFinishedPayload(result types.RunResult, status string, errClass string, meta runFinishMeta) map[string]any {
 	payload := make(map[string]any, 128)
+	appendTerminalOutcomePayload(payload, result)
 	payload["status"] = status
 	payload["latency_ms"] = result.LatencyMs
 	payload["tool_calls"] = len(result.ToolCalls)

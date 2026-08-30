@@ -58,3 +58,19 @@ func TestFromStatusCodeRequestInvalid(t *testing.T) {
 		t.Fatalf("reason=%q, want request_invalid", classified.Reason)
 	}
 }
+
+func TestWithStreamPhasePreservesClassification(t *testing.T) {
+	base := FromError(errors.New("service unavailable"))
+	got := WithStreamPhase(base, "post_start")
+	classified, ok := got.(*Classified)
+	if !ok {
+		t.Fatalf("expected classified error, got %T", got)
+	}
+	if classified.Reason != "server" || classified.StreamPhase != "post_start" {
+		t.Fatalf("classified = %#v", classified)
+	}
+	projected := classified.ClassifiedError()
+	if projected.Details["provider_reason"] != "server" || projected.Details["stream_phase"] != "post_start" {
+		t.Fatalf("projected details = %#v", projected.Details)
+	}
+}

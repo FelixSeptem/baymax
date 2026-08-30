@@ -152,19 +152,21 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
 	})
 	if stream == nil {
-		return errors.New("openai stream is nil")
+		return providererror.WithStreamPhase(providererror.FromError(errors.New("openai stream is nil")), "pre_execution")
 	}
 	defer func() {
 		_ = stream.Close()
 	}()
 
 	state := streamState{toolCalls: map[string]*toolCallState{}}
+	streamStarted := false
 	for stream.Next() {
+		streamStarted = true
 		mapped, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
 			var classified *providererror.Classified
 			if errors.As(err, &classified) {
-				return classified
+				return providererror.WithStreamPhase(classified, "post_start")
 			}
 			if onEvent != nil {
 				_ = onEvent(types.ModelEvent{
@@ -184,13 +186,19 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	if err := stream.Err(); err != nil {
+		phase := "pre_execution"
+		if streamStarted {
+			phase = "post_start"
+		}
 		if onEvent != nil {
+			meta := openAIErrorMeta(err.Error())
+			meta["stream_phase"] = phase
 			_ = onEvent(types.ModelEvent{
 				Type: types.ModelEventTypeResponseError,
-				Meta: openAIErrorMeta(err.Error()),
+				Meta: meta,
 			})
 		}
-		return err
+		return providererror.WithStreamPhase(providererror.FromError(err), phase)
 	}
 	return ctx.Err()
 }
@@ -350,9 +358,10 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 }
 
 func openAIErrorMeta(message string) map[string]any {
-	meta := make(map[string]any, 2)
+	meta := make(map[string]any, 3)
 	meta["provider"] = "openai"
 	meta["error"] = message
+	meta["stream_phase"] = "post_start"
 	return meta
 }
 

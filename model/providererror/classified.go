@@ -13,10 +13,24 @@ import (
 // Provider-specific finer ErrorClass split remains deferred; current classification
 // is kept stable for contract/replay compatibility.
 type Classified struct {
-	Class     types.ErrorClass
-	Reason    string
-	Retryable bool
-	Cause     error
+	Class       types.ErrorClass
+	Reason      string
+	Retryable   bool
+	StreamPhase string
+	Cause       error
+}
+
+func WithStreamPhase(err error, phase string) error {
+	if err == nil {
+		return nil
+	}
+	var classified *Classified
+	if !errors.As(err, &classified) || classified == nil {
+		classified = FromError(err).(*Classified)
+	}
+	copy := *classified
+	copy.StreamPhase = strings.TrimSpace(phase)
+	return &copy
 }
 
 func (e *Classified) Error() string {
@@ -51,6 +65,7 @@ func (e *Classified) ClassifiedError() *types.ClassifiedError {
 		Retryable: e.Retryable,
 		Details: map[string]any{
 			"provider_reason": e.Reason,
+			"stream_phase":    e.StreamPhase,
 		},
 	}
 }

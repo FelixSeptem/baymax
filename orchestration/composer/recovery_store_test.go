@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -71,6 +72,23 @@ func TestFileRecoveryStoreCorruptSnapshotFailsFast(t *testing.T) {
 	}
 	if !IsRecoveryErrorCode(loadErr, RecoveryErrorSnapshotCorrupt) {
 		t.Fatalf("expected RecoveryErrorSnapshotCorrupt, got %v", loadErr)
+	}
+}
+
+func TestRecoveryErrorProjectsToRecoveryConflictWithSourcePhase(t *testing.T) {
+	pre, err := RecoveryTerminalOutcome("run-recovery", newRecoveryError(RecoveryErrorConflict, "snapshot mismatch", nil), types.ExecutionPhasePreExecution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pre.FailureFamily != types.FailureFamilyRecoveryConflict || pre.Phase != types.ExecutionPhasePreExecution || pre.State != types.RunStateFailed {
+		t.Fatalf("pre outcome = %#v", pre)
+	}
+	post, err := RecoveryTerminalOutcome("run-recovery", newRecoveryError(RecoveryErrorConflict, "late report", nil), types.ExecutionPhasePostStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if post.FailureFamily != types.FailureFamilyRecoveryConflict || post.Phase != types.ExecutionPhasePostStart {
+		t.Fatalf("post outcome = %#v", post)
 	}
 }
 

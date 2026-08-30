@@ -62,6 +62,15 @@ type RunRecord struct {
 	ProtocolWorkspaceChangeSetID                string                            `json:"protocol_workspace_change_set_id,omitempty"`
 	ProtocolWorkspaceIntegrityDriftReason       string                            `json:"protocol_workspace_integrity_drift_reason,omitempty"`
 	Status                                      string                            `json:"status,omitempty"`
+	TerminalState                               string                            `json:"terminal_state,omitempty"`
+	TerminalFailureFamily                       string                            `json:"terminal_failure_family,omitempty"`
+	TerminalPhase                               string                            `json:"terminal_phase,omitempty"`
+	TerminalSourceReason                        string                            `json:"terminal_source_reason,omitempty"`
+	TerminalRetryable                           bool                              `json:"terminal_retryable,omitempty"`
+	TerminalResumable                           bool                              `json:"terminal_resumable,omitempty"`
+	TerminalAttempt                             int                               `json:"terminal_attempt,omitempty"`
+	TerminalAttemptLimit                        int                               `json:"terminal_attempt_limit,omitempty"`
+	TerminalCausationID                         string                            `json:"terminal_causation_id,omitempty"`
 	Iterations                                  int                               `json:"iterations"`
 	ToolCalls                                   int                               `json:"tool_calls"`
 	LatencyMs                                   int64                             `json:"latency_ms"`

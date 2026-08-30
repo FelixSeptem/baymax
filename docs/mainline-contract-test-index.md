@@ -16,6 +16,7 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 | 主干流程| 正向场景 | 异常/降级场景 |
 | ---| --- | --- |
+| Runtime Failure Taxonomy / Terminal Outcome| `core/types/terminal_outcome_test.go::TestTerminalOutcomeValidateAcceptsCompletedSuccess`、`core/runner/runner_test.go::TestRunNormalCompletionAndEvents`、`observability/event/runtime_recorder_test.go::TestRuntimeRecorderParsesAdditiveTerminalOutcomeProjection` | `core/runner/runner_test.go::TestStreamFailFastWithErrModel`、`model/openai/client_test.go::TestStreamClassifiesPreAndPostStartDecoderErrors`、`core/types/terminal_outcome_test.go::TestTerminalOutcomeArbiterFirstTerminalWinsAndRecordsConflict` |
 | Run| `core/runner/runner_test.go::TestRunNormalCompletionAndEvents` | `core/runner/runner_test.go::TestRunTimeoutAbort` |
 | Evaluation Corpus/Badcase/Experiment| `runtime/evalcontract/contract_test.go::TestNormalizeCorpusDeterministicAndSorted`, `tool/diagnosticsreplay/eval_contract_test.go::TestEvalContractFixtureSuccessAndLegacyShape` | `runtime/evalcontract/contract_test.go::TestCompareExperimentsIdempotentAndConflict`, `tool/diagnosticsreplay/eval_contract_test.go::TestEvalContractFixtureDriftClassification` |
 | Stream| `core/runner/runner_test.go::TestStreamForwardsDelta` | `core/runner/runner_test.go::TestStreamFailFastWithErrModel` |
@@ -336,6 +337,16 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 - Quality gate path: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
 
 ## 使用方式
+
+## Terminal Outcome Taxonomy
+
+- Projection/model: `core/types/terminal_outcome_test.go`、`core/runner/runner_test.go`
+- Tool ownership and panic cleanup: `tool/local/registry_test.go`
+- Recovery conflict and phase mapping: `orchestration/composer/recovery_store_test.go`
+- Replay fixture and parser compatibility: `tool/diagnosticsreplay/replay_test.go`、`tool/diagnosticsreplay/testdata/terminal_outcomes.json`
+- Drift and Run/Stream semantic guards: `integration/terminal_outcome_contract_test.go`
+- Dedicated gate: `scripts/check-terminal-outcome-contract.sh` / `scripts/check-terminal-outcome-contract.ps1`
+- Quality gate ownership: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
 
 1. 变更完成前，确保以上用例在 `go test ./...` 中通过。
 2. 合并前，执行 `go test -race ./...` 验证并发安全基线。

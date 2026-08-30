@@ -12,7 +12,7 @@ import (
 const (
 	patternName    = "agent-runtime-protocol-projection"
 	phase          = "P1"
-	semanticAnchor = "agent_runtime_protocol.capability_context_admission"
+	semanticAnchor = "agent_runtime_protocol.capability_context_admission_terminal_outcome"
 	classification = "agent_runtime_protocol.projection"
 )
 
@@ -64,7 +64,11 @@ func run(production bool) {
 	if err != nil {
 		panic(err)
 	}
-	expectedMarkers := []string{"protocol_run_mapped", "protocol_event_mapped", "protocol_checkpoint_mapped", "protocol_descriptor_validated", "protocol_context_validated", "protocol_admission_projected"}
+	terminalOutcome := types.TerminalOutcome{RunID: runRef.RunID, SessionID: runRef.SessionID, State: types.RunStateCompleted, FailureFamily: types.FailureFamilyNone, Phase: types.ExecutionPhasePostStart, SourceReason: "protocol.completed"}
+	if err := terminalOutcome.Validate(); err != nil {
+		panic(err)
+	}
+	expectedMarkers := []string{"protocol_run_mapped", "protocol_event_mapped", "protocol_checkpoint_mapped", "protocol_descriptor_validated", "protocol_context_validated", "protocol_admission_projected", "terminal_outcome_projected"}
 	if production {
 		expectedMarkers = append(expectedMarkers, "protocol_invalid_transition_rejected")
 	}
@@ -100,6 +104,9 @@ func run(production bool) {
 	}
 	if admission.Decision == types.ProtocolRunAdmissionDecisionAdmitted {
 		fmt.Println("verification.semantic.marker.protocol_admission_projected=ok")
+	}
+	if terminalOutcome.FailureFamily == types.FailureFamilyNone && terminalOutcome.State == types.RunStateCompleted {
+		fmt.Println("verification.semantic.marker.terminal_outcome_projected=ok")
 	}
 	if production {
 		if err := types.ValidateRunStateTransition(types.RunStateCompleted, types.RunStateWorking); err != nil {

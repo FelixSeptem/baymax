@@ -19,12 +19,16 @@ const (
 
 // MinimalEvent is the normalized replay output record for diagnostics timeline review.
 type MinimalEvent struct {
-	RunID     string    `json:"run_id"`
-	Sequence  int64     `json:"sequence"`
-	Phase     string    `json:"phase"`
-	Status    string    `json:"status"`
-	Reason    string    `json:"reason,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	RunID         string    `json:"run_id"`
+	Sequence      int64     `json:"sequence"`
+	Phase         string    `json:"phase"`
+	Status        string    `json:"status"`
+	Reason        string    `json:"reason,omitempty"`
+	TerminalState string    `json:"terminal_state,omitempty"`
+	FailureFamily string    `json:"failure_family,omitempty"`
+	TerminalPhase string    `json:"terminal_phase,omitempty"`
+	SourceReason  string    `json:"source_reason,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 // ReplayOutput is the stable JSON envelope emitted by replay tooling.
@@ -174,12 +178,16 @@ func parseEventEnvelopeArray(items []any) ([]MinimalEvent, error) {
 			return nil, missingFieldError(fmt.Sprintf("events[%d].payload.status", i))
 		}
 		out = append(out, MinimalEvent{
-			RunID:     runID,
-			Sequence:  sequence,
-			Phase:     phase,
-			Status:    status,
-			Reason:    strings.TrimSpace(toString(payload["reason"])),
-			Timestamp: timestamp,
+			RunID:         runID,
+			Sequence:      sequence,
+			Phase:         phase,
+			Status:        status,
+			Reason:        strings.TrimSpace(toString(payload["reason"])),
+			TerminalState: strings.TrimSpace(toString(payload["terminal_state"])),
+			FailureFamily: strings.TrimSpace(toString(payload["terminal_failure_family"])),
+			TerminalPhase: strings.TrimSpace(toString(payload["terminal_phase"])),
+			SourceReason:  strings.TrimSpace(toString(payload["terminal_source_reason"])),
+			Timestamp:     timestamp,
 		})
 	}
 	if len(out) == 0 {
@@ -213,12 +221,16 @@ func parseMinimalEvent(item map[string]any, path string) (MinimalEvent, error) {
 		return MinimalEvent{}, err
 	}
 	return MinimalEvent{
-		RunID:     runID,
-		Sequence:  sequence,
-		Phase:     phase,
-		Status:    status,
-		Reason:    strings.TrimSpace(toString(item["reason"])),
-		Timestamp: ts,
+		RunID:         runID,
+		Sequence:      sequence,
+		Phase:         phase,
+		Status:        status,
+		Reason:        strings.TrimSpace(toString(item["reason"])),
+		TerminalState: strings.TrimSpace(toString(item["terminal_state"])),
+		FailureFamily: strings.TrimSpace(toString(item["failure_family"])),
+		TerminalPhase: strings.TrimSpace(toString(item["terminal_phase"])),
+		SourceReason:  strings.TrimSpace(toString(item["source_reason"])),
+		Timestamp:     ts,
 	}, nil
 }
 

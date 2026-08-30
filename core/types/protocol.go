@@ -833,14 +833,14 @@ func NewProtocolRunFromRequest(req RunRequest, state RunState) (RunRef, error) {
 // MapRunnerResultToProtocol projects terminal Runner output and tool call
 // summaries without changing the Runner's execution or retry semantics.
 func MapRunnerResultToProtocol(result RunResult, sessionID string) (RunRef, []StepRef, error) {
-	state := RunStateCompleted
-	if result.Error != nil {
-		state = RunStateFailed
+	outcome, err := TerminalOutcomeFromRunResult(result, sessionID)
+	if err != nil {
+		return RunRef{}, nil, err
 	}
 	run := RunRef{
 		RunID:     strings.TrimSpace(result.RunID),
 		SessionID: strings.TrimSpace(sessionID),
-		State:     state,
+		State:     outcome.State,
 		Source:    ProtocolSourceRunner,
 	}
 	if err := run.ValidateProtocolReference(); err != nil {

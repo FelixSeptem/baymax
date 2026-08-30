@@ -144,6 +144,38 @@ func TestStreamReturnsDecoderError(t *testing.T) {
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("err = %v, want unexpected EOF", err)
 	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) || classified.StreamPhase != "pre_execution" {
+		t.Fatalf("decoder error = %T %#v, want classified pre_execution", err, err)
+	}
+}
+
+func TestStreamClassifiesPreAndPostStartDecoderErrors(t *testing.T) {
+	preClient := NewClient(Config{Model: "gpt-4.1-mini"})
+	preClient.newStream = func(ctx context.Context, body responses.ResponseNewParams) responseStream {
+		return &fakeResponseStream{err: io.ErrUnexpectedEOF}
+	}
+	preErr := preClient.Stream(context.Background(), types.ModelRequest{Input: "x"}, nil)
+	var preClassified *providererror.Classified
+	if !errors.As(preErr, &preClassified) || preClassified.StreamPhase != "pre_execution" {
+		t.Fatalf("pre-start error = %T %#v, want classified pre_execution", preErr, preErr)
+	}
+
+	postClient := NewClient(Config{Model: "gpt-4.1-mini"})
+	postClient.newStream = func(ctx context.Context, body responses.ResponseNewParams) responseStream {
+		return &fakeResponseStream{
+			events: []responses.ResponseStreamEventUnion{{
+				Type:  "response.output_text.delta",
+				Delta: responses.ResponseStreamEventUnionDelta{OfString: "partial"},
+			}},
+			err: io.ErrUnexpectedEOF,
+		}
+	}
+	postErr := postClient.Stream(context.Background(), types.ModelRequest{Input: "x"}, func(types.ModelEvent) error { return nil })
+	var postClassified *providererror.Classified
+	if !errors.As(postErr, &postClassified) || postClassified.StreamPhase != "post_start" {
+		t.Fatalf("post-start error = %T %#v, want classified post_start", postErr, postErr)
+	}
 }
 
 func TestStreamFailsOnInvalidToolArguments(t *testing.T) {

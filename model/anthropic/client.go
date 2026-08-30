@@ -135,13 +135,15 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	}
 	stream := c.newStream(ctx, input)
 	if stream == nil {
-		return errors.New("anthropic stream is nil")
+		return providererror.WithStreamPhase(providererror.FromError(errors.New("anthropic stream is nil")), "pre_execution")
 	}
 	defer func() { _ = stream.Close() }()
 
 	state := streamState{toolByIndex: map[int64]*toolCallState{}}
 	completed := false
+	streamStarted := false
 	for stream.Next() {
+		streamStarted = true
 		events, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
 			classified := providererror.FromError(err)
@@ -151,7 +153,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 					Meta: anthropicErrorMeta(err.Error()),
 				})
 			}
-			return classified
+			return providererror.WithStreamPhase(classified, "post_start")
 		}
 		if onEvent == nil {
 			continue
@@ -166,13 +168,19 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		}
 	}
 	if err := stream.Err(); err != nil {
+		phase := "pre_execution"
+		if streamStarted {
+			phase = "post_start"
+		}
 		if onEvent != nil {
+			meta := anthropicErrorMeta(err.Error())
+			meta["stream_phase"] = phase
 			_ = onEvent(types.ModelEvent{
 				Type: types.ModelEventTypeResponseError,
-				Meta: anthropicErrorMeta(err.Error()),
+				Meta: meta,
 			})
 		}
-		return providererror.FromError(err)
+		return providererror.WithStreamPhase(providererror.FromError(err), phase)
 	}
 	if onEvent != nil && !completed {
 		if err := onEvent(types.ModelEvent{
@@ -359,9 +367,10 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 }
 
 func anthropicErrorMeta(message string) map[string]any {
-	meta := make(map[string]any, 2)
+	meta := make(map[string]any, 3)
 	meta["provider"] = "anthropic"
 	meta["error"] = message
+	meta["stream_phase"] = "post_start"
 	return meta
 }
 

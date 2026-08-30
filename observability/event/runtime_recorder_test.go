@@ -785,6 +785,64 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderParsesAdditiveTerminalOutcomeProjection(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "run.finished",
+		RunID:   "run-terminal-projection",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"status":                  "failed",
+			"error_class":             string(types.ErrModel),
+			"terminal_state":          string(types.RunStateFailed),
+			"terminal_failure_family": string(types.FailureFamilyRuntimeFailed),
+			"terminal_phase":          string(types.ExecutionPhasePostStart),
+			"terminal_source_reason":  "provider_error",
+			"terminal_retryable":      true,
+			"terminal_resumable":      true,
+			"terminal_attempt":        2,
+			"terminal_attempt_limit":  3,
+			"terminal_causation_id":   "cause-1",
+		},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.TerminalState != string(types.RunStateFailed) || got.TerminalFailureFamily != string(types.FailureFamilyRuntimeFailed) || got.TerminalPhase != string(types.ExecutionPhasePostStart) {
+		t.Fatalf("terminal state projection mismatch: %#v", got)
+	}
+	if got.TerminalSourceReason != "provider_error" || !got.TerminalRetryable || !got.TerminalResumable || got.TerminalAttempt != 2 || got.TerminalAttemptLimit != 3 || got.TerminalCausationID != "cause-1" {
+		t.Fatalf("terminal metadata projection mismatch: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderCollaborationParserCompatibilityAdditiveNullableDefault(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

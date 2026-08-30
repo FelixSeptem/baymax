@@ -16,7 +16,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-08-29）：
+当前里程碑快照（2026-08-30）：
+- 已归档：
+  - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`：运行失败分类与权威终态合同（proposal/design/specs/tasks 与实现已完成）。
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已完成待归档：
   - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。

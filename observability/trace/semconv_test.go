@@ -95,6 +95,16 @@ func TestCanonicalAttributeMapInjectsSchemaAndFiltersUnknownKeys(t *testing.T) {
 	}
 }
 
+func TestTerminalOutcomeAttributesAreBoundedAndAdditive(t *testing.T) {
+	attrs := TerminalOutcomeAttributes("completed", "none", "post_start", "react.completed", false, false, 2, 4, "cause-1")
+	if attrs[AttrTerminalState] != "completed" || attrs[AttrTerminalFailureFamily] != "none" || attrs[AttrTerminalPhase] != "post_start" || attrs[AttrTerminalAttempt] != "2" {
+		t.Fatalf("terminal attrs = %#v", attrs)
+	}
+	if _, ok := attrs[AttrTerminalCausationID]; ok {
+		t.Fatal("causation id must be excluded from bounded OTel terminal attributes")
+	}
+}
+
 func TestRunStreamSemanticEquivalenceAllowsOrderingDifferences(t *testing.T) {
 	runSpans := []SemanticSpan{
 		{

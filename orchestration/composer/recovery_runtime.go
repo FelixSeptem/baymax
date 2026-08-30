@@ -523,6 +523,18 @@ func (c *Composer) emitRecoveryTimeline(
 		"sequence": sequence,
 		"run_id":   runID,
 	}
+	if strings.TrimSpace(reason) == RecoveryReasonConflict {
+		phase := types.ExecutionPhasePreExecution
+		if strings.TrimSpace(taskID) != "" || strings.TrimSpace(attemptID) != "" {
+			phase = types.ExecutionPhasePostStart
+		}
+		payload["terminal_state"] = string(types.RunStateFailed)
+		payload["terminal_failure_family"] = string(types.FailureFamilyRecoveryConflict)
+		payload["terminal_phase"] = string(phase)
+		payload["terminal_source_reason"] = strings.TrimSpace(reason)
+		payload["terminal_retryable"] = false
+		payload["terminal_resumable"] = false
+	}
 	if strings.TrimSpace(taskID) != "" {
 		payload["task_id"] = strings.TrimSpace(taskID)
 	}

@@ -134,18 +134,28 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	}
 
 	toolSeq := 0
+	streamStarted := false
 	for chunk, err := range c.stream(ctx, input) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
+			phase := "pre_execution"
+			if streamStarted {
+				phase = "post_start"
+			}
 			if onEvent != nil {
+				meta := geminiErrorMeta(err.Error())
+				meta["stream_phase"] = phase
 				_ = onEvent(types.ModelEvent{
 					Type: types.ModelEventTypeResponseError,
-					Meta: geminiErrorMeta(err.Error()),
+					Meta: meta,
 				})
 			}
-			return providererror.FromError(err)
+			return providererror.WithStreamPhase(providererror.FromError(err), phase)
+		}
+		if chunk != nil {
+			streamStarted = true
 		}
 		mapped := mapStreamChunk(chunk, &toolSeq)
 		if onEvent == nil {
@@ -334,9 +344,10 @@ func estimateGeminiStreamEvents(resp *genai.GenerateContentResponse) int {
 }
 
 func geminiErrorMeta(message string) map[string]any {
-	meta := make(map[string]any, 2)
+	meta := make(map[string]any, 3)
 	meta["provider"] = "gemini"
 	meta["error"] = message
+	meta["stream_phase"] = "post_start"
 	return meta
 }
 

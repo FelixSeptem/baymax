@@ -88,6 +88,23 @@ func TestReplayContractMissingFieldReasonCode(t *testing.T) {
 	}
 }
 
+func TestTerminalOutcomeReplayFixturePreservesAdditiveClassification(t *testing.T) {
+	input := mustReadFixture(t, "terminal_outcomes.json")
+	got, err := ParseMinimalReplayJSON(input)
+	if err != nil {
+		t.Fatalf("ParseMinimalReplayJSON error: %v", err)
+	}
+	if len(got.Events) != 11 {
+		t.Fatalf("event count = %d, want 11", len(got.Events))
+	}
+	if got.Events[0].TerminalState != "completed" || got.Events[0].FailureFamily != "none" {
+		t.Fatalf("success classification = %#v", got.Events[0])
+	}
+	if got.Events[10].FailureFamily != "recovery_conflict" || got.Events[10].TerminalPhase != "post_start" {
+		t.Fatalf("late conflict classification = %#v", got.Events[10])
+	}
+}
+
 func mustReadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	path := filepath.Join("testdata", name)

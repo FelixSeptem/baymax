@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-08-29 21:07:45
+Updated: 2026-08-30 23:01:37
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -128,3 +128,4 @@ Updated: 2026-08-29 21:07:45
 - 124 -> extend-realtime-event-protocol-with-durable-runtime-stream-binding
 - 125 -> extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance
 - 126 -> extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract
+- 127 -> standardize-runtime-failure-taxonomy-and-terminal-outcome-contract

@@ -1179,6 +1179,7 @@ Mailbox diagnostics additive 字段（Mailbox Runtime Wiring）：
 `runtime/diagnostics.RunRecord` 采用“按能力域分组”的 additive 模型（见 `runtime/diagnostics/store.go`）：
 
 - 基础运行摘要：`run_id/status/iterations/tool_calls/latency_ms/error_class`
+- Terminal Outcome Projection（Runtime Failure Taxonomy）：`terminal_state`、`terminal_failure_family`、`terminal_phase`、`terminal_source_reason`、`terminal_retryable`、`terminal_resumable`、`terminal_attempt`、`terminal_attempt_limit`、`terminal_causation_id`。这些字段为 additive + nullable + default，仅由 `run.finished` 通过 `observability/event.RuntimeRecorder` 写入；缺失时分别按空字符串、`false`、`0` 解释。`terminal_outcome` 结构化载荷可用于 replay，但不进入高基数 OTel 属性。
 - Provider 与降级：`model_provider/fallback_* / required_capabilities`
 - Context Assembler：`prefix_hash`、`assemble_*`、`stage2_*`、`context_pressure_*`、`context_compaction_*`、`recap_status`（迁移窗口兼容 legacy 编号字段读取）
 - 编排聚合：`team_*`、`workflow_*`、`a2a_*`、`scheduler_*`、`subagent_*`、`collab_*`
@@ -2167,6 +2168,14 @@ Realtime Protocol + Interrupt/Resume gate 与 required-check 暴露：
 ```go
 mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: "runtime.yaml"})
 ```
+
+## 终态失败归一化
+
+`run.finished` 可增量携带 `terminal_state`、`terminal_failure_family`、`terminal_phase`、`terminal_source_reason`、`terminal_retryable`、`terminal_resumable`、`terminal_attempt`、`terminal_attempt_limit` 和 `terminal_causation_id`。字段通过 `RuntimeRecorder` 写入 `RunRecord`，旧事件缺失时保持兼容默认。
+
+失败族固定为 `none`、`rejected`、`policy_denied`、`runtime_failed`、`timed_out`、`canceled`、`retry_exhausted`、`recovery_conflict`；`pre_execution` 表示尚未开始可观察工作，`post_start` 表示已有有效输出、工具调用或恢复尝试。retry/resume 与 attempt 元数据必须由源组件提供，projection 不从错误文本推断。
+
+回放 fixture：`tool/diagnosticsreplay/testdata/terminal_outcomes.json`。专用门禁：`scripts/check-terminal-outcome-contract.sh` / `scripts/check-terminal-outcome-contract.ps1`。
 
 
 

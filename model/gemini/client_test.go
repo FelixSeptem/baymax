@@ -187,6 +187,9 @@ func TestStreamFailFastAndClassified(t *testing.T) {
 	if classified.Reason != "server" {
 		t.Fatalf("reason = %q, want server", classified.Reason)
 	}
+	if classified.StreamPhase != "pre_execution" {
+		t.Fatalf("stream phase = %q, want pre_execution", classified.StreamPhase)
+	}
 	if len(events) == 0 || events[0].Type != types.ModelEventTypeResponseError {
 		t.Fatalf("expected response.error event, got %#v", events)
 	}

@@ -6,11 +6,11 @@ Go 1.22+ with module dependencies resolved; no external network service is requi
 
 ## Semantic Anchor
 
-`realtime.durable_runtime_stream_binding` extends the existing source-owned interrupt/resume example with a bounded, transport-neutral event-stream subscription. Realtime remains the owner of event history, cursor validation, sequence, deduplication, interrupt freeze, and resume semantics.
+`realtime.event_stream_terminal_recovery` extends the existing source-owned interrupt/resume example with a bounded, transport-neutral event-stream subscription and terminal recovery projection. Realtime remains the owner of event history, cursor validation, sequence, deduplication, interrupt freeze, resume semantics, retention, and slow-consumer outcomes. The terminal arbiter remains the owner of first-terminal-wins semantics.
 
 ## Runtime Path
 
-`core/types` validates the subscription and normalizes source history/live handoff; `core/runner` exposes the opt-in projection; `observability/event.RuntimeRecorder` records nullable binding correlation; `observability/trace` exports finite binding state/reason attributes; `runtime/diagnostics` stores the additive fields.
+`core/types` validates the subscription and normalizes source history/live handoff plus terminal recovery; `core/runner` exposes the opt-in projection; `observability/event.RuntimeRecorder` records nullable binding/recovery correlation; `observability/trace` exports finite binding state/reason attributes; `runtime/diagnostics` stores the additive fields.
 
 No listener, connection manager, hosted Event/Session service, external event store, global queue, synthetic cursor, or transport gateway is part of this example.
 
@@ -28,6 +28,8 @@ The executable variants retain the existing markers `realtime_cursor_idempotent`
 - `realtime_stream_binding_expired`
 - `realtime_stream_binding_backpressure`
 - `realtime_stream_binding_disconnect_recovery`
+- `realtime_stream_terminal_available`
+- `realtime_stream_recovery_retained_facts`
 
 Production-ish additionally emits `governance_realtime_gate_enforced` and `governance_realtime_replay_bound`.
 
@@ -37,7 +39,7 @@ Each variant prints `verification.mainline_runtime_path=ok`, `verification.seman
 
 ## Reconnect, Catch-Up, and Handoff
 
-`latest` starts a source-owned live tail. `after_cursor` asks Realtime for bounded history, reports `catching_up`, then transitions to `live` only with a valid handoff boundary. A bounded history/live overlap is deduplicated by the canonical Realtime event ID. A missing sequence is reported as `gap`; the binding does not synthesize a cursor or claim exactly-once delivery.
+`latest` starts a source-owned live tail. `after_cursor` asks Realtime for bounded history, reports `catching_up`, then transitions to `live` only with a valid handoff boundary. A bounded history/live overlap is deduplicated by the canonical Realtime event ID. A missing sequence is reported as `gap`; the binding does not synthesize a cursor or claim exactly-once delivery. Observer disconnect/stop does not mutate the Run or trigger retry/resume. Recovery can expose a source-owned terminal snapshot before its terminal event arrives; the existing terminal arbiter preserves the first business terminal and records late conflicts without overwriting it.
 
 ## Expiry and Backpressure
 
@@ -45,7 +47,7 @@ An expired cursor is reported as `expired` and never silently falls back to `lat
 
 ## Rollback
 
-Rollback removes the opt-in binding projection and omits its nullable diagnostics fields. The existing Realtime envelope, cursor, interrupt/resume, Run/Stream parity, and example markers remain valid. Revert the root README, MATRIX row, and both executable variants together if the documentation baseline must be withdrawn.
+Rollback removes the opt-in recovery projection and omits its nullable diagnostics fields. The existing Realtime envelope, cursor, interrupt/resume, durable binding, Run/Stream parity, and legacy example markers remain valid. Revert the root README, MATRIX row, and both executable variants together if the documentation baseline must be withdrawn.
 
 ## Failure/Rollback Notes
 

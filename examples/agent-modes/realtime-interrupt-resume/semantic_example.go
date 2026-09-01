@@ -17,7 +17,7 @@ import (
 const (
 	patternName      = "realtime-interrupt-resume"
 	phase            = "P2"
-	semanticAnchor   = "realtime.durable_runtime_stream_binding"
+	semanticAnchor   = "realtime.event_stream_terminal_recovery"
 	classification   = "realtime.resume_recovery"
 	semanticToolName = "mode_realtime_interrupt_resume_semantic_step"
 )
@@ -69,7 +69,7 @@ type realtimeState struct {
 	TotalScore         int
 }
 
-var runtimeDomains = []string{"core/types", "core/runner", "observability/event", "observability/trace", "runtime/diagnostics"}
+var runtimeDomains = []string{"core/types", "core/runner", "observability/event", "observability/trace", "runtime/diagnostics", "tool/diagnosticsreplay"}
 
 var minimalSemanticSteps = []realtimeStep{
 	{
@@ -107,6 +107,18 @@ var minimalSemanticSteps = []realtimeStep{
 		RuntimeDomain: "core/types",
 		Intent:        "normalize bounded catch-up/live overlap using canonical event deduplication",
 		Outcome:       "handoff overlap is removed while sequence ordering remains source-owned",
+	},
+	{
+		Marker:        "realtime_stream_terminal_available",
+		RuntimeDomain: "core/types",
+		Intent:        "project a source-owned terminal snapshot without replacing the Run lifecycle",
+		Outcome:       "terminal availability is normalized through first-terminal-wins",
+	},
+	{
+		Marker:        "realtime_stream_recovery_retained_facts",
+		RuntimeDomain: "core/runner",
+		Intent:        "retain bounded stream events and completed tool-call facts across recovery",
+		Outcome:       "recovery preserves source correlation without creating history storage",
 	},
 }
 
@@ -210,9 +222,13 @@ func executeVariant(variant string) {
 	}
 
 	engine := runner.New(newRealtimeWorkflowModel(variant), runner.WithLocalRegistry(reg), runner.WithRuntimeManager(mgr))
+	policy := types.DefaultLoopPolicy()
+	// One final model turn is required after each semantic tool step.
+	policy.MaxIterations = len(stepsForVariant(variant)) + 1
 	result, err := engine.Run(context.Background(), types.RunRequest{
-		RunID: fmt.Sprintf("agent-mode-%s-%s", modecommon.MarkerToken(patternName), modecommon.MarkerToken(variant)),
-		Input: "execute realtime interrupt resume workflow",
+		RunID:  fmt.Sprintf("agent-mode-%s-%s", modecommon.MarkerToken(patternName), modecommon.MarkerToken(variant)),
+		Input:  "execute realtime interrupt resume workflow",
+		Policy: &policy,
 	}, nil)
 	if err != nil {
 		panic(err)
@@ -612,7 +628,7 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 		default:
 			risk = "degraded_path"
 		}
-	case "realtime_stream_binding_live", "realtime_stream_binding_catch_up", "realtime_stream_binding_handoff_dedup", "realtime_stream_binding_expired", "realtime_stream_binding_backpressure", "realtime_stream_binding_disconnect_recovery":
+	case "realtime_stream_binding_live", "realtime_stream_binding_catch_up", "realtime_stream_binding_handoff_dedup", "realtime_stream_binding_expired", "realtime_stream_binding_backpressure", "realtime_stream_binding_disconnect_recovery", "realtime_stream_terminal_available", "realtime_stream_recovery_retained_facts":
 		binding, bindingErr := projectExampleBinding(marker, sessionID)
 		if bindingErr != nil {
 			return types.ToolResult{}, bindingErr
@@ -622,6 +638,21 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 		result["stream_binding_reason"] = binding.Outcome.ReasonCode
 		result["stream_binding_sequence_boundary"] = binding.Outcome.LastSequence
 		result["stream_binding_event_count"] = len(binding.Events)
+		if marker == "realtime_stream_terminal_available" || marker == "realtime_stream_recovery_retained_facts" {
+			recovery, recoveryErr := types.ProjectEventStreamTerminalRecovery(binding, types.EventStreamTerminalRecoveryObservation{
+				TerminalCandidates: []types.TerminalOutcome{{RunID: "example-run", SessionID: sessionID, State: types.RunStateCompleted, FailureFamily: types.FailureFamilyNone, Phase: types.ExecutionPhasePostStart}},
+				RetainedToolCalls:  []types.ToolCallSummary{{CallID: "example-tool-call", Name: "realtime.example"}},
+			})
+			if recoveryErr != nil {
+				return types.ToolResult{}, recoveryErr
+			}
+			result["stream_recovery_phase"] = string(recovery.ObserverState)
+			result["stream_recovery_retained_event_total"] = len(recovery.RetainedEvents)
+			result["stream_recovery_retained_tool_call_total"] = len(recovery.RetainedToolCalls)
+			if recovery.Terminal != nil {
+				result["stream_recovery_terminal_state"] = string(recovery.Terminal.State)
+			}
+		}
 		risk = "stream_binding_" + strings.TrimPrefix(marker, "realtime_stream_binding_")
 	case "governance_realtime_gate_enforced":
 		governanceDecision = "allow"
@@ -738,6 +769,9 @@ func projectExampleBinding(marker, sessionID string) (types.EventStreamBindingPr
 		outcome.Phase = types.EventStreamBindingPhaseDisconnected
 		outcome.ReasonCode = "realtime.binding.disconnected"
 		outcome.LastSequence = 4
+	case "realtime_stream_terminal_available", "realtime_stream_recovery_retained_facts":
+		history = []types.RealtimeEventEnvelope{exampleBindingEvent("example-recovery-event", sessionID, 1)}
+		outcome.LastSequence = 1
 	}
 	return types.ProjectEventStreamBinding(subscription, outcome, history, live)
 }

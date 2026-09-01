@@ -419,6 +419,13 @@ type RunRecord struct {
 	StreamBindingReason                         string                            `json:"stream_binding_reason,omitempty"`
 	StreamBindingCursorMode                     string                            `json:"stream_binding_cursor_mode,omitempty"`
 	StreamBindingSequenceBoundary               int64                             `json:"stream_binding_sequence_boundary,omitempty"`
+	StreamRecoveryPhase                         string                            `json:"stream_recovery_phase,omitempty"`
+	StreamRecoveryReason                        string                            `json:"stream_recovery_reason,omitempty"`
+	StreamRecoveryTerminalState                 string                            `json:"stream_recovery_terminal_state,omitempty"`
+	StreamRecoveryTerminalFailureFamily         string                            `json:"stream_recovery_terminal_failure_family,omitempty"`
+	StreamRecoveryRetainedEventTotal            int                               `json:"stream_recovery_retained_event_total,omitempty"`
+	StreamRecoveryRetainedToolCallTotal         int                               `json:"stream_recovery_retained_tool_call_total,omitempty"`
+	StreamRecoveryTerminalConflictRecorded      bool                              `json:"stream_recovery_terminal_conflict_recorded,omitempty"`
 	HooksEnabled                                bool                              `json:"hooks_enabled,omitempty"`
 	HooksFailMode                               string                            `json:"hooks_fail_mode,omitempty"`
 	HooksPhases                                 []string                          `json:"hooks_phases,omitempty"`

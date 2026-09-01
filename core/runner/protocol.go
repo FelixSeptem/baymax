@@ -19,3 +19,14 @@ func RealtimeProtocolDescriptorForRuntime(runtimeID, profileVersion string, capa
 func ProjectRealtimeEventStreamBinding(subscription types.EventStreamSubscription, outcome types.EventStreamBindingOutcome, history, live []types.RealtimeEventEnvelope) (types.EventStreamBindingProjection, error) {
 	return types.ProjectEventStreamBinding(subscription, outcome, history, live)
 }
+
+// ProjectRealtimeEventStreamTerminalRecovery composes the source-owned
+// Realtime binding with the terminal recovery projection. It remains pure:
+// Realtime owns history/cursors and the caller supplies terminal facts.
+func ProjectRealtimeEventStreamTerminalRecovery(subscription types.EventStreamSubscription, outcome types.EventStreamBindingOutcome, history, live []types.RealtimeEventEnvelope, observation types.EventStreamTerminalRecoveryObservation) (types.EventStreamTerminalRecovery, error) {
+	binding, err := ProjectRealtimeEventStreamBinding(subscription, outcome, history, live)
+	if err != nil {
+		return types.EventStreamTerminalRecovery{}, err
+	}
+	return types.ProjectEventStreamTerminalRecovery(binding, observation)
+}

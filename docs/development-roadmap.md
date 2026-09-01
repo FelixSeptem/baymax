@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-08-30
+更新时间：2026-08-31
 
 ## 定位
 
@@ -30,6 +30,8 @@ Baymax 主线保持 `library-first + contract-first`：
 - `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
 - 已归档：
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`（运行失败分类与权威终态合同，proposal/design/specs/tasks 与实现已完成）
+- 进行中：
+  - `harden-runtime-event-stream-terminal-recovery-contract`（事件流与权威终态可恢复性合同，承接 durable binding 与 terminal outcome）
 - 候选：以 openspec list --json 为准（当前 P4 已完成并归档，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）

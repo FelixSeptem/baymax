@@ -2177,6 +2177,14 @@ mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: "run
 
 回放 fixture：`tool/diagnosticsreplay/testdata/terminal_outcomes.json`。专用门禁：`scripts/check-terminal-outcome-contract.sh` / `scripts/check-terminal-outcome-contract.ps1`。
 
+## Event Stream Terminal Recovery
+
+Event stream terminal recovery is an opt-in, transport-neutral projection. Realtime owns event history, accepted cursors, ordering, deduplication, retention, disconnect, and slow-consumer results; `core/types` only validates and normalizes bounded source input. Observer states are `catching_up`、`live`、`disconnected`、`stopped`、`terminal_available`、`expired`、`gap` 和 `backpressure`. Disconnect or stop never changes a Run state and never triggers retry/resume.
+
+Run diagnostics add nullable/defaultable recovery fields: `stream_recovery_phase`、`stream_recovery_reason`、`stream_recovery_terminal_state`、`stream_recovery_terminal_failure_family`、`stream_recovery_retained_event_total`、`stream_recovery_retained_tool_call_total`、`stream_recovery_terminal_conflict_recorded`。Cursor bodies and causation IDs are not OTel dimensions. Writes continue through `RuntimeRecorder`; old events omit the fields without changing query defaults.
+
+Replay fixture: `runtime_event_stream_terminal_recovery.v1`. Drift classifications: `stream_sequence_gap`、`stream_recovery_terminal_drift`、`stream_recovery_retained_facts_drift`、`stream_recovery_run_stream_parity_drift`. Dedicated gate: `scripts/check-runtime-event-stream-terminal-recovery-contract.sh` / `scripts/check-runtime-event-stream-terminal-recovery-contract.ps1`.
+
 
 
 

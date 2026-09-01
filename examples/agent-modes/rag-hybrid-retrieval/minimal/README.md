@@ -37,3 +37,4 @@ go run ./examples/agent-modes/rag-hybrid-retrieval/minimal
 - If candidate build/rerank output is empty, verify corpus inputs in `semantic_example.go` and rerun this variant.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+- Runtime source formatting baseline: `main.go` is gofmt-normalized; no behavioral change.

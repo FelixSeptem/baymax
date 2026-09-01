@@ -1,0 +1,12 @@
+{
+  "version": "runtime_event_stream_terminal_recovery.v1",
+  "ownership": "hosted",
+  "cases": [
+    {
+      "name": "hosted_event_store",
+      "run": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected"},
+      "stream": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected"},
+      "expected": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected"}
+    }
+  ]
+}

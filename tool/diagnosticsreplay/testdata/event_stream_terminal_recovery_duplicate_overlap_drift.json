@@ -1,0 +1,11 @@
+{
+  "version": "runtime_event_stream_terminal_recovery.v1",
+  "cases": [
+    {
+      "name": "duplicate_overlap",
+      "run": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 3, "deduplicated_event_total": 0},
+      "stream": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 3, "deduplicated_event_total": 0},
+      "expected": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 2, "deduplicated_event_total": 1}
+    }
+  ]
+}

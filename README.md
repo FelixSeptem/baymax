@@ -16,7 +16,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-08-30）：
+当前里程碑快照（2026-08-31）：
+- 进行中：
+  - `harden-runtime-event-stream-terminal-recovery-contract`（进行中）：事件流与权威终态可恢复性合同，收口 observer disconnect/stop、cursor catch-up/live-tail、terminal snapshot/event convergence 与 replay 一致性；不引入传输网关或第二套终态状态机。
 - 已归档：
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`：运行失败分类与权威终态合同（proposal/design/specs/tasks 与实现已完成）。
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
@@ -293,6 +295,7 @@ bash scripts/check-realtime-protocol-contract.sh
 
 ```powershell
 pwsh -File scripts/check-realtime-protocol-contract.ps1
+pwsh -File scripts/check-runtime-event-stream-terminal-recovery-contract.ps1
 ```
 
 JIT Context Organization 专项门禁：

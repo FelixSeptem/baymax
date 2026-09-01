@@ -140,6 +140,7 @@ R4 多代理共享契约前置门禁（阻断级）：
 - checkpoint history/workspace provenance 仅由 `core/types` 与 `orchestration/snapshot` 做 reference-only projection；snapshot 仍是唯一事实源，workspace/sandbox 仍拥有副作用与 policy，禁止新增第二套 store、workspace filesystem 或 control plane；
 - `observability/event.RuntimeRecorder` 继续是 diagnostics 唯一写入入口，protocol 映射只能复用标准事件路径。
 - Durable runtime event-stream binding 仅由 `core/types`/`core/runner` 做 transport-neutral source projection；Realtime 保持 cursor/history/sequence/dedup/interrupt-resume 所有权。禁止在 binding 层新增 listener、connection manager、hosted Event/Session service、external event store、global queue 或 control plane。
+- Event-stream terminal recovery 仅组合 source-owned binding、terminal outcome 与 retained facts 投影；observer disconnect/stop 不得改变 Run lifecycle 或触发 retry/resume。terminal conflict 必须经既有 arbiter 记录，禁止新增第二套 terminal state machine、binding queue、history store 或恢复 worker。
 - `ProtocolDescriptor`、bounded Session context 与 same-Session admission outcome 是 opt-in、side-effect-free projection；Runner、Composer/Workflow、Teams、Scheduler、A2A、Realtime 继续拥有授权、队列、锁、分支、取消与持久化事实。
 - capability negotiation 复用 adapter 的 required/optional、`fail_fast|best_effort` 与 reason taxonomy；descriptor 的 action availability 不等于 authorization。
 

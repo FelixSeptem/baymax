@@ -1,0 +1,11 @@
+{
+  "version": "runtime_event_stream_terminal_recovery.v1",
+  "cases": [
+    {
+      "name": "retention_expired",
+      "run": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"},
+      "stream": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"},
+      "expected": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"}
+    }
+  ]
+}

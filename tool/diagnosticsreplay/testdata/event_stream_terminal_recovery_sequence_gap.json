@@ -1,0 +1,11 @@
+{
+  "version": "runtime_event_stream_terminal_recovery.v1",
+  "cases": [
+    {
+      "name": "sequence_gap",
+      "run": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap"},
+      "stream": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap"},
+      "expected": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap"}
+    }
+  ]
+}

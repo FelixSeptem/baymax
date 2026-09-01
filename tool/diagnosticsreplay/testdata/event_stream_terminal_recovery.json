@@ -1,0 +1,78 @@
+{
+  "version": "runtime_event_stream_terminal_recovery.v1",
+  "ownership": "source_owned",
+  "cases": [
+    {
+      "name": "success_terminal_snapshot",
+      "run": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "completed", "terminal_failure_family": "none", "retained_event_total": 2, "retained_tool_call_total": 1},
+      "stream": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "completed", "terminal_failure_family": "none", "retained_event_total": 2, "retained_tool_call_total": 1},
+      "expected": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "completed", "terminal_failure_family": "none", "retained_event_total": 2, "retained_tool_call_total": 1}
+    },
+    {
+      "name": "observer_disconnect",
+      "run": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected", "retained_event_total": 1},
+      "stream": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected", "retained_event_total": 1},
+      "expected": {"observer_state": "disconnected", "recovery_reason": "realtime.binding.disconnected", "retained_event_total": 1}
+    },
+    {
+      "name": "observer_stop",
+      "run": {"observer_state": "stopped", "recovery_reason": "realtime.binding.closed", "retained_event_total": 1},
+      "stream": {"observer_state": "stopped", "recovery_reason": "realtime.binding.closed", "retained_event_total": 1},
+      "expected": {"observer_state": "stopped", "recovery_reason": "realtime.binding.closed", "retained_event_total": 1}
+    },
+    {
+      "name": "catch_up_live_handoff",
+      "run": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 3},
+      "stream": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 3},
+      "expected": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 3}
+    },
+    {
+      "name": "overlap_deduplicated",
+      "run": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 2, "deduplicated_event_total": 1},
+      "stream": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 2, "deduplicated_event_total": 1},
+      "expected": {"observer_state": "live", "recovery_reason": "realtime.binding.live", "retained_event_total": 2, "deduplicated_event_total": 1}
+    },
+    {
+      "name": "sequence_gap",
+      "run": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap", "retained_event_total": 1},
+      "stream": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap", "retained_event_total": 1},
+      "expected": {"observer_state": "gap", "recovery_reason": "stream_sequence_gap", "retained_event_total": 1}
+    },
+    {
+      "name": "retention_expired",
+      "run": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"},
+      "stream": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"},
+      "expected": {"observer_state": "expired", "recovery_reason": "realtime.cursor.expired"}
+    },
+    {
+      "name": "backpressure",
+      "run": {"observer_state": "backpressure", "recovery_reason": "realtime.binding.backpressured", "retained_event_total": 1},
+      "stream": {"observer_state": "backpressure", "recovery_reason": "realtime.binding.backpressured", "retained_event_total": 1},
+      "expected": {"observer_state": "backpressure", "recovery_reason": "realtime.binding.backpressured", "retained_event_total": 1}
+    },
+    {
+      "name": "canceled_terminal",
+      "run": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "canceled", "terminal_failure_family": "canceled", "retained_event_total": 1},
+      "stream": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "canceled", "terminal_failure_family": "canceled", "retained_event_total": 1},
+      "expected": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "canceled", "terminal_failure_family": "canceled", "retained_event_total": 1}
+    },
+    {
+      "name": "timed_out_terminal",
+      "run": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "timed_out", "retained_event_total": 1},
+      "stream": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "timed_out", "retained_event_total": 1},
+      "expected": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "timed_out", "retained_event_total": 1}
+    },
+    {
+      "name": "provider_failure_after_partial_output",
+      "run": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "retained_tool_call_total": 1},
+      "stream": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "retained_tool_call_total": 1},
+      "expected": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "retained_tool_call_total": 1}
+    },
+    {
+      "name": "late_terminal_conflict_preserves_first",
+      "run": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "terminal_conflict_recorded": true},
+      "stream": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "terminal_conflict_recorded": true},
+      "expected": {"observer_state": "terminal_available", "recovery_reason": "realtime.binding.live", "terminal_state": "failed", "terminal_failure_family": "runtime_failed", "retained_event_total": 1, "terminal_conflict_recorded": true}
+    }
+  ]
+}

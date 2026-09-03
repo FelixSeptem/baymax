@@ -350,6 +350,12 @@ if ! bash scripts/check-runtime-event-stream-terminal-recovery-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] tool lifecycle failure isolation contract"
+if ! bash scripts/check-tool-lifecycle-failure-isolation-contract.sh; then
+  echo "[quality-gate][tool-lifecycle-failure-isolation-contract] tool lifecycle failure isolation contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

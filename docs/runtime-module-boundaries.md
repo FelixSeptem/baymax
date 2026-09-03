@@ -81,6 +81,7 @@
 - `core/runner` / `tool/local` / `skill/loader`
   - 消费全局 runtime 配置快照
   - 产出标准运行时事件（不直接写诊断存储）
+  - `tool/local` 负责工具调用实际执行；工具生命周期合同仅对其既有 lookup/validation/policy/sandbox/middleware/retry/panic/finalize 边界做 transport-neutral 投影，不拥有第二套 Tool 状态机或 hosted executor
 - `observability/event`
   - 事件日志与分发
   - `RuntimeRecorder` 作为诊断唯一写入入口，将事件映射为统一诊断记录

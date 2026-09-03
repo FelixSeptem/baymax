@@ -572,6 +572,70 @@ func TestRunAndStreamToolCallLimitFailFast(t *testing.T) {
 	}
 }
 
+func TestRunAndStreamToolLifecycleDiagnosticsEquivalent(t *testing.T) {
+	newManager := func(t *testing.T, prefix string) *runtimeconfig.Manager {
+		t.Helper()
+		mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: prefix})
+		if err != nil {
+			t.Fatalf("NewManager() error = %v", err)
+		}
+		t.Cleanup(func() { _ = mgr.Close() })
+		return mgr
+	}
+	newRegistry := func(t *testing.T) *local.Registry {
+		t.Helper()
+		reg := local.NewRegistry()
+		if _, err := reg.Register(&fakeTool{name: "echo", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{Content: "tool-ok"}, nil
+		}}); err != nil {
+			t.Fatalf("register tool: %v", err)
+		}
+		return reg
+	}
+	runMgr := newManager(t, "BAYMAX_RUN_TOOL_LIFECYCLE_TEST")
+	streamMgr := newManager(t, "BAYMAX_STREAM_TOOL_LIFECYCLE_TEST")
+	runTurns := 0
+	runEngine := New(&fakeModel{generate: func(_ context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+		runTurns++
+		if runTurns == 1 {
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "run-tool", Name: "local.echo"}}}, nil
+		}
+		if len(req.ToolResult) != 1 || req.ToolResult[0].Result.Content != "tool-ok" {
+			return types.ModelResponse{}, fmt.Errorf("run tool feedback mismatch: %#v", req.ToolResult)
+		}
+		return types.ModelResponse{FinalAnswer: "done"}, nil
+	}}, WithLocalRegistry(newRegistry(t)), WithRuntimeManager(runMgr))
+	streamTurns := 0
+	streamEngine := New(&fakeModel{stream: func(_ context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+		streamTurns++
+		if streamTurns == 1 {
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{CallID: "stream-tool", Name: "local.echo"}})
+		}
+		if len(req.ToolResult) != 1 || req.ToolResult[0].Result.Content != "tool-ok" {
+			return fmt.Errorf("stream tool feedback mismatch: %#v", req.ToolResult)
+		}
+		return onEvent(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "done"})
+	}}, WithLocalRegistry(newRegistry(t)), WithRuntimeManager(streamMgr))
+	runResult, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-lifecycle", Input: "x"}, nil)
+	streamResult, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "stream-lifecycle", Input: "x"}, nil)
+	if runErr != nil || streamErr != nil {
+		t.Fatalf("Run/Stream errors = %v/%v", runErr, streamErr)
+	}
+	if runResult.FinalAnswer != streamResult.FinalAnswer || runResult.FinalAnswer != "done" {
+		t.Fatalf("Run/Stream final answers = %q/%q", runResult.FinalAnswer, streamResult.FinalAnswer)
+	}
+	runCalls := runMgr.RecentCalls(1)
+	streamCalls := streamMgr.RecentCalls(1)
+	if len(runCalls) != 1 || len(streamCalls) != 1 {
+		t.Fatalf("Run/Stream lifecycle call counts = %d/%d", len(runCalls), len(streamCalls))
+	}
+	for name, record := range map[string]runtimediag.CallRecord{"run": runCalls[0], "stream": streamCalls[0]} {
+		if record.LifecycleStage != "finalize" || record.FailureOrigin != "unknown" || !record.Finalized || !record.ExecutionStarted || record.AttemptCount != 1 {
+			t.Fatalf("%s lifecycle diagnostics = %#v", name, record)
+		}
+	}
+}
+
 func TestRunToolLoopSuccess(t *testing.T) {
 	reg := local.NewRegistry()
 	_, err := reg.Register(&fakeTool{
@@ -2234,6 +2298,9 @@ security:
 	}
 	if runFinished.Payload["reason_code"] != "security.permission_denied" || streamFinished.Payload["reason_code"] != "security.permission_denied" {
 		t.Fatalf("reason code mismatch run=%#v stream=%#v", runFinished.Payload["reason_code"], streamFinished.Payload["reason_code"])
+	}
+	if calls := mgr.RecentCalls(10); len(calls) != 0 {
+		t.Fatalf("policy-denied calls must not bypass ownership into tool lifecycle diagnostics: %#v", calls)
 	}
 }
 

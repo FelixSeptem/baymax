@@ -112,6 +112,24 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 				timeline.Time,
 			)
 		}
+	case types.EventTypeToolLifecycleFinalized:
+		r.manager.RecordCall(runtimediag.CallRecord{
+			Time:             ev.Time,
+			Component:        "tool",
+			Transport:        payloadString(payload, "transport"),
+			RunID:            ev.RunID,
+			CallID:           payloadString(payload, "call_id"),
+			Name:             payloadString(payload, "tool_name"),
+			Action:           "invoke",
+			LatencyMs:        payloadInt64(payload, "latency_ms"),
+			RetryCount:       payloadInt(payload, "retry_count"),
+			ErrorClass:       payloadString(payload, "error_class"),
+			LifecycleStage:   payloadString(payload, "lifecycle_stage"),
+			FailureOrigin:    payloadString(payload, "failure_origin"),
+			ExecutionStarted: payloadBool(payload, "execution_started"),
+			Finalized:        payloadBool(payload, "finalized"),
+			AttemptCount:     payloadInt(payload, "attempt_count"),
+		})
 	case "run.finished":
 		errorClass := payloadString(payload, "error_class")
 		status := payloadString(payload, "status")

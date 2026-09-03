@@ -82,6 +82,16 @@ func TestAgentModeP1RegressionPaths(t *testing.T) {
 				"verification.semantic.marker.governance_workflow_gate_enforced=ok",
 			},
 		},
+		{
+			name: "tool-lifecycle-finalize-minimal",
+			mode: "hooks-middleware-extension-pipeline/minimal",
+			must: []string{
+				"result.final_answer=hooks-middleware-extension-pipeline/minimal",
+				"lifecycle=finalize",
+				"lifecycle_finalized=true",
+				"lifecycle_call_order_stable=true",
+			},
+		},
 	}
 
 	for _, tc := range cases {

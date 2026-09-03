@@ -53,6 +53,33 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderRecordsToolLifecycleCallAdditively(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_TOOL_LIFECYCLE_TEST"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer func() { _ = mgr.Close() }()
+	recorder := NewRuntimeRecorder(mgr)
+	recorder.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    types.EventTypeToolLifecycleFinalized,
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"call_id": "call-1", "tool_name": "local.echo", "latency_ms": 12,
+			"lifecycle_stage": "finalize", "failure_origin": "retry_exhausted",
+			"execution_started": true, "finalized": true, "attempt_count": 3,
+		},
+	})
+	calls := mgr.RecentCalls(1)
+	if len(calls) != 1 {
+		t.Fatalf("call records = %d, want 1", len(calls))
+	}
+	got := calls[0]
+	if got.CallID != "call-1" || got.Name != "local.echo" || got.LifecycleStage != "finalize" || got.FailureOrigin != "retry_exhausted" || !got.ExecutionStarted || !got.Finalized || got.AttemptCount != 3 {
+		t.Fatalf("lifecycle call record = %#v", got)
+	}
+}
+
 func TestRuntimeRecorderRecordsRunFinishedAndDedup(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

@@ -30,8 +30,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
 - 已归档：
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`（运行失败分类与权威终态合同，proposal/design/specs/tasks 与实现已完成）
-- 进行中：
-  - `harden-runtime-event-stream-terminal-recovery-contract`（事件流与权威终态可恢复性合同，承接 durable binding 与 terminal outcome）
+- 进行中：无（以 `openspec list --json` 为准）
 - 候选：以 openspec list --json 为准（当前 P4 已完成并归档，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）
@@ -684,6 +683,7 @@ Why now：
    - **复用与边界**：复用 `tool/local`、`ToolMiddleware`、policy precedence、sandbox egress 和 `RuntimeRecorder`；不新增第二套 Tool/MCP 模型。
    - **启动信号**：工具错误无法回填、并行结果顺序漂移、middleware 绕过安全链路或异常路径未 finalize。
    - **Example Impact Assessment（未来提案必填）**：`修改示例`，在 `02-tool-loop-basic` 或 agent mode 工具示例中增加拒绝、panic、超时和并行排序断言。
+   - **当前状态（2026-09-03）**：OpenSpec 任务与质量门禁已完成，change 为 `harden-tool-lifecycle-and-failure-isolation-contract`，当前等待归档；阶段投影、dispatcher 接线、diagnostics/replay 与 gate 已收口。
 
 4. **上下文压缩运行交接单合同（P1/P2）**
    - **目标**：确认压缩产物在受限 token 预算下仍保留任务目标、已完成/未完成事项、失败尝试、文件变更、工具结果、策略状态和可恢复引用。

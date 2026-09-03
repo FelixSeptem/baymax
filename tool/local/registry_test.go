@@ -412,6 +412,97 @@ runtime:
 	}
 }
 
+func TestDispatcherProjectsToolLifecycleForSuccessValidationAndPanic(t *testing.T) {
+	registry := NewRegistry()
+	if _, err := registry.Register(&fakeTool{name: "echo", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Content: "ok"}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Register(&fakeTool{name: "panic", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+		panic("boom")
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := NewDispatcher(registry)
+	outcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{
+		{CallID: "success", Name: "local.echo"},
+		{CallID: "missing", Name: "local.unknown"},
+		{CallID: "panic", Name: "local.panic"},
+	}, DispatchConfig{Concurrency: 1})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if len(outcomes) != 3 {
+		t.Fatalf("outcomes = %d, want 3", len(outcomes))
+	}
+	if outcomes[0].Lifecycle == nil || len(outcomes[0].Lifecycle.Stages) != 5 || outcomes[0].Lifecycle.FailureOrigin != types.ToolFailureOriginUnknown {
+		t.Fatalf("success lifecycle = %#v", outcomes[0].Lifecycle)
+	}
+	if outcomes[1].Lifecycle == nil || outcomes[1].Lifecycle.FailureOrigin != types.ToolFailureOriginLookup {
+		t.Fatalf("lookup lifecycle = %#v", outcomes[1].Lifecycle)
+	}
+	if outcomes[2].Lifecycle == nil || outcomes[2].Lifecycle.FailureOrigin != types.ToolFailureOriginPanic || !outcomes[2].Lifecycle.ExecutionStarted {
+		t.Fatalf("panic lifecycle = %#v", outcomes[2].Lifecycle)
+	}
+}
+
+func TestDispatcherLifecycleRecordsRetryExhaustionAndPreStartCancellation(t *testing.T) {
+	registry := NewRegistry()
+	if _, err := registry.Register(&fakeTool{name: "retry", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{Error: &types.ClassifiedError{Class: types.ErrTool, Message: "retry me", Retryable: true}}, errors.New("retry me")
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := NewDispatcher(registry)
+	retryOutcomes, err := dispatcher.Dispatch(context.Background(), []types.ToolCall{{CallID: "retry", Name: "local.retry"}}, DispatchConfig{Concurrency: 1, Retry: 2, FailFast: false})
+	if err != nil {
+		t.Fatalf("retry Dispatch() error = %v", err)
+	}
+	if got := retryOutcomes[0].Lifecycle; got == nil || got.FailureOrigin != types.ToolFailureOriginRetryExhausted || got.AttemptCount != 3 || !got.ExecutionStarted || !got.Finalized {
+		t.Fatalf("retry lifecycle = %#v, want exhausted three-attempt finalized lifecycle", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledOutcomes, err := dispatcher.Dispatch(ctx, []types.ToolCall{{CallID: "cancel", Name: "local.retry"}}, DispatchConfig{Concurrency: 1, FailFast: false})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Dispatch() error = %v, want context.Canceled", err)
+	}
+	if got := canceledOutcomes[0].Lifecycle; got == nil || got.FailureOrigin != types.ToolFailureOriginCanceled || got.ExecutionStarted || !got.Finalized {
+		t.Fatalf("cancel lifecycle = %#v, want pre-start canceled finalized lifecycle", got)
+	}
+}
+
+func TestDispatcherLifecycleParallelResultsKeepInputIndexesForDuplicateIDs(t *testing.T) {
+	registry := NewRegistry()
+	if _, err := registry.Register(&fakeTool{name: "slow", invoke: func(_ context.Context, args map[string]any) (types.ToolResult, error) {
+		if args["delay"] == "slow" {
+			time.Sleep(20 * time.Millisecond)
+		}
+		return types.ToolResult{Content: fmt.Sprint(args["value"])}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := NewDispatcher(registry)
+	calls := []types.ToolCall{
+		{CallID: "duplicate", Name: "local.slow", Args: map[string]any{"delay": "slow", "value": "first"}},
+		{CallID: "duplicate", Name: "local.slow", Args: map[string]any{"value": "second"}},
+	}
+	outcomes, err := dispatcher.Dispatch(context.Background(), calls, DispatchConfig{Concurrency: 2, FailFast: false})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if len(outcomes) != len(calls) || outcomes[0].Result.Content != "first" || outcomes[1].Result.Content != "second" {
+		t.Fatalf("outcomes = %#v, want original input order", outcomes)
+	}
+	for i := range outcomes {
+		if outcomes[i].CallID != "duplicate" || outcomes[i].Lifecycle == nil || outcomes[i].Lifecycle.InputIndex != i {
+			t.Fatalf("outcome[%d] = %#v, want deterministic duplicate-id projection", i, outcomes[i])
+		}
+	}
+}
+
 func TestDispatcherRecordsDiagnosticsWithRuntimeManager(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
 	cfg := `

@@ -299,6 +299,9 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Event Stream Terminal Recovery Projection | `core/types/event_stream_terminal_recovery_test.go`、`core/runner/event_stream_terminal_recovery_test.go` | `integration/event_stream_terminal_recovery_contract_test.go` |
 | Event Stream Terminal Recovery Replay Fixture | `tool/diagnosticsreplay/event_stream_terminal_recovery_test.go` | `tool/diagnosticsreplay/testdata/event_stream_terminal_recovery.json` |
 | Event Stream Terminal Recovery Contract Gate | `scripts/check-runtime-event-stream-terminal-recovery-contract.sh` | `scripts/check-runtime-event-stream-terminal-recovery-contract.ps1` |
+| Tool Lifecycle Projection and Failure Isolation | `core/types/tool_lifecycle_test.go`、`tool/local/registry_test.go::TestDispatcherProjectsToolLifecycleForSuccessValidationAndPanic` | `tool/local/registry_test.go` 中 panic/timeout/retry/sandbox/middleware suites |
+| Tool Lifecycle Replay Fixture | `tool/diagnosticsreplay/tool_lifecycle_test.go::TestParseToolLifecycleReplayJSONNormalizesStagesAndOrder` | `tool/diagnosticsreplay/tool_lifecycle_test.go::TestParseToolLifecycleReplayJSONRejectsStageDrift` |
+| Tool Lifecycle Failure Isolation Contract Gate | `scripts/check-tool-lifecycle-failure-isolation-contract.sh` | `scripts/check-tool-lifecycle-failure-isolation-contract.ps1` |
 | Pre-1 Governance Docs Consistency| `tool/contributioncheck/governance_docs_test.go::TestPre1GovernanceDocsConsistency` | `tool/contributioncheck/governance_docs_test.go::TestValidatePre1GovernanceDocsDetectsStageConflict` |
 | Pre-1 Governance Gate Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | Pre-1 Governance Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

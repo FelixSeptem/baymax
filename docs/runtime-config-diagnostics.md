@@ -2185,6 +2185,12 @@ Run diagnostics add nullable/defaultable recovery fields: `stream_recovery_phase
 
 Replay fixture: `runtime_event_stream_terminal_recovery.v1`. Drift classifications: `stream_sequence_gap`、`stream_recovery_terminal_drift`、`stream_recovery_retained_facts_drift`、`stream_recovery_run_stream_parity_drift`. Dedicated gate: `scripts/check-runtime-event-stream-terminal-recovery-contract.sh` / `scripts/check-runtime-event-stream-terminal-recovery-contract.ps1`.
 
+## Tool Lifecycle and Failure Isolation
+
+工具生命周期合同复用 `tool/local.Dispatcher`、policy/sandbox、ToolMiddleware、既有 failure taxonomy 与 terminal outcome owner，仅投影 `prepare -> validate -> authorize -> execute -> finalize`。每个调用保留 `call_id`、原始输入顺序、是否已执行、失败来源和 finalize 状态；拒绝、panic、timeout、cancel、retry exhaustion 与执行错误保持可区分，不引入第二套 Tool/MCP 或终态状态机。
+
+CallRecord 新增且保持 `additive + nullable + default` 的字段：`lifecycle_stage`、`failure_origin`、`execution_started`、`finalized`、`attempt_count`。回放 fixture 为 `tool_lifecycle_failure_isolation.v1`；专用门禁为 `scripts/check-tool-lifecycle-failure-isolation-contract.sh` / `scripts/check-tool-lifecycle-failure-isolation-contract.ps1`，并接入 `check-quality-gate.*`。
+
 
 
 

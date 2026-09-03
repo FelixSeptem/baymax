@@ -18,11 +18,13 @@ go run ./examples/agent-modes/hooks-middleware-extension-pipeline/production-ish
 
 ## Real Runtime Path
 - Semantic anchor: `middleware.onion_bubble_passthrough`.
+- Tool lifecycle anchor: `tool.lifecycle_failure_isolation`.
 - Classification: `hooks.middleware_pipeline`.
 - Runtime path evidence: `core/runner,tool/local,runtime/config`.
 - Semantic flow:
   - minimal 的 3 步 middleware 链路；
   - 追加 `governance_hooks_gate_enforced` 与 `governance_hooks_replay_bound` 两步治理链路。
+  - 生命周期投影覆盖 deny、panic/timeout finalize、partial facts 与 parallel `call_id` ordering，门禁绑定 `tool_lifecycle_failure_isolation.v1`。
 - Related contracts: `agent-lifecycle-hooks-and-tool-middleware-contract`.
 - Required gates: `check-hooks-middleware-contract.*`.
 - Replay fixtures: `hooks_middleware.v1`.
@@ -43,5 +45,6 @@ go run ./examples/agent-modes/hooks-middleware-extension-pipeline/production-ish
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If governance result is unexpected,检查 `bubble_severity`/`retryable` 与 gate 决策是否一致。
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
+- Tool lifecycle contract verification: `pwsh -File scripts/check-tool-lifecycle-failure-isolation-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

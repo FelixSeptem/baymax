@@ -18,18 +18,23 @@ import (
 )
 
 type CallRecord struct {
-	Time           time.Time `json:"time"`
-	Component      string    `json:"component"`
-	Transport      string    `json:"transport,omitempty"`
-	Profile        string    `json:"profile,omitempty"`
-	RunID          string    `json:"run_id,omitempty"`
-	CallID         string    `json:"call_id,omitempty"`
-	Name           string    `json:"name,omitempty"`
-	Action         string    `json:"action,omitempty"`
-	LatencyMs      int64     `json:"latency_ms"`
-	RetryCount     int       `json:"retry_count"`
-	ReconnectCount int       `json:"reconnect_count"`
-	ErrorClass     string    `json:"error_class,omitempty"`
+	Time             time.Time `json:"time"`
+	Component        string    `json:"component"`
+	Transport        string    `json:"transport,omitempty"`
+	Profile          string    `json:"profile,omitempty"`
+	RunID            string    `json:"run_id,omitempty"`
+	CallID           string    `json:"call_id,omitempty"`
+	Name             string    `json:"name,omitempty"`
+	Action           string    `json:"action,omitempty"`
+	LatencyMs        int64     `json:"latency_ms"`
+	RetryCount       int       `json:"retry_count"`
+	ReconnectCount   int       `json:"reconnect_count"`
+	ErrorClass       string    `json:"error_class,omitempty"`
+	LifecycleStage   string    `json:"lifecycle_stage,omitempty"`
+	FailureOrigin    string    `json:"failure_origin,omitempty"`
+	ExecutionStarted bool      `json:"execution_started,omitempty"`
+	Finalized        bool      `json:"finalized,omitempty"`
+	AttemptCount     int       `json:"attempt_count,omitempty"`
 }
 
 type RuntimePolicyDecisionPathEntry struct {

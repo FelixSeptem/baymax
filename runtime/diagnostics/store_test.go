@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -10,6 +11,29 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+func TestCallRecordToolLifecycleFieldsAreAdditiveAndBackwardCompatible(t *testing.T) {
+	legacy := []byte(`{"time":"2026-09-02T00:00:00Z","component":"tool","call_id":"old","name":"local.echo","latency_ms":1,"retry_count":0}`)
+	var oldRecord CallRecord
+	if err := json.Unmarshal(legacy, &oldRecord); err != nil {
+		t.Fatalf("unmarshal legacy call record: %v", err)
+	}
+	if oldRecord.LifecycleStage != "" || oldRecord.FailureOrigin != "" || oldRecord.ExecutionStarted || oldRecord.Finalized || oldRecord.AttemptCount != 0 {
+		t.Fatalf("legacy defaults = %#v", oldRecord)
+	}
+	record := CallRecord{Component: "tool", CallID: "new", Name: "local.echo", LifecycleStage: "finalize", FailureOrigin: "panic", ExecutionStarted: true, Finalized: true, AttemptCount: 1}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal lifecycle call record: %v", err)
+	}
+	var decoded CallRecord
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal lifecycle call record: %v", err)
+	}
+	if decoded.LifecycleStage != "finalize" || decoded.FailureOrigin != "panic" || !decoded.ExecutionStarted || !decoded.Finalized || decoded.AttemptCount != 1 {
+		t.Fatalf("lifecycle round trip = %#v", decoded)
+	}
+}
 
 func TestStoreQueryRunsFastTimeSortedLockedMatchesPublicSemantics(t *testing.T) {
 	d := NewStore(16, 16, 8, 20, TimelineTrendConfig{}, ContextStage2ExternalTrendConfig{})

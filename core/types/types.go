@@ -758,9 +758,10 @@ type ToolCall struct {
 }
 
 type ToolCallOutcome struct {
-	CallID string     `json:"call_id"`
-	Name   string     `json:"name"`
-	Result ToolResult `json:"result"`
+	CallID    string                   `json:"call_id"`
+	Name      string                   `json:"name"`
+	Result    ToolResult               `json:"result"`
+	Lifecycle *ToolLifecycleProjection `json:"lifecycle,omitempty"`
 }
 
 type ToolCallSummary struct {
@@ -834,6 +835,10 @@ type SkillBundle struct {
 const EventSchemaVersionV1 = "v1"
 
 const EventTypeActionTimeline = "action.timeline"
+
+// EventTypeToolLifecycleFinalized carries the bounded, additive diagnostics
+// projection for one source-owned tool invocation.
+const EventTypeToolLifecycleFinalized = "tool.lifecycle.finalized"
 
 type ActionPhase string
 

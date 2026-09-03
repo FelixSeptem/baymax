@@ -13,9 +13,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
-	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -156,6 +154,7 @@ type dropLowPriorityClassifier struct {
 type Dispatcher struct {
 	registry    *Registry
 	runtimeMgr  *runtimeconfig.Manager
+	recorder    types.EventHandler
 	middlewares []types.ToolMiddleware
 }
 
@@ -164,16 +163,6 @@ func NewDispatcher(registry *Registry) *Dispatcher {
 		registry = NewRegistry()
 	}
 	return &Dispatcher{registry: registry}
-}
-
-func NewDispatcherWithRuntimeManager(registry *Registry, mgr *runtimeconfig.Manager) *Dispatcher {
-	d := NewDispatcher(registry)
-	d.runtimeMgr = mgr
-	return d
-}
-
-func (d *Dispatcher) SetRuntimeManager(mgr *runtimeconfig.Manager) {
-	d.runtimeMgr = mgr
 }
 
 func (d *Dispatcher) SetMiddlewares(middlewares ...types.ToolMiddleware) {
@@ -216,11 +205,32 @@ func (d *Dispatcher) Dispatch(ctx context.Context, calls []types.ToolCall, cfg D
 	readIdx := make([]int, 0, len(calls))
 	writeIdx := make([]int, 0, len(calls))
 	outcomes := make([]types.ToolCallOutcome, len(calls))
+	defer func() {
+		for i := range outcomes {
+			if outcomes[i].Lifecycle == nil {
+				origin := classifyLifecycleFailure(nil, outcomes[i].Result.Error)
+				if outcomes[i].Result.Error == nil {
+					origin = types.ToolFailureOriginUnknown
+				}
+				attachLifecycle(calls[i], &outcomes[i], i, origin, false)
+			} else if outcomes[i].Lifecycle.InputIndex < 0 {
+				outcomes[i].Lifecycle.InputIndex = i
+			}
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		for i, call := range calls {
+			outcomes[i] = failedOutcome(call, types.ErrTool, err.Error(), false, nil)
+			attachLifecycle(call, &outcomes[i], i, classifyLifecycleFailure(err, outcomes[i].Result.Error), false)
+		}
+		return outcomes, err
+	}
 
 	for i, call := range calls {
 		tool, ok := d.registry.Get(call.Name)
 		if !ok {
 			outcomes[i] = failedOutcome(call, types.ErrTool, fmt.Sprintf("tool %q not found", call.Name), false, map[string]any{"name": call.Name})
+			attachLifecycle(call, &outcomes[i], i, types.ToolFailureOriginLookup, false)
 			if cfg.FailFast {
 				return outcomes[:i+1], errors.New(outcomes[i].Result.Error.Message)
 			}
@@ -541,18 +551,21 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 	tool, ok := d.registry.Get(call.Name)
 	if !ok {
 		outcomes[i] = failedOutcome(call, types.ErrTool, fmt.Sprintf("tool %q not found", call.Name), false, map[string]any{"name": call.Name})
-		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		attachLifecycle(call, &outcomes[i], i, types.ToolFailureOriginLookup, false)
+		d.recordToolDiag(call, start, outcomes[i].Result.Error, outcomes[i].Lifecycle)
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
 	if err := ValidateArgs(tool.JSONSchema(), call.Args); err != nil {
 		outcomes[i] = failedOutcome(call, types.ErrTool, "input validation failed", false, map[string]any{"validation": err.Error()})
-		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		attachLifecycle(call, &outcomes[i], i, types.ToolFailureOriginValidation, false)
+		d.recordToolDiag(call, start, outcomes[i].Result.Error, outcomes[i].Lifecycle)
 		return errors.New(outcomes[i].Result.Error.Message)
 	}
 
 	hostMarker := sandboxHostMarker{}
 	if handled, err := d.trySandboxInvoke(ctx, tool, call, outcomes, i, &hostMarker); handled {
-		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		attachLifecycle(call, &outcomes[i], i, classifyLifecycleFailure(err, outcomes[i].Result.Error), true)
+		d.recordToolDiag(call, start, outcomes[i].Result.Error, outcomes[i].Lifecycle)
 		return err
 	}
 
@@ -586,11 +599,20 @@ func (d *Dispatcher) invokeOne(ctx context.Context, call types.ToolCall, outcome
 		if outcomes[i].Result.Error != nil {
 			outcomes[i].Result.Error.Details = mergeDetails(outcomes[i].Result.Error.Details, map[string]any{"retry_count": retryCount})
 		}
-		d.recordToolDiag(call, start, outcomes[i].Result.Error)
+		attachLifecycle(call, &outcomes[i], i, classifyLifecycleFailure(nil, outcomes[i].Result.Error), true)
+		if outcomes[i].Lifecycle != nil {
+			outcomes[i].Lifecycle.AttemptCount = retryCount + 1
+		}
+		d.recordToolDiag(call, start, outcomes[i].Result.Error, outcomes[i].Lifecycle)
 		return nil
 	}
 	outcomes[i] = failedOutcome(call, types.ErrTool, err.Error(), false, toolFailureDetails(err, retryCount))
-	d.recordToolDiag(call, start, outcomes[i].Result.Error)
+	origin := classifyLifecycleFailure(err, outcomes[i].Result.Error)
+	if origin == types.ToolFailureOriginExecution && retryCount > 0 {
+		origin = types.ToolFailureOriginRetryExhausted
+	}
+	attachLifecycle(call, &outcomes[i], i, origin, true)
+	d.recordToolDiag(call, start, outcomes[i].Result.Error, outcomes[i].Lifecycle)
 	return err
 }
 
@@ -1242,38 +1264,4 @@ func sandboxNamespaceToolKey(toolName string) (string, bool) {
 		return "", false
 	}
 	return namespace + "+" + tool, true
-}
-
-func oteltraceAttrs(name string) []attribute.KeyValue {
-	return []attribute.KeyValue{attribute.String("tool.name", name)}
-}
-
-func failedOutcome(call types.ToolCall, class types.ErrorClass, message string, retryable bool, details map[string]any) types.ToolCallOutcome {
-	return types.ToolCallOutcome{
-		CallID: call.CallID,
-		Name:   call.Name,
-		Result: types.ToolResult{
-			Error: &types.ClassifiedError{Class: class, Message: message, Retryable: retryable, Details: details},
-		},
-	}
-}
-
-func (d *Dispatcher) recordToolDiag(call types.ToolCall, start time.Time, classifiedErr *types.ClassifiedError) {
-	if d.runtimeMgr == nil {
-		return
-	}
-	errorClass := ""
-	if classifiedErr != nil {
-		errorClass = string(classifiedErr.Class)
-	}
-	d.runtimeMgr.RecordCall(runtimediag.CallRecord{
-		Time:       time.Now(),
-		Component:  "tool",
-		Transport:  "local",
-		CallID:     call.CallID,
-		Name:       call.Name,
-		Action:     "invoke",
-		LatencyMs:  time.Since(start).Milliseconds(),
-		ErrorClass: errorClass,
-	})
 }

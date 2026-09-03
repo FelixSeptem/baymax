@@ -30,19 +30,21 @@ type middlewareStep struct {
 }
 
 type middlewareState struct {
-	PipelineID         string
-	OnionOrder         string
-	MiddlewareDepth    int
-	BubbleCode         string
-	BubbleSeverity     string
-	Retryable          bool
-	ExtensionFields    []string
-	PassthroughOK      bool
-	GovernanceDecision string
-	GovernanceTicket   string
-	ReplaySignature    string
-	SeenMarkers        []string
-	TotalScore         int
+	PipelineID               string
+	OnionOrder               string
+	MiddlewareDepth          int
+	BubbleCode               string
+	BubbleSeverity           string
+	Retryable                bool
+	ExtensionFields          []string
+	PassthroughOK            bool
+	GovernanceDecision       string
+	GovernanceTicket         string
+	ReplaySignature          string
+	SeenMarkers              []string
+	TotalScore               int
+	LifecycleFinalized       bool
+	LifecycleCallOrderStable bool
 }
 
 var runtimeDomains = []string{"core/runner", "tool/local"}
@@ -202,7 +204,7 @@ func (m *middlewarePipelineModel) Generate(ctx context.Context, req types.ModelR
 	governanceOn := strings.TrimSpace(m.state.GovernanceDecision) != ""
 
 	final := fmt.Sprintf(
-		"%s/%s semantic_path_completed phase=%s anchor=%s classification=%s onion=%s depth=%d bubble=%s severity=%s retryable=%t extension=%s passthrough=%t governance=%s ticket=%s replay=%s score=%d markers=%s",
+		"%s/%s semantic_path_completed phase=%s anchor=%s classification=%s onion=%s depth=%d bubble=%s severity=%s retryable=%t extension=%s passthrough=%t governance=%s ticket=%s replay=%s lifecycle=finalize lifecycle_finalized=%t lifecycle_call_order_stable=%t score=%d markers=%s",
 		patternName,
 		m.variant,
 		phase,
@@ -218,6 +220,8 @@ func (m *middlewarePipelineModel) Generate(ctx context.Context, req types.ModelR
 		normalizedValue(m.state.GovernanceDecision, governanceOn),
 		normalizedValue(m.state.GovernanceTicket, governanceOn),
 		normalizedValue(m.state.ReplaySignature, governanceOn),
+		m.state.LifecycleFinalized,
+		m.state.LifecycleCallOrderStable,
 		m.state.TotalScore,
 		strings.Join(markers, ","),
 	)
@@ -236,6 +240,10 @@ func (m *middlewarePipelineModel) capture(outcomes []types.ToolCallOutcome) {
 		marker, _ := item.Result.Structured["marker"].(string)
 		if marker != "" {
 			m.state.SeenMarkers = append(m.state.SeenMarkers, marker)
+		}
+		if item.Lifecycle != nil {
+			m.state.LifecycleFinalized = item.Lifecycle.Finalized && len(item.Lifecycle.Stages) == 5
+			m.state.LifecycleCallOrderStable = item.Lifecycle.InputIndex >= 0
 		}
 		if onion, _ := item.Result.Structured["onion_order"].(string); strings.TrimSpace(onion) != "" {
 			m.state.OnionOrder = strings.TrimSpace(onion)

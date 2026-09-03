@@ -741,6 +741,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-runtime-event-stream-terminal-recovery-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] tool lifecycle failure isolation contract"
+        Command   = { pwsh -File scripts/check-tool-lifecycle-failure-isolation-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] adapter scaffold drift"
         Command   = { pwsh -File scripts/check-adapter-scaffold-drift.ps1 }
     }

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-08-31
+更新时间：2026-09-03
 
 ## 定位
 
@@ -15,7 +15,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-08-30：
+截至 2026-09-03：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
@@ -30,8 +30,11 @@ Baymax 主线保持 `library-first + contract-first`：
 - `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history 与 workspace provenance contract
 - 已归档：
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`（运行失败分类与权威终态合同，proposal/design/specs/tasks 与实现已完成）
-- 进行中：无（以 `openspec list --json` 为准）
-- 候选：以 openspec list --json 为准（当前 P4 已完成并归档，后续方向另立提案）。
+- 已归档：
+  - `harden-tool-lifecycle-and-failure-isolation-contract`（工具调用生命周期阶段投影、失败隔离与 finalize 幂等合同）
+- 最近归档：
+  - `establish-session-history-checkpoint-replay-contract`（P2 会话历史、Checkpoint 与回放边界合同；已完成实施并归档）
+- 候选：以 openspec list --json 为准（当前无活跃提案，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）
 

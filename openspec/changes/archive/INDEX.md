@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-03 21:21:55
+Updated: 2026-09-04 21:05:51
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -131,3 +131,4 @@ Updated: 2026-09-03 21:21:55
 - 127 -> standardize-runtime-failure-taxonomy-and-terminal-outcome-contract
 - 128 -> harden-runtime-event-stream-terminal-recovery-contract
 - 129 -> harden-tool-lifecycle-and-failure-isolation-contract
+- 130 -> establish-session-history-checkpoint-replay-contract

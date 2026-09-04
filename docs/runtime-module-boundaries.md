@@ -161,3 +161,6 @@ R4 多代理共享契约前置门禁（阻断级）：
   - `model/*` 负责 provider 协议细节与官方 SDK 调用（包括 token count、能力探测、流式映射）。
 - 禁止在 `context/*` 中直接引入 provider 官方 SDK（OpenAI/Anthropic/Gemini），避免跨层耦合与升级扩散。
 - 任何新增 provider 级能力（例如 token count、模型元数据查询）应先落在 `model/<provider>`，再由上层通过接口复用。
+## Session history and replay boundary
+
+Session message history remains source-owned by the embedding host/session adapter. `core/types` provides bounded reference validation; `orchestration/snapshot` validates history/checkpoint context before source-owned restore; `tool/diagnosticsreplay` performs offline read-only normalization. No runtime package introduces a session database, hosted gateway, provider SDK dependency, artifact content service, or second state fact source.

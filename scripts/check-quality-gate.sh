@@ -356,6 +356,12 @@ if ! bash scripts/check-tool-lifecycle-failure-isolation-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] session history checkpoint replay contract"
+if ! bash scripts/check-session-history-checkpoint-replay-contract.sh; then
+  echo "[quality-gate][session-history-checkpoint-replay-contract] session history checkpoint replay contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

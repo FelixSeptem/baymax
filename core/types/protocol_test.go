@@ -88,6 +88,30 @@ func TestCheckpointHistoryAndWorkspaceProvenanceValidation(t *testing.T) {
 	}
 }
 
+func TestCheckpointHistoryLeafAssociationAndBranchRunValidation(t *testing.T) {
+	ref := CheckpointRef{
+		CheckpointID:       "checkpoint-branch",
+		SchemaVersion:      "state_session_snapshot.v1",
+		SourceComponent:    "composer",
+		Digest:             "digest-branch",
+		RunID:              "run-branch",
+		SessionID:          "session-1",
+		Relation:           CheckpointRelationBranch,
+		ParentCheckpointID: "checkpoint-root",
+		BranchID:           "branch-1",
+		HistoryRootID:      "entry-0",
+		HistoryLeafID:      "entry-1",
+		HistoryDigest:      "history-digest",
+	}
+	if err := ref.ValidateProtocolReference(); err != nil {
+		t.Fatalf("branch checkpoint with history association should validate: %v", err)
+	}
+	ref.HistoryLeafID = ""
+	if err := ref.ValidateProtocolReference(); err == nil || !strings.Contains(err.Error(), "history_leaf_id") {
+		t.Fatalf("branch checkpoint without history leaf should fail: %v", err)
+	}
+}
+
 func TestCheckpointReferenceRemainsBackwardCompatibleWithoutProvenance(t *testing.T) {
 	ref := CheckpointRef{CheckpointID: "checkpoint-1", SchemaVersion: "v1", SourceComponent: "runner", Digest: "digest"}
 	if err := ref.ValidateProtocolReference(); err != nil {

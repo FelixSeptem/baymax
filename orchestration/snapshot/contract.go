@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 const (
@@ -39,10 +41,12 @@ type ExportRequest struct {
 }
 
 type ImportRequest struct {
-	Payload      []byte `json:"payload"`
-	RestoreMode  string `json:"restore_mode"`
-	CompatWindow int    `json:"compat_window"`
-	OperationID  string `json:"operation_id"`
+	Payload      []byte                        `json:"payload"`
+	RestoreMode  string                        `json:"restore_mode"`
+	CompatWindow int                           `json:"compat_window"`
+	OperationID  string                        `json:"operation_id"`
+	History      *types.SessionHistoryBoundary `json:"history,omitempty"`
+	Checkpoint   *types.CheckpointRef          `json:"checkpoint,omitempty"`
 }
 
 type ImportResult struct {
@@ -223,6 +227,25 @@ func (i *Importer) Import(req ImportRequest) (ImportResult, error) {
 		return ImportResult{}, &ImportError{
 			ConflictCode: ConflictCodeDigestMismatch,
 			Message:      fmt.Sprintf("snapshot manifest digest mismatch: got=%q want=%q", manifest.Digest, expectedDigest),
+		}
+	}
+	if req.History != nil {
+		if err := req.History.Validate(types.HistoryValidationLimits{MaxEntries: 256, MaxSerializedBytes: 1 << 20}); err != nil {
+			return ImportResult{}, &ImportError{ConflictCode: types.SessionHistoryReasonGap, Message: "history validation failed", Cause: err}
+		}
+		if manifest.Source.SessionID != "" && req.History.SessionID != manifest.Source.SessionID {
+			return ImportResult{}, &ImportError{ConflictCode: types.SessionHistoryReasonCheckpointAssociation, Message: "history session does not match snapshot source"}
+		}
+	}
+	if req.Checkpoint != nil {
+		if err := req.Checkpoint.ValidateProtocolReference(); err != nil {
+			return ImportResult{}, &ImportError{ConflictCode: types.SessionHistoryReasonCheckpointAssociation, Message: "checkpoint validation failed", Cause: err}
+		}
+		if req.Checkpoint.Digest != manifest.Digest {
+			return ImportResult{}, &ImportError{ConflictCode: types.SessionHistoryReasonCheckpointAssociation, Message: "checkpoint digest does not match snapshot manifest"}
+		}
+		if manifest.Source.SessionID != "" && req.Checkpoint.SessionID != "" && req.Checkpoint.SessionID != manifest.Source.SessionID {
+			return ImportResult{}, &ImportError{ConflictCode: types.SessionHistoryReasonCheckpointAssociation, Message: "checkpoint session does not match snapshot source"}
 		}
 	}
 

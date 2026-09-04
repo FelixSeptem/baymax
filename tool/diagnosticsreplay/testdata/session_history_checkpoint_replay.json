@@ -1,0 +1,12 @@
+{
+  "version": "session_history_checkpoint_replay.v1",
+  "cases": [
+    {
+      "name": "branch-and-replay",
+      "run": {"session_id":"session-1","run_id":"run-2","history":{"version":"session_history_checkpoint_replay.v1","session_id":"session-1","root":{"id":"entry-0","position":0,"digest":"d0"},"entries":[{"id":"entry-0","position":0,"digest":"d0"},{"id":"entry-1","parent_id":"entry-0","position":1,"digest":"d1"}],"leaf_id":"entry-1"},"branch":{"session_id":"session-1","branch_id":"branch-1","parent_leaf_id":"entry-1","parent_run_id":"run-1","run_id":"run-2"}},
+      "stream": {"session_id":"session-1","run_id":"run-2","history":{"version":"session_history_checkpoint_replay.v1","session_id":"session-1","root":{"id":"entry-0","position":0,"digest":"d0"},"entries":[{"id":"entry-0","position":0,"digest":"d0"},{"id":"entry-1","parent_id":"entry-0","position":1,"digest":"d1"}],"leaf_id":"entry-1"},"branch":{"session_id":"session-1","branch_id":"branch-1","parent_leaf_id":"entry-1","parent_run_id":"run-1","run_id":"run-2"}},
+      "expected": {"session_id":"session-1","run_id":"run-2","history":{"version":"session_history_checkpoint_replay.v1","session_id":"session-1","root":{"id":"entry-0","position":0,"digest":"d0"},"entries":[{"id":"entry-0","position":0,"digest":"d0"},{"id":"entry-1","parent_id":"entry-0","position":1,"digest":"d1"}],"leaf_id":"entry-1"},"branch":{"session_id":"session-1","branch_id":"branch-1","parent_leaf_id":"entry-1","parent_run_id":"run-1","run_id":"run-2"}},
+      "idempotency": {"operation_id":"replay-1","fixture_version":"session_history_checkpoint_replay.v1","input_digest":"digest-1","side_effect_free":true}
+    }
+  ]
+}

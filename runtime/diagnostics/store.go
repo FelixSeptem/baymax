@@ -63,6 +63,12 @@ type RunRecord struct {
 	ProtocolCheckpointBranchID                  string                            `json:"protocol_checkpoint_branch_id,omitempty"`
 	ProtocolCheckpointRestoreSource             string                            `json:"protocol_checkpoint_restore_source,omitempty"`
 	ProtocolCheckpointReplayKey                 string                            `json:"protocol_checkpoint_replay_key,omitempty"`
+	ProtocolHistoryRootID                       string                            `json:"protocol_history_root_id,omitempty"`
+	ProtocolHistoryLeafID                       string                            `json:"protocol_history_leaf_id,omitempty"`
+	ProtocolHistoryDigest                       string                            `json:"protocol_history_digest,omitempty"`
+	ProtocolBranchParentLeafID                  string                            `json:"protocol_branch_parent_leaf_id,omitempty"`
+	ProtocolRestoreOperationID                  string                            `json:"protocol_restore_operation_id,omitempty"`
+	ProtocolReplayClassification                string                            `json:"protocol_replay_classification,omitempty"`
 	ProtocolWorkspaceID                         string                            `json:"protocol_workspace_id,omitempty"`
 	ProtocolWorkspaceChangeSetID                string                            `json:"protocol_workspace_change_set_id,omitempty"`
 	ProtocolWorkspaceIntegrityDriftReason       string                            `json:"protocol_workspace_integrity_drift_reason,omitempty"`

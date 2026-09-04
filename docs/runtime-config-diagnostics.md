@@ -2195,3 +2195,8 @@ CallRecord 新增且保持 `additive + nullable + default` 的字段：`lifecycl
 
 
 
+## Session history, checkpoint, and replay diagnostics
+
+The `session_history_checkpoint_replay.v1` contract exposes bounded additive fields for `history_root_id`, `history_leaf_id`, `history_digest`, `branch_parent_leaf_id`, `restore_operation_id`, and `replay_classification`. Missing fields default to empty for historical consumers. History retention and message-body storage remain owned by the embedding session source; the protocol stores references and digests only.
+
+Validation failures use deterministic classifications including `session.history_gap`, `session.history_conflict`, `session.checkpoint_association_mismatch`, `session.branch_parent_missing`, `session.replay_conflict`, and `session.replay_side_effect`. Strict restore rejects invalid lineage before mutation; compatible restore is bounded by the existing snapshot compatibility window.

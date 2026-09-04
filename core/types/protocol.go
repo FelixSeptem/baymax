@@ -540,6 +540,9 @@ type CheckpointRef struct {
 	ParentCheckpointID  string                  `json:"parent_checkpoint_id,omitempty"`
 	BranchID            string                  `json:"branch_id,omitempty"`
 	HistoryIndex        int                     `json:"history_index,omitempty"`
+	HistoryRootID       string                  `json:"history_root_id,omitempty"`
+	HistoryLeafID       string                  `json:"history_leaf_id,omitempty"`
+	HistoryDigest       string                  `json:"history_digest,omitempty"`
 	RestoreSource       CheckpointRestoreSource `json:"restore_source,omitempty"`
 	ReplayKey           string                  `json:"replay_key,omitempty"`
 	WorkspaceProvenance *WorkspaceProvenance    `json:"workspace_provenance,omitempty"`
@@ -675,6 +678,11 @@ func (r CheckpointRef) ValidateProtocolReference() error {
 	}
 	if r.HistoryIndex < 0 {
 		return protocolValidationError("checkpoint history_index must be >= 0")
+	}
+	if strings.TrimSpace(r.HistoryRootID) != "" || strings.TrimSpace(r.HistoryLeafID) != "" || strings.TrimSpace(r.HistoryDigest) != "" {
+		if strings.TrimSpace(r.HistoryRootID) == "" || strings.TrimSpace(r.HistoryLeafID) == "" {
+			return protocolValidationError("checkpoint history_root_id and history_leaf_id must be provided together")
+		}
 	}
 	if relation != CheckpointRelationRoot && strings.TrimSpace(r.ParentCheckpointID) == "" {
 		return protocolValidationError("%s", ProtocolReasonCheckpointLineageMissingParent)

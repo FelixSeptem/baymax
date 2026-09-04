@@ -38,6 +38,7 @@ required_patterns=(
   "mainline-readiness-admission-degradation"
   "custom-adapter-mcp-model-tool-memory-pack"
   "custom-adapter-health-readiness-circuit"
+  "session-history-checkpoint-replay"
 )
 
 contains_pattern() {

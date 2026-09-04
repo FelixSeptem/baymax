@@ -42,7 +42,8 @@ $requiredPatterns = @(
     "mainline-scheduler-qos-backoff-dlq",
     "mainline-readiness-admission-degradation",
     "custom-adapter-mcp-model-tool-memory-pack",
-    "custom-adapter-health-readiness-circuit"
+    "custom-adapter-health-readiness-circuit",
+    "session-history-checkpoint-replay"
 )
 
 function Assert-Contains {

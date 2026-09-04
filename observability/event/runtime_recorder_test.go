@@ -3227,6 +3227,12 @@ func TestRuntimeRecorderParsesCheckpointWorkspaceProvenanceFields(t *testing.T) 
 			"protocol_workspace_id":                     "workspace-1",
 			"protocol_workspace_change_set_id":          "change-2",
 			"protocol_workspace_integrity_drift_reason": "workspace.integrity_drift",
+			"protocol_history_root_id":                  "entry-0",
+			"protocol_history_leaf_id":                  "entry-1",
+			"protocol_history_digest":                   "history-digest",
+			"protocol_branch_parent_leaf_id":            "entry-1",
+			"protocol_restore_operation_id":             "restore-1",
+			"protocol_replay_classification":            "session.history_gap",
 		},
 	})
 	items := mgr.RecentRuns(1)
@@ -3234,7 +3240,7 @@ func TestRuntimeRecorderParsesCheckpointWorkspaceProvenanceFields(t *testing.T) 
 		t.Fatalf("run records len = %d, want 1", len(items))
 	}
 	got := items[0]
-	if got.ProtocolCheckpointID != "checkpoint-2" || got.ProtocolCheckpointRelation != "derived" || got.ProtocolCheckpointParentID != "checkpoint-1" || got.ProtocolCheckpointBranchID != "branch-1" || got.ProtocolCheckpointRestoreSource != "cross_session" || got.ProtocolCheckpointReplayKey != "replay-2" || got.ProtocolWorkspaceID != "workspace-1" || got.ProtocolWorkspaceChangeSetID != "change-2" || got.ProtocolWorkspaceIntegrityDriftReason != "workspace.integrity_drift" {
+	if got.ProtocolCheckpointID != "checkpoint-2" || got.ProtocolCheckpointRelation != "derived" || got.ProtocolCheckpointParentID != "checkpoint-1" || got.ProtocolCheckpointBranchID != "branch-1" || got.ProtocolCheckpointRestoreSource != "cross_session" || got.ProtocolCheckpointReplayKey != "replay-2" || got.ProtocolWorkspaceID != "workspace-1" || got.ProtocolWorkspaceChangeSetID != "change-2" || got.ProtocolWorkspaceIntegrityDriftReason != "workspace.integrity_drift" || got.ProtocolHistoryRootID != "entry-0" || got.ProtocolHistoryLeafID != "entry-1" || got.ProtocolHistoryDigest != "history-digest" || got.ProtocolBranchParentLeafID != "entry-1" || got.ProtocolRestoreOperationID != "restore-1" || got.ProtocolReplayClassification != "session.history_gap" {
 		t.Fatalf("provenance fields mismatch: %#v", got)
 	}
 }

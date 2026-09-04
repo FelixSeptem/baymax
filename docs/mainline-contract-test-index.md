@@ -328,6 +328,14 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 ## Agent Mode Example Pack Mapping
 
+## Session History / Checkpoint / Replay Contract
+
+- Projection and validation: `core/types/session_history_test.go`, `core/types/protocol_test.go`
+- Snapshot pre-restore association: `orchestration/snapshot/session_history_restore_test.go`
+- Replay fixture and drift/side-effect checks: `tool/diagnosticsreplay/session_history_test.go`, `tool/diagnosticsreplay/testdata/session_history_checkpoint_replay.json`
+- Dedicated gate: `scripts/check-session-history-checkpoint-replay-contract.sh` / `scripts/check-session-history-checkpoint-replay-contract.ps1`
+- Quality gate ownership: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
+
 - Matrix entrypoint: `examples/agent-modes/MATRIX.md`
 - Unified example root: `examples/agent-modes/`
 - Pattern coverage gate: `scripts/check-agent-mode-pattern-coverage.sh` / `scripts/check-agent-mode-pattern-coverage.ps1`

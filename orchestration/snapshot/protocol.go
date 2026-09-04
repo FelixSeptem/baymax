@@ -20,6 +20,9 @@ type CheckpointProjectionContext struct {
 	ParentCheckpointID  string
 	BranchID            string
 	HistoryIndex        int
+	HistoryRootID       string
+	HistoryLeafID       string
+	HistoryDigest       string
 	RestoreSource       types.CheckpointRestoreSource
 	ReplayKey           string
 	WorkspaceProvenance *types.WorkspaceProvenance
@@ -39,6 +42,9 @@ func ProtocolCheckpointRefWithContext(manifest Manifest, context CheckpointProje
 		ParentCheckpointID:  strings.TrimSpace(context.ParentCheckpointID),
 		BranchID:            strings.TrimSpace(context.BranchID),
 		HistoryIndex:        context.HistoryIndex,
+		HistoryRootID:       strings.TrimSpace(context.HistoryRootID),
+		HistoryLeafID:       strings.TrimSpace(context.HistoryLeafID),
+		HistoryDigest:       strings.TrimSpace(context.HistoryDigest),
 		RestoreSource:       context.RestoreSource,
 		ReplayKey:           strings.TrimSpace(context.ReplayKey),
 		WorkspaceProvenance: context.WorkspaceProvenance,

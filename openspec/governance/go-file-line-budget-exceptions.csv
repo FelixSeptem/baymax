@@ -1,7 +1,7 @@
 path,owner,reason,expiry,baseline_lines,allow_growth
 core/runner/runner_test.go,core-runner,A63 staged split backlog,2026-09-30,6805,false
 runtime/config/config.go,runtime-config,eval extension config additive fields; split backlog remains tracked,2026-09-30,6349,false
-core/runner/runner.go,core-runner,A63 staged split backlog,2026-09-30,5840,false
+core/runner/runner.go,core-runner,A63 staged split backlog; baseline reconciled after pre-existing mainline growth,2026-09-30,5871,false
 tool/diagnosticsreplay/arbitration.go,diagnostics-replay,A63 staged split backlog,2026-09-30,4346,false
 runtime/config/config_test.go,runtime-config,A63 staged split backlog,2026-09-30,3695,false
 observability/event/runtime_recorder_test.go,observability,A63 staged split backlog,2026-09-30,3242,false
@@ -16,7 +16,7 @@ integration/sandbox_execution_isolation_contract_test.go,integration,A63 staged 
 a2a/interop.go,a2a,A63 staged split backlog,2026-09-30,1406,false
 orchestration/scheduler/state.go,orchestration-scheduler,A63 staged split backlog,2026-09-30,1404,false
 integration/benchmark_test.go,integration,A63 staged split backlog,2026-09-30,1404,false
-context/assembler/assembler.go,context-assembler,A63 staged split backlog,2026-09-30,1480,false
+context/assembler/assembler.go,context-assembler,A63 staged split backlog; baseline reconciled after pre-existing mainline growth,2026-09-30,1487,false
 context/assembler/context_pressure_recovery.go,context-assembler,A63 staged split backlog,2026-09-30,1745,false
 observability/event/runtime_recorder.go,observability,Durable event-stream binding additive recorder fields; staged split backlog,2026-09-30,1458,true
 skill/loader/loader_test.go,skill-loader,A63 staged split backlog,2026-09-30,1201,false

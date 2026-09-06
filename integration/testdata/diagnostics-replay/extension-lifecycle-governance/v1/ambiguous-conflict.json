@@ -1,0 +1,12 @@
+{
+  "profile": "extension_lifecycle_governance.v1",
+  "case": "equal-precedence-digest-conflict",
+  "resources": [
+    {"name":"lint","kind":"hook","version":"1.0.0","compat":">=0.1.0 <1.0.0","digest":"sha256:a","source":"project-explicit"},
+    {"name":"lint","kind":"hook","version":"1.0.0","compat":">=0.1.0 <1.0.0","digest":"sha256:b","source":"project-explicit"}
+  ],
+  "expected": {
+    "accepted": false,
+    "reason": "extension.ambiguous_conflict"
+  }
+}

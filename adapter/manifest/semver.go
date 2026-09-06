@@ -46,6 +46,12 @@ func evaluateSemverRange(expr, runtimeVersion string) (bool, error) {
 	return true, nil
 }
 
+// EvaluateSemverRange exposes the deterministic compatibility evaluator to
+// transport-neutral consumers such as extension governance.
+func EvaluateSemverRange(expr, runtimeVersion string) (bool, error) {
+	return evaluateSemverRange(expr, runtimeVersion)
+}
+
 func parseSemverRange(expr string) ([]semverComparator, error) {
 	raw := strings.TrimSpace(expr)
 	if raw == "" {

@@ -1,0 +1,31 @@
+{
+  "profile": "extension_lifecycle_governance.v1",
+  "case": "deterministic-project-explicit-wins",
+  "resources": [
+    {
+      "name": "lint",
+      "kind": "hook",
+      "version": "1.0.0",
+      "compat": ">=0.1.0 <1.0.0",
+      "digest": "sha256:project",
+      "source": "project-explicit",
+      "required": ["tool.read"],
+      "optional": ["ui.notify"]
+    },
+    {
+      "name": "lint",
+      "kind": "hook",
+      "version": "1.0.0",
+      "compat": ">=0.1.0 <1.0.0",
+      "digest": "sha256:user",
+      "source": "user-auto",
+      "required": ["tool.read"],
+      "optional": []
+    }
+  ],
+  "expected": {
+    "selected_digest": "sha256:project",
+    "conflict_count": 1,
+    "reason": "project-explicit-precedence"
+  }
+}

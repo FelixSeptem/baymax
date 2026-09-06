@@ -54,6 +54,31 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderRecordsExtensionLifecycleFieldsAdditively(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_EXTENSION_TEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version: types.EventSchemaVersionV1,
+		Type:    "extension.lifecycle",
+		RunID:   "run-extension",
+		Time:    time.Now(),
+		Payload: map[string]any{
+			"extension_name": "lint", "extension_generation": 2,
+			"extension_phase": "reload", "extension_reason": "extension.rollback",
+			"extension_source": "project-explicit", "extension_digest": "sha256:abc",
+			"status": "degraded", "reason_code": "extension.rollback",
+		},
+	})
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 || items[0].ExtensionName != "lint" || items[0].ExtensionGeneration != 2 || items[0].ExtensionPhase != "reload" || items[0].ExtensionReason != "extension.rollback" || items[0].ExtensionSource != "project-explicit" || items[0].ExtensionDigest != "sha256:abc" {
+		t.Fatalf("extension lifecycle projection=%#v", items)
+	}
+}
+
 func TestRuntimeRecorderRecordsToolLifecycleCallAdditively(t *testing.T) {
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_TOOL_LIFECYCLE_TEST"})
 	if err != nil {

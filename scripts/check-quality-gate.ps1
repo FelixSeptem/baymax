@@ -753,6 +753,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-session-history-checkpoint-replay-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] extension lifecycle contract replay"
+        Command   = { pwsh -File scripts/check-extension-lifecycle-contract-replay.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] adapter scaffold drift"
         Command   = { pwsh -File scripts/check-adapter-scaffold-drift.ps1 }
     }

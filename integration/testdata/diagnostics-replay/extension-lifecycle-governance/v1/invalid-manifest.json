@@ -1,0 +1,15 @@
+{
+  "profile": "extension_lifecycle_governance.v1",
+  "case": "missing-digest",
+  "resource": {
+    "name": "lint",
+    "kind": "hook",
+    "version": "1.0.0",
+    "compat": ">=0.1.0 <1.0.0",
+    "source": "project-explicit"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "extension.missing_field"
+  }
+}

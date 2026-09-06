@@ -320,6 +320,12 @@ if ! bash scripts/check-adapter-contract-replay.sh; then
   exit 1
 fi
 
+echo "[quality-gate] extension lifecycle contract replay"
+if ! bash scripts/check-extension-lifecycle-contract-replay.sh; then
+  echo "[quality-gate][extension-lifecycle-replay] extension lifecycle contract replay check failed"
+  exit 1
+fi
+
 echo "[quality-gate] sandbox adapter conformance contract"
 if ! bash scripts/check-sandbox-adapter-conformance-contract.sh; then
   echo "[quality-gate][sandbox-adapter-conformance-contract] sandbox adapter conformance contract check failed"

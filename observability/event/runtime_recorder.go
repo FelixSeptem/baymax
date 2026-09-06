@@ -155,6 +155,18 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 		payload = r.manager.RedactPayload(payload)
 	}
 	switch ev.Type {
+	case "extension.lifecycle":
+		r.manager.RecordRun(runtimediag.RunRecord{
+			Time: ev.Time, RunID: ev.RunID,
+			ExtensionName:       boundedExtensionDiagnosticString(payloadString(payload, "extension_name"), 96),
+			ExtensionGeneration: nonNegativeUint64(payloadInt(payload, "extension_generation")),
+			ExtensionPhase:      boundedExtensionDiagnosticString(payloadString(payload, "extension_phase"), 32),
+			ExtensionReason:     boundedExtensionDiagnosticString(payloadString(payload, "extension_reason"), 96),
+			ExtensionSource:     boundedExtensionDiagnosticString(payloadString(payload, "extension_source"), 64),
+			ExtensionDigest:     boundedExtensionDiagnosticString(payloadString(payload, "extension_digest"), 80),
+			Status:              payloadString(payload, "status"),
+			ReasonCode:          payloadString(payload, "reason_code"),
+		})
 	case types.EventTypeContextHandoff:
 		r.rememberContextHandoff(ev.RunID, contextHandoffProjection{
 			Event:              payloadString(payload, "context_handoff_event"),
@@ -736,6 +748,21 @@ func payloadString(m map[string]any, key string) string {
 	}
 	s, _ := raw.(string)
 	return strings.TrimSpace(s)
+}
+
+func boundedExtensionDiagnosticString(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return value[:limit]
+}
+
+func nonNegativeUint64(value int) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(value)
 }
 
 func payloadHasKey(m map[string]any, key string) bool {

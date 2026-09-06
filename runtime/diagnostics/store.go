@@ -72,6 +72,12 @@ type RunRecord struct {
 	ProtocolWorkspaceID                         string                            `json:"protocol_workspace_id,omitempty"`
 	ProtocolWorkspaceChangeSetID                string                            `json:"protocol_workspace_change_set_id,omitempty"`
 	ProtocolWorkspaceIntegrityDriftReason       string                            `json:"protocol_workspace_integrity_drift_reason,omitempty"`
+	ExtensionName                               string                            `json:"extension_name,omitempty"`
+	ExtensionGeneration                         uint64                            `json:"extension_generation,omitempty"`
+	ExtensionPhase                              string                            `json:"extension_phase,omitempty"`
+	ExtensionReason                             string                            `json:"extension_reason,omitempty"`
+	ExtensionSource                             string                            `json:"extension_source,omitempty"`
+	ExtensionDigest                             string                            `json:"extension_digest,omitempty"`
 	Status                                      string                            `json:"status,omitempty"`
 	TerminalState                               string                            `json:"terminal_state,omitempty"`
 	TerminalFailureFamily                       string                            `json:"terminal_failure_family,omitempty"`

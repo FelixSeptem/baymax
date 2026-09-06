@@ -713,6 +713,38 @@ Why now：
    - **启动信号**：外部 Skill/Plugin 数量和来源增长，出现版本漂移、供应链审计或扩展故障隔离需求。
    - **Example Impact Assessment（未来提案必填）**：`新增示例`，先增加 manifest/compatibility 的离线 fixture，再决定是否进入运行时实现。
 
+#### `earendil-works/pi` 对照后的吸收路线（建议优先级）
+
+参考仓库：[`earendil-works/pi`](https://github.com/earendil-works/pi)，DeepWiki 索引版本 `853a80d2`（2026-09-01）。本节将可借鉴的设计拆分为“可直接建立提案”“应并入同一提案的 capability”和“暂不单独立项”三类，避免复制实现或重复已归档能力。
+
+1. **扩展生命周期治理、资源确定性发现与能力隔离合同（P1/P2，下一候选）**
+   - **可借鉴**：`ResourceLoader -> ExtensionLoader -> ExtensionRunner` 的分层；全局/项目/显式配置三类资源来源；稳定 precedence；manifest 声明资源；Hook 的阻断语义；reload 时旧实例失效、新实例接管；扩展 UI 通过 request/response 与宿主解耦。
+   - **Baymax 适配**：复用 `skill/loader`、`adapter/manifest`、`adapter/capability`、hooks/middleware、sandbox/allowlist、readiness admission 与 `RuntimeRecorder`。扩展读取 turn snapshot，在明确 save point 提交可持久化事实；扩展失败只影响扩展或当前可取消动作，不得改写 Run 权威终态。
+   - **合同范围**：来源与优先级、manifest/digest/version compatibility、requested-vs-declared capability、激活前校验、Hook 超时/阻断/失败分类、资源上限、reload/rollback、旧实例事件隔离、Run/Stream parity、replay 与供应链风险诊断。
+   - **明确不做**：不引入 npm/package manager、托管扩展市场、远程控制面、第二套 Session/Artifact store、平行终态机或绕过 policy/sandbox/RuntimeRecorder 的 Extension API。
+   - **启动信号**：出现真实外部 Skill/Plugin/Adapter 接入，或版本漂移、供应链审计、坏扩展隔离、资源覆盖冲突等问题。
+   - **Example Impact Assessment（未来提案必填）**：`新增示例`；先建立 manifest、兼容性、拒绝与 reload 的离线 fixture，再决定运行时接线。
+
+2. **Harness save point 与 turn snapshot 约束（并入扩展治理，不单独立项）**
+   - **可借鉴**：`idle/turn/compaction/branch_summary/retry` 阶段模型；可变 Harness config 与不可变 turn snapshot 分离；pending writes 在 save point 统一提交。
+   - **Baymax 适配**：作为扩展、Hook、middleware 的生命周期约束，复用既有 Run、snapshot、checkpoint、recovery 和 RuntimeRecorder 合同；不得重建 Session/Harness 存储或第二套恢复状态机。
+   - **验收重点**：运行中配置变更不污染当前 Run；扩展写入只在定义的提交点生效；reload 不改变正在执行 Run 的历史事实；异常路径仍能 finalize 并可回放。
+
+3. **Provider/model capability registry 与 credential preflight（P2，现有能力的增量方向）**
+   - **可借鉴**：统一模型元数据（上下文窗口、reasoning、vision 等）；Provider 与 credential resolution 分离；启动/执行前认证预检；模型切换保留消息语义。
+   - **Baymax 适配**：仅作为 `model/<provider>`、adapter health/readiness 的增量任务，复用现有 capability taxonomy、readiness finding 与配置治理；不在 `context/*` 引入 Provider SDK，不新增平行模型注册中心。
+   - **启动信号**：出现动态模型目录、本地模型路由、跨 Provider handoff 或凭据预检的明确宿主需求。
+
+4. **RPC/JSON Event 与宿主 UI request/response（P2，按嵌入需求触发）**
+   - **可借鉴**：命令响应与异步事件分离；严格 JSONL framing；扩展 UI 请求可挂起并等待客户端响应后恢复。
+   - **Baymax 适配**：作为 realtime/interrupt-resume、HITL 和嵌入式宿主的增量接缝；复用既有 cursor、sequence、dedupe、授权与终态语义，不新建 RPC 控制面。
+   - **启动信号**：出现 IDE/桌面宿主、远程 UI 或 HITL 客户端需要统一 headless 接入。
+
+5. **Session tree、append-only backend 与 backend conformance（长期参考，不单独立项）**
+   - **可借鉴**：JSONL append-only、`parentId/leafId` 历史树、save point、backend conformance、版本迁移、幂等提交和 writer lease。
+   - **Baymax 适配**：继续作为既有 session history/checkpoint/replay、snapshot 与 provenance 的实现原则；snapshot 仍是唯一事实源，replay 只读。
+   - **明确不做**：当前不引入 SQLite Session 第二事实源、独立 session server、Artifact content service 或平台化存储。
+
 候选路线的共同硬约束：
 
 - 保持 `library-first`，不引入平台化控制面、跨租户调度或托管 Agent Gateway。
@@ -1524,3 +1556,6 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 
 
 
+## 当前实施状态（2026-09-06）
+
+- `extension-lifecycle-governance-resource-resolution-contract`：OpenSpec `all_done`，实现与验证已完成，待按流程归档。

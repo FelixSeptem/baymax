@@ -50,6 +50,10 @@
   - requested vs declared capability 协商（capability negotiation contract）
   - 策略收敛：`fail_fast|best_effort` 与 override 语义
   - reason taxonomy 收敛：`adapter.capability.*` 命名空间
+- `extension`
+  - transport-neutral descriptor、source precedence、digest provenance 与 capability/admission 合同
+  - bounded Hook/tool execution、turn snapshot/save-point、activation generation/reload/rollback
+  - 不直接写 diagnostics；生命周期事件必须经 `observability/event.RuntimeRecorder`
 - `adapter/scaffold`
   - 外部 adapter 脚手架生成与模板收口
   - 生成 manifest/conformance/negotiation baseline 测试骨架
@@ -102,6 +106,7 @@
 - Workflow 编排直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Adapter 契约模块直接写 `runtime/diagnostics` 存储（必须经标准事件/门禁链路收口）
+- Extension 不得绕过 `runtime/config` readiness/policy、sandbox/allowlist 或 `RuntimeRecorder` 单写入口
 - Scheduler 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Composer 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）

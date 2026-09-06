@@ -271,6 +271,8 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Context Compression Production Replay Fixture (`context_compression_production.v1`)| `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractContextCompressionProductionFixtureSuite` | `tool/diagnosticsreplay/arbitration_test.go::TestReplayContractContextCompressionProductionDriftClassification` |
 | Context Compression Production Benchmark Regression Gate| `scripts/check-context-production-hardening-benchmark-regression.sh` | `scripts/check-context-production-hardening-benchmark-regression.ps1` |
 | Context Compression Production Contract Gate| `scripts/check-context-compression-production-contract.sh` | `scripts/check-context-compression-production-contract.ps1` |
+| Context Compression Runtime Handoff Contract Gate| `scripts/check-context-handoff-contract.sh` | `scripts/check-context-handoff-contract.ps1` |
+| Context Compression Runtime Handoff Run/Stream Event Parity| `core/runner/runner_test.go::TestContextHandoffEmissionIsRunStreamEquivalent` | `observability/event/runtime_recorder_test.go::TestRuntimeRecorderRecordsContextHandoffEvent` |
 | Context Compression Production Contract Gate CI Required-Check 候选| `.github/workflows/ci.yml::context-compression-production-contract-gate` | `.github/workflows/ci.yml::context-compression-production-contract-gate` |
 | Context Compression Production Contract Gate Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |
 | Context Compression Production Additive Diagnostics Mapping| `core/runner/runner_test.go::TestRunFinishedPayloadIncludesContextCompressionProductionAdditiveFields` | `runtime/diagnostics/store_test.go::TestStoreRunContextJITAdditiveFieldsPersistAndReplayIdempotent` |

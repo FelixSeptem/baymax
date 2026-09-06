@@ -226,6 +226,16 @@ type RunRecord struct {
 	ContextColdStoreGovernanceAction            string                            `json:"context_cold_store_governance_action,omitempty"`
 	ContextRecoveryConsistencyMarker            string                            `json:"context_recovery_consistency_marker,omitempty"`
 	ContextRecapSource                          string                            `json:"context_recap_source,omitempty"`
+	ContextHandoffVersion                       string                            `json:"context_handoff_version,omitempty"`
+	ContextHandoffEvent                         string                            `json:"context_handoff_event,omitempty"`
+	ContextHandoffCut                           string                            `json:"context_handoff_cut,omitempty"`
+	ContextHandoffSourceCheckpointID            string                            `json:"context_handoff_source_checkpoint_id,omitempty"`
+	ContextHandoffQualityScore                  float64                           `json:"context_handoff_quality_score,omitempty"`
+	ContextHandoffFallbackReason                string                            `json:"context_handoff_fallback_reason,omitempty"`
+	ContextHandoffRestoreReady                  bool                              `json:"context_handoff_restore_ready,omitempty"`
+	ContextHandoffRestoreStatus                 string                            `json:"context_handoff_restore_status,omitempty"`
+	ContextHandoffRestoreOperationID            string                            `json:"context_handoff_restore_operation_id,omitempty"`
+	ContextHandoffRestoreReason                 string                            `json:"context_handoff_restore_reason,omitempty"`
 	RecapStatus                                 string                            `json:"recap_status,omitempty"`
 	TeamID                                      string                            `json:"team_id,omitempty"`
 	TeamStrategy                                string                            `json:"team_strategy,omitempty"`

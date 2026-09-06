@@ -11,11 +11,192 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/handoff"
 	"github.com/FelixSeptem/baymax/context/journal"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	tiktoken "github.com/pkoukk/tiktoken-go"
 )
+
+func TestAssemblerBuildHandoffUsesStableCutAndBoundedFacts(t *testing.T) {
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	req := types.ContextAssembleRequest{RunID: "run-1", SessionID: "session-1", Input: "ship feature"}
+	modelReq := types.ModelRequest{Messages: []types.Message{{Role: "user", Content: "change file README"}}}
+	got, err := a.BuildHandoff(req, modelReq, types.ContextAssembleResult{Status: StatusSuccess})
+	if err != nil {
+		t.Fatalf("BuildHandoff() error = %v", err)
+	}
+	if got.Cut != handoff.CutFinalizedEvent || got.RunID != "run-1" || len(got.Facts) != 1 {
+		t.Fatalf("handoff = %+v", got)
+	}
+}
+
+func TestAssemblerBuildHandoffUsesFinalizedToolBoundary(t *testing.T) {
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	req := types.ContextAssembleRequest{
+		RunID: "run-tool-boundary",
+		Input: "continue after the tool result",
+		ToolResult: []types.ToolCallOutcome{{
+			CallID: "call-1",
+			Name:   "local.echo",
+			Lifecycle: &types.ToolLifecycleProjection{
+				Finalized: true,
+			},
+		}},
+	}
+	got, err := a.BuildHandoff(req, types.ModelRequest{Input: req.Input}, types.ContextAssembleResult{Status: StatusSuccess})
+	if err != nil {
+		t.Fatalf("BuildHandoff() error = %v", err)
+	}
+	if got.Cut != handoff.CutToolFinalized {
+		t.Fatalf("cut = %q, want %q", got.Cut, handoff.CutToolFinalized)
+	}
+}
+
+func TestAssemblerBuildHandoffUsesCheckpointAndFlushedStreamBoundaries(t *testing.T) {
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	checkpointReq := types.ContextAssembleRequest{RunID: "run-checkpoint", Input: "resume", FinalizedCheckpointID: "cp-42"}
+	checkpoint, err := a.BuildHandoff(checkpointReq, types.ModelRequest{Input: checkpointReq.Input}, types.ContextAssembleResult{Status: StatusSuccess})
+	if err != nil {
+		t.Fatalf("checkpoint BuildHandoff() error = %v", err)
+	}
+	if checkpoint.Cut != handoff.CutCheckpoint || checkpoint.SourceCheckpointID != "cp-42" {
+		t.Fatalf("checkpoint handoff = %#v", checkpoint)
+	}
+
+	streamReq := types.ContextAssembleRequest{RunID: "run-flushed", Input: "continue", StreamFlushed: true}
+	flushed, err := a.BuildHandoff(streamReq, types.ModelRequest{Input: streamReq.Input}, types.ContextAssembleResult{Status: StatusSuccess})
+	if err != nil {
+		t.Fatalf("flushed stream BuildHandoff() error = %v", err)
+	}
+	if flushed.Cut != handoff.CutFlushedStream {
+		t.Fatalf("flushed stream cut = %q, want %q", flushed.Cut, handoff.CutFlushedStream)
+	}
+}
+
+func TestAssemblerBuildHandoffCarriesCompressionGovernanceProjection(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig()
+	cfg.Runtime.Context.JIT.Compaction.Handoff.QualityThreshold = 0.7
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg.ContextAssembler }, WithRuntimeContextConfigProvider(func() runtimeconfig.RuntimeContextConfig { return cfg.Runtime.Context }))
+	result := types.ContextAssembleResult{Status: StatusSuccess, Stage: types.AssembleStage{
+		PressureZone: "danger", PressureReason: "token_budget", PressureTriggerSource: "absolute",
+		CompactionFallback: true, CompactionFallbackReason: "quality_below_threshold", CompactionQualityScore: 0.4,
+		RetainedEvidenceCount: 2, SpillCount: 3, SwapBackCount: 1,
+		ContextLifecycleTierStats:   map[string]int{"cold": 2, "pruned": 1},
+		ContextTierTransitionReason: "spill", ContextColdStoreGovernanceAction: "quota_trim",
+		ContextRecoveryConsistencyMarker: "replay_stable",
+	}}
+	got, err := a.BuildHandoff(types.ContextAssembleRequest{RunID: "run-projection", Input: "continue"}, types.ModelRequest{Input: "continue"}, result)
+	if err != nil {
+		t.Fatalf("BuildHandoff() error = %v", err)
+	}
+	if got.Compression.PressureZone != "danger" || got.Compression.RetainedEvidenceCount != 2 || got.Compression.SpillCount != 3 || got.Compression.LifecycleTierStats["cold"] != 2 {
+		t.Fatalf("compression projection = %#v", got.Compression)
+	}
+	if got.Fallback == nil || got.Fallback.Reason != handoff.FallbackQualityBelowThreshold {
+		t.Fatalf("fallback = %#v, want canonical quality reason", got.Fallback)
+	}
+	if got.Quality.Score != 0.4 || got.Quality.RestoreReady {
+		t.Fatalf("quality = %#v, want source score and non-ready fallback", got.Quality)
+	}
+}
+
+func TestAssemblerRestoreHandoffValidatesReferencesBeforeMutation(t *testing.T) {
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	h := handoff.Handoff{Version: handoff.VersionV1, RunID: "run-1", Cut: handoff.CutCheckpoint, Objective: "ship", References: []handoff.Reference{{Kind: handoff.ReferenceCheckpoint, ID: "cp-1"}}}
+	_, err := a.RestoreHandoff(h, handoff.ResolverFunc(func(handoff.Reference) error { return handoff.ErrReferenceNotFound }))
+	if err == nil {
+		t.Fatal("RestoreHandoff() accepted missing reference")
+	}
+}
+
+func TestAssemblerRestoreHandoffIsIdempotentAfterReferenceValidation(t *testing.T) {
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
+	h := handoff.Handoff{Version: handoff.VersionV1, RunID: "run-idempotent", Cut: handoff.CutCheckpoint, Objective: "ship", References: []handoff.Reference{{Kind: handoff.ReferenceCheckpoint, ID: "cp-1"}}}
+	resolveCalls := 0
+	resolver := handoff.ResolverFunc(func(ref handoff.Reference) error {
+		resolveCalls++
+		if ref.ID != "cp-1" {
+			t.Fatalf("resolved unexpected reference %#v", ref)
+		}
+		return nil
+	})
+	first, err := a.RestoreHandoff(h, resolver)
+	if err != nil {
+		t.Fatalf("first RestoreHandoff() error = %v", err)
+	}
+	second, err := a.RestoreHandoff(h, resolver)
+	if err != nil {
+		t.Fatalf("second RestoreHandoff() error = %v", err)
+	}
+	if first != second || resolveCalls != 1 {
+		t.Fatalf("restore must be idempotent: first=%#v second=%#v resolver_calls=%d", first, second, resolveCalls)
+	}
+}
+
+type assemblerRestoreStore struct {
+	values map[string]handoff.RestoreResult
+}
+
+func (s *assemblerRestoreStore) Lookup(id string) (handoff.RestoreResult, bool, error) {
+	result, ok := s.values[id]
+	return result, ok, nil
+}
+
+func (s *assemblerRestoreStore) Save(id string, result handoff.RestoreResult) error {
+	if s.values == nil {
+		s.values = map[string]handoff.RestoreResult{}
+	}
+	s.values[id] = result
+	return nil
+}
+
+func TestAssemblerRestoreHandoffUsesDurableOperationStoreAcrossInstances(t *testing.T) {
+	store := &assemblerRestoreStore{}
+	h := handoff.Handoff{Version: handoff.VersionV1, RunID: "run-durable", Cut: handoff.CutCheckpoint, Objective: "ship", References: []handoff.Reference{{Kind: handoff.ReferenceCheckpoint, ID: "cp-1"}}}
+	firstAssembler := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler }, WithHandoffRestoreStore(store))
+	first, err := firstAssembler.RestoreHandoff(h, handoff.ResolverFunc(func(handoff.Reference) error { return nil }))
+	if err != nil {
+		t.Fatalf("first restore error = %v", err)
+	}
+	secondAssembler := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler }, WithHandoffRestoreStore(store))
+	resolverCalled := false
+	second, err := secondAssembler.RestoreHandoff(h, handoff.ResolverFunc(func(handoff.Reference) error { resolverCalled = true; return handoff.ErrReferenceNotFound }))
+	if err != nil {
+		t.Fatalf("second restore error = %v", err)
+	}
+	if first != second || resolverCalled {
+		t.Fatalf("durable restore mismatch: first=%#v second=%#v resolver_called=%v", first, second, resolverCalled)
+	}
+}
+
+func TestAssemblerAssembleWithHandoffIsOptIn(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig()
+	cfg.Runtime.Context.JIT.Compaction.Handoff.Enabled = true
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg.ContextAssembler }, WithRuntimeContextConfigProvider(func() runtimeconfig.RuntimeContextConfig { return cfg.Runtime.Context }))
+	req := types.ContextAssembleRequest{RunID: "run-handoff", SessionID: "session-handoff", Input: "summarize progress", Messages: []types.Message{{Role: "user", Content: "progress fact"}}}
+	modelReq := types.ModelRequest{RunID: req.RunID, Input: req.Input, Messages: req.Messages}
+	_, got, h, err := a.AssembleWithHandoff(context.Background(), req, modelReq)
+	if err != nil {
+		t.Fatalf("AssembleWithHandoff() error = %v", err)
+	}
+	if got.Status == "" || h == nil || h.RunID != req.RunID {
+		t.Fatalf("result=%+v handoff=%+v", got, h)
+	}
+}
+
+func TestAssemblerAssembleWithHandoffDisabledPreservesLegacyPath(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig()
+	a := New(func() runtimeconfig.ContextAssemblerConfig { return cfg.ContextAssembler }, WithRuntimeContextConfigProvider(func() runtimeconfig.RuntimeContextConfig { return cfg.Runtime.Context }))
+	req := types.ContextAssembleRequest{RunID: "run-legacy", Input: "legacy path", Messages: []types.Message{{Role: "user", Content: "unchanged"}}}
+	_, _, h, err := a.AssembleWithHandoff(context.Background(), req, types.ModelRequest{RunID: req.RunID, Input: req.Input, Messages: req.Messages})
+	if err != nil {
+		t.Fatalf("AssembleWithHandoff() error = %v", err)
+	}
+	if h != nil {
+		t.Fatalf("handoff = %+v, want nil when disabled", h)
+	}
+}
 
 const semanticPrefixVersion = "context-prefix-and-journal-baseline"
 

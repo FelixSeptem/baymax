@@ -665,6 +665,10 @@ Invoke-RequiredParallelSteps -Steps @(
         }
     },
     @{
+        StepLabel = "[quality-gate] context handoff contract suites"
+        Command   = { pwsh -File scripts/check-context-handoff-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] realtime protocol contract suites"
         Command   = { pwsh -File scripts/check-realtime-protocol-contract.ps1 }
     },

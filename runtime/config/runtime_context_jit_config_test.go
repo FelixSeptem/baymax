@@ -107,6 +107,17 @@ func TestRuntimeContextJITConfigDefaults(t *testing.T) {
 			cfg.Runtime.Context.JIT.ColdStore.Compact.MinFragmentationRatio,
 		)
 	}
+	if cfg.Runtime.Context.JIT.Compaction.Handoff.MaxSerializedBytes <= 0 {
+		t.Fatalf("handoff max serialized bytes = %d, want positive default", cfg.Runtime.Context.JIT.Compaction.Handoff.MaxSerializedBytes)
+	}
+}
+
+func TestRuntimeContextJITConfigRejectsInvalidHandoffBudget(t *testing.T) {
+	cfg := DefaultConfig().Runtime.Context
+	cfg.JIT.Compaction.Handoff.MaxSerializedBytes = 0
+	if err := ValidateRuntimeContextConfig(cfg); err == nil || !strings.Contains(err.Error(), "handoff.max_serialized_bytes") {
+		t.Fatalf("expected handoff budget validation error, got %v", err)
+	}
 }
 
 func TestRuntimeContextJITConfigEnvOverridePrecedence(t *testing.T) {

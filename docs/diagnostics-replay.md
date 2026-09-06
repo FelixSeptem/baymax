@@ -10,6 +10,26 @@
 
 ## 输入契约
 
+### 3) Context Handoff 回放模式
+
+上下文压缩运行交接使用版本化 `context_handoff.v1` fixture。fixture 至少包含 `handoff`、`run`、`stream` 三部分；回放校验 handoff schema、引用边界以及 Run/Stream 观察结果一致性。稳定漂移分类包括：
+
+- `handoff_fact_loss`
+- `handoff_reference_loss`
+- `handoff_cut_invalid`
+- `handoff_quality_below_threshold`
+- `handoff_schema_drift`
+- `handoff_restore_non_idempotent`
+- `handoff_run_stream_mismatch`
+
+示例 Go 调用：
+
+```go
+out, err := diagnosticsreplay.EvaluateHandoffFixtureJSON(raw)
+```
+
+回放是只读的；handoff 不复制 Session History、Checkpoint 或 Artifact 内容，只验证其引用投影。
+
 ### 1) 精简模式（D1）
 
 当前仅支持 JSON 输入，支持两种形态：

@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -924,6 +925,90 @@ mcp:
 		got.CollabRetrySuccessTotal != 0 ||
 		got.CollabRetryExhaustedTotal != 0 {
 		t.Fatalf("missing collaboration additive fields must resolve to documented defaults: %#v", got)
+	}
+}
+
+func TestRuntimeRecorderRecordsContextHandoffEvent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime.yaml")
+	cfg := `
+mcp:
+  active_profile: default
+  profiles:
+    default:
+      call_timeout: 2s
+      retry: 0
+      backoff: 10ms
+      queue_size: 16
+      backpressure: block
+      read_pool_size: 2
+      write_pool_size: 1
+`
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX"})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      types.EventTypeContextHandoff,
+		RunID:     "run-context-handoff",
+		Iteration: 2,
+		Time:      time.Now(),
+		Payload: map[string]any{
+			"context_handoff_event":                "generated",
+			"context_handoff_version":              "handoff.v1",
+			"context_handoff_cut":                  "tool_finalized",
+			"context_handoff_quality_score":        0.8,
+			"context_handoff_fallback_reason":      "",
+			"context_handoff_restore_ready":        true,
+			"context_handoff_restore_status":       "restored",
+			"context_handoff_restore_operation_id": "handoff_op_1",
+			"context_handoff_restore_reason":       "idempotent_noop",
+		},
+	})
+	rec.OnEvent(context.Background(), types.Event{
+		Version:   types.EventSchemaVersionV1,
+		Type:      "run.finished",
+		RunID:     "run-context-handoff",
+		Iteration: 2,
+		Time:      time.Now(),
+		Payload:   map[string]any{"status": "success"},
+	})
+
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("run records len = %d, want 1", len(items))
+	}
+	got := items[0]
+	if got.RunID != "run-context-handoff" || got.Iterations != 2 {
+		t.Fatalf("handoff identity projection = %#v", got)
+	}
+	if got.ContextHandoffVersion != "handoff.v1" || got.ContextHandoffCut != "tool_finalized" || got.ContextHandoffQualityScore != 0.8 || !got.ContextHandoffRestoreReady {
+		t.Fatalf("handoff projection = %#v", got)
+	}
+	if got.ContextHandoffEvent != "generated" {
+		t.Fatalf("handoff event = %q, want generated", got.ContextHandoffEvent)
+	}
+	if got.ContextHandoffRestoreStatus != "restored" || got.ContextHandoffRestoreOperationID != "handoff_op_1" || got.ContextHandoffRestoreReason != "idempotent_noop" {
+		t.Fatalf("handoff restore projection = %#v", got)
+	}
+}
+
+func TestRuntimeRecorderBoundsPendingContextHandoffProjections(t *testing.T) {
+	rec := &RuntimeRecorder{handoffByRun: map[string]contextHandoffProjection{}, handoffOrder: make([]string, 0, maxPendingContextHandoffs)}
+	for idx := 0; idx < maxPendingContextHandoffs+1; idx++ {
+		rec.rememberContextHandoff(fmt.Sprintf("run-%d", idx), contextHandoffProjection{Version: "handoff.v1"})
+	}
+	if len(rec.handoffByRun) != maxPendingContextHandoffs || len(rec.handoffOrder) != maxPendingContextHandoffs {
+		t.Fatalf("pending handoff cache size = %d/%d, want %d", len(rec.handoffByRun), len(rec.handoffOrder), maxPendingContextHandoffs)
+	}
+	if _, ok := rec.handoffByRun["run-0"]; ok {
+		t.Fatal("oldest pending handoff should be evicted")
 	}
 }
 

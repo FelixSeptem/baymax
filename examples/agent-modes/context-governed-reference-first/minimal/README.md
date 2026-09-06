@@ -16,9 +16,9 @@ go run ./examples/agent-modes/context-governed-reference-first/minimal
 - Semantic anchor: `context.reference_first_isolate_edit_tiering`.
 - Classification: `context.reference_first_governance`.
 - Runtime path evidence: `core/runner,tool/local,runtime/config,context/assembler,context/guard,context/journal`.
-- Related contracts: `jit-context-organization-and-reference-first-assembly-contract; context-compression-production-hardening-contract`.
-- Required gates: `check-context-jit-organization-contract.*; check-context-compression-production-contract.*`.
-- Replay fixtures: `context_reference_first.v1; context_compression_production.v1`.
+- Related contracts: `jit-context-organization-and-reference-first-assembly-contract; context-compression-production-hardening-contract; context-compression-runtime-handoff`.
+- Required gates: `check-context-jit-organization-contract.*; check-context-compression-production-contract.*; check-context-handoff-contract.*`.
+- Replay fixtures: `context_reference_first.v1; context_compression_production.v1; context_handoff.v1`.
 
 ## Expected Output/Verification
 - `verification.mainline_runtime_path=ok`
@@ -27,7 +27,7 @@ go run ./examples/agent-modes/context-governed-reference-first/minimal
 - `verification.semantic.classification=context.reference_first_governance`
 - `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,context/assembler,context/guard,context/journal`
 - `verification.semantic.governance=baseline`
-- `verification.semantic.expected_markers=context_reference_first_selected,context_isolate_handoff_applied,context_edit_gate_evaluated`
+- `verification.semantic.expected_markers=context_reference_first_selected,context_isolate_handoff_applied,context_edit_gate_evaluated,context_handoff_validated,context_handoff_restore_ready`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
 
@@ -35,5 +35,6 @@ go run ./examples/agent-modes/context-governed-reference-first/minimal
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If isolated references or edit-gate decisions are unexpected, inspect reference/edit fixtures in `semantic_example.go`.
+- If handoff markers are missing, validate `handoff.v1` fields and replay the context handoff fixture before enabling recovery.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
 - For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.

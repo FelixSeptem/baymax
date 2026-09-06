@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/context/guard"
+	"github.com/FelixSeptem/baymax/context/handoff"
 	"github.com/FelixSeptem/baymax/context/journal"
 	"github.com/FelixSeptem/baymax/context/provider"
 	"github.com/FelixSeptem/baymax/core/types"
@@ -78,27 +79,34 @@ type Assembler struct {
 	runtimeContextConfig func() runtimeconfig.RuntimeContextConfig
 	now                  func() time.Time
 
-	mu              sync.Mutex
-	storageKey      string
-	storage         journal.Storage
-	stage2Key       string
-	stage2Provider  provider.Provider
-	prefixCache     map[string]string
-	prefixCacheUsed map[string]time.Time
-	prefixRunScoped map[string]string
-	pressureState   map[string]*pressureRunState
-	pressureUsed    map[string]time.Time
-	spillBackend    SpillBackend
-	spillBackendKey string
-	embeddingScorer SemanticEmbeddingScorer
-	embeddingKey    string
-	rerankers       map[string]SemanticReranker
-	defaultReranker SemanticReranker
-	agenticRouter   AgenticRouter
+	mu                                                   sync.Mutex
+	storageKey, stage2Key, spillBackendKey, embeddingKey string
+	storage                                              journal.Storage
+	stage2Provider                                       provider.Provider
+	prefixCache                                          map[string]string
+	prefixCacheUsed                                      map[string]time.Time
+	prefixRunScoped                                      map[string]string
+	pressureState                                        map[string]*pressureRunState
+	pressureUsed                                         map[string]time.Time
+	restoredHandoffs                                     map[string]handoff.RestoreResult
+	handoffRestoreStore                                  handoff.RestoreOperationStore
+	spillBackend                                         SpillBackend
+	embeddingScorer                                      SemanticEmbeddingScorer
+	rerankers                                            map[string]SemanticReranker
+	defaultReranker                                      SemanticReranker
+	agenticRouter                                        AgenticRouter
 }
 
 // Option customizes assembler behavior for embedding/reranker/redaction integrations.
 type Option func(*Assembler)
+
+// WithHandoffRestoreStore injects a durable operation identity store for
+// crash/restart-safe handoff restores.
+func WithHandoffRestoreStore(store handoff.RestoreOperationStore) Option {
+	return func(a *Assembler) {
+		a.handoffRestoreStore = store
+	}
+}
 
 // WithRedactionConfigProvider injects runtime redaction config provider for recap/stage2 sanitization.
 func WithRedactionConfigProvider(provider func() runtimeconfig.SecurityRedactionConfig) Option {

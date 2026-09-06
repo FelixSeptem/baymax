@@ -16,7 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-03）：
+当前里程碑快照（2026-09-06）：
+- `context-compression-runtime-handoff-contract`（已归档；上下文压缩运行交接单合同，代码、测试、文档与门禁已完成）。
 - 最近归档：
   - `establish-session-history-checkpoint-replay-contract`（已归档；P2 会话历史、Checkpoint 与回放边界合同）
 - 已归档：

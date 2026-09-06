@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/context/assembler"
+	"github.com/FelixSeptem/baymax/context/handoff"
 	"github.com/FelixSeptem/baymax/core/types"
 	obsevent "github.com/FelixSeptem/baymax/observability/event"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -7327,4 +7328,163 @@ runtime:
 		t.Fatalf("new runtime manager failed: %v", err)
 	}
 	return mgr
+}
+
+func TestContextHandoffEmissionIsRunStreamEquivalent(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-context-handoff.yaml")
+	cfg := `
+runtime:
+  context:
+    jit:
+      compaction:
+        handoff:
+          enabled: true
+context_assembler:
+  enabled: true
+  journal_path: 'JOURNAL_PATH'
+`
+	cfg = strings.ReplaceAll(cfg, "JOURNAL_PATH", filepath.ToSlash(filepath.Join(t.TempDir(), "journal.jsonl")))
+	if err := os.WriteFile(cfgPath, []byte(strings.TrimSpace(cfg)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_CONTEXT_HANDOFF_TEST"})
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	runModel := &fakeModel{generate: func(context.Context, types.ModelRequest) (types.ModelResponse, error) {
+		return types.ModelResponse{FinalAnswer: "ok"}, nil
+	}}
+	streamModel := &fakeModel{stream: func(_ context.Context, _ types.ModelRequest, emit func(types.ModelEvent) error) error {
+		return emit(types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: "ok"})
+	}}
+	runCollector := &eventCollector{}
+	streamCollector := &eventCollector{}
+	request := types.RunRequest{RunID: "run-context-handoff", SessionID: "session-context-handoff", Input: "continue verified work"}
+	if _, err := New(runModel, WithRuntimeManager(mgr)).Run(context.Background(), request, runCollector); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if _, err := New(streamModel, WithRuntimeManager(mgr)).Stream(context.Background(), request, streamCollector); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+
+	assertContextHandoffEvent := func(events []types.Event) types.Event {
+		t.Helper()
+		for _, event := range events {
+			if event.Type == types.EventTypeContextHandoff {
+				return event
+			}
+		}
+		t.Fatalf("context handoff event not emitted: %#v", events)
+		return types.Event{}
+	}
+	assertContextHandoffLifecycle := func(events []types.Event, want string) {
+		t.Helper()
+		for _, event := range events {
+			if event.Type == types.EventTypeContextHandoff && event.Payload["context_handoff_event"] == want {
+				return
+			}
+		}
+		t.Fatalf("context handoff lifecycle %q not emitted: %#v", want, events)
+	}
+	runEvent := assertContextHandoffEvent(runCollector.evs)
+	streamEvent := assertContextHandoffEvent(streamCollector.evs)
+	assertContextHandoffLifecycle(runCollector.evs, "validated")
+	assertContextHandoffLifecycle(streamCollector.evs, "validated")
+	for _, event := range []types.Event{runEvent, streamEvent} {
+		if event.Payload["context_handoff_event"] != "generated" || event.Payload["context_handoff_version"] != "handoff.v1" || event.Payload["context_handoff_cut"] != "finalized_event" || event.Payload["context_handoff_restore_ready"] != true {
+			t.Fatalf("handoff payload = %#v", event.Payload)
+		}
+	}
+}
+
+func TestHandoffBoundaryFromModelEventRequiresExplicitCompletedMetadata(t *testing.T) {
+	completed := types.ModelEvent{
+		Type: types.ModelEventTypeResponseCompleted,
+		Meta: map[string]any{"checkpoint_id": "cp-1", "stream_flushed": true},
+	}
+	boundary := handoffBoundaryFromModelEvent(completed)
+	if boundary.CheckpointID != "cp-1" || !boundary.StreamFlushed {
+		t.Fatalf("completed boundary = %#v, want checkpoint cp-1 and flushed", boundary)
+	}
+	delta := types.ModelEvent{
+		Type: types.ModelEventTypeOutputTextDelta,
+		Meta: map[string]any{"checkpoint_id": "cp-delta", "stream_flushed": true},
+	}
+	if got := handoffBoundaryFromModelEvent(delta); got.CheckpointID != "" || got.StreamFlushed {
+		t.Fatalf("delta boundary = %#v, want empty boundary", got)
+	}
+}
+
+func TestEngineRestoreHandoffEmitsLifecycleAndUsesConfiguredOwner(t *testing.T) {
+	seen := 0
+	collector := &eventCollector{}
+	engine := New(nil,
+		WithHandoffResolver(handoff.ResolverFunc(func(ref handoff.Reference) error {
+			seen++
+			if ref.Kind != handoff.ReferenceCheckpoint || ref.ID != "cp-restore" {
+				t.Fatalf("unexpected reference: %#v", ref)
+			}
+			return nil
+		})),
+	)
+	record := handoff.Handoff{Version: handoff.VersionV1, RunID: "run-restore", Cut: handoff.CutCheckpoint, Objective: "resume", References: []handoff.Reference{{Kind: handoff.ReferenceCheckpoint, ID: "cp-restore"}}}
+	first, err := engine.RestoreHandoff(context.Background(), record, collector)
+	if err != nil {
+		t.Fatalf("first restore: %v", err)
+	}
+	second, err := engine.RestoreHandoff(context.Background(), record, collector)
+	if err != nil {
+		t.Fatalf("second restore: %v", err)
+	}
+	if first != second || seen != 1 {
+		t.Fatalf("restore idempotency = first=%#v second=%#v owner_calls=%d", first, second, seen)
+	}
+	var validated, restored int
+	for _, ev := range collector.evs {
+		if ev.Type != types.EventTypeContextHandoff {
+			continue
+		}
+		switch ev.Payload["context_handoff_event"] {
+		case "validated":
+			validated++
+		case "restored":
+			restored++
+		}
+	}
+	if validated != 1 || restored != 1 {
+		t.Fatalf("restore lifecycle events = validated=%d restored=%d events=%#v", validated, restored, collector.evs)
+	}
+}
+
+func TestEngineRestoreHandoffRejectsInvalidCutBeforeOwnerAccess(t *testing.T) {
+	seen := 0
+	collector := &eventCollector{}
+	engine := New(nil, WithHandoffResolver(handoff.ResolverFunc(func(handoff.Reference) error {
+		seen++
+		return nil
+	})))
+	_, err := engine.RestoreHandoff(context.Background(), handoff.Handoff{
+		Version:    handoff.VersionV1,
+		RunID:      "run-invalid-cut",
+		Cut:        handoff.CutUnflushedStream,
+		Objective:  "resume",
+		References: []handoff.Reference{{Kind: handoff.ReferenceCheckpoint, ID: "cp-1"}},
+	}, collector)
+	if err == nil {
+		t.Fatal("RestoreHandoff accepted unflushed stream cut")
+	}
+	if seen != 0 {
+		t.Fatalf("owner was accessed before validation: %d calls", seen)
+	}
+	for _, ev := range collector.evs {
+		if ev.Type == types.EventTypeContextHandoff && ev.Payload["context_handoff_event"] == "validation_failed" {
+			if ev.Payload["context_handoff_fallback_reason"] != handoff.FallbackInvalidCut {
+				t.Fatalf("validation fallback reason = %#v", ev.Payload)
+			}
+			return
+		}
+	}
+	t.Fatalf("validation_failed event not emitted: %#v", collector.evs)
 }

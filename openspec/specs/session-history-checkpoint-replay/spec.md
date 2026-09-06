@@ -118,3 +118,10 @@ All new protocol, diagnostics, and fixture fields MUST be additive, nullable or 
 #### Scenario: History drift is recorded through the canonical writer
 - **WHEN** replay or runtime validation detects a history, branch, restore, or replay drift
 - **THEN** bounded additive fields are recorded through `RuntimeRecorder` and no parallel diagnostics writer is used
+
+### Requirement: Session history replay SHALL validate handoff continuity
+Session history and checkpoint replay SHALL verify that a handoff cut, referenced immutable leaves, and restored next actions preserve lineage and continuity without creating a parallel history source.
+
+#### Scenario: Continuity-preserving replay
+- **WHEN** a valid handoff is replayed from its source checkpoint
+- **THEN** history lineage and immutable leaves match the source projection and restore is idempotent

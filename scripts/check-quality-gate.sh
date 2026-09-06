@@ -236,6 +236,12 @@ if ! BAYMAX_CONTEXT_COMPRESSION_SKIP_IMPACTED_CONTRACT_SUITES=1 bash scripts/che
   exit 1
 fi
 
+echo "[quality-gate] context handoff contract suites"
+if ! bash scripts/check-context-handoff-contract.sh; then
+  echo "[quality-gate][context-handoff-contract] context handoff contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] realtime protocol contract suites"
 if ! bash scripts/check-realtime-protocol-contract.sh; then
   echo "[quality-gate][realtime-protocol-contract] realtime protocol contract suites failed"

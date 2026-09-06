@@ -44,6 +44,15 @@ type RuntimeContextJITCompactionConfig struct {
 	QualityThreshold float64                                    `json:"quality_threshold"`
 	FallbackPolicy   string                                     `json:"fallback_policy"`
 	RuleEligibility  RuntimeContextJITCompactionRuleEligibility `json:"rule_eligibility"`
+	Handoff          RuntimeContextJITHandoffConfig             `json:"handoff"`
+}
+
+type RuntimeContextJITHandoffConfig struct {
+	Enabled            bool    `json:"enabled"`
+	MaxSerializedBytes int     `json:"max_serialized_bytes"`
+	MaxLatencyMS       int     `json:"max_latency_ms"`
+	QualityThreshold   float64 `json:"quality_threshold"`
+	FailurePolicy      string  `json:"failure_policy"`
 }
 
 type RuntimeContextJITCompactionRuleEligibility struct {
@@ -126,6 +135,20 @@ func ValidateRuntimeContextJITConfig(cfg RuntimeContextJITConfig) error {
 	}
 	if cfg.Compaction.QualityThreshold < 0 || cfg.Compaction.QualityThreshold > 1 {
 		return fmt.Errorf("runtime.context.jit.compaction.quality_threshold must be in [0,1]")
+	}
+	if cfg.Compaction.Handoff.MaxSerializedBytes <= 0 {
+		return fmt.Errorf("runtime.context.jit.compaction.handoff.max_serialized_bytes must be > 0")
+	}
+	if cfg.Compaction.Handoff.MaxLatencyMS <= 0 {
+		return fmt.Errorf("runtime.context.jit.compaction.handoff.max_latency_ms must be > 0")
+	}
+	if cfg.Compaction.Handoff.QualityThreshold < 0 || cfg.Compaction.Handoff.QualityThreshold > 1 {
+		return fmt.Errorf("runtime.context.jit.compaction.handoff.quality_threshold must be in [0,1]")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Compaction.Handoff.FailurePolicy)) {
+	case RuntimeContextJITCompactionFallbackPolicyBestEffort, RuntimeContextJITCompactionFallbackPolicyFailFast:
+	default:
+		return fmt.Errorf("runtime.context.jit.compaction.handoff.failure_policy must be one of [%s,%s], got %q", RuntimeContextJITCompactionFallbackPolicyBestEffort, RuntimeContextJITCompactionFallbackPolicyFailFast, cfg.Compaction.Handoff.FailurePolicy)
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Compaction.FallbackPolicy)) {
 	case RuntimeContextJITCompactionFallbackPolicyBestEffort, RuntimeContextJITCompactionFallbackPolicyFailFast:

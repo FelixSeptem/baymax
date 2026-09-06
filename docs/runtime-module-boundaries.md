@@ -160,6 +160,7 @@ R4 多代理共享契约前置门禁（阻断级）：
   - `context/assembler` 只做策略编排与触发时机控制（例如 CA3 压力分区、阈值判定、计数调用节流）。
   - `model/*` 负责 provider 协议细节与官方 SDK 调用（包括 token count、能力探测、流式映射）。
 - 禁止在 `context/*` 中直接引入 provider 官方 SDK（OpenAI/Anthropic/Gemini），避免跨层耦合与升级扩散。
+- `context/handoff` 只定义有界交接 DTO、验证和恢复投影，不拥有或复制 Session History、Checkpoint、Snapshot、Artifact 正文。
 - 任何新增 provider 级能力（例如 token count、模型元数据查询）应先落在 `model/<provider>`，再由上层通过接口复用。
 ## Session history and replay boundary
 

@@ -3,6 +3,8 @@ package contextgovernedreferencefirst
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -59,6 +61,17 @@ type contextState struct {
 	ReplayBinding      string
 	SeenMarkers        []string
 	TotalScore         int
+}
+
+type handoffEventCollector struct {
+	events []types.Event
+}
+
+func (c *handoffEventCollector) OnEvent(_ context.Context, event types.Event) {
+	if c == nil {
+		return
+	}
+	c.events = append(c.events, event)
 }
 
 var runtimeDomains = []string{"context/assembler", "context/guard", "context/journal"}
@@ -166,7 +179,13 @@ func executeVariant(variant string) {
 		panic(err)
 	}
 
-	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX"})
+	configPath := filepath.Join(os.TempDir(), fmt.Sprintf("baymax-context-handoff-%s.yaml", modecommon.MarkerToken(variant)))
+	config := fmt.Sprintf("runtime:\n  context:\n    jit:\n      compaction:\n        handoff:\n          enabled: true\ncontext_assembler:\n  enabled: true\n  journal_path: '%s'\n", filepath.ToSlash(filepath.Join(os.TempDir(), fmt.Sprintf("baymax-context-handoff-%s.journal.jsonl", modecommon.MarkerToken(variant)))))
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.Remove(configPath) }()
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: configPath, EnvPrefix: "BAYMAX_CONTEXT_GOVERNED_EXAMPLE"})
 	if err != nil {
 		panic(err)
 	}
@@ -178,17 +197,18 @@ func executeVariant(variant string) {
 	}
 
 	engine := runner.New(newContextWorkflowModel(variant), runner.WithLocalRegistry(reg), runner.WithRuntimeManager(mgr))
+	collector := &handoffEventCollector{}
 	result, err := engine.Run(context.Background(), types.RunRequest{
 		RunID: fmt.Sprintf("agent-mode-%s-%s", modecommon.MarkerToken(patternName), modecommon.MarkerToken(variant)),
 		Input: "execute context governed reference first workflow",
-	}, nil)
+	}, collector)
 	if err != nil {
 		panic(err)
 	}
 
 	expected := expectedMarkersForVariant(variant)
 	runtimePath := modecommon.ComposeRuntimePath(runtimeDomains)
-	pathStatus := modecommon.RuntimePathStatus(result.ToolCalls, len(expected))
+	pathStatus := modecommon.RuntimePathStatus(result.ToolCalls, len(stepsForVariant(variant)))
 	governanceStatus := "baseline"
 	if variant == modecommon.VariantProduction {
 		governanceStatus = "enforced"
@@ -207,6 +227,9 @@ func executeVariant(variant string) {
 	fmt.Printf("verification.semantic.governance=%s\n", governanceStatus)
 	fmt.Printf("verification.semantic.marker_count=%d\n", len(expected))
 	for _, marker := range expected {
+		if strings.HasPrefix(marker, "context_handoff_") && !hasValidatedHandoff(collector.events) {
+			panic("context handoff runtime markers were not observed")
+		}
 		fmt.Printf("verification.semantic.marker.%s=ok\n", modecommon.MarkerToken(marker))
 	}
 	fmt.Printf("result.tool_calls=%d\n", len(result.ToolCalls))
@@ -214,11 +237,24 @@ func executeVariant(variant string) {
 	fmt.Printf("result.signature=%d\n", modecommon.ComputeSignature(result.FinalAnswer, result.ToolCalls))
 }
 
+func hasValidatedHandoff(events []types.Event) bool {
+	for _, event := range events {
+		if event.Type != types.EventTypeContextHandoff {
+			continue
+		}
+		if event.Payload["context_handoff_version"] == "handoff.v1" && event.Payload["context_handoff_restore_ready"] == true {
+			return true
+		}
+	}
+	return false
+}
+
 func expectedMarkersForVariant(variant string) []string {
-	markers := make([]string, 0, len(minimalSemanticSteps)+len(productionGovernanceSteps))
+	markers := make([]string, 0, len(minimalSemanticSteps)+len(productionGovernanceSteps)+2)
 	for _, step := range minimalSemanticSteps {
 		markers = append(markers, step.Marker)
 	}
+	markers = append(markers, "context_handoff_validated", "context_handoff_restore_ready")
 	if variant == modecommon.VariantProduction {
 		for _, step := range productionGovernanceSteps {
 			markers = append(markers, step.Marker)

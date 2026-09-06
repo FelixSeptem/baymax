@@ -19,12 +19,14 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - context-stage2-routing-and-disclosure：stage2 规则/agentic 路由 + provider 拉取 + tail recap
 - context-pressure-compaction-and-swapback：压力分区、压缩、prune、spill、semantic compaction
 - context-production-hardening-and-threshold-governance：阈值覆盖与触发来源追踪（通过压力阶段统计字段体现）
+- context-compression-runtime-handoff：压缩后的有界事实交接与引用校验（`context/handoff`），不拥有 session/checkpoint/artifact 正文。
 
 `provider` 子域负责 file/http/rag/db/elasticsearch 的检索适配和错误分层（`transport|protocol|semantic`）。
 
 ## 关键入口
 
 - `assembler/assembler.go`
+- `assembler/handoff.go`（可选 `AssembleWithHandoff` / `RestoreHandoff` 接缝）
 - `assembler/context_pressure_recovery.go`
 - `journal/storage.go`
 - `guard/guard.go`
@@ -35,6 +37,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - `context/*` 不直接依赖 provider 官方 SDK；模型能力应通过 `model/*` 间接复用。
 - stage2 错误层、reason code、hint 元数据需保持契约稳定，供 diagnostics 聚合。
 - 该域只生成标准结果与事件，不直接写 `runtime/diagnostics` 存储。
+- handoff 仅保存 `handoff.v1` 结构化事实、推断、待确认事项与 source references；恢复通过既有 owner 和 reference-first 接缝完成。
 
 ## 配置与默认值
 

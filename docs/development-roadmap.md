@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-03
+更新时间：2026-09-06
 
 ## 定位
 
@@ -34,6 +34,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `harden-tool-lifecycle-and-failure-isolation-contract`（工具调用生命周期阶段投影、失败隔离与 finalize 幂等合同）
 - 最近归档：
   - `establish-session-history-checkpoint-replay-contract`（P2 会话历史、Checkpoint 与回放边界合同；已完成实施并归档）
+  - `context-compression-runtime-handoff-contract`（上下文压缩运行交接单合同；代码、测试、文档与门禁已完成并归档）
 - 候选：以 openspec list --json 为准（当前无活跃提案，后续方向另立提案）。
 
 ## 版本阶段口径（延续 0.x）

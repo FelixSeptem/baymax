@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/context/assembler"
+	"github.com/FelixSeptem/baymax/context/handoff"
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -42,31 +43,37 @@ type Option func(*Engine)
 
 // Engine orchestrates run/stream model loop, tool dispatch, context assembly, and diagnostics emission.
 type Engine struct {
-	model              types.ModelClient
-	models             map[string]types.ModelClient
-	modelOrder         []string
-	dispatcher         *local.Dispatcher
-	tracer             *obsTrace.Manager
-	runtimeMgr         *runtimeconfig.Manager
-	assembler          *assembler.Assembler
-	actionGateMatcher  types.ActionGateMatcher
-	actionGateResolver types.ActionGateResolver
-	clarification      types.ClarificationResolver
-	modelInputFilters  []types.ModelInputSecurityFilter
-	modelOutputFilters []types.ModelOutputSecurityFilter
-	lifecycleHooks     []types.AgentLifecycleHook
-	toolMiddlewares    []types.ToolMiddleware
-	skillLoader        types.SkillLoader
-	securityAlert      types.SecurityAlertCallback
-	securityDeliveryMu sync.Mutex
-	securityDelivery   *securityAlertDeliveryExecutor
-	sandboxExecutor    types.SandboxExecutor
-	now                func() time.Time
-	newRunID           func() string
-	capCacheMu         sync.RWMutex
-	capCache           map[string]cachedCapabilities
-	realtimeCursorMu   sync.Mutex
-	realtimeCursors    map[string]realtimeCursorRecord
+	model               types.ModelClient
+	models              map[string]types.ModelClient
+	modelOrder          []string
+	dispatcher          *local.Dispatcher
+	tracer              *obsTrace.Manager
+	runtimeMgr          *runtimeconfig.Manager
+	assembler           *assembler.Assembler
+	actionGateMatcher   types.ActionGateMatcher
+	actionGateResolver  types.ActionGateResolver
+	clarification       types.ClarificationResolver
+	modelInputFilters   []types.ModelInputSecurityFilter
+	modelOutputFilters  []types.ModelOutputSecurityFilter
+	lifecycleHooks      []types.AgentLifecycleHook
+	toolMiddlewares     []types.ToolMiddleware
+	skillLoader         types.SkillLoader
+	securityAlert       types.SecurityAlertCallback
+	securityDeliveryMu  sync.Mutex
+	securityDelivery    *securityAlertDeliveryExecutor
+	sandboxExecutor     types.SandboxExecutor
+	now                 func() time.Time
+	newRunID            func() string
+	capCacheMu          sync.RWMutex
+	capCache            map[string]cachedCapabilities
+	realtimeCursorMu    sync.Mutex
+	realtimeCursors     map[string]realtimeCursorRecord
+	handoffBoundaryMu   sync.Mutex
+	handoffBoundaries   map[string]handoffBoundary
+	handoffResolver     handoff.Resolver
+	handoffRestoreStore handoff.RestoreOperationStore
+	handoffRestoreMu    sync.Mutex
+	handoffRestored     map[string]handoff.RestoreResult
 }
 
 type cachedCapabilities struct {
@@ -91,12 +98,14 @@ type classifiedModelError interface {
 // New creates a runner engine with default tracer and context assembler wiring.
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
-		model:           model,
-		models:          map[string]types.ModelClient{},
-		tracer:          obsTrace.NewManager("baymax/core/runner"),
-		now:             time.Now,
-		capCache:        map[string]cachedCapabilities{},
-		realtimeCursors: map[string]realtimeCursorRecord{},
+		model:             model,
+		models:            map[string]types.ModelClient{},
+		tracer:            obsTrace.NewManager("baymax/core/runner"),
+		now:               time.Now,
+		capCache:          map[string]cachedCapabilities{},
+		realtimeCursors:   map[string]realtimeCursorRecord{},
+		handoffBoundaries: map[string]handoffBoundary{},
+		handoffRestored:   map[string]handoff.RestoreResult{},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
@@ -175,6 +184,25 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 	}
 }
 
+// WithHandoffResolver injects the reference-first resolver backed by the
+// authoritative artifact, checkpoint, history, or snapshot owners.
+func WithHandoffResolver(resolver handoff.Resolver) Option {
+	return func(e *Engine) {
+		if e != nil {
+			e.handoffResolver = resolver
+		}
+	}
+}
+
+// WithHandoffRestoreStore injects durable restore-operation identity storage.
+func WithHandoffRestoreStore(store handoff.RestoreOperationStore) Option {
+	return func(e *Engine) {
+		if e != nil {
+			e.handoffRestoreStore = store
+		}
+	}
+}
+
 // WithSandboxExecutor injects host-provided sandbox executor and bridges it into runtime manager when available.
 func WithSandboxExecutor(executor types.SandboxExecutor) Option {
 	return func(e *Engine) {
@@ -195,10 +223,13 @@ func WithContextAssemblerAgenticRouter(router assembler.AgenticRouter) Option {
 }
 
 func (e *Engine) releaseContextAssemblerRunState(runID string) {
-	if e == nil || e.assembler == nil {
+	if e == nil {
 		return
 	}
-	e.assembler.OnRunFinished(runID)
+	if e.assembler != nil {
+		e.assembler.OnRunFinished(runID)
+	}
+	e.clearHandoffBoundary(runID)
 }
 
 // WithProviderModels registers provider-name to model-client mapping for step-level fallback selection.
@@ -1063,7 +1094,7 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 	if tc, ok := selectedModel.(types.TokenCounter); ok {
 		tokenCounter = tc
 	}
-	assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
+	assembledReq, assembleResult, assembleErr := e.assembleWithHandoff(ctx, types.ContextAssembleRequest{
 		RunID:         runID,
 		SessionID:     req.SessionID,
 		PrefixVersion: e.resolvePrefixVersion(),
@@ -1075,7 +1106,7 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 		Capabilities:  modelReq.Capabilities,
 		TokenCounter:  tokenCounter,
 		ModelClient:   selectedModel,
-	}, modelReq)
+	}, modelReq, h, iteration)
 	lastAssemble := assembleResult
 	memoryAggregate.observeAssemble(assembleResult)
 
@@ -1201,6 +1232,7 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 	modelCtx, modelSpan := e.tracer.StartStep(stepCtx, "model.stream", attribute.Int("iteration.index", iteration))
 	err := selectedModel.Stream(modelCtx, modelReq, func(ev types.ModelEvent) error {
 		normalizedEvent := ev
+		e.rememberHandoffBoundary(runID, handoffBoundaryFromModelEvent(normalizedEvent))
 		if normalizedEvent.Type == types.ModelEventTypeFinalAnswer || normalizedEvent.Type == types.ModelEventTypeOutputTextDelta {
 			filteredOutput, filterDecision, filterTerminal, filterErr := e.applyOutputFilters(stepCtx, runID, iteration, normalizedEvent.TextDelta)
 			if filterDecision != nil {
@@ -2125,7 +2157,7 @@ func (e *Engine) prepareReactModelStep(
 	if tc, ok := selectedModel.(types.TokenCounter); ok {
 		tokenCounter = tc
 	}
-	assembledReq, assembleResult, assembleErr := e.assembler.Assemble(ctx, types.ContextAssembleRequest{
+	assembledReq, assembleResult, assembleErr := e.assembleWithHandoff(ctx, types.ContextAssembleRequest{
 		RunID:         runID,
 		SessionID:     req.SessionID,
 		PrefixVersion: e.resolvePrefixVersion(),
@@ -2137,7 +2169,7 @@ func (e *Engine) prepareReactModelStep(
 		Capabilities:  modelReq.Capabilities,
 		TokenCounter:  tokenCounter,
 		ModelClient:   selectedModel,
-	}, modelReq)
+	}, modelReq, h, iteration)
 	if memoryAggregate != nil {
 		memoryAggregate.observeAssemble(assembleResult)
 	}
@@ -2215,6 +2247,7 @@ func (e *Engine) streamModelStep(
 	stepToolCalls := make([]types.ToolCall, 0)
 	streamErr := selectedModel.Stream(modelCtx, modelReq, func(ev types.ModelEvent) error {
 		normalizedEvent := ev
+		e.rememberHandoffBoundary(runID, handoffBoundaryFromModelEvent(normalizedEvent))
 		if normalizedEvent.Type == types.ModelEventTypeFinalAnswer || normalizedEvent.Type == types.ModelEventTypeOutputTextDelta {
 			filteredOutput, filterDecision, filterTerminal, filterErr := e.applyOutputFilters(stepCtx, runID, iteration, normalizedEvent.TextDelta)
 			if filterDecision != nil && lastSecurity != nil {

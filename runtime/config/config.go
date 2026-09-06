@@ -1326,6 +1326,7 @@ func DefaultConfig() Config {
 					Compaction: RuntimeContextJITCompactionConfig{
 						QualityThreshold: 0.60,
 						FallbackPolicy:   RuntimeContextJITCompactionFallbackPolicyBestEffort,
+						Handoff:          RuntimeContextJITHandoffConfig{Enabled: false, MaxSerializedBytes: 64 * 1024, MaxLatencyMS: 100, QualityThreshold: 0.60, FailurePolicy: RuntimeContextJITCompactionFallbackPolicyBestEffort},
 						RuleEligibility: RuntimeContextJITCompactionRuleEligibility{
 							AllowOldestToolResult: true,
 							MinRetainedEvidence:   1,
@@ -4503,6 +4504,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.context.jit.compaction.fallback_policy", base.Runtime.Context.JIT.Compaction.FallbackPolicy)
 	v.SetDefault("runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result", base.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult)
 	v.SetDefault("runtime.context.jit.compaction.rule_eligibility.min_retained_evidence", base.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence)
+	registerRuntimeContextHandoffDefaults(v, base)
 	v.SetDefault("runtime.context.jit.swap_back.enabled", base.Runtime.Context.JIT.SwapBack.Enabled)
 	v.SetDefault("runtime.context.jit.swap_back.min_relevance_score", base.Runtime.Context.JIT.SwapBack.MinRelevanceScore)
 	v.SetDefault("runtime.context.jit.swap_back.ranking_strategy", base.Runtime.Context.JIT.SwapBack.RankingStrategy)
@@ -5220,15 +5222,7 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	contextJITCompactionQualityThreshold, err := strictFloatConfigValue(v, "runtime.context.jit.compaction.quality_threshold")
-	if err != nil {
-		return Config{}, err
-	}
-	contextJITCompactionRuleAllowOldestToolResult, err := strictBoolConfigValue(v, "runtime.context.jit.compaction.rule_eligibility.allow_oldest_tool_result")
-	if err != nil {
-		return Config{}, err
-	}
-	contextJITCompactionRuleMinRetainedEvidence, err := strictIntConfigValue(v, "runtime.context.jit.compaction.rule_eligibility.min_retained_evidence")
+	contextJITCompaction, err := readRuntimeContextJITCompactionConfig(v)
 	if err != nil {
 		return Config{}, err
 	}
@@ -5314,10 +5308,7 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Context.JIT.EditGate.Enabled = contextJITEditGateEnabled
 	cfg.Runtime.Context.JIT.EditGate.ClearAtLeastTokens = contextJITEditGateClearAtLeastTokens
 	cfg.Runtime.Context.JIT.EditGate.MinGainRatio = contextJITEditGateMinGainRatio
-	cfg.Runtime.Context.JIT.Compaction.QualityThreshold = contextJITCompactionQualityThreshold
-	cfg.Runtime.Context.JIT.Compaction.FallbackPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.context.jit.compaction.fallback_policy")))
-	cfg.Runtime.Context.JIT.Compaction.RuleEligibility.AllowOldestToolResult = contextJITCompactionRuleAllowOldestToolResult
-	cfg.Runtime.Context.JIT.Compaction.RuleEligibility.MinRetainedEvidence = contextJITCompactionRuleMinRetainedEvidence
+	cfg.Runtime.Context.JIT.Compaction = contextJITCompaction
 	cfg.Runtime.Context.JIT.SwapBack.Enabled = contextJITSwapBackEnabled
 	cfg.Runtime.Context.JIT.SwapBack.MinRelevanceScore = contextJITSwapBackMinRelevanceScore
 	cfg.Runtime.Context.JIT.SwapBack.RankingStrategy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.context.jit.swap_back.ranking_strategy")))

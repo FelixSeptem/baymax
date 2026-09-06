@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -15,6 +16,24 @@ import (
 type RuntimeRecorder struct {
 	manager         *runtimeconfig.Manager
 	exporterRuntime *runtimeExporterRuntime
+	handoffMu       sync.Mutex
+	handoffByRun    map[string]contextHandoffProjection
+	handoffOrder    []string
+}
+
+const maxPendingContextHandoffs = 256
+
+type contextHandoffProjection struct {
+	Event              string
+	Version            string
+	Cut                string
+	SourceCheckpointID string
+	QualityScore       float64
+	FallbackReason     string
+	RestoreReady       bool
+	RestoreStatus      string
+	RestoreOperationID string
+	RestoreReason      string
 }
 
 type RuntimeRecorderOption func(*runtimeRecorderOptionSet)
@@ -66,6 +85,8 @@ func NewRuntimeRecorder(manager *runtimeconfig.Manager, options ...RuntimeRecord
 	return &RuntimeRecorder{
 		manager:         manager,
 		exporterRuntime: newRuntimeExporterRuntime(resolver),
+		handoffByRun:    map[string]contextHandoffProjection{},
+		handoffOrder:    make([]string, 0, maxPendingContextHandoffs),
 	}
 }
 
@@ -83,6 +104,45 @@ func (r *RuntimeRecorder) Close() {
 	r.exporterRuntime.Close()
 }
 
+func (r *RuntimeRecorder) rememberContextHandoff(runID string, projection contextHandoffProjection) {
+	if r == nil || strings.TrimSpace(runID) == "" {
+		return
+	}
+	r.handoffMu.Lock()
+	defer r.handoffMu.Unlock()
+	if r.handoffByRun == nil {
+		r.handoffByRun = map[string]contextHandoffProjection{}
+	}
+	key := strings.TrimSpace(runID)
+	if _, exists := r.handoffByRun[key]; !exists {
+		r.handoffOrder = append(r.handoffOrder, key)
+	}
+	r.handoffByRun[key] = projection
+	for len(r.handoffOrder) > maxPendingContextHandoffs {
+		oldest := r.handoffOrder[0]
+		r.handoffOrder = r.handoffOrder[1:]
+		delete(r.handoffByRun, oldest)
+	}
+}
+
+func (r *RuntimeRecorder) takeContextHandoff(runID string) contextHandoffProjection {
+	if r == nil || strings.TrimSpace(runID) == "" {
+		return contextHandoffProjection{}
+	}
+	r.handoffMu.Lock()
+	defer r.handoffMu.Unlock()
+	key := strings.TrimSpace(runID)
+	projection := r.handoffByRun[key]
+	delete(r.handoffByRun, key)
+	for idx, pending := range r.handoffOrder {
+		if pending == key {
+			r.handoffOrder = append(r.handoffOrder[:idx], r.handoffOrder[idx+1:]...)
+			break
+		}
+	}
+	return projection
+}
+
 func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 	if r == nil || r.manager == nil {
 		return
@@ -95,6 +155,19 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 		payload = r.manager.RedactPayload(payload)
 	}
 	switch ev.Type {
+	case types.EventTypeContextHandoff:
+		r.rememberContextHandoff(ev.RunID, contextHandoffProjection{
+			Event:              payloadString(payload, "context_handoff_event"),
+			Version:            payloadString(payload, "context_handoff_version"),
+			Cut:                payloadString(payload, "context_handoff_cut"),
+			SourceCheckpointID: payloadString(payload, "context_handoff_source_checkpoint_id"),
+			QualityScore:       payloadFloat64(payload, "context_handoff_quality_score"),
+			FallbackReason:     payloadString(payload, "context_handoff_fallback_reason"),
+			RestoreReady:       payloadBool(payload, "context_handoff_restore_ready"),
+			RestoreStatus:      payloadString(payload, "context_handoff_restore_status"),
+			RestoreOperationID: payloadString(payload, "context_handoff_restore_operation_id"),
+			RestoreReason:      payloadString(payload, "context_handoff_restore_reason"),
+		})
 	case types.EventTypeActionTimeline:
 		if timeline, ok := ParseActionTimeline(types.Event{
 			Version:   ev.Version,
@@ -182,6 +255,7 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			}
 		}
 		decision := payloadString(payload, "decision")
+		handoffProjection := r.takeContextHandoff(ev.RunID)
 		runtimeReadinessStatus := payloadString(payload, "runtime_readiness_status")
 		budgetDecision := payloadString(payload, "budget_decision")
 		evalSummary := payloadAnyMap(payload, "eval_summary")
@@ -350,6 +424,16 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 			ContextColdStoreGovernanceAction:            payloadString(payload, "context_cold_store_governance_action"),
 			ContextRecoveryConsistencyMarker:            payloadString(payload, "context_recovery_consistency_marker"),
 			ContextRecapSource:                          payloadString(payload, "context_recap_source"),
+			ContextHandoffVersion:                       payloadStringOrFallback(payload, "context_handoff_version", handoffProjection.Version),
+			ContextHandoffEvent:                         payloadStringOrFallback(payload, "context_handoff_event", handoffProjection.Event),
+			ContextHandoffCut:                           payloadStringOrFallback(payload, "context_handoff_cut", handoffProjection.Cut),
+			ContextHandoffSourceCheckpointID:            payloadStringOrFallback(payload, "context_handoff_source_checkpoint_id", handoffProjection.SourceCheckpointID),
+			ContextHandoffQualityScore:                  payloadFloat64OrFallback(payload, "context_handoff_quality_score", handoffProjection.QualityScore),
+			ContextHandoffFallbackReason:                payloadStringOrFallback(payload, "context_handoff_fallback_reason", handoffProjection.FallbackReason),
+			ContextHandoffRestoreReady:                  payloadBoolOrFallback(payload, "context_handoff_restore_ready", handoffProjection.RestoreReady),
+			ContextHandoffRestoreStatus:                 payloadStringOrFallback(payload, "context_handoff_restore_status", handoffProjection.RestoreStatus),
+			ContextHandoffRestoreOperationID:            payloadStringOrFallback(payload, "context_handoff_restore_operation_id", handoffProjection.RestoreOperationID),
+			ContextHandoffRestoreReason:                 payloadStringOrFallback(payload, "context_handoff_restore_reason", handoffProjection.RestoreReason),
 			RecapStatus:                                 payloadString(payload, "recap_status"),
 			TeamID:                                      payloadString(payload, "team_id"),
 			TeamStrategy:                                payloadString(payload, "team_strategy"),
@@ -720,6 +804,13 @@ func payloadFloat64(m map[string]any, key string) float64 {
 	default:
 		return 0
 	}
+}
+
+func payloadFloat64OrFallback(m map[string]any, key string, fallback float64) float64 {
+	if !payloadHasKey(m, key) {
+		return fallback
+	}
+	return payloadFloat64(m, key)
 }
 
 func payloadFloat64Compat(m map[string]any, primary string, legacy string) float64 {
@@ -1236,6 +1327,13 @@ func payloadBool(m map[string]any, key string) bool {
 	}
 	v, _ := raw.(bool)
 	return v
+}
+
+func payloadBoolOrFallback(m map[string]any, key string, fallback bool) bool {
+	if !payloadHasKey(m, key) {
+		return fallback
+	}
+	return payloadBool(m, key)
 }
 
 func payloadBoolCompat(m map[string]any, primary string, legacy string) bool {

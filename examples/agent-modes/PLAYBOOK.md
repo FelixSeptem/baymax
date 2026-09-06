@@ -43,7 +43,7 @@ This playbook defines how to promote each `agent-modes` example from `minimal` t
 ## Mode Mapping
 | pattern | phase | semantic anchor | production governance markers | gates | replay |
 | --- | --- | --- | --- | --- | --- |
-| `context-governed-reference-first` | `P0` | `context.reference_first_isolate_edit_tiering` | `governance_context_tiering_enforced; governance_context_replay_bound` | `check-context-jit-organization-contract.*; check-context-compression-production-contract.*` | `context_reference_first.v1; context_compression_production.v1` |
+| `context-governed-reference-first` | `P0` | `context.reference_first_isolate_edit_tiering` | `governance_context_tiering_enforced; governance_context_replay_bound; context_handoff_validated; context_handoff_restore_ready` | `check-context-jit-organization-contract.*; check-context-compression-production-contract.*; check-context-handoff-contract.*` | `context_reference_first.v1; context_compression_production.v1; context_handoff.v1` |
 | `hitl-governed-checkpoint` | `P0` | `hitl.await_resume_reject_timeout_recover` | `governance_hitl_gate_enforced; governance_hitl_replay_bound` | `check-react-contract.*` | `react.v1` |
 | `mcp-governed-stdio-http` | `P0` | `transport.profile_failover_governance` | `governance_transport_gate_enforced; governance_transport_replay_bound` | `check-quality-gate.*` | `cross-domain-primary-reason-arbitration-contract.v1` |
 | `multi-agents-collab-recovery` | `P0` | `collab.mailbox_taskboard_recovery` | `governance_collab_gate_enforced; governance_collab_replay_bound` | `check-multi-agent-shared-contract.*` | `cross-domain-primary-reason-arbitration-contract.v1` |

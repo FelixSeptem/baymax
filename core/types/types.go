@@ -554,17 +554,19 @@ type ModelRequest struct {
 }
 
 type ContextAssembleRequest struct {
-	RunID         string                 `json:"run_id,omitempty"`
-	SessionID     string                 `json:"session_id,omitempty"`
-	PrefixVersion string                 `json:"prefix_version,omitempty"`
-	ModelProvider string                 `json:"model_provider,omitempty"`
-	Model         string                 `json:"model,omitempty"`
-	Input         string                 `json:"input,omitempty"`
-	Messages      []Message              `json:"messages,omitempty"`
-	ToolResult    []ToolCallOutcome      `json:"tool_results,omitempty"`
-	Capabilities  CapabilityRequirements `json:"capabilities,omitempty"`
-	TokenCounter  TokenCounter           `json:"-"`
-	ModelClient   ModelClient            `json:"-"`
+	RunID                 string                 `json:"run_id,omitempty"`
+	SessionID             string                 `json:"session_id,omitempty"`
+	FinalizedCheckpointID string                 `json:"finalized_checkpoint_id,omitempty"`
+	StreamFlushed         bool                   `json:"stream_flushed,omitempty"`
+	PrefixVersion         string                 `json:"prefix_version,omitempty"`
+	ModelProvider         string                 `json:"model_provider,omitempty"`
+	Model                 string                 `json:"model,omitempty"`
+	Input                 string                 `json:"input,omitempty"`
+	Messages              []Message              `json:"messages,omitempty"`
+	ToolResult            []ToolCallOutcome      `json:"tool_results,omitempty"`
+	Capabilities          CapabilityRequirements `json:"capabilities,omitempty"`
+	TokenCounter          TokenCounter           `json:"-"`
+	ModelClient           ModelClient            `json:"-"`
 }
 
 type ContextAssembleResult struct {
@@ -835,6 +837,10 @@ type SkillBundle struct {
 const EventSchemaVersionV1 = "v1"
 
 const EventTypeActionTimeline = "action.timeline"
+
+// EventTypeContextHandoff carries the bounded diagnostics projection for a
+// context handoff lifecycle outcome. The full handoff remains source-owned.
+const EventTypeContextHandoff = "context.handoff"
 
 // EventTypeToolLifecycleFinalized carries the bounded, additive diagnostics
 // projection for one source-owned tool invocation.

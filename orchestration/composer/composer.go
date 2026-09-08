@@ -282,6 +282,12 @@ type runStat struct {
 	ReadinessAdmissionBypassTotal        int
 	ReadinessAdmissionMode               string
 	ReadinessAdmissionPrimaryCode        string
+	ProviderCatalogVersion               string
+	ProviderModel                        string
+	ProviderCapabilityOutcome            string
+	ProviderCredentialStatus             string
+	ProviderFallback                     string
+	ProviderAdmissionReasons             []string
 	BudgetDecision                       string
 	DegradeAction                        string
 	BudgetSnapshot                       runtimeconfig.RuntimeAdmissionBudgetSnapshot
@@ -1049,6 +1055,24 @@ func (c *Composer) injectRunSummary(ev types.Event) types.Event {
 	if strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode) != "" {
 		payload["runtime_readiness_admission_primary_code"] = strings.TrimSpace(stats.ReadinessAdmissionPrimaryCode)
 	}
+	if strings.TrimSpace(stats.ProviderCatalogVersion) != "" {
+		payload["provider_catalog_version"] = strings.TrimSpace(stats.ProviderCatalogVersion)
+	}
+	if strings.TrimSpace(stats.ProviderModel) != "" {
+		payload["provider_model"] = strings.TrimSpace(stats.ProviderModel)
+	}
+	if strings.TrimSpace(stats.ProviderCapabilityOutcome) != "" {
+		payload["provider_capability_outcome"] = strings.TrimSpace(stats.ProviderCapabilityOutcome)
+	}
+	if strings.TrimSpace(stats.ProviderCredentialStatus) != "" {
+		payload["provider_credential_status"] = strings.TrimSpace(stats.ProviderCredentialStatus)
+	}
+	if strings.TrimSpace(stats.ProviderFallback) != "" {
+		payload["provider_fallback"] = strings.TrimSpace(stats.ProviderFallback)
+	}
+	if len(stats.ProviderAdmissionReasons) > 0 {
+		payload["provider_admission_reasons"] = append([]string(nil), stats.ProviderAdmissionReasons...)
+	}
 	if strings.TrimSpace(stats.BudgetDecision) != "" {
 		payload["budget_decision"] = strings.TrimSpace(stats.BudgetDecision)
 	}
@@ -1177,6 +1201,7 @@ func (c *Composer) snapshotRunStat(runID string) runStat {
 	}
 	out := *current
 	out.PolicyDecisionPath = cloneRuntimePolicyCandidates(out.PolicyDecisionPath)
+	out.ProviderAdmissionReasons = append([]string(nil), out.ProviderAdmissionReasons...)
 	return out
 }
 

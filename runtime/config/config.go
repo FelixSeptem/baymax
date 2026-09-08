@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	modelcatalog "github.com/FelixSeptem/baymax/model/catalog"
 	"github.com/spf13/viper"
 )
 
@@ -292,6 +293,7 @@ type RuntimeDomainConfig struct {
 	Realtime          RuntimeRealtimeConfig          `json:"realtime"`
 	Context           RuntimeContextConfig           `json:"context"`
 	Readiness         RuntimeReadinessConfig         `json:"readiness"`
+	ProviderCatalog   RuntimeProviderCatalogConfig   `json:"provider_catalog"`
 	Admission         RuntimeAdmissionConfig         `json:"admission"`
 	State             RuntimeStateConfig             `json:"state"`
 	Session           RuntimeSessionConfig           `json:"session"`
@@ -305,6 +307,14 @@ type RuntimeDomainConfig struct {
 	Eval              RuntimeEvalConfig              `json:"eval"`
 	Diagnostics       RuntimeDiagnosticsConfig       `json:"diagnostics"`
 	Memory            RuntimeMemoryConfig            `json:"memory"`
+}
+
+// RuntimeProviderCatalogConfig controls the optional host-injected model catalog.
+type RuntimeProviderCatalogConfig struct {
+	Enabled     bool                      `json:"enabled"`
+	Version     string                    `json:"version"`
+	Descriptors []modelcatalog.Descriptor `json:"descriptors,omitempty"`
+	Strict      bool                      `json:"strict"`
 }
 
 type AdapterConfig struct {
@@ -1373,6 +1383,12 @@ func DefaultConfig() Config {
 					BlockOn:        ReadinessAdmissionBlockOnBlockedOnly,
 					DegradedPolicy: ReadinessAdmissionDegradedPolicyAllowAndRecord,
 				},
+			},
+			ProviderCatalog: RuntimeProviderCatalogConfig{
+				Enabled:     false,
+				Version:     "",
+				Descriptors: nil,
+				Strict:      false,
 			},
 			Admission: RuntimeAdmissionConfig{
 				Budget: RuntimeAdmissionBudgetConfig{
@@ -5347,6 +5363,10 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Readiness.Admission.Mode = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.mode")))
 	cfg.Runtime.Readiness.Admission.BlockOn = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.block_on")))
 	cfg.Runtime.Readiness.Admission.DegradedPolicy = strings.ToLower(strings.TrimSpace(v.GetString("runtime.readiness.admission.degraded_policy")))
+	cfg.Runtime.ProviderCatalog, err = buildProviderCatalogConfig(v, cfg.Runtime.ProviderCatalog)
+	if err != nil {
+		return Config{}, err
+	}
 	admissionDegradePolicyEnabled, err := strictBoolConfigValue(v, "runtime.admission.degrade_policy.enabled")
 	if err != nil {
 		return Config{}, err
@@ -5990,6 +6010,32 @@ func buildConfig(v *viper.Viper) (Config, error) {
 		cfg.MCP.Profiles[name] = p
 	}
 	return cfg, nil
+}
+
+func buildProviderCatalogConfig(v *viper.Viper, base RuntimeProviderCatalogConfig) (RuntimeProviderCatalogConfig, error) {
+	out := base
+	out.Enabled = v.GetBool("runtime.provider_catalog.enabled")
+	out.Version = strings.TrimSpace(v.GetString("runtime.provider_catalog.version"))
+	out.Strict = v.GetBool("runtime.provider_catalog.strict")
+	raw := v.Get("runtime.provider_catalog.descriptors")
+	if raw != nil {
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return RuntimeProviderCatalogConfig{}, fmt.Errorf("runtime.provider_catalog.descriptors: %w", err)
+		}
+		var descriptors []modelcatalog.Descriptor
+		if err := json.Unmarshal(encoded, &descriptors); err != nil {
+			return RuntimeProviderCatalogConfig{}, fmt.Errorf("runtime.provider_catalog.descriptors: %w", err)
+		}
+		out.Descriptors = descriptors
+	}
+	if !out.Enabled {
+		return out, nil
+	}
+	if _, err := modelcatalog.New(modelcatalog.Input{Version: out.Version, Descriptors: out.Descriptors}); err != nil {
+		return RuntimeProviderCatalogConfig{}, err
+	}
+	return out, nil
 }
 
 func strictBoolConfigValue(v *viper.Viper, key string) (bool, error) {

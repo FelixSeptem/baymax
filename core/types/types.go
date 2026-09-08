@@ -524,6 +524,10 @@ func DefaultMCPRuntimePolicy() MCPRuntimePolicy {
 type RunRequest struct {
 	RunID                  string                 `json:"run_id,omitempty"`
 	SessionID              string                 `json:"session_id,omitempty"`
+	Provider               string                 `json:"provider,omitempty"`
+	Model                  string                 `json:"model,omitempty"`
+	CredentialStatus       string                 `json:"credential_status,omitempty"`
+	CredentialReason       string                 `json:"credential_reason,omitempty"`
 	Realtime               *RealtimeRunRequest    `json:"realtime,omitempty"`
 	Input                  string                 `json:"input"`
 	Messages               []Message              `json:"messages,omitempty"`

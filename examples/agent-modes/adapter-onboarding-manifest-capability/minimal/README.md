@@ -14,11 +14,13 @@ go run ./examples/agent-modes/adapter-onboarding-manifest-capability/minimal
 ## Real Runtime Path
 - Semantic anchor: `adapter.manifest_capability_fallback`.
 - Classification: `adapter.onboarding`.
-- Runtime path evidence: `core/runner,tool/local,runtime/config,adapter/manifest,adapter/capability`.
+- Runtime path evidence: `core/runner,tool/local,runtime/config,adapter/manifest,adapter/capability,model/catalog`.
 - Semantic flow:
   - `adapter_manifest_loaded`: 输出 manifest 版本、contract profile、required capabilities。
   - `adapter_capability_negotiated`: 与 runtime 能力集协商，产出 negotiated/missing。
   - `adapter_fallback_mapped`: 根据能力缺口映射 fallback profile 与原因。
+  - `provider_catalog_admission_projected`: 以 catalog version 和规范化 provider/model 身份生成准入投影。
+  - `credential_preflight_redacted`: 仅输出 credential status/reason，不输出凭据、端点或原始响应。
 - Related contracts: `adapter-manifest-and-runtime-compatibility; adapter-capability-negotiation-and-fallback; adapter-contract-profile-versioning-and-replay`.
 - Required gates: `check-adapter-manifest-contract.*; check-adapter-capability-contract.*; check-adapter-contract-replay.*`.
 - Replay fixtures: `adapter_contract_profile.v1`.
@@ -28,16 +30,16 @@ go run ./examples/agent-modes/adapter-onboarding-manifest-capability/minimal
 - `verification.semantic.phase=P2`
 - `verification.semantic.anchor=adapter.manifest_capability_fallback`
 - `verification.semantic.classification=adapter.onboarding`
-- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,adapter/manifest,adapter/capability`
+- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,adapter/manifest,adapter/capability,model/catalog`
 - `verification.semantic.governance=baseline`
-- `verification.semantic.expected_markers=adapter_manifest_loaded,adapter_capability_negotiated,adapter_fallback_mapped`
+- `verification.semantic.expected_markers=adapter_manifest_loaded,adapter_capability_negotiated,adapter_fallback_mapped,provider_catalog_admission_projected,credential_preflight_redacted`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
-- `result.final_answer` 包含 `required/negotiated/missing/fallback/reason` 等真实字段。
+- `result.final_answer` 包含 `required/negotiated/missing/fallback/reason/catalog_version/credential_status` 等真实字段，且不包含 credential material。
 
 ## Failure/Rollback Notes
 - If runtime path check fails, verify local registry wiring and rerun this variant.
 - If fallback result is unexpected,先核对 `missing_caps` 与 `fallback_reason` 的一致性。
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
-- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized; a catalog reload rollback must retain the last valid generation.

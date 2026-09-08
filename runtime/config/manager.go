@@ -11,6 +11,7 @@ import (
 
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	"github.com/FelixSeptem/baymax/core/types"
+	modelcatalog "github.com/FelixSeptem/baymax/model/catalog"
 	runtimediag "github.com/FelixSeptem/baymax/runtime/diagnostics"
 	"github.com/FelixSeptem/baymax/runtime/security/redaction"
 	"github.com/fsnotify/fsnotify"
@@ -50,6 +51,8 @@ type Manager struct {
 
 	readinessMu          sync.RWMutex
 	readinessComponents  RuntimeReadinessComponentSnapshot
+	providerCatalogMu    sync.RWMutex
+	providerCatalog      modelcatalog.Catalog
 	reactReadiness       ReactReadinessDependencySnapshot
 	adapterHealthMu      sync.RWMutex
 	adapterHealthTargets map[string]AdapterHealthTarget
@@ -176,6 +179,16 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 			EnvPrefix: m.envPrefix,
 		},
 	})
+	if cfg.Runtime.ProviderCatalog.Enabled {
+		catalog, err := modelcatalog.New(modelcatalog.Input{
+			Version:     cfg.Runtime.ProviderCatalog.Version,
+			Descriptors: cfg.Runtime.ProviderCatalog.Descriptors,
+		})
+		if err != nil {
+			return nil, err
+		}
+		m.providerCatalog = catalog
+	}
 	m.invalidatePolicyResolveCache()
 	if opts.EnableHotReload || cfg.Reload.Enabled {
 		if err := m.Watch(context.Background()); err != nil {
@@ -267,6 +280,17 @@ func (m *Manager) reload() {
 		m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
 		return
 	}
+	var nextProviderCatalog modelcatalog.Catalog
+	if cfg.Runtime.ProviderCatalog.Enabled {
+		nextProviderCatalog, err = modelcatalog.New(modelcatalog.Input{
+			Version:     cfg.Runtime.ProviderCatalog.Version,
+			Descriptors: cfg.Runtime.ProviderCatalog.Descriptors,
+		})
+		if err != nil {
+			m.diag.AddReload(runtimediag.ReloadRecord{Time: time.Now(), Success: false, Error: err.Error()})
+			return
+		}
+	}
 	m.snap.Store(&Snapshot{
 		Config:   cfg,
 		LoadedAt: time.Now(),
@@ -275,6 +299,9 @@ func (m *Manager) reload() {
 			EnvPrefix: m.envPrefix,
 		},
 	})
+	m.providerCatalogMu.Lock()
+	m.providerCatalog = nextProviderCatalog
+	m.providerCatalogMu.Unlock()
 	m.invalidatePolicyResolveCache()
 	m.diag.Resize(
 		cfg.Diagnostics.MaxCallRecords,
@@ -350,6 +377,69 @@ func (m *Manager) EffectiveConfigSanitized() map[string]any {
 		return map[string]any{"error": err.Error()}
 	}
 	return m.redactor().SanitizeMap(raw)
+}
+
+// ProviderCatalog returns the immutable active provider/model catalog.
+func (m *Manager) ProviderCatalog() (modelcatalog.Catalog, bool) {
+	if m == nil {
+		return modelcatalog.Catalog{}, false
+	}
+	m.providerCatalogMu.RLock()
+	defer m.providerCatalogMu.RUnlock()
+	if m.providerCatalog.Version() == "" {
+		return modelcatalog.Catalog{}, false
+	}
+	return m.providerCatalog, true
+}
+
+// EvaluateProviderModel evaluates a provider/model admission against the active catalog.
+func (m *Manager) EvaluateProviderModel(request modelcatalog.Request, credentials map[string]modelcatalog.CredentialEvidence) (modelcatalog.Admission, error) {
+	if m == nil {
+		return modelcatalog.Admission{Status: modelcatalog.StatusBlocked, Reasons: []string{modelcatalog.ReasonUnknownModel}}, nil
+	}
+	catalog, ok := m.ProviderCatalog()
+	if !ok {
+		return modelcatalog.Admission{Status: modelcatalog.StatusReady}, nil
+	}
+	return modelcatalog.Evaluate(catalog, request, credentials, m.EffectiveConfigRef().Runtime.ProviderCatalog.Strict)
+}
+
+// ProviderModelReadiness evaluates provider-model admission through the canonical readiness projection.
+func (m *Manager) ProviderModelReadiness(request modelcatalog.Request, credentials map[string]modelcatalog.CredentialEvidence) (ReadinessResult, error) {
+	result := m.ReadinessPreflight()
+	admission, err := m.EvaluateProviderModel(request, credentials)
+	if err != nil {
+		return result, err
+	}
+	result.ProviderAdmission = &admission
+	for _, reason := range admission.Reasons {
+		severity := ReadinessSeverityWarning
+		if admission.Status == modelcatalog.StatusBlocked {
+			severity = ReadinessSeverityError
+		}
+		result.Findings = append(result.Findings, ReadinessFinding{
+			Code: reason, Domain: "provider", Severity: severity,
+			Message: "provider model admission: " + reason,
+			Metadata: map[string]any{
+				"catalog_version":   admission.Catalog,
+				"provider":          admission.Selected.Provider,
+				"model":             admission.Selected.Model,
+				"credential_status": admission.Credential.Status,
+			},
+		})
+	}
+	if admission.Status == modelcatalog.StatusBlocked {
+		result.Status = ReadinessStatusBlocked
+	} else if admission.Status == modelcatalog.StatusDegraded && result.Status == ReadinessStatusReady {
+		result.Status = ReadinessStatusDegraded
+	}
+	if admission.Status == modelcatalog.StatusDegraded && m.EffectiveConfigRef().Runtime.Readiness.Strict {
+		result.Status = ReadinessStatusBlocked
+		admission.Status = modelcatalog.StatusBlocked
+		result.ProviderAdmission = &admission
+	}
+	result.Findings = canonicalizeReadinessFindings(result.Findings)
+	return result, nil
 }
 
 // ResolvePolicy resolves MCP runtime policy by profile and optional override.

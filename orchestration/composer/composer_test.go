@@ -29,6 +29,29 @@ type dispatcherHandler struct {
 	dispatcher *event.Dispatcher
 }
 
+type blockingModel struct {
+	base    *fakes.Model
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (m *blockingModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+	select {
+	case m.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-m.release:
+	case <-ctx.Done():
+		return types.ModelResponse{}, ctx.Err()
+	}
+	return m.base.Generate(ctx, req)
+}
+
+func (m *blockingModel) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	return m.base.Stream(ctx, req, onEvent)
+}
+
 func (h dispatcherHandler) OnEvent(ctx context.Context, ev types.Event) {
 	if h.dispatcher == nil {
 		return
@@ -435,6 +458,146 @@ func TestComposerReadinessPreflightPassthroughAndReadOnly(t *testing.T) {
 	if before.QueueTotal != after.QueueTotal || before.ClaimTotal != after.ClaimTotal || before.ReclaimTotal != after.ReclaimTotal {
 		t.Fatalf("readiness query should be read-only, before=%#v after=%#v", before, after)
 	}
+}
+
+func TestComposerProviderAdmissionDeniesRunAndStreamBeforeProviderAction(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-provider-admission.yaml")
+	if err := os.WriteFile(cfgPath, []byte("runtime:\n  provider_catalog:\n    enabled: true\n    version: v1\n    descriptors:\n      - provider: openai\n        model: gpt\n        context_window: 128\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_COMPOSER_PROVIDER_ADMISSION_TEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "must not run"}}})
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := types.RunRequest{Provider: "openai", Model: "gpt", CredentialStatus: "missing", Input: "x"}
+	if _, err := comp.Run(context.Background(), request, nil); err == nil {
+		t.Fatal("run should be denied")
+	}
+	if _, err := comp.Stream(context.Background(), request, nil); err == nil {
+		t.Fatal("stream should be denied")
+	}
+	if got := model.Calls(); got != 0 {
+		t.Fatalf("provider action calls = %d, want 0", got)
+	}
+}
+
+func TestComposerProviderAdmissionProjectsSnapshotOnSuccessfulRun(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-provider-admission-success.yaml")
+	if err := os.WriteFile(cfgPath, []byte("runtime:\n  provider_catalog:\n    enabled: true\n    version: v-success\n    descriptors:\n      - provider: openai\n        model: gpt\n        context_window: 128\n        capabilities: [streaming]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_COMPOSER_PROVIDER_ADMISSION_SUCCESS_TEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	model := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "provider-admitted"}}})
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := NewBuilder(model).
+		WithRuntimeManager(mgr).
+		WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := "run-provider-admission-success"
+	result, err := comp.Run(context.Background(), types.RunRequest{
+		RunID:            runID,
+		Provider:         "OpenAI",
+		Model:            "GPT",
+		CredentialStatus: "available",
+		Input:            "success",
+	}, nil)
+	if err != nil {
+		t.Fatalf("run should be allowed: %v", err)
+	}
+	if result.Error != nil || result.FinalAnswer != "provider-admitted" {
+		t.Fatalf("unexpected run result: %#v", result)
+	}
+	if got := model.Calls(); got != 1 {
+		t.Fatalf("provider action calls = %d, want 1", got)
+	}
+	runs := mgr.RecentRuns(10)
+	for _, rec := range runs {
+		if strings.TrimSpace(rec.RunID) != runID {
+			continue
+		}
+		if rec.ProviderCatalogVersion != "v-success" {
+			t.Fatalf("provider_catalog_version = %q, want v-success", rec.ProviderCatalogVersion)
+		}
+		if rec.ProviderModel != "openai/gpt" {
+			t.Fatalf("provider_model = %q, want openai/gpt", rec.ProviderModel)
+		}
+		if rec.ProviderCapabilityOutcome != "accepted" {
+			t.Fatalf("provider_capability_outcome = %q, want accepted", rec.ProviderCapabilityOutcome)
+		}
+		if rec.ProviderCredentialStatus != "available" {
+			t.Fatalf("provider_credential_status = %q, want available", rec.ProviderCredentialStatus)
+		}
+		if len(rec.ProviderAdmissionReasons) != 0 {
+			t.Fatalf("provider_admission_reasons = %#v, want empty", rec.ProviderAdmissionReasons)
+		}
+		return
+	}
+	t.Fatalf("run summary for %q not found in %#v", runID, runs)
+}
+
+func TestComposerProviderAdmissionFreezesCatalogGenerationDuringInFlightRun(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "runtime-provider-admission-inflight.yaml")
+	writeCatalog := func(version string) {
+		t.Helper()
+		cfg := "reload:\n  enabled: true\n  debounce: 10ms\nruntime:\n  provider_catalog:\n    enabled: true\n    version: " + version + "\n    descriptors:\n      - provider: openai\n        model: gpt\n        context_window: 128\n"
+		if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCatalog("v-inflight-1")
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{FilePath: cfgPath, EnvPrefix: "BAYMAX_COMPOSER_PROVIDER_ADMISSION_INFLIGHT_TEST", EnableHotReload: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	base := fakes.NewModel([]fakes.ModelStep{{Response: types.ModelResponse{FinalAnswer: "inflight"}}})
+	model := &blockingModel{base: base, started: started, release: release}
+	dispatcher := event.NewDispatcher(event.NewRuntimeRecorder(mgr))
+	comp, err := NewBuilder(model).WithRuntimeManager(mgr).WithEventHandler(dispatcherHandler{dispatcher: dispatcher}).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := "run-provider-admission-inflight"
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := comp.Run(context.Background(), types.RunRequest{RunID: runID, Provider: "openai", Model: "gpt", CredentialStatus: "available", Input: "inflight"}, nil)
+		done <- runErr
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("model action did not start")
+	}
+	writeCatalog("v-inflight-2")
+	waitFor(t, 4*time.Second, func() bool { return mgr.EffectiveConfig().Runtime.ProviderCatalog.Version == "v-inflight-2" }, "provider catalog reload")
+	close(release)
+	if runErr := <-done; runErr != nil {
+		t.Fatalf("in-flight run failed: %v", runErr)
+	}
+	for _, rec := range mgr.RecentRuns(10) {
+		if rec.RunID == runID {
+			if rec.ProviderCatalogVersion != "v-inflight-1" {
+				t.Fatalf("in-flight provider catalog version = %q, want v-inflight-1", rec.ProviderCatalogVersion)
+			}
+			return
+		}
+	}
+	t.Fatalf("run summary for %q not found", runID)
 }
 
 func TestComposerReadinessAdmissionBlockedDenyRunAndStreamNoSideEffects(t *testing.T) {

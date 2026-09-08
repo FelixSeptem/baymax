@@ -15,7 +15,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 活跃变更：`openspec list --json`
 - 已归档变更：`openspec/changes/archive/INDEX.md`
 
-截至 2026-09-03：
+截至 2026-09-06：
 - 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
 - 已归档：
   - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
@@ -35,7 +35,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 最近归档：
   - `establish-session-history-checkpoint-replay-contract`（P2 会话历史、Checkpoint 与回放边界合同；已完成实施并归档）
   - `context-compression-runtime-handoff-contract`（上下文压缩运行交接单合同；代码、测试、文档与门禁已完成并归档）
-- 候选：以 openspec list --json 为准（当前无活跃提案，后续方向另立提案）。
+- 进行中：
+  - （暂无）
+已归档：`introduce-provider-model-capability-and-credential-preflight-contract`：Provider/model 静态能力目录与脱敏 credential preflight；代码、测试、文档与门禁已完成，归档序号为 133。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -730,10 +732,11 @@ Why now：
    - **Baymax 适配**：作为扩展、Hook、middleware 的生命周期约束，复用既有 Run、snapshot、checkpoint、recovery 和 RuntimeRecorder 合同；不得重建 Session/Harness 存储或第二套恢复状态机。
    - **验收重点**：运行中配置变更不污染当前 Run；扩展写入只在定义的提交点生效；reload 不改变正在执行 Run 的历史事实；异常路径仍能 finalize 并可回放。
 
-3. **Provider/model capability registry 与 credential preflight（P2，现有能力的增量方向）**
+3. **Provider/model capability registry 与 credential preflight（P2，已立项实施方向）**
    - **可借鉴**：统一模型元数据（上下文窗口、reasoning、vision 等）；Provider 与 credential resolution 分离；启动/执行前认证预检；模型切换保留消息语义。
    - **Baymax 适配**：仅作为 `model/<provider>`、adapter health/readiness 的增量任务，复用现有 capability taxonomy、readiness finding 与配置治理；不在 `context/*` 引入 Provider SDK，不新增平行模型注册中心。
    - **启动信号**：出现动态模型目录、本地模型路由、跨 Provider handoff 或凭据预检的明确宿主需求。
+   - **当前状态（2026-09-08）**：`introduce-provider-model-capability-and-credential-preflight-contract` 已归档为 133；范围限定为静态或宿主注入目录、脱敏证据、现有 readiness 复用与确定性回放，不包含远程发现、credential store 或控制面。
 
 4. **RPC/JSON Event 与宿主 UI request/response（P2，按嵌入需求触发）**
    - **可借鉴**：命令响应与异步事件分离；严格 JSONL framing；扩展 UI 请求可挂起并等待客户端响应后恢复。
@@ -1556,6 +1559,7 @@ hooks/snapshot/plan/realtime baseline contracts 与 Context JIT Organization 验
 
 
 
-## 当前实施状态（2026-09-06）
+## 当前实施状态（2026-09-07）
 
-- `extension-lifecycle-governance-resource-resolution-contract`：OpenSpec `all_done`，实现与验证已完成，待按流程归档。
+- `introduce-provider-model-capability-and-credential-preflight-contract`：OpenSpec proposal/design/specs/tasks 已完成，代码、测试、文档与门禁已通过，已归档至 `openspec/changes/archive/133-introduce-provider-model-capability-and-credential-preflight-contract/`。
+- `extension-lifecycle-governance-resource-resolution-contract`：已归档，见 `openspec/changes/archive/132-extension-lifecycle-governance-resource-resolution-contract/`。

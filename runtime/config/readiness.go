@@ -12,6 +12,7 @@ import (
 
 	adapterhealth "github.com/FelixSeptem/baymax/adapter/health"
 	"github.com/FelixSeptem/baymax/core/types"
+	modelcatalog "github.com/FelixSeptem/baymax/model/catalog"
 )
 
 type ReadinessStatus string
@@ -165,6 +166,7 @@ type ReadinessResult struct {
 	ArbitrationRulePolicyAction     string                          `json:"runtime_arbitration_rule_policy_action,omitempty"`
 	ArbitrationRuleUnsupportedTotal int                             `json:"runtime_arbitration_rule_unsupported_total,omitempty"`
 	ArbitrationRuleMismatchTotal    int                             `json:"runtime_arbitration_rule_mismatch_total,omitempty"`
+	ProviderAdmission               *modelcatalog.Admission         `json:"provider_model_admission,omitempty"`
 	arbitrationVersionConfig        RuntimeArbitrationVersionConfig `json:"-"`
 }
 

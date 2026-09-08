@@ -16,8 +16,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-06）：
-- `extension-lifecycle-governance-resource-resolution-contract`（已完成待归档，扩展生命周期、资源确定性发现、准入与失败隔离）
+当前里程碑快照（2026-09-08）：
+- `introduce-provider-model-capability-and-credential-preflight-contract`（已归档，Provider/model 能力目录与脱敏 credential preflight 合同）
+- `extension-lifecycle-governance-resource-resolution-contract`（已归档，扩展生命周期、资源确定性发现、准入与失败隔离）
 - `context-compression-runtime-handoff-contract`（已归档；上下文压缩运行交接单合同，代码、测试、文档与门禁已完成）。
 - 最近归档：
   - `establish-session-history-checkpoint-replay-contract`（已归档；P2 会话历史、Checkpoint 与回放边界合同）
@@ -256,7 +257,8 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前主线能力状态（最新）：
-- `extension-lifecycle-governance-resource-resolution-contract`：扩展生命周期、资源确定性发现、准入、失败隔离与 reload/rollback（实施中，24/26 tasks complete）
+- `introduce-provider-model-capability-and-credential-preflight-contract`：Provider/model 静态能力目录、脱敏 credential preflight、readiness 投影、诊断回放与 Run/Stream parity（已归档并稳定）
+- `extension-lifecycle-governance-resource-resolution-contract`：扩展生命周期、资源确定性发现、准入、失败隔离与 reload/rollback（已归档并稳定）
 - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（已归档并稳定；冻结跨框架任务生命周期协议投影，不引入托管控制面）。
 - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract（已归档并稳定；扩展 descriptor、bounded context、host-action 与 source-owned admission projection）。
 - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`：agent mode anti-template doc-first delivery 契约（已归档并稳定）。

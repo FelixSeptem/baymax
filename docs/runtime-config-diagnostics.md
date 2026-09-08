@@ -2144,6 +2144,29 @@ Realtime Protocol + Interrupt/Resume gate 与 required-check 暴露：
 
 ## 热更新语义
 
+### Provider/model capability catalog and credential preflight
+
+`runtime.provider_catalog.*` is disabled by default and resolves with
+`env > file > default` precedence. When enabled, startup MUST fail fast for a
+duplicate normalized provider/model identity, malformed capability, nonpositive
+context window, invalid fallback target, or invalid credential-preflight
+policy. A reload validates the whole candidate catalog before publication; an
+invalid candidate keeps the preceding complete catalog snapshot atomically.
+
+Catalog and credential evidence are host supplied. The runtime does not perform
+remote discovery, background refresh, credential storage, or credential probes.
+Evidence retains only normalized provider identity, `available|missing|invalid|
+unverified` status, and a bounded canonical reason. Credentials, endpoints,
+tokens, raw provider responses, and validation payloads are excluded from
+configuration, events, diagnostics, and replay fixtures.
+
+`RunRecord` will add nullable/default-compatible projections for catalog
+version, normalized provider/model identity, selected fallback, required and
+optional capability outcome, credential status, and ordered reason codes. Only
+`observability/event.RuntimeRecorder` writes these projections. Each admitted
+Run or Stream retains its catalog generation snapshot; later valid reloads
+affect only later admissions.
+
 - 触发机制：监听配置文件变更。
 - 执行路径：`parse -> validate -> build snapshot -> atomic swap`。
 - 失败策略：任一步失败则拒绝本次更新，保留旧快照，并写入 reload 诊断记录。

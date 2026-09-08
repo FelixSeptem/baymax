@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	modelcatalog "github.com/FelixSeptem/baymax/model/catalog"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
@@ -37,6 +38,35 @@ func (c *Composer) guardReadinessAdmission(
 		req.RunID = runID
 	}
 	admissionRequest := buildReadinessAdmissionRequest(req)
+	if strings.TrimSpace(req.Provider) != "" && strings.TrimSpace(req.Model) != "" {
+		required := make([]string, 0, len(req.Capabilities.Normalized()))
+		for _, item := range req.Capabilities.Normalized() {
+			required = append(required, string(item))
+		}
+		provider := strings.ToLower(strings.TrimSpace(req.Provider))
+		providerAdmission, providerErr := c.runtimeMgr.EvaluateProviderModel(modelcatalog.Request{
+			Identity: modelcatalog.Identity{Provider: provider, Model: req.Model},
+			Required: required,
+		}, map[string]modelcatalog.CredentialEvidence{
+			provider: {Provider: provider, Status: req.CredentialStatus, Reason: req.CredentialReason},
+		})
+		if providerErr != nil {
+			return req, nil, providerErr
+		}
+		c.recordProviderAdmission(runID, providerAdmission)
+		if providerAdmission.Status == modelcatalog.StatusBlocked {
+			reason := modelcatalog.ReasonUnknownModel
+			if len(providerAdmission.Reasons) > 0 {
+				reason = providerAdmission.Reasons[0]
+			}
+			result := &types.RunResult{RunID: runID, Error: &types.ClassifiedError{
+				Class: types.ErrContext, Message: "provider model admission denied", Retryable: false,
+				Details: map[string]any{"reason_code": reason, "provider_model_admission": providerAdmission},
+			}}
+			c.emitAdmissionDeniedEvent(ctx, runID, h, result)
+			return req, result, errors.New("provider model admission denied")
+		}
+	}
 	decision := c.runtimeMgr.EvaluateReadinessAdmissionWithBudgetRequest(strings.TrimSpace(req.ArbitrationRuleVersion), admissionRequest)
 	c.recordReadinessAdmission(runID, decision)
 	c.emitRolloutGovernanceTimeline(ctx, runID, h, decision)
@@ -90,6 +120,29 @@ func (c *Composer) guardReadinessAdmission(
 	}
 	c.emitAdmissionDeniedEvent(ctx, runID, h, result)
 	return req, result, errors.New(msg)
+}
+
+func (c *Composer) recordProviderAdmission(runID string, admission modelcatalog.Admission) {
+	if c == nil || strings.TrimSpace(runID) == "" {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	stat := c.ensureRunStat(runID)
+	stat.ProviderCatalogVersion = admission.Catalog
+	stat.ProviderModel = strings.TrimSpace(admission.Selected.Provider + "/" + admission.Selected.Model)
+	capabilityOutcome := "accepted"
+	if !admission.Capabilities.Accepted {
+		capabilityOutcome = "blocked"
+	} else if admission.Capabilities.Downgraded {
+		capabilityOutcome = "degraded"
+	}
+	stat.ProviderCapabilityOutcome = capabilityOutcome
+	stat.ProviderCredentialStatus = strings.TrimSpace(admission.Credential.Status)
+	if admission.Fallback != nil {
+		stat.ProviderFallback = strings.TrimSpace(admission.Fallback.Provider + "/" + admission.Fallback.Model)
+	}
+	stat.ProviderAdmissionReasons = append([]string(nil), admission.Reasons...)
 }
 
 func (c *Composer) recordReadinessAdmission(runID string, decision runtimeconfig.ReadinessAdmissionDecision) {

@@ -50,6 +50,13 @@
   - requested vs declared capability 协商（capability negotiation contract）
   - 策略收敛：`fail_fast|best_effort` 与 override 语义
   - reason taxonomy 收敛：`adapter.capability.*` 命名空间
+- `model/catalog`
+  - library-owned immutable provider/model descriptor catalog and redacted
+    credential-evidence admission evaluation
+  - reuses `adapter/capability`; does not perform provider discovery, network
+    probes, credential storage, or diagnostics writes
+  - freezes normalized catalog generation and admission facts for a Run or
+    Stream before provider execution
 - `extension`
   - transport-neutral descriptor、source precedence、digest provenance 与 capability/admission 合同
   - bounded Hook/tool execution、turn snapshot/save-point、activation generation/reload/rollback
@@ -111,6 +118,8 @@
 - Composer 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）
 - 在 `adapter/*` 之外重复实现 manifest/capability 合同解析，造成错误分类与回放语义漂移
+- `model/catalog` 或 `runtime/*` 进行远程 model discovery、background refresh、credential storage，或持久化 credential material
+- provider/model admission 绕过 `adapter/capability`、`runtime/config` readiness aggregation，或 `RuntimeRecorder` 单写入口
 
 CI 通过 `scripts/check-runtime-boundaries.sh` 做静态检查。
 治理型评审可结合 `docs/modular-e2e-review-matrix.md` 执行“模块 + 主干链路”双视角核验。
@@ -167,6 +176,9 @@ R4 多代理共享契约前置门禁（阻断级）：
 - 禁止在 `context/*` 中直接引入 provider 官方 SDK（OpenAI/Anthropic/Gemini），避免跨层耦合与升级扩散。
 - `context/handoff` 只定义有界交接 DTO、验证和恢复投影，不拥有或复制 Session History、Checkpoint、Snapshot、Artifact 正文。
 - 任何新增 provider 级能力（例如 token count、模型元数据查询）应先落在 `model/<provider>`，再由上层通过接口复用。
+- Provider/model catalog is host-injected bounded metadata, not a provider SDK
+  client. Provider protocol and token-accounting details remain in
+  `model/<provider>`; `context/*` remains forbidden from importing provider SDKs.
 ## Session history and replay boundary
 
 Session message history remains source-owned by the embedding host/session adapter. `core/types` provides bounded reference validation; `orchestration/snapshot` validates history/checkpoint context before source-owned restore; `tool/diagnosticsreplay` performs offline read-only normalization. No runtime package introduces a session database, hosted gateway, provider SDK dependency, artifact content service, or second state fact source.

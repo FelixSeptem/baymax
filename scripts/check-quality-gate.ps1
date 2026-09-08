@@ -643,6 +643,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] readiness-timeout-health replay f
 
 Invoke-RequiredParallelSteps -Steps @(
     @{
+        StepLabel = "[quality-gate] provider-model capability admission contract"
+        Command   = { pwsh -File scripts/check-provider-model-capability-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] react contract suites"
         Command   = { pwsh -File scripts/check-react-contract.ps1 }
     },

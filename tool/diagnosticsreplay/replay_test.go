@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +103,61 @@ func TestTerminalOutcomeReplayFixturePreservesAdditiveClassification(t *testing.
 	}
 	if got.Events[10].FailureFamily != "recovery_conflict" || got.Events[10].TerminalPhase != "post_start" {
 		t.Fatalf("late conflict classification = %#v", got.Events[10])
+	}
+}
+
+func TestProviderModelAdmissionReplayFixtureIsVersionedAndRedacted(t *testing.T) {
+	input := mustReadFixture(t, "provider_model_admission.v1.json")
+	got, err := ParseMinimalReplayJSON(input)
+	if err != nil {
+		t.Fatalf("ParseMinimalReplayJSON error: %v", err)
+	}
+	if len(got.Events) != 9 {
+		t.Fatalf("provider admission replay = %#v", got)
+	}
+	wantReasons := map[string]bool{
+		"provider.admission.ready":            true,
+		"provider.catalog.unknown_model":      true,
+		"adapter.capability.missing_required": true,
+		"provider.catalog.optional_fallback":  true,
+		"provider.credential.missing":         true,
+		"provider.credential.unverified":      true,
+		"provider.catalog.reload_rollback":    true,
+	}
+	for _, event := range got.Events {
+		if !wantReasons[event.Reason] {
+			t.Fatalf("unexpected provider admission reason %q in %#v", event.Reason, got)
+		}
+	}
+	if got.Events[6].Phase != "run" || got.Events[7].Phase != "stream" || got.Events[6].Reason != got.Events[7].Reason {
+		t.Fatalf("run/stream parity events diverged: %#v", got.Events[6:8])
+	}
+	if string(input) == "" {
+		t.Fatal("provider admission fixture is empty")
+	}
+	for _, secret := range []string{"sk-", "authorization", "endpoint", "token"} {
+		if strings.Contains(strings.ToLower(string(input)), secret) {
+			t.Fatalf("provider admission fixture contains secret material %q", secret)
+		}
+	}
+}
+
+func TestProviderModelAdmissionReplayIsIdempotent(t *testing.T) {
+	input := mustReadFixture(t, "provider_model_admission.v1.json")
+
+	first, err := ParseMinimalReplayJSON(input)
+	if err != nil {
+		t.Fatalf("first ParseMinimalReplayJSON error: %v", err)
+	}
+	second, err := ParseMinimalReplayJSON(input)
+	if err != nil {
+		t.Fatalf("second ParseMinimalReplayJSON error: %v", err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("replay is not idempotent\nfirst: %#v\nsecond: %#v", first, second)
+	}
+	if len(second.Events) != 9 {
+		t.Fatalf("idempotent replay event count = %d, want 9", len(second.Events))
 	}
 }
 

@@ -78,6 +78,12 @@ type RunRecord struct {
 	ExtensionReason                             string                            `json:"extension_reason,omitempty"`
 	ExtensionSource                             string                            `json:"extension_source,omitempty"`
 	ExtensionDigest                             string                            `json:"extension_digest,omitempty"`
+	ProviderCatalogVersion                      string                            `json:"provider_catalog_version,omitempty"`
+	ProviderModel                               string                            `json:"provider_model,omitempty"`
+	ProviderCapabilityOutcome                   string                            `json:"provider_capability_outcome,omitempty"`
+	ProviderCredentialStatus                    string                            `json:"provider_credential_status,omitempty"`
+	ProviderFallback                            string                            `json:"provider_fallback,omitempty"`
+	ProviderAdmissionReasons                    []string                          `json:"provider_admission_reasons,omitempty"`
 	Status                                      string                            `json:"status,omitempty"`
 	TerminalState                               string                            `json:"terminal_state,omitempty"`
 	TerminalFailureFamily                       string                            `json:"terminal_failure_family,omitempty"`

@@ -313,6 +313,8 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | OpenSpec Roadmap Status Consistency Gate Path| `scripts/check-openspec-roadmap-status-consistency.sh` | `scripts/check-openspec-roadmap-status-consistency.ps1` |
 | OpenSpec Roadmap Status Consistency Docs Path| `scripts/check-docs-consistency.sh` | `scripts/check-docs-consistency.ps1` |
 | OpenSpec Roadmap Status Consistency CI Required-Check 候选| `.github/workflows/ci.yml::openspec-roadmap-status-consistency-gate` | `.github/workflows/ci.yml::openspec-roadmap-status-consistency-gate` |
+| Provider/Model Capability Catalog and Credential Preflight| `model/catalog/catalog_test.go`、`model/catalog/admission_test.go`、`runtime/config/*provider_catalog*_test.go` | `scripts/check-provider-model-capability-contract.sh`、`scripts/check-provider-model-capability-contract.ps1` |
+| Provider/Model Admission Replay and Diagnostics Parity| `tool/diagnosticsreplay/*provider_model*_test.go`、`observability/event/*provider_model*_test.go` | `scripts/check-provider-model-capability-contract.sh`、`scripts/check-provider-model-capability-contract.ps1` |
 | Proposal Example Impact Declaration Governance| `tool/contributioncheck/governance_automation_test.go::TestValidateProposalExampleImpactDeclarationPass` | `tool/contributioncheck/governance_automation_test.go::TestValidateProposalExampleImpactDeclarationInvalidValue` |
 | Proposal Example Impact Declaration Gate Path| `scripts/check-openspec-example-impact-declaration.sh` | `scripts/check-openspec-example-impact-declaration.ps1` |
 | Proposal Example Impact Declaration Quality Path| `scripts/check-quality-gate.sh` | `scripts/check-quality-gate.ps1` |

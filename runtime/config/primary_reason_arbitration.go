@@ -347,6 +347,13 @@ var remediationHintByPrimaryCode = map[string]remediationHint{
 		Code:   "runtime.diagnostics.bundle.fix_policy",
 		Domain: ReadinessDomainRuntime,
 	},
+	"provider.catalog.unknown_model":      {Code: "provider.catalog.select_supported_model", Domain: ReadinessDomainRuntime},
+	"provider.catalog.invalid_descriptor": {Code: "provider.catalog.fix_descriptor", Domain: ReadinessDomainRuntime},
+	"provider.catalog.invalid_capability": {Code: "provider.catalog.fix_capability", Domain: ReadinessDomainRuntime},
+	"provider.catalog.invalid_fallback":   {Code: "provider.catalog.fix_fallback", Domain: ReadinessDomainRuntime},
+	"provider.credential.missing":         {Code: "provider.credential.provide_valid_evidence", Domain: ReadinessDomainRuntime},
+	"provider.credential.invalid":         {Code: "provider.credential.provide_valid_evidence", Domain: ReadinessDomainRuntime},
+	"provider.credential.unverified":      {Code: "provider.credential.verify_evidence_or_enable_non_strict", Domain: ReadinessDomainRuntime},
 
 	ReadinessAdmissionCodeBypassDisabled:  {Code: "readiness.admission_enable_if_required", Domain: "runtime"},
 	ReadinessAdmissionCodeReady:           {Code: "readiness.no_action", Domain: "runtime"},
@@ -511,6 +518,10 @@ func readinessPrimaryPrecedence(finding ReadinessFinding) int {
 		ReadinessCodeObservabilityExportSinkUnavailable,
 		ReadinessCodeObservabilityExportAuthInvalid,
 		ReadinessCodeDiagnosticsBundleOutputUnavailable:
+		return 4
+	case "provider.catalog.unknown_model", "provider.credential.missing", "provider.credential.invalid":
+		return 1
+	case "provider.credential.unverified", "provider.catalog.optional_fallback":
 		return 4
 	}
 

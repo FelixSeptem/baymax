@@ -1,16 +1,16 @@
 path,owner,reason,expiry,baseline_lines,allow_growth
 core/runner/runner_test.go,core-runner,A63 staged split backlog,2026-09-30,6805,false
-runtime/config/config.go,runtime-config,eval extension config additive fields; split backlog remains tracked,2026-09-30,6349,false
+runtime/config/config.go,runtime-config,eval and provider-model admission config additive fields; split backlog remains tracked,2026-09-30,6349,true
 core/runner/runner.go,core-runner,A63 staged split backlog; baseline reconciled after pre-existing mainline growth,2026-09-30,5871,false
 tool/diagnosticsreplay/arbitration.go,diagnostics-replay,A63 staged split backlog,2026-09-30,4346,false
 runtime/config/config_test.go,runtime-config,A63 staged split backlog,2026-09-30,3695,false
 observability/event/runtime_recorder_test.go,observability,A63 staged split backlog,2026-09-30,3242,false
 runtime/config/manager_test.go,runtime-config,A63 staged split backlog,2026-09-30,2899,false
-runtime/config/readiness.go,runtime-config,A63 staged split backlog,2026-09-30,2749,false
+runtime/config/readiness.go,runtime-config,provider-model readiness projection additive fields; A63 staged split backlog remains tracked,2026-09-30,2749,true
 runtime/diagnostics/store_test.go,runtime-diagnostics,A63 staged split backlog,2026-09-30,2509,false
 runtime/diagnostics/store.go,runtime-diagnostics,Durable event-stream binding additive diagnostics fields; staged split backlog,2026-09-30,2387,true
 context/assembler/assembler_test.go,context-assembler,A63 staged split backlog,2026-09-30,1872,false
-orchestration/composer/composer.go,orchestration-composer,A63 staged split backlog,2026-09-30,1787,false
+orchestration/composer/composer.go,orchestration-composer,provider-model admission wiring additive fields; A63 staged split backlog remains tracked,2026-09-30,1787,true
 runtime/config/readiness_test.go,runtime-config,A63 staged split backlog,2026-09-30,1739,false
 integration/sandbox_execution_isolation_contract_test.go,integration,A63 staged split backlog,2026-09-30,1646,false
 a2a/interop.go,a2a,A63 staged split backlog,2026-09-30,1406,false

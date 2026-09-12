@@ -78,6 +78,40 @@ func TestRuntimeRecorderRecordsBoundedHostObservationFacts(t *testing.T) {
 	}
 }
 
+func TestRuntimeRecorderProjectsRuntimeInputFactsWithoutPayloadBodies(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_RUNTIME_INPUT_FACTS"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	for _, ev := range []types.Event{
+		{Version: types.EventSchemaVersionV1, Type: types.EventTypeRuntimeInputAdmission, RunID: "run-input-admit", Time: time.Now().UTC(), Payload: map[string]any{
+			"input_id": "input-1", "input_kind": "steering", "admission_status": "accepted", "reason_code": "runtime_input.accepted", "payload": "secret body",
+		}},
+		{Version: types.EventSchemaVersionV1, Type: types.EventTypeRuntimeInputApplied, RunID: "run-input-apply", Time: time.Now().UTC(), Payload: map[string]any{
+			"input_id": "input-1", "input_kind": "steering", "apply_boundary": "next_decision", "payload": "secret body",
+		}},
+		{Version: types.EventSchemaVersionV1, Type: types.EventTypeRuntimeInputPromotion, RunID: "run-input-promote", Time: time.Now().UTC(), Payload: map[string]any{
+			"input_id": "input-2", "promoted_run_id": "run-next", "causation_id": "run-input", "payload": "secret body",
+		}},
+	} {
+		rec.OnEvent(context.Background(), ev)
+	}
+	runs := mgr.RecentRuns(8)
+	if len(runs) != 3 {
+		t.Fatalf("runtime input facts = %#v", runs)
+	}
+	for _, run := range runs {
+		if strings.Contains(run.ProtocolState, "secret") || strings.Contains(run.ProtocolAdmissionReason, "secret") {
+			t.Fatalf("raw runtime input leaked: %#v", run)
+		}
+		if run.ProtocolState == "" {
+			t.Fatalf("runtime input fact state missing: %#v", run)
+		}
+	}
+}
+
 func TestRuntimeRecorderIgnoresHostCursorBodiesAndUnknownFacts(t *testing.T) {
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_HOST_OBSERVATION_NEGATIVE_TEST"})
 	if err != nil {

@@ -21,31 +21,38 @@ type ActiveRunSnapshot struct {
 }
 
 type activeRunState struct {
-	activeRunMu            sync.RWMutex
-	activeRuns             map[string]*ActiveRunControl
-	activeRunControl       bool
-	activeRunLimit         int
-	activeRunIngressBuffer int
+	activeRunMu                sync.RWMutex
+	activeRuns                 map[string]*ActiveRunControl
+	activeRunControl           bool
+	activeRunLimit             int
+	activeRunIngressBuffer     int
+	runtimeInputFollowUpBuffer int
 }
 
 // ActiveRunControl exposes cancellation and bounded Realtime ingress for one Run.
 // The control is owned by its Engine and is removed when the Run terminates.
 type ActiveRunControl struct {
-	engine         *Engine
-	runID          string
-	sessionID      string
-	stream         bool
-	startedAt      time.Time
-	ctx            context.Context
-	cancel         context.CancelFunc
-	ingress        chan types.RealtimeEventEnvelope
-	closed         chan struct{}
-	closeOnce      sync.Once
-	mu             sync.RWMutex
-	state          types.RunState
-	runtime        *realtimeSessionRuntime
-	cancelAdmitted bool
-	closedFlag     bool
+	engine             *Engine
+	runID              string
+	sessionID          string
+	stream             bool
+	startedAt          time.Time
+	ctx                context.Context
+	cancel             context.CancelFunc
+	ingress            chan types.RealtimeEventEnvelope
+	closed             chan struct{}
+	closeOnce          sync.Once
+	mu                 sync.RWMutex
+	state              types.RunState
+	runtime            *realtimeSessionRuntime
+	cancelAdmitted     bool
+	closedFlag         bool
+	inputMu            sync.Mutex
+	pendingSteering    *types.RuntimeInputEnvelope
+	followUps          []types.RuntimeInputEnvelope
+	inputSeen          map[string]struct{}
+	followUpLimit      int
+	runtimeInputClosed bool
 }
 
 type hostRunReservationKey struct{}
@@ -141,10 +148,13 @@ func (c *ActiveRunControl) Snapshot() ActiveRunSnapshot {
 }
 
 var (
-	ErrActiveRunDuplicate    = errors.New("active run already registered")
-	ErrActiveRunUnknown      = errors.New("active run not found")
-	ErrActiveRunClosed       = errors.New("active run control is closed")
-	ErrActiveRunBackpressure = errors.New("active run realtime ingress is full")
+	ErrActiveRunDuplicate       = errors.New("active run already registered")
+	ErrActiveRunUnknown         = errors.New("active run not found")
+	ErrActiveRunClosed          = errors.New("active run control is closed")
+	ErrActiveRunBackpressure    = errors.New("active run realtime ingress is full")
+	ErrRuntimeInputUnknown      = errors.New("runtime input run not found")
+	ErrRuntimeInputBackpressure = errors.New("runtime input lane is full")
+	ErrRuntimeInputClosed       = errors.New("runtime input lane is closed")
 )
 
 // WithActiveRunControlLimit bounds the number of concurrently controllable Runs.
@@ -167,6 +177,16 @@ func WithActiveRunIngressBuffer(size int) Option {
 	}
 }
 
+// WithRuntimeInputFollowUpBuffer sets the per-Run bounded follow-up capacity.
+func WithRuntimeInputFollowUpBuffer(size int) Option {
+	return func(e *Engine) {
+		if size > 0 {
+			e.activeRunControl = true
+			e.runtimeInputFollowUpBuffer = size
+		}
+	}
+}
+
 func (e *Engine) initActiveRunControl() {
 	if e.activeRuns == nil {
 		e.activeRuns = make(map[string]*ActiveRunControl)
@@ -176,6 +196,9 @@ func (e *Engine) initActiveRunControl() {
 	}
 	if e.activeRunIngressBuffer <= 0 {
 		e.activeRunIngressBuffer = 16
+	}
+	if e.runtimeInputFollowUpBuffer <= 0 {
+		e.runtimeInputFollowUpBuffer = 8
 	}
 }
 
@@ -203,6 +226,7 @@ func (e *Engine) beginActiveRun(ctx context.Context, runID, sessionID string, st
 		startedAt: time.Now().UTC(), ctx: derived, cancel: cancel,
 		ingress: make(chan types.RealtimeEventEnvelope, e.activeRunIngressBuffer),
 		closed:  make(chan struct{}), state: types.RunStateWorking,
+		inputSeen: make(map[string]struct{}), followUpLimit: e.runtimeInputFollowUpBuffer,
 	}
 	e.activeRuns[runID] = ctrl
 	e.activeRunMu.Unlock()
@@ -250,11 +274,28 @@ func (e *Engine) activeRunSafePoint(ctx context.Context, h types.EventHandler, c
 	return nil
 }
 
+// applyRuntimeInputSafePoint moves source-owned steering into the next model
+// request only after the existing atomic Runner boundary has completed.
+func (e *Engine) applyRuntimeInputSafePoint(ctx context.Context, h types.EventHandler, req *types.RunRequest, control *ActiveRunControl) {
+	if req == nil || control == nil {
+		return
+	}
+	for _, input := range control.DrainRuntimeInputSafePoint() {
+		req.Messages = append(req.Messages, types.Message{Role: "user", Content: input.Payload})
+		e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: types.EventTypeRuntimeInputApplied, RunID: control.runID, Time: e.now(), Payload: map[string]any{
+			"input_id":       input.InputID,
+			"input_kind":     string(input.Kind),
+			"apply_boundary": string(input.ApplyBoundary),
+		}})
+	}
+}
+
 func (e *Engine) finishActiveRun(ctrl *ActiveRunControl) {
 	if ctrl == nil {
 		return
 	}
 	ctrl.closeOnce.Do(func() {
+		ctrl.settleRuntimeInputs()
 		ctrl.mu.Lock()
 		ctrl.closedFlag = true
 		ctrl.mu.Unlock()
@@ -317,6 +358,7 @@ func (e *Engine) CancelRun(runID, sessionID string) (types.HostAdmissionStatus, 
 	}
 	ctrl.cancelAdmitted = true
 	ctrl.mu.Unlock()
+	ctrl.settleRuntimeInputs()
 	ctrl.cancel()
 	return types.HostAdmissionStatusAccepted, nil
 }

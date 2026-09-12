@@ -24,7 +24,7 @@ function Assert-PatternAbsent {
 
 Write-Host "[embedded-host-contract-gate] ownership and non-goal assertions"
 Assert-PatternAbsent -Assertion "source_owner" -Pattern 'runtime/diagnostics|mcp/(http|stdio)|net/http|gorilla/websocket|database/sql'
-Assert-PatternAbsent -Assertion "non_goals" -Pattern 'steering|follow[-_ ]?up|hosted listener|remote Session|Artifact store|global queue|terminal state machine'
+Assert-PatternAbsent -Assertion "non_goals" -Pattern 'hosted listener|remote Session|Artifact store|global queue|terminal state machine'
 Assert-PatternAbsent -Assertion "bounded_state" -Pattern '^[[:space:]]*var[[:space:]]+[A-Za-z0-9_]+[[:space:]]*=[[:space:]]*make\((map|chan)'
 
 Write-Host "[embedded-host-contract-gate] replay and framing markers"
@@ -34,5 +34,8 @@ if (-not (Select-String -Path (Join-Path $repoRoot "tool\diagnosticsreplay\host_
 }
 if (-not (Select-String -Path (Join-Path $repoRoot "host\jsonl\*.go") -Pattern "LF|CRLF|Frame|Negotiat|MaxFrame" -Quiet)) {
     throw "[embedded-host-contract-gate][framing] missing framing markers"
+}
+if (-not (Select-String -Path (Join-Path $repoRoot "host\host.go") -Pattern "RuntimeInputControl|AdmitHostRuntimeInput|run.input.steering|run.input.follow_up" -Quiet)) {
+    throw "[embedded-host-contract-gate][runtime-input] missing source-owned runtime input routing markers"
 }
 Write-Host "[embedded-host-contract-gate] done"

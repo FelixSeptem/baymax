@@ -856,11 +856,15 @@ const EventTypeToolLifecycleFinalized = "tool.lifecycle.finalized"
 const EventTypeHostObservation = "host.observation"
 
 const (
-	EventTypeHostCorrelation   = "host.correlation"
-	EventTypeHostAdmission     = "host.admission"
-	EventTypeHostPendingClose  = "host.pending.close"
-	EventTypeHostDelivery      = "host.delivery"
-	EventTypeHostSourceControl = "host.source_control"
+	EventTypeHostCorrelation        = "host.correlation"
+	EventTypeHostAdmission          = "host.admission"
+	EventTypeHostPendingClose       = "host.pending.close"
+	EventTypeHostDelivery           = "host.delivery"
+	EventTypeHostSourceControl      = "host.source_control"
+	EventTypeRuntimeInputAdmission  = "runtime.input.admission"
+	EventTypeRuntimeInputApplied    = "runtime.input.applied"
+	EventTypeRuntimeInputNotApplied = "runtime.input.not_applied"
+	EventTypeRuntimeInputPromotion  = "runtime.input.promotion"
 )
 
 type ActionPhase string

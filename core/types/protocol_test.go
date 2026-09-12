@@ -383,6 +383,26 @@ func TestProtocolDescriptorActionsDoNotImplyAuthorization(t *testing.T) {
 	}
 }
 
+func TestProtocolDescriptorAdvertisesRuntimeInputCapabilitiesWithoutAuthorizingThem(t *testing.T) {
+	descriptor := ProtocolDescriptor{
+		ProtocolName:   AgentRuntimeProtocolName,
+		ProfileVersion: "v1",
+		RuntimeID:      "runtime-input",
+		Capabilities: []ProtocolCapability{
+			{Name: ProtocolCapabilityRuntimeInputSteering},
+		},
+	}
+	if !descriptor.SupportsCapability(ProtocolCapabilityRuntimeInputSteering) {
+		t.Fatal("steering capability was not advertised")
+	}
+	if descriptor.SupportsCapability(ProtocolCapabilityRuntimeInputFollowUp) {
+		t.Fatal("follow-up capability was advertised unexpectedly")
+	}
+	if err := descriptor.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConcurrentRunAdmissionValidatesPolicyOutcomePairs(t *testing.T) {
 	queued := ProtocolRunAdmission{
 		SessionID:         "session-1",

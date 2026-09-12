@@ -41,6 +41,12 @@ type SourceControl interface {
 	IngestRealtime(context.Context, types.HostCommandEnvelope, types.RealtimeEventEnvelope) (types.HostAdmissionStatus, string, error)
 }
 
+// RuntimeInputControl is an optional source-owned steering/follow-up admission owner.
+// It is deliberately separate from SourceControl to preserve existing source implementations.
+type RuntimeInputControl interface {
+	AdmitHostRuntimeInput(context.Context, types.HostCommandEnvelope, types.RuntimeInputEnvelope) (types.HostAdmissionStatus, string, error)
+}
+
 // EventSubscriber delegates cursor recovery and live-tail ownership.
 type EventSubscriber interface {
 	SubscribeHostEvents(context.Context, types.EventStreamSubscription) (types.EventStreamBindingProjection, error)
@@ -348,7 +354,7 @@ func (c *Connection) emitFact(ctx context.Context, eventType, runID string, payl
 		return
 	}
 	safe := map[string]any{}
-	for _, key := range []string{"fact", "session_id", "request_id", "message_id", "admission_status", "reason_code", "source_control", "pending_outcome", "delivery_status"} {
+	for _, key := range []string{"fact", "session_id", "request_id", "message_id", "admission_status", "reason_code", "source_control", "input_kind", "input_id", "pending_outcome", "delivery_status"} {
 		if value, ok := payload[key]; ok {
 			switch typed := value.(type) {
 			case string:
@@ -373,17 +379,27 @@ func (c *Connection) emitFactEvent(ctx context.Context, fact types.Event) {
 }
 
 func (c *Connection) emitAdmission(cmd types.HostCommandEnvelope, response types.HostCommandResponse) {
-	c.emitFact(context.Background(), types.EventTypeHostAdmission, cmd.RunID, map[string]any{
+	payload := map[string]any{
 		"fact": "admission", "session_id": cmd.SessionID, "request_id": cmd.RequestID,
 		"message_id": cmd.MessageID, "admission_status": string(response.Status), "reason_code": response.ReasonCode,
-	})
+	}
+	if response.InputKind != "" {
+		payload["input_kind"] = string(response.InputKind)
+		payload["input_id"] = response.InputID
+	}
+	c.emitFact(context.Background(), types.EventTypeHostAdmission, cmd.RunID, payload)
 }
 
 func (c *Connection) emitAdmissionFromResponse(response types.HostCommandResponse) {
-	c.emitFact(context.Background(), types.EventTypeHostAdmission, response.RunID, map[string]any{
+	payload := map[string]any{
 		"fact": "admission", "session_id": response.SessionID, "request_id": response.RequestID,
 		"message_id": response.MessageID, "admission_status": string(response.Status), "reason_code": response.ReasonCode,
-	})
+	}
+	if response.InputKind != "" {
+		payload["input_kind"] = string(response.InputKind)
+		payload["input_id"] = response.InputID
+	}
+	c.emitFact(context.Background(), types.EventTypeHostAdmission, response.RunID, payload)
 }
 
 func (c *Connection) closeWithCause(cause error) {
@@ -490,6 +506,8 @@ func (c *Connection) HandleCommand(ctx context.Context, cmd types.HostCommandEnv
 		response, err = c.executeAction(ctx, cmd)
 	case types.HostCommandKindRealtimeInterrupt, types.HostCommandKindRealtimeResume:
 		response, err = c.ingestRealtime(ctx, cmd)
+	case types.HostCommandKindSteering, types.HostCommandKindFollowUp:
+		response, err = c.admitRuntimeInput(ctx, cmd)
 	case types.HostCommandKindHITLRespond:
 		response, err = c.handleHITLResponse(cmd)
 	case types.HostCommandKindEventsSubscribe:
@@ -519,6 +537,40 @@ func (c *Connection) HandleCommand(ctx context.Context, cmd types.HostCommandEnv
 		after()
 	}
 	return response, nil
+}
+
+func (c *Connection) admitRuntimeInput(ctx context.Context, cmd types.HostCommandEnvelope) (types.HostCommandResponse, error) {
+	owner, ok := c.coord.control.(RuntimeInputControl)
+	if !ok {
+		return types.NormalizeHostCommandAdmission(cmd, types.HostAdmissionStatusRejected, types.HostReasonUnknownKind)
+	}
+	kind := types.RuntimeInputKindSteering
+	if cmd.Kind == types.HostCommandKindFollowUp {
+		kind = types.RuntimeInputKindFollowUp
+	}
+	input := types.RuntimeInputEnvelope{Version: types.RuntimeInputProtocolVersionV1, InputID: stringPayload(cmd.Payload, "input_id"), Kind: kind, Time: c.coord.now().UTC(), SessionID: cmd.SessionID, RunID: cmd.RunID, CausationID: cmd.CausationID, SourceCorrelation: cmd.SourceCorrelation, Payload: stringPayload(cmd.Payload, "payload")}
+	if raw, ok := cmd.Payload["profile_version"].(string); ok {
+		input.ProfileVersion = raw
+	}
+	status, reason, err := owner.AdmitHostRuntimeInput(ctx, cmd, input)
+	if err != nil {
+		response, normalizeErr := reject(cmd, err)
+		return response, normalizeErr
+	}
+	response, err := types.NormalizeHostCommandAdmission(cmd, status, reason)
+	if err == nil {
+		response.InputKind = kind
+		response.InputID = input.InputID
+	}
+	return response, err
+}
+
+func stringPayload(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return value
 }
 
 func (c *Connection) deliverCommandResponse(ctx context.Context, response types.HostCommandResponse, normalizeErr error) (types.HostCommandResponse, error) {

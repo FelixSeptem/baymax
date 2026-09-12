@@ -422,6 +422,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 		if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
 			terminal, runErr, state = classifyRealtimeError(err), err, StateAbort
 		}
+		e.applyRuntimeInputSafePoint(ctx, h, &req, control)
 		switch state {
 		case StateInit:
 			if iteration >= policy.MaxIterations {
@@ -1597,6 +1598,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			terminal, runErr = classifyRealtimeError(err), err
 			break
 		}
+		e.applyRuntimeInputSafePoint(ctx, h, &req, control)
 		if iteration >= policy.MaxIterations {
 			terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 			runErr = errors.New(terminal.Message)
@@ -1697,6 +1699,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			terminal, runErr = classifyRealtimeError(err), err
 			break
 		}
+		e.applyRuntimeInputSafePoint(ctx, h, &req, control)
 		if stepErr != nil && stepResult.Text != "" {
 			final = stepResult.Text
 		}

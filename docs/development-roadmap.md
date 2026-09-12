@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-11
+更新时间：2026-09-12
 
 ## 定位
 
@@ -20,9 +20,10 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-11：
+截至 2026-09-12：
 
 - 已归档：
+  - `introduce-runtime-steering-and-follow-up-input-contract`
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`
   - `harden-runtime-event-stream-terminal-recovery-contract`
   - `harden-tool-lifecycle-and-failure-isolation-contract`
@@ -30,12 +31,11 @@ Baymax 主线保持 `library-first + contract-first`：
   - `context-compression-runtime-handoff-contract`
   - `extension-lifecycle-governance-resource-resolution-contract`
   - `introduce-provider-model-capability-and-credential-preflight-contract`
+  - `establish-embedded-host-command-response-and-event-correlation-contract`
 - 候选：
   - 当前没有默认启动的 P0/P1 change。新 change 必须满足本文件的准入规则，并由明确的风险信号或宿主需求触发。
-- 进行中：
-  - `establish-embedded-host-command-response-and-event-correlation-contract`
 
-最近归档的七项变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理和 provider/model 准入的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
+最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -102,7 +102,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | --- | --- | --- | --- | --- |
 | 首选候选（现有 P2 细化） | 嵌入式宿主事件与请求响应接缝 | 严格 JSONL、request correlation、command response 与 async event 分离、pending 收口、stdout 保护 | Runner/Composer、Agent Runtime Protocol、Realtime、terminal arbiter、readiness/policy/sandbox、`RuntimeRecorder` | IDE、桌面宿主、headless UI 或外部 HITL 客户端需要运行中控制。不得只做 framing；必须先明确 source-owned active Run control。 |
 | 与首选合并优先 | 宿主介导 HITL adapter | 将 confirm/select/input 投影为反向请求并按 ID 返回响应 | `ClarificationResolver`、`ActionGateResolver`、现有 timeout 和 HITL timeline | 首个宿主需要跨进程确认或输入。只适配既有 HITL，不建立新状态机。 |
-| 条件候选 | 运行中 steering/follow-up 输入语义 | 区分影响当前下一步的 steering 与空闲后执行的 follow-up | Runner 消息输入、Session history、checkpoint、terminal/cancel owner | 宿主需要 active Run 中追加或排队输入。必须独立立项，定义有界队列、compaction 边界和 Run/Stream parity。 |
 | 条件候选 | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy | 出现跨 provider 恢复或边界兼容回归。优先补测试、fixture 和 gate，不扩张 provider SDK 边界。 |
 | 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow fixture、失败反馈 | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 出现新的真实扩展来源。不得建设 package manager/market，也不得无准入动态执行扩展。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |

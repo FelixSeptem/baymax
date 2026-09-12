@@ -254,6 +254,12 @@ if ! bash scripts/check-embedded-host-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] runtime steering/follow-up contract suites"
+if ! bash scripts/check-runtime-steering-follow-up-contract.sh; then
+  echo "[quality-gate][runtime-steering-follow-up-contract] runtime steering/follow-up contract gate failed"
+  exit 1
+fi
+
 echo "[quality-gate] agent runtime protocol contract suites"
 if ! bash scripts/check-agent-runtime-protocol-contract.sh; then
   echo "[quality-gate][agent-runtime-protocol-contract] agent runtime protocol contract suites failed"

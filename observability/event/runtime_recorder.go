@@ -155,7 +155,7 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 		payload = r.manager.RedactPayload(payload)
 	}
 	switch ev.Type {
-	case types.EventTypeHostObservation, types.EventTypeHostCorrelation, types.EventTypeHostAdmission, types.EventTypeHostPendingClose, types.EventTypeHostDelivery, types.EventTypeHostSourceControl:
+	case types.EventTypeHostObservation, types.EventTypeHostCorrelation, types.EventTypeHostAdmission, types.EventTypeHostPendingClose, types.EventTypeHostDelivery, types.EventTypeHostSourceControl, types.EventTypeRuntimeInputAdmission, types.EventTypeRuntimeInputApplied, types.EventTypeRuntimeInputNotApplied, types.EventTypeRuntimeInputPromotion:
 		// Host adapter facts are additive and deliberately projected into the
 		// existing bounded RunRecord. Never persist cursor bodies or raw payloads.
 		fact := payloadString(payload, "fact")

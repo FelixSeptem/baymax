@@ -96,7 +96,7 @@ Pi 将 extension UI 调用桥接到 RPC 宿主，并区分两类运行中输入�
 
 Baymax 已有 `ClarificationResolver` 和 `ActionGateResolver`，Runner 会发出 clarification/timeline 事件并同步等待 resolver。因此，第一步应把现有 HITL 语义适配为 host-mediated request/response，而不是创建新 HITL 状态。
 
-Steering/follow-up 暂时只适合作为需求触发候选。它们需要定义输入所有权、队列上限、compaction 期间行为、tool execution 边界、取消优先级和 Run/Stream 等价；若与基础宿主 RPC 一次性交付，范围和时序风险过大。
+Steering/follow-up 已由独立 OpenSpec 提案收口为 source-owned bounded lanes：steering 在既有 safe point 应用，follow-up 在 idle/terminal 边界通过现有 Run/Stream path 晋升为 distinct causal Run，并明确 cancel/terminal/disconnect 优先级与 parity。该实现不复制 Pi 的 AgentSession、lane/register/ledger 或远程 Session Server。
 
 ## 6. Session、持久化与 Harness
 

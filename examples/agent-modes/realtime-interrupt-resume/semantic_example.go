@@ -75,6 +75,9 @@ var minimalSemanticSteps = []realtimeStep{
 	{Marker: "host_negotiation_completed", RuntimeDomain: "host/jsonl", Intent: "negotiate the embedded host profile before mutation", Outcome: "one supported profile is acknowledged"},
 	{Marker: "host_command_correlated", RuntimeDomain: "host", Intent: "correlate command response with request and source run", Outcome: "bounded request and run correlation is projected"},
 	{Marker: "host_command_admission_separated", RuntimeDomain: "host", Intent: "separate command admission from asynchronous terminal outcome", Outcome: "accepted admission does not synthesize completion"},
+	{Marker: "runtime_steering_admitted", RuntimeDomain: "core/runner", Intent: "admit one source-owned steering envelope without claiming application", Outcome: "bounded admission is correlated to the active Run"},
+	{Marker: "runtime_steering_applied_at_safe_point", RuntimeDomain: "core/runner", Intent: "apply steering only after the current model/tool boundary", Outcome: "the next model decision observes the input"},
+	{Marker: "runtime_follow_up_pending", RuntimeDomain: "core/runner", Intent: "retain one bounded follow-up until the idle or terminal boundary", Outcome: "follow-up remains distinct from steering and terminal completion"},
 	{Marker: "host_active_interrupt_resume", RuntimeDomain: "core/runner", Intent: "delegate active interrupt and resume to source-owned control", Outcome: "safe-point control preserves realtime semantics"},
 	{Marker: "host_terminal_authoritative", RuntimeDomain: "host", Intent: "project the source-owned terminal outcome exactly once", Outcome: "terminal recovery remains authoritative"},
 	{
@@ -128,6 +131,10 @@ var minimalSemanticSteps = []realtimeStep{
 }
 
 var productionGovernanceSteps = []realtimeStep{
+	{Marker: "runtime_steering_duplicate_rejected", RuntimeDomain: "core/runner", Intent: "deduplicate a repeated steering identity at source admission", Outcome: "duplicate input is rejected without source mutation"},
+	{Marker: "runtime_follow_up_promoted", RuntimeDomain: "core/runner", Intent: "promote a pending follow-up through the existing Run path", Outcome: "a distinct causal Run is created"},
+	{Marker: "runtime_follow_up_backpressure", RuntimeDomain: "core/runner", Intent: "classify a full bounded follow-up lane", Outcome: "backpressure is explicit and non-blocking"},
+	{Marker: "runtime_input_not_applied_on_disconnect", RuntimeDomain: "host", Intent: "settle disconnected input without applying it to the source Run", Outcome: "disconnect remains transport-scoped and terminal state stays source-owned"},
 	{Marker: "host_hitl_reverse_request", RuntimeDomain: "host", Intent: "project a correlated reverse HITL request and settle it once", Outcome: "RequestID and timeout semantics remain source-owned"},
 	{Marker: "host_disconnect_recovery", RuntimeDomain: "host", Intent: "close observation without implicitly mutating the business Run", Outcome: "durable cursor and terminal recovery remain available"},
 	{Marker: "host_jsonl_frame_rejected", RuntimeDomain: "host/jsonl", Intent: "reject malformed or oversized frames before source mutation", Outcome: "bounded framing classification is deterministic"},
@@ -576,6 +583,34 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 	var risk string
 
 	switch marker {
+	case "runtime_steering_admitted":
+		result["runtime_input_admission"] = "accepted"
+		result["runtime_input_kind"] = string(types.RuntimeInputKindSteering)
+		risk = "runtime_input_admitted"
+	case "runtime_steering_applied_at_safe_point":
+		result["runtime_input_apply_boundary"] = string(types.RuntimeInputApplyBoundaryNextDecision)
+		result["runtime_input_apply_status"] = "applied"
+		risk = "runtime_input_safe_point"
+	case "runtime_follow_up_pending":
+		result["runtime_input_kind"] = string(types.RuntimeInputKindFollowUp)
+		result["runtime_input_pending"] = true
+		risk = "runtime_follow_up_pending"
+	case "runtime_steering_duplicate_rejected":
+		result["runtime_input_admission"] = "duplicate"
+		result["runtime_input_reason"] = types.RuntimeInputReasonDuplicate
+		risk = "runtime_input_duplicate"
+	case "runtime_follow_up_promoted":
+		result["runtime_input_kind"] = string(types.RuntimeInputKindFollowUp)
+		result["runtime_input_promotion"] = "distinct_causal_run"
+		risk = "runtime_follow_up_promoted"
+	case "runtime_follow_up_backpressure":
+		result["runtime_input_admission"] = "rejected"
+		result["runtime_input_reason"] = types.RuntimeInputReasonBackpressure
+		risk = "runtime_follow_up_backpressure"
+	case "runtime_input_not_applied_on_disconnect":
+		result["runtime_input_apply_status"] = "not_applied"
+		result["runtime_input_reason"] = types.RuntimeInputReasonDisconnected
+		risk = "runtime_input_disconnect"
 	case "realtime_cursor_idempotent":
 		appliedCursors, lastCursor, duplicateDropped = dedupeCursors(events)
 		result["applied_cursors"] = toAnyIntSlice(appliedCursors)

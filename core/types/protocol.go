@@ -90,6 +90,8 @@ const (
 	ProtocolReasonWorkspaceProvenanceMissing     = "workspace.provenance_missing"
 	ProtocolReasonWorkspaceAssociationMismatch   = "workspace.association_mismatch"
 	ProtocolReasonWorkspaceIntegrityDrift        = "workspace.integrity_drift"
+	ProtocolCapabilityRuntimeInputSteering       = "runtime.input.steering"
+	ProtocolCapabilityRuntimeInputFollowUp       = "runtime.input.follow_up"
 )
 
 // ProtocolCapabilityStrategy uses the same request semantics as adapter
@@ -191,6 +193,21 @@ func (d ProtocolDescriptor) SupportsAction(action ProtocolAction) bool {
 	needle := ProtocolAction(normalizeProtocolName(string(action)))
 	for _, candidate := range d.Actions {
 		if ProtocolAction(normalizeProtocolName(string(candidate))) == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// SupportsCapability reports advertised availability only; authorization is
+// still evaluated by the source and host policy owners.
+func (d ProtocolDescriptor) SupportsCapability(name string) bool {
+	needle := normalizeProtocolName(name)
+	if needle == "" {
+		return false
+	}
+	for _, capability := range d.Capabilities {
+		if normalizeProtocolName(capability.Name) == needle {
 			return true
 		}
 	}

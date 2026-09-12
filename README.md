@@ -16,8 +16,9 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-11）：
-- 进行中：`establish-embedded-host-command-response-and-event-correlation-contract`（嵌入式宿主命令/响应、异步事件、HITL 反向请求、active Run control 与 strict JSONL binding；实现按 OpenSpec 任务逐步收口）。
+当前里程碑快照（2026-09-12）：
+- `introduce-runtime-steering-and-follow-up-input-contract`（已归档，source-owned steering/follow-up admission、safe-point apply、follow-up promotion 与 embedded host/JSONL contract）。
+- `establish-embedded-host-command-response-and-event-correlation-contract`（已归档，嵌入式宿主命令/响应、异步事件、HITL 反向请求、active Run control 与 strict JSONL binding）
 - `introduce-provider-model-capability-and-credential-preflight-contract`（已归档，Provider/model 能力目录与脱敏 credential preflight 合同）
 - `extension-lifecycle-governance-resource-resolution-contract`（已归档，扩展生命周期、资源确定性发现、准入与失败隔离）
 - `context-compression-runtime-handoff-contract`（已归档；上下文压缩运行交接单合同，代码、测试、文档与门禁已完成）。
@@ -49,6 +50,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 ## 架构设计
 
 Agent Runtime Protocol 是面向嵌入宿主的引用与生命周期投影，不是新的执行引擎或托管控制面。对象映射由 `core/types` 提供，Runner、Workflow、Teams、Scheduler、A2A、Realtime、Snapshot 与 RuntimeRecorder 继续分别拥有执行、恢复、事件和诊断事实源。当前扩展以 additive `ProtocolDescriptor`、bounded Session context、显式 host-action availability 和 source-owned same-Session admission outcome 暴露能力，不引入队列、锁、分支引擎、会话服务或 provider-specific context schema。
+
+运行中输入合同（steering/follow-up）同样保持 source-owned：每个 active Run 只有有界 steering slot 与 follow-up FIFO；steering 只能在既有 model/tool/HITL 原子边界后的 safe point 应用，follow-up 只能在 idle/terminal 边界通过现有 Run/Stream admission path 晋升为 distinct causal Run。Host 只负责 command correlation、authorization/readiness 前置检查、JSONL framing 与 bounded delivery，不拥有 Session history、terminal state、Realtime cursor 或 global queue。该合同不新增 runtime config key，也不提供 remote gateway 或 hosted persistence。
 
 Durable runtime event-stream binding 是可选的 transport-neutral 投影：支持有界 `latest`/`after_cursor`、source-owned catch-up/live-tail handoff、重叠去重、过期、断连与 backpressure 分类；不提供 transport gateway、托管 Event/Session service、外部 event store 或 binding-owned queue。
 

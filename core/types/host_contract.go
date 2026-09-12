@@ -30,8 +30,13 @@ const (
 	HostCommandKindRealtimeInterrupt HostCommandKind = "realtime.interrupt"
 	HostCommandKindRealtimeResume    HostCommandKind = "realtime.resume"
 	HostCommandKindHITLRespond       HostCommandKind = "hitl.respond"
-	HostCommandKindEventsSubscribe   HostCommandKind = "events.subscribe"
-	HostCommandKindRunGet            HostCommandKind = "run.get"
+	HostCommandKindSteering          HostCommandKind = "run.input.steering"
+	HostCommandKindFollowUp          HostCommandKind = "run.input.follow_up"
+	// Compatibility aliases for callers that use the explicit input naming.
+	HostCommandKindInputSteering   HostCommandKind = HostCommandKindSteering
+	HostCommandKindInputFollowUp   HostCommandKind = HostCommandKindFollowUp
+	HostCommandKindEventsSubscribe HostCommandKind = "events.subscribe"
+	HostCommandKindRunGet          HostCommandKind = "run.get"
 )
 
 type HostAdmissionStatus string
@@ -147,6 +152,8 @@ type HostCommandResponse struct {
 	Status            HostAdmissionStatus `json:"status"`
 	ReasonCode        string              `json:"reason_code,omitempty"`
 	SourceCorrelation string              `json:"source_correlation,omitempty"`
+	InputKind         RuntimeInputKind    `json:"input_kind,omitempty"`
+	InputID           string              `json:"input_id,omitempty"`
 	Terminal          *TerminalOutcome    `json:"terminal,omitempty"`
 }
 
@@ -321,7 +328,7 @@ func AuthorizeHostCommand(a HostAuthorization) error {
 
 func isHostCommandKind(k HostCommandKind) bool {
 	switch k {
-	case HostCommandKindRunStart, HostCommandKindAction, HostCommandKindRealtimeInterrupt, HostCommandKindRealtimeResume, HostCommandKindHITLRespond, HostCommandKindEventsSubscribe, HostCommandKindRunGet:
+	case HostCommandKindRunStart, HostCommandKindAction, HostCommandKindRealtimeInterrupt, HostCommandKindRealtimeResume, HostCommandKindHITLRespond, HostCommandKindSteering, HostCommandKindFollowUp, HostCommandKindEventsSubscribe, HostCommandKindRunGet:
 		return true
 	}
 	return false

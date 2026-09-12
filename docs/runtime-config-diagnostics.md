@@ -2145,6 +2145,10 @@ Realtime Protocol + Interrupt/Resume gate 与 required-check 暴露：
 
 ## 热更新语义
 
+### Runtime steering/follow-up diagnostics
+
+Steering/follow-up 不新增 runtime 配置键，沿用固定的 `env > file > default` 配置域。输入 admission、safe-point apply/not-applied、duplicate/stale、disconnect、queue pressure、promotion 与 terminal-race facts 只能通过 `observability/event.RuntimeRecorder` 进入既有 bounded diagnostics projection；raw input payload、cursor、frame body、Session history 与 provider request 不写入 RunRecord 或 OTel 高基数字段。历史事件缺少这些事实时保持 additive/nullable/default 兼容。
+
 ### Provider/model capability catalog and credential preflight
 
 `runtime.provider_catalog.*` is disabled by default and resolves with

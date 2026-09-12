@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-08 19:21:33
+Updated: 2026-09-12 15:18:11
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -135,3 +135,5 @@ Updated: 2026-09-08 19:21:33
 - 131 -> context-compression-runtime-handoff-contract
 - 132 -> extension-lifecycle-governance-resource-resolution-contract
 - 133 -> introduce-provider-model-capability-and-credential-preflight-contract
+- 134 -> establish-embedded-host-command-response-and-event-correlation-contract
+- 135 -> build-go-agent-loop-framework

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -46,16 +47,19 @@ type realtimeCursorRecord struct {
 }
 
 type realtimeSessionRuntime struct {
+	mu        sync.Mutex
 	engine    *Engine
 	cfg       runtimeconfig.RuntimeRealtimeConfig
 	runID     string
 	sessionID string
 
-	seqMax      int64
-	lastInSeq   int64
-	seenDedup   map[string]struct{}
-	interrupted bool
-	cursor      string
+	seqMax       int64
+	lastInSeq    int64
+	seenDedup    map[string]struct{}
+	pendingDedup map[string]struct{}
+	pendingSeq   map[int64]struct{}
+	interrupted  bool
+	cursor       string
 
 	interruptTotal int
 	resumeTotal    int
@@ -87,18 +91,142 @@ func (e *Engine) newRealtimeSessionRuntime(runID string, req types.RunRequest) *
 		sessionID = "session:" + strings.TrimSpace(runID)
 	}
 	return &realtimeSessionRuntime{
-		engine:    e,
-		cfg:       cfg,
-		runID:     strings.TrimSpace(runID),
-		sessionID: sessionID,
-		seenDedup: map[string]struct{}{},
+		engine:       e,
+		cfg:          cfg,
+		runID:        strings.TrimSpace(runID),
+		sessionID:    sessionID,
+		seenDedup:    map[string]struct{}{},
+		pendingDedup: map[string]struct{}{},
+		pendingSeq:   map[int64]struct{}{},
 	}
+}
+
+// reserveControlEvent validates a host ingress event against source-owned
+// state without publishing or applying it. ActiveRunControl serializes calls
+// to this method with consumption, so accepted admission remains truthful.
+func (s *realtimeSessionRuntime) reserveControlEvent(ev types.RealtimeEventEnvelope) (types.HostAdmissionStatus, error) {
+	if s == nil {
+		return types.HostAdmissionStatusRejected, ErrActiveRunClosed
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ev.Type = types.RealtimeEventType(strings.ToLower(strings.TrimSpace(string(ev.Type))))
+	if err := types.ValidateRealtimeEventEnvelope(ev); err != nil {
+		return types.HostAdmissionStatusRejected, s.protocolError(realtimeReasonSchemaInvalid, realtimeErrorLayerProtocol, err.Error())
+	}
+	if ev.RunID != s.runID || ev.SessionID != s.sessionID {
+		return types.HostAdmissionStatusRejected, s.protocolError(
+			realtimeReasonSchemaInvalid,
+			realtimeErrorLayerProtocol,
+			"realtime event source correlation mismatch",
+		)
+	}
+	if ev.Type != types.RealtimeEventTypeInterrupt && ev.Type != types.RealtimeEventTypeResume {
+		return types.HostAdmissionStatusRejected, s.protocolError(
+			realtimeReasonUnsupportedEventType,
+			realtimeErrorLayerProtocol,
+			fmt.Sprintf("unsupported active realtime event type %q", ev.Type),
+		)
+	}
+	key := strings.TrimSpace(ev.DedupKey())
+	if _, exists := s.seenDedup[key]; key != "" && exists {
+		return types.HostAdmissionStatusDuplicate, nil
+	}
+	if _, exists := s.pendingDedup[key]; key != "" && exists {
+		return types.HostAdmissionStatusDuplicate, nil
+	}
+	if err := s.validateReservedSequence(ev.Seq); err != nil {
+		return types.HostAdmissionStatusRejected, err
+	}
+	if ev.Type == types.RealtimeEventTypeResume {
+		if !s.interrupted {
+			return types.HostAdmissionStatusRejected, s.protocolError(
+				realtimeReasonInvalidResumeCursor,
+				realtimeErrorLayerSemantic,
+				"realtime resume requires input_required source state",
+			)
+		}
+		cursor := strings.TrimSpace(ev.ResumeCursor())
+		if !s.validResumeCursor(cursor) {
+			return types.HostAdmissionStatusRejected, s.protocolError(
+				realtimeReasonInvalidResumeCursor,
+				realtimeErrorLayerSemantic,
+				fmt.Sprintf("invalid resume cursor %q", cursor),
+			)
+		}
+	}
+	if s.pendingDedup == nil {
+		s.pendingDedup = map[string]struct{}{}
+	}
+	if s.pendingSeq == nil {
+		s.pendingSeq = map[int64]struct{}{}
+	}
+	if key != "" {
+		s.pendingDedup[key] = struct{}{}
+	}
+	s.pendingSeq[ev.Seq] = struct{}{}
+	return types.HostAdmissionStatusAccepted, nil
+}
+
+func (s *realtimeSessionRuntime) validateReservedSequence(seq int64) error {
+	expected := s.lastInSeq + 1
+	for {
+		if _, exists := s.pendingSeq[expected]; !exists {
+			break
+		}
+		expected++
+	}
+	if seq == expected {
+		return nil
+	}
+	if seq < expected {
+		return s.protocolError(
+			realtimeReasonEventOrderDrift,
+			realtimeErrorLayerProtocol,
+			fmt.Sprintf("realtime sequence out of order: expected=%d incoming=%d", expected, seq),
+		)
+	}
+	return s.protocolError(
+		realtimeReasonSequenceGap,
+		realtimeErrorLayerProtocol,
+		fmt.Sprintf("realtime sequence gap: expected=%d incoming=%d", expected, seq),
+	)
+}
+
+func (s *realtimeSessionRuntime) consumeReservedControlEvent(ev types.RealtimeEventEnvelope) {
+	// Reservation removal is part of source commit in ingestControlEvents. It
+	// intentionally remains present across the dequeue/apply boundary.
+}
+
+func (s *realtimeSessionRuntime) releaseControlEvent(ev types.RealtimeEventEnvelope) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pendingDedup, strings.TrimSpace(ev.DedupKey()))
+	delete(s.pendingSeq, ev.Seq)
+}
+
+func (s *realtimeSessionRuntime) protocolError(code, layer, message string) error {
+	return &realtimeProtocolError{Code: code, Layer: layer, Message: message}
+}
+
+func (s *realtimeSessionRuntime) isInterrupted() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.interrupted
 }
 
 func (s *realtimeSessionRuntime) fillRunFinishMeta(meta *runFinishMeta) {
 	if s == nil || meta == nil {
 		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	meta.RealtimeProtocolVersion = strings.TrimSpace(s.cfg.Protocol.Version)
 	meta.RealtimeSessionID = strings.TrimSpace(s.sessionID)
 	meta.RealtimeEventSeqMax = s.seqMax
@@ -164,23 +292,48 @@ func (s *realtimeSessionRuntime) ingestControlEvents(
 		if err := types.ValidateRealtimeEventEnvelope(ev); err != nil {
 			return s.fail(realtimeReasonSchemaInvalid, realtimeErrorLayerProtocol, err.Error())
 		}
-		if key := strings.TrimSpace(ev.DedupKey()); key != "" {
-			if _, seen := s.seenDedup[key]; seen {
-				s.dedupTotal++
-				continue
-			}
-			s.seenDedup[key] = struct{}{}
-		}
-		if err := s.acceptSequence(ev.Seq); err != nil {
+		duplicate, err := s.commitControlEvent(ev)
+		if err != nil {
 			return err
 		}
-		s.observeSeq(ev.Seq)
+		if duplicate {
+			continue
+		}
 		s.emitEnvelope(ctx, h, iteration, ev)
-		if err := s.applyControlEvent(ev); err != nil {
-			return err
-		}
 	}
 	return nil
+}
+
+// commitControlEvent atomically transfers a queued reservation into the
+// source-owned dedupe, sequence, and lifecycle state. Event handlers run only
+// after this method releases the runtime mutex.
+func (s *realtimeSessionRuntime) commitControlEvent(ev types.RealtimeEventEnvelope) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := strings.TrimSpace(ev.DedupKey())
+	if key != "" {
+		if _, seen := s.seenDedup[key]; seen {
+			s.dedupTotal++
+			delete(s.pendingDedup, key)
+			delete(s.pendingSeq, ev.Seq)
+			return true, nil
+		}
+	}
+	if err := s.acceptSequenceLocked(ev.Seq); err != nil {
+		return false, err
+	}
+	if err := s.applyControlEventLocked(ev); err != nil {
+		return false, err
+	}
+	if key != "" {
+		s.seenDedup[key] = struct{}{}
+	}
+	if ev.Seq > s.seqMax {
+		s.seqMax = ev.Seq
+	}
+	delete(s.pendingDedup, key)
+	delete(s.pendingSeq, ev.Seq)
+	return false, nil
 }
 
 func (s *realtimeSessionRuntime) emitRequest(ctx context.Context, h types.EventHandler, iteration int, req types.RunRequest) {
@@ -328,7 +481,7 @@ func (s *realtimeSessionRuntime) emitSyntheticEvent(
 	return nil
 }
 
-func (s *realtimeSessionRuntime) applyControlEvent(ev types.RealtimeEventEnvelope) error {
+func (s *realtimeSessionRuntime) applyControlEventLocked(ev types.RealtimeEventEnvelope) error {
 	switch ev.Type {
 	case types.RealtimeEventTypeInterrupt:
 		if !s.interrupted {
@@ -359,7 +512,7 @@ func (s *realtimeSessionRuntime) applyControlEvent(ev types.RealtimeEventEnvelop
 	return nil
 }
 
-func (s *realtimeSessionRuntime) acceptSequence(seq int64) error {
+func (s *realtimeSessionRuntime) acceptSequenceLocked(seq int64) error {
 	if seq <= 0 {
 		return s.fail(realtimeReasonSchemaInvalid, realtimeErrorLayerProtocol, "realtime seq must be > 0")
 	}
@@ -383,12 +536,6 @@ func (s *realtimeSessionRuntime) acceptSequence(seq int64) error {
 		realtimeErrorLayerProtocol,
 		fmt.Sprintf("realtime sequence gap: last=%d incoming=%d", s.lastInSeq, seq),
 	)
-}
-
-func (s *realtimeSessionRuntime) observeSeq(seq int64) {
-	if seq > s.seqMax {
-		s.seqMax = seq
-	}
 }
 
 func (s *realtimeSessionRuntime) nextSeq() int64 {

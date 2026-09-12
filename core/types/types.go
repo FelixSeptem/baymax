@@ -850,6 +850,19 @@ const EventTypeContextHandoff = "context.handoff"
 // projection for one source-owned tool invocation.
 const EventTypeToolLifecycleFinalized = "tool.lifecycle.finalized"
 
+// EventTypeHostObservation carries bounded host adapter facts for diagnostics.
+// Payloads are projected by RuntimeRecorder; cursor bodies and arbitrary
+// transport data are intentionally not persisted.
+const EventTypeHostObservation = "host.observation"
+
+const (
+	EventTypeHostCorrelation   = "host.correlation"
+	EventTypeHostAdmission     = "host.admission"
+	EventTypeHostPendingClose  = "host.pending.close"
+	EventTypeHostDelivery      = "host.delivery"
+	EventTypeHostSourceControl = "host.source_control"
+)
+
 type ActionPhase string
 
 const (

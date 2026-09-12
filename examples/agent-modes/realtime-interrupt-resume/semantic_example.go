@@ -17,7 +17,7 @@ import (
 const (
 	patternName      = "realtime-interrupt-resume"
 	phase            = "P2"
-	semanticAnchor   = "realtime.event_stream_terminal_recovery"
+	semanticAnchor   = "embedded_host.command_response_event_correlation"
 	classification   = "realtime.resume_recovery"
 	semanticToolName = "mode_realtime_interrupt_resume_semantic_step"
 )
@@ -72,6 +72,11 @@ type realtimeState struct {
 var runtimeDomains = []string{"core/types", "core/runner", "observability/event", "observability/trace", "runtime/diagnostics", "tool/diagnosticsreplay"}
 
 var minimalSemanticSteps = []realtimeStep{
+	{Marker: "host_negotiation_completed", RuntimeDomain: "host/jsonl", Intent: "negotiate the embedded host profile before mutation", Outcome: "one supported profile is acknowledged"},
+	{Marker: "host_command_correlated", RuntimeDomain: "host", Intent: "correlate command response with request and source run", Outcome: "bounded request and run correlation is projected"},
+	{Marker: "host_command_admission_separated", RuntimeDomain: "host", Intent: "separate command admission from asynchronous terminal outcome", Outcome: "accepted admission does not synthesize completion"},
+	{Marker: "host_active_interrupt_resume", RuntimeDomain: "core/runner", Intent: "delegate active interrupt and resume to source-owned control", Outcome: "safe-point control preserves realtime semantics"},
+	{Marker: "host_terminal_authoritative", RuntimeDomain: "host", Intent: "project the source-owned terminal outcome exactly once", Outcome: "terminal recovery remains authoritative"},
 	{
 		Marker:        "realtime_cursor_idempotent",
 		RuntimeDomain: "core/runner",
@@ -123,6 +128,10 @@ var minimalSemanticSteps = []realtimeStep{
 }
 
 var productionGovernanceSteps = []realtimeStep{
+	{Marker: "host_hitl_reverse_request", RuntimeDomain: "host", Intent: "project a correlated reverse HITL request and settle it once", Outcome: "RequestID and timeout semantics remain source-owned"},
+	{Marker: "host_disconnect_recovery", RuntimeDomain: "host", Intent: "close observation without implicitly mutating the business Run", Outcome: "durable cursor and terminal recovery remain available"},
+	{Marker: "host_jsonl_frame_rejected", RuntimeDomain: "host/jsonl", Intent: "reject malformed or oversized frames before source mutation", Outcome: "bounded framing classification is deterministic"},
+	{Marker: "host_stdout_pure", RuntimeDomain: "cmd/host-jsonl", Intent: "keep protocol frames on stdout and diagnostics on stderr", Outcome: "subprocess output remains protocol-only"},
 	{
 		Marker:        "governance_realtime_gate_enforced",
 		RuntimeDomain: "core/runner",
@@ -628,6 +637,8 @@ func (t *realtimeInterruptResumeTool) Invoke(ctx context.Context, args map[strin
 		default:
 			risk = "degraded_path"
 		}
+	case "host_negotiation_completed", "host_command_correlated", "host_command_admission_separated", "host_active_interrupt_resume", "host_terminal_authoritative", "host_hitl_reverse_request", "host_disconnect_recovery", "host_jsonl_frame_rejected", "host_stdout_pure":
+		risk = "host_contract"
 	case "realtime_stream_binding_live", "realtime_stream_binding_catch_up", "realtime_stream_binding_handoff_dedup", "realtime_stream_binding_expired", "realtime_stream_binding_backpressure", "realtime_stream_binding_disconnect_recovery", "realtime_stream_terminal_available", "realtime_stream_recovery_retained_facts":
 		binding, bindingErr := projectExampleBinding(marker, sessionID)
 		if bindingErr != nil {

@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -74,6 +73,7 @@ type Engine struct {
 	handoffRestoreStore handoff.RestoreOperationStore
 	handoffRestoreMu    sync.Mutex
 	handoffRestored     map[string]handoff.RestoreResult
+	activeRunState
 }
 
 type cachedCapabilities struct {
@@ -106,6 +106,7 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 		realtimeCursors:   map[string]realtimeCursorRecord{},
 		handoffBoundaries: map[string]handoffBoundary{},
 		handoffRestored:   map[string]handoff.RestoreResult{},
+		activeRunState:    activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunLimit: 128, activeRunIngressBuffer: 16},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
@@ -322,6 +323,12 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	if runID == "" {
 		runID = e.newRunID()
 	}
+	control, controlledCtx, controlErr := e.prepareActiveRun(ctx, runID, req.SessionID, false)
+	if controlErr != nil {
+		return e.activeRunFailure(runID, controlErr)
+	}
+	ctx = controlledCtx
+	defer e.finishActiveRun(control)
 	defer e.releaseContextAssemblerRunState(runID)
 
 	start := e.now()
@@ -347,6 +354,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
 	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
+	e.bindActiveRun(control, realtimeRuntime)
 	reactToolCallTotal := 0
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
@@ -397,7 +405,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateAbort
 			}
 		}
-		if terminal == nil && realtimeRuntime.interrupted {
+		if terminal == nil && realtimeRuntime.isInterrupted() {
 			terminal = realtimeRuntime.interruptTerminalError()
 			runErr = errors.New(terminal.Message)
 			state = StateAbort
@@ -411,6 +419,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	}
 
 	for {
+		if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
+			terminal, runErr, state = classifyRealtimeError(err), err, StateAbort
+		}
 		switch state {
 		case StateInit:
 			if iteration >= policy.MaxIterations {
@@ -1491,6 +1502,12 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	if runID == "" {
 		runID = e.newRunID()
 	}
+	control, controlledCtx, controlErr := e.prepareActiveRun(ctx, runID, req.SessionID, true)
+	if controlErr != nil {
+		return e.activeRunFailure(runID, controlErr)
+	}
+	ctx = controlledCtx
+	defer e.finishActiveRun(control)
 	defer e.releaseContextAssemblerRunState(runID)
 	start := e.now()
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
@@ -1516,6 +1533,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	sandboxRuntime := e.sandboxRuntimeSnapshot()
 	sandboxAggregate := sandboxRunDiagnosticsAccumulator{}
 	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
+	e.bindActiveRun(control, realtimeRuntime)
 	reactToolCallTotal := 0
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
@@ -1565,7 +1583,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 				runErr = err
 			}
 		}
-		if terminal == nil && realtimeRuntime.interrupted {
+		if terminal == nil && realtimeRuntime.isInterrupted() {
 			terminal = realtimeRuntime.interruptTerminalError()
 			runErr = errors.New(terminal.Message)
 		}
@@ -1575,6 +1593,10 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	}
 
 	for terminal == nil {
+		if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
+			terminal, runErr = classifyRealtimeError(err), err
+			break
+		}
 		if iteration >= policy.MaxIterations {
 			terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 			runErr = errors.New(terminal.Message)
@@ -1671,6 +1693,10 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			&lastSecurity,
 			realtimeRuntime,
 		)
+		if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
+			terminal, runErr = classifyRealtimeError(err), err
+			break
+		}
 		if stepErr != nil && stepResult.Text != "" {
 			final = stepResult.Text
 		}
@@ -6009,68 +6035,6 @@ func applyClarificationResponse(req types.RunRequest, response types.Clarificati
 		Content: "clarification:\n" + joined,
 	})
 	return req
-}
-
-func normalizeLifecycleHooks(hooks []types.AgentLifecycleHook) []types.AgentLifecycleHook {
-	if len(hooks) == 0 {
-		return nil
-	}
-	out := make([]types.AgentLifecycleHook, 0, len(hooks))
-	for _, hook := range hooks {
-		if hook == nil {
-			continue
-		}
-		out = append(out, hook)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func normalizeToolMiddlewares(middlewares []types.ToolMiddleware) []types.ToolMiddleware {
-	if len(middlewares) == 0 {
-		return nil
-	}
-	out := make([]types.ToolMiddleware, 0, len(middlewares))
-	for _, middleware := range middlewares {
-		if middleware == nil {
-			continue
-		}
-		out = append(out, middleware)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func normalizeToolName(name string) string {
-	return strings.ToLower(strings.TrimSpace(name))
-}
-
-func normalizeActionGateDecision(in types.ActionGateDecision) types.ActionGateDecision {
-	switch strings.ToLower(strings.TrimSpace(string(in))) {
-	case string(types.ActionGateDecisionAllow):
-		return types.ActionGateDecisionAllow
-	case string(types.ActionGateDecisionDeny):
-		return types.ActionGateDecisionDeny
-	case string(types.ActionGateDecisionRequireConfirm):
-		return types.ActionGateDecisionRequireConfirm
-	default:
-		return types.ActionGateDecisionDeny
-	}
-}
-
-func marshalToolArgs(args map[string]any) string {
-	if len(args) == 0 {
-		return ""
-	}
-	raw, err := json.Marshal(args)
-	if err != nil {
-		return fmt.Sprintf("%v", args)
-	}
-	return string(raw)
 }
 
 var _ types.Runner = (*Engine)(nil)

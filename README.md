@@ -16,7 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-08）：
+当前里程碑快照（2026-09-11）：
+- 进行中：`establish-embedded-host-command-response-and-event-correlation-contract`（嵌入式宿主命令/响应、异步事件、HITL 反向请求、active Run control 与 strict JSONL binding；实现按 OpenSpec 任务逐步收口）。
 - `introduce-provider-model-capability-and-credential-preflight-contract`（已归档，Provider/model 能力目录与脱敏 credential preflight 合同）
 - `extension-lifecycle-governance-resource-resolution-contract`（已归档，扩展生命周期、资源确定性发现、准入与失败隔离）
 - `context-compression-runtime-handoff-contract`（已归档；上下文压缩运行交接单合同，代码、测试、文档与门禁已完成）。

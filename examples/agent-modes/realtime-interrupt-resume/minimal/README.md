@@ -2,7 +2,7 @@
 
 ## Purpose
 Real runtime semantic example for `realtime-interrupt-resume` with `minimal` evidence profile.
-This variant executes a concrete realtime recovery chain: cursor idempotency dedupe, interrupt capture, and checkpoint resume recovery.
+This variant executes a concrete realtime recovery chain: cursor idempotency dedupe, interrupt capture, checkpoint resume recovery, and the documentation baseline for an embedded host command/response/event contract.
 
 ## Run
 go run ./examples/agent-modes/realtime-interrupt-resume/minimal
@@ -13,27 +13,36 @@ go run ./examples/agent-modes/realtime-interrupt-resume/minimal
 - No external network service is required.
 
 ## Real Runtime Path
-- Semantic anchor: `realtime.event_stream_terminal_recovery`.
+- Semantic anchor: `embedded_host.command_response_event_correlation` (with source recovery anchor `realtime.event_stream_terminal_recovery`).
 - Classification: `realtime.resume_recovery`.
-- Runtime path evidence: `core/runner,tool/local,runtime/config,core/types,observability/event,observability/trace,runtime/diagnostics,tool/diagnosticsreplay`.
-- Related contracts: `realtime-event-protocol-and-interrupt-resume-contract; durable-runtime-event-stream-binding; runtime-event-stream-terminal-recovery`.
-- Required gates: `check-realtime-protocol-contract.*; check-agent-runtime-protocol-contract.*; check-runtime-event-stream-terminal-recovery-contract.*`.
-- Replay fixtures: `realtime_event_protocol.v1; agent_runtime_protocol.v1/stream-binding.json; runtime_event_stream_terminal_recovery.v1`.
+- Runtime path evidence: `core/types,core/runner,host,host/jsonl,tool/local,runtime/config,orchestration/composer,observability/event,observability/trace,runtime/diagnostics,tool/diagnosticsreplay`.
+- Related contracts: `embedded-host-command-response-and-event-correlation-contract; realtime-event-protocol-and-interrupt-resume-contract; durable-runtime-event-stream-binding; runtime-event-stream-terminal-recovery`.
+- Required gates: `check-realtime-protocol-contract.*; check-agent-runtime-protocol-contract.*; check-runtime-event-stream-terminal-recovery-contract.*; host-contract/jsonl/replay/parity gates planned by the change`.
+- Replay fixtures: `embedded_host_transcript.v1; realtime_event_protocol.v1; agent_runtime_protocol.v1/stream-binding.json; runtime_event_stream_terminal_recovery.v1`.
+
+## Host Contract Expectations
+
+- The host negotiates one supported profile before mutation commands and correlates each command response with its request, `session_id`, `run_id`, causation, and source facts when known.
+- Admission is two-phase: `accepted|rejected|duplicate` reports only command admission; asynchronous progress and the single source-owned terminal outcome arrive as `runtime_event` envelopes. An accepted cancel or interrupt is not a synthetic canceled/completed result.
+- `cancel` and active `realtime.interrupt|resume` are delegated to the source-owned Run control. Realtime validates session/run identity, sequence, dedupe, cursor, and safe-point lifecycle; disconnect does not submit an implicit control command.
+- The minimal profile documents the resolver boundary but does not claim a live HITL bridge: any future `host_request`/`host_response` must preserve existing RequestID, timeout, clarification cancellation, and Action Gate fail-closed semantics.
+- Reconnection uses durable cursor catch-up and terminal recovery; a disconnected observer does not cancel or rewrite the business Run.
+- The strict JSONL binding is LF-delimited, one object per frame, bounded to the planned 1 MiB default, and keeps stdout protocol-only. Logs belong on the injected non-stdout writer (stderr by default); malformed/oversized frames are rejected before source mutation.
 
 ## Expected Output/Verification
 - `verification.mainline_runtime_path=ok`
 - `verification.semantic.phase=P2`
-- `verification.semantic.anchor=realtime.event_stream_terminal_recovery`
+- `verification.semantic.anchor=embedded_host.command_response_event_correlation`
 - `verification.semantic.classification=realtime.resume_recovery`
-- `verification.semantic.runtime_path=core/runner,tool/local,runtime/config,core/types,observability/event,observability/trace,runtime/diagnostics,tool/diagnosticsreplay`
+- `verification.semantic.runtime_path=core/types,core/runner,host,host/jsonl,tool/local,runtime/config,orchestration/composer,observability/event,observability/trace,runtime/diagnostics,tool/diagnosticsreplay`
 - `verification.semantic.governance=baseline`
-- `verification.semantic.expected_markers=realtime_cursor_idempotent,realtime_interrupt_captured,realtime_resume_recovered,realtime_stream_binding_live,realtime_stream_binding_catch_up,realtime_stream_binding_handoff_dedup,realtime_stream_terminal_available,realtime_stream_recovery_retained_facts`
+- `verification.semantic.expected_markers=host_negotiation_completed,host_command_correlated,host_command_admission_separated,host_active_interrupt_resume,host_terminal_authoritative,realtime_cursor_idempotent,realtime_interrupt_captured,realtime_resume_recovered,realtime_stream_binding_live,realtime_stream_binding_catch_up,realtime_stream_binding_handoff_dedup,realtime_stream_terminal_available,realtime_stream_recovery_retained_facts`
 - one line per marker: `verification.semantic.marker.<token>=ok`
 - `result.final_answer=` and `result.signature=`
 
 ## Failure/Rollback Notes
-- If runtime path check fails, verify local registry wiring and rerun this variant.
+- If runtime path check fails, verify the documented source-owner path (`core/types -> core/runner -> host -> host/jsonl`) and rerun this variant.
 - If semantic markers are missing, run `pwsh -File scripts/check-agent-mode-real-runtime-semantic-contract.ps1`.
-- If cursor/interrupt/resume outputs are unexpected, inspect event/signal fixtures in `semantic_example.go`.
+- If cursor/interrupt/resume outputs are unexpected, inspect event/signal fixtures in `semantic_example.go`; do not infer terminal state from an admission response.
 - If README diverges from runtime behavior, run `pwsh -File scripts/check-agent-mode-readme-runtime-sync-contract.ps1`.
-- For rollback, revert this directory (`main.go` + `README.md`) together to keep code/docs synchronized.
+- For rollback, revert this directory (`main.go` + `README.md`) together and remove the host projection from the root README/MATRIX row. Existing Realtime, resolver, durable-stream, and terminal-recovery owners remain unchanged.

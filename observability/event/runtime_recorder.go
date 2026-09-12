@@ -155,6 +155,24 @@ func (r *RuntimeRecorder) OnEvent(ctx context.Context, ev types.Event) {
 		payload = r.manager.RedactPayload(payload)
 	}
 	switch ev.Type {
+	case types.EventTypeHostObservation, types.EventTypeHostCorrelation, types.EventTypeHostAdmission, types.EventTypeHostPendingClose, types.EventTypeHostDelivery, types.EventTypeHostSourceControl:
+		// Host adapter facts are additive and deliberately projected into the
+		// existing bounded RunRecord. Never persist cursor bodies or raw payloads.
+		fact := payloadString(payload, "fact")
+		if fact == "" {
+			fact = ev.Type
+		}
+		if fact == "unknown" {
+			return
+		}
+		r.manager.RecordRun(runtimediag.RunRecord{
+			Time: ev.Time, RunID: ev.RunID,
+			ProtocolState:             boundedExtensionDiagnosticString(fact, 32),
+			ProtocolSessionID:         boundedExtensionDiagnosticString(payloadString(payload, "session_id"), 96),
+			ProtocolAdmissionDecision: boundedExtensionDiagnosticString(payloadString(payload, "admission_status"), 32),
+			ProtocolAdmissionReason:   boundedExtensionDiagnosticString(payloadString(payload, "reason_code"), 96),
+			ProtocolSource:            boundedExtensionDiagnosticString(payloadString(payload, "source_control"), 48),
+		})
 	case "extension.lifecycle":
 		r.manager.RecordRun(runtimediag.RunRecord{
 			Time: ev.Time, RunID: ev.RunID,

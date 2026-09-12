@@ -248,6 +248,12 @@ if ! bash scripts/check-realtime-protocol-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] embedded host contract suites"
+if ! bash scripts/check-embedded-host-contract.sh; then
+  echo "[quality-gate][embedded-host-contract] embedded host contract suites failed"
+  exit 1
+fi
+
 echo "[quality-gate] agent runtime protocol contract suites"
 if ! bash scripts/check-agent-runtime-protocol-contract.sh; then
   echo "[quality-gate][agent-runtime-protocol-contract] agent runtime protocol contract suites failed"

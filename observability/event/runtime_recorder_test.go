@@ -54,6 +54,43 @@ mcp:
 	}
 }
 
+func TestRuntimeRecorderRecordsBoundedHostObservationFacts(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_HOST_OBSERVATION_TEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	long := strings.Repeat("x", 512)
+	rec.OnEvent(context.Background(), types.Event{Version: types.EventSchemaVersionV1, Type: types.EventTypeHostObservation, RunID: "run-host", Time: time.Now(), Payload: map[string]any{
+		"fact": "admission", "session_id": long, "admission_status": "accepted", "reason_code": long,
+		"source_correlation": long, "cursor": strings.Repeat("cursor-body", 100),
+	}})
+	items := mgr.RecentRuns(1)
+	if len(items) != 1 {
+		t.Fatalf("runs len=%d want 1", len(items))
+	}
+	if items[0].ProtocolState != "admission" || items[0].ProtocolAdmissionDecision != "accepted" {
+		t.Fatalf("host fact projection=%#v", items[0])
+	}
+	if len(items[0].ProtocolSessionID) > 96 || len(items[0].ProtocolAdmissionReason) > 96 {
+		t.Fatalf("unbounded host fact persisted: %#v", items[0])
+	}
+}
+
+func TestRuntimeRecorderIgnoresHostCursorBodiesAndUnknownFacts(t *testing.T) {
+	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_HOST_OBSERVATION_NEGATIVE_TEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mgr.Close() }()
+	rec := NewRuntimeRecorder(mgr)
+	rec.OnEvent(context.Background(), types.Event{Version: types.EventSchemaVersionV1, Type: types.EventTypeHostObservation, RunID: "run-host", Time: time.Now(), Payload: map[string]any{"fact": "unknown", "cursor": "opaque-secret"}})
+	if got := mgr.RecentRuns(1); len(got) != 0 {
+		t.Fatalf("unknown host fact recorded: %#v", got)
+	}
+}
+
 func TestRuntimeRecorderRecordsExtensionLifecycleFieldsAdditively(t *testing.T) {
 	mgr, err := runtimeconfig.NewManager(runtimeconfig.ManagerOptions{EnvPrefix: "BAYMAX_EXTENSION_TEST"})
 	if err != nil {

@@ -28,7 +28,7 @@
 ## 4. Replay, Diagnostics, and Gates
 
 - [x] 4.1 Implement offline, side-effect-free replay for both fixture namespaces and classify schema, binding, association, integrity, stale-attempt, completion-correlation, duplicate, late, disconnect, recovery, and Run/Stream parity drift; verify replay never invokes providers, tools, Git, or workspace mutation.
-- [ ] 4.2 Add `RuntimeRecorder` diagnostics tests for bounded additive workspace/completion identifiers and reason codes; verify raw workspace contents, completion bodies, reasoning, credentials, and unbounded payloads are absent.
+- [x] 4.2 Add `RuntimeRecorder` diagnostics tests for bounded additive workspace/completion identifiers and reason codes; verify raw workspace contents, completion bodies, reasoning, credentials, and unbounded payloads are absent.
 - [x] 4.3 Add shell and PowerShell contract gates with equivalent fixture, replay, source-owner, architecture-boundary, idempotency, and parity checks; verify removing required evidence makes each gate fail.
 - [x] 4.4 Register the independent gate in `scripts/check-quality-gate.*` and update `docs/mainline-contract-test-index.md`; verify shell/PowerShell gate parity and docs consistency.
 

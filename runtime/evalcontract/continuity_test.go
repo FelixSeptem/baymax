@@ -54,3 +54,17 @@ func TestCompareContinuityRequiresRunAndPhase(t *testing.T) {
 		t.Fatalf("expected schema drift, got %v", err)
 	}
 }
+
+func TestCompareContinuityDetectsRunStreamAndRecoveryDrift(t *testing.T) {
+	base := ContinuityProjection{Version: ContinuityComparisonVersionV1, RunID: "r1", Phase: ContinuityPhaseBaseline, Mode: "run", OperationID: "op-1", StateDigest: "state-1", Facts: []ContinuityFact{{Kind: ContinuityKindObjective, Owner: "runner", ID: "o", Digest: "d"}}}
+	stream := base
+	stream.Phase, stream.Mode = ContinuityPhaseCandidate, "stream"
+	if _, err := CompareContinuity(base, stream); err == nil || err.Error() != ReasonContinuityRunStreamParityDrift {
+		t.Fatalf("expected parity drift, got %v", err)
+	}
+	recovered := base
+	recovered.Phase, recovered.Mode, recovered.StateDigest = ContinuityPhaseCandidate, "run", "state-2"
+	if _, err := CompareContinuity(base, recovered); err == nil || err.Error() != ReasonContinuityRecoveryIdempotencyDrift {
+		t.Fatalf("expected recovery drift, got %v", err)
+	}
+}

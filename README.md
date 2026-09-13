@@ -17,7 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-13）：
-- `establish-eval-continuity-comparison-and-replay-contract`（进行中；bounded reference-only continuity comparator、handoff/snapshot adapters 与离线 replay/gate，不持久化 transcript、reasoning 或 artifact body）。
+- `establish-eval-continuity-comparison-and-replay-contract`（已归档；bounded reference-only continuity comparator、handoff/snapshot adapters 与离线 replay/gate，不持久化 transcript、reasoning 或 artifact body）。
 - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（已归档；task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership 已由 bounded fixture、replay、contract 和 gate 收口）。
 - `harden-cross-provider-handoff-and-stream-edge-conformance`（已归档；OpenAI/Anthropic/Gemini adapter-owned 规范化、step-boundary fallback fence、Run/Stream parity 与离线 replay；不新增配置、远程目录或路由控制面）。
 - `introduce-runtime-steering-and-follow-up-input-contract`（已归档，source-owned steering/follow-up admission、safe-point apply、follow-up promotion 与 embedded host/JSONL contract）。

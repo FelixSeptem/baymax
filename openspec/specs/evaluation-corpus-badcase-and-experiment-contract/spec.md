@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Evaluation corpus SHALL be versioned and reference-first
 The runtime MUST accept an evaluation corpus with a stable corpus version and item identifier. Each item MUST declare a scenario and MAY reference input, tool, policy, and runtime snapshot artifacts by bounded URI or digest. Corpus normalization MUST be deterministic, and incompatible corpus versions MUST fail before evaluation.
 
@@ -74,3 +76,14 @@ Feedback recommendations MUST reference an experiment or Badcase, include review
 - **WHEN** a feedback recommendation is present during a subsequent run
 - **THEN** the runtime does not alter prompt, tool, policy, memory, or runtime configuration based on that recommendation
 
+### Requirement: Experiment evaluation SHALL expose additive continuity comparison
+
+Evaluation comparison MUST be able to associate a bounded continuity comparison with a corpus item or experiment result by stable run/session and checkpoint/reference identity. This association MUST remain nullable and reference-only, MUST NOT change existing corpus or experiment aggregation semantics, and MUST classify continuity drift independently from metric or rubric drift.
+
+#### Scenario: Experiment includes a valid continuity association
+- **WHEN** an experiment result references a valid continuity comparison for the same run and corpus item
+- **THEN** the result preserves existing metric comparison behavior and exposes the normalized continuity outcome
+
+#### Scenario: Continuity drift does not mutate experiment aggregates
+- **WHEN** a continuity comparison reports drift for an otherwise valid experiment shard
+- **THEN** the aggregate retains its existing deterministic semantics and reports continuity drift as an additive classification

@@ -34,12 +34,10 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-embedded-host-command-response-and-event-correlation-contract`
   - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
   - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
-- 进行中：
-  - `establish-eval-continuity-comparison-and-replay-contract`
-    已从 `master` 基线切出功能分支，proposal/design/spec/tasks 完成，当前按任务清单实施。
+  - `establish-eval-continuity-comparison-and-replay-contract`（bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较，以及 fixture/replay/contract/gate 已收口）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  - 当前 active change 即为 Eval continuity comparator；其余候选继续保持观察，除非出现新的可复现风险或宿主需求。
+  - 当前无 active change；其余候选继续保持观察，除非出现新的可复现风险或宿主需求。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance` 已于 2026-09-13 归档并纳入主线基线；其 conformance fixture、replay 与 gate 不再作为当前 P2 候选重复排期。
 
@@ -142,18 +140,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 4. Eval continuity 只验证有界事实和引用在 compaction/handoff/recovery 前后的确定性，不保存 raw reasoning，也不把模型摘要提升为 task/session/workspace 的事实源。
 5. Extension、Eval 方向继续采用需求触发，不因外部项目存在同名能力而自动立项；`learn-claude-code` 的 daemon thread、`shell=True`、JSON/JSONL 双写、轮询认领和非事务 worktree index 只作为反例，不进入生产基线。
 6. Pi 的 lane/register/ledger、experimental CBOR protocol、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不成为 Baymax 默认公共模型，也不进入近期备选。
-
-### 当前 active change：Eval continuity comparison 与 replay contract
-
-**Change**：`establish-eval-continuity-comparison-and-replay-contract`（分支：`eval-continuity-comparison`）。
-
-**状态**：提案阶段已完成，待按 `tasks.md` 实施；实施期间以本 change 为唯一进度来源，完成后合并 `master`、推送并删除功能分支。
-
-**范围**：仅比较 bounded reference-only projections，覆盖 identity/objective/task/attempt/lease/workspace/pending request/checkpoint/artifact，连接 `runtime/evalcontract`、`context/handoff`、`orchestration/snapshot` 与 `tool/diagnosticsreplay`，并增加 fixture、replay、contract/gate 与文档索引。
-
-**边界**：不保存 transcript/reasoning/artifact body，不建设 persistence service、resolver、配置键或新的 FSM；不改变 `examples/agent-modes`。Example Impact Assessment：`无需示例变更（附理由）`。
-
-**验证与退出**：完成 focused/full/race Go tests、golangci-lint、quality/docs gates 与 `openspec validate --all`；所有任务具备代码、测试、文档和门禁证据后方可归档。
 
 ### 需求触发观察项
 

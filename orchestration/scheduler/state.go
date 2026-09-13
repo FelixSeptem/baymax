@@ -1465,4 +1465,3 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 	s.lastConsecutive = 0
 	return nil
 }
-

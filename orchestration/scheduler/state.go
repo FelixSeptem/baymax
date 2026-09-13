@@ -276,14 +276,15 @@ func (s *schedulerState) claim(workerID string, now time.Time, leaseTimeout time
 
 	nextAttempt := len(record.Attempts) + 1
 	attempt := Attempt{
-		AttemptID:      fmt.Sprintf("%s-attempt-%d", taskID, nextAttempt),
-		Attempt:        nextAttempt,
-		WorkerID:       workerID,
-		LeaseToken:     fmt.Sprintf("%s-lease-%d", taskID, now.UnixNano()),
-		Status:         AttemptStatusRunning,
-		StartedAt:      now,
-		HeartbeatAt:    now,
-		LeaseExpiresAt: now.Add(leaseTimeout),
+		AttemptID:           fmt.Sprintf("%s-attempt-%d", taskID, nextAttempt),
+		Attempt:             nextAttempt,
+		WorkerID:            workerID,
+		LeaseToken:          fmt.Sprintf("%s-lease-%d", taskID, now.UnixNano()),
+		Status:              AttemptStatusRunning,
+		StartedAt:           now,
+		HeartbeatAt:         now,
+		LeaseExpiresAt:      now.Add(leaseTimeout),
+		WorkspaceProvenance: cloneWorkspaceProvenance(record.Task.WorkspaceProvenance),
 	}
 	record.Attempts = append(record.Attempts, attempt)
 	record.CurrentAttempt = attempt.AttemptID
@@ -943,6 +944,10 @@ func (s *schedulerState) commitTerminal(commit TerminalCommit) (CommitResult, er
 	if record.State != TaskStateRunning {
 		return CommitResult{}, ErrTaskNotRunning
 	}
+	current, ok := record.currentAttempt()
+	if !ok || !workspaceProvenanceEqual(current.WorkspaceProvenance, normalized.WorkspaceProvenance) {
+		return CommitResult{}, ErrWorkspaceBindingMismatch
+	}
 	return s.applyTerminalCommit(record, normalized)
 }
 
@@ -975,6 +980,10 @@ func (s *schedulerState) commitAsyncReportTerminal(commit TerminalCommit) (Commi
 	}
 	if record.State == TaskStateRunning {
 		return CommitResult{}, ErrTaskNotAwaitingReport
+	}
+	current, ok := record.currentAttempt()
+	if !ok || !workspaceProvenanceEqual(current.WorkspaceProvenance, normalized.WorkspaceProvenance) {
+		return CommitResult{}, ErrWorkspaceBindingMismatch
 	}
 	if record.State != TaskStateAwaitingReport {
 		if s.asyncAwait.LateReportPolicy == AsyncLateReportPolicyDropAndRecord {
@@ -1070,6 +1079,21 @@ func terminalCommitConflict(existing, incoming TerminalCommit) bool {
 	return false
 }
 
+func cloneWorkspaceProvenance(in *types.WorkspaceProvenance) *types.WorkspaceProvenance {
+	if in == nil {
+		return nil
+	}
+	copy := *in
+	return &copy
+}
+
+func workspaceProvenanceEqual(a, b *types.WorkspaceProvenance) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func (s *schedulerState) get(taskID string) (TaskRecord, bool) {
 	record := s.Tasks[strings.TrimSpace(taskID)]
 	if record == nil {
@@ -1082,7 +1106,11 @@ func cloneTaskRecord(in TaskRecord) TaskRecord {
 	out := in
 	out.Task = in.Task
 	out.Task.Payload = copyMap(in.Task.Payload)
+	out.Task.WorkspaceProvenance = cloneWorkspaceProvenance(in.Task.WorkspaceProvenance)
 	out.Attempts = append([]Attempt(nil), in.Attempts...)
+	for i := range out.Attempts {
+		out.Attempts[i].WorkspaceProvenance = cloneWorkspaceProvenance(in.Attempts[i].WorkspaceProvenance)
+	}
 	out.Result = copyMap(in.Result)
 	return out
 }
@@ -1262,6 +1290,14 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 			record.Attempts[idx].AttemptID = attemptID
 			record.Attempts[idx].WorkerID = strings.TrimSpace(record.Attempts[idx].WorkerID)
 			record.Attempts[idx].LeaseToken = strings.TrimSpace(record.Attempts[idx].LeaseToken)
+			if record.Attempts[idx].WorkspaceProvenance != nil {
+				if err := record.Attempts[idx].WorkspaceProvenance.Validate(); err != nil {
+					return fmt.Errorf("%w: tasks[%d].attempts[%d].workspace_provenance invalid: %v", ErrSnapshotCorrupt, i, idx, err)
+				}
+				if !workspaceProvenanceEqual(record.Task.WorkspaceProvenance, record.Attempts[idx].WorkspaceProvenance) {
+					return fmt.Errorf("%w: tasks[%d].attempts[%d].workspace_provenance mismatches task", ErrSnapshotCorrupt, i, idx)
+				}
+			}
 			if attemptID == currentAttemptID {
 				currentExists = true
 			}

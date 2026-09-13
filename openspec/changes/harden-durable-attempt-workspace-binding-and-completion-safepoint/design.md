@@ -31,6 +31,8 @@ Workspace binding reuses `types.WorkspaceProvenance` identifiers and integrity r
 
 Alternative: let scheduler inspect or mutate workspaces. Rejected by module boundaries and library-first scope.
 
+Retry policy selected from the fixture evidence is explicit: a retry may reuse the prior binding only when the host supplies the same reference and integrity validation succeeds; otherwise it must use `rebind_with_rollover` and a new attempt/lease correlation. An omitted retry mode is not interpreted implicitly, so stale workspace results cannot be treated as equivalent to the current attempt.
+
 ### 3. Existing owners remain authoritative for completion
 
 Mailbox delivery and scheduler terminal commits remain durable delivery/state owners. The source Runtime remains the only owner that can admit or apply runtime input at a model decision safe point. A completion adapter may translate bounded correlation metadata, but it cannot inject into an active operation or create a parallel pending/terminal FSM.

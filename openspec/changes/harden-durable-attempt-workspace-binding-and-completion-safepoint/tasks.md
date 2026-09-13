@@ -11,9 +11,9 @@
 
 ## 2. Task-Attempt Workspace Binding
 
-- [ ] 2.1 Select and document explicit retry semantics—reuse only after integrity validation or rebind with rollover correlation—based on gap fixture evidence; verify no implicit workspace choice remains in fixture expectations.
-- [ ] 2.2 Add the minimal optional reference-only workspace binding to scheduler task/attempt/commit surfaces proven necessary by the fixtures; verify legacy records and snapshots without the fields retain existing behavior.
-- [ ] 2.3 Enforce task/attempt/lease/workspace correlation on claim, heartbeat, retry, rollover, and terminal commit; verify stale attempt and mismatched workspace results cannot mutate the current task.
+- [x] 2.1 Select and document explicit retry semantics—reuse only after integrity validation or rebind with rollover correlation—based on gap fixture evidence; verify no implicit workspace choice remains in fixture expectations.
+- [x] 2.2 Add the minimal optional reference-only workspace binding to scheduler task/attempt/commit surfaces proven necessary by the fixtures; verify legacy records and snapshots without the fields retain existing behavior.
+- [x] 2.3 Enforce task/attempt/lease/workspace correlation on claim, heartbeat, retry, rollover, and terminal commit; verify stale attempt and mismatched workspace results cannot mutate the current task.
 - [ ] 2.4 Extend scheduler snapshot and composer recovery normalization with binding references and pre-mutation integrity reconciliation; verify strict fail-fast and compatible bounded downgrade behavior for missing, dirty, conflict, checkpoint mismatch, and integrity drift.
 - [ ] 2.5 Add memory/file backend and snapshot round-trip tests for positive, negative, boundary, retry, lease-expiry, manual-retry, recovery, and idempotency cases; verify backend parity.
 

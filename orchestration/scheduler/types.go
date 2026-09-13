@@ -95,19 +95,20 @@ const (
 )
 
 type Task struct {
-	TaskID            string                    `json:"task_id"`
-	RunID             string                    `json:"run_id,omitempty"`
-	WorkflowID        string                    `json:"workflow_id,omitempty"`
-	TeamID            string                    `json:"team_id,omitempty"`
-	StepID            string                    `json:"step_id,omitempty"`
-	AgentID           string                    `json:"agent_id,omitempty"`
-	PeerID            string                    `json:"peer_id,omitempty"`
-	ParentRunID       string                    `json:"parent_run_id,omitempty"`
-	Priority          string                    `json:"priority,omitempty"`
-	Payload           map[string]any            `json:"payload,omitempty"`
-	MaxAttempts       int                       `json:"max_attempts,omitempty"`
-	NotBefore         time.Time                 `json:"not_before,omitempty"`
-	TimeoutResolution TimeoutResolutionMetadata `json:"timeout_resolution,omitempty"`
+	TaskID              string                     `json:"task_id"`
+	RunID               string                     `json:"run_id,omitempty"`
+	WorkflowID          string                     `json:"workflow_id,omitempty"`
+	TeamID              string                     `json:"team_id,omitempty"`
+	StepID              string                     `json:"step_id,omitempty"`
+	AgentID             string                     `json:"agent_id,omitempty"`
+	PeerID              string                     `json:"peer_id,omitempty"`
+	ParentRunID         string                     `json:"parent_run_id,omitempty"`
+	Priority            string                     `json:"priority,omitempty"`
+	Payload             map[string]any             `json:"payload,omitempty"`
+	MaxAttempts         int                        `json:"max_attempts,omitempty"`
+	NotBefore           time.Time                  `json:"not_before,omitempty"`
+	TimeoutResolution   TimeoutResolutionMetadata  `json:"timeout_resolution,omitempty"`
+	WorkspaceProvenance *types.WorkspaceProvenance `json:"workspace_provenance,omitempty"`
 }
 
 func normalizeTask(in Task) (Task, error) {
@@ -146,19 +147,27 @@ func normalizeTask(in Task) (Task, error) {
 		out.NotBefore = out.NotBefore.UTC()
 	}
 	out.Payload = copyMap(out.Payload)
+	if out.WorkspaceProvenance != nil {
+		copy := *out.WorkspaceProvenance
+		if err := copy.Validate(); err != nil {
+			return Task{}, fmt.Errorf("workspace_provenance: %w", err)
+		}
+		out.WorkspaceProvenance = &copy
+	}
 	return out, nil
 }
 
 type Attempt struct {
-	AttemptID      string        `json:"attempt_id"`
-	Attempt        int           `json:"attempt"`
-	WorkerID       string        `json:"worker_id"`
-	LeaseToken     string        `json:"lease_token"`
-	Status         AttemptStatus `json:"status"`
-	StartedAt      time.Time     `json:"started_at"`
-	HeartbeatAt    time.Time     `json:"heartbeat_at"`
-	LeaseExpiresAt time.Time     `json:"lease_expires_at"`
-	TerminalAt     time.Time     `json:"terminal_at,omitempty"`
+	AttemptID           string                     `json:"attempt_id"`
+	Attempt             int                        `json:"attempt"`
+	WorkerID            string                     `json:"worker_id"`
+	LeaseToken          string                     `json:"lease_token"`
+	Status              AttemptStatus              `json:"status"`
+	StartedAt           time.Time                  `json:"started_at"`
+	HeartbeatAt         time.Time                  `json:"heartbeat_at"`
+	LeaseExpiresAt      time.Time                  `json:"lease_expires_at"`
+	TerminalAt          time.Time                  `json:"terminal_at,omitempty"`
+	WorkspaceProvenance *types.WorkspaceProvenance `json:"workspace_provenance,omitempty"`
 }
 
 type TaskRecord struct {
@@ -207,17 +216,18 @@ type ClaimedTask struct {
 }
 
 type TerminalCommit struct {
-	TaskID       string           `json:"task_id"`
-	AttemptID    string           `json:"attempt_id"`
-	Status       TaskState        `json:"status"`
-	Source       string           `json:"source,omitempty"`
-	RemoteTaskID string           `json:"remote_task_id,omitempty"`
-	Result       map[string]any   `json:"result,omitempty"`
-	ErrorMessage string           `json:"error_message,omitempty"`
-	ErrorClass   types.ErrorClass `json:"error_class,omitempty"`
-	ErrorLayer   string           `json:"error_layer,omitempty"`
-	OutcomeKey   string           `json:"outcome_key,omitempty"`
-	CommittedAt  time.Time        `json:"committed_at"`
+	TaskID              string                     `json:"task_id"`
+	AttemptID           string                     `json:"attempt_id"`
+	Status              TaskState                  `json:"status"`
+	Source              string                     `json:"source,omitempty"`
+	RemoteTaskID        string                     `json:"remote_task_id,omitempty"`
+	Result              map[string]any             `json:"result,omitempty"`
+	ErrorMessage        string                     `json:"error_message,omitempty"`
+	ErrorClass          types.ErrorClass           `json:"error_class,omitempty"`
+	ErrorLayer          string                     `json:"error_layer,omitempty"`
+	OutcomeKey          string                     `json:"outcome_key,omitempty"`
+	CommittedAt         time.Time                  `json:"committed_at"`
+	WorkspaceProvenance *types.WorkspaceProvenance `json:"workspace_provenance,omitempty"`
 }
 
 func normalizeCommit(in TerminalCommit) (TerminalCommit, error) {
@@ -245,6 +255,13 @@ func normalizeCommit(in TerminalCommit) (TerminalCommit, error) {
 	}
 	if out.Status == TaskStateSucceeded {
 		out.Result = copyMap(out.Result)
+	}
+	if out.WorkspaceProvenance != nil {
+		copy := *out.WorkspaceProvenance
+		if err := copy.Validate(); err != nil {
+			return TerminalCommit{}, fmt.Errorf("workspace_provenance: %w", err)
+		}
+		out.WorkspaceProvenance = &copy
 	}
 	if out.OutcomeKey == "" {
 		out.OutcomeKey = defaultOutcomeKey(out)
@@ -436,6 +453,7 @@ var (
 	ErrTaskBoardControlStateConflict       = errors.New("scheduler task board control state conflict")
 	ErrTaskBoardControlOperationConflict   = errors.New("scheduler task board control operation_id conflict")
 	ErrTaskBoardControlRetryBudgetExceeded = errors.New("scheduler task board control manual retry budget exceeded")
+	ErrWorkspaceBindingMismatch            = errors.New("scheduler workspace binding mismatch")
 )
 
 type StoreSnapshot struct {

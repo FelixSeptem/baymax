@@ -35,7 +35,8 @@ Baymax 主线保持 `library-first + contract-first`：
   - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
   - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
 - 进行中：
-  - `establish-eval-continuity-comparison-and-replay-contract`：已从 `master` 基线切出功能分支 `eval-continuity-comparison`，完成 proposal/design/spec/tasks，等待实施。
+  - `establish-eval-continuity-comparison-and-replay-contract`
+    已从 `master` 基线切出功能分支，proposal/design/spec/tasks 完成，当前按任务清单实施。
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 当前 active change 即为 Eval continuity comparator；其余候选继续保持观察，除非出现新的可复现风险或宿主需求。

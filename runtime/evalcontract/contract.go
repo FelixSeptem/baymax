@@ -82,23 +82,26 @@ type ShardMetric struct {
 }
 
 type Experiment struct {
-	Version       string        `json:"version"`
-	ID            string        `json:"id"`
-	CorpusVersion string        `json:"corpus_version"`
-	Rubric        Rubric        `json:"rubric"`
-	RunBatch      string        `json:"run_batch"`
-	ExecutionMode string        `json:"execution_mode"`
-	Shards        []ShardMetric `json:"shards"`
+	Version       string                `json:"version"`
+	ID            string                `json:"id"`
+	CorpusVersion string                `json:"corpus_version"`
+	Rubric        Rubric                `json:"rubric"`
+	RunBatch      string                `json:"run_batch"`
+	ExecutionMode string                `json:"execution_mode"`
+	Shards        []ShardMetric         `json:"shards"`
+	Continuity    *ContinuityComparison `json:"continuity,omitempty"`
 }
 
 type ComparisonResult struct {
-	ExperimentID  string `json:"experiment_id"`
-	CorpusVersion string `json:"corpus_version"`
-	RubricDigest  string `json:"rubric_digest"`
-	ExecutionMode string `json:"execution_mode"`
-	Passed        int    `json:"passed"`
-	Total         int    `json:"total"`
-	Digest        string `json:"digest"`
+	ExperimentID   string `json:"experiment_id"`
+	CorpusVersion  string `json:"corpus_version"`
+	RubricDigest   string `json:"rubric_digest"`
+	ExecutionMode  string `json:"execution_mode"`
+	Passed         int    `json:"passed"`
+	Total          int    `json:"total"`
+	Digest         string `json:"digest"`
+	ContinuityID   string `json:"continuity_id,omitempty"`
+	ContinuityPass *bool  `json:"continuity_pass,omitempty"`
 }
 
 type FeedbackRecommendation struct {
@@ -238,6 +241,14 @@ func CompareExperiments(in Experiment) (ComparisonResult, error) {
 		total += s.Total
 	}
 	result := ComparisonResult{ExperimentID: in.ID, CorpusVersion: in.CorpusVersion, RubricDigest: rubricDigest, ExecutionMode: in.ExecutionMode, Passed: passed, Total: total}
+	if in.Continuity != nil {
+		if in.Continuity.Version != ContinuityComparisonVersionV1 || strings.TrimSpace(in.Continuity.ID) == "" {
+			return ComparisonResult{}, fmt.Errorf("%s", ReasonContinuitySchemaDrift)
+		}
+		result.ContinuityID = strings.TrimSpace(in.Continuity.ID)
+		passedContinuity := in.Continuity.Passed
+		result.ContinuityPass = &passedContinuity
+	}
 	result.Digest, err = digestValue(result)
 	return result, err
 }

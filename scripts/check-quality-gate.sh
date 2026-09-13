@@ -200,6 +200,12 @@ if ! go test ./integration -run '^TestComposerContractMailboxRuntimeWiring' -cou
   exit 1
 fi
 
+echo "[quality-gate] eval continuity comparison contract"
+if ! bash scripts/check-eval-continuity-comparison-contract.sh; then
+  echo "[quality-gate][eval-continuity-comparison] continuity comparison contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] timeout resolution contract suites"
 if ! go test ./integration -run '^TestTimeoutResolutionContract' -count=1; then
   echo "[quality-gate][timeout-resolution-contract] timeout resolution contract suites failed"

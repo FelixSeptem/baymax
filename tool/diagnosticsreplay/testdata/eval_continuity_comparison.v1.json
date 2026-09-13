@@ -1,0 +1,38 @@
+{
+  "version": "eval_continuity_comparison.v1",
+  "baseline": {
+    "version": "eval_continuity_comparison.v1",
+    "run_id": "run-continuity-1",
+    "session_id": "session-continuity-1",
+    "phase": "baseline",
+    "facts": [
+      {"kind": "identity.agent", "owner": "runner", "id": "agent-1", "digest": "agent-digest"},
+      {"kind": "objective", "owner": "runner", "id": "objective", "digest": "objective-digest"},
+      {"kind": "task", "owner": "scheduler", "id": "task-1", "digest": "task-digest"},
+      {"kind": "attempt", "owner": "scheduler", "id": "attempt-1", "digest": "attempt-digest"},
+      {"kind": "lease", "owner": "scheduler", "id": "lease-1", "digest": "lease-digest"},
+      {"kind": "workspace_binding", "owner": "scheduler", "id": "workspace-1", "digest": "workspace-digest"},
+      {"kind": "pending_request", "owner": "runtime-input", "id": "request-1", "digest": "request-digest"},
+      {"kind": "checkpoint", "owner": "snapshot", "id": "checkpoint-1", "digest": "checkpoint-digest", "version": "state_session_snapshot.v1"},
+      {"kind": "artifact", "owner": "artifact", "id": "artifact-1", "digest": "artifact-digest"}
+    ]
+  },
+  "candidate": {
+    "version": "eval_continuity_comparison.v1",
+    "run_id": "run-continuity-1",
+    "session_id": "session-continuity-1",
+    "phase": "candidate",
+    "facts": [
+      {"kind": "identity.agent", "owner": "runner", "id": "agent-1", "digest": "agent-digest"},
+      {"kind": "objective", "owner": "runner", "id": "objective", "digest": "objective-digest"},
+      {"kind": "task", "owner": "scheduler", "id": "task-1", "digest": "task-digest"},
+      {"kind": "attempt", "owner": "scheduler", "id": "attempt-1", "digest": "attempt-digest"},
+      {"kind": "lease", "owner": "scheduler", "id": "lease-1", "digest": "lease-digest"},
+      {"kind": "workspace_binding", "owner": "scheduler", "id": "workspace-1", "digest": "workspace-digest"},
+      {"kind": "pending_request", "owner": "runtime-input", "id": "request-1", "digest": "request-digest"},
+      {"kind": "checkpoint", "owner": "snapshot", "id": "checkpoint-1", "digest": "checkpoint-digest", "version": "state_session_snapshot.v1"},
+      {"kind": "artifact", "owner": "artifact", "id": "artifact-1", "digest": "artifact-digest"}
+    ]
+  },
+  "expected": {"passed": true}
+}

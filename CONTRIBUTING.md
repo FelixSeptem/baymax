@@ -49,6 +49,18 @@ PR 模板为中文优先，接受英文内容；但结构与必填检查项必�
 默认 CI 在 pull request 事件执行 `contribution-template-gate`。建议在分支保护中将其设为 required status check。
 DX D1 补充 `diagnostics-replay-gate`（replay 契约回归），建议同样设为 required status check。
 
+## 提案与功能分支生命周期
+
+每个需要实施的 OpenSpec 提案使用一个语义化功能分支，功能分支的生命周期与提案实施周期一致：
+
+1. 创建提案前先同步最新基准分支（默认是 `master`），并从该基准创建功能分支。
+2. 提案的 proposal、design、spec、tasks、代码、测试和文档改动全部在该功能分支内完成；不得在基准分支直接实施。
+3. 实施完成后，必须按提案流程完成验证和归档，再将功能分支合并回最新基准分支并推送。
+4. 合并结果完成验证后，删除已合并的本地功能分支及其关联 worktree；不得保留已结束提案的长期功能分支。
+5. 下一个提案必须重新从最新基准分支切出新的功能分支。未合并分支不得删除，除非明确确认放弃该提案及其提交。
+
+缓存、测试输出和其他未跟踪本地运行产物不属于功能分支生命周期清理范围，除非另有明确清理请求。
+
 ## OpenSpec 提案要求
 
 涉及运行时行为、配置语义、诊断 schema 或 contract 预期变化时，提案工件（`proposal.md`、`design.md`、`tasks.md`）必须包含 `example impact assessment` 声明，且值只能是以下三种之一：

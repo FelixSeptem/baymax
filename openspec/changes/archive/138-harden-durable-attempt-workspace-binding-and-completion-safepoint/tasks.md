@@ -42,4 +42,4 @@
 
 - [x] 6.1 Run focused scheduler, mailbox, composer recovery, snapshot, runner runtime-input, diagnostics replay, and Run/Stream integration suites; record positive, negative, boundary, idempotency, and backend-parity evidence.
 - [x] 6.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record exact results and any environment-blocked command.
-- [ ] 6.3 Archive with `scripts/openspec-archive-seq.ps1`, update roadmap/README/archive index status, merge the proposal branch to the latest `master`, verify the merged result, push, and delete the merged local branch/worktree.
+- [x] 6.3 Archive with `scripts/openspec-archive-seq.ps1`, update roadmap/README/archive index status, merge the proposal branch to the latest `master`, verify the merged result, push, and delete the merged local branch/worktree.

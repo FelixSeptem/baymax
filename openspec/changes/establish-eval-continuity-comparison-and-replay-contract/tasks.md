@@ -15,7 +15,7 @@
 - [x] 3.1 Add additive continuity association coverage to evaluation corpus/experiment comparison and verify existing metric/rubric aggregation and local/distributed parity tests remain unchanged.
 - [x] 3.2 Update `docs/mainline-contract-test-index.md` with comparator, adapter, and replay fixture mappings; verify docs consistency checks pass.
 - [x] 3.3 Reconcile `docs/development-roadmap.md` to mark the bounded eval continuity comparator as the active proposal and record non-goals, ownership boundaries, and Example Impact Assessment; verify roadmap/OpenSpec consistency gate passes.
-- [ ] 3.4 Run focused tests, full `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `scripts/check-quality-gate.ps1`, `scripts/check-docs-consistency.ps1`, and `openspec validate --all`; focused tests, docs/example-impact/status gates, and full lint pass, while full suite remains blocked by pre-existing adapter-conformance nondeterminism and race requires an unavailable GCC toolchain (see implementation handoff).
+- [x] 3.4 Run focused tests, full `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `scripts/check-quality-gate.ps1`, `scripts/check-docs-consistency.ps1`, and `openspec validate --all`; all focused/full tests, race, lint, quality, docs, status, example-impact, semantic-stability, performance, smoke, and vulnerability gates pass with the verified MinGW GCC/CGO toolchain.
 
 ## Example Impact Assessment
 

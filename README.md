@@ -17,6 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-12）：
+- `harden-cross-provider-handoff-and-stream-edge-conformance`（已归档；OpenAI/Anthropic/Gemini adapter-owned 规范化、step-boundary fallback fence、Run/Stream parity 与离线 replay；不新增配置、远程目录或路由控制面）。
 - `introduce-runtime-steering-and-follow-up-input-contract`（已归档，source-owned steering/follow-up admission、safe-point apply、follow-up promotion 与 embedded host/JSONL contract）。
 - `establish-embedded-host-command-response-and-event-correlation-contract`（已归档，嵌入式宿主命令/响应、异步事件、HITL 反向请求、active Run control 与 strict JSONL binding）
 - `introduce-provider-model-capability-and-credential-preflight-contract`（已归档，Provider/model 能力目录与脱敏 credential preflight 合同）
@@ -77,6 +78,7 @@ runtime/config + runtime/diagnostics
 
 - `runtime/*` 不反向依赖 MCP 传输实现。
 - Provider 协议细节收敛在 `model/<provider>`。
+- 跨 Provider handoff 与 stream edge 只比较有界 canonical projection；stream 首个语义事件之后禁止切换 Provider。
 - 诊断写入统一经过 `observability/event.RuntimeRecorder`。
 - 配置优先级固定：`env > file > default`。
 

@@ -154,10 +154,23 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 			}
 			return providererror.WithStreamPhase(providererror.FromError(err), phase)
 		}
-		if chunk != nil {
+		mapped := mapStreamChunk(chunk, &toolSeq)
+		if len(mapped) > 0 {
 			streamStarted = true
 		}
-		mapped := mapStreamChunk(chunk, &toolSeq)
+		for _, ev := range mapped {
+			if len(ev.TextDelta) > 64*1024 {
+				err := &providererror.Classified{Class: types.ErrModel, Reason: "overflow", Retryable: false, Cause: errors.New("gemini stream content exceeds 65536 bytes")}
+				if onEvent != nil {
+					_ = onEvent(types.ModelEvent{Type: types.ModelEventTypeResponseError, Meta: geminiErrorMeta(err.Error())})
+				}
+				phase := "pre_execution"
+				if streamStarted {
+					phase = "post_start"
+				}
+				return providererror.WithStreamPhase(err, phase)
+			}
+		}
 		if onEvent == nil {
 			continue
 		}
@@ -284,12 +297,8 @@ func mapStreamChunk(resp *genai.GenerateContentResponse, toolSeq *int) []types.M
 			if part == nil {
 				continue
 			}
-			if strings.TrimSpace(part.Text) != "" {
-				events = append(events, types.ModelEvent{
-					Type:      types.ModelEventTypeOutputTextDelta,
-					TextDelta: part.Text,
-					Meta:      geminiProviderMeta(),
-				})
+			if part.FunctionCall == nil {
+				events = append(events, types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: part.Text, Meta: geminiProviderMeta()})
 			}
 			if part.FunctionCall != nil && part.FunctionCall.Name != "" {
 				(*toolSeq)++

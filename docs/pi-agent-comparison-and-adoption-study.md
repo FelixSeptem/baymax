@@ -19,6 +19,8 @@ Baymax 研究基线：
 - 已交付能力以 `openspec/specs/`、`openspec/changes/archive/INDEX.md` 和 `docs/mainline-contract-test-index.md` 为准。
 - 关键实现入口是 `core/runner`、`core/types`、`orchestration/composer`、`runtime/config`、`runtime/diagnostics` 与 `observability/event`。
 
+2026-09-12 校准：当前实施方向是跨 Provider handoff 与 stream edge conformance。Provider-native 投影仍由 `model/openai|anthropic|gemini` 各自拥有，Runner 保持 step/terminal/fallback fence 所有权；不吸收远程 model catalog、credential store、全局 router、hosted gateway 或 Pi 的 provider-neutral wire abstraction。该方向通过 `provider_handoff_stream_edge.v1` 离线回放及双平台 gate 回滚，无配置或数据迁移。
+
 核心结论：
 
 1. 两个项目不是同一种产品。Pi 首先是可直接使用的终端 coding agent 与 SDK；Baymax 首先是 `library-first + contract-first` 的 Go runtime。

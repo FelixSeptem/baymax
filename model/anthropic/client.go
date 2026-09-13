@@ -143,7 +143,6 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	completed := false
 	streamStarted := false
 	for stream.Next() {
-		streamStarted = true
 		events, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
 			classified := providererror.FromError(err)
@@ -154,6 +153,9 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 				})
 			}
 			return providererror.WithStreamPhase(classified, "post_start")
+		}
+		if len(events) > 0 {
+			streamStarted = true
 		}
 		if onEvent == nil {
 			continue
@@ -275,9 +277,7 @@ func mapStreamEvent(ev anthropic.MessageStreamEventUnion, state *streamState) ([
 		delta := ev.Delta
 		switch delta.Type {
 		case "text_delta":
-			if strings.TrimSpace(delta.Text) != "" {
-				events = append(events, types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: delta.Text, Meta: meta})
-			}
+			events = append(events, types.ModelEvent{Type: types.ModelEventTypeOutputTextDelta, TextDelta: delta.Text, Meta: meta})
 		case "input_json_delta":
 			call := ensureToolState(state, ev.Index)
 			call.inputRaw += delta.PartialJSON
@@ -342,6 +342,9 @@ func maybeEmitToolCall(call *toolCallState, index int64, state *streamState) (*t
 		return nil, nil
 	}
 	raw := strings.TrimSpace(call.inputRaw)
+	if len(raw) > maxToolCallArgsDecodeBufferCap {
+		return nil, &providererror.Classified{Class: types.ErrModel, Reason: "overflow", Retryable: false, Cause: fmt.Errorf("anthropic tool arguments exceed %d bytes", maxToolCallArgsDecodeBufferCap)}
+	}
 	if raw == "" {
 		raw = "{}"
 	}

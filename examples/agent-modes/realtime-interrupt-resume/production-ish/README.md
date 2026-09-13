@@ -26,7 +26,7 @@ go run ./examples/agent-modes/realtime-interrupt-resume/production-ish
 - Classification: `realtime.resume_recovery`.
 - Runtime path evidence: `core/types,core/runner,host,host/jsonl,tool/local,runtime/config,orchestration/composer,observability/event,observability/trace,runtime/diagnostics,tool/diagnosticsreplay`.
 - Related contracts: `embedded-host-command-response-and-event-correlation-contract; runtime-steering-and-follow-up-input-contract; realtime-event-protocol-and-interrupt-resume-contract; durable-runtime-event-stream-binding; runtime-event-stream-terminal-recovery`.
-- Required gates: `check-realtime-protocol-contract.*; check-agent-runtime-protocol-contract.*; check-runtime-event-stream-terminal-recovery-contract.*; check-runtime-steering-follow-up-contract.*; check-embedded-host-contract.*`.
+- Required gates: `check-realtime-protocol-contract.*; check-agent-runtime-protocol-contract.*; check-runtime-event-stream-terminal-recovery-contract.*; check-runtime-steering-follow-up-contract.*; check-embedded-host-contract.*; check-cross-provider-handoff-stream-edge-conformance.*`.
 - Replay fixtures: `embedded_host_protocol.v1; realtime_event_protocol.v1; agent_runtime_protocol.v1/stream-binding.json; runtime_event_stream_terminal_recovery.v1`.
 
 ## Host Contract Expectations

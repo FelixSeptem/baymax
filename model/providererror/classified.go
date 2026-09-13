@@ -98,12 +98,19 @@ func FromError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
 	}
+	if errors.Is(err, context.Canceled) {
+		return &Classified{Class: types.ErrModel, Reason: "abort", Retryable: false, Cause: err}
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return &Classified{Class: types.ErrPolicyTimeout, Reason: "timeout", Retryable: true, Cause: err}
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(msg, "payload too large"), strings.Contains(msg, "content too large"), strings.Contains(msg, "context length"), strings.Contains(msg, "overflow"):
+		return &Classified{Class: types.ErrModel, Reason: "overflow", Retryable: false, Cause: err}
+	case strings.Contains(msg, "connection reset"), strings.Contains(msg, "unexpected eof"), strings.Contains(msg, "transport"):
+		return &Classified{Class: types.ErrModel, Reason: "transport", Retryable: true, Cause: err}
 	case strings.Contains(msg, "tool calling unsupported"),
 		strings.Contains(msg, "tool call unsupported"),
 		strings.Contains(msg, "unsupported tool calling"),

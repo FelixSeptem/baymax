@@ -10,6 +10,7 @@ import (
 )
 
 const FeedbackHeader = "[tool_result_feedback.v1]"
+const MaxCanonicalFeedbackBytes = 64 * 1024
 
 type feedbackEnvelopeItem struct {
 	ToolCallID string             `json:"tool_call_id"`
@@ -88,6 +89,9 @@ func CanonicalInput(req types.ModelRequest) (string, error) {
 			Retryable: false,
 			Cause:     fmt.Errorf("marshal canonical tool result feedback: %w", err),
 		}
+	}
+	if len(blob) > MaxCanonicalFeedbackBytes {
+		return "", &providererror.Classified{Class: types.ErrModel, Reason: "overflow", Retryable: false, Cause: fmt.Errorf("tool result feedback exceeds %d bytes", MaxCanonicalFeedbackBytes)}
 	}
 	if base == "" {
 		return FeedbackHeader + "\n" + string(blob), nil

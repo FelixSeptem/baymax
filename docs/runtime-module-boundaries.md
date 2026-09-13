@@ -57,6 +57,10 @@
     probes, credential storage, or diagnostics writes
   - freezes normalized catalog generation and admission facts for a Run or
     Stream before provider execution
+- `model/openai` / `model/anthropic` / `model/gemini`
+  - 各自拥有 provider-native tool call/result、thinking、usage、Unicode/empty content 与 stream edge 到 canonical contract 的转换。
+  - capability/request-shape fallback 只能发生在 model step 调用前；首个语义 stream event 是不可跨越的 provider-switch fence。
+  - `core/runner` 只消费 canonical values 并拥有 step、terminal 与 Run/Stream parity；禁止抽取新的共享 wire protocol 或把 Provider SDK 引入 `context/*`。
 - `extension`
   - transport-neutral descriptor、source precedence、digest provenance 与 capability/admission 合同
   - bounded Hook/tool execution、turn snapshot/save-point、activation generation/reload/rollback

@@ -67,3 +67,16 @@ func TestCanonicalInputRejectsInvalidFeedbackShape(t *testing.T) {
 		t.Fatalf("reason=%q, want feedback_invalid", classified.Reason)
 	}
 }
+
+func TestCanonicalInputRejectsOversizedFeedback(t *testing.T) {
+	_, err := CanonicalInput(types.ModelRequest{ToolResult: []types.ToolCallOutcome{{
+		CallID: "call-1", Name: "local.echo", Result: types.ToolResult{Content: strings.Repeat("x", MaxCanonicalFeedbackBytes)},
+	}}})
+	if err == nil {
+		t.Fatal("expected overflow error")
+	}
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) || classified.Reason != "overflow" {
+		t.Fatalf("error=%v, want overflow classification", err)
+	}
+}

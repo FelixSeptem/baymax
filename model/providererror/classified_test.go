@@ -1,6 +1,7 @@
 package providererror
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -43,6 +44,26 @@ func TestFromErrorCanonicalToolCallingTaxonomy(t *testing.T) {
 			}
 			if classified.Class != types.ErrModel {
 				t.Fatalf("class=%q, want %q", classified.Class, types.ErrModel)
+			}
+		})
+	}
+}
+
+func TestFromErrorCanonicalEdgeTaxonomy(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "abort", err: context.Canceled, want: "abort"},
+		{name: "overflow", err: errors.New("context length overflow"), want: "overflow"},
+		{name: "transport", err: errors.New("transport connection reset"), want: "transport"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			classified := FromError(tc.err).(*Classified)
+			if classified.Reason != tc.want || classified.Class != types.ErrModel {
+				t.Fatalf("classified=%#v, want reason=%q class=%q", classified, tc.want, types.ErrModel)
 			}
 		})
 	}

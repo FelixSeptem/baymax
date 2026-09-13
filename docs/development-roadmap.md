@@ -32,6 +32,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `extension-lifecycle-governance-resource-resolution-contract`
   - `introduce-provider-model-capability-and-credential-preflight-contract`
   - `establish-embedded-host-command-response-and-event-correlation-contract`
+  - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
 - 候选：
   - 当前没有默认启动的 P0/P1 change。新 change 必须满足本文件的准入规则，并由明确的风险信号或宿主需求触发。
 
@@ -50,15 +51,15 @@ Baymax 主线保持 `library-first + contract-first`：
 | 域 | 已交付基线 | 后续约束 |
 | --- | --- | --- |
 | Runtime 与 Protocol | Run/Stream、Agent Runtime Protocol、capability/context/admission、checkpoint/workspace provenance、权威终态 | Run/Stream 保持语义等价；执行、恢复和排队仍由 source runtime 拥有。 |
-| Realtime 与 HITL | interrupt/resume、durable stream binding、cursor、catch-up/live-tail、terminal recovery | 不创建第二套 event ordering、cursor 或终态状态机。 |
+| Realtime、Host 与 HITL | interrupt/resume、durable stream binding、cursor、catch-up/live-tail、terminal recovery、embedded host command/event correlation、HITL reverse request、steering/follow-up | 不创建第二套 event ordering、cursor、pending、输入队列或终态状态机。 |
 | Tool、MCP 与 Security | 本地工具生命周期、MCP profiles、sandbox isolation/egress、allowlist、policy precedence | 工具和扩展不得绕过 policy、sandbox 或 `RuntimeRecorder`。 |
 | Context 与 Memory | Context Assembler、压缩生产治理、压缩 handoff、memory SPI、scope/search/lifecycle | `context/*` 不直连 provider SDK；snapshot 保持唯一事实源。 |
-
-State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。
 | Orchestration | Workflow、Teams、A2A、Scheduler、Mailbox、task board、recovery | 不以新 change 建立平台化调度或统一多代理拓扑。 |
 | Config、Readiness 与 Diagnostics | `env > file > default`、fail-fast、热更新原子回滚、readiness/admission、diagnostics replay | QueryRuns 和诊断 schema 仅 additive + nullable + default。 |
 | Extension 与 Provider | extension lifecycle/resource resolution、adapter manifest/capability、静态 provider/model catalog、credential preflight | Provider 细节在 `model/<provider>`；不引入远程目录、credential store 或扩展市场。 |
 | Evaluation 与 Gates | OTel/eval、corpus/badcase/experiment、semantic/performance/docs/contract gates | 评测和观测不演化为托管控制面。 |
+
+State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。
 
 ### Harnessability scorecard 与门禁耗时预算治理
 
@@ -70,51 +71,50 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 - `docs/mainline-contract-test-index.md`
 - `docs/runtime-config-diagnostics.md`
 - `docs/runtime-module-boundaries.md`
-- `docs/pi-agent-comparison-and-adoption-study.md`（外部项目对照与后续提案筛选依据）
+- `docs/pi-agent-comparison-and-adoption-study.md`（外部项目对照方法与后续提案筛选依据）
 
 ## 可启动候选
 
 候选不是承诺排期。启动前必须先完成现状审计，并在 OpenSpec proposal 中记录 `Why now`、风险、回滚点、文档影响、Example Impact Assessment 和验证命令。
 
-### P2：嵌入式宿主事件与请求响应接缝
+### P2：跨 Provider handoff 与 stream edge conformance
 
-**触发信号**：出现 IDE、桌面宿主、headless UI 或 HITL 客户端需要统一接入；或者现有 embedding 方无法把命令响应、异步事件与恢复操作安全关联。
+**触发信号**：多 Provider、fallback、context handoff 与 tool-result feedback 已成为主线能力，但 OpenAI、Anthropic、Gemini 的 tool-call/thinking/usage/abort/Unicode/空内容边界仍缺少一份统一、可回放、可阻断的 conformance matrix。随着 embedded host 与运行中输入合同落地，这些边界漂移会直接暴露给宿主，具备现在收口的风险信号。
 
-**目标**：在已有 realtime、interrupt/resume 与 durable stream binding 之上定义 transport-neutral 的宿主请求/响应和事件关联接缝。首个 binding 可评估严格 JSONL framing，但协议不得依赖某种远程网关。
+**目标**：基于现有 provider adapter、capability/preflight、context handoff、tool-result feedback、failure taxonomy 与 Run/Stream parity，建立跨 Provider 的确定性 handoff 和 stream edge conformance 合同。优先补齐测试、版本化 fixture、replay 与 gate；只有 fixture 证明漂移时才最小化修正 `model/<provider>`。
 
-**必须复用**：`run_id`、cursor、sequence、dedupe、interrupt/resume、readiness admission、policy/sandbox、`RuntimeRecorder` 和现有终态 taxonomy。
+**必须复用**：`model/<provider>` owner、Provider capability/preflight、`model/toolcontract`、context handoff、failure taxonomy、authoritative terminal outcome、Run/Stream parity、diagnostics replay 与 `RuntimeRecorder`。
 
-**验证方向**：request correlation、重复响应、超时、断连 catch-up、过期 cursor、host action authorization、权威终态查询、Run/Stream parity、replay idempotency 和 framing drift gate。
+**验证方向**：tool-call/tool-result round-trip、thinking/reasoning 投影、stream start/partial/abort、usage 保留、overflow、Unicode、空内容、fallback/handoff causation、错误分层、终态唯一性、Run/Stream parity、replay idempotency 与 shell/PowerShell gate parity。
 
-**明确不做**：REST/SSE/WebSocket/gRPC gateway、托管连接、远程 Session/Artifact store、RBAC、多租户、平台化 UI 或第二套实时状态机。
+**明确不做**：新增 Provider、重写 Provider SDK、远程 model catalog、credential store、通用 provider-agnostic wire protocol、全局路由器、托管 gateway，或在 `context/*` 引入 Provider 官方 SDK。
 
-**Example Impact Assessment（立项时）**：`修改示例`。先完成 `examples/agent-modes/realtime-interrupt-resume` 的文档基线，再增加可回归运行态场景。
+**Example Impact Assessment（立项时）**：`修改示例`。若修改 `examples/agent-modes`，必须先更新 `MATRIX.md` 与对应模式 README 的 semantic anchor、runtime path、expected markers 和 rollback notes；示例不得依赖 live provider。
 
-完整对照、证据基线和不吸收项见 `docs/pi-agent-comparison-and-adoption-study.md`。该候选借鉴 Pi 的成熟 RPC 接入经验，但不复制其 AgentSession 或实验性远程 Session Server。
+已归档的嵌入式宿主接缝、HITL reverse request 与 steering/follow-up 合同作为本候选的宿主侧前置基线，不再以新提案重复定义。完整对照、证据基线和不吸收项见 `docs/pi-agent-comparison-and-adoption-study.md`。
 
-## 后续提案备选池（Pi 对照增量）
+## 后续提案备选池（外部项目对照增量）
 
 同域收口声明：Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。Context organization 语义能力同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 Context JIT Organization 增量吸收；生产可用治理同域需求（压缩质量门控、冷存检索/清理、一致性回放、强门禁）统一在 a69 吸收，不再新增平行 context 压缩提案。Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
 
-备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求或可复现风险触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。
+备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求或可复现风险触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。外部项目的同名能力必须先路由到本表已有 owner：`learn-claude-code` 的 context compact/identity reinjection 进入 Eval 与 context continuity 候选，background completion 与 task/worktree isolation 进入 Durable operation 审计，team request-response 进入既有 Host/HITL/runtime-input conformance；不得据此复制 agent loop、task board、mailbox、skill loader、worktree manager 或平行状态机。
 
 | 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
 | --- | --- | --- | --- | --- |
-| 首选候选（现有 P2 细化） | 嵌入式宿主事件与请求响应接缝 | 严格 JSONL、request correlation、command response 与 async event 分离、pending 收口、stdout 保护 | Runner/Composer、Agent Runtime Protocol、Realtime、terminal arbiter、readiness/policy/sandbox、`RuntimeRecorder` | IDE、桌面宿主、headless UI 或外部 HITL 客户端需要运行中控制。不得只做 framing；必须先明确 source-owned active Run control。 |
-| 与首选合并优先 | 宿主介导 HITL adapter | 将 confirm/select/input 投影为反向请求并按 ID 返回响应 | `ClarificationResolver`、`ActionGateResolver`、现有 timeout 和 HITL timeline | 首个宿主需要跨进程确认或输入。只适配既有 HITL，不建立新状态机。 |
-| 条件候选 | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy | 出现跨 provider 恢复或边界兼容回归。优先补测试、fixture 和 gate，不扩张 provider SDK 边界。 |
+| 首选条件候选（当前 P2） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 多 Provider 主线缺少统一 conformance matrix，且边界漂移已会暴露给 embedded host。优先补测试、fixture 和 gate，不扩张 provider SDK 边界。 |
+| 首选审计候选（下一方向 P1） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 显式验证 task/attempt 与 workspace provenance 的关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation；审计后台完成结果进入下一模型决策安全点时的 correlation、dedupe、late/disconnect/recovery 语义 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 代码审计已确认 checkpoint 具备 workspace provenance 和完整性漂移检测，但 scheduler attempt 尚无显式 workspace binding。先以 gap fixture 证明并行、重试或恢复中的真实冲突，再启动 contract 提案；实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
 | 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow fixture、失败反馈 | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 出现新的真实扩展来源。不得建设 package manager/market，也不得无准入动态执行扩展。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
-| 观察候选 | Eval transcript/artifact comparison | baseline/candidate harness、transcript 与 snapshot artifact | OTel/eval/corpus、checkpoint/artifact refs、diagnostics replay | 现有 eval 无法定位可复现质量回归。只增加有界引用与比较，不建立 artifact service。 |
-| 审计项 | Durable operation 与状态所有权审计 | entries/registers/usage ledger/lane 作为 owner 检查框架 | Session history、checkpoint、snapshot、scheduler/mailbox/recovery、diagnostics | 先证明现有 checkpoint 无法恢复真实进行中 operation，再转为提案；不得先创建第二套 Session 状态模型。 |
+| 观察候选 | Eval transcript/artifact comparison 与 compaction continuity | baseline/candidate harness、有界 transcript/snapshot artifact 引用；验证 compaction/handoff 前后的 agent/role/team、task/attempt/lease、workspace binding、pending correlated request、objective 与权威 checkpoint 连续性 | OTel/eval/corpus、context handoff、checkpoint/snapshot/artifact refs、diagnostics replay | 现有 eval 无法定位可复现质量回归，或压缩/恢复后出现身份、任务或工作区事实漂移。摘要不得成为新事实源，不持久化 reasoning body；只增加有界引用与比较，不建立 transcript/artifact service。 |
 
 备选池合并与排序规则：
 
-1. active Run control、命令关联、JSONL framing、output integrity、event backpressure 和基础 HITL bridge 优先在“嵌入式宿主事件与请求响应接缝”内收敛，避免相互循环依赖。
-2. steering/follow-up 会新增输入队列与时序语义，必须晚于基础宿主接缝并独立评审。
-3. Provider、Extension、Eval 方向继续采用需求触发，不因外部项目存在同名能力而自动立项。
-4. Durable operation 当前只做 owner 审计；Pi 的 lane/register/ledger 不成为 Baymax 默认公共模型。
-5. Pi 的 experimental CBOR protocol、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不进入近期备选。
+1. active Run control、命令关联、JSONL framing、output integrity、event backpressure、基础 HITL bridge 与 steering/follow-up 已归档；后续只允许在既有 owner 下验证 request ID、approve/reject、timeout、duplicate、late response 与权威终态一致性，不抽取新的通用 coordination FSM。
+2. 跨 Provider conformance 采用 fixture/test/gate-first，只在可复现 drift 下最小修正 `model/<provider>`，不先建设新的共享路由或 wire abstraction。
+3. 当前 P2 归档后，下一审计优先验证 task/attempt 到 workspace provenance 的接缝；只有 gap fixture 证明 lease rollover、重试或恢复会误用 workspace 时，才升级为 OpenSpec change。后台完成通知作为同一 owner 审计的次级切面，优先复用 mailbox 与 runtime-input safe point。
+4. Eval continuity 只验证有界事实和引用在 compaction/handoff/recovery 前后的确定性，不保存 raw reasoning，也不把模型摘要提升为 task/session/workspace 的事实源。
+5. Extension、Eval 方向继续采用需求触发，不因外部项目存在同名能力而自动立项；`learn-claude-code` 的 daemon thread、`shell=True`、JSON/JSONL 双写、轮询认领和非事务 worktree index 只作为反例，不进入生产基线。
+6. Pi 的 lane/register/ledger、experimental CBOR protocol、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不成为 Baymax 默认公共模型，也不进入近期备选。
 
 ### 需求触发观察项
 
@@ -124,7 +124,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | --- | --- | --- |
 | 远程 model catalog 或本地模型路由 | 静态/宿主注入目录不足以支持明确的路由需求 | 以本页“Model catalog 与本地模型路由增量”为同一候选，不创建平行提案；不在 `context/*` 引入 provider SDK，不接入 credential store。 |
 | 运行时成本或延迟治理增量 | 成本或 P95 抖动成为稳定主线瓶颈 | 复用 operation profile、timeout resolution、budget admission 与既有诊断字段。 |
-| 评测或 tracing 增量 | 跨后端字段解释不一致，或出现可复现质量回归缺口 | 复用 OTel/eval/corpus 基线，不引入评测控制面。 |
+| 评测、tracing 或 compaction continuity 增量 | 跨后端字段解释不一致、出现可复现质量回归，或 compaction/handoff/recovery 后 identity/task/workspace/pending-request 事实漂移 | 以本页“Eval transcript/artifact comparison 与 compaction continuity”为同一候选；复用 OTel/eval/corpus、context handoff、checkpoint/snapshot 和 bounded refs，不引入评测控制面或第二事实源。 |
 | 外部 extension 生态增量 | 新的真实扩展来源、供应链审计或隔离需求超出现有 lifecycle contract | 复用 manifest/capability/allowlist；不建设 package manager 或市场。 |
 
 ## 示例状态
@@ -164,7 +164,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 - 平台化控制面（多租户、RBAC、审计和运营面板）。
 - 跨租户全局调度与控制平面。
 - 市场化/托管化 adapter registry 能力。
-- Remote Runtime Gateway、托管 Session/Artifact persistence、独立 session server 与远程 event store。
+- Remote Runtime Gateway、托管 Session/Artifact/Workspace persistence、独立 session server、远程 event store 与 hosted worktree manager。
 - Pi experimental protocol 的 CBOR wire、session attachment/lease 与 SQLite hosted backend。
 
 这些方向不能以单个大提案混合交付；未来若启动，必须分别定义 gateway、persistence profile、artifact resolver 与 authorization/governance profile。

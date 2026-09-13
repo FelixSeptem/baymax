@@ -83,5 +83,26 @@ If a marker or runtime path is missing, run the agent-mode semantic and README s
 
 - Contracts: `embedded-host-command-response-and-event-correlation-contract`; `runtime-steering-and-follow-up-input-contract`; `realtime-event-protocol-and-interrupt-resume-contract`; `durable-runtime-event-stream-binding`; `runtime-event-stream-terminal-recovery`.
 - Replay fixture: `embedded_host_protocol.v1` (includes valid/rejection/duplicate/disconnect/promotion and Run/Stream parity classifications); alongside `realtime_event_protocol.v1`, `agent_runtime_protocol.v1/stream-binding.json`, and `runtime_event_stream_terminal_recovery.v1`.
-- Required gates: `check-realtime-protocol-contract.*`; `check-agent-runtime-protocol-contract.*`; `check-runtime-event-stream-terminal-recovery-contract.*`; `check-runtime-steering-follow-up-contract.*`; `check-embedded-host-contract.*`.
+- Required gates: `check-realtime-protocol-contract.*`; `check-agent-runtime-protocol-contract.*`; `check-runtime-event-stream-terminal-recovery-contract.*`; `check-runtime-steering-follow-up-contract.*`; `check-embedded-host-contract.*`; `check-cross-provider-handoff-stream-edge-conformance.*`.
 - Example impact assessment: `修改示例`. The baseline is documentation-only until tasks 1.1 and 1.2 are complete; implementation tasks must not be checked before this anchor/path/marker/rollback mapping is present.
+
+## Cross-Provider Handoff and Stream-Edge Baseline
+
+This provider-independent mode also serves as the documentation baseline for
+`provider_handoff_stream_edge.v1`. The semantic anchor is
+`provider_handoff.canonical_stream_edge_projection`; the runtime path remains
+provider-owned under `model/openai`, `model/anthropic`, and `model/gemini`, with
+`model/toolcontract` and `model/providererror` supplying shared input and error
+contracts. No live credentials are required: fixtures contain bounded semantic
+inputs and normalized projections only.
+
+Expected conformance markers are `provider_tool_call_normalized`,
+`provider_feedback_correlated`, `provider_stream_boundary_normalized`,
+`provider_abort_usage_nullable`, `provider_fallback_fence_enforced`, and
+`provider_run_stream_parity`. Replay uses the offline
+`provider_handoff_stream_edge.v1` namespace and stable drift classes from the
+change spec; shell and PowerShell conformance gates must agree.
+
+Rollback removes this documentation mapping and its fixture/gate references
+together. It does not add a provider, runtime configuration key, credential
+store, hosted gateway, or mid-stream fallback path.

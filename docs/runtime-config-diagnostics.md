@@ -6,6 +6,8 @@
 
 为运行时提供统一配置入口（YAML + Env + Default）、热更新能力，以及仅库接口的诊断查询能力。
 
+跨 Provider handoff/stream-edge conformance 不新增配置键：继续使用现有 provider 与 capability admission 配置。回滚只需移除 `provider_handoff_stream_edge.v1` replay/gate 和相应 adapter-local 修正，不涉及配置或持久化迁移。诊断仅允许有界分类、digest、provider/mode/correlation 标识；不得记录 raw provider payload、reasoning body、credential 或无界 stream content。
+
 ## 配置优先级
 
 固定优先级：`env > file > default`

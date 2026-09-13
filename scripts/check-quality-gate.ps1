@@ -733,6 +733,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-adapter-contract-replay.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] provider handoff and stream edge conformance"
+        Command   = { pwsh -File scripts/check-provider-handoff-stream-edge-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] sandbox adapter conformance contract"
         Command   = { pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1 }
     },

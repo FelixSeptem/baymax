@@ -161,12 +161,15 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	state := streamState{toolCalls: map[string]*toolCallState{}}
 	streamStarted := false
 	for stream.Next() {
-		streamStarted = true
 		mapped, err := mapStreamEvent(stream.Current(), &state)
 		if err != nil {
 			var classified *providererror.Classified
 			if errors.As(err, &classified) {
-				return providererror.WithStreamPhase(classified, "post_start")
+				phase := "pre_execution"
+				if streamStarted {
+					phase = "post_start"
+				}
+				return providererror.WithStreamPhase(classified, phase)
 			}
 			if onEvent != nil {
 				_ = onEvent(types.ModelEvent{
@@ -175,6 +178,9 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 				})
 			}
 			return err
+		}
+		if len(mapped) > 0 {
+			streamStarted = true
 		}
 		if onEvent == nil {
 			continue
@@ -334,6 +340,9 @@ func maybeEmitToolCall(state *streamState, itemID string) (*types.ModelEvent, er
 	raw := strings.TrimSpace(call.arguments)
 	if raw == "" {
 		raw = "{}"
+	}
+	if len(raw) > maxToolCallArgsDecodeBufferCap {
+		return nil, &providererror.Classified{Class: types.ErrModel, Reason: "overflow", Retryable: false, Cause: fmt.Errorf("openai tool arguments exceed %d bytes", maxToolCallArgsDecodeBufferCap)}
 	}
 	args, err := decodeOpenAIToolCallArgs(raw)
 	if err != nil {

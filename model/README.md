@@ -2,6 +2,8 @@
 
 ## 功能域
 
+OpenAI、Anthropic 与 Gemini adapter 各自拥有 provider-native tool-call/result、thinking、usage 和 stream edge 转换。跨 Provider conformance 只输出有界 canonical digest/correlation；首个语义 stream event 后不得 fallback。离线证据见 `tool/diagnosticsreplay/testdata/provider_handoff_stream_edge.v1.json`，门禁见 `scripts/check-provider-handoff-stream-edge-contract.sh/.ps1`。该合同不新增配置、credential store、远程 catalog 或共享 wire protocol。
+
 `model` 提供多 Provider 模型适配，当前包含：
 
 - `openai`

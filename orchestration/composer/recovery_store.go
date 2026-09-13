@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 )
@@ -131,15 +132,16 @@ type RecoveryInteractionState struct {
 }
 
 type RecoverySnapshot struct {
-	Version        string                   `json:"version"`
-	UpdatedAt      time.Time                `json:"updated_at"`
-	Run            RecoveryRunSnapshot      `json:"run"`
-	Workflow       RecoveryWorkflowSnapshot `json:"workflow,omitempty"`
-	Scheduler      scheduler.StoreSnapshot  `json:"scheduler"`
-	A2A            RecoveryA2ASnapshot      `json:"a2a,omitempty"`
-	Interaction    RecoveryInteractionState `json:"interaction,omitempty"`
-	Replay         RecoveryReplayCursor     `json:"replay"`
-	ConflictPolicy string                   `json:"conflict_policy"`
+	Version              string                             `json:"version"`
+	UpdatedAt            time.Time                          `json:"updated_at"`
+	Run                  RecoveryRunSnapshot                `json:"run"`
+	Workflow             RecoveryWorkflowSnapshot           `json:"workflow,omitempty"`
+	Scheduler            scheduler.StoreSnapshot            `json:"scheduler"`
+	A2A                  RecoveryA2ASnapshot                `json:"a2a,omitempty"`
+	Interaction          RecoveryInteractionState           `json:"interaction,omitempty"`
+	CompletionReferences runner.CompletionReferenceSnapshot `json:"completion_references,omitempty"`
+	Replay               RecoveryReplayCursor               `json:"replay"`
+	ConflictPolicy       string                             `json:"conflict_policy"`
 }
 
 type RecoveryStore interface {
@@ -404,6 +406,30 @@ func (s *FileRecoveryStore) writeSnapshotLocked(snapshot RecoverySnapshot) error
 
 func normalizeRecoverySnapshot(snapshot RecoverySnapshot, expectedRunID string) (RecoverySnapshot, error) {
 	out := snapshot
+	if len(out.CompletionReferences.Pending) > 256 {
+		return RecoverySnapshot{}, newRecoveryError(RecoveryErrorSnapshotCorrupt, "completion reference snapshot exceeds bound", nil)
+	}
+	seenCompletion := make(map[string]struct{}, len(out.CompletionReferences.Pending))
+	for i := range out.CompletionReferences.Pending {
+		ref := &out.CompletionReferences.Pending[i]
+		ref.MessageID = strings.TrimSpace(ref.MessageID)
+		ref.IdempotencyKey = strings.TrimSpace(ref.IdempotencyKey)
+		ref.SessionID = strings.TrimSpace(ref.SessionID)
+		ref.RunID = strings.TrimSpace(ref.RunID)
+		if ref.MessageID == "" || ref.IdempotencyKey == "" || ref.SessionID == "" || ref.RunID == "" {
+			return RecoverySnapshot{}, newRecoveryError(RecoveryErrorSnapshotCorrupt, "completion reference requires bounded identity fields", nil)
+		}
+		if ref.RunID != strings.TrimSpace(expectedRunID) {
+			return RecoverySnapshot{}, newRecoveryError(RecoveryErrorConflict, "completion reference run association mismatch", nil)
+		}
+		if _, exists := seenCompletion[ref.IdempotencyKey]; exists {
+			return RecoverySnapshot{}, newRecoveryError(RecoveryErrorConflict, "duplicate completion reference idempotency key", nil)
+		}
+		seenCompletion[ref.IdempotencyKey] = struct{}{}
+	}
+	sort.Slice(out.CompletionReferences.Pending, func(i, j int) bool {
+		return out.CompletionReferences.Pending[i].IdempotencyKey < out.CompletionReferences.Pending[j].IdempotencyKey
+	})
 	out.Version = strings.TrimSpace(out.Version)
 	if out.Version == "" {
 		out.Version = RecoverySnapshotVersion

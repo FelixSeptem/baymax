@@ -44,6 +44,10 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
   - `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）已归档并稳定。
   - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization and reference-first assembly）已归档并稳定。
 
+当前 P1 审计的 ownership 边界固定为：scheduler 拥有 task/attempt/lease/retry/terminal commit，checkpoint/snapshot 拥有 reference-only provenance 与 restore reconciliation，mailbox 拥有 durable completion delivery，`core/runner` 拥有 runtime-input safe-point admission/application，`tool/diagnosticsreplay` 只做离线无副作用归一化。workspace 内容、Git/worktree 生命周期、completion body、reasoning、credentials 和终端事实不被复制到 scheduler/snapshot/diagnostics。
+
+该审计不新增 runtime config key 或 hosted service；现有 `env > file > default` 配置与 additive + nullable + default 兼容规则保持不变。若需回滚，只移除新增 reference projection、fixture/replay/gate 与恢复适配；legacy scheduler、mailbox、snapshot、Run/Stream 与 terminal behavior 不需迁移。明确 non-goals 包括 Git/worktree manager、workspace/artifact store、runtime Git/shell、自动 merge/push 与平行 task/session/coordination FSM。
+
 版本阶段快照：
 - 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
 - `0.x` 阶段允许新增能力型提案，前提是满足提案准入字段与质量门禁阻断要求。

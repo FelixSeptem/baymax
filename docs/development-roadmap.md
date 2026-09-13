@@ -91,6 +91,10 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 **第一阶段交付**：只新增 bounded gap fixture、replay 分类、必要的 contract/gate 测试和审计文档；只有 fixture 证明 lease rollover、retry 或 recovery 会误用 workspace，或 completion 会丢失/重复 promotion，才进入最小运行时字段/API 变更。
 
+**Ownership / compatibility / privacy**：scheduler 继续拥有 task/attempt/lease/retry/terminal commit；checkpoint/snapshot 只拥有 reference-only provenance 与恢复前校验；mailbox 拥有 durable completion delivery；`core/runner` 拥有 runtime-input safe-point admission/application；`tool/diagnosticsreplay` 只做离线、无副作用归一化。新增引用必须 additive + nullable + default，历史记录缺失时按 binding absent 处理，未知字段安全忽略；workspace 内容、路径、Git 元数据、completion body、reasoning、credentials 和无界 payload 不进入快照、诊断或 replay。
+
+**No-new-config / rollback**：本审计不新增 runtime 配置键或 hot-update 分支，继续复用现有 `env > file > default` 配置域。回滚只移除新增 reference projection、fixture/replay/gate 与恢复适配，不需要持久化迁移，也不改变既有 scheduler、mailbox、snapshot、Run/Stream 或 terminal outcome 语义。
+
 **明确不做**：Git/worktree manager、runtime 直接执行 Git/shell、hosted workspace/artifact service、自动 merge/push、第二套 task/session/coordination 状态机，或复制外部项目的 daemon thread、`shell=True`、固定轮询和非事务 worktree index。
 
 **Example Impact Assessment（立项时）**：`无需示例变更（附理由）`。首阶段只验证 scheduler、recovery、mailbox、runtime-input 接缝，不修改 `examples/agent-modes`；若后续确需示例变化，必须先完成 `MATRIX.md` 与对应模式 README 的文档基线。

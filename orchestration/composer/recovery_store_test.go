@@ -8,9 +8,67 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
+
+type completionRecoveryRunner struct {
+	Runner
+	snapshot runner.CompletionReferenceSnapshot
+	captured string
+	restored int
+}
+
+func (r *completionRecoveryRunner) SnapshotCompletionReferences(runID string) (runner.CompletionReferenceSnapshot, bool) {
+	r.captured = runID
+	return r.snapshot, true
+}
+
+func (r *completionRecoveryRunner) RestoreCompletionReferences(snapshot runner.CompletionReferenceSnapshot) error {
+	r.restored += len(snapshot.Pending)
+	return nil
+}
+
+func TestRecoverySnapshotPersistsAndRestoresCompletionReferences(t *testing.T) {
+	base := &completionRecoveryRunner{snapshot: runner.CompletionReferenceSnapshot{Pending: []types.CompletionReference{{MessageID: "msg-1", IdempotencyKey: "idem-1", SessionID: "session-1", RunID: "run-completion-recovery"}}}}
+	store := scheduler.NewMemoryStore()
+	comp := &Composer{runner: base, now: time.Now, recoveryConflictPolicy: runtimeconfig.RecoveryConflictPolicyFailFast, scheduler: mustScheduler(t, store)}
+	if _, err := comp.scheduler.Enqueue(context.Background(), scheduler.Task{TaskID: "task-completion-recovery", RunID: "run-completion-recovery"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := comp.CaptureRecoverySnapshot(context.Background(), "run-completion-recovery", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.captured != "run-completion-recovery" || len(snapshot.CompletionReferences.Pending) != 1 {
+		t.Fatalf("completion refs were not captured: captured=%q snapshot=%#v", base.captured, snapshot.CompletionReferences)
+	}
+	if err := comp.restoreCompletionReferences(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if base.restored != 1 {
+		t.Fatalf("restored=%d, want 1", base.restored)
+	}
+}
+
+func TestNormalizeRecoverySnapshotRejectsCompletionReferenceDrift(t *testing.T) {
+	snapshot := testRecoverySnapshot("run-completion-reference-drift")
+	snapshot.CompletionReferences.Pending = []types.CompletionReference{{MessageID: "msg-1", IdempotencyKey: "idem-1", SessionID: "session-1", RunID: "other-run"}}
+	if _, err := normalizeRecoverySnapshot(snapshot, snapshot.Run.RunID); err == nil {
+		t.Fatal("expected completion reference run association mismatch")
+	}
+}
+
+func mustScheduler(t *testing.T, store scheduler.QueueStore) *scheduler.Scheduler {
+	t.Helper()
+	s, err := scheduler.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
 
 func TestMemoryRecoveryStoreRoundTripAndDuplicateLoad(t *testing.T) {
 	store := NewMemoryRecoveryStore()

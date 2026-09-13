@@ -32,5 +32,7 @@ func TestParseCompletionSafePointOwnershipFixtureRejectsParityDrift(t *testing.T
 func TestEvaluateCompletionSafePointOwnershipClassifiesDuplicateAndLate(t *testing.T) {
 	raw := []byte(`{"version":"completion_safe_point_ownership.v1","cases":[{"name":"dup","run_id":"run-1","session_id":"s","task_id":"t","attempt_id":"a","mailbox_id":"m","correlation_id":"c","outcome":"duplicate","duplicate":true,"run":{"status":"duplicate"},"stream":{"status":"duplicate"}}]}`)
 	fixture, err := EvaluateCompletionSafePointOwnershipFixtureJSON(raw)
-	if err != nil || fixture.Cases[0].Outcome != "duplicate" { t.Fatalf("fixture=%#v err=%v", fixture, err) }
+	if err != nil || fixture.Cases[0].Outcome != "duplicate" {
+		t.Fatalf("fixture=%#v err=%v", fixture, err)
+	}
 }

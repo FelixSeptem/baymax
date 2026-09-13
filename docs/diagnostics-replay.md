@@ -8,6 +8,8 @@
 - 离线排障（无需连接运行时 API）。
 - 回归校验（固定输入/输出契约）。
 
+Durable task/attempt workspace binding 与 completion safe-point replay 属于离线、只读的 reference projection。Replay 不调用 provider、tool、Git、shell、workspace filesystem、mailbox transport 或 Runner；它只验证 bounded identifiers、hash/classification、correlation、idempotency 与 Run/Stream parity。
+
 ## 输入契约
 
 ### 3) Context Handoff 回放模式
@@ -130,8 +132,23 @@ _ = out // deterministic normalized output
 - `secondary_count_drift`（explainability extension：secondary reason 规模语义漂移）
 - `hint_taxonomy_drift`（explainability extension：remediation hint taxonomy 漂移）
 - `rule_version_drift`（explainability extension：arbitration rule version 漂移）
+- `durable_attempt_workspace_schema_drift`
+- `durable_attempt_workspace_binding_drift`
+- `durable_attempt_workspace_association_drift`
+- `durable_attempt_workspace_integrity_drift`
+- `durable_attempt_workspace_stale_attempt_drift`
+- `completion_safe_point_schema_drift`
+- `completion_safe_point_correlation_drift`
+- `completion_safe_point_run_stream_parity_drift`
+- `completion_safe_point_privacy_drift`
 
 这些错误码用于 CI 契约回归和脚本自动判定，除非显式版本化，不应随意变更。
+
+## Durable binding and completion fixtures
+
+`durable_attempt_workspace_binding.v1` covers absent/valid references, lease rollover, explicit retry reuse or rebind, stale commits, missing/dirty/conflict/drift/checkpoint mismatch, and recovery reconciliation. `completion_safe_point_ownership.v1` covers mailbox correlation, accepted/duplicate/late/disconnected/not-applied/recovered outcomes, terminal conflict, and equivalent Run/Stream safe-point observations. Both schemas reject unknown versions, malformed/oversized inputs, and raw workspace contents, completion bodies, reasoning, credentials, or unbounded payloads.
+
+Legacy replay fixtures remain byte-compatible. New fields are additive and nullable; consumers may ignore unknown fields and treat missing references as absent. Rollback removes these fixture namespaces and gate invocations without changing existing D1, Agent Runtime Protocol, Realtime, or snapshot replay behavior.
 
 ## CI 门禁
 
@@ -142,3 +159,5 @@ _ = out // deterministic normalized output
   - 目标套件：`go test ./tool/diagnosticsreplay ./integration -run 'Test(ReplayContractCompositeFixture|ReplayContractPrimaryReasonArbitrationFixture|ReadinessTimeoutHealthReplayContract|PrimaryReasonArbitrationReplayContract)' -count=1`
 
 建议在分支保护中将 `diagnostics-replay-gate` 设置为 required status check。
+
+Durable binding/completion 使用独立阻断门禁：`bash scripts/check-durable-attempt-completion-replay-contract.sh` 或 `pwsh -File scripts/check-durable-attempt-completion-replay-contract.ps1`。

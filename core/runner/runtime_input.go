@@ -3,10 +3,24 @@ package runner
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/FelixSeptem/baymax/core/types"
 )
+
+type CompletionReferenceSnapshot struct {
+	Pending []types.CompletionReference `json:"pending,omitempty"`
+}
+
+// SnapshotCompletionReferences returns bounded pending completion references for an active Run.
+func (e *Engine) SnapshotCompletionReferences(runID string) (CompletionReferenceSnapshot, bool) {
+	ctrl, ok := e.ActiveRun(runID)
+	if !ok {
+		return CompletionReferenceSnapshot{}, false
+	}
+	return ctrl.SnapshotCompletionReferences(), true
+}
 
 // AdmitHostRuntimeInput adapts the host transport contract to the source-owned
 // input admission API without giving the host access to the input lanes.
@@ -122,6 +136,41 @@ func (e *Engine) AdmitCompletionReference(ref types.CompletionReference) (types.
 	payload := "completion:" + strings.TrimSpace(ref.MessageID)
 	input := types.RuntimeInputEnvelope{Version: types.RuntimeInputProtocolVersionV1, InputID: strings.TrimSpace(ref.IdempotencyKey), Kind: types.RuntimeInputKindFollowUp, Time: e.now(), SessionID: strings.TrimSpace(ref.SessionID), RunID: strings.TrimSpace(ref.RunID), CausationID: strings.TrimSpace(ref.AttemptID), SourceCorrelation: correlation, ApplyBoundary: types.RuntimeInputApplyBoundaryIdleTerminal, Payload: payload}
 	return e.AdmitRuntimeInput(input)
+}
+
+// SnapshotCompletionReferences exposes only bounded pending reference metadata.
+func (c *ActiveRunControl) SnapshotCompletionReferences() CompletionReferenceSnapshot {
+	if c == nil {
+		return CompletionReferenceSnapshot{}
+	}
+	c.inputMu.Lock()
+	defer c.inputMu.Unlock()
+	out := CompletionReferenceSnapshot{Pending: make([]types.CompletionReference, 0, len(c.followUps))}
+	for _, input := range c.followUps {
+		if !strings.HasPrefix(input.Payload, "completion:") {
+			continue
+		}
+		out.Pending = append(out.Pending, types.CompletionReference{MessageID: strings.TrimPrefix(input.Payload, "completion:"), IdempotencyKey: input.InputID, CorrelationID: input.SourceCorrelation, AttemptID: input.CausationID, SessionID: input.SessionID, RunID: input.RunID})
+	}
+	sort.Slice(out.Pending, func(i, j int) bool { return out.Pending[i].IdempotencyKey < out.Pending[j].IdempotencyKey })
+	return out
+}
+
+// RestoreCompletionReferences reuses admission dedupe and never creates a Run.
+func (e *Engine) RestoreCompletionReferences(snapshot CompletionReferenceSnapshot) error {
+	if len(snapshot.Pending) > 256 {
+		return fmt.Errorf("completion reference snapshot exceeds bound")
+	}
+	for _, ref := range snapshot.Pending {
+		admission, err := e.AdmitCompletionReference(ref)
+		if err != nil {
+			return err
+		}
+		if admission.Status != types.RuntimeInputAdmissionStatusAccepted && admission.Status != types.RuntimeInputAdmissionStatusDuplicate {
+			return fmt.Errorf("completion reference restore not applied: %s", admission.ReasonCode)
+		}
+	}
+	return nil
 }
 
 func runtimeInputRejected(input types.RuntimeInputEnvelope, reason string, err error) (types.RuntimeInputAdmission, error) {

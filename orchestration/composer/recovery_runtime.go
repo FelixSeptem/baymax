@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
@@ -221,7 +222,30 @@ func (c *Composer) CaptureRecoverySnapshot(ctx context.Context, runID, workflowI
 		},
 		ConflictPolicy: conflictPolicy,
 	}
+	if source, ok := c.runner.(interface {
+		SnapshotCompletionReferences(string) (runner.CompletionReferenceSnapshot, bool)
+	}); ok {
+		if refs, found := source.SnapshotCompletionReferences(resolvedRunID); found {
+			snapshot.CompletionReferences = refs
+		}
+	}
 	return normalizeRecoverySnapshot(snapshot, resolvedRunID)
+}
+
+func (c *Composer) restoreCompletionReferences(snapshot RecoverySnapshot) error {
+	if len(snapshot.CompletionReferences.Pending) == 0 {
+		return nil
+	}
+	target, ok := c.runner.(interface {
+		RestoreCompletionReferences(runner.CompletionReferenceSnapshot) error
+	})
+	if !ok {
+		return newRecoveryError(RecoveryErrorConflict, "completion reference restore unsupported by runner", nil)
+	}
+	if err := target.RestoreCompletionReferences(snapshot.CompletionReferences); err != nil {
+		return newRecoveryError(RecoveryErrorConflict, "restore completion references", err)
+	}
+	return nil
 }
 
 func (c *Composer) PersistRecoverySnapshot(ctx context.Context, runID, workflowID string) (RecoverySnapshot, error) {
@@ -324,6 +348,11 @@ func (c *Composer) Recover(ctx context.Context, req RecoverRequest) (RecoverResu
 		}
 	}
 
+	if err := c.restoreCompletionReferences(normalized); err != nil {
+		c.markRecoveryConflict(runID, "completion_reference_restore_failed")
+		c.emitRecoveryTimeline(ctx, runID, RecoveryReasonConflict, types.ActionStatusFailed, "", "")
+		return RecoverResult{}, err
+	}
 	if err := s.Restore(ctx, normalized.Scheduler); err != nil {
 		c.markRecoveryConflict(runID, "scheduler_restore_failed")
 		c.emitRecoveryTimeline(ctx, runID, RecoveryReasonConflict, types.ActionStatusFailed, "", "")

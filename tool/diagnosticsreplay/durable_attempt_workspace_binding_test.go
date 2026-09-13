@@ -40,5 +40,7 @@ func TestParseDurableAttemptWorkspaceBindingFixtureRejectsImplicitRetry(t *testi
 func TestEvaluateDurableAttemptWorkspaceBindingClassifiesObservedDrift(t *testing.T) {
 	raw := []byte(`{"version":"durable_attempt_workspace_binding.v1","cases":[{"name":"stale","task_id":"task-1","attempt_id":"attempt-2","attempt":2,"lease_generation":2,"expected":"accepted","observed":"stale"}]}`)
 	_, err := EvaluateDurableAttemptWorkspaceBindingFixtureJSON(raw)
-	if err == nil || !strings.Contains(err.Error(), ReasonCodeDurableAttemptWorkspaceStaleAttemptDrift) { t.Fatalf("err=%v", err) }
+	if err == nil || !strings.Contains(err.Error(), ReasonCodeDurableAttemptWorkspaceStaleAttemptDrift) {
+		t.Fatalf("err=%v", err)
+	}
 }

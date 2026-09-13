@@ -20,10 +20,10 @@
 ## 3. Completion Safe-Point Ownership
 
 - [x] 3.1 Define the minimal bounded adapter from mailbox/scheduler terminal completion correlation to the existing source-owned runtime-input envelope; verify it does not create a new queue, terminal arbiter, cursor, or Run state machine.
-- [ ] 3.2 Apply accepted completion input only at the existing next-decision or idle/terminal boundary; verify no active provider, tool, or HITL operation is mutated mid-operation.
-- [ ] 3.3 Reconcile duplicate completion, duplicate promotion, late timeout, terminal conflict, disconnect, backpressure, and not-applied outcomes through existing scheduler and runtime-input classifications; verify the authoritative terminal outcome remains immutable.
-- [ ] 3.4 Persist and restore only bounded pending/applied completion references needed for reconciliation; verify repeated recovery applies at most one logical completion and never resurrects a closed Run.
-- [ ] 3.5 Add equivalent Run and Stream integration tests for completion admission, safe-point application, duplicate, late, disconnect, terminal race, and recovery; verify normalized outcomes differ only by permitted event ordering.
+- [x] 3.2 Apply accepted completion input only at the existing next-decision or idle/terminal boundary; verify no active provider, tool, or HITL operation is mutated mid-operation.
+- [x] 3.3 Reconcile duplicate completion, duplicate promotion, late timeout, terminal conflict, disconnect, backpressure, and not-applied outcomes through existing scheduler and runtime-input classifications; verify the authoritative terminal outcome remains immutable.
+- [x] 3.4 Persist and restore only bounded pending/applied completion references needed for reconciliation; verify repeated recovery applies at most one logical completion and never resurrects a closed Run.
+- [x] 3.5 Add equivalent Run and Stream integration tests for completion admission, safe-point application, duplicate, late, disconnect, terminal race, and recovery; verify normalized outcomes differ only by permitted event ordering.
 
 ## 4. Replay, Diagnostics, and Gates
 
@@ -34,12 +34,12 @@
 
 ## 5. Documentation and Scope Review
 
-- [ ] 5.1 Update `README.md`, `docs/development-roadmap.md`, `docs/runtime-config-diagnostics.md`, `docs/runtime-module-boundaries.md`, and relevant scheduler/snapshot/replay READMEs with ownership, compatibility, privacy, rollback, and no-new-config decisions; verify status consistency.
-- [ ] 5.2 Review implementation against non-goals and architecture constraints; verify no Git/worktree manager, runtime Git/shell execution, hosted workspace/artifact service, automatic merge/push, raw-content diagnostics, or parallel task/session/coordination FSM was introduced.
-- [ ] 5.3 Re-evaluate Example Impact Assessment after fixture-driven implementation; if examples remain untouched, document the reason, otherwise complete the mandatory `MATRIX.md` and mode README baseline before example code.
+- [x] 5.1 Update `README.md`, `docs/development-roadmap.md`, `docs/runtime-config-diagnostics.md`, `docs/runtime-module-boundaries.md`, and relevant scheduler/snapshot/replay READMEs with ownership, compatibility, privacy, rollback, and no-new-config decisions; verify status consistency.
+- [x] 5.2 Review implementation against non-goals and architecture constraints; verify no Git/worktree manager, runtime Git/shell execution, hosted workspace/artifact service, automatic merge/push, raw-content diagnostics, or parallel task/session/coordination FSM was introduced.
+- [x] 5.3 Re-evaluate Example Impact Assessment after fixture-driven implementation; if examples remain untouched, document the reason, otherwise complete the mandatory `MATRIX.md` and mode README baseline before example code.
 
 ## 6. Integrated Verification and Handoff
 
-- [ ] 6.1 Run focused scheduler, mailbox, composer recovery, snapshot, runner runtime-input, diagnostics replay, and Run/Stream integration suites; record positive, negative, boundary, idempotency, and backend-parity evidence.
-- [ ] 6.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record exact results and any environment-blocked command.
+- [x] 6.1 Run focused scheduler, mailbox, composer recovery, snapshot, runner runtime-input, diagnostics replay, and Run/Stream integration suites; record positive, negative, boundary, idempotency, and backend-parity evidence.
+- [x] 6.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record exact results and any environment-blocked command.
 - [ ] 6.3 Archive with `scripts/openspec-archive-seq.ps1`, update roadmap/README/archive index status, merge the proposal branch to the latest `master`, verify the merged result, push, and delete the merged local branch/worktree.

@@ -37,6 +37,8 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
   - 支持默认关闭、可显式开启的有界 primitive retry（sync delegation + async submit）
 - `snapshot` 负责版本化 manifest、digest 校验、strict/compatible 恢复决策与 operation 幂等收敛。
 
+Durable task/attempt workspace binding 与 completion safe-point 审计不改变上述 source ownership：scheduler 仅保存并校验 bounded workspace references，mailbox 继续负责 completion delivery，`core/runner` 继续在既有 safe point 应用 completion reference，snapshot/composer 只做恢复前 reconciliation，replay 只做离线归一化。
+
 所有编排路径通过标准 `action.timeline` / `run.finished` 事件暴露状态。
 
 ## 关键入口
@@ -72,11 +74,13 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - readiness admission 默认关闭（`runtime.readiness.admission.enabled=false`），启用后在 managed Run/Stream 执行前统一准入。
 - workflow graph composability 默认关闭，需显式开启。
 - unified snapshot 默认关闭（`runtime.state.snapshot.enabled=false`），默认恢复模式为 `strict`，兼容窗口默认 `1`。
+- 本审计不新增 runtime 配置键；workspace/completion 关联由输入引用与既有 owner 决定，配置优先级仍为 `env > file > default`。
 
 ## 当前非目标
 
 - 不在编排层引入 MQ/控制面能力（Kafka/NATS/RabbitMQ/UI/RBAC）。
 - 不承诺 exactly-once，仅保证 at-least-once 下的幂等收敛。
+- 不引入 Git/worktree manager、workspace/artifact service、runtime Git/shell、自动 merge/push 或第二套 task/session/coordination state machine；不记录 workspace 内容、completion body、reasoning 或 credentials。
 
 ## 可观测性与验证
 

@@ -187,3 +187,11 @@ R4 多代理共享契约前置门禁（阻断级）：
 ## Session history and replay boundary
 
 Session message history remains source-owned by the embedding host/session adapter. `core/types` provides bounded reference validation; `orchestration/snapshot` validates history/checkpoint context before source-owned restore; `tool/diagnosticsreplay` performs offline read-only normalization. No runtime package introduces a session database, hosted gateway, provider SDK dependency, artifact content service, or second state fact source.
+
+## Durable task/attempt workspace and completion boundary
+
+`orchestration/scheduler` remains the owner of task, attempt, lease, retry/rollover, stale-attempt, and terminal-commit state. `WorkspaceProvenance` is an additive, nullable, reference-only association; scheduler validates correlation but never resolves or mutates workspace contents. `orchestration/mailbox` owns durable completion delivery, while `core/runner` owns completion-reference admission and application at its existing runtime-input safe point. No completion queue or parallel terminal/coordination FSM is permitted.
+
+`orchestration/snapshot` and `orchestration/composer` perform pre-mutation association/integrity reconciliation under existing `strict|compatible` and `compat_window` rules. Replay (`tool/diagnosticsreplay`) is offline and side-effect free. New references/classifications are bounded and privacy-preserving: workspace paths/content, Git metadata, completion bodies, reasoning, credentials, and unbounded payloads are excluded from snapshots, diagnostics, and OTel. Diagnostics continue through `observability/event.RuntimeRecorder` only.
+
+This boundary introduces no runtime configuration keys or hot-update semantics; existing scheduler/mailbox/recovery/snapshot/runtime-input settings keep `env > file > default`. Rollback removes additive references, fixtures, and gates without migration; legacy scheduler, mailbox, snapshot, and Run/Stream behavior remains valid. Git/worktree managers, workspace stores, hosted artifact services, runtime Git/shell execution, automatic merge/push, and parallel task/session state machines remain explicit non-goals.

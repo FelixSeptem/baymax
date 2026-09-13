@@ -94,6 +94,11 @@ func ParseCompletionSafePointOwnershipFixtureJSON(raw []byte) (CompletionSafePoi
 	return f, nil
 }
 
+// EvaluateCompletionSafePointOwnershipFixtureJSON is the offline replay entrypoint.
+func EvaluateCompletionSafePointOwnershipFixtureJSON(raw []byte) (CompletionSafePointOwnershipFixture, error) {
+	return ParseCompletionSafePointOwnershipFixtureJSON(raw)
+}
+
 func schemaCompletionError(msg string) *ValidationError {
 	return &ValidationError{Code: ReasonCodeCompletionSafePointSchemaDrift, Message: msg}
 }

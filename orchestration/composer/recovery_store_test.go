@@ -236,6 +236,18 @@ func TestNormalizeRecoverySnapshotInteractionState(t *testing.T) {
 	}
 }
 
+func TestNormalizeRecoverySnapshotRejectsWorkspaceAssociationMismatch(t *testing.T) {
+	snapshot := testRecoverySnapshot("run-recovery-workspace-checkpoint")
+	snapshot.Scheduler.Tasks[0].Task.WorkspaceProvenance = &types.WorkspaceProvenance{
+		WorkspaceID: "ws", ChangeSetID: "cs", BeforeIntegrity: "before", AfterIntegrity: "after",
+		ProducedByRunID: "run-other", ProducedByStepID: "step",
+	}
+	snapshot.Scheduler.Tasks[0].Attempts[0].WorkspaceProvenance = snapshot.Scheduler.Tasks[0].Task.WorkspaceProvenance
+	if _, err := normalizeRecoverySnapshot(snapshot, snapshot.Run.RunID); err == nil {
+		t.Fatal("expected workspace association mismatch")
+	}
+}
+
 func testRecoverySnapshot(runID string) RecoverySnapshot {
 	now := time.Now()
 	taskID := "task-" + runID

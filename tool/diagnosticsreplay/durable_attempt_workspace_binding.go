@@ -73,6 +73,31 @@ func ParseDurableAttemptWorkspaceBindingFixtureJSON(raw []byte) (DurableAttemptW
 	return f, nil
 }
 
+// EvaluateDurableAttemptWorkspaceBindingFixtureJSON validates and classifies the
+// bounded projection without invoking any runtime, provider, VCS, or workspace APIs.
+func EvaluateDurableAttemptWorkspaceBindingFixtureJSON(raw []byte) (DurableAttemptWorkspaceBindingFixture, error) {
+	f, err := ParseDurableAttemptWorkspaceBindingFixtureJSON(raw)
+	if err != nil {
+		return f, err
+	}
+	for _, c := range f.Cases {
+		if c.Expected == c.Observed || c.Observed == "" {
+			continue
+		}
+		code := ReasonCodeDurableAttemptWorkspaceBindingDrift
+		switch c.Observed {
+		case "stale":
+			code = ReasonCodeDurableAttemptWorkspaceStaleAttemptDrift
+		case "conflict":
+			code = ReasonCodeDurableAttemptWorkspaceAssociationDrift
+		case "missing", "dirty", "drift", "checkpoint_mismatch":
+			code = ReasonCodeDurableAttemptWorkspaceIntegrityDrift
+		}
+		return f, &ValidationError{Code: code, Message: c.Name}
+	}
+	return f, nil
+}
+
 func validateDurableWorkspaceCase(c *DurableAttemptWorkspaceBindingCase) error {
 	c.Name, c.TaskID, c.AttemptID, c.Expected, c.Observed = strings.TrimSpace(c.Name), strings.TrimSpace(c.TaskID), strings.TrimSpace(c.AttemptID), strings.TrimSpace(c.Expected), strings.TrimSpace(c.Observed)
 	if c.Name == "" || c.TaskID == "" || c.AttemptID == "" || c.Expected == "" {

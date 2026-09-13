@@ -138,6 +138,28 @@ func TestStoreSnapshotRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStoreSnapshotRestoreRejectsTerminalWorkspaceDrift(t *testing.T) {
+	store := NewMemoryStore()
+	ctx := context.Background()
+	ws := &types.WorkspaceProvenance{WorkspaceID: "ws", ChangeSetID: "cs", BeforeIntegrity: "before", AfterIntegrity: "after", ProducedByRunID: "run", ProducedByStepID: "step"}
+	if _, err := store.Enqueue(ctx, Task{TaskID: "task", RunID: "run", StepID: "step", WorkspaceProvenance: ws}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := store.Claim(ctx, "worker", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("claim: %v", err)
+	}
+	snap, err := store.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap.Tasks[0].Attempts[0].WorkspaceProvenance = &types.WorkspaceProvenance{WorkspaceID: "other", ChangeSetID: "cs", BeforeIntegrity: "before", AfterIntegrity: "after", ProducedByRunID: "run", ProducedByStepID: "step"}
+	if err := store.Restore(ctx, snap); err == nil {
+		t.Fatal("expected workspace drift rejection")
+	}
+	_ = claimed
+}
+
 func TestFileStoreCorruptSnapshotFailsFast(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corrupt-state.json")
 	content := `{

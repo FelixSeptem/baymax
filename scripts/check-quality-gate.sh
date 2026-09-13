@@ -398,6 +398,12 @@ if ! bash scripts/check-session-history-checkpoint-replay-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] durable attempt/completion replay contract"
+if ! bash scripts/check-durable-attempt-completion-replay-contract.sh; then
+  echo "[quality-gate][durable-attempt-completion-replay-contract] check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

@@ -440,6 +440,9 @@ func normalizeRecoverySnapshot(snapshot RecoverySnapshot, expectedRunID string) 
 			nil,
 		)
 	}
+	if err := reconcileRecoveryWorkspaceBindings(out); err != nil {
+		return RecoverySnapshot{}, err
+	}
 
 	sort.Slice(out.Scheduler.Tasks, func(i, j int) bool {
 		return strings.TrimSpace(out.Scheduler.Tasks[i].Task.TaskID) < strings.TrimSpace(out.Scheduler.Tasks[j].Task.TaskID)
@@ -487,6 +490,32 @@ func normalizeRecoverySnapshot(snapshot RecoverySnapshot, expectedRunID string) 
 		out.Replay.Sequence = 0
 	}
 	return out, nil
+}
+
+func reconcileRecoveryWorkspaceBindings(snapshot RecoverySnapshot) error {
+	for i := range snapshot.Scheduler.Tasks {
+		record := snapshot.Scheduler.Tasks[i]
+		binding := record.Task.WorkspaceProvenance
+		if binding == nil {
+			continue
+		}
+		if err := binding.Validate(); err != nil {
+			return newRecoveryError(RecoveryErrorConflict, "workspace binding is invalid", err)
+		}
+		if runID := strings.TrimSpace(record.Task.RunID); runID != "" && strings.TrimSpace(binding.ProducedByRunID) != runID {
+			return newRecoveryError(RecoveryErrorConflict, "workspace binding run association mismatch", nil)
+		}
+		if stepID := strings.TrimSpace(record.Task.StepID); stepID != "" && strings.TrimSpace(binding.ProducedByStepID) != stepID {
+			return newRecoveryError(RecoveryErrorConflict, "workspace binding step association mismatch", nil)
+		}
+		for j := range record.Attempts {
+			attemptBinding := record.Attempts[j].WorkspaceProvenance
+			if attemptBinding == nil || *attemptBinding != *binding {
+				return newRecoveryError(RecoveryErrorConflict, "workspace binding attempt association mismatch", nil)
+			}
+		}
+	}
+	return nil
 }
 
 func normalizeQueue(queue []string) []string {

@@ -1273,6 +1273,14 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 			return fmt.Errorf("%w: tasks[%d].task is invalid: %v", ErrSnapshotCorrupt, i, err)
 		}
 		record.Task = normalizedTask
+		if wp := record.Task.WorkspaceProvenance; wp != nil {
+			if record.Task.RunID != "" && wp.ProducedByRunID != record.Task.RunID {
+				return fmt.Errorf("%w: tasks[%d].workspace_provenance run association mismatch", ErrSnapshotCorrupt, i)
+			}
+			if record.Task.StepID != "" && wp.ProducedByStepID != record.Task.StepID {
+				return fmt.Errorf("%w: tasks[%d].workspace_provenance step association mismatch", ErrSnapshotCorrupt, i)
+			}
+		}
 
 		currentAttemptID := strings.TrimSpace(record.CurrentAttempt)
 		record.CurrentAttempt = currentAttemptID
@@ -1416,6 +1424,18 @@ func (s *schedulerState) restore(snapshot StoreSnapshot) error {
 		normalized.ErrorLayer = strings.TrimSpace(normalized.ErrorLayer)
 		normalized.OutcomeKey = strings.TrimSpace(normalized.OutcomeKey)
 		normalized.Result = copyMap(normalized.Result)
+		if record := tasks[taskID]; record != nil {
+			attempt, ok := record.attemptByID(attemptID)
+			if !ok {
+				return fmt.Errorf("%w: terminal_commits[%d] references unknown attempt %q", ErrSnapshotCorrupt, i, attemptID)
+			}
+			if normalized.WorkspaceProvenance != nil && !workspaceProvenanceEqual(record.Task.WorkspaceProvenance, normalized.WorkspaceProvenance) {
+				return fmt.Errorf("%w: terminal_commits[%d].workspace_provenance mismatches task", ErrSnapshotCorrupt, i)
+			}
+			if normalized.WorkspaceProvenance != nil && !workspaceProvenanceEqual(attempt.WorkspaceProvenance, normalized.WorkspaceProvenance) {
+				return fmt.Errorf("%w: terminal_commits[%d].workspace_provenance mismatches attempt", ErrSnapshotCorrupt, i)
+			}
+		}
 		terminalCommits[key] = normalized
 	}
 

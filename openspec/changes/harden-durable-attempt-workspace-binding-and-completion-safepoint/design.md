@@ -66,6 +66,20 @@ source-owned runtime-input admission
 next safe point → one Run/Stream-equivalent model decision
 ```
 
+## Ownership Evidence Matrix (Task 1.1)
+
+This is the implementation baseline for the first task. Each owner below is linked to concrete source and test paths; rows marked `gap` identify behavior that later tasks must add and must not be inferred from adjacent coverage.
+
+| Boundary | Source owner | Existing tests | Evidence-backed conclusion |
+| --- | --- | --- | --- |
+| Task/attempt/lease | `orchestration/scheduler/types.go:97,152,164,209`; claim/commit in `orchestration/scheduler/scheduler.go:193,375` | `orchestration/scheduler/store_test.go:23,308,405,853,1129` | Scheduler owns lifecycle, lease, retry, stale-attempt, and terminal commit state. `Task`, `Attempt`, and `TerminalCommit` currently have no workspace binding field (`gap`). |
+| Checkpoint workspace provenance | `core/types/protocol.go:549,589,599,733`; projection in `orchestration/snapshot/protocol.go:33` | `core/types/protocol_test.go:59`; `orchestration/snapshot/protocol_test.go:27,50` | Protocol/checkpoint code owns bounded provenance references and integrity validation, not workspace resolution or mutation. |
+| Scheduler snapshot/restore and composer recovery | `orchestration/scheduler/types.go:441`; `scheduler.go:433,444`; `orchestration/composer/recovery_runtime.go` | `orchestration/scheduler/store_test.go:56,853`; `orchestration/snapshot/contract_test.go:61,95,129`; `orchestration/snapshot/session_history_restore_test.go:11` | Snapshot and recovery owners validate, compare, restore, and preserve idempotency. Binding reconciliation is absent (`gap`). |
+| Mailbox result | `orchestration/mailbox/bridge.go:11,18,54,70,95`; envelope at `orchestration/mailbox/types.go:51` | `orchestration/mailbox/mailbox_test.go:38,178`; `orchestration/invoke/mailbox_bridge_test.go:12,79` | Mailbox owns result correlation/delivery/idempotency and backend persistence; it does not apply runtime input. |
+| Runtime-input safe point | `core/runner/runtime_input.go:72,121,149` | `core/runner/runtime_input_test.go:57,110,132`; `core/runner/runtime_input_parity_test.go:50,105` | `core/runner` owns admission and application at the existing safe point / next-decision boundary, preserving Run/Stream parity. Mailbox-to-safe-point completion translation is not proven (`gap`). |
+
+The matrix deliberately does not assign ownership to a new queue, terminal arbiter, workspace manager, or recovery state machine. Those would contradict the existing source ownership and the proposal's non-goals.
+
 ## Risks / Trade-offs
 
 - **[Risk]** Existing legacy tasks omit workspace references. → Keep all new fields optional and preserve legacy behavior; add explicit “binding absent” fixture coverage.

@@ -4,10 +4,10 @@
 
 ## 1. Baseline Audit and Gap Fixtures
 
-- [ ] 1.1 Record the current scheduler task/attempt/lease, checkpoint workspace provenance, snapshot/recovery, mailbox result, and runtime-input safe-point ownership matrix in the proposal/design evidence; verify every claimed owner is linked to source code and an existing test.
-- [ ] 1.2 Define a bounded `durable_attempt_workspace_binding.v1` fixture schema for absent binding, valid binding, lease rollover, retry reuse/rebind, stale commit, missing/dirty/conflict/drift, checkpoint association, and recovery reconciliation; verify malformed, oversized, and unknown-version inputs fail deterministically.
-- [ ] 1.3 Define a bounded `completion_safe_point_ownership.v1` fixture schema for correlation, duplicate, late timeout, disconnect, recovery, not-applied, and Run/Stream parity; verify raw completion bodies and reasoning content are excluded.
-- [ ] 1.4 Add red tests that demonstrate the current task/attempt workspace gap and completion-to-safe-point ownership gap before any runtime field or API change; verify each test fails for the intended missing contract rather than unrelated setup.
+- [x] 1.1 Record the current scheduler task/attempt/lease, checkpoint workspace provenance, snapshot/recovery, mailbox result, and runtime-input safe-point ownership matrix in the proposal/design evidence; verify every claimed owner is linked to source code and an existing test.
+- [x] 1.2 Define a bounded `durable_attempt_workspace_binding.v1` fixture schema for absent binding, valid binding, lease rollover, retry reuse/rebind, stale commit, missing/dirty/conflict/drift, checkpoint association, and recovery reconciliation; verify malformed, oversized, and unknown-version inputs fail deterministically.
+- [x] 1.3 Define a bounded `completion_safe_point_ownership.v1` fixture schema for correlation, duplicate, late timeout, disconnect, recovery, not-applied, and Run/Stream parity; verify raw completion bodies and reasoning content are excluded.
+- [x] 1.4 Add red tests that demonstrate the current task/attempt workspace gap and completion-to-safe-point ownership gap before any runtime field or API change; verify each test fails for the intended missing contract rather than unrelated setup.
 
 ## 2. Task-Attempt Workspace Binding
 

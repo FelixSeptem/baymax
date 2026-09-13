@@ -33,8 +33,9 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-provider-model-capability-and-credential-preflight-contract`
   - `establish-embedded-host-command-response-and-event-correlation-contract`
   - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
+  - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
 - 进行中：
-  - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（P1 审计提案：task/attempt/workspace binding、lease/retry/recovery 接缝与 completion safe-point ownership；首阶段以 gap fixture、replay 和 gate 证明真实漂移）
+  当前没有 active change。已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 当前没有默认启动的 P0/P1 change。新 change 必须满足本文件的准入规则，并由明确的风险信号或宿主需求触发。
 
@@ -81,9 +82,11 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 候选不是承诺排期。启动前必须先完成现状审计，并在 OpenSpec proposal 中记录 `Why now`、风险、回滚点、文档影响、Example Impact Assessment 和验证命令。
 
-### P1：Durable task-attempt/workspace binding 与 completion safe-point 所有权审计
+### 已归档基线：Durable task-attempt/workspace binding 与 completion safe-point 所有权审计
 
-**触发信号**：checkpoint/snapshot 已具备 workspace provenance 和完整性漂移检测，但 scheduler 的 `Task`/`Attempt`/lease rollover 没有结构化 workspace binding；后台 completion 已分别存在于 mailbox/scheduler 与 runtime-input safe point，却缺少一条被证明的统一 promotion ownership 接缝。该方向先以 gap fixture 验证真实冲突，再决定是否引入最小 contract 增量。
+**交付状态**：已于 2026-09-13 归档为 `138-harden-durable-attempt-workspace-binding-and-completion-safepoint`，并纳入主线基线。
+
+**触发信号**：checkpoint/snapshot 已具备 workspace provenance 和完整性漂移检测，但 scheduler 的 `Task`/`Attempt`/lease rollover 没有结构化 workspace binding；后台 completion 已分别存在于 mailbox/scheduler 与 runtime-input safe point，却缺少一条被证明的统一 promotion ownership 接缝。该方向已通过 gap fixture、replay、contract 和 gate 收口。
 
 **目标**：审计并验证 task/attempt 与 workspace provenance 的关联、retry/lease rollover 隔离、snapshot/recovery integrity reconciliation，以及后台 completion 进入下一模型决策安全点时的 correlation、dedupe、late、disconnect、recovery 和 Run/Stream parity 语义。
 
@@ -124,7 +127,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
 | --- | --- | --- | --- | --- |
 | 已归档基线（137） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 已完成并归档；后续仅在新的可复现 drift 下以增量 change 处理，不重新排期为 P2。 |
-| 首选审计候选（当前 P1） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 显式验证 task/attempt 与 workspace provenance 的关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation；审计后台完成结果进入下一模型决策安全点时的 correlation、dedupe、late/disconnect/recovery 语义 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 代码审计已确认 checkpoint 具备 workspace provenance 和完整性漂移检测，但 scheduler attempt 尚无显式 workspace binding。先以 gap fixture 证明并行、重试或恢复中的真实冲突，再启动 contract 提案；实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
+| 已归档基线（138） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 已完成 task/attempt 与 workspace provenance 关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation，以及后台 completion 的 correlation、dedupe、late/disconnect/recovery 与 Run/Stream parity 验证 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 已通过 gap fixture、contract/replay、shell/PowerShell gate 和文档一致性校验；后续仅在新的可复现 drift 下以增量 change 处理。实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
 | 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow fixture、失败反馈 | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 出现新的真实扩展来源。不得建设 package manager/market，也不得无准入动态执行扩展。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 | 观察候选 | Eval transcript/artifact comparison 与 compaction continuity | baseline/candidate harness、有界 transcript/snapshot artifact 引用；验证 compaction/handoff 前后的 agent/role/team、task/attempt/lease、workspace binding、pending correlated request、objective 与权威 checkpoint 连续性 | OTel/eval/corpus、context handoff、checkpoint/snapshot/artifact refs、diagnostics replay | 现有 eval 无法定位可复现质量回归，或压缩/恢复后出现身份、任务或工作区事实漂移。摘要不得成为新事实源，不持久化 reasoning body；只增加有界引用与比较，不建立 transcript/artifact service。 |

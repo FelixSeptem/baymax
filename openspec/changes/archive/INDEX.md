@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-13 00:29:51
+Updated: 2026-09-13 10:45:49
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -139,3 +139,4 @@ Updated: 2026-09-13 00:29:51
 - 135 -> build-go-agent-loop-framework
 - 136 -> introduce-runtime-steering-and-follow-up-input-contract
 - 137 -> harden-cross-provider-handoff-and-stream-edge-conformance
+- 138 -> harden-durable-attempt-workspace-binding-and-completion-safepoint

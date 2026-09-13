@@ -13,6 +13,18 @@ const RuntimeInputProtocolVersionV1 = "runtime_input.v1"
 // RuntimeInputMaxPayloadBytes bounds content carried by a single input envelope.
 const RuntimeInputMaxPayloadBytes = 16 * 1024
 
+// CompletionReference carries only bounded correlation metadata from a durable
+// completion into the source-owned runtime-input admission path.
+type CompletionReference struct {
+	MessageID      string
+	IdempotencyKey string
+	CorrelationID  string
+	TaskID         string
+	AttemptID      string
+	SessionID      string
+	RunID          string
+}
+
 type RuntimeInputKind string
 
 const (

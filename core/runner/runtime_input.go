@@ -108,6 +108,22 @@ func (e *Engine) AdmitRuntimeInput(input types.RuntimeInputEnvelope) (types.Runt
 	return types.NormalizeRuntimeInputAdmission(input, types.RuntimeInputAdmissionStatusAccepted, types.RuntimeInputReasonAccepted)
 }
 
+// AdmitCompletionReference adapts a durable completion to the existing
+// source-owned follow-up lane. It carries references only; completion bodies
+// remain owned by the mailbox/scheduler path and are never copied here.
+func (e *Engine) AdmitCompletionReference(ref types.CompletionReference) (types.RuntimeInputAdmission, error) {
+	if strings.TrimSpace(ref.MessageID) == "" || strings.TrimSpace(ref.IdempotencyKey) == "" || strings.TrimSpace(ref.RunID) == "" || strings.TrimSpace(ref.SessionID) == "" {
+		return types.RuntimeInputAdmission{}, fmt.Errorf("completion reference requires message, idempotency, run, and session identifiers")
+	}
+	correlation := strings.TrimSpace(ref.CorrelationID)
+	if correlation == "" {
+		correlation = strings.TrimSpace(ref.TaskID)
+	}
+	payload := "completion:" + strings.TrimSpace(ref.MessageID)
+	input := types.RuntimeInputEnvelope{Version: types.RuntimeInputProtocolVersionV1, InputID: strings.TrimSpace(ref.IdempotencyKey), Kind: types.RuntimeInputKindFollowUp, Time: e.now(), SessionID: strings.TrimSpace(ref.SessionID), RunID: strings.TrimSpace(ref.RunID), CausationID: strings.TrimSpace(ref.AttemptID), SourceCorrelation: correlation, ApplyBoundary: types.RuntimeInputApplyBoundaryIdleTerminal, Payload: payload}
+	return e.AdmitRuntimeInput(input)
+}
+
 func runtimeInputRejected(input types.RuntimeInputEnvelope, reason string, err error) (types.RuntimeInputAdmission, error) {
 	admission, normalizeErr := types.NormalizeRuntimeInputAdmission(input, types.RuntimeInputAdmissionStatusRejected, reason)
 	if normalizeErr != nil {

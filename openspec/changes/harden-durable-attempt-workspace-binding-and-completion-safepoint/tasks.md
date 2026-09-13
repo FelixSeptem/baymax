@@ -19,7 +19,7 @@
 
 ## 3. Completion Safe-Point Ownership
 
-- [ ] 3.1 Define the minimal bounded adapter from mailbox/scheduler terminal completion correlation to the existing source-owned runtime-input envelope; verify it does not create a new queue, terminal arbiter, cursor, or Run state machine.
+- [x] 3.1 Define the minimal bounded adapter from mailbox/scheduler terminal completion correlation to the existing source-owned runtime-input envelope; verify it does not create a new queue, terminal arbiter, cursor, or Run state machine.
 - [ ] 3.2 Apply accepted completion input only at the existing next-decision or idle/terminal boundary; verify no active provider, tool, or HITL operation is mutated mid-operation.
 - [ ] 3.3 Reconcile duplicate completion, duplicate promotion, late timeout, terminal conflict, disconnect, backpressure, and not-applied outcomes through existing scheduler and runtime-input classifications; verify the authoritative terminal outcome remains immutable.
 - [ ] 3.4 Persist and restore only bounded pending/applied completion references needed for reconciliation; verify repeated recovery applies at most one logical completion and never resurrects a closed Run.

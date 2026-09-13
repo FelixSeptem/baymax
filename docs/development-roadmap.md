@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-12
+更新时间：2026-09-13
 
 ## 定位
 
@@ -33,8 +33,12 @@ Baymax 主线保持 `library-first + contract-first`：
   - `introduce-provider-model-capability-and-credential-preflight-contract`
   - `establish-embedded-host-command-response-and-event-correlation-contract`
   - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
+- 进行中：
+  - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（P1 审计提案：task/attempt/workspace binding、lease/retry/recovery 接缝与 completion safe-point ownership；首阶段以 gap fixture、replay 和 gate 证明真实漂移）
 - 候选：
   - 当前没有默认启动的 P0/P1 change。新 change 必须满足本文件的准入规则，并由明确的风险信号或宿主需求触发。
+
+`harden-cross-provider-handoff-and-stream-edge-conformance` 已于 2026-09-13 归档并纳入主线基线；其 conformance fixture、replay 与 gate 不再作为当前 P2 候选重复排期。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
@@ -77,7 +81,21 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 候选不是承诺排期。启动前必须先完成现状审计，并在 OpenSpec proposal 中记录 `Why now`、风险、回滚点、文档影响、Example Impact Assessment 和验证命令。
 
-### P2：跨 Provider handoff 与 stream edge conformance
+### P1：Durable task-attempt/workspace binding 与 completion safe-point 所有权审计
+
+**触发信号**：checkpoint/snapshot 已具备 workspace provenance 和完整性漂移检测，但 scheduler 的 `Task`/`Attempt`/lease rollover 没有结构化 workspace binding；后台 completion 已分别存在于 mailbox/scheduler 与 runtime-input safe point，却缺少一条被证明的统一 promotion ownership 接缝。该方向先以 gap fixture 验证真实冲突，再决定是否引入最小 contract 增量。
+
+**目标**：审计并验证 task/attempt 与 workspace provenance 的关联、retry/lease rollover 隔离、snapshot/recovery integrity reconciliation，以及后台 completion 进入下一模型决策安全点时的 correlation、dedupe、late、disconnect、recovery 和 Run/Stream parity 语义。
+
+**必须复用**：scheduler `Task`/`Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder`、现有 terminal outcome 与 A2A correlation。
+
+**第一阶段交付**：只新增 bounded gap fixture、replay 分类、必要的 contract/gate 测试和审计文档；只有 fixture 证明 lease rollover、retry 或 recovery 会误用 workspace，或 completion 会丢失/重复 promotion，才进入最小运行时字段/API 变更。
+
+**明确不做**：Git/worktree manager、runtime 直接执行 Git/shell、hosted workspace/artifact service、自动 merge/push、第二套 task/session/coordination 状态机，或复制外部项目的 daemon thread、`shell=True`、固定轮询和非事务 worktree index。
+
+**Example Impact Assessment（立项时）**：`无需示例变更（附理由）`。首阶段只验证 scheduler、recovery、mailbox、runtime-input 接缝，不修改 `examples/agent-modes`；若后续确需示例变化，必须先完成 `MATRIX.md` 与对应模式 README 的文档基线。
+
+### 已归档基线：跨 Provider handoff 与 stream edge conformance
 
 **触发信号**：多 Provider、fallback、context handoff 与 tool-result feedback 已成为主线能力，但 OpenAI、Anthropic、Gemini 的 tool-call/thinking/usage/abort/Unicode/空内容边界仍缺少一份统一、可回放、可阻断的 conformance matrix。随着 embedded host 与运行中输入合同落地，这些边界漂移会直接暴露给宿主，具备现在收口的风险信号。
 
@@ -101,8 +119,8 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 | 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
 | --- | --- | --- | --- | --- |
-| 首选条件候选（当前 P2） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 多 Provider 主线缺少统一 conformance matrix，且边界漂移已会暴露给 embedded host。优先补测试、fixture 和 gate，不扩张 provider SDK 边界。 |
-| 首选审计候选（下一方向 P1） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 显式验证 task/attempt 与 workspace provenance 的关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation；审计后台完成结果进入下一模型决策安全点时的 correlation、dedupe、late/disconnect/recovery 语义 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 代码审计已确认 checkpoint 具备 workspace provenance 和完整性漂移检测，但 scheduler attempt 尚无显式 workspace binding。先以 gap fixture 证明并行、重试或恢复中的真实冲突，再启动 contract 提案；实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
+| 已归档基线（137） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 已完成并归档；后续仅在新的可复现 drift 下以增量 change 处理，不重新排期为 P2。 |
+| 首选审计候选（当前 P1） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 显式验证 task/attempt 与 workspace provenance 的关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation；审计后台完成结果进入下一模型决策安全点时的 correlation、dedupe、late/disconnect/recovery 语义 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 代码审计已确认 checkpoint 具备 workspace provenance 和完整性漂移检测，但 scheduler attempt 尚无显式 workspace binding。先以 gap fixture 证明并行、重试或恢复中的真实冲突，再启动 contract 提案；实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
 | 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow fixture、失败反馈 | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 出现新的真实扩展来源。不得建设 package manager/market，也不得无准入动态执行扩展。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 | 观察候选 | Eval transcript/artifact comparison 与 compaction continuity | baseline/candidate harness、有界 transcript/snapshot artifact 引用；验证 compaction/handoff 前后的 agent/role/team、task/attempt/lease、workspace binding、pending correlated request、objective 与权威 checkpoint 连续性 | OTel/eval/corpus、context handoff、checkpoint/snapshot/artifact refs、diagnostics replay | 现有 eval 无法定位可复现质量回归，或压缩/恢复后出现身份、任务或工作区事实漂移。摘要不得成为新事实源，不持久化 reasoning body；只增加有界引用与比较，不建立 transcript/artifact service。 |
@@ -111,7 +129,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 1. active Run control、命令关联、JSONL framing、output integrity、event backpressure、基础 HITL bridge 与 steering/follow-up 已归档；后续只允许在既有 owner 下验证 request ID、approve/reject、timeout、duplicate、late response 与权威终态一致性，不抽取新的通用 coordination FSM。
 2. 跨 Provider conformance 采用 fixture/test/gate-first，只在可复现 drift 下最小修正 `model/<provider>`，不先建设新的共享路由或 wire abstraction。
-3. 当前 P2 归档后，下一审计优先验证 task/attempt 到 workspace provenance 的接缝；只有 gap fixture 证明 lease rollover、重试或恢复会误用 workspace 时，才升级为 OpenSpec change。后台完成通知作为同一 owner 审计的次级切面，优先复用 mailbox 与 runtime-input safe point。
+3. 跨 Provider conformance 已归档；下一审计优先验证 task/attempt 到 workspace provenance 的接缝。只有 gap fixture 证明 lease rollover、重试或恢复会误用 workspace，或后台 completion 会丢失/重复 promotion 时，才升级为 OpenSpec change；后台完成通知作为同一 owner 审计的次级切面，优先复用 mailbox 与 runtime-input safe point。
 4. Eval continuity 只验证有界事实和引用在 compaction/handoff/recovery 前后的确定性，不保存 raw reasoning，也不把模型摘要提升为 task/session/workspace 的事实源。
 5. Extension、Eval 方向继续采用需求触发，不因外部项目存在同名能力而自动立项；`learn-claude-code` 的 daemon thread、`shell=True`、JSON/JSONL 双写、轮询认领和非事务 worktree index 只作为反例，不进入生产基线。
 6. Pi 的 lane/register/ledger、experimental CBOR protocol、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不成为 Baymax 默认公共模型，也不进入近期备选。

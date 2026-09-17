@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-13
+更新时间：2026-09-17
 
 ## 定位
 
@@ -38,14 +38,14 @@ Baymax 主线保持 `library-first + contract-first`：
   - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  - 当前无 active change；`Model catalog 与本地模型路由增量`、`Eval transcript/artifact comparison 与 compaction continuity` 继续保持观察，后续仍需满足各自触发条件。
+  - 观察候选：`Provider 结构化上下文投影与 Prompt Cache 可观测性`、`预算感知派生上下文投影`、`Model catalog 与本地模型路由增量`。三者均需满足各自触发条件，不因外部项目存在同名能力而自动立项。
 
-`harden-cross-provider-handoff-and-stream-edge-conformance` 已于 2026-09-13 归档并纳入主线基线；其 conformance fixture、replay 与 gate 不再作为当前 P2 候选重复排期。
+`harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
-  - 无。
+  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`：作为归档 139 的离线 Eval 收尾，proposal/design/spec/tasks 已起草，实施尚未开始；范围严格限定为首错归因、轨迹前缀决策边界、bounded evidence、review-only feedback association 与 fixture/replay/gate，不修改 runtime loop 或示例语义。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -59,14 +59,14 @@ Baymax 主线保持 `library-first + contract-first`：
 
 | 域 | 已交付基线 | 后续约束 |
 | --- | --- | --- |
-| Runtime 与 Protocol | Run/Stream、Agent Runtime Protocol、capability/context/admission、checkpoint/workspace provenance、权威终态 | Run/Stream 保持语义等价；执行、恢复和排队仍由 source runtime 拥有。 |
+| Runtime 与 Protocol | Run/Stream、Agent Runtime Protocol、capability/context/admission、ReAct plan notebook、checkpoint/workspace provenance、权威终态 | Run/Stream 保持语义等价；执行、计划、恢复和排队仍由各自 source runtime owner 拥有。 |
 | Realtime、Host 与 HITL | interrupt/resume、durable stream binding、cursor、catch-up/live-tail、terminal recovery、embedded host command/event correlation、HITL reverse request、steering/follow-up | 不创建第二套 event ordering、cursor、pending、输入队列或终态状态机。 |
 | Tool、MCP 与 Security | 本地工具生命周期、MCP profiles、sandbox isolation/egress、allowlist、policy precedence | 工具和扩展不得绕过 policy、sandbox 或 `RuntimeRecorder`。 |
-| Context 与 Memory | Context Assembler、压缩生产治理、压缩 handoff、memory SPI、scope/search/lifecycle | `context/*` 不直连 provider SDK；snapshot 保持唯一事实源。 |
+| Context 与 Memory | Context Assembler、reference-first、task-aware tail recap、压缩生产治理、压缩 handoff、memory SPI、scope/search/lifecycle | `context/*` 不直连 provider SDK；recap/status 只能是 source-owned facts 的有界派生投影，snapshot 保持唯一事实源。 |
 | Orchestration | Workflow、Teams、A2A、Scheduler、Mailbox、task board、recovery | 不以新 change 建立平台化调度或统一多代理拓扑。 |
 | Config、Readiness 与 Diagnostics | `env > file > default`、fail-fast、热更新原子回滚、readiness/admission、diagnostics replay | QueryRuns 和诊断 schema 仅 additive + nullable + default。 |
 | Extension 与 Provider | extension lifecycle/resource resolution、adapter manifest/capability、静态 provider/model catalog、credential preflight | Provider 细节在 `model/<provider>`；不引入远程目录、credential store 或扩展市场。 |
-| Evaluation 与 Gates | OTel/eval、corpus/badcase/experiment、semantic/performance/docs/contract gates | 评测和观测不演化为托管控制面。 |
+| Evaluation 与 Gates | OTel/eval、corpus/Badcase/experiment、review-only feedback、continuity comparison、semantic/performance/docs/contract gates | 评测和观测不演化为托管控制面；反馈不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置或 gate。 |
 
 State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。
 
@@ -122,28 +122,69 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 已归档的嵌入式宿主接缝、HITL reverse request 与 steering/follow-up 合同作为本候选的宿主侧前置基线，不再以新提案重复定义。完整对照、证据基线和不吸收项见 `docs/pi-agent-comparison-and-adoption-study.md`。
 
+### 优先审计候选：Eval 首错归因、轨迹前缀决策边界与证据化改进建议
+
+**校准事实**：现有 evaluation owner 已覆盖 corpus、Badcase、experiment/shard metric、comparison、review-only feedback 与 continuity comparison，并已证明 compaction/handoff/snapshot/recovery 前后的 bounded reference continuity；当前缺口不是再建一套 transcript 或 artifact 系统，而是 Badcase 仍主要描述最终结果，尚不能结构化表达“第一次从可接受轨迹偏离发生在哪里、当时允许或禁止什么动作、结论由哪些已有证据支持”。
+
+**目标**：在既有 eval contract 下增量验证 `first error step/kind`、`root cause owner`、`primary/secondary cause`、`evidence refs`、`recoverability/confidence`，以及轨迹前缀上的 `acceptable/forbidden actions`、`required evidence` 和安全约束。Memory retrieval/application 的命中、误用、遗漏和作用域错误作为同一 corpus 的场景覆盖，不另建 memory evaluation 提案或新的 memory 事实源。
+
+**第一阶段交付**：先增加 bounded fixture、离线 replay 分类、contract test 和 gate，证明现有结果级 Badcase 无法稳定定位首个偏离或下一动作边界；在证据成立前不修改 runtime loop。证据引用必须有界、可重放并指向既有 event/checkpoint/artifact reference，不持久化 raw reasoning、完整 transcript body 或无界工具输出。
+
+**反馈边界**：改进建议保持 review-only，只能形成带 evidence 的候选建议；不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置、测试、gate，也不得自动提交、合并或推送代码。
+
+**Example Impact Assessment（立项时）**：`无需示例变更（附理由）`。首阶段只扩展离线 eval fixture/replay/gate，不改变 `examples/agent-modes` 的 runtime path 或可观察语义；若后续 contract 变更需要真实模式演示，必须重新评估并遵循文档先行规则。
+
+### 观察候选：Provider 结构化上下文投影与 Prompt Cache 可观测性
+
+**校准事实**：跨 Provider handoff 与 stream edge conformance 已归档；后续不再泛化建设 provider 共享协议。下一步只审计 `ModelRequest.Input`、`Messages`、`ToolResult` 到真实 SDK request 的投影是否完整保留 system/user/assistant/tool role、Skill fragment、task-aware tail recap、tool-result correlation、稳定前缀与工具顺序，以及 Run/Stream parity。现有 `TokenUsage` 尚未表达 cached input、cache read 或 cache write，因此任何 cache usage 字段都只能按诊断兼容规则演进。
+
+**启动条件与第一阶段交付**：先使用真实 SDK 形状的版本化 fixture、replay 与 benchmark 证明消息语义丢失、顺序漂移，或 prompt cache 成本/P95 问题已成为稳定瓶颈。只有 fixture 证明 adapter drift，才最小修改 `model/<provider>` 或 `model/toolcontract`；cache usage 只能 additive + nullable + default，并通过 `RuntimeRecorder` 单写入口暴露。
+
+**必须复用**：`model/<provider>`、`model/toolcontract`、context handoff、既有 provider conformance、Run/Stream parity 与 `RuntimeRecorder`。不得新建通用 provider wire protocol、gateway、credential store 或全局路由状态机，不得在 `context/*` 引入 Provider 官方 SDK。
+
+**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。fixture/replay/benchmark 不改变示例 runtime path；若后续真实 adapter 修复改变示例的 expected markers 或 usage 输出，立项时必须重新评估并先更新 `MATRIX.md` 与对应 README。
+
+### 观察候选：预算感知派生上下文投影
+
+**校准事实**：Baymax 已有 ReAct iteration/tool-call limit、`runtime.react.on_budget_exhausted`、runtime budget admission、scheduler `ParentRemainingBudget`、ReAct Plan Notebook 与 task-aware tail recap。缺口不是预算 source-of-truth 或新的任务状态机，而是模型决策上下文尚缺少由这些 owner 计算出的、有界只读 remaining-budget 投影，也缺少“预算增加是否改善完成质量、还是只增加重复循环”的稳定评测。
+
+**第一阶段交付**：只建立 benchmark、fixture 与 replay，比较 completion rate、iteration/tool-call usage、token/latency、repeated-loop rate、Run/Stream parity，以及 snapshot/recovery 后预算投影的确定性重算。只有数据证明模型可见预算事实能稳定改善决策质量，才讨论策略提示或 tail projection 的最小 contract；不得先引入 adaptive budget 策略。
+
+**所有权边界**：预算事实继续由 LoopPolicy/ReAct counters、budget admission 和 scheduler parent budget 各自拥有；Plan Notebook 继续只拥有 plan lifecycle；context tail 只接收 `source-owned facts -> bounded/read-only/nullable derived projection`。不得建立第二预算账本、第二 task/plan/terminal 状态机，也不得把模型生成的剩余预算写回事实源。
+
+**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。首阶段仅增加 benchmark/fixture/replay，不改变 agent-mode 配置、runtime path 或 expected markers；若后续投影进入示例上下文，必须重新评估并遵循文档先行规则。
+
 ## 后续提案备选池（外部项目对照增量）
 
-同域收口声明：Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。Context organization 语义能力同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 Context JIT Organization 增量吸收；生产可用治理同域需求（压缩质量门控、冷存检索/清理、一致性回放、强门禁）统一在 a69 吸收，不再新增平行 context 压缩提案。Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
+备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `bojieli/ai-agent-book@c8963443736004412692b1af7706c89096d46e4e`，只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
-备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求或可复现风险触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。外部项目的同名能力必须先路由到本表已有 owner：`learn-claude-code` 的 context compact/identity reinjection 进入 Eval 与 context continuity 候选，background completion 与 task/worktree isolation 进入 Durable operation 审计，team request-response 进入既有 Host/HITL/runtime-input conformance；不得据此复制 agent loop、task board、mailbox、skill loader、worktree manager 或平行状态机。
+### 同域演进路由
+
+- **Eval**：continuity comparison 已归档；下一质量方向进入既有 corpus/Badcase/experiment/feedback owner，增量验证首错归因、轨迹前缀决策边界和 evidence-linked review-only suggestion。Memory application 作为 corpus 场景并入，不单独立项。
+- **Provider**：结构化上下文与 prompt cache 进入归档 137 的增量 owner，先验证真实 SDK fixture；只有 drift 成立才最小修改 `model/<provider>`，不抽象新的共享 wire protocol。
+- **Context/Budget**：预算可见性复用 ReAct counters、budget admission、scheduler parent budget、Plan Notebook 与 task-aware tail recap，只允许 source-owned facts 的有界只读派生投影，不创建平行账本或状态机。
+- **Tool discovery**：按需 tool schema 投影复用现有 Skill loader、MCP、manifest/capability、allowlist 与 sandbox；只有工具规模、schema token 或选择准确率成为稳定瓶颈时才启动，不建设市场、动态下载或 credential store。
+- **Realtime/Host**：事件、中断恢复、HITL、steering/follow-up、completion promotion 与 request correlation 继续由既有 owner 演进，不抽取第二套 event ordering、pending、输入队列、协调或终态控制面。
 
 | 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
 | --- | --- | --- | --- | --- |
 | 已归档基线（137） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 已完成并归档；后续仅在新的可复现 drift 下以增量 change 处理，不重新排期为 P2。 |
 | 已归档基线（138） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 已完成 task/attempt 与 workspace provenance 关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation，以及后台 completion 的 correlation、dedupe、late/disconnect/recovery 与 Run/Stream parity 验证 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 已通过 gap fixture、contract/replay、shell/PowerShell gate 和文档一致性校验；后续仅在新的可复现 drift 下以增量 change 处理。实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
-| 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow fixture、失败反馈 | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 出现新的真实扩展来源。不得建设 package manager/market，也不得无准入动态执行扩展。 |
+| 已归档基线（139） | Eval continuity comparison 与 replay contract | bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较 | OTel/eval/corpus、context handoff、checkpoint/snapshot refs、diagnostics replay | 已完成并归档；后续质量增量进入首错归因与轨迹边界候选，不重复建设 transcript/artifact service。 |
+| 已归档基线（140） | External extension authoring conformance | 离线 authoring conformance、版本化 fixture、replay 与双平台 gate | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 已完成并归档；未来仅在新的真实扩展来源暴露新增 drift 时，以既有 owner 的增量 change 处理。 |
+| 观察候选 | Provider 结构化上下文投影与 Prompt Cache 可观测性 | 真实 SDK message/tool-result projection、stable prefix/tool order、cache usage 与 Run/Stream parity | `model/<provider>`、`model/toolcontract`、context handoff、provider conformance、`RuntimeRecorder` | fixture 证明 role/message/tool-result 语义丢失或顺序漂移，或 cache 成本/P95 成为稳定瓶颈。cache 字段仅 additive + nullable + default。 |
+| 观察候选 | 预算感知派生上下文投影 | remaining iteration/tool/time/cost 的有界只读投影与预算利用 benchmark | LoopPolicy/ReAct counters、budget admission、scheduler parent budget、Plan Notebook、context tail | 更高预算不能改善完成质量，或重复循环/提前饱和可稳定复现。先 benchmark，不新建预算账本、任务状态机或 adaptive strategy。 |
+| 条件候选 | 本地/宿主准入后的按需 Tool Schema 投影 | 在已准入工具集合内按需选择并投影 schema，减少无效上下文占用 | Skill loader、MCP、manifest/capability、allowlist、sandbox、既有 tool lifecycle | 工具数量、schema token 或工具选择准确率形成稳定瓶颈。不得动态下载工具、绕过准入，或建设 marketplace/credential store。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
-| 观察候选 | Eval transcript/artifact comparison 与 compaction continuity | baseline/candidate harness、有界 transcript/snapshot artifact 引用；验证 compaction/handoff 前后的 agent/role/team、task/attempt/lease、workspace binding、pending correlated request、objective 与权威 checkpoint 连续性 | OTel/eval/corpus、context handoff、checkpoint/snapshot/artifact refs、diagnostics replay | 现有 eval 无法定位可复现质量回归，或压缩/恢复后出现身份、任务或工作区事实漂移。摘要不得成为新事实源，不持久化 reasoning body；只增加有界引用与比较，不建立 transcript/artifact service。 |
 
 备选池合并与排序规则：
 
-1. active Run control、命令关联、JSONL framing、output integrity、event backpressure、基础 HITL bridge 与 steering/follow-up 已归档；后续只允许在既有 owner 下验证 request ID、approve/reject、timeout、duplicate、late response 与权威终态一致性，不抽取新的通用 coordination FSM。
-2. 跨 Provider conformance 采用 fixture/test/gate-first，只在可复现 drift 下最小修正 `model/<provider>`，不先建设新的共享路由或 wire abstraction。
-3. 跨 Provider conformance 已归档；下一审计优先验证 task/attempt 到 workspace provenance 的接缝。只有 gap fixture 证明 lease rollover、重试或恢复会误用 workspace，或后台 completion 会丢失/重复 promotion 时，才升级为 OpenSpec change；后台完成通知作为同一 owner 审计的次级切面，优先复用 mailbox 与 runtime-input safe point。
-4. Eval continuity 只验证有界事实和引用在 compaction/handoff/recovery 前后的确定性，不保存 raw reasoning，也不把模型摘要提升为 task/session/workspace 的事实源。
-5. Extension、Eval 方向继续采用需求触发，不因外部项目存在同名能力而自动立项；`learn-claude-code` 的 daemon thread、`shell=True`、JSON/JSONL 双写、轮询认领和非事务 worktree index 只作为反例，不进入生产基线。
-6. Pi 的 lane/register/ledger、experimental CBOR protocol、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不成为 Baymax 默认公共模型，也不进入近期备选。
+1. **Eval 首错归因与轨迹边界优先审计**：它可以 fixture-only 起步、运行时风险最低，并为 Provider、Budget、Memory application 等后续方向提供统一的质量归因证据；在 gap 被证明前不改 runtime。
+2. **Provider 结构化上下文与 cache 可观测性次序跟进**：真实 SDK fixture/replay/benchmark 先行，只在 role、tool-result、ordering、usage 或 Run/Stream drift 成立时最小修复既有 adapter。
+3. **预算感知投影先评测后策略**：先比较完成率、预算利用、重复循环、token/latency 与 recovery 重算；没有稳定收益不得引入模型提示、adaptive budget 或新的状态持久化。
+4. **Tool schema-on-demand 只由规模瓶颈触发**：保持本地/宿主准入、安全上界和确定性选择，工具规模、schema token 或准确率没有形成稳定瓶颈时不立项。
+5. **Memory application 与 evidence-linked suggestion 并入 Eval**：memory retrieval/application 作为 corpus 场景，建议保持 review-only；不拆分独立反馈控制面，也不允许自动自改代码、测试或 gate。
+6. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
 
 ### 需求触发观察项
 
@@ -151,10 +192,12 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 | 方向 | 触发信号 | 首要边界 |
 | --- | --- | --- |
+| Eval 首错归因与轨迹前缀决策边界 | Badcase 只能给出最终失败，无法定位首个偏离、primary/secondary cause、责任 owner 或下一步 acceptable/forbidden action | 复用既有 eval/continuity owner；只记录 bounded evidence refs，不保存 raw reasoning，改进建议保持 review-only。 |
+| Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract` 和归档 137；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
+| 预算感知派生上下文投影 | 更高 iteration/tool-call/token/time 预算不能改善质量，重复循环或提前饱和可复现，或 recovery 后剩余预算表达不一致 | 复用 ReAct/budget/scheduler/Plan Notebook/context tail owner；只允许 source-owned facts 的有界只读投影，先 benchmark 后策略。 |
+| 本地/宿主准入后的按需 Tool Schema 投影 | 工具数量、schema token 占用或工具选择准确率达到稳定瓶颈 | 只在已准入工具集合内投影；复用 Skill loader/MCP/manifest/allowlist/sandbox，不建设市场、下载器或 credential store。 |
 | 远程 model catalog 或本地模型路由 | 静态/宿主注入目录不足以支持明确的路由需求 | 以本页“Model catalog 与本地模型路由增量”为同一候选，不创建平行提案；不在 `context/*` 引入 provider SDK，不接入 credential store。 |
-| 运行时成本或延迟治理增量 | 成本或 P95 抖动成为稳定主线瓶颈 | 复用 operation profile、timeout resolution、budget admission 与既有诊断字段。 |
-| 评测、tracing 或 compaction continuity 增量 | 跨后端字段解释不一致、出现可复现质量回归，或 compaction/handoff/recovery 后 identity/task/workspace/pending-request 事实漂移 | 以本页“Eval transcript/artifact comparison 与 compaction continuity”为同一候选；复用 OTel/eval/corpus、context handoff、checkpoint/snapshot 和 bounded refs，不引入评测控制面或第二事实源。 |
-| 外部 extension 生态增量 | 新的真实扩展来源、供应链审计或隔离需求超出现有 lifecycle contract | 复用 manifest/capability/allowlist；不建设 package manager 或市场。 |
+| 外部 extension 生态增量 | 归档 140 之后出现新的真实扩展来源，且供应链审计、失败反馈或隔离需求超出现有 lifecycle contract | 只做 existing authoring conformance owner 的增量；复用 manifest/capability/allowlist/sandbox，不建设 package manager、marketplace 或动态下载执行链。 |
 
 ## 示例状态
 

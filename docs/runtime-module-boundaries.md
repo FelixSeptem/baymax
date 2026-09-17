@@ -63,6 +63,7 @@
   - `core/runner` 只消费 canonical values 并拥有 step、terminal 与 Run/Stream parity；禁止抽取新的共享 wire protocol 或把 Provider SDK 引入 `context/*`。
 - `extension`
   - transport-neutral descriptor、source precedence、digest provenance 与 capability/admission 合同
+  - external authoring conformance 仅消费 extension/adapter/policy/sandbox 的 source-owned 投影；不执行不受信任源码、不拥有第二套生命周期或终态状态机
   - bounded Hook/tool execution、turn snapshot/save-point、activation generation/reload/rollback
   - 不直接写 diagnostics；生命周期事件必须经 `observability/event.RuntimeRecorder`
 - `adapter/scaffold`
@@ -118,6 +119,7 @@
 - A2A 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Adapter 契约模块直接写 `runtime/diagnostics` 存储（必须经标准事件/门禁链路收口）
 - Extension 不得绕过 `runtime/config` readiness/policy、sandbox/allowlist 或 `RuntimeRecorder` 单写入口
+- External authoring conformance 只能离线验证既有 owner；fixture/replay 不得访问网络、写入运行时诊断或修改 workspace/source state
 - Scheduler 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - Composer 模块直接写 `runtime/diagnostics` 存储（必须经 `observability/event.RuntimeRecorder` 单写入口）
 - 将 peer 协作语义下沉到 `mcp/*`（A2A/MCP 职责重叠）

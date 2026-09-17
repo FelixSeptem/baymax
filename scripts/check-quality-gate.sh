@@ -356,6 +356,12 @@ if ! bash scripts/check-extension-lifecycle-contract-replay.sh; then
   exit 1
 fi
 
+echo "[quality-gate] external extension authoring conformance"
+if ! bash scripts/check-external-extension-authoring-conformance.sh; then
+  echo "[quality-gate][external-extension-authoring] external extension authoring conformance failed"
+  exit 1
+fi
+
 echo "[quality-gate] sandbox adapter conformance contract"
 if ! bash scripts/check-sandbox-adapter-conformance-contract.sh; then
   echo "[quality-gate][sandbox-adapter-conformance-contract] sandbox adapter conformance contract check failed"

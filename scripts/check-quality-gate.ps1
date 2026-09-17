@@ -781,6 +781,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-extension-lifecycle-contract-replay.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] external extension authoring conformance"
+        Command   = { pwsh -File scripts/check-external-extension-authoring-conformance.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] adapter scaffold drift"
         Command   = { pwsh -File scripts/check-adapter-scaffold-drift.ps1 }
     }

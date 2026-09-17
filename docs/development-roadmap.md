@@ -20,7 +20,7 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-13：
+截至 2026-09-17：
 
 - 已归档：
   - `introduce-runtime-steering-and-follow-up-input-contract`
@@ -35,13 +35,17 @@ Baymax 主线保持 `library-first + contract-first`：
   - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
   - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
   - `establish-eval-continuity-comparison-and-replay-contract`（bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较，以及 fixture/replay/contract/gate 已收口）
+  - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  - 当前无 active change；其余候选继续保持观察，除非出现新的可复现风险或宿主需求。
+  - 当前无 active change；`Model catalog 与本地模型路由增量`、`Eval transcript/artifact comparison 与 compaction continuity` 继续保持观察，后续仍需满足各自触发条件。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance` 已于 2026-09-13 归档并纳入主线基线；其 conformance fixture、replay 与 gate 不再作为当前 P2 候选重复排期。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
+
+- 进行中：
+  - 无。
 
 ## 版本阶段口径（延续 0.x）
 

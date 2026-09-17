@@ -187,6 +187,14 @@ func ErrorCode(err error) string {
 	return "extension.error"
 }
 
+// ErrorField extracts the stable field associated with an extension contract error.
+func ErrorField(err error) string {
+	if e, ok := err.(*contractError); ok {
+		return e.field
+	}
+	return ""
+}
+
 // ValidateDescriptor validates and normalizes an extension descriptor.
 func ValidateDescriptor(in Descriptor) (Descriptor, error) {
 	d := normalizeDescriptor(in)

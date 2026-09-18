@@ -13,11 +13,11 @@
 
 ## 3. Evaluation Associations and Replay
 
-- [ ] 3.1 Add additive + nullable attribution references to Badcase, experiment result and feedback recommendation contracts while preserving historical JSON/default behavior; verify archived payload fixtures retain existing reproduction, aggregation, continuity and approval semantics.
-- [ ] 3.2 Validate corpus item, Badcase, experiment, run and first-error-step correlation without rewriting either source record; verify matching associations succeed and mismatches emit deterministic attribution-correlation drift.
-- [ ] 3.3 Keep evidence-linked feedback review-only and non-actionable; verify approved recommendations cannot mutate prompt, Skill, tool, policy, memory, runtime configuration, code, tests, gates or execution decisions.
-- [ ] 3.4 Implement `eval_first_error_attribution.v1` parsing and evaluation in `tool/diagnosticsreplay` by reusing the shared pure contract; verify success, drift, malformed, privacy and memory-application fixtures pass without live connectivity or side effects.
-- [ ] 3.5 Run mixed historical and new replay fixtures and verify all archived fixture generations remain parseable, deterministic and backward compatible with no aggregate or taxonomy regression.
+- [x] 3.1 Add additive + nullable attribution references to Badcase, experiment result and feedback recommendation contracts while preserving historical JSON/default behavior; verify archived payload fixtures retain existing reproduction, aggregation, continuity and approval semantics.
+- [x] 3.2 Validate corpus item, Badcase, experiment, run and first-error-step correlation without rewriting either source record; verify matching associations succeed and mismatches emit deterministic attribution-correlation drift.
+- [x] 3.3 Keep evidence-linked feedback review-only and non-actionable; verify approved recommendations cannot mutate prompt, Skill, tool, policy, memory, runtime configuration, code, tests, gates or execution decisions.
+- [x] 3.4 Implement `eval_first_error_attribution.v1` parsing and evaluation in `tool/diagnosticsreplay` by reusing the shared pure contract; verify success, drift, malformed, privacy and memory-application fixtures pass without live connectivity or side effects.
+- [x] 3.5 Run mixed historical and new replay fixtures and verify all archived fixture generations remain parseable, deterministic and backward compatible with no aggregate or taxonomy regression.
 
 ## 4. Contract Gates and Documentation
 

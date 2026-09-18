@@ -64,13 +64,15 @@ type Correlation struct {
 }
 
 type Badcase struct {
-	ID             string      `json:"id"`
-	Category       string      `json:"category"`
-	Reproduction   Reference   `json:"reproduction"`
-	Correlation    Correlation `json:"correlation,omitempty"`
-	Status         string      `json:"status"`
-	ExpectedDigest string      `json:"expected_digest,omitempty"`
-	ObservedDigest string      `json:"observed_digest,omitempty"`
+	ID                    string                          `json:"id"`
+	Category              string                          `json:"category"`
+	Reproduction          Reference                       `json:"reproduction"`
+	Correlation           Correlation                     `json:"correlation,omitempty"`
+	Status                string                          `json:"status"`
+	ExpectedDigest        string                          `json:"expected_digest,omitempty"`
+	ObservedDigest        string                          `json:"observed_digest,omitempty"`
+	CorpusItemID          string                          `json:"corpus_item_id,omitempty"`
+	FirstErrorAttribution *FirstErrorAttributionReference `json:"first_error_attribution,omitempty"`
 }
 
 type ShardMetric struct {
@@ -82,37 +84,42 @@ type ShardMetric struct {
 }
 
 type Experiment struct {
-	Version       string                `json:"version"`
-	ID            string                `json:"id"`
-	CorpusVersion string                `json:"corpus_version"`
-	Rubric        Rubric                `json:"rubric"`
-	RunBatch      string                `json:"run_batch"`
-	ExecutionMode string                `json:"execution_mode"`
-	Shards        []ShardMetric         `json:"shards"`
-	Continuity    *ContinuityComparison `json:"continuity,omitempty"`
+	Version               string                          `json:"version"`
+	ID                    string                          `json:"id"`
+	CorpusVersion         string                          `json:"corpus_version"`
+	Rubric                Rubric                          `json:"rubric"`
+	RunBatch              string                          `json:"run_batch"`
+	ExecutionMode         string                          `json:"execution_mode"`
+	Shards                []ShardMetric                   `json:"shards"`
+	Continuity            *ContinuityComparison           `json:"continuity,omitempty"`
+	FirstErrorAttribution *FirstErrorAttributionReference `json:"first_error_attribution,omitempty"`
 }
 
 type ComparisonResult struct {
-	ExperimentID   string `json:"experiment_id"`
-	CorpusVersion  string `json:"corpus_version"`
-	RubricDigest   string `json:"rubric_digest"`
-	ExecutionMode  string `json:"execution_mode"`
-	Passed         int    `json:"passed"`
-	Total          int    `json:"total"`
-	Digest         string `json:"digest"`
-	ContinuityID   string `json:"continuity_id,omitempty"`
-	ContinuityPass *bool  `json:"continuity_pass,omitempty"`
+	ExperimentID          string                          `json:"experiment_id"`
+	CorpusVersion         string                          `json:"corpus_version"`
+	RubricDigest          string                          `json:"rubric_digest"`
+	ExecutionMode         string                          `json:"execution_mode"`
+	Passed                int                             `json:"passed"`
+	Total                 int                             `json:"total"`
+	Digest                string                          `json:"digest"`
+	ContinuityID          string                          `json:"continuity_id,omitempty"`
+	ContinuityPass        *bool                           `json:"continuity_pass,omitempty"`
+	FirstErrorAttribution *FirstErrorAttributionReference `json:"first_error_attribution,omitempty"`
 }
 
 type FeedbackRecommendation struct {
-	Version         string `json:"version"`
-	ID              string `json:"id"`
-	ExperimentID    string `json:"experiment_id,omitempty"`
-	BadcaseID       string `json:"badcase_id,omitempty"`
-	ReviewerID      string `json:"reviewer_id"`
-	DecisionContext string `json:"decision_context"`
-	Status          string `json:"status"`
-	Recommendation  string `json:"recommendation"`
+	Version               string                          `json:"version"`
+	ID                    string                          `json:"id"`
+	ExperimentID          string                          `json:"experiment_id,omitempty"`
+	BadcaseID             string                          `json:"badcase_id,omitempty"`
+	ReviewerID            string                          `json:"reviewer_id"`
+	DecisionContext       string                          `json:"decision_context"`
+	Status                string                          `json:"status"`
+	Recommendation        string                          `json:"recommendation"`
+	ApplicationMode       string                          `json:"application_mode,omitempty"`
+	FirstErrorAttribution *FirstErrorAttributionReference `json:"first_error_attribution,omitempty"`
+	Evidence              []AttributionReference          `json:"evidence,omitempty"`
 }
 
 // CorrelationPayload projects the shared evaluation metadata consumed by both
@@ -183,6 +190,19 @@ func ClassifyBadcase(in Badcase, observedDigest string, referenceAvailable bool)
 	if in.ID == "" || in.Category == "" {
 		return Badcase{}, fmt.Errorf("%s", ReasonMalformedCorpus)
 	}
+	in.CorpusItemID = strings.TrimSpace(in.CorpusItemID)
+	if in.FirstErrorAttribution != nil {
+		reference, err := normalizeFirstErrorAttributionReference(*in.FirstErrorAttribution)
+		if err != nil {
+			return Badcase{}, err
+		}
+		if reference.BadcaseID != in.ID || (in.CorpusItemID != "" && reference.CorpusItemID != in.CorpusItemID) ||
+			(in.Correlation.RunID != "" && reference.RunID != strings.TrimSpace(in.Correlation.RunID)) ||
+			(in.Correlation.StepID != "" && reference.StepID != strings.TrimSpace(in.Correlation.StepID)) {
+			return Badcase{}, fmt.Errorf("%s", ReasonFirstErrorCorrelationDrift)
+		}
+		in.FirstErrorAttribution = &reference
+	}
 	if !referenceAvailable {
 		in.Status = BadcaseStatusUnavailable
 		return in, fmt.Errorf("%s", ReasonCorpusReferenceUnavailable)
@@ -211,6 +231,17 @@ func CompareExperiments(in Experiment) (ComparisonResult, error) {
 	}
 	if in.ExecutionMode != "local" && in.ExecutionMode != "distributed" {
 		return ComparisonResult{}, fmt.Errorf("%s", ReasonMalformedCorpus)
+	}
+	var attribution *FirstErrorAttributionReference
+	if in.FirstErrorAttribution != nil {
+		reference, err := normalizeFirstErrorAttributionReference(*in.FirstErrorAttribution)
+		if err != nil {
+			return ComparisonResult{}, err
+		}
+		if reference.ExperimentID != in.ID {
+			return ComparisonResult{}, fmt.Errorf("%s", ReasonFirstErrorCorrelationDrift)
+		}
+		attribution = &reference
 	}
 	_, rubricDigest, err := NormalizeRubric(in.Rubric)
 	if err != nil {
@@ -250,6 +281,7 @@ func CompareExperiments(in Experiment) (ComparisonResult, error) {
 		result.ContinuityPass = &passedContinuity
 	}
 	result.Digest, err = digestValue(result)
+	result.FirstErrorAttribution = attribution
 	return result, err
 }
 
@@ -261,6 +293,31 @@ func ValidateFeedback(in FeedbackRecommendation) error {
 	}
 	if in.Version != FeedbackVersionV1 || in.ID == "" || (in.ExperimentID == "" && in.BadcaseID == "") || strings.TrimSpace(in.ReviewerID) == "" || strings.TrimSpace(in.DecisionContext) == "" {
 		return fmt.Errorf("%s", ReasonApprovalMissing)
+	}
+	in.ApplicationMode = strings.ToLower(strings.TrimSpace(in.ApplicationMode))
+	if in.ApplicationMode != "" && in.ApplicationMode != FeedbackApplicationReviewOnly {
+		return fmt.Errorf("%s", ReasonFeedbackAutoApplyForbidden)
+	}
+	if in.FirstErrorAttribution != nil {
+		reference, err := normalizeFirstErrorAttributionReference(*in.FirstErrorAttribution)
+		if err != nil {
+			return err
+		}
+		if (in.ExperimentID != "" && reference.ExperimentID != strings.TrimSpace(in.ExperimentID)) ||
+			(in.BadcaseID != "" && reference.BadcaseID != strings.TrimSpace(in.BadcaseID)) {
+			return fmt.Errorf("%s", ReasonFirstErrorCorrelationDrift)
+		}
+		if in.ApplicationMode != FeedbackApplicationReviewOnly {
+			return fmt.Errorf("%s", ReasonFeedbackAutoApplyForbidden)
+		}
+		if len(in.Evidence) == 0 {
+			return fmt.Errorf("%s", ReasonTrajectoryRequiredEvidenceMissing)
+		}
+		if _, err := normalizeAttributionReferences(in.Evidence); err != nil {
+			return err
+		}
+	} else if len(in.Evidence) > 0 {
+		return fmt.Errorf("%s", ReasonFirstErrorSchemaDrift)
 	}
 	switch in.Status {
 	case "pending", "approved", "rejected":

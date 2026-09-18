@@ -85,6 +85,24 @@ func TestFirstErrorAttributionFixtureRejectsMalformedVersion(t *testing.T) {
 	}
 }
 
+func TestFirstErrorAttributionFixtureCoexistsWithHistoricalEvalReplay(t *testing.T) {
+	legacy, err := ParseEvalContractFixtureJSON([]byte(`{"version":"evaluation_contract.v1","cases":[{"name":"legacy","expected":{},"observed":{}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EvaluateEvalContractFixture(legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture := readFirstErrorAttributionFixture(t, "eval_first_error_attribution.v1.json")
+	if _, err := EvaluateFirstErrorAttributionFixture(fixture); err != nil {
+		t.Fatal(err)
+	}
+	if err := EvaluateEvalContractFixture(legacy); err != nil {
+		t.Fatalf("new replay path changed historical fixture behavior: %v", err)
+	}
+}
+
 func readFirstErrorAttributionFixture(t *testing.T, name string) FirstErrorAttributionFixture {
 	t.Helper()
 	raw := mustReadFixture(t, name)

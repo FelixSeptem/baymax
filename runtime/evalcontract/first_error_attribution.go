@@ -68,7 +68,10 @@ const (
 	ReasonFirstErrorCorrelationDrift        = "first_error_correlation_drift"
 	ReasonFirstErrorPrivacyViolation        = "first_error_privacy_violation"
 	ReasonFirstErrorRunStreamParityDrift    = "first_error_run_stream_parity_drift"
+	ReasonFeedbackAutoApplyForbidden        = "feedback_auto_apply_forbidden"
 )
+
+const FeedbackApplicationReviewOnly = "review_only"
 
 type AttributionCorrelation struct {
 	CorpusItemID  string `json:"corpus_item_id"`
@@ -125,6 +128,16 @@ type FirstErrorAttribution struct {
 	PrefixDigest          string                     `json:"prefix_digest"`
 	Boundary              TrajectoryDecisionBoundary `json:"boundary"`
 	Evidence              []AttributionEvidence      `json:"evidence"`
+}
+
+type FirstErrorAttributionReference struct {
+	Version      string `json:"version"`
+	ID           string `json:"id"`
+	CorpusItemID string `json:"corpus_item_id"`
+	BadcaseID    string `json:"badcase_id"`
+	RunID        string `json:"run_id"`
+	StepID       string `json:"step_id"`
+	ExperimentID string `json:"experiment_id,omitempty"`
 }
 
 type FirstErrorDrift struct {
@@ -345,6 +358,57 @@ func CompareFirstErrorAttribution(baselineInput, candidateInput FirstErrorAttrib
 		return FirstErrorComparison{}, err
 	}
 	return comparison, nil
+}
+
+func NewFirstErrorAttributionReference(attribution FirstErrorAttribution) (FirstErrorAttributionReference, error) {
+	normalized, identity, err := NormalizeFirstErrorAttribution(attribution)
+	if err != nil {
+		return FirstErrorAttributionReference{}, err
+	}
+	return FirstErrorAttributionReference{
+		Version:      FirstErrorAttributionVersionV1,
+		ID:           identity,
+		CorpusItemID: normalized.Correlation.CorpusItemID,
+		BadcaseID:    normalized.Correlation.BadcaseID,
+		RunID:        normalized.Correlation.RunID,
+		StepID:       normalized.FirstError.StepID,
+		ExperimentID: normalized.Correlation.ExperimentID,
+	}, nil
+}
+
+func ValidateFirstErrorAttributionAssociation(reference FirstErrorAttributionReference, attribution FirstErrorAttribution) error {
+	normalizedReference, err := normalizeFirstErrorAttributionReference(reference)
+	if err != nil {
+		return err
+	}
+	normalizedAttribution, identity, err := NormalizeFirstErrorAttribution(attribution)
+	if err != nil {
+		return err
+	}
+	if normalizedReference.ID != identity ||
+		normalizedReference.CorpusItemID != normalizedAttribution.Correlation.CorpusItemID ||
+		normalizedReference.BadcaseID != normalizedAttribution.Correlation.BadcaseID ||
+		normalizedReference.RunID != normalizedAttribution.Correlation.RunID ||
+		normalizedReference.StepID != normalizedAttribution.FirstError.StepID ||
+		normalizedReference.ExperimentID != normalizedAttribution.Correlation.ExperimentID {
+		return fmt.Errorf("%s", ReasonFirstErrorCorrelationDrift)
+	}
+	return nil
+}
+
+func normalizeFirstErrorAttributionReference(reference FirstErrorAttributionReference) (FirstErrorAttributionReference, error) {
+	reference.Version = normalizeToken(reference.Version)
+	reference.ID = strings.TrimSpace(reference.ID)
+	reference.CorpusItemID = strings.TrimSpace(reference.CorpusItemID)
+	reference.BadcaseID = strings.TrimSpace(reference.BadcaseID)
+	reference.RunID = strings.TrimSpace(reference.RunID)
+	reference.StepID = strings.TrimSpace(reference.StepID)
+	reference.ExperimentID = strings.TrimSpace(reference.ExperimentID)
+	if reference.Version != FirstErrorAttributionVersionV1 || reference.ID == "" || reference.CorpusItemID == "" ||
+		reference.BadcaseID == "" || reference.RunID == "" || reference.StepID == "" {
+		return FirstErrorAttributionReference{}, fmt.Errorf("%s", ReasonFirstErrorSchemaDrift)
+	}
+	return reference, nil
 }
 
 func normalizeAttributionReferences(input []AttributionReference) ([]AttributionReference, error) {

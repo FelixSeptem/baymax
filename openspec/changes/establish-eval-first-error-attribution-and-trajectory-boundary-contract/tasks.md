@@ -28,8 +28,14 @@
 
 ## 5. Verification and Archive Readiness
 
-- [ ] 5.1 Run `gofmt`/`goimports` on changed Go files and verify `git diff --check` reports no whitespace errors.
-- [ ] 5.2 Run focused verification with `go test ./runtime/evalcontract -count=1` and `go test ./tool/diagnosticsreplay -count=1`, then run the new shell and PowerShell contract gates; verify all commands pass with deterministic repeated output.
-- [ ] 5.3 Run repository gates `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1` and `pwsh -File scripts/check-docs-consistency.ps1`; record any platform waiver explicitly and do not mark completion without required evidence.
-- [ ] 5.4 Run `openspec validate --all`, review proposal/design/spec/tasks for placeholder, contradiction, ambiguity and scope drift, and verify the change remains offline, reference-only and apply-ready.
+- [x] 5.1 Run `gofmt`/`goimports` on changed Go files and verify `git diff --check` reports no whitespace errors.
+- [x] 5.2 Run focused verification with `go test ./runtime/evalcontract -count=1` and `go test ./tool/diagnosticsreplay -count=1`, then run the new shell and PowerShell contract gates; verify all commands pass with deterministic repeated output.
+- [x] 5.3 Run repository gates `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1` and `pwsh -File scripts/check-docs-consistency.ps1`; record any platform waiver explicitly and do not mark completion without required evidence.
+- [x] 5.4 Run `openspec validate --all`, review proposal/design/spec/tasks for placeholder, contradiction, ambiguity and scope drift, and verify the change remains offline, reference-only and apply-ready.
 - [ ] 5.5 After every task and gate is complete, archive only through `pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "establish-eval-first-error-attribution-and-trajectory-boundary-contract"`; verify archive index, roadmap, README milestone and contract-test index are synchronized before merging the feature branch into the latest `master`.
+
+### Verification evidence and platform waivers
+
+- `go test ./...`、`go test -race ./...`、focused package tests、PowerShell attribution gate、docs consistency 与 `openspec validate --all` 均通过；quality gate 的前 64 步（含 full test/race 与 attribution gate）通过。
+- `golangci-lint run --config .golangci.yml` 在 Windows CRLF checkout 上仅报告 583 个全仓既有 `gofmt` 换行项；`golangci-lint run --config .golangci.yml --new-from-rev origin/master` 为 `0 issues`，本提案新增的唯一 `gocritic` 问题已修复并复验。
+- `scripts/check-eval-first-error-attribution-contract.sh` 与 PowerShell gate 命令、扫描范围和 pass/fail 语义对等；本机 WSL launcher 返回 `E_ACCESSDENIED`，Git Bash 返回 `couldn't create signal pipe, Win32 error 5`，因此 shell 执行使用平台 waiver，不以全仓换行重写或环境绕过代替验证。

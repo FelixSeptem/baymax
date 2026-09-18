@@ -64,17 +64,15 @@ func TestNormalizeFirstErrorAttributionEquivalentInputOrderingProducesSameIdenti
 }
 
 func TestNormalizeFirstErrorAttributionRejectsMissingIdentity(t *testing.T) {
-	tests := []struct {
+		tests := []struct {
 		name   string
 		mutate func(*FirstErrorAttribution)
 	}{
 		{
-			name: "corpus item or badcase association",
-			mutate: func(in *FirstErrorAttribution) {
-				in.Correlation.CorpusItemID = ""
-				in.Correlation.BadcaseID = ""
-			},
+			name: "corpus item association",
+			mutate: func(in *FirstErrorAttribution) { in.Correlation.CorpusItemID = "" },
 		},
+		{name: "badcase association", mutate: func(in *FirstErrorAttribution) { in.Correlation.BadcaseID = "" }},
 		{name: "first-error step", mutate: func(in *FirstErrorAttribution) { in.FirstError.StepID = "" }},
 		{name: "first-error ordinal", mutate: func(in *FirstErrorAttribution) { in.FirstError.Ordinal = nil }},
 		{name: "first-error kind", mutate: func(in *FirstErrorAttribution) { in.FirstError.Kind = "" }},
@@ -150,7 +148,7 @@ func TestNormalizeFirstErrorAttributionRejectsCollectionAndSerializedSizeBounds(
 		{
 			name: "required evidence above 32",
 			mutate: func(in *FirstErrorAttribution) {
-				in.Boundary.RequiredEvidence = boundaryReferences("event", "required", 33)
+				in.Boundary.RequiredEvidence = boundaryReferences("runtime", "required", 33)
 			},
 		},
 		{

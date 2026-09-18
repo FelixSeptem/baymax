@@ -56,16 +56,14 @@ func TestCompareFirstErrorAttributionClassifiesEachSemanticDrift(t *testing.T) {
 			name:   "required evidence boundary",
 			reason: ReasonTrajectoryRequiredEvidenceDrift,
 			mutate: func(in *FirstErrorAttribution) {
-				in.Boundary.RequiredEvidence = in.Boundary.RequiredEvidence[:1]
-				in.Evidence = in.Evidence[:1]
+				in.Boundary.RequiredEvidence = nil
 			},
 		},
 		{
 			name:   "evidence reference",
 			reason: ReasonFirstErrorEvidenceDrift,
 			mutate: func(in *FirstErrorAttribution) {
-				in.Boundary.RequiredEvidence[0].Digest = "sha256:other-event"
-				in.Evidence[0].Reference.Digest = "sha256:other-event"
+				in.Evidence[1].Reference.Digest = "sha256:other-policy"
 			},
 		},
 		{

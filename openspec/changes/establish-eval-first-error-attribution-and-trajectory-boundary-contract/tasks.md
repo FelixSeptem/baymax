@@ -6,10 +6,10 @@
 
 ## 2. Bounded Attribution Contract
 
-- [ ] 2.1 Add semantic attribution types, supported version, fixed top-level kind/owner taxonomy, recoverability enum, integer confidence range, bounded cause/evidence/action limits and canonical reason constants in `runtime/evalcontract`; verify positive, negative and boundary tests cover every validator branch.
-- [ ] 2.2 Implement pure deterministic normalization for first-error identity, ranked causes, prefix digest, decision-boundary sets and source-owned evidence references; verify equivalent unordered inputs produce identical normalized output and digest while malformed or conflicting input fails fast.
-- [ ] 2.3 Implement side-effect-free baseline/candidate comparison with canonical step, kind, prefix, owner, cause, action, evidence, recoverability, confidence, correlation and parity drift classifications; verify repeated comparison is idempotent and neither input is mutated.
-- [ ] 2.4 Add explicit privacy and side-effect guards proving attribution code does not persist bodies or call provider, tool, memory backend, resolver, Git, workspace or runtime execution paths; verify focused tests and static gate checks reject forbidden dependencies/content.
+- [x] 2.1 Add semantic attribution types, supported version, fixed top-level kind/owner taxonomy, recoverability enum, integer confidence range, bounded cause/evidence/action limits and canonical reason constants in `runtime/evalcontract`; verify positive, negative and boundary tests cover every validator branch.
+- [x] 2.2 Implement pure deterministic normalization for first-error identity, ranked causes, prefix digest, decision-boundary sets and source-owned evidence references; verify equivalent unordered inputs produce identical normalized output and digest while malformed or conflicting input fails fast.
+- [x] 2.3 Implement side-effect-free baseline/candidate comparison with canonical step, kind, prefix, owner, cause, action, evidence, recoverability, confidence, correlation and parity drift classifications; verify repeated comparison is idempotent and neither input is mutated.
+- [x] 2.4 Add explicit privacy and side-effect guards proving attribution code does not persist bodies or call provider, tool, memory backend, resolver, Git, workspace or runtime execution paths; verify focused tests and static gate checks reject forbidden dependencies/content.
 
 ## 3. Evaluation Associations and Replay
 

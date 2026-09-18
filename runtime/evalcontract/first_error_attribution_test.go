@@ -234,6 +234,99 @@ func TestNormalizeFirstErrorAttributionRejectsBodyBearingEvidence(t *testing.T) 
 	assertFirstErrorAttributionReason(t, in, ReasonFirstErrorPrivacyViolation)
 }
 
+func TestNormalizeFirstErrorAttributionAcceptsDeclaredBoundaryValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*FirstErrorAttribution)
+		check  func(FirstErrorAttribution)
+	}{
+		{
+			name: "minimum confidence and unknown recoverability default",
+			mutate: func(in *FirstErrorAttribution) {
+				in.ConfidenceBasisPoints = 0
+				in.Recoverability = ""
+			},
+			check: func(in FirstErrorAttribution) {
+				if in.Recoverability != RecoverabilityUnknown {
+					t.Fatalf("recoverability = %q, want %q", in.Recoverability, RecoverabilityUnknown)
+				}
+			},
+		},
+		{
+			name: "maximum confidence and collection bounds",
+			mutate: func(in *FirstErrorAttribution) {
+				in.ConfidenceBasisPoints = 10000
+				in.Cause.Secondary = rankedCauses(FirstErrorMaxSecondaryCauses)
+				in.Boundary.AcceptableActions = boundaryReferences("tool", "acceptable", FirstErrorMaxBoundaryEntries)
+				in.Boundary.ForbiddenActions = boundaryReferences("tool", "forbidden", FirstErrorMaxBoundaryEntries)
+				in.Boundary.RequiredEvidence = nil
+				in.Boundary.SafetyConstraints = boundaryReferences("policy", "constraint", FirstErrorMaxBoundaryEntries)
+				in.Evidence = evidenceReferences(FirstErrorMaxEvidence)
+			},
+			check: func(FirstErrorAttribution) {},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := validFirstErrorAttribution()
+			tt.mutate(&in)
+			normalized, identity, err := NormalizeFirstErrorAttribution(in)
+			if err != nil || identity == "" {
+				t.Fatalf("boundary input rejected: normalized=%#v identity=%q err=%v", normalized, identity, err)
+			}
+			tt.check(normalized)
+		})
+	}
+}
+
+func TestNormalizeFirstErrorAttributionRejectsUnsupportedTaxonomyAndMalformedReferences(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*FirstErrorAttribution)
+	}{
+		{name: "unsupported version", mutate: func(in *FirstErrorAttribution) { in.Version = "eval_first_error_attribution.v2" }},
+		{name: "zero ordinal", mutate: func(in *FirstErrorAttribution) { ordinal := 0; in.FirstError.Ordinal = &ordinal }},
+		{name: "unsupported kind", mutate: func(in *FirstErrorAttribution) { in.FirstError.Kind = "planning" }},
+		{name: "unsupported owner", mutate: func(in *FirstErrorAttribution) { in.Cause.Owner = "scheduler" }},
+		{name: "unsupported recoverability", mutate: func(in *FirstErrorAttribution) { in.Recoverability = "maybe" }},
+		{name: "unsupported execution mode", mutate: func(in *FirstErrorAttribution) { in.Correlation.ExecutionMode = "batch" }},
+		{name: "invalid primary cause", mutate: func(in *FirstErrorAttribution) { in.Cause.Primary = "contains spaces" }},
+		{name: "invalid secondary rank", mutate: func(in *FirstErrorAttribution) { in.Cause.Secondary[0].Rank = 0 }},
+		{name: "duplicate secondary rank", mutate: func(in *FirstErrorAttribution) { in.Cause.Secondary[1].Rank = in.Cause.Secondary[0].Rank }},
+		{name: "invalid secondary code", mutate: func(in *FirstErrorAttribution) { in.Cause.Secondary[0].Code = "bad code" }},
+		{name: "missing reference kind", mutate: func(in *FirstErrorAttribution) { in.Boundary.AcceptableActions[0].Kind = "" }},
+		{name: "unsupported reference owner", mutate: func(in *FirstErrorAttribution) { in.Boundary.AcceptableActions[0].Owner = "scheduler" }},
+		{name: "missing reference id", mutate: func(in *FirstErrorAttribution) { in.Boundary.AcceptableActions[0].ID = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := validFirstErrorAttribution()
+			tt.mutate(&in)
+			assertFirstErrorAttributionReason(t, in, ReasonFirstErrorSchemaDrift)
+		})
+	}
+}
+
+func TestNormalizeFirstErrorAttributionDeduplicatesExactReferencesWithoutMutatingInput(t *testing.T) {
+	in := validFirstErrorAttribution()
+	in.Evidence = append(in.Evidence, in.Evidence[0])
+	in.Boundary.AcceptableActions = append(in.Boundary.AcceptableActions, in.Boundary.AcceptableActions[0])
+	before := cloneFirstErrorAttribution(t, in)
+
+	normalized, identity, err := NormalizeFirstErrorAttribution(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity == "" || len(normalized.Evidence) != 2 || len(normalized.Boundary.AcceptableActions) != 2 {
+		t.Fatalf("exact references were not canonicalized: %#v", normalized)
+	}
+	if !reflect.DeepEqual(in, before) {
+		t.Fatalf("normalization mutated input:\nbefore: %#v\nafter:  %#v", before, in)
+	}
+}
+
 func validFirstErrorAttribution() FirstErrorAttribution {
 	ordinal := 2
 	return FirstErrorAttribution{
@@ -270,7 +363,6 @@ func validFirstErrorAttribution() FirstErrorAttribution {
 			},
 			RequiredEvidence: []AttributionReference{
 				{Kind: "event", Owner: "runtime", ID: "event-1", Digest: "sha256:event", Version: "event.v1"},
-				{Kind: "policy", Owner: "policy", ID: "policy-1", Digest: "sha256:policy", Version: "policy.v1"},
 			},
 			SafetyConstraints: []AttributionReference{
 				{Kind: "policy", Owner: "policy", ID: "no-destructive-write", Digest: "sha256:no-write"},

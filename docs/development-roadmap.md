@@ -166,6 +166,15 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 - **Tool discovery**：按需 tool schema 投影复用现有 Skill loader、MCP、manifest/capability、allowlist 与 sandbox；只有工具规模、schema token 或选择准确率成为稳定瓶颈时才启动，不建设市场、动态下载或 credential store。
 - **Realtime/Host**：事件、中断恢复、HITL、steering/follow-up、completion promotion 与 request correlation 继续由既有 owner 演进，不抽取第二套 event ordering、pending、输入队列、协调或终态控制面。
 
+历史门禁继续保留下列同域收口锚点；后续结构调整不得改变其 owner 语义：
+
+- Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。
+- Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
+- Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
+- Context organization 语义能力同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 Context JIT Organization 增量吸收；生产可用治理同域需求（压缩质量门控、冷存检索/清理、一致性回放、强门禁）统一在 a69 吸收，不再新增平行 context 压缩提案。
+- Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
+- Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
+
 | 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
 | --- | --- | --- | --- | --- |
 | 已归档基线（137） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 已完成并归档；后续仅在新的可复现 drift 下以增量 change 处理，不重新排期为 P2。 |

@@ -1,6 +1,6 @@
 ## 1. Gap Fixtures and Test-First Baseline
 
-- [ ] 1.1 Add failing `runtime/evalcontract` tests for canonical first-error normalization, equivalent input ordering, missing identity, invalid confidence, collection/size bounds, action-boundary conflict, missing required evidence, duplicate evidence and body-bearing privacy rejection; verify the focused tests fail for the intended missing-contract reasons before implementation.
+- [x] 1.1 Add failing `runtime/evalcontract` tests for canonical first-error normalization, equivalent input ordering, missing identity, invalid confidence, collection/size bounds, action-boundary conflict, missing required evidence, duplicate evidence and body-bearing privacy rejection; verify the focused tests fail for the intended missing-contract reasons before implementation.
 - [ ] 1.2 Add failing comparison tests for step/kind/prefix, owner/cause, action/evidence, recoverability/confidence, correlation and Run/Stream parity drift; verify each expected canonical reason is asserted independently without last-write-wins behavior.
 - [ ] 1.3 Add versioned `eval_first_error_attribution.v1` success, semantic-drift, memory-application and privacy fixtures plus failing `tool/diagnosticsreplay` tests; verify the fixtures demonstrate that the existing result-only Badcase/replay path cannot express the required attribution boundary.
 

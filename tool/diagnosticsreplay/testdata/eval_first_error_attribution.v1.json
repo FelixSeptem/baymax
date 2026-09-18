@@ -1,0 +1,41 @@
+{
+  "version": "eval_first_error_attribution.v1",
+  "cases": [
+    {
+      "name": "canonical-success",
+      "baseline": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "item-1", "badcase_id": "badcase-1", "run_id": "run-1", "execution_mode": "run"},
+        "first_error": {"step_id": "step-2", "ordinal": 2, "kind": "tool_selection"},
+        "cause": {"owner": "model", "primary": "tool_mismatch", "secondary": [{"rank": 2, "code": "policy_preference"}, {"rank": 1, "code": "retrieval_noise"}]},
+        "recoverability": "recoverable",
+        "confidence_basis_points": 8750,
+        "prefix_digest": "sha256:prefix",
+        "boundary": {
+          "acceptable_actions": [{"kind": "tool", "owner": "tool", "id": "search", "digest": "sha256:search"}],
+          "forbidden_actions": [{"kind": "tool", "owner": "tool", "id": "delete", "digest": "sha256:delete"}],
+          "required_evidence": [{"kind": "event", "owner": "runtime", "id": "event-1", "digest": "sha256:event", "version": "event.v1"}],
+          "safety_constraints": [{"kind": "policy", "owner": "policy", "id": "review-required", "digest": "sha256:review"}]
+        },
+        "evidence": [{"reference": {"kind": "event", "owner": "runtime", "id": "event-1", "digest": "sha256:event", "version": "event.v1"}}]
+      },
+      "candidate": {
+        "version": "EVAL_FIRST_ERROR_ATTRIBUTION.V1",
+        "correlation": {"corpus_item_id": " item-1 ", "badcase_id": " badcase-1 ", "run_id": " run-1 ", "execution_mode": "stream"},
+        "first_error": {"step_id": " step-2 ", "ordinal": 2, "kind": " TOOL_SELECTION "},
+        "cause": {"owner": " MODEL ", "primary": " TOOL_MISMATCH ", "secondary": [{"rank": 1, "code": " RETRIEVAL_NOISE "}, {"rank": 2, "code": " POLICY_PREFERENCE "}]},
+        "recoverability": " RECOVERABLE ",
+        "confidence_basis_points": 8750,
+        "prefix_digest": " sha256:prefix ",
+        "boundary": {
+          "acceptable_actions": [{"kind": "tool", "owner": "tool", "id": " search ", "digest": " sha256:search "}],
+          "forbidden_actions": [{"kind": "tool", "owner": "tool", "id": " delete ", "digest": " sha256:delete "}],
+          "required_evidence": [{"kind": "event", "owner": "runtime", "id": " event-1 ", "digest": " sha256:event ", "version": " event.v1 "}],
+          "safety_constraints": [{"kind": "policy", "owner": "policy", "id": " review-required ", "digest": " sha256:review "}]
+        },
+        "evidence": [{"reference": {"kind": "event", "owner": "runtime", "id": " event-1 ", "digest": " sha256:event ", "version": " event.v1 "}}]
+      },
+      "expected": {"passed": true, "drifts": []}
+    }
+  ]
+}

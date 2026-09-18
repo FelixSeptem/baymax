@@ -1,0 +1,25 @@
+{
+  "version": "eval_first_error_attribution.v1",
+  "cases": [
+    {
+      "name": "semantic-drift",
+      "baseline": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "item-1", "badcase_id": "badcase-1", "run_id": "run-1"},
+        "first_error": {"step_id": "step-2", "ordinal": 2, "kind": "tool_selection"},
+        "cause": {"owner": "model", "primary": "tool_mismatch"},
+        "recoverability": "recoverable", "confidence_basis_points": 8750, "prefix_digest": "sha256:prefix",
+        "boundary": {}, "evidence": []
+      },
+      "candidate": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "item-1", "badcase_id": "badcase-1", "run_id": "run-1"},
+        "first_error": {"step_id": "step-3", "ordinal": 3, "kind": "policy"},
+        "cause": {"owner": "model", "primary": "policy_preference"},
+        "recoverability": "recoverable", "confidence_basis_points": 8750, "prefix_digest": "sha256:prefix",
+        "boundary": {}, "evidence": []
+      },
+      "expected": {"passed": false, "drifts": ["first_error_step_drift", "first_error_kind_drift", "first_error_cause_drift"]}
+    }
+  ]
+}

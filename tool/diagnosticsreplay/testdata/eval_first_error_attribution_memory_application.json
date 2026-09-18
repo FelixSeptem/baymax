@@ -1,0 +1,27 @@
+{
+  "version": "eval_first_error_attribution.v1",
+  "cases": [
+    {
+      "name": "memory-application-scope-error",
+      "baseline": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "memory-item-1", "badcase_id": "memory-badcase-1", "run_id": "run-memory-1"},
+        "first_error": {"step_id": "memory-step-2", "ordinal": 2, "kind": "memory_application"},
+        "cause": {"owner": "memory", "primary": "scope_error"},
+        "recoverability": "recoverable", "confidence_basis_points": 9200, "prefix_digest": "sha256:memory-prefix",
+        "boundary": {"required_evidence": [{"kind": "memory", "owner": "memory", "id": "memory-diagnostic-1", "digest": "sha256:memory-diagnostic"}]},
+        "evidence": [{"reference": {"kind": "memory", "owner": "memory", "id": "memory-diagnostic-1", "digest": "sha256:memory-diagnostic"}}]
+      },
+      "candidate": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "memory-item-1", "badcase_id": "memory-badcase-1", "run_id": "run-memory-1"},
+        "first_error": {"step_id": "memory-step-2", "ordinal": 2, "kind": "memory_application"},
+        "cause": {"owner": "memory", "primary": "scope_error"},
+        "recoverability": "recoverable", "confidence_basis_points": 9200, "prefix_digest": "sha256:memory-prefix",
+        "boundary": {"required_evidence": [{"kind": "memory", "owner": "memory", "id": "memory-diagnostic-1", "digest": "sha256:memory-diagnostic"}]},
+        "evidence": [{"reference": {"kind": "memory", "owner": "memory", "id": "memory-diagnostic-1", "digest": "sha256:memory-diagnostic"}}]
+      },
+      "expected": {"passed": true, "drifts": []}
+    }
+  ]
+}

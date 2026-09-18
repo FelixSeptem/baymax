@@ -1,0 +1,26 @@
+{
+  "version": "eval_first_error_attribution.v1",
+  "cases": [
+    {
+      "name": "body-bearing-evidence",
+      "baseline": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "item-1", "badcase_id": "badcase-1", "run_id": "run-1"},
+        "first_error": {"step_id": "step-2", "ordinal": 2, "kind": "tool_selection"},
+        "cause": {"owner": "model", "primary": "tool_mismatch"},
+        "recoverability": "recoverable", "confidence_basis_points": 8750, "prefix_digest": "sha256:prefix",
+        "boundary": {},
+        "evidence": [{"reference": {"kind": "tool", "owner": "tool", "id": "tool-call-1", "digest": "sha256:tool-call"}, "body": "raw tool output"}]
+      },
+      "candidate": {
+        "version": "eval_first_error_attribution.v1",
+        "correlation": {"corpus_item_id": "item-1", "badcase_id": "badcase-1", "run_id": "run-1"},
+        "first_error": {"step_id": "step-2", "ordinal": 2, "kind": "tool_selection"},
+        "cause": {"owner": "model", "primary": "tool_mismatch"},
+        "recoverability": "recoverable", "confidence_basis_points": 8750, "prefix_digest": "sha256:prefix",
+        "boundary": {}, "evidence": []
+      },
+      "expected": {"passed": false, "error": "first_error_privacy_violation"}
+    }
+  ]
+}

@@ -64,12 +64,12 @@ func TestNormalizeFirstErrorAttributionEquivalentInputOrderingProducesSameIdenti
 }
 
 func TestNormalizeFirstErrorAttributionRejectsMissingIdentity(t *testing.T) {
-		tests := []struct {
+	tests := []struct {
 		name   string
 		mutate func(*FirstErrorAttribution)
 	}{
 		{
-			name: "corpus item association",
+			name:   "corpus item association",
 			mutate: func(in *FirstErrorAttribution) { in.Correlation.CorpusItemID = "" },
 		},
 		{name: "badcase association", mutate: func(in *FirstErrorAttribution) { in.Correlation.BadcaseID = "" }},

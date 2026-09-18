@@ -85,6 +85,15 @@ type streamGoldenEvent struct {
 	HasTool   bool   `json:"has_tool_call,omitempty"`
 }
 
+func TestStreamingGoldenLineEndingsAreEquivalent(t *testing.T) {
+	lf := "[\n  {}\n]"
+	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
+
+	if normalizeStreamingGolden(lf) != normalizeStreamingGolden(crlf) {
+		t.Fatal("LF and CRLF golden content should compare equally")
+	}
+}
+
 func TestStreamingEventSequenceGolden(t *testing.T) {
 	model := &streamGoldenModel{}
 
@@ -122,9 +131,13 @@ func TestStreamingEventSequenceGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}
-	if strings.TrimSpace(string(got)) != strings.TrimSpace(string(want)) {
+	if normalizeStreamingGolden(string(got)) != normalizeStreamingGolden(string(want)) {
 		t.Fatalf("golden mismatch\n--- got ---\n%s\n--- want ---\n%s", string(got), string(want))
 	}
+}
+
+func normalizeStreamingGolden(in string) string {
+	return strings.TrimSpace(strings.ReplaceAll(in, "\r\n", "\n"))
 }
 
 type streamGoldenTool struct{}

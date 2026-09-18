@@ -629,6 +629,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] eval continuity comparison contra
     pwsh -File scripts/check-eval-continuity-comparison-contract.ps1
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] eval first-error attribution contract" -Command {
+    pwsh -File scripts/check-eval-first-error-attribution-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] adapter-health contract suites" -Command {
     go test ./adapter/health ./runtime/config ./runtime/diagnostics ./observability/event ./integration/adapterconformance -run 'Test(RunnerProbe|AdapterHealthConfig|ManagerAdapterHealth|ManagerReadinessPreflightAdapterHealth|StoreRunReadinessAdditiveFieldsPersistAndReplayIdempotent|RuntimeRecorderReadinessParserCompatibilityAdditiveNullableDefault|RuntimeRecorderAdapterHealthGovernanceParserCompatibilityAdditiveNullableDefault|AdapterConformanceHealth(Matrix|Governance))' -count=1
 }

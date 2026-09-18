@@ -344,6 +344,14 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 ## Agent Mode Example Pack Mapping
 
+## Eval First-Error Attribution / Trajectory Boundary
+
+- Contract model and normalization: `runtime/evalcontract/first_error_attribution_test.go::TestNormalizeFirstErrorAttributionCanonicalizesFirstErrorAndBoundary`, `runtime/evalcontract/first_error_comparison_test.go::TestCompareFirstErrorAttributionClassifiesEachSemanticDrift`
+- Negative/privacy/side-effect coverage: `runtime/evalcontract/first_error_attribution_test.go`, `runtime/evalcontract/first_error_guard_test.go`
+- Replay fixture and drift taxonomy: `tool/diagnosticsreplay/first_error_attribution_test.go`, `tool/diagnosticsreplay/testdata/eval_first_error_attribution.v1.json`, `tool/diagnosticsreplay/testdata/eval_first_error_attribution_semantic_drift.json`, `tool/diagnosticsreplay/testdata/eval_first_error_attribution_memory_application.json`, `tool/diagnosticsreplay/testdata/eval_first_error_attribution_privacy_violation.json`
+- Dedicated gate: `scripts/check-eval-first-error-attribution-contract.sh` / `scripts/check-eval-first-error-attribution-contract.ps1`
+- Quality gate ownership: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
+
 ## Session History / Checkpoint / Replay Contract
 
 - Projection and validation: `core/types/session_history_test.go`, `core/types/protocol_test.go`

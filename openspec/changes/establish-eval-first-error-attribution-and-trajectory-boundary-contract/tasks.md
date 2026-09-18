@@ -21,10 +21,10 @@
 
 ## 4. Contract Gates and Documentation
 
-- [ ] 4.1 Add semantic shell and PowerShell contract gates for first-error attribution and wire both into `scripts/check-quality-gate.sh/.ps1`; verify both scripts run focused tests, scan forbidden side effects/body persistence and report the same pass/fail semantics.
-- [ ] 4.2 Update `docs/mainline-contract-test-index.md` with the attribution contract, positive/negative tests, replay fixture and gate mapping; verify every referenced test and script path exists.
-- [ ] 4.3 Update `docs/development-roadmap.md` from active proposal through delivered/archived state only when implementation evidence exists, preserving the Eval → Provider → Budget ordering and avoiding a second progress source; verify `scripts/check-openspec-roadmap-status-consistency.ps1` passes at each status transition.
-- [ ] 4.4 Confirm Example Impact Assessment remains `无需示例变更（附理由）`: the change is offline Eval/replay/gate only and does not alter `examples/agent-modes` configuration, runtime path or expected markers; verify no example file changes are present, or stop and complete the mandatory `MATRIX.md` and mode README baseline before any example implementation.
+- [x] 4.1 Add semantic shell and PowerShell contract gates for first-error attribution and wire both into `scripts/check-quality-gate.sh/.ps1`; verify both scripts run focused tests, scan forbidden side effects/body persistence and report the same pass/fail semantics.
+- [x] 4.2 Update `docs/mainline-contract-test-index.md` with the attribution contract, positive/negative tests, replay fixture and gate mapping; verify every referenced test and script path exists.
+- [x] 4.3 Update `docs/development-roadmap.md` from active proposal through delivered/archived state only when implementation evidence exists, preserving the Eval → Provider → Budget ordering and avoiding a second progress source; verify `scripts/check-openspec-roadmap-status-consistency.ps1` passes at each status transition.
+- [x] 4.4 Confirm Example Impact Assessment remains `无需示例变更（附理由）`: the change is offline Eval/replay/gate only and does not alter `examples/agent-modes` configuration, runtime path or expected markers; verify no example file changes are present, or stop and complete the mandatory `MATRIX.md` and mode README baseline before any example implementation.
 
 ## 5. Verification and Archive Readiness
 

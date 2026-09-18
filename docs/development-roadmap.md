@@ -45,7 +45,7 @@ Baymax 主线保持 `library-first + contract-first`：
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
-  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`：作为归档 139 的离线 Eval 收尾，proposal/design/spec/tasks 已起草，实施尚未开始；范围严格限定为首错归因、轨迹前缀决策边界、bounded evidence、review-only feedback association 与 fixture/replay/gate，不修改 runtime loop 或示例语义。
+  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`：作为归档 139 的离线 Eval 收尾，已完成首错归因类型/归一化/比较、Badcase/experiment/feedback additive 关联与 eval_first_error_attribution.v1 replay fixtures；当前继续收口双平台 gate、文档映射和全量门禁，范围仍严格限定为首错归因、轨迹前缀决策边界、bounded evidence、review-only feedback association 与 fixture/replay/gate，不修改 runtime loop 或示例语义。
 
 ## 版本阶段口径（延续 0.x）
 

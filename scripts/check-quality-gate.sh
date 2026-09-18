@@ -206,6 +206,12 @@ if ! bash scripts/check-eval-continuity-comparison-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] eval first-error attribution contract"
+if ! bash scripts/check-eval-first-error-attribution-contract.sh; then
+  echo "[quality-gate][eval-first-error-attribution] first-error attribution contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] timeout resolution contract suites"
 if ! go test ./integration -run '^TestTimeoutResolutionContract' -count=1; then
   echo "[quality-gate][timeout-resolution-contract] timeout resolution contract suites failed"

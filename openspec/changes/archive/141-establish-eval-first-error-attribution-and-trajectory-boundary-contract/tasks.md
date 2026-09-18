@@ -32,7 +32,7 @@
 - [x] 5.2 Run focused verification with `go test ./runtime/evalcontract -count=1` and `go test ./tool/diagnosticsreplay -count=1`, then run the new shell and PowerShell contract gates; verify all commands pass with deterministic repeated output.
 - [x] 5.3 Run repository gates `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1` and `pwsh -File scripts/check-docs-consistency.ps1`; record any platform waiver explicitly and do not mark completion without required evidence.
 - [x] 5.4 Run `openspec validate --all`, review proposal/design/spec/tasks for placeholder, contradiction, ambiguity and scope drift, and verify the change remains offline, reference-only and apply-ready.
-- [ ] 5.5 After every task and gate is complete, archive only through `pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "establish-eval-first-error-attribution-and-trajectory-boundary-contract"`; verify archive index, roadmap, README milestone and contract-test index are synchronized before merging the feature branch into the latest `master`.
+- [x] 5.5 After every task and gate is complete, archive only through `pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "establish-eval-first-error-attribution-and-trajectory-boundary-contract"`; verify archive index, roadmap, README milestone and contract-test index are synchronized before merging the feature branch into the latest `master`.
 
 ### Verification evidence and platform waivers
 

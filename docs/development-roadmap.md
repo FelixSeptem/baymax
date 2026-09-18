@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-17
+更新时间：2026-09-18
 
 ## 定位
 
@@ -20,7 +20,7 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-17：
+截至 2026-09-18：
 
 - 已归档：
   - `introduce-runtime-steering-and-follow-up-input-contract`
@@ -36,6 +36,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
   - `establish-eval-continuity-comparison-and-replay-contract`（bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较，以及 fixture/replay/contract/gate 已收口）
   - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
+  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 观察候选：`Provider 结构化上下文投影与 Prompt Cache 可观测性`、`预算感知派生上下文投影`、`Model catalog 与本地模型路由增量`。三者均需满足各自触发条件，不因外部项目存在同名能力而自动立项。
@@ -45,7 +46,7 @@ Baymax 主线保持 `library-first + contract-first`：
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
-  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`：作为归档 139 的离线 Eval 收尾，已完成首错归因类型/归一化/比较、Badcase/experiment/feedback additive 关联与 eval_first_error_attribution.v1 replay fixtures；当前继续收口双平台 gate、文档映射和全量门禁，范围仍严格限定为首错归因、轨迹前缀决策边界、bounded evidence、review-only feedback association 与 fixture/replay/gate，不修改 runtime loop 或示例语义。
+  - 当前无 active change；下一提案必须从最新 master 重新切出语义化功能分支。
 
 ## 版本阶段口径（延续 0.x）
 

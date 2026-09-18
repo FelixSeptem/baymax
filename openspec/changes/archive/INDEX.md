@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-17 08:22:20
+Updated: 2026-09-18 22:12:02
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -142,3 +142,4 @@ Updated: 2026-09-17 08:22:20
 - 138 -> harden-durable-attempt-workspace-binding-and-completion-safepoint
 - 139 -> establish-eval-continuity-comparison-and-replay-contract
 - 140 -> external-extension-authoring-conformance
+- 141 -> establish-eval-first-error-attribution-and-trajectory-boundary-contract

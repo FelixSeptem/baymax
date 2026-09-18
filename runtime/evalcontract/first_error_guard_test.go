@@ -5,14 +5,13 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestFirstErrorAttributionImplementationRemainsPureAndOffline(t *testing.T) {
-	path := filepath.Join("first_error_attribution.go")
+	path := "first_error_attribution.go"
 	source, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

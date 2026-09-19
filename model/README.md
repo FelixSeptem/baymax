@@ -30,6 +30,19 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - provider 错误归类与 `Retryable` 语义对齐
 - 工具结果回灌输入的 canonical envelope 构建
 
+## 请求侧投影契约（provider_request_projection.v1）
+
+Runtime → Provider 方向与响应侧是同族合同：`model/conformance` 拥有 provider-neutral 的 `source`/`observed` 双投影、canonical digest 与稳定分类词表，`tool/diagnosticsreplay` 负责离线只读 replay，三个 adapter 在包内测试中通过既有缝隙（`newResponse`/`newStream`、`Config.GenerateFn`/`StreamFn`）捕获真实 SDK 请求形状。
+
+- 版本化 fixture：`tool/diagnosticsreplay/testdata/model_request_projection.v1.json`，覆盖 OpenAI / Anthropic / Gemini × run / stream，以及「无 tool result」分支。
+- 生成入口：`BAYMAX_REGEN_REQUEST_PROJECTION_FIXTURE=1 go test ./tool/diagnosticsreplay -run TestGenerateProviderRequestProjectionFixture`。正常测试会校验提交物与契约构建器逐字节一致，提交物不得被静默改写。
+- `declared_gap` 是**待修复项的证据锚点**，不是容忍语义：缺口未申报、或已申报缺口不再复现，都会以稳定码失败并要求显式更新契约。
+- cache 用量按 `additive + nullable + default` 演进：当前 adapter 没有 cache 会计来源，投影固定 `available=false` 且不得伪造 read/write 值；新增 provider 字段不得破坏历史 fixture。
+- 分类词表（与 `model/conformance`、`tool/diagnosticsreplay` 与门禁保持一致）：
+  `provider_request_schema_drift`、`provider_request_role_projection_drift`、`provider_request_tool_result_native_drift`、`provider_request_part_ordering_drift`、`provider_request_stable_prefix_drift`、`provider_request_tool_order_drift`、`provider_request_capability_projection_drift`、`provider_request_run_stream_parity_drift`、`provider_cache_usage_projection_drift`、`provider_request_overflow_drift`、`provider_request_contract_drift`。
+- 已知不对称（基线事实，不是本契约的容忍项）：`CountTokens` 路径会原生投影 `Messages` 的 system/assistant 角色，而 `Generate`/`Stream` 把整个请求压平为单段文本，因此 token 会计与实发请求可能不对应。这是后续增量 change 的触发证据。
+- 门禁：`scripts/check-provider-request-projection-contract.sh` / `.ps1`。
+
 ## 关键入口
 
 - `openai/client.go`

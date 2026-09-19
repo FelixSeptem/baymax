@@ -745,6 +745,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-provider-handoff-stream-edge-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] provider request projection and cache observability conformance"
+        Command   = { pwsh -File scripts/check-provider-request-projection-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] sandbox adapter conformance contract"
         Command   = { pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1 }
     },

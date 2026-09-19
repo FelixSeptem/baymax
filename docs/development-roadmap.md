@@ -39,14 +39,19 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  - 观察候选：`Provider 结构化上下文投影与 Prompt Cache 可观测性`、`预算感知派生上下文投影`、`Model catalog 与本地模型路由增量`。三者均需满足各自触发条件，不因外部项目存在同名能力而自动立项。
+  - 观察候选：`预算感知派生上下文投影`、`Model catalog 与本地模型路由增量`。二者均需满足各自触发条件，不因外部项目存在同名能力而自动立项。
+  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的触发条件已由可复现证据满足，不再作为观察候选，已立项进入「进行中」。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
-  - 当前无 active change；下一提案必须从最新 master 重新切出语义化功能分支。
+  - `establish-provider-request-projection-and-cache-observability-contract`：Provider 请求侧结构化投影与 Prompt Cache 可观测性契约（范围、非目标与后续增量触发证据见本节下方段落）。
+
+本提案范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。**不修改任何适配器运行时投影行为**，不新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
+
+该提案的后续增量触发证据（本提案内不实施，仅记录）：三个适配器的 `CountTokens` 路径原生投影 `Messages` 的 system/assistant 角色，而 `Generate`/`Stream` 把整个请求压平为单段文本，因此 token 会计与实发请求可能不对应。若要让计费口径与实发请求一致，必须由新的增量 change 显式更换适配器投影行为。
 
 ## 版本阶段口径（延续 0.x）
 

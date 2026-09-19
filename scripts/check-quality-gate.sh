@@ -356,6 +356,12 @@ if ! bash scripts/check-provider-handoff-stream-edge-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] provider request projection and cache observability conformance"
+if ! bash scripts/check-provider-request-projection-contract.sh; then
+  echo "[quality-gate][provider-request-projection-contract] provider request projection conformance failed"
+  exit 1
+fi
+
 echo "[quality-gate] extension lifecycle contract replay"
 if ! bash scripts/check-extension-lifecycle-contract-replay.sh; then
   echo "[quality-gate][extension-lifecycle-replay] extension lifecycle contract replay check failed"

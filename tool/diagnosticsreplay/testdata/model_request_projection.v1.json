@@ -1,0 +1,857 @@
+{
+  "version": "provider_request_projection.v1",
+  "cases": [
+    {
+      "name": "openai_run_canonical_text_envelope",
+      "provider": "openai",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "openai_stream_canonical_text_envelope",
+      "provider": "openai",
+      "mode": "stream",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "openai_run_stream_parity",
+      "provider": "openai",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "run": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "stream": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "openai_run_without_tool_results",
+      "provider": "openai",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": false,
+        "stable_prefix_first": false,
+        "content_digest": "0bdf1fe6979c66d56b11f5aa686267892e26e9263d1e312e14a8ccaf8d7339f4",
+        "total_bytes": 24,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift"
+      ],
+      "first_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23",
+      "replay_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23"
+    },
+    {
+      "name": "anthropic_run_canonical_text_envelope",
+      "provider": "anthropic",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "anthropic_stream_canonical_text_envelope",
+      "provider": "anthropic",
+      "mode": "stream",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "anthropic_run_stream_parity",
+      "provider": "anthropic",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "run": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "stream": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "anthropic_run_without_tool_results",
+      "provider": "anthropic",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": false,
+        "stable_prefix_first": false,
+        "content_digest": "0bdf1fe6979c66d56b11f5aa686267892e26e9263d1e312e14a8ccaf8d7339f4",
+        "total_bytes": 24,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift"
+      ],
+      "first_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23",
+      "replay_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23"
+    },
+    {
+      "name": "gemini_run_canonical_text_envelope",
+      "provider": "gemini",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "gemini_stream_canonical_text_envelope",
+      "provider": "gemini",
+      "mode": "stream",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "expected": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "gemini_run_stream_parity",
+      "provider": "gemini",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "tool_order": [
+          "read_file"
+        ],
+        "tool_results": [
+          {
+            "call_id": "call-1",
+            "name": "read_file",
+            "status": "ok",
+            "result_digest": "15e470ec647ae0e6734ec2a397d8be444063aebab70fb6775c1a1e5f042b0ae6"
+          }
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "run": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "stream": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text",
+          "tool_result_envelope"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": true,
+        "tool_order": [
+          "read_file"
+        ],
+        "stable_prefix_first": false,
+        "content_digest": "6463e23376483df9c07b175fad026634b4ef4861bee227c47a38826cf01e0d70",
+        "total_bytes": 131,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift",
+        "provider_request_tool_result_native_drift"
+      ],
+      "first_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033",
+      "replay_digest": "73c00b2c851760ca8c8436d2dcd107944149dec22a042bd9e7f40644afc75033"
+    },
+    {
+      "name": "gemini_run_without_tool_results",
+      "provider": "gemini",
+      "mode": "run",
+      "source": {
+        "roles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "capabilities": [
+          "tool_call",
+          "streaming"
+        ],
+        "input_bytes": 24
+      },
+      "observed": {
+        "roles": [
+          "user"
+        ],
+        "parts": [
+          "user_text"
+        ],
+        "tool_result_native": false,
+        "tool_result_correlated": false,
+        "stable_prefix_first": false,
+        "content_digest": "0bdf1fe6979c66d56b11f5aa686267892e26e9263d1e312e14a8ccaf8d7339f4",
+        "total_bytes": 24,
+        "cache_usage": {
+          "available": false
+        }
+      },
+      "declared_gaps": [
+        "provider_request_capability_projection_drift",
+        "provider_request_role_projection_drift"
+      ],
+      "first_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23",
+      "replay_digest": "adbf8ce684c97f4809be4dd746db68164079aca1fb383682fa28be9dd689bb23"
+    }
+  ]
+}

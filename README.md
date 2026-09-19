@@ -17,7 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-19）：
-- `establish-provider-request-projection-and-cache-observability-contract`（进行中；Runtime → Provider 请求侧投影契约 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 role/tool-result-native/能力投影 `declared_gap`、cache 用量 additive + nullable + default 口径、版本化 fixture、离线 replay 与双平台 gate；不修改适配器运行时投影行为）。
+- `establish-provider-request-projection-and-cache-observability-contract`（已归档并稳定；Runtime → Provider 请求侧投影契约 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 role/tool-result-native/能力投影 `declared_gap`、cache 用量 additive + nullable + default 口径、版本化 fixture、离线 replay 与双平台 gate；不修改适配器运行时投影行为）。
 - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（已归档并稳定；作为归档 139 的离线 Eval 收尾，交付 bounded 首错归因/比较、轨迹决策边界、additive 关联、replay fixtures 与双平台 gate；不修改 runtime loop 或 agent-mode 示例语义）。
 - `external-extension-authoring-conformance`（已归档；离线 authoring conformance、版本化 fixture、replay 与双平台 gate，不新增 package manager、运行时配置或 agent-mode 示例语义）。
 - `establish-eval-continuity-comparison-and-replay-contract`（已归档；bounded reference-only continuity comparator、handoff/snapshot adapters 与离线 replay/gate，不持久化 transcript、reasoning 或 artifact body）。

@@ -134,7 +134,7 @@ Baymax 已有 provider adapters、静态/宿主注入 catalog、capability negot
 - `core/runner` 唯一构造 `types.ModelRequest`，把 `Input`、`Messages`、`ToolResult`、`Capabilities` 原样转发；语义丢失发生在适配器，不在 runner。
 - 三个适配器在 `Generate`/`Stream` 上只把请求压平为单段文本（`toolcontract.CanonicalInput` / `WithCanonicalInput`），因此 system-role Skill fragment、assistant 历史、原生 tool-result 归属与能力需求都不进入 SDK 请求；`model/openai` 侧表现为 `Input.OfString` 有值、`Input.OfInputItemList` 为空、`Instructions` 为空。
 - 同一请求在 `Generate` 与 `Stream` 下的投影等价（已由三个适配器的 Run/Stream parity 审计测试钉住）。
-- 已知不对称（本提案不修复，仅作为后续增量触发证据）：`CountTokens` 路径会原生投影 `Messages` 的 system/assistant 角色，而 `Generate`/`Stream` 压平为单段文本，因此 token 会计与实发请求可能不对应。
+- 已知不对称（归档 142 未修复，仅作为后续增量触发证据）：`CountTokens` 路径会原生投影 `Messages` 的 system/assistant 角色，而 `Generate`/`Stream` 压平为单段文本，因此 token 会计与实发请求可能不对应。
 - `TokenUsage` 无 cache 字段，cache 会计只能按 additive + nullable + default 演进；当前适配器无 cache 来源，投影固定 `available=false` 且不伪造 read/write 值。
 
 这些事实被归一化为 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 `declared_gap`（缺口只能被显式修复，不能被静默引入或静默修复），以及离线 replay 与双平台 gate。
@@ -181,7 +181,7 @@ Pi 的 `packages/protocol`、`packages/server` 和 `packages/client` 当前明�
 | 与首选合并优先 | 宿主介导 HITL adapter | extension UI reverse request | 只适配现有 clarification/action gate RequestID 和 timeout，不建新 HITL state | 首个宿主需要跨进程确认、选择或输入。 |
 | 条件候选 | 运行中 steering/follow-up 输入语义 | steer 与 follow-up 分离、queue regression | 新增有界输入 ingress 和明确时序；不修改历史消息 owner | 宿主确实需要在 active Run 中追加或排队用户输入。 |
 | 条件候选 | 跨 Provider handoff 与 stream edge conformance | cross-provider、abort usage、overflow、Unicode fixtures | 优先扩展测试/fixture/gate，复用现有 provider admission 和 error taxonomy | 已归档为 `harden-cross-provider-handoff-and-stream-edge-conformance`，触发条件已满足。 |
-| 进行中 | Provider 请求侧结构化投影与 Prompt Cache 可观测性 | 统一 provider projection、cache/usage 字段兼容 | 只建立 `source`/`observed` 双投影、canonical digest、被钉住的缺口与离线 replay/gate；不修改适配器运行时投影行为，不新增 cache 策略 | 已立项为 `establish-provider-request-projection-and-cache-observability-contract`，触发条件（可复现的 role/tool-result/能力投影丢失）已满足。 |
+| 已归档 | Provider 请求侧结构化投影与 Prompt Cache 可观测性 | 统一 provider projection、cache/usage 字段兼容 | 只建立 `source`/`observed` 双投影、canonical digest、被钉住的缺口与离线 replay/gate；不修改适配器运行时投影行为，不新增 cache 策略 | 已归档为 `establish-provider-request-projection-and-cache-observability-contract`（归档 142），触发条件（可复现的 role/tool-result/能力投影丢失）已满足。 |
 | 条件候选 | 外部 Extension authoring conformance | extension authoring eval、真实 workflow 测试 | 复用 lifecycle/manifest/capability/allowlist/sandbox，改善开发者反馈 | 出现新的外部扩展来源或集成方。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | Models runtime、动态 discovery、llama.cpp router | catalog 仍由 source/host 提供，不引入 credential store | 静态或宿主注入 catalog 无法满足明确路由需求。 |
 | 观察候选 | Eval transcript/artifact comparison | eval harness、snapshot/transcript artifact | 只增加引用和 baseline/candidate 对比，不建 artifact service | 现有 corpus/eval 无法定位可复现质量回归。 |

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-18 22:12:02
+Updated: 2026-09-19 22:35:33
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -143,3 +143,4 @@ Updated: 2026-09-18 22:12:02
 - 139 -> establish-eval-continuity-comparison-and-replay-contract
 - 140 -> external-extension-authoring-conformance
 - 141 -> establish-eval-first-error-attribution-and-trajectory-boundary-contract
+- 142 -> establish-provider-request-projection-and-cache-observability-contract

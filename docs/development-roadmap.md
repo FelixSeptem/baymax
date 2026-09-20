@@ -20,7 +20,7 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-19：
+截至 2026-09-20：
 
 - 已归档：
   - `introduce-runtime-steering-and-follow-up-input-contract`
@@ -37,17 +37,18 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-eval-continuity-comparison-and-replay-contract`（bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较，以及 fixture/replay/contract/gate 已收口）
   - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
   - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
+  - `establish-budget-aware-derived-context-projection-contract`（归档 143；有界只读预算投影契约、离线 benchmark、fixture、replay 与 gate 已收口；未改变运行时行为）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  - 观察候选：`预算感知派生上下文投影`、`Model catalog 与本地模型路由增量`。二者均需满足各自触发条件，不因外部项目存在同名能力而自动立项。
-  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的触发条件已由可复现证据满足，已作为归档 142 收口，不再作为观察候选。
+  - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项。
+  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的审计基线已由归档 142 收口；其中 native request projection 修复已作为 active change `preserve-provider-native-request-projection-parity` 立项，cache usage schema 仍须等待独立的成本/P95 触发证据。
+  - `预算感知派生上下文投影` 的启动条件（先建立 benchmark、fixture 与 replay，比较完成率、预算利用、重复循环与恢复重算）已由归档 143（`establish-budget-aware-derived-context-projection-contract`）交付并收口，不再作为观察候选。
+- 进行中：
+  - `preserve-provider-native-request-projection-parity`（以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
-
-- 进行中：
-  - 当前无 active change；下一提案必须从最新 master 重新切出语义化功能分支。
 
 归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。**未修改任何适配器运行时投影行为**，未新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
 
@@ -128,37 +129,35 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 已归档的嵌入式宿主接缝、HITL reverse request 与 steering/follow-up 合同作为本候选的宿主侧前置基线，不再以新提案重复定义。完整对照、证据基线和不吸收项见 `docs/pi-agent-comparison-and-adoption-study.md`。
 
-### 优先审计候选：Eval 首错归因、轨迹前缀决策边界与证据化改进建议
+### 已归档基线：Eval 首错归因、轨迹前缀决策边界与证据化改进建议
 
-**校准事实**：现有 evaluation owner 已覆盖 corpus、Badcase、experiment/shard metric、comparison、review-only feedback 与 continuity comparison，并已证明 compaction/handoff/snapshot/recovery 前后的 bounded reference continuity；当前缺口不是再建一套 transcript 或 artifact 系统，而是 Badcase 仍主要描述最终结果，尚不能结构化表达“第一次从可接受轨迹偏离发生在哪里、当时允许或禁止什么动作、结论由哪些已有证据支持”。
+**交付状态**：归档 141 已在既有 eval/corpus/Badcase/experiment/feedback owner 内交付 `first error step/kind`、root-cause owner、primary/secondary cause、bounded evidence refs、recoverability/confidence、轨迹前缀 acceptable/forbidden actions 与 review-only recommendation，并覆盖 memory retrieval/application 的同一 corpus 场景；未新建 transcript、artifact 或 memory 事实源，未改 runtime loop。
 
-**目标**：在既有 eval contract 下增量验证 `first error step/kind`、`root cause owner`、`primary/secondary cause`、`evidence refs`、`recoverability/confidence`，以及轨迹前缀上的 `acceptable/forbidden actions`、`required evidence` 和安全约束。Memory retrieval/application 的命中、误用、遗漏和作用域错误作为同一 corpus 的场景覆盖，不另建 memory evaluation 提案或新的 memory 事实源。
+**后续触发**：只有新的 Badcase 无法由既有首错归因、evidence 或 action-boundary taxonomy 稳定解释时，才以新的增量 change 扩展既有 owner；建议继续保持 review-only，不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置、测试、gate 或代码。
 
-**第一阶段交付**：先增加 bounded fixture、离线 replay 分类、contract test 和 gate，证明现有结果级 Badcase 无法稳定定位首个偏离或下一动作边界；在证据成立前不修改 runtime loop。证据引用必须有界、可重放并指向既有 event/checkpoint/artifact reference，不持久化 raw reasoning、完整 transcript body 或无界工具输出。
+### 进行中：Provider 原生请求投影与 Run/Stream 对等
 
-**反馈边界**：改进建议保持 review-only，只能形成带 evidence 的候选建议；不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置、测试、gate，也不得自动提交、合并或推送代码。
+**交付状态**：active change `preserve-provider-native-request-projection-parity` 以归档 142 的真实 SDK fixture/gap 为依据，修复 `ModelRequest.Input`、`Messages`、`ToolResult` 到 SDK request 的原生 role、顺序、tool-result correlation 与 Run/Stream/CountTokens parity。跨 Provider handoff 与 stream edge conformance 继续复用既有 owner，不建设共享协议。
 
-**Example Impact Assessment（立项时）**：`无需示例变更（附理由）`。首阶段只扩展离线 eval fixture/replay/gate，不改变 `examples/agent-modes` 的 runtime path 或可观察语义；若后续 contract 变更需要真实模式演示，必须重新评估并遵循文档先行规则。
-
-### 观察候选：Provider 结构化上下文投影与 Prompt Cache 可观测性
-
-**校准事实**：跨 Provider handoff 与 stream edge conformance 已归档；后续不再泛化建设 provider 共享协议。下一步只审计 `ModelRequest.Input`、`Messages`、`ToolResult` 到真实 SDK request 的投影是否完整保留 system/user/assistant/tool role、Skill fragment、task-aware tail recap、tool-result correlation、稳定前缀与工具顺序，以及 Run/Stream parity。现有 `TokenUsage` 尚未表达 cached input、cache read 或 cache write，因此任何 cache usage 字段都只能按诊断兼容规则演进。
-
-**启动条件与第一阶段交付**：先使用真实 SDK 形状的版本化 fixture、replay 与 benchmark 证明消息语义丢失、顺序漂移，或 prompt cache 成本/P95 问题已成为稳定瓶颈。只有 fixture 证明 adapter drift，才最小修改 `model/<provider>` 或 `model/toolcontract`；cache usage 只能 additive + nullable + default，并通过 `RuntimeRecorder` 单写入口暴露。
+**范围与后续触发**：当前 change 只最小修改 `model/<provider>` 与 SDK-neutral canonical request facts；prompt-cache usage 仍不纳入。只有 cache 成本/P95 成为稳定瓶颈且有 provider usage 证据时，才另行以 `additive + nullable + default` 和 `RuntimeRecorder` 单写入口设计 cache schema。
 
 **必须复用**：`model/<provider>`、`model/toolcontract`、context handoff、既有 provider conformance、Run/Stream parity 与 `RuntimeRecorder`。不得新建通用 provider wire protocol、gateway、credential store 或全局路由状态机，不得在 `context/*` 引入 Provider 官方 SDK。
 
-**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。fixture/replay/benchmark 不改变示例 runtime path；若后续真实 adapter 修复改变示例的 expected markers 或 usage 输出，立项时必须重新评估并先更新 `MATRIX.md` 与对应 README。
+**Example Impact Assessment**：`无需示例变更（附理由）`。本 change 使用 fixture/replay/gate 验证 SDK 请求构造，不改变示例 runtime path；若实现改变示例的 expected markers 或 usage 输出，必须先更新 `MATRIX.md` 与对应 README，并将评估改为“修改示例”。
 
-### 观察候选：预算感知派生上下文投影
+### 已归档：预算感知派生上下文投影
 
-**校准事实**：Baymax 已有 ReAct iteration/tool-call limit、`runtime.react.on_budget_exhausted`、runtime budget admission、scheduler `ParentRemainingBudget`、ReAct Plan Notebook 与 task-aware tail recap。缺口不是预算 source-of-truth 或新的任务状态机，而是模型决策上下文尚缺少由这些 owner 计算出的、有界只读 remaining-budget 投影，也缺少“预算增加是否改善完成质量、还是只增加重复循环”的稳定评测。
+**交付状态**：归档 143（`establish-budget-aware-derived-context-projection-contract`）已完成有界只读投影契约、离线预算利用 benchmark、版本化 fixture、replay 与双平台 gate；未修改运行时行为。
 
-**第一阶段交付**：只建立 benchmark、fixture 与 replay，比较 completion rate、iteration/tool-call usage、token/latency、repeated-loop rate、Run/Stream parity，以及 snapshot/recovery 后预算投影的确定性重算。只有数据证明模型可见预算事实能稳定改善决策质量，才讨论策略提示或 tail projection 的最小 contract；不得先引入 adaptive budget 策略。
+**校准事实**：Baymax 已有 ReAct iteration/tool-call limit、`runtime.react.on_budget_exhausted`、runtime budget admission、scheduler `ParentRemainingBudget`、ReAct Plan Notebook 与 task-aware tail recap。缺口不是预算 source-of-truth 或新的任务状态机，而是模型决策上下文尚缺少由这些 owner 计算出的、有界只读 remaining-budget 投影，也缺少"预算增加是否改善完成质量、还是只增加重复循环"的稳定评测。
 
-**所有权边界**：预算事实继续由 LoopPolicy/ReAct counters、budget admission 和 scheduler parent budget 各自拥有；Plan Notebook 继续只拥有 plan lifecycle；context tail 只接收 `source-owned facts -> bounded/read-only/nullable derived projection`。不得建立第二预算账本、第二 task/plan/terminal 状态机，也不得把模型生成的剩余预算写回事实源。
+**目标**：在既有 owner 之上增量交付版本化、有界、只读的派生预算投影契约 `budget_projection.v1`，以及离线、确定性、计算型的预算利用 benchmark；比较 completion rate、iteration/tool-call usage、token/latency、repeated-loop rate、Run/Stream parity，以及 snapshot/recovery 后预算投影的确定性重算。只有数据证明模型可见预算事实能稳定改善决策质量，才讨论策略提示或 tail projection 的最小 contract；不得先引入 adaptive budget 策略。
 
-**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。首阶段仅增加 benchmark/fixture/replay，不改变 agent-mode 配置、runtime path 或 expected markers；若后续投影进入示例上下文，必须重新评估并遵循文档先行规则。
+**必须复用**：LoopPolicy/ReAct counters（`RuntimeReactConfig`）、budget admission（`budget_admission.v1`）、scheduler `ParentRemainingBudget`、Plan Notebook、`context/assembler` 既有的 "source-owned facts → bounded 派生投影" 模式（`buildTaskAwareTailRecap`）与 `tool/diagnosticsreplay`。
+
+**所有权边界**：预算事实继续由 LoopPolicy/ReAct counters、budget admission 和 scheduler parent budget 各自拥有；Plan Notebook 继续只拥有 plan lifecycle；`context/budgetprojection` 只接收 `source-owned facts -> bounded/read-only/nullable derived projection`。不得建立第二预算账本、第二 task/plan/terminal 状态机，也不得把模型生成的剩余预算写回事实源。
+
+**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。首阶段仅增加 benchmark/fixture/replay/gate，不改变 agent-mode 配置、runtime path 或 expected markers；若后续投影进入示例上下文，必须重新评估并遵循文档先行规则。
 
 ## 后续提案备选池（外部项目对照增量）
 
@@ -188,7 +187,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 已归档基线（139） | Eval continuity comparison 与 replay contract | bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较 | OTel/eval/corpus、context handoff、checkpoint/snapshot refs、diagnostics replay | 已完成并归档；后续质量增量进入首错归因与轨迹边界候选，不重复建设 transcript/artifact service。 |
 | 已归档基线（140） | External extension authoring conformance | 离线 authoring conformance、版本化 fixture、replay 与双平台 gate | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 已完成并归档；未来仅在新的真实扩展来源暴露新增 drift 时，以既有 owner 的增量 change 处理。 |
 | 观察候选 | Provider 结构化上下文投影与 Prompt Cache 可观测性 | 真实 SDK message/tool-result projection、stable prefix/tool order、cache usage 与 Run/Stream parity | `model/<provider>`、`model/toolcontract`、context handoff、provider conformance、`RuntimeRecorder` | fixture 证明 role/message/tool-result 语义丢失或顺序漂移，或 cache 成本/P95 成为稳定瓶颈。cache 字段仅 additive + nullable + default。 |
-| 观察候选 | 预算感知派生上下文投影 | remaining iteration/tool/time/cost 的有界只读投影与预算利用 benchmark | LoopPolicy/ReAct counters、budget admission、scheduler parent budget、Plan Notebook、context tail | 更高预算不能改善完成质量，或重复循环/提前饱和可稳定复现。先 benchmark，不新建预算账本、任务状态机或 adaptive strategy。 |
 | 条件候选 | 本地/宿主准入后的按需 Tool Schema 投影 | 在已准入工具集合内按需选择并投影 schema，减少无效上下文占用 | Skill loader、MCP、manifest/capability、allowlist、sandbox、既有 tool lifecycle | 工具数量、schema token 或工具选择准确率形成稳定瓶颈。不得动态下载工具、绕过准入，或建设 marketplace/credential store。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 
@@ -196,7 +194,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 1. **Eval 首错归因与轨迹边界优先审计**：它可以 fixture-only 起步、运行时风险最低，并为 Provider、Budget、Memory application 等后续方向提供统一的质量归因证据；在 gap 被证明前不改 runtime。
 2. **Provider 结构化上下文与 cache 可观测性次序跟进**：真实 SDK fixture/replay/benchmark 先行，只在 role、tool-result、ordering、usage 或 Run/Stream drift 成立时最小修复既有 adapter。
-3. **预算感知投影先评测后策略**：先比较完成率、预算利用、重复循环、token/latency 与 recovery 重算；没有稳定收益不得引入模型提示、adaptive budget 或新的状态持久化。
+3. **预算感知投影归档后仍坚持先评测后策略**：归档 143 仅交付 benchmark、fixture、replay 与 gate；没有稳定收益不得引入模型提示、adaptive budget 或新的状态持久化。
 4. **Tool schema-on-demand 只由规模瓶颈触发**：保持本地/宿主准入、安全上界和确定性选择，工具规模、schema token 或准确率没有形成稳定瓶颈时不立项。
 5. **Memory application 与 evidence-linked suggestion 并入 Eval**：memory retrieval/application 作为 corpus 场景，建议保持 review-only；不拆分独立反馈控制面，也不允许自动自改代码、测试或 gate。
 6. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
@@ -209,7 +207,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | --- | --- | --- |
 | Eval 首错归因与轨迹前缀决策边界 | Badcase 只能给出最终失败，无法定位首个偏离、primary/secondary cause、责任 owner 或下一步 acceptable/forbidden action | 复用既有 eval/continuity owner；只记录 bounded evidence refs，不保存 raw reasoning，改进建议保持 review-only。 |
 | Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract` 和归档 137；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
-| 预算感知派生上下文投影 | 更高 iteration/tool-call/token/time 预算不能改善质量，重复循环或提前饱和可复现，或 recovery 后剩余预算表达不一致 | 复用 ReAct/budget/scheduler/Plan Notebook/context tail owner；只允许 source-owned facts 的有界只读投影，先 benchmark 后策略。 |
 | 本地/宿主准入后的按需 Tool Schema 投影 | 工具数量、schema token 占用或工具选择准确率达到稳定瓶颈 | 只在已准入工具集合内投影；复用 Skill loader/MCP/manifest/allowlist/sandbox，不建设市场、下载器或 credential store。 |
 | 远程 model catalog 或本地模型路由 | 静态/宿主注入目录不足以支持明确的路由需求 | 以本页“Model catalog 与本地模型路由增量”为同一候选，不创建平行提案；不在 `context/*` 引入 provider SDK，不接入 credential store。 |
 | 外部 extension 生态增量 | 归档 140 之后出现新的真实扩展来源，且供应链审计、失败反馈或隔离需求超出现有 lifecycle contract | 只做 existing authoring conformance owner 的增量；复用 manifest/capability/allowlist/sandbox，不建设 package manager、marketplace 或动态下载执行链。 |

@@ -362,6 +362,12 @@ if ! bash scripts/check-provider-request-projection-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] derived budget projection contract"
+if ! bash scripts/check-budget-aware-context-projection-contract.sh; then
+  echo "[quality-gate][budget-aware-context-projection-contract] derived budget projection conformance failed"
+  exit 1
+fi
+
 echo "[quality-gate] extension lifecycle contract replay"
 if ! bash scripts/check-extension-lifecycle-contract-replay.sh; then
   echo "[quality-gate][extension-lifecycle-replay] extension lifecycle contract replay check failed"

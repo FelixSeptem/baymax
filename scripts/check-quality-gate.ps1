@@ -785,6 +785,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-durable-attempt-completion-replay-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] derived budget projection contract"
+        Command   = { pwsh -File scripts/check-budget-aware-context-projection-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] extension lifecycle contract replay"
         Command   = { pwsh -File scripts/check-extension-lifecycle-contract-replay.ps1 }
     },

@@ -61,6 +61,10 @@
   - 各自拥有 provider-native tool call/result、thinking、usage、Unicode/empty content 与 stream edge 到 canonical contract 的转换。
   - capability/request-shape fallback 只能发生在 model step 调用前；首个语义 stream event 是不可跨越的 provider-switch fence。
   - `core/runner` 只消费 canonical values 并拥有 step、terminal 与 Run/Stream parity；禁止抽取新的共享 wire protocol 或把 Provider SDK 引入 `context/*`。
+- `context/budgetprojection`
+  - 只拥有 `budget_projection.v1` 有界只读派生投影契约与离线预算利用 benchmark。
+  - 只依赖标准库：不 import `runtime/*`、`orchestration/*`、`model/*`、`observability/*`，因此不会形成 `context → runtime` 反向依赖，也不构成第二本预算账本。
+  - 预算事实仍由 `runtime/config`（ReAct iteration/tool-call limit、`budget_admission.v1` 的 cost/latency 决策）、`orchestration/scheduler`（`ParentRemainingBudget`）与 `core/runner`（React Plan Notebook）各自拥有；投影不写回、不参与终态判定。
 - `extension`
   - transport-neutral descriptor、source precedence、digest provenance 与 capability/admission 合同
   - external authoring conformance 仅消费 extension/adapter/policy/sandbox 的 source-owned 投影；不执行不受信任源码、不拥有第二套生命周期或终态状态机

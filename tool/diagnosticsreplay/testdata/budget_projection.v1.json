@@ -1,0 +1,1074 @@
+{
+  "version": "budget_projection.v1",
+  "cases": [
+    {
+      "case_id": "full-facts-complete",
+      "facts": {
+        "iteration": {
+          "limit": 10,
+          "used": 3
+        },
+        "tool_call": {
+          "limit": 20,
+          "used": 5
+        },
+        "time": {
+          "budget_ms": 60000,
+          "elapsed_ms": 12000
+        },
+        "cost": {
+          "estimate_total": 2.5,
+          "hard_threshold": 10,
+          "degrade_threshold": 6
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": true,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 7,
+            "limit": 10,
+            "used": 3,
+            "ratio": 0.3
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 15,
+            "limit": 20,
+            "used": 5,
+            "ratio": 0.25
+          },
+          "time_ms": {
+            "available": true,
+            "remaining": 48000,
+            "limit": 60000,
+            "used": 12000,
+            "ratio": 0.2
+          },
+          "cost_headroom": {
+            "available": true,
+            "remaining": 7.5,
+            "limit": 10,
+            "used": 2.5,
+            "ratio": 0.25
+          }
+        },
+        "pressure": "normal",
+        "notes": [
+          "none"
+        ],
+        "digest": "3c590824a766eea0c5b42207264fe90626dd85c0d9d412d6b855ad6d17824c59"
+      },
+      "declared_gaps": [],
+      "expect_digest": "3c590824a766eea0c5b42207264fe90626dd85c0d9d412d6b855ad6d17824c59"
+    },
+    {
+      "case_id": "iteration-pressure-elevated",
+      "facts": {
+        "iteration": {
+          "limit": 10,
+          "used": 6
+        },
+        "tool_call": {
+          "limit": 20,
+          "used": 4
+        },
+        "time": {
+          "budget_ms": 60000,
+          "elapsed_ms": 20000
+        },
+        "cost": {
+          "estimate_total": 4,
+          "hard_threshold": 10,
+          "degrade_threshold": 6
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": true,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 4,
+            "limit": 10,
+            "used": 6,
+            "ratio": 0.6
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 16,
+            "limit": 20,
+            "used": 4,
+            "ratio": 0.2
+          },
+          "time_ms": {
+            "available": true,
+            "remaining": 40000,
+            "limit": 60000,
+            "used": 20000,
+            "ratio": 0.3333333333333333
+          },
+          "cost_headroom": {
+            "available": true,
+            "remaining": 6,
+            "limit": 10,
+            "used": 4,
+            "ratio": 0.4
+          }
+        },
+        "pressure": "elevated",
+        "notes": [
+          "none"
+        ],
+        "digest": "55123e5654e045d9d4f9dda98596b4a867ce3b4f55d03f79be65fcc227bf68f8"
+      },
+      "declared_gaps": [],
+      "expect_digest": "55123e5654e045d9d4f9dda98596b4a867ce3b4f55d03f79be65fcc227bf68f8"
+    },
+    {
+      "case_id": "iteration-pressure-critical",
+      "facts": {
+        "iteration": {
+          "limit": 10,
+          "used": 9
+        },
+        "tool_call": {
+          "limit": 20,
+          "used": 5
+        },
+        "time": {
+          "budget_ms": 60000,
+          "elapsed_ms": 30000
+        },
+        "cost": {
+          "estimate_total": 8.5,
+          "hard_threshold": 10,
+          "degrade_threshold": 6
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": true,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 1,
+            "limit": 10,
+            "used": 9,
+            "ratio": 0.9
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 15,
+            "limit": 20,
+            "used": 5,
+            "ratio": 0.25
+          },
+          "time_ms": {
+            "available": true,
+            "remaining": 30000,
+            "limit": 60000,
+            "used": 30000,
+            "ratio": 0.5
+          },
+          "cost_headroom": {
+            "available": true,
+            "remaining": 1.5,
+            "limit": 10,
+            "used": 8.5,
+            "ratio": 0.85
+          }
+        },
+        "pressure": "critical",
+        "notes": [
+          "pressure=critical"
+        ],
+        "digest": "714614ece88aaec93d5e78ec425a7195dbd9a6c71090b1feade593cc22ed8ce0"
+      },
+      "declared_gaps": [],
+      "expect_digest": "714614ece88aaec93d5e78ec425a7195dbd9a6c71090b1feade593cc22ed8ce0"
+    },
+    {
+      "case_id": "missing-time-budget",
+      "facts": {
+        "iteration": {
+          "limit": 10,
+          "used": 2
+        },
+        "tool_call": {
+          "limit": 20,
+          "used": 4
+        },
+        "cost": {
+          "estimate_total": 2,
+          "hard_threshold": 10,
+          "degrade_threshold": 6
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": false,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 8,
+            "limit": 10,
+            "used": 2,
+            "ratio": 0.2
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 16,
+            "limit": 20,
+            "used": 4,
+            "ratio": 0.2
+          },
+          "time_ms": {
+            "available": false
+          },
+          "cost_headroom": {
+            "available": true,
+            "remaining": 8,
+            "limit": 10,
+            "used": 2,
+            "ratio": 0.2
+          }
+        },
+        "pressure": "normal",
+        "notes": [
+          "time_budget_unavailable"
+        ],
+        "digest": "aaa43e013db77a18a750a6a29044860ea50d20c067db768967c6479d8c989ec9"
+      },
+      "declared_gaps": [
+        "budget_facts_missing_time_budget"
+      ],
+      "expect_digest": "aaa43e013db77a18a750a6a29044860ea50d20c067db768967c6479d8c989ec9"
+    },
+    {
+      "case_id": "missing-cost-threshold",
+      "facts": {
+        "iteration": {
+          "limit": 10,
+          "used": 2
+        },
+        "tool_call": {
+          "limit": 20,
+          "used": 4
+        },
+        "time": {
+          "budget_ms": 60000,
+          "elapsed_ms": 10000
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": false,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 8,
+            "limit": 10,
+            "used": 2,
+            "ratio": 0.2
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 16,
+            "limit": 20,
+            "used": 4,
+            "ratio": 0.2
+          },
+          "time_ms": {
+            "available": true,
+            "remaining": 50000,
+            "limit": 60000,
+            "used": 10000,
+            "ratio": 0.16666666666666666
+          },
+          "cost_headroom": {
+            "available": false
+          }
+        },
+        "pressure": "normal",
+        "notes": [
+          "cost_threshold_unavailable"
+        ],
+        "digest": "19fba90b07f6f2e827120cb630d521705aa02dc1b3581569be0813343163f9cc"
+      },
+      "declared_gaps": [
+        "budget_facts_missing_cost_threshold"
+      ],
+      "expect_digest": "19fba90b07f6f2e827120cb630d521705aa02dc1b3581569be0813343163f9cc"
+    },
+    {
+      "case_id": "missing-iteration-and-tool-call",
+      "facts": {
+        "time": {
+          "budget_ms": 60000,
+          "elapsed_ms": 10000
+        },
+        "cost": {
+          "estimate_total": 2,
+          "hard_threshold": 10,
+          "degrade_threshold": 6
+        },
+        "admission": {
+          "decision": "allow"
+        },
+        "parent": {
+          "remaining_ms": 30000
+        },
+        "plan": {
+          "change_total": 4,
+          "recover_count": 0,
+          "status": "active"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": false,
+        "remaining": {
+          "iteration": {
+            "available": false
+          },
+          "tool_call": {
+            "available": false
+          },
+          "time_ms": {
+            "available": true,
+            "remaining": 50000,
+            "limit": 60000,
+            "used": 10000,
+            "ratio": 0.16666666666666666
+          },
+          "cost_headroom": {
+            "available": true,
+            "remaining": 8,
+            "limit": 10,
+            "used": 2,
+            "ratio": 0.2
+          }
+        },
+        "pressure": "normal",
+        "notes": [
+          "iteration_limit_unavailable",
+          "tool_call_limit_unavailable"
+        ],
+        "digest": "eda827fa147097cada495b2645327b646f5ad3725ed82ef53211c6778edb21ee"
+      },
+      "declared_gaps": [
+        "budget_facts_missing_iteration_limit",
+        "budget_facts_missing_tool_call_limit"
+      ],
+      "expect_digest": "eda827fa147097cada495b2645327b646f5ad3725ed82ef53211c6778edb21ee"
+    },
+    {
+      "case_id": "all-dimensions-missing",
+      "facts": {
+        "admission": {
+          "decision": "allow"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": false,
+        "remaining": {
+          "iteration": {
+            "available": false
+          },
+          "tool_call": {
+            "available": false
+          },
+          "time_ms": {
+            "available": false
+          },
+          "cost_headroom": {
+            "available": false
+          }
+        },
+        "pressure": "none",
+        "notes": [
+          "cost_threshold_unavailable",
+          "iteration_limit_unavailable",
+          "time_budget_unavailable",
+          "tool_call_limit_unavailable"
+        ],
+        "digest": "8493a34e08d9d3084b0ea414b3300250d321d9657cc2e6d8ba41366fd630d266"
+      },
+      "declared_gaps": [
+        "budget_facts_missing_cost_threshold",
+        "budget_facts_missing_iteration_limit",
+        "budget_facts_missing_time_budget",
+        "budget_facts_missing_tool_call_limit"
+      ],
+      "expect_digest": "8493a34e08d9d3084b0ea414b3300250d321d9657cc2e6d8ba41366fd630d266"
+    },
+    {
+      "case_id": "legacy-snapshot-without-optional-owners",
+      "facts": {
+        "iteration": {
+          "limit": 8,
+          "used": 2
+        },
+        "tool_call": {
+          "limit": 12,
+          "used": 3
+        },
+        "admission": {
+          "decision": "allow"
+        }
+      },
+      "expected": {
+        "version": "budget_projection.v1",
+        "complete": false,
+        "remaining": {
+          "iteration": {
+            "available": true,
+            "remaining": 6,
+            "limit": 8,
+            "used": 2,
+            "ratio": 0.25
+          },
+          "tool_call": {
+            "available": true,
+            "remaining": 9,
+            "limit": 12,
+            "used": 3,
+            "ratio": 0.25
+          },
+          "time_ms": {
+            "available": false
+          },
+          "cost_headroom": {
+            "available": false
+          }
+        },
+        "pressure": "normal",
+        "notes": [
+          "cost_threshold_unavailable",
+          "time_budget_unavailable"
+        ],
+        "digest": "e9283daa8f3d2592437b5f69cb2ef5efb2a76f5d7764741e7176aba854eebe18"
+      },
+      "declared_gaps": [
+        "budget_facts_missing_cost_threshold",
+        "budget_facts_missing_time_budget"
+      ],
+      "expect_digest": "e9283daa8f3d2592437b5f69cb2ef5efb2a76f5d7764741e7176aba854eebe18"
+    }
+  ],
+  "benchmarks": [
+    {
+      "benchmark_id": "budget-utilization-baseline",
+      "traces": [
+        {
+          "trace_id": "trace-completed",
+          "steps": [
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "terminal_success",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "trace-repeated-loop",
+          "steps": [
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "repeat",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "repeat",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "terminal_exhausted",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "trace_count": 2,
+        "step_count": 7,
+        "completion_rate": 0.5,
+        "repeated_loop_rate": 0.2857142857142857,
+        "saturation_rate": 0.5,
+        "utilization": [
+          {
+            "dimension": "cost_headroom",
+            "ratio": 0.5285714285714286,
+            "samples": 7
+          },
+          {
+            "dimension": "iteration",
+            "ratio": 0.5142857142857142,
+            "samples": 7
+          },
+          {
+            "dimension": "time_ms",
+            "ratio": 0.47857142857142865,
+            "samples": 7
+          },
+          {
+            "dimension": "tool_call",
+            "ratio": 0.4428571428571428,
+            "samples": 7
+          }
+        ],
+        "digest": "21839bfbb867c243a43d86ce091cf40a57e76b21ae5f8a92a0aa0bd62f971603"
+      },
+      "declared_gaps": []
+    },
+    {
+      "benchmark_id": "budget-utilization-recovery-recompute",
+      "traces": [
+        {
+          "trace_id": "trace-completed",
+          "steps": [
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "terminal_success",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "trace-repeated-loop",
+          "steps": [
+            {
+              "outcome": "progress",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "repeat",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "repeat",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 3
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 5
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 12000
+                },
+                "cost": {
+                  "estimate_total": 2.5,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            },
+            {
+              "outcome": "terminal_exhausted",
+              "facts": {
+                "iteration": {
+                  "limit": 10,
+                  "used": 8
+                },
+                "tool_call": {
+                  "limit": 20,
+                  "used": 14
+                },
+                "time": {
+                  "budget_ms": 60000,
+                  "elapsed_ms": 51000
+                },
+                "cost": {
+                  "estimate_total": 9,
+                  "hard_threshold": 10,
+                  "degrade_threshold": 6
+                },
+                "admission": {
+                  "decision": "allow"
+                },
+                "parent": {
+                  "remaining_ms": 30000
+                },
+                "plan": {
+                  "change_total": 4,
+                  "recover_count": 0,
+                  "status": "active"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "trace_count": 2,
+        "step_count": 7,
+        "completion_rate": 0.5,
+        "repeated_loop_rate": 0.2857142857142857,
+        "saturation_rate": 0.5,
+        "utilization": [
+          {
+            "dimension": "cost_headroom",
+            "ratio": 0.5285714285714286,
+            "samples": 7
+          },
+          {
+            "dimension": "iteration",
+            "ratio": 0.5142857142857142,
+            "samples": 7
+          },
+          {
+            "dimension": "time_ms",
+            "ratio": 0.47857142857142865,
+            "samples": 7
+          },
+          {
+            "dimension": "tool_call",
+            "ratio": 0.4428571428571428,
+            "samples": 7
+          }
+        ],
+        "digest": "21839bfbb867c243a43d86ce091cf40a57e76b21ae5f8a92a0aa0bd62f971603"
+      },
+      "declared_gaps": []
+    }
+  ]
+}

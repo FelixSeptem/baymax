@@ -87,7 +87,11 @@ $openspecText = ($openspecOutput | ForEach-Object {
         if ($_ -is [System.Management.Automation.ErrorRecord]) { return $_.ToString() }
         return [string]$_
     }) -join "`n"
-$openspecPayload = $openspecText | ConvertFrom-Json
+$openspecJSONStart = $openspecText.IndexOf("{")
+if ($openspecJSONStart -lt 0) {
+    throw "[missing-example-impact-declaration] openspec list --json returned no JSON object: $openspecText"
+}
+$openspecPayload = $openspecText.Substring($openspecJSONStart) | ConvertFrom-Json
 $activeChanges = @($openspecPayload.changes |
     Where-Object { ([string]$_.status).Trim().ToLowerInvariant() -eq "in-progress" } |
     ForEach-Object { ([string]$_.name).Trim() } |

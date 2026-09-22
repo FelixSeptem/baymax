@@ -28,11 +28,13 @@ type Config struct {
 }
 
 type Client struct {
-	model    string
-	sdk      *genai.Client
-	generate func(ctx context.Context, input string) (types.ModelResponse, error)
-	stream   func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error]
-	discover func(ctx context.Context, model string) (types.ProviderCapabilities, error)
+	model          string
+	sdk            *genai.Client
+	generate       func(ctx context.Context, input string) (types.ModelResponse, error)
+	stream         func(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error]
+	nativeGenerate func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error)
+	nativeStream   func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) iter.Seq2[*genai.GenerateContentResponse, error]
+	discover       func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
@@ -95,13 +97,17 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		sdk:      sdk,
 		discover: cfg.DiscoverFn,
 	}
-	client.generate = client.generateWithSDK
 	if cfg.GenerateFn != nil {
 		client.generate = cfg.GenerateFn
 	}
-	client.stream = client.streamWithSDK
 	if cfg.StreamFn != nil {
 		client.stream = cfg.StreamFn
+	}
+	client.nativeGenerate = func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+		return client.sdk.Models.GenerateContent(ctx, model, contents, config)
+	}
+	client.nativeStream = func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) iter.Seq2[*genai.GenerateContentResponse, error] {
+		return client.sdk.Models.GenerateContentStream(ctx, model, contents, config)
 	}
 	if client.discover == nil {
 		client.discover = client.discoverWithSDK
@@ -114,28 +120,43 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-	input, err := toolcontract.CanonicalInput(req)
+	contents, config, err := nativeGenerateRequest(req)
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	if input == "" {
-		return types.ModelResponse{}, errors.New("model input is empty")
+	if c.generate != nil {
+		input, inputErr := toolcontract.CanonicalInput(req)
+		if inputErr != nil {
+			return types.ModelResponse{}, inputErr
+		}
+		return c.generate(ctx, input)
 	}
-	return c.generate(ctx, input)
+	resp, err := c.nativeGenerate(ctx, c.model, contents, config)
+	if err != nil {
+		return types.ModelResponse{}, providererror.FromError(err)
+	}
+	return decodeGenerateResponse(resp), nil
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	input, err := toolcontract.CanonicalInput(req)
+	contents, config, err := nativeGenerateRequest(req)
 	if err != nil {
 		return err
 	}
-	if input == "" {
-		return errors.New("model input is empty")
+	var stream iter.Seq2[*genai.GenerateContentResponse, error]
+	if c.stream != nil {
+		input, inputErr := toolcontract.CanonicalInput(req)
+		if inputErr != nil {
+			return inputErr
+		}
+		stream = c.stream(ctx, input)
+	} else {
+		stream = c.nativeStream(ctx, c.model, contents, config)
 	}
 
 	toolSeq := 0
 	streamStarted := false
-	for chunk, err := range c.stream(ctx, input) {
+	for chunk, err := range stream {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -191,6 +212,67 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	return ctx.Err()
 }
 
+// nativeGenerateRequest maps the shared request interpretation to Gemini's
+// native contents/parts and system instruction fields. Tool results are sent
+// as FunctionResponse parts, never as a text feedback envelope.
+func nativeGenerateRequest(req types.ModelRequest) ([]*genai.Content, *genai.GenerateContentConfig, error) {
+	interpreted, err := toolcontract.InterpretRequest(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	systemParts := make([]*genai.Part, 0, len(interpreted.Messages))
+	contents := make([]*genai.Content, 0, len(interpreted.Messages)+1)
+	for _, message := range interpreted.Messages {
+		textPart := &genai.Part{Text: message.Content}
+		switch strings.ToLower(strings.TrimSpace(message.Role)) {
+		case "system":
+			systemParts = append(systemParts, textPart)
+		case "user":
+			contents = append(contents, &genai.Content{Role: "user", Parts: []*genai.Part{textPart}})
+		case "assistant":
+			contents = append(contents, &genai.Content{Role: "model", Parts: []*genai.Part{textPart}})
+		default:
+			return nil, nil, nativeRequestShapeError("Gemini contents cannot represent message role %q", message.Role)
+		}
+	}
+	for _, outcome := range interpreted.ToolResults {
+		response := map[string]any{}
+		if outcome.Result.Error != nil {
+			response["error"] = outcome.Result.Error.Message
+		} else {
+			response["output"] = outcome.Result.Content
+			if len(outcome.Result.Structured) > 0 {
+				response["structured"] = outcome.Result.Structured
+			}
+		}
+		contents = append(contents, &genai.Content{
+			Role: "user",
+			Parts: []*genai.Part{{FunctionResponse: &genai.FunctionResponse{
+				ID:       outcome.CallID,
+				Name:     outcome.Name,
+				Response: response,
+			}}},
+		})
+	}
+	if len(contents) == 0 && len(systemParts) == 0 {
+		return nil, nil, errors.New("model input is empty")
+	}
+	config := &genai.GenerateContentConfig{}
+	if len(systemParts) > 0 {
+		config.SystemInstruction = &genai.Content{Parts: systemParts}
+	}
+	return contents, config, nil
+}
+
+func nativeRequestShapeError(format string, args ...any) error {
+	return &providererror.Classified{
+		Class:     types.ErrModel,
+		Reason:    "request_shape_invalid",
+		Retryable: false,
+		Cause:     fmt.Errorf(format, args...),
+	}
+}
+
 func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
@@ -200,11 +282,20 @@ func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelReques
 }
 
 func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
+	contents, config, err := nativeGenerateRequest(req)
+	if err != nil {
+		return 0, err
+	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		model = c.model
 	}
-	contents := buildTokenContents(req)
+	// CountTokens has no separate system-instruction parameter in this SDK.
+	// Preserve the same system facts as a bounded user-role content only for
+	// token accounting; Generate/Stream retain the native SystemInstruction.
+	if config != nil && config.SystemInstruction != nil {
+		contents = append([]*genai.Content{{Role: "user", Parts: config.SystemInstruction.Parts}}, contents...)
+	}
 	if len(contents) == 0 {
 		return 0, errors.New("model input is empty")
 	}
@@ -378,18 +469,6 @@ func geminiToolCallMeta(callID, toolName string) map[string]any {
 	meta["tool_call_id"] = callID
 	meta["tool_name"] = toolName
 	return meta
-}
-
-func (c *Client) streamWithSDK(ctx context.Context, input string) iter.Seq2[*genai.GenerateContentResponse, error] {
-	return c.sdk.Models.GenerateContentStream(ctx, c.model, genai.Text(input), nil)
-}
-
-func (c *Client) generateWithSDK(ctx context.Context, input string) (types.ModelResponse, error) {
-	resp, err := c.sdk.Models.GenerateContent(ctx, c.model, genai.Text(input), nil)
-	if err != nil {
-		return types.ModelResponse{}, providererror.FromError(err)
-	}
-	return decodeGenerateResponse(resp), nil
 }
 
 func decodeGenerateResponse(resp any) types.ModelResponse {

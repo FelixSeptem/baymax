@@ -29,12 +29,14 @@ type Config struct {
 }
 
 type Client struct {
-	model     string
-	maxToken  int64
-	sdk       anthropic.Client
-	generate  func(ctx context.Context, input string) (types.ModelResponse, error)
-	newStream func(ctx context.Context, input string) Stream
-	discover  func(ctx context.Context, model string) (types.ProviderCapabilities, error)
+	model        string
+	maxToken     int64
+	sdk          anthropic.Client
+	generate     func(ctx context.Context, input string) (types.ModelResponse, error)
+	newStream    func(ctx context.Context, input string) Stream
+	newMessage   func(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error)
+	nativeStream func(ctx context.Context, params anthropic.MessageNewParams) Stream
+	discover     func(ctx context.Context, model string) (types.ProviderCapabilities, error)
 }
 
 type Stream interface {
@@ -88,18 +90,14 @@ func NewClient(cfg Config) *Client {
 		sdk:      anthropic.NewClient(opts...),
 		discover: cfg.DiscoverFn,
 	}
-	client.generate = client.generateWithSDK
 	if cfg.GenerateFn != nil {
 		client.generate = cfg.GenerateFn
 	}
-	client.newStream = func(ctx context.Context, input string) Stream {
-		return client.sdk.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(client.model),
-			MaxTokens: client.maxToken,
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(input)),
-			},
-		})
+	client.newMessage = func(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+		return client.sdk.Messages.New(ctx, params)
+	}
+	client.nativeStream = func(ctx context.Context, params anthropic.MessageNewParams) Stream {
+		return client.sdk.Messages.NewStreaming(ctx, params)
 	}
 	if cfg.StreamFn != nil {
 		client.newStream = cfg.StreamFn
@@ -115,25 +113,43 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-	input, err := toolcontract.CanonicalInput(req)
+	params, err := nativeMessageParams(req, c.model, c.maxToken)
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	if input == "" {
-		return types.ModelResponse{}, errors.New("model input is empty")
+	if c.generate != nil {
+		input, inputErr := toolcontract.CanonicalInput(req)
+		if inputErr != nil {
+			return types.ModelResponse{}, inputErr
+		}
+		return c.generate(ctx, input)
 	}
-	return c.generate(ctx, input)
+	msg, err := c.newMessage(ctx, params)
+	if err != nil {
+		var apiErr *anthropic.Error
+		if errors.As(err, &apiErr) {
+			return types.ModelResponse{}, providererror.FromStatusCode(err, apiErr.StatusCode)
+		}
+		return types.ModelResponse{}, providererror.FromError(err)
+	}
+	return decodeMessage(msg), nil
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	input, err := toolcontract.CanonicalInput(req)
+	params, err := nativeMessageParams(req, c.model, c.maxToken)
 	if err != nil {
 		return err
 	}
-	if input == "" {
-		return errors.New("model input is empty")
+	var stream Stream
+	if c.newStream != nil {
+		input, inputErr := toolcontract.CanonicalInput(req)
+		if inputErr != nil {
+			return inputErr
+		}
+		stream = c.newStream(ctx, input)
+	} else {
+		stream = c.nativeStream(ctx, params)
 	}
-	stream := c.newStream(ctx, input)
 	if stream == nil {
 		return providererror.WithStreamPhase(providererror.FromError(errors.New("anthropic stream is nil")), "pre_execution")
 	}
@@ -195,6 +211,63 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	return ctx.Err()
 }
 
+// nativeMessageParams maps the SDK-neutral request interpretation to
+// Anthropic's native Messages API shape. Anthropic carries system content in a
+// top-level field, while user/assistant turns remain ordered message params.
+func nativeMessageParams(req types.ModelRequest, model string, maxTokens int64) (anthropic.MessageNewParams, error) {
+	interpreted, err := toolcontract.InterpretRequest(req)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+	params := anthropic.MessageNewParams{
+		Model:     anthropic.Model(strings.TrimSpace(model)),
+		MaxTokens: maxTokens,
+		System:    make([]anthropic.TextBlockParam, 0, len(interpreted.Messages)),
+		Messages:  make([]anthropic.MessageParam, 0, len(interpreted.Messages)+1),
+	}
+	for _, message := range interpreted.Messages {
+		content := anthropic.NewTextBlock(message.Content)
+		switch strings.ToLower(strings.TrimSpace(message.Role)) {
+		case "system":
+			params.System = append(params.System, anthropic.TextBlockParam{Text: message.Content})
+		case "user":
+			params.Messages = append(params.Messages, anthropic.NewUserMessage(content))
+		case "assistant":
+			params.Messages = append(params.Messages, anthropic.NewAssistantMessage(content))
+		default:
+			return anthropic.MessageNewParams{}, nativeRequestShapeError("Anthropic Messages cannot represent message role %q", message.Role)
+		}
+	}
+	if len(interpreted.ToolResults) > 0 {
+		blocks := make([]anthropic.ContentBlockParamUnion, 0, len(interpreted.ToolResults))
+		for _, outcome := range interpreted.ToolResults {
+			output, marshalErr := json.Marshal(struct {
+				ToolName string           `json:"tool_name"`
+				Result   types.ToolResult `json:"result"`
+			}{ToolName: outcome.Name, Result: outcome.Result})
+			if marshalErr != nil {
+				return anthropic.MessageNewParams{}, nativeRequestShapeError("marshal Anthropic tool result: %v", marshalErr)
+			}
+			isError := outcome.Result.Error != nil
+			blocks = append(blocks, anthropic.NewToolResultBlock(outcome.CallID, string(output), isError))
+		}
+		params.Messages = append(params.Messages, anthropic.NewUserMessage(blocks...))
+	}
+	if len(params.Messages) == 0 && len(params.System) == 0 {
+		return anthropic.MessageNewParams{}, errors.New("model input is empty")
+	}
+	return params, nil
+}
+
+func nativeRequestShapeError(format string, args ...any) error {
+	return &providererror.Classified{
+		Class:     types.ErrModel,
+		Reason:    "request_shape_invalid",
+		Retryable: false,
+		Cause:     fmt.Errorf(format, args...),
+	}
+}
+
 func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
@@ -208,35 +281,19 @@ func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, 
 	if model == "" {
 		model = c.model
 	}
-	systemBlocks := make([]anthropic.TextBlockParam, 0, len(req.Messages))
-	msgs := make([]anthropic.MessageParam, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		role := strings.ToLower(strings.TrimSpace(m.Role))
-		content := strings.TrimSpace(m.Content)
-		if content == "" {
-			continue
-		}
-		switch role {
-		case "system":
-			systemBlocks = append(systemBlocks, anthropic.TextBlockParam{Text: content})
-		case "assistant":
-			msgs = append(msgs, anthropic.NewAssistantMessage(anthropic.NewTextBlock(content)))
-		default:
-			msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(content)))
-		}
+	params, err := nativeMessageParams(req, model, c.maxToken)
+	if err != nil {
+		return 0, err
 	}
-	if input := strings.TrimSpace(req.Input); input != "" {
-		msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(input)))
-	}
-	if len(msgs) == 0 {
+	if len(params.Messages) == 0 {
 		return 0, errors.New("model input is empty")
 	}
 	resp, err := c.sdk.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{
 		Model: anthropic.Model(model),
 		System: anthropic.MessageCountTokensParamsSystemUnion{
-			OfTextBlockArray: systemBlocks,
+			OfTextBlockArray: params.System,
 		},
-		Messages: msgs,
+		Messages: params.Messages,
 	})
 	if err != nil {
 		return 0, providererror.FromError(err)
@@ -421,24 +478,6 @@ func decodeAnthropicToolCallArgs(raw string) (map[string]any, error) {
 		return nil, err
 	}
 	return args, nil
-}
-
-func (c *Client) generateWithSDK(ctx context.Context, input string) (types.ModelResponse, error) {
-	msg, err := c.sdk.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(c.model),
-		MaxTokens: c.maxToken,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(input)),
-		},
-	})
-	if err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) {
-			return types.ModelResponse{}, providererror.FromStatusCode(err, apiErr.StatusCode)
-		}
-		return types.ModelResponse{}, providererror.FromError(err)
-	}
-	return decodeMessage(msg), nil
 }
 
 func decodeMessage(msg any) types.ModelResponse {

@@ -19,32 +19,13 @@ const requestProjectionFixturePath = "testdata/model_request_projection.v1.json"
 // never rewrite itself during a normal test run.
 const regenRequestProjectionFixtureEnv = "BAYMAX_REGEN_REQUEST_PROJECTION_FIXTURE"
 
-// auditedRequestGaps is the pinned semantic-loss set produced by every current
-// adapter for the audited request shape. It is evidence, not a tolerance:
-// removing an entry requires an explicit contract change, and adding one
-// requires the adapter to actually regress.
+// auditedRequestGaps retains only the capability baseline that this change
+// intentionally does not resolve. Native role, ordering, and tool-result gaps
+// have been explicitly migrated away.
 func auditedRequestGaps() []string {
 	return []string{
 		conformance.ReasonRequestCapabilityProjectionDrift,
-		conformance.ReasonRequestRoleProjectionDrift,
-		conformance.ReasonRequestToolResultNativeDrift,
 	}
-}
-
-// fixtureAuditPayload reconstructs, provider-neutrally, the text payload the
-// current adapters hand to their SDK: the canonical input plus the canonical
-// tool-result feedback envelope when tool results were admitted.
-//
-// The bytes are synthetic by design. Byte-for-byte equivalence with the live
-// adapters is owned by model/<provider>/request_projection_test.go; here only
-// the normalized projection of that payload is pinned.
-func fixtureAuditPayload(withToolResult bool) string {
-	payload := "summarize the repository"
-	if withToolResult {
-		payload += "\nworking on it\n[tool_result_feedback.v1]\n" +
-			`{"tool_name":"read_file","call_id":"call-1","content":"file body"}`
-	}
-	return payload
 }
 
 // fixtureSource mirrors what RequestFactsFromModelRequest admits for the
@@ -71,7 +52,7 @@ func fixtureSource(withToolResult, withCapabilities bool) conformance.RequestFac
 }
 
 func fixtureObserved(source conformance.RequestFacts) conformance.RequestProjection {
-	return conformance.ProjectRequestTextEnvelope(fixtureAuditPayload(len(source.ToolResults) > 0), source.ToolResults)
+	return conformance.ProjectRequestNative(source)
 }
 
 func finalizeRequestProjectionCase(t *testing.T, c conformance.RequestProjectionCase) conformance.RequestProjectionCase {
@@ -109,7 +90,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 			observed := fixtureObserved(source)
 			expected := observed
 			cases = append(cases, finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
-				Name:         provider + "_" + mode + "_canonical_text_envelope",
+				Name:         provider + "_" + mode + "_native_request_projection",
 				Provider:     provider,
 				Mode:         mode,
 				Source:       source,
@@ -136,19 +117,16 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 			DeclaredGaps: auditedRequestGaps(),
 		}))
 
-		// No tool results admitted: the native-tool-result gap must disappear
-		// while role and capability gaps remain.
+		// No tool results admitted: native role projection remains gap-free and
+		// only the unresolved capability baseline remains.
 		plainSource := fixtureSource(false, true)
 		cases = append(cases, finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
-			Name:     provider + "_run_without_tool_results",
-			Provider: provider,
-			Mode:     "run",
-			Source:   plainSource,
-			Observed: fixtureObserved(plainSource),
-			DeclaredGaps: []string{
-				conformance.ReasonRequestCapabilityProjectionDrift,
-				conformance.ReasonRequestRoleProjectionDrift,
-			},
+			Name:         provider + "_run_without_tool_results",
+			Provider:     provider,
+			Mode:         "run",
+			Source:       plainSource,
+			Observed:     fixtureObserved(plainSource),
+			DeclaredGaps: auditedRequestGaps(),
 		}))
 	}
 	return conformance.RequestProjectionFixture{
@@ -164,6 +142,15 @@ func marshalRequestProjectionFixture(t *testing.T, fixture conformance.RequestPr
 		t.Fatalf("marshal fixture: %v", err)
 	}
 	return append(raw, '\n')
+}
+
+// normalizeFixtureLineEndings compares the versioned JSON artifact as
+// repository text rather than as a checkout-specific byte stream. Git may
+// materialize LF-tracked text as CRLF on Windows when core.autocrlf is enabled,
+// while json.MarshalIndent always emits LF. The projection contract is the
+// JSON content; its line-ending representation must not create false drift.
+func normalizeFixtureLineEndings(raw []byte) []byte {
+	return bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 }
 
 // TestGenerateProviderRequestProjectionFixture regenerates the committed
@@ -190,7 +177,10 @@ func TestProviderRequestProjectionFixtureMatchesCommittedArtifact(t *testing.T) 
 	if err != nil {
 		t.Fatalf("read committed fixture: %v", err)
 	}
-	if !bytes.Equal(bytes.TrimSpace(got), bytes.TrimSpace(want)) {
+	if !bytes.Equal(
+		bytes.TrimSpace(normalizeFixtureLineEndings(got)),
+		bytes.TrimSpace(normalizeFixtureLineEndings(want)),
+	) {
 		t.Fatalf("%s drifted from the contract builder; regenerate it with %s=1",
 			requestProjectionFixturePath, regenRequestProjectionFixtureEnv)
 	}
@@ -417,7 +407,7 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 				c.Name = "openai_run_undeclared_role_gap"
 				c.Source = conformance.RequestFacts{Roles: []string{"system", "user"}}
 				source := c.Source
-				c.Observed = fixtureObserved(source)
+				c.Observed = conformance.ProjectRequestTextEnvelope("legacy role projection", source.ToolResults)
 				c.Expected = nil
 				c.DeclaredGaps = nil
 			},
@@ -437,7 +427,7 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 					ToolOrder: []string{"read_file"},
 				}
 				source := c.Source
-				c.Observed = fixtureObserved(source)
+				c.Observed = conformance.ProjectRequestTextEnvelope("legacy tool projection", source.ToolResults)
 				c.Expected = nil
 				c.DeclaredGaps = nil
 			},
@@ -472,7 +462,7 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
-				Name:         "openai_run_canonical_text_envelope",
+				Name:         "openai_run_native_request_projection",
 				Provider:     "openai",
 				Mode:         "run",
 				Source:       fixtureSource(true, true),
@@ -501,7 +491,7 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 // fail-fast classification, never a silent truncation.
 func TestProviderRequestProjectionReplayRejectsBounds(t *testing.T) {
 	base := finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
-		Name:         "openai_run_canonical_text_envelope",
+		Name:         "openai_run_native_request_projection",
 		Provider:     "openai",
 		Mode:         "run",
 		Source:       fixtureSource(true, true),

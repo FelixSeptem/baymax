@@ -50,9 +50,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
-归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。**未修改任何适配器运行时投影行为**，未新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
+归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。归档 142 本身**未修改适配器运行时投影行为**；当前 active change 在其证据基线上显式修复已验证的 role、ordering 与 native tool-result gap，不新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
 
-该提案留下的后续增量触发证据（本提案内不实施，仅记录）：三个适配器的 `CountTokens` 路径原生投影 `Messages` 的 system/assistant 角色，而 `Generate`/`Stream` 把整个请求压平为单段文本，因此 token 会计与实发请求可能不对应。若要让计费口径与实发请求一致，必须由新的增量 change 显式更换适配器投影行为。
+该提案留下的后续增量触发证据已由 active change 处理：三个适配器的 Generate/Stream 现在复用 SDK-neutral canonical facts 构造原生 role/tool-result request，Anthropic/Gemini CountTokens 复用相同可表达事实，OpenAI 继续保留官方 SDK 无 token-count API 的明确 capability exception。Prompt-cache usage schema 仍不在本 change 内，只有稳定成本/P95 与 provider usage 证据成立时才另行立项。
 
 ## 版本阶段口径（延续 0.x）
 

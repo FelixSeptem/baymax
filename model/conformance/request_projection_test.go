@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -269,6 +270,29 @@ func TestParseRequestProjectionFixtureRejectsUnsupportedVersion(t *testing.T) {
 	}
 	if classified.Code != ReasonRequestSchemaDrift {
 		t.Fatalf("unexpected code %q", classified.Code)
+	}
+}
+
+func TestProjectRequestNativePreservesRoleOrderInputAndToolFacts(t *testing.T) {
+	source := RequestFacts{
+		Roles:      []string{"system", "user", "assistant"},
+		InputBytes: len("final instruction"),
+		ToolOrder:  []string{"read_file"},
+		ToolResults: []RequestToolFact{{
+			CallID: "call-1",
+			Name:   "read_file",
+		}},
+	}
+	projected := ProjectRequestNative(source)
+	if !reflect.DeepEqual(projected.Roles, source.Roles) {
+		t.Fatalf("roles = %v, want %v", projected.Roles, source.Roles)
+	}
+	wantParts := []string{RequestPartSystemText, RequestPartUserText, RequestPartAssistantText, RequestPartUserText, RequestPartToolResultNative}
+	if !reflect.DeepEqual(projected.Parts, wantParts) {
+		t.Fatalf("parts = %v, want %v", projected.Parts, wantParts)
+	}
+	if !projected.ToolResultNative || !projected.ToolResultCorrelated || !reflect.DeepEqual(projected.ToolOrder, source.ToolOrder) {
+		t.Fatalf("native tool projection = %#v", projected)
 	}
 }
 

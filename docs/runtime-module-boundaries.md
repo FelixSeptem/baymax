@@ -59,6 +59,8 @@
     Stream before provider execution
 - `model/openai` / `model/anthropic` / `model/gemini`
   - 各自拥有 provider-native tool call/result、thinking、usage、Unicode/empty content 与 stream edge 到 canonical contract 的转换。
+  - `model/toolcontract.InterpretRequest` 只提供无 SDK 依赖的 canonical request facts；官方 SDK request builder、system/user/assistant 映射和 native tool-result/function-response part 必须留在对应 provider 包内。
+  - Generate、Stream 与 CountTokens 复用相同 canonical facts；SDK 不可表达的 token-count 字段只能记录为明确 capability exception，不得退化成文本信封。
   - capability/request-shape fallback 只能发生在 model step 调用前；首个语义 stream event 是不可跨越的 provider-switch fence。
   - `core/runner` 只消费 canonical values 并拥有 step、terminal 与 Run/Stream parity；禁止抽取新的共享 wire protocol 或把 Provider SDK 引入 `context/*`。
 - `context/budgetprojection`

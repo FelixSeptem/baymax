@@ -13,6 +13,32 @@ import (
 	"google.golang.org/genai"
 )
 
+func TestNativeGenerateRequestPreservesRolesInputAndFunctionResponse(t *testing.T) {
+	contents, config, err := nativeGenerateRequest(auditModelRequest())
+	if err != nil {
+		t.Fatalf("nativeGenerateRequest error: %v", err)
+	}
+	if config == nil || config.SystemInstruction == nil || len(config.SystemInstruction.Parts) != 1 ||
+		config.SystemInstruction.Parts[0].Text != "skill fragment: always cite files" {
+		t.Fatalf("system projection = %#v", config)
+	}
+	if len(contents) != 4 {
+		t.Fatalf("content count = %d, want 4", len(contents))
+	}
+	wantRoles := []string{"user", "model", "user"}
+	wantText := []string{"summarize the repository", "working on it", "summarize the repository"}
+	for i := range wantRoles {
+		if contents[i].Role != wantRoles[i] || len(contents[i].Parts) != 1 || contents[i].Parts[0].Text != wantText[i] {
+			t.Fatalf("content %d = %#v, want role=%q text=%q", i, contents[i], wantRoles[i], wantText[i])
+		}
+	}
+	response := contents[3].Parts[0].FunctionResponse
+	if response == nil || response.ID != "call-1" || response.Name != "read_file" ||
+		response.Response["output"] != "file body" {
+		t.Fatalf("function response = %#v", response)
+	}
+}
+
 // auditModelRequest mirrors the provider-neutral request shape the runtime
 // admits once Skill bundle mapping has appended system-role prompt fragments
 // and the ReAct loop has produced canonical tool-result feedback.

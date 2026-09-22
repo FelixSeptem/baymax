@@ -374,6 +374,44 @@ func ProjectRequestTextEnvelope(payload string, toolResults []RequestToolFact) R
 	return projection
 }
 
+// ProjectRequestNative describes the provider-neutral facts emitted by a
+// provider-owned native request builder. It intentionally records only bounded
+// role/part/order/correlation facts; provider SDK values and raw content stay
+// outside the conformance package.
+func ProjectRequestNative(source RequestFacts) RequestProjection {
+	projection := RequestProjection{
+		Roles:      append([]string(nil), source.Roles...),
+		Parts:      make([]string, 0, len(source.Roles)+1+len(source.ToolResults)),
+		ToolOrder:  append([]string(nil), source.ToolOrder...),
+		TotalBytes: source.InputBytes,
+	}
+	for _, role := range source.Roles {
+		switch strings.ToLower(strings.TrimSpace(role)) {
+		case "system":
+			projection.Parts = append(projection.Parts, RequestPartSystemText)
+		case "user":
+			projection.Parts = append(projection.Parts, RequestPartUserText)
+		case "assistant":
+			projection.Parts = append(projection.Parts, RequestPartAssistantText)
+		}
+	}
+	if source.InputBytes > 0 {
+		projection.Parts = append(projection.Parts, RequestPartUserText)
+	}
+	if len(source.ToolResults) > 0 {
+		projection.Parts = append(projection.Parts, RequestPartToolResultNative)
+		projection.ToolResultNative = true
+		projection.ToolResultCorrelated = true
+		for _, result := range source.ToolResults {
+			if strings.TrimSpace(result.CallID) == "" || strings.TrimSpace(result.Name) == "" {
+				projection.ToolResultCorrelated = false
+				break
+			}
+		}
+	}
+	return projection
+}
+
 // RequestContentDigest returns the bounded content digest used by request
 // projection facts. Raw payload text never enters the contract.
 func RequestContentDigest(payload string) string {

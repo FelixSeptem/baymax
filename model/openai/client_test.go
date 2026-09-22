@@ -10,6 +10,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
+	"github.com/FelixSeptem/baymax/model/toolcontract"
 	"github.com/openai/openai-go/responses"
 )
 
@@ -214,12 +215,12 @@ func TestStreamFailsOnInvalidToolArguments(t *testing.T) {
 	}
 }
 
-func TestGenerateInjectsCanonicalToolFeedbackIntoRequest(t *testing.T) {
-	var captured string
+func TestGenerateCallbackReceivesCanonicalToolFeedbackWithoutTextEnvelope(t *testing.T) {
+	var captured types.ModelRequest
 	client := NewClient(Config{
 		Model: "gpt-4.1-mini",
 		GenerateFn: func(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-			captured = req.Input
+			captured = req
 			return types.ModelResponse{FinalAnswer: "ok"}, nil
 		},
 	})
@@ -236,10 +237,12 @@ func TestGenerateInjectsCanonicalToolFeedbackIntoRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate error: %v", err)
 	}
-	if !strings.Contains(captured, "[tool_result_feedback.v1]") ||
-		!strings.Contains(captured, `"tool_call_id":"call-1"`) ||
-		!strings.Contains(captured, `"tool_name":"local.echo"`) {
-		t.Fatalf("captured canonical feedback missing expected fields: %q", captured)
+	if captured.Input != "hello" || len(captured.ToolResult) != 1 ||
+		captured.ToolResult[0].CallID != "call-1" || captured.ToolResult[0].Name != "local.echo" {
+		t.Fatalf("captured request lost canonical feedback: %#v", captured)
+	}
+	if strings.Contains(captured.Input, toolcontract.FeedbackHeader) {
+		t.Fatalf("callback request must not contain a text feedback envelope: %q", captured.Input)
 	}
 }
 

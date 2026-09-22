@@ -61,11 +61,11 @@ func TestProviderRequestProjectionContractBoundary(t *testing.T) {
 		}
 	})
 
-	t.Run("adapters keep the canonical request projection entrypoint", func(t *testing.T) {
+	t.Run("adapters keep the SDK-neutral request interpretation entrypoint", func(t *testing.T) {
 		expectations := map[string]string{
-			filepath.Join("model", "openai", "client.go"):    "toolcontract.WithCanonicalInput",
-			filepath.Join("model", "anthropic", "client.go"): "toolcontract.CanonicalInput",
-			filepath.Join("model", "gemini", "client.go"):    "toolcontract.CanonicalInput",
+			filepath.Join("model", "openai", "client.go"):    "toolcontract.InterpretRequest",
+			filepath.Join("model", "anthropic", "client.go"): "toolcontract.InterpretRequest",
+			filepath.Join("model", "gemini", "client.go"):    "toolcontract.InterpretRequest",
 		}
 		for relative, symbol := range expectations {
 			source := mustRead(t, filepath.Join(root, relative))

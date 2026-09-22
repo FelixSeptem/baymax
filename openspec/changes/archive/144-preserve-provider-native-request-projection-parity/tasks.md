@@ -35,7 +35,7 @@
 - [x] 4.2 更新 `docs/development-roadmap.md`：将 Eval 首错归因候选与归档 141 对齐为已归档基线，并把 Provider 方向表述为归档 142 证据后的 native request projection 修复；运行 roadmap status consistency gate，验证无 `roadmap-status-drift`。
 - [x] 4.3 运行聚焦的 normal/race suites（`model/toolcontract`、`model/conformance`、三 adapter、`tool/diagnosticsreplay`、`tool/contributioncheck`），记录 role/tool-result 成功与失败、Run/Stream/CountTokens 对等、fixture migration 与 replay 幂等证据。
 - [x] 4.4 运行 `openspec validate --all`、`go test ./...`、`go test -race ./...`、`golangci-lint run --config .golangci.yml`、双平台 provider projection gate、`scripts/check-quality-gate.*` 与 `scripts/check-docs-consistency.*`；记录精确结果、环境受限命令及等价替代证据。
-- [x] 4.5 最终范围复核：确认没有新增 provider、共享 wire/gateway、credential store、remote catalog、runtime 配置键、context SDK 依赖、scheduler/ReAct/tail recap 接线、诊断 schema 或 raw payload 持久化；已完成门禁与归档，待合并/推送成功后按 AGENTS.md 清理 feature branch/worktree。
+- [x] 4.5 最终范围复核：确认没有新增 provider、共享 wire/gateway、credential store、remote catalog、runtime 配置键、context SDK 依赖、scheduler/ReAct/tail recap 接线、诊断 schema 或 raw payload 持久化；门禁、归档、合并与推送均已完成，随后按 AGENTS.md 清理 feature branch/worktree。
 
 ## Verification Record
 
@@ -50,5 +50,5 @@
 - Shell provider projection gate：普通受限令牌下的 Windows Git Bash 无法创建 signal pipe、WSL 无法创建实例（均为 Win32 error 5）；在提升权限且进程级设置 `PATH=/usr/bin:$PATH` 后，Git Bash shell gate 已完整通过。PowerShell 等价 gate 同样通过。
 - `scripts/check-quality-gate.ps1`：所有测试、race、契约与文档阶段通过，最终在严格 golangci-lint 阶段因上述基线 gofmt 问题失败。
 - 2026-09-22 等价 LF 集成门禁：在隔离的纯 LF 验证仓库中，以 `BAYMAX_A64_GATE_SELECTION_MODE=full` 运行 `BAYMAX_QUALITY_GATE_SCOPE=general pwsh -File scripts/check-quality-gate.ps1`，repo hygiene、docs consistency、OpenSpec example impact、A64 impacted selection、A64 harnessability、semantic labeling、`go test ./...`、`go test -race ./...` 与 strict `golangci-lint` 全部通过；总耗时约 207 秒，strict lint 返回 `0 issues`。`full` 模式仅绕过临时单元素快照触发的 A64 PowerShell `.Count` 展开边界，未修改脚本。原始功能工作树 strict lint 仍记录为受 `core.autocrlf=true` 的 CRLF 基线阻塞，因此该隔离门禁作为等价 LF 替代证据保留。
-- 范围复核：变更文件未触及 `runtime/*`、`context/*`、`orchestration/scheduler/*`、`core/runner/*` 或 `model/catalog/*`；`model/toolcontract` 依赖闭包不含三家 provider SDK。归档脚本已完成，合并、push 与分支/worktree 清理在本记录提交时尚待执行。
+- 范围复核：变更文件未触及 `runtime/*`、`context/*`、`orchestration/scheduler/*`、`core/runner/*` 或 `model/catalog/*`；`model/toolcontract` 依赖闭包不含三家 provider SDK。归档脚本、合并与 push 已完成；feature branch/worktree 清理在本记录提交后执行。
 - 2026-09-22 最终范围复核：`git diff --name-only` forbidden-scope 检查为 `0`；`go list -deps ./model/toolcontract` 的 provider SDK 依赖泄漏为 `0`；以工作树内独立 `GOCACHE` 重跑 `tool/contributioncheck` 与 `tool/diagnosticsreplay` 的 provider projection 边界/回放测试均通过。未发现新增 provider、共享 wire/gateway、credential store、remote catalog、runtime 配置键、context SDK 依赖、scheduler/ReAct/tail recap 接线、诊断写入或 raw payload 持久化。

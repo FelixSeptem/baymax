@@ -344,6 +344,12 @@ if ! bash scripts/check-provider-model-capability-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] model catalog routing admission contract"
+if ! bash scripts/check-model-catalog-routing-admission-contract.sh; then
+  echo "[quality-gate][model-catalog-routing-admission-contract] model catalog routing admission contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter contract replay"
 if ! bash scripts/check-adapter-contract-replay.sh; then
   echo "[quality-gate][adapter-contract-replay] adapter contract replay check failed"

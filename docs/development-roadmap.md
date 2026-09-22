@@ -38,6 +38,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
   - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
   - `establish-budget-aware-derived-context-projection-contract`（归档 143；有界只读预算投影契约、离线 benchmark、fixture、replay 与 gate 已收口；未改变运行时行为）
+  - `establish-model-catalog-routing-admission-audit-contract`（归档 145；host-supplied model catalog/routing admission 的有界审计、版本化 fixture/replay、Run/Stream parity 及由可复现 exact-identity gap 触发的纯函数 deterministic resolver 已收口；不引入远程 catalog、credential store 或全局 router）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项。

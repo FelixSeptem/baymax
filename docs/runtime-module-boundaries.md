@@ -57,6 +57,9 @@
     probes, credential storage, or diagnostics writes
   - freezes normalized catalog generation and admission facts for a Run or
     Stream before provider execution
+  - owns the bounded `model_catalog_routing_admission.v1` normalization/audit and
+    the explicitly opt-in pure candidate resolver; resolver inputs are
+    host-supplied and never become a global mutable router
 - `model/openai` / `model/anthropic` / `model/gemini`
   - 各自拥有 provider-native tool call/result、thinking、usage、Unicode/empty content 与 stream edge 到 canonical contract 的转换。
   - `model/toolcontract.InterpretRequest` 只提供无 SDK 依赖的 canonical request facts；官方 SDK request builder、system/user/assistant 映射和 native tool-result/function-response part 必须留在对应 provider 包内。

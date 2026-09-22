@@ -43,6 +43,27 @@ Runtime → Provider 方向与响应侧是同族合同：`model/toolcontract.Int
 - CountTokens 必须复用相同 canonical facts；Anthropic/Gemini 的 token API 使用其可表达的原生消息/contents，Gemini system instruction 仅在 token API 无独立字段时做有界 user-role capability projection；OpenAI 官方 SDK 当前没有 token count API，保留明确 unsupported capability，不伪造文本请求。
 - 门禁：`scripts/check-provider-request-projection-contract.sh` / `.ps1`。
 
+## Model catalog routing admission audit (`model_catalog_routing_admission.v1`)
+
+`model/catalog` 现在提供一个 host-supplied、provider-neutral 的 catalog/routing
+admission audit。它规范化候选 identity、priority、required/optional capability、
+catalog generation 与有界 reason/digest；复用既有 exact-identity
+`Evaluate`、credential evidence、fallback 和 readiness 语义。
+
+审计阶段对多个 independently admissible 候选返回稳定的
+`provider.catalog.audit.ambiguous_selection`，不按 caller order 隐式选型。审计已
+固定这一表达缺口后，`ResolveRoutingAdmission` 作为显式 opt-in 的纯函数路径按
+规范化 priority 选择候选，并保留 skipped candidate reasons；它不执行远程
+discovery、background refresh、credential probe、网络/文件 I/O，也不写 runtime
+diagnostics 或维护全局 router。
+
+- 版本化 fixture：`tool/diagnosticsreplay/testdata/model_catalog_routing_admission.v1.json`。
+- replay：`tool/diagnosticsreplay/model_catalog_routing_admission.go`，重复回放必须
+  产生相同 digest、generation、selection 与 reason order。
+- 门禁：`scripts/check-model-catalog-routing-admission-contract.sh` / `.ps1`。
+- Example Impact Assessment：`无需示例变更（附理由）`；该 change 不改变
+  `examples/agent-modes` 的配置、runtime path 或 expected markers。
+
 ## 关键入口
 
 - `openai/client.go`

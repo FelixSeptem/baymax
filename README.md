@@ -16,7 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-20）：
+当前里程碑快照（2026-09-22）：
+- `establish-model-catalog-routing-admission-audit-contract`（已归档为 145；host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver；不引入远程 discovery、credential store 或全局 router）。
 - `preserve-provider-native-request-projection-parity`（已归档为 144；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。
 - `establish-budget-aware-derived-context-projection-contract`（已归档为 143；由既有预算 owner 事实派生、有界只读的 `budget_projection.v1` 剩余预算投影契约 + 离线确定性预算利用 benchmark + replay 与双平台 gate；不新增预算账本、不新增配置键、不修改 ReAct 循环或 tail recap 接线）。
 - `establish-provider-request-projection-and-cache-observability-contract`（已归档并稳定；Runtime → Provider 请求侧投影契约 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 role/tool-result-native/能力投影 `declared_gap`、cache 用量 additive + nullable + default 口径、版本化 fixture、离线 replay 与双平台 gate；不修改适配器运行时投影行为）。
@@ -274,6 +275,7 @@ _ = err
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前主线能力状态（最新）：
+- `establish-model-catalog-routing-admission-audit-contract`：host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver（已归档为 145；不引入远程 discovery、credential store 或全局 router）。
 - `introduce-provider-model-capability-and-credential-preflight-contract`：Provider/model 静态能力目录、脱敏 credential preflight、readiness 投影、诊断回放与 Run/Stream parity（已归档并稳定）
 - `extension-lifecycle-governance-resource-resolution-contract`：扩展生命周期、资源确定性发现、准入、失败隔离与 reload/rollback（已归档并稳定）
 - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（已归档并稳定；冻结跨框架任务生命周期协议投影，不引入托管控制面）。

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-22 22:10:19
+Updated: 2026-09-23 07:14:17
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -146,3 +146,4 @@ Updated: 2026-09-22 22:10:19
 - 142 -> establish-provider-request-projection-and-cache-observability-contract
 - 143 -> establish-budget-aware-derived-context-projection-contract
 - 144 -> preserve-provider-native-request-projection-parity
+- 145 -> establish-model-catalog-routing-admission-audit-contract

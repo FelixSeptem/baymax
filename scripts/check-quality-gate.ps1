@@ -655,6 +655,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-provider-model-capability-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] model catalog routing admission contract"
+        Command   = { pwsh -File scripts/check-model-catalog-routing-admission-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] react contract suites"
         Command   = { pwsh -File scripts/check-react-contract.ps1 }
     },

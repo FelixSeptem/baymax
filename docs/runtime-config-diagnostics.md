@@ -2175,6 +2175,15 @@ optional capability outcome, credential status, and ordered reason codes. Only
 Run or Stream retains its catalog generation snapshot; later valid reloads
 affect only later admissions.
 
+The `model_catalog_routing_admission.v1` audit is offline and host-supplied. It
+does not add a runtime configuration key or discovery lifecycle. Exact-identity
+admission reports multiple independently admissible candidates as bounded
+`provider.catalog.audit.ambiguous_selection`; the opt-in pure resolver is only
+used after that audit evidence and consumes the supplied snapshot, candidates and
+policy without network, filesystem, clock, credential-probe or provider SDK side
+effects. Fixture/replay evidence is stored outside `RunRecord`; no new
+diagnostic fields are required by this change.
+
 - 触发机制：监听配置文件变更。
 - 执行路径：`parse -> validate -> build snapshot -> atomic swap`。
 - 失败策略：任一步失败则拒绝本次更新，保留旧快照，并写入 reload 诊断记录。

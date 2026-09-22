@@ -1,0 +1,281 @@
+{
+  "version": "model_catalog_routing_admission.v1",
+  "cases": [
+    {
+      "case_id": "audit-ready",
+      "catalog": {
+        "version": "catalog-generation-1",
+        "descriptors": [
+          {
+            "provider": "openai",
+            "model": "fast",
+            "context_window": 32000,
+            "capabilities": ["streaming"]
+          }
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-1",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ],
+        "required_capabilities": ["streaming"]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-1",
+        "status": "ready",
+        "selected": {"provider": "openai", "model": "fast"},
+        "candidate_order": [
+          {"provider": "openai", "model": "fast"}
+        ]
+      }
+    },
+    {
+      "case_id": "audit-capability-blocked",
+      "catalog": {
+        "version": "catalog-generation-2",
+        "descriptors": [
+          {
+            "provider": "openai",
+            "model": "fast",
+            "context_window": 32000,
+            "capabilities": ["streaming"]
+          }
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-2",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ],
+        "required_capabilities": ["tool_call"]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-2",
+        "status": "blocked",
+        "reasons": ["provider.catalog.audit.no_admissible_candidate"]
+      }
+    },
+    {
+      "case_id": "audit-credential-degraded",
+      "catalog": {
+        "version": "catalog-generation-3",
+        "descriptors": [
+          {
+            "provider": "openai",
+            "model": "fast",
+            "context_window": 32000
+          }
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-3",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "unverified"}
+      },
+      "expected": {
+        "catalog_generation": "generation-3",
+        "status": "degraded",
+        "selected": {"provider": "openai", "model": "fast"},
+        "reasons": ["provider.credential.unverified"]
+      }
+    },
+    {
+      "case_id": "audit-declared-fallback",
+      "catalog": {
+        "version": "catalog-generation-4",
+        "descriptors": [
+          {
+            "provider": "openai",
+            "model": "fast",
+            "context_window": 32000,
+            "capabilities": ["streaming"],
+            "fallback": {"provider": "openai", "model": "vision"}
+          },
+          {
+            "provider": "openai",
+            "model": "vision",
+            "context_window": 128000,
+            "capabilities": ["streaming", "vision"]
+          }
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-4",
+        "source": "host",
+        "strategy": "best_effort",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ],
+        "optional_capabilities": ["vision"]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-4",
+        "status": "degraded",
+        "selected": {"provider": "openai", "model": "fast"},
+        "fallback": {"provider": "openai", "model": "vision"},
+        "reasons": [
+          "adapter.capability.optional_downgraded",
+          "provider.catalog.optional_fallback"
+        ]
+      }
+    },
+    {
+      "case_id": "audit-ambiguous-selection",
+      "catalog": {
+        "version": "catalog-generation-5",
+        "descriptors": [
+          {"provider": "openai", "model": "fast", "context_window": 32000},
+          {"provider": "local", "model": "small", "context_window": 32000}
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-5",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}, "priority": 2},
+          {"identity": {"provider": "local", "model": "small"}, "priority": 1}
+        ]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"},
+        "local": {"provider": "local", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-5",
+        "status": "blocked",
+        "reasons": ["provider.catalog.audit.ambiguous_selection"],
+        "candidate_order": [
+          {"provider": "openai", "model": "fast"},
+          {"provider": "local", "model": "small"}
+        ]
+      }
+    },
+    {
+      "case_id": "resolver-priority-selection",
+      "mode": "resolver",
+      "catalog": {
+        "version": "catalog-generation-6",
+        "descriptors": [
+          {"provider": "openai", "model": "fast", "context_window": 32000, "capabilities": ["streaming"]},
+          {"provider": "local", "model": "small", "context_window": 32000, "capabilities": ["streaming", "vision"]}
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-6",
+        "source": "host",
+        "strategy": "best_effort",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}, "priority": 1},
+          {"identity": {"provider": "local", "model": "small"}, "priority": 2}
+        ],
+        "required_capabilities": ["streaming"],
+        "optional_capabilities": ["vision"]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"},
+        "local": {"provider": "local", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-6",
+        "status": "ready",
+        "selected": {"provider": "local", "model": "small"},
+        "resolver_activated": true,
+        "candidate_order": [
+          {"provider": "local", "model": "small"},
+          {"provider": "openai", "model": "fast"}
+        ]
+      }
+    },
+    {
+      "case_id": "audit-no-candidates",
+      "catalog": {
+        "version": "catalog-generation-7",
+        "descriptors": []
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-7",
+        "source": "host",
+        "candidates": []
+      },
+      "expected": {
+        "catalog_generation": "generation-7",
+        "status": "blocked",
+        "reasons": ["provider.catalog.audit.no_candidates"]
+      }
+    },
+    {
+      "case_id": "run-parity",
+      "catalog": {
+        "version": "catalog-generation-8",
+        "descriptors": [
+          {"provider": "openai", "model": "fast", "context_window": 32000}
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-8",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-8",
+        "status": "ready",
+        "selected": {"provider": "openai", "model": "fast"}
+      }
+    },
+    {
+      "case_id": "stream-parity",
+      "catalog": {
+        "version": "catalog-generation-8",
+        "descriptors": [
+          {"provider": "openai", "model": "fast", "context_window": 32000}
+        ]
+      },
+      "input": {
+        "version": "model_catalog_routing_admission.v1",
+        "catalog_generation": "generation-8",
+        "source": "host",
+        "candidates": [
+          {"identity": {"provider": "openai", "model": "fast"}}
+        ]
+      },
+      "credentials": {
+        "openai": {"provider": "openai", "status": "available"}
+      },
+      "expected": {
+        "catalog_generation": "generation-8",
+        "status": "ready",
+        "selected": {"provider": "openai", "model": "fast"}
+      }
+    }
+  ]
+}

@@ -132,8 +132,8 @@ Shell and PowerShell gates MUST execute equivalent checks for adapter ownership,
 - **THEN** provider SDK 类型仅存在于相应的 `model/<provider>` 包，SDK-neutral canonical facts 不形成共享 provider wire protocol
 
 #### Scenario: 审计不新增运行时 API
-- **WHEN** 请求侧审计被执行
-- **THEN** 审计仅依赖既有缝隙完成，未新增导出 API、配置键或运行时分支
+- **WHEN** 请求侧 conformance 审计被执行
+- **THEN** 审计仅依赖既有 SDK-boundary 注入缝隙完成，未新增导出 API、配置键或平行运行时分支
 
 #### Scenario: 适配器所有权被门禁保护
 - **WHEN** SDK 请求构造逻辑被移动到 `model/<provider>` 之外的包

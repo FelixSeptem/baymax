@@ -133,7 +133,7 @@ For OpenAI, Anthropic, and Gemini, a valid feedback result MUST be represented a
 
 #### Scenario: Equivalent tool-result feedback through Anthropic and Gemini adapters
 - **WHEN** equivalent canonical tool-result payload is sent to Anthropic and Gemini adapters
-- **THEN** both adapters map payload to their native request parts and continue the model step with semantically equivalent outcome classification
+- **THEN** both adapters map it to their native request parts and continue the model step with semantically equivalent outcome classification
 
 #### Scenario: Invalid feedback fails before invocation
 - **WHEN** canonical feedback is missing required identity or exceeds bounds

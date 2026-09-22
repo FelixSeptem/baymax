@@ -2,7 +2,6 @@ package openai
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -36,16 +35,6 @@ func auditModelRequest() types.ModelRequest {
 			Required: []types.ModelCapability{types.ModelCapabilityToolCall, types.ModelCapabilityStreaming},
 		},
 	}
-}
-
-// auditDeclaredGaps is the pinned request projection gap set for the OpenAI
-// adapter. It is evidence, not a tolerance: fixing any of these requires an
-// explicit contract change (see openspec change
-// establish-provider-request-projection-and-cache-observability-contract).
-var auditDeclaredGaps = []string{
-	conformance.ReasonRequestCapabilityProjectionDrift,
-	conformance.ReasonRequestRoleProjectionDrift,
-	conformance.ReasonRequestToolResultNativeDrift,
 }
 
 func TestRequestProjectionAuditStreamShape(t *testing.T) {
@@ -111,10 +100,7 @@ func TestRequestProjectionAuditRunStreamParity(t *testing.T) {
 	}
 }
 
-func TestRequestProjectionAuditFallsBackToLastMessageOnly(t *testing.T) {
-	// With no Input, the adapter falls back to the last message content only,
-	// so earlier roles are still lost and the system fragment still never
-	// reaches the SDK.
+func TestRequestProjectionAuditPreservesMessagesWhenInputIsEmpty(t *testing.T) {
 	req := auditModelRequest()
 	req.Input = ""
 
@@ -128,77 +114,50 @@ func TestRequestProjectionAuditFallsBackToLastMessageOnly(t *testing.T) {
 		t.Fatalf("Stream returned error: %v", err)
 	}
 
-	projected := captured.Input.OfString.Value
-	if !strings.Contains(projected, "working on it") {
-		t.Fatalf("expected last message content to be used as fallback, got %q", projected)
+	items := captured.Input.OfInputItemList
+	if len(items) != len(req.Messages)+len(req.ToolResult) {
+		t.Fatalf("input item count = %d, want %d", len(items), len(req.Messages)+len(req.ToolResult))
 	}
-	if strings.Contains(projected, "skill fragment") {
-		t.Fatalf("system-role skill fragment reached the SDK: %q", projected)
+	if items[0].OfMessage == nil || items[0].OfMessage.Role != responses.EasyInputMessageRoleSystem {
+		t.Fatalf("system message was not preserved: %#v", items[0])
 	}
 }
 
 func assertOpenAIProjection(t *testing.T, captured responses.ResponseNewParams, req types.ModelRequest) {
 	t.Helper()
 
-	if !captured.Input.OfString.Valid() {
-		t.Fatal("audit expectation: the request input must be projected as a single string")
+	if captured.Input.OfString.Valid() {
+		t.Fatal("request must not collapse canonical facts into a single text input")
 	}
-	projected := captured.Input.OfString.Value
-	if strings.TrimSpace(projected) == "" {
-		t.Fatal("projected input is empty")
+	items := captured.Input.OfInputItemList
+	if len(items) != len(req.Messages)+1+len(req.ToolResult) {
+		t.Fatalf("input item count = %d, want %d", len(items), len(req.Messages)+1+len(req.ToolResult))
 	}
-	if len(captured.Input.OfInputItemList) != 0 {
-		t.Fatalf("audit expectation changed: input items are now projected (%d)", len(captured.Input.OfInputItemList))
+	wantRoles := []responses.EasyInputMessageRole{
+		responses.EasyInputMessageRoleSystem,
+		responses.EasyInputMessageRoleUser,
+		responses.EasyInputMessageRoleAssistant,
+		responses.EasyInputMessageRoleUser,
 	}
-	if captured.Instructions.Valid() {
-		t.Fatal("audit expectation changed: system instructions are now projected")
+	wantContent := []string{
+		"skill fragment: always cite files",
+		"summarize the repository",
+		"working on it",
+		"summarize the repository",
 	}
-	if strings.Contains(projected, "skill fragment") {
-		t.Fatal("audit expectation changed: system-role skill fragment reached the SDK")
+	for i := range wantRoles {
+		message := items[i].OfMessage
+		if message == nil || message.Role != wantRoles[i] || message.Content.OfString.Value != wantContent[i] {
+			t.Fatalf("input item %d = %#v, want role=%q content=%q", i, items[i], wantRoles[i], wantContent[i])
+		}
 	}
-	if strings.Contains(projected, "working on it") {
-		t.Fatal("audit expectation changed: assistant history reached the SDK")
+	output := items[len(wantRoles)].OfFunctionCallOutput
+	if output == nil || output.CallID != "call-1" {
+		t.Fatalf("tool result is not an associated native function output: %#v", items[len(wantRoles)])
 	}
-	if !strings.Contains(projected, toolcontract.FeedbackHeader) {
-		t.Fatal("canonical tool-result feedback envelope is missing from the projected input")
-	}
-
-	source := conformance.RequestFactsFromModelRequest(req)
-	observed := conformance.ProjectRequestTextEnvelope(projected, source.ToolResults)
-	if !observed.ToolResultCorrelated {
-		t.Fatal("tool-result correlation must be preserved inside the text envelope")
-	}
-
-	gaps := conformance.ClassifyRequestGaps(source, observed)
-	if strings.Join(gaps, ",") != strings.Join(auditDeclaredGaps, ",") {
-		t.Fatalf("request projection gaps changed: got %v want %v", gaps, auditDeclaredGaps)
-	}
-
-	if err := conformance.ValidateCacheUsageBaselineUnavailable(observed); err != nil {
-		t.Fatalf("cache usage baseline violated: %v", err)
-	}
-
-	first, err := conformance.RequestProjectionDigest(observed)
-	if err != nil {
-		t.Fatalf("digest: %v", err)
-	}
-	canonical, err := conformance.CanonicalRequestProjection(observed)
-	if err != nil {
-		t.Fatalf("canonical: %v", err)
-	}
-	var reparsed conformance.RequestProjection
-	if err := json.Unmarshal(canonical, &reparsed); err != nil {
-		t.Fatalf("round-trip decode: %v", err)
-	}
-	replay, err := conformance.RequestProjectionDigest(reparsed)
-	if err != nil {
-		t.Fatalf("digest: %v", err)
-	}
-	if first != replay {
-		t.Fatalf("request projection digest is not idempotent: %q != %q", first, replay)
-	}
-
-	if len(observed.Capabilities) != 0 {
-		t.Fatal("audit expectation changed: capabilities are now projected")
+	if strings.Contains(output.Output, toolcontract.FeedbackHeader) ||
+		!strings.Contains(output.Output, `"tool_name":"read_file"`) ||
+		!strings.Contains(output.Output, `"content":"file body"`) {
+		t.Fatalf("native function output did not preserve tool identity/result: %q", output.Output)
 	}
 }

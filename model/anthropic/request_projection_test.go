@@ -9,7 +9,33 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/model/conformance"
 	"github.com/FelixSeptem/baymax/model/toolcontract"
+	"github.com/anthropics/anthropic-sdk-go"
 )
+
+func TestNativeMessageParamsPreserveRolesInputAndToolResult(t *testing.T) {
+	params, err := nativeMessageParams(auditModelRequest(), "claude-3-5-sonnet-latest", 1024)
+	if err != nil {
+		t.Fatalf("nativeMessageParams error: %v", err)
+	}
+	if len(params.System) != 1 || params.System[0].Text != "skill fragment: always cite files" {
+		t.Fatalf("system projection = %#v", params.System)
+	}
+	if len(params.Messages) != 4 {
+		t.Fatalf("message count = %d, want 4", len(params.Messages))
+	}
+	if params.Messages[0].Role != anthropic.MessageParamRoleUser ||
+		params.Messages[1].Role != anthropic.MessageParamRoleAssistant ||
+		params.Messages[2].Role != anthropic.MessageParamRoleUser {
+		t.Fatalf("message roles = %#v", params.Messages[:3])
+	}
+	toolBlock := params.Messages[3].Content[0].OfToolResult
+	if toolBlock == nil || toolBlock.ToolUseID != "call-1" || len(toolBlock.Content) != 1 ||
+		toolBlock.Content[0].OfText == nil ||
+		!strings.Contains(toolBlock.Content[0].OfText.Text, "read_file") ||
+		!strings.Contains(toolBlock.Content[0].OfText.Text, "file body") {
+		t.Fatalf("tool result projection = %#v", params.Messages[3])
+	}
+}
 
 // auditModelRequest mirrors the provider-neutral request shape the runtime
 // admits once Skill bundle mapping has appended system-role prompt fragments

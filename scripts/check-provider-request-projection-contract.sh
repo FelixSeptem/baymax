@@ -26,6 +26,10 @@ echo "[provider-request-projection] fixture presence, version, and bounds"
 [[ -f "${fixture}" ]] || fail "provider_request_schema_drift: missing fixture ${fixture}"
 [[ "$(wc -c < "${fixture}")" -le 2097152 ]] || fail "provider_request_overflow_drift: fixture exceeds 2 MiB"
 grep -q "\"${fixture_version}\"" "${fixture}" || fail "provider_request_schema_drift: fixture does not declare ${fixture_version}"
+grep -q 'tool_result_envelope' "${fixture}" && fail "provider_request_tool_result_native_drift: fixture still declares text-envelope projection"
+for resolved_gap in provider_request_role_projection_drift provider_request_tool_result_native_drift provider_request_part_ordering_drift provider_request_run_stream_parity_drift; do
+  grep -q "${resolved_gap}" "${fixture}" && fail "provider_request_contract_drift: resolved gap remains declared in fixture: ${resolved_gap}"
+done
 
 echo "[provider-request-projection] stable classification taxonomy"
 request_projection_codes=(
@@ -52,7 +56,7 @@ echo "[provider-request-projection] adapter ownership, provider neutrality, no r
 go test ./tool/contributioncheck -run 'TestProviderRequestProjectionContractBoundary' -count=1
 
 echo "[provider-request-projection] adapter SDK request projection shape"
-go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsageProjection|ProjectionAudit' -count=1
+go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsageProjection|ProjectionAudit|NativeMessageParams|NativeGenerateRequest' -count=1
 
 echo "[provider-request-projection] offline replay idempotency"
 go test ./tool/diagnosticsreplay -run 'ProviderRequestProjection' -count=2

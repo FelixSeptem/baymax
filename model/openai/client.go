@@ -102,23 +102,14 @@ func (c *Client) ProviderName() string {
 }
 
 func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
-	normalizedReq, err := toolcontract.WithCanonicalInput(req)
+	params, err := c.nativeRequestParams(req)
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	req = normalizedReq
 	if c.generateFn != nil {
 		return c.generateFn(ctx, req)
 	}
-	input := strings.TrimSpace(req.Input)
-	if input == "" {
-		return types.ModelResponse{}, errors.New("model input is empty")
-	}
-
-	resp, err := c.newResponse(ctx, responses.ResponseNewParams{
-		Model: c.model,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
-	})
+	resp, err := c.newResponse(ctx, params)
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
@@ -134,23 +125,14 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
-	normalizedReq, err := toolcontract.WithCanonicalInput(req)
+	params, err := c.nativeRequestParams(req)
 	if err != nil {
 		return err
 	}
-	req = normalizedReq
 	if c.streamFn != nil {
 		return c.streamFn(ctx, req, onEvent)
 	}
-	input := strings.TrimSpace(req.Input)
-	if input == "" {
-		return errors.New("model input is empty")
-	}
-
-	stream := c.newStream(ctx, responses.ResponseNewParams{
-		Model: c.model,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
-	})
+	stream := c.newStream(ctx, params)
 	if stream == nil {
 		return providererror.WithStreamPhase(providererror.FromError(errors.New("openai stream is nil")), "pre_execution")
 	}
@@ -219,8 +201,79 @@ func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelReques
 
 func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, error) {
 	_ = ctx
-	_ = req
+	if _, err := c.nativeRequestParams(req); err != nil {
+		return 0, err
+	}
 	return 0, errors.New("openai official sdk does not provide token count api in this adapter")
+}
+
+// nativeRequestParams maps SDK-neutral canonical facts into the OpenAI
+// Responses API shape. Keeping this builder local prevents a shared provider
+// request protocol from leaking out of model/openai.
+func (c *Client) nativeRequestParams(req types.ModelRequest) (responses.ResponseNewParams, error) {
+	interpreted, err := toolcontract.InterpretRequest(req)
+	if err != nil {
+		return responses.ResponseNewParams{}, err
+	}
+	items := make(responses.ResponseInputParam, 0, len(interpreted.Messages)+len(interpreted.ToolResults))
+	for _, message := range interpreted.Messages {
+		role, err := openAIMessageRole(message.Role)
+		if err != nil {
+			return responses.ResponseNewParams{}, err
+		}
+		items = append(items, responses.ResponseInputItemParamOfMessage(message.Content, role))
+	}
+	for _, outcome := range interpreted.ToolResults {
+		output, err := openAIToolResultOutput(outcome)
+		if err != nil {
+			return responses.ResponseNewParams{}, err
+		}
+		items = append(items, responses.ResponseInputItemParamOfFunctionCallOutput(outcome.CallID, output))
+	}
+	if len(items) == 0 {
+		return responses.ResponseNewParams{}, errors.New("model input is empty")
+	}
+	return responses.ResponseNewParams{
+		Model: c.model,
+		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: items},
+	}, nil
+}
+
+func openAIMessageRole(raw string) (responses.EasyInputMessageRole, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "system":
+		return responses.EasyInputMessageRoleSystem, nil
+	case "user":
+		return responses.EasyInputMessageRoleUser, nil
+	case "assistant":
+		return responses.EasyInputMessageRoleAssistant, nil
+	default:
+		return "", nativeRequestShapeError("OpenAI Responses input cannot represent message role %q", raw)
+	}
+}
+
+func openAIToolResultOutput(outcome types.ToolCallOutcome) (string, error) {
+	payload := struct {
+		ToolName string           `json:"tool_name"`
+		Result   types.ToolResult `json:"result"`
+	}{
+		ToolName: outcome.Name,
+		Result:   outcome.Result,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", nativeRequestShapeError("marshal OpenAI function output: %v", err)
+	}
+	return string(raw), nil
+}
+
+func nativeRequestShapeError(format string, args ...any) error {
+	return &providererror.Classified{
+		Class:     types.ErrModel,
+		Reason:    "request_shape_invalid",
+		Retryable: false,
+		Cause:     fmt.Errorf(format, args...),
+	}
 }
 
 func (c *Client) discoverWithSDK(ctx context.Context, model string) (types.ProviderCapabilities, error) {

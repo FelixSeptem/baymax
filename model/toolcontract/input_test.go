@@ -2,12 +2,50 @@ package toolcontract
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 )
+
+func TestInterpretRequestPreservesOrderedMessagesFinalInputAndToolCorrelation(t *testing.T) {
+	interpreted, err := InterpretRequest(types.ModelRequest{
+		Messages: []types.Message{
+			{Role: "system", Content: "  system rule  "},
+			{Role: "user", Content: "user question"},
+			{Role: "assistant", Content: "assistant history"},
+			{Role: "user", Content: " \t "},
+		},
+		Input: "  final instruction  ",
+		ToolResult: []types.ToolCallOutcome{{
+			CallID: " call-1 ",
+			Name:   " local.read ",
+			Result: types.ToolResult{Content: "file body"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("InterpretRequest error: %v", err)
+	}
+
+	wantMessages := []types.Message{
+		{Role: "system", Content: "system rule"},
+		{Role: "user", Content: "user question"},
+		{Role: "assistant", Content: "assistant history"},
+		{Role: "user", Content: "final instruction"},
+	}
+	if !reflect.DeepEqual(interpreted.Messages, wantMessages) {
+		t.Fatalf("messages = %#v, want %#v", interpreted.Messages, wantMessages)
+	}
+	if len(interpreted.ToolResults) != 1 {
+		t.Fatalf("tool result count = %d, want 1", len(interpreted.ToolResults))
+	}
+	gotResult := interpreted.ToolResults[0]
+	if gotResult.CallID != "call-1" || gotResult.Name != "local.read" || gotResult.Result.Content != "file body" {
+		t.Fatalf("tool result = %#v, want trimmed native correlation", gotResult)
+	}
+}
 
 func TestCanonicalInputWithoutToolFeedbackUsesBaseInput(t *testing.T) {
 	input, err := CanonicalInput(types.ModelRequest{

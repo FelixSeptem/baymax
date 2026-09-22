@@ -15,6 +15,12 @@ if (-not (Test-Path -LiteralPath $fixture)) { throw "provider_request_schema_dri
 if ((Get-Item -LiteralPath $fixture).Length -gt 2097152) { throw "provider_request_overflow_drift: fixture exceeds 2 MiB" }
 $fixtureText = Get-Content -LiteralPath $fixture -Raw
 if ($fixtureText -notmatch [regex]::Escape($fixtureVersion)) { throw "provider_request_schema_drift: fixture does not declare $fixtureVersion" }
+if ($fixtureText -match 'tool_result_envelope') { throw "provider_request_tool_result_native_drift: fixture still declares text-envelope projection" }
+foreach ($resolvedGap in @("provider_request_role_projection_drift", "provider_request_tool_result_native_drift", "provider_request_part_ordering_drift", "provider_request_run_stream_parity_drift")) {
+    if ($fixtureText -match [regex]::Escape($resolvedGap)) {
+        throw "provider_request_contract_drift: resolved gap remains declared in fixture: $resolvedGap"
+    }
+}
 
 Write-Host "[provider-request-projection] stable classification taxonomy"
 $requestProjectionCodes = @(
@@ -45,7 +51,7 @@ Write-Host "[provider-request-projection] adapter ownership, provider neutrality
 Invoke-NativeStrict -Label "request projection contract boundary" -Command { go test ./tool/contributioncheck -run 'TestProviderRequestProjectionContractBoundary' -count=1 }
 
 Write-Host "[provider-request-projection] adapter SDK request projection shape"
-Invoke-NativeStrict -Label "request projection adapter shape" -Command { go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsageProjection|ProjectionAudit' -count=1 }
+Invoke-NativeStrict -Label "request projection adapter shape" -Command { go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsageProjection|ProjectionAudit|NativeMessageParams|NativeGenerateRequest' -count=1 }
 
 Write-Host "[provider-request-projection] offline replay idempotency"
 Invoke-NativeStrict -Label "request projection replay idempotency" -Command { go test ./tool/diagnosticsreplay -run 'ProviderRequestProjection' -count=2 }

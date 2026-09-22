@@ -41,18 +41,18 @@ Baymax 主线保持 `library-first + contract-first`：
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项。
-  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的审计基线已由归档 142 收口；其中 native request projection 修复已作为 active change `preserve-provider-native-request-projection-parity` 立项，cache usage schema 仍须等待独立的成本/P95 触发证据。
+  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的审计基线已由归档 142 收口；native request projection 修复已作为归档 144 `preserve-provider-native-request-projection-parity` 交付，cache usage schema 仍须等待独立的成本/P95 触发证据。
   - `预算感知派生上下文投影` 的启动条件（先建立 benchmark、fixture 与 replay，比较完成率、预算利用、重复循环与恢复重算）已由归档 143（`establish-budget-aware-derived-context-projection-contract`）交付并收口，不再作为观察候选。
-- 进行中：
-  - `preserve-provider-native-request-projection-parity`（以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
+- 已归档：
+  - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。
 
 最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
 
-归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。归档 142 本身**未修改适配器运行时投影行为**；当前 active change 在其证据基线上显式修复已验证的 role、ordering 与 native tool-result gap，不新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
+归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。归档 142 本身**未修改适配器运行时投影行为**；归档 144 已在其证据基线上显式修复已验证的 role、ordering 与 native tool-result gap，不新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
 
-该提案留下的后续增量触发证据已由 active change 处理：三个适配器的 Generate/Stream 现在复用 SDK-neutral canonical facts 构造原生 role/tool-result request，Anthropic/Gemini CountTokens 复用相同可表达事实，OpenAI 继续保留官方 SDK 无 token-count API 的明确 capability exception。Prompt-cache usage schema 仍不在本 change 内，只有稳定成本/P95 与 provider usage 证据成立时才另行立项。
+该提案留下的后续增量触发证据已由归档 144 处理：三个适配器的 Generate/Stream 现在复用 SDK-neutral canonical facts 构造原生 role/tool-result request，Anthropic/Gemini CountTokens 复用相同可表达事实，OpenAI 继续保留官方 SDK 无 token-count API 的明确 capability exception。Prompt-cache usage schema 仍不在归档 144 内，只有稳定成本/P95 与 provider usage 证据成立时才另行立项。
 
 ## 版本阶段口径（延续 0.x）
 
@@ -135,15 +135,15 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 **后续触发**：只有新的 Badcase 无法由既有首错归因、evidence 或 action-boundary taxonomy 稳定解释时，才以新的增量 change 扩展既有 owner；建议继续保持 review-only，不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置、测试、gate 或代码。
 
-### 进行中：Provider 原生请求投影与 Run/Stream 对等
+### 已归档：Provider 原生请求投影与 Run/Stream 对等
 
-**交付状态**：active change `preserve-provider-native-request-projection-parity` 以归档 142 的真实 SDK fixture/gap 为依据，修复 `ModelRequest.Input`、`Messages`、`ToolResult` 到 SDK request 的原生 role、顺序、tool-result correlation 与 Run/Stream/CountTokens parity。跨 Provider handoff 与 stream edge conformance 继续复用既有 owner，不建设共享协议。
+**交付状态**：归档 144（`preserve-provider-native-request-projection-parity`）以归档 142 的真实 SDK fixture/gap 为依据，修复 `ModelRequest.Input`、`Messages`、`ToolResult` 到 SDK request 的原生 role、顺序、tool-result correlation 与 Run/Stream/CountTokens parity。跨 Provider handoff 与 stream edge conformance 继续复用既有 owner，不建设共享协议。
 
-**范围与后续触发**：当前 change 只最小修改 `model/<provider>` 与 SDK-neutral canonical request facts；prompt-cache usage 仍不纳入。只有 cache 成本/P95 成为稳定瓶颈且有 provider usage 证据时，才另行以 `additive + nullable + default` 和 `RuntimeRecorder` 单写入口设计 cache schema。
+**范围与后续触发**：归档 144 只最小修改 `model/<provider>` 与 SDK-neutral canonical request facts；prompt-cache usage 仍不纳入。只有 cache 成本/P95 成为稳定瓶颈且有 provider usage 证据时，才另行以 `additive + nullable + default` 和 `RuntimeRecorder` 单写入口设计 cache schema。
 
 **必须复用**：`model/<provider>`、`model/toolcontract`、context handoff、既有 provider conformance、Run/Stream parity 与 `RuntimeRecorder`。不得新建通用 provider wire protocol、gateway、credential store 或全局路由状态机，不得在 `context/*` 引入 Provider 官方 SDK。
 
-**Example Impact Assessment**：`无需示例变更（附理由）`。本 change 使用 fixture/replay/gate 验证 SDK 请求构造，不改变示例 runtime path；若实现改变示例的 expected markers 或 usage 输出，必须先更新 `MATRIX.md` 与对应 README，并将评估改为“修改示例”。
+**Example Impact Assessment**：`无需示例变更（附理由）`。归档 144 使用 fixture/replay/gate 验证 SDK 请求构造，不改变示例 runtime path；若后续实现改变示例的 expected markers 或 usage 输出，必须先更新 `MATRIX.md` 与对应 README，并将评估改为“修改示例”。
 
 ### 已归档：预算感知派生上下文投影
 

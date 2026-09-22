@@ -17,7 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-20）：
-- `preserve-provider-native-request-projection-parity`（进行中；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。
+- `preserve-provider-native-request-projection-parity`（已归档为 144；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。
 - `establish-budget-aware-derived-context-projection-contract`（已归档为 143；由既有预算 owner 事实派生、有界只读的 `budget_projection.v1` 剩余预算投影契约 + 离线确定性预算利用 benchmark + replay 与双平台 gate；不新增预算账本、不新增配置键、不修改 ReAct 循环或 tail recap 接线）。
 - `establish-provider-request-projection-and-cache-observability-contract`（已归档并稳定；Runtime → Provider 请求侧投影契约 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 role/tool-result-native/能力投影 `declared_gap`、cache 用量 additive + nullable + default 口径、版本化 fixture、离线 replay 与双平台 gate；不修改适配器运行时投影行为）。
 - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（已归档并稳定；作为归档 139 的离线 Eval 收尾，交付 bounded 首错归因/比较、轨迹决策边界、additive 关联、replay fixtures 与双平台 gate；不修改 runtime loop 或 agent-mode 示例语义）。

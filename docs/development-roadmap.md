@@ -17,7 +17,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档：
   - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
 
-- 当前无 active change：openspec list --json 返回 changes: []；代码基线为 master@e4e9137，已与 origin/master 同步。
+- 当前无 active change：openspec list --json 返回 changes: []；代码基线为 master@a0b6074，已与 origin/master 同步。
 
 状态权威来源：
 
@@ -173,26 +173,26 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 ### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
 
-下表逐章记录本轮研究结论。`已吸收/复用` 表示现有代码、spec 或 roadmap 已覆盖，不再开平行提案；`新增候选` 表示只记录方向，启动仍须满足触发条件；`条件观察` 表示需要真实成本、风险或宿主证据；`不吸收` 表示超出 library-first 或与仓库硬约束冲突。
+研究基线固定为 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`。本轮重新读取 README、前言、第 1–30 章正文及第 25–29 章实践案例；案例中的产品数字和平台能力只作为背景，不直接视为 Baymax 的需求证据。下表逐章记录研究结论。`已吸收/复用` 表示现有代码、spec 或 roadmap 已覆盖，不再开平行提案；`新增候选` 表示只记录方向，启动仍须满足触发条件；`条件观察` 表示需要真实成本、风险或宿主证据；`不吸收` 表示超出 library-first 或与仓库硬约束冲突。
 
 | 章节 | 可吸收点 | Baymax 路由与当前状态 | 处理边界 |
 | --- | --- | --- | --- |
 | 1 | Model + Harness、最低充分自治、风险与成熟度匹配 | 已吸收为架构与提案准入原则 | 不因“Agentic OS”概念扩大近期范围 |
 | 2 | 组件/平台/生命周期三视图；Model、Harness、Runtime、治理和调优解耦 | 已吸收至模块边界、OpenSpec 和 roadmap 基线 | 不创建平台控制面或第二 Runtime |
-| 3 | 多种 Harness 构建入口、Task/Session/Event/Trace/Artifact/Outcome 分离、版本化发布单元 | 已吸收部分；版本化能力资产进入“能力资产溯源与发布回滚”候选 | 不建设托管 Agent 平台、资源市场或云产品适配层 |
-| 4 | Prepare–Model–Act–Observe–Verify、阶段门禁、Continuation、委派责任、完成证据 | 阶段推进/恢复/完成 safe-point 已有基线；新增“完成验证证据”可并入仿真候选 | Verifier 不能替代业务 Outcome owner，不以模型自述判定完成 |
-| 5 | Context Manifest、Context/State 分离、Memory/Knowledge/Skill 分类、渐进式披露、作用域/版本/删除/反退化 | `context/*`、memory scope/lifecycle、skill loader 已覆盖部分；新增能力资产溯源候选 | 不把 raw transcript、reasoning 或跨租户内容写入新事实源 |
-| 6 | Action Plane、身份绑定、Policy/ASK/Preview/Commit/Verify、副作用/幂等/可逆性/风险元数据、Observation | Tool/MCP/policy/sandbox/HITL 已有 owner；新增“动作能力风险与幂等证据审计”候选 | 首阶段只做 contract/fixture/replay/gate，不改执行器或凭证存储 |
-| 7 | 沙箱工作区、长任务环境生命周期、冷启动/恢复/资源成本和故障演练 | sandbox conformance、workspace provenance、recovery 已有基线；生命周期成本作为条件观察 | 不引入托管 workspace、Git manager 或全球执行平台 |
-| 8 | Event Log/Checkpoint/Workspace/Memory/Knowledge 分层、RPO/RTO、冷热分层、删除与派生索引清理 | checkpoint/snapshot/memory lifecycle 已有 owner；生命周期与派生清理纳入资产候选审计 | 不重写存储事实源，不新增 hosted Agent database |
+| 3 | 多种 Harness 构建入口、Task/Session/Event/Trace/Artifact/Outcome 分离、版本化 Agent Release 与交付物边界 | 已吸收为“最低充分架构”和责任分层原则；版本化能力资产进入“能力资产溯源与发布回滚”候选 | 不建设托管 Agent 平台、资源市场或云产品适配层 |
+| 4 | Prepare–Model–Act–Observe–Verify、探索/计划/执行分离、阶段门禁、Continuation、委派契约、失败传播、完成证据 | 阶段推进/恢复/完成 safe-point 已有基线；“完成验证证据”和阶段性验收并入仿真候选 | Verifier 不能替代业务 Outcome owner，不以模型自述判定完成 |
+| 5 | Context Policy/Manifest、Context/State 分离、Commit–Compact–Rebuild–Validate、Memory/Knowledge/Skill 分类、渐进式披露、作用域/版本/删除/反退化 | `context/*`、memory scope/lifecycle、skill loader 已覆盖部分；新增能力资产溯源候选 | 不把 raw transcript、reasoning 或跨租户内容写入新事实源 |
+| 6 | Action Plane、身份绑定、Policy/ASK/Preview/Commit/Verify、副作用/幂等/可逆性/风险元数据、Observation、Tool/MCP/A2A 与 Environment Contract 边界 | Tool/MCP/policy/sandbox/HITL 已有 owner；新增“动作能力风险与幂等证据审计”候选 | 首阶段只做 contract/fixture/replay/gate，不改执行器或凭证存储 |
+| 7 | 沙箱工作区、Session/Workspace 亲和、休眠/恢复、模板/快照/Fork/Reset、执行代次围栏、环境故障与业务副作用区分 | sandbox conformance、workspace provenance、recovery 已有基线；生命周期成本与围栏完整性作为条件观察 | 不引入托管 workspace、Git manager 或全球执行平台 |
+| 8 | Event Log/Checkpoint/Workspace/Memory/Knowledge/Ontology 分层、RPO/RTO、冷热分层、COW 快照、Artifact 可寻址交付、删除与派生索引清理、租户一致性 | checkpoint/snapshot/memory lifecycle 已有 owner；生命周期、派生清理与语义资产血缘纳入资产候选审计 | 不重写存储事实源，不新增 hosted Agent database 或业务知识平台 |
 | 9 | LLM/MCP/Agent 流量治理、预算预留/结算、身份/权限/审批/审计分层 | budget admission、policy precedence、readiness 和 diagnostics 已覆盖核心；预算归因仅条件观察 | 不建设 AI Gateway、租户控制面或远程路由服务 |
 | 10 | 异步/定时/工作流边界、Task 与 Session 分离、幂等/对账/补偿、状态信号非事实源 | scheduler、mailbox、task board、checkpoint/recovery 和 completion safe-point 已吸收 | 不创建第二任务状态机；业务 Outcome 仍由宿主定义 |
 | 11 | 多 Agent 入站/出站权限分离、委派链、结果接受、跨 Trace 关联 | A2A、scheduler、teams/workflow 和 diagnostics 已有基础；委派身份与预算租约列为长期观察 | 仅在真实跨主体委派需求出现后审计，不引入全局身份/租户平台 |
-| 12 | 人机/能力/协作/内构四类通信面，连接与任务解耦，顺序/投递/去重/续传/背压 | realtime、host、A2A、mailbox、durable stream binding 已覆盖 | 不复制 event ordering、pending map、cursor 或远程 Session Server |
-| 13 | Intent 与实际执行分离；Tool/沙箱/进程/文件/网络/策略结果形成证据链；最小必要采集 | RuntimeRecorder、sandbox、diagnostics 和 tracing 已有基础；动作证据审计候选吸收该点 | 不采集 raw payload、凭证、完整命令输出或无界系统调用日志 |
+| 12 | 人机/能力/协作/内构四类通信面；请求-响应、流式、任务句柄、持久通道的语义分层；顺序/投递/去重/续传/背压/生命周期/权限六要素 | realtime、host、A2A、mailbox、durable stream binding 已覆盖；“任务句柄不等于事件续传、协议无状态不等于应用无状态”作为审计检查项 | 不复制 event ordering、pending map、cursor 或远程 Session Server |
+| 13 | Intent 与实际执行分离；ENTRY→AGENT→STEP→LLM/RETRIEVAL/TOOL 观测层级；多入口采集、去重、采样、脱敏、成本与审计证据链 | RuntimeRecorder、sandbox、diagnostics 和 tracing 已有基础；动作证据审计候选吸收该点，采集覆盖差异只在真实 drift 时增量处理 | 不采集 raw payload、凭证、完整命令输出或无界系统调用日志 |
 | 14 | Prompt injection、身份安全、会话级隔离、出站 deny-first、供应链签名/漂移 | policy、sandbox egress、redaction、adapter allowlist、extension governance 已覆盖主线 | 仅在出现越权/污染/漂移 fixture 时增量审计；不接入云防火墙或镜像平台 |
 | 15 | Prompt/Skill/MCP/Agent 的稳定标识、精确版本、Lock/Context Manifest、影响分析、撤回和可替代版本 | extension/manifest/skill loader 已有局部能力；新增能力资产溯源与回滚候选 | 不建设 Nacos/registry/marketplace/动态下载；宿主继续提供资源 |
-| 16 | Spec–Manifest–Run–Result 证据链；模拟用户/环境/故障；证据可用性与“不可判定”结果 | 新增“场景化 Agent Simulation 与完成验证”观察候选，复用 eval/corpus/sandbox/replay | 仿真只交付证据材料，不直接发布或改写 Outcome；不依赖 live provider |
+| 16 | Spec–Manifest–Run–Result 证据链；Scenario/Asset 分别版本化；用户/环境/工具/故障模拟；计划与事实事件分离；records→observations→evidence 分层；执行/证据完整性/业务结果/发布准入四态独立；证据不足输出“不可判定” | 新增“场景化 Agent Simulation 与完成验证”观察候选，复用 eval/corpus/sandbox/replay | 仿真只交付证据材料，不直接发布或改写 Outcome；不依赖 live provider |
 | 17 | 模型/Harness/环境归因、非劣效与安全硬门禁、影子/灰度/扩量/回滚 | evaluation、quality gate、provider conformance 和版本化 fixture 已覆盖大部分 | 发布治理只作为资产/评测候选的子范围，不单独建设模型训练或灰度控制面 |
 | 18 | Trace→Pipeline→Dataset→Evaluator→Experiment→候选变更的数据飞轮 | corpus/Badcase/experiment/feedback 已有 owner；作为现有 eval 增量校准 | 不将反馈自动写回 Prompt、Skill、Tool、Policy、Memory 或 gate |
 | 19 | Trace 与 Trajectory 区分、按目标/结果/关键步骤定位、失败后行为与业务事实核对 | 归档 141 已提供首错归因、轨迹边界和 bounded evidence refs | 不新增 transcript/artifact 事实源，不把观测材料当 Outcome |
@@ -201,17 +201,81 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 22 | Badcase 发现、同题 baseline/candidate、逐题差异、非劣效和发布前回归 | 归档 141 与 eval corpus/experiment 已覆盖 | 继续 review-only；不把评估分数直接变成运行时策略 |
 | 23 | 经验→Skill/Script/Workflow 的分层、候选补丁、人工选择、回滚和受控采用 | skill loader、extension authoring、feedback approval 和 gates 已覆盖治理原则 | 不允许自修改、自发布或无审批的自动进化 |
 | 24 | 边缘评估、区域数据驻留、缓存/回源、边缘安全和灰度 | 记录为长期方向，不进入近期 library-first 主线 | 不建设全球边缘 Runtime、WebMCP 或托管分发控制面 |
-| 25 | 研发交付的契约链、交叉质检、可复现修复、定向测试和人类最终放行 | 可作为 Simulation/Verifier 候选的场景来源 | 不把案例流程硬编码成通用 runtime loop |
-| 26 | GenUI 的结构化界面 Spec、客户端白名单、schema 校验、Action Event 回传 | 仅吸收“结构化事件 + 客户端能力白名单”的协议检查方法 | 不新增 UI renderer、组件 registry 或 GenUI runtime |
-| 27 | 观测→诊断→自动化动作→知识沉淀、技术指标映射业务影响、变更前风险预判 | 业务 Outcome/evidence 可作为 verifier fixture；保持观察 | 不建设 AIOps 控制面或自动生产修复链 |
-| 28 | 长周期记忆、冷热分层、匿名化数据分析、数据 Agent 与多模型/小模型分工 | memory scope/lifecycle 与 eval corpus 可复用部分方法 | 不引入专用数据库、企业数据平台或业务语义模型 |
+| 25 | 契约链不衰减、独立交叉评审、稳定复现作为修复门禁、定向测试、失败分流、端到端交付、人工最终放行、阶段性 Loop | 可作为 Simulation/Verifier、Action evidence 和 release gate 的场景来源 | 不把案例流程硬编码成通用 runtime loop |
+| 26 | 声明式 UI/交互 Spec、客户端能力白名单、schema 校验、Server→Client 数据与 Client→Server Action Event、结果可追踪可校验 | 仅吸收“结构化事件 + 客户端能力白名单 + schema/回传校验”的协议检查方法 | 不新增 UI renderer、组件 registry 或 GenUI runtime |
+| 27 | 统一事件入口、观测→诊断→授权动作→反馈闭环、告警降噪、技术指标映射业务连续性、变更前风险预判、经验三元组沉淀 | 业务 Outcome/evidence 可作为 verifier fixture；业务影响映射保持观察 | 不建设 AIOps 控制面或自动生产修复链 |
+| 28 | 长周期记忆底座、冷热与生命周期、匿名化分析、业务语义层/本体、多模型与小模型分工、统一 AI 资产入口 | memory scope/lifecycle、context assembler、eval corpus 可复用部分方法；业务语义层仅作长期观察 | 不引入专用数据库、企业数据平台或业务语义模型 |
 | 29 | 多 Agent 研发小队、独立评审、定向测试、授权与回滚、先证明流程再证明规模收益 | 委派租约、Simulation、Verifier 和证据链候选的案例来源 | 不复制特定竞赛拓扑、角色 DSL 或托管协作平台 |
-| 30 | 复用性/强制性/可验证性三条下沉判据；Task/Environment/Authorization/Evidence 核心对象；预算租约、幂等与补偿 | 作为所有新提案的架构筛选规则；委派租约列长期观察 | 不实现 Agentic OS、统一控制面、跨组织身份或 hosted persistence |
+| 30 | 复用性/强制性/可验证性三条下沉判据；Run/Session/Workspace/Skill/Budget Lease/Policy/Evidence 等核心对象；六类可标准化接口；强制边界与观测边界分类；计划/已发出/已确认操作、幂等、补偿与撤销 | 作为所有新提案的架构筛选规则；委派租约、动作证据和沙箱成本列长期/条件观察 | 不实现 Agentic OS、统一控制面、跨组织身份或 hosted persistence |
+
+### 完整可吸收点清单（按能力域归并）
+
+逐章阅读后，真正能落到 Baymax 的内容可以归并为以下十类。该清单是“吸收点”而不是十个新提案；每一项都必须路由到已有 owner，并先以 fixture/replay/gate 证明缺口。
+
+1. **最低充分架构与责任分层（第 1–3、30 章）**
+   - 用业务目标、风险、可逆性、执行跨度和结果可验证性选择 Workflow、Hybrid、Single-Agent、Long-Horizon 或 Multi-Agent，不把更高自治当作默认升级。
+   - 固定 Model、Harness、Runtime、Sandbox、Governance、Evaluation 的责任边界；把 Run/Session/Event/Trace/Artifact/Outcome 分开，Agent Release 以版本组合和可复现证据为最小交付单元。
+   - 吸收状态：已进入架构硬约束、OpenSpec 准入和 roadmap，不新增平行能力。
+
+2. **任务、状态与长程恢复（第 4、7、8、10、12、30 章）**
+   - 区分 Run、Task、Session、Workspace、Checkpoint、Artifact 和业务 Outcome；状态事实独立于连接、进程和当前模型上下文。
+   - 计划/阶段门禁/Continuation、异步任务、定时触发、工作流 AND/OR Join、重试对账与补偿必须由权威 owner 驱动；任务句柄不等于事件续传，协议无状态不等于应用无状态。
+   - 快照只恢复其覆盖的文件和状态；跨系统副作用必须依赖查询、幂等键、补偿或人工核对。执行代次围栏用于防止旧实例在接管后继续写入。
+   - 吸收状态：大部分已由 scheduler、checkpoint/snapshot、mailbox、recovery、durable stream 和 completion safe-point 覆盖；围栏与外部副作用核对仅在真实宿主缺口出现时增量审计。
+
+3. **Context、Memory、Knowledge、Skill 与资产生命周期（第 5、8、15、23、28、30 章）**
+   - 用 Context Policy/Manifest 管理输入，用 Commit–Compact–Rebuild–Validate 管理压缩与重建；Context 不是 State，Memory 不是 Knowledge，Skill 不是 Tool。
+   - 能力资产需要 stable identity、版本/digest、owner、scope、依赖、消费者引用、来源与验证时间；支持 lock、漂移检测、撤回、替代版本、删除和派生索引清理。
+   - 采用渐进式披露和最小充分共享；用户/租户/任务作用域必须先于检索和注入，失效记忆不得继续作为事实使用。
+   - 吸收状态：`context/*`、`skill/loader`、extension manifest、memory lifecycle 已覆盖局部；“能力资产溯源与发布回滚审计”保持观察候选，不建设 registry、marketplace、动态下载或新事实存储。
+
+4. **Action capability、权限与安全边界（第 6、9、13、14、29、30 章）**
+   - 将模型意图与实际执行事实分开；Action 至少表达副作用、风险、可逆性、幂等、前置条件、超时、环境需求、错误分类和验收证据。
+   - 对高影响动作采用 Preview→Approve→Commit→Verify，结果未知时先查询再重试；Tool/MCP/A2A/Skill/Subagent/Remote Agent 按是否拥有独立任务循环、状态和 Artifact 选择，不用通用 Shell 代替窄业务 Action。
+   - 权限按主体、租户、任务目的、目标资源、阶段、数据敏感度、预算与历史审批判定；Policy/Sandbox/出站控制/Prompt Injection 防护形成纵深边界，且必须区分“强制边界”和“仅观测边界”。
+   - 吸收状态：Policy、HITL、sandbox、RuntimeRecorder、tool lifecycle 已有 owner；“动作能力风险、幂等与验收证据审计”是当前首要条件候选，首阶段只做 contract/fixture/replay/gate。
+
+5. **Sandbox、Workspace 与单位成功任务成本（第 7、8、17、24、30 章）**
+   - 把模板、快照、Fork、Reset、休眠/唤醒、冷启动、资源占用、失败重试、清理和恢复完整性作为环境生命周期；环境事实与业务结果分别验收。
+   - 用相同任务、权限和服务目标测量创建吞吐、空载占用、恢复时延、尾延迟、隔离强度、失败样本和“单位成功任务成本”，不把平均成本或零违规直接等同于质量结论。
+   - 吸收状态：记录为条件观察；只有真实宿主出现稳定 P95/P99、恢复、并发密度或成本瓶颈时才立项，不建设 hosted workspace、全球 Edge Runtime 或新资源调度器。
+
+6. **通信、协作与委派租约（第 11、12、30 章）**
+   - 能力面、协作面、内构面、人机面分别描述；同步、流式、任务句柄、持久通道分别声明状态位置和恢复责任。
+   - 通信合同至少覆盖版本/能力协商、顺序、投递确认、去重、续传点、生命周期、背压、权限和故障收口；任务状态、消息重播和业务恢复不能混成一个语义。
+   - 委派链应绑定入站主体、Agent 主体、出站主体、资源范围、预算、有效期和级联撤销；共享上下文遵循最小必要原则。
+   - 吸收状态：A2A、scheduler、mailbox、Realtime/Host 已有 owner；委派身份与预算/权限租约列长期观察，需真实跨主体委派证据才启动。
+
+7. **可观测性、审计与证据层级（第 6、13、16、19、27、30 章）**
+   - 观测层级采用 `ENTRY→AGENT/WORKFLOW→STEP→LLM/RETRIEVAL/TOOL`，并把模型、工具、状态变化、审批、沙箱和资源通过因果标识关联。
+   - 允许应用埋点、SDK/框架插桩、Hook/Daemon、基础设施探针等多入口，但必须去重、采样、脱敏、限字段和区分实际值/估算值；Metrics、Logs、Trace、Events 不强行写成一个事实模型。
+   - 证据按 records→observations→evidence→verdict 分层；Intent、已发出操作、已确认结果分别记录。观测材料不能自动成为业务 Outcome，证据不足应返回“不可判定”。
+   - 吸收状态：`RuntimeRecorder` 单写入口、diagnostics replay、OTel/eval 已覆盖主体；缺口只有在真实采集漂移或动作事实无法核对时进入动作证据审计。
+
+8. **场景化 Simulation 与完成验证（第 4、16、17、21、22、25、29 章）**
+   - 用 Scenario Spec、版本化 Asset、不可变 Manifest、Run、Run Result 组织受控执行；用户、环境、工具、故障和模型输出都可替身化或回放。
+   - 仿真必须区分计划触发与已发生 Event，故障记录计划生效/目标命中/恢复验证四步；运行状态、证据完整性、业务结果、发布准入四态独立表达。
+   - Run Result 只交付记录、事实观测和证据引用；评估器再进行断言、重评分、baseline/candidate 对比、置信边界和“不可判定”处理。模拟器质量和 Agent 成功率分开治理。
+   - 吸收状态：保持“场景化 Agent Simulation 与完成验证”观察候选；首阶段离线、确定性、无 provider/network 副作用，不直接发布或改写业务 Outcome。
+
+9. **评估、Badcase 与受控改进（第 17–23、25、27 章）**
+   - 先做模型/Harness/执行环境归因，再决定是否需要模型训练；固定任务分布、权限、预算和环境，报告质量、可靠性、安全、时延以及单位成功任务成本。
+   - Trace 与 Trajectory 分开；从目标/结果/关键步骤定位，形成首错、责任 owner、可恢复性和 bounded evidence。黄金数据集包含题目、Rubric、正负样本、版本冻结和人工复核；Badcase 用同题 baseline/candidate 比较。
+   - 经验→Skill/Script/Workflow 的改进必须经过候选补丁、独立评测、人工选择、发布门禁和回滚；反馈保持 review-only，不自动修改 Prompt、Skill、Tool、Policy、Memory、配置、测试或 gate。
+   - 吸收状态：已有 OTel/eval/corpus/Badcase/experiment/feedback owner；模型 SFT、Agentic RL、蒸馏和自动自进化不进入近期主线。
+
+10. **案例提炼与业务影响映射（第 25–29 章）**
+    - 研发案例共同强调契约链、独立交叉评审、可复现修复、定向测试、失败分流、端到端交付和人类最终放行；运维案例强调统一事件入口、技术指标→业务连续性映射、授权动作和反馈三元组；设计案例强调声明式 Spec、白名单和 Action Event 校验；数据案例强调业务语义层、长期记忆治理与大小模型分工。
+    - 这些内容只作为 Simulation/Verifier、Action evidence、release gate 和业务 Outcome fixture 的场景来源，不把垂直流程硬编码为通用 runtime loop，也不建设 AIOps、GenUI、企业数据平台或专用语义数据库。
+
+11. **明确不吸收的系统级方向（第 2、3、9、17、24、30 章）**
+    - AI Gateway/统一租户控制面、Registry/Marketplace/动态下载执行链、Hosted Agent database、全球 Edge Runtime/WebMCP、模型训练平台、SFT/Agentic RL/蒸馏、无审批自进化、Agentic OS、跨组织统一身份和远程 Session Server 均不进入近期 roadmap。
+    - 只有出现真实宿主需求、可复现安全/质量 drift 或稳定成本瓶颈，才从对应既有 owner 发起最小增量 change；任何新增 contract/配置/诊断字段仍需 additive + nullable + default、Example Impact Assessment 和双平台 gate。
 
 ### 同域演进路由
 
 - **Eval**：continuity comparison 已归档；下一质量方向进入既有 corpus/Badcase/experiment/feedback owner，增量验证首错归因、轨迹前缀决策边界和 evidence-linked review-only suggestion。Memory application 作为 corpus 场景并入，不单独立项。
-- **Provider**：结构化上下文与 prompt cache 进入归档 137 的增量 owner，先验证真实 SDK fixture；只有 drift 成立才最小修改 `model/<provider>`，不抽象新的共享 wire protocol。
+- **Provider**：结构化上下文与 prompt cache 复用归档 142 的投影审计与归档 144 的 native request projection owner，先验证真实 SDK fixture；只有 drift 成立才最小修改 `model/<provider>`，不抽象新的共享 wire protocol。
 - **Context/Budget**：预算可见性复用 ReAct counters、budget admission、scheduler parent budget、Plan Notebook 与 task-aware tail recap，只允许 source-owned facts 的有界只读派生投影，不创建平行账本或状态机。
 - **Tool discovery**：按需 tool schema 投影复用现有 Skill loader、MCP、manifest/capability、allowlist 与 sandbox；只有工具规模、schema token 或选择准确率成为稳定瓶颈时才启动，不建设市场、动态下载或 credential store。
 - **Realtime/Host**：事件、中断恢复、HITL、steering/follow-up、completion promotion 与 request correlation 继续由既有 owner 演进，不抽取第二套 event ordering、pending、输入队列、协调或终态控制面。
@@ -257,7 +321,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 方向 | 触发信号 | 首要边界 |
 | --- | --- | --- |
 | Eval 首错归因与轨迹前缀决策边界 | Badcase 只能给出最终失败，无法定位首个偏离、primary/secondary cause、责任 owner 或下一步 acceptable/forbidden action | 复用既有 eval/continuity owner；只记录 bounded evidence refs，不保存 raw reasoning，改进建议保持 review-only。 |
-| Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract` 和归档 137；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
+| Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract`、归档 142 与归档 144；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
 | 本地/宿主准入后的按需 Tool Schema 投影 | 工具数量、schema token 占用或工具选择准确率达到稳定瓶颈 | 只在已准入工具集合内投影；复用 Skill loader/MCP/manifest/allowlist/sandbox，不建设市场、下载器或 credential store。 |
 | 远程 model catalog 或本地模型路由 | 静态/宿主注入目录不足以支持明确的路由需求 | 以本页“Model catalog 与本地模型路由增量”为同一候选，不创建平行提案；不在 `context/*` 引入 provider SDK，不接入 credential store。 |
 | 外部 extension 生态增量 | 归档 140 之后出现新的真实扩展来源，且供应链审计、失败反馈或隔离需求超出现有 lifecycle contract | 只做 existing authoring conformance owner 的增量；复用 manifest/capability/allowlist/sandbox，不建设 package manager、marketplace 或动态下载执行链。 |

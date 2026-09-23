@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-23
+更新时间：2026-09-24
 
 ## 定位
 
@@ -25,7 +25,7 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-23：
+截至 2026-09-24：
 
 ## 已归档快照
 
@@ -171,7 +171,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；此前 `bojieli/ai-agent-book@c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论继续作为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
-### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-23）
+### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
 
 下表逐章记录本轮研究结论。`已吸收/复用` 表示现有代码、spec 或 roadmap 已覆盖，不再开平行提案；`新增候选` 表示只记录方向，启动仍须满足触发条件；`条件观察` 表示需要真实成本、风险或宿主证据；`不吸收` 表示超出 library-first 或与仓库硬约束冲突。
 

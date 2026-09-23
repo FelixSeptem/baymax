@@ -1,0 +1,25 @@
+{
+  "version": "tool_schema_pressure_selection_audit.v1",
+  "snapshot_id": "synthetic-pressure-quality",
+  "tools": [
+    {
+      "identity": "search",
+      "source": "local",
+      "capabilities": ["search"],
+      "priority": 100,
+      "admitted": true,
+      "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}
+    },
+    {
+      "identity": "admin",
+      "source": "local",
+      "capabilities": ["admin"],
+      "priority": 1,
+      "admitted": true,
+      "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}
+    }
+  ],
+  "policy": {"schema_bytes_budget": 17, "token_budget": 5, "quality_min_f1": 0.8},
+  "cases": [{"id": "find", "intent": "find a record", "expected": ["search"], "allowed": ["search"], "forbidden": ["admin"]}],
+  "strategies": [{"kind": "full_admitted_set"}, {"kind": "capability_filtered_set", "capability": "search"}]
+}

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-18
+更新时间：2026-09-23
 
 ## 定位
 
@@ -14,6 +14,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
+- 已归档：
+  - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
+
 状态权威来源：
 
 1. 活跃变更：`openspec list --json`。
@@ -21,6 +24,8 @@ Baymax 主线保持 `library-first + contract-first`：
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
 截至 2026-09-20：
+
+## 已归档快照
 
 - 已归档：
   - `introduce-runtime-steering-and-follow-up-input-contract`

@@ -17,6 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-22）：
+- `establish-admitted-tool-schema-pressure-selection-audit`（已归档为 146；离线、provider-neutral 的已准入工具 schema pressure、synthetic selection quality、多策略评分、corpus advisory 与 replay；不接入 runtime selector、ModelRequest 或 provider projection）。
 - `establish-model-catalog-routing-admission-audit-contract`（已归档为 145；host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver；不引入远程 discovery、credential store 或全局 router）。
 - `preserve-provider-native-request-projection-parity`（已归档为 144；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。
 - `establish-budget-aware-derived-context-projection-contract`（已归档为 143；由既有预算 owner 事实派生、有界只读的 `budget_projection.v1` 剩余预算投影契约 + 离线确定性预算利用 benchmark + replay 与双平台 gate；不新增预算账本、不新增配置键、不修改 ReAct 循环或 tail recap 接线）。
@@ -104,6 +105,7 @@ runtime/config + runtime/diagnostics
 | Core Types | `core/types` | 跨模块 DTO、错误分类、契约接口 |
 | Model Adapters | `model/openai` `model/anthropic` `model/gemini` `model/providererror` `model/toolcontract` | Provider 适配、错误归类与工具结果输入合同 |
 | Local Tool Runtime | `tool/local` | 本地工具注册、schema 校验、调度执行 |
+| Tool Schema Audit | `tool/schemaaudit` | 已准入工具的离线 schema pressure、synthetic selection quality、多策略比较与 replay facts；不接入运行时投影 |
 | MCP Runtime | `mcp/http` `mcp/stdio` `mcp/profile` `mcp/retry` `mcp/diag` | 远程工具传输与可靠性治理 |
 | Context Assembler | `context/assembler` `context/journal` `context/guard` `context/provider` | 上下文装配、检索与守卫 |
 | Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` `orchestration/mailbox` `orchestration/invoke` `orchestration/collab` `orchestration/snapshot` | 工作流、多代理协作、调度、调用桥接与快照合同 |

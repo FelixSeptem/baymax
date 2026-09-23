@@ -1,5 +1,14 @@
 # Mainline Contract Test Index
 
+## Tool schema pressure and selection audit (archived 146)
+
+- Owner: `tool/schemaaudit`; diagnostics adapter: `tool/diagnosticsreplay/schema_audit.go`.
+- Contract: `tool_schema_pressure_selection_audit.v1`; mandatory synthetic gold sets plus optional advisory corpus metadata.
+- Coverage: canonical digest/order, bounded schema facts, pressure levels and budgets, full/capability/priority/source/fixture strategies, precision/recall/F1/expected-hit/forbidden-hit/fallback coverage, conclusion rules, replay idempotency and Run/Stream parity.
+- Boundary: no provider SDK/tokenizer, model call, network/download, credential, registry mutation, runtime selector/router, `ModelRequest` wiring, raw schema/prompt/output/tool-result persistence, or examples behavior change.
+- Focused tests: `go test ./tool/schemaaudit ./tool/diagnosticsreplay`.
+- Dedicated gates: `scripts/check-tool-schema-audit-contract.sh` / `scripts/check-tool-schema-audit-contract.ps1`.
+
 更新时间：2026-08-28
 
 ## 目标

@@ -107,6 +107,10 @@
   - 消费全局 runtime 配置快照
   - 产出标准运行时事件（不直接写诊断存储）
   - `tool/local` 负责工具调用实际执行；工具生命周期合同仅对其既有 lookup/validation/policy/sandbox/middleware/retry/panic/finalize 边界做 transport-neutral 投影，不拥有第二套 Tool 状态机或 hosted executor
+- `tool/schemaaudit`
+  - 只接收宿主已经准入的 bounded provider-neutral tool snapshot，负责 schema canonical facts、pressure、synthetic quality 与有限策略的离线比较。
+  - 不调用 `tool/local`、MCP、Provider SDK/tokenizer，不访问网络/文件/时钟/credential，不修改 registry、allowlist、sandbox、Skill、ModelRequest 或运行时配置；raw schema 只允许在内存 canonicalization 阶段出现。
+  - Eval corpus/Badcase 只作为 optional advisory；replay 与 Run/Stream parity 只比较有界 normalized facts，不能形成第二 admission、selector、router 或 terminal 状态机。
 - `observability/event`
   - 事件日志与分发
   - `RuntimeRecorder` 作为诊断唯一写入入口，将事件映射为统一诊断记录

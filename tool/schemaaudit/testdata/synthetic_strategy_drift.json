@@ -1,0 +1,7 @@
+{
+  "version": "tool_schema_pressure_selection_audit.v1",
+  "snapshot_id": "strategy-drift",
+  "tools": [{"identity": "search", "source": "local", "admitted": true, "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}}],
+  "cases": [{"id": "find", "expected": ["search"], "allowed": ["search"], "forbidden": []}],
+  "strategies": [{"kind": "future_unbounded_strategy"}]
+}

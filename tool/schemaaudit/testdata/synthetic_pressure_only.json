@@ -1,0 +1,8 @@
+{
+  "version": "tool_schema_pressure_selection_audit.v1",
+  "snapshot_id": "pressure-only",
+  "tools": [{"identity": "search", "source": "local", "capabilities": ["search"], "admitted": true, "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}}],
+  "policy": {"schema_bytes_budget": 16, "token_budget": 4, "quality_min_f1": 0.8},
+  "cases": [{"id": "find", "expected": ["search"], "allowed": ["search"], "forbidden": []}],
+  "strategies": [{"kind": "full_admitted_set"}]
+}

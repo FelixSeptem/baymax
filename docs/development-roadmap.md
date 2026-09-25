@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-24
+更新时间：2026-09-25
 
 ## 定位
 
@@ -19,7 +19,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
 
 - 进行中：
-当前基线：代码基线为 `master@76863df`，已与 `origin/master` 同步。
+提案分支基线：`master@76863df`（切分时已与 `origin/master` 同步）；提案现已归档并快进合并至 `master@0a8b81f`。
 
 状态权威来源：
 
@@ -27,7 +27,7 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-24：
+截至 2026-09-25：
 
 ## 已归档快照
 

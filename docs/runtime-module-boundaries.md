@@ -201,6 +201,12 @@ R4 多代理共享契约前置门禁（阻断级）：
   `model/<provider>`; `context/*` remains forbidden from importing provider SDKs.
 ## Session history and replay boundary
 
+## Action capability evidence audit boundary
+
+`tool/diagnosticsreplay/action_capability_audit.go` is a read-only, offline consumer of host-admitted bounded Action capability snapshots. Action Gate/parameter rules own authorization and approval; `tool/local` lifecycle owners retain dispatch, retry, attempt and finalization facts; Policy/Sandbox own security decisions; action timeline owns sequencing; and `observability/event.RuntimeRecorder` remains the only diagnostics writer. The audit owns neither execution, retry, compensation, terminal state nor persistent Action state.
+
+The `action_capability_audit.v1` fixture uses reference-only identity, version/digest, scope, attempt/correlation, stage/status and bounded summary fields. It excludes Tool/MCP/Provider invocation, network, registry, filesystem, credentials, clocks, payload bodies, reasoning, complete command output and unbounded responses. It introduces no runtime configuration, hosted execution/session store, global queue, dynamic registry/download path, direct diagnostic writer or second terminal state machine. Rollback removes the offline audit adapter, fixture and gate only; existing Run/Stream and source-owner semantics remain unchanged.
+
 Session message history remains source-owned by the embedding host/session adapter. `core/types` provides bounded reference validation; `orchestration/snapshot` validates history/checkpoint context before source-owned restore; `tool/diagnosticsreplay` performs offline read-only normalization. No runtime package introduces a session database, hosted gateway, provider SDK dependency, artifact content service, or second state fact source.
 
 ## Durable task/attempt workspace and completion boundary

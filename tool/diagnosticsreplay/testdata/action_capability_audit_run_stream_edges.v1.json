@@ -1,0 +1,54 @@
+{
+  "version": "action_capability_audit.v1",
+  "cases": [
+    {
+      "case_id": "run-stream-allow",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"allow","stage":"approve","status":"allowed"}]},
+      "stream": {"evidence":[{"id":"allow","stage":"approve","status":"allowed"}]},
+      "expected": {"verdict":"compliant"}
+    },
+    {
+      "case_id": "run-stream-deny",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"deny","stage":"approve","status":"denied"}]},
+      "stream": {"evidence":[{"id":"deny","stage":"approve","status":"denied"}]},
+      "expected": {"verdict":"compliant"}
+    },
+    {
+      "case_id": "run-stream-timeout",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"timeout","stage":"approve","status":"timeout"}]},
+      "stream": {"evidence":[{"id":"timeout","stage":"approve","status":"timeout"}]},
+      "expected": {"verdict":"compliant"}
+    },
+    {
+      "case_id": "run-stream-pre-execution-rejection",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"rejected","stage":"policy","status":"rejected"}]},
+      "stream": {"evidence":[{"id":"rejected","stage":"policy","status":"rejected"}]},
+      "expected": {"verdict":"compliant"}
+    },
+    {
+      "case_id": "run-stream-started-interruption",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"issued","stage":"issued","status":"interrupted"}]},
+      "stream": {"evidence":[{"id":"issued","stage":"issued","status":"interrupted"}]},
+      "expected": {"verdict":"insufficient_evidence", "drift_codes":["action_capability_evidence_insufficient"]}
+    },
+    {
+      "case_id": "run-stream-confirmed-result",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"issued","stage":"issued","status":"observed","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"},{"id":"confirmed","stage":"confirmed","status":"confirmed","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"}]},
+      "stream": {"evidence":[{"id":"issued","stage":"issued","status":"observed","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"},{"id":"confirmed","stage":"confirmed","status":"confirmed","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"}]},
+      "expected": {"verdict":"compliant"}
+    },
+    {
+      "case_id": "run-stream-unconfirmed-result",
+      "action": {"identity":"catalog.lookup","source":"host-admitted","version":"v1","owner":"catalog-owner","scope":"tenant:demo","effect":"read","side_effect":"none","risk":"low","reversible":true,"idempotent":true,"retryable":true,"timeout_ms":1000},
+      "run": {"evidence":[{"id":"issued","stage":"issued","status":"interrupted","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"}]},
+      "stream": {"evidence":[{"id":"issued","stage":"issued","status":"interrupted","action_identity":"catalog.lookup","version":"v1","scope":"tenant:demo","attempt_id":"attempt-1","correlation_id":"correlation-1"}]},
+      "expected": {"verdict":"insufficient_evidence", "drift_codes":["action_capability_evidence_insufficient"]}
+    }
+  ]
+}

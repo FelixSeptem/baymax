@@ -350,6 +350,12 @@ if ! bash scripts/check-model-catalog-routing-admission-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] action capability risk/idempotency evidence audit contract"
+if ! bash scripts/check-action-capability-audit-contract.sh; then
+  echo "[quality-gate][action-capability-audit-contract] action capability evidence audit contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter contract replay"
 if ! bash scripts/check-adapter-contract-replay.sh; then
   echo "[quality-gate][adapter-contract-replay] adapter contract replay check failed"

@@ -1,0 +1,26 @@
+{
+  "version": "action_capability_audit.v1",
+  "cases": [
+    {
+      "case_id": "duplicate-conflict",
+      "action": {
+        "identity": "catalog.lookup",
+        "source": "host-admitted",
+        "version": "v1",
+        "owner": "catalog-owner",
+        "scope": "tenant:demo",
+        "effect": "read",
+        "side_effect": "none",
+        "risk": "low",
+        "reversible": true,
+        "idempotent": true,
+        "retryable": true,
+        "timeout_ms": 1000
+      },
+      "evidence": [
+        {"id": "e1", "stage": "intent", "status": "observed"},
+        {"id": "e1", "stage": "issued", "status": "observed"}
+      ]
+    }
+  ]
+}

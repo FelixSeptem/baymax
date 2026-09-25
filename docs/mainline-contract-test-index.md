@@ -1,5 +1,15 @@
 # Mainline Contract Test Index
 
+## Action capability risk, idempotency, and evidence audit (archived 147)
+
+- Owner: source facts remain with Action Gate, tool lifecycle, Policy/Sandbox, Action timeline and `observability/event.RuntimeRecorder`; the offline adapter is `tool/diagnosticsreplay/action_capability_audit.go`.
+- Contract: `action_capability_audit.v1`; host-admitted bounded descriptor plus reference-only intent/issued/confirmed and Preview/Approve/Commit/Verify evidence.
+- OpenSpec delta: `openspec/changes/archive/147-establish-action-capability-risk-idempotency-evidence-audit/specs/action-capability-risk-idempotency-evidence-audit/spec.md`.
+- Coverage: canonical metadata digest/order, explicit unknown metadata, strict JSON duplicate/unknown-field rejection, 1 MiB/field/retry/timeout bounds, privacy, evidence sufficiency and attempt/correlation matching, high-risk stage status/scope, approval scope, declared/observed drift, historical no-extension compatibility, and Run/Stream semantic parity independent of reference IDs.
+- Boundary: no Tool/MCP/Provider/network/registry/filesystem/credential/clock invocation; no `RuntimeRecorder`, `RunRecord`, runtime configuration, policy or business-outcome write; no registry, queue, hosted store, automatic compensation or second terminal state machine.
+- Focused tests: `tool/diagnosticsreplay/action_capability_audit_test.go::TestReplayActionCapabilityAuditNormalizesCompleteReadAction`, `tool/diagnosticsreplay/action_capability_audit_fixture_test.go::TestReplayActionCapabilityAuditFixtureIsBoundedDeterministicAndCovered`, `tool/contributioncheck/action_capability_audit_boundary_test.go::TestActionCapabilityAuditRemainsOfflineAndLibraryFirst`.
+- Dedicated gates: `scripts/check-action-capability-audit-contract.sh` / `scripts/check-action-capability-audit-contract.ps1`.
+
 ## Tool schema pressure and selection audit (archived 146)
 
 - Owner: `tool/schemaaudit`; diagnostics adapter: `tool/diagnosticsreplay/schema_audit.go`.

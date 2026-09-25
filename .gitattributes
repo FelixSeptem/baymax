@@ -1,0 +1,2 @@
+# Go source files are formatted with gofmt, which requires LF line endings.
+*.go text eol=lf

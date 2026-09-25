@@ -16,7 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-22）：
+当前里程碑快照（2026-09-25）：
+- `establish-action-capability-risk-idempotency-evidence-audit`（已归档为 147；离线、确定性、可回放的 Action capability 风险、幂等与验收证据审计，不改变运行时执行语义）。
 - `establish-admitted-tool-schema-pressure-selection-audit`（已归档为 146；离线、provider-neutral 的已准入工具 schema pressure、synthetic selection quality、多策略评分、corpus advisory 与 replay；不接入 runtime selector、ModelRequest 或 provider projection）。
 - `establish-model-catalog-routing-admission-audit-contract`（已归档为 145；host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver；不引入远程 discovery、credential store 或全局 router）。
 - `preserve-provider-native-request-projection-parity`（已归档为 144；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-23 23:00:17
+Updated: 2026-09-25 17:00:24
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -148,3 +148,4 @@ Updated: 2026-09-23 23:00:17
 - 144 -> preserve-provider-native-request-projection-parity
 - 145 -> establish-model-catalog-routing-admission-audit-contract
 - 146 -> establish-admitted-tool-schema-pressure-selection-audit
+- 147 -> establish-action-capability-risk-idempotency-evidence-audit

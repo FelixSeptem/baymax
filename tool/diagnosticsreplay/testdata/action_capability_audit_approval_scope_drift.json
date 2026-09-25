@@ -1,0 +1,30 @@
+{
+  "version": "action_capability_audit.v1",
+  "cases": [
+    {
+      "case_id": "approval-scope-drift",
+      "action": {
+        "identity": "billing.charge",
+        "source": "host-admitted",
+        "digest": "sha256:charge",
+        "owner": "billing-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "external",
+        "risk": "high",
+        "reversible": false,
+        "idempotent": true,
+        "retryable": false,
+        "timeout_ms": 1000,
+        "stages": ["preview", "approve", "commit", "verify"]
+      },
+      "evidence": [
+        {"id": "preview", "stage": "preview", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "approve", "stage": "approve", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "commit", "stage": "commit", "status": "observed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:other"},
+        {"id": "verify", "stage": "verify", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:other"}
+      ],
+      "expected": {"verdict": "gap", "drift_codes": ["action_capability_approval_scope_drift", "action_capability_evidence_correlation_drift"]}
+    }
+  ]
+}

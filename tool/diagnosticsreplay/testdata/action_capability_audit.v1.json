@@ -1,0 +1,177 @@
+{
+  "version": "action_capability_audit.v1",
+  "cases": [
+    {
+      "case_id": "low-risk-read",
+      "action": {
+        "identity": "catalog.lookup",
+        "source": "host-admitted",
+        "namespace": "catalog",
+        "tool": "lookup",
+        "version": "2026-09-24",
+        "owner": "catalog-owner",
+        "scope": "tenant:demo",
+        "effect": "read",
+        "side_effect": "none",
+        "risk": "low",
+        "reversible": true,
+        "idempotent": true,
+        "retryable": true,
+        "timeout_ms": 1000
+      },
+      "expected": {"verdict": "compliant"}
+    },
+    {
+      "case_id": "high-risk-four-stage",
+      "action": {
+        "identity": "billing.charge",
+        "source": "host-admitted",
+        "tool": "charge",
+        "digest": "sha256:charge",
+        "owner": "billing-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "external",
+        "risk": "high",
+        "reversible": false,
+        "idempotent": true,
+        "retryable": false,
+        "timeout_ms": 3000,
+        "stages": ["preview", "approve", "commit", "verify"]
+      },
+      "evidence": [
+        {"id": "approve-1", "stage": "approve", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "commit-1", "stage": "commit", "status": "observed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "intent-1", "stage": "intent", "status": "observed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "preview-1", "stage": "preview", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "verify-1", "stage": "verify", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo"},
+        {"id": "issued-1", "stage": "issued", "status": "observed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo", "attempt_id": "attempt-1", "correlation_id": "correlation-1"},
+        {"id": "confirmed-1", "stage": "confirmed", "status": "confirmed", "action_identity": "billing.charge", "version": "sha256:charge", "scope": "tenant:demo", "attempt_id": "attempt-1", "correlation_id": "correlation-1"}
+      ],
+      "expected": {"verdict": "compliant"}
+    },
+    {
+      "case_id": "missing-metadata",
+      "action": {
+        "identity": "profile.update",
+        "source": "host-admitted",
+        "tool": "update",
+        "digest": "sha256:update",
+        "owner": "profile-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "external",
+        "risk": "medium"
+      },
+      "expected": {"verdict": "gap", "drift_codes": ["action_capability_metadata_missing", "action_capability_stage_evidence_missing", "action_capability_verify_evidence_missing"]}
+    },
+    {
+      "case_id": "issued-without-confirmation",
+      "action": {
+        "identity": "message.send",
+        "source": "host-admitted",
+        "tool": "send",
+        "digest": "sha256:send",
+        "owner": "message-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "external",
+        "risk": "high",
+        "reversible": false,
+        "idempotent": false,
+        "retryable": false,
+        "timeout_ms": 1000,
+        "stages": ["preview", "approve", "commit", "verify"]
+      },
+      "evidence": [{"id": "issued-1", "stage": "issued", "status": "observed", "action_identity": "message.send", "version": "sha256:send", "scope": "tenant:demo"}],
+      "expected": {"verdict": "insufficient_evidence", "drift_codes": ["action_capability_evidence_insufficient", "action_capability_stage_evidence_missing", "action_capability_verify_evidence_missing"]}
+    },
+    {
+      "case_id": "declared-observed-drift",
+      "action": {
+        "identity": "storage.put",
+        "source": "host-admitted",
+        "tool": "put",
+        "digest": "sha256:put",
+        "owner": "storage-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "none",
+        "risk": "low",
+        "reversible": true,
+        "idempotent": true,
+        "retryable": true,
+        "timeout_ms": 1000
+      },
+      "observed": {"effect": "write", "side_effect": "external", "risk": "high", "idempotent": false},
+      "expected": {"verdict": "gap", "drift_codes": ["action_capability_declared_observed_drift"]}
+    },
+    {
+      "case_id": "non-idempotent-retry-ambiguity",
+      "action": {
+        "identity": "billing.capture",
+        "source": "host-admitted",
+        "tool": "capture",
+        "digest": "sha256:capture",
+        "owner": "billing-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "none",
+        "risk": "medium",
+        "reversible": true,
+        "idempotent": false,
+        "retryable": true,
+        "timeout_ms": 1000
+      },
+      "expected": {"verdict": "gap", "drift_codes": ["action_capability_retry_idempotency_conflict"]}
+    },
+    {
+      "case_id": "run-stream-equivalent",
+      "action": {
+        "identity": "catalog.lookup",
+        "source": "host-admitted",
+        "tool": "lookup",
+        "version": "2026-09-24",
+        "owner": "catalog-owner",
+        "scope": "tenant:demo",
+        "effect": "read",
+        "side_effect": "none",
+        "risk": "low",
+        "reversible": true,
+        "idempotent": true,
+        "retryable": true,
+        "timeout_ms": 1000
+      },
+      "run": {"evidence": [{"id": "intent", "stage": "intent", "status": "observed"}]},
+      "stream": {"evidence": [{"id": "intent", "stage": "intent", "status": "observed"}]},
+      "expected": {"verdict": "insufficient_evidence", "drift_codes": ["action_capability_evidence_insufficient"]}
+    },
+    {
+      "case_id": "run-stream-confirmation-drift",
+      "action": {
+        "identity": "message.send",
+        "source": "host-admitted",
+        "tool": "send",
+        "digest": "sha256:send",
+        "owner": "message-owner",
+        "scope": "tenant:demo",
+        "effect": "write",
+        "side_effect": "external",
+        "risk": "high",
+        "reversible": false,
+        "idempotent": true,
+        "retryable": false,
+        "timeout_ms": 1000,
+        "stages": ["preview", "approve", "commit", "verify"]
+      },
+      "run": {"evidence": [{"id": "issued", "stage": "issued", "status": "observed", "action_identity": "message.send", "version": "sha256:send", "scope": "tenant:demo", "attempt_id": "attempt-1", "correlation_id": "correlation-1"}, {"id": "confirmed", "stage": "confirmed", "status": "confirmed", "action_identity": "message.send", "version": "sha256:send", "scope": "tenant:demo", "attempt_id": "attempt-1", "correlation_id": "correlation-1"}]},
+      "stream": {"evidence": [{"id": "issued", "stage": "issued", "status": "observed"}]},
+      "expected": {"verdict": "gap", "drift_codes": ["action_capability_evidence_insufficient", "action_capability_run_stream_evidence_parity_drift", "action_capability_stage_evidence_missing", "action_capability_verify_evidence_missing"]}
+    },
+    {
+      "case_id": "historical-compatibility",
+      "action": {},
+      "expected": {"verdict": "not_applicable"}
+    }
+  ]
+}

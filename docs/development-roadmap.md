@@ -16,8 +16,10 @@ Baymax 主线保持 `library-first + contract-first`：
 
 - 已归档：
   - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
+  - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
 
-- 当前无 active change：openspec list --json 返回 changes: []；代码基线为 master@a0b6074，已与 origin/master 同步。
+- 进行中：
+当前基线：代码基线为 `master@76863df`，已与 `origin/master` 同步。
 
 状态权威来源：
 

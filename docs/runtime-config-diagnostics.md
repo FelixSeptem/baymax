@@ -2234,6 +2234,14 @@ Replay fixture: `runtime_event_stream_terminal_recovery.v1`. Drift classificatio
 
 CallRecord 新增且保持 `additive + nullable + default` 的字段：`lifecycle_stage`、`failure_origin`、`execution_started`、`finalized`、`attempt_count`。回放 fixture 为 `tool_lifecycle_failure_isolation.v1`；专用门禁为 `scripts/check-tool-lifecycle-failure-isolation-contract.sh` / `scripts/check-tool-lifecycle-failure-isolation-contract.ps1`，并接入 `check-quality-gate.*`。
 
+## Action capability risk, idempotency, and evidence audit
+
+`action_capability_audit.v1` is an offline, host-supplied replay fixture only. It introduces **no runtime configuration keys, no hot-update behavior, no `RunRecord` fields, and no `RuntimeRecorder` writes**. Existing `env > file > default` configuration semantics are therefore unchanged.
+
+The audit accepts bounded Action metadata and reference-only evidence for `intent`、`issued`、`confirmed` plus Preview/Approve/Commit/Verify. It returns one of `compliant`、`gap`、`insufficient_evidence`、`not_applicable`; missing risk/idempotency/reversibility/precondition/Verify facts never default to safe or successful. Raw payloads, credentials, reasoning, complete command output and unbounded responses are rejected rather than emitted to diagnostics or OTel.
+
+The offline fixture is `tool/diagnosticsreplay/testdata/action_capability_audit.v1.json`; dedicated gates are `scripts/check-action-capability-audit-contract.sh` and `scripts/check-action-capability-audit-contract.ps1`. Rollback removes only the offline adapter, fixture and gate, without data migration or runtime semantic change.
+
 
 
 

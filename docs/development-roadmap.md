@@ -28,6 +28,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 截至 2026-09-25：
 
+- 进行中：
+  - `establish-capability-asset-provenance-and-release-rollback-audit`（提案已完成；首阶段限定为 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
+
 ## 已归档快照
 
 - 已归档：

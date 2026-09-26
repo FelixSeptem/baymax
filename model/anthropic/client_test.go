@@ -2,15 +2,101 @@ package anthropic
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/model/conformance"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 )
+
+func TestProjectAnthropicCacheUsageMapsReadAndCreateTokens(t *testing.T) {
+	var usage anthropic.Usage
+	if err := json.Unmarshal([]byte(`{"cache_creation_input_tokens":5,"cache_read_input_tokens":11,"input_tokens":20,"output_tokens":2,"inference_geo":"us"}`), &usage); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	got, err := projectMessageCacheUsage(usage)
+	if err != nil {
+		t.Fatalf("project cache usage: %v", err)
+	}
+	want := conformance.CacheUsageProjection{Available: true, ReadTokens: 11, WriteTokens: 5, TotalTokens: 16, SourceKind: conformance.CacheUsageSourceAnthropic, SourceVersion: "v1"}
+	if got != want {
+		t.Fatalf("projection = %+v, want %+v", got, want)
+	}
+}
+
+func TestProjectAnthropicCacheUsageRejectsMissingOrNegativeFields(t *testing.T) {
+	for _, raw := range []string{
+		`{"input_tokens":20,"output_tokens":2}`,
+		`{"cache_creation_input_tokens":5,"cache_read_input_tokens":-1,"input_tokens":20,"output_tokens":2}`,
+	} {
+		var usage anthropic.Usage
+		if err := json.Unmarshal([]byte(raw), &usage); err != nil {
+			t.Fatalf("decode usage: %v", err)
+		}
+		got, err := projectMessageCacheUsage(usage)
+		if err == nil || got.Available || got.ReadTokens != 0 || got.WriteTokens != 0 {
+			t.Fatalf("invalid usage %s produced projection %+v and error %v", raw, got, err)
+		}
+	}
+}
+
+func TestGenerateProjectsCacheUsageOnModelResponse(t *testing.T) {
+	var message anthropic.Message
+	if err := json.Unmarshal([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude","stop_reason":"end_turn","usage":{"input_tokens":20,"output_tokens":2,"cache_read_input_tokens":11,"cache_creation_input_tokens":5}}`), &message); err != nil {
+		t.Fatalf("decode message: %v", err)
+	}
+	c := NewClient(Config{})
+	c.newMessage = func(context.Context, anthropic.MessageNewParams) (*anthropic.Message, error) { return &message, nil }
+	got, err := c.Generate(context.Background(), types.ModelRequest{Input: "hello"})
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	want := types.CacheUsageProjection{Available: true, ReadTokens: 11, WriteTokens: 5, TotalTokens: 16, SourceKind: conformance.CacheUsageSourceAnthropic, SourceVersion: "v1"}
+	if got.CacheUsage != want {
+		t.Fatalf("cache usage = %+v, want %+v", got.CacheUsage, want)
+	}
+}
+
+func TestStreamUsesLatestAnthropicCacheUsageSnapshotAtCompletion(t *testing.T) {
+	var start, delta, stop anthropic.MessageStreamEventUnion
+	for _, item := range []struct {
+		raw string
+		dst *anthropic.MessageStreamEventUnion
+	}{
+		{`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude","stop_reason":null,"usage":{"input_tokens":20,"output_tokens":0,"cache_read_input_tokens":11,"cache_creation_input_tokens":5}}}`, &start},
+		{`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":24,"output_tokens":2,"cache_read_input_tokens":13,"cache_creation_input_tokens":7}}`, &delta},
+		{`{"type":"message_stop"}`, &stop},
+	} {
+		if err := json.Unmarshal([]byte(item.raw), item.dst); err != nil {
+			t.Fatalf("decode stream event: %v", err)
+		}
+	}
+	c := NewClient(Config{StreamFn: func(context.Context, string) Stream {
+		return &fakeAnthropicStream{events: []anthropic.MessageStreamEventUnion{start, delta, stop}}
+	}})
+	var events []types.ModelEvent
+	if err := c.Stream(context.Background(), types.ModelRequest{Input: "hello"}, func(event types.ModelEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	for _, event := range events[:len(events)-1] {
+		if _, ok := event.Meta["cache_usage"]; ok {
+			t.Fatalf("interim event must not carry cache usage: %+v", event)
+		}
+	}
+	got, ok := events[len(events)-1].Meta["cache_usage"].(types.CacheUsageProjection)
+	want := types.CacheUsageProjection{Available: true, ReadTokens: 13, WriteTokens: 7, TotalTokens: 20, SourceKind: conformance.CacheUsageSourceAnthropic, SourceVersion: "v1"}
+	if !ok || got != want {
+		t.Fatalf("completed cache usage = %#v, want %+v", events[len(events)-1].Meta["cache_usage"], want)
+	}
+}
 
 type fakeAnthropicStream struct {
 	events []anthropic.MessageStreamEventUnion

@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -9,10 +10,84 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/model/conformance"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	"github.com/FelixSeptem/baymax/model/toolcontract"
 	"github.com/openai/openai-go/responses"
 )
+
+func TestProjectResponseCacheUsageMapsExplicitCachedTokens(t *testing.T) {
+	var usage responses.ResponseUsage
+	if err := json.Unmarshal([]byte(`{"input_tokens":30,"input_tokens_details":{"cached_tokens":12},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":32}`), &usage); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	got, err := projectResponseCacheUsage(usage)
+	if err != nil {
+		t.Fatalf("project cache usage: %v", err)
+	}
+	want := conformance.CacheUsageProjection{Available: true, ReadTokens: 12, TotalTokens: 12, SourceKind: conformance.CacheUsageSourceOpenAIResponses, SourceVersion: "v1"}
+	if got != want {
+		t.Fatalf("projection = %+v, want %+v", got, want)
+	}
+}
+
+func TestProjectResponseCacheUsageRejectsMissingAndNegativeCachedTokens(t *testing.T) {
+	for _, raw := range []string{
+		`{"input_tokens":30,"input_tokens_details":{},"output_tokens":2,"output_tokens_details":{},"total_tokens":32}`,
+		`{"input_tokens":30,"input_tokens_details":{"cached_tokens":-1},"output_tokens":2,"output_tokens_details":{},"total_tokens":32}`,
+	} {
+		var usage responses.ResponseUsage
+		if err := json.Unmarshal([]byte(raw), &usage); err != nil {
+			t.Fatalf("decode usage: %v", err)
+		}
+		got, err := projectResponseCacheUsage(usage)
+		if err == nil || got.Available || got.ReadTokens != 0 || got.TotalTokens != 0 {
+			t.Fatalf("invalid usage %s produced projection %+v and error %v", raw, got, err)
+		}
+	}
+}
+
+func TestGenerateProjectsCacheUsageOnModelResponse(t *testing.T) {
+	var response responses.Response
+	if err := json.Unmarshal([]byte(`{"output":[],"usage":{"input_tokens":30,"input_tokens_details":{"cached_tokens":12},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":32}}`), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	c := NewClient(Config{})
+	c.newResponse = func(context.Context, responses.ResponseNewParams) (*responses.Response, error) { return &response, nil }
+	got, err := c.Generate(context.Background(), types.ModelRequest{Input: "hello"})
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	want := types.CacheUsageProjection{Available: true, ReadTokens: 12, TotalTokens: 12, SourceKind: conformance.CacheUsageSourceOpenAIResponses, SourceVersion: "v1"}
+	if got.CacheUsage != want {
+		t.Fatalf("cache usage = %+v, want %+v", got.CacheUsage, want)
+	}
+}
+
+func TestStreamProjectsCacheUsageOnlyOnCompletedEvent(t *testing.T) {
+	var completed responses.ResponseStreamEventUnion
+	if err := json.Unmarshal([]byte(`{"type":"response.completed","sequence_number":2,"response":{"output":[],"usage":{"input_tokens":30,"input_tokens_details":{"cached_tokens":12},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":32}}}`), &completed); err != nil {
+		t.Fatalf("decode completed event: %v", err)
+	}
+	c := NewClient(Config{})
+	c.newStream = func(context.Context, responses.ResponseNewParams) responseStream {
+		return &fakeResponseStream{events: []responses.ResponseStreamEventUnion{{Type: "response.in_progress"}, completed}}
+	}
+	var events []types.ModelEvent
+	if err := c.Stream(context.Background(), types.ModelRequest{Input: "hello"}, func(ev types.ModelEvent) error {
+		events = append(events, ev)
+		return nil
+	}); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if _, ok := events[0].Meta["cache_usage"]; ok {
+		t.Fatalf("interim event must not carry cache usage: %+v", events[0])
+	}
+	got, ok := events[len(events)-1].Meta["cache_usage"].(types.CacheUsageProjection)
+	if !ok || !got.Available || got.ReadTokens != 12 {
+		t.Fatalf("completed cache usage = %#v", events[len(events)-1].Meta["cache_usage"])
+	}
+}
 
 type fakeResponseStream struct {
 	events []responses.ResponseStreamEventUnion

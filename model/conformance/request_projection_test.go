@@ -59,8 +59,8 @@ func TestRequestProjectionDigestIsDeterministic(t *testing.T) {
 }
 
 func TestRequestProjectionIgnoresUnknownFields(t *testing.T) {
-	base := `{"roles":["user"],"parts":["user_text"],"cache_usage":{"available":true,"read_tokens":7}}`
-	withUnknown := `{"roles":["user"],"parts":["user_text"],"cache_usage":{"available":true,"read_tokens":7},"future_provider_field":{"nested":true},"another_unknown":"x"}`
+	base := `{"roles":["user"],"parts":["user_text"],"cache_usage":{"available":true,"read_tokens":7,"total_tokens":7,"source_kind":"openai_responses","source_version":"v1"}}`
+	withUnknown := `{"roles":["user"],"parts":["user_text"],"cache_usage":{"available":true,"read_tokens":7,"total_tokens":7,"source_kind":"openai_responses","source_version":"v1"},"future_provider_field":{"nested":true},"another_unknown":"x"}`
 
 	var plain, extended RequestProjection
 	if err := json.Unmarshal([]byte(base), &plain); err != nil {
@@ -117,6 +117,59 @@ func TestRequestProjectionRejectsNegativeCacheUsage(t *testing.T) {
 	}
 	if classified.Code != ReasonCacheUsageProjectionDrift {
 		t.Fatalf("unexpected code %q", classified.Code)
+	}
+}
+
+func TestCacheUsageProjectionAcceptsNormalizedReadWriteTotalAndSource(t *testing.T) {
+	projection := RequestProjection{CacheUsage: CacheUsageProjection{
+		Available:     true,
+		ReadTokens:    12,
+		WriteTokens:   3,
+		TotalTokens:   15,
+		SourceKind:    CacheUsageSourceOpenAIResponses,
+		SourceVersion: "v1",
+	}}
+	if err := ValidateRequestProjection(projection); err != nil {
+		t.Fatalf("expected normalized cache usage to validate: %v", err)
+	}
+}
+
+func TestCacheUsageProjectionRejectsInconsistentTotal(t *testing.T) {
+	err := ValidateRequestProjection(RequestProjection{CacheUsage: CacheUsageProjection{
+		Available:     true,
+		ReadTokens:    12,
+		WriteTokens:   3,
+		TotalTokens:   14,
+		SourceKind:    CacheUsageSourceOpenAIResponses,
+		SourceVersion: "v1",
+	}})
+	var classified *RequestProjectionError
+	if !errors.As(err, &classified) || classified.Code != ReasonCacheUsageProjectionDrift {
+		t.Fatalf("expected cache drift for inconsistent total, got %v", err)
+	}
+}
+
+func TestCacheUsageProjectionRejectsMissingSourceWhenAvailable(t *testing.T) {
+	err := ValidateRequestProjection(RequestProjection{CacheUsage: CacheUsageProjection{
+		Available:  true,
+		ReadTokens: 1,
+	}})
+	var classified *RequestProjectionError
+	if !errors.As(err, &classified) || classified.Code != ReasonCacheUsageProjectionDrift {
+		t.Fatalf("expected cache drift for missing source, got %v", err)
+	}
+}
+
+func TestCacheUsageProjectionRejectsOverflow(t *testing.T) {
+	err := ValidateRequestProjection(RequestProjection{CacheUsage: CacheUsageProjection{
+		Available:     true,
+		ReadTokens:    MaxCacheTokens + 1,
+		SourceKind:    CacheUsageSourceGemini,
+		SourceVersion: "v1",
+	}})
+	var classified *RequestProjectionError
+	if !errors.As(err, &classified) || classified.Code != ReasonRequestOverflowDrift {
+		t.Fatalf("expected cache overflow drift, got %v", err)
 	}
 }
 

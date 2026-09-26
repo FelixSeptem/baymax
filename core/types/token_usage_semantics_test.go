@@ -20,10 +20,9 @@ func jsonFieldShape(t reflect.Type) []string {
 
 // TestTokenUsageJSONShapeIsFrozen pins the provider-usage shape that the
 // cache-usage observability contract deliberately does NOT touch. Cache
-// accounting lives in the request-side conformance projection
-// (model/conformance.CacheUsageProjection) under an additive + nullable +
-// default rule; it must not be back-ported into these runtime protocol types
-// without an explicit contract change.
+// accounting lives in the additive, defaultable ModelResponse.CacheUsage
+// carrier and the request-side conformance projection; it must not be merged
+// into TokenUsage without an explicit contract change.
 func TestTokenUsageJSONShapeIsFrozen(t *testing.T) {
 	want := []string{
 		"InputTokens=input_tokens",

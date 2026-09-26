@@ -8,6 +8,27 @@ import (
 	"time"
 )
 
+func TestModelResponseCacheUsageRoundTrip(t *testing.T) {
+	want := ModelResponse{
+		FinalAnswer: "cache-aware",
+		CacheUsage: CacheUsageProjection{
+			Available: true, ReadTokens: 7, TotalTokens: 7,
+			SourceKind: "openai_responses", SourceVersion: "v1",
+		},
+	}
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var got ModelResponse
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if got.CacheUsage != want.CacheUsage {
+		t.Fatalf("cache usage = %+v, want %+v", got.CacheUsage, want.CacheUsage)
+	}
+}
+
 func TestDefaultLoopPolicy(t *testing.T) {
 	p := DefaultLoopPolicy()
 	if p.MaxIterations != 12 {

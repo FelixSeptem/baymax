@@ -47,6 +47,11 @@ type RequestProjectionReplayCase struct {
 	Idempotent              bool     `json:"idempotent"`
 	RunStreamParityVerified bool     `json:"run_stream_parity_verified"`
 	CacheUsageAvailable     bool     `json:"cache_usage_available"`
+	CacheReadTokens         int64    `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens        int64    `json:"cache_write_tokens,omitempty"`
+	CacheTotalTokens        int64    `json:"cache_total_tokens,omitempty"`
+	CacheSourceKind         string   `json:"cache_source_kind,omitempty"`
+	CacheSourceVersion      string   `json:"cache_source_version,omitempty"`
 }
 
 // RequestProjectionReplayResult is the normalized replay output. Replaying the
@@ -118,6 +123,11 @@ func replayRequestProjectionCase(c conformance.RequestProjectionCase) (RequestPr
 		ReplayDigest:        replay,
 		Idempotent:          first == replay,
 		CacheUsageAvailable: c.Observed.CacheUsage.Available,
+		CacheReadTokens:     c.Observed.CacheUsage.ReadTokens,
+		CacheWriteTokens:    c.Observed.CacheUsage.WriteTokens,
+		CacheTotalTokens:    c.Observed.CacheUsage.TotalTokens,
+		CacheSourceKind:     c.Observed.CacheUsage.SourceKind,
+		CacheSourceVersion:  c.Observed.CacheUsage.SourceVersion,
 	}
 	if c.Run != nil && c.Stream != nil {
 		// ParseRequestProjectionFixtureJSON already rejects a parity violation,

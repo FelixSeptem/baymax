@@ -114,14 +114,18 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 		return types.ModelResponse{}, err
 	}
 
-	return types.ModelResponse{
+	response := types.ModelResponse{
 		FinalAnswer: resp.OutputText(),
 		Usage: types.TokenUsage{
 			InputTokens:  int(resp.Usage.InputTokens),
 			OutputTokens: int(resp.Usage.OutputTokens),
 			TotalTokens:  int(resp.Usage.TotalTokens),
 		},
-	}, nil
+	}
+	if cacheUsage, cacheErr := projectResponseCacheUsage(resp.Usage); cacheErr == nil {
+		response.CacheUsage = cacheUsage
+	}
+	return response, nil
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
@@ -350,6 +354,11 @@ func mapStreamEvent(ev responses.ResponseStreamEventUnion, state *streamState) (
 		events = append(events, types.ModelEvent{Type: ev.Type, Meta: meta})
 	default:
 		events = append(events, types.ModelEvent{Type: ev.Type, Meta: meta})
+	}
+	if ev.Type == "response.completed" {
+		if cacheUsage, cacheErr := projectResponseCacheUsage(ev.Response.Usage); cacheErr == nil {
+			meta["cache_usage"] = cacheUsage
+		}
 	}
 
 	return events, nil

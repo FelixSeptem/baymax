@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 // FixtureVersionRequestV1 is the versioned namespace for the request-side
@@ -72,7 +74,20 @@ const (
 	MaxRequestTools      = 64
 	MaxRequestIdentifier = 256
 	MaxRequestBytes      = 2 << 20
+	MaxCacheTokens       = 1 << 60
 )
+
+const (
+	CacheUsageSourceOpenAIResponses = "openai_responses"
+	CacheUsageSourceAnthropic       = "anthropic_messages"
+	CacheUsageSourceGemini          = "gemini_generate_content"
+)
+
+var cacheUsageSourceVocabulary = []string{
+	CacheUsageSourceOpenAIResponses,
+	CacheUsageSourceAnthropic,
+	CacheUsageSourceGemini,
+}
 
 // RequestProjectionError carries a stable classification code so that replay
 // and gate tooling can act on the failure without string matching.
@@ -128,16 +143,9 @@ type RequestProjection struct {
 	CacheUsage           CacheUsageProjection `json:"cache_usage"`
 }
 
-// CacheUsageProjection carries cache accounting availability only. Cache
-// fields are additive + nullable + default: an adapter that does not report
-// cache accounting MUST leave Available false and MUST NOT fabricate read or
-// write tokens. A historical fixture that omits cache_usage entirely decodes to
-// this same zero value.
-type CacheUsageProjection struct {
-	Available   bool  `json:"available"`
-	ReadTokens  int64 `json:"read_tokens,omitempty"`
-	WriteTokens int64 `json:"write_tokens,omitempty"`
-}
+// CacheUsageProjection carries bounded, provider-neutral cache accounting.
+// Provider-native fields are translated only at their owning adapter boundary.
+type CacheUsageProjection = types.CacheUsageProjection
 
 // RequestProjectionFixture is the versioned request-side conformance fixture.
 type RequestProjectionFixture struct {
@@ -216,11 +224,29 @@ func ValidateRequestProjection(in RequestProjection) error {
 			return requestErrorf(ReasonRequestOverflowDrift, "digest exceeds %d bytes", MaxRequestIdentifier)
 		}
 	}
-	if !in.CacheUsage.Available && (in.CacheUsage.ReadTokens != 0 || in.CacheUsage.WriteTokens != 0) {
-		return requestErrorf(ReasonCacheUsageProjectionDrift, "cache usage unavailable but read/write tokens are non-zero")
+	return ValidateCacheUsageProjection(in.CacheUsage)
+}
+
+// ValidateCacheUsageProjection enforces explicit source, non-negative bounded
+// counters, and the read + write = total relationship.
+func ValidateCacheUsageProjection(in CacheUsageProjection) error {
+	if !in.Available {
+		if in.ReadTokens != 0 || in.WriteTokens != 0 || in.TotalTokens != 0 || in.SourceKind != "" || in.SourceVersion != "" {
+			return requestErrorf(ReasonCacheUsageProjectionDrift, "cache usage unavailable but accounting fields are populated")
+		}
+		return nil
 	}
-	if in.CacheUsage.Available && (in.CacheUsage.ReadTokens < 0 || in.CacheUsage.WriteTokens < 0) {
+	if in.ReadTokens < 0 || in.WriteTokens < 0 || in.TotalTokens < 0 {
 		return requestErrorf(ReasonCacheUsageProjectionDrift, "cache token accounting must not be negative")
+	}
+	if in.ReadTokens > MaxCacheTokens || in.WriteTokens > MaxCacheTokens || in.TotalTokens > MaxCacheTokens {
+		return requestErrorf(ReasonRequestOverflowDrift, "cache token accounting exceeds %d", MaxCacheTokens)
+	}
+	if in.SourceKind == "" || !containsString(cacheUsageSourceVocabulary, in.SourceKind) || in.SourceVersion != "v1" {
+		return requestErrorf(ReasonCacheUsageProjectionDrift, "cache usage source kind/version is missing or unsupported")
+	}
+	if in.ReadTokens > MaxCacheTokens-in.WriteTokens || in.ReadTokens+in.WriteTokens != in.TotalTokens {
+		return requestErrorf(ReasonCacheUsageProjectionDrift, "cache total must equal read plus write tokens")
 	}
 	return nil
 }
@@ -237,12 +263,15 @@ func ValidateCacheUsageBaselineUnavailable(in RequestProjection) error {
 	if in.CacheUsage.Available {
 		return requestErrorf(ReasonCacheUsageProjectionDrift, "adapter claims cache usage availability without an accounting source")
 	}
-	if in.CacheUsage.ReadTokens != 0 || in.CacheUsage.WriteTokens != 0 {
+	if in.CacheUsage.ReadTokens != 0 || in.CacheUsage.WriteTokens != 0 || in.CacheUsage.TotalTokens != 0 || in.CacheUsage.SourceKind != "" || in.CacheUsage.SourceVersion != "" {
 		return requestErrorf(
 			ReasonCacheUsageProjectionDrift,
-			"adapter fabricated cache tokens: read=%d write=%d",
+			"adapter fabricated cache usage: read=%d write=%d total=%d source=%q/%q",
 			in.CacheUsage.ReadTokens,
 			in.CacheUsage.WriteTokens,
+			in.CacheUsage.TotalTokens,
+			in.CacheUsage.SourceKind,
+			in.CacheUsage.SourceVersion,
 		)
 	}
 	return nil

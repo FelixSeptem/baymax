@@ -749,6 +749,18 @@ type ModelResponse struct {
 	ToolCalls            []ToolCall            `json:"tool_calls,omitempty"`
 	ClarificationRequest *ClarificationRequest `json:"clarification_request,omitempty"`
 	Usage                TokenUsage            `json:"usage"`
+	CacheUsage           CacheUsageProjection  `json:"cache_usage"`
+}
+
+// CacheUsageProjection is an optional provider-neutral cache accounting view.
+// It is kept separate from TokenUsage so existing token semantics remain frozen.
+type CacheUsageProjection struct {
+	Available     bool   `json:"available"`
+	ReadTokens    int64  `json:"read_tokens,omitempty"`
+	WriteTokens   int64  `json:"write_tokens,omitempty"`
+	TotalTokens   int64  `json:"total_tokens,omitempty"`
+	SourceKind    string `json:"source_kind,omitempty"`
+	SourceVersion string `json:"source_version,omitempty"`
 }
 
 type ToolResult struct {

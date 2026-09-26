@@ -51,7 +51,7 @@ Write-Host "[provider-request-projection] adapter ownership, provider neutrality
 Invoke-NativeStrict -Label "request projection contract boundary" -Command { go test ./tool/contributioncheck -run 'TestProviderRequestProjectionContractBoundary' -count=1 }
 
 Write-Host "[provider-request-projection] adapter SDK request projection shape"
-Invoke-NativeStrict -Label "request projection adapter shape" -Command { go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsageProjection|ProjectionAudit|NativeMessageParams|NativeGenerateRequest' -count=1 }
+Invoke-NativeStrict -Label "request projection adapter shape" -Command { go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsage|ProjectionAudit|NativeMessageParams|NativeGenerateRequest|CountTokens' -count=1 }
 
 Write-Host "[provider-request-projection] offline replay idempotency"
 Invoke-NativeStrict -Label "request projection replay idempotency" -Command { go test ./tool/diagnosticsreplay -run 'ProviderRequestProjection' -count=2 }

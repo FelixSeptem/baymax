@@ -18,8 +18,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
   - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
 
-- 进行中：
-提案分支基线：`master@76863df`（切分时已与 `origin/master` 同步）；提案现已归档并快进合并至 `master@0a8b81f`。
+提案分支基线：`master@76863df`（切分时已与 `origin/master` 同步）；提案现已归档为 148，并随本次功能分支合并进入主线。
 
 状态权威来源：
 
@@ -48,10 +47,11 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
   - `establish-budget-aware-derived-context-projection-contract`（归档 143；有界只读预算投影契约、离线 benchmark、fixture、replay 与 gate 已收口；未改变运行时行为）
   - `establish-model-catalog-routing-admission-audit-contract`（归档 145；host-supplied model catalog/routing admission 的有界审计、版本化 fixture/replay、Run/Stream parity 及由可复现 exact-identity gap 触发的纯函数 deterministic resolver 已收口；不引入远程 catalog、credential store 或全局 router）
+  - `establish-provider-cache-usage-observability-contract`（归档 148；三家 provider 的 cache usage 已通过独立 `ModelResponse.CacheUsage` carrier、终态 Stream 快照、离线 fixture/replay 与双平台 contract gate 收口；不改变 `TokenUsage`、RuntimeRecorder schema 或缓存策略）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
   - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项。
-  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的审计基线已由归档 142 收口；native request projection 修复已作为归档 144 `preserve-provider-native-request-projection-parity` 交付，cache usage schema 仍须等待独立的成本/P95 触发证据。
+  - `Provider 结构化上下文投影与 Prompt Cache 可观测性` 的审计基线已由归档 142 收口；native request projection 修复已作为归档 144 `preserve-provider-native-request-projection-parity` 交付；cache usage 可观测性增量已由归档 148 `establish-provider-cache-usage-observability-contract` 交付。后续仅在出现新的可复现 provider usage drift 或明确宿主需求时立项。
   - `预算感知派生上下文投影` 的启动条件（先建立 benchmark、fixture 与 replay，比较完成率、预算利用、重复循环与恢复重算）已由归档 143（`establish-budget-aware-derived-context-projection-contract`）交付并收口，不再作为观察候选。
 - 已归档：
   - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
@@ -312,7 +312,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 已归档基线（138） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 已完成 task/attempt 与 workspace provenance 关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation，以及后台 completion 的 correlation、dedupe、late/disconnect/recovery 与 Run/Stream parity 验证 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 已通过 gap fixture、contract/replay、shell/PowerShell gate 和文档一致性校验；后续仅在新的可复现 drift 下以增量 change 处理。实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
 | 已归档基线（139） | Eval continuity comparison 与 replay contract | bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较 | OTel/eval/corpus、context handoff、checkpoint/snapshot refs、diagnostics replay | 已完成并归档；后续质量增量进入首错归因与轨迹边界候选，不重复建设 transcript/artifact service。 |
 | 已归档基线（140） | External extension authoring conformance | 离线 authoring conformance、版本化 fixture、replay 与双平台 gate | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 已完成并归档；未来仅在新的真实扩展来源暴露新增 drift 时，以既有 owner 的增量 change 处理。 |
-| 观察候选 | Provider 结构化上下文投影与 Prompt Cache 可观测性 | 真实 SDK message/tool-result projection、stable prefix/tool order、cache usage 与 Run/Stream parity | `model/<provider>`、`model/toolcontract`、context handoff、provider conformance、`RuntimeRecorder` | fixture 证明 role/message/tool-result 语义丢失或顺序漂移，或 cache 成本/P95 成为稳定瓶颈。cache 字段仅 additive + nullable + default。 |
+| 已归档基线（148） | Provider cache usage 可观测性 | 三家 SDK cache usage adapter projection、终态 Stream 快照选择、fixture/replay 与 Run/Stream parity | `model/<provider>`、`model/conformance`、`tool/diagnosticsreplay`；不接入 `RuntimeRecorder` | `establish-provider-cache-usage-observability-contract` 已归档；独立于 `TokenUsage`，cache 字段仅 additive + nullable + default。 |
 | 条件候选 | 本地/宿主准入后的按需 Tool Schema 投影 | 在已准入工具集合内按需选择并投影 schema，减少无效上下文占用 | Skill loader、MCP、manifest/capability、allowlist、sandbox、既有 tool lifecycle | 工具数量、schema token 或工具选择准确率形成稳定瓶颈。不得动态下载工具、绕过准入，或建设 marketplace/credential store。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 | 已归档基线（147） | Action capability 风险、幂等与验收证据审计 | 已完成已准入 Tool/MCP/Action 的副作用、风险、可逆性、幂等、前置条件和 evidence reference 离线一致性审计；Codex 的审批范围、网络授权与 sandbox 分层作为后续增量检查项 | `model/toolcontract`、policy precedence、HITL/action gate、sandbox、RuntimeRecorder、diagnostics replay | 归档 147 已收口；只有新的 approval scope、网络授权、sandbox escalation 或声明/事实 drift 才从既有 owner 发起增量 change，不再重复排期。 |

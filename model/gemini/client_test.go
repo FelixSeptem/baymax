@@ -9,9 +9,87 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/model/conformance"
 	providererror "github.com/FelixSeptem/baymax/model/providererror"
 	"google.golang.org/genai"
 )
+
+func TestProjectGenerateContentCacheUsageMapsExplicitPositiveCount(t *testing.T) {
+	resp := &genai.GenerateContentResponse{UsageMetadata: &genai.GenerateContentResponseUsageMetadata{CachedContentTokenCount: 17}}
+	got, err := projectGenerateContentCacheUsage(resp)
+	if err != nil {
+		t.Fatalf("project cache usage: %v", err)
+	}
+	want := conformance.CacheUsageProjection{Available: true, ReadTokens: 17, TotalTokens: 17, SourceKind: conformance.CacheUsageSourceGemini, SourceVersion: "v1"}
+	if got != want {
+		t.Fatalf("projection = %+v, want %+v", got, want)
+	}
+}
+
+func TestProjectGenerateContentCacheUsageKeepsMissingOrZeroUnavailable(t *testing.T) {
+	for _, resp := range []*genai.GenerateContentResponse{
+		{},
+		{UsageMetadata: &genai.GenerateContentResponseUsageMetadata{}},
+	} {
+		got, err := projectGenerateContentCacheUsage(resp)
+		if err == nil || got.Available || got.ReadTokens != 0 || got.TotalTokens != 0 {
+			t.Fatalf("response %+v produced projection %+v and error %v", resp, got, err)
+		}
+	}
+}
+
+func TestProjectGenerateContentCacheUsageRejectsNegativeCount(t *testing.T) {
+	got, err := projectGenerateContentCacheUsage(&genai.GenerateContentResponse{UsageMetadata: &genai.GenerateContentResponseUsageMetadata{CachedContentTokenCount: -1}})
+	if err == nil || got.Available || got.ReadTokens != 0 || got.TotalTokens != 0 {
+		t.Fatalf("negative response produced projection %+v and error %v", got, err)
+	}
+}
+
+func TestGenerateProjectsCacheUsageOnModelResponse(t *testing.T) {
+	c := &Client{
+		model: "gemini-2.5-flash",
+		nativeGenerate: func(context.Context, string, []*genai.Content, *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+			return &genai.GenerateContentResponse{UsageMetadata: &genai.GenerateContentResponseUsageMetadata{PromptTokenCount: 20, CachedContentTokenCount: 17}}, nil
+		},
+	}
+	got, err := c.Generate(context.Background(), types.ModelRequest{Input: "hello"})
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	want := types.CacheUsageProjection{Available: true, ReadTokens: 17, TotalTokens: 17, SourceKind: conformance.CacheUsageSourceGemini, SourceVersion: "v1"}
+	if got.CacheUsage != want {
+		t.Fatalf("cache usage = %+v, want %+v", got.CacheUsage, want)
+	}
+}
+
+func TestStreamUsesLatestGeminiCacheUsageSnapshotAtCompletion(t *testing.T) {
+	c := &Client{
+		model: "gemini-2.5-flash",
+		stream: func(context.Context, string) iter.Seq2[*genai.GenerateContentResponse, error] {
+			return seqFromChunks([]*genai.GenerateContentResponse{
+				{UsageMetadata: &genai.GenerateContentResponseUsageMetadata{CachedContentTokenCount: 11}},
+				{Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "done"}}}}}, UsageMetadata: &genai.GenerateContentResponseUsageMetadata{CachedContentTokenCount: 17}},
+			}, nil)
+		},
+	}
+	var events []types.ModelEvent
+	if err := c.Stream(context.Background(), types.ModelRequest{Input: "hello"}, func(event types.ModelEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	for _, event := range events[:len(events)-1] {
+		if _, ok := event.Meta["cache_usage"]; ok {
+			t.Fatalf("interim event must not carry cache usage: %+v", event)
+		}
+	}
+	got, ok := events[len(events)-1].Meta["cache_usage"].(types.CacheUsageProjection)
+	want := types.CacheUsageProjection{Available: true, ReadTokens: 17, TotalTokens: 17, SourceKind: conformance.CacheUsageSourceGemini, SourceVersion: "v1"}
+	if !ok || got != want {
+		t.Fatalf("completed cache usage = %#v, want %+v", events[len(events)-1].Meta["cache_usage"], want)
+	}
+}
 
 func TestGenerateUsesConfiguredGenerateFn(t *testing.T) {
 	c := &Client{

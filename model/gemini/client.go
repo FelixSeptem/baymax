@@ -156,6 +156,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 
 	toolSeq := 0
 	streamStarted := false
+	var cacheUsage types.CacheUsageProjection
 	for chunk, err := range stream {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -174,6 +175,9 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 				})
 			}
 			return providererror.WithStreamPhase(providererror.FromError(err), phase)
+		}
+		if projected, projectionErr := projectGenerateContentCacheUsage(chunk); projectionErr == nil {
+			cacheUsage = projected
 		}
 		mapped := mapStreamChunk(chunk, &toolSeq)
 		if len(mapped) > 0 {
@@ -204,7 +208,7 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 	if onEvent != nil {
 		if err := onEvent(types.ModelEvent{
 			Type: types.ModelEventTypeResponseCompleted,
-			Meta: geminiCompletedMeta(),
+			Meta: geminiCompletedMeta(cacheUsage),
 		}); err != nil {
 			return err
 		}
@@ -451,9 +455,12 @@ func geminiErrorMeta(message string) map[string]any {
 	return meta
 }
 
-func geminiCompletedMeta() map[string]any {
-	meta := make(map[string]any, 1)
+func geminiCompletedMeta(cacheUsage types.CacheUsageProjection) map[string]any {
+	meta := make(map[string]any, 2)
 	meta["provider"] = "gemini"
+	if cacheUsage.Available {
+		meta["cache_usage"] = cacheUsage
+	}
 	return meta
 }
 
@@ -491,7 +498,7 @@ func decodeGenerateResponse(resp any) types.ModelResponse {
 	if candidate := int(gjson.GetBytes(raw, "usage_metadata.total_token_count").Int()); candidate > 0 {
 		total = candidate
 	}
-	return types.ModelResponse{
+	response := types.ModelResponse{
 		FinalAnswer: text,
 		Usage: types.TokenUsage{
 			InputTokens:  in,
@@ -499,6 +506,10 @@ func decodeGenerateResponse(resp any) types.ModelResponse {
 			TotalTokens:  total,
 		},
 	}
+	if cacheUsage, cacheErr := projectGenerateContentCacheUsageBytes(raw); cacheErr == nil {
+		response.CacheUsage = cacheUsage
+	}
+	return response
 }
 
 func decodeTypedGenerateResponse(resp *genai.GenerateContentResponse) types.ModelResponse {
@@ -517,7 +528,7 @@ func decodeTypedGenerateResponse(resp *genai.GenerateContentResponse) types.Mode
 			totalTokens = candidate
 		}
 	}
-	return types.ModelResponse{
+	response := types.ModelResponse{
 		FinalAnswer: text,
 		Usage: types.TokenUsage{
 			InputTokens:  inputTokens,
@@ -525,6 +536,10 @@ func decodeTypedGenerateResponse(resp *genai.GenerateContentResponse) types.Mode
 			TotalTokens:  totalTokens,
 		},
 	}
+	if cacheUsage, cacheErr := projectGenerateContentCacheUsage(resp); cacheErr == nil {
+		response.CacheUsage = cacheUsage
+	}
+	return response
 }
 
 func decodeTypedCandidateText(candidates []*genai.Candidate) string {

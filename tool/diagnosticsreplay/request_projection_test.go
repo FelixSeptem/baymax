@@ -55,6 +55,24 @@ func fixtureObserved(source conformance.RequestFacts) conformance.RequestProject
 	return conformance.ProjectRequestNative(source)
 }
 
+func fixtureCacheUsage(provider string) conformance.CacheUsageProjection {
+	projection := conformance.CacheUsageProjection{Available: true, SourceVersion: "v1"}
+	switch provider {
+	case "openai":
+		projection.ReadTokens = 12
+		projection.SourceKind = conformance.CacheUsageSourceOpenAIResponses
+	case "anthropic":
+		projection.ReadTokens = 12
+		projection.WriteTokens = 3
+		projection.SourceKind = conformance.CacheUsageSourceAnthropic
+	case "gemini":
+		projection.ReadTokens = 12
+		projection.SourceKind = conformance.CacheUsageSourceGemini
+	}
+	projection.TotalTokens = projection.ReadTokens + projection.WriteTokens
+	return projection
+}
+
 func finalizeRequestProjectionCase(t *testing.T, c conformance.RequestProjectionCase) conformance.RequestProjectionCase {
 	t.Helper()
 	digest, err := conformance.RequestProjectionDigest(c.Observed)
@@ -88,6 +106,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 		for _, mode := range []string{"run", "stream"} {
 			source := fixtureSource(true, true)
 			observed := fixtureObserved(source)
+			observed.CacheUsage = fixtureCacheUsage(provider)
 			expected := observed
 			cases = append(cases, finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
 				Name:         provider + "_" + mode + "_native_request_projection",
@@ -104,6 +123,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 		// identically on both lanes.
 		paritySource := fixtureSource(true, true)
 		parityObserved := fixtureObserved(paritySource)
+		parityObserved.CacheUsage = fixtureCacheUsage(provider)
 		runProjection := parityObserved
 		streamProjection := parityObserved
 		cases = append(cases, finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
@@ -211,8 +231,13 @@ func TestProviderRequestProjectionFixtureReplays(t *testing.T) {
 		if !c.Idempotent || c.Digest != c.ReplayDigest || c.Digest == "" {
 			t.Fatalf("case %q is not idempotent: %+v", c.Name, c)
 		}
+		if strings.HasSuffix(c.Name, "_native_request_projection") && !c.CacheUsageAvailable {
+			t.Fatalf("case %q lost its declared cache accounting", c.Name)
+		}
 		if c.CacheUsageAvailable {
-			t.Fatalf("case %q claims cache usage availability without an accounting source", c.Name)
+			if c.CacheTotalTokens != c.CacheReadTokens+c.CacheWriteTokens || c.CacheSourceVersion != "v1" {
+				t.Fatalf("case %q has invalid normalized cache accounting: %+v", c.Name, c)
+			}
 		}
 		providers[c.Provider]++
 		if c.RunStreamParityVerified {

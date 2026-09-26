@@ -56,6 +56,7 @@ type toolCallState struct {
 type streamState struct {
 	toolByIndex map[int64]*toolCallState
 	toolSeq     int
+	cacheUsage  types.CacheUsageProjection
 }
 
 const maxToolCallArgsDecodeBufferCap = 64 * 1024
@@ -132,7 +133,11 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 		}
 		return types.ModelResponse{}, providererror.FromError(err)
 	}
-	return decodeMessage(msg), nil
+	response := decodeMessage(msg)
+	if cacheUsage, cacheErr := projectMessageCacheUsage(msg.Usage); cacheErr == nil {
+		response.CacheUsage = cacheUsage
+	}
+	return response, nil
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
@@ -374,7 +379,18 @@ func mapStreamEvent(ev anthropic.MessageStreamEventUnion, state *streamState) ([
 			events = append(events, *toolEvent)
 		}
 	case "message_stop":
+		if state.cacheUsage.Available {
+			meta["cache_usage"] = state.cacheUsage
+		}
 		events = append(events, types.ModelEvent{Type: types.ModelEventTypeResponseCompleted, Meta: meta})
+	case "message_start":
+		if cacheUsage, err := projectMessageCacheUsage(ev.Message.Usage); err == nil {
+			state.cacheUsage = cacheUsage
+		}
+	case "message_delta":
+		if cacheUsage, err := projectMessageDeltaCacheUsage(ev.Usage); err == nil {
+			state.cacheUsage = cacheUsage
+		}
 	}
 	return events, nil
 }
@@ -511,7 +527,7 @@ func decodeTypedMessage(msg anthropic.Message) types.ModelResponse {
 	in := int(msg.Usage.InputTokens)
 	out := int(msg.Usage.OutputTokens)
 	total := in + out
-	return types.ModelResponse{
+	response := types.ModelResponse{
 		FinalAnswer: decodeTypedMessageText(msg.Content),
 		Usage: types.TokenUsage{
 			InputTokens:  in,
@@ -519,6 +535,10 @@ func decodeTypedMessage(msg anthropic.Message) types.ModelResponse {
 			TotalTokens:  total,
 		},
 	}
+	if cacheUsage, err := projectMessageCacheUsage(msg.Usage); err == nil {
+		response.CacheUsage = cacheUsage
+	}
+	return response
 }
 
 func decodeTypedMessageText(content []anthropic.ContentBlockUnion) string {

@@ -49,7 +49,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -73,14 +77,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
+      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
     },
     {
       "name": "openai_stream_native_request_projection",
@@ -130,7 +138,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -154,14 +166,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
+      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
     },
     {
       "name": "openai_run_stream_parity",
@@ -211,7 +227,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "run": {
@@ -235,7 +255,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "stream": {
@@ -259,14 +283,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "openai_responses",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
+      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
     },
     {
       "name": "openai_run_without_tool_results",
@@ -358,7 +386,12 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -382,14 +415,19 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
+      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
     },
     {
       "name": "anthropic_stream_native_request_projection",
@@ -439,7 +477,12 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -463,14 +506,19 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
+      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
     },
     {
       "name": "anthropic_run_stream_parity",
@@ -520,7 +568,12 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "run": {
@@ -544,7 +597,12 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "stream": {
@@ -568,14 +626,19 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "write_tokens": 3,
+          "total_tokens": 15,
+          "source_kind": "anthropic_messages",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
+      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
     },
     {
       "name": "anthropic_run_without_tool_results",
@@ -667,7 +730,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -691,14 +758,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
+      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
     },
     {
       "name": "gemini_stream_native_request_projection",
@@ -748,7 +819,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "expected": {
@@ -772,14 +847,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
+      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
     },
     {
       "name": "gemini_run_stream_parity",
@@ -829,7 +908,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "run": {
@@ -853,7 +936,11 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "stream": {
@@ -877,14 +964,18 @@
         "stable_prefix_first": false,
         "total_bytes": 24,
         "cache_usage": {
-          "available": false
+          "available": true,
+          "read_tokens": 12,
+          "total_tokens": 12,
+          "source_kind": "gemini_generate_content",
+          "source_version": "v1"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a",
-      "replay_digest": "5d627364cf3ffad6b1d4388935ec37d86e80f3f510f40d9d4da927c97828b83a"
+      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
+      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
     },
     {
       "name": "gemini_run_without_tool_results",

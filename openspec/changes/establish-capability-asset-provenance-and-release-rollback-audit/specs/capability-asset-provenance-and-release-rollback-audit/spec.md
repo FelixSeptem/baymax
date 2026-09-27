@@ -66,7 +66,7 @@ Given a withdrawal request and a complete normalized dependency/consumer graph, 
 
 ### Requirement: Replacement compatibility SHALL be advisory and deterministic
 
-The audit MAY compare a withdrawn asset with a proposed replacement, but compatibility output MUST remain an advisory finding based on identity, version range, digest, scope, dependency, and declared capability metadata. The audit MUST NOT activate, withdraw, or mutate either asset.
+The audit MAY compare a withdrawn asset with a proposed replacement, but compatibility output MUST remain an advisory finding based on identity, an optional bounded version range, compatible digest set, scope, dependency, and declared capability metadata. The audit MUST NOT activate, withdraw, or mutate either asset.
 
 #### Scenario: Compatible replacement is identified
 - **WHEN** a replacement preserves the required identity relationship, supported version range, scope, dependencies, and declared capabilities

@@ -1,0 +1,14 @@
+{
+  "version": "capability_asset_provenance.v1",
+  "cases": [{
+    "case_id": "scope-violation",
+    "asset": {
+      "kind": "skill",
+      "identity": "skill.cross-scope",
+      "owner": "team.skills",
+      "scope": "session",
+      "source": "host-manifest",
+      "consumers": [{"kind": "agent", "identity": "agent.project", "scope": "project"}]
+    }
+  }]
+}

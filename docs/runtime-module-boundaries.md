@@ -207,6 +207,12 @@ R4 多代理共享契约前置门禁（阻断级）：
 
 The `action_capability_audit.v1` fixture uses reference-only identity, version/digest, scope, attempt/correlation, stage/status and bounded summary fields. It excludes Tool/MCP/Provider invocation, network, registry, filesystem, credentials, clocks, payload bodies, reasoning, complete command output and unbounded responses. It introduces no runtime configuration, hosted execution/session store, global queue, dynamic registry/download path, direct diagnostic writer or second terminal state machine. Rollback removes the offline audit adapter, fixture and gate only; existing Run/Stream and source-owner semantics remain unchanged.
 
+## Capability asset provenance and release rollback audit boundary
+
+`tool/diagnosticsreplay/capability_asset_provenance.go` is a bounded, read-only, offline consumer of host-owned Skill, extension, adapter, memory, context, and evaluation metadata. It normalizes stable identity, version/digest, owner, scope, dependency, consumer, withdrawal-impact, and replacement-compatibility references; it does not activate, withdraw, publish, or roll back assets. Existing owner modules remain authoritative for lifecycle and policy decisions.
+
+The `capability_asset_provenance.v1` projection excludes raw prompt/transcript/reasoning, credentials, workspace content, provider SDK calls, network access, dynamic registries, marketplace resolution, hosted persistence, and direct `RuntimeRecorder` writes. Replay and Run/Stream parity compare only bounded normalized facts. Rollback removes the projection adapter, fixtures, replay entry point, documentation, and gates without persistence migration or runtime behavior changes.
+
 Session message history remains source-owned by the embedding host/session adapter. `core/types` provides bounded reference validation; `orchestration/snapshot` validates history/checkpoint context before source-owned restore; `tool/diagnosticsreplay` performs offline read-only normalization. No runtime package introduces a session database, hosted gateway, provider SDK dependency, artifact content service, or second state fact source.
 
 ## Durable task/attempt workspace and completion boundary

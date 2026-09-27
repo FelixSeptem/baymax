@@ -23,7 +23,7 @@ The proposal introduces an offline audit capability over metadata already owned 
 
 ### Versioned projection, not a shared fact store
 
-The audit consumes owner-specific descriptors and emits a versioned projection with a bounded asset kind, stable identity, optional version and digest, owner, scope, source reference, dependency references, consumer references, and verification timestamp. Normalized references contain identifiers/digests only. A projection digest covers canonical fields and sorted reference arrays.
+The audit consumes owner-specific descriptors and emits a versioned projection with a bounded asset kind, stable identity, optional version, version range, digest and compatible digest set, owner, scope, source reference, dependency references, consumer references, dependent references, and verification timestamp. Normalized references contain identifiers/digests only. A projection digest covers canonical fields and sorted reference arrays.
 
 An in-memory or file-backed registry was rejected because it would create a second authoritative source and introduce lifecycle, deletion, and migration semantics that the roadmap explicitly defers. Existing owner records remain authoritative.
 
@@ -37,7 +37,7 @@ This is preferred over preserving source order because source ordering differs b
 
 The audit returns findings and bounded impact sets, including candidate replacement compatibility, but never activates, withdraws, or rewrites an asset. Withdrawal impact is computed from declared consumer references and dependency edges only; missing references produce an explicit incomplete-evidence finding rather than an inferred consumer set.
 
-This keeps policy and activation with existing owners and makes rollback a repository change that can remove the projection/replay/gate without data migration.
+Withdrawal impact is the bounded, sorted union of declared consumers and dependents; missing either required edge set produces incomplete evidence. This keeps policy and activation with existing owners and makes rollback a repository change that can remove the projection/replay/gate without data migration.
 
 ### Replay-first verification
 

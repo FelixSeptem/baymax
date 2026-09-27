@@ -1,0 +1,80 @@
+{
+  "version": "capability_asset_provenance.v1",
+  "cases": [
+    {
+      "case_id": "valid",
+      "asset": {
+        "kind": "skill",
+        "identity": "skill.search",
+        "version": "1.2.0",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "team.search",
+        "scope": "session/project",
+        "source": "host-manifest",
+        "verified_at": "2026-09-26T00:00:00Z",
+        "capabilities": ["search", "summarize"],
+        "dependencies": [{"kind": "tool", "identity": "tool.fetch", "scope": "session/project", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],
+        "consumers": [{"kind": "agent", "identity": "agent.research", "scope": "session/project"}]
+      }
+    },
+    {
+      "case_id": "historical-nullable",
+      "asset": {"kind": "skill", "identity": "skill.legacy", "owner": "team.legacy", "scope": "session", "source": "host-manifest"}
+    },
+    {
+      "case_id": "duplicate-reference",
+      "asset": {
+        "kind": "adapter",
+        "identity": "adapter.search",
+        "version": "2.0.0",
+        "owner": "team.adapters",
+        "scope": "project",
+        "source": "adapter-manifest",
+        "dependencies": [
+          {"kind": "tool", "identity": "tool.fetch", "scope": "project"},
+          {"kind": "tool", "identity": "tool.fetch", "scope": "project"}
+        ]
+      }
+    },
+    {
+      "case_id": "observed-drift",
+      "asset": {"kind": "memory", "identity": "memory.main", "version": "1.0.0", "owner": "team.memory", "scope": "session", "source": "memory-manifest"},
+      "observed": {"kind": "memory", "identity": "memory.main", "version": "2.0.0", "owner": "team.memory", "scope": "session", "source": "memory-manifest"}
+    },
+    {
+      "case_id": "withdrawal-complete",
+      "withdraw": true,
+      "asset": {
+        "kind": "skill",
+        "identity": "skill.withdrawable",
+        "version": "1.0.0",
+        "owner": "team.skills",
+        "scope": "project",
+        "source": "host-manifest",
+        "consumers": [
+          {"kind": "agent", "identity": "agent.one", "scope": "project"},
+          {"kind": "agent", "identity": "agent.two", "scope": "project"}
+        ],
+        "dependents": [
+          {"kind": "workflow", "identity": "workflow.index", "scope": "project"}
+        ]
+      }
+    },
+    {
+      "case_id": "withdrawal-incomplete",
+      "withdraw": true,
+      "asset": {"kind": "skill", "identity": "skill.unknown-consumers", "owner": "team.skills", "scope": "project", "source": "host-manifest"}
+    },
+    {
+      "case_id": "replacement-compatible",
+      "asset": {"kind": "skill", "identity": "skill.replaceable", "version": "1.0.0", "owner": "team.skills", "scope": "project", "source": "host-manifest", "capabilities": ["search"]},
+      "replacement": {"kind": "skill", "identity": "skill.replaceable", "version": "1.1.0", "owner": "team.skills", "scope": "project", "source": "host-manifest", "capabilities": ["search"]}
+    },
+    {
+      "case_id": "run-stream-equivalent",
+      "asset": {"kind": "context", "identity": "context.prefix", "version": "1.0.0", "owner": "team.context", "scope": "session", "source": "context-manifest"},
+      "run": {"kind": "context", "identity": "context.prefix", "version": "1.0.0", "owner": "team.context", "scope": "session", "source": "context-manifest"},
+      "stream": {"kind": "context", "identity": "context.prefix", "version": "1.0.0", "owner": "team.context", "scope": "session", "source": "context-manifest"}
+    }
+  ]
+}

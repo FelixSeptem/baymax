@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-26 20:02:43
+Updated: 2026-09-27 20:53:01
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -150,3 +150,4 @@ Updated: 2026-09-26 20:02:43
 - 146 -> establish-admitted-tool-schema-pressure-selection-audit
 - 147 -> establish-action-capability-risk-idempotency-evidence-audit
 - 148 -> establish-provider-cache-usage-observability-contract
+- 149 -> establish-capability-asset-provenance-and-release-rollback-audit

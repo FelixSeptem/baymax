@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-09-25
+更新时间：2026-09-27
 
 ## 定位
 
@@ -17,8 +17,9 @@ Baymax 主线保持 `library-first + contract-first`：
 - 已归档：
   - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
   - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
+  - `establish-capability-asset-provenance-and-release-rollback-audit`（归档 149；已完成 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
 
-提案分支基线：`master@76863df`（切分时已与 `origin/master` 同步）；提案现已归档为 148，并随本次功能分支合并进入主线。
+提案分支基线：`master@76863df`（切分时已与 `origin/master` 同步）；提案现已归档为 149，并随本次功能分支合并进入主线。
 
 状态权威来源：
 
@@ -26,10 +27,10 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-09-25：
+截至 2026-09-27：
 
 - 进行中：
-  - `establish-capability-asset-provenance-and-release-rollback-audit`（提案已完成；首阶段限定为 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
+  - （暂无）
 
 ## 已归档快照
 

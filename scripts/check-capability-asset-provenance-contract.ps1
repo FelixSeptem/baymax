@@ -9,6 +9,7 @@ Set-Location $repoRoot
     "capability_asset_impact_incomplete"
     "capability_asset_privacy_or_bound_violation"
     "capability_asset_provenance_drift"
+    "capability_asset_missing_evidence"
     "capability_asset_reference_integrity"
     "capability_asset_replacement_compatible"
     "capability_asset_replacement_incompatible"

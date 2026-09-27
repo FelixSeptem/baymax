@@ -47,12 +47,15 @@ func TestCapabilityAssetProvenanceRejectsNegativeFixtures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = ReplayCapabilityAssetProvenanceJSON(raw)
+		result, err := ReplayCapabilityAssetProvenanceJSON(raw)
+		if name == "capability_asset_provenance_scope_violation.json" {
+			if err != nil || len(result.Cases) != 1 || !containsCapabilityString(result.Cases[0].Findings, ReasonCodeCapabilityAssetScopeViolation) {
+				t.Fatalf("fixture %s result=%#v error=%v", name, result, err)
+			}
+			continue
+		}
 		if err == nil {
 			t.Fatalf("fixture %s unexpectedly passed", name)
-		}
-		if name == "capability_asset_provenance_scope_violation.json" && !strings.Contains(err.Error(), ReasonCodeCapabilityAssetScopeViolation) {
-			t.Fatalf("fixture %s error = %v", name, err)
 		}
 		if name == "capability_asset_provenance_privacy_violation.json" && !strings.Contains(err.Error(), ReasonCodeCapabilityAssetPrivacyOrBoundViolation) {
 			t.Fatalf("fixture %s error = %v", name, err)

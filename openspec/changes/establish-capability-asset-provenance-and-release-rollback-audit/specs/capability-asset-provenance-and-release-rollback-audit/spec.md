@@ -20,6 +20,8 @@ The audit SHALL accept a versioned `capability_asset_provenance.v1` projection c
 
 Normalization MUST validate field syntax, deduplicate and sort dependency and consumer references by canonical identity, and apply documented nullable/default values for omitted optional fields. Unknown additive fields MUST be ignored safely. Equivalent inputs with different source ordering MUST normalize to the same projection digest.
 
+Identifier-bearing fields MUST use bounded ASCII identifiers containing only letters, digits, dot, underscore, colon, slash, or hyphen. Version-range operators MUST be parsed as exactly one supported operator per constraint; malformed repeated operators MUST be rejected.
+
 #### Scenario: Equivalent reference order is normalized
 - **WHEN** two valid inputs contain the same references in different orders and with duplicate entries
 - **THEN** both inputs produce equivalent normalized references and the same projection digest
@@ -43,6 +45,8 @@ Dependency and consumer references MUST contain bounded identifiers or digests a
 ### Requirement: Provenance drift and dependency conflicts SHALL be explicit findings
 
 The audit MUST compare expected and observed identity, version, digest, owner, scope, dependency, and consumer metadata using stable finding categories. It MUST distinguish missing evidence, malformed metadata, declared drift, and conflicting duplicate identity rather than silently selecting a last writer.
+
+Cases MAY declare `require_observed=true`; when set without an observed descriptor, the audit MUST emit `capability_asset_missing_evidence`. A provenance-drift finding MUST include bounded normalized expected and observed descriptor references.
 
 #### Scenario: Version or digest drift is replayed
 - **WHEN** expected and observed projections share an identity but differ in version or digest

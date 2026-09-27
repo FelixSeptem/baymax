@@ -21,6 +21,7 @@ const (
 	ReasonCodeCapabilityAssetReferenceIntegrity      = "capability_asset_reference_integrity"
 	ReasonCodeCapabilityAssetScopeViolation          = "capability_asset_scope_violation"
 	ReasonCodeCapabilityAssetProvenanceDrift         = "capability_asset_provenance_drift"
+	ReasonCodeCapabilityAssetMissingEvidence         = "capability_asset_missing_evidence"
 	ReasonCodeCapabilityAssetDuplicateConflict       = "capability_asset_duplicate_conflict"
 	ReasonCodeCapabilityAssetImpactIncomplete        = "capability_asset_impact_incomplete"
 	ReasonCodeCapabilityAssetImpactConflict          = "capability_asset_impact_conflict"
@@ -41,13 +42,14 @@ type CapabilityAssetProvenanceFixture struct {
 }
 
 type CapabilityAssetProvenanceCase struct {
-	CaseID      string           `json:"case_id"`
-	Asset       CapabilityAsset  `json:"asset"`
-	Observed    *CapabilityAsset `json:"observed,omitempty"`
-	Withdraw    bool             `json:"withdraw,omitempty"`
-	Replacement *CapabilityAsset `json:"replacement,omitempty"`
-	Run         *CapabilityAsset `json:"run,omitempty"`
-	Stream      *CapabilityAsset `json:"stream,omitempty"`
+	CaseID          string           `json:"case_id"`
+	Asset           CapabilityAsset  `json:"asset"`
+	Observed        *CapabilityAsset `json:"observed,omitempty"`
+	RequireObserved bool             `json:"require_observed,omitempty"`
+	Withdraw        bool             `json:"withdraw,omitempty"`
+	Replacement     *CapabilityAsset `json:"replacement,omitempty"`
+	Run             *CapabilityAsset `json:"run,omitempty"`
+	Stream          *CapabilityAsset `json:"stream,omitempty"`
 }
 
 type CapabilityAsset struct {
@@ -80,15 +82,22 @@ type CapabilityAssetProvenanceResult struct {
 }
 
 type CapabilityAssetProvenanceCaseResult struct {
-	CaseID          string                     `json:"case_id"`
-	Projection      CapabilityAsset            `json:"projection"`
-	Findings        []string                   `json:"findings,omitempty"`
-	Impact          []CapabilityAssetReference `json:"impact,omitempty"`
-	ImpactComplete  bool                       `json:"impact_complete,omitempty"`
-	Digest          string                     `json:"digest"`
-	ReplayDigest    string                     `json:"replay_digest"`
-	Idempotent      bool                       `json:"idempotent"`
-	RunStreamParity string                     `json:"run_stream_parity,omitempty"`
+	CaseID          string                         `json:"case_id"`
+	Projection      CapabilityAsset                `json:"projection"`
+	Findings        []string                       `json:"findings,omitempty"`
+	FindingDetails  []CapabilityAssetFindingDetail `json:"finding_details,omitempty"`
+	Impact          []CapabilityAssetReference     `json:"impact,omitempty"`
+	ImpactComplete  bool                           `json:"impact_complete,omitempty"`
+	Digest          string                         `json:"digest"`
+	ReplayDigest    string                         `json:"replay_digest"`
+	Idempotent      bool                           `json:"idempotent"`
+	RunStreamParity string                         `json:"run_stream_parity,omitempty"`
+}
+
+type CapabilityAssetFindingDetail struct {
+	Code     string          `json:"code"`
+	Expected CapabilityAsset `json:"expected,omitempty"`
+	Observed CapabilityAsset `json:"observed,omitempty"`
 }
 
 // ReplayCapabilityAssetProvenanceJSON evaluates a bounded, offline fixture twice.
@@ -110,7 +119,18 @@ func ReplayCapabilityAssetProvenanceJSON(raw []byte) (CapabilityAssetProvenanceR
 		return CapabilityAssetProvenanceResult{}, capabilityAssetError(ReasonCodeCapabilityAssetSchemaDrift, "cases must contain between one and 64 items")
 	}
 	result := CapabilityAssetProvenanceResult{Version: fixture.Version, Cases: make([]CapabilityAssetProvenanceCaseResult, 0, len(fixture.Cases))}
-	for _, item := range fixture.Cases {
+	normalizedAssets := make([]CapabilityAsset, len(fixture.Cases))
+	identityGroups := make(map[string][]int)
+	for index, item := range fixture.Cases {
+		asset, err := normalizeCapabilityAsset(item.Asset)
+		if err != nil {
+			return CapabilityAssetProvenanceResult{}, err
+		}
+		normalizedAssets[index] = asset
+		key := asset.Identity + "\x00" + asset.Scope
+		identityGroups[key] = append(identityGroups[key], index)
+	}
+	for index, item := range fixture.Cases {
 		first, err := replayCapabilityAssetCase(item)
 		if err != nil {
 			return CapabilityAssetProvenanceResult{}, err
@@ -124,6 +144,17 @@ func ReplayCapabilityAssetProvenanceJSON(raw []byte) (CapabilityAssetProvenanceR
 		}
 		first.ReplayDigest = second.Digest
 		first.Idempotent = first.Digest == first.ReplayDigest
+		for _, other := range identityGroups[normalizedAssets[index].Identity+"\x00"+normalizedAssets[index].Scope] {
+			if normalizedAssets[other].Owner != normalizedAssets[index].Owner || !reflect.DeepEqual(normalizedAssets[other].Dependencies, normalizedAssets[index].Dependencies) {
+				first.Findings = uniqueStrings(append(first.Findings, ReasonCodeCapabilityAssetDuplicateConflict))
+			}
+		}
+		sort.Strings(first.Findings)
+		if len(first.Findings) > 0 {
+			first.Digest = digestCapabilityAssetCase(first.Projection, first.Findings, first.FindingDetails, first.Impact, first.ImpactComplete, first.RunStreamParity)
+			first.ReplayDigest = first.Digest
+			first.Idempotent = true
+		}
 		result.Cases = append(result.Cases, first)
 	}
 	return result, nil
@@ -142,6 +173,13 @@ func replayCapabilityAssetCase(input CapabilityAssetProvenanceCase) (CapabilityA
 		return CapabilityAssetProvenanceCaseResult{}, err
 	}
 	findings := make([]string, 0)
+	details := make([]CapabilityAssetFindingDetail, 0)
+	projection.Dependencies, findings = omitCapabilityCrossScope(projection.Dependencies, projection.Scope, findings)
+	projection.Consumers, findings = omitCapabilityCrossScope(projection.Consumers, projection.Scope, findings)
+	projection.Dependents, findings = omitCapabilityCrossScope(projection.Dependents, projection.Scope, findings)
+	if input.RequireObserved && input.Observed == nil {
+		findings = append(findings, ReasonCodeCapabilityAssetMissingEvidence)
+	}
 	if input.Observed != nil {
 		if err := validateCapabilityAsset(*input.Observed); err != nil {
 			return CapabilityAssetProvenanceCaseResult{}, err
@@ -152,6 +190,7 @@ func replayCapabilityAssetCase(input CapabilityAssetProvenanceCase) (CapabilityA
 		}
 		if !reflect.DeepEqual(projection, observed) {
 			findings = append(findings, ReasonCodeCapabilityAssetProvenanceDrift)
+			details = append(details, CapabilityAssetFindingDetail{Code: ReasonCodeCapabilityAssetProvenanceDrift, Expected: projection, Observed: observed})
 		}
 	}
 	if input.Withdraw {
@@ -208,19 +247,40 @@ func replayCapabilityAssetCase(input CapabilityAssetProvenanceCase) (CapabilityA
 	}
 	sort.Strings(findings)
 	findings = uniqueStrings(findings)
-	impact, err := normalizeCapabilityReferences(append(append([]CapabilityAssetReference(nil), projection.Consumers...), projection.Dependents...))
+	authorizedConsumers := make([]CapabilityAssetReference, 0, len(projection.Consumers))
+	authorizedDependents := make([]CapabilityAssetReference, 0, len(projection.Dependents))
+	authorizedConsumers = append(authorizedConsumers, projection.Consumers...)
+	authorizedDependents = append(authorizedDependents, projection.Dependents...)
+	impact, err := normalizeCapabilityReferences(append(authorizedConsumers, authorizedDependents...))
 	if err != nil {
 		return CapabilityAssetProvenanceCaseResult{}, err
 	}
-	impactComplete := input.Withdraw && input.Asset.Consumers != nil && input.Asset.Dependents != nil && !containsCapabilityString(findings, ReasonCodeCapabilityAssetImpactConflict)
-	digest := digestCapabilityAssetCase(projection, findings, impact, impactComplete, parity)
-	return CapabilityAssetProvenanceCaseResult{CaseID: caseID, Projection: projection, Findings: findings, Impact: impact, ImpactComplete: impactComplete, Digest: digest, RunStreamParity: parity}, nil
+	impactComplete := input.Withdraw && input.Asset.Consumers != nil && input.Asset.Dependents != nil && !containsCapabilityString(findings, ReasonCodeCapabilityAssetImpactConflict) && !containsCapabilityString(findings, ReasonCodeCapabilityAssetScopeViolation)
+	digest := digestCapabilityAssetCase(projection, findings, details, impact, impactComplete, parity)
+	return CapabilityAssetProvenanceCaseResult{CaseID: caseID, Projection: projection, Findings: findings, FindingDetails: details, Impact: impact, ImpactComplete: impactComplete, Digest: digest, RunStreamParity: parity}, nil
+}
+
+func omitCapabilityCrossScope(refs []CapabilityAssetReference, scope string, findings []string) ([]CapabilityAssetReference, []string) {
+	filtered := make([]CapabilityAssetReference, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Scope != scope {
+			findings = append(findings, ReasonCodeCapabilityAssetScopeViolation)
+			continue
+		}
+		filtered = append(filtered, ref)
+	}
+	return filtered, findings
 }
 
 func validateCapabilityAsset(asset CapabilityAsset) error {
 	for name, value := range map[string]string{"kind": asset.Kind, "identity": asset.Identity, "owner": asset.Owner, "scope": asset.Scope, "source": asset.Source, "version": asset.Version, "version_range": asset.VersionRange, "digest": asset.Digest, "verified_at": asset.VerifiedAt} {
 		if err := validateCapabilityString(name, value); err != nil {
 			return err
+		}
+	}
+	for name, value := range map[string]string{"kind": asset.Kind, "identity": asset.Identity, "owner": asset.Owner, "scope": asset.Scope, "source": asset.Source} {
+		if value != "" && !validCapabilityIdentifier(value) {
+			return capabilityAssetError(ReasonCodeCapabilityAssetPrivacyOrBoundViolation, name+" has invalid identifier syntax")
 		}
 	}
 	if strings.TrimSpace(asset.Kind) == "" || strings.TrimSpace(asset.Identity) == "" || strings.TrimSpace(asset.Owner) == "" || strings.TrimSpace(asset.Scope) == "" || strings.TrimSpace(asset.Source) == "" {
@@ -250,9 +310,6 @@ func validateCapabilityAsset(asset CapabilityAsset) error {
 			if err := validateCapabilityReference(ref); err != nil {
 				return err
 			}
-			if ref.Scope != asset.Scope {
-				return capabilityAssetError(ReasonCodeCapabilityAssetScopeViolation, "reference scope differs from asset scope")
-			}
 		}
 	}
 	return nil
@@ -274,6 +331,9 @@ func validateCapabilityReference(ref CapabilityAssetReference) error {
 	if ref.Kind == "" || ref.Identity == "" || ref.Scope == "" {
 		return capabilityAssetError(ReasonCodeCapabilityAssetReferenceIntegrity, "reference kind, identity, and scope are required")
 	}
+	if !validCapabilityIdentifier(ref.Kind) || !validCapabilityIdentifier(ref.Identity) || !validCapabilityIdentifier(ref.Scope) {
+		return capabilityAssetError(ReasonCodeCapabilityAssetPrivacyOrBoundViolation, "reference has invalid identifier syntax")
+	}
 	if ref.Digest != "" && !validCapabilityDigest(ref.Digest) {
 		return capabilityAssetError(ReasonCodeCapabilityAssetReferenceIntegrity, "reference digest is invalid")
 	}
@@ -288,6 +348,19 @@ func validateCapabilityString(name, value string) error {
 		return capabilityAssetError(ReasonCodeCapabilityAssetPrivacyOrBoundViolation, name+" contains sensitive material")
 	}
 	return nil
+}
+
+func validCapabilityIdentifier(value string) bool {
+	if value == "" || len(value) > capabilityAssetMaxString {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._:/-", r) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func normalizeCapabilityAsset(asset CapabilityAsset) (CapabilityAsset, error) {
@@ -353,14 +426,15 @@ func capabilityReferenceKey(ref CapabilityAssetReference) string {
 	return ref.Kind + "\x00" + ref.Identity + "\x00" + ref.Scope + "\x00" + ref.Digest
 }
 
-func digestCapabilityAssetCase(asset CapabilityAsset, findings []string, impact []CapabilityAssetReference, complete bool, parity string) string {
+func digestCapabilityAssetCase(asset CapabilityAsset, findings []string, details []CapabilityAssetFindingDetail, impact []CapabilityAssetReference, complete bool, parity string) string {
 	canonical := struct {
-		Asset    CapabilityAsset            `json:"asset"`
-		Findings []string                   `json:"findings,omitempty"`
-		Impact   []CapabilityAssetReference `json:"impact,omitempty"`
-		Complete bool                       `json:"complete"`
-		Parity   string                     `json:"parity,omitempty"`
-	}{asset, findings, impact, complete, parity}
+		Asset    CapabilityAsset                `json:"asset"`
+		Findings []string                       `json:"findings,omitempty"`
+		Details  []CapabilityAssetFindingDetail `json:"details,omitempty"`
+		Impact   []CapabilityAssetReference     `json:"impact,omitempty"`
+		Complete bool                           `json:"complete"`
+		Parity   string                         `json:"parity,omitempty"`
+	}{asset, findings, details, impact, complete, parity}
 	raw, _ := json.Marshal(canonical)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
@@ -448,23 +522,24 @@ func validCapabilityVersionRange(value string) bool {
 		return false
 	}
 	for _, part := range parts {
-		if !hasCapabilityVersionOperator(part) {
+		op := capabilityVersionOperator(part)
+		if op == "" {
 			return false
 		}
-		if !validCapabilityVersion(strings.TrimLeft(part, "<>=~")) {
+		if !validCapabilityVersion(strings.TrimPrefix(part, op)) {
 			return false
 		}
 	}
 	return true
 }
 
-func hasCapabilityVersionOperator(value string) bool {
+func capabilityVersionOperator(value string) string {
 	for _, operator := range []string{">=", "<=", ">", "<", "=", "~"} {
 		if strings.HasPrefix(value, operator) {
-			return true
+			return operator
 		}
 	}
-	return false
+	return ""
 }
 
 func validCapabilityVersion(value string) bool {

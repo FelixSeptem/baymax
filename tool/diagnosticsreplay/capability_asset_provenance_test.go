@@ -134,3 +134,72 @@ func TestReplayCapabilityAssetProvenanceEnforcesReplacementVersionRangeAndDepend
 		t.Fatalf("withdrawal impact = %#v complete=%v", item.Impact, item.ImpactComplete)
 	}
 }
+
+func TestReplayCapabilityAssetProvenanceReportsScopeAndMissingEvidence(t *testing.T) {
+	asset := validCapabilityAsset()
+	asset.Consumers = []CapabilityAssetReference{{Kind: "agent", Identity: "agent.external", Scope: "other-scope"}}
+	fixture := CapabilityAssetProvenanceFixture{Version: CapabilityAssetProvenanceVersion, Cases: []CapabilityAssetProvenanceCase{
+		{CaseID: "scope", Asset: asset, Withdraw: true},
+		{CaseID: "missing-evidence", Asset: validCapabilityAsset(), RequireObserved: true},
+	}}
+	raw, _ := json.Marshal(fixture)
+	result, err := ReplayCapabilityAssetProvenanceJSON(raw)
+	if err != nil {
+		t.Fatalf("replay should classify bounded evidence instead of rejecting it: %v", err)
+	}
+	if !containsCapabilityString(result.Cases[0].Findings, ReasonCodeCapabilityAssetScopeViolation) || len(result.Cases[0].Projection.Consumers) != 0 || result.Cases[0].ImpactComplete {
+		t.Fatalf("cross-scope reference was treated as authorized: %#v", result.Cases[0])
+	}
+	if !containsCapabilityString(result.Cases[1].Findings, ReasonCodeCapabilityAssetMissingEvidence) {
+		t.Fatalf("missing evidence finding = %#v", result.Cases[1].Findings)
+	}
+}
+
+func TestReplayCapabilityAssetProvenanceDetectsConflictingAssetIdentityAcrossCases(t *testing.T) {
+	left := validCapabilityAsset()
+	right := left
+	right.Owner = "team.other"
+	fixture := CapabilityAssetProvenanceFixture{Version: CapabilityAssetProvenanceVersion, Cases: []CapabilityAssetProvenanceCase{
+		{CaseID: "left", Asset: left},
+		{CaseID: "right", Asset: right},
+	}}
+	raw, _ := json.Marshal(fixture)
+	result, err := ReplayCapabilityAssetProvenanceJSON(raw)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	for _, item := range result.Cases {
+		if !containsCapabilityString(item.Findings, ReasonCodeCapabilityAssetDuplicateConflict) {
+			t.Fatalf("identity conflict missing from case %q: %#v", item.CaseID, item.Findings)
+		}
+	}
+}
+
+func TestReplayCapabilityAssetProvenanceIncludesBoundedDriftEvidence(t *testing.T) {
+	expected := validCapabilityAsset()
+	observed := expected
+	observed.Version = "1.3.0"
+	fixture := CapabilityAssetProvenanceFixture{Version: CapabilityAssetProvenanceVersion, Cases: []CapabilityAssetProvenanceCase{{CaseID: "drift-evidence", Asset: expected, Observed: &observed}}}
+	raw, _ := json.Marshal(fixture)
+	result, err := ReplayCapabilityAssetProvenanceJSON(raw)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	detail := result.Cases[0].FindingDetails[0]
+	if detail.Code != ReasonCodeCapabilityAssetProvenanceDrift || detail.Expected.Identity != expected.Identity || detail.Observed.Identity != observed.Identity || detail.Expected.Digest != expected.Digest {
+		t.Fatalf("drift evidence detail = %#v", detail)
+	}
+}
+
+func TestCapabilityAssetIdentifiersAndVersionRangeUseStrictSyntax(t *testing.T) {
+	asset := validCapabilityAsset()
+	asset.Identity = "skill.search\nworkspace content"
+	if err := validateCapabilityAsset(asset); err == nil || !strings.Contains(err.Error(), ReasonCodeCapabilityAssetPrivacyOrBoundViolation) {
+		t.Fatalf("invalid identity syntax error = %v", err)
+	}
+	for _, value := range []string{">>1.0.0", "===1.0.0", "~>=1.0.0"} {
+		if validCapabilityVersionRange(value) {
+			t.Errorf("malformed version range %q accepted", value)
+		}
+	}
+}

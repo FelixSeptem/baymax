@@ -29,13 +29,15 @@ An in-memory or file-backed registry was rejected because it would create a seco
 
 ### Deterministic canonicalization
 
-Inputs are validated before normalization. Asset kinds, identifier syntax, scope shape, reference limits, and digest formats use explicit bounded rules. Optional fields use documented null/default values; unknown additive fields are ignored. Arrays of dependencies and consumers are deduplicated and sorted by canonical identity before digesting.
+Inputs are validated before normalization. Asset kinds, identifier syntax, scope shape, reference limits, and digest formats use explicit bounded rules. Identifier-bearing fields accept only ASCII letters, digits, dot, underscore, colon, slash, and hyphen. Optional fields use documented null/default values; unknown additive fields are ignored. Arrays of dependencies and consumers are deduplicated and sorted by canonical identity before digesting. Repeated primary descriptors with the same identity and scope but incompatible owner or dependency data are all marked conflicting; no case is selected as authoritative.
 
 This is preferred over preserving source order because source ordering differs between manifest producers and would create false drift. The canonicalizer must never silently repair an invalid required field.
 
 ### Separate audit findings from release decisions
 
 The audit returns findings and bounded impact sets, including candidate replacement compatibility, but never activates, withdraws, or rewrites an asset. Withdrawal impact is computed from declared consumer references and dependency edges only; missing references produce an explicit incomplete-evidence finding rather than an inferred consumer set.
+
+Cases that require an observed descriptor set `require_observed=true`; an omitted descriptor then emits the bounded `capability_asset_missing_evidence` finding. Drift findings carry normalized, bounded expected and observed descriptors so evidence remains auditable without storing bodies. Cross-scope references are retained only long enough to classify `capability_asset_scope_violation`, then excluded from the authorized projection and impact set.
 
 Withdrawal impact is the bounded, sorted union of declared consumers and dependents; missing either required edge set produces incomplete evidence. This keeps policy and activation with existing owners and makes rollback a repository change that can remove the projection/replay/gate without data migration.
 

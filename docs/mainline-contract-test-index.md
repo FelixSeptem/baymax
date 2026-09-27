@@ -9,6 +9,7 @@
 - Boundary: no Tool/MCP/Provider/network/registry/filesystem/credential/clock invocation; no `RuntimeRecorder`, `RunRecord`, runtime configuration, policy or business-outcome write; no registry, queue, hosted store, automatic compensation or second terminal state machine.
 - Focused tests: `tool/diagnosticsreplay/action_capability_audit_test.go::TestReplayActionCapabilityAuditNormalizesCompleteReadAction`, `tool/diagnosticsreplay/action_capability_audit_fixture_test.go::TestReplayActionCapabilityAuditFixtureIsBoundedDeterministicAndCovered`, `tool/contributioncheck/action_capability_audit_boundary_test.go::TestActionCapabilityAuditRemainsOfflineAndLibraryFirst`.
 - Dedicated gates: `scripts/check-action-capability-audit-contract.sh` / `scripts/check-action-capability-audit-contract.ps1`.
+- Capability asset provenance and release rollback audit: `tool/diagnosticsreplay` provides bounded `capability_asset_provenance.v1` normalization, drift/withdrawal/replacement findings, privacy boundaries, replay idempotency, and Run/Stream parity. Dedicated gates: `scripts/check-capability-asset-provenance-contract.sh` / `scripts/check-capability-asset-provenance-contract.ps1`.
 
 ## Tool schema pressure and selection audit (archived 146)
 

@@ -1,0 +1,14 @@
+{
+  "version": "capability_asset_provenance.v1",
+  "cases": [{
+    "case_id": "privacy-violation",
+    "asset": {
+      "kind": "skill",
+      "identity": "skill.secret",
+      "owner": "team.skills",
+      "scope": "session",
+      "source": "host-manifest",
+      "credential": "not-allowed"
+    }
+  }]
+}

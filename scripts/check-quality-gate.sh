@@ -356,6 +356,12 @@ if ! bash scripts/check-action-capability-audit-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] capability asset provenance and release rollback audit contract"
+if ! bash scripts/check-capability-asset-provenance-contract.sh; then
+  echo "[quality-gate][capability-asset-provenance-contract] capability asset provenance audit contract check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter contract replay"
 if ! bash scripts/check-adapter-contract-replay.sh; then
   echo "[quality-gate][adapter-contract-replay] adapter contract replay check failed"

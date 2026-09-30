@@ -1,9 +1,9 @@
 ## 1. Contract model and normalization
 
-- [ ] 1.1 Define bounded `tool_schema_projection_readiness.v1` input/output types, enums, limits, nullable/default fields, reason codes, and canonical digest rules; verify compile-time construction and validation tests cover valid, empty, oversized, non-admitted, privacy, duplicate, and unsupported-source inputs.
-- [ ] 1.2 Implement deterministic sample-window normalization and stable-versus-transient pressure/quality classification; verify repeated-window, outlier, ordering, threshold-boundary, and insufficient-measurement tests produce stable digests and verdicts.
-- [ ] 1.3 Implement advisory subset opportunity evaluation using only admitted identities and canonical facts; verify subset, required-schema retention, capability preservation, omission reasons, and admission-bypass negative tests.
-- [ ] 1.4 Implement independent evidence-axis aggregation and `not_ready`/`ready_for_runtime_design`/`blocked` conclusion rules; verify missing-quality, degraded-quality, stable-ready, semantic-loss, and blocked-integrity scenarios.
+- [x] 1.1 Define bounded `tool_schema_projection_readiness.v1` input/output types, enums, limits, nullable/default fields, reason codes, and canonical digest rules; verify compile-time construction and validation tests cover valid, empty, oversized, non-admitted, privacy, duplicate, and unsupported-source inputs.
+- [x] 1.2 Implement deterministic sample-window normalization and stable-versus-transient pressure/quality classification; verify repeated-window, outlier, ordering, threshold-boundary, and insufficient-measurement tests produce stable digests and verdicts.
+- [x] 1.3 Implement advisory subset opportunity evaluation using only admitted identities and canonical facts; verify subset, required-schema retention, capability preservation, omission reasons, and admission-bypass negative tests.
+- [x] 1.4 Implement independent evidence-axis aggregation and `not_ready`/`ready_for_runtime_design`/`blocked` conclusion rules; verify missing-quality, degraded-quality, stable-ready, semantic-loss, and blocked-integrity scenarios.
 
 ## 2. Replay, fixtures, and parity
 

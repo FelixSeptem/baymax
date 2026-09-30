@@ -1,0 +1,1 @@
+{"version":"scenario.v1","id":"malformed","events":[{"id":"same","sequence":1,"kind":"tool","owner":"tool"},{"id":"same","sequence":2,"kind":"completion","owner":"runner"}]}

@@ -1,0 +1,1 @@
+{"version":"scenario.v1","id":"evidence-conflict","evidence":[{"owner":"tool","id":"call","digest":"sha256:a"},{"owner":"tool","id":"call","digest":"sha256:b"}]}

@@ -1,0 +1,1 @@
+{"version":"scenario.v1","id":"admission-drift","admission":{"required_evidence":["different-proof"],"require_outcome":true}}

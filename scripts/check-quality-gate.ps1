@@ -792,10 +792,14 @@ Invoke-RequiredParallelSteps -Steps @(
         StepLabel = "[quality-gate] session history checkpoint replay contract"
         Command   = { pwsh -File scripts/check-session-history-checkpoint-replay-contract.ps1 }
     },
-    @{
+      @{
         StepLabel = "[quality-gate] durable attempt/completion replay contract"
         Command   = { pwsh -File scripts/check-durable-attempt-completion-replay-contract.ps1 }
-    },
+      },
+      @{
+        StepLabel = "[quality-gate] scenario simulation contract"
+        Command   = { pwsh -File scripts/check-scenario-simulation-contract.ps1 }
+      },
     @{
         StepLabel = "[quality-gate] derived budget projection contract"
         Command   = { pwsh -File scripts/check-budget-aware-context-projection-contract.ps1 }

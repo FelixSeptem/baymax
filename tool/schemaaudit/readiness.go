@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"strings"
 )
 
 const ReadinessVersion = "tool_schema_projection_readiness.v1"
@@ -141,6 +142,9 @@ func EvaluateReadiness(in ReadinessInput) (ReadinessResult, error) {
 		}
 		if tool.Schema.Bytes < 0 || tool.Schema.Bytes > p.MaxSchemaBytes {
 			return zero, &Error{Code: CodeReadinessOverflow, Message: tool.Identity + " schema exceeds readiness bound"}
+		}
+		if strings.Contains(strings.ToLower(tool.Schema.Digest), "credential") || strings.Contains(strings.ToLower(tool.Schema.Digest), "secret") || strings.Contains(strings.ToLower(tool.Schema.Digest), "token") {
+			return zero, &Error{Code: CodeReadinessPrivacyMaterial, Message: "schema digest contains privacy material"}
 		}
 		byID[tool.Identity] = tool
 	}

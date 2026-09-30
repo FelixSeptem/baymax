@@ -7,9 +7,9 @@
 
 ## 2. Replay, fixtures, and parity
 
-- [ ] 2.1 Add versioned success, transient, stable-ready, insufficient-evidence, blocked-integrity, privacy, overflow, and historical-default fixtures without raw schema/prompt/tool-result payloads; verify fixture size and privacy boundary tests.
-- [ ] 2.2 Add diagnostics replay adapter with unknown-field tolerance, historical defaults, canonical drift classifications, and idempotent repeated replay; verify replay tests for digest/window/metrics/selection/conclusion/reason-order drift.
-- [ ] 2.3 Add Run/Stream parity fixtures and comparison tests for every evidence axis and conclusion; verify equivalent inputs match and deliberate divergence returns `run_stream_parity_drift`.
+- [x] 2.1 Add versioned success, transient, stable-ready, insufficient-evidence, blocked-integrity, privacy, overflow, and historical-default fixtures without raw schema/prompt/tool-result payloads; verify fixture size and privacy boundary tests.
+- [x] 2.2 Add diagnostics replay adapter with unknown-field tolerance, historical defaults, canonical drift classifications, and idempotent repeated replay; verify replay tests for digest/window/metrics/selection/conclusion/reason-order drift.
+- [x] 2.3 Add Run/Stream parity fixtures and comparison tests for every evidence axis and conclusion; verify equivalent inputs match and deliberate divergence returns `run_stream_parity_drift`.
 
 ## 3. Governance boundaries and gates
 

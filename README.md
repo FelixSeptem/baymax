@@ -17,6 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-09-27）：
+- `establish-scenario-agent-simulation-and-completion-verification`（进行中；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）。
 - `establish-capability-asset-provenance-and-release-rollback-audit`（已归档并稳定；bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计已收口，不新增 runtime registry、动态下载或自动回滚）。
 - `establish-provider-cache-usage-observability-contract`（已归档为 148；三家 provider 的 cache usage additive projection、Run/Stream parity、fixture/replay/gate 已收口；不改变 `TokenUsage`、RuntimeRecorder schema 或缓存策略）。
 - `establish-action-capability-risk-idempotency-evidence-audit`（已归档为 147；离线、确定性、可回放的 Action capability 风险、幂等与验收证据审计，不改变运行时执行语义）。

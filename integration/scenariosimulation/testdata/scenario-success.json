@@ -1,0 +1,13 @@
+{
+  "version": "scenario.v1",
+  "id": "offline-success",
+  "events": [
+    {"id": "invoke", "sequence": 1, "kind": "tool", "owner": "tool.local", "causation_id": "run-1"},
+    {"id": "finish", "sequence": 2, "kind": "completion", "owner": "core.runner", "causation_id": "invoke"}
+  ],
+  "evidence": [
+    {"owner": "tool.local", "id": "invoke", "digest": "sha256:tool-evidence", "version": "tool-result.v1", "correlation_id": "run-1"}
+  ],
+  "outcome": {"owner": "host.verifier", "id": "outcome-1", "digest": "sha256:outcome", "version": "outcome.v1"},
+  "admission": {"required_evidence": ["invoke"], "require_outcome": true}
+}

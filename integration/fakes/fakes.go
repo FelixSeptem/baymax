@@ -149,6 +149,49 @@ type MCP struct {
 	CallFn func(ctx context.Context, name string, args map[string]any) (types.ToolResult, error)
 }
 
+// Approval is a deterministic test-only approval dependency. It records no
+// body or policy state and never makes a production admission decision.
+type Approval struct {
+	Decision string
+}
+
+const (
+	ApprovalGranted = "granted"
+	ApprovalDenied  = "denied"
+	ApprovalPending = "pending"
+)
+
+func (a Approval) Decide(context.Context) string { return a.Decision }
+
+// Cancellation exposes a context derived from a controlled test action. The
+// runtime remains responsible for observing cancellation and choosing its
+// authoritative terminal state.
+type Cancellation struct {
+	Requested bool
+}
+
+func (c Cancellation) Context(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	if c.Requested {
+		cancel()
+	}
+	return ctx, cancel
+}
+
+// StreamFault describes a bounded stream fault injection. It is consumed by
+// test setup only; it does not replay or recover events itself.
+type StreamFault struct {
+	AfterSequence int
+	Reason        string
+}
+
+// Recovery is a reference-only recovery input. Completion promotion remains
+// owned by the existing completion safe-point implementation.
+type Recovery struct {
+	ReferenceID string
+	Replayed    bool
+}
+
 func (m *MCP) ListTools(ctx context.Context) ([]types.MCPToolMeta, error) {
 	if m.ListFn != nil {
 		return m.ListFn(ctx)

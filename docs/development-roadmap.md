@@ -30,7 +30,7 @@ Baymax 主线保持 `library-first + contract-first`：
 截至 2026-09-27：
 
 - 进行中：
-  - （暂无）
+  - `establish-scenario-agent-simulation-and-completion-verification`（offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
 
 ## 已归档快照
 
@@ -198,7 +198,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 13 | Intent 与实际执行分离；ENTRY→AGENT→STEP→LLM/RETRIEVAL/TOOL 观测层级；多入口采集、去重、采样、脱敏、成本与审计证据链；区分确定性 policy 决策与辅助模型 review | RuntimeRecorder、sandbox、diagnostics 和 tracing 已有基础；动作事实/approval scope 由归档 147 与既有 action owner 覆盖，采集覆盖差异只在真实 drift 时增量处理 | 不采集 raw payload、凭证、完整命令输出或无界系统调用日志；模型 review 仅作辅助证据 |
 | 14 | Prompt injection、身份安全、会话级隔离、出站 deny-first、供应链签名/漂移 | policy、sandbox egress、redaction、adapter allowlist、extension governance 已覆盖主线 | 仅在出现越权/污染/漂移 fixture 时增量审计；不接入云防火墙或镜像平台 |
 | 15 | Prompt/Skill/MCP/Agent 的稳定标识、精确版本、Lock/Context Manifest、影响分析、撤回和可替代版本 | extension/manifest/skill loader 已有局部能力；新增能力资产溯源与回滚候选 | 不建设 Nacos/registry/marketplace/动态下载；宿主继续提供资源 |
-| 16 | Spec–Manifest–Run–Result 证据链；Scenario/Asset 分别版本化；用户/环境/工具/故障模拟；计划与事实事件分离；records→observations→evidence 分层；执行/证据完整性/业务结果/发布准入四态独立；证据不足输出“不可判定”；Codex 测试 harness 可脚本化 SSE 分片、失败、取消、审批和恢复 | “场景化 Agent Simulation 与完成验证”观察候选吸收版本化场景、可组合 fake provider/tool/approval、流控故障与 session recovery 测试；复用 eval/corpus/sandbox/replay | 仿真只交付证据材料，不直接发布或改写 Outcome；不依赖 live provider；新增 harness 仅为 test support，不形成生产运行时 API |
+| 16 | Spec–Manifest–Run–Result 证据链；Scenario/Asset 分别版本化；用户/环境/工具/故障模拟；计划与事实事件分离；records→observations→evidence 分层；执行/证据完整性/业务结果/发布准入四态独立；证据不足输出“不可判定”；Codex 测试 harness 可脚本化 SSE 分片、失败、取消、审批和恢复 | “场景化 Agent Simulation 与完成验证”已进入实施：先交付版本化 bounded schema、reference-only verifier、offline replay 和 test-support builder；复用 eval/corpus/sandbox/replay | 仿真只交付证据材料，不直接发布或改写 Outcome；不依赖 live provider；新增 harness 仅为 test support，不形成生产运行时 API |
 | 17 | 模型/Harness/环境归因、非劣效与安全硬门禁、影子/灰度/扩量/回滚；全流程 harness 需能复现 stream 未完成、服务错误、重试后下一 turn 可继续等恢复边界 | evaluation、quality gate、provider conformance 和版本化 fixture 已覆盖大部分；故障注入与生命周期断言并入 Simulation/Eval 候选 | 发布治理只作为资产/评测候选的子范围，不单独建设模型训练或灰度控制面 |
 | 18 | Trace→Pipeline→Dataset→Evaluator→Experiment→候选变更的数据飞轮 | corpus/Badcase/experiment/feedback 已有 owner；作为现有 eval 增量校准 | 不将反馈自动写回 Prompt、Skill、Tool、Policy、Memory 或 gate |
 | 19 | Trace 与 Trajectory 区分、按目标/结果/关键步骤定位、失败后行为与业务事实核对 | 归档 141 已提供首错归因、轨迹边界和 bounded evidence refs | 不新增 transcript/artifact 事实源，不把观测材料当 Outcome |

@@ -452,6 +452,12 @@ if ! bash scripts/check-durable-attempt-completion-replay-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] scenario simulation contract"
+if ! bash scripts/check-scenario-simulation-contract.sh; then
+  echo "[quality-gate][scenario-simulation-contract] check failed"
+  exit 1
+fi
+
 echo "[quality-gate] adapter scaffold drift"
 if ! bash scripts/check-adapter-scaffold-drift.sh; then
   echo "[quality-gate][adapter-scaffold-drift] adapter scaffold drift check failed"

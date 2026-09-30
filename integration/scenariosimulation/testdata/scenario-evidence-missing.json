@@ -1,0 +1,5 @@
+{
+  "version": "scenario.v1",
+  "id": "offline-evidence-missing",
+  "admission": {"required_evidence": ["checkpoint-1"], "require_outcome": true}
+}

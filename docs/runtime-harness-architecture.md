@@ -44,6 +44,13 @@ Runtime Harness 负责把 `Run/Stream` 主循环、工具调度、配置治理�
 - 失败收敛：fail-fast、回滚、可降级路径与默认值策略。
 - 漂移阻断：命名治理 gate、语义等价强校验、行数预算与债务不扩张门禁。
 
+### 2.5 Offline Scenario Test Support（离线场景测试支持）
+
+- `integration/scenariosimulation` 提供版本化、有界、reference-first 的 Scenario、Run Result、纯函数 evidence verifier 与 fixture replay；只可由集成测试和 test-support 使用。
+- `integration/scenariosimulation.Builder` 仅把受控输入映射到 `integration/fakes`；运行顺序、policy、取消传播、completion safe-point 和 terminal 仍由现有 owner 决定。
+- 此能力不提供生产 executor，不访问 live provider、network、Git、workspace 或 hosted state，不保存 transcript/body/credentials，不拥有 RuntimeRecorder 写入口。
+- Execution、evidence、business outcome、release admission 分轴表达；缺失事实使用 `indeterminate`，仿真不得推断宿主业务 Outcome。
+
 ## 3. Contract 与 Gate 映射
 
 | 关注面 | Canonical 文档 | 主要 Gate / Suite |

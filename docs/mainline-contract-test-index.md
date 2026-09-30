@@ -1,5 +1,13 @@
 # Mainline Contract Test Index
 
+## Scenario agent simulation and completion verification (in progress)
+
+- Owner: `integration/scenariosimulation` is offline test support only; existing runner, completion safe-point, business host, and `observability/event.RuntimeRecorder` remain authoritative.
+- Contract: versioned `scenario.v1` profiles and bounded `run_result.v1` projections; execution, evidence, business outcome, and admission are independent verdicts with `indeterminate` for missing facts.
+- Boundary: no live provider/network/Git/workspace/hosted state, production executor, raw transcript/body/credentials, parallel event queue, terminal machine, or diagnostics writer.
+- Focused tests: `integration/scenariosimulation/contract_test.go`, `integration/scenariosimulation/replay_test.go`, `integration/scenariosimulation/builder_test.go`.
+- Dedicated gates: `scripts/check-scenario-simulation-contract.sh` / `scripts/check-scenario-simulation-contract.ps1`; both are wired into their quality-gate entrypoints.
+
 ## Action capability risk, idempotency, and evidence audit (archived 147)
 
 - Owner: source facts remain with Action Gate, tool lifecycle, Policy/Sandbox, Action timeline and `observability/event.RuntimeRecorder`; the offline adapter is `tool/diagnosticsreplay/action_capability_audit.go`.

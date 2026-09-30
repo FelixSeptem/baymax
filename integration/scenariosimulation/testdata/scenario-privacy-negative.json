@@ -1,0 +1,7 @@
+{
+  "version": "scenario.v1",
+  "id": "offline-privacy-negative",
+  "evidence": [
+    {"owner": "tool.local", "id": "invoke", "body": "must never be accepted"}
+  ]
+}

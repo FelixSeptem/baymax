@@ -13,14 +13,14 @@
 
 ## 3. Governance boundaries and gates
 
-- [ ] 3.1 Extend `tool/contributioncheck` boundary checks to reject runtime selector/router wiring, admission bypass, remote discovery, provider SDK/tokenizer use, raw payload persistence, and RuntimeRecorder/control-plane writes; verify each violation has a stable classification.
-- [ ] 3.2 Add dedicated shell and PowerShell readiness contract gates and wire them into the quality gate; verify both scripts execute the same fixture suite and fail fast on contract drift.
-- [ ] 3.3 Update `docs/mainline-contract-test-index.md` with readiness owner, fixtures, replay tests, parity checks, and both gate paths; verify docs consistency checks discover the complete mapping.
+- [x] 3.1 Extend `tool/contributioncheck` boundary checks to reject runtime selector/router wiring, admission bypass, remote discovery, provider SDK/tokenizer use, raw payload persistence, and RuntimeRecorder/control-plane writes; verify each violation has a stable classification.
+- [x] 3.2 Add dedicated shell and PowerShell readiness contract gates and wire them into the quality gate; verify both scripts execute the same fixture suite and fail fast on contract drift.
+- [x] 3.3 Update `docs/mainline-contract-test-index.md` with readiness owner, fixtures, replay tests, parity checks, and both gate paths; verify docs consistency checks discover the complete mapping.
 
 ## 4. Roadmap and status convergence
 
-- [ ] 4.1 Correct `docs/development-roadmap.md` and `README.md` so archived scenario simulation is not listed as in progress, update the baseline/archive sequence, and add this readiness change as an active candidate with its trigger and non-goals; verify status-parity and roadmap-status gates pass.
-- [ ] 4.2 Record Example Impact Assessment as `无需示例变更（附理由）` in proposal, design, and tasks and verify the example-impact governance gate accepts all three artifacts without modifying `examples/agent-modes`.
+- [x] 4.1 Correct `docs/development-roadmap.md` and `README.md` so archived scenario simulation is not listed as in progress, update the baseline/archive sequence, and add this readiness change as an active candidate with its trigger and non-goals; verify status-parity and roadmap-status gates pass.
+- [x] 4.2 Record Example Impact Assessment as `无需示例变更（附理由）` in proposal, design, and tasks and verify the example-impact governance gate accepts all three artifacts without modifying `examples/agent-modes`.
 
 ## 5. Verification and delivery
 

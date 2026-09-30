@@ -382,6 +382,16 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 ## Agent Mode Example Pack Mapping
 
+## Tool Schema Projection Readiness (`tool_schema_projection_readiness.v1`)
+
+- Contract model and normalization: `tool/schemaaudit/readiness.go`, `tool/schemaaudit/readiness_test.go`
+- Replay fixture and drift/parity checks: `tool/diagnosticsreplay/tool_schema_projection_readiness.go`, `tool/diagnosticsreplay/tool_schema_projection_readiness_test.go`, `tool/diagnosticsreplay/testdata/tool_schema_projection_readiness.v1.json`
+- Negative/privacy/overflow fixtures: `tool/diagnosticsreplay/testdata/tool_schema_projection_readiness_overflow.json`, `tool/diagnosticsreplay/testdata/tool_schema_projection_readiness_privacy.json`
+- Boundary governance: `tool/contributioncheck/tool_schema_projection_readiness_boundary_test.go`
+- Dedicated contract gate: `scripts/check-tool-schema-projection-readiness-contract.sh` / `scripts/check-tool-schema-projection-readiness-contract.ps1`
+- Quality gate ownership: `scripts/check-quality-gate.sh` / `scripts/check-quality-gate.ps1`
+- Scope boundary: offline, provider-neutral, admitted-subset-only; no runtime selector, ModelRequest/provider projection, registry, marketplace, dynamic download, credential store, or RuntimeRecorder write.
+
 ## Eval First-Error Attribution / Trajectory Boundary
 
 - Contract model and normalization: `runtime/evalcontract/first_error_attribution_test.go::TestNormalizeFirstErrorAttributionCanonicalizesFirstErrorAndBoundary`, `runtime/evalcontract/first_error_comparison_test.go::TestCompareFirstErrorAttributionClassifiesEachSemanticDrift`

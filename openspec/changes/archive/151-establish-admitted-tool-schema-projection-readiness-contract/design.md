@@ -66,4 +66,6 @@
 
 无。阈值、窗口最小样本数、reason code 和字段上限属于本提案任务中必须固定并写入 fixture 的契约内容，不延后到实现阶段猜测。
 
-Example Impact Assessment：`无需示例变更（附理由）`。该设计只增加离线 readiness 证据，不改变 agent-mode 的代码、配置、运行时路径或用户可见行为。
+## Example Impact Assessment
+
+无需示例变更（附理由）：该设计只增加离线 readiness 证据，不改变 agent-mode 的代码、配置、运行时路径或用户可见行为。

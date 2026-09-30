@@ -30,7 +30,7 @@ Baymax 主线保持 `library-first + contract-first`：
 截至 2026-09-30：
 
 - 进行中：
-  - `establish-admitted-tool-schema-projection-readiness-contract`（offline bounded tool_schema_projection_readiness.v1、稳定窗口与 admitted-subset opportunity、replay/Run-Stream parity 与双平台 gate；不接入 runtime selector 或 provider projection）
+  无。当前没有未归档的 active change。
 
 ## 已归档快照
 
@@ -318,7 +318,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 已归档基线（139） | Eval continuity comparison 与 replay contract | bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较 | OTel/eval/corpus、context handoff、checkpoint/snapshot refs、diagnostics replay | 已完成并归档；后续质量增量进入首错归因与轨迹边界候选，不重复建设 transcript/artifact service。 |
 | 已归档基线（140） | External extension authoring conformance | 离线 authoring conformance、版本化 fixture、replay 与双平台 gate | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 已完成并归档；未来仅在新的真实扩展来源暴露新增 drift 时，以既有 owner 的增量 change 处理。 |
 | 已归档基线（148） | Provider cache usage 可观测性 | 三家 SDK cache usage adapter projection、终态 Stream 快照选择、fixture/replay 与 Run/Stream parity | `model/<provider>`、`model/conformance`、`tool/diagnosticsreplay`；不接入 `RuntimeRecorder` | `establish-provider-cache-usage-observability-contract` 已归档；独立于 `TokenUsage`，cache 字段仅 additive + nullable + default。 |
-| 实施中 | 本地/宿主准入后的按需 Tool Schema 投影 readiness | 通过 `tool_schema_projection_readiness.v1` 的稳定窗口、admitted-subset opportunity 与质量证据，判断是否达到后续 runtime design 触发条件 | `tool/schemaaudit`、`tool/diagnosticsreplay`、`tool/contributioncheck`，事实仍来自 Skill loader、MCP、manifest/capability、allowlist、sandbox | 仅交付离线 readiness 证据；不接入 runtime selector、动态下载、marketplace 或 credential store。 |
+| 已归档基线（151） | 本地/宿主准入后的按需 Tool Schema 投影 readiness | 已通过 `tool_schema_projection_readiness.v1` 的稳定窗口、admitted-subset opportunity 与质量证据验证，具备进入后续 runtime design 讨论的证据 | `tool/schemaaudit`、`tool/diagnosticsreplay`、`tool/contributioncheck`，事实仍来自 Skill loader、MCP、manifest/capability、allowlist、sandbox | 仅交付离线 readiness 证据；不接入 runtime selector、动态下载、marketplace 或 credential store。 |
 | 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 | 已归档基线（147） | Action capability 风险、幂等与验收证据审计 | 已完成已准入 Tool/MCP/Action 的副作用、风险、可逆性、幂等、前置条件和 evidence reference 离线一致性审计；Codex 的审批范围、网络授权与 sandbox 分层作为后续增量检查项 | `model/toolcontract`、policy precedence、HITL/action gate、sandbox、RuntimeRecorder、diagnostics replay | 归档 147 已收口；只有新的 approval scope、网络授权、sandbox escalation 或声明/事实 drift 才从既有 owner 发起增量 change，不再重复排期。 |
 | 观察候选 | Context/Skill/Memory/Knowledge 能力资产溯源与发布回滚审计 | 统一 stable identity、version/digest、owner、scope、依赖、消费者引用、漂移、撤回和替代版本的 reference-only manifest；吸收 Codex 的摘要优先、按需读取、预算截断和省略原因投影 | `skill/loader`、extension governance、adapter manifest、memory scope/lifecycle、context assembler、eval corpus | 出现 Skill 漂移、跨作用域泄漏、版本不可追溯、上下文预算争抢或撤回影响面不明。不得建设 registry、marketplace、动态下载或新事实存储。 |

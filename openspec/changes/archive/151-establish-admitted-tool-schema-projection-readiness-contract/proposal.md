@@ -28,4 +28,7 @@
 - 文档：`docs/development-roadmap.md`、`README.md`、`docs/mainline-contract-test-index.md`，同步归档状态和 readiness contract 映射。
 - 兼容性：新增版本化、nullable/default 兼容的离线结果，不修改运行时配置、诊断写入、Tool/MCP 生命周期、provider 请求或准入行为。
 - 风险与回滚：错误阈值或样本判定可能造成 readiness 误报；可通过 fixture 调整、版本化 evaluator 回滚或移除新增 gate 回滚，且无需数据迁移。
-- Example Impact Assessment：`无需示例变更（附理由）`。本变更只增加离线审计与治理证据，不改变 `examples/agent-modes` 的运行时行为、配置语义或用户可见流程；真正接入 runtime projection 时必须另起提案重新评估示例影响。
+
+## Example Impact Assessment
+
+无需示例变更（附理由）：本变更只增加离线审计与治理证据，不改变 `examples/agent-modes` 的运行时行为、配置语义或用户可见流程；真正接入 runtime projection 时必须另起提案重新评估示例影响。

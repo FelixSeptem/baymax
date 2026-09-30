@@ -219,11 +219,12 @@ func EvaluateReadiness(in ReadinessInput) (ReadinessResult, error) {
 	if len(selected) > 0 && projectedPressure.CanonicalSchemaBytes < basePressure.CanonicalSchemaBytes && projectedPressure.TokenEstimate <= basePressure.TokenEstimate {
 		result.Opportunity = ReadinessOpportunityAvailable
 	}
-	if result.AdmissionIntegrity == ReadinessFail || result.SemanticCompleteness == ReadinessFail {
+	switch {
+	case result.AdmissionIntegrity == ReadinessFail || result.SemanticCompleteness == ReadinessFail:
 		result.Conclusion = ReadinessBlocked
-	} else if pressureSignal == ReadinessStable && result.Opportunity == ReadinessOpportunityAvailable && result.SelectionQuality == ReadinessPass {
+	case pressureSignal == ReadinessStable && result.Opportunity == ReadinessOpportunityAvailable && result.SelectionQuality == ReadinessPass:
 		result.Conclusion = ReadinessReadyForRuntimeDesign
-	} else {
+	default:
 		result.Conclusion = ReadinessNotReady
 	}
 	result.Digest = readinessResultDigest(result)

@@ -24,8 +24,12 @@
 
 ## 5. Verification and delivery
 
-- [ ] 5.1 Run focused tests for the new schemaaudit/diagnosticsreplay/contributioncheck packages and verify all readiness fixtures, negative cases, and parity checks pass.
-- [ ] 5.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record any Windows-environment limitation without weakening contract assertions.
-- [ ] 5.3 Review the diff for scope, architecture-boundary compliance, additive/default compatibility, absence of proposal-number identifiers, and clean separation from user-owned changes; verify the change is ready for review and later archive.
+- [x] 5.1 Run focused tests for the new schemaaudit/diagnosticsreplay/contributioncheck packages and verify all readiness fixtures, negative cases, and parity checks pass.
+- [x] 5.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record any Windows-environment limitation without weakening contract assertions.
+  - Verification record (2026-09-30): `go test ./...`, focused readiness suites, OpenSpec validation (129/129), docs/example-impact gates, and golangci-lint passed. The aggregate `go test -race ./...` and quality gate race step were blocked only by transient Windows `.test.exe` file locks (`cmd/host-jsonl`, `mcp/stdio`, `orchestration/invoke`); each affected package subsequently passed `go test -race` serially with an isolated `GOTMPDIR`. No data race, test assertion, compiler, or contract failure was reported.
+- [x] 5.3 Review the diff for scope, architecture-boundary compliance, additive/default compatibility, absence of proposal-number identifiers, and clean separation from user-owned changes; verify the change is ready for review and later archive.
+  - Review record (2026-09-30): the branch contains only the proposal, offline evaluator/replay/fixtures/gates, and synchronized governance docs. `tool/schemaaudit/readiness.go` introduces only standard-library imports; the replay package's pre-existing broader dependency surface is unchanged by this file. No readiness implementation imports MCP transport/internal packages, provider SDKs, or runtime control-plane APIs. Generated `.artifacts/a64` reports and `.gocache-*` directories remain explicitly unstaged.
 
-Example Impact Assessment: `无需示例变更（附理由）`。本任务集只交付离线 readiness contract、fixture、replay、gate 和治理文档，不修改 `examples/agent-modes` 的代码、配置或运行时语义。
+## Example Impact Assessment
+
+无需示例变更（附理由）：本任务集只交付离线 readiness contract、fixture、replay、gate 和治理文档，不修改 `examples/agent-modes` 的代码、配置或运行时语义。

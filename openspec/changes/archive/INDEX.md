@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-09-30 21:53:17
+Updated: 2026-10-01 09:24:59
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -153,3 +153,4 @@ Updated: 2026-09-30 21:53:17
 - 149 -> establish-capability-asset-provenance-and-release-rollback-audit
 - 150 -> establish-scenario-agent-simulation-and-completion-verification
 - 151 -> establish-admitted-tool-schema-projection-readiness-contract
+- 152 -> establish-provider-context-cache-drift-admission-evidence

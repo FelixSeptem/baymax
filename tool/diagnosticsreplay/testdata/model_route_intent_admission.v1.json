@@ -1,0 +1,100 @@
+{
+  "version": "model_route_intent_admission.v1",
+  "cases": [
+    {
+      "case_id": "satisfied",
+      "input": {
+        "version": "model_route_intent_admission.v1",
+        "intent": {
+          "target": {"provider": "openai", "model": "gpt-4o"},
+          "allowed": [{"provider": "openai", "model": "gpt-4o"}],
+          "expected_catalog_generation": "v1"
+        },
+        "facts": {
+          "catalog_generation": "v1",
+          "status": "ready",
+          "selected": {"provider": "openai", "model": "gpt-4o"}
+        }
+      },
+      "expected": {
+        "verdict": "satisfied",
+        "catalog_generation": "v1",
+        "selected": {"provider": "openai", "model": "gpt-4o"}
+      }
+    },
+    {
+      "case_id": "route-gap",
+      "input": {
+        "version": "model_route_intent_admission.v1",
+        "intent": {"target": {"provider": "openai", "model": "gpt-4o"}},
+        "facts": {
+          "catalog_generation": "v1",
+          "status": "ready",
+          "selected": {"provider": "local", "model": "small"}
+        }
+      },
+      "expected": {
+        "verdict": "route-gap-confirmed",
+        "catalog_generation": "v1",
+        "selected": {"provider": "local", "model": "small"},
+        "reasons": ["model.route_intent.target_not_selected"]
+      }
+    },
+    {
+      "case_id": "insufficient",
+      "input": {
+        "version": "model_route_intent_admission.v1",
+        "intent": {"target": {"provider": "openai", "model": "gpt-4o"}},
+        "facts": {"catalog_generation": "v1", "status": "blocked"}
+      },
+      "expected": {
+        "verdict": "insufficient-evidence",
+        "catalog_generation": "v1",
+        "reasons": ["model.route_intent.admission_blocked"]
+      }
+    },
+    {
+      "case_id": "parity",
+      "input": {
+        "version": "model_route_intent_admission.v1",
+        "intent": {
+          "target": {"provider": "openai", "model": "gpt-4o"},
+          "require_run_stream_parity": true
+        },
+        "facts": {
+          "catalog_generation": "v1",
+          "status": "ready",
+          "selected": {"provider": "openai", "model": "gpt-4o"},
+          "run": {"catalog_generation": "v1", "status": "ready", "selected": {"provider": "openai", "model": "gpt-4o"}},
+          "stream": {"catalog_generation": "v1", "status": "ready", "selected": {"provider": "openai", "model": "gpt-4o"}}
+        }
+      },
+      "expected": {
+        "verdict": "satisfied",
+        "catalog_generation": "v1",
+        "selected": {"provider": "openai", "model": "gpt-4o"},
+        "run_stream_parity": true
+      }
+    },
+    {
+      "case_id": "generation-gap",
+      "input": {
+        "version": "model_route_intent_admission.v1",
+        "intent": {
+          "target": {"provider": "openai", "model": "gpt-4o"},
+          "expected_catalog_generation": "v2"
+        },
+        "facts": {
+          "catalog_generation": "v1",
+          "status": "ready",
+          "selected": {"provider": "openai", "model": "gpt-4o"}
+        }
+      },
+      "expected": {
+        "verdict": "insufficient-evidence",
+        "catalog_generation": "v1",
+        "reasons": ["model.route_intent.generation_mismatch"]
+      }
+    }
+  ]
+}

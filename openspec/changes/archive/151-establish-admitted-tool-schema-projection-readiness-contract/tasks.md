@@ -1,0 +1,35 @@
+## 1. Contract model and normalization
+
+- [x] 1.1 Define bounded `tool_schema_projection_readiness.v1` input/output types, enums, limits, nullable/default fields, reason codes, and canonical digest rules; verify compile-time construction and validation tests cover valid, empty, oversized, non-admitted, privacy, duplicate, and unsupported-source inputs.
+- [x] 1.2 Implement deterministic sample-window normalization and stable-versus-transient pressure/quality classification; verify repeated-window, outlier, ordering, threshold-boundary, and insufficient-measurement tests produce stable digests and verdicts.
+- [x] 1.3 Implement advisory subset opportunity evaluation using only admitted identities and canonical facts; verify subset, required-schema retention, capability preservation, omission reasons, and admission-bypass negative tests.
+- [x] 1.4 Implement independent evidence-axis aggregation and `not_ready`/`ready_for_runtime_design`/`blocked` conclusion rules; verify missing-quality, degraded-quality, stable-ready, semantic-loss, and blocked-integrity scenarios.
+
+## 2. Replay, fixtures, and parity
+
+- [x] 2.1 Add versioned success, transient, stable-ready, insufficient-evidence, blocked-integrity, privacy, overflow, and historical-default fixtures without raw schema/prompt/tool-result payloads; verify fixture size and privacy boundary tests.
+- [x] 2.2 Add diagnostics replay adapter with unknown-field tolerance, historical defaults, canonical drift classifications, and idempotent repeated replay; verify replay tests for digest/window/metrics/selection/conclusion/reason-order drift.
+- [x] 2.3 Add Run/Stream parity fixtures and comparison tests for every evidence axis and conclusion; verify equivalent inputs match and deliberate divergence returns `run_stream_parity_drift`.
+
+## 3. Governance boundaries and gates
+
+- [x] 3.1 Extend `tool/contributioncheck` boundary checks to reject runtime selector/router wiring, admission bypass, remote discovery, provider SDK/tokenizer use, raw payload persistence, and RuntimeRecorder/control-plane writes; verify each violation has a stable classification.
+- [x] 3.2 Add dedicated shell and PowerShell readiness contract gates and wire them into the quality gate; verify both scripts execute the same fixture suite and fail fast on contract drift.
+- [x] 3.3 Update `docs/mainline-contract-test-index.md` with readiness owner, fixtures, replay tests, parity checks, and both gate paths; verify docs consistency checks discover the complete mapping.
+
+## 4. Roadmap and status convergence
+
+- [x] 4.1 Correct `docs/development-roadmap.md` and `README.md` so archived scenario simulation is not listed as in progress, update the baseline/archive sequence, and add this readiness change as an active candidate with its trigger and non-goals; verify status-parity and roadmap-status gates pass.
+- [x] 4.2 Record Example Impact Assessment as `无需示例变更（附理由）` in proposal, design, and tasks and verify the example-impact governance gate accepts all three artifacts without modifying `examples/agent-modes`.
+
+## 5. Verification and delivery
+
+- [x] 5.1 Run focused tests for the new schemaaudit/diagnosticsreplay/contributioncheck packages and verify all readiness fixtures, negative cases, and parity checks pass.
+- [x] 5.2 Run `openspec validate --all`, `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, and `pwsh -File scripts/check-docs-consistency.ps1`; record any Windows-environment limitation without weakening contract assertions.
+  - Verification record (2026-09-30): `go test ./...`, focused readiness suites, OpenSpec validation (129/129), docs/example-impact gates, and golangci-lint passed. The aggregate `go test -race ./...` and quality gate race step were blocked only by transient Windows `.test.exe` file locks (`cmd/host-jsonl`, `mcp/stdio`, `orchestration/invoke`); each affected package subsequently passed `go test -race` serially with an isolated `GOTMPDIR`. No data race, test assertion, compiler, or contract failure was reported.
+- [x] 5.3 Review the diff for scope, architecture-boundary compliance, additive/default compatibility, absence of proposal-number identifiers, and clean separation from user-owned changes; verify the change is ready for review and later archive.
+  - Review record (2026-09-30): the branch contains only the proposal, offline evaluator/replay/fixtures/gates, and synchronized governance docs. `tool/schemaaudit/readiness.go` introduces only standard-library imports; the replay package's pre-existing broader dependency surface is unchanged by this file. No readiness implementation imports MCP transport/internal packages, provider SDKs, or runtime control-plane APIs. Generated `.artifacts/a64` reports and `.gocache-*` directories remain explicitly unstaged.
+
+## Example Impact Assessment
+
+无需示例变更（附理由）：本任务集只交付离线 readiness contract、fixture、replay、gate 和治理文档，不修改 `examples/agent-modes` 的代码、配置或运行时语义。

@@ -1,0 +1,41 @@
+{
+  "version": "provider_context_cache_evidence.v1",
+  "cases": [
+    {
+      "case_id": "openai-no-drift",
+      "reference": {
+        "provider": "openai",
+        "sdk_version": "v1",
+        "projection_case": "openai-run",
+        "projection_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "required_dimensions": ["cache-parity", "role"],
+      "dimensions": [
+        {"name": "role", "status": "verified-no-drift"},
+        {"name": "cache-parity", "status": "verified-no-drift"}
+      ]
+    },
+    {
+      "case_id": "anthropic-insufficient",
+      "reference": {
+        "provider": "anthropic",
+        "sdk_version": "v1",
+        "projection_case": "anthropic-run",
+        "projection_digest": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+      },
+      "required_dimensions": ["host-cost-p95"],
+      "dimensions": [{"name": "host-cost-p95", "status": "unavailable"}]
+    },
+    {
+      "case_id": "gemini-drift",
+      "reference": {
+        "provider": "gemini",
+        "sdk_version": "v1",
+        "projection_case": "gemini-stream",
+        "projection_digest": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      },
+      "required_dimensions": ["tool-result"],
+      "dimensions": [{"name": "tool-result", "status": "drift-confirmed"}]
+    }
+  ]
+}

@@ -2188,6 +2188,18 @@ diagnostic fields are required by this change.
 - 执行路径：`parse -> validate -> build snapshot -> atomic swap`。
 - 失败策略：任一步失败则拒绝本次更新，保留旧快照，并写入 reload 诊断记录。
 
+### Model route intent admission evidence
+
+`model_route_intent_admission.v1` is a reference-only comparison between an
+explicit host route intent and existing catalog/admission facts. Its verdict is
+one of `satisfied`, `route-gap-confirmed`, or `insufficient-evidence`; it does
+not authorize runtime model selection or add a configuration key. The evidence
+projection is bounded to normalized identities, catalog generation, status,
+capability/credential summaries, parity facts, and stable reason codes. It
+rejects endpoint, credential material, raw provider payload, prompt, reasoning,
+and unbounded body data. Replay is offline and idempotent, with historical
+optional fields defaulted and unknown fields ignored.
+
 ## 限制
 
 - `mcp/stdio` 的 `read_pool_size` / `write_pool_size` 当前在 client 初始化时生效；热更新后不动态重建池大小。

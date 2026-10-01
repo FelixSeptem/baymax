@@ -1,0 +1,21 @@
+{
+  "version": "tool_schema_projection_readiness.v1",
+  "cases": [
+    {
+      "case_id": "stable-ready",
+      "input": {
+        "version": "tool_schema_projection_readiness.v1",
+        "snapshot_id": "stable-ready",
+        "tools": [
+          {"identity": "admin", "source": "local", "capabilities": ["admin"], "admitted": true, "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}},
+          {"identity": "search", "source": "local", "capabilities": ["search"], "admitted": true, "schema": {"digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0", "bytes": 17, "token_estimate": 5, "estimator_version": "utf8_bytes_div4_v1"}}
+        ],
+        "policy": {"min_stable_samples": 2, "schema_bytes_budget": 18, "token_budget": 6, "quality_min_f1": 0.8},
+        "cases": [{"id": "find", "expected": ["search"], "allowed": ["search"], "forbidden": ["admin"]}],
+        "samples": [{"ordinal": 1, "schema_bytes": 34, "token_estimate": 10, "f1": 0.5, "forbidden_hit": 1}, {"ordinal": 2, "schema_bytes": 34, "token_estimate": 10, "f1": 0.5, "forbidden_hit": 1}],
+        "opportunity": {"selected": ["search"], "required": ["search"]}
+      },
+      "expected": {"conclusion": "ready_for_runtime_design", "pressure_signal": "stable", "opportunity": "available"}
+    }
+  ]
+}

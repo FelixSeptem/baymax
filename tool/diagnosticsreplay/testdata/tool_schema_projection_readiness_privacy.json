@@ -1,0 +1,4 @@
+{
+  "version": "tool_schema_projection_readiness.v1",
+  "cases": [{"case_id": "privacy", "input": {"version": "tool_schema_projection_readiness.v1", "snapshot_id": "privacy", "tools": [{"identity": "secret", "source": "local", "admitted": true, "schema": {"digest": "credential"}}], "samples": []}}]
+}

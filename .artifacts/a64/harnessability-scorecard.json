@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-09-21T07:33:41.4112553+08:00",
+  "generated_at": "2026-10-01T11:58:37.6927855+08:00",
   "complexity_tier": "standard",
   "metrics": {
     "contract_coverage_pct": 100.0,
     "drift": {
-      "fixture_count": 101,
+      "fixture_count": 102,
       "min_fixture_count": 2,
       "unclassified_count": 0,
       "max_unclassified_count": 0,

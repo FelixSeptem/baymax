@@ -44,6 +44,50 @@ Runtime → Provider 方向与响应侧是同族合同：`model/toolcontract.Int
 - CountTokens 必须复用相同 canonical facts；Anthropic/Gemini 的 token API 使用其可表达的原生消息/contents，Gemini system instruction 仅在 token API 无独立字段时做有界 user-role capability projection；OpenAI 官方 SDK 当前没有 token count API，保留明确 unsupported capability，不伪造文本请求。
 - 门禁：`scripts/check-provider-request-projection-contract.sh` / `.ps1`。
 
+## Provider Context/Cache Drift Admission Evidence
+
+`provider_context_cache_evidence.v1` 是独立于请求投影和运行时策略的、离线且
+reference-only 的准入证据合同。它只引用既有
+`provider_request_projection.v1` case 与 canonical digest，并以纯函数方式输出
+`no-drift`、`drift-confirmed` 或 `insufficient-evidence`；不会调用 Provider SDK、
+网络、工具或修改 adapter、Prompt、Skill、Policy、runtime 配置与 cache 策略。
+
+- Model：`model/conformance/provider_context_cache_evidence.go`
+- Replay：`tool/diagnosticsreplay/provider_context_cache_evidence.go`
+- Fixture：`tool/diagnosticsreplay/testdata/provider_context_cache_evidence.v1.json`
+- Negative fixture：`tool/diagnosticsreplay/testdata/provider_context_cache_evidence_privacy.json`
+- Contribution route：`tool/contributioncheck/provider_context_cache_admission.go`
+- Gate：`scripts/check-provider-context-cache-evidence-contract.sh` / `.ps1`
+- Seed providers：OpenAI、Anthropic、Gemini；覆盖 Run/Stream cache parity、
+  role、Skill/tail、tool-result、ordering、成本证据和缺失证据边界。
+- Stable reason codes：
+  `provider_context_cache_evidence_schema_drift`、
+  `provider_context_cache_evidence_unknown_version`、
+  `provider_context_cache_evidence_reference_drift`、
+  `provider_context_cache_evidence_privacy_drift`、
+  `provider_context_cache_evidence_overflow_drift`、
+  `provider_context_cache_evidence_duplicate_conflict`、
+  `provider_context_cache_role_drift`、
+  `provider_context_cache_skill_tail_drift`、
+  `provider_context_cache_tool_result_drift`、
+  `provider_context_cache_ordering_drift`、
+  `provider_context_cache_parity_drift`、
+  `provider_context_cache_cost_evidence_drift`、
+  `provider_context_cache_evidence_missing`、
+  `provider_context_cache_verdict_drift`。
+- Example Impact Assessment：`无需示例变更（附理由）`；该 change 不改变
+  `examples/agent-modes` 的配置、runtime path 或 expected markers。
+
+## Model route intent admission evidence (`model_route_intent_admission.v1`)
+
+`model/catalog` 还提供显式宿主路由意图与既有 catalog/admission facts 的离线、只读比较。它只输出 `satisfied`、`route-gap-confirmed` 或 `insufficient-evidence`，不会按 caller order 选模、调用 provider、探测 credential、执行 discovery 或维护全局 router。
+
+- Evidence projection：`model/catalog/route_intent.go`
+- Fixture/replay：`tool/diagnosticsreplay/testdata/model_route_intent_admission.v1.json`、`tool/diagnosticsreplay/model_route_intent_admission.go`
+- Stable reason：generation、target identity、allowed candidate、capability、credential、admission blocked、Run/Stream parity 与 privacy/bounds 分类均为有界字符串。
+- Gate：`scripts/check-model-route-intent-admission-contract.sh` / `.ps1`
+- Example Impact Assessment：`无需示例变更（附理由）`；该 evidence 不改变 `examples/agent-modes` 的配置、runtime path 或 expected markers。
+
 ## Model catalog routing admission audit (`model_catalog_routing_admission.v1`)
 
 `model/catalog` 现在提供一个 host-supplied、provider-neutral 的 catalog/routing

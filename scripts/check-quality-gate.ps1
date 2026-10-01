@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$readinessGate = Join-Path $PSScriptRoot "check-tool-schema-projection-readiness-contract.ps1"
+if (Test-Path -LiteralPath $readinessGate) { & $readinessGate }
 . (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")

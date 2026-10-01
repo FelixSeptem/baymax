@@ -1,0 +1,16 @@
+{
+  "version": "provider_context_cache_evidence.v1",
+  "cases": [
+    {
+      "case_id": "privacy",
+      "reference": {
+        "provider": "openai",
+        "sdk_version": "bearer token",
+        "projection_case": "openai-run",
+        "projection_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "required_dimensions": ["role"],
+      "dimensions": [{"name": "role", "status": "verified-no-drift"}]
+    }
+  ]
+}

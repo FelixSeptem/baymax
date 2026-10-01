@@ -178,7 +178,19 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 ## 后续提案备选池（外部项目对照增量）
 
-备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；此前 `bojieli/ai-agent-book@c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论继续作为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
+备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
+
+### AI Agent Book 实验方法校准（2026-10-01）
+
+`bojieli/ai-agent-book@dbc046e` 是教学与实验仓库，不是可直接嵌入的 runtime。其 109 个实验、共享 provider 适配层、锁定依赖和验证材料可作为证据组织参考，但不能单独构成 Baymax 的运行时需求或候选提案。以下原则只在出现独立、可复现的宿主 gap 时，路由到既有 owner 的 fixture/replay/gate 增量：
+
+- **工具规模与披露证据**：同时比较 schema token 成本、候选召回率与实际调用正确性；工具数量造成稳定错选、漏选或 cache 成本退化时，复用 `tool/schemaaudit`、Skill loader、MCP、manifest/capability、allowlist 与 sandbox owner 审计。不得因此引入 runtime selector、动态下载、marketplace、全局语义路由或 credential store。
+- **工具 contract 与副作用恢复**：工具描述应明确适用范围、边界、参数示例、分页/截断、幂等、取消后副作用状态及失败重规划证据；provider 接管或流式恢复用已执行工具作为重复副作用探针。复用 `tool/local` lifecycle、policy/sandbox、`model/<provider>`、handoff 和 replay owner；不得新建第二执行、终态或诊断状态机，provider 切换仍受首个语义 stream event 后不可切换的围栏约束。
+- **分层 verifier**：将环境终态、关键过程和开放式质量分别判定，前两层保持确定性规则，质量层即使使用模型也不得覆盖确定性 verdict；输出逐维 verdict、证据位置与 `insufficient-evidence`。复用归档 141、150 的 Scenario/Run Result、首错归因、reference-only verifier 与 test-support builder。
+- **受控候选改进**：候选补丁与可信根分离，必须经静态检查、隔离回放、反例回归、人工选择和回滚证据；模型不得批准自身生成的变更。复用 OpenSpec、review-only feedback、quality gate、sandbox 和 capability asset provenance/rollback owner，不实现自动自修改、自发布或模型自审批。
+- **可复现实验交付**：将环境与依赖锁定、外部依赖版本、成功/外部复现/未完成状态、fixture manifest、验证记录和 CI 影响范围明确分开；源码存在或安装成功不等于实验验收完成。复用现有 docs consistency、quality gate、contract/replay index 和 package-level test 纪律，不建设另一套实验平台或长期原始轨迹存储。
+
+本轮校准不新增、恢复或排序候选；截至本文件更新时间，未归档且未启动的规范提案方向仍为 0 项。
 
 ### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
 

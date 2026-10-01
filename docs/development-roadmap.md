@@ -21,6 +21,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；已完成 offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate，不提供生产 executor）
   - `establish-admitted-tool-schema-projection-readiness-contract`（归档 151；已完成 admitted Tool Schema projection 的离线 readiness 证据、replay 与 gate，不接入 runtime selector 或动态下载）
   - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）
+  - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
 
 提案分支基线：`master@fe7ab59`（已与 `origin/master` 同步）；当前证据准入提案从该基线切出。
 
@@ -32,8 +33,6 @@ Baymax 主线保持 `library-first + contract-first`：
 
 截至 2026-10-01：
 
-- 进行中：
-  - `establish-model-route-intent-admission-evidence`（从归档 145 的 catalog/admission 基线出发，建立显式宿主路由意图与既有 admission facts 的离线 evidence、replay、parity 与 gate；不改变 runtime model selection）。
 下一项提案须在本 change 归档并合并到最新 `master` 后重新切出功能分支。
 
 ## 已归档快照
@@ -59,8 +58,8 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  当前未归档的规范提案方向共 4 项（下文成熟度表是计数与触发条件的唯一来源）；其中 `Model catalog 与本地模型路由增量` 正在由 `establish-model-route-intent-admission-evidence` 进行 evidence-first 审计。
-  - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项；当前 active change 仅验证路由意图表达缺口，不实现运行时 router。
+  当前未归档的规范提案方向共 4 项（下文成熟度表是计数与触发条件的唯一来源）；其中 `Model catalog 与本地模型路由增量` 已完成 evidence-first 审计。
+  - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项；已归档的 evidence change 仅验证路由意图表达缺口，不实现运行时 router。
   - 条件观察：`外部 extension 生态增量`。
   - 条件观察：`Sandbox 生命周期与单位成功任务成本基线`。
   - 长期观察：`委派身份链与预算/权限租约审计`。

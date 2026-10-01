@@ -16,8 +16,8 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
-当前里程碑快照（2026-09-30）：
-- `establish-provider-context-cache-drift-admission-evidence`（进行中；Provider 结构化上下文与 Prompt Cache 的 evidence-first 准入，仅交付 reference-only fixture、replay、三态 verdict 与双 shell gate；不修改 adapter、runtime 配置或 cache 策略）。
+当前里程碑快照（2026-10-01）：
+- `establish-provider-context-cache-drift-admission-evidence`（已归档为 152；Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate 已收口；不修改 adapter、runtime 配置、价格模型或 cache 策略）。
 - `establish-admitted-tool-schema-projection-readiness-contract`（已归档为 151；offline bounded tool_schema_projection_readiness.v1、稳定窗口、admitted-subset opportunity、replay 与双平台 gate；不接入 runtime selector 或 provider projection）。
 - `establish-scenario-agent-simulation-and-completion-verification`（已归档为 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）。
 - `establish-capability-asset-provenance-and-release-rollback-audit`（已归档并稳定；bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计已收口，不新增 runtime registry、动态下载或自动回滚）。

@@ -59,8 +59,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  当前未归档且未启动的规范提案方向共 3 项（下文成熟度表是计数与触发条件的唯一来源）；其中 `Model catalog 与本地模型路由增量` 已完成 evidence-first 审计。
-  - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项；已归档的 evidence change 仅验证路由意图表达缺口，不实现运行时 router。
+  当前未归档且未启动的规范提案方向共 2 项（下文成熟度表是计数与触发条件的唯一来源）。
   - 条件观察：`外部 extension 生态增量`。
   - 长期观察：`委派身份链与预算/权限租约审计`。
 - 已归档：
@@ -325,7 +324,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 已归档基线（148） | Provider cache usage 可观测性 | 三家 SDK cache usage adapter projection、终态 Stream 快照选择、fixture/replay 与 Run/Stream parity | `model/<provider>`、`model/conformance`、`tool/diagnosticsreplay`；不接入 `RuntimeRecorder` | `establish-provider-cache-usage-observability-contract` 已归档；独立于 `TokenUsage`，cache 字段仅 additive + nullable + default。 |
 | 已归档基线（151） | 本地/宿主准入后的按需 Tool Schema 投影 readiness | 已通过 `tool_schema_projection_readiness.v1` 的稳定窗口、admitted-subset opportunity 与质量证据验证，具备进入后续 runtime design 讨论的证据 | `tool/schemaaudit`、`tool/diagnosticsreplay`、`tool/contributioncheck`，事实仍来自 Skill loader、MCP、manifest/capability、allowlist、sandbox | 仅交付离线 readiness 证据；不接入 runtime selector、动态下载、marketplace 或 credential store。 |
 | 已归档基线（152） | Provider 结构化上下文投影与 Prompt Cache 漂移准入证据 | 将 SDK 边界捕获或宿主成本摘要以 reference-only evidence 关联既有 projection digest，并输出 no-drift / drift-confirmed / insufficient-evidence verdict | `model/conformance`、`tool/diagnosticsreplay`、`tool/contributioncheck`、既有 `model/<provider>` SDK 边界测试 | 已完成并归档；仅交付离线 evidence、replay、三态 verdict、隐私/边界 gate 与 review-only owner route，不改变 adapter、`ModelResponse.CacheUsage`、runtime 配置、价格模型或 cache 策略。 |
-| 观察候选 | Model catalog 与本地模型路由增量 | runtime model discovery、本地模型 router、明确 auth preflight | provider/model catalog、credential preflight、readiness、host injection | 静态或宿主注入 catalog 无法满足明确路由需求。不引入 credential store，不在 `context/*` 引入 provider SDK。 |
 | 已归档基线（147） | Action capability 风险、幂等与验收证据审计 | 已完成已准入 Tool/MCP/Action 的副作用、风险、可逆性、幂等、前置条件和 evidence reference 离线一致性审计；Codex 的审批范围、网络授权与 sandbox 分层作为后续增量检查项 | `model/toolcontract`、policy precedence、HITL/action gate、sandbox、RuntimeRecorder、diagnostics replay | 归档 147 已收口；只有新的 approval scope、网络授权、sandbox escalation 或声明/事实 drift 才从既有 owner 发起增量 change，不再重复排期。 |
 | 已归档基线（149） | Context/Skill/Memory/Knowledge 能力资产溯源与发布回滚审计 | 已完成 stable identity、version/digest、owner、scope、依赖、消费者引用、漂移、撤回和替代版本的 bounded reference-only audit | `skill/loader`、extension governance、adapter manifest、memory scope/lifecycle、context assembler、eval corpus | 归档 149 已收口；只有新的可复现 provenance、scope 或 rollback gap 才从既有 owner 发起增量 change，不建设 registry、marketplace、动态下载或新事实存储。 |
 | 已归档基线（150） | 场景化 Agent Simulation 与完成验证 | 已完成 bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate | OTel/eval/corpus、sandbox conformance、diagnostics replay、completion safe-point、RuntimeRecorder、integration test support | 归档 150 已收口；只有新的可复现 harness gap 或稳定维护成本才以增量 change 扩展，保持离线/确定性，不替代业务 Outcome。 |
@@ -336,12 +334,11 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 备选池合并与排序规则：
 
 1. **Provider 结构化上下文与 Prompt Cache 漂移准入证据**：当前 change 先以 SDK fixture/replay/有界宿主摘要建立 no-drift、drift-confirmed 与 insufficient-evidence 的准入结论；只有 confirmed drift 才以独立 change 最小修复既有 adapter。
-2. **Model catalog 与本地模型路由增量**：只有静态或宿主注入目录不能满足明确路由需求时，才以既有 catalog/preflight/readiness owner 做最小增量，不接入 credential store 或全局 router。
-3. **外部 extension 生态增量**：只有新的真实扩展来源超过归档 140 的 lifecycle contract 时，才在 existing authoring conformance owner 内增量处理。
-4. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
-5. **委派身份链与预算/权限租约**：真实跨 Agent/跨宿主的过期、撤销、责任追溯或 root-scoped 预算越界才触发；不建设跨租户控制面或全球身份服务。
-6. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
-7. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
+2. **外部 extension 生态增量**：只有新的真实扩展来源超过归档 140 的 lifecycle contract 时，才在 existing authoring conformance owner 内增量处理。
+3. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
+4. **委派身份链与预算/权限租约**：真实跨 Agent/跨宿主的过期、撤销、责任追溯或 root-scoped 预算越界才触发；不建设跨租户控制面或全球身份服务。
+5. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
+6. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
 
 ### 需求触发观察项
 
@@ -350,7 +347,6 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 方向 | 触发信号 | 首要边界 |
 | --- | --- | --- |
 | Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract`、归档 142 与归档 144；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
-| 远程 model catalog 或本地模型路由 | 静态/宿主注入目录不足以支持明确的路由需求 | 以本页“Model catalog 与本地模型路由增量”为同一候选，不创建平行提案；不在 `context/*` 引入 provider SDK，不接入 credential store。 |
 | 外部 extension 生态增量 | 归档 140 之后出现新的真实扩展来源，且供应链审计、失败反馈或隔离需求超出现有 lifecycle contract | 只做 existing authoring conformance owner 的增量；复用 manifest/capability/allowlist/sandbox，不建设 package manager、marketplace 或动态下载执行链。 |
 
 ## 示例状态

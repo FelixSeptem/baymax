@@ -297,6 +297,12 @@ if ! bash scripts/check-sandbox-rollout-governance-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] sandbox lifecycle-success-cost evidence contract"
+if ! bash scripts/check-sandbox-lifecycle-success-cost-evidence-contract.sh; then
+  echo "[quality-gate][sandbox-lifecycle-success-cost-evidence] sandbox lifecycle-success-cost evidence contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] sandbox egress + adapter allowlist contract suites"
 if ! bash scripts/check-sandbox-egress-allowlist-contract.sh; then
   echo "[quality-gate][sandbox-egress-allowlist-contract] sandbox egress + adapter allowlist contract suites failed"

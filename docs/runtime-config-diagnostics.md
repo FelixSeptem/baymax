@@ -1350,7 +1350,17 @@ Composed summary additive fields（contract markers）：
 - `diagnostics_bundle_last_reason_code`
 - `diagnostics_bundle_last_schema_version`
 
-## 诊断回放（D1 + Readiness-Timeout-Health Replay Fixture + Cross-Domain Primary Reason Arbitration + Arbitration Explainability + Secondary Reason + Arbitration Version Governance + Memory Provider SPI + Builtin Filesystem + Observability Export + Diagnostics Bundle + ReAct Loop + Tool-Calling Parity + Sandbox Egress + Adapter Allowlist + Policy Precedence + Decision Trace + Memory Governance + Runtime Budget Admission + Lifecycle Hooks + Tool Middleware + Unified State/Session Snapshot + ReAct Plan Notebook + Plan Change Hook + Realtime Protocol + Interrupt/Resume）
+## 诊断回放（D1 + Readiness-Timeout-Health Replay Fixture + Cross-Domain Primary Reason Arbitration + Arbitration Explainability + Secondary Reason + Arbitration Version Governance + Memory Provider SPI + Builtin Filesystem + Observability Export + Diagnostics Bundle + ReAct Loop + Tool-Calling Parity + Sandbox Egress + Adapter Allowlist + Policy Precedence + Decision Trace + Memory Governance + Runtime Budget Admission + Lifecycle Hooks + Tool Middleware + Unified State/Session Snapshot + ReAct Plan Notebook + Plan Change Hook + Realtime Protocol + Interrupt/Resume + Sandbox Lifecycle Success Cost Evidence）
+
+### Sandbox Lifecycle Success Cost Evidence（reference-only）
+
+`sandbox_lifecycle_success_cost_evidence.v1` 是离线、host-supplied 的 evidence/replay 合同，不是 runtime 配置或诊断持久化字段。它只归一化 opaque invocation/session reference、backend/profile identity、`per_call|per_session`、`acquire|launch|execute|retry|release|recover` phase、bounded duration/resource bucket、retry ordinal、terminal outcome 与 Run/Stream parity。
+
+- verdict 只有 `within-baseline`、`lifecycle-gap-confirmed`、`insufficient-evidence`；只有 terminal successful task 才能生成 bounded unit-success-cost summary。
+- replay 必须区分 cold launch、per-session reuse 与 recovery/resume，并对 phase/continuity、cost bucket、baseline、terminal outcome、Run/Stream parity 与 privacy drift 返回稳定分类。
+- 禁止 command/arguments/environment/workdir/mount/path/endpoint/credential/stdout/stderr/raw violation/prompt/reasoning/unbounded body；未知 additive 字段可忽略，重复 replay 必须幂等。
+- 本合同不新增 `security.sandbox.*` 配置、不写 `RuntimeRecorder`、不创建 sandbox executor/backend/platform driver/proxy/service account/global session store，也不改变 readiness/admission/terminal/runtime model selection。
+- 证据与门禁映射：`tool/diagnosticsreplay/sandbox_lifecycle_success_cost_evidence.go`、`tool/diagnosticsreplay/testdata/sandbox_lifecycle_success_cost_evidence.v1.json`、`tool/contributioncheck/sandbox_lifecycle_success_cost_evidence_boundary_test.go`、`scripts/check-sandbox-lifecycle-success-cost-evidence-contract.sh/.ps1`。
 
 Agent Runtime Protocol additive projection（`agent_runtime_protocol.v1`）：
 - canonical references: `session_id`、`run_id`、`step_id`、`parent_step_id`、`event_id`、`causation_id`、`artifact_id`、`checkpoint_id`；

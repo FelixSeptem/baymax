@@ -14,16 +14,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-- 已归档：
-  - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
-  - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
-  - `establish-capability-asset-provenance-and-release-rollback-audit`（归档 149；已完成 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
-  - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；已完成 offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate，不提供生产 executor）
-  - `establish-admitted-tool-schema-projection-readiness-contract`（归档 151；已完成 admitted Tool Schema projection 的离线 readiness 证据、replay 与 gate，不接入 runtime selector 或动态下载）
-  - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）
-  - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
+- 进行中：无。
 
-提案分支基线：`master@fe7ab59`（已与 `origin/master` 同步）；当前证据准入提案从该基线切出。
+提案分支基线：`master@1e968ca`（已与 `origin/master` 同步）；当前证据准入提案从该基线切出。
 
 状态权威来源：
 
@@ -37,6 +30,14 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 已归档快照
 
+- 已归档：
+  - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
+  - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）
+  - `establish-admitted-tool-schema-projection-readiness-contract`（归档 151；已完成 admitted Tool Schema projection 的离线 readiness 证据、replay 与 gate，不接入 runtime selector 或动态下载）
+  - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；已完成 offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate，不提供生产 executor）
+  - `establish-capability-asset-provenance-and-release-rollback-audit`（归档 149；已完成 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
+  - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
+  - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
 - 已归档：
   - `introduce-runtime-steering-and-follow-up-input-contract`
   - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`
@@ -58,10 +59,9 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  当前未归档的规范提案方向共 4 项（下文成熟度表是计数与触发条件的唯一来源）；其中 `Model catalog 与本地模型路由增量` 已完成 evidence-first 审计。
+  当前未归档且未启动的规范提案方向共 3 项（下文成熟度表是计数与触发条件的唯一来源）；其中 `Model catalog 与本地模型路由增量` 已完成 evidence-first 审计。
   - 观察候选：`Model catalog 与本地模型路由增量`。该方向需满足自身触发条件，不因外部项目存在同名能力而自动立项；已归档的 evidence change 仅验证路由意图表达缺口，不实现运行时 router。
   - 条件观察：`外部 extension 生态增量`。
-  - 条件观察：`Sandbox 生命周期与单位成功任务成本基线`。
   - 长期观察：`委派身份链与预算/权限租约审计`。
 - 已归档：
   - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
@@ -330,7 +330,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | 已归档基线（149） | Context/Skill/Memory/Knowledge 能力资产溯源与发布回滚审计 | 已完成 stable identity、version/digest、owner、scope、依赖、消费者引用、漂移、撤回和替代版本的 bounded reference-only audit | `skill/loader`、extension governance、adapter manifest、memory scope/lifecycle、context assembler、eval corpus | 归档 149 已收口；只有新的可复现 provenance、scope 或 rollback gap 才从既有 owner 发起增量 change，不建设 registry、marketplace、动态下载或新事实存储。 |
 | 已归档基线（150） | 场景化 Agent Simulation 与完成验证 | 已完成 bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate | OTel/eval/corpus、sandbox conformance、diagnostics replay、completion safe-point、RuntimeRecorder、integration test support | 归档 150 已收口；只有新的可复现 harness gap 或稳定维护成本才以增量 change 扩展，保持离线/确定性，不替代业务 Outcome。 |
 | 条件观察 | 外部 extension 生态增量 | 对归档 140 之后的新真实扩展来源做供应链审计、失败反馈或隔离能力增量 | existing authoring conformance owner、manifest/capability、allowlist、sandbox | 新来源的需求超出现有 lifecycle contract 时才立项；不建设 package manager、marketplace 或动态下载执行链。 |
-| 条件观察 | Sandbox 生命周期与单位成功任务成本基线 | 统一测量创建、冷启动、休眠、恢复、资源占用、失败重试和单位成功任务成本；吸收 Codex 的高层 policy→平台 driver 映射、deny/launch-failure/escalation 分类与跨平台 conformance | sandbox profiles、workspace provenance、scheduler、quality/performance gates | 真实宿主出现稳定 P95/P99、恢复、sandbox 能力漂移或成本瓶颈时再立项；不引入 hosted workspace、边缘 Runtime 或新的资源调度器。 |
+| 已归档基线（154） | Sandbox 生命周期与单位成功任务成本基线 | 已完成离线、bounded、privacy-safe evidence 对 acquire/launch/execute/retry/release/recover、cold launch/reuse/recovery 与单位成功任务成本的比较；参考 Anthropic `sandbox-runtime@5d196e0` 的边界经验 | sandbox profiles、workspace provenance、scheduler、`tool/diagnosticsreplay`、quality/performance gates | 归档 154 已收口；不引入 executor、平台 driver、proxy、账号/凭证、配置、诊断持久化或 session owner。只有 confirmed gap 才能以独立 change 讨论运行时或平台实现。 |
 | 长期观察 | 委派身份链与预算/权限租约审计 | 将入站主体、Agent 主体、出站委派、资源范围、有效期、撤销和预算绑定为可验证 reference projection；吸收 Codex 的 session-root registry、并发/预算上限和角色有界覆盖 | Agent Runtime Protocol、A2A、scheduler/mailbox、policy/readiness、RuntimeRecorder | 真实跨 Agent/跨宿主委派需要过期、撤销、责任追溯或 root-scoped 预算越界时触发；不建设跨租户控制面、credential store 或全球身份服务。 |
 
 备选池合并与排序规则：
@@ -338,9 +338,9 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 1. **Provider 结构化上下文与 Prompt Cache 漂移准入证据**：当前 change 先以 SDK fixture/replay/有界宿主摘要建立 no-drift、drift-confirmed 与 insufficient-evidence 的准入结论；只有 confirmed drift 才以独立 change 最小修复既有 adapter。
 2. **Model catalog 与本地模型路由增量**：只有静态或宿主注入目录不能满足明确路由需求时，才以既有 catalog/preflight/readiness owner 做最小增量，不接入 credential store 或全局 router。
 3. **外部 extension 生态增量**：只有新的真实扩展来源超过归档 140 的 lifecycle contract 时，才在 existing authoring conformance owner 内增量处理。
-4. **Sandbox 生命周期与单位成功任务成本**：稳定 P95/P99、恢复、能力漂移或成本瓶颈是立项前提；不建设 hosted workspace、边缘 Runtime 或资源调度器。
+4. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
 5. **委派身份链与预算/权限租约**：真实跨 Agent/跨宿主的过期、撤销、责任追溯或 root-scoped 预算越界才触发；不建设跨租户控制面或全球身份服务。
-6. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）及按需 Tool Schema 投影 readiness（151）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
+6. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
 7. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
 
 ### 需求触发观察项

@@ -17,6 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-10-01）：
+- `establish-sandbox-lifecycle-success-cost-evidence`（已归档为 154；Sandbox 生命周期与单位成功任务成本的离线、bounded、privacy-safe evidence-first 基线、replay 与双平台 gate 已收口，不新增 executor、平台 driver、配置、诊断持久化或 session owner）。
 - `establish-model-route-intent-admission-evidence`（已归档为 153；显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）。
 - `establish-provider-context-cache-drift-admission-evidence`（已归档为 152；Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate 已收口；不修改 adapter、runtime 配置、价格模型或 cache 策略）。
 - `establish-admitted-tool-schema-projection-readiness-contract`（已归档为 151；offline bounded tool_schema_projection_readiness.v1、稳定窗口、admitted-subset opportunity、replay 与双平台 gate；不接入 runtime selector 或 provider projection）。
@@ -280,7 +281,7 @@ _ = err
 稳定能力清单（已归档）：
 - Runtime 主干：Run/Stream、工具闭环、Context Assembler（语义分层）、Security（S1-S4）。
 - 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
-- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、全链路 smoke gate、文档一致性 gate。
+- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、sandbox lifecycle-success-cost evidence gate、全链路 smoke gate、文档一致性 gate。
 - 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
 
 当前主线能力状态（最新）：
@@ -363,6 +364,7 @@ bash scripts/check-policy-precedence-contract.sh
 bash scripts/check-observability-export-and-bundle-contract.sh
 bash scripts/check-memory-contract-conformance.sh
 bash scripts/check-sandbox-rollout-governance-contract.sh
+bash scripts/check-sandbox-lifecycle-success-cost-evidence-contract.sh
 bash scripts/check-agent-eval-and-tracing-interop-contract.sh
 bash scripts/check-state-snapshot-contract.sh
 bash scripts/check-diagnostics-query-performance-regression.sh
@@ -382,6 +384,7 @@ pwsh -File scripts/check-policy-precedence-contract.ps1
 pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
 pwsh -File scripts/check-memory-contract-conformance.ps1
 pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
+pwsh -File scripts/check-sandbox-lifecycle-success-cost-evidence-contract.ps1
 pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1
 pwsh -File scripts/check-state-snapshot-contract.ps1
 pwsh -File scripts/check-diagnostics-query-performance-regression.ps1

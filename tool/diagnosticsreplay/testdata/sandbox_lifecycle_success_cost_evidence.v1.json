@@ -1,0 +1,126 @@
+{
+  "version": "sandbox_lifecycle_success_cost_evidence.v1",
+  "cases": [
+    {
+      "case_id": "cold-launch-success",
+      "input": {
+        "invocation_ref": "invocation-cold-1",
+        "session_ref": "session-cold-1",
+        "backend": "host-sandbox",
+        "profile": "restricted",
+        "session_mode": "per_call",
+        "phases": ["acquire", "launch", "execute", "release"],
+        "duration_bucket": "lt_1s",
+        "resource_bucket": "small",
+        "retry_ordinal": 0,
+        "terminal_outcome": "success",
+        "success_classification": "successful",
+        "baseline": {"duration_bucket": "lt_1s", "resource_bucket": "small"},
+        "run_stream_parity": true
+      },
+      "expected": {
+        "verdict": "within-baseline",
+        "lifecycle_kind": "cold_launch",
+        "has_success_cost": true,
+        "run_stream_parity": true
+      }
+    },
+    {
+      "case_id": "session-reuse-success",
+      "input": {
+        "invocation_ref": "invocation-reuse-1",
+        "session_ref": "session-reuse-1",
+        "backend": "host-sandbox",
+        "profile": "restricted",
+        "session_mode": "per_session",
+        "phases": ["execute", "release"],
+        "duration_bucket": "lt_1s",
+        "resource_bucket": "small",
+        "retry_ordinal": 0,
+        "terminal_outcome": "success",
+        "success_classification": "successful",
+        "baseline": {"duration_bucket": "lt_1s", "resource_bucket": "small"},
+        "run_stream_parity": true
+      },
+      "expected": {
+        "verdict": "within-baseline",
+        "lifecycle_kind": "reuse",
+        "has_success_cost": true,
+        "run_stream_parity": true
+      }
+    },
+    {
+      "case_id": "recovery-success",
+      "input": {
+        "invocation_ref": "invocation-recover-1",
+        "session_ref": "session-recover-1",
+        "backend": "host-sandbox",
+        "profile": "restricted",
+        "session_mode": "per_session",
+        "phases": ["acquire", "launch", "execute", "retry", "recover", "execute", "release"],
+        "duration_bucket": "lt_1s",
+        "resource_bucket": "small",
+        "retry_ordinal": 1,
+        "reason_code": "recoverable_failure",
+        "terminal_outcome": "success",
+        "success_classification": "successful",
+        "baseline": {"duration_bucket": "lt_1s", "resource_bucket": "small"},
+        "run_stream_parity": true
+      },
+      "expected": {
+        "verdict": "within-baseline",
+        "lifecycle_kind": "recovery",
+        "has_success_cost": true,
+        "run_stream_parity": true
+      }
+    },
+    {
+      "case_id": "failed-terminal-no-cost",
+      "input": {
+        "invocation_ref": "invocation-failed-1",
+        "session_ref": "session-failed-1",
+        "backend": "host-sandbox",
+        "profile": "restricted",
+        "session_mode": "per_call",
+        "phases": ["acquire", "launch", "execute", "release"],
+        "duration_bucket": "lt_1s",
+        "resource_bucket": "small",
+        "retry_ordinal": 0,
+        "terminal_outcome": "failure",
+        "success_classification": "failed",
+        "baseline": {"duration_bucket": "lt_1s", "resource_bucket": "small"},
+        "run_stream_parity": true
+      },
+      "expected": {
+        "verdict": "insufficient-evidence",
+        "lifecycle_kind": "cold_launch",
+        "has_success_cost": false,
+        "run_stream_parity": true
+      }
+    },
+    {
+      "case_id": "baseline-drift",
+      "input": {
+        "invocation_ref": "invocation-drift-1",
+        "session_ref": "session-drift-1",
+        "backend": "host-sandbox",
+        "profile": "restricted",
+        "session_mode": "per_call",
+        "phases": ["acquire", "launch", "execute", "release"],
+        "duration_bucket": "lt_1s",
+        "resource_bucket": "small",
+        "retry_ordinal": 0,
+        "terminal_outcome": "success",
+        "success_classification": "successful",
+        "baseline": {"duration_bucket": "gte_1s", "resource_bucket": "small"},
+        "run_stream_parity": true
+      },
+      "expected": {
+        "verdict": "lifecycle-gap-confirmed",
+        "lifecycle_kind": "cold_launch",
+        "has_success_cost": true,
+        "run_stream_parity": true
+      }
+    }
+  ]
+}

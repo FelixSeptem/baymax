@@ -723,6 +723,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] sandbox lifecycle-success-cost evidence contract"
+        Command   = { pwsh -File scripts/check-sandbox-lifecycle-success-cost-evidence-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] sandbox egress + adapter allowlist contract suites"
         Command   = { pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1 }
     },

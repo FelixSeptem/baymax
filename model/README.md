@@ -78,6 +78,16 @@ reference-only 的准入证据合同。它只引用既有
 - Example Impact Assessment：`无需示例变更（附理由）`；该 change 不改变
   `examples/agent-modes` 的配置、runtime path 或 expected markers。
 
+## Model route intent admission evidence (`model_route_intent_admission.v1`)
+
+`model/catalog` 还提供显式宿主路由意图与既有 catalog/admission facts 的离线、只读比较。它只输出 `satisfied`、`route-gap-confirmed` 或 `insufficient-evidence`，不会按 caller order 选模、调用 provider、探测 credential、执行 discovery 或维护全局 router。
+
+- Evidence projection：`model/catalog/route_intent.go`
+- Fixture/replay：`tool/diagnosticsreplay/testdata/model_route_intent_admission.v1.json`、`tool/diagnosticsreplay/model_route_intent_admission.go`
+- Stable reason：generation、target identity、allowed candidate、capability、credential、admission blocked、Run/Stream parity 与 privacy/bounds 分类均为有界字符串。
+- Gate：`scripts/check-model-route-intent-admission-contract.sh` / `.ps1`
+- Example Impact Assessment：`无需示例变更（附理由）`；该 evidence 不改变 `examples/agent-modes` 的配置、runtime path 或 expected markers。
+
 ## Model catalog routing admission audit (`model_catalog_routing_admission.v1`)
 
 `model/catalog` 现在提供一个 host-supplied、provider-neutral 的 catalog/routing

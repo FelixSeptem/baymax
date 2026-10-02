@@ -36,6 +36,7 @@ go run ./examples/01-chat-minimal
 
 当前无进行中的 OpenSpec change。最近归档：
 
+- `add-explicit-model-capability-adapter`（归档 155）：显式 model capability adapter、Stream preflight 诊断与最小模板澄清。
 - `layered-technical-documentation-and-drift-governance`（归档 156）：分层技术文档、README 导航和新提案 Documentation Impact Assessment/漂移门禁。
 
 ## 文档与事实源

@@ -19,7 +19,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
 
-归档 155（`openai-compatible-endpoint-profile-conformance`）已完成实现、归档并合并到主线；其官方 Responses API 兼容 endpoint profile、离线 conformance contract、capability 边界与回滚说明已纳入主线基线。
+归档 157（`openai-compatible-endpoint-profile-conformance`）已完成实现、归档并合并到主线；其官方 Responses API 兼容 endpoint profile、离线 conformance contract、capability 边界与回滚说明已纳入主线基线。
+
+归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
 
 提案分支基线：`master@3c36e7f`（已与 `origin/master` 同步）；当前文档体系提案从该基线切出。
 

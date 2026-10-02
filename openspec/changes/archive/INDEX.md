@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-02 11:06:50
+Updated: 2026-10-02 17:47:05
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -156,5 +156,6 @@ Updated: 2026-10-02 11:06:50
 - 152 -> establish-provider-context-cache-drift-admission-evidence
 - 153 -> establish-model-route-intent-admission-evidence
 - 154 -> establish-sandbox-lifecycle-success-cost-evidence
-- 155 -> openai-compatible-endpoint-profile-conformance
+- 155 -> add-explicit-model-capability-adapter
 - 156 -> layered-technical-documentation-and-drift-governance
+- 157 -> openai-compatible-endpoint-profile-conformance

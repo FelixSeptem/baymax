@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/FelixSeptem/baymax/adapter/modelcapability"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -25,8 +26,15 @@ func (customModelAdapter) Stream(_ context.Context, _ types.ModelRequest, onEven
 }
 
 func main() {
-	eng := runner.New(customModelAdapter{})
-	res, err := eng.Run(context.Background(), types.RunRequest{
+	model, err := modelcapability.Wrap(customModelAdapter{}, modelcapability.Config{
+		Provider:     "model-adapter-template",
+		Capabilities: []types.ModelCapability{types.ModelCapabilityStreaming},
+	})
+	if err != nil {
+		panic(err)
+	}
+	eng := runner.New(model)
+	res, err := eng.Stream(context.Background(), types.RunRequest{
 		Input: "ping model adapter",
 	}, nil)
 	if err != nil {

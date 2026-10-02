@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/adapter/modelcapability"
 	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/context/handoff"
 	"github.com/FelixSeptem/baymax/core/types"
@@ -31,6 +32,19 @@ type fakeModel struct {
 	provider string
 	caps     map[types.ModelCapability]types.CapabilitySupport
 	discover error
+}
+
+type minimalStreamModel struct {
+	streamCalls int
+}
+
+func (m *minimalStreamModel) Generate(context.Context, types.ModelRequest) (types.ModelResponse, error) {
+	return types.ModelResponse{FinalAnswer: "generated"}, nil
+}
+
+func (m *minimalStreamModel) Stream(_ context.Context, _ types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	m.streamCalls++
+	return onEvent(types.ModelEvent{Type: types.ModelEventTypeFinalAnswer, TextDelta: "streamed"})
 }
 
 func (f *fakeModel) Generate(ctx context.Context, req types.ModelRequest) (types.ModelResponse, error) {
@@ -3204,6 +3218,50 @@ provider_fallback:
 	}
 	if res.Error.Details["provider_reason"] != "capability_unsupported" {
 		t.Fatalf("provider_reason = %#v, want capability_unsupported", res.Error.Details["provider_reason"])
+	}
+}
+
+func TestStreamCapabilityPreflightNamesMissingDiscoveryContract(t *testing.T) {
+	model := &minimalStreamModel{}
+	res, err := New(model).Stream(context.Background(), types.RunRequest{Input: "hello"}, nil)
+	if err == nil {
+		t.Fatal("expected capability preflight error")
+	}
+	if model.streamCalls != 0 {
+		t.Fatalf("stream calls = %d, want 0", model.streamCalls)
+	}
+	if res.Error == nil {
+		t.Fatal("missing classified error")
+	}
+	if got := res.Error.Details["provider_reason"]; got != "capability_discovery_unavailable" {
+		t.Fatalf("provider_reason = %#v, want capability_discovery_unavailable", got)
+	}
+	if got := res.Error.Details["missing_interfaces"]; got != "ModelCapabilityDiscovery" {
+		t.Fatalf("missing_interfaces = %#v, want ModelCapabilityDiscovery", got)
+	}
+	if !strings.Contains(res.Error.Message, "ProviderName") || !strings.Contains(res.Error.Message, "DiscoverCapabilities") {
+		t.Fatalf("error message = %q, want discovery methods", res.Error.Message)
+	}
+}
+
+func TestStreamExplicitCapabilityAdapterOptsInStreaming(t *testing.T) {
+	model := &minimalStreamModel{}
+	wrapped, err := modelcapability.Wrap(model, modelcapability.Config{
+		Provider:     "local",
+		Capabilities: []types.ModelCapability{types.ModelCapabilityStreaming},
+	})
+	if err != nil {
+		t.Fatalf("Wrap failed: %v", err)
+	}
+	res, err := New(wrapped).Stream(context.Background(), types.RunRequest{Input: "hello"}, nil)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+	if model.streamCalls != 1 {
+		t.Fatalf("stream calls = %d, want 1", model.streamCalls)
+	}
+	if res.FinalAnswer != "streamed" {
+		t.Fatalf("FinalAnswer = %q, want streamed", res.FinalAnswer)
 	}
 }
 

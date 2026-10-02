@@ -92,12 +92,15 @@ manifest 片段（profile declaration + manifest snippet）：
 
 最小可运行片段（`examples/templates/model-adapter-template/main.go`）展示：
 - 实现 `types.ModelClient`（`Generate/Stream`）；
-- 通过 `runner.New` 进入统一 Run 链路。
+- 通过 `adapter/modelcapability` 显式声明 provider identity 与 `streaming` 能力；
+- 通过 `runner.New` 进入统一 Stream 链路。
 
 边界说明：
 - 模板聚焦接口收敛，不覆盖 provider SDK 的生产化治理策略。
 - provider-specific 协议映射应保持在 `model/<provider>` 子域，不泄漏到 `core/*`。
-- 生产接入需补齐错误分类与 capability discovery。
+- `types.ModelClient` 本身不包含 `ProviderName()` / `DiscoverCapabilities(...)`。严格 Stream preflight 需要 `types.ModelCapabilityDiscovery`；本地/测试模型可使用 `adapter/modelcapability.Wrap` 显式 opt-in。
+- 未实现 capability discovery 时，runner 会在 provider invocation 前返回 `capability_discovery_unavailable`，并指出缺少 `ModelCapabilityDiscovery`、`ProviderName` 和 `DiscoverCapabilities`。
+- 生产接入需补齐错误分类与真实 capability discovery；显式静态 adapter 仅适用于调用方能够承担声明责任的本地或测试模型。
 
 ## Tool Adapter Template（P3）
 

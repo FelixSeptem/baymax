@@ -2733,6 +2733,8 @@ func (e *Engine) selectModelForStep(ctx context.Context, req types.ModelRequest,
 		Missing:  map[string][]types.ModelCapability{},
 		Required: req.Capabilities.Normalized(),
 	}
+	discoveryUnavailable := false
+	discoveredCandidate := false
 	if stream {
 		hasStreaming := false
 		for _, cap := range selection.Required {
@@ -2781,9 +2783,11 @@ func (e *Engine) selectModelForStep(ctx context.Context, req types.ModelRequest,
 		}
 		discovery, ok := client.(types.ModelCapabilityDiscovery)
 		if !ok {
+			discoveryUnavailable = true
 			selection.Missing[name] = append([]types.ModelCapability(nil), selection.Required...)
 			continue
 		}
+		discoveredCandidate = true
 		report, err := e.discoverCapabilities(ctx, name, discovery, req, timeout, cacheTTL)
 		if err != nil {
 			selection.Missing[name] = append([]types.ModelCapability(nil), selection.Required...)
@@ -2803,12 +2807,19 @@ func (e *Engine) selectModelForStep(ctx context.Context, req types.ModelRequest,
 		required = append(required, string(cap))
 	}
 	selection.Reason = "capability_preflight_failed"
-	err := classified(types.ErrModel, "no provider satisfies required capabilities", false)
-	err.Details = map[string]any{
-		"provider_reason":       "capability_unsupported",
-		"required_capabilities": strings.Join(required, ","),
-		"attempted_providers":   strings.Join(selection.Attempted, ","),
+	message := "no provider satisfies required capabilities"
+	providerReason := "capability_unsupported"
+	details := map[string]any{}
+	if discoveryUnavailable && !discoveredCandidate {
+		providerReason = "capability_discovery_unavailable"
+		message = "no provider satisfies required capabilities: ModelCapabilityDiscovery is required for strict capability preflight (implement ProviderName and DiscoverCapabilities, or wrap the model with adapter/modelcapability)"
+		details["missing_interfaces"] = "ModelCapabilityDiscovery"
 	}
+	err := classified(types.ErrModel, message, false)
+	details["provider_reason"] = providerReason
+	details["required_capabilities"] = strings.Join(required, ",")
+	details["attempted_providers"] = strings.Join(selection.Attempted, ",")
+	err.Details = details
 	return nil, selection, err
 }
 

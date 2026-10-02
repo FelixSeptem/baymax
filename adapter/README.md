@@ -8,6 +8,7 @@
 - `adapter/capability`：能力协商与降级策略
 - `adapter/health`：运行期健康探测三态契约（`healthy|degraded|unavailable`）
 - `adapter/scaffold`：外部适配脚手架与契约测试骨架生成
+- `adapter/modelcapability`：为最小 `types.ModelClient` 显式补充 provider identity 与能力发现
 
 Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
@@ -32,6 +33,20 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 4. 交付层（`scaffold`）
 - 生成最小可运行的 adapter 目录结构。
 - 默认携带 manifest、conformance bootstrap、negotiation baseline 测试骨架。
+
+### Model capability opt-in
+
+`types.ModelClient` 只要求 `Generate` 与 `Stream`。严格的 runner preflight 另外需要可选的 `types.ModelCapabilityDiscovery`（`ProviderName()` 与 `DiscoverCapabilities(...)`）。本地或测试模型可以显式包装并声明能力：
+
+```go
+model, err := modelcapability.Wrap(client, modelcapability.Config{
+    Provider:     "local",
+    Model:        "fixture",
+    Capabilities: []types.ModelCapability{types.ModelCapabilityStreaming},
+})
+```
+
+包装器不会根据方法集推断能力；未声明 `streaming` 的模型仍会被严格 Stream preflight 拒绝。生产 provider adapter 应在 `model/<provider>` 中提供真实 discovery，而不是把静态声明当作远程探测结果。
 
 ## 关键入口
 
@@ -95,3 +110,4 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - 常见误用：把 `required` 能力当作可降级能力处理，破坏 fail-fast 边界。
 - 常见误用：只改模板不改 conformance harness，导致生成产物与验收口径漂移。
 - 常见误用：在 adapter 层直接写业务诊断存储，绕过统一单写路径。
+- 常见误用：只实现最小 `ModelClient` 就调用严格 `runner.Engine.Stream`；此时错误会指出缺少 `ModelCapabilityDiscovery`，应使用显式 capability adapter 或补齐 provider discovery。

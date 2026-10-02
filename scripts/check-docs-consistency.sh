@@ -50,6 +50,12 @@ if ! bash scripts/check-openspec-roadmap-status-consistency.sh; then
   exit 1
 fi
 
+echo "[docs-consistency] openspec documentation impact"
+if ! bash scripts/check-openspec-documentation-impact.sh; then
+  echo "[docs-consistency][openspec-documentation-impact] openspec documentation impact failed"
+  exit 1
+fi
+
 offline_cache_issues=()
 mapfile -t offline_tracked < <(git ls-files -- examples/adapters/_a23-offline-work || true)
 for path in "${offline_tracked[@]}"; do

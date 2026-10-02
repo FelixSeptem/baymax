@@ -1,442 +1,91 @@
 # Baymax Agent Loop (Go)
 
-Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，聚焦可嵌入的多代理编排能力：
+Baymax 是一个 library-first、contract-first 的 Go Agent runtime，面向可嵌入的单 agent、多 agent、工具和 MCP 编排。它提供 Run/Stream 主循环、Provider 适配、Context projection、结构化诊断、replay 和离线治理门禁；宿主仍拥有 credential、网络、持久化和全局路由。
 
-- 统一 Run/Stream 主循环
-- 本地工具与 MCP 双传输（HTTP/STDIO）
-- 多模型 Provider 适配（OpenAI/Anthropic/Gemini）
-- Context Assembler（prefix baseline / stage2 routing / pressure compaction / production hardening）
-- A2A / Workflow / Teams / Scheduler / Composer 组合编排
-- 结构化可观测性（timeline + diagnostics + RuntimeRecorder 单写）
-- Agent Runtime Protocol 投影（Session/Run/Step/Event/Artifact/Checkpoint；复用既有 Runtime source-of-truth）
-
-最新进度请查看：
-- `docs/development-roadmap.md`
-- `openspec list --json`
-
-[介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
-
-当前里程碑快照（2026-10-01）：
-- `openai-compatible-endpoint-profile-conformance`（已归档为 155；官方 Responses API 与显式声明的兼容 endpoint profile 离线 conformance，不做自动探测）。
-- `establish-sandbox-lifecycle-success-cost-evidence`（已归档为 154；Sandbox 生命周期与单位成功任务成本的离线、bounded、privacy-safe evidence-first 基线、replay 与双平台 gate 已收口，不新增 executor、平台 driver、配置、诊断持久化或 session owner）。
-- `establish-model-route-intent-admission-evidence`（已归档为 153；显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）。
-- `establish-provider-context-cache-drift-admission-evidence`（已归档为 152；Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate 已收口；不修改 adapter、runtime 配置、价格模型或 cache 策略）。
-- `establish-admitted-tool-schema-projection-readiness-contract`（已归档为 151；offline bounded tool_schema_projection_readiness.v1、稳定窗口、admitted-subset opportunity、replay 与双平台 gate；不接入 runtime selector 或 provider projection）。
-- `establish-scenario-agent-simulation-and-completion-verification`（已归档为 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）。
-- `establish-capability-asset-provenance-and-release-rollback-audit`（已归档并稳定；bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计已收口，不新增 runtime registry、动态下载或自动回滚）。
-- `establish-provider-cache-usage-observability-contract`（已归档为 148；三家 provider 的 cache usage additive projection、Run/Stream parity、fixture/replay/gate 已收口；不改变 `TokenUsage`、RuntimeRecorder schema 或缓存策略）。
-- `establish-action-capability-risk-idempotency-evidence-audit`（已归档为 147；离线、确定性、可回放的 Action capability 风险、幂等与验收证据审计，不改变运行时执行语义）。
-- `establish-admitted-tool-schema-pressure-selection-audit`（已归档为 146；离线、provider-neutral 的已准入工具 schema pressure、synthetic selection quality、多策略评分、corpus advisory 与 replay；不接入 runtime selector、ModelRequest 或 provider projection）。
-- `establish-model-catalog-routing-admission-audit-contract`（已归档为 145；host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver；不引入远程 discovery、credential store 或全局 router）。
-- `preserve-provider-native-request-projection-parity`（已归档为 144；基于归档 142 的 SDK 边界 gap fixture，修复 OpenAI、Anthropic、Gemini 的原生 role/tool-result 请求投影与 Run/Stream/CountTokens 对等；canonical facts 保持 SDK-neutral，native builders 留在各 adapter 内；不新增 cache schema、共享 provider wire protocol 或 runtime 配置）。
-- `establish-budget-aware-derived-context-projection-contract`（已归档为 143；由既有预算 owner 事实派生、有界只读的 `budget_projection.v1` 剩余预算投影契约 + 离线确定性预算利用 benchmark + replay 与双平台 gate；不新增预算账本、不新增配置键、不修改 ReAct 循环或 tail recap 接线）。
-- `establish-provider-request-projection-and-cache-observability-contract`（已归档并稳定；Runtime → Provider 请求侧投影契约 `provider_request_projection.v1`：`source`/`observed` 双投影、canonical digest、被钉住的 role/tool-result-native/能力投影 `declared_gap`、cache 用量 additive + nullable + default 口径、版本化 fixture、离线 replay 与双平台 gate；不修改适配器运行时投影行为）。
-- `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（已归档并稳定；作为归档 139 的离线 Eval 收尾，交付 bounded 首错归因/比较、轨迹决策边界、additive 关联、replay fixtures 与双平台 gate；不修改 runtime loop 或 agent-mode 示例语义）。
-- `external-extension-authoring-conformance`（已归档；离线 authoring conformance、版本化 fixture、replay 与双平台 gate，不新增 package manager、运行时配置或 agent-mode 示例语义）。
-- `establish-eval-continuity-comparison-and-replay-contract`（已归档；bounded reference-only continuity comparator、handoff/snapshot adapters 与离线 replay/gate，不持久化 transcript、reasoning 或 artifact body）。
-- `harden-durable-attempt-workspace-binding-and-completion-safepoint`（已归档；task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership 已由 bounded fixture、replay、contract 和 gate 收口）。
-- `harden-cross-provider-handoff-and-stream-edge-conformance`（已归档；OpenAI/Anthropic/Gemini adapter-owned 规范化、step-boundary fallback fence、Run/Stream parity 与离线 replay；不新增配置、远程目录或路由控制面）。
-- `introduce-runtime-steering-and-follow-up-input-contract`（已归档，source-owned steering/follow-up admission、safe-point apply、follow-up promotion 与 embedded host/JSONL contract）。
-- `establish-embedded-host-command-response-and-event-correlation-contract`（已归档，嵌入式宿主命令/响应、异步事件、HITL 反向请求、active Run control 与 strict JSONL binding）
-- `introduce-provider-model-capability-and-credential-preflight-contract`（已归档，Provider/model 能力目录与脱敏 credential preflight 合同）
-- `extension-lifecycle-governance-resource-resolution-contract`（已归档，扩展生命周期、资源确定性发现、准入与失败隔离）
-- `context-compression-runtime-handoff-contract`（已归档；上下文压缩运行交接单合同，代码、测试、文档与门禁已完成）。
-- 最近归档：
-  - `establish-session-history-checkpoint-replay-contract`（已归档；P2 会话历史、Checkpoint 与回放边界合同）
-- 已归档：
-  - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`：运行失败分类与权威终态合同（proposal/design/specs/tasks 与实现已完成）。
-- 已归档并稳定：早期与主线归档提案（完整清单以 `openspec/changes/archive/INDEX.md` 为准）。
-- 已归档：
-  - `harden-tool-lifecycle-and-failure-isolation-contract`（工具调用生命周期阶段投影、失败隔离与 finalize 幂等合同）
-  - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`（codebase consolidation and semantic labeling，OpenSpec `all_done`）。
-- 已归档：
-  - `extend-realtime-event-protocol-with-durable-runtime-stream-binding`：Durable Runtime Event Stream Binding Contract 已归档并稳定。
-  - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）已归档并稳定。
-- `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract 已归档并稳定。
-- `extend-agent-runtime-protocol-with-checkpoint-history-and-workspace-provenance`：P3 checkpoint history、lineage、branch/replay 与 workspace provenance，保持 snapshot/workspace source ownership 与 additive compatibility，已归档并稳定。
-- `extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`：P4 evaluation corpus、Badcase replay、experiment comparison 与人工反馈建议，已归档并稳定。
-  - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`（agent mode anti-template doc-first delivery）已归档并稳定。
-  - `introduce-real-runtime-agent-mode-examples-contract-a71`（real runtime agent mode examples）已归档并稳定。
-  - `introduce-governance-automation-and-consistency-gate-contract-a70`（governance automation and consistency gate）已归档并稳定。
-  - `introduce-context-compression-production-hardening-contract-a69`（context compression production hardening）已归档并稳定。
-  - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`（jit context organization and reference-first assembly）已归档并稳定。
-
-当前 P1 审计的 ownership 边界固定为：scheduler 拥有 task/attempt/lease/retry/terminal commit，checkpoint/snapshot 拥有 reference-only provenance 与 restore reconciliation，mailbox 拥有 durable completion delivery，`core/runner` 拥有 runtime-input safe-point admission/application，`tool/diagnosticsreplay` 只做离线无副作用归一化。workspace 内容、Git/worktree 生命周期、completion body、reasoning、credentials 和终端事实不被复制到 scheduler/snapshot/diagnostics。
-
-该审计不新增 runtime config key 或 hosted service；现有 `env > file > default` 配置与 additive + nullable + default 兼容规则保持不变。若需回滚，只移除新增 reference projection、fixture/replay/gate 与恢复适配；legacy scheduler、mailbox、snapshot、Run/Stream 与 terminal behavior 不需迁移。明确 non-goals 包括 Git/worktree manager、workspace/artifact store、runtime Git/shell、自动 merge/push 与平行 task/session/coordination FSM。
-
-版本阶段快照：
-- 当前仓库保持 `0.x` pre-1 阶段，默认不做 `1.0.0/prod-ready` 承诺。
-- `0.x` 阶段允许新增能力型提案，前提是满足提案准入字段与质量门禁阻断要求。
-- 提案准入规则与边界以 `docs/development-roadmap.md`、`docs/versioning-and-compatibility.md` 为准。
-
-## 架构设计
-
-Agent Runtime Protocol 是面向嵌入宿主的引用与生命周期投影，不是新的执行引擎或托管控制面。对象映射由 `core/types` 提供，Runner、Workflow、Teams、Scheduler、A2A、Realtime、Snapshot 与 RuntimeRecorder 继续分别拥有执行、恢复、事件和诊断事实源。当前扩展以 additive `ProtocolDescriptor`、bounded Session context、显式 host-action availability 和 source-owned same-Session admission outcome 暴露能力，不引入队列、锁、分支引擎、会话服务或 provider-specific context schema。
-
-运行中输入合同（steering/follow-up）同样保持 source-owned：每个 active Run 只有有界 steering slot 与 follow-up FIFO；steering 只能在既有 model/tool/HITL 原子边界后的 safe point 应用，follow-up 只能在 idle/terminal 边界通过现有 Run/Stream admission path 晋升为 distinct causal Run。Host 只负责 command correlation、authorization/readiness 前置检查、JSONL framing 与 bounded delivery，不拥有 Session history、terminal state、Realtime cursor 或 global queue。该合同不新增 runtime config key，也不提供 remote gateway 或 hosted persistence。
-
-Durable runtime event-stream binding 是可选的 transport-neutral 投影：支持有界 `latest`/`after_cursor`、source-owned catch-up/live-tail handoff、重叠去重、过期、断连与 backpressure 分类；不提供 transport gateway、托管 Event/Session service、外部 event store 或 binding-owned queue。
-
-Baymax 采用分层组合与单向依赖，核心结构如下：
-
-```text
-Application / Host SDK
-        |
-        v
-core/runner + orchestration/* + a2a/*
-        |
-        v
-context/* + tool/local + mcp/http|stdio + model/*
-        |
-        v
-observability/event (RuntimeRecorder single-writer)
-        |
-        v
-runtime/config + runtime/diagnostics
-```
-
-关键架构约束：
-
-- `runtime/*` 不反向依赖 MCP 传输实现。
-- Provider 协议细节收敛在 `model/<provider>`。
-- 跨 Provider handoff 与 stream edge 只比较有界 canonical projection；stream 首个语义事件之后禁止切换 Provider。
-- 诊断写入统一经过 `observability/event.RuntimeRecorder`。
-- 配置优先级固定：`env > file > default`。
-
-边界说明见：`docs/runtime-module-boundaries.md`
-
-## 核心模块
-
-| 模块 | 目录 | 作用 |
-| --- | --- | --- |
-| Runner Core | `core/runner` | Run/Stream 状态机与终止语义 |
-| Core Types | `core/types` | 跨模块 DTO、错误分类、契约接口 |
-| Model Adapters | `model/openai` `model/anthropic` `model/gemini` `model/providererror` `model/toolcontract` | Provider 适配、错误归类与工具结果输入合同 |
-| Local Tool Runtime | `tool/local` | 本地工具注册、schema 校验、调度执行 |
-| Tool Schema Audit | `tool/schemaaudit` | 已准入工具的离线 schema pressure、synthetic selection quality、多策略比较与 replay facts；不接入运行时投影 |
-| MCP Runtime | `mcp/http` `mcp/stdio` `mcp/profile` `mcp/retry` `mcp/diag` | 远程工具传输与可靠性治理 |
-| Context Assembler | `context/assembler` `context/journal` `context/guard` `context/provider` | 上下文装配、检索与守卫 |
-| Orchestration | `orchestration/workflow` `orchestration/teams` `orchestration/composer` `orchestration/scheduler` `orchestration/mailbox` `orchestration/invoke` `orchestration/collab` `orchestration/snapshot` | 工作流、多代理协作、调度、调用桥接与快照合同 |
-| A2A Interop | `a2a` | Agent-to-Agent 互联契约（submit/status/result） |
-| Adapter Contracts | `adapter/manifest` `adapter/capability` `adapter/scaffold` | 外部适配契约、能力协商与脚手架治理 |
-| Runtime Config | `runtime/config` | 配置加载、校验、热更新、回滚 |
-| Diagnostics & Eventing | `runtime/diagnostics` `observability/event` `observability/trace` | 可观测性、诊断存储与查询（当前以 `Recent* + Trends` 为主） |
-| Skill Loader | `skill/loader` | AGENTS/SKILL 发现、评分、bundle 组装 |
-| Runtime Security | `runtime/security` | 脱敏与安全治理基础能力 |
-| Integration Contracts | `integration` `integration/adapterconformance` `integration/adaptercontractreplay` `integration/sandboxconformance` | 主干合同回归、适配一致性与回放验证 |
-
-## 组件说明索引
-
-- [A2A Interop 说明](a2a/README.md)
-- [Runner Core 说明](core/runner/README.md)
-- [Core Types 说明](core/types/README.md)
-- [Local Tool Runtime 说明](tool/local/README.md)
-- [MCP Runtime 说明](mcp/README.md)
-- [Model Adapters 说明](model/README.md)
-- [Model Provider Error 说明](model/providererror/README.md)
-- [Model Tool Contract 说明](model/toolcontract/README.md)
-- [Context Assembler 说明](context/README.md)
-- [Orchestration 说明](orchestration/README.md)
-- [Orchestration Snapshot 说明](orchestration/snapshot/README.md)
-- [Adapter Contracts 说明](adapter/README.md)
-- [Runtime Config 说明](runtime/config/README.md)
-- [Runtime Diagnostics 说明](runtime/diagnostics/README.md)
-- [Runtime Security 说明](runtime/security/README.md)
-- [Runtime Security Redaction 说明](runtime/security/redaction/README.md)
-- [Observability 说明](observability/README.md)
-- [Skill Loader 说明](skill/loader/README.md)
-- [Integration Contracts 说明](integration/README.md)
-
-## 设计哲学
-
-- **Library First**：优先提供可嵌入、可组合的 Go 库能力。
-- **Contract First**：行为变更由 OpenSpec + 契约测试驱动。
-- **Fail Fast**：非法配置和非法热更新快速失败并原子回滚。
-- **Observability by Default**：timeline/diagnostics 是运行时原语，不是附加功能。
-- **Boundary over Convenience**：严格模块边界，减少跨域语义漂移。
-
-## 快速开始
-
-### 1) 环境要求
-
-- Go `1.26+`
-
-### 2) 安装依赖
-
-```bash
-go mod tidy
-```
-
-### 3) 最小运行示例
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-
-	"github.com/FelixSeptem/baymax/core/runner"
-	"github.com/FelixSeptem/baymax/core/types"
-	openaiadapter "github.com/FelixSeptem/baymax/model/openai"
-)
-
-func main() {
-	model := openaiadapter.NewClient(openaiadapter.Config{
-		APIKey: os.Getenv("OPENAI_API_KEY"),
-		Model:  "gpt-4.1-mini",
-	})
-
-	engine := runner.New(model)
-	res, err := engine.Run(context.Background(), types.RunRequest{
-		Input: "用一句话介绍 Baymax。",
-	}, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(res.FinalAnswer)
-}
-```
-
-可直接运行示例：
+## 5 分钟开始
 
 ```bash
 go run ./examples/01-chat-minimal
 ```
 
-### 4) Composer 最小接入
+接着按 [集成指南](docs/guides/integration.md) 选择工具、MCP 或多 agent 路径。最小示例只展示 library 接入，不代表生产配置、重试或安全策略。
 
-```go
-comp, err := composer.NewBuilder(model).
-	WithRuntimeManager(mgr).
-	WithEventHandler(dispatcher).
-	Build()
-if err != nil {
-	panic(err)
-}
+## 能力边界
 
-res, err := comp.Run(ctx, types.RunRequest{
-	RunID: "run-composer-demo",
-	Input: "hello composer",
-}, nil)
-_ = res
-```
+- 统一 Run/Stream 主循环与终态语义。
+- OpenAI、Anthropic、Gemini 等 Provider adapter（协议细节位于 `model/<provider>`）。
+- local tool、MCP HTTP/STDIO、workflow、teams、A2A、scheduler、composer。
+- Context budget/projection、结构化 timeline/diagnostics、RuntimeRecorder 单写入口。
+- contract/replay/gate 作为离线、bounded、可重复的证据。
 
-### 5) Mailbox Unified Coordination
+不提供自动 Provider 探测、隐式全局 registry、远程控制面或跨租户状态。架构与依赖边界见 [架构总览](docs/architecture/overview.md) 和 [模块边界](docs/runtime-module-boundaries.md)。
 
-```go
-mb, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
-if err != nil {
-	panic(err)
-}
-bridge := invoke.NewMailboxBridge(mb)
+## 按读者进入
 
-// sync command->result
-outcome, err := bridge.InvokeSync(ctx, a2aClient, invoke.Request{
-	TaskID:     "task-sync-demo",
-	WorkflowID: "wf-demo",
-	TeamID:     "team-demo",
-	AgentID:    "agent-parent",
-	PeerID:     "agent-child",
-	Method:     "delegate",
-	Payload:    map[string]any{"mode": "sync"},
-})
-_ = outcome
-_ = err
+- 新用户： [文档索引](docs/README.md) → [集成指南](docs/guides/integration.md) → [最佳实践](docs/guides/best-practices.md)。
+- 集成方： [架构总览](docs/architecture/overview.md) → [配置与诊断](docs/guides/configuration-and-diagnostics.md) → [测试/replay/gate](docs/guides/testing-replay-gates.md)。
+- 贡献者： [贡献指南](docs/guides/contribution.md) → [OpenSpec 工作流](docs/guides/openspec-workflow.md) → [故障排查](docs/guides/troubleshooting.md)。
 
-// delayed command
-_, err = bridge.PublishDelayedCommand(ctx, invoke.Request{
-	TaskID:     "task-delayed-demo",
-	WorkflowID: "wf-demo",
-	TeamID:     "team-demo",
-	AgentID:    "agent-parent",
-	PeerID:     "agent-child",
-	Method:     "delegate",
-}, time.Now().Add(30*time.Second), time.Now().Add(5*time.Minute))
-_ = err
-```
+## 当前状态与路线图
 
-### 6) Invocation 入口
+当前状态的唯一依据是 `openspec list --json`、[开发路线图](docs/development-roadmap.md) 和 [归档索引](openspec/changes/archive/INDEX.md)。
 
-主线调用入口统一为 `orchestration/mailbox` + `orchestration/invoke/mailbox_bridge`。
+### 版本阶段快照
 
-### 7) Mailbox Lifecycle Worker（Lifecycle Contract）
+项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
-- 默认值：
-  - `mailbox.worker.enabled=false`
-  - `mailbox.worker.poll_interval=100ms`
-  - `mailbox.worker.handler_error_policy=requeue`
-  - `mailbox.worker.inflight_timeout=30s`
-  - `mailbox.worker.heartbeat_interval=5s`
-  - `mailbox.worker.reclaim_on_consume=true`
-  - `mailbox.worker.panic_policy=follow_handler_error_policy`
-- worker handler 返回错误时默认按 `requeue` 收敛；panic recover 路径复用同一 policy（`requeue|nack`）。
-- stale `in_flight` reclaim 默认在 consume 路径开启；reclaim reason canonical 为 `lease_expired`。
-- lifecycle 诊断覆盖：`consume/ack/nack/requeue/dead_letter/expired`，并追加 `reclaimed/panic_recovered` additive 观测标记。
+当前无进行中的 OpenSpec change。最近归档：
 
-### 8) 能力状态
+- `layered-technical-documentation-and-drift-governance`（归档 156）：分层技术文档、README 导航和新提案 Documentation Impact Assessment/漂移门禁。
 
-稳定能力清单（已归档）：
-- Runtime 主干：Run/Stream、工具闭环、Context Assembler（语义分层）、Security（S1-S4）。
-- 多代理主链路：Teams/Workflow/A2A/Scheduler/Composer、sync/async/delayed、recovery boundary、统一诊断查询与 task board 查询。
-- 质量门禁：shared multi-agent contracts、性能基线门禁（含 diagnostics query gate）、sandbox rollout governance gate、sandbox lifecycle-success-cost evidence gate、全链路 smoke gate、文档一致性 gate。
-- 外部适配生态：template、conformance harness、scaffold、manifest、capability negotiation、profile replay gate。
+## 文档与事实源
 
-当前主线能力状态（最新）：
-- `establish-model-catalog-routing-admission-audit-contract`：host-supplied model catalog/routing admission audit、版本化 fixture/replay、Run/Stream parity 与由审计证据触发的纯函数 deterministic resolver（已归档为 145；不引入远程 discovery、credential store 或全局 router）。
-- `introduce-provider-model-capability-and-credential-preflight-contract`：Provider/model 静态能力目录、脱敏 credential preflight、readiness 投影、诊断回放与 Run/Stream parity（已归档并稳定）
-- `extension-lifecycle-governance-resource-resolution-contract`：扩展生命周期、资源确定性发现、准入、失败隔离与 reload/rollback（已归档并稳定）
-- `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（已归档并稳定；冻结跨框架任务生命周期协议投影，不引入托管控制面）。
-- `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract（已归档并稳定；扩展 descriptor、bounded context、host-action 与 source-owned admission projection）。
-- `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`：agent mode anti-template doc-first delivery 契约（已归档并稳定）。
-- `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling 契约（已完成待归档，OpenSpec `all_done`）。
-- `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate 契约（已归档并稳定）。
-- `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples 契约（已归档并稳定）。
-- `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening 契约（已归档并稳定）。
-- `introduce-engineering-and-performance-optimization-contract-a64`：engineering and performance optimization 契约（已完成待归档，OpenSpec `all_done`）。
-- `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：jit context organization + reference-first assembly 契约（已归档）。
+- [技术文档索引](docs/README.md)
+- [事实源与迁移矩阵](docs/documentation-ownership.md)
+- [文档写作与页面模板](docs/documentation-style-guide.md)
+- [开发路线图](docs/development-roadmap.md)
+- [运行时模块边界](docs/runtime-module-boundaries.md)
+- [Runtime Harness 架构](docs/runtime-harness-architecture.md)
+- [主线契约测试索引](docs/mainline-contract-test-index.md)
+- [运行时配置与诊断](docs/runtime-config-diagnostics.md)
+- [Diagnostics Replay](docs/diagnostics-replay.md)
+- [外部适配模板索引](docs/external-adapter-template-index.md)
+- [适配迁移映射](docs/adapter-migration-mapping.md)
+- [版本与兼容](docs/versioning-and-compatibility.md)
 
-近期已归档能力：
-- 近期主线提案已归档并稳定，归档明细与能力范围请以 `docs/development-roadmap.md` 和 `openspec/changes/archive/INDEX.md` 为准。
+### 模块 README
 
-### 当前主线能力（现状）
+`a2a/README.md` · `core/runner/README.md` · `core/types/README.md` · `tool/local/README.md` · `mcp/README.md` · `model/README.md` · `context/README.md` · `orchestration/README.md` · `adapter/README.md` · `runtime/config/README.md` · `runtime/diagnostics/README.md` · `runtime/security/README.md` · `observability/README.md` · `skill/loader/README.md`
 
-- 已归档：`extend-runtime-otel-and-agent-eval-with-corpus-badcase-and-experiment-contract`（P4 evaluation corpus、Badcase、experiment comparison 与 review-only feedback）。
-- 已完成待归档：
-  - `introduce-codebase-consolidation-and-semantic-labeling-contract-a63`：codebase consolidation + semantic labeling
-  - `introduce-engineering-and-performance-optimization-contract-a64`：engineering/performance optimization
-- 已归档：
-  - `introduce-agent-runtime-protocol-contract`：Agent Runtime Protocol contract（Session/Run/Step/Event/Artifact/Checkpoint 协议投影）
-  - `extend-agent-runtime-protocol-capability-context-and-concurrency-contract`：Capability、Context 与 Concurrent-Run Admission Contract
-  - `introduce-agent-mode-anti-template-doc-first-delivery-contract-a72`：agent mode anti-template doc-first delivery
-  - `introduce-real-runtime-agent-mode-examples-contract-a71`：real runtime agent mode examples
-  - `introduce-governance-automation-and-consistency-gate-contract-a70`：governance automation and consistency gate
-  - `introduce-context-compression-production-hardening-contract-a69`：context compression production hardening
-  - `introduce-jit-context-organization-and-reference-first-assembly-contract-a67-ctx`：JIT context organization + reference-first assembly
-- 已归档稳定：主线多代理能力（包含 hooks/middleware、state/session snapshot、react plan notebook、realtime event protocol 等能力）
+### 示例
 
-当前主线建议优先关注：
-- 运行时配置与诊断字段：`docs/runtime-config-diagnostics.md`
-- 合同测试与门禁映射：`docs/mainline-contract-test-index.md`
-- 提案状态与范围边界：`docs/development-roadmap.md`
+`examples/01-chat-minimal`、`02-tool-loop-basic`、`03-mcp-mixed-call`、`04-streaming-interrupt`、`05-parallel-tools-fanout`、`06-async-job-progress`、`07-09` 多 agent 示例，以及 `examples/agent-modes/MATRIX.md` 模式矩阵。
 
-Realtime Protocol 专项门禁：
-
-```bash
-bash scripts/check-realtime-protocol-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-realtime-protocol-contract.ps1
-pwsh -File scripts/check-runtime-event-stream-terminal-recovery-contract.ps1
-```
-
-JIT Context Organization 专项门禁：
-
-```bash
-bash scripts/check-context-jit-organization-contract.sh
-```
-
-```powershell
-pwsh -File scripts/check-context-jit-organization-contract.ps1
-```
-
-状态权威来源：
-- `openspec list --json`
-- `openspec/changes/archive/INDEX.md`
+Agent mode 专项门禁：`scripts/check-agent-mode-real-runtime-semantic-contract.sh`、`scripts/check-agent-mode-readme-runtime-sync-contract.sh`、`scripts/check-agent-mode-anti-template-contract.sh`、`scripts/check-agent-mode-doc-first-delivery-contract.sh`（Windows 使用同名 `.ps1` 入口）。
 
 ## 开发验证
-
-最小建议命令：
 
 ```bash
 go test ./...
 go test -race ./...
 golangci-lint run --config .golangci.yml
-bash scripts/check-react-contract.sh
-bash scripts/check-react-plan-notebook-contract.sh
-bash scripts/check-context-jit-organization-contract.sh
-bash scripts/check-realtime-protocol-contract.sh
-bash scripts/check-sandbox-egress-allowlist-contract.sh
-bash scripts/check-policy-precedence-contract.sh
-bash scripts/check-observability-export-and-bundle-contract.sh
-bash scripts/check-memory-contract-conformance.sh
-bash scripts/check-sandbox-rollout-governance-contract.sh
-bash scripts/check-sandbox-lifecycle-success-cost-evidence-contract.sh
-bash scripts/check-agent-eval-and-tracing-interop-contract.sh
-bash scripts/check-state-snapshot-contract.sh
-bash scripts/check-diagnostics-query-performance-regression.sh
+bash scripts/check-docs-consistency.sh
+bash scripts/check-openspec-documentation-impact.sh
+bash scripts/check-quality-gate.sh
 ```
 
-Windows 质量门禁：
+Windows 使用等价的 `pwsh -File scripts/check-docs-consistency.ps1`、`check-openspec-documentation-impact.ps1` 和 `check-quality-gate.ps1`。文件占用时，按 [故障排查](docs/guides/troubleshooting.md) 使用隔离缓存逐包验证并记录未执行项。
 
-```powershell
-pwsh -File scripts/check-quality-gate.ps1
-pwsh -File scripts/check-docs-consistency.ps1
-pwsh -File scripts/check-react-contract.ps1
-pwsh -File scripts/check-react-plan-notebook-contract.ps1
-pwsh -File scripts/check-context-jit-organization-contract.ps1
-pwsh -File scripts/check-realtime-protocol-contract.ps1
-pwsh -File scripts/check-sandbox-egress-allowlist-contract.ps1
-pwsh -File scripts/check-policy-precedence-contract.ps1
-pwsh -File scripts/check-observability-export-and-bundle-contract.ps1
-pwsh -File scripts/check-memory-contract-conformance.ps1
-pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1
-pwsh -File scripts/check-sandbox-lifecycle-success-cost-evidence-contract.ps1
-pwsh -File scripts/check-agent-eval-and-tracing-interop-contract.ps1
-pwsh -File scripts/check-state-snapshot-contract.ps1
-pwsh -File scripts/check-diagnostics-query-performance-regression.ps1
-```
+## 提案治理
 
-PowerShell 门禁治理语义（Strict Native Helper）：
-- required native command 默认 strict fail-fast（非零即阻断）。
-- 唯一非阻断例外为 `govulncheck` 在 `BAYMAX_SECURITY_SCAN_MODE=warn` 时的告警放行。
+每个新 OpenSpec proposal/design/tasks 都必须包含 Documentation Impact Assessment，逐项判断 architecture、components、configuration、contract/API、diagnostics、examples、CLI/integration、best practices、roadmap，并提供 affected paths、owner 和 verification。行为/配置/contract/诊断/示例变化还必须声明 Example Impact Assessment。
 
-## 示例
+文档门禁：
 
-- `examples/01-chat-minimal`：最小单轮问答
-- `examples/02-tool-loop-basic`：工具调用闭环
-- `examples/03-mcp-mixed-call`：local + MCP 混合
-- `examples/04-streaming-interrupt`：流式中断收敛
-- `examples/05-parallel-tools-fanout`：并发工具 fanout
-- `examples/06-async-job-progress`：异步任务进度回传
-- `examples/07-multi-agent-async-channel`：Composer + Scheduler(Local)
-- `examples/08-multi-agent-network-bridge`：Composer + Scheduler(A2A)
-- `examples/09-multi-agent-full-chain-reference`：Teams + Workflow + A2A + Scheduler + Recovery（Run/Stream + async/delayed/recovery）
-- `examples/agent-modes`：统一模式矩阵入口（`MATRIX.md` + `PLAYBOOK.md` + `STABILITY_BASELINE.json` + `minimal/production-ish` 双档示例）
-- `scripts/check-agent-mode-examples-smoke.sh` / `scripts/check-agent-mode-examples-smoke.ps1`：`agent-modes` 双变体语义 smoke
-- `scripts/check-agent-mode-real-runtime-semantic-contract.sh` / `scripts/check-agent-mode-real-runtime-semantic-contract.ps1`：A71 真实语义门禁
-- `scripts/check-agent-mode-readme-runtime-sync-contract.sh` / `scripts/check-agent-mode-readme-runtime-sync-contract.ps1`：A71 README 运行时同步门禁
-- `scripts/check-agent-mode-anti-template-contract.sh` / `scripts/check-agent-mode-anti-template-contract.ps1`：A72 反模板门禁（同构模板与模式自有语义检查）
-- `scripts/check-agent-mode-doc-first-delivery-contract.sh` / `scripts/check-agent-mode-doc-first-delivery-contract.ps1`：A72 文档先行门禁（文档基线先于代码）
+- `scripts/check-openspec-documentation-impact.sh/.ps1`：文档影响声明、变更面、链接、任务和状态漂移。
+- `scripts/check-openspec-example-impact-declaration.sh/.ps1`：示例影响声明。
+- `scripts/check-openspec-roadmap-status-consistency.sh/.ps1`：roadmap/OpenSpec/archive 状态一致性。
 
-## 文档入口
+## 许可证与社区
 
-- 路线图与阶段进度：`docs/development-roadmap.md`
-- 外部适配模板索引：`docs/external-adapter-template-index.md`
-- 适配迁移映射：`docs/adapter-migration-mapping.md`
-- 适配一致性验收：`scripts/check-adapter-conformance.sh` / `scripts/check-adapter-conformance.ps1`
-- 适配 manifest 合同校验：`scripts/check-adapter-manifest-contract.sh` / `scripts/check-adapter-manifest-contract.ps1`
-- 适配能力协商合同校验：`scripts/check-adapter-capability-contract.sh` / `scripts/check-adapter-capability-contract.ps1`
-- 适配合同回放校验：`scripts/check-adapter-contract-replay.sh` / `scripts/check-adapter-contract-replay.ps1`
-- sandbox adapter conformance 校验：`scripts/check-sandbox-adapter-conformance-contract.sh` / `scripts/check-sandbox-adapter-conformance-contract.ps1`
-- 适配脚手架漂移校验：`scripts/check-adapter-scaffold-drift.sh` / `scripts/check-adapter-scaffold-drift.ps1`
-- 运行时配置与诊断：`docs/runtime-config-diagnostics.md`
-- Runtime Harness 架构总览：`docs/runtime-harness-architecture.md`
-- 模块边界约束：`docs/runtime-module-boundaries.md`
-- 核心模块语义映射：`docs/core-module-semantic-alignment.md`
-- 主干契约测试索引：`docs/mainline-contract-test-index.md`
-- V1 验收与限制：`docs/v1-acceptance.md`
-- 版本与兼容策略：`docs/versioning-and-compatibility.md`
-- Diagnostics Replay 指南：`docs/diagnostics-replay.md`
-
-## 开源与治理
-
-- 贡献指南：`CONTRIBUTING.md`
-- 行为规范：`CODE_OF_CONDUCT.md`
-- 安全策略：`SECURITY.md`
-- 许可证：`LICENSE`（Apache License 2.0）
-- 变更记录：`CHANGELOG.md`
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[SECURITY.md](SECURITY.md)、[CHANGELOG.md](CHANGELOG.md) 和 [LICENSE](LICENSE)。

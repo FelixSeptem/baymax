@@ -15,15 +15,13 @@ Baymax 主线保持 `library-first + contract-first`：
 ## 当前状态
 
 - 进行中：
-  当前无仍在实施的 active change。
+  当前无 active OpenSpec change。
 
-待归档：`openai-compatible-endpoint-profile-conformance` 已完成实现与验证；以官方 OpenAI Responses API 和宿主显式声明的 OpenAI-compatible endpoint profile 为范围，完成离线 conformance contract、capability 边界与回滚说明，不做自动探测。归档前不再新增实现任务。
+当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
 
-实施记录：profile admission、capability validation、离线 fixture/replay、Run/Stream parity、privacy/bounds 和双平台 gate 已完成首轮实现；live compatible endpoint checks 未执行，不作为本 change 的自动准入条件。
+归档 155（`openai-compatible-endpoint-profile-conformance`）已完成实现、归档并合并到主线；其官方 Responses API 兼容 endpoint profile、离线 conformance contract、capability 边界与回滚说明已纳入主线基线。
 
-验证记录：PowerShell profile/conformance gate、全量 quality gate、OpenSpec strict、Example Impact、roadmap/docs consistency 与 diff 检查均通过；本次收尾重跑 Git Bash shell 入口时遇到 Windows Git Bash signal-pipe `Win32 error 5` 环境启动失败，未归因于产品断言，之前同一 executable 入口已有离线 gate 通过记录。
-
-提案分支基线：`master@f9440a6`（已与 `origin/master` 同步）；当前 Provider remediation 提案从该基线切出。
+提案分支基线：`master@3c36e7f`（已与 `origin/master` 同步）；当前文档体系提案从该基线切出。
 
 状态权威来源：
 
@@ -68,6 +66,7 @@ Baymax 主线保持 `library-first + contract-first`：
 - 候选：
   当前无未启动候选；已撤回的 confirmed-drift 修复方向不计入候选，OpenAI-compatible endpoint profile conformance 已完成实施并等待归档。
 - 已归档：
+  - `layered-technical-documentation-and-drift-governance`（归档 156；中文为主的分层技术文档、README 导航、canonical source map、组件/指南页面，以及新提案 Documentation Impact Assessment 与双平台文档漂移门禁；不改变运行时行为、API contract、配置语义或 agent-mode 示例语义）。
   - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
 
 `harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。

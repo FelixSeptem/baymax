@@ -44,6 +44,10 @@ Invoke-NativeStrict -Label "[docs-consistency] openspec roadmap status consisten
     pwsh -File scripts/check-openspec-roadmap-status-consistency.ps1
 }
 
+Invoke-NativeStrict -Label "[docs-consistency] openspec documentation impact" -Command {
+    pwsh -File scripts/check-openspec-documentation-impact.ps1
+}
+
 $offlineCacheIssues = New-Object 'System.Collections.Generic.List[string]'
 $offlineTracked = @(Invoke-NativeCaptureStrict -Label "git ls-files -- examples/adapters/_a23-offline-work" -Command {
         git ls-files -- examples/adapters/_a23-offline-work

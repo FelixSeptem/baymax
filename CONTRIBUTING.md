@@ -63,6 +63,8 @@ DX D1 补充 `diagnostics-replay-gate`（replay 契约回归），建议同样�
 
 ## OpenSpec 提案要求
 
+每个新提案还必须在 `proposal.md`、`design.md`、`tasks.md` 中填写 Documentation Impact Assessment，逐项覆盖 architecture、components、configuration、contract/API、diagnostics、examples、CLI/integration、best practices、roadmap。每行必须选择 `新增文档`、`修改文档` 或带理由的 `无需文档变更（附理由）`，并在需要文档时写明 affected paths、owner 和 verification。门禁：`scripts/check-openspec-documentation-impact.sh` / `.ps1`。
+
 涉及运行时行为、配置语义、诊断 schema 或 contract 预期变化时，提案工件（`proposal.md`、`design.md`、`tasks.md`）必须包含 `example impact assessment` 声明，且值只能是以下三种之一：
 
 - `新增示例`

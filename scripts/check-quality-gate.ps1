@@ -4,6 +4,10 @@ $readinessGate = Join-Path $PSScriptRoot "check-tool-schema-projection-readiness
 if (Test-Path -LiteralPath $readinessGate) { & $readinessGate }
 . (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 
+Invoke-NativeStrict -Label "[quality-gate] openspec documentation impact" -Command {
+    pwsh -File (Join-Path $PSScriptRoot "check-openspec-documentation-impact.ps1")
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 

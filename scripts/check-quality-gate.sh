@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+echo "[quality-gate] openspec documentation impact"
+bash scripts/check-openspec-documentation-impact.sh
 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check-tool-schema-projection-readiness-contract.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -21,6 +21,7 @@ type Config struct {
 	APIKey     string
 	BaseURL    string
 	Model      string
+	Profile    *EndpointProfile
 	GenerateFn func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 	StreamFn   func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
 	DiscoverFn func(context.Context, string) (types.ProviderCapabilities, error)
@@ -29,6 +30,8 @@ type Config struct {
 type Client struct {
 	sdk         openai.Client
 	model       string
+	baseURL     string
+	profile     *EndpointProfile
 	generateFn  func(context.Context, types.ModelRequest) (types.ModelResponse, error)
 	streamFn    func(context.Context, types.ModelRequest, func(types.ModelEvent) error) error
 	discoverFn  func(context.Context, string) (types.ProviderCapabilities, error)
@@ -81,6 +84,8 @@ func NewClient(cfg Config) *Client {
 	client := &Client{
 		sdk:        sdkClient,
 		model:      model,
+		baseURL:    strings.TrimSpace(cfg.BaseURL),
+		profile:    cfg.Profile,
 		generateFn: cfg.GenerateFn,
 		streamFn:   cfg.StreamFn,
 		discoverFn: cfg.DiscoverFn,
@@ -122,13 +127,18 @@ func (c *Client) Generate(ctx context.Context, req types.ModelRequest) (types.Mo
 			TotalTokens:  int(resp.Usage.TotalTokens),
 		},
 	}
-	if cacheUsage, cacheErr := projectResponseCacheUsage(resp.Usage); cacheErr == nil {
-		response.CacheUsage = cacheUsage
+	if c.profile == nil || c.profile.Capability(EndpointCapabilityCacheUsage) == types.CapabilitySupportSupported {
+		if cacheUsage, cacheErr := projectResponseCacheUsage(resp.Usage); cacheErr == nil {
+			response.CacheUsage = cacheUsage
+		}
 	}
 	return response, nil
 }
 
 func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+	if err := c.validateProfile(req, true); err != nil {
+		return err
+	}
 	params, err := c.nativeRequestParams(req)
 	if err != nil {
 		return err
@@ -168,6 +178,11 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 		if len(mapped) > 0 {
 			streamStarted = true
 		}
+		if c.profile != nil && c.profile.Capability(EndpointCapabilityCacheUsage) != types.CapabilitySupportSupported {
+			for i := range mapped {
+				delete(mapped[i].Meta, "cache_usage")
+			}
+		}
 		if onEvent == nil {
 			continue
 		}
@@ -196,6 +211,9 @@ func (c *Client) Stream(ctx context.Context, req types.ModelRequest, onEvent fun
 }
 
 func (c *Client) DiscoverCapabilities(ctx context.Context, req types.ModelRequest) (types.ProviderCapabilities, error) {
+	if err := c.validateProfile(req, false); err != nil {
+		return types.ProviderCapabilities{}, err
+	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		model = c.model
@@ -215,6 +233,9 @@ func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, 
 // Responses API shape. Keeping this builder local prevents a shared provider
 // request protocol from leaking out of model/openai.
 func (c *Client) nativeRequestParams(req types.ModelRequest) (responses.ResponseNewParams, error) {
+	if err := c.validateProfile(req, false); err != nil {
+		return responses.ResponseNewParams{}, err
+	}
 	interpreted, err := toolcontract.InterpretRequest(req)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
@@ -237,10 +258,44 @@ func (c *Client) nativeRequestParams(req types.ModelRequest) (responses.Response
 	if len(items) == 0 {
 		return responses.ResponseNewParams{}, errors.New("model input is empty")
 	}
+	if c.profile != nil {
+		if c.profile.Capability(EndpointCapabilityStructuredInput) != types.CapabilitySupportSupported {
+			return responses.ResponseNewParams{}, profileError(ReasonProfileCapabilityUnsupported, "structured input is not declared supported")
+		}
+		if len(interpreted.ToolResults) > 0 && c.profile.Capability(EndpointCapabilityNativeToolResult) != types.CapabilitySupportSupported {
+			return responses.ResponseNewParams{}, profileError(ReasonProfileCapabilityUnsupported, "native tool results are not declared supported")
+		}
+	}
 	return responses.ResponseNewParams{
 		Model: c.model,
 		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: items},
 	}, nil
+}
+
+func (c *Client) validateProfile(req types.ModelRequest, streaming bool) error {
+	if c.profile == nil {
+		if c.baseURL != "" {
+			return profileError(ReasonProfileRequired, "custom BaseURL requires an explicit endpoint profile")
+		}
+		return nil
+	}
+	if err := c.profile.Validate(); err != nil {
+		return err
+	}
+	if c.baseURL == "" || normalizeProfileEndpoint(c.baseURL) != normalizeProfileEndpoint(c.profile.Endpoint) {
+		return profileError(ReasonProfileEndpointMismatch, "BaseURL and profile endpoint must match")
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.model
+	}
+	if model != strings.TrimSpace(c.profile.Model) {
+		return profileError(ReasonProfileModelMismatch, "request model %q does not match profile model", model)
+	}
+	if streaming && c.profile.Capability(EndpointCapabilityStreaming) != types.CapabilitySupportSupported {
+		return profileError(ReasonProfileCapabilityUnsupported, "streaming is not declared supported")
+	}
+	return nil
 }
 
 func openAIMessageRole(raw string) (responses.EasyInputMessageRole, error) {

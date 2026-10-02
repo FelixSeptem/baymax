@@ -1,0 +1,51 @@
+{
+  "version": "openai-compatible-endpoint-profile-conformance.v1",
+  "cases": [
+    {
+      "name": "official-openai-responses",
+      "profile_id": "official-openai",
+      "endpoint": "https://api.openai.com/v1",
+      "model": "gpt-4.1-mini",
+      "api_shape": "responses.v1",
+      "projection_case": "openai_run_stream_parity",
+      "projection_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
+      "capabilities": {
+        "structured_input": "supported",
+        "native_tool_result": "supported",
+        "streaming": "supported",
+        "cache_usage": "supported",
+        "count_tokens": "unsupported"
+      },
+      "roles": ["system", "user", "assistant"],
+      "tool_result_native": true,
+      "tool_result_correlated": true,
+      "stream_events": ["response.output_text.delta", "response.completed"],
+      "provider_switch_after_semantic_event": false,
+      "terminal_cache_usage": true,
+      "run_stream_parity": true
+    },
+    {
+      "name": "declared-qwen-compatible-responses",
+      "profile_id": "qwen-compatible",
+      "endpoint": "https://example.test/v1",
+      "model": "qwen-max",
+      "api_shape": "responses.v1",
+      "projection_case": "openai_run_stream_parity",
+      "projection_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
+      "capabilities": {
+        "structured_input": "supported",
+        "native_tool_result": "supported",
+        "streaming": "supported",
+        "cache_usage": "unknown",
+        "count_tokens": "unsupported"
+      },
+      "roles": ["system", "user", "assistant"],
+      "tool_result_native": true,
+      "tool_result_correlated": true,
+      "stream_events": ["response.output_text.delta", "response.completed"],
+      "provider_switch_after_semantic_event": false,
+      "terminal_cache_usage": false,
+      "run_stream_parity": true
+    }
+  ]
+}

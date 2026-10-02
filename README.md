@@ -17,6 +17,7 @@ Baymax 是一个 `library-first`、`contract-first` 的 Go Agent 运行时库，
 [介绍文章](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MjU2NTEzMg==&action=getalbum&album_id=4468952460832636934#wechat_redirect)
 
 当前里程碑快照（2026-10-01）：
+- `openai-compatible-endpoint-profile-conformance`（已归档为 155；官方 Responses API 与显式声明的兼容 endpoint profile 离线 conformance，不做自动探测）。
 - `establish-sandbox-lifecycle-success-cost-evidence`（已归档为 154；Sandbox 生命周期与单位成功任务成本的离线、bounded、privacy-safe evidence-first 基线、replay 与双平台 gate 已收口，不新增 executor、平台 driver、配置、诊断持久化或 session owner）。
 - `establish-model-route-intent-admission-evidence`（已归档为 153；显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）。
 - `establish-provider-context-cache-drift-admission-evidence`（已归档为 152；Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate 已收口；不修改 adapter、runtime 配置、价格模型或 cache 策略）。

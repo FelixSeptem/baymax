@@ -44,6 +44,16 @@ Runtime → Provider 方向与响应侧是同族合同：`model/toolcontract.Int
 - CountTokens 必须复用相同 canonical facts；Anthropic/Gemini 的 token API 使用其可表达的原生消息/contents，Gemini system instruction 仅在 token API 无独立字段时做有界 user-role capability projection；OpenAI 官方 SDK 当前没有 token count API，保留明确 unsupported capability，不伪造文本请求。
 - 门禁：`scripts/check-provider-request-projection-contract.sh` / `.ps1`。
 
+## OpenAI-compatible endpoint profile conformance
+
+`openai-compatible-endpoint-profile-conformance.v1` 是宿主显式声明的、离线可回放的 OpenAI Responses 兼容 profile。profile 必须绑定有界的 endpoint、model、`responses.v1` API shape 和独立 capability 声明；BaseURL 本身不会触发自动探测或兼容性推断。
+
+- fixture：`tool/diagnosticsreplay/testdata/openai_endpoint_profile_conformance.v1.json`，覆盖官方 OpenAI Responses profile 与一个显式声明的兼容 profile。
+- canonical facts：structured roles、native tool-result correlation、stream event boundary、terminal cache usage、Run/Stream parity 与首个语义 stream event 后的 provider fence。
+- 缺失或 `unknown` 的 cache usage、CountTokens、tool 或 stream capability 保持 unavailable/unknown，不从 HTTP 成功或未知字段伪造能力；OpenAI 官方 CountTokens 仍明确 unsupported。
+- profile conformance 只做 review-only 的 fixture/replay/gate，不调用网络、Provider、工具、RuntimeRecorder 或 credential store；shell/PowerShell 入口为 `scripts/check-openai-compatible-endpoint-profile.sh` / `.ps1`。
+- 回滚只移除 profile admission、conformance fixture、replay/gate 与文档；官方 OpenAI adapter、既有 BaseURL 行为、历史 `provider_request_projection.v1` fixture 和 CountTokens unsupported 语义保持不变。live compatible endpoint checks 当前未执行，需由宿主在具备 endpoint 和凭据的环境中单独验证。
+
 ## Provider Context/Cache Drift Admission Evidence
 
 `provider_context_cache_evidence.v1` 是独立于请求投影和运行时策略的、离线且

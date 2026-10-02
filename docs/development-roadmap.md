@@ -14,9 +14,16 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-- 进行中：无。
+- 进行中：
+  当前无仍在实施的 active change。
 
-提案分支基线：`master@1e968ca`（已与 `origin/master` 同步）；当前证据准入提案从该基线切出。
+待归档：`openai-compatible-endpoint-profile-conformance` 已完成实现与验证；以官方 OpenAI Responses API 和宿主显式声明的 OpenAI-compatible endpoint profile 为范围，完成离线 conformance contract、capability 边界与回滚说明，不做自动探测。归档前不再新增实现任务。
+
+实施记录：profile admission、capability validation、离线 fixture/replay、Run/Stream parity、privacy/bounds 和双平台 gate 已完成首轮实现；live compatible endpoint checks 未执行，不作为本 change 的自动准入条件。
+
+验证记录：PowerShell profile/conformance gate、全量 quality gate、OpenSpec strict、Example Impact、roadmap/docs consistency 与 diff 检查均通过；本次收尾重跑 Git Bash shell 入口时遇到 Windows Git Bash signal-pipe `Win32 error 5` 环境启动失败，未归因于产品断言，之前同一 executable 入口已有离线 gate 通过记录。
+
+提案分支基线：`master@f9440a6`（已与 `origin/master` 同步）；当前 Provider remediation 提案从该基线切出。
 
 状态权威来源：
 
@@ -59,7 +66,7 @@ Baymax 主线保持 `library-first + contract-first`：
   - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
   已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
 - 候选：
-  当前未归档且未启动的规范提案方向共 0 项（下文成熟度表是计数与触发条件的唯一来源）。
+  当前无未启动候选；已撤回的 confirmed-drift 修复方向不计入候选，OpenAI-compatible endpoint profile conformance 已完成实施并等待归档。
 - 已归档：
   - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
 
@@ -178,6 +185,15 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 ## 后续提案备选池（外部项目对照增量）
 
+### 候选列表维护规则
+
+- 本节是未启动提案候选的唯一维护列表；每个候选必须包含语义化 slug、触发信号、复用 owner、首阶段 DoD、非目标和回滚边界。
+- 候选只有在真实宿主需求、可复现风险或稳定成本/质量瓶颈出现后才能进入列表；外部项目经验只能作为吸收点，不能单独制造候选。
+- 起草 OpenSpec 后，候选必须从本节移到“当前状态”的“进行中”列表；`openspec list --json` 是活跃状态权威，roadmap 必须同步同名 slug。
+- 归档后，候选从“进行中”移入“已归档快照”，并从本节删除；放弃的候选必须记录放弃原因后删除，不得保留悬空条目。
+- 同一能力域只能保留一个候选；已有归档能力的后续需求必须引用原 owner 和新的触发证据，不得以近义名称重复排期。
+- 每次候选状态变化必须同步 `docs/development-roadmap.md`、`openspec list --json` 和归档索引（归档时），并执行 roadmap/doc consistency gate。
+
 备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
 ### AI Agent Book 实验方法校准（2026-10-01）
@@ -190,7 +206,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 - **受控候选改进**：候选补丁与可信根分离，必须经静态检查、隔离回放、反例回归、人工选择和回滚证据；模型不得批准自身生成的变更。复用 OpenSpec、review-only feedback、quality gate、sandbox 和 capability asset provenance/rollback owner，不实现自动自修改、自发布或模型自审批。
 - **可复现实验交付**：将环境与依赖锁定、外部依赖版本、成功/外部复现/未完成状态、fixture manifest、验证记录和 CI 影响范围明确分开；源码存在或安装成功不等于实验验收完成。复用现有 docs consistency、quality gate、contract/replay index 和 package-level test 纪律，不建设另一套实验平台或长期原始轨迹存储。
 
-本轮校准不新增、恢复或排序候选；截至本文件更新时间，未归档且未启动的规范提案方向仍为 0 项。
+本轮校准不新增其他候选；由于当前没有真实 confirmed drift，原 provider projection remediation 方向已撤回；OpenAI-compatible endpoint profile conformance 已完成实施并等待归档，未归档且未启动的规范提案方向为 0 项。
 
 ### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
 

@@ -68,3 +68,58 @@ func TestDynamicActionPausesBeforeNextModelStepAndResumesSameRun(t *testing.T) {
 		t.Fatalf("duplicate resume = %#v, err=%v", duplicate, err)
 	}
 }
+
+func TestDynamicActionResumeRejectsStaleCheckpoint(t *testing.T) {
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{name: "prepare", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{PendingAction: &types.DynamicActionReference{Token: "opaque-stale", Kind: "prepare", Resumable: true, RunID: "run-stale", SessionID: "session-stale", Iteration: 1, CallID: "call-stale", Source: "test", Digest: "digest-stale"}}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &fakeModel{generate: func(_ context.Context, _ types.ModelRequest) (types.ModelResponse, error) {
+		return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-stale", Name: "local.prepare"}}}, nil
+	}}
+	engine := New(model, WithLocalRegistry(reg))
+	paused, err := engine.Run(context.Background(), types.RunRequest{RunID: "run-stale", SessionID: "session-stale", Input: "x"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := paused.TerminalOutcome
+	_, err = engine.ResumeDynamicAction(context.Background(), types.DynamicActionDecision{Decision: types.DynamicActionDecisionConfirm, Token: "wrong", RunID: "run-stale", SessionID: "session-stale", CheckpointID: outcome.CheckpointID, CheckpointVersion: outcome.CheckpointVersion, CheckpointDigest: outcome.CheckpointDigest, IdempotencyKey: "stale-1"}, nil, false)
+	if err == nil || err != ErrDynamicActionStale {
+		t.Fatalf("stale resume err=%v, want %v", err, ErrDynamicActionStale)
+	}
+}
+
+func TestDynamicActionRunAndStreamPreserveInputRequiredParity(t *testing.T) {
+	makeEngine := func(stream bool) (*Engine, *int) {
+		reg := local.NewRegistry()
+		_, _ = reg.Register(&fakeTool{name: "prepare", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+			return types.ToolResult{PendingAction: &types.DynamicActionReference{Token: "opaque-parity", Kind: "prepare", Resumable: true, RunID: "run-parity", SessionID: "session-parity", Iteration: 1, CallID: "call-parity", Source: "test", Digest: "digest-parity"}}, nil
+		}})
+		calls := 0
+		model := &fakeModel{generate: func(_ context.Context, _ types.ModelRequest) (types.ModelResponse, error) {
+			calls++
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-parity", Name: "local.prepare"}}}, nil
+		}, stream: func(_ context.Context, _ types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			calls++
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{CallID: "call-parity", Name: "local.prepare"}})
+		}}
+		_ = stream
+		return New(model, WithLocalRegistry(reg)), &calls
+	}
+	runEngine, runCalls := makeEngine(false)
+	streamEngine, streamCalls := makeEngine(true)
+	run, runErr := runEngine.Run(context.Background(), types.RunRequest{RunID: "run-parity", SessionID: "session-parity", Input: "x"}, nil)
+	stream, streamErr := streamEngine.Stream(context.Background(), types.RunRequest{RunID: "run-parity", SessionID: "session-parity", Input: "x"}, nil)
+	if runErr != nil || streamErr != nil || run.TerminalOutcome == nil || stream.TerminalOutcome == nil {
+		t.Fatalf("run=%#v err=%v stream=%#v err=%v", run, runErr, stream, streamErr)
+	}
+	if run.TerminalOutcome.State != types.RunStateInputRequired || stream.TerminalOutcome.State != types.RunStateInputRequired {
+		t.Fatalf("run/stream states: %v/%v", run.TerminalOutcome.State, stream.TerminalOutcome.State)
+	}
+	if *runCalls != 1 || *streamCalls != 1 {
+		t.Fatalf("model calls run/stream=%d/%d", *runCalls, *streamCalls)
+	}
+}

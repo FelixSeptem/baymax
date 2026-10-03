@@ -35,6 +35,29 @@ func TestCallRecordToolLifecycleFieldsAreAdditiveAndBackwardCompatible(t *testin
 	}
 }
 
+func TestRunRecordDynamicActionFieldsAreAdditiveAndBounded(t *testing.T) {
+	legacy := []byte(`{"run_id":"legacy","status":"success"}`)
+	var oldRecord RunRecord
+	if err := json.Unmarshal(legacy, &oldRecord); err != nil {
+		t.Fatalf("unmarshal legacy run record: %v", err)
+	}
+	if oldRecord.DynamicActionCount != 0 || oldRecord.DynamicActionCheckpointID != "" {
+		t.Fatalf("legacy dynamic action defaults = %#v", oldRecord)
+	}
+	record := RunRecord{RunID: "run-dynamic", DynamicActionCount: 1, DynamicActionReferenceDigest: "digest-1", DynamicActionCheckpointID: "checkpoint-1", DynamicActionCheckpointVersion: "dynamic_action_resume.v1", DynamicActionCheckpointDigest: "digest-1", DynamicActionPauseReason: "dynamic_action.input_required_same_run", DynamicActionResumeAttempt: 1, DynamicActionResumeAdmission: "accepted"}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal dynamic action record: %v", err)
+	}
+	var decoded RunRecord
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal dynamic action record: %v", err)
+	}
+	if decoded.DynamicActionCount != 1 || decoded.DynamicActionCheckpointID != "checkpoint-1" || decoded.DynamicActionResumeAdmission != "accepted" {
+		t.Fatalf("dynamic action round trip = %#v", decoded)
+	}
+}
+
 func TestStoreQueryRunsFastTimeSortedLockedMatchesPublicSemantics(t *testing.T) {
 	d := NewStore(16, 16, 8, 20, TimelineTrendConfig{}, ContextStage2ExternalTrendConfig{})
 	base := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)

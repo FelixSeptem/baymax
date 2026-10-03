@@ -98,7 +98,11 @@ func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest
 		RunID: ref.RunID, SessionID: ref.SessionID, State: types.RunStateInputRequired, FailureFamily: types.FailureFamilyNone, Phase: types.ExecutionPhasePostStart, Resumable: true,
 		PendingAction: &ref, CheckpointID: checkpoint.CheckpointID, CheckpointVersion: checkpoint.Version, CheckpointDigest: checkpoint.Digest,
 	}}
-	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: ref.RunID, Iteration: iteration, Time: e.now(), Payload: runFinishedPayload(result, "input_required", "", runFinishMeta{GateChecks: gateStatsValue(gateStats)})})
+	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: ref.RunID, Iteration: iteration, Time: e.now(), Payload: runFinishedPayload(result, "input_required", "", runFinishMeta{
+		GateChecks: gateStatsValue(gateStats), DynamicActionCount: 1, DynamicActionReferenceDigest: ref.Digest,
+		DynamicActionCheckpointID: checkpoint.CheckpointID, DynamicActionCheckpointVersion: checkpoint.Version,
+		DynamicActionCheckpointDigest: checkpoint.Digest, DynamicActionPauseReason: "dynamic_action.input_required_same_run",
+	})})
 	return result
 }
 

@@ -416,6 +416,14 @@ type RunRecord struct {
 	GateTimeoutCount                            int                               `json:"gate_timeout_count,omitempty"`
 	GateRuleHitCount                            int                               `json:"gate_rule_hit_count,omitempty"`
 	GateRuleLastID                              string                            `json:"gate_rule_last_id,omitempty"`
+	DynamicActionCount                          int                               `json:"dynamic_action_count,omitempty"`
+	DynamicActionReferenceDigest                string                            `json:"dynamic_action_reference_digest,omitempty"`
+	DynamicActionCheckpointID                   string                            `json:"dynamic_action_checkpoint_id,omitempty"`
+	DynamicActionCheckpointVersion              string                            `json:"dynamic_action_checkpoint_version,omitempty"`
+	DynamicActionCheckpointDigest               string                            `json:"dynamic_action_checkpoint_digest,omitempty"`
+	DynamicActionPauseReason                    string                            `json:"dynamic_action_pause_reason,omitempty"`
+	DynamicActionResumeAttempt                  int                               `json:"dynamic_action_resume_attempt,omitempty"`
+	DynamicActionResumeAdmission                string                            `json:"dynamic_action_resume_admission,omitempty"`
 	AwaitCount                                  int                               `json:"await_count,omitempty"`
 	ResumeCount                                 int                               `json:"resume_count,omitempty"`
 	CancelByUserCount                           int                               `json:"cancel_by_user_count,omitempty"`

@@ -2966,6 +2966,14 @@ type runFinishMeta struct {
 	GateTimeout                       int
 	GateRuleHits                      int
 	GateRuleLast                      string
+	DynamicActionCount                int
+	DynamicActionReferenceDigest      string
+	DynamicActionCheckpointID         string
+	DynamicActionCheckpointVersion    string
+	DynamicActionCheckpointDigest     string
+	DynamicActionPauseReason          string
+	DynamicActionResumeAttempt        int
+	DynamicActionResumeAdmission      string
 	HitlAwait                         int
 	HitlResumed                       int
 	HitlCanceled                      int
@@ -3284,6 +3292,26 @@ func runFinishedPayload(result types.RunResult, status string, errClass string, 
 	payload["gate_timeout_count"] = meta.GateTimeout
 	payload["gate_rule_hit_count"] = meta.GateRuleHits
 	payload["gate_rule_last_id"] = meta.GateRuleLast
+	payload["dynamic_action_count"] = meta.DynamicActionCount
+	if meta.DynamicActionReferenceDigest != "" {
+		payload["dynamic_action_reference_digest"] = meta.DynamicActionReferenceDigest
+	}
+	if meta.DynamicActionCheckpointID != "" {
+		payload["dynamic_action_checkpoint_id"] = meta.DynamicActionCheckpointID
+	}
+	if meta.DynamicActionCheckpointVersion != "" {
+		payload["dynamic_action_checkpoint_version"] = meta.DynamicActionCheckpointVersion
+	}
+	if meta.DynamicActionCheckpointDigest != "" {
+		payload["dynamic_action_checkpoint_digest"] = meta.DynamicActionCheckpointDigest
+	}
+	if meta.DynamicActionPauseReason != "" {
+		payload["dynamic_action_pause_reason"] = meta.DynamicActionPauseReason
+	}
+	payload["dynamic_action_resume_attempt"] = meta.DynamicActionResumeAttempt
+	if meta.DynamicActionResumeAdmission != "" {
+		payload["dynamic_action_resume_admission"] = meta.DynamicActionResumeAdmission
+	}
 	payload["await_count"] = meta.HitlAwait
 	payload["resume_count"] = meta.HitlResumed
 	payload["cancel_by_user_count"] = meta.HitlCanceled

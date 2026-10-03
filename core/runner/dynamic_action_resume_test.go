@@ -43,6 +43,10 @@ func TestDynamicActionPausesBeforeNextModelStepAndResumesSameRun(t *testing.T) {
 	if modelCalls != 1 || toolCalls != 1 {
 		t.Fatalf("calls after pause model=%d tool=%d", modelCalls, toolCalls)
 	}
+	// The pause projection is additive and contains only bounded references.
+	if first.TerminalOutcome.PendingAction == nil {
+		t.Fatalf("pending action projection missing: %#v", first.TerminalOutcome.PendingAction)
+	}
 	if _, ok := engine.ActiveRun("run-dynamic-1"); !ok {
 		t.Fatal("paused run control was not retained")
 	}

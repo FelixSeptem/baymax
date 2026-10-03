@@ -103,11 +103,17 @@ func TestDynamicActionRunAndStreamPreserveInputRequiredParity(t *testing.T) {
 			return types.ToolResult{PendingAction: &types.DynamicActionReference{Token: "opaque-parity", Kind: "prepare", Resumable: true, RunID: "run-parity", SessionID: "session-parity", Iteration: 1, CallID: "call-parity", Source: "test", Digest: "digest-parity"}}, nil
 		}})
 		calls := 0
-		model := &fakeModel{generate: func(_ context.Context, _ types.ModelRequest) (types.ModelResponse, error) {
+		model := &fakeModel{generate: func(_ context.Context, req types.ModelRequest) (types.ModelResponse, error) {
 			calls++
+			if len(req.ToolResult) > 0 {
+				return types.ModelResponse{FinalAnswer: "confirmed"}, nil
+			}
 			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-parity", Name: "local.prepare"}}}, nil
-		}, stream: func(_ context.Context, _ types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+		}, stream: func(_ context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
 			calls++
+			if len(req.ToolResult) > 0 {
+				return onEvent(types.ModelEvent{Type: types.ModelEventTypeFinalAnswer, TextDelta: "confirmed"})
+			}
 			return onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{CallID: "call-parity", Name: "local.prepare"}})
 		}}
 		_ = stream
@@ -125,5 +131,9 @@ func TestDynamicActionRunAndStreamPreserveInputRequiredParity(t *testing.T) {
 	}
 	if *runCalls != 1 || *streamCalls != 1 {
 		t.Fatalf("model calls run/stream=%d/%d", *runCalls, *streamCalls)
+	}
+	streamResumed, err := streamEngine.ResumeDynamicAction(context.Background(), types.DynamicActionDecision{Decision: types.DynamicActionDecisionConfirm, Token: "opaque-parity", RunID: "run-parity", SessionID: "session-parity", CheckpointID: stream.TerminalOutcome.CheckpointID, CheckpointVersion: stream.TerminalOutcome.CheckpointVersion, CheckpointDigest: stream.TerminalOutcome.CheckpointDigest, IdempotencyKey: "parity-confirm"}, nil, true)
+	if err != nil || streamResumed.FinalAnswer != "confirmed" {
+		t.Fatalf("stream resume = %#v, err=%v", streamResumed, err)
 	}
 }

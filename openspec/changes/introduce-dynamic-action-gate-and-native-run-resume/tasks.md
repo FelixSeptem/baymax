@@ -1,13 +1,13 @@
 ## 1. Dynamic action contract
 
-- [ ] 1.1 Add additive `PendingActionReference`/dynamic registration types with bounded token, action kind, resumability, Run/iteration/tool correlation, validation, and JSON round-trip tests; verify malformed, oversized, and legacy-absent values are rejected or defaulted deterministically.
-- [ ] 1.2 Extend tool result/dispatcher plumbing to carry an optional dynamic action registration without changing existing tool behavior; verify existing local tool and adapter conformance tests remain green when the field is absent.
+- [x] 1.1 Add additive `PendingActionReference`/dynamic registration types with bounded token, action kind, resumability, Run/iteration/tool correlation, validation, and JSON round-trip tests; verify malformed, oversized, and legacy-absent values are rejected or defaulted deterministically. Evidence: `core/types/dynamic_action_resume.go`, `core/types/dynamic_action_resume_test.go`, focused and full `core/types` tests.
+- [x] 1.2 Extend tool result/dispatcher plumbing to carry an optional dynamic action registration without changing existing tool behavior; verify existing local tool and adapter conformance tests remain green when the field is absent. Evidence: additive `ToolResult.PendingAction`, full `core/runner` regression suite and focused local dispatch coverage.
 - [ ] 1.3 Define source-owned checkpoint and resume interfaces with version, digest, bounded metadata, idempotency identity, and explicit durability capability; verify duplicate and conflicting checkpoint operations are deterministic.
 
 ## 2. Runner pause and same-Run resume
 
-- [ ] 2.1 Normalize dynamic registrations after tool dispatch and evaluate their Action Gate decision before the next model step; verify a valid `require_confirm` registration pauses execution and suppresses subsequent model/executor calls.
-- [ ] 2.2 Project a dynamic pause as `input_required` while preserving Run/session/iteration/tool correlation and additive gate/checkpoint diagnostics; verify the terminal/runtime projection does not report `completed` for a paused Run.
+- [x] 2.1 Normalize dynamic registrations after tool dispatch and evaluate their Action Gate decision before the next model step; verify a valid resumable registration pauses execution and suppresses subsequent model/executor calls. Evidence: `core/runner/dynamic_action_resume.go` and `TestDynamicActionPausesBeforeNextModelStepAndResumesSameRun`.
+- [x] 2.2 Project a dynamic pause as `input_required` while preserving Run/session/iteration/tool correlation and additive gate/checkpoint diagnostics; verify the terminal/runtime projection does not report `completed` for a paused Run. Evidence: `TerminalOutcome` projection and the same Runner test.
 - [ ] 2.3 Implement same-Run checkpoint restore for Run and Stream, including tool-result references and iteration boundary; verify confirmation resumes the original `run_id` exactly once without re-executing completed tools.
 - [ ] 2.4 Implement fail-closed resume validation for missing, stale, expired, mismatched, conflicting, duplicate, and terminal checkpoints; verify no provider, tool, executor, or terminal mutation occurs on rejection.
 

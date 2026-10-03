@@ -28,3 +28,17 @@
 
 - [ ] 5.1 Run affected package tests, integration contract/replay tests, and race tests for dynamic action pause/resume; verify Run/Stream parity and legacy behavior.
 - [ ] 5.2 Run `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, `pwsh -File scripts/check-docs-consistency.ps1`, and `openspec validate --all`; record any unrelated pre-existing agent-mode gate failures explicitly.
+
+## Documentation Impact Assessment
+
+| Area | Outcome | Affected paths | Owner | Verification |
+| --- | --- | --- | --- | --- |
+| architecture | 修改文档 | `docs/runtime-module-boundaries.md` | core/runtime maintainers | docs consistency |
+| components | 新增文档 | `examples/dynamic-action-resume/README.md` | runner/adapter owners | example smoke run |
+| configuration | 无需文档变更（附理由） | — | runtime/config | no new keys |
+| contract/API | 修改文档 | `docs/mainline-contract-test-index.md` | contract owners | focused tests |
+| diagnostics | 修改文档 | `docs/runtime-config-diagnostics.md` | observability owners | diagnostics tests |
+| examples | 新增文档 | `examples/dynamic-action-resume` | example owners | `go run` |
+| CLI/integration | 修改文档 | host action-resume contract | host owners | host tests |
+| best practices | 修改文档 | runtime boundary docs | maintainer | docs gate |
+| roadmap | 修改文档 | `docs/development-roadmap.md` | release owner | roadmap parity |

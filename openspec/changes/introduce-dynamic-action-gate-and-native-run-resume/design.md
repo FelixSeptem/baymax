@@ -99,3 +99,17 @@ New diagnostics fields are nullable/defaultable and written through `RuntimeReco
 ## Example Impact Assessment
 
 新增示例
+
+## Documentation Impact Assessment
+
+| Area | Outcome | Affected paths | Owner | Verification |
+| --- | --- | --- | --- | --- |
+| architecture | 修改文档 | `docs/runtime-module-boundaries.md` | core/runtime maintainers | docs consistency |
+| components | 新增文档 | `examples/dynamic-action-resume/README.md` | runner/adapter owners | example smoke run |
+| configuration | 无需文档变更（附理由） | — | runtime/config | no configuration change |
+| contract/API | 修改文档 | `docs/mainline-contract-test-index.md` | contract owners | focused tests |
+| diagnostics | 修改文档 | `docs/runtime-config-diagnostics.md` | observability owners | diagnostics tests |
+| examples | 新增文档 | `examples/dynamic-action-resume` | example owners | `go run` |
+| CLI/integration | 修改文档 | host action-resume contract | host owners | host tests |
+| best practices | 修改文档 | runtime boundary docs | maintainer | docs gate |
+| roadmap | 修改文档 | `docs/development-roadmap.md` | release owner | roadmap parity |

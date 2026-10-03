@@ -31,3 +31,17 @@ Application adapters can already identify an unconfirmed `PendingAction`, preven
 - Affected integrations: Application/REST/MCP adapters can bridge their PendingAction through an opaque token without moving business state into Baymax.
 - Persistence/dependencies: no provider SDK or hosted control plane; checkpoint storage is an injected bounded source-owned dependency and must not become a business action store.
 - Example Impact Assessment: 新增示例。
+
+## Documentation Impact Assessment
+
+| Area | Outcome | Affected paths | Owner | Verification |
+| --- | --- | --- | --- | --- |
+| architecture | 修改文档 | `docs/runtime-module-boundaries.md` | core/runtime maintainers | docs consistency |
+| components | 新增文档 | `examples/dynamic-action-resume/README.md` | runner/adapter owners | example smoke run |
+| configuration | 无需文档变更（附理由） | — | runtime/config | no new keys |
+| contract/API | 修改文档 | `docs/mainline-contract-test-index.md` | contract owners | focused tests |
+| diagnostics | 修改文档 | `docs/runtime-config-diagnostics.md` | observability owners | diagnostics tests |
+| examples | 新增文档 | `examples/dynamic-action-resume` | example owners | `go run` |
+| CLI/integration | 修改文档 | host action-resume contract | host owners | host tests |
+| best practices | 修改文档 | runtime boundary docs | maintainer | docs gate |
+| roadmap | 修改文档 | `docs/development-roadmap.md` | release owner | roadmap parity |

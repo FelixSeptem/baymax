@@ -46,6 +46,12 @@ type TerminalOutcome struct {
 	Attempt       int            `json:"attempt,omitempty"`
 	AttemptLimit  int            `json:"attempt_limit,omitempty"`
 	CausationID   string         `json:"causation_id,omitempty"`
+	// PendingAction and checkpoint fields are bounded runner-owned references.
+	// The application action payload is intentionally not represented here.
+	PendingAction     *DynamicActionReference `json:"pending_action,omitempty"`
+	CheckpointID      string                  `json:"checkpoint_id,omitempty"`
+	CheckpointVersion string                  `json:"checkpoint_version,omitempty"`
+	CheckpointDigest  string                  `json:"checkpoint_digest,omitempty"`
 }
 
 // TerminalOutcomeFromRunResult derives a normalized projection from the
@@ -178,7 +184,7 @@ func (o TerminalOutcome) Validate() error {
 	if strings.TrimSpace(o.RunID) == "" {
 		return fmt.Errorf("terminal_outcome run_id is required")
 	}
-	if o.State != RunStateCompleted && o.State != RunStateFailed && o.State != RunStateCanceled {
+	if o.State != RunStateCompleted && o.State != RunStateFailed && o.State != RunStateCanceled && o.State != RunStateInputRequired {
 		return fmt.Errorf("terminal_outcome state %q is not terminal", o.State)
 	}
 	switch o.FailureFamily {
@@ -191,8 +197,22 @@ func (o TerminalOutcome) Validate() error {
 	if o.Phase != ExecutionPhasePreExecution && o.Phase != ExecutionPhasePostStart {
 		return fmt.Errorf("terminal_outcome phase %q is unsupported", o.Phase)
 	}
-	if o.State == RunStateCompleted && o.FailureFamily != FailureFamilyNone {
+	if (o.State == RunStateCompleted || o.State == RunStateInputRequired) && o.FailureFamily != FailureFamilyNone {
 		return fmt.Errorf("terminal_outcome completed state requires failure_family none")
+	}
+	if o.State == RunStateInputRequired {
+		if !o.Resumable {
+			return fmt.Errorf("terminal_outcome input_required state requires resumable=true")
+		}
+		if o.Phase != ExecutionPhasePostStart {
+			return fmt.Errorf("terminal_outcome input_required state requires post_start phase")
+		}
+		if o.PendingAction == nil {
+			return fmt.Errorf("terminal_outcome input_required state requires pending_action")
+		}
+		if err := o.PendingAction.Validate(); err != nil {
+			return fmt.Errorf("validate pending_action: %w", err)
+		}
 	}
 	if o.State == RunStateCanceled && o.FailureFamily != FailureFamilyCanceled {
 		return fmt.Errorf("terminal_outcome canceled state requires failure_family canceled")

@@ -74,6 +74,8 @@ type Engine struct {
 	handoffRestoreMu    sync.Mutex
 	handoffRestored     map[string]handoff.RestoreResult
 	activeRunState
+	dynamicActionMu    sync.Mutex
+	dynamicCheckpoints map[string]dynamicActionCheckpoint
 }
 
 type cachedCapabilities struct {
@@ -98,15 +100,16 @@ type classifiedModelError interface {
 // New creates a runner engine with default tracer and context assembler wiring.
 func New(model types.ModelClient, opts ...Option) *Engine {
 	e := &Engine{
-		model:             model,
-		models:            map[string]types.ModelClient{},
-		tracer:            obsTrace.NewManager("baymax/core/runner"),
-		now:               time.Now,
-		capCache:          map[string]cachedCapabilities{},
-		realtimeCursors:   map[string]realtimeCursorRecord{},
-		handoffBoundaries: map[string]handoffBoundary{},
-		handoffRestored:   map[string]handoff.RestoreResult{},
-		activeRunState:    activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunLimit: 128, activeRunIngressBuffer: 16},
+		model:              model,
+		models:             map[string]types.ModelClient{},
+		tracer:             obsTrace.NewManager("baymax/core/runner"),
+		now:                time.Now,
+		capCache:           map[string]cachedCapabilities{},
+		realtimeCursors:    map[string]realtimeCursorRecord{},
+		handoffBoundaries:  map[string]handoffBoundary{},
+		handoffRestored:    map[string]handoff.RestoreResult{},
+		dynamicCheckpoints: map[string]dynamicActionCheckpoint{},
+		activeRunState:     activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunControl: true, activeRunLimit: 128, activeRunIngressBuffer: 16},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},
@@ -328,7 +331,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 		return e.activeRunFailure(runID, controlErr)
 	}
 	ctx = controlledCtx
-	defer e.finishActiveRun(control)
+	defer func() {
+		if control == nil || !control.dynamicActionPaused() {
+			e.finishActiveRun(control)
+		}
+	}()
 	defer e.releaseContextAssemblerRunState(runID)
 
 	start := e.now()
@@ -340,6 +347,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	warnings := make([]string, 0)
 	mergedCalls := make([]types.ToolCallSummary, 0)
 	pendingOutcomes := make([]types.ToolCallOutcome, 0)
+	if resumed, ok := ctx.Value(dynamicPendingOutcomesKey{}).([]types.ToolCallOutcome); ok {
+		pendingOutcomes = append(pendingOutcomes, resumed...)
+	}
 	lastSelection := stepModelSelection{}
 	selectionPath := make([]string, 0, 4)
 	fallbackUsed := false
@@ -701,6 +711,15 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			if !dispatchResult.Dispatched {
 				state = StateModelStep
 				continue
+			}
+			if ref, pause, actionErr := e.dynamicActionFromOutcomes(dispatchResult.Outcomes, runID, req.SessionID, iteration); actionErr != nil {
+				terminal = classified(types.ErrTool, actionErr.Error(), false)
+				runErr = actionErr
+				state = StateAbort
+				continue
+			} else if pause {
+				result := e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, false, &timelineSeq, &gateStats)
+				return result, nil
 			}
 			hookTerminal, hookErr = e.runLifecycleHooks(
 				ctx,
@@ -1508,7 +1527,11 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		return e.activeRunFailure(runID, controlErr)
 	}
 	ctx = controlledCtx
-	defer e.finishActiveRun(control)
+	defer func() {
+		if control == nil || !control.dynamicActionPaused() {
+			e.finishActiveRun(control)
+		}
+	}()
 	defer e.releaseContextAssemblerRunState(runID)
 	start := e.now()
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
@@ -1521,6 +1544,9 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	warnings := make([]string, 0)
 	mergedCalls := make([]types.ToolCallSummary, 0)
 	pendingOutcomes := make([]types.ToolCallOutcome, 0)
+	if resumed, ok := ctx.Value(dynamicPendingOutcomesKey{}).([]types.ToolCallOutcome); ok {
+		pendingOutcomes = append(pendingOutcomes, resumed...)
+	}
 	lastSelection := stepModelSelection{}
 	lastAssemble := types.ContextAssembleResult{}
 	selectionPath := make([]string, 0, 4)
@@ -1972,6 +1998,14 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			terminal = dispatchTerminal
 			runErr = dispatchErr
 			break
+		}
+		if ref, pause, actionErr := e.dynamicActionFromOutcomes(dispatchResult.Outcomes, runID, req.SessionID, iteration); actionErr != nil {
+			terminal = classified(types.ErrTool, actionErr.Error(), false)
+			runErr = actionErr
+			break
+		} else if pause {
+			result := e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, true, &timelineSeq, &gateStats)
+			return result, nil
 		}
 		hookTerminal, hookErr = e.runLifecycleHooks(
 			ctx,

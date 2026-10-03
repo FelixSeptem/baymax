@@ -767,6 +767,9 @@ type ToolResult struct {
 	Content    string           `json:"content,omitempty"`
 	Structured map[string]any   `json:"structured,omitempty"`
 	Error      *ClassifiedError `json:"error,omitempty"`
+	// PendingAction is an additive opaque registration. The Runner owns only
+	// bounded correlation metadata; application action payload remains source-owned.
+	PendingAction *DynamicActionReference `json:"pending_action,omitempty"`
 }
 
 type ToolCall struct {

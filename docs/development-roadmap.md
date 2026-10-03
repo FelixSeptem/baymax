@@ -14,8 +14,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-- 进行中：
-  当前无 active OpenSpec change。
+当前无进行中的 OpenSpec change。`introduce-dynamic-action-gate-and-native-run-resume` 已完成实现、验证与文档收口，待使用归档脚本归档并更新归档索引。
 
 当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
 

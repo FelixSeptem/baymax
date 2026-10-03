@@ -42,6 +42,13 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 ## 索引
 
+### Dynamic action pause/resume（当前 change）
+
+- Owner：`core/runner` 拥有 Runner pause/checkpoint/resume correlation；Application/adapter 拥有 PendingAction payload、授权和 executor；`host` 只拥有 command admission。
+- Contract：`dynamic_action_resume.v1`；Run/Stream 在同一 `run_id` 上保持语义等价，拒绝 stale/mismatch/terminal resume，重复 idempotency key 不重复执行。
+- Focused tests：`core/types/dynamic_action_resume_test.go`、`core/runner/dynamic_action_resume_test.go`、`runtime/diagnostics/store_test.go::TestRunRecordDynamicActionFieldsAreAdditiveAndBounded`、`tool/diagnosticsreplay/dynamic_action_resume_test.go`。
+- Example：`examples/dynamic-action-resume`；只输出 opaque token/checkpoint facts，不输出业务 PendingAction body。
+
 | 主干流程| 正向场景 | 异常/降级场景 |
 | ---| --- | --- |
 | Runtime Failure Taxonomy / Terminal Outcome| `core/types/terminal_outcome_test.go::TestTerminalOutcomeValidateAcceptsCompletedSuccess`、`core/runner/runner_test.go::TestRunNormalCompletionAndEvents`、`observability/event/runtime_recorder_test.go::TestRuntimeRecorderParsesAdditiveTerminalOutcomeProjection` | `core/runner/runner_test.go::TestStreamFailFastWithErrModel`、`model/openai/client_test.go::TestStreamClassifiesPreAndPostStartDecoderErrors`、`core/types/terminal_outcome_test.go::TestTerminalOutcomeArbiterFirstTerminalWinsAndRecordsConflict` |

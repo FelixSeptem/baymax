@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-02 17:47:05
+Updated: 2026-10-03 12:08:11
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -159,3 +159,4 @@ Updated: 2026-10-02 17:47:05
 - 155 -> add-explicit-model-capability-adapter
 - 156 -> layered-technical-documentation-and-drift-governance
 - 157 -> openai-compatible-endpoint-profile-conformance
+- 158 -> introduce-dynamic-action-gate-and-native-run-resume

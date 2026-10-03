@@ -10,6 +10,8 @@
 
 ## 配置优先级
 
+Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`dynamic_action_count`、`dynamic_action_reference_digest`、`dynamic_action_checkpoint_id`、`dynamic_action_checkpoint_version`、`dynamic_action_checkpoint_digest`、`dynamic_action_pause_reason`、`dynamic_action_resume_attempt` 和 `dynamic_action_resume_admission`。这些字段只记录 opaque reference/checkpoint facts，不写入 PendingAction 业务正文；写入仍必须经过 `observability/event.RuntimeRecorder`。
+
 固定优先级：`env > file > default`
 
 - `default`：由 `runtime/config.DefaultConfig()` 提供。

@@ -1,0 +1,12 @@
+{
+  "version": "dynamic_action_resume.v1",
+  "cases": [
+    {"case_id":"pause-run","run_id":"run-1","mode":"run","outcome":"pause","token_digest":"opaque-token-1","checkpoint_digest":"checkpoint-1","idempotency_key":"idem-1","expected_admission":"input_required"},
+    {"case_id":"pause-stream","run_id":"run-2","mode":"stream","outcome":"pause","token_digest":"opaque-token-2","checkpoint_digest":"checkpoint-2","idempotency_key":"idem-2","expected_admission":"input_required"},
+    {"case_id":"confirm","run_id":"run-1","mode":"run","outcome":"confirm","token_digest":"opaque-token-1","checkpoint_digest":"checkpoint-1","idempotency_key":"idem-1","expected_admission":"accepted"},
+    {"case_id":"deny","run_id":"run-3","mode":"run","outcome":"deny","token_digest":"opaque-token-3","checkpoint_digest":"checkpoint-3","idempotency_key":"idem-3","expected_admission":"accepted"},
+    {"case_id":"duplicate","run_id":"run-1","mode":"run","outcome":"duplicate","token_digest":"opaque-token-1","checkpoint_digest":"checkpoint-1","idempotency_key":"idem-1","expected_admission":"duplicate"},
+    {"case_id":"stale","run_id":"run-4","mode":"run","outcome":"stale","token_digest":"opaque-token-4","checkpoint_digest":"checkpoint-4","idempotency_key":"idem-4","expected_admission":"rejected"},
+    {"case_id":"terminal-race","run_id":"run-5","mode":"stream","outcome":"terminal","token_digest":"opaque-token-5","checkpoint_digest":"checkpoint-5","idempotency_key":"idem-5","expected_admission":"rejected"}
+  ]
+}

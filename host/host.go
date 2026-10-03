@@ -504,6 +504,8 @@ func (c *Connection) HandleCommand(ctx context.Context, cmd types.HostCommandEnv
 		response, after, abandon, err = c.startRun(ctx, cmd)
 	case types.HostCommandKindAction:
 		response, err = c.executeAction(ctx, cmd)
+	case types.HostCommandKindActionResume:
+		response, err = c.resumeDynamicAction(ctx, cmd)
 	case types.HostCommandKindRealtimeInterrupt, types.HostCommandKindRealtimeResume:
 		response, err = c.ingestRealtime(ctx, cmd)
 	case types.HostCommandKindSteering, types.HostCommandKindFollowUp:

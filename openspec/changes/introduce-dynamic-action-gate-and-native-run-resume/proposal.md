@@ -32,6 +32,10 @@ Application adapters can already identify an unconfirmed `PendingAction`, preven
 - Persistence/dependencies: no provider SDK or hosted control plane; checkpoint storage is an injected bounded source-owned dependency and must not become a business action store.
 - Example Impact Assessment: 新增示例。
 
+## Example Impact Assessment
+
+新增示例
+
 ## Documentation Impact Assessment
 
 | Area | Outcome | Affected paths | Owner | Verification |

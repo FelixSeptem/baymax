@@ -29,6 +29,10 @@
 - [ ] 5.1 Run affected package tests, integration contract/replay tests, and race tests for dynamic action pause/resume; verify Run/Stream parity and legacy behavior.
 - [ ] 5.2 Run `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `pwsh -File scripts/check-quality-gate.ps1`, `pwsh -File scripts/check-docs-consistency.ps1`, and `openspec validate --all`; record any unrelated pre-existing agent-mode gate failures explicitly.
 
+## Example Impact Assessment
+
+新增示例
+
 ## Documentation Impact Assessment
 
 | Area | Outcome | Affected paths | Owner | Verification |

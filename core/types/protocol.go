@@ -805,6 +805,52 @@ func ValidateRunStateTransition(from, to RunState) error {
 	return protocolValidationError("invalid run state transition %q -> %q", from, to)
 }
 
+// DynamicActionResumePath identifies the only protocol path that may restore
+// a paused same-Run input_required execution.
+const DynamicActionResumePath = "dynamic-resume"
+
+// ValidateDynamicActionRunStateTransition validates the dynamic action
+// boundary independently from the legacy generic transition helper. Generic
+// input_required transitions remain available to existing protocol owners;
+// same-Run restoration must opt into this explicit path.
+func ValidateDynamicActionRunStateTransition(from, to RunState) error {
+	if !isValidRunState(from) || !isValidRunState(to) {
+		return protocolValidationError("unsupported dynamic action run state transition %q -> %q", from, to)
+	}
+	switch {
+	case from == RunStateWorking && to == RunStateInputRequired:
+		return nil
+	case from == RunStateInputRequired && to == RunStateWorking:
+		return nil
+	default:
+		return protocolValidationError("invalid dynamic action run state transition %q -> %q", from, to)
+	}
+}
+
+// ValidateRunStateTransitionVia applies the regular protocol transition rules
+// except that input_required -> working is reserved for dynamic-resume.
+func ValidateRunStateTransitionVia(from, to RunState, path string) error {
+	if from == RunStateInputRequired && to == RunStateWorking {
+		if strings.TrimSpace(path) != DynamicActionResumePath {
+			return protocolValidationError("input_required -> working requires %q path", DynamicActionResumePath)
+		}
+		return ValidateDynamicActionRunStateTransition(from, to)
+	}
+	return ValidateRunStateTransition(from, to)
+}
+
+// ValidateDynamicActionResumeState rejects terminal source Runs and all
+// non-input_required states as resume targets.
+func ValidateDynamicActionResumeState(state RunState) error {
+	if state == RunStateCompleted || state == RunStateFailed || state == RunStateCanceled {
+		return protocolValidationError("dynamic action resume is not allowed from terminal state %q", state)
+	}
+	if state != RunStateInputRequired {
+		return protocolValidationError("dynamic action resume requires input_required state, got %q", state)
+	}
+	return nil
+}
+
 // NewRetryRunRef creates a new submitted run causally linked to a terminal,
 // non-successful source run. The source RunRef is never mutated.
 func NewRetryRunRef(previous RunRef, retryRunID string) (RunRef, error) {

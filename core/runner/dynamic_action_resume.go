@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -14,8 +15,11 @@ var (
 	ErrDynamicActionStale        = errors.New("dynamic action checkpoint is stale")
 	ErrDynamicActionConflict     = errors.New("dynamic action resume conflicts with an existing admission")
 	ErrDynamicActionTerminal     = errors.New("dynamic action checkpoint belongs to a terminal run")
+	ErrDynamicActionExpired      = errors.New("dynamic action checkpoint has expired")
 	ErrDynamicActionNotResumable = errors.New("dynamic action is not resumable")
 )
+
+const dynamicActionCheckpointMaxAge = 24 * time.Hour
 
 type dynamicActionCheckpoint struct {
 	checkpoint types.RunCheckpoint
@@ -74,7 +78,7 @@ func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest
 		CheckpointID: fmt.Sprintf("%s:%s", ref.RunID, ref.CallID),
 		RunID:        ref.RunID, SessionID: ref.SessionID, State: types.RunStateInputRequired,
 		Mode: map[bool]string{true: "stream", false: "run"}[stream], Iteration: iteration,
-		PendingAction: &ref, Digest: ref.Digest,
+		PendingAction: &ref, Digest: ref.Digest, CreatedAt: e.now().UTC(),
 	}
 	if err := checkpoint.Validate(); err != nil {
 		return types.RunResult{RunID: ref.RunID, Iterations: iteration, Error: classified(types.ErrTool, err.Error(), false)}
@@ -138,6 +142,15 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 		e.dynamicActionMu.Unlock()
 		return types.RunResult{}, ErrDynamicActionUnknown
 	}
+	if cp.resumed && cp.decision.IdempotencyKey == decision.IdempotencyKey && cp.decision.Decision == decision.Decision {
+		result := cp.result
+		e.dynamicActionMu.Unlock()
+		return result, nil
+	}
+	if !cp.checkpoint.CreatedAt.IsZero() && e.now().UTC().Sub(cp.checkpoint.CreatedAt) > dynamicActionCheckpointMaxAge {
+		e.dynamicActionMu.Unlock()
+		return types.RunResult{}, ErrDynamicActionExpired
+	}
 	if cp.checkpoint.State != types.RunStateInputRequired {
 		e.dynamicActionMu.Unlock()
 		return types.RunResult{}, ErrDynamicActionTerminal
@@ -147,19 +160,16 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 		return types.RunResult{}, ErrDynamicActionStale
 	}
 	if cp.resumed {
-		if cp.decision.IdempotencyKey == decision.IdempotencyKey && cp.decision.Decision == decision.Decision {
-			result := cp.result
-			e.dynamicActionMu.Unlock()
-			return result, nil
-		}
 		e.dynamicActionMu.Unlock()
 		return types.RunResult{}, ErrDynamicActionConflict
 	}
 	cp.resumed, cp.decision = true, decision
 	if decision.Decision != types.DynamicActionDecisionConfirm {
-		cp.result = types.RunResult{RunID: cp.checkpoint.RunID, Iterations: cp.checkpoint.Iteration, TerminalOutcome: &types.TerminalOutcome{RunID: cp.checkpoint.RunID, SessionID: cp.checkpoint.SessionID, State: types.RunStateCanceled, FailureFamily: types.FailureFamilyCanceled, Phase: types.ExecutionPhasePostStart}}
+		cp.result = types.RunResult{RunID: cp.checkpoint.RunID, Iterations: cp.checkpoint.Iteration, TerminalOutcome: &types.TerminalOutcome{RunID: cp.checkpoint.RunID, SessionID: cp.checkpoint.SessionID, State: types.RunStateCanceled, FailureFamily: types.FailureFamilyCanceled, Phase: types.ExecutionPhasePostStart, SourceReason: string(decision.Decision)}}
+		cp.checkpoint.State = types.RunStateCanceled
 		e.dynamicCheckpoints[decision.RunID] = cp
 		e.dynamicActionMu.Unlock()
+		e.emitDynamicActionResolution(ctx, h, cp, decision)
 		if ctrl, exists := e.ActiveRun(decision.RunID); exists {
 			e.finishActiveRun(ctrl)
 		}
@@ -196,9 +206,27 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 	e.dynamicActionMu.Lock()
 	latest := e.dynamicCheckpoints[decision.RunID]
 	latest.result = cp.result
+	if cp.result.TerminalOutcome != nil {
+		latest.checkpoint.State = cp.result.TerminalOutcome.State
+	}
 	e.dynamicCheckpoints[decision.RunID] = latest
 	e.dynamicActionMu.Unlock()
 	return cp.result, nil
+}
+
+func (e *Engine) emitDynamicActionResolution(ctx context.Context, h types.EventHandler, cp dynamicActionCheckpoint, decision types.DynamicActionDecision) {
+	if h == nil {
+		return
+	}
+	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.dynamic_action.resolved", RunID: cp.checkpoint.RunID, Iteration: cp.checkpoint.Iteration, Time: e.now(), Payload: map[string]any{
+		"decision": string(decision.Decision), "checkpoint_id": cp.checkpoint.CheckpointID, "checkpoint_version": cp.checkpoint.Version,
+		"checkpoint_digest": cp.checkpoint.Digest, "dynamic_action_resume_attempt": 1, "dynamic_action_resume_admission": "accepted",
+	}})
+	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: cp.checkpoint.RunID, Iteration: cp.checkpoint.Iteration, Time: e.now(), Payload: map[string]any{
+		"state": string(types.RunStateCanceled), "reason_code": string(decision.Decision), "gate_checks": 1,
+		"dynamic_action_count": 1, "dynamic_action_checkpoint_id": cp.checkpoint.CheckpointID, "dynamic_action_checkpoint_version": cp.checkpoint.Version,
+		"dynamic_action_checkpoint_digest": cp.checkpoint.Digest, "dynamic_action_resume_attempt": 1, "dynamic_action_resume_admission": "accepted",
+	}})
 }
 
 func (e *Engine) runWithPending(ctx context.Context, req types.RunRequest, outcomes []types.ToolCallOutcome, h types.EventHandler) (types.RunResult, error) {

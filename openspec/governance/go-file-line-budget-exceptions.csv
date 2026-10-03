@@ -1,7 +1,7 @@
 path,owner,reason,expiry,baseline_lines,allow_growth
 core/runner/runner_test.go,core-runner,A63 staged split backlog,2026-09-30,6805,false
 runtime/config/config.go,runtime-config,eval and provider-model admission config additive fields; split backlog remains tracked,2026-12-31,6349,true
-core/runner/runner.go,core-runner,A63 staged split backlog; baseline reconciled after pre-existing mainline growth,2026-12-31,5871,false
+core/runner/runner.go,core-runner,A63 staged split backlog; baseline reconciled after pre-existing mainline growth and dynamic action boundary integration,2026-12-31,5916,false
 tool/diagnosticsreplay/arbitration.go,diagnostics-replay,A63 staged split backlog,2026-12-31,4346,false
 runtime/config/config_test.go,runtime-config,A63 staged split backlog,2026-09-30,3695,false
 observability/event/runtime_recorder_test.go,observability,A63 staged split backlog,2026-09-30,3242,false

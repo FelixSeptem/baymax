@@ -14,9 +14,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-- 进行中：
-  - `introduce-dynamic-action-gate-and-native-run-resume`
-  当前范围：动态 PendingAction opaque reference、工具结果边界 input_required、同一 Run/Stream checkpoint resume 与 host action-resume admission；已完成类型合同、Runner pause/resume 基础切片和 Host 可选入口，replay/diagnostics/docs 仍待收口。
+当前无进行中的 OpenSpec change。`introduce-dynamic-action-gate-and-native-run-resume` 已完成实现、验证与文档收口，待使用归档脚本归档并更新归档索引。
 
 当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
 

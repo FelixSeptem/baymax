@@ -34,9 +34,9 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
-当前进行中的 OpenSpec change：
+最近完成、待归档的 OpenSpec change：
 
-- `introduce-dynamic-action-gate-and-native-run-resume`（进行中）：动态 PendingAction 的 opaque action reference、`input_required` pause、同一 Run/Stream checkpoint resume；当前已完成类型合同、Runner 基础切片与 Host 可选入口，完整 replay/diagnostics/docs 仍在实施。
+- `introduce-dynamic-action-gate-and-native-run-resume`：动态 PendingAction 的 opaque action reference、`input_required` pause、同一 Run/Stream checkpoint resume；实现、replay、diagnostics、文档与质量门禁已完成，待使用归档脚本更新归档索引。
 
 最近归档：
 

@@ -106,7 +106,7 @@ New diagnostics fields are nullable/defaultable and written through `RuntimeReco
 | --- | --- | --- | --- | --- |
 | architecture | 修改文档 | `docs/runtime-module-boundaries.md` | core/runtime maintainers | docs consistency |
 | components | 新增文档 | `examples/dynamic-action-resume/README.md` | runner/adapter owners | example smoke run |
-| configuration | 无需文档变更（附理由） | — | runtime/config | no configuration change |
+| configuration | 修改文档 | `openspec/governance/go-file-line-budget-exceptions.csv` | governance maintainers | quality gate |
 | contract/API | 修改文档 | `docs/mainline-contract-test-index.md` | contract owners | focused tests |
 | diagnostics | 修改文档 | `docs/runtime-config-diagnostics.md` | observability owners | diagnostics tests |
 | examples | 新增文档 | `examples/dynamic-action-resume` | example owners | `go run` |

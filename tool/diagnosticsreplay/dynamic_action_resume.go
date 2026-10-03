@@ -61,7 +61,7 @@ func ReplayDynamicActionResumeJSON(raw []byte) (DynamicActionResumeReplay, error
 		item.TokenDigest = stableDigest(item.TokenDigest)
 		item.CheckpointDigest = stableDigest(item.CheckpointDigest)
 	}
-	return DynamicActionResumeReplay{Version: fixture.Version, Cases: fixture.Cases}, nil
+	return DynamicActionResumeReplay(fixture), nil
 }
 
 func stableDigest(value string) string {

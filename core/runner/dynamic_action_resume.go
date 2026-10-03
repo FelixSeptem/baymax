@@ -169,7 +169,8 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 		cp.checkpoint.State = types.RunStateCanceled
 		e.dynamicCheckpoints[decision.RunID] = cp
 		e.dynamicActionMu.Unlock()
-		e.emitDynamicActionResolution(ctx, h, cp, decision)
+		e.emitDynamicActionResolved(ctx, h, cp, decision)
+		e.emitDynamicActionCanceled(ctx, h, cp, decision)
 		if ctrl, exists := e.ActiveRun(decision.RunID); exists {
 			e.finishActiveRun(ctrl)
 		}
@@ -181,6 +182,7 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 		control = ctrl
 	}
 	e.dynamicActionMu.Unlock()
+	e.emitDynamicActionResolved(ctx, h, cp, decision)
 	request.RunID = decision.RunID
 	e.dynamicActionMu.Lock()
 	// The first resumed model step consumes the checkpointed tool results.
@@ -214,7 +216,7 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 	return cp.result, nil
 }
 
-func (e *Engine) emitDynamicActionResolution(ctx context.Context, h types.EventHandler, cp dynamicActionCheckpoint, decision types.DynamicActionDecision) {
+func (e *Engine) emitDynamicActionResolved(ctx context.Context, h types.EventHandler, cp dynamicActionCheckpoint, decision types.DynamicActionDecision) {
 	if h == nil {
 		return
 	}
@@ -222,6 +224,12 @@ func (e *Engine) emitDynamicActionResolution(ctx context.Context, h types.EventH
 		"decision": string(decision.Decision), "checkpoint_id": cp.checkpoint.CheckpointID, "checkpoint_version": cp.checkpoint.Version,
 		"checkpoint_digest": cp.checkpoint.Digest, "dynamic_action_resume_attempt": 1, "dynamic_action_resume_admission": "accepted",
 	}})
+}
+
+func (e *Engine) emitDynamicActionCanceled(ctx context.Context, h types.EventHandler, cp dynamicActionCheckpoint, decision types.DynamicActionDecision) {
+	if h == nil {
+		return
+	}
 	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: cp.checkpoint.RunID, Iteration: cp.checkpoint.Iteration, Time: e.now(), Payload: map[string]any{
 		"state": string(types.RunStateCanceled), "reason_code": string(decision.Decision), "gate_checks": 1,
 		"dynamic_action_count": 1, "dynamic_action_checkpoint_id": cp.checkpoint.CheckpointID, "dynamic_action_checkpoint_version": cp.checkpoint.Version,

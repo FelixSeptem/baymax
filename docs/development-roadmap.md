@@ -14,9 +14,11 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-当前无进行中的 OpenSpec change。`introduce-dynamic-action-gate-and-native-run-resume` 已完成实现、验证与文档收口，待使用归档脚本归档并更新归档索引。
-
 当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
+
+归档 158（`introduce-dynamic-action-gate-and-native-run-resume`）已完成实现、验证并归档；其动态 PendingAction opaque reference、`input_required` pause、同一 Run/Stream checkpoint resume 与 Host action-resume admission 已纳入主线基线。
+
+归档 159（`fix-dynamic-action-resolution-terminal-event-semantics`）已完成实现、验证并归档；其动态 action resolution 与 canceled terminal 事件已拆分，confirm/deny/timeout 的 resolution 事件、deny/timeout canceled terminal、duplicate resume 幂等和 Run/Stream 语义对等已纳入主线基线。
 
 归档 157（`openai-compatible-endpoint-profile-conformance`）已完成实现、归档并合并到主线；其官方 Responses API 兼容 endpoint profile、离线 conformance contract、capability 边界与回滚说明已纳入主线基线。
 

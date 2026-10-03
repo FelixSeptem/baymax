@@ -9,6 +9,172 @@ import (
 	"github.com/FelixSeptem/baymax/tool/local"
 )
 
+type dynamicActionEventCollector struct {
+	events []types.Event
+}
+
+func (c *dynamicActionEventCollector) OnEvent(_ context.Context, ev types.Event) {
+	c.events = append(c.events, ev)
+}
+
+func (c *dynamicActionEventCollector) count(eventType string) int {
+	count := 0
+	for _, ev := range c.events {
+		if ev.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+func (c *dynamicActionEventCollector) canceledFinishedCount() int {
+	count := 0
+	for _, ev := range c.events {
+		if ev.Type == "run.finished" && ev.Payload != nil && ev.Payload["state"] == string(types.RunStateCanceled) {
+			count++
+		}
+	}
+	return count
+}
+
+func (c *dynamicActionEventCollector) lastResolvedDecision() any {
+	payload := c.lastResolvedPayload()
+	if payload == nil {
+		return nil
+	}
+	return payload["decision"]
+}
+
+func (c *dynamicActionEventCollector) lastResolvedPayload() map[string]any {
+	for i := len(c.events) - 1; i >= 0; i-- {
+		if c.events[i].Type == "run.dynamic_action.resolved" && c.events[i].Payload != nil {
+			return c.events[i].Payload
+		}
+	}
+	return nil
+}
+
+func newDynamicActionResumeEventScenario(t *testing.T, stream bool) (*Engine, *types.TerminalOutcome, *dynamicActionEventCollector) {
+	t.Helper()
+	reg := local.NewRegistry()
+	_, err := reg.Register(&fakeTool{name: "prepare", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
+		return types.ToolResult{PendingAction: &types.DynamicActionReference{
+			Token: "opaque-events", Kind: "prepare", Resumable: true,
+			RunID: "run-events", SessionID: "session-events", Iteration: 1,
+			CallID: "call-events", Source: "test", Digest: "digest-events",
+		}}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &fakeModel{
+		generate: func(_ context.Context, req types.ModelRequest) (types.ModelResponse, error) {
+			if len(req.ToolResult) > 0 {
+				return types.ModelResponse{FinalAnswer: "confirmed"}, nil
+			}
+			return types.ModelResponse{ToolCalls: []types.ToolCall{{CallID: "call-events", Name: "local.prepare"}}}, nil
+		},
+		stream: func(_ context.Context, req types.ModelRequest, onEvent func(types.ModelEvent) error) error {
+			if len(req.ToolResult) > 0 {
+				return onEvent(types.ModelEvent{Type: types.ModelEventTypeFinalAnswer, TextDelta: "confirmed"})
+			}
+			return onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{CallID: "call-events", Name: "local.prepare"}})
+		},
+	}
+	engine := New(model, WithLocalRegistry(reg))
+	collector := &dynamicActionEventCollector{}
+	var paused types.RunResult
+	if stream {
+		paused, err = engine.Stream(context.Background(), types.RunRequest{RunID: "run-events", SessionID: "session-events", Input: "x"}, collector)
+	} else {
+		paused, err = engine.Run(context.Background(), types.RunRequest{RunID: "run-events", SessionID: "session-events", Input: "x"}, collector)
+	}
+	if err != nil || paused.TerminalOutcome == nil || paused.TerminalOutcome.State != types.RunStateInputRequired {
+		t.Fatalf("pause=%#v err=%v", paused, err)
+	}
+	return engine, paused.TerminalOutcome, collector
+}
+
+func resumeDynamicActionForEventTest(t *testing.T, engine *Engine, checkpoint *types.TerminalOutcome, collector *dynamicActionEventCollector, decision types.DynamicActionDecisionKind, stream bool) types.RunResult {
+	t.Helper()
+	result, err := engine.ResumeDynamicAction(context.Background(), types.DynamicActionDecision{
+		Decision: decision, Token: "opaque-events", RunID: "run-events", SessionID: "session-events",
+		CheckpointID: checkpoint.CheckpointID, CheckpointVersion: checkpoint.CheckpointVersion,
+		CheckpointDigest: checkpoint.CheckpointDigest, IdempotencyKey: "idem-" + string(decision),
+	}, collector, stream)
+	if err != nil {
+		t.Fatalf("resume decision=%s err=%v", decision, err)
+	}
+	return result
+}
+
+func TestDynamicActionResolutionEventsSeparateDecisionAndCancellation(t *testing.T) {
+	t.Run("confirm run", func(t *testing.T) {
+		engine, checkpoint, collector := newDynamicActionResumeEventScenario(t, false)
+		result := resumeDynamicActionForEventTest(t, engine, checkpoint, collector, types.DynamicActionDecisionConfirm, false)
+		if result.TerminalOutcome == nil || result.TerminalOutcome.State == types.RunStateCanceled {
+			t.Fatalf("confirm result=%#v, want non-canceled terminal outcome", result.TerminalOutcome)
+		}
+		if collector.count("run.dynamic_action.resolved") != 1 || collector.lastResolvedDecision() != string(types.DynamicActionDecisionConfirm) {
+			t.Fatalf("resolution events=%d decision=%v, want one confirm", collector.count("run.dynamic_action.resolved"), collector.lastResolvedDecision())
+		}
+		assertDynamicActionResolvedPayload(t, collector.lastResolvedPayload(), checkpoint, types.DynamicActionDecisionConfirm)
+		if collector.canceledFinishedCount() != 0 {
+			t.Fatalf("canceled terminal events=%d, want zero", collector.canceledFinishedCount())
+		}
+		duplicate := resumeDynamicActionForEventTest(t, engine, checkpoint, collector, types.DynamicActionDecisionConfirm, false)
+		if duplicate.FinalAnswer != result.FinalAnswer || collector.count("run.dynamic_action.resolved") != 1 {
+			t.Fatalf("duplicate=%#v resolution events=%d, want prior result and one event", duplicate, collector.count("run.dynamic_action.resolved"))
+		}
+	})
+
+	t.Run("confirm stream", func(t *testing.T) {
+		engine, checkpoint, collector := newDynamicActionResumeEventScenario(t, true)
+		result := resumeDynamicActionForEventTest(t, engine, checkpoint, collector, types.DynamicActionDecisionConfirm, true)
+		if result.TerminalOutcome == nil || result.TerminalOutcome.State == types.RunStateCanceled {
+			t.Fatalf("confirm stream result=%#v, want non-canceled terminal outcome", result.TerminalOutcome)
+		}
+		if collector.count("run.dynamic_action.resolved") != 1 || collector.lastResolvedDecision() != string(types.DynamicActionDecisionConfirm) || collector.canceledFinishedCount() != 0 {
+			t.Fatalf("stream resolution=%d decision=%v canceled=%d, want one confirm and zero canceled", collector.count("run.dynamic_action.resolved"), collector.lastResolvedDecision(), collector.canceledFinishedCount())
+		}
+		assertDynamicActionResolvedPayload(t, collector.lastResolvedPayload(), checkpoint, types.DynamicActionDecisionConfirm)
+	})
+
+	for _, decision := range []types.DynamicActionDecisionKind{types.DynamicActionDecisionDeny, types.DynamicActionDecisionTimeout} {
+		t.Run(string(decision), func(t *testing.T) {
+			engine, checkpoint, collector := newDynamicActionResumeEventScenario(t, false)
+			result := resumeDynamicActionForEventTest(t, engine, checkpoint, collector, decision, false)
+			if result.TerminalOutcome == nil || result.TerminalOutcome.State != types.RunStateCanceled {
+				t.Fatalf("result=%#v, want canceled", result.TerminalOutcome)
+			}
+			if collector.count("run.dynamic_action.resolved") != 1 || collector.lastResolvedDecision() != string(decision) || collector.canceledFinishedCount() != 1 {
+				t.Fatalf("resolution=%d decision=%v canceled=%d, want one resolution and one canceled", collector.count("run.dynamic_action.resolved"), collector.lastResolvedDecision(), collector.canceledFinishedCount())
+			}
+			assertDynamicActionResolvedPayload(t, collector.lastResolvedPayload(), checkpoint, decision)
+		})
+	}
+}
+
+func assertDynamicActionResolvedPayload(t *testing.T, payload map[string]any, checkpoint *types.TerminalOutcome, decision types.DynamicActionDecisionKind) {
+	t.Helper()
+	if payload == nil {
+		t.Fatal("missing dynamic action resolution payload")
+	}
+	want := map[string]any{
+		"decision":                        string(decision),
+		"checkpoint_id":                   checkpoint.CheckpointID,
+		"checkpoint_version":              checkpoint.CheckpointVersion,
+		"checkpoint_digest":               checkpoint.CheckpointDigest,
+		"dynamic_action_resume_attempt":   1,
+		"dynamic_action_resume_admission": "accepted",
+	}
+	for key, expected := range want {
+		if got := payload[key]; got != expected {
+			t.Fatalf("resolution payload[%q]=%#v, want %#v; payload=%#v", key, got, expected, payload)
+		}
+	}
+}
+
 func TestDynamicActionPausesBeforeNextModelStepAndResumesSameRun(t *testing.T) {
 	reg := local.NewRegistry()
 	toolCalls := 0

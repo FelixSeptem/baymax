@@ -34,12 +34,10 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
-最近完成、待归档的 OpenSpec change：
-
-- `introduce-dynamic-action-gate-and-native-run-resume`：动态 PendingAction 的 opaque action reference、`input_required` pause、同一 Run/Stream checkpoint resume；实现、replay、diagnostics、文档与质量门禁已完成，待使用归档脚本更新归档索引。
-
 最近归档：
 
+- `fix-dynamic-action-resolution-terminal-event-semantics`（归档 159）：拆分动态 action resolution 与 canceled terminal 事件；confirm、deny、timeout 统一发出一次 resolution，只有 deny/timeout 发出 canceled terminal，并补齐 Run/Stream 与 duplicate resume 事件回归。
+- `introduce-dynamic-action-gate-and-native-run-resume`（归档 158）：动态 PendingAction 的 opaque action reference、`input_required` pause、同一 Run/Stream checkpoint resume。
 - `add-explicit-model-capability-adapter`（归档 155）：显式 model capability adapter、Stream preflight 诊断与最小模板澄清。
 - `layered-technical-documentation-and-drift-governance`（归档 156）：分层技术文档、README 导航和新提案 Documentation Impact Assessment/漂移门禁。
 

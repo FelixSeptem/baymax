@@ -26,6 +26,7 @@ type HostCommandKind string
 const (
 	HostCommandKindRunStart          HostCommandKind = "run.start"
 	HostCommandKindAction            HostCommandKind = "run.action"
+	HostCommandKindActionResume      HostCommandKind = "run.action.resume"
 	HostCommandKindRunAction         HostCommandKind = "run.action"
 	HostCommandKindRealtimeInterrupt HostCommandKind = "realtime.interrupt"
 	HostCommandKindRealtimeResume    HostCommandKind = "realtime.resume"
@@ -73,6 +74,13 @@ type HostRunStartAdmission struct {
 // HostRunStarter admits a Run before any business execution begins.
 type HostRunStarter interface {
 	AdmitHostRun(context.Context, RunRequest, HostRunExecutionMode) (HostRunStartAdmission, error)
+}
+
+// DynamicActionResumer is an optional source capability for same-Run action
+// checkpoint admission. It is intentionally separate from Runner so existing
+// hosts retain their current contract.
+type DynamicActionResumer interface {
+	ResumeDynamicAction(context.Context, DynamicActionDecision, EventHandler, bool) (RunResult, error)
 }
 
 const (
@@ -328,7 +336,7 @@ func AuthorizeHostCommand(a HostAuthorization) error {
 
 func isHostCommandKind(k HostCommandKind) bool {
 	switch k {
-	case HostCommandKindRunStart, HostCommandKindAction, HostCommandKindRealtimeInterrupt, HostCommandKindRealtimeResume, HostCommandKindHITLRespond, HostCommandKindSteering, HostCommandKindFollowUp, HostCommandKindEventsSubscribe, HostCommandKindRunGet:
+	case HostCommandKindRunStart, HostCommandKindAction, HostCommandKindActionResume, HostCommandKindRealtimeInterrupt, HostCommandKindRealtimeResume, HostCommandKindHITLRespond, HostCommandKindSteering, HostCommandKindFollowUp, HostCommandKindEventsSubscribe, HostCommandKindRunGet:
 		return true
 	}
 	return false

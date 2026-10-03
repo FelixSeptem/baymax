@@ -504,6 +504,8 @@ func (c *Connection) HandleCommand(ctx context.Context, cmd types.HostCommandEnv
 		response, after, abandon, err = c.startRun(ctx, cmd)
 	case types.HostCommandKindAction:
 		response, err = c.executeAction(ctx, cmd)
+	case types.HostCommandKindActionResume:
+		response, err = c.resumeDynamicAction(ctx, cmd)
 	case types.HostCommandKindRealtimeInterrupt, types.HostCommandKindRealtimeResume:
 		response, err = c.ingestRealtime(ctx, cmd)
 	case types.HostCommandKindSteering, types.HostCommandKindFollowUp:
@@ -537,6 +539,33 @@ func (c *Connection) HandleCommand(ctx context.Context, cmd types.HostCommandEnv
 		after()
 	}
 	return response, nil
+}
+
+func (c *Connection) resumeDynamicAction(ctx context.Context, cmd types.HostCommandEnvelope) (types.HostCommandResponse, error) {
+	resumer, ok := c.coord.runner.(types.DynamicActionResumer)
+	if !ok {
+		return types.NormalizeHostCommandAdmission(cmd, types.HostAdmissionStatusRejected, "host.dynamic_action_resume_unavailable")
+	}
+	decision := types.DynamicActionDecision{
+		Decision: types.DynamicActionDecisionKind(stringPayload(cmd.Payload, "decision")),
+		Token:    stringPayload(cmd.Payload, "token"), RunID: cmd.RunID, SessionID: cmd.SessionID,
+		CheckpointID: stringPayload(cmd.Payload, "checkpoint_id"), CheckpointVersion: stringPayload(cmd.Payload, "checkpoint_version"),
+		CheckpointDigest: stringPayload(cmd.Payload, "checkpoint_digest"), IdempotencyKey: stringPayload(cmd.Payload, "idempotency_key"), Reference: stringPayload(cmd.Payload, "reference"),
+	}
+	if err := decision.Validate(); err != nil {
+		return reject(cmd, err)
+	}
+	stream, _ := cmd.Payload["stream"].(bool)
+	h := EventHandlerFunc(func(eventCtx context.Context, ev types.Event) { _ = c.emitEvent(eventCtx, cmd, ev) })
+	result, err := resumer.ResumeDynamicAction(ctx, decision, h, stream)
+	if err != nil {
+		return reject(cmd, err)
+	}
+	status := types.HostAdmissionStatusAccepted
+	if result.TerminalOutcome != nil && result.TerminalOutcome.State == types.RunStateInputRequired {
+		status = types.HostAdmissionStatusAccepted
+	}
+	return types.NormalizeHostCommandAdmission(cmd, status, "dynamic_action.resume_admitted")
 }
 
 func (c *Connection) admitRuntimeInput(ctx context.Context, cmd types.HostCommandEnvelope) (types.HostCommandResponse, error) {

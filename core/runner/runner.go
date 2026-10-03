@@ -109,7 +109,7 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 		handoffBoundaries:  map[string]handoffBoundary{},
 		handoffRestored:    map[string]handoff.RestoreResult{},
 		dynamicCheckpoints: map[string]dynamicActionCheckpoint{},
-		activeRunState:     activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunControl: true, activeRunLimit: 128, activeRunIngressBuffer: 16},
+		activeRunState:     activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunLimit: 128, activeRunIngressBuffer: 16},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
 		},

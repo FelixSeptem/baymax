@@ -62,6 +62,13 @@ func (e *Engine) dynamicActionFromOutcomes(outcomes []types.ToolCallOutcome, run
 }
 
 func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest, h types.EventHandler, control *ActiveRunControl, ref types.DynamicActionReference, outcomes []types.ToolCallOutcome, iteration int, stream bool, seq *int64, gateStats *actionGateStats) types.RunResult {
+	if control == nil {
+		// Plain Run/Stream deliberately do not expose host controls by default.
+		// Once a tool registers a dynamic action, retain a dedicated control for
+		// the paused source Run so same-Run resume can be admitted without making
+		// ordinary runs subject to host-control limits.
+		control, _, _ = e.beginActiveRun(context.WithoutCancel(ctx), ref.RunID, ref.SessionID, stream)
+	}
 	checkpoint := types.RunCheckpoint{
 		Version:      types.DynamicActionResumeProtocolVersion,
 		CheckpointID: fmt.Sprintf("%s:%s", ref.RunID, ref.CallID),

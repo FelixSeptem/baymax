@@ -26,8 +26,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 宿主执行接入与恢复边界的首项已完成实施、验证并归档，其余 4 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
 
-- 进行中：
--  无。
+归档 161（`enforce-openspec-public-semantics-documentation-contract`）已完成实施、验证并归档；其强制每个 active OpenSpec 的 proposal/design/tasks 接受对外语义文档同步承诺，并以双平台门禁检查文档路径、owner、证据及声明一致性；不改变 runtime。
 
 已归档 160 的原生执行事件 adapter 提案响应集成方自行构造 parent/terminal ExecutionEvent、尚未消费真实 runner 事件的需求；Baymax 审计确认 direct Event 无通用 event ID/sequence，协议映射可能共享 TraceID，durable binding 当前仅覆盖 Realtime。因此已复用原生 EventHandler/Protocol 与 source owner，明确 direct callback 不按 mapped ID 去重、不提供持久游标、input_required 是暂停，RuntimeRecorder 保持独立诊断消费者。宿主保留业务授权、记录存储和 commit gate。
 
@@ -481,6 +480,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
    - 风险与非目标
    - 回滚点
    - 文档影响
+   - Public Semantic Documentation Commitment：对外语义变化须同 change 同步维护文档、owner 与验证证据；无变化须写理由，三份工件一致
    - Example Impact Assessment：`新增示例`、`修改示例`，或 `无需示例变更（附理由）`
    - 验证命令
 4. 对行为、配置、诊断 schema 或 contract 的变更，必须同步 OpenSpec spec delta、正负边界测试、必要 integration、replay fixture 与 shell/PowerShell parity gate。
@@ -516,7 +516,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 标准顺序：
 
 1. `openspec list --json` 与现状审计。
-2. `proposal.md`、`design.md`、`tasks.md`、spec delta，包含 Example Impact Assessment。
+2. `proposal.md`、`design.md`、`tasks.md`、spec delta，包含 Example Impact Assessment 和三份一致的 Public Semantic Documentation Commitment。
 3. 代码、测试、回放、独立 gate 与文档同步实施。
 4. 执行门禁：
 

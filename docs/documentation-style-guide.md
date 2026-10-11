@@ -40,7 +40,33 @@ Baymax 文档中文为主，代码标识、API、协议名、配置键和错误�
 
 ## 文档影响评估模板
 
-新提案的 `proposal.md`、`design.md`、`tasks.md` 都应包含以下段落（可复制后填写）：
+新提案的 `proposal.md`、`design.md`、`tasks.md` 都必须包含以下公开语义文档同步承诺。它不是对文档影响表的替代，而是每个 OpenSpec 对“对外能力变化必须同步维护文档”的明确接受：
+
+```markdown
+## Public Semantic Documentation Commitment
+
+- 对外语义变化：是
+- 文档同步状态：已同步
+- 维护文档：`README.md`、`docs/guides/integration.md`
+- 维护 owner：maintainer
+- 验证证据：`pwsh -File scripts/check-docs-consistency.ps1`
+```
+
+没有对外语义变化时，必须写明理由：
+
+```markdown
+## Public Semantic Documentation Commitment
+
+- 对外语义变化：否
+- 文档同步状态：无需同步（附理由）：本 change 只修改内部测试工具，不改变公开 API、运行时行为、配置、诊断、CLI/integration 或示例语义。
+- 维护文档：—
+- 维护 owner：maintainer
+- 验证证据：`pwsh -File scripts/check-openspec-documentation-impact.ps1`
+```
+
+“是”必须在同一 change 中提交维护文档，列出的每个路径必须存在并出现在功能分支相对 `master` 的 Git 差异中（包括未提交、未跟踪文件）；仅引用既有文档不算同步。“否”必须给出具体理由。三份工件的承诺不能互相矛盾，门禁会检查缺失、非法值和文档同步漂移。
+
+新提案的 `proposal.md`、`design.md`、`tasks.md` 还必须包含以下文档影响表（可复制后填写）：
 
 ```markdown
 ## Documentation Impact Assessment

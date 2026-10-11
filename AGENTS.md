@@ -51,12 +51,20 @@ pwsh -File scripts/check-docs-consistency.ps1
   - quality 侧：`scripts/check-openspec-example-impact-declaration.sh/.ps1`（接入 `check-quality-gate.*`）
   - 失败分类码：`roadmap-status-drift`、`missing-example-impact-declaration`、`invalid-example-impact-value`
 
-7. `examples/agent-modes` 变更必须文档先行（强制）
+7. 对外语义变化必须同步维护文档（每个 OpenSpec 强制接受）
+- `proposal.md`、`design.md`、`tasks.md` 必须包含 `Public Semantic Documentation Commitment` 段，明确声明是否发生对外语义变化。
+- 只要涉及公开 API/contract、运行时行为、事件顺序/identity/终态、错误反馈、配置默认值/校验、诊断字段、CLI/integration 或示例语义变化，必须声明“对外语义变化：是”，并在同一 OpenSpec change 中列出已同步维护的文档路径、维护 owner 和验证命令。
+- 声明“对外语义变化：否”时必须附带具体理由；不得以“代码改动很小”“仅 additive”或“测试已覆盖”代替文档影响判断。
+- 每个声明的维护文档路径必须存在，且出现在当前功能分支相对 `master` 的 Git 差异中（包括未提交和未跟踪文件）；仅列出既有文档但未修改，不算同步。
+- 文档未同步、维护路径/owner/验证证据缺失，或三份 OpenSpec 工件声明不一致，视为提案不完整，禁止进入实施、勾选任务或归档。
+- `scripts/check-openspec-documentation-impact.*` 必须在 proposal/design/tasks 三份工件上执行该校验；失败分类码包括 `missing-public-semantic-documentation-commitment`、`invalid-public-semantic-documentation-commitment`、`public-semantic-doc-sync-missing`、`public-semantic-documentation-drift`。
+
+8. `examples/agent-modes` 变更必须文档先行（强制）
 - 先完成文档基线：`MATRIX.md` + 对应模式 `README.md`（含 semantic anchor、runtime path、expected markers、rollback notes）。
 - 文档基线未完成前，禁止进入该模式代码实现与任务勾选。
 - 任务勾选必须同时具备代码/测试/文档/门禁四类证据，不得仅凭占位实现或文档更新勾选。
 
-8. 功能分支生命周期必须与提案实施周期一致
+9. 功能分支生命周期必须与提案实施周期一致
 - 开始提案前先同步最新基准分支（默认 `master`），再从基准分支创建一个语义化功能分支。
 - 提案实施期间的 proposal/design/spec/tasks、代码、测试和文档改动统一在该功能分支完成，禁止直接在基准分支实施。
 - 提案完成验证并归档后，将功能分支合并到最新基准分支并推送；合并结果验证通过后删除已合并的本地功能分支及关联 worktree。

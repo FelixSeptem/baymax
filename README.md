@@ -35,10 +35,12 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
+- `enforce-openspec-public-semantics-documentation-contract`（归档 161；[公开语义文档同步治理](openspec/changes/archive/161-enforce-openspec-public-semantics-documentation-contract/proposal.md)）：要求每个 active OpenSpec 的三份工件声明对外语义文档同步承诺，并由双平台门禁检查。
 - `establish-native-execution-event-adapter-contract`（归档 160；[原生执行事件与宿主接入契约](openspec/changes/archive/160-establish-native-execution-event-adapter-contract/proposal.md)）：已完成版本化 native execution event、bounded host references、source capability 声明、观察失败反馈、真实 Run/Stream 集成、离线 replay、示例与维护文档同步。其余四项宿主接入候选见路线图。
 
 最近归档：
 
+- `enforce-openspec-public-semantics-documentation-contract`（归档 161）：公开语义变化的维护文档同步承诺、三份提案工件一致性及双平台门禁。
 - `establish-native-execution-event-adapter-contract`（归档 160）：版本化原生执行事件与宿主 adapter 合同、bounded references、observer failure 反馈、Run/Stream parity、离线 replay、示例及维护文档同步。
 - `fix-dynamic-action-resolution-terminal-event-semantics`（归档 159）：拆分动态 action resolution 与 canceled terminal 事件；confirm、deny、timeout 统一发出一次 resolution，只有 deny/timeout 发出 canceled terminal，并补齐 Run/Stream 与 duplicate resume 事件回归。
 - `introduce-dynamic-action-gate-and-native-run-resume`（归档 158）：动态 PendingAction 的 opaque action reference、`input_required` pause、同一 Run/Stream checkpoint resume。
@@ -85,11 +87,11 @@ Windows 使用等价的 `pwsh -File scripts/check-docs-consistency.ps1`、`check
 
 ## 提案治理
 
-每个新 OpenSpec proposal/design/tasks 都必须包含 Documentation Impact Assessment，逐项判断 architecture、components、configuration、contract/API、diagnostics、examples、CLI/integration、best practices、roadmap，并提供 affected paths、owner 和 verification。行为/配置/contract/诊断/示例变化还必须声明 Example Impact Assessment。
+每个新 OpenSpec proposal/design/tasks 都必须包含 Documentation Impact Assessment，逐项判断 architecture、components、configuration、contract/API、diagnostics、examples、CLI/integration、best practices、roadmap，并提供 affected paths、owner 和 verification。行为/配置/contract/诊断/示例变化还必须声明 Example Impact Assessment。三份工件均须接受 Public Semantic Documentation Commitment；公开 API/contract、运行时行为、事件与终态、错误、配置、诊断、CLI/integration 或示例语义发生变化时，维护文档必须与变更同批提交，声明维护路径、owner 和验证证据；无变化也须写具体理由。
 
 文档门禁：
 
-- `scripts/check-openspec-documentation-impact.sh/.ps1`：文档影响声明、变更面、链接、任务和状态漂移。
+- `scripts/check-openspec-documentation-impact.sh/.ps1`：文档影响及公开语义同步承诺、跨工件一致性、变更面和链接；缺失、非法、无同步证据及声明漂移分别报出稳定分类码。
 - `scripts/check-openspec-example-impact-declaration.sh/.ps1`：示例影响声明。
 - `scripts/check-openspec-roadmap-status-consistency.sh/.ps1`：roadmap/OpenSpec/archive 状态一致性。
 

@@ -30,6 +30,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 ## 关键入口
 
 - `types.go`
+- `native_execution_event.go`：`NativeExecutionEvent` / `NativeExecutionProjector` / `NativeExecutionOptions`，纯投影和 `native_execution_event.v1` 能力声明。
 
 ## 边界与依赖
 
@@ -38,8 +39,10 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
 ## 配置与默认值
 
-- N/A：`core/types` 为纯契约层，不持有运行时配置键或默认值。
-- 与默认值相关的定义应位于 `runtime/config`，此处只承载类型与契约语义。
+- 不持有 env/file/hot-update 配置键。`NativeExecutionLimits` 是纯投影的 constructor-only 合同限制：每 scalar 1024 UTF-8 bytes、16 citations、host references JSON 8 KiB、单条事件 JSON 64 KiB；显式 override 的四项均须正值。
+- 输出为独立 JSON 快照，数字用 `json.Number` 保持精度，拒绝未知 reference 字段、非法 UTF-8、不可序列化值、循环/超深值和自定义 JSON/Text marshaler（标准 `time.Time` 除外）。Realtime 空 binding 的 subscription/outcome 元数据也受 event byte 限制。
+
+直接 `ProjectEvent` 复用既有 `MapEventToProtocol`，保留 native type/version、iteration、trace/span 和 payload references。固定 source profiles 声明 mapping_reference/callback_order、无 history/cursor/dedup/gap；相同 ID 或重复回调不合并。独立 `ProjectRealtimeBinding` 复用已有 Realtime subscription 验证和 normalization，不提供 worker/history/cache。`SourceState` 读取 native terminal_outcome.state、terminal_state、state；`IsTerminal` 为无状态分类，`input_required` 不属终态。完整接入合同见 [eventadapter](../../host/eventadapter/README.md)。
 
 ## 可观测性与验证
 

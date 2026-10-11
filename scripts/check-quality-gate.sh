@@ -264,6 +264,8 @@ if ! bash scripts/check-realtime-protocol-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] native execution event contract suites"
+bash scripts/check-native-execution-event-contract.sh
 echo "[quality-gate] embedded host contract suites"
 if ! bash scripts/check-embedded-host-contract.sh; then
   echo "[quality-gate][embedded-host-contract] embedded host contract suites failed"

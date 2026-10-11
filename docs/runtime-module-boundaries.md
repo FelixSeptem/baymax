@@ -1,6 +1,6 @@
 # Runtime Module Boundaries
 
-更新时间：2026-03-20
+更新时间：2026-10-10
 
 ## 目标
 
@@ -117,6 +117,10 @@
   - `RuntimeRecorder` 作为诊断唯一写入入口，将事件映射为统一诊断记录
 
 ## 依赖方向
+
+`core/types.NativeExecutionProjector` 是只依赖标准库的纯验证/快照/协议投影；`host/eventadapter` 只依赖标准库与 `core/types`，同步消费已有 source 的 EventHandler。runner、workflow、teams、scheduler、composer、A2A 继续拥有执行、预算、恢复和 terminal。adapter 不 import 这些 execution owners、Provider SDK 或 diagnostics store，不新建 subscription worker、global ordering/dedup queue、terminal FSM 或 retry/resume 控制。
+
+宿主负责 sink 持久化、授权、task/revision/effect references、业务 commit gate 和 AG-UI/SSE。callback source 选择必须显式，parent/causation facts 原样保留，独立并行 source 使用独立 observer。Realtime 仅经已有 source-normalized binding 的纯 projector；cursor replay 不等于 execution resume。observer failure/Close 只停止观察；RuntimeRecorder 继续是诊断单写入口，无新 QueryRuns 字段和 runtime 配置键。验证：`scripts/check-native-execution-event-contract.sh/.ps1`；详细 [合同](../host/eventadapter/README.md)。
 
 允许方向（简化）：
 

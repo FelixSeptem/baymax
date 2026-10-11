@@ -1,5 +1,21 @@
 # Mainline Contract Test Index
 
+## Native execution event adapter
+
+`native_execution_event.v1` opt-in observer/projector 保留原生执行事实；RuntimeRecorder 单写、source terminal/ordering/identity 和业务 commit gate 均保留各自 owner。无 env/file/hot-update 键或 QueryRuns 字段。Source 接线、limits、迁移/回滚见 [adapter 合同](../host/eventadapter/README.md) 与 [集成指南](guides/integration.md)。
+
+| Spec requirement | Positive / boundary / negative evidence | Integration / replay / gate |
+| --- | --- | --- |
+| Actual source projection; no fabricated outcome | `core/types/native_execution_event_test.go`: mapper baseline, immutable snapshot, source profiles, Run/Session mismatch | `TestNativeExecutionRealRunnerLifecycle`, `TestNativeExecutionComposerChildSources` |
+| Capability/identity restrictions | Shared TraceID/fallback/sequence=0 baseline; unsupported source/cursor admission | Fixture shared-identity/repeated callbacks; observer serial snapshot; ownership gate |
+| Source-owned Realtime binding | `TestNativeExecutionRealtimeBinding`, `TestNativeExecutionRealtimeMetadataLimits`: overlap/gap/expired/source/correlation/UTF-8/size | Versioned Realtime overlap/gap/expired fixtures |
+| Bounded isolated host references/snapshots | Exact byte/item bounds, strict allowlist/type/UTF-8, nested mutation, large integer, cyclic/non-JSON input; `TestNativeExecutionRejectsCustomSerializationBeforeInvocation` | Reference/event overflow and source conflict fixtures |
+| Independent bounded delivery failure | `host/eventadapter/observer_test.go`: deadline, error-after-write, first failure, context/Close, concurrent/reentrant, reference/counter bounds | `TestNativeExecutionObservationFailureDoesNotChangeSource`: independent RuntimeRecorder fan-out and terminal failure/disconnect |
+| Pause/resolution/terminal distinctions | `TestNativeExecutionTerminalUsesNativeOutcome`, pause incomplete status | `TestNativeExecutionDynamicActionResume`: Run/Stream confirm/deny/timeout/duplicate; pause-as-terminal negative fixture |
+| Offline conformance / parity | `tool/diagnosticsreplay/native_execution_event_test.go`: deterministic replay; mutated/invalid fixture rejection; terminal/resolution/correlation/failure/receipt drift; semantic delta/nested business drift | `tool/diagnosticsreplay/testdata/native_execution_event.v1.json`; true Run/Stream transcript parity; `examples/native-execution-events` smoke |
+
+Dedicated gates: `scripts/check-native-execution-event-contract.sh/.ps1`, wired into both quality gates. Both run the same focused positive/negative suites, source-ownership scan and offline example markers. `tool/contributioncheck/native_execution_event_boundary_test.go` parses implementation AST and verifies forbidden dependency, global state, worker/channel and execution/diagnostic ownership mutations are rejected. Replay uses no live model/tool/network/application sink/business writes. Parity verifies mapped direct IDs before normalization; only known fragment-only model callbacks attached to an observed model step with matching correlation, capabilities and host references are removed. Error, clarification, metadata, unknown delta and nested business values remain comparison facts. Generated references are normalized only at schema-owned envelope/payload/terminal-outcome/checkpoint locations; no arbitrary host-reference normalization.
+
 ## Scenario agent simulation and completion verification (in progress)
 
 - Owner: `integration/scenariosimulation` is offline test support only; existing runner, completion safe-point, business host, and `observability/event.RuntimeRecorder` remain authoritative.
@@ -28,7 +44,7 @@
 - Focused tests: `go test ./tool/schemaaudit ./tool/diagnosticsreplay`.
 - Dedicated gates: `scripts/check-tool-schema-audit-contract.sh` / `scripts/check-tool-schema-audit-contract.ps1`.
 
-更新时间：2026-08-28
+更新时间：2026-10-10
 
 ## 目标
 

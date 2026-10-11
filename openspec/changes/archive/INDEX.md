@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-03 17:36:00
+Updated: 2026-10-11 12:48:04
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -161,3 +161,4 @@ Updated: 2026-10-03 17:36:00
 - 157 -> openai-compatible-endpoint-profile-conformance
 - 158 -> introduce-dynamic-action-gate-and-native-run-resume
 - 159 -> fix-dynamic-action-resolution-terminal-event-semantics
+- 160 -> establish-native-execution-event-adapter-contract

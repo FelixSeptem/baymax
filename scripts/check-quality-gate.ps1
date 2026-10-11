@@ -703,6 +703,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-realtime-protocol-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] native execution event contract suites"
+        Command   = { pwsh -File scripts/check-native-execution-event-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] embedded host contract suites"
         Command   = { pwsh -File scripts/check-embedded-host-contract.ps1 }
     },

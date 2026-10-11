@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-04-04
+更新时间：2026-10-10
 
 ## 目标
 
@@ -8,9 +8,17 @@
 
 跨 Provider handoff/stream-edge conformance 不新增配置键：继续使用现有 provider 与 capability admission 配置。Durable task/attempt workspace binding 与 completion safe-point ownership 同样不新增 runtime 配置键或 hot-update 分支，继续复用 scheduler/mailbox/recovery/runtime-input/snapshot 的既有 `env > file > default` 配置域。回滚只需移除对应 replay/gate 与 additive reference projection，不涉及配置或持久化迁移。诊断仅允许有界分类、digest、provider/mode/correlation 标识；不得记录 raw provider payload、reasoning body、credential、workspace content、completion body 或无界 stream content。
 
-## 配置优先级
+## Native execution observer：constructor-only
+
+`host/eventadapter.Options` 和 `core/types.NativeExecutionOptions` 只在构造时提供，不新增 env/file/hot-update 配置键，不修改 `env > file > default` 或原子回滚语义。默认 DeliveryTimeout 1 秒（0 选择默认、负值拒绝）；显式 NativeExecutionLimits 四项均为正整数，默认 scalar 1024 UTF-8 bytes、16 citations、host-reference JSON 8 KiB、projected event JSON 64 KiB。引用 namespace 固定，只携带 task/occurrence/plan/projection/knowledge-generation/citation references。
+
+Observer Status 是有界集成反馈，无 payload/raw error：healthy/failed/closed、首错 reason/reference（最多 256 bytes）、received/delivered/unconfirmed/skipped/terminal_delivered 饱和计数和 incomplete。projection error 不调用 sink；sink error/timeout 表示 unconfirmed，不能推断未写入。首错后停止交付，不 cancel/resume/retry source。`input_required` 不是 terminal，缺少已确认 terminal 为 incomplete observation。
+
+本次无 QueryRuns 或诊断 schema 新字段；Status 不直接写诊断。RuntimeRecorder 独立消费原始 source 事件，仍是唯一诊断 writer。授权 sink 可以获得真实事件正文，不能将它复制到新增 diagnostics、OTel 或 replay fixture。详见 [observer contract](../host/eventadapter/README.md) 与 [接线指南](guides/integration.md)。回滚停用 adapter/恢复原 EventHandler，无配置或持久化迁移，外部 effect 由业务处理。
 
 Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`dynamic_action_count`、`dynamic_action_reference_digest`、`dynamic_action_checkpoint_id`、`dynamic_action_checkpoint_version`、`dynamic_action_checkpoint_digest`、`dynamic_action_pause_reason`、`dynamic_action_resume_attempt` 和 `dynamic_action_resume_admission`。这些字段只记录 opaque reference/checkpoint facts，不写入 PendingAction 业务正文；写入仍必须经过 `observability/event.RuntimeRecorder`。
+
+## 配置优先级
 
 固定优先级：`env > file > default`
 

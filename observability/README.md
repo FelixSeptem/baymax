@@ -21,6 +21,10 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 `RuntimeRecorder` 会在写入前应用 runtime 配置脱敏策略，保证诊断与日志口径一致。
 `RuntimeRecorder` 对重复事件按幂等键进行收敛，避免 replay 导致计数放大。
 
+`host/eventadapter` 是独立的 opt-in 原生事件消费者。与 RuntimeRecorder 接线时通过 `event.Dispatcher` 显式 fan-out 原始事件，adapter failure 不写回 source 或 recorder，不生成额外观察事件形成循环。adapter 的 direct EventID/TraceID 为 mapping reference，不能套用 recorder 存储幂等策略丢弃回调；每个 valid callback 都保留。
+
+observer `Status` 提供 bounded 首错 reference/reason 与 delivery counts，sink error/timeout 为 unconfirmed；它不是 Run outcome、诊断记录或业务提交证明。真实正文只交给已授权 sink，不复制到新 diagnostics/replay fixture，本次无 QueryRuns schema 字段。对应集成证据：`TestNativeExecutionObservationFailureDoesNotChangeSource` 与 [专用 gate](../scripts/check-native-execution-event-contract.ps1)；接线见 [integration guide](../docs/guides/integration.md)。
+
 ## 关键入口
 
 - `event/dispatcher.go`

@@ -1,0 +1,362 @@
+{
+  "version": "native_execution_event.v1",
+  "cases": [
+    {
+      "case_id": "shared-identity-and-repeat",
+      "options": {
+        "source": "runner",
+        "expected_run_id": "fake-run",
+        "host_references": {
+          "task_id": "fake-task"
+        }
+      },
+      "events": [
+        {
+          "version": "v1",
+          "type": "model.completed",
+          "run_id": "fake-run",
+          "trace_id": "fake-trace",
+          "time": "2026-10-03T00:00:00Z"
+        },
+        {
+          "version": "v1",
+          "type": "run.finished",
+          "run_id": "fake-run",
+          "trace_id": "fake-trace",
+          "time": "2026-10-03T00:00:00Z",
+          "payload": {
+            "terminal_state": "completed"
+          }
+        },
+        {
+          "version": "v1",
+          "type": "run.finished",
+          "run_id": "fake-run",
+          "trace_id": "fake-trace",
+          "time": "2026-10-03T00:00:00Z",
+          "payload": {
+            "terminal_state": "completed"
+          }
+        }
+      ],
+      "expected_reason": "",
+      "expected_events": 3,
+      "expected_terminals": 2,
+      "expected_shared_identity": true
+    },
+    {
+      "case_id": "unsupported-cursor",
+      "options": {
+        "source": "runner",
+        "required_capabilities": [
+          "cursor"
+        ]
+      },
+      "expected_reason": "native_execution.unsupported",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "source-conflict",
+      "options": {
+        "source": "runner",
+        "expected_run_id": "expected"
+      },
+      "events": [
+        {
+          "type": "model.completed",
+          "run_id": "other",
+          "time": "2026-10-03T00:00:00Z"
+        }
+      ],
+      "expected_reason": "native_execution.correlation",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "invalid-source",
+      "options": {
+        "source": "business"
+      },
+      "expected_reason": "native_execution.unsupported",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "reference-limit",
+      "options": {
+        "source": "runner",
+        "host_references": {
+          "task_id": "fake-task"
+        },
+        "limits": {
+          "scalar_reference_bytes": 1,
+          "citation_count": 16,
+          "host_reference_bytes": 8192,
+          "event_bytes": 65536
+        }
+      },
+      "expected_reason": "native_execution.limit",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "event-limit",
+      "options": {
+        "source": "runner",
+        "limits": {
+          "scalar_reference_bytes": 1024,
+          "citation_count": 16,
+          "host_reference_bytes": 8192,
+          "event_bytes": 1
+        }
+      },
+      "events": [
+        {
+          "type": "run.finished",
+          "run_id": "fake-run",
+          "time": "2026-10-03T00:00:00Z",
+          "payload": {
+            "state": "completed"
+          }
+        }
+      ],
+      "expected_reason": "native_execution.limit",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "pause-is-not-terminal",
+      "options": {
+        "source": "runner"
+      },
+      "events": [
+        {
+          "type": "run.finished",
+          "run_id": "fake-run",
+          "time": "2026-10-03T00:00:00Z",
+          "payload": {
+            "state": "input_required"
+          }
+        }
+      ],
+      "expected_reason": "",
+      "expected_events": 1,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "reject-pause-completion-claim",
+      "options": {
+        "source": "runner"
+      },
+      "events": [
+        {
+          "type": "run.finished",
+          "run_id": "fake-run",
+          "time": "2026-10-03T00:00:00Z",
+          "payload": {
+            "state": "input_required"
+          }
+        }
+      ],
+      "claim_terminal": true,
+      "expected_reason": "native_execution.pause_as_terminal",
+      "expected_events": 1,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "observer-write-ambiguity",
+      "options": {
+        "source": "runner"
+      },
+      "observation": {
+        "state": "failed",
+        "reason": "observation.sink_error",
+        "received": 2,
+        "delivered": 0,
+        "unconfirmed": 1,
+        "skipped": 1,
+        "terminal_delivered": 0,
+        "incomplete": true
+      },
+      "expected_reason": "observation.sink_error",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "realtime-overlap",
+      "options": {
+        "source": "realtime"
+      },
+      "binding": {
+        "subscription": {
+          "version": "durable_runtime_event_stream_binding.v1",
+          "subscription_id": "fake-sub",
+          "source": "realtime",
+          "session_id": "fake-session",
+          "run_id": "fake-run",
+          "start_mode": "after_cursor",
+          "cursor": {
+            "value": "fake-cursor",
+            "sequence": 1
+          },
+          "max_batch_size": 4,
+          "delivery_policy": "reject"
+        },
+        "outcome": {
+          "subscription_id": "fake-sub",
+          "phase": "live",
+          "reason_code": "source.live",
+          "last_sequence": 2
+        },
+        "events": [
+          {
+            "event_id": "fake-event",
+            "session_id": "fake-session",
+            "run_id": "fake-run",
+            "seq": 2,
+            "type": "complete",
+            "ts": "2026-10-03T00:00:00Z",
+            "payload": {
+              "state": "completed"
+            }
+          },
+          {
+            "event_id": "fake-event",
+            "session_id": "fake-session",
+            "run_id": "fake-run",
+            "seq": 2,
+            "type": "complete",
+            "ts": "2026-10-03T00:00:00Z",
+            "payload": {
+              "state": "completed"
+            }
+          }
+        ]
+      },
+      "expected_reason": "",
+      "expected_events": 1,
+      "expected_terminals": 1
+    },
+    {
+      "case_id": "realtime-expired",
+      "options": {
+        "source": "realtime"
+      },
+      "binding": {
+        "subscription": {
+          "version": "durable_runtime_event_stream_binding.v1",
+          "subscription_id": "fake-sub",
+          "source": "realtime",
+          "session_id": "fake-session",
+          "run_id": "fake-run",
+          "start_mode": "after_cursor",
+          "cursor": {
+            "value": "fake-cursor",
+            "sequence": 1
+          },
+          "max_batch_size": 4,
+          "delivery_policy": "reject"
+        },
+        "outcome": {
+          "subscription_id": "fake-sub",
+          "phase": "expired",
+          "reason_code": "source.expired",
+          "last_sequence": 1
+        }
+      },
+      "expected_reason": "",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "realtime-gap",
+      "options": {
+        "source": "realtime"
+      },
+      "binding": {
+        "subscription": {
+          "version": "durable_runtime_event_stream_binding.v1",
+          "subscription_id": "fake-sub",
+          "source": "realtime",
+          "session_id": "fake-session",
+          "run_id": "fake-run",
+          "start_mode": "after_cursor",
+          "cursor": {
+            "value": "fake-cursor",
+            "sequence": 1
+          },
+          "max_batch_size": 4,
+          "delivery_policy": "reject"
+        },
+        "outcome": {
+          "subscription_id": "fake-sub",
+          "phase": "live",
+          "reason_code": "source.live",
+          "last_sequence": 4
+        },
+        "events": [
+          {
+            "event_id": "fake-event",
+            "session_id": "fake-session",
+            "run_id": "fake-run",
+            "seq": 4,
+            "type": "complete",
+            "ts": "2026-10-03T00:00:00Z",
+            "payload": {
+              "state": "completed"
+            }
+          }
+        ]
+      },
+      "expected_reason": "protocol.event_stream.sequence_gap",
+      "expected_events": 0,
+      "expected_terminals": 0
+    },
+    {
+      "case_id": "realtime-subscription-correlation",
+      "options": {
+        "source": "realtime",
+        "expected_run_id": "another-run"
+      },
+      "binding": {
+        "subscription": {
+          "version": "durable_runtime_event_stream_binding.v1",
+          "subscription_id": "fake-sub",
+          "source": "realtime",
+          "session_id": "fake-session",
+          "run_id": "fake-run",
+          "start_mode": "after_cursor",
+          "cursor": {
+            "value": "fake-cursor",
+            "sequence": 1
+          },
+          "max_batch_size": 4,
+          "delivery_policy": "reject"
+        },
+        "outcome": {
+          "subscription_id": "fake-sub",
+          "phase": "live",
+          "reason_code": "source.live",
+          "last_sequence": 4
+        },
+        "events": [
+          {
+            "event_id": "fake-event",
+            "session_id": "fake-session",
+            "run_id": "fake-run",
+            "seq": 4,
+            "type": "complete",
+            "ts": "2026-10-03T00:00:00Z",
+            "payload": {
+              "state": "completed"
+            }
+          }
+        ]
+      },
+      "expected_reason": "native_execution.correlation",
+      "expected_events": 0,
+      "expected_terminals": 0
+    }
+  ]
+}

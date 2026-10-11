@@ -46,7 +46,7 @@
 - [x] 7.2 执行 go test ./...、go test -race ./...、golangci-lint run --config .golangci.yml、pwsh -File scripts/check-quality-gate.ps1 和 pwsh -File scripts/check-docs-consistency.ps1，记录全部结果后才标记实施完成。
 - [x] 7.3 执行 OpenSpec strict validation 与 git diff --check，审阅 additive API、source ownership、风险和回滚点；确认所有实施任务具备代码/测试/文档/门禁证据。
 - [x] 7.4 实施完成并满足归档条件后仅使用 scripts/openspec-archive-seq.ps1 -ChangeName establish-native-execution-event-adapter-contract 归档，同步 roadmap、README 与归档索引并复验状态一致。
-- [ ] 7.5 将已验证并归档的功能分支提交、合并到最新 master、推送并验证合并结果，再删除已合并本地分支及关联 worktree；用 git 状态与远端 commit 确认，不删除未跟踪缓存/运行产物。
+- [x] 7.5 将已验证并归档的功能分支提交、合并到最新 master、推送并验证合并结果，再删除已合并本地分支及关联 worktree；用 git 状态与远端 commit 确认，不删除未跟踪缓存/运行产物。
 
 ## Example Impact Assessment
 

@@ -47,7 +47,7 @@
 - [x] 7.1 执行受影响包 `go test ./orchestration/... ./integration/... ./tool/diagnosticsreplay ./tool/contributioncheck -count=1`、专用双平台 gate 和 example smoke；在 `verification.md` 记录命令/exit code/证据，未执行项写明原因且不能假称通过。
 - [x] 7.2 执行 `go test ./...`、`go test -race ./...`、`golangci-lint run --config .golangci.yml`、`pwsh -File scripts/check-quality-gate.ps1`、`pwsh -File scripts/check-docs-consistency.ps1`、OpenSpec strict validation 与 `git diff --check`；验证通过后进行 contract/docs 自审与风险/回滚核对。
 - [x] 7.3 仅在全部实施与文档证据完整后使用 `scripts/openspec-archive-seq.ps1 -ChangeName establish-host-execution-plan-bridge-contract` 归档；同步 roadmap/README/index，再验证门禁，禁止手工重命名 archive。
-- [ ] 7.4 按实际授权执行提交、同步最新 master、合并、推送及合并结果验证；验证已合并后才删除本地功能分支及相关 worktree，保留用户缓存与未合并分支；记录交付 commit 和未执行项。
+- [x] 7.4 按实际授权执行提交、同步最新 master、合并、推送及合并结果验证；验证已合并后才删除本地功能分支及相关 worktree，保留用户缓存与未合并分支；记录交付 commit 和未执行项。
 
 ## Example Impact Assessment
 

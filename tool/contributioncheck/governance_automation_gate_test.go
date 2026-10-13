@@ -1,6 +1,7 @@
 package contributioncheck
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,6 +146,7 @@ func TestPublicSemanticDocumentationCommitmentGateFixtures(t *testing.T) {
 	}{
 		{"valid", commitment, ""},
 		{"valid-committed", commitment, ""},
+		{"valid-large-untracked", commitment, ""},
 		{"unsynced-doc", commitment, "public-semantic-doc-sync-missing"},
 		{"missing", "## Other Commitment\n", "missing-public-semantic-documentation-commitment"},
 		{"invalid", strings.Replace(commitment, "对外语义变化：是", "对外语义变化：maybe", 1), "invalid-public-semantic-documentation-commitment"},
@@ -203,7 +205,7 @@ func TestPublicSemanticDocumentationCommitmentGateFixtures(t *testing.T) {
 			if out, err := commit.CombinedOutput(); err != nil {
 				t.Fatalf("commit fixture baseline: %v: %s", err, out)
 			}
-			if tc.name == "valid" || tc.name == "valid-committed" {
+			if tc.name == "valid" || tc.name == "valid-committed" || tc.name == "valid-large-untracked" {
 				if tc.name == "valid-committed" {
 					branch := exec.Command("git", "switch", "--quiet", "-c", "fixture-change")
 					branch.Dir = dir
@@ -224,6 +226,18 @@ func TestPublicSemanticDocumentationCommitmentGateFixtures(t *testing.T) {
 					commit.Dir = dir
 					if out, err := commit.CombinedOutput(); err != nil {
 						t.Fatalf("commit updated fixture document: %v: %s", err, out)
+					}
+				}
+			}
+			if tc.name == "valid-large-untracked" {
+				cache := filepath.Join(dir, "zz-cache")
+				if err := os.MkdirAll(cache, 0755); err != nil {
+					t.Fatal(err)
+				}
+				// Enough bytes after README to reproduce grep -q SIGPIPE under pipefail.
+				for i := 0; i < 4000; i++ {
+					if err := os.WriteFile(filepath.Join(cache, fmt.Sprintf("%05d-%s", i, strings.Repeat("x", 100))), nil, 0644); err != nil {
+						t.Fatal(err)
 					}
 				}
 			}

@@ -15,6 +15,8 @@
 
 Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
+[`orchestration/planbridge`](planbridge/README.md) 是 opt-in 的 `host_execution_plan.v1` 编译/薄委托层：它先对独立 descriptor 与 native binding 做 bounded 全计划预检，再只选择一个既有 owner 执行。支持 inline direct、terminal-only teams parallel/vote、flat workflow 以及每次 activation 都新建独占内存 scheduler 的 local child。mailbox、resumed/native resume、durable continuation、subgraph、shared queue child 均在 source activation 前以 `unsupported_capability` 拒绝。原生执行、budget、retry、checkpoint、terminal 和事件仍属 source owner；业务授权、revision、effect 与 commit 属宿主。composer.Run/Stream 仍只委托 runner，不因此成为通用 plan graph executor。
+
 ## 架构设计
 
 设计原则是“组合优先，不吸收下层细节”：

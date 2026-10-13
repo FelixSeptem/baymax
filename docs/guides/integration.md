@@ -48,6 +48,21 @@ Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和
 
 与 RuntimeRecorder 共用 source 时使用显式 fan-out，让 recorder 消费原始事件、observer 消费原始事件的独立快照；不要从 QueryRuns 或 RunResult 合成事件。关闭/停用 observer 即可回滚观察接入；保留业务记录，已经发生的外部写入需按业务规则处理。
 
+## 宿主计划接入
+
+`orchestration/planbridge` 提供 opt-in 的 `host_execution_plan.v1` API：先以 `Describe` 生成 reference-only source facts，再以独立、受信的 native binding 和 live `Admit` callback 调用 `Compile`，最后使用 `Compiled.Run` 或 `Compiled.Stream` 委托一个既有 owner。Compile 无副作用地校验整份计划和 binding；它不把 composer.Run/Stream 解释为自动执行通用 graph。
+
+执行形态 direct/subagent/team/workflow、投递 inline/mailbox 和触发 manual/scheduled/resumed/callback 独立。首版目标：inline direct、teams parallel/vote、flat workflow、隔离独占 scheduler 的 local child；shared-queue child、mailbox delivery、resumed/native checkpoint resume 和组合动态 action continuation 在 dispatch 前拒绝。Stream 只承接实际 source streaming/callback 能力；同步 child handler 不自动获得 token streaming。
+
+宿主先授权实际 input/handler/tool 与业务写范围，再提交 plan identity/version、authority/tool digests、真实 parent references 和完整预算事实；digest 仅证明规范化描述一致，不认证 callback 或权限。编译快照不能替代实际 activation 的权限/readiness/lease/parent budget 重检。replan 使用新版本；恢复继续使用明确的 source-native API，不以相同 run ID 或 replay 伪装恢复。
+
+真实 source 事件通过上文 observer 投影，PlanVersion/PlanDigest 使用独立 HostReferences；plan ID 由 application execution record 关联。direct input_required 保留 pause；team/workflow/child 首版要求 terminal-only binding。聚合终态、scheduler commit 与 observer status 均不替代业务 commit gate。limits、错误、opaque binding 责任及拒绝反例见 [package README](../../orchestration/planbridge/README.md)，可运行的离线 fake model/tool 示例见 [host-execution-plan](../../examples/host-execution-plan/README.md)。
+
+停用新增 bridge 回到既有 owner 显式调用；保留 task/attempt/checkpoint/outbox 和业务记录，不能因此撤销已发生 effects。公开 API/默认值/限制/错误/支持矩阵发生变化时，必须在同一 OpenSpec 同步维护文档并通过治理门禁。
+
 ## 边界与回滚方式
 
 宿主拥有 credential、网络、持久化和全局路由。接入失败时禁用新增 adapter/profile，恢复上一个显式配置；不要通过降级隐藏 contract 不匹配。
+# Host execution plan bridge
+
+For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox, resumed execution and shared child queues are rejected rather than adapted.

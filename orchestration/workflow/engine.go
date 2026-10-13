@@ -806,6 +806,26 @@ func hasCycle(steps []Step) bool {
 	return false
 }
 
+// PreflightDefinition returns flat native executable defaults without invoking
+// adapters, checkpoints or emitters. Payloads and service references are owned
+// by the caller; callers needing a snapshot must detach them separately.
+func (e *Engine) PreflightDefinition(def Definition) (Definition, error) {
+	def.Steps = append([]Step(nil), def.Steps...)
+	for i := range def.Steps {
+		def.Steps[i].DependsOn = append([]string(nil), def.Steps[i].DependsOn...)
+	}
+	def = normalizeDefinition(def)
+	if errs := ValidateDefinition(def); len(errs) > 0 {
+		return Definition{}, errs
+	}
+	for i := range def.Steps {
+		if def.Steps[i].Timeout <= 0 {
+			def.Steps[i].Timeout = e.defaultStepTimeout
+		}
+	}
+	return def, nil
+}
+
 func (e *Engine) Plan(def Definition) ([]string, error) {
 	def = normalizeDefinition(def)
 	compiled, _, err := e.compileDefinition(def)

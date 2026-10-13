@@ -124,6 +124,10 @@
 
 允许方向（简化）：
 
+已交付的 [宿主执行计划桥接](../orchestration/planbridge/README.md) 位于 `orchestration/planbridge`，依赖 core/types 与既有 runner/composer/workflow/teams/scheduler 的原生入口和 validator；允许与独立 `host/eventadapter` 接线，禁止反向让 event adapter 控制执行。它只持有 bounded detached plan/binding facts，先全计划预检再委托一个 source owner；不得增加执行/预算/retry/terminal/recovery 状态机、worker 或诊断写入入口。
+
+宿主仍拥有业务 policy、授权、revision、effect key、input/handler binding 与 commit gate；identity/digest 不是授权。共享 scheduler claim 不提供任意 task-specific dispatch；首版 local child 仅允许隔离独占 binding。mailbox、组合动态暂停和跨 owner/native resume 请求须按不支持合同先拒绝；direct runner pause 保持原生语义。支持范围、constructor-only bounded limits、错误与回滚需在实施时同步 package/API 文档，当前声明不代表公开能力已交付。
+
 `runtime/*` -> (no dependency on `mcp/http` or `mcp/stdio`)
 
 `mcp/*`, `core/*`, `tool/*`, `skill/*`, `observability/*`, `orchestration/*`, `adapter/*` -> `runtime/*`
@@ -227,3 +231,6 @@ Session message history remains source-owned by the embedding host/session adapt
 `orchestration/snapshot` and `orchestration/composer` perform pre-mutation association/integrity reconciliation under existing `strict|compatible` and `compat_window` rules. Replay (`tool/diagnosticsreplay`) is offline and side-effect free. New references/classifications are bounded and privacy-preserving: workspace paths/content, Git metadata, completion bodies, reasoning, credentials, and unbounded payloads are excluded from snapshots, diagnostics, and OTel. Diagnostics continue through `observability/event.RuntimeRecorder` only.
 
 This boundary introduces no runtime configuration keys or hot-update semantics; existing scheduler/mailbox/recovery/snapshot/runtime-input settings keep `env > file > default`. Rollback removes additive references, fixtures, and gates without migration; legacy scheduler, mailbox, snapshot, and Run/Stream behavior remains valid. Git/worktree managers, workspace stores, hosted artifact services, runtime Git/shell execution, automatic merge/push, and parallel task/session state machines remain explicit non-goals.
+# Host execution plan bridge boundary
+
+`orchestration/planbridge` may validate bounded descriptors and delegate exactly once to runner, teams, workflow or a private local composer/scheduler owner. It must not acquire a shared queue, create a worker, own retry/budget/terminal/recovery state, write `RuntimeRecorder`, or import MCP transports. `tool/diagnosticsreplay` consumes only bounded reference fixtures and never receives executable binding references.

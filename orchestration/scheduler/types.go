@@ -111,6 +111,10 @@ type Task struct {
 	WorkspaceProvenance *types.WorkspaceProvenance `json:"workspace_provenance,omitempty"`
 }
 
+// NormalizeTask exposes the enqueue validator/defaults without store writes.
+// Payload copying follows the native shallow-copy contract.
+func NormalizeTask(in Task) (Task, error) { return normalizeTask(in) }
+
 func normalizeTask(in Task) (Task, error) {
 	out := in
 	out.TaskID = strings.TrimSpace(out.TaskID)

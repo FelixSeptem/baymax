@@ -33,7 +33,9 @@ for dir in "${active[@]}"; do
       mapfile -t doc_paths < <(printf '%s\n' "$paths" | grep -oE '`[^`]+\.md`' | tr -d '`' || true)
       if (( ${#doc_paths[@]} == 0 )); then add_issue public-semantic-doc-sync-missing "$name/$file:维护文档"; fi
       for doc_path in "${doc_paths[@]}"; do
-        if [[ ! -f "$doc_path" ]] || ! printf '%s\n' "${changed[@]}" | grep -Fxq -- "$doc_path"; then add_issue public-semantic-doc-sync-missing "$name/$file:$doc_path"; fi
+        # Consume all paths: grep -q would terminate early and SIGPIPE printf
+        # under pipefail when a host retains a large untracked cache.
+        if [[ ! -f "$doc_path" ]] || ! printf '%s\n' "${changed[@]}" | grep -Fx -- "$doc_path" >/dev/null; then add_issue public-semantic-doc-sync-missing "$name/$file:$doc_path"; fi
       done
     else
       if [[ "$status" != '无需同步（附理由）：'* && "$status" != '无需同步（附理由）:'* ]] || (( ${#status} < 20 )); then add_issue invalid-public-semantic-documentation-commitment "$name/$file:文档同步状态"; fi

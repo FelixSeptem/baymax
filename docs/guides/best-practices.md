@@ -16,3 +16,6 @@
 直接事件的 EventID/TraceID 是 mapping reference，不是去重键；两条同 ID 回调都必须保留。并行 source 用独立 observer，不按时间戳生成全局 sequence。不合作 sink 会阻塞 source 回调；应响应独立 observer context 的 deadline，避免无界背压。sink error/timeout 可能发生在写入之后，必须作为 unconfirmed 处理，不能自动 retry。
 
 快照接受有界 JSON-compatible 数据和标准 `time.Time`，拒绝自定义 JSON/Text marshaler。新增公开语义（包括 additive/opt-in）须同步其维护文档、spec、正负测试和门禁；运行 [专用 contract gate](../../scripts/check-native-execution-event-contract.ps1) 和离线示例后再交付。
+# Host plan bridge boundaries
+
+Treat `host_execution_plan.v1` as an opt-in compile-time consistency contract: always re-evaluate authorization, lease and remaining budget in `Binding.Admit` at activation. Do not treat a digest as authorization, a native terminal result as a business commit, or offline replay as Run resume. Keep callbacks/services in trusted bindings; their implementation cannot be authenticated by descriptor hashes. Roll back by ceasing bridge calls and using the native owner APIs; preserve task/checkpoint/outbox facts and reconcile effects through the host commit gate.

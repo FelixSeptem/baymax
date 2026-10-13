@@ -674,6 +674,13 @@ func resolveVoteWinner(records []TaskRecord, tieBreak VoteTieBreak) string {
 	return best
 }
 
+// NormalizePlan exposes the native pure validation/defaults seam. It detaches
+// the task slice before normalization; opaque runners remain host-owned.
+func NormalizePlan(plan Plan) (Plan, error) {
+	plan.Tasks = append([]Task(nil), plan.Tasks...)
+	return normalizePlan(plan)
+}
+
 func normalizePlan(plan Plan) (Plan, error) {
 	plan.TeamID = strings.TrimSpace(plan.TeamID)
 	plan.WorkflowID = strings.TrimSpace(plan.WorkflowID)

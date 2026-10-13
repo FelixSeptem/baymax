@@ -1,0 +1,1 @@
+{"version":"host_execution_plan.v1","cases":[{"case_id":"invalid-digest","plan_id":"plan","plan_version":1,"plan_digest":"sha256:not-a-digest","source_outcome":"completed","run_id":"run","budget_nanos":1,"source_evidence":true,"expected_reason":""}]}

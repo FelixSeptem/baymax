@@ -476,3 +476,11 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 
 
+# Host execution plan bridge contract
+
+| Requirement | Evidence |
+| --- | --- |
+| bounded descriptor, canonical digest, detached snapshots and native preflight | `orchestration/planbridge/*_test.go`, `orchestration/teams/normalization_test.go`, `orchestration/workflow/preflight_test.go`, `orchestration/scheduler/normalization_test.go` |
+| native owner Run/Stream, pause, child isolation and event projection | `integration/host_execution_plan_bridge_test.go` |
+| reference-only drift classification | `tool/diagnosticsreplay/host_execution_plan_test.go`, `tool/diagnosticsreplay/testdata/host_execution_plan.v1.json` |
+| shell/PowerShell contract and offline example | `scripts/check-host-execution-plan-contract.sh`, `scripts/check-host-execution-plan-contract.ps1`, `examples/host-execution-plan` |

@@ -1618,6 +1618,8 @@ Composed reason contract markers（必须保持字面稳定）：
 
 ## 安全基线（S1）
 
+- 安全验证工具链基线为 Go `1.26.9` 或更新的兼容补丁版本；`go.mod` 保留 `go 1.26.0` 语言版本，并通过 `toolchain go1.26.9` 声明补丁基线。默认 `GOTOOLCHAIN=auto` 和 CI 的 `go-version-file: go.mod` 读取该声明；离线或 local 模式须预装相应工具链，并以 `go version` 核实。
+- 工具链、模块缓存或漏洞数据库访问失败均不构成扫描通过。安全维护必须在实际 patched toolchain 下获得 strict `govulncheck ./...` 和完整质量门禁 exit=0；不得以 warn、关闭扫描或阈值调整代替漏洞修复。依赖升级限定为新扫描要求的修复版本及其最小一致依赖图。
 - 质量门禁脚本（Linux/PowerShell）与 CI 默认执行 `govulncheck` 且使用 strict 语义。
 - 可通过环境变量降级为 warn：`BAYMAX_SECURITY_SCAN_MODE=warn`。
 - 可通过 `BAYMAX_SECURITY_SCAN_GOVULNCHECK_ENABLED=false` 临时关闭扫描（不建议在 CI 中关闭）。

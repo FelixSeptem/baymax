@@ -37,10 +37,12 @@ go run ./examples/01-chat-minimal
 
 - `enforce-openspec-public-semantics-documentation-contract`（归档 161；[公开语义文档同步治理](openspec/changes/archive/161-enforce-openspec-public-semantics-documentation-contract/proposal.md)）：要求每个 active OpenSpec 的三份工件声明对外语义文档同步承诺，并由双平台门禁检查。
 - `establish-native-execution-event-adapter-contract`（归档 160；[原生执行事件与宿主接入契约](openspec/changes/archive/160-establish-native-execution-event-adapter-contract/proposal.md)）：已完成版本化 native execution event、bounded host references、source capability 声明、观察失败反馈、真实 Run/Stream 集成、离线 replay、示例与维护文档同步。
-- `establish-host-execution-plan-bridge-contract`（进行中；[宿主执行计划桥接提案](openspec/changes/establish-host-execution-plan-bridge-contract/proposal.md)）：已交付 opt-in、bounded 的 `host_execution_plan.v1` 编译与薄委托 API，将版本化计划和独立 native binding 在无副作用的全计划预检后交给既有 runner/teams/workflow/scheduler owner。支持矩阵、独立宿主授权、回滚与离线运行示例见 [设计](openspec/changes/establish-host-execution-plan-bridge-contract/design.md) 和 [示例](examples/host-execution-plan/README.md)；归档仍以 change 的完整验证和任务证据为前提。其余 3 项未启动候选见路线图。
+- `establish-host-execution-plan-bridge-contract`（归档 162；[宿主执行计划桥接提案](openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/proposal.md)）：已交付 opt-in、bounded 的 `host_execution_plan.v1` 编译与薄委托 API，将版本化计划和独立 native binding 在无副作用的全计划预检后交给既有 runner/teams/workflow/scheduler owner。支持矩阵、独立宿主授权、回滚与离线运行示例见 [设计](openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/design.md) 和 [示例](examples/host-execution-plan/README.md)。其余 3 项未启动候选见路线图。
+- `remediate-strict-security-vulnerabilities`（归档 163；[安全维护提案](openspec/changes/archive/163-remediate-strict-security-vulnerabilities/proposal.md)）：已完成 Go patched toolchain 与严格漏洞扫描最小依赖图升级，保持 strict 扫描策略，并以双入口完整质量门禁验证收口。开发环境基线见 [贡献指南](CONTRIBUTING.md)。
 
 最近归档：
 
+- `establish-host-execution-plan-bridge-contract`（归档 162）：版本化计划描述与 native binding、全计划预检、既有执行 owner 薄委托、离线 replay、示例与双平台门禁。
 - `enforce-openspec-public-semantics-documentation-contract`（归档 161）：公开语义变化的维护文档同步承诺、三份提案工件一致性及双平台门禁。
 - `establish-native-execution-event-adapter-contract`（归档 160）：版本化原生执行事件与宿主 adapter 合同、bounded references、observer failure 反馈、Run/Stream parity、离线 replay、示例及维护文档同步。
 - `fix-dynamic-action-resolution-terminal-event-semantics`（归档 159）：拆分动态 action resolution 与 canceled terminal 事件；confirm、deny、timeout 统一发出一次 resolution，只有 deny/timeout 发出 canceled terminal，并补齐 Run/Stream 与 duplicate resume 事件回归。

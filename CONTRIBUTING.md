@@ -4,9 +4,11 @@
 
 前置条件：
 
-- Go 1.26+
+- Go 1.26.9 或更新的兼容安全补丁版本（语言版本为 `go 1.26.0`，验证工具链由 `go.mod` 的 `toolchain go1.26.9` 声明）
 - golangci-lint
-- govulncheck（建议安装；质量门禁默认使用）
+- govulncheck（建议预装；完整质量门禁默认以 strict 模式执行，未预装时脚本通过 `go run` 获取并运行官方工具）
+
+默认 `GOTOOLCHAIN=auto` 会按 `go.mod` 自动选择或下载声明的工具链；CI 的 `go-version-file: go.mod` 同样读取该声明。离线或设置 `GOTOOLCHAIN=local` 的环境应预装符合补丁基线的 Go，并先用 `go version` 确认实际版本。工具链下载、漏洞数据库访问或扫描失败均应解决其原因，不得通过 warn、关闭扫描或修改阈值完成安全修复。
 
 安装依赖：
 

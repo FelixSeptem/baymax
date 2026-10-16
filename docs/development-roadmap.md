@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-14
+更新时间：2026-10-16
 
 ## 定位
 
@@ -31,6 +31,8 @@ Baymax 主线保持 `library-first + contract-first`：
 
 本提案复用归档 158/159 的 dynamic action checkpoint 与事件语义、归档 160 的真实事件，以及归档 162 的 plan identity。准入位于原生 runner ResumeDynamicAction 提交边界，宿主 callback 读取可信暂停绑定及当前权限/revision；拒绝不消费 checkpoint 或执行副作用。首阶段只支持原 Engine 内 direct Run/Stream continuation，不扩展 planbridge resumed/team/workflow/mailbox 或 metadata-only 跨进程恢复，不建立第二套恢复状态机。宿主继续负责 effect 边界的 authority/revision/effect CAS。Example Impact Assessment：`新增示例`；已实现 [离线真实 runner 示例](../examples/host-resume-admission/README.md) 并同步 [实际 API 接入指南](guides/host-resume-admission.md)。对外语义变化接受 AGENTS.md 的三工件文档同步约束，完整实施 DoD 以 tasks、spec 与 verification.md 为准。
 
+归档 163（`remediate-strict-security-vulnerabilities`）已完成独立安全维护：Go 工具链升至 1.26.9，strict 可达漏洞要求的最小依赖图已升级，严格扫描策略与性能门禁阈值保持不变。Example Impact Assessment：`无需示例变更（附理由）`，工具链与依赖补丁不改变示例 runtime path、semantic anchor 或 expected marker；完整 Go 测试和质量门禁仍覆盖现有示例。验证记录区分实际 advisory、缓存/权限失败和修复后扫描结果。完整工件见归档 [proposal](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/proposal.md)、[design](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/design.md) 与 [tasks](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/tasks.md)。
+
 归档 162（`establish-host-execution-plan-bridge-contract`）已完成并合并到主线；交付 opt-in host_execution_plan.v1、bounded 编译、全计划预检、既有 native owner 委托、离线 replay/example 与双平台 contract gate。范围、支持矩阵与交付证据见 [归档提案](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/proposal.md) 和 [示例](../examples/host-execution-plan/README.md)。其 resumed/mailbox/shared-queue 拒绝边界继续有效。
 
 归档 161（`enforce-openspec-public-semantics-documentation-contract`）已完成实施、验证并归档；其强制每个 active OpenSpec 的 proposal/design/tasks 接受对外语义文档同步承诺，并以双平台门禁检查文档路径、owner、证据及声明一致性；不改变 runtime。
@@ -45,14 +47,15 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-10-14：
+截至 2026-10-16：
 
-归档 160/161/162 已纳入 `master`；本次从同步基线创建 `feat/host-resume-admission-revalidation`，已完成 runner/Host guard、DTO、并发回归、离线 replay 与示例，正在执行完整门禁。后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
+归档 160/161/162/163 已纳入 `master`。安全维护已完成并保持 strict 扫描策略；本次 host-resume 分支已从安全维护后的最新基线同步，runner/Host guard、DTO、并发回归、离线 replay 与示例已实施，正在执行联合完整门禁。后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
 
 ## 已归档快照
 
 - 已归档：
-  - `establish-host-execution-plan-bridge-contract`（归档 162；已完成 bounded 宿主计划编译、原生 owner 委托、live admission、离线 replay、示例与双平台 gate）
+  - `remediate-strict-security-vulnerabilities`（归档 163；Go 1.26.9 patched toolchain、最小 strict 漏洞依赖图、受控 recorder baseline 校准、双入口质量门禁与严格可达漏洞扫描）
+  - `establish-host-execution-plan-bridge-contract`（归档 162；版本化计划/原生 binding、bounded 全计划预检、既有 owner 委托、离线 replay、示例与双平台门禁已纳入主线）
   - `establish-native-execution-event-adapter-contract`（归档 160；已完成版本化原生执行事件、bounded host references、observer failure 反馈、Run/Stream parity、离线 replay、示例与维护文档同步）
   - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
   - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）

@@ -11,6 +11,22 @@
 - 基线由主分支最近一次稳定 benchmark 结果生成。
 - 结果建议存储为 JSON 或 markdown 报告，并附测试环境信息（CPU、Go 版本、提交号）。
 
+### Runtime recorder baseline provenance
+
+`scripts/diagnostics-query-benchmark-baseline.env` 中的两个 runtime recorder
+基线于 2026-10-16 刷新，来源为 `master`
+`7aac3d7969a20e904cc83694b6f3082a8c6f308a`。采样环境为 Go `1.26.9`、
+AMD Ryzen 7 7840HS w/ Radeon 780M Graphics（16 CPU）、`GOFLAGS=-p=1`，并使用
+门禁默认 `200ms` benchtime 的 11 次独立样本中位数。
+
+| Benchmark | ns/op | p95-ns/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| `BenchmarkRuntimeRecorderRunFinished` | 326370 | 1070000 | 2232 |
+| `BenchmarkRuntimeRecorderRunFinishedSandboxEnriched` | 334217 | 1009100 | 2714 |
+
+本次只校准这两个已证实失配的主分支样本；诊断 query 的其他四项基线、所有
+12%/15% 回归阈值、默认 benchmark 参数和脚本判定逻辑均未改变。
+
 ## Acceptance Rule (Relative Percentage)
 
 - 吞吐类指标（越高越好）采用相对下降阈值：

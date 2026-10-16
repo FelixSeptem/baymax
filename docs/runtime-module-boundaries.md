@@ -1,10 +1,18 @@
 # Runtime Module Boundaries
 
-更新时间：2026-10-10
+更新时间：2026-10-14
 
 ## 目标
 
 明确全局 runtime 平台能力与 MCP 子域能力边界，避免配置与诊断入口继续耦合在单个 MCP runtime 包。
+
+## 宿主恢复准入边界
+
+`core/types/host_resume_admission.go` 定义 `host_resume_admission.v1` 有界 reference-only verifier 合同，`core/runner.WithHostResumeVerifier` 在原生 dynamic action checkpoint admission 提交前接入。runner 拥有 checkpoint/generation、decision 单次提交、continuation 和事件语义；宿主 callback 拥有可信 plan/revision/authority/tool/write-scope/confirmation/effect 绑定与当前业务授权。`host` 保留通用 command authorization 并委托同一 source guard，不另建 pending registry、执行器或终态 owner。
+
+callback 必须在 source 锁外运行，返回后 source 锁内重检 generation/state/mode/expiry/cancellation/context；拒绝不消费 checkpoint，不发 resolution/terminal。宿主仍在实际 effect 边界 CAS，Baymax 不维护业务账本或分布式 commit。metadata SPI/snapshot/replay 不能恢复新 Engine 内部 request/outcomes；首阶段不扩展 planbridge resumed/team/workflow/mailbox continuation。既有 composer recovery 所有权不因此改动。
+
+无 Provider SDK、业务库或 MCP transport 依赖，无 runtime 配置键或 QueryRuns 新字段；诊断保持 RuntimeRecorder 单写。支持矩阵、重复请求迁移和回滚见 [恢复准入指南](guides/host-resume-admission.md)。callback 锁外执行，source generation/control 在 commit 前重检；业务 CAS 仍属于宿主。
 
 ## 模块职责
 

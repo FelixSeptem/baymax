@@ -1,5 +1,20 @@
 # Mainline Contract Test Index
 
+## Host resume admission revalidation
+
+`host_resume_admission.v1` opt-in guard 已在 source runner 接线；默认关闭，nil verifier fail-closed。公开 API、limits、错误与恢复范围见 [指南](guides/host-resume-admission.md)。以下文件是实际验收入口，完整代码门禁状态以 change verification.md 为准。
+
+| Spec requirement | Positive / negative / boundary evidence | Integration / replay / gate |
+| --- | --- | --- |
+| Trusted bounded host bindings | `core/types/host_resume_admission_test.go`: Bounds、Drift、SnapshotDetached | trusted paused fixture 与 binding mismatch；256/128-byte 与 envelope 边界 |
+| Current authority before source commit | `core/runner/host_resume_admission_test.go`: RejectionPreservesCheckpointAndKey、NilPanicAndCanceledContextFailClosed | `TestHostResumeNativeSourceGuardAndResponseBarrier`；`TestHostResumeBusinessEffectStillRequiresCAS` |
+| Source commit race rechecks | RechecksSourceAfterCallback、ConcurrentCallbacksCommitOnce、NextPendingActionIsNewGeneration | barrier 双 confirm、cancel/expiry/replacement/context，Run/Stream iteration 1→2→3；race 门禁 |
+| Full duplicate and result-read boundaries | DuplicateRequiresFullIdentity、InFlightIsNotEmptySuccess，guard 启用/关闭 | Host 不同 message source duplicate，独立结果读取授权，verifier/effect 不重复 |
+| Live continuation versus metadata recovery | CancellationAuthorityAndRestartScope，新 Engine unknown 且无调用 | `integration/host_resume_admission_test.go`；既有 planbridge unsupported 测试继续有效 |
+| Source events and offline conformance | `core/runner/dynamic_action_resume_test.go` 的 resolved/canceled event suite；guard rejection 无新事件 | `TestHostResumeReplayGoldenAndDrift`、14-case golden/invalid fixtures 与 ownership test |
+
+`scripts/check-host-resume-admission-contract.sh/.ps1` 已接入 quality/contributioncheck，验证 native/Host/replay/example、故意 drift 的 exit=1 与 `host_resume.replay_drift`。示例 [host-resume-admission](../examples/host-resume-admission/README.md) 使用真实 runner 产生 markers。完整代码门禁、两平台实际执行项与未执行原因记录在 change verification.md；文档同步门禁不代替运行时 conformance。
+
 ## Native execution event adapter
 
 `native_execution_event.v1` opt-in observer/projector 保留原生执行事实；RuntimeRecorder 单写、source terminal/ordering/identity 和业务 commit gate 均保留各自 owner。无 env/file/hot-update 键或 QueryRuns 字段。Source 接线、limits、迁移/回滚见 [adapter 合同](../host/eventadapter/README.md) 与 [集成指南](guides/integration.md)。

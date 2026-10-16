@@ -715,6 +715,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-embedded-host-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] host resume admission contract suites"
+        Command   = { pwsh -File scripts/check-host-resume-admission-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] runtime steering/follow-up contract suites"
         Command   = { pwsh -File scripts/check-runtime-steering-follow-up-contract.ps1 }
     },

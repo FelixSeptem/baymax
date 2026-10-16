@@ -60,6 +60,12 @@ Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和
 
 停用新增 bridge 回到既有 owner 显式调用；保留 task/attempt/checkpoint/outbox 和业务记录，不能因此撤销已发生 effects。公开 API/默认值/限制/错误/支持矩阵发生变化时，必须在同一 OpenSpec 同步维护文档并通过治理门禁。
 
+## 暂停后的恢复准入
+
+native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用 Authorizer 不自动证明暂停前的业务 revision、plan/write scope 和当前权限仍匹配。`runner.WithHostResumeVerifier` 显式安装 `host_resume_admission.v1`，由宿主 callback 读取可信暂停绑定与当前事实，在 decision commit 前重验证；direct API 与既有 run.action.resume 共享该入口，不增加 command kind。默认不安装；安装 nil verifier 会 fail-closed。
+
+完整 normalized identity 与 mode 必须保持一致才能读取 duplicate result，执行中返回 `runner.ErrDynamicActionInProgress`。接线/limits/错误/支持矩阵见 [恢复准入指南](host-resume-admission.md)，[离线示例](../../examples/host-resume-admission/README.md) 使用真实 runner 验证拒绝、恢复、duplicate 和 CAS。不要把 metadata/snapshot/replay 或同 run ID 当成新 Engine 的 durable continuation；planbridge resumed 仍 unsupported。宿主实际 effect 提交仍需 authority/revision/effect CAS，digest、resolved、command acceptance 与 runner completion 均不是业务 commit。
+
 ## 边界与回滚方式
 
 宿主拥有 credential、网络、持久化和全局路由。接入失败时禁用新增 adapter/profile，恢复上一个显式配置；不要通过降级隐藏 contract 不匹配。

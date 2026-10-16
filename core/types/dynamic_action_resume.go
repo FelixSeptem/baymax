@@ -13,6 +13,34 @@ import (
 // action payload represented by Token.
 const DynamicActionResumeProtocolVersion = "dynamic_action_resume.v1"
 
+// DynamicActionContinuationError reports execution failure after the source
+// accepted a resume decision. It is not an admission rejection. Unwrap preserves
+// the execution cause for direct callers and source-retained duplicate reads.
+type DynamicActionContinuationError struct {
+	cause error
+}
+
+func NewDynamicActionContinuationError(cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return &DynamicActionContinuationError{cause: cause}
+}
+
+func (e *DynamicActionContinuationError) Error() string {
+	if e == nil || e.cause == nil {
+		return "dynamic action continuation failed"
+	}
+	return e.cause.Error()
+}
+
+func (e *DynamicActionContinuationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
 const (
 	DynamicActionMaxTokenBytes             = 256
 	DynamicActionMaxKindBytes              = 128
@@ -102,6 +130,19 @@ type DynamicActionDecision struct {
 	CheckpointDigest  string                    `json:"checkpoint_digest"`
 	IdempotencyKey    string                    `json:"idempotency_key"`
 	Reference         string                    `json:"reference,omitempty"`
+}
+
+// Normalized returns the canonical identity used for source idempotency.
+func (d DynamicActionDecision) Normalized() DynamicActionDecision {
+	d.RunID = strings.TrimSpace(d.RunID)
+	d.SessionID = strings.TrimSpace(d.SessionID)
+	d.CheckpointID = strings.TrimSpace(d.CheckpointID)
+	d.CheckpointVersion = strings.TrimSpace(d.CheckpointVersion)
+	d.CheckpointDigest = strings.TrimSpace(d.CheckpointDigest)
+	d.Token = strings.TrimSpace(d.Token)
+	d.Reference = strings.TrimSpace(d.Reference)
+	d.IdempotencyKey = strings.TrimSpace(d.IdempotencyKey)
+	return d
 }
 
 func (d DynamicActionDecision) Validate() error {

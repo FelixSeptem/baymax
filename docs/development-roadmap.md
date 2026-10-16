@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-13
+更新时间：2026-10-14
 
 ## 定位
 
@@ -24,12 +24,14 @@ Baymax 主线保持 `library-first + contract-first`：
 
 归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
 
-宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 的实现与维护文档已进入进行中收尾；其余 3 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
+宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162；恢复准入重验证已实施，正在完成交付门禁。其余 2 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
 
 - 进行中：
-  - `establish-host-execution-plan-bridge-contract`（实施收尾；P1；已交付版本化计划描述/原生 binding、bounded 编译、全计划预检、既有执行 owner 委托、离线 replay/example 与双平台 contract gate；归档仍待全部最终门禁以 exit 0 完成；[proposal](../openspec/changes/establish-host-execution-plan-bridge-contract/proposal.md)、[design](../openspec/changes/establish-host-execution-plan-bridge-contract/design.md)、[tasks](../openspec/changes/establish-host-execution-plan-bridge-contract/tasks.md)）
+  - `establish-host-resume-admission-revalidation-contract`（实施中，交付验证；P1；已交付 reference-only 宿主绑定、当前授权/revision 重验证、source 锁外 callback 与锁内再次校验、完整 duplicate identity 和 Run/Stream conformance；[proposal](../openspec/changes/establish-host-resume-admission-revalidation-contract/proposal.md)、[design](../openspec/changes/establish-host-resume-admission-revalidation-contract/design.md)、[tasks](../openspec/changes/establish-host-resume-admission-revalidation-contract/tasks.md)）
 
-本提案复用归档 160 的真实事件与 host references；首版目标为 direct、inline teams parallel/vote、flat workflow 和隔离独占 scheduler 的 local child。mailbox、resumed/native resume、跨 owner durable continuation、shared-queue child 与组合动态 pause 必须先拒绝，不新建 executor/预算/retry/恢复状态机。宿主继续负责业务授权、revision 和 commit gate。Example Impact Assessment：`新增示例`；已建立 [示例文档基线](../examples/host-execution-plan/README.md)。对外语义变化接受 AGENTS.md 的三工件文档同步约束，完整实施 DoD 以 tasks 与 spec 为准。
+本提案复用归档 158/159 的 dynamic action checkpoint 与事件语义、归档 160 的真实事件，以及归档 162 的 plan identity。准入位于原生 runner ResumeDynamicAction 提交边界，宿主 callback 读取可信暂停绑定及当前权限/revision；拒绝不消费 checkpoint 或执行副作用。首阶段只支持原 Engine 内 direct Run/Stream continuation，不扩展 planbridge resumed/team/workflow/mailbox 或 metadata-only 跨进程恢复，不建立第二套恢复状态机。宿主继续负责 effect 边界的 authority/revision/effect CAS。Example Impact Assessment：`新增示例`；已实现 [离线真实 runner 示例](../examples/host-resume-admission/README.md) 并同步 [实际 API 接入指南](guides/host-resume-admission.md)。对外语义变化接受 AGENTS.md 的三工件文档同步约束，完整实施 DoD 以 tasks、spec 与 verification.md 为准。
+
+归档 162（`establish-host-execution-plan-bridge-contract`）已完成并合并到主线；交付 opt-in host_execution_plan.v1、bounded 编译、全计划预检、既有 native owner 委托、离线 replay/example 与双平台 contract gate。范围、支持矩阵与交付证据见 [归档提案](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/proposal.md) 和 [示例](../examples/host-execution-plan/README.md)。其 resumed/mailbox/shared-queue 拒绝边界继续有效。
 
 归档 161（`enforce-openspec-public-semantics-documentation-contract`）已完成实施、验证并归档；其强制每个 active OpenSpec 的 proposal/design/tasks 接受对外语义文档同步承诺，并以双平台门禁检查文档路径、owner、证据及声明一致性；不改变 runtime。
 
@@ -43,13 +45,14 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-10-11：
+截至 2026-10-14：
 
-归档 160/161 已合并回 `master`；本次确认 `master` 与 `origin/master` 同步后创建 `feat/host-execution-plan-bridge` 起草提案，已审计 Baymax 原生入口。尚未开始 runtime 实施；后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
+归档 160/161/162 已纳入 `master`；本次从同步基线创建 `feat/host-resume-admission-revalidation`，已完成 runner/Host guard、DTO、并发回归、离线 replay 与示例，正在执行完整门禁。后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
 
 ## 已归档快照
 
 - 已归档：
+  - `establish-host-execution-plan-bridge-contract`（归档 162；已完成 bounded 宿主计划编译、原生 owner 委托、live admission、离线 replay、示例与双平台 gate）
   - `establish-native-execution-event-adapter-contract`（归档 160；已完成版本化原生执行事件、bounded host references、observer failure 反馈、Run/Stream parity、离线 replay、示例与维护文档同步）
   - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
   - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）
@@ -212,33 +215,18 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
-### 待实现提案：宿主执行接入与恢复边界（2026-10-11）
+### 待实现提案：宿主执行接入与恢复边界（2026-10-14）
 
-需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件提案已归档为 160，plan bridge 已移入“当前状态”的进行中列表，以下仅维护其余 3 个未启动候选。
+需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件与 plan bridge 已分别归档为 160/162；恢复准入重验证仅在“当前状态”的进行中列表维护，以下仅维护其余 2 个未启动候选。
 
 总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。优先补接入 contract 与 conformance，只有复现证明既有机制存在 gap 时才最小修改运行时。
 
 | 顺序 | 待实现候选 slug | 优先级与依赖 | 首阶段目标 |
 | --- | --- | --- | --- |
-| 1 | `establish-host-resume-admission-revalidation-contract` | P1；依赖进行中 plan bridge 的稳定 identity/digest，复用归档 158/159 | runtime 恢复前重新验证宿主权限与业务 revision |
-| 2 | `establish-host-context-assembly-handoff-contract` | P2；可与 plan bridge 分别立项，复用其 capability/digest 约定 | 业务过滤后的上下文装配、预算、handoff 与恢复接缝 |
-| 3 | `establish-application-outbox-mailbox-recovery-contract` | P2；依赖 plan/event correlation 与恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
+| 1 | `establish-host-context-assembly-handoff-contract` | P2；复用归档 162 的 capability/digest 约定，可独立立项 | 业务过滤后的上下文装配、预算、handoff 与恢复接缝 |
+| 2 | `establish-application-outbox-mailbox-recovery-contract` | P2；复用归档 160/162 的 plan/event correlation，依赖恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
 
 上述优先级是建议启动顺序，不表示可跳过准入审计。以下 Example Impact Assessment 为立项预评估，正式 proposal/design/tasks 须分别声明并确认。各候选都须交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate；实施时按 AGENTS.md 执行完整代码门禁。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
-
-#### 恢复准入与宿主授权重验证
-
-**候选 slug / 状态**：`establish-host-resume-admission-revalidation-contract`；待实现，未启动。
-
-**触发信号**：Task Harness 的 pause/resume/checkpoint 与业务 revision、write scope、确认和 effect key 同时存在；恢复 runtime 状态并不等于原业务权限仍有效。归档 158/159 已解决动态 PendingAction 原生 input_required/resume 与 resolution/terminal 语义，本候选补宿主准入接缝，不重复建设这些能力。
-
-**复用 owner 与范围**：runner/Host dynamic action resume、checkpoint/snapshot、scheduler attempt/lease 与既有 action gate。Baymax 恢复其拥有的执行状态，宿主重新验证 task revision、plan digest、write scope、authority、confirmation 与 effect key；相同 run ID 只证明 correlation，不能单独证明 checkpoint 恢复或再次授权。
-
-**首阶段 DoD**：区分 resume、retry、event replay 与 new run，明确恢复顺序与拒绝 contract；宿主准入拒绝须发生在 runtime 状态变更与新副作用之前。以真实 runner 检验合法 checkpoint、失效权限/revision、plan/checkpoint digest mismatch、重复 idempotency key、过期或冲突 decision、进程恢复适用范围和 Run/Stream parity；明确哪些 checkpoint 可持久恢复，哪些仅为进程内恢复。拒绝与重复请求不得重复产生 resolution/terminal 或执行 effect。
-
-**非目标、风险与回滚**：不让 Baymax 解释 Danny 业务权限，不把 checkpoint/policy digest 当成授权，不声称恢复能回滚已发生业务写入。主要风险是恢复时使用旧权限或重复提交；回滚停用新增接缝，并按宿主策略拒绝无法重验证的恢复请求，保留既有 native resume contract。
-
-**文档与示例影响**：更新 Host/HITL、checkpoint/recovery 文档、`docs/runtime-module-boundaries.md` 和 `docs/mainline-contract-test-index.md`。Example Impact Assessment：`新增示例`，展示业务 revision 变更导致恢复拒绝及合法确认恢复，复用归档 158/159 语义。
 
 #### 宿主上下文装配与 handoff 接缝
 
@@ -433,7 +421,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 2. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
 3. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
 4. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
-5. **宿主执行接入候选**：原生事件已归档为 160，plan bridge 起草后仅在“当前状态”维护；下一候选优先恢复准入，context 接缝可独立推进，outbox/mailbox 接缝依赖稳定关联。先证明接入 gap，再最小补充既有 owner，不把原五项合并为平台化执行控制大提案。
+5. **宿主执行接入候选**：原生事件/plan bridge 已归档为 160/162，恢复准入已实施且交付状态仅在“当前状态”维护；下一候选为 context 接缝，outbox/mailbox 接缝依赖稳定关联与恢复准入边界。先证明接入 gap，再最小补充既有 owner，不把原五项合并为平台化执行控制大提案。
 
 ### 需求触发观察项
 

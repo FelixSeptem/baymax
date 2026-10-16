@@ -1,6 +1,6 @@
 # Runtime Config & Diagnostics API
 
-更新时间：2026-10-10
+更新时间：2026-10-14
 
 ## 目标
 
@@ -17,6 +17,14 @@ Observer Status 是有界集成反馈，无 payload/raw error：healthy/failed/c
 本次无 QueryRuns 或诊断 schema 新字段；Status 不直接写诊断。RuntimeRecorder 独立消费原始 source 事件，仍是唯一诊断 writer。授权 sink 可以获得真实事件正文，不能将它复制到新增 diagnostics、OTel 或 replay fixture。详见 [observer contract](../host/eventadapter/README.md) 与 [接线指南](guides/integration.md)。回滚停用 adapter/恢复原 EventHandler，无配置或持久化迁移，外部 effect 由业务处理。
 
 Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`dynamic_action_count`、`dynamic_action_reference_digest`、`dynamic_action_checkpoint_id`、`dynamic_action_checkpoint_version`、`dynamic_action_checkpoint_digest`、`dynamic_action_pause_reason`、`dynamic_action_resume_attempt` 和 `dynamic_action_resume_admission`。这些字段只记录 opaque reference/checkpoint facts，不写入 PendingAction 业务正文；写入仍必须经过 `observability/event.RuntimeRecorder`。
+
+## 宿主恢复准入：constructor-only
+
+`runner.WithHostResumeVerifier(types.HostResumeVerifier)` 安装 `host_resume_admission.v1` source runner guard，默认不安装；显式安装 nil verifier 或缺可信 binding 时 fail-closed，不能由请求字段绕过。不新增 env/file/hot-update 配置键，不改变配置优先级/原子回滚。references 256 UTF-8 bytes、digests 128 bytes、request/result DTO JSON envelope 各 32 KiB，plan version 必须大于零；不影响既有协议限额。Go 常量为 `HostResumeMaxReferenceBytes`、`HostResumeMaxDigestBytes`、`HostResumeMaxEnvelopeBytes`。
+
+`types.HostResumeReason` 提供有界 `host_resume.*` rejection 分类：invalid_binding、binding_mismatch、authority_denied、revision_drift、plan_drift、scope_drift、confirmation_invalid、effect_conflict、revalidation_failed，可用 errors.Is 比较。callback error/panic/context cancellation 收口为 revalidation_failed；tool/write scope 共用 scope_drift。source stale/expired/terminal/conflict/unknown 仍由 source 分类；exact duplicate 执行中返回 `runner.ErrDynamicActionInProgress`，完成后返回保留结果与原 continuation error，不再次调用 verifier。完整 normalized identity 与 mode 是 duplicate 的必要条件，不能只保留 key/kind。
+
+拒绝及 duplicate 不新增 resolved/terminal，accepted decision 保持现有事件顺序；可在既有 admission/source fact event 中携带 bounded reason/opaque references，新增 payload 遵守 additive/nullable/default，经 RuntimeRecorder 单写。无新 QueryRuns 字段，不记录业务正文、凭证、原始 effect key 或 raw callback errors。准入后执行失败返回 `*types.DynamicActionContinuationError`，支持 errors.As 区分与 errors.Is 解包；Host 对首次和 exact duplicate 仍返回 accepted / dynamic_action.resume_admitted，由 source terminal 事件表达执行失败或取消，禁止将 provider/tool 原始错误放入 admission ReasonCode。业务 effect store、授权和 CAS 仍由宿主管理。支持矩阵与回滚见 [恢复准入指南](guides/host-resume-admission.md)。
 
 ## 配置优先级
 

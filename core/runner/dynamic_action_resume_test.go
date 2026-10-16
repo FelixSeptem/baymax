@@ -54,7 +54,7 @@ func (c *dynamicActionEventCollector) lastResolvedPayload() map[string]any {
 	return nil
 }
 
-func newDynamicActionResumeEventScenario(t *testing.T, stream bool) (*Engine, *types.TerminalOutcome, *dynamicActionEventCollector) {
+func newDynamicActionResumeEventScenario(t *testing.T, stream bool, opts ...Option) (*Engine, *types.TerminalOutcome, *dynamicActionEventCollector) {
 	t.Helper()
 	reg := local.NewRegistry()
 	_, err := reg.Register(&fakeTool{name: "prepare", invoke: func(context.Context, map[string]any) (types.ToolResult, error) {
@@ -81,7 +81,7 @@ func newDynamicActionResumeEventScenario(t *testing.T, stream bool) (*Engine, *t
 			return onEvent(types.ModelEvent{Type: types.ModelEventTypeToolCall, ToolCall: &types.ToolCall{CallID: "call-events", Name: "local.prepare"}})
 		},
 	}
-	engine := New(model, WithLocalRegistry(reg))
+	engine := New(model, append(opts, WithLocalRegistry(reg))...)
 	collector := &dynamicActionEventCollector{}
 	var paused types.RunResult
 	if stream {

@@ -272,6 +272,8 @@ if ! bash scripts/check-host-execution-plan-contract.sh; then
   exit 1
 fi
 echo "[quality-gate] embedded host contract suites"
+echo "[quality-gate] host resume admission contract suites"
+bash scripts/check-host-resume-admission-contract.sh
 if ! bash scripts/check-embedded-host-contract.sh; then
   echo "[quality-gate][embedded-host-contract] embedded host contract suites failed"
   exit 1

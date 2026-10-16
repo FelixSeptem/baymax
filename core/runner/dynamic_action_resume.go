@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -17,9 +18,28 @@ var (
 	ErrDynamicActionTerminal     = errors.New("dynamic action checkpoint belongs to a terminal run")
 	ErrDynamicActionExpired      = errors.New("dynamic action checkpoint has expired")
 	ErrDynamicActionNotResumable = errors.New("dynamic action is not resumable")
+	ErrDynamicActionInProgress   = errors.New("dynamic action resume is in progress")
 )
 
 const dynamicActionCheckpointMaxAge = 24 * time.Hour
+
+// dynamicActionState keeps checkpoint ownership and its admission guard together.
+type dynamicActionState struct {
+	dynamicActionMu    sync.Mutex
+	dynamicCheckpoints map[string]dynamicActionCheckpoint
+	dynamicGeneration  uint64
+	hostResumeRequired bool
+	hostResumeVerifier types.HostResumeVerifier
+}
+
+// WithHostResumeVerifier enables host revalidation for every dynamic-action
+// decision on this Engine. Nil explicitly enables a fail-closed guard.
+func WithHostResumeVerifier(verifier types.HostResumeVerifier) Option {
+	return func(e *Engine) {
+		e.hostResumeRequired = true
+		e.hostResumeVerifier = verifier
+	}
+}
 
 type dynamicActionCheckpoint struct {
 	checkpoint types.RunCheckpoint
@@ -29,6 +49,9 @@ type dynamicActionCheckpoint struct {
 	resumed    bool
 	decision   types.DynamicActionDecision
 	result     types.RunResult
+	completed  bool
+	resultErr  error
+	generation uint64
 }
 
 func normalizeDynamicAction(outcome types.ToolCallOutcome, runID, sessionID string, iteration int) (types.DynamicActionReference, error) {
@@ -73,18 +96,23 @@ func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest
 		// ordinary runs subject to host-control limits.
 		control, _, _ = e.beginActiveRun(context.WithoutCancel(ctx), ref.RunID, ref.SessionID, stream)
 	}
+	e.dynamicActionMu.Lock()
+	e.dynamicGeneration++
+	generation := e.dynamicGeneration
+	e.dynamicActionMu.Unlock()
 	checkpoint := types.RunCheckpoint{
 		Version:      types.DynamicActionResumeProtocolVersion,
-		CheckpointID: fmt.Sprintf("%s:%s", ref.RunID, ref.CallID),
+		CheckpointID: fmt.Sprintf("dynamic-action:%d", generation),
 		RunID:        ref.RunID, SessionID: ref.SessionID, State: types.RunStateInputRequired,
 		Mode: map[bool]string{true: "stream", false: "run"}[stream], Iteration: iteration,
 		PendingAction: &ref, Digest: ref.Digest, CreatedAt: e.now().UTC(),
 	}
+	checkpoint = (types.HostResumeRequest{Checkpoint: checkpoint}).Detached().Checkpoint
 	if err := checkpoint.Validate(); err != nil {
 		return types.RunResult{RunID: ref.RunID, Iterations: iteration, Error: classified(types.ErrTool, err.Error(), false)}
 	}
 	e.dynamicActionMu.Lock()
-	e.dynamicCheckpoints[ref.RunID] = dynamicActionCheckpoint{checkpoint: checkpoint, request: req, outcomes: append([]types.ToolCallOutcome(nil), outcomes...), stream: stream}
+	e.dynamicCheckpoints[ref.RunID] = dynamicActionCheckpoint{checkpoint: checkpoint, request: req, outcomes: append([]types.ToolCallOutcome(nil), outcomes...), stream: stream, generation: generation}
 	e.dynamicActionMu.Unlock()
 	if control != nil {
 		control.mu.Lock()
@@ -136,84 +164,150 @@ func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.Dynamic
 	if err := decision.Validate(); err != nil {
 		return types.RunResult{}, err
 	}
+	decision = decision.Normalized()
 	e.dynamicActionMu.Lock()
-	cp, ok := e.dynamicCheckpoints[strings.TrimSpace(decision.RunID)]
-	if !ok {
-		e.dynamicActionMu.Unlock()
-		return types.RunResult{}, ErrDynamicActionUnknown
+	cp, duplicate, err := e.dynamicResumePreflight(decision, stream)
+	e.dynamicActionMu.Unlock()
+	if err != nil || duplicate {
+		if duplicate {
+			err = types.NewDynamicActionContinuationError(err)
+		}
+		return detachedDynamicActionResult(cp.result), err
 	}
-	if cp.resumed && cp.decision.IdempotencyKey == decision.IdempotencyKey && cp.decision.Decision == decision.Decision {
-		result := cp.result
-		e.dynamicActionMu.Unlock()
-		return result, nil
+	if ctx.Err() != nil {
+		return types.RunResult{}, types.HostResumeRevalidationFailed
 	}
-	if !cp.checkpoint.CreatedAt.IsZero() && e.now().UTC().Sub(cp.checkpoint.CreatedAt) > dynamicActionCheckpointMaxAge {
-		e.dynamicActionMu.Unlock()
-		return types.RunResult{}, ErrDynamicActionExpired
+	if e.hostResumeRequired {
+		r := types.HostResumeRequest{Version: types.HostResumeAdmissionVersion, Checkpoint: cp.checkpoint, Decision: decision}.Detached()
+		if err := e.revalidateHostResume(ctx, r); err != nil {
+			return types.RunResult{}, err
+		}
 	}
-	if cp.checkpoint.State != types.RunStateInputRequired {
+	// Host code has returned. Recheck the source generation and cancellation
+	// before the one decision commit; never keep source locks across host code.
+	e.dynamicActionMu.Lock()
+	latest, duplicate, err := e.dynamicResumePreflight(decision, stream)
+	if err != nil || duplicate {
 		e.dynamicActionMu.Unlock()
-		return types.RunResult{}, ErrDynamicActionTerminal
+		if duplicate {
+			err = types.NewDynamicActionContinuationError(err)
+		}
+		return detachedDynamicActionResult(latest.result), err
 	}
-	if cp.stream != stream || cp.checkpoint.SessionID != strings.TrimSpace(decision.SessionID) || cp.checkpoint.CheckpointID != strings.TrimSpace(decision.CheckpointID) || cp.checkpoint.Version != strings.TrimSpace(decision.CheckpointVersion) || cp.checkpoint.Digest != strings.TrimSpace(decision.CheckpointDigest) || cp.checkpoint.PendingAction == nil || cp.checkpoint.PendingAction.Token != strings.TrimSpace(decision.Token) {
+	if latest.generation != cp.generation {
 		e.dynamicActionMu.Unlock()
 		return types.RunResult{}, ErrDynamicActionStale
 	}
-	if cp.resumed {
+	cp = latest
+	control, exists := e.ActiveRun(decision.RunID)
+	if !exists {
 		e.dynamicActionMu.Unlock()
-		return types.RunResult{}, ErrDynamicActionConflict
+		return types.RunResult{}, ErrDynamicActionTerminal
+	}
+	// CancelRun linearizes under this same control mutex. A cancellation that
+	// wins first cannot be bypassed by an old successful host check.
+	control.mu.Lock()
+	if control.cancelAdmitted || control.closedFlag || control.ctx.Err() != nil || control.state != types.RunStateInputRequired {
+		control.mu.Unlock()
+		e.dynamicActionMu.Unlock()
+		return types.RunResult{}, ErrDynamicActionTerminal
+	}
+	if ctx.Err() != nil {
+		control.mu.Unlock()
+		e.dynamicActionMu.Unlock()
+		return types.RunResult{}, types.HostResumeRevalidationFailed
 	}
 	cp.resumed, cp.decision = true, decision
 	if decision.Decision != types.DynamicActionDecisionConfirm {
 		cp.result = types.RunResult{RunID: cp.checkpoint.RunID, Iterations: cp.checkpoint.Iteration, TerminalOutcome: &types.TerminalOutcome{RunID: cp.checkpoint.RunID, SessionID: cp.checkpoint.SessionID, State: types.RunStateCanceled, FailureFamily: types.FailureFamilyCanceled, Phase: types.ExecutionPhasePostStart, SourceReason: string(decision.Decision)}}
 		cp.checkpoint.State = types.RunStateCanceled
+		cp.completed = true
+		control.state = types.RunStateCanceled
 		e.dynamicCheckpoints[decision.RunID] = cp
+		control.mu.Unlock()
 		e.dynamicActionMu.Unlock()
 		e.emitDynamicActionResolved(ctx, h, cp, decision)
 		e.emitDynamicActionCanceled(ctx, h, cp, decision)
-		if ctrl, exists := e.ActiveRun(decision.RunID); exists {
-			e.finishActiveRun(ctrl)
-		}
-		return cp.result, nil
+		e.finishActiveRun(control)
+		return detachedDynamicActionResult(cp.result), nil
 	}
 	e.dynamicCheckpoints[decision.RunID] = cp
-	request, outcomes, control := cp.request, append([]types.ToolCallOutcome(nil), cp.outcomes...), (*ActiveRunControl)(nil)
-	if ctrl, exists := e.ActiveRun(decision.RunID); exists {
-		control = ctrl
-	}
+	control.state = types.RunStateWorking
+	control.mu.Unlock()
+	request, outcomes := cp.request, append([]types.ToolCallOutcome(nil), cp.outcomes...)
 	e.dynamicActionMu.Unlock()
 	e.emitDynamicActionResolved(ctx, h, cp, decision)
 	request.RunID = decision.RunID
-	e.dynamicActionMu.Lock()
-	// The first resumed model step consumes the checkpointed tool results.
-	e.dynamicCheckpoints[decision.RunID] = cp
-	e.dynamicActionMu.Unlock()
-	resumeCtx := ctx
-	if control != nil {
-		control.mu.Lock()
-		control.state = types.RunStateWorking
-		control.mu.Unlock()
-		resumeCtx = context.WithValue(resumeCtx, hostRunReservationKey{}, control)
-	}
-	// Store the continuation inputs for the normal loop to consume once.
-	e.dynamicActionMu.Lock()
-	cp.outcomes = outcomes
-	e.dynamicCheckpoints[decision.RunID] = cp
-	e.dynamicActionMu.Unlock()
+	resumeCtx := context.WithValue(ctx, dynamicResumeIterationKey{}, cp.checkpoint.Iteration)
+	resumeCtx = context.WithValue(resumeCtx, hostRunReservationKey{}, control)
+	// Preserve both request cancellation and source control cancellation while
+	// keeping this cooperative continuation in the calling goroutine.
+	resumeCtx, cancel := context.WithCancel(resumeCtx)
+	stop := context.AfterFunc(control.ctx, cancel)
+	defer func() { stop(); cancel() }()
 	if stream {
-		cp.result, _ = e.streamReactWithPending(resumeCtx, request, outcomes, h)
+		cp.result, cp.resultErr = e.streamReactWithPending(resumeCtx, request, outcomes, h)
 	} else {
-		cp.result, _ = e.runWithPending(resumeCtx, request, outcomes, h)
+		cp.result, cp.resultErr = e.runWithPending(resumeCtx, request, outcomes, h)
 	}
 	e.dynamicActionMu.Lock()
-	latest := e.dynamicCheckpoints[decision.RunID]
-	latest.result = cp.result
-	if cp.result.TerminalOutcome != nil {
-		latest.checkpoint.State = cp.result.TerminalOutcome.State
+	latest = e.dynamicCheckpoints[decision.RunID]
+	if latest.generation == cp.generation {
+		latest.result, latest.resultErr, latest.completed = detachedDynamicActionResult(cp.result), cp.resultErr, true
+		if cp.result.TerminalOutcome != nil {
+			latest.checkpoint.State = cp.result.TerminalOutcome.State
+		}
+		e.dynamicCheckpoints[decision.RunID] = latest
 	}
-	e.dynamicCheckpoints[decision.RunID] = latest
 	e.dynamicActionMu.Unlock()
-	return cp.result, nil
+	return cp.result, types.NewDynamicActionContinuationError(cp.resultErr)
+}
+
+// dynamicResumePreflight requires dynamicActionMu. A duplicate is identified
+// before terminal/expiry checks, but only with the entire normalized identity.
+func (e *Engine) dynamicResumePreflight(d types.DynamicActionDecision, stream bool) (dynamicActionCheckpoint, bool, error) {
+	cp, ok := e.dynamicCheckpoints[d.RunID]
+	if !ok {
+		return cp, false, ErrDynamicActionUnknown
+	}
+	if cp.resumed && cp.decision == d && cp.stream == stream {
+		if !cp.completed {
+			return dynamicActionCheckpoint{}, false, ErrDynamicActionInProgress
+		}
+		return cp, true, cp.resultErr
+	}
+	if cp.stream != stream || cp.checkpoint.SessionID != d.SessionID || cp.checkpoint.CheckpointID != d.CheckpointID || cp.checkpoint.Version != d.CheckpointVersion || cp.checkpoint.Digest != d.CheckpointDigest || cp.checkpoint.PendingAction == nil || cp.checkpoint.PendingAction.Token != d.Token {
+		return dynamicActionCheckpoint{}, false, ErrDynamicActionStale
+	}
+	if !cp.checkpoint.CreatedAt.IsZero() && e.now().UTC().Sub(cp.checkpoint.CreatedAt) > dynamicActionCheckpointMaxAge {
+		return dynamicActionCheckpoint{}, false, ErrDynamicActionExpired
+	}
+	if cp.checkpoint.State != types.RunStateInputRequired {
+		return dynamicActionCheckpoint{}, false, ErrDynamicActionTerminal
+	}
+	if cp.resumed {
+		return dynamicActionCheckpoint{}, false, ErrDynamicActionConflict
+	}
+	return cp, false, nil
+}
+
+func (e *Engine) revalidateHostResume(ctx context.Context, r types.HostResumeRequest) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = types.HostResumeRevalidationFailed
+		}
+	}()
+	if err = r.Validate(); err != nil {
+		return err
+	}
+	if e.hostResumeVerifier == nil {
+		return types.HostResumeRevalidationFailed
+	}
+	x, callbackErr := e.hostResumeVerifier.RevalidateHostResume(ctx, r.Detached())
+	if callbackErr != nil || ctx.Err() != nil {
+		return types.HostResumeRevalidationFailed
+	}
+	return types.ValidateHostResumeResult(r, x)
 }
 
 func (e *Engine) emitDynamicActionResolved(ctx context.Context, h types.EventHandler, cp dynamicActionCheckpoint, decision types.DynamicActionDecision) {
@@ -248,3 +342,5 @@ func (e *Engine) streamReactWithPending(ctx context.Context, req types.RunReques
 }
 
 type dynamicPendingOutcomesKey struct{}
+
+type dynamicResumeIterationKey struct{}

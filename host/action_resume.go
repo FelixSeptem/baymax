@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"errors"
 
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -31,7 +32,10 @@ func (c *Connection) resumeDynamicAction(ctx context.Context, cmd types.HostComm
 	stream, _ := cmd.Payload["stream"].(bool)
 	h := EventHandlerFunc(func(eventCtx context.Context, ev types.Event) { _ = c.emitEvent(eventCtx, cmd, ev) })
 	if _, err := resumer.ResumeDynamicAction(ctx, decision, h, stream); err != nil {
-		return reject(cmd, err)
+		var continuationErr *types.DynamicActionContinuationError
+		if !errors.As(err, &continuationErr) {
+			return reject(cmd, err)
+		}
 	}
 	return types.NormalizeHostCommandAdmission(cmd, types.HostAdmissionStatusAccepted, "dynamic_action.resume_admitted")
 }

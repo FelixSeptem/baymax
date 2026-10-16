@@ -74,8 +74,7 @@ type Engine struct {
 	handoffRestoreMu    sync.Mutex
 	handoffRestored     map[string]handoff.RestoreResult
 	activeRunState
-	dynamicActionMu    sync.Mutex
-	dynamicCheckpoints map[string]dynamicActionCheckpoint
+	dynamicActionState
 }
 
 type cachedCapabilities struct {
@@ -108,7 +107,7 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 		realtimeCursors:    map[string]realtimeCursorRecord{},
 		handoffBoundaries:  map[string]handoffBoundary{},
 		handoffRestored:    map[string]handoff.RestoreResult{},
-		dynamicCheckpoints: map[string]dynamicActionCheckpoint{},
+		dynamicActionState: dynamicActionState{dynamicCheckpoints: map[string]dynamicActionCheckpoint{}},
 		activeRunState:     activeRunState{activeRuns: map[string]*ActiveRunControl{}, activeRunLimit: 128, activeRunIngressBuffer: 16},
 		newRunID: func() string {
 			return fmt.Sprintf("run-%d", time.Now().UnixNano())
@@ -342,7 +341,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
 	defer runSpan.End()
 	state := StateInit
-	iteration := 0
+	iteration, _ := ctx.Value(dynamicResumeIterationKey{}).(int)
 	lastResponse := types.ModelResponse{}
 	warnings := make([]string, 0)
 	mergedCalls := make([]types.ToolCallSummary, 0)
@@ -1537,7 +1536,7 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	ctx, runSpan := e.tracer.StartRun(ctx, runID)
 	defer runSpan.End()
 
-	iteration := 0
+	iteration, _ := ctx.Value(dynamicResumeIterationKey{}).(int)
 	timelineSeq := int64(0)
 	final := ""
 	usage := types.TokenUsage{}

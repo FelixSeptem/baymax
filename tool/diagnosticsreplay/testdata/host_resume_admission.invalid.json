@@ -1,0 +1,1 @@
+{"version":"host_resume_admission.v1","cases":[{"case_id":"reject-with-effect","mode":"run","run_id":"run","session_id":"session","checkpoint_id":"checkpoint","decision":"confirm","status":"rejected","binding_matches":true,"authority_valid":false,"revision_matches":true,"effects":1,"iteration_before":1,"iteration_after":1,"expected_reason":"host_resume.authority_denied"}]}

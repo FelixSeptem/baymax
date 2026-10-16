@@ -32,7 +32,7 @@
 ## 6. 文档同步与交付验证
 
 - [x] 6.1 按最终 API、limits、默认关闭、错误分类、事件顺序、duplicate 迁移和恢复矩阵同步全部承诺维护文档与 proposal/design/tasks；验证三份 Public Semantic Documentation Commitment 一致、文档真实进入 Git 差异及 documentation/example/roadmap/docs 门禁通过。
-- [ ] 6.2 运行受影响包单测/integration、专用双平台 gate、openspec strict validation，以及 go test ./...、go test -race ./...、golangci-lint run --config .golangci.yml、pwsh -File scripts/check-quality-gate.ps1、pwsh -File scripts/check-docs-consistency.ps1 和 git diff --check；验证实际 exit-code 并将风险、回滚、未执行项及原因写入 verification.md，禁止以计划替代执行证据。
+- [x] 6.2 运行受影响包单测/integration、专用双平台 gate、openspec strict validation，以及 go test ./...、go test -race ./...、golangci-lint run --config .golangci.yml、pwsh -File scripts/check-quality-gate.ps1、pwsh -File scripts/check-docs-consistency.ps1 和 git diff --check；验证实际 exit-code 并将风险、回滚、未执行项及原因写入 verification.md，禁止以计划替代执行证据。
 - [ ] 6.3 完整验证后使用 scripts/openspec-archive-seq.ps1 归档并同步 roadmap/索引；按 AGENTS.md 在获准交付时提交、合并最新 master、验证合并结果、推送并清理已合并功能分支，验证 Git 状态与归档序号无漂移。
 
 ## Example Impact Assessment

@@ -1,6 +1,6 @@
 # Host resume admission verification
 
-日期：2026-10-15（包含 2026-10-14 的原始回归证据）。功能分支：`feat/host-resume-admission-revalidation`；起草基准：`7aac3d7`。当前为实现收尾验证；归档、提交、合并和推送状态单独记录，不以代码通过代替交付完成。
+日期：2026-10-16（包含 2026-10-14、2026-10-15 的原始回归证据）。功能分支：`feat/host-resume-admission-revalidation`；起草基准：`7aac3d7`。当前为实现收尾验证；归档、提交、合并和推送状态单独记录，不以代码通过代替交付完成。
 
 ## 已取得的证据
 
@@ -56,4 +56,36 @@
 
 ## 工作区与生命周期
 
-预存 `.artifacts/a64/*.json` 两项改动及未跟踪 Go 缓存属于用户，保留且不纳入本 change。当前未归档、提交、合并或推送；严格安全门禁尚未通过，tasks 6.2 与 6.3 保持未勾选。解除阻断需要在独立依赖/Go 工具链安全更新中升级到 Go `1.26.9`、评估并更新受影响模块，随后重新执行完整质量门禁；不得以 warn/disabled 安全扫描替代 strict 通过证据。
+预存 `.artifacts/a64/*.json` 两项改动及未跟踪 Go 缓存属于用户，保留且不纳入本 change。实现已保存为 checkpoint commit `e1f776b`（`feat: implement host resume admission revalidation`）；尚未归档、合并或推送，tasks 6.2 与 6.3 保持未勾选。
+
+用户已批准独立安全维护 `remediate-strict-security-vulnerabilities`，在独立 worktree 中声明 Go `1.26.9` 并更新 `golang.org/x/net v0.60.0` 及其最小一致依赖图。安全维护分支的直接 strict scan 和 PowerShell 完整门禁均 exit=0；其 Git Bash 完整入口两次在默认 200ms diagnostics 性能采样下失败，普通测试、race、lint、semantic stability 均通过。第二次普通/sandbox recorder 中位数为 202285/227644 ns/op（+16.6452%/+14.0833%，阈值 12%），不能计为完整通过。
+
+随后使用同一 Go `1.26.9`、cache、默认 16 CPU 和相同 benchmark 对照 master 与安全分支。200ms/count=5 的 master 中位数为 189725/208339 ns/op，patched 为 202387/205406；1s/count=5 的 master 为 189677/218868，patched 为 188877/207317。长采样未显示 patched 比 master 更慢，分配数相同，具体波动原因仍未知。安全分支通过既有参数延长 diagnostics 采样至 1s，再次执行完整 Git Bash 门禁；5 次中位数、baseline、ns/allocs/p95 阈值及 strict/enabled 策略均保持不变。该轮仍 exit=1：前 75 项（含普通测试、race、lint、semantic stability）通过，第 76 项 sandbox-enriched recorder 中位数 326245 ns/op，相对 199542 基线 +63.4969%，未运行 full-chain 和最终 strict scan。其后顺序运行独立性能脚本也 exit=1，此次普通 recorder 中位数 198068 ns/op，相对 173419 基线 +14.2136%，而 sandbox-enriched 为 220536 ns/op（+10.5211%，通过）。样本呈波动、具体原因未知；所有失败与采样参数差异保留在安全 change 的 verification.md，安全维护暂不归档或合并。
+
+再次顺序复核现有的 500ms/count=9 采样组合，独立 diagnostics 性能脚本仍 exit=1：普通 recorder 中位数 194900 ns/op，相对 173419 基线 +12.3868%，略超原有 12% 阈值；sandbox-enriched 中位数 215414 ns/op（+7.9542%，通过）。安全分支与 master 的 recorder、benchmark、基线和性能门禁实现没有差异；本轮未调高阈值、改基线或再以重复完整门禁碰运气。失败的具体环境或历史基线原因尚未确定，原提案 6.2/6.3 仍未完成。
+
+安全提案 `verification.md` 已登记独立性能维护待办：4 月基线提交到当前 master 的 `RunRecord` 从 357 增至 447 个字段，recorder fixture 未变；当前 master/patched 分配数同为 2232/2714 allocs/op，比旧基线两项均高 204。需在固定主分支/Go/CPU/采样环境下调查热点和重测，优先评估优化；只有证明旧 baseline 失配，才在独立提案中按性能策略修改对应 baseline 并重新验证双平台完整门禁。此项尚未实施，不视为本提案或安全提案的门禁通过。
+
+安全分支的证据不能替代本 host-resume 实现与安全更新组合后的完整门禁；合并安全基线后仍须执行联合验证，不得以 warn/disabled 安全扫描替代 strict 通过证据。
+
+本轮重新运行 `pwsh -NoProfile -File scripts/check-host-resume-admission-contract.ps1`，exit=0，受影响包、故意 drift（预期 exit=1 / `host_resume.replay_drift`）和 8 个离线示例 marker 均通过。`C:/Program Files/Git/bin/bash.exe scripts/check-host-resume-admission-contract.sh` 在受限进程中因 Win32 signal-pipe error 5 退出 `-1073741502`，给予正常进程访问后相同入口 exit=0，故意 drift 分类一致。重新运行 `pwsh -NoProfile -File scripts/check-docs-consistency.ps1`、`openspec validate establish-host-resume-admission-revalidation-contract --strict` 和 `git diff --check` 均 exit=0。专用门禁的双平台通过不替代仍待完成的联合全量 strict quality gate。
+
+## 2026-10-16 安全基线合并后的最终联合验证（任务 6.2）
+
+本 change 已在提交 `268134800821b32b96d0325884b0b8fef810ff73` 上验证；该提交将 host-resume 实现与已推送的安全基线 `master`/`origin/master` `8af46d2fe730daed4f9e40b96969bf801b8352a1` 合并。上文记录的性能、缓存访问和旧依赖图失败是该安全基线之前的历史诊断，不能代表本节的最终交付结论。
+
+| 范围 | 实际命令/证据 | 结果 |
+| --- | --- | --- |
+| 受影响包与集成 | `go test ./core/types ./core/runner ./host/... ./integration/... ./tool/diagnosticsreplay ./tool/contributioncheck -count=1` | exit=0；core types/runner、Host、integration、replay 与 contributioncheck 全部通过 |
+| 专用 Windows 门禁 | `pwsh -NoProfile -File scripts/check-host-resume-admission-contract.ps1` | exit=0；故意 replay drift 为预期 exit=1 / `host_resume.replay_drift`，八个离线示例 marker 通过 |
+| 专用 Bash 门禁 | `C:\\Program Files\\Git\\bin\\bash.exe scripts/check-host-resume-admission-contract.sh` | exit=0；与 Windows 门禁具有相同的故意 drift 分类和示例覆盖 |
+| 严格 OpenSpec | `openspec validate establish-host-resume-admission-revalidation-contract --strict` | exit=0；change valid |
+| 全量普通测试 | `go test ./...` | exit=0；最终 full quality gate 的第 73 步亦通过（285.05s） |
+| 全量竞态测试 | `go test -race ./...` | exit=0；最终 full quality gate 的第 74 步通过（742.07s） |
+| 静态检查 | `golangci-lint run --config .golangci.yml` | exit=0；最终 full quality gate 内成功完成 |
+| 完整质量门禁 | `GOFLAGS=-p=1`、`BAYMAX_QUALITY_GATE_SCOPE=full`、`BAYMAX_QUALITY_GATE_PARALLELISM=1`、总/单步超时 `14400/3600` 秒下的 `pwsh -NoProfile -File scripts/check-quality-gate.ps1` | exit=0；78 步，3139.98s；A64 semantic/performance、full-chain smoke 通过；strict `govulncheck` 报 `No vulnerabilities found.` / `Your code is affected by 0 vulnerabilities.` |
+| 文档与差异 | `pwsh -NoProfile -File scripts/check-docs-consistency.ps1`、`git diff --check` | exit=0；documentation impact、roadmap consistency 和 whitespace 检查通过 |
+
+第一次后台完整门禁在第 73 步失败不是 runtime/contract 失败：此前被会话包装中断的 contributioncheck 自检在 `examples/agent-modes/MATRIX.md` 和 `examples/agent-modes/rag-hybrid-retrieval/minimal/main.go` 留下了临时的 `doc_ready_state`/sentinel 测试输入。根因通过 Git 差异、无残留 Go/Bash 进程、以及相同 contributioncheck 定向测试的干净重现确认；恢复两份测试遗留文件至已跟踪内容后，`go test ./tool/contributioncheck -run 'TestAgentMode(AntiTemplateContractExecutionPassFailAndExceptionalBranches|DocFirstDeliveryContractExecutionPassFailAndExceptionalBranches|A72ShellPowerShellParityOnClassifications)$' -count=1` exit=0，且第二次完整门禁成功。未修改 agent-mode 合同、测试逻辑、性能基线、阈值、采样或 strict 扫描策略。
+
+未执行项：无。执行时保留 `.artifacts/a64/*.json`、`.artifacts/host-resume-user-report-backup/` 和 `.gocache-*` 用户/测试产物，不纳入 change 提交。风险与回滚点沿用本文件“风险与回滚”章节：guard 默认关闭；如需回滚，停止恢复入口或回退本 change，保留暂停记录和业务 effect/outbox，并由宿主继续执行 authority/revision/effect CAS。

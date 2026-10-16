@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-13
+更新时间：2026-10-16
 
 ## 定位
 
@@ -24,12 +24,13 @@ Baymax 主线保持 `library-first + contract-first`：
 
 归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
 
-宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 的实现与维护文档已进入进行中收尾；其余 3 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
+宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162 并纳入主线；其余 3 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
 
-- 进行中：
-  - `establish-host-execution-plan-bridge-contract`（实施收尾；P1；已交付版本化计划描述/原生 binding、bounded 编译、全计划预检、既有执行 owner 委托、离线 replay/example 与双平台 contract gate；归档仍待全部最终门禁以 exit 0 完成；[proposal](../openspec/changes/establish-host-execution-plan-bridge-contract/proposal.md)、[design](../openspec/changes/establish-host-execution-plan-bridge-contract/design.md)、[tasks](../openspec/changes/establish-host-execution-plan-bridge-contract/tasks.md)）
+- 进行中：无。
 
-本提案复用归档 160 的真实事件与 host references；首版目标为 direct、inline teams parallel/vote、flat workflow 和隔离独占 scheduler 的 local child。mailbox、resumed/native resume、跨 owner durable continuation、shared-queue child 与组合动态 pause 必须先拒绝，不新建 executor/预算/retry/恢复状态机。宿主继续负责业务授权、revision 和 commit gate。Example Impact Assessment：`新增示例`；已建立 [示例文档基线](../examples/host-execution-plan/README.md)。对外语义变化接受 AGENTS.md 的三工件文档同步约束，完整实施 DoD 以 tasks 与 spec 为准。
+归档 163（`remediate-strict-security-vulnerabilities`）已完成独立安全维护：Go 工具链升至 1.26.9，strict 可达漏洞要求的最小依赖图已升级，严格扫描策略与性能门禁阈值保持不变。Example Impact Assessment：`无需示例变更（附理由）`，工具链与依赖补丁不改变示例 runtime path、semantic anchor 或 expected marker；完整 Go 测试和质量门禁仍覆盖现有示例。验证记录区分实际 advisory、缓存/权限失败和修复后扫描结果。完整工件见归档 [proposal](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/proposal.md)、[design](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/design.md) 与 [tasks](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/tasks.md)。
+
+归档 162 复用归档 160 的真实事件与 host references，支持 direct、inline teams parallel/vote、flat workflow 和隔离独占 scheduler 的 local child。mailbox、resumed/native resume、跨 owner durable continuation、shared-queue child 与组合动态 pause 在激活前拒绝；宿主继续负责业务授权、revision 和 commit gate。完整合同见归档 [proposal](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/proposal.md)、[design](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/design.md)、[tasks](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/tasks.md) 与 [示例](../examples/host-execution-plan/README.md)。
 
 归档 161（`enforce-openspec-public-semantics-documentation-contract`）已完成实施、验证并归档；其强制每个 active OpenSpec 的 proposal/design/tasks 接受对外语义文档同步承诺，并以双平台门禁检查文档路径、owner、证据及声明一致性；不改变 runtime。
 
@@ -43,13 +44,15 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-10-11：
+截至 2026-10-16：
 
-归档 160/161 已合并回 `master`；本次确认 `master` 与 `origin/master` 同步后创建 `feat/host-execution-plan-bridge` 起草提案，已审计 Baymax 原生入口。尚未开始 runtime 实施；后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
+归档 160/161/162 已纳入 `master`。安全维护在同步 `origin/master` 后，从 `7aac3d7` 创建独立分支 `feat/security-strict-vulnerability-remediation`；不混入其他功能 worktree 的未提交实现。后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
 
 ## 已归档快照
 
 - 已归档：
+  - `remediate-strict-security-vulnerabilities`（归档 163；Go 1.26.9 patched toolchain、最小 strict 漏洞依赖图、受控 recorder baseline 校准、双入口质量门禁与严格可达漏洞扫描）
+  - `establish-host-execution-plan-bridge-contract`（归档 162；版本化计划/原生 binding、bounded 全计划预检、既有 owner 委托、离线 replay、示例与双平台门禁已纳入主线）
   - `establish-native-execution-event-adapter-contract`（归档 160；已完成版本化原生执行事件、bounded host references、observer failure 反馈、Run/Stream parity、离线 replay、示例与维护文档同步）
   - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
   - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）

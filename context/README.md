@@ -23,6 +23,8 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - `context-compression-runtime-handoff`：压缩后的有界事实交接与引用校验（`context/handoff`），不拥有 session/checkpoint/artifact 正文。
 - `context-budget-aware-derived-projection`：由既有预算 owner 事实派生的有界只读剩余预算投影（`context/budgetprojection`），不拥有预算事实、不建立第二本账本。
 
+归档 165（`establish-host-context-assembly-handoff-contract`）已交付 `host_context_projection.v1` direct bridge：`context/hostprojection` 以 constructor/API 明确 opt-in 验证 detached、reference-only descriptor（32 KiB、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest），且仅在结构/limits → canonical digest → correlation/capability subset 校验后调用宿主 fresh current-authority resolver。direct Run/Stream 仅在既有 Context Assembler 启用时复用该接缝；禁用时保留 assembler bypass 语义，projection 不会被 admit 或 resolve。`handoff.v1` 只可附带 additive、nullable 的 reference-only correlation；关联 restore 必须使用显式 current resolver，且只返回 caller-owned injection 所需的 transient material，不自行注入、resume 或 run。有限 `host_context.*` 错误 fail-closed，且不暴露 body 或 callback error。bridge 不持久化 resolver body，也不得把 source body、业务授权、private memory/knowledge、预算事实或业务 commit 迁入 `context/*`；dedicated replay、双平台 gate、标准 quality-path 接线、验证记录与[离线示例](../examples/host-context-assembly/README.md)已交付。边界与回滚见 [hostprojection README](hostprojection/README.md) 和[归档 proposal](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
+
 `provider` 子域负责 file/http/rag/db/elasticsearch 的检索适配和错误分层（`transport|protocol|semantic`）。
 
 ## 关键入口
@@ -43,6 +45,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - 该域只生成标准结果与事件，不直接写 `runtime/diagnostics` 存储。
 - handoff 仅保存 `handoff.v1` 结构化事实、推断、待确认事项与 source references；恢复通过既有 owner 和 reference-first 接缝完成。
 - `context/budgetprojection` 只依赖标准库，不 import 任何 Baymax 包；预算事实仍由 `runtime/config`（ReAct iteration/tool-call limit、`budget_admission.v1`）、`orchestration/scheduler`（`ParentRemainingBudget`）与 `core/runner`（React Plan Notebook）各自拥有。投影是纯派生函数，不写回事实源、不参与终态判定。
+- active host-context bridge 采用 constructor/API 明确 opt-in，不新增 env/file/hot-update 键、RuntimeRecorder payload 或 QueryRuns 字段；descriptor/handoff digest 是一致性证据而非当前 source access 或业务授权。resolver 每次仅在验证后由宿主按当前授权解析，解析的 body 是当次 assembly/restore 的 transient material，不会持久化，也不得直接写 diagnostics。bridge 不写回 `budget_projection.v1` 的 source facts、不建立预算状态或 admission cache；incomplete/saturated 的既有派生语义和 terminal owner 保持不变。
 
 ## 派生预算投影契约（`budget_projection.v1`）
 

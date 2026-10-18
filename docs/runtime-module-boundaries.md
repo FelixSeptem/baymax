@@ -14,6 +14,12 @@ callback 必须在 source 锁外运行，返回后 source 锁内重检 generatio
 
 无 Provider SDK、业务库或 MCP transport 依赖，无 runtime 配置键或 QueryRuns 新字段；诊断保持 RuntimeRecorder 单写。支持矩阵、重复请求迁移和回滚见 [恢复准入指南](guides/host-resume-admission.md)。callback 锁外执行，source generation/control 在 commit 前重检；业务 CAS 仍属于宿主。
 
+## 宿主 context assembly/handoff 合同边界（进行中，已实现）
+
+归档 165（`establish-host-context-assembly-handoff-contract`）已在 `context/hostprojection` 实现 `host_context_projection.v1` 的纯 descriptor/admission/resolver API，并在 direct Run/Stream assembly 与 `handoff.v1` correlation 处接线。bridge 的 constructor/API 固定限制为 32 KiB serialized descriptor、64 opaque references、256 UTF-8 bytes/reference 与 128 UTF-8 bytes/digest；校验顺序为 structure/limits、canonical digest、correlation/capability subset，随后才调用宿主 fresh current-authority resolver。direct Run/Stream 仅在既有 Context Assembler 启用时执行该 opt-in admission/resolution；禁用时保持 assembler bypass。宿主仍拥有 role/source-trust/business-reference/tool allowlist、private memory/knowledge、业务 revision/authorization 与 commit gate；`context` 仅在宿主预过滤后请求 transient current material，并复用既有 assembler、`handoff.v1` 和 reference-first restore。correlated restore 返回 material 给 caller-owned injection，不自行注入、resume 或 run。该 contract 不创建 source-body store、Provider SDK dependency、budget ledger 或恢复状态机。
+
+该边界禁止 `context/*` 引入 Provider SDK、source-body store、预算写回、全局 projection registry、直接 RuntimeRecorder 写入或新的 execution/terminal/recovery state machine。descriptor/handoff digest 只能证明规范化事实一致；finite `host_context.*` 分类 fail-closed 且不包含 body/callback error。restore 必须保留既有 source validation，并由宿主用 fresh resolver 重新确认当前 source access；resolver-independent restore 必须拒绝。该 contract 不新增 env/file/hot-update 配置、RuntimeRecorder 或 QueryRuns 字段、host wire command、outbox/mailbox 或动态 action continuation。dedicated replay、shell/PowerShell gate、标准 quality-path wiring、验证记录与离线示例已经交付。范围和回滚见归档 [proposal](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
+
 ## 模块职责
 
 - `runtime/config`

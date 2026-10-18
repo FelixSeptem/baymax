@@ -15,4 +15,7 @@ $files = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "tool/schemaaudit") -
 $files += Join-Path $repoRoot "tool/diagnosticsreplay/tool_schema_projection_readiness.go"
 $matches = rg -n 'github\.com/(openai|anthropics)|google\.golang\.org/genai|tokenizer|ModelRequest|net/http|os\.Open|os\.WriteFile|globalSelector|globalRouter|dynamicDownload|marketplaceResolve|persistRawSchema|persistPrompt|persistModelOutput|persistToolResult|RuntimeRecorder' @files 2>$null
 if ($LASTEXITCODE -eq 0 -and $matches) { throw "[tool-schema-projection-readiness-gate] forbidden runtime/provider/persistence reference detected" }
+# rg returns 1 for a successful no-match scan. Do not let that expected status
+# terminate a parent quality gate before its required steps have run.
+$global:LASTEXITCODE = 0
 Write-Host "[tool-schema-projection-readiness-gate] offline readiness contract passed"

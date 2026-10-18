@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/FelixSeptem/baymax/context/handoff"
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -140,6 +141,13 @@ func (e *Engine) RestoreHandoff(ctx context.Context, record handoff.Handoff, eve
 		e.emitContextHandoff(ctx, eventHandler, record.RunID, 0, failed, "validation_failed")
 		return handoff.RestoreResult{}, err
 	}
+	if record.HostContextProjection != nil {
+		err := errors.New("host context projection restore requires explicit current host resolver")
+		failed := record
+		failed.Fallback = &handoff.Fallback{Reason: handoff.FallbackGenerationFailure}
+		e.emitContextHandoff(ctx, eventHandler, record.RunID, 0, failed, "restore_failed")
+		return handoff.RestoreResult{}, err
+	}
 	id := handoff.ID(record)
 	e.handoffRestoreMu.Lock()
 	if result, ok := e.handoffRestored[id]; ok {
@@ -171,6 +179,54 @@ func (e *Engine) RestoreHandoff(ctx context.Context, record handoff.Handoff, eve
 		e.emitContextHandoffRestore(ctx, eventHandler, record, result, "restored")
 	}
 	return result, nil
+}
+
+// RestoreHandoffWithHostProjection is the explicit correlated-restore path.
+// It requires a fresh host resolver every call; a historical handoff or digest
+// cannot silently become source authorization. The returned Resolution is
+// transient material for caller-owned injection only and does not resume a
+// run, emit a terminal outcome, or authorize a business effect.
+func (e *Engine) RestoreHandoffWithHostProjection(
+	ctx context.Context,
+	record handoff.Handoff,
+	hostResolver hostprojection.Resolver,
+	eventHandler types.EventHandler,
+) (handoff.RestoreResult, hostprojection.Resolution, error) {
+	if e == nil || e.assembler == nil {
+		return handoff.RestoreResult{}, hostprojection.Resolution{}, errors.New("context assembler is not configured")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := record.Validate(handoff.DefaultLimits()); err != nil {
+		failed := record
+		failed.Fallback = &handoff.Fallback{Reason: handoffValidationReason(err)}
+		e.emitContextHandoff(ctx, eventHandler, record.RunID, 0, failed, "validation_failed")
+		return handoff.RestoreResult{}, hostprojection.Resolution{}, err
+	}
+	e.emitContextHandoff(ctx, eventHandler, record.RunID, 0, record, "validated")
+	result, resolution, err := e.assembler.RestoreHandoffWithHostProjection(ctx, record, e.handoffResolver, hostResolver, e.handoffRestoreStore)
+	if err != nil {
+		failed := record
+		failed.Fallback = &handoff.Fallback{Reason: handoffRestoreReason(err)}
+		e.emitContextHandoff(ctx, eventHandler, record.RunID, 0, failed, "restore_failed")
+		return handoff.RestoreResult{}, hostprojection.Resolution{}, err
+	}
+	id := handoff.ID(record)
+	e.handoffRestoreMu.Lock()
+	if e.handoffRestored == nil {
+		e.handoffRestored = map[string]handoff.RestoreResult{}
+	}
+	if existing, ok := e.handoffRestored[id]; ok {
+		result = existing
+		e.handoffRestoreMu.Unlock()
+		return result, resolution, nil
+	}
+	e.handoffRestored[id] = result
+	e.handoffRestoreMu.Unlock()
+	record.Quality.RestoreReady = true
+	e.emitContextHandoffRestore(ctx, eventHandler, record, result, "restored")
+	return result, resolution, nil
 }
 
 func handoffValidationReason(err error) string {

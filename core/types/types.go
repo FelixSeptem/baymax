@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 )
 
 type Runner interface {
@@ -534,6 +536,11 @@ type RunRequest struct {
 	Policy                 *LoopPolicy            `json:"policy,omitempty"`
 	Capabilities           CapabilityRequirements `json:"capabilities,omitempty"`
 	ArbitrationRuleVersion string                 `json:"arbitration_rule_version,omitempty"`
+	// HostContextProjection and HostContextResolver are explicit opt-in,
+	// ephemeral assembly dependencies. They are intentionally excluded from
+	// wire/runtime serialization and retain no source authorization decision.
+	HostContextProjection *hostprojection.Descriptor `json:"-"`
+	HostContextResolver   hostprojection.Resolver    `json:"-"`
 }
 
 type RunResult struct {
@@ -571,6 +578,11 @@ type ContextAssembleRequest struct {
 	Capabilities          CapabilityRequirements `json:"capabilities,omitempty"`
 	TokenCounter          TokenCounter           `json:"-"`
 	ModelClient           ModelClient            `json:"-"`
+	// HostContextProjection and HostContextResolver form an explicit opt-in,
+	// ephemeral bridge. Neither is serialized into runtime inputs, handoffs, or
+	// diagnostics; the host retains current source authorization ownership.
+	HostContextProjection *hostprojection.Descriptor `json:"-"`
+	HostContextResolver   hostprojection.Resolver    `json:"-"`
 }
 
 type ContextAssembleResult struct {

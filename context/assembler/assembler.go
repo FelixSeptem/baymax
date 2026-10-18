@@ -14,6 +14,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/context/guard"
 	"github.com/FelixSeptem/baymax/context/handoff"
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/context/journal"
 	"github.com/FelixSeptem/baymax/context/provider"
 	"github.com/FelixSeptem/baymax/core/types"
@@ -224,6 +225,11 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 			Recap: types.RecapMetadata{Status: types.RecapStatusDisabled},
 		}, nil
 	}
+	var err error
+	req, modelReq, err = resolveHostProjection(ctx, req, modelReq)
+	if err != nil {
+		return modelReq, failedResult(req, start, hostProjectionFailure(err)), err
+	}
 
 	storage, err := a.ensureStorage(cfg)
 	if err != nil {
@@ -374,6 +380,32 @@ func (a *Assembler) Assemble(ctx context.Context, req types.ContextAssembleReque
 	}
 	outcome.LatencyMs = a.now().Sub(start).Milliseconds()
 	return modelReq, outcome, nil
+}
+
+// resolveHostProjection executes the host-owned resolver before any assembler
+// storage, journal, provider, or lock activity. Its material is ephemeral and
+// is only appended to the request that continues into the existing assembler.
+func resolveHostProjection(ctx context.Context, req types.ContextAssembleRequest, modelReq types.ModelRequest) (types.ContextAssembleRequest, types.ModelRequest, error) {
+	if req.HostContextProjection == nil {
+		return req, modelReq, nil
+	}
+	_, resolution, err := hostprojection.Resolve(ctx, *req.HostContextProjection, req.HostContextResolver)
+	if err != nil {
+		return req, modelReq, err
+	}
+	for _, material := range resolution.Materials() {
+		message := types.Message{Role: material.Role, Content: material.Content}
+		req.Messages = append(req.Messages, message)
+		modelReq.Messages = append(modelReq.Messages, message)
+	}
+	return req, modelReq, nil
+}
+
+func hostProjectionFailure(err error) string {
+	if classified, ok := err.(*hostprojection.Error); ok {
+		return string(classified.Code)
+	}
+	return string(hostprojection.CodeInvalidDescriptor)
 }
 
 func (a *Assembler) ensureStorage(cfg runtimeconfig.ContextAssemblerConfig) (journal.Storage, error) {

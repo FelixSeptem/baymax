@@ -24,7 +24,11 @@ Baymax 主线保持 `library-first + contract-first`：
 
 归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
 
-宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164。其余 2 个未启动候选统一维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
+宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165。当前没有 context 接缝变更处于进行中状态；其余 1 个未启动候选维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
+
+- 进行中：无
+
+归档 165（`establish-host-context-assembly-handoff-contract`）已完成实现、验证和规格同步：它交付 host context projection 的显式 opt-in、reference-only 宿主接入合同。宿主先完成角色、来源与业务引用过滤；Baymax 在既有 Context Assembler 与 handoff/restore owner 内验证 `host_context_projection.v1` 的 identity/digest、capability 收窄和 opaque source reference。constructor/API 固定限制为 32 KiB descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest；有限 `host_context.*` 失败分类 fail-closed，且不包含 body 或 callback error。direct Run/Stream 仅在既有 Context Assembler 启用时支持该 opt-in path；禁用时保留 assembler bypass 语义，projection 不会被 admit 或 resolve。legal `handoff.v1` correlation、fresh-resolver correlated restore、read-only `budget_projection.v1` 语义、reference-only replay、双平台 dedicated gate、标准 quality path 的静态接线与离线 example 都已交付。不新增 context store、业务授权/commit、预算账本、Provider SDK、RuntimeRecorder/QueryRuns 字段或平行执行/终态/恢复状态机。Example Impact Assessment：新增示例；`examples/host-context-assembly/README.md` 是已交付的文档与离线示例基线。完整工件见 [归档提案](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
 
 归档 164（`establish-host-resume-admission-revalidation-contract`）已完成并合并交付：reference-only 宿主绑定、当前授权/revision 重验证、source 锁外 callback 与锁内再次校验、完整 duplicate identity、Run/Stream/Host conformance、离线 replay、双平台 gate 与严格联合质量门禁均已验证。其恢复范围仍只支持原 Engine 内 direct Run/Stream continuation，不扩展 planbridge resumed/team/workflow/mailbox 或 metadata-only 跨进程恢复；宿主继续负责 effect 边界的 authority/revision/effect CAS。Example Impact Assessment：`新增示例`；离线真实 runner 示例与 API 接入指南已同步。
 
@@ -51,6 +55,7 @@ Baymax 主线保持 `library-first + contract-first`：
 ## 已归档快照
 
 - 已归档：
+  - `establish-host-context-assembly-handoff-contract`（归档 165；显式 opt-in、reference-only `host_context_projection.v1`，current-authority resolver、assembler/handoff correlation、离线 replay/example 与双平台 gate）
   - `establish-host-resume-admission-revalidation-contract`（归档 164；宿主恢复准入重验证、完整 duplicate identity、Run/Stream/Host conformance、离线 replay、双平台 gate 与严格联合质量门禁）
   - `remediate-strict-security-vulnerabilities`（归档 163；Go 1.26.9 patched toolchain、最小 strict 漏洞依赖图、受控 recorder baseline 校准、双入口质量门禁与严格可达漏洞扫描）
   - `establish-host-execution-plan-bridge-contract`（归档 162；版本化计划/原生 binding、bounded 全计划预检、既有 owner 委托、离线 replay、示例与双平台门禁已纳入主线）
@@ -218,30 +223,15 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 ### 待实现提案：宿主执行接入与恢复边界（2026-10-14）
 
-需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge 与恢复准入重验证已分别归档为 160/162/164，以下仅维护其余 2 个未启动候选。
+需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；以下仅维护其余 1 个未启动候选。
 
 总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。优先补接入 contract 与 conformance，只有复现证明既有机制存在 gap 时才最小修改运行时。
 
 | 顺序 | 待实现候选 slug | 优先级与依赖 | 首阶段目标 |
 | --- | --- | --- | --- |
-| 1 | `establish-host-context-assembly-handoff-contract` | P2；复用归档 162 的 capability/digest 约定，可独立立项 | 业务过滤后的上下文装配、预算、handoff 与恢复接缝 |
-| 2 | `establish-application-outbox-mailbox-recovery-contract` | P2；复用归档 160/162 的 plan/event correlation，依赖恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
+| 1 | `establish-application-outbox-mailbox-recovery-contract` | P2；复用归档 160/162 的 plan/event correlation，依赖恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
 
 上述优先级是建议启动顺序，不表示可跳过准入审计。以下 Example Impact Assessment 为立项预评估，正式 proposal/design/tasks 须分别声明并确认。各候选都须交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate；实施时按 AGENTS.md 执行完整代码门禁。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
-
-#### 宿主上下文装配与 handoff 接缝
-
-**候选 slug / 状态**：`establish-host-context-assembly-handoff-contract`；待实现，未启动。
-
-**触发信号**：集成方报告 Danny 的 context projection 同时实现 prefix、capability digest、role/history/private memory、reference-first、budget、compaction、digest 与 handoff，存在与 Baymax Context Assembler 重复维护的风险。
-
-**复用 owner 与范围**：Context Assembler、prefix/journal、budget-derived projection、compaction、`context/handoff` 与 snapshot/checkpoint reference。宿主先按角色访问、来源信任、business reference/tool allowlist 过滤事实，Baymax 再负责装配、预算裁剪、压缩、prefix 一致性、child 继承与 handoff；私有记忆、知识访问和 Stele/compilation 写权限仍由宿主决定。
-
-**首阶段 DoD**：建立有界 context fragment、projection version/digest、capability digest 与 source-owned reference 的接入合同；明确 context snapshot、runner checkpoint 与 application execution record 的不同责任。验证预算不足、reference 缺失/漂移、prefix 不一致、child 权限收窄、handoff/restore、压缩和 Run/Stream parity；digest 是一致性证据，restore 仍须重新经过宿主授权。复用既有预算事实，不引入第二账本；reference body 和敏感内容不进入新增诊断。
-
-**非目标、风险与回滚**：不迁移业务角色权限、source trust 决策或 memory/knowledge 数据库，不在 `context/*` 引入 Provider SDK。主要风险是过滤顺序错误导致越权上下文或恢复旧权限；回滚停用新增 bridge，保留宿主预过滤与既有 assembler 路径。
-
-**文档与示例影响**：更新 context/handoff 文档、`docs/runtime-module-boundaries.md` 和 `docs/mainline-contract-test-index.md`。Example Impact Assessment：`新增示例`，演示宿主过滤后装配与 child handoff，agent-mode 示例先建立文档基线。
 
 #### Application outbox 与 mailbox 投递恢复接缝
 

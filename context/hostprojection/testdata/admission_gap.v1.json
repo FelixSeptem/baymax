@@ -1,0 +1,20 @@
+{
+  "version": "host_context_projection_admission_gap.v1",
+  "references": "synthetic opaque references only; no source body is present",
+  "cases": [
+    {
+      "case_id": "valid-detached-reference",
+      "schema_version": "host_context_projection.v1",
+      "projection_id": "projection-alpha",
+      "source_reference": "opaque://source/alpha",
+      "expectation": "requires_structured_descriptor_and_validator"
+    },
+    {
+      "case_id": "invalid-before-resolver",
+      "schema_version": "host_context_projection.v2",
+      "projection_id": "projection-alpha",
+      "source_reference": "opaque://source/alpha",
+      "expectation": "reject_before_source_resolution"
+    }
+  ]
+}

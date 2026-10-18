@@ -486,6 +486,12 @@ fi
 echo "[quality-gate] go test ./..."
 go test ./...
 
+echo "[quality-gate] host context assembly handoff contract"
+if ! bash scripts/check-host-context-assembly-handoff-contract.sh; then
+  echo "[quality-gate][host-context-assembly-handoff-contract] check failed"
+  exit 1
+fi
+
 echo "[quality-gate] go test -race (exclude examples packages)"
 if [[ "${CGO_ENABLED}" != "1" ]]; then
   echo "[quality-gate] go test -race requires CGO_ENABLED=1"
@@ -504,7 +510,7 @@ else
 fi
 
 echo "[quality-gate] golangci-lint"
-golangci-lint run --config .golangci.yml
+golangci-lint run --config .golangci.yml ./...
 
 echo "[quality-gate] a64 semantic stability gate"
 if ! bash scripts/check-a64-semantic-stability-contract.sh; then

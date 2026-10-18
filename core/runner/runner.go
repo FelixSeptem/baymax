@@ -1125,17 +1125,19 @@ func (e *Engine) streamLegacy(ctx context.Context, req types.RunRequest, h types
 		tokenCounter = tc
 	}
 	assembledReq, assembleResult, assembleErr := e.assembleWithHandoff(ctx, types.ContextAssembleRequest{
-		RunID:         runID,
-		SessionID:     req.SessionID,
-		PrefixVersion: e.resolvePrefixVersion(),
-		ModelProvider: selection.Provider,
-		Model:         modelReq.Model,
-		Input:         modelReq.Input,
-		Messages:      modelReq.Messages,
-		ToolResult:    modelReq.ToolResult,
-		Capabilities:  modelReq.Capabilities,
-		TokenCounter:  tokenCounter,
-		ModelClient:   selectedModel,
+		RunID:                 runID,
+		SessionID:             req.SessionID,
+		PrefixVersion:         e.resolvePrefixVersion(),
+		ModelProvider:         selection.Provider,
+		Model:                 modelReq.Model,
+		Input:                 modelReq.Input,
+		Messages:              modelReq.Messages,
+		ToolResult:            modelReq.ToolResult,
+		Capabilities:          modelReq.Capabilities,
+		TokenCounter:          tokenCounter,
+		ModelClient:           selectedModel,
+		HostContextProjection: req.HostContextProjection,
+		HostContextResolver:   req.HostContextResolver,
 	}, modelReq, h, iteration)
 	lastAssemble := assembleResult
 	memoryAggregate.observeAssemble(assembleResult)
@@ -2220,17 +2222,19 @@ func (e *Engine) prepareReactModelStep(
 		tokenCounter = tc
 	}
 	assembledReq, assembleResult, assembleErr := e.assembleWithHandoff(ctx, types.ContextAssembleRequest{
-		RunID:         runID,
-		SessionID:     req.SessionID,
-		PrefixVersion: e.resolvePrefixVersion(),
-		ModelProvider: selection.Provider,
-		Model:         modelReq.Model,
-		Input:         modelReq.Input,
-		Messages:      modelReq.Messages,
-		ToolResult:    modelReq.ToolResult,
-		Capabilities:  modelReq.Capabilities,
-		TokenCounter:  tokenCounter,
-		ModelClient:   selectedModel,
+		RunID:                 runID,
+		SessionID:             req.SessionID,
+		PrefixVersion:         e.resolvePrefixVersion(),
+		ModelProvider:         selection.Provider,
+		Model:                 modelReq.Model,
+		Input:                 modelReq.Input,
+		Messages:              modelReq.Messages,
+		ToolResult:            modelReq.ToolResult,
+		Capabilities:          modelReq.Capabilities,
+		TokenCounter:          tokenCounter,
+		ModelClient:           selectedModel,
+		HostContextProjection: req.HostContextProjection,
+		HostContextResolver:   req.HostContextResolver,
 	}, modelReq, h, iteration)
 	if memoryAggregate != nil {
 		memoryAggregate.observeAssemble(assembleResult)

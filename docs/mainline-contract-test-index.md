@@ -68,8 +68,10 @@ Dedicated gates: `scripts/check-native-execution-event-contract.sh/.ps1`, wired 
 mailbox unified coordination contract 已作为主线（sync/async/delayed/query）；完成 mailbox canonical entry consolidation 后仅保留 mailbox canonical 调用入口。
 
 状态口径说明：
-- 本索引仅收录已接入主线质量门禁的 contract suites。
-- 在研提案仅在“对应 suites 已接入主线 gate”后进入本索引；其余状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
+- 本索引收录已交付的 contract suites 及其 dedicated gate；是否已接入标准质量门禁必须在对应条目中明确说明。
+- 在研提案仅在对应 suite 和 dedicated gate 已交付后进入本索引；其余状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
+
+归档 165（`establish-host-context-assembly-handoff-contract`）已交付 dedicated contract evidence：`context/hostprojection` 的 descriptor bounds/digest/capability/resolver tests，`context/assembler` 的 validation-before-journal、handoff correlation、privacy 和 current-authorization restore tests，`core/runner` 的真实 Run/Stream + fake tool 在两轮 assembly 下的 normalized projection/handoff lifecycle/bounded rejection parity、等价 legal handoff 的 explicit restore parity 和 revoked-source fail-closed evidence，以及 incomplete/saturated `budget_projection.v1` 在 existing context-pressure/compaction 下不发生写回或终态改变的 tests。`tool/diagnosticsreplay` 的十例 reference-only fixture 覆盖 malformed/bounds/privacy/authorization/reference/digest/capability/plan/restore/Run-Stream/side-effect drift；离线 example smoke 为 `go test ./examples/host-context-assembly -run TestOfflineExampleEmitsContractMarkers -count=1`。已交付的双平台 blocking gate 为 `scripts/check-host-context-assembly-handoff-contract.ps1` 与 `.sh`：均调用 projection/privacy、Run/Stream/budget/handoff/restore、replay、example 和 ownership suites；Go 不可用时显式报 `unavailable` 并失败。两个 gate 已静态接入标准 quality path，且 contribution test 断言此接线；完整的质量验证与平台限制说明见归档 [verification record](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/verification.md)。
 
 ## 索引
 

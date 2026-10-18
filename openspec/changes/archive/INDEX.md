@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-16 19:12:13
+Updated: 2026-10-18 12:01:16
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -166,3 +166,4 @@ Updated: 2026-10-16 19:12:13
 - 162 -> establish-host-execution-plan-bridge-contract
 - 163 -> remediate-strict-security-vulnerabilities
 - 164 -> establish-host-resume-admission-revalidation-contract
+- 165 -> establish-host-context-assembly-handoff-contract

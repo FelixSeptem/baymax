@@ -60,6 +60,16 @@ Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和
 
 停用新增 bridge 回到既有 owner 显式调用；保留 task/attempt/checkpoint/outbox 和业务记录，不能因此撤销已发生 effects。公开 API/默认值/限制/错误/支持矩阵发生变化时，必须在同一 OpenSpec 同步维护文档并通过治理门禁。
 
+## 宿主 context assembly/handoff（进行中提案；direct contract 已提供）
+
+`establish-host-context-assembly-handoff-contract` 已提供显式 opt-in 的 `host_context_projection.v1` direct assembly contract。宿主仍先完成 role/source-trust/business-reference/tool allowlist 过滤，然后把 detached descriptor 和 current-authority resolver 放入非序列化的 `types.RunRequest.HostContextProjection` / `HostContextResolver`；direct Run 和 Stream 仅在现有 Context Assembler 启用时复用该 owner。若 assembler 禁用，既有 bypass 语义保持不变，projection 不会被 admit 或 resolve。Baymax 不保存私有 memory/knowledge、业务 revision、授权、application execution record 或 resolver 返回的 source body。
+
+接入要求宿主提供版本化、bounded、reference-only descriptor 和当前授权的 source resolver。固定 constructor/API 限制是：serialized descriptor 最多 32 KiB、最多 64 个 opaque references、每个 reference 最多 256 UTF-8 bytes、每个 digest 最多 128 UTF-8 bytes。Baymax 按 structure/limits → canonical digest → optional plan correlation + parent/child capability subset → resolver → existing assembler 的顺序处理；仅在前述验证通过且 assembler enabled 时复用既有 assembler、compaction 和 handoff owner。digest 只证明投影一致性，不证明 source access、业务权限或 commit；handoff/replay 也不是恢复授权。child 必须收窄 capability；关联 restore 先走既有 source validation，再通过 `runner.RestoreHandoffWithHostProjection` 由宿主用 fresh resolver 重新授权，并只返回供 caller-owned injection 使用的 transient resolution；该 API 不自行注入 context、resume 或 run。不会增加 host wire command、outbox/mailbox worker、Provider SDK、业务 store、RuntimeRecorder/QueryRuns 字段、平行 terminal 或 recovery coordinator。
+
+应用可以将 `*hostprojection.Error` 作为有限的拒绝面处理；稳定 `Code` 包括 `host_context.unsupported_version`、`host_context.invalid_descriptor`、`host_context.limit_exceeded`、`host_context.duplicate_reference`、`host_context.invalid_capability`、`host_context.digest_mismatch`、`host_context.capability_expansion`、`host_context.parent_evidence_missing`、`host_context.invalid_plan_correlation`、`host_context.resolver_denied` 与 `host_context.source_not_found`。这些错误均 fail-closed，且不携带 raw callback error 或 source body；不得按字符串重试或把 historical digest 当作授权。
+
+当前只支持 assembler enabled 时的 direct Run/Stream assembly、legal existing `handoff.v1` cuts 与 explicit correlated restore validation/material resolution；cross-process continuation、resolver-independent restore、mailbox/workflow/team recovery 和 dynamic-action continuation 均不支持。可运行的离线示例以 fake model/tool、synthetic opaque reference 和 current-authority resolver 展示 admitted assembly、capability widening rejection、revoked restore 与 legacy rollback；reference-only replay、shell/PowerShell dedicated gates、标准 quality-path 接线与验证记录已交付。可追踪范围、拒绝矩阵和回滚在归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)，运行方式见 [host-context-assembly](../../examples/host-context-assembly/README.md)。
+
 ## 暂停后的恢复准入
 
 native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用 Authorizer 不自动证明暂停前的业务 revision、plan/write scope 和当前权限仍匹配。`runner.WithHostResumeVerifier` 显式安装 `host_resume_admission.v1`，由宿主 callback 读取可信暂停绑定与当前事实，在 decision commit 前重验证；direct API 与既有 run.action.resume 共享该入口，不增加 command kind。默认不安装；安装 nil verifier 会 fail-closed。

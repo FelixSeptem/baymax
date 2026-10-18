@@ -103,29 +103,69 @@ type Fallback struct {
 	Reason string `json:"reason"`
 }
 
+// HostContextSourceReference is bounded opaque evidence retained for future
+// host revalidation. It is never a resolved source body or authorization.
+type HostContextSourceReference struct {
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
+}
+
+// HostContextParentCorrelation preserves only child-subset evidence; it does
+// not grant any authority to a restored operation.
+type HostContextParentCorrelation struct {
+	ProjectionID     string   `json:"projection_id"`
+	CapabilityDigest string   `json:"capability_digest"`
+	Capabilities     []string `json:"capabilities"`
+}
+
+// HostContextPlanCorrelation is immutable identity evidence. Handoff never
+// imports a plan executor and cannot compile, dispatch, resume, or authorize
+// the referenced host plan.
+type HostContextPlanCorrelation struct {
+	PlanID      string `json:"plan_id"`
+	PlanVersion int    `json:"plan_version"`
+	Digest      string `json:"digest"`
+}
+
+// HostContextProjectionCorrelation is additive and nullable so legacy
+// handoff consumers retain their existing behavior. It deliberately excludes
+// source bodies, credentials, business authorization, and effect payloads.
+type HostContextProjectionCorrelation struct {
+	SchemaVersion     string                        `json:"schema_version"`
+	ProjectionID      string                        `json:"projection_id"`
+	ProjectionVersion int                           `json:"projection_version"`
+	Digest            string                        `json:"digest"`
+	CapabilityDigest  string                        `json:"capability_digest"`
+	Capabilities      []string                      `json:"capabilities"`
+	SourceReferences  []HostContextSourceReference  `json:"source_references"`
+	Parent            *HostContextParentCorrelation `json:"parent,omitempty"`
+	Plan              *HostContextPlanCorrelation   `json:"plan,omitempty"`
+}
+
 type Handoff struct {
-	Version            string                `json:"version"`
-	RunID              string                `json:"run_id"`
-	SessionID          string                `json:"session_id,omitempty"`
-	SourceCheckpointID string                `json:"source_checkpoint_id,omitempty"`
-	Cut                Cut                   `json:"cut"`
-	Objective          string                `json:"objective"`
-	Completed          []string              `json:"completed,omitempty"`
-	Pending            []string              `json:"pending,omitempty"`
-	FailedAttempts     []string              `json:"failed_attempts,omitempty"`
-	FileChanges        []string              `json:"file_changes,omitempty"`
-	ToolResults        []string              `json:"tool_results,omitempty"`
-	PolicyState        map[string]string     `json:"policy_state,omitempty"`
-	SandboxState       map[string]string     `json:"sandbox_state,omitempty"`
-	AdmissionState     map[string]string     `json:"admission_state,omitempty"`
-	References         []Reference           `json:"references,omitempty"`
-	NextActions        []Action              `json:"next_actions,omitempty"`
-	Facts              []Evidence            `json:"facts,omitempty"`
-	Inferences         []Inference           `json:"inferences,omitempty"`
-	NeedsConfirmation  []string              `json:"needs_confirmation,omitempty"`
-	Quality            Quality               `json:"quality"`
-	Compression        CompressionProjection `json:"compression,omitempty"`
-	Fallback           *Fallback             `json:"fallback,omitempty"`
+	Version               string                            `json:"version"`
+	RunID                 string                            `json:"run_id"`
+	SessionID             string                            `json:"session_id,omitempty"`
+	SourceCheckpointID    string                            `json:"source_checkpoint_id,omitempty"`
+	Cut                   Cut                               `json:"cut"`
+	Objective             string                            `json:"objective"`
+	Completed             []string                          `json:"completed,omitempty"`
+	Pending               []string                          `json:"pending,omitempty"`
+	FailedAttempts        []string                          `json:"failed_attempts,omitempty"`
+	FileChanges           []string                          `json:"file_changes,omitempty"`
+	ToolResults           []string                          `json:"tool_results,omitempty"`
+	PolicyState           map[string]string                 `json:"policy_state,omitempty"`
+	SandboxState          map[string]string                 `json:"sandbox_state,omitempty"`
+	AdmissionState        map[string]string                 `json:"admission_state,omitempty"`
+	References            []Reference                       `json:"references,omitempty"`
+	NextActions           []Action                          `json:"next_actions,omitempty"`
+	Facts                 []Evidence                        `json:"facts,omitempty"`
+	Inferences            []Inference                       `json:"inferences,omitempty"`
+	NeedsConfirmation     []string                          `json:"needs_confirmation,omitempty"`
+	Quality               Quality                           `json:"quality"`
+	Compression           CompressionProjection             `json:"compression,omitempty"`
+	HostContextProjection *HostContextProjectionCorrelation `json:"host_context_projection,omitempty"`
+	Fallback              *Fallback                         `json:"fallback,omitempty"`
 }
 
 type Limits struct {
@@ -182,6 +222,9 @@ func (h Handoff) Validate(l Limits) error {
 			return errors.New("handoff next action description is required")
 		}
 	}
+	if err := validateHostContextProjectionCorrelation(h.HostContextProjection); err != nil {
+		return err
+	}
 	if l.MaxSerializedSize > 0 {
 		encoded, err := json.Marshal(h)
 		if err != nil {
@@ -190,6 +233,35 @@ func (h Handoff) Validate(l Limits) error {
 		if len(encoded) > l.MaxSerializedSize {
 			return errors.New("handoff serialized size exceeds limit")
 		}
+	}
+	return nil
+}
+
+func validateHostContextProjectionCorrelation(correlation *HostContextProjectionCorrelation) error {
+	if correlation == nil {
+		return nil
+	}
+	if correlation.SchemaVersion != "host_context_projection.v1" || strings.TrimSpace(correlation.ProjectionID) == "" || correlation.ProjectionVersion <= 0 || strings.TrimSpace(correlation.Digest) == "" || strings.TrimSpace(correlation.CapabilityDigest) == "" {
+		return errors.New("invalid host context projection correlation")
+	}
+	if len(correlation.Digest) > 128 || len(correlation.CapabilityDigest) > 128 || len(correlation.SourceReferences) == 0 || len(correlation.SourceReferences) > 64 || len(correlation.Capabilities) == 0 {
+		return errors.New("host context projection correlation exceeds bounds")
+	}
+	seen := make(map[string]struct{}, len(correlation.SourceReferences))
+	for _, reference := range correlation.SourceReferences {
+		if strings.TrimSpace(reference.Reference) == "" || strings.TrimSpace(reference.Digest) == "" || len(reference.Reference) > 256 || len(reference.Digest) > 128 {
+			return errors.New("invalid host context projection source reference")
+		}
+		if _, exists := seen[reference.Reference]; exists {
+			return errors.New("duplicate host context projection source reference")
+		}
+		seen[reference.Reference] = struct{}{}
+	}
+	if correlation.Parent != nil && (strings.TrimSpace(correlation.Parent.ProjectionID) == "" || strings.TrimSpace(correlation.Parent.CapabilityDigest) == "" || len(correlation.Parent.Capabilities) == 0) {
+		return errors.New("invalid host context projection parent correlation")
+	}
+	if correlation.Plan != nil && (strings.TrimSpace(correlation.Plan.PlanID) == "" || correlation.Plan.PlanVersion <= 0 || strings.TrimSpace(correlation.Plan.Digest) == "") {
+		return errors.New("invalid host context projection plan correlation")
 	}
 	return nil
 }

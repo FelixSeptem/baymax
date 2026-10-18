@@ -191,7 +191,7 @@ $script:QualityGateStartedAt = Get-Date
 $script:QualityGateStepIndex = 0
 $script:QualityGateStepTimings = New-Object 'System.Collections.Generic.List[object]'
 $script:QualityGateActiveProcessIds = New-Object 'System.Collections.Generic.HashSet[int]'
-$script:QualityGateTotalTimeoutSeconds = Get-PositiveIntEnvOrDefault -EnvName "BAYMAX_QUALITY_GATE_TOTAL_TIMEOUT_SECONDS" -DefaultValue 900
+$script:QualityGateTotalTimeoutSeconds = Get-PositiveIntEnvOrDefault -EnvName "BAYMAX_QUALITY_GATE_TOTAL_TIMEOUT_SECONDS" -DefaultValue 1800
 $script:QualityGateStepTimeoutSeconds = Get-PositiveIntEnvOrDefault -EnvName "BAYMAX_QUALITY_GATE_STEP_TIMEOUT_SECONDS" -DefaultValue 600
 $script:QualityGateParallelism = Get-PositiveIntEnvOrDefault -EnvName "BAYMAX_QUALITY_GATE_PARALLELISM" -DefaultValue 3
 if ($script:QualityGateStepTimeoutSeconds -gt $script:QualityGateTotalTimeoutSeconds) {
@@ -536,7 +536,7 @@ try {
         }
 
         Invoke-RequiredStep -StepLabel "[quality-gate] golangci-lint --config .golangci.yml" -Command {
-            golangci-lint run --config .golangci.yml
+            golangci-lint run --config .golangci.yml ./...
         }
 
         Write-Host "[quality-gate] done (scope=general)"
@@ -855,8 +855,12 @@ Invoke-RequiredStep -StepLabel "[quality-gate] go test -race ./..." -Command {
     go test -race ./...
 }
 
+Invoke-RequiredStep -StepLabel "[quality-gate] host context assembly handoff contract" -Command {
+    pwsh -File scripts/check-host-context-assembly-handoff-contract.ps1
+}
+
 Invoke-RequiredStep -StepLabel "[quality-gate] golangci-lint --config .golangci.yml" -Command {
-    golangci-lint run --config .golangci.yml
+    golangci-lint run --config .golangci.yml ./...
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] a64 semantic stability gate" -Command {

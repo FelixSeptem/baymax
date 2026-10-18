@@ -26,6 +26,12 @@ Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`d
 
 拒绝及 duplicate 不新增 resolved/terminal，accepted decision 保持现有事件顺序；可在既有 admission/source fact event 中携带 bounded reason/opaque references，新增 payload 遵守 additive/nullable/default，经 RuntimeRecorder 单写。无新 QueryRuns 字段，不记录业务正文、凭证、原始 effect key 或 raw callback errors。准入后执行失败返回 `*types.DynamicActionContinuationError`，支持 errors.As 区分与 errors.Is 解包；Host 对首次和 exact duplicate 仍返回 accepted / dynamic_action.resume_admitted，由 source terminal 事件表达执行失败或取消，禁止将 provider/tool 原始错误放入 admission ReasonCode。业务 effect store、授权和 CAS 仍由宿主管理。支持矩阵与回滚见 [恢复准入指南](guides/host-resume-admission.md)。
 
+## 宿主 context projection（进行中提案；当前无配置或诊断字段）
+
+`establish-host-context-assembly-handoff-contract` 已交付 `host_context_projection.v1` 的 direct Go contract：`context/hostprojection` 的 `Admit`/`Resolve` 与 `types.RunRequest` 的非序列化 opt-in fields。它不新增配置键、RuntimeRecorder payload 或 QueryRuns 字段；resolver 是每次 assembly/restore 由宿主按当前授权调用的 callback，runtime 不保存 resolver 或已解析 body。bridge 继续采用 constructor/API 明确 opt-in；固定限制为 32 KiB serialized descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest，不增加 env/file/hot-update 域，并保持 `env > file > default`、非法配置 fail-fast 与原子回滚的既有规则。
+
+该合同的 descriptor 与 handoff correlation 只允许 bounded schema/identity/version/digest/capability/opaque-reference 事实；它们不是 RuntimeRecorder 或 QueryRuns schema。若未来既有诊断 owner 需要投影相关事实，字段必须 additive + nullable + default 并经 `RuntimeRecorder` 单写。raw source body、private memory/knowledge、credentials、business authorization/effect 和 raw resolver error 均不得记录；digest 不代表当前 source access 或业务授权。公开失败面是有限的 `host_context.*` 分类（包括 descriptor/bounds/digest/capability、resolver denial 与 missing source），均 fail-closed。dedicated replay/gate/example 已交付，但 active change 的最终标准完整验证仍待执行。
+
 ## 配置优先级
 
 固定优先级：`env > file > default`

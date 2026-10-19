@@ -26,6 +26,37 @@ DLQ. A queued lease reclaim is explicitly `lease_lost`; it is neither a new
 parent Run nor a fabricated business completion. Mailbox remains the only owner
 of delivery retry, lease and DLQ semantics.
 
+## Native retained history
+
+The existing mailbox owner also implements `types.NativeEventHistoryReader`.
+`HistorySource` returns a source-instance reference; `Capabilities` declares
+`mailbox.history.v1`, source-local sequence ordering, a 1024-entry retention
+window, cursor scope/version, durability and the limit of terminal recovery
+(mailbox lifecycle only, never host business commit). `ReadAfter` returns a
+bounded detached page and opaque versioned cursor. A nil cursor starts at the
+current retained floor; a cursor before that floor returns
+`types.ErrCursorExpired` with floor evidence, a discontinuity returns
+`types.ErrHistoryGap`, malformed/foreign cursors return their distinct typed
+errors, and pending/failed FileStore persistence returns
+`types.ErrSourceUnavailable`. It never falls back to latest.
+
+The floor is the after-position immediately before the first retained sequence;
+the retention policy is a count bound (last 1024 events), not a time guarantee.
+FileStore persists journal and mailbox snapshot atomically, so a newly opened
+FileStore can continue from a host-confirmed cursor. MemoryStore supports only
+process-local history and must not be advertised as durable. Legacy snapshots
+without a journal do not claim retained history. Journal entries contain bounded
+reference-only lifecycle/terminal facts and omit envelope payload, credentials,
+callback errors and business-commit assertions.
+
+Replay is structurally read-only: it does not publish, consume/claim, renew,
+ack, nack, requeue, retry, reclaim, dead-letter, invoke a handler, Run/Stream,
+resume a checkpoint or write diagnostics. `Complete` means the current retained
+tail is reached, not that the source can never emit another lifecycle event.
+Runner, child, team and workflow have no mailbox journal and remain explicitly
+unsupported. Cursor replay is not execution recovery. Contract coverage is
+listed in [the mainline contract index](../../docs/mainline-contract-test-index.md).
+
 ## Application outbox dispatch proposal
 
 `establish-application-outbox-mailbox-recovery-contract` is an active proposal, not a delivered mailbox API. It plans a separate constructor-only, reference-only bridge that may delegate a bounded descriptor to this existing owner or to scheduler. It must not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Before implementation, no bridge type, example, replay fixture or dedicated gate exists.

@@ -159,6 +159,7 @@ type Policy struct {
 }
 
 type Snapshot struct {
+	History     *HistoryJournal   `json:"history,omitempty"`
 	Backend     string            `json:"backend"`
 	Records     []Record          `json:"records"`
 	Queue       []string          `json:"queue"`

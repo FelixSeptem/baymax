@@ -60,12 +60,14 @@ func (o fileStoreOptions) batchingEnabled() bool {
 }
 
 type FileStore struct {
-	mu             sync.Mutex
-	path           string
-	state          mailboxState
-	persistOpts    fileStoreOptions
-	pendingPersist int
-	dirtySince     time.Time
+	historyPersistFailed bool
+	historyCommitted     bool
+	mu                   sync.Mutex
+	path                 string
+	state                mailboxState
+	persistOpts          fileStoreOptions
+	pendingPersist       int
+	dirtySince           time.Time
 }
 
 func NewFileStore(path string, policy Policy, opts ...FileStoreOption) (*FileStore, error) {
@@ -256,10 +258,17 @@ func (s *FileStore) load() error {
 	if err := s.state.restore(snapshot); err != nil {
 		return fmt.Errorf("decode mailbox file backend: %w", err)
 	}
+	s.historyCommitted = snapshot.History != nil
 	return nil
 }
 
-func (s *FileStore) persist() error {
+func (s *FileStore) persist() (err error) {
+	defer func() {
+		s.historyPersistFailed = err != nil
+		if err == nil {
+			s.historyCommitted = true
+		}
+	}()
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return fmt.Errorf("mkdir mailbox backend directory: %w", err)
 	}

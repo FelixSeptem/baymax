@@ -31,6 +31,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
 - `types.go`
 - `native_execution_event.go`：`NativeExecutionEvent` / `NativeExecutionProjector` / `NativeExecutionOptions`，纯投影和 `native_execution_event.v1` 能力声明。
+- `native_event_history.go`：source-neutral `SourceRef`、capabilities、opaque cursor、bounded page、reader interface 与稳定 typed errors。`NativeHistoryIdentity` 独立于 callback `EventID` 和协议 `Sequence`。
 
 ## 边界与依赖
 
@@ -45,6 +46,8 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 直接 `ProjectEvent` 复用既有 `MapEventToProtocol`，保留 native type/version、iteration、trace/span 和 payload references。固定 source profiles 声明 mapping_reference/callback_order、无 history/cursor/dedup/gap；相同 ID 或重复回调不合并。独立 `ProjectRealtimeBinding` 复用已有 Realtime subscription 验证和 normalization，不提供 worker/history/cache。`SourceState` 读取 native terminal_outcome.state、terminal_state、state；`IsTerminal` 为无状态分类，`input_required` 不属终态。完整接入合同见 [eventadapter](../../host/eventadapter/README.md)。
 
 ## 可观测性与验证
+
+Native event history 是独立 source-owned contract：`NativeEventHistoryReader.Capabilities` 声明 source namespace、sequence scope、retention/floor、cursor scope/version、durability 与 terminal recovery；`ReadAfter` 返回 detached `NativeEventPage`。mailbox 的 `History.TerminalOutcome` 仅将 `acked`、`dead_letter`、`expired` 分类为该 mailbox 生命周期的 terminal，`SourceState` 保留对应值；TTL 的 `mailbox.expired` transition 若 owner 已将记录送入 DLQ，terminal outcome 仍为 `dead_letter`。这些都不表示 runner 完成或 host business commit。`ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 和 `ErrSourceUnavailable` 可用 `errors.Is` 判定。当前只 mailbox owner 实现 retained journal；runner/child/team/workflow 由 `UnsupportedNativeEventHistoryReader` 明确拒绝。读 history 不等于 Run resume、checkpoint restore、retry 或业务 commit。source namespace/ID 各限 1024 UTF-8 bytes，cursor 限 4096 bytes，page limit 为 1–200；非法 source/limit 返回 `ErrHistoryInvalid`。详见 [mailbox](../../orchestration/mailbox/README.md)。
 
 - 关键验证：`go test ./core/types -count=1`。
 - 契约变更后应同步更新主干契约索引与跨模块回归用例。

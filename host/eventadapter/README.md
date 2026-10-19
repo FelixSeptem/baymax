@@ -16,6 +16,10 @@
 
 source 必须显式选择，不能按事件名猜测。并行 child/source 使用独立 observer，保留 source 给出的 parent/causation references；没有全局顺序。直接 callback 中相同 mapped EventID/TraceID 也会交付，不可用于去重。Realtime cursor replay 不等于 runner resume。
 
+## Source journal 与实时投影边界
+
+`orchestration/mailbox` 的 `NativeEventHistoryReader` 是独立 source-owner extension；它返回的 `NativeExecutionEvent.History` 保留 journal identity、source-local sequence 与 lifecycle terminal evidence。adapter 不创建 journal、不解析 cursor、不调用 reader，也不把 callback EventID/TraceID 或 host observation sequence 转成 history identity。宿主可将 history page 交给自己的只读投影逻辑；这不赋予 callback observer durable history/cursor/dedup 能力。当前 runner、child、team、workflow 仍通过 source audit 明确报告 unsupported history；mailbox MemoryStore 也不能宣称跨进程 durable replay。replay 与 checkpoint restore、Run resume 和业务 commit 的语义各自独立。
+
 ## Sink 与失败反馈
 
 Sink.Consume(ctx, event) 同步调用，默认 deadline 1 秒，必须合作响应 context；库无法中断不合作的 Go 回调。不建立队列、每事件 goroutine 或自动 retry。observer context 独立于 Run context，取消 Run 后仍能交付 canceled 事实。同 observer 重入/并发 fail-fast；并发失败前已经进入的 sink 可能发生写入。

@@ -1,0 +1,22 @@
+{
+  "version":"native_event_history.v1",
+  "capabilities":[
+    {"kind":"runner","supported":false,"durable":false,"after_cursor":false,"sequence_scope":"none","reason":"runner journal unsupported"},
+    {"kind":"child","supported":false,"durable":false,"after_cursor":false,"sequence_scope":"none","reason":"child journal unsupported"},
+    {"kind":"team","supported":false,"durable":false,"after_cursor":false,"sequence_scope":"none","reason":"team journal unsupported"},
+    {"kind":"workflow","supported":false,"durable":false,"after_cursor":false,"sequence_scope":"none","reason":"workflow journal unsupported"},
+    {"kind":"mailbox","supported":true,"durable":true,"after_cursor":true,"sequence_scope":"source_instance"}
+  ],
+  "cases":[
+    {"id":"capability-matrix","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"floor":0,"high_water":0,"page_next":{"value":"empty-page"},"complete":true,"side_effects":0},
+    {"id":"cursor-restart","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor_source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"confirmed-cursor-v1"},"confirmed_cursor":{"value":"confirmed-cursor-v1"},"page_next":{"value":"next-cursor-v1"},"after":1,"next_position":1,"floor":0,"high_water":1,"complete":true,"restart":true,"side_effects":0},
+    {"id":"terminal-recovery","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"floor":0,"high_water":1,"next_position":1,"complete":true,"expected_terminal":"acked","events":[{"version":"native_execution_event.v1","native_type":"mailbox.ack","native_version":"mailbox.history.v1","history":{"source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"sequence":1,"event_id":"mailbox.history.v1/source-a/1","terminal_outcome":"acked"},"event":{"event_id":"mailbox.history.v1/source-a/1","source":"mailbox","payload":{}}}],"page_next":{"value":"terminal-next"},"side_effects":0},
+    {"id":"malformed-cursor","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"malformed"},"malformed_cursor":true,"expected_error":"cursor_malformed","side_effects":0},
+    {"id":"foreign-cursor","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"foreign"},"cursor_source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-b"},"expected_error":"cursor_foreign","side_effects":0},
+    {"id":"expired-cursor","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"expired"},"after":2,"floor":8,"high_water":9,"expected_error":"cursor_expired","side_effects":0},
+    {"id":"history-gap","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"gap"},"after":1,"high_water":3,"missing_sequence":true,"expected_error":"history_gap","side_effects":0},
+    {"id":"unsupported-source","source":{"kind":"workflow","namespace":"workflow.v1","id":"workflow-a"},"expected_error":"history_unsupported","side_effects":0},
+    {"id":"source-unavailable","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"unavailable":true,"expected_error":"source_unavailable","side_effects":0},
+    {"id":"no-latest-fallback","source":{"kind":"mailbox","namespace":"mailbox.history.v1","id":"source-a"},"cursor":{"value":"expired"},"after":2,"floor":8,"high_water":9,"expected_error":"cursor_expired","latest_fallback":false,"side_effects":0}
+  ]
+}

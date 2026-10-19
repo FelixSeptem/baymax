@@ -102,4 +102,7 @@ func main() {
 		panic("missing source pause")
 	}
 	fmt.Printf("native-events run=%s\nnative-events stream=%s\nobserver=%s\npause-is-terminal=%t\n", run.TerminalOutcome.State, stream.TerminalOutcome.State, streamEvents.Observation.State, pauseEvents.Events[len(pauseEvents.Events)-1].IsTerminal())
+	if err := demonstrateHistory(); err != nil {
+		panic(err)
+	}
 }

@@ -495,6 +495,33 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 # Host execution plan bridge contract
 
+## Source-owned native event history and cursor replay
+
+`NativeEventHistoryReader` is a read-only source extension. Only the existing
+mailbox owner supplies a retained journal in this change; FileStore persists
+source-local identity/sequence/cursor/terminal facts, MemoryStore declares
+process-local history, and runner/child/team/workflow remain explicitly
+unsupported. Callback identity is not journal identity, and replay cannot
+retry/resume/restore execution or commit an effect.
+
+| Requirement | Evidence |
+| --- | --- |
+| bounded detached source/cursor/page DTOs and typed errors | `core/types/native_event_history_test.go` |
+| mailbox retention/floor, immutable pages, cursor malformed/foreign/expired/gap/unavailable, FileStore reopen and subprocess restart | `orchestration/mailbox/history_test.go` |
+| source-bound manifest facts; durable versus process-local floor; unsupported forms | `orchestration/planbridge/history_capability_test.go` |
+| adapter stays callback-only and cannot manufacture history identity | `host/eventadapter/history_boundary_test.go` |
+| real-owner source history and Run/Stream correlation/admission parity | `integration/native_event_history_contract_test.go` |
+| reference-only capabilities/cursor/terminal/error/drift replay without owner construction | `tool/diagnosticsreplay/native_event_history_test.go`, `integration/native_event_history_replay_contract_test.go`, `integration/testdata/diagnostics-replay/native-event-history/v1/conformance.json` |
+| offline callback plus reopened-mailbox example | `examples/native-execution-events/README.md`, `examples/native-execution-events/history.go` |
+| shell/PowerShell contract gates and quality wiring | `scripts/check-native-event-history-contract.sh`, `scripts/check-native-event-history-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
+
+The fixture evidence reference is `fixture:native-event-history.v1`. The
+dedicated gate checks bounded reference facts, source order/identity, restart
+cursor, retention/error outcomes and no-side-effect drift. Existing live-event
+gates continue to cover callback projection independently. The
+[integration support matrix](guides/integration.md) and [mailbox contract](../orchestration/mailbox/README.md)
+define the retention and terminal-recovery limits.
+
 ## Spec 1 capability manifest and mailbox_async extension
 
 | Requirement | Evidence |

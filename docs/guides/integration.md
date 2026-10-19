@@ -46,6 +46,38 @@ status := observer.Status() // 独立评估 runErr/source outcome 与观察结�
 
 Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和串行 callback order，不能按 EventID/TraceID 去重，也没有 durable history/cursor 或全局顺序。必需的 unsupported 能力在构造时拒绝。Realtime 只经 `ProjectRealtimeBinding` 保留既有 source binding 的 identity/sequence/overlap/gap/expired outcome；该入口不订阅事件，也不恢复执行。各 owner 的接线矩阵、默认 limits 和失败分类见 [adapter 合同](../../host/eventadapter/README.md)。
 
+### Source-owned native history 与 restart replay
+
+`types.NativeEventHistoryReader` 是只读 source-store extension。先由真实 owner 取得 `SourceRef`，查询 `Capabilities`，再用 `ReadAfter(ctx, source, confirmedCursor, limit)` 分页；page 的 events、next cursor 和 retention floor 均为 detached snapshot。不要以任意 run ID、callback EventID/TraceID 或 host sequence 替代 source/cursor。当前 source audit 如下：
+
+| Source | Event namespace / sequence | Retention / cursor | Terminal recovery / restart | Unsupported reason |
+| --- | --- | --- | --- | --- |
+| runner | `runner.event.unsupported`；未定义 history sequence | none；无 cursor | none | runner owner 尚无 retained journal |
+| isolated child | `child.event.unsupported`；未定义 history sequence | none；无 cursor | none | child owner 尚无 retained journal |
+| team | `team.event.unsupported`；未定义 history sequence | none；无 cursor | none | team owner 尚无 retained journal |
+| workflow | `workflow.event.unsupported`；未定义 history sequence | none；无 cursor | none | workflow owner 尚无 retained journal |
+| mailbox MemoryStore | `mailbox.history.v1/<source-id>`；仅 source instance 内递增 | 最后 1024 lifecycle events；无时间保证；opaque `mailbox.history.v1` source-instance cursor | retained mailbox lifecycle；仅同进程 | 不支持 durable history / 跨进程 replay |
+| mailbox FileStore | `mailbox.history.v1/<source-id>`；仅 source instance 内递增 | 最后 1024 lifecycle events；无时间保证；opaque `mailbox.history.v1` source-instance cursor | 同一 snapshot 的 source identity/journal 可重开读取；仅 mailbox lifecycle | checkpoint restore / business commit 不在此能力内 |
+
+runner/child/team/workflow 的 `UnsupportedNativeEventHistoryReader` 会提供明确 capability floor，并在 `ReadAfter` 返回 `ErrHistoryUnsupported`；不会订阅 callback 或激活执行。`planbridge.DefaultCapabilityManifest` 不推断具体 source；`CapabilityManifestWithHistory` 只基于匹配 mailbox source 的实际 facts 提升 mailbox history/replay 能力，并将 namespace、sequence、retention/floor、cursor、terminal recovery 作为 `SourceHistory` 保留。source 不可用时返回 typed unavailable，不能将静态 manifest 或 DTO 编译成功当作可重放证据。
+
+```go
+source, err := owner.HistorySource(ctx) // owner is an existing *mailbox.Mailbox
+if err != nil { return err }
+caps, err := owner.Capabilities(ctx, source)
+if err != nil { return err }
+_ = caps // Check Supported and Durable against the host's actual requirement.
+page, err := owner.ReadAfter(ctx, source, confirmedCursor, 100)
+if err != nil { return err }
+// Project page.Events read-only. Persist page.NextCursor only after host confirmation.
+```
+
+`limit` 必须在 1–200；source namespace/ID 各限 1024 UTF-8 bytes，opaque cursor 限 4096 bytes。`nil` cursor 从当前 retention floor 开始，floor 是第一条保留事件之前的 after-position（最后已删除 sequence）；它不证明更早历史完整。`Complete` 只表示当前 retained tail 已读完，并不声明 source 永久停止。
+
+用 `errors.Is` 区分 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 与 `ErrSourceUnavailable`；非法 source/page limit 为 `ErrHistoryInvalid`。expiry/gap 可携带安全 floor evidence，但不能静默改读 floor/latest。FileStore 未提交批量写入、持久化失败或 legacy snapshot 缺 history 时 unavailable；读取不隐式 Flush。跨进程 consumer 必须重开同一已持久化 FileStore，再提交原 source 与已确认 cursor。
+
+crash-before-consumer-projection 的恢复是重新读取 source 已保留事实；host 自行以 source-owned history identity 幂等投影并确认 cursor。它不调用模型、工具、handler、Run/Stream、claim/ack/nack、retry、resume 或 restore，不分配新 parent Run，也不改变 delivery、业务 commit 或 checkpoint 状态。并行 source 的顺序仅在各 source 内成立。离线可运行 [示例](../../examples/native-execution-events/README.md) 展示重开 replay、malformed/foreign/expired 与四类 unsupported；[contract index](../mainline-contract-test-index.md) 列出 gap/unavailable 等证据。
+
 与 RuntimeRecorder 共用 source 时使用显式 fan-out，让 recorder 消费原始事件、observer 消费原始事件的独立快照；不要从 QueryRuns 或 RunResult 合成事件。关闭/停用 observer 即可回滚观察接入；保留业务记录，已经发生的外部写入需按业务规则处理。
 
 ## 宿主计划接入
@@ -87,4 +119,4 @@ native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用
 集成方必须分别判断 dispatch accepted、mailbox/scheduler lifecycle、host effect committed 和 host outbox confirmed。ack、任务 terminal、Run/Stream terminal、digest 和 replay 都不是业务 commit。恢复仅承诺 at-least-once：mailbox delivery retry、scheduler execution retry 与 host business-commit retry 不可叠加为 bridge retry。未来停用 bridge 时回到既有原生 owner 调用，并保留 pending outbox、message/task/attempt 及已提交 effect，交由宿主幂等对账。
 # Host execution plan bridge
 
-For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox, resumed execution and shared child queues are rejected rather than adapted.
+For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox requires an explicit manifest-approved native binding, while resumed execution and shared child queues are rejected.

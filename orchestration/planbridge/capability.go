@@ -1,6 +1,11 @@
 package planbridge
 
-import "strings"
+import (
+	"context"
+	"strings"
+
+	"github.com/FelixSeptem/baymax/core/types"
+)
 
 const CapabilityManifestSchemaVersion = "host_runtime_capability_manifest.v1"
 
@@ -39,23 +44,24 @@ type CapabilityManifest struct {
 }
 
 type ExecutionFormCapability struct {
-	Form                ExecutionForm     `json:"form"`
-	Admission           CapabilityState   `json:"admission"`
-	NativeEvents        CapabilityState   `json:"native_events"`
-	DurableHistory      CapabilityState   `json:"durable_history"`
-	AfterCursorReplay   CapabilityState   `json:"after_cursor_replay"`
-	CheckpointCreation  CapabilityState   `json:"checkpoint_creation"`
-	CrossProcessRestore CapabilityState   `json:"cross_process_restore"`
-	InputRequired       CapabilityState   `json:"input_required"`
-	ApprovalRequired    CapabilityState   `json:"approval_required"`
-	BudgetExhausted     CapabilityState   `json:"budget_exhausted"`
-	Cancellation        CapabilityState   `json:"cancellation"`
-	Timeout             CapabilityState   `json:"timeout"`
-	CausalRetry         CapabilityState   `json:"causal_retry"`
-	MailboxContinuation CapabilityState   `json:"mailbox_continuation"`
-	RetentionPolicy     string            `json:"retention_policy"`
-	EvidenceReference   string            `json:"evidence_reference"`
-	UnsupportedReasons  map[string]string `json:"unsupported_reasons,omitempty"`
+	Form                ExecutionForm              `json:"form"`
+	Admission           CapabilityState            `json:"admission"`
+	NativeEvents        CapabilityState            `json:"native_events"`
+	DurableHistory      CapabilityState            `json:"durable_history"`
+	AfterCursorReplay   CapabilityState            `json:"after_cursor_replay"`
+	CheckpointCreation  CapabilityState            `json:"checkpoint_creation"`
+	CrossProcessRestore CapabilityState            `json:"cross_process_restore"`
+	InputRequired       CapabilityState            `json:"input_required"`
+	ApprovalRequired    CapabilityState            `json:"approval_required"`
+	BudgetExhausted     CapabilityState            `json:"budget_exhausted"`
+	Cancellation        CapabilityState            `json:"cancellation"`
+	Timeout             CapabilityState            `json:"timeout"`
+	CausalRetry         CapabilityState            `json:"causal_retry"`
+	MailboxContinuation CapabilityState            `json:"mailbox_continuation"`
+	RetentionPolicy     string                     `json:"retention_policy"`
+	EvidenceReference   string                     `json:"evidence_reference"`
+	UnsupportedReasons  map[string]string          `json:"unsupported_reasons,omitempty"`
+	SourceHistory       *types.HistoryCapabilities `json:"source_history,omitempty"`
 }
 
 // CapabilityManifestReader returns detached entries so callers cannot change
@@ -99,6 +105,53 @@ func DefaultCapabilityManifest() CapabilityManifest {
 		result.Forms = append(result.Forms, entry)
 	}
 	return result
+}
+
+// CapabilityManifestWithHistory projects only a source owner's evidenced facts.
+// It does not open a mailbox, create a history store, or imply checkpoint/restore.
+func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEventHistoryReader, source types.SourceRef) (CapabilityManifest, error) {
+	result := DefaultCapabilityManifest()
+	if reader == nil {
+		return result, types.ErrSourceUnavailable
+	}
+	caps, err := reader.Capabilities(ctx, source)
+	if err != nil {
+		return result, err
+	}
+	if caps.Source != source || source.Kind != types.HistorySourceMailbox {
+		return result, types.ErrHistoryUnsupported
+	}
+	for i := range result.Forms {
+		entry := &result.Forms[i]
+		if entry.Form != ExecutionFormMailboxAsync {
+			continue
+		}
+		entry.RetentionPolicy = caps.RetentionWindow
+		entry.EvidenceReference = "fixture:native-event-history.v1"
+		if !caps.Supported {
+			entry.DurableHistory = CapabilityUnsupported
+			entry.AfterCursorReplay = CapabilityUnsupported
+			entry.UnsupportedReasons["durable_history"] = caps.UnsupportedReason
+			entry.UnsupportedReasons["after_cursor_replay"] = caps.UnsupportedReason
+			continue
+		}
+		capabilitySnapshot := caps
+		if caps.RetentionFloor != nil {
+			floor := *caps.RetentionFloor
+			capabilitySnapshot.RetentionFloor = &floor
+		}
+		entry.SourceHistory = &capabilitySnapshot
+		entry.AfterCursorReplay = CapabilitySupported
+		delete(entry.UnsupportedReasons, "after_cursor_replay")
+		if caps.Durable {
+			entry.DurableHistory = CapabilitySupported
+			delete(entry.UnsupportedReasons, "durable_history")
+		} else {
+			entry.DurableHistory = CapabilityUnsupported
+			entry.UnsupportedReasons["durable_history"] = "source retention is process-local"
+		}
+	}
+	return result, validateCapabilityManifest(result)
 }
 
 func NewCapabilityManifestReader(manifest CapabilityManifest) (*CapabilityManifestReader, error) {
@@ -189,6 +242,24 @@ func validateCapability(entry ExecutionFormCapability) error {
 			return fail(InvalidPlan, "capability_manifest."+dimension, nil)
 		}
 	}
+	historyDeclared := entry.DurableHistory == CapabilitySupported || entry.AfterCursorReplay == CapabilitySupported
+	if historyDeclared && entry.SourceHistory == nil {
+		return fail(InvalidPlan, "capability_manifest.source_history", nil)
+	}
+	if entry.SourceHistory != nil {
+		history := entry.SourceHistory
+		if entry.Form != ExecutionFormMailboxAsync || history.Source.Validate() != nil || history.Source.Kind != types.HistorySourceMailbox || !history.Supported || !history.SequenceDefined || history.RetentionFloor == nil || history.RetentionFloor.Validate() != nil {
+			return fail(InvalidPlan, "capability_manifest.source_history", nil)
+		}
+		for _, value := range []string{history.EventIdentityNamespace, history.SequenceScope, history.RetentionWindow, history.CursorScope, history.CursorVersion, history.TerminalRecovery} {
+			if strings.TrimSpace(value) == "" || len(value) > types.MaxHistoryReferenceBytes {
+				return fail(InvalidPlan, "capability_manifest.source_history", nil)
+			}
+		}
+		if entry.AfterCursorReplay != CapabilitySupported || (history.Durable != (entry.DurableHistory == CapabilitySupported)) {
+			return fail(InvalidPlan, "capability_manifest.source_history", nil)
+		}
+	}
 	return nil
 }
 
@@ -206,6 +277,14 @@ func cloneCapability(entry ExecutionFormCapability) ExecutionFormCapability {
 	clone.UnsupportedReasons = make(map[string]string, len(entry.UnsupportedReasons))
 	for key, value := range entry.UnsupportedReasons {
 		clone.UnsupportedReasons[key] = value
+	}
+	if entry.SourceHistory != nil {
+		history := *entry.SourceHistory
+		if entry.SourceHistory.RetentionFloor != nil {
+			floor := *entry.SourceHistory.RetentionFloor
+			history.RetentionFloor = &floor
+		}
+		clone.SourceHistory = &history
 	}
 	return clone
 }

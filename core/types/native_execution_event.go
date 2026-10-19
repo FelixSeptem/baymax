@@ -113,6 +113,8 @@ type NativeExecutionCapabilities struct {
 }
 
 type NativeExecutionEvent struct {
+	// History is present only for a retained source fact, never a callback mapping.
+	History        *NativeHistoryIdentity        `json:"history,omitempty"`
 	Version        string                        `json:"version"`
 	Event          EventEnvelope                 `json:"event"`
 	NativeType     string                        `json:"native_type"`
@@ -130,6 +132,12 @@ func (e NativeExecutionEvent) IsTerminal() bool {
 	if e.Event.Source == ProtocolSourceRealtime {
 		return e.NativeType == string(RealtimeEventTypeComplete)
 	}
+	if e.History != nil && e.History.Source.Kind == HistorySourceMailbox {
+		switch e.History.TerminalOutcome {
+		case "acked", "dead_letter", "expired":
+			return true
+		}
+	}
 	if e.NativeType != "run.finished" {
 		return false
 	}
@@ -140,6 +148,9 @@ func (e NativeExecutionEvent) IsTerminal() bool {
 // SourceState reads the source's terminal projection or explicit pause state.
 // It does not infer an outcome from status, acknowledgement, or event names.
 func (e NativeExecutionEvent) SourceState() string {
+	if e.History != nil && e.History.TerminalOutcome != "" {
+		return e.History.TerminalOutcome
+	}
 	if outcome, ok := e.Event.Payload["terminal_outcome"].(map[string]any); ok {
 		if state, ok := outcome["state"].(string); ok {
 			return state

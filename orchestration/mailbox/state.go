@@ -9,6 +9,7 @@ import (
 )
 
 type mailboxState struct {
+	History     HistoryJournal
 	Records     map[string]*Record  `json:"records"`
 	Queue       []string            `json:"queue"`
 	Idempotency map[string]string   `json:"idempotency"`
@@ -21,6 +22,7 @@ type mailboxState struct {
 
 func newMailboxState(backend string, policy Policy) mailboxState {
 	return mailboxState{
+		History:     newHistoryJournal(),
 		Records:     map[string]*Record{},
 		Queue:       []string{},
 		Idempotency: map[string]string{},
@@ -79,6 +81,7 @@ func (s *mailboxState) publish(envelope Envelope, now time.Time) (PublishResult,
 	s.Idempotency[normalized.IdempotencyKey] = normalized.MessageID
 	s.Stats.PublishedTotal++
 	s.Stats.QueueTotal++
+	s.appendHistory("admit", rec, "", ActionOptions{})
 	return PublishResult{Record: cloneRecord(rec)}, nil
 }
 
@@ -401,6 +404,7 @@ func (s *mailboxState) snapshot() Snapshot {
 	}
 	queue := append([]string(nil), s.Queue...)
 	return Snapshot{
+		History:     s.History.clone(),
 		Backend:     s.Stats.Backend,
 		Records:     records,
 		Queue:       queue,
@@ -415,6 +419,13 @@ func (s *mailboxState) restore(snapshot Snapshot) error {
 	if err != nil {
 		return err
 	}
+	history := newHistoryJournal()
+	if normalized.History != nil {
+		if err := normalized.History.validate(); err != nil {
+			return err
+		}
+		history = *normalized.History.clone()
+	}
 	records := make(map[string]*Record, len(normalized.Records))
 	inFlightTotal := 0
 	for i := range normalized.Records {
@@ -425,6 +436,7 @@ func (s *mailboxState) restore(snapshot Snapshot) error {
 		}
 	}
 	s.Records = records
+	s.History = history
 	s.Queue = append([]string(nil), normalized.Queue...)
 	s.Idempotency = make(map[string]string, len(normalized.Idempotency))
 	for k, v := range normalized.Idempotency {
@@ -466,6 +478,7 @@ func (s *mailboxState) emitLifecycleEvent(
 	if s == nil {
 		return
 	}
+	s.appendHistory(string(transition), rec, reason, opts)
 	if !s.traceEvents {
 		return
 	}

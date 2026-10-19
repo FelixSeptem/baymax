@@ -255,6 +255,28 @@ func TestNativeExecutionTerminalUsesNativeOutcome(t *testing.T) {
 	}
 }
 
+func TestNativeExecutionTerminalUsesMailboxHistoryOutcome(t *testing.T) {
+	source := SourceRef{Kind: HistorySourceMailbox, Namespace: "mailbox.history.v1", ID: "mailbox"}
+	for _, outcome := range []string{"acked", "dead_letter", "expired"} {
+		event := NativeExecutionEvent{
+			History:    &NativeHistoryIdentity{Source: source, Sequence: 1, EventID: "event", TerminalOutcome: outcome},
+			NativeType: "mailbox." + outcome,
+		}
+		if !event.IsTerminal() || event.SourceState() != outcome {
+			t.Errorf("mailbox terminal outcome %q was not recognized: state=%q", outcome, event.SourceState())
+		}
+	}
+	for _, event := range []NativeExecutionEvent{
+		{History: &NativeHistoryIdentity{Source: source, Sequence: 1, EventID: "event"}, NativeType: "mailbox.consume"},
+		{History: &NativeHistoryIdentity{Source: source, Sequence: 1, EventID: "event", TerminalOutcome: "business_committed"}, NativeType: "mailbox.ack"},
+		{History: &NativeHistoryIdentity{Source: SourceRef{Kind: HistorySourceRunner, Namespace: "runner", ID: "run"}, Sequence: 1, EventID: "event", TerminalOutcome: "acked"}, NativeType: "runner.event"},
+	} {
+		if event.IsTerminal() {
+			t.Errorf("non-mailbox/unknown lifecycle fact classified terminal: %+v", event)
+		}
+	}
+}
+
 func BenchmarkNativeExecutionProjection(b *testing.B) {
 	p, err := NewNativeExecutionProjector(NativeExecutionOptions{Source: ProtocolSourceRunner})
 	if err != nil {

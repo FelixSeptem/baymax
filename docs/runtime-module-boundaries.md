@@ -140,7 +140,7 @@ callback 必须在 source 锁外运行，返回后 source 锁内重检 generatio
 
 已交付的 [宿主执行计划桥接](../orchestration/planbridge/README.md) 位于 `orchestration/planbridge`，依赖 core/types 与既有 runner/composer/workflow/teams/scheduler 的原生入口和 validator；允许与独立 `host/eventadapter` 接线，禁止反向让 event adapter 控制执行。它只持有 bounded detached plan/binding facts，先全计划预检再委托一个 source owner；不得增加执行/预算/retry/terminal/recovery 状态机、worker 或诊断写入入口。
 
-宿主仍拥有业务 policy、授权、revision、effect key、input/handler binding 与 commit gate；identity/digest 不是授权。共享 scheduler claim 不提供任意 task-specific dispatch；首版 local child 仅允许隔离独占 binding。mailbox、组合动态暂停和跨 owner/native resume 请求须按不支持合同先拒绝；direct runner pause 保持原生语义。支持范围、constructor-only bounded limits、错误与回滚需在实施时同步 package/API 文档，当前声明不代表公开能力已交付。
+宿主仍拥有业务 policy、授权、revision、effect key、input/handler binding 与 commit gate；identity/digest 不是授权。共享 scheduler claim 不提供任意 task-specific dispatch；local child 仅允许隔离独占 binding。mailbox 必须通过 manifest-approved native binding；组合动态暂停和 planbridge resumed 请求按不支持合同先拒绝，direct runner pause 保持原生语义。支持范围、constructor-only bounded limits、错误与回滚见 package/API 文档；source history replay 不增加 execution restore 能力。
 
 `runtime/*` -> (no dependency on `mcp/http` or `mcp/stdio`)
 
@@ -261,5 +261,28 @@ manifest-approved `mailbox_async` binding to `orchestration/mailbox`. It must no
 create a queue, worker loop, scheduler, lease/retry/DLQ owner, event journal or
 terminal reducer. Mailbox owns message/delivery/lease/attempt lifecycle; the host
 owns authority, write scope, effect namespace and business commit. Capability
-manifest evidence never substitutes for current admission. The bridge does not
-provide Spec 2 history/cursor replay or Spec 3 durable checkpoint restore.
+manifest evidence never substitutes for current admission. Spec 2 history/cursor
+replay is delegated to a concrete mailbox source reader; Spec 3 durable
+checkpoint restore remains unsupported.
+
+### Native history source ownership
+
+`core/types` owns bounded source-neutral history DTOs, typed errors and the
+`NativeEventHistoryReader` interface, with no storage or execution dependency.
+The existing `orchestration/mailbox` state/backend owns the first journal:
+monotonic source-local sequence, bounded reference facts, count-based retention,
+floor and cursor scope. FileStore atomically persists it with its existing
+snapshot; MemoryStore declares only process-local availability. No additional
+queue, scheduler, worker, journal service or lifecycle owner is introduced.
+
+`ReadAfter` only snapshots retained state; it cannot mutate delivery, Flush a
+store, reclaim a lease, publish, retry, ack, resume/restore, invoke model/tool or
+write `RuntimeRecorder`. `host/eventadapter` remains a realtime callback
+projector with no journal/cursor ownership. `orchestration/planbridge` may
+project a matching concrete source's capability into the manifest, including
+source identity and retention/cursor facts; its dispatch path does not read or
+maintain history. Runner/child/team/workflow return explicit unsupported rather
+than inventing callback or cross-source ordering. `tool/diagnosticsreplay`
+validates reference-only fixtures without constructing a mailbox owner or any
+execution dependency. History replay does not restore execution or prove a
+business commit.

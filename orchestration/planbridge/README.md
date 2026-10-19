@@ -57,8 +57,8 @@ separately; this compiled snapshot cannot restore a Run.
 Errors expose `Code`, a safe field path and optional native `Unwrap`, never
 payloads: unsupported_version, invalid_plan, limit_exceeded, binding_mismatch,
 unsupported_capability and source_unavailable. The capability manifest is
-versioned/evidence-linked and explicitly marks history, replay, checkpoint and
-pause dimensions that remain unsupported in this Spec. Canonical SHA256 covers declared refs/digests and matched
+versioned/evidence-linked and explicitly marks source-history, checkpoint and
+pause dimensions with their evidenced supported/unsupported state. Canonical SHA256 covers declared refs/digests and matched
 source-normalized structural/default/budget facts, with sorted map keys,
 preserved semantic list order and durations in integer nanoseconds.
 
@@ -76,3 +76,15 @@ Rollback: stop calling the bridge and call native APIs explicitly. Preserve
 task/attempt/checkpoint/outbox and business facts; no storage migration or undo
 of already executed effects is provided. See the offline
 [example](../../examples/host-execution-plan/README.md).
+
+`DefaultCapabilityManifest` remains a conservative source-unbound declaration.
+Use `CapabilityManifestWithHistory(ctx, reader, source)` to obtain concrete
+mailbox source facts from the existing owner: only a matching source-bound
+capability can enable after-cursor replay, and durable history additionally
+requires durable persistence. `ExecutionFormCapability.SourceHistory` preserves
+the declared source/event namespace, sequence scope, retention/floor,
+cursor scope/version and terminal-recovery limits. MemoryStore replay remains
+process-local; unavailable or incompatible source facts fail closed. Runner,
+child, team and workflow history stay unsupported, and no history capability
+enables checkpoint creation, cross-process execution restore or composite
+pause. The bridge neither owns nor reads a journal during plan dispatch.

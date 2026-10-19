@@ -2311,6 +2311,30 @@ pause support. Mailbox host-plan references are bounded and exclude payloads,
 credentials and callback errors; message/delivery/lease/retry/DLQ facts remain
 source-owned. No new env/file/hot-update key or QueryRuns field is introduced.
 
+## Native event history limits and diagnostics boundary
+
+Native history adds no env/file/hot-update key or default, and no QueryRuns,
+RunRecord or OTel field. Existing `env > file > default`, fail-fast validation
+and atomic rollback remain unchanged. Constructor/API bounds are source
+namespace and ID at most 1024 UTF-8 bytes each, opaque cursor at most 4096
+bytes, page limit 1–200, and mailbox retention of the last 1024 lifecycle
+events with no time guarantee. `Complete` is a retained-tail observation;
+retention floor is the after-position preceding the first retained event.
+
+`ErrHistoryUnsupported`, `ErrCursorMalformed`, `ErrCursorForeign`,
+`ErrCursorExpired`, `ErrHistoryGap` and `ErrSourceUnavailable` are typed reader
+outcomes, not new runtime terminal states. Invalid source/page bounds use
+`ErrHistoryInvalid`. FileStore pending/failed persistence and legacy snapshots
+without a persisted journal do not claim durable availability. Reads never
+Flush or repair a store, reclaim delivery, generate diagnostics or start
+execution. Journal facts are reference-only: payloads, credentials, callback
+errors and host business-commit assertions are excluded. Callback EventID and
+host observation sequence cannot become journal identity or replay cursor.
+Offline replay classifications and evidence live in the
+[contract index](mainline-contract-test-index.md); any future diagnostics must
+still go through `observability/event.RuntimeRecorder` as the sole writer and
+preserve additive + nullable + default compatibility.
+
 # Application outbox dispatch bridge（进行中 change；无配置或诊断字段）
 
 `establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only、reference-only `application_outbox_dispatch.v1` 接入；它不提供 env/file/hot-update 配置键、默认值、QueryRuns 字段、RuntimeRecorder payload 或诊断查询 API。既有 `env > file > default` 优先级、非法配置 fail-fast 与原子回滚语义不变。

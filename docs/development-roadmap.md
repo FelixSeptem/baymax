@@ -24,9 +24,10 @@ Baymax 主线保持 `library-first + contract-first`：
 
 归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
 
-宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165。当前没有 context 接缝变更处于进行中状态；其余 1 个未启动候选维护在下文“待实现提案：宿主执行接入与恢复边界”。候选不代表已实现能力或承诺排期。
+宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165，application outbox 接缝已归档为 166。
 
-- 进行中：无
+- 进行中：
+  - 当前没有已完成但未归档的 change。
 
 归档 165（`establish-host-context-assembly-handoff-contract`）已完成实现、验证和规格同步：它交付 host context projection 的显式 opt-in、reference-only 宿主接入合同。宿主先完成角色、来源与业务引用过滤；Baymax 在既有 Context Assembler 与 handoff/restore owner 内验证 `host_context_projection.v1` 的 identity/digest、capability 收窄和 opaque source reference。constructor/API 固定限制为 32 KiB descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest；有限 `host_context.*` 失败分类 fail-closed，且不包含 body 或 callback error。direct Run/Stream 仅在既有 Context Assembler 启用时支持该 opt-in path；禁用时保留 assembler bypass 语义，projection 不会被 admit 或 resolve。legal `handoff.v1` correlation、fresh-resolver correlated restore、read-only `budget_projection.v1` 语义、reference-only replay、双平台 dedicated gate、标准 quality path 的静态接线与离线 example 都已交付。不新增 context store、业务授权/commit、预算账本、Provider SDK、RuntimeRecorder/QueryRuns 字段或平行执行/终态/恢复状态机。Example Impact Assessment：新增示例；`examples/host-context-assembly/README.md` 是已交付的文档与离线示例基线。完整工件见 [归档提案](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
 
@@ -221,27 +222,27 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
-### 待实现提案：宿主执行接入与恢复边界（2026-10-14）
+### 活动提案：宿主执行接入与恢复边界（2026-10-14）
 
-需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；以下仅维护其余 1 个未启动候选。
+需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；application outbox 接缝已完成实现与验证，以下保留其活动 change 的归档前边界。
 
-总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。优先补接入 contract 与 conformance，只有复现证明既有机制存在 gap 时才最小修改运行时。
+总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。本 change 已补齐 application outbox 接入 contract、conformance、replay、example 与双平台 gate，仍按既有 owner 边界运行。
 
-| 顺序 | 待实现候选 slug | 优先级与依赖 | 首阶段目标 |
+| 顺序 | 后续 slug | 优先级与依赖 | 首阶段目标 |
 | --- | --- | --- | --- |
 | 1 | `establish-application-outbox-mailbox-recovery-contract` | P2；复用归档 160/162 的 plan/event correlation，依赖恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
 
-上述优先级是建议启动顺序，不表示可跳过准入审计。以下 Example Impact Assessment 为立项预评估，正式 proposal/design/tasks 须分别声明并确认。各候选都须交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate；实施时按 AGENTS.md 执行完整代码门禁。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
+上述顺序记录后续候选 change 的优先级与依赖。归档 166 已按 proposal/design/tasks 的 Example Impact Assessment 交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate，并按 AGENTS.md 执行完整代码门禁和归档前复核。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
 
 #### Application outbox 与 mailbox 投递恢复接缝
 
-**候选 slug / 状态**：`establish-application-outbox-mailbox-recovery-contract`；待实现，未启动。
+**change slug / 状态**：`establish-application-outbox-mailbox-recovery-contract`；归档 166。
 
 **触发信号**：集成方报告 scheduler 同时处理 occurrence、next_run、DST、misfire/backfill、application outbox、mailbox dispatch、effect key、execution record 与 webhook delivery，需要拆开业务调度责任和底层可靠投递。
 
 **复用 owner 与范围**：mailbox publish/lease/ack/nack/requeue/delay/QoS/DLQ、scheduler task/attempt/lease/retry、composer/snapshot recovery 与 completion safe point。宿主继续拥有 cron 用户归属、IANA timezone/DST、schedule revision、misfire/backfill 策略、occurrence key、outbox、effect key 和幂等业务提交；Baymax 负责消息投递和执行 attempt 的既有机制。
 
-**首阶段 DoD**：定义 occurrence/outbox/message/task/attempt/run correlation 与 admission/ack 接缝；验证“publish 后未标记 outbox”和“业务 commit 后未 ack”两个崩溃窗口、重复投递、stale attempt、lease rollover、delayed delivery、取消、恢复与 DLQ。明确 delivery retry、execution retry、business commit retry 各自 owner，避免重试叠加；按 at-least-once 加宿主 effect 幂等证明恢复，不把 ack 或 scheduler terminal 推断为业务提交成功，必要执行路径保持 Run/Stream parity。
+**已交付 DoD**：定义 occurrence/outbox/message/task/attempt/run correlation 与 admission/ack 接缝；已验证“publish 后未标记 outbox”和“业务 commit 后未 ack”两个崩溃窗口、重复投递、stale attempt、lease rollover、delayed delivery、取消、恢复与 DLQ。delivery retry、execution retry、business commit retry 保持各自 owner，未由 bridge 叠加；按 at-least-once 加宿主 effect 幂等证明恢复，不把 ack 或 scheduler terminal 推断为业务提交成功，必要执行路径保持 Run/Stream parity。证据见本 change 的 `verification.md` 与 contract-test index。
 
 **非目标、风险与回滚**：不迁移整个 scheduler、cron/DST 业务语义或 webhook 产品流程，不承诺 exactly-once 或跨 application/Baymax 的原子 commit。主要风险是崩溃窗口重复 effect 或旧 occurrence 越权提交；回滚停止新增 dispatch bridge 并保留未确认 outbox，由宿主按幂等键协调重投，不能删除待处理事实。
 

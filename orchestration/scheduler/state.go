@@ -227,6 +227,9 @@ func (s *schedulerState) enqueue(task Task, now time.Time) (TaskRecord, error) {
 		return TaskRecord{}, err
 	}
 	if existing, ok := s.Tasks[normalized.TaskID]; ok && existing != nil {
+		if existing.Task.DispatchBinding != normalized.DispatchBinding {
+			return TaskRecord{}, ErrDispatchBindingMismatch
+		}
 		return cloneTaskRecord(*existing), nil
 	}
 	if now.IsZero() {

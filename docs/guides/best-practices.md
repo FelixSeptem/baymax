@@ -19,3 +19,9 @@
 # Host plan bridge boundaries
 
 Treat `host_execution_plan.v1` as an opt-in compile-time consistency contract: always re-evaluate authorization, lease and remaining budget in `Binding.Admit` at activation. Do not treat a digest as authorization, a native terminal result as a business commit, or offline replay as Run resume. Keep callbacks/services in trusted bindings; their implementation cannot be authenticated by descriptor hashes. Roll back by ceasing bridge calls and using the native owner APIs; preserve task/checkpoint/outbox facts and reconcile effects through the host commit gate.
+
+## Application outbox recovery（归档 166）
+
+`establish-application-outbox-mailbox-recovery-contract` 已交付 bridge。接入时，应把 application outbox、业务 authorization、effect key/idempotency/CAS、cron/DST/misfire/backfill 和最终 outbox confirmation 保留给宿主；Baymax 仅复用既有 mailbox 或 scheduler owner。务必把 delivery acceptance、target lifecycle、host effect committed、outbox confirmed 分开记录和判断：mailbox ack、scheduler terminal、Run/Stream terminal、digest 或 replay 都不代表 business commit。
+
+将完整 normalized identity（profile/version、target、outbox/occurrence、revision/effect reference、target binding、source correlation、idempotency key）用于 duplicate 判断；exact duplicate 才能收敛，改变 target/revision/effect binding 的 key reuse 必须拒绝。恢复采用 at-least-once，且不得把 mailbox delivery retry、scheduler execution retry 和 host business-commit retry 叠加。回滚停止新 bridge dispatch、保留事实并由宿主以 effect CAS 对账；不要删除 pending record 或宣称撤销已提交 effect。

@@ -50,11 +50,17 @@ func (s *mailboxState) publish(envelope Envelope, now time.Time) (PublishResult,
 	now = normalizeNow(now)
 	if existingID, ok := s.Idempotency[normalized.IdempotencyKey]; ok {
 		if existing, ok := s.Records[existingID]; ok && existing != nil {
+			if existing.Envelope.DispatchBinding != normalized.DispatchBinding {
+				return PublishResult{}, ErrDispatchBindingMismatch
+			}
 			s.Stats.DuplicatePublishTotal++
 			return PublishResult{Record: cloneRecord(*existing), Duplicate: true}, nil
 		}
 	}
 	if existing, ok := s.Records[normalized.MessageID]; ok && existing != nil {
+		if existing.Envelope.DispatchBinding != normalized.DispatchBinding {
+			return PublishResult{}, ErrDispatchBindingMismatch
+		}
 		s.Stats.DuplicatePublishTotal++
 		return PublishResult{Record: cloneRecord(*existing), Duplicate: true}, nil
 	}

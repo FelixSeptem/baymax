@@ -49,20 +49,22 @@ const (
 )
 
 type Envelope struct {
-	MessageID      string         `json:"message_id"`
-	IdempotencyKey string         `json:"idempotency_key"`
-	CorrelationID  string         `json:"correlation_id,omitempty"`
-	Kind           EnvelopeKind   `json:"kind"`
-	FromAgent      string         `json:"from_agent,omitempty"`
-	ToAgent        string         `json:"to_agent,omitempty"`
-	TaskID         string         `json:"task_id,omitempty"`
-	RunID          string         `json:"run_id,omitempty"`
-	WorkflowID     string         `json:"workflow_id,omitempty"`
-	TeamID         string         `json:"team_id,omitempty"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	NotBefore      time.Time      `json:"not_before,omitempty"`
-	ExpireAt       time.Time      `json:"expire_at,omitempty"`
-	Attempt        int            `json:"attempt,omitempty"`
+	// DispatchBinding binds opt-in dispatch identity; empty preserves native semantics.
+	DispatchBinding string         `json:"dispatch_binding,omitempty"`
+	MessageID       string         `json:"message_id"`
+	IdempotencyKey  string         `json:"idempotency_key"`
+	CorrelationID   string         `json:"correlation_id,omitempty"`
+	Kind            EnvelopeKind   `json:"kind"`
+	FromAgent       string         `json:"from_agent,omitempty"`
+	ToAgent         string         `json:"to_agent,omitempty"`
+	TaskID          string         `json:"task_id,omitempty"`
+	RunID           string         `json:"run_id,omitempty"`
+	WorkflowID      string         `json:"workflow_id,omitempty"`
+	TeamID          string         `json:"team_id,omitempty"`
+	Payload         map[string]any `json:"payload,omitempty"`
+	NotBefore       time.Time      `json:"not_before,omitempty"`
+	ExpireAt        time.Time      `json:"expire_at,omitempty"`
+	Attempt         int            `json:"attempt,omitempty"`
 }
 
 type Record struct {
@@ -170,15 +172,17 @@ type Store interface {
 }
 
 var (
-	ErrMessageNotFound    = errors.New("mailbox message not found")
-	ErrMessageNotInflight = errors.New("mailbox message is not in-flight")
-	ErrConsumerMismatch   = errors.New("mailbox consumer mismatch")
-	ErrSnapshotCorrupt    = errors.New("mailbox snapshot is corrupt")
+	ErrDispatchBindingMismatch = errors.New("mailbox dispatch binding mismatch")
+	ErrMessageNotFound         = errors.New("mailbox message not found")
+	ErrMessageNotInflight      = errors.New("mailbox message is not in-flight")
+	ErrConsumerMismatch        = errors.New("mailbox consumer mismatch")
+	ErrSnapshotCorrupt         = errors.New("mailbox snapshot is corrupt")
 )
 
 func normalizeEnvelope(in Envelope) (Envelope, error) {
 	out := in
 	out.MessageID = strings.TrimSpace(out.MessageID)
+	out.DispatchBinding = strings.TrimSpace(out.DispatchBinding)
 	out.IdempotencyKey = strings.TrimSpace(out.IdempotencyKey)
 	out.CorrelationID = strings.TrimSpace(out.CorrelationID)
 	out.FromAgent = strings.TrimSpace(out.FromAgent)

@@ -2302,3 +2302,9 @@ Validation failures use deterministic classifications including `session.history
 # Host execution plan bridge limits and diagnostics
 
 `orchestration/planbridge` has constructor-only `Limits`: descriptor 64 KiB, structural items 128, dependencies 1024, reference 1024 UTF-8 bytes, nesting 8 and copied binding 64 KiB by default. There are no environment, file, hot-update, QueryRuns or diagnostic-schema additions. Limits may only be tightened per construction. Planbridge does not write diagnostics; `RuntimeRecorder` remains the single diagnostic writer. Its offline replay is reference-only and does not execute or resume a run.
+
+# Application outbox dispatch bridge（进行中 change；无配置或诊断字段）
+
+`establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only、reference-only `application_outbox_dispatch.v1` 接入；它不提供 env/file/hot-update 配置键、默认值、QueryRuns 字段、RuntimeRecorder payload 或诊断查询 API。既有 `env > file > default` 优先级、非法配置 fail-fast 与原子回滚语义不变。
+
+若实施，bridge descriptor 和 result 只允许 bounded profile/target/outbox/occurrence/revision/effect/target-binding/correlation/idempotency 引用与有限分类；不记录业务 body、effect 内容、credential、原始 callback error 或任意 payload。任何未来诊断投影必须 additive + nullable + default，并只经 `observability/event.RuntimeRecorder` 写入。mailbox ack、scheduler/Run/Stream terminal、digest 与 replay 均不能生成或推断 `host effect committed`/`host outbox confirmed`。取消 constructor binding 即可回滚，且不要求配置或持久化迁移。

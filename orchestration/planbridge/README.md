@@ -8,14 +8,17 @@ The public API is `Describe(Descriptor, Binding, Limits)` to populate normalized
 reference-only `SourceFacts`, `Compile(Descriptor, Binding, Limits)` to validate
 those independently supplied facts, and `Compiled.Run/Stream(ctx, Execution)`.
 `Identity()` and `Canonical()` return detached identity and canonical bytes.
-`Binding` selects exactly one of `Direct`, `Team`, `Workflow`, `Child` and supplies
+`Binding` selects exactly one of `Direct`, `Team`, `Workflow`, `Child` or the
+source-owned `Mailbox` binding and supplies
 a mandatory live `Admit` callback. Compilation never invokes callbacks.
 
 Axes are independent: direct/subagent/team/workflow, inline/mailbox, and
 manual/scheduled/resumed/callback. Only inline direct, terminal-only parallel/vote
-team, flat workflow, and isolated local child are supported. Mailbox, resumed,
-durable continuation, subgraphs and shared child scheduler bindings fail before
-activation. Scheduled/callback labels create no workers. `ChildBinding` accepts
+team, flat workflow, isolated local child, and manifest-approved `mailbox_async`
+are supported. Mailbox requires a compatible source-owned manifest and native
+binding; resumed, durable continuation, subgraphs and shared child scheduler
+bindings fail before activation. Scheduled/callback labels create no workers.
+`ChildBinding` accepts
 no queue, scheduler or composer: activation constructs a private memory store,
 scheduler and composer, used by one dispatch and never exposed. No bool supplied
 by a caller can assert isolation. Child dispatch has no token streaming;
@@ -53,9 +56,21 @@ separately; this compiled snapshot cannot restore a Run.
 
 Errors expose `Code`, a safe field path and optional native `Unwrap`, never
 payloads: unsupported_version, invalid_plan, limit_exceeded, binding_mismatch,
-unsupported_capability. Canonical SHA256 covers declared refs/digests and matched
+unsupported_capability and source_unavailable. The capability manifest is
+versioned/evidence-linked and explicitly marks history, replay, checkpoint and
+pause dimensions that remain unsupported in this Spec. Canonical SHA256 covers declared refs/digests and matched
 source-normalized structural/default/budget facts, with sorted map keys,
 preserved semantic list order and durations in integer nanoseconds.
+
+For `mailbox_async`, `MailboxBinding` requires a compatible immutable manifest,
+the existing mailbox owner and a complete `mailbox.HostPlanBinding`. Compile
+derives the binding's `PlanDigest` from the descriptor/source-fact projection;
+a supplied differing digest is a pre-publish `binding_mismatch`. Activation
+rechecks the manifest and owner, then calls `AdmitHostPlan` once. `Result.Mailbox`
+is a detached source projection: original run/parent run, delivery/lease IDs, attempt causation,
+lifecycle result/reason and terminal outcome stay distinct from an application
+business commit. `Run` and `Stream` can return duplicate projections for the
+same logical message but never manufacture a second parent Run.
 
 Rollback: stop calling the bridge and call native APIs explicitly. Preserve
 task/attempt/checkpoint/outbox and business facts; no storage migration or undo

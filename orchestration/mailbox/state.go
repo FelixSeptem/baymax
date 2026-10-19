@@ -133,6 +133,13 @@ func (s *mailboxState) consume(
 	rec.ConsumerID = consumerID
 	rec.DeliveryAttempt++
 	rec.Envelope.Attempt = rec.DeliveryAttempt
+	rec.DeliveryID = fmt.Sprintf("%s:delivery:%d", rec.Envelope.MessageID, rec.DeliveryAttempt)
+	rec.LeaseID = fmt.Sprintf("%s:lease:%d", rec.Envelope.MessageID, rec.DeliveryAttempt)
+	baseCausation := rec.Envelope.MessageID
+	if rec.Envelope.HostPlanBinding != nil && strings.TrimSpace(rec.Envelope.HostPlanBinding.CausationID) != "" {
+		baseCausation = rec.Envelope.HostPlanBinding.CausationID
+	}
+	rec.AttemptCausation = fmt.Sprintf("%s:attempt:%d", baseCausation, rec.DeliveryAttempt)
 	rec.InFlightSince = now
 	rec.LastHeartbeatAt = now
 	if inflightTimeout > 0 {

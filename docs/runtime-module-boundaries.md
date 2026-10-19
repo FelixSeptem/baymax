@@ -254,3 +254,12 @@ This boundary introduces no runtime configuration keys or hot-update semantics; 
 `establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only 的 `application_outbox_dispatch.v1` bridge；`orchestration/outboxbridge` 接收受限的 reference-only descriptor，并且仅委托一个既有 target：`orchestration/mailbox` 继续拥有 publish/claim/ack/nack/requeue/delay/lease/DLQ，`orchestration/scheduler` 继续拥有 task/attempt/lease/retry/terminal/DLQ。bridge 不拥有 application outbox、业务 effect、cron/DST、业务授权、worker、lease、retry、terminal reducer、分布式事务或 diagnostics state。
 
 宿主保留 outbox confirmation 和 effect idempotency/CAS；dispatch accepted、target lifecycle、host effect evidence 与 host outbox confirmation 是独立事实。mailbox ack、scheduler 或 Run/Stream terminal、descriptor digest 和离线 replay 均不能推断业务提交。恢复保持 at-least-once，并分离 mailbox delivery retry、scheduler execution retry 与 host business-commit retry；如需诊断投影，仍只可经 `observability/event.RuntimeRecorder` 单写。停止构造该 bridge 即为回滚：保留 outbox/message/task/attempt/effect 事实，由宿主以幂等键对账。
+### Host capability manifest and mailbox plan bridge
+
+`orchestration/planbridge` may read a bounded capability manifest and delegate a
+manifest-approved `mailbox_async` binding to `orchestration/mailbox`. It must not
+create a queue, worker loop, scheduler, lease/retry/DLQ owner, event journal or
+terminal reducer. Mailbox owns message/delivery/lease/attempt lifecycle; the host
+owns authority, write scope, effect namespace and business commit. Capability
+manifest evidence never substitutes for current admission. The bridge does not
+provide Spec 2 history/cursor replay or Spec 3 durable checkpoint restore.

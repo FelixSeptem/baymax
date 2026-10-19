@@ -22,7 +22,7 @@ func Describe(d Descriptor, b Binding, l Limits) (Descriptor, error) {
 	if err != nil {
 		return Descriptor{}, err
 	}
-	_, facts, _, err := prepare(d.Shape, len(d.RequiredCapabilities), b, limits)
+	_, facts, _, err := prepare(d.Shape, d.Delivery, len(d.RequiredCapabilities), b, limits)
 	if err != nil {
 		return Descriptor{}, err
 	}
@@ -55,7 +55,7 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if len(d.CheckpointRef) > limits.ReferenceBytes {
 		return nil, fail(LimitExceeded, "checkpoint_ref", nil)
 	}
-	if d.Delivery != DeliveryInline {
+	if d.Delivery != DeliveryInline && d.Delivery != DeliveryMailbox {
 		return nil, fail(UnsupportedCapability, "delivery", nil)
 	}
 	if d.Trigger != TriggerManual && d.Trigger != TriggerScheduled && d.Trigger != TriggerCallback {
@@ -76,9 +76,26 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if err = checkReferences(reflect.ValueOf(ds.SourceFacts), limits.ReferenceBytes); err != nil {
 		return nil, err
 	}
-	normalized, facts, cfgDigest, err := prepare(d.Shape, len(d.RequiredCapabilities), b, limits)
+	normalized, facts, cfgDigest, err := prepare(d.Shape, d.Delivery, len(d.RequiredCapabilities), b, limits)
 	if err != nil {
 		return nil, err
+	}
+	identityDigest := ""
+	if d.Delivery == DeliveryMailbox {
+		identityDigest, err = derivedMailboxPlanDigest(ds, facts)
+		if err != nil {
+			return nil, err
+		}
+		provided := strings.TrimSpace(normalized.Mailbox.Binding.PlanDigest)
+		if provided != "" && provided != identityDigest {
+			return nil, fail(BindingMismatch, "binding.mailbox.plan_digest", nil)
+		}
+		if declared, _ := ds.SourceFacts["plan_digest"].(string); strings.TrimSpace(declared) != "" && strings.TrimSpace(declared) != identityDigest {
+			return nil, fail(BindingMismatch, "source_facts.plan_digest", nil)
+		}
+		normalized.Mailbox.Binding.PlanDigest = identityDigest
+		facts["plan_digest"] = identityDigest
+		ds.SourceFacts["plan_digest"] = identityDigest
 	}
 	actual, _ := encoded(facts)
 	declared, _ := encoded(ds.SourceFacts)
@@ -93,9 +110,30 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if len(canonical) > limits.DescriptorBytes {
 		return nil, fail(LimitExceeded, "descriptor.bytes", nil)
 	}
-	return &Compiled{identity: Identity{d.PlanID, d.PlanVersion, digest(canonical)}, descriptor: ds, binding: normalized, canonical: canonical, limits: limits, childConfigDigest: cfgDigest}, nil
+	if identityDigest == "" {
+		identityDigest = digest(canonical)
+	}
+	return &Compiled{identity: Identity{d.PlanID, d.PlanVersion, identityDigest}, descriptor: ds, binding: normalized, canonical: canonical, limits: limits, childConfigDigest: cfgDigest}, nil
 }
 func digest(raw []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) }
+
+// derivedMailboxPlanDigest deliberately excludes its own value. This permits
+// Compile to bind one immutable descriptor identity without a hash fixed-point
+// while retaining the complete mailbox source-fact projection in the final
+// compiled snapshot.
+func derivedMailboxPlanDigest(d Descriptor, facts map[string]any) (string, error) {
+	projection := d
+	projection.SourceFacts = make(map[string]any, len(facts))
+	for key, value := range facts {
+		projection.SourceFacts[key] = value
+	}
+	projection.SourceFacts["plan_digest"] = ""
+	raw, err := encoded(projection)
+	if err != nil {
+		return "", err
+	}
+	return digest(raw), nil
+}
 func checkReferences(v reflect.Value, max int) error {
 	if !v.IsValid() {
 		return nil
@@ -131,9 +169,9 @@ func checkReferences(v reflect.Value, max int) error {
 	return nil
 }
 
-func prepare(shape Shape, requiredCapabilities int, b Binding, l Limits) (Binding, map[string]any, string, error) {
+func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding, l Limits) (Binding, map[string]any, string, error) {
 	count := 0
-	for _, present := range []bool{b.Direct != nil, b.Team != nil, b.Workflow != nil, b.Child != nil} {
+	for _, present := range []bool{b.Direct != nil, b.Team != nil, b.Workflow != nil, b.Child != nil, b.Mailbox != nil} {
 		if present {
 			count++
 		}
@@ -143,6 +181,38 @@ func prepare(shape Shape, requiredCapabilities int, b Binding, l Limits) (Bindin
 	}
 	if len(b.SemanticDigest) > l.ReferenceBytes {
 		return Binding{}, nil, "", fail(LimitExceeded, "binding.semantic_digest", nil)
+	}
+	if delivery == DeliveryMailbox {
+		if shape != ShapeDirect || b.Mailbox == nil || b.Mailbox.Manifest == nil {
+			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.mailbox", nil)
+		}
+		if b.Mailbox.Owner == nil {
+			return Binding{}, nil, "", fail(SourceUnavailable, "binding.mailbox.owner", nil)
+		}
+		if e := b.Mailbox.Manifest.ValidateCompatibility(CapabilityManifestContractVersion, CapabilityManifestAPIVersion); e != nil {
+			return Binding{}, nil, "", e
+		}
+		capability, e := b.Mailbox.Manifest.Capability(ExecutionFormMailboxAsync)
+		if e != nil {
+			return Binding{}, nil, "", e
+		}
+		if capability.Admission != CapabilitySupported || capability.MailboxContinuation != CapabilitySupported {
+			return Binding{}, nil, "", fail(UnsupportedCapability, "capability_manifest.mailbox_async", nil)
+		}
+		binding := b.Mailbox.Binding
+		if len(binding.MessageID) > l.ReferenceBytes || len(binding.IdempotencyKey) > l.ReferenceBytes || len(binding.PlanDigest) > l.ReferenceBytes {
+			return Binding{}, nil, "", fail(LimitExceeded, "binding.mailbox.reference", nil)
+		}
+		facts := asFacts(binding)
+		if _, e := snapshot(facts, l.DescriptorBytes, l.NestingDepth); e != nil {
+			return Binding{}, nil, "", e
+		}
+		// The compiled plan derives its own digest below. Keep the caller's
+		// construction binding immutable across compilation attempts.
+		mailboxBinding := *b.Mailbox
+		mailboxBinding.Binding = binding
+		b.Mailbox = &mailboxBinding
+		return b, facts, "", nil
 	}
 	var facts map[string]any
 	cfgDigest := ""

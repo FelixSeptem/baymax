@@ -13,6 +13,7 @@ import (
 	"github.com/FelixSeptem/baymax/host/eventadapter"
 	"github.com/FelixSeptem/baymax/integration/fakes"
 	"github.com/FelixSeptem/baymax/orchestration/composer"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 	"github.com/FelixSeptem/baymax/orchestration/planbridge"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	"github.com/FelixSeptem/baymax/orchestration/teams"
@@ -46,6 +47,199 @@ func bridgeExecute(t *testing.T, p *planbridge.Compiled, stream bool, x planbrid
 		return p.Stream(context.Background(), x)
 	}
 	return p.Run(context.Background(), x)
+}
+
+func TestHostExecutionPlanMailboxAsyncRealOwnerParityAndLifecycle(t *testing.T) {
+	ctx := context.Background()
+	owner, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{MaxAttempts: 2, DLQEnabled: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := planbridge.NewCapabilityManifestReader(planbridge.DefaultCapabilityManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admissions := 0
+	b := bridgeBinding()
+	b.Admit = func(context.Context, planbridge.Identity) (planbridge.Admission, error) {
+		admissions++
+		return planbridge.Admission{AuthorityDigest: "authority", ToolCapabilityDigest: "tools", SemanticDigest: "semantics"}, nil
+	}
+	b.Mailbox = &planbridge.MailboxBinding{Owner: owner, Manifest: manifest, Binding: mailbox.HostPlanBinding{
+		ContractVersion: mailbox.HostPlanBindingContractVersion, MessageID: "integration-message", IdempotencyKey: "integration-logical", RunID: "run", ParentRunID: "parent", CausationID: "cause", AuthorityDigest: "authority", WriteScope: "scope", EffectNamespace: "effects", Occurrence: "occurrence", HostCorrelation: "host", ResourceLimit: 1,
+	}}
+	d := bridgeDescriptor(planbridge.ShapeDirect)
+	d.Delivery = planbridge.DeliveryMailbox
+	d, err = planbridge.Describe(d, b, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := planbridge.Compile(d, b, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := p.Run(ctx, planbridge.Execution{})
+	if err != nil || run.Mailbox == nil || run.Mailbox.Duplicate || run.Mailbox.PlanDigest != p.Identity().Digest {
+		t.Fatalf("mailbox Run: result=%#v err=%v", run.Mailbox, err)
+	}
+	stream, err := p.Stream(ctx, planbridge.Execution{})
+	if err != nil || stream.Mailbox == nil || !stream.Mailbox.Duplicate {
+		t.Fatalf("mailbox Stream: result=%#v err=%v", stream.Mailbox, err)
+	}
+	if run.Mailbox.MessageID != stream.Mailbox.MessageID || run.Mailbox.RunID != stream.Mailbox.RunID || run.Mailbox.ParentRunID != stream.Mailbox.ParentRunID || run.Mailbox.CausationID != stream.Mailbox.CausationID || run.Mailbox.AuthorityDigest != stream.Mailbox.AuthorityDigest || run.Mailbox.Occurrence != stream.Mailbox.Occurrence || run.Mailbox.EffectNamespace != stream.Mailbox.EffectNamespace || run.Mailbox.HostCorrelation != stream.Mailbox.HostCorrelation {
+		t.Fatalf("Run/Stream source parity drift: run=%#v stream=%#v", run.Mailbox, stream.Mailbox)
+	}
+	snapshot, err := owner.Snapshot(ctx)
+	if err != nil || len(snapshot.Records) != 1 || admissions != 2 {
+		t.Fatalf("logical admission count=%d host admissions=%d err=%v", len(snapshot.Records), admissions, err)
+	}
+	conflict := b
+	conflict.Mailbox = &planbridge.MailboxBinding{Owner: owner, Manifest: manifest, Binding: b.Mailbox.Binding}
+	conflict.Mailbox.Binding.WriteScope = "conflicting-scope"
+	conflictDescriptor, describeErr := planbridge.Describe(d, conflict, planbridge.Limits{})
+	if describeErr != nil {
+		t.Fatal(describeErr)
+	}
+	conflictPlan, compileErr := planbridge.Compile(conflictDescriptor, conflict, planbridge.Limits{})
+	if compileErr != nil {
+		t.Fatal(compileErr)
+	}
+	if _, err = conflictPlan.Run(ctx, planbridge.Execution{}); !errors.Is(err, mailbox.ErrHostPlanBindingConflict) {
+		t.Fatalf("conflicting logical reuse error = %v", err)
+	}
+	afterConflict, snapshotErr := owner.Snapshot(ctx)
+	if snapshotErr != nil || len(afterConflict.Records) != 1 {
+		t.Fatalf("conflict rejection mutated mailbox: records=%d err=%v", len(afterConflict.Records), snapshotErr)
+	}
+	claimed, ok, err := owner.Consume(ctx, "consumer")
+	if err != nil || !ok {
+		t.Fatalf("mailbox consume: ok=%v err=%v", ok, err)
+	}
+	acked, err := owner.Ack(ctx, claimed.Envelope.MessageID, "consumer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := mailbox.HostPlanOutcomeFromRecord(acked)
+	if err != nil || terminal.LifecycleResult != "ack" || terminal.TerminalOutcome != "acked" || terminal.AttemptCausation == "" || terminal.ParentRunID != "parent" {
+		t.Fatalf("mailbox source terminal projection=%#v err=%v", terminal, err)
+	}
+
+	bad := b
+	bad.Mailbox = &planbridge.MailboxBinding{Manifest: manifest, Binding: b.Mailbox.Binding}
+	if _, err = planbridge.Describe(d, bad, planbridge.Limits{}); err == nil {
+		t.Fatal("unavailable mailbox owner was admitted")
+	}
+	after, err := owner.Snapshot(ctx)
+	if err != nil || len(after.Records) != 1 {
+		t.Fatalf("unavailable rejection mutated mailbox: records=%d err=%v", len(after.Records), err)
+	}
+	incompatibleDocument := planbridge.DefaultCapabilityManifest()
+	incompatibleDocument.APIVersion = "mailbox-manifest.incompatible"
+	incompatible, err := planbridge.NewCapabilityManifestReader(incompatibleDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionMismatch := b
+	versionMismatch.Mailbox = &planbridge.MailboxBinding{Owner: owner, Manifest: incompatible, Binding: b.Mailbox.Binding}
+	if _, err = planbridge.Describe(d, versionMismatch, planbridge.Limits{}); err == nil {
+		t.Fatal("incompatible manifest version was admitted")
+	}
+	afterVersion, err := owner.Snapshot(ctx)
+	if err != nil || len(afterVersion.Records) != 1 {
+		t.Fatalf("version rejection mutated mailbox: records=%d err=%v", len(afterVersion.Records), err)
+	}
+}
+
+func TestHostExecutionPlanMailboxAsyncRealOwnerLifecycleEvidence(t *testing.T) {
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	owner, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{MaxAttempts: 2, BackoffInitial: time.Millisecond, BackoffMax: time.Millisecond, DLQEnabled: true}), mailbox.WithClock(func() time.Time { return clock }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := planbridge.NewCapabilityManifestReader(planbridge.DefaultCapabilityManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := bridgeBinding()
+	b.Mailbox = &planbridge.MailboxBinding{Owner: owner, Manifest: manifest, Binding: mailbox.HostPlanBinding{
+		ContractVersion: mailbox.HostPlanBindingContractVersion, MessageID: "lifecycle-integration-message", IdempotencyKey: "lifecycle-integration-logical", RunID: "run", ParentRunID: "parent", CausationID: "cause", AuthorityDigest: "authority", WriteScope: "scope", EffectNamespace: "effects", Occurrence: "occurrence", HostCorrelation: "host", ResourceLimit: 1,
+	}}
+	d := bridgeDescriptor(planbridge.ShapeDirect)
+	d.Delivery = planbridge.DeliveryMailbox
+	d, err = planbridge.Describe(d, b, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := planbridge.Compile(d, b, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.Run(ctx, planbridge.Execution{}); err != nil {
+		t.Fatal(err)
+	}
+	first, ok, err := owner.ConsumeWithLease(ctx, "worker-1", time.Millisecond, false)
+	if err != nil || !ok {
+		t.Fatalf("first consume: ok=%v err=%v", ok, err)
+	}
+	clock = clock.Add(5 * time.Millisecond)
+	if _, ok, err = owner.ConsumeWithLease(ctx, "worker-2", time.Millisecond, true); err != nil || ok {
+		t.Fatalf("lease reclaim must only requeue: ok=%v err=%v", ok, err)
+	}
+	page, err := owner.Query(ctx, mailbox.QueryRequest{MessageID: first.Envelope.MessageID})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("lease-loss query: items=%d err=%v", len(page.Items), err)
+	}
+	lost, err := mailbox.HostPlanOutcomeFromRecord(page.Items[0])
+	if err != nil || lost.LifecycleResult != "lease_lost" || lost.AttemptCausation != first.AttemptCausation || lost.ParentRunID != "parent" {
+		t.Fatalf("lease-loss evidence = %#v err=%v", lost, err)
+	}
+	clock = clock.Add(2 * time.Millisecond)
+	second, ok, err := owner.ConsumeWithLease(ctx, "worker-3", time.Millisecond, false)
+	if err != nil || !ok || second.DeliveryAttempt != 2 || second.AttemptCausation == first.AttemptCausation {
+		t.Fatalf("retry consume = %#v ok=%v err=%v", second, ok, err)
+	}
+	dlqRecord, err := owner.Requeue(ctx, second.Envelope.MessageID, "worker-3", mailbox.LifecycleReasonRetryExhausted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlq, err := mailbox.HostPlanOutcomeFromRecord(dlqRecord)
+	if err != nil || dlq.LifecycleResult != "dlq" || dlq.TerminalOutcome != "dead_letter" || dlq.ParentRunID != "parent" || dlq.AuthorityDigest != "authority" || dlq.EffectNamespace != "effects" {
+		t.Fatalf("dlq evidence = %#v err=%v", dlq, err)
+	}
+
+	timeoutClock := clock
+	timeoutOwner, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{TTL: time.Millisecond}), mailbox.WithClock(func() time.Time { return timeoutClock }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeoutBinding := b
+	timeoutBinding.Mailbox = &planbridge.MailboxBinding{Owner: timeoutOwner, Manifest: manifest, Binding: b.Mailbox.Binding}
+	timeoutBinding.Mailbox.Binding.MessageID = "timeout-integration-message"
+	timeoutBinding.Mailbox.Binding.IdempotencyKey = "timeout-integration-logical"
+	timeoutDescriptor, err := planbridge.Describe(d, timeoutBinding, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeoutPlan, err := planbridge.Compile(timeoutDescriptor, timeoutBinding, planbridge.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = timeoutPlan.Run(ctx, planbridge.Execution{}); err != nil {
+		t.Fatal(err)
+	}
+	timeoutClock = timeoutClock.Add(2 * time.Millisecond)
+	if _, ok, err = timeoutOwner.Consume(ctx, "timeout-worker"); err != nil || ok {
+		t.Fatalf("timeout consume should not deliver: ok=%v err=%v", ok, err)
+	}
+	timeoutPage, err := timeoutOwner.Query(ctx, mailbox.QueryRequest{MessageID: "timeout-integration-message"})
+	if err != nil || len(timeoutPage.Items) != 1 {
+		t.Fatalf("timeout query: items=%d err=%v", len(timeoutPage.Items), err)
+	}
+	timeout, err := mailbox.HostPlanOutcomeFromRecord(timeoutPage.Items[0])
+	if err != nil || timeout.LifecycleResult != "timeout" || timeout.TerminalOutcome != "expired" || timeout.ParentRunID != "parent" {
+		t.Fatalf("timeout evidence = %#v err=%v", timeout, err)
+	}
 }
 
 func TestHostExecutionPlanRealDirectParityAndPause(t *testing.T) {

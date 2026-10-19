@@ -2,6 +2,7 @@ package mailbox
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sort"
@@ -50,28 +51,78 @@ const (
 
 type Envelope struct {
 	// DispatchBinding binds opt-in dispatch identity; empty preserves native semantics.
-	DispatchBinding string         `json:"dispatch_binding,omitempty"`
-	MessageID       string         `json:"message_id"`
-	IdempotencyKey  string         `json:"idempotency_key"`
-	CorrelationID   string         `json:"correlation_id,omitempty"`
-	Kind            EnvelopeKind   `json:"kind"`
-	FromAgent       string         `json:"from_agent,omitempty"`
-	ToAgent         string         `json:"to_agent,omitempty"`
-	TaskID          string         `json:"task_id,omitempty"`
-	RunID           string         `json:"run_id,omitempty"`
-	WorkflowID      string         `json:"workflow_id,omitempty"`
-	TeamID          string         `json:"team_id,omitempty"`
-	Payload         map[string]any `json:"payload,omitempty"`
-	NotBefore       time.Time      `json:"not_before,omitempty"`
-	ExpireAt        time.Time      `json:"expire_at,omitempty"`
-	Attempt         int            `json:"attempt,omitempty"`
+	DispatchBinding string           `json:"dispatch_binding,omitempty"`
+	HostPlanBinding *HostPlanBinding `json:"host_plan_binding,omitempty"`
+	MessageID       string           `json:"message_id"`
+	IdempotencyKey  string           `json:"idempotency_key"`
+	CorrelationID   string           `json:"correlation_id,omitempty"`
+	Kind            EnvelopeKind     `json:"kind"`
+	FromAgent       string           `json:"from_agent,omitempty"`
+	ToAgent         string           `json:"to_agent,omitempty"`
+	TaskID          string           `json:"task_id,omitempty"`
+	RunID           string           `json:"run_id,omitempty"`
+	WorkflowID      string           `json:"workflow_id,omitempty"`
+	TeamID          string           `json:"team_id,omitempty"`
+	Payload         map[string]any   `json:"payload,omitempty"`
+	NotBefore       time.Time        `json:"not_before,omitempty"`
+	ExpireAt        time.Time        `json:"expire_at,omitempty"`
+	Attempt         int              `json:"attempt,omitempty"`
+}
+
+const HostPlanBindingContractVersion = "mailbox_host_plan_binding.v1"
+
+// HostPlanBinding contains only source correlation and host references needed
+// to admit one mailbox logical message. It intentionally contains no payload,
+// credentials, callback error or business-commit assertion.
+type HostPlanBinding struct {
+	ContractVersion string `json:"contract_version"`
+	MessageID       string `json:"message_id"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	RunID           string `json:"run_id"`
+	ParentRunID     string `json:"parent_run_id"`
+	CausationID     string `json:"causation_id"`
+	AuthorityDigest string `json:"authority_digest"`
+	PlanDigest      string `json:"plan_digest"`
+	WriteScope      string `json:"write_scope"`
+	EffectNamespace string `json:"effect_namespace"`
+	Occurrence      string `json:"occurrence"`
+	HostCorrelation string `json:"host_correlation"`
+	ResourceLimit   int    `json:"resource_limit"`
+}
+
+// HostPlanOutcome is a detached source-owned admission projection. Delivery,
+// attempt and terminal lifecycle remain owned by Mailbox and its Record.
+type HostPlanOutcome struct {
+	MessageID        string       `json:"message_id"`
+	RunID            string       `json:"run_id"`
+	DeliveryID       string       `json:"delivery_id,omitempty"`
+	LeaseID          string       `json:"lease_id,omitempty"`
+	DeliveryLeaseID  string       `json:"delivery_lease_id,omitempty"`
+	AttemptCausation string       `json:"attempt_causation,omitempty"`
+	ParentRunID      string       `json:"parent_run_id"`
+	CausationID      string       `json:"causation_id"`
+	AuthorityDigest  string       `json:"authority_digest"`
+	PlanDigest       string       `json:"plan_digest"`
+	WriteScope       string       `json:"write_scope"`
+	EffectNamespace  string       `json:"effect_namespace"`
+	Occurrence       string       `json:"occurrence"`
+	HostCorrelation  string       `json:"host_correlation"`
+	DeliveryAttempt  int          `json:"delivery_attempt,omitempty"`
+	LifecycleState   MessageState `json:"lifecycle_state"`
+	LifecycleResult  string       `json:"lifecycle_result"`
+	LifecycleReason  string       `json:"lifecycle_reason,omitempty"`
+	TerminalOutcome  string       `json:"terminal_outcome,omitempty"`
+	Duplicate        bool         `json:"duplicate"`
 }
 
 type Record struct {
 	Envelope         Envelope     `json:"envelope"`
 	State            MessageState `json:"state"`
+	DeliveryID       string       `json:"delivery_id,omitempty"`
+	LeaseID          string       `json:"lease_id,omitempty"`
 	ConsumerID       string       `json:"consumer_id,omitempty"`
 	DeliveryAttempt  int          `json:"delivery_attempt,omitempty"`
+	AttemptCausation string       `json:"attempt_causation,omitempty"`
 	InFlightSince    time.Time    `json:"inflight_since,omitempty"`
 	LastHeartbeatAt  time.Time    `json:"last_heartbeat_at,omitempty"`
 	LeaseExpiresAt   time.Time    `json:"lease_expires_at,omitempty"`
@@ -173,11 +224,42 @@ type Store interface {
 
 var (
 	ErrDispatchBindingMismatch = errors.New("mailbox dispatch binding mismatch")
+	ErrHostPlanBindingConflict = errors.New("mailbox host-plan binding conflict")
 	ErrMessageNotFound         = errors.New("mailbox message not found")
 	ErrMessageNotInflight      = errors.New("mailbox message is not in-flight")
 	ErrConsumerMismatch        = errors.New("mailbox consumer mismatch")
 	ErrSnapshotCorrupt         = errors.New("mailbox snapshot is corrupt")
 )
+
+func normalizeHostPlanBinding(in HostPlanBinding) (HostPlanBinding, error) {
+	out := in
+	fields := []*string{
+		&out.ContractVersion, &out.MessageID, &out.IdempotencyKey, &out.RunID, &out.ParentRunID,
+		&out.CausationID, &out.AuthorityDigest, &out.PlanDigest, &out.WriteScope,
+		&out.EffectNamespace, &out.Occurrence, &out.HostCorrelation,
+	}
+	for _, field := range fields {
+		*field = strings.TrimSpace(*field)
+		if *field == "" || len(*field) > 1024 {
+			return HostPlanBinding{}, errors.New("host-plan binding requires bounded identity and reference fields")
+		}
+	}
+	if out.ContractVersion != HostPlanBindingContractVersion {
+		return HostPlanBinding{}, fmt.Errorf("host-plan binding contract version %q is unsupported", out.ContractVersion)
+	}
+	if out.ResourceLimit <= 0 || out.ResourceLimit > 128 {
+		return HostPlanBinding{}, errors.New("host-plan binding resource_limit must be in [1,128]")
+	}
+	return out, nil
+}
+
+func hostPlanDispatchBinding(binding HostPlanBinding) string {
+	raw := fmt.Sprintf("%q|%q|%q|%q|%q|%q|%q|%q|%q|%q|%q|%q|%d",
+		binding.ContractVersion, binding.MessageID, binding.IdempotencyKey, binding.ParentRunID,
+		binding.RunID, binding.CausationID, binding.AuthorityDigest, binding.PlanDigest, binding.WriteScope,
+		binding.EffectNamespace, binding.Occurrence, binding.HostCorrelation, binding.ResourceLimit)
+	return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(raw)))
+}
 
 func normalizeEnvelope(in Envelope) (Envelope, error) {
 	out := in
@@ -193,6 +275,13 @@ func normalizeEnvelope(in Envelope) (Envelope, error) {
 	out.TeamID = strings.TrimSpace(out.TeamID)
 	out.Attempt = maxInt(out.Attempt, 0)
 	out.Payload = copyMap(out.Payload)
+	if out.HostPlanBinding != nil {
+		binding, err := normalizeHostPlanBinding(*out.HostPlanBinding)
+		if err != nil {
+			return Envelope{}, err
+		}
+		out.HostPlanBinding = &binding
+	}
 	if !out.NotBefore.IsZero() {
 		out.NotBefore = out.NotBefore.UTC()
 	}
@@ -368,6 +457,10 @@ func cloneRecord(in Record) Record {
 	out := in
 	out.Envelope = in.Envelope
 	out.Envelope.Payload = copyMap(in.Envelope.Payload)
+	if in.Envelope.HostPlanBinding != nil {
+		binding := *in.Envelope.HostPlanBinding
+		out.Envelope.HostPlanBinding = &binding
+	}
 	return out
 }
 

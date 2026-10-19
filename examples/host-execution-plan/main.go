@@ -7,6 +7,7 @@ import (
 	"github.com/FelixSeptem/baymax/adapter/modelcapability"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 	"github.com/FelixSeptem/baymax/orchestration/planbridge"
 	"github.com/FelixSeptem/baymax/tool/local"
 )
@@ -93,6 +94,41 @@ func main() {
 	}
 	fmt.Println("source-owner-preserved")
 	fmt.Println("run-stream-parity")
+	mailboxOwner, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
+	if err != nil {
+		panic(err)
+	}
+	mailboxDescriptor := descriptor()
+	mailboxDescriptor.Delivery = planbridge.DeliveryMailbox
+	mailboxBinding := planbridge.Binding{
+		SemanticDigest: "offline-semantics",
+		Admit: func(context.Context, planbridge.Identity) (planbridge.Admission, error) {
+			return planbridge.Admission{AuthorityDigest: "offline-authority", ToolCapabilityDigest: "offline-tools", SemanticDigest: "offline-semantics"}, nil
+		},
+		Mailbox: &planbridge.MailboxBinding{Owner: mailboxOwner, Manifest: mustManifest(), Binding: mailbox.HostPlanBinding{
+			ContractVersion: mailbox.HostPlanBindingContractVersion, MessageID: "offline-message", IdempotencyKey: "offline-logical",
+			RunID: "offline-run", ParentRunID: "offline-parent", CausationID: "offline-cause", AuthorityDigest: "offline-authority", WriteScope: "offline-scope",
+			PlanDigest: "", EffectNamespace: "offline-effect", Occurrence: "offline-occurrence", HostCorrelation: "offline-host", ResourceLimit: 1,
+		}},
+	}
+	mailboxDescriptor, err = planbridge.Describe(mailboxDescriptor, mailboxBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	mailboxPlan, err := planbridge.Compile(mailboxDescriptor, mailboxBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	mailboxRun, err := mailboxPlan.Run(context.Background(), planbridge.Execution{})
+	if err != nil || mailboxRun.Mailbox == nil || mailboxRun.Mailbox.Duplicate {
+		panic(fmt.Sprintf("mailbox run: %v", err))
+	}
+	mailboxStream, err := mailboxPlan.Stream(context.Background(), planbridge.Execution{})
+	if err != nil || mailboxStream.Mailbox == nil || !mailboxStream.Mailbox.Duplicate {
+		panic(fmt.Sprintf("mailbox stream: %v", err))
+	}
+	fmt.Println("mailbox-logical-admission")
+	fmt.Println("mailbox-lifecycle-source-owned")
 	bad := d
 	bad.PlanVersion++
 	bad.SourceFacts["run_id"] = "different"
@@ -112,4 +148,21 @@ func main() {
 	fmt.Println("no-side-effects-before-rejection")
 	// Native completion is deliberately not a business write; the host owns its commit gate.
 	fmt.Println("host-commit-required")
+}
+
+func mustManifest() *planbridge.CapabilityManifestReader {
+	manifest, err := planbridge.NewCapabilityManifestReader(func() planbridge.CapabilityManifest {
+		m := planbridge.DefaultCapabilityManifest()
+		for i := range m.Forms {
+			if m.Forms[i].Form == planbridge.ExecutionFormMailboxAsync {
+				m.Forms[i].MailboxContinuation = planbridge.CapabilitySupported
+				delete(m.Forms[i].UnsupportedReasons, "mailbox_continuation")
+			}
+		}
+		return m
+	}())
+	if err != nil {
+		panic(err)
+	}
+	return manifest
 }

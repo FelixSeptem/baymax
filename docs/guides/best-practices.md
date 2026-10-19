@@ -1,5 +1,18 @@
 # 最佳实践
 
+## Host capability 与 mailbox plan bridge
+
+调用 `orchestration/planbridge` 前先读取 versioned capability manifest；不要
+用 package/DTO 存在性猜测 `mailbox_async`、history、checkpoint 或 pause 支持。
+只有 manifest、mailbox contract version、当前 source availability 与完整
+`HostPlanBinding` 都通过时，planbridge 才会调用既有 mailbox owner。
+
+Mailbox message/delivery/lease/attempt/ack/nack/retry/DLQ 和 source terminal
+由 mailbox owner 保持；plan digest、ack 或 DLQ 不是业务 authorization、effect
+commit 或 durable resume。重复 dispatch 必须携带同一 authority、occurrence、
+parent/causation、write scope 与 effect namespace；冲突 identity 应在 publish 前
+fail closed。lease loss 不得通过重新 Run parent 恢复。
+
 - 明确声明 Provider、model、tool、MCP endpoint 和 policy，不依赖自动发现。
 - 把宿主 credential、超时、重试、限流和持久化策略留在宿主层。
 - 对 Run 和 Stream 编写同一组业务终态断言。

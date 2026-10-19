@@ -37,6 +37,31 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 	if err = ctx.Err(); err != nil {
 		return out, err
 	}
+	if p.descriptor.Delivery == DeliveryMailbox {
+		if p.binding.Mailbox == nil || p.binding.Mailbox.Owner == nil || p.binding.Mailbox.Manifest == nil {
+			return out, fail(SourceUnavailable, "activation.mailbox.owner", nil)
+		}
+		if err = p.binding.Mailbox.Manifest.ValidateCompatibility(CapabilityManifestContractVersion, CapabilityManifestAPIVersion); err != nil {
+			return out, err
+		}
+		capability, capabilityErr := p.binding.Mailbox.Manifest.Capability(ExecutionFormMailboxAsync)
+		if capabilityErr != nil {
+			return out, capabilityErr
+		}
+		if capability.Admission != CapabilitySupported || capability.MailboxContinuation != CapabilitySupported {
+			return out, fail(UnsupportedCapability, "activation.capability_manifest.mailbox_async", nil)
+		}
+		binding := p.binding.Mailbox.Binding
+		if binding.PlanDigest != p.identity.Digest {
+			return out, fail(BindingMismatch, "activation.mailbox.plan_digest", nil)
+		}
+		mailboxResult, e := p.binding.Mailbox.Owner.AdmitHostPlan(ctx, binding)
+		if e != nil {
+			return out, e
+		}
+		out.Mailbox = &mailboxResult
+		return out, nil
+	}
 	source := types.ProtocolSourceRunner
 	runID := ""
 	switch p.descriptor.Shape {

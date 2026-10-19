@@ -2303,6 +2303,14 @@ Validation failures use deterministic classifications including `session.history
 
 `orchestration/planbridge` has constructor-only `Limits`: descriptor 64 KiB, structural items 128, dependencies 1024, reference 1024 UTF-8 bytes, nesting 8 and copied binding 64 KiB by default. There are no environment, file, hot-update, QueryRuns or diagnostic-schema additions. Limits may only be tightened per construction. Planbridge does not write diagnostics; `RuntimeRecorder` remains the single diagnostic writer. Its offline replay is reference-only and does not execute or resume a run.
 
+Spec 1 additionally exposes a versioned `host_runtime_capability_manifest.v1`
+projection and manifest-approved `mailbox_async` plan binding. The manifest is
+reference-only evidence: it does not authorize business writes or imply durable
+history, cursor replay, checkpoint creation, cross-process restore or composite
+pause support. Mailbox host-plan references are bounded and exclude payloads,
+credentials and callback errors; message/delivery/lease/retry/DLQ facts remain
+source-owned. No new env/file/hot-update key or QueryRuns field is introduced.
+
 # Application outbox dispatch bridge（进行中 change；无配置或诊断字段）
 
 `establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only、reference-only `application_outbox_dispatch.v1` 接入；它不提供 env/file/hot-update 配置键、默认值、QueryRuns 字段、RuntimeRecorder payload 或诊断查询 API。既有 `env > file > default` 优先级、非法配置 fail-fast 与原子回滚语义不变。

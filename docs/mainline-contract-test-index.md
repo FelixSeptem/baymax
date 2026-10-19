@@ -495,6 +495,19 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 # Host execution plan bridge contract
 
+## Spec 1 capability manifest and mailbox_async extension
+
+| Requirement | Evidence |
+| --- | --- |
+| versioned capability declaration and explicit unsupported dimensions | `orchestration/planbridge/capability_test.go` |
+| source-owned binding/outcome, duplicate convergence, delivery/lease/attempt causation and lease-loss/retry/DLQ/timeout | `orchestration/mailbox/host_plan_binding_test.go` |
+| manifest-gated mailbox delegation, compile-time plan digest and activation availability rejection | `orchestration/planbridge/mailbox_binding_test.go` |
+| real-owner Run/Stream source correlation/terminal parity without a second logical admission | `integration/host_execution_plan_bridge_test.go` |
+| rejection before publish/Run on missing manifest or incompatible binding | `orchestration/planbridge/mailbox_binding_test.go` |
+| reference-only mailbox manifest/binding/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
+| dedicated shell/PowerShell contract gate | `scripts/check-mailbox-plan-bridge-contract.sh`, `scripts/check-mailbox-plan-bridge-contract.ps1` |
+
+
 | Requirement | Evidence |
 | --- | --- |
 | bounded descriptor, canonical digest, detached snapshots and native preflight | `orchestration/planbridge/*_test.go`, `orchestration/teams/normalization_test.go`, `orchestration/workflow/preflight_test.go`, `orchestration/scheduler/normalization_test.go` |

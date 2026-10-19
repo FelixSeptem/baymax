@@ -1,6 +1,6 @@
 # Host Execution Plan Bridge
 
-这是 `host_execution_plan.v1` 的离线 opt-in 示例。运行 `go run ./examples/host-execution-plan`；它使用 fake model/tool 和真实 runner，不访问 Provider、业务数据库或网络。示例证明 compile 无副作用、source owner 保留、Run/Stream 等价及预检拒绝；它不构成业务 commit、durable resume 或 mailbox worker。
+这是 `host_execution_plan.v1` 的离线 opt-in 示例。运行 `go run ./examples/host-execution-plan`；它使用 fake model/tool 和真实 runner，不访问 Provider、业务数据库或网络。示例证明 compile 无副作用、source owner 保留、Run/Stream 等价及预检拒绝；Spec 1 还规定 manifest-approved `mailbox_async` 只能委托既有 mailbox owner，不能构成业务 commit、durable resume 或 mailbox worker。
 
 ## Semantic anchors
 
@@ -26,7 +26,8 @@ direct 使用真实 runner/composer（composer.Run/Stream 目前只委托 runner
 | local child + inline | 隔离独占 scheduler 原生 dispatch | 完整 child/parent budget；同步 handler 不自动提供 token streaming |
 | subagent fanout | 经 native teams/workflow 组合 | bridge 不建立 fanout loop |
 | shared-queue child dispatch | 编译拒绝 | 不 enqueue/claim，无关 task 不变 |
-| mailbox/resumed/native resume/durable continuation | 编译拒绝 | accepted 不等于 completed；相同 run ID 不证明恢复 |
+| mailbox_async + compatible manifest/binding | 委托既有 mailbox owner | source-owned message/delivery/lease/retry/DLQ；不创建 worker 或 parent Run |
+| mailbox/resumed/native resume/durable continuation without declared capability | 编译/准入拒绝 | accepted 不等于 completed；相同 run ID 不证明恢复 |
 
 limits 默认是 descriptor 64 KiB、合计 structural items 128、dependencies 1024、单 reference 1024 UTF-8 bytes、depth 8；copied binding 独立 64 KiB。零 override 选默认，正值只能收紧，负值/放宽拒绝。
 
@@ -41,8 +42,10 @@ markers 为示例本地验证输出，不是新 runtime 事件或 terminal state
 - `unsupported-capability-rejected`：mailbox/resume/shared-queue/组合 pause 请求在 activation 前拒绝。
 - `no-side-effects-before-rejection`：model/tool/handler/enqueue/publish/claim/commit 计数与真实 store 状态证明拒绝边界。
 - `host-commit-required`：source result/observer 状态没有自动提交业务结果。
+- `mailbox-logical-admission`：同一 full logical binding 的 Run/Stream dispatch 只保留一个 mailbox message admission。
+- `mailbox-lifecycle-source-owned`：delivery/lease/retry/DLQ 与 terminal evidence 来自 mailbox owner，不是 bridge synthetic state。
 
-全部 marker 都来自前置断言后的真实离线验证；`scripts/check-host-execution-plan-contract.sh/.ps1` 同时校验它们与故意 drift fixture。
+全部 marker 都来自前置断言后的真实离线验证；`scripts/check-host-execution-plan-contract.sh/.ps1` 同时校验它们与故意 drift fixture。mailbox 的 owner lifecycle、Run/Stream parity 与 reference-only fixture 由 `scripts/check-mailbox-plan-bridge-contract.sh/.ps1` 单独覆盖；两者都不会访问 Provider、业务数据库或网络。
 
 ## Rollback notes
 

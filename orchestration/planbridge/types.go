@@ -10,6 +10,7 @@ import (
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/host/eventadapter"
 	"github.com/FelixSeptem/baymax/orchestration/composer"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 	"github.com/FelixSeptem/baymax/orchestration/teams"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -68,6 +69,7 @@ const (
 	LimitExceeded         Code = "limit_exceeded"
 	BindingMismatch       Code = "binding_mismatch"
 	UnsupportedCapability Code = "unsupported_capability"
+	SourceUnavailable     Code = "source_unavailable"
 )
 
 type Error struct {
@@ -103,6 +105,7 @@ type Binding struct {
 	Team           *TeamBinding
 	Workflow       *WorkflowBinding
 	Child          *ChildBinding
+	Mailbox        *MailboxBinding
 }
 type DirectBinding struct {
 	Runner  types.Runner
@@ -127,6 +130,16 @@ type ChildBinding struct {
 	Runtime      *runtimeconfig.Manager
 	TerminalOnly bool
 }
+
+type MailboxBinding struct {
+	Owner    MailboxOwner
+	Binding  mailbox.HostPlanBinding
+	Manifest *CapabilityManifestReader
+}
+
+type MailboxOwner interface {
+	AdmitHostPlan(context.Context, mailbox.HostPlanBinding) (mailbox.HostPlanOutcome, error)
+}
 type Execution struct {
 	Handler         types.EventHandler
 	Sink            eventadapter.Sink
@@ -143,6 +156,7 @@ type Result struct {
 	Team        *teams.Result
 	Workflow    *workflow.RunResult
 	Child       *composer.ChildDispatchResult
+	Mailbox     *mailbox.HostPlanOutcome
 	Observation *eventadapter.Status
 }
 type Compiled struct {

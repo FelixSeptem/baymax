@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-16
+更新时间：2026-10-19
 
 ## 定位
 
@@ -27,7 +27,8 @@ Baymax 主线保持 `library-first + contract-first`：
 宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165，application outbox 接缝已归档为 166。
 
 - 进行中：
-  - 当前没有已完成但未归档的 change。
+
+`publish-capabilities-and-bridge-mailbox-async-host-plans`（Spec 1；BXM-5 + BXM-1）已完成实现与验证，待按 OpenSpec 流程归档。它交付 versioned host runtime capability manifest 与 `mailbox_async` host-plan bridge：先固定 form-level admission/evidence/unsupported boundary，再以既有 mailbox owner 承接 source-owned logical admission、delivery/lease/retry/DLQ/terminal evidence；不新建 queue、worker、scheduler 或 direct-run fallback。
 
 归档 165（`establish-host-context-assembly-handoff-contract`）已完成实现、验证和规格同步：它交付 host context projection 的显式 opt-in、reference-only 宿主接入合同。宿主先完成角色、来源与业务引用过滤；Baymax 在既有 Context Assembler 与 handoff/restore owner 内验证 `host_context_projection.v1` 的 identity/digest、capability 收窄和 opaque source reference。constructor/API 固定限制为 32 KiB descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest；有限 `host_context.*` 失败分类 fail-closed，且不包含 body 或 callback error。direct Run/Stream 仅在既有 Context Assembler 启用时支持该 opt-in path；禁用时保留 assembler bypass 语义，projection 不会被 admit 或 resolve。legal `handoff.v1` correlation、fresh-resolver correlated restore、read-only `budget_projection.v1` 语义、reference-only replay、双平台 dedicated gate、标准 quality path 的静态接线与离线 example 都已交付。不新增 context store、业务授权/commit、预算账本、Provider SDK、RuntimeRecorder/QueryRuns 字段或平行执行/终态/恢复状态机。Example Impact Assessment：新增示例；`examples/host-context-assembly/README.md` 是已交付的文档与离线示例基线。完整工件见 [归档提案](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
 
@@ -413,7 +414,104 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 2. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
 3. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
 4. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
-5. **宿主执行接入候选**：原生事件/plan bridge/恢复准入已归档为 160/162/164；下一候选为 context 接缝，outbox/mailbox 接缝依赖稳定关联与恢复准入边界。先证明接入 gap，再最小补充既有 owner，不把原五项合并为平台化执行控制大提案。
+5. **宿主执行接入候选**：原生事件/plan bridge/恢复准入已归档为 160/162/164；下列“公开运行时契约”路线图以 source owner 为中心补齐这些基线的已确认缺口。它们不是通用执行平台提案：每一项都必须复用既有 runner、workflow、teams、mailbox 或其 store，禁止另建 scheduler、mailbox owner、event journal、恢复状态机或 host 控制面。实施前仍须以独立 OpenSpec 记录真实 gap、文档影响、Example Impact Assessment、回滚点及可执行证据。
+
+### 公开运行时契约路线图（BXM-1 至 BXM-5）
+
+#### 三个 OpenSpec 的拆分规则、顺序与依赖
+
+五个 BXM 是不能拆散的**公开 contract 验收面**，但执行时固定收敛为下面三个顺序 OpenSpec。不得按 package、DTO 或“可编译”任意另拆平行 change；如出现新的 source form，必须回到下表所列 source-owner change 的增量范围内。
+
+| 执行顺序 | OpenSpec change（语义化名称） | 收敛的 BXM | change 内强制顺序 | 入口/退出条件与不可扩张边界 |
+| --- | --- | --- | --- | --- |
+| Spec 1 | `publish-capabilities-and-bridge-mailbox-async-host-plans` | BXM-5 + BXM-1 | 先固化 capability document、版本、evidence reference 与 admission 查询；再扩展 `host_execution_plan.v1`、mailbox binding/outcome 和 native delegation。 | **入口**：归档 160/162/164 的拒绝边界与既有 `orchestration/mailbox` binding/delivery 事实。**退出**：只有 manifest 明示 `mailbox_async` 已支持后才能 admission；完成一个 source-owned logical admission、lease/retry/DLQ evidence 与 Run/Stream parity。**禁止**：新 queue、worker loop、scheduler、mailbox owner、direct-run fallback。 |
+| Spec 2 | `retain-source-native-event-history-and-cursor-replay` | BXM-2 | 先做 runner/child/team/workflow/mailbox 的 source audit 与 capability floor；再定义 journal/cursor/error contract；最后逐 source 接入只读 retained history 与 replay evidence。 | **入口**：Spec 1 的 manifest version/unsupported vocabulary 可声明 history 状态。**退出**：每个声称支持的 source 都具备 identity、sequence scope、retention floor、cursor scope、typed error 与 restart replay 证据；未支持 source 保持 `ErrHistoryUnsupported`。**禁止**：callback adapter history、host observation cursor、跨 source 全局序或 replay 副作用。 |
+| Spec 3 | `persist-native-continuations-and-restore-composite-graphs` | BXM-3 + BXM-4 | 先为 direct 建立 persistent checkpoint/claim/restore；再逐 form 接入 child/team/workflow/mailbox 的组合状态；每开放一个 pause-reason × form 格子，先在 manifest 标记、再 admission、再 source restore 与证据。 | **入口**：Spec 1 的 capability/admission contract；Spec 2 的 source identity 与可用时的 source-position/replay-reference 语义。**退出**：新 Engine 恢复同一 source graph，重复 resume 幂等/冲突 fail-closed，支持矩阵与实际测试一致。**禁止**：新 parent Run、重跑已完成 member/step、host 伪恢复、metadata-only restore 或把 unsupported 格子当成 best effort。 |
+
+Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和合并。Spec 2 不要求所有 source 都立即有 retained history，但它必须把每一种 source 的支持与拒绝固定进 manifest；Spec 3 可以分阶段开放具体组合形态，却不得在同一个 OpenSpec 之外改变其已经声明的恢复/拒绝语义。若 Spec 3 的所有 form × pause-reason 格子无法在一个可审查变更内获得 source-state 证据，Spec 3 只能交付 direct 及已验证 form，并将剩余格子维持为 `unsupported_capability`；新增格子以该 change 的后续增量 OpenSpec 处理，而非宣称 Spec 3 已覆盖。
+
+#### BXM-5：版本化 host runtime capability manifest（Spec 1 的第一阶段）
+
+**目的**：让 planner、host admission 与 Danny 在 dispatch 前得到可签名、可追溯的能力事实，取代通过 package、DTO 或历史文档猜测支持范围。
+
+**公开 contract**：新增 versioned Baymax capability document/API。每个 execution form 至少声明下列维度：
+
+- `execution form`、`admission`、`native events`、`durable history`、`after-cursor replay`；
+- `checkpoint creation`、`cross-process restore`、`input_required`、`approval_required`、`budget_exhausted`；
+- `cancellation`、`timeout`、`causal retry`、`mailbox continuation`、`retention policy`。
+
+每项声明必须关联 Baymax contract version、build/module revision、public API version、fixture/contract-test evidence reference，并且对 `false`/不支持的能力给出稳定的原因或限制。manifest 是 planner/admission 的唯一协商输入；它不能授权业务 effect，也不能把未来路线图、源码存在或可编译的 DTO 表示成可用能力。
+
+**验收与非目标**：manifest 与实际 admission、source owner、Run/Stream 语义和 contract fixture 必须一致；任何 capability version 不兼容、source 不可用或未声明的 form 都必须在 admission 前返回 typed unavailable/unsupported，不得静默降级为 direct run。它不引入远程 registry、托管控制面或新的全局 scheduler。关联 Danny：1.5、2.3、7.1。
+
+#### BXM-1：`mailbox_async` host execution plan bridge（Spec 1 的第二阶段）
+
+**目标与 owner**：扩展 `host_execution_plan.v1`，定义 mailbox delivery/binding，并由 `orchestration/planbridge` 在编译/准入后桥接到现有 Baymax mailbox owner。planbridge 仍只是 bounded compiler/delegator：不得自行建立队列、worker/execution loop、第二个 mailbox owner 或 scheduler。
+
+**编译与 admission 必检项**：mailbox 配置及 contract version、source-owned message identity、parent run、causation、authority digest、plan digest、write scope、effect namespace 和 resource limits。mailbox 不可用或 binding/contract version 不兼容时，必须在 admission 前以 typed unavailable/unsupported 失败；不得将 mailbox 计划改走 inline/direct run。
+
+**source-owned binding/outcome DTO**：公开的 mailbox binding 与 outcome 至少保留 message ID、delivery/lease ID、attempt/retry causation、ack/nack/retry/DLQ 结果、原始 run/parent run/host correlation 与 terminal outcome。对同一逻辑消息的重复 dispatch 必须幂等：只允许一个 logical admission，并保留原 authority、occurrence 和 effect namespace。lease loss、timeout、retry 与 DLQ 必须由 mailbox source 原生记录并可关联到 attempt/terminal evidence；Danny 不得通过重新 `Run` 一个 parent 来“恢复”。
+
+**验收证据**：成功编译不会创建新 scheduler 或第二套 mailbox owner；同一 mailbox continuation 的 `Run`/`Stream` source terminal 语义等价；重复投递只留一个 logical admission；lease-loss、retry、DLQ 具备原生 event 与可关联 terminal/attempt evidence。关联 Danny：1.3、4.7、5.4、7.1、7.3。
+
+#### BXM-2：source-owned native event history 与 cursor replay（Spec 2）
+
+**能力审计先行**：runner、child、team、workflow、mailbox 必须各自声明实际 event-history capability，而不是沿用 event adapter 的实时 callback 投影。每个 source 的声明必须定义 source/event identity namespace、source sequence 是否定义及其范围、retention window/floor、cursor 格式与 scope、cursor expiry/gap/foreign-cursor 错误、durable terminal recovery，以及 crash-before-consumer-projection 后如何从 source replay。
+
+**公开 API 与分页语义**：提供 bounded、read-after-cursor 的 source journal/source store extension，例如 `NativeEventHistoryReader.Capabilities(ctx, source)` 和 `ReadAfter(ctx, source, cursor, limit)`。返回页至少包含 `Events`、`NextCursor`、`RetentionFloor`、`Complete`。cursor 是 opaque 且仅能解释所属 source 声明的顺序；并行 child/team 仅保证各自 source 内顺序，绝不伪造全局自然排序。
+
+**错误与副作用边界**：必须显式提供 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap`、`ErrSourceUnavailable`。replay 永远只读，不能调用模型、工具、retry、resume、recovery 或其它有副作用操作。callback EventID 不能被误用为可去重、可回放的 journal identity；eventadapter 不得私自维护应用级 history。
+
+**验收证据**：重启后 retained source 可从已确认 cursor 继续读取；source journal 写入、terminal event、replay cursor 语义可复现；过期 cursor 明确返回 gap/expiry，不得悄悄从 latest 读取。关联 Danny：1.3、3.2、3.3、4.1、5.4、7.2。
+
+#### BXM-3：durable checkpoint 与跨进程 restore（Spec 3 的第一阶段）
+
+**目标与存储边界**：将 runner checkpoint 从 Engine 进程内状态升级为可注入、可持久化的 `RunCheckpointStore` 实际路径。公开 checkpoint ref 至少包含 checkpoint ID、schema/version、digest、source/run/session identity、source position 或 replay reference、pause reason、creation/expiry、causal predecessor 与 resume attempt identity。建议 store surface 包含 `Save`、`Load`、`ClaimResume`；新 Engine 的 `ResumeFromCheckpoint` 是恢复同一逻辑 continuation 的唯一入口。
+
+**fail-closed 恢复协议**：restore 前必须校验 checkpoint digest、schema、source/run/session binding、expiry、ownership 以及已消费/恢复状态。相同 resume request 返回同一 admissible result 或明确 idempotent projection；冲突 resume 必须 fail closed。cancellation、timeout、retry 与 resume 的优先级和竞争状态需由 source 明确定义并可在 terminal evidence 中解释。durable store 故障、缺 checkpoint、损坏、过期或 foreign checkpoint 都不得降级为重新 `Run`；host revalidation callback 只能决定是否准入恢复，不能代替 source state restore。
+
+**验收证据**：新 Engine/新进程可恢复同一 checkpoint，且不分配新的逻辑 parent run；checkpoint 创建、持久化、host admission、恢复开始和 terminal 写入之间的每个 crash window 均有可解释状态。取消请求被接受不等于 terminal cancellation，terminal 必须来自 source evidence。关联 Danny：1.3、5.2、5.3、5.4、5.5、7.2。
+
+#### BXM-4：child/team/workflow/mailbox 的 pause 与 continuation（Spec 3 的第二阶段）
+
+**manifest-first 支持矩阵**：对每个 execution form，capability manifest 必须分别声明 `input_required`、`approval_required`、`budget_exhausted` 与重启后恢复。direct 是必须验证的基线；child/fanout、team parallel/vote、workflow、mailbox 仅在声明支持时才可被 admission。首轮若只实现 `direct + workflow`，其它 form 的对应格子必须是明确 `unsupported_capability`，不能因类型存在、terminal-only 行为或 best-effort retry 而被视作可恢复。
+
+| 执行形态 | `input_required` | `approval_required` | `budget_exhausted` | 重启后恢复 |
+| --- | --- | --- | --- | --- |
+| direct | 必须验证 | 必须验证 | 必须验证 | 必须验证 |
+| child/fanout | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
+| team parallel/vote | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
+| workflow | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
+| mailbox | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
+
+**支持某格时的持久化责任**：source owner 必须保存组合状态、成员状态、step dependency、预算消耗、未决 action 和 native run IDs；恢复同一 native graph，不得重跑已经完成的成员或步骤；parent/child/member/step/attempt 因果链必须连续。失败、取消、超预算成员与 aggregate outcome 的语义在 pause/retry/restore 前后保持稳定。
+
+**验收与非目标**：每一个标为支持的格子都要有 pause、跨进程 restore、cancel/timeout/retry 竞争、terminal evidence 以及 Run/Stream 对等测试；未实现格子一律 admission reject。该路线图不允许用 host 再跑 parent、重新执行完成成员/步骤或创建平行 graph 来伪造 continuation。关联 Danny：1.3、4.3–4.6、5.2、5.4、7.1。
+
+#### 跨项不变量、文档和验证要求
+
+- **source ownership**：mailbox、runner、workflow、team、child 各自继续拥有自身 message/delivery/lease、run、graph、event、checkpoint 和 terminal 事实；host 只提供业务 authorization/revision/effect 决策及可选 revalidation，不能转写 source history 或恢复状态。
+- **identity 与因果**：任何 bridge、checkpoint、history 或 manifest 投影必须保持原始 authority、occurrence、effect namespace、run/parent run、message/delivery/lease、attempt/retry causation 与 host correlation；不得生成第二逻辑执行或伪造跨 source 全局事件顺序。
+- **错误与降级**：unavailable、unsupported、version mismatch、foreign/expired/gap/corrupt/conflicting identity 均需 typed、可测试并在副作用前失败；禁止改走 direct run、latest cursor、new parent run 或 best-effort replay。
+- **公开文档**：每个后续 OpenSpec 的 proposal/design/tasks 必须声明 Example Impact Assessment 与 Public Semantic Documentation Commitment；至少同步 `README.md`、`docs/runtime-config-diagnostics.md`、`docs/runtime-module-boundaries.md`、`docs/mainline-contract-test-index.md`、相关 package README、integration guide 与对应离线 example 的实际受影响路径。
+- **证据链**：每项必须同时更新 source 单测（正向/负向/边界）、integration Run/Stream parity、版本化 fixture/replay、shell/PowerShell dedicated contract gate、质量门禁和公开示例；manifest 中的 evidence reference 只可指向已存在且在本 change 验证过的证据。
+
+#### Danny 任务覆盖映射
+
+| Danny 任务 | 本路线图承接项 | 不允许的替代做法 |
+| --- | --- | --- |
+| 1.3 | BXM-1、BXM-2、BXM-3、BXM-4 | 以 host 观测序列、重跑 parent 或 metadata-only reference 充当 native continuation。 |
+| 1.5 | BXM-5 | 通过 import、package 存在或 DTO 编译推断 capability。 |
+| 2.3 | BXM-5 | 让 planner 在 admission 后才发现能力不支持。 |
+| 3.2、3.3 | BXM-2 | callback EventID、host observation sequence 或 latest fallback 当作 durable replay cursor。 |
+| 4.1 | BXM-2 | 让 event adapter 保存应用级 history，或声称跨并行 child 有全局自然顺序。 |
+| 4.3–4.6 | BXM-4 | terminal-only team/workflow/local child 被错误当作可 pause/restore。 |
+| 4.7 | BXM-1 | planbridge 自建 queue/worker，或将 mailbox delivery 降级为 direct run。 |
+| 5.2、5.3、5.5 | BXM-3、BXM-4 | 新 Engine 重跑、复用 run ID 但没有 source restore，或忽略 resume claim 冲突。 |
+| 5.4 | BXM-1、BXM-2、BXM-3、BXM-4 | 在 lease/retry/DLQ、cursor replay、checkpoint 或 terminal 间丢失因果身份。 |
+| 7.1 | BXM-1、BXM-4、BXM-5 | 把未声明 form/pause reason 作为隐式支持。 |
+| 7.2 | BXM-2、BXM-3 | 把 replay 或 durable restore 实现为有副作用的 retry/resume。 |
+| 7.3 | BXM-1 | 将 ack/nack/retry/DLQ 映射为 host business commit 或无关联 terminal。 |
 
 ### 需求触发观察项
 
@@ -423,7 +521,7 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | --- | --- | --- |
 | Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract`、归档 142 与归档 144；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
 | 通用 ExecutionGraph | 多个独立宿主经 plan bridge 仍无法表达同一种执行结构，且 fixture 证明既有 workflow/teams/composer 组合不足 | 先审计既有定义和验证器；不得仅因 Danny 模式名称而新建统一 executor、拓扑或状态机。 |
-| 完整 runner durable event replay | 真实宿主要求进程重启后重放 runner 执行事件，且明确 event identity、source cursor、retention 与恢复 SLA，现有 source binding 无法满足 | 与实时事件 adapter 分开审计，复用 source owner 与存储 SPI；不默认扩展 Realtime-only binding，不建设远程 event store 或 hosted 控制面。 |
+| 完整 runner durable event replay | 已纳入 BXM-2（Spec 2）；启动时仍须以 source audit 固定每种 source 的 identity、cursor、retention 与恢复 SLA | 与实时事件 adapter 分开审计，复用 source owner 与存储 SPI；不默认扩展 Realtime-only binding，不建设远程 event store 或 hosted 控制面。 |
 
 ## 示例状态
 

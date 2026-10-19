@@ -1,0 +1,57 @@
+{
+  "version": "mailbox_plan_bridge.v1",
+  "cases": [
+    {
+      "case_id": "leased-parity",
+      "manifest_contract_version": "baymax.runtime.contract.v1",
+      "manifest_api_version": "host_runtime_capability_manifest.v1",
+      "evidence_reference": "fixture:mailbox-planbridge.v1",
+      "source_available": true,
+      "binding_equivalent": true,
+      "logical_admissions": 1,
+      "observation": { "message_id": "message-1", "delivery_id": "message-1:delivery:1", "lease_id": "message-1:lease:1", "attempt_causation": "cause-1:attempt:1", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "leased" },
+      "run": { "message_id": "message-1", "delivery_id": "message-1:delivery:1", "lease_id": "message-1:lease:1", "attempt_causation": "cause-1:attempt:1", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "leased" },
+      "stream": { "message_id": "message-1", "delivery_id": "message-1:delivery:1", "lease_id": "message-1:lease:1", "attempt_causation": "cause-1:attempt:1", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "leased" },
+      "expected_reason": ""
+    },
+    {
+      "case_id": "lease-loss-retry-dlq-parity",
+      "manifest_contract_version": "baymax.runtime.contract.v1",
+      "manifest_api_version": "host_runtime_capability_manifest.v1",
+      "evidence_reference": "fixture:mailbox-planbridge.v1",
+      "source_available": true,
+      "binding_equivalent": true,
+      "logical_admissions": 1,
+      "observation": { "message_id": "message-1", "delivery_id": "message-1:delivery:2", "lease_id": "message-1:lease:2", "attempt_causation": "cause-1:attempt:2", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "dlq", "terminal_outcome": "dead_letter" },
+      "run": { "message_id": "message-1", "delivery_id": "message-1:delivery:2", "lease_id": "message-1:lease:2", "attempt_causation": "cause-1:attempt:2", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "dlq", "terminal_outcome": "dead_letter" },
+      "stream": { "message_id": "message-1", "delivery_id": "message-1:delivery:2", "lease_id": "message-1:lease:2", "attempt_causation": "cause-1:attempt:2", "parent_run_id": "parent-1", "causation_id": "cause-1", "authority_digest": "authority", "plan_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "dlq", "terminal_outcome": "dead_letter" },
+      "expected_reason": ""
+    },
+    {
+      "case_id": "unavailable-before-admission",
+      "manifest_contract_version": "baymax.runtime.contract.v1",
+      "manifest_api_version": "host_runtime_capability_manifest.v1",
+      "evidence_reference": "fixture:mailbox-planbridge.v1",
+      "source_available": false,
+      "binding_equivalent": true,
+      "logical_admissions": 0,
+      "observation": { "message_id": "message-2", "parent_run_id": "parent-2", "causation_id": "cause-2", "authority_digest": "authority", "plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "run": { "message_id": "message-2", "parent_run_id": "parent-2", "causation_id": "cause-2", "authority_digest": "authority", "plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "stream": { "message_id": "message-2", "parent_run_id": "parent-2", "causation_id": "cause-2", "authority_digest": "authority", "plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "expected_reason": "mailbox_plan_bridge.manifest_drift"
+    },
+    {
+      "case_id": "duplicate-conflict",
+      "manifest_contract_version": "baymax.runtime.contract.v1",
+      "manifest_api_version": "host_runtime_capability_manifest.v1",
+      "evidence_reference": "fixture:mailbox-planbridge.v1",
+      "source_available": true,
+      "binding_equivalent": true,
+      "logical_admissions": 2,
+      "observation": { "message_id": "message-3", "parent_run_id": "parent-3", "causation_id": "cause-3", "authority_digest": "authority", "plan_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "run": { "message_id": "message-3", "parent_run_id": "parent-3", "causation_id": "cause-3", "authority_digest": "authority", "plan_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "stream": { "message_id": "message-3", "parent_run_id": "parent-3", "causation_id": "cause-3", "authority_digest": "authority", "plan_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "write_scope": "scope", "effect_namespace": "effects", "occurrence": "occurrence", "host_correlation": "host", "lifecycle_result": "admitted" },
+      "expected_reason": "mailbox_plan_bridge.duplicate_conflict"
+    }
+  ]
+}

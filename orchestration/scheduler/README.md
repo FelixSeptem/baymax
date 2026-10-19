@@ -37,3 +37,13 @@ No Git/worktree manager, runtime Git or shell execution, hosted workspace/artifa
 - `go test ./core/runner -run 'CompletionReference|RuntimeInput' -count=1`
 - `go test ./tool/diagnosticsreplay -run 'DurableAttemptWorkspaceBinding|CompletionSafePointOwnership' -count=1`
 - `pwsh -File scripts/check-durable-attempt-completion-replay-contract.ps1`
+
+## Application outbox dispatch boundary
+
+The delivered `orchestration/outboxbridge` constructor-only API submits a bounded,
+reference-only descriptor to this existing scheduler owner when the host explicitly
+selects the `scheduler` target. Scheduler still owns task/attempt identity, claim,
+lease generation, retry, stale-attempt rejection, terminal state, and DLQ; the
+bridge and host must not create a parallel task or terminal lifecycle.
+
+The host retains application outbox state, schedule/occurrence policy, authorization, business effect idempotency/CAS, and outbox confirmation. Scheduler terminal state is not host business commit. Recovery remains at-least-once and keeps scheduler execution retry separate from mailbox delivery retry and host business-commit retry. Stopping bridge dispatch preserves existing task/attempt facts for host reconciliation.

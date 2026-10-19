@@ -501,3 +501,17 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | native owner Run/Stream, pause, child isolation and event projection | `integration/host_execution_plan_bridge_test.go` |
 | reference-only drift classification | `tool/diagnosticsreplay/host_execution_plan_test.go`, `tool/diagnosticsreplay/testdata/host_execution_plan.v1.json` |
 | shell/PowerShell contract and offline example | `scripts/check-host-execution-plan-contract.sh`, `scripts/check-host-execution-plan-contract.ps1`, `examples/host-execution-plan` |
+
+# Application outbox mailbox/scheduler recovery
+
+`establish-application-outbox-mailbox-recovery-contract` is archived as 166. The following index maps each contract area to executable evidence; the bridge retains distinct dispatch accepted, target lifecycle, host effect evidence and outbox confirmation facts, and no ack, terminal, digest or replay result stands in for a business commit.
+
+| Requirement | Implementation evidence |
+| --- | --- |
+| bounded opt-in descriptor, canonical digest and current host admission | `orchestration/outboxbridge/bridge.go`, `orchestration/outboxbridge/bridge_test.go` |
+| mailbox native-owner delegation and binding persistence | `orchestration/mailbox/dispatch_binding_test.go`, `orchestration/outboxbridge/bridge_test.go` |
+| scheduler native-owner delegation and binding persistence | `orchestration/scheduler/dispatch_binding.go`, `orchestration/scheduler/dispatch_binding_test.go`, `orchestration/outboxbridge/bridge_test.go` |
+| crash-window recovery and business-commit separation | `integration/application_outbox_run_stream_contract_test.go`, `orchestration/outboxbridge/bridge_test.go` |
+| reference-only replay and drift classification | `tool/diagnosticsreplay/application_outbox.go`, `tool/diagnosticsreplay/application_outbox_test.go`, `tool/diagnosticsreplay/testdata/application_outbox_dispatch.v1.json` |
+| offline example and documented markers | `examples/application-outbox-recovery/main.go`, `examples/application-outbox-recovery/README.md` |
+| equivalent contract gates and quality-path wiring | `scripts/check-application-outbox-mailbox-recovery-contract.ps1`, `scripts/check-application-outbox-mailbox-recovery-contract.sh`, `openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/verification.md` |

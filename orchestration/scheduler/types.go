@@ -95,6 +95,8 @@ const (
 )
 
 type Task struct {
+	// DispatchBinding binds opt-in dispatch identity; empty preserves native semantics.
+	DispatchBinding     string                     `json:"dispatch_binding,omitempty"`
 	TaskID              string                     `json:"task_id"`
 	RunID               string                     `json:"run_id,omitempty"`
 	WorkflowID          string                     `json:"workflow_id,omitempty"`
@@ -117,6 +119,7 @@ func NormalizeTask(in Task) (Task, error) { return normalizeTask(in) }
 
 func normalizeTask(in Task) (Task, error) {
 	out := in
+	out.DispatchBinding = strings.TrimSpace(out.DispatchBinding)
 	out.TaskID = strings.TrimSpace(out.TaskID)
 	out.RunID = strings.TrimSpace(out.RunID)
 	out.WorkflowID = strings.TrimSpace(out.WorkflowID)

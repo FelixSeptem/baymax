@@ -4,6 +4,10 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
+
+if (Test-Path (Join-Path $repoRoot "scripts/check-application-outbox-mailbox-recovery-contract.ps1")) {
+    pwsh -File (Join-Path $repoRoot "scripts/check-openspec-roadmap-status-consistency.ps1")
+}
 if (-not $env:GOCACHE) {
     $env:GOCACHE = Join-Path $repoRoot ".gocache"
 }

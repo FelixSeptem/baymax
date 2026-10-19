@@ -8,6 +8,10 @@ Invoke-NativeStrict -Label "[quality-gate] openspec documentation impact" -Comma
     pwsh -File (Join-Path $PSScriptRoot "check-openspec-documentation-impact.ps1")
 }
 
+Invoke-NativeStrict -Label "[quality-gate] application outbox mailbox recovery contract" -Command {
+    pwsh -File (Join-Path $PSScriptRoot "check-application-outbox-mailbox-recovery-contract.ps1")
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 

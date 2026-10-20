@@ -10,8 +10,12 @@ import (
 const CapabilityManifestSchemaVersion = "host_runtime_capability_manifest.v1"
 
 const (
-	CapabilityManifestContractVersion = "baymax.runtime.contract.v1"
-	CapabilityManifestAPIVersion      = "host_runtime_capability_manifest.v1"
+	CapabilityManifestContractVersion    = "baymax.runtime.contract.v1"
+	CapabilityManifestAPIVersion         = "host_runtime_capability_manifest.v1"
+	LimitationDurableSourceNotConfigured = "durable_source_not_configured"
+	LimitationCompositeGraphRestore      = "composite_graph_restore_unsupported"
+	LimitationSourceEvidenceMissing      = "source_evidence_missing"
+	LimitationPlanResumedTrigger         = "plan_resumed_trigger_unsupported"
 )
 
 type ExecutionForm string
@@ -44,24 +48,25 @@ type CapabilityManifest struct {
 }
 
 type ExecutionFormCapability struct {
-	Form                ExecutionForm              `json:"form"`
-	Admission           CapabilityState            `json:"admission"`
-	NativeEvents        CapabilityState            `json:"native_events"`
-	DurableHistory      CapabilityState            `json:"durable_history"`
-	AfterCursorReplay   CapabilityState            `json:"after_cursor_replay"`
-	CheckpointCreation  CapabilityState            `json:"checkpoint_creation"`
-	CrossProcessRestore CapabilityState            `json:"cross_process_restore"`
-	InputRequired       CapabilityState            `json:"input_required"`
-	ApprovalRequired    CapabilityState            `json:"approval_required"`
-	BudgetExhausted     CapabilityState            `json:"budget_exhausted"`
-	Cancellation        CapabilityState            `json:"cancellation"`
-	Timeout             CapabilityState            `json:"timeout"`
-	CausalRetry         CapabilityState            `json:"causal_retry"`
-	MailboxContinuation CapabilityState            `json:"mailbox_continuation"`
-	RetentionPolicy     string                     `json:"retention_policy"`
-	EvidenceReference   string                     `json:"evidence_reference"`
-	UnsupportedReasons  map[string]string          `json:"unsupported_reasons,omitempty"`
-	SourceHistory       *types.HistoryCapabilities `json:"source_history,omitempty"`
+	Form                ExecutionForm                   `json:"form"`
+	Admission           CapabilityState                 `json:"admission"`
+	NativeEvents        CapabilityState                 `json:"native_events"`
+	DurableHistory      CapabilityState                 `json:"durable_history"`
+	AfterCursorReplay   CapabilityState                 `json:"after_cursor_replay"`
+	CheckpointCreation  CapabilityState                 `json:"checkpoint_creation"`
+	CrossProcessRestore CapabilityState                 `json:"cross_process_restore"`
+	InputRequired       CapabilityState                 `json:"input_required"`
+	ApprovalRequired    CapabilityState                 `json:"approval_required"`
+	BudgetExhausted     CapabilityState                 `json:"budget_exhausted"`
+	Cancellation        CapabilityState                 `json:"cancellation"`
+	Timeout             CapabilityState                 `json:"timeout"`
+	CausalRetry         CapabilityState                 `json:"causal_retry"`
+	MailboxContinuation CapabilityState                 `json:"mailbox_continuation"`
+	RetentionPolicy     string                          `json:"retention_policy"`
+	EvidenceReference   string                          `json:"evidence_reference"`
+	UnsupportedReasons  map[string]string               `json:"unsupported_reasons,omitempty"`
+	SourceHistory       *types.HistoryCapabilities      `json:"source_history,omitempty"`
+	SourceContinuation  *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
 }
 
 // CapabilityManifestReader returns detached entries so callers cannot change
@@ -90,13 +95,18 @@ func DefaultCapabilityManifest() CapabilityManifest {
 			UnsupportedReasons: map[string]string{
 				"durable_history":       "source journal is Spec 2",
 				"after_cursor_replay":   "source journal is Spec 2",
-				"checkpoint_creation":   "durable checkpoint is Spec 3",
-				"cross_process_restore": "durable checkpoint is Spec 3",
-				"input_required":        "composite continuation is Spec 3",
-				"approval_required":     "composite continuation is Spec 3",
-				"budget_exhausted":      "composite continuation is Spec 3",
+				"checkpoint_creation":   LimitationCompositeGraphRestore,
+				"cross_process_restore": LimitationCompositeGraphRestore,
+				"input_required":        LimitationCompositeGraphRestore,
+				"approval_required":     LimitationCompositeGraphRestore,
+				"budget_exhausted":      LimitationCompositeGraphRestore,
 				"mailbox_continuation":  "mailbox form is not enabled by default",
 			},
+		}
+		if form == ExecutionFormDirect {
+			for _, dimension := range continuationDimensions() {
+				entry.UnsupportedReasons[dimension] = LimitationDurableSourceNotConfigured
+			}
 		}
 		if form == ExecutionFormMailboxAsync {
 			entry.MailboxContinuation = CapabilitySupported
@@ -105,6 +115,54 @@ func DefaultCapabilityManifest() CapabilityManifest {
 		result.Forms = append(result.Forms, entry)
 	}
 	return result
+}
+
+func continuationDimensions() []string {
+	return []string{"checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted"}
+}
+
+// CapabilityManifestWithContinuation queries an explicitly configured source.
+// Only a complete direct source declaration can enable the durable profile;
+// composite restore and resumed host plans remain unsupported.
+func CapabilityManifestWithContinuation(ctx context.Context, source types.ContinuationCapabilitySource) (CapabilityManifest, error) {
+	result := DefaultCapabilityManifest()
+	if source == nil {
+		return result, fail(SourceUnavailable, "capability_manifest.source_continuation", nil)
+	}
+	caps, err := source.ContinuationCapabilities(ctx)
+	if err != nil {
+		return result, err
+	}
+	if err = caps.Validate(); err != nil {
+		for i := range result.Forms {
+			if result.Forms[i].Form == ExecutionFormDirect {
+				for _, dimension := range continuationDimensions() {
+					result.Forms[i].UnsupportedReasons[dimension] = LimitationSourceEvidenceMissing
+				}
+			}
+		}
+		return result, &Error{Code: UnsupportedCapability, Field: "capability_manifest.source_continuation", Limitation: LimitationSourceEvidenceMissing}
+	}
+	if caps.ContractVersion != result.ContractVersion || caps.APIVersion != result.APIVersion {
+		return result, fail(UnsupportedVersion, "capability_manifest.source_continuation", nil)
+	}
+	for i := range result.Forms {
+		entry := &result.Forms[i]
+		if entry.Form != ExecutionFormDirect {
+			continue
+		}
+		snapshot := caps.Clone()
+		entry.SourceContinuation = &snapshot
+		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
+		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
+		entry.RetentionPolicy = caps.RetentionPolicy
+		entry.EvidenceReference = caps.EvidenceReferences["cross_process_restore"]
+		for _, dimension := range continuationDimensions() {
+			delete(entry.UnsupportedReasons, dimension)
+		}
+	}
+	result.ModuleRevision = caps.ModuleRevision
+	return result, validateCapabilityManifest(result)
 }
 
 // CapabilityManifestWithHistory projects only a source owner's evidenced facts.
@@ -214,6 +272,9 @@ func validateCapabilityManifest(manifest CapabilityManifest) error {
 		if err := validateCapability(entry); err != nil {
 			return err
 		}
+		if c := entry.SourceContinuation; c != nil && (c.ContractVersion != manifest.ContractVersion || c.APIVersion != manifest.APIVersion || c.ModuleRevision != manifest.ModuleRevision) {
+			return fail(UnsupportedVersion, "capability_manifest.source_continuation", nil)
+		}
 	}
 	return nil
 }
@@ -240,6 +301,20 @@ func validateCapability(entry ExecutionFormCapability) error {
 			}
 		default:
 			return fail(InvalidPlan, "capability_manifest."+dimension, nil)
+		}
+	}
+	continuationDeclared := entry.CheckpointCreation == CapabilitySupported || entry.CrossProcessRestore == CapabilitySupported || entry.InputRequired == CapabilitySupported || entry.ApprovalRequired == CapabilitySupported || entry.BudgetExhausted == CapabilitySupported
+	if continuationDeclared || entry.SourceContinuation != nil {
+		if entry.Form != ExecutionFormDirect || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		for _, dimension := range continuationDimensions() {
+			if states[dimension] != CapabilitySupported {
+				return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+			}
+		}
+		if entry.RetentionPolicy != entry.SourceContinuation.RetentionPolicy || entry.EvidenceReference != entry.SourceContinuation.EvidenceReferences["cross_process_restore"] {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 	}
 	historyDeclared := entry.DurableHistory == CapabilitySupported || entry.AfterCursorReplay == CapabilitySupported
@@ -285,6 +360,10 @@ func cloneCapability(entry ExecutionFormCapability) ExecutionFormCapability {
 			history.RetentionFloor = &floor
 		}
 		clone.SourceHistory = &history
+	}
+	if entry.SourceContinuation != nil {
+		continuation := entry.SourceContinuation.Clone()
+		clone.SourceContinuation = &continuation
 	}
 	return clone
 }

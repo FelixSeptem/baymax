@@ -2,6 +2,7 @@ package planbridge
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"reflect"
@@ -20,6 +21,15 @@ import (
 func Describe(d Descriptor, b Binding, l Limits) (Descriptor, error) {
 	limits, err := resolveLimits(l)
 	if err != nil {
+		return Descriptor{}, err
+	}
+	if err = validateRequiredCapabilities(d, limits); err != nil {
+		return Descriptor{}, err
+	}
+	if err = validateTrigger(d.Trigger); err != nil {
+		return Descriptor{}, err
+	}
+	if err = validateBoundContinuationRequirements(context.Background(), d, b); err != nil {
 		return Descriptor{}, err
 	}
 	_, facts, _, err := prepare(d.Shape, d.Delivery, len(d.RequiredCapabilities), b, limits)
@@ -58,16 +68,14 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if d.Delivery != DeliveryInline && d.Delivery != DeliveryMailbox {
 		return nil, fail(UnsupportedCapability, "delivery", nil)
 	}
-	if d.Trigger != TriggerManual && d.Trigger != TriggerScheduled && d.Trigger != TriggerCallback {
-		return nil, fail(UnsupportedCapability, "trigger", nil)
+	if err = validateTrigger(d.Trigger); err != nil {
+		return nil, err
 	}
-	if len(d.RequiredCapabilities) > limits.StructuralItems {
-		return nil, fail(LimitExceeded, "required_capabilities", nil)
+	if err = validateRequiredCapabilities(d, limits); err != nil {
+		return nil, err
 	}
-	for _, cap := range d.RequiredCapabilities {
-		if cap != "source_timeline" && (cap != "token_streaming" || d.Shape != ShapeDirect) && (cap != "dynamic_pause" || d.Shape != ShapeDirect) {
-			return nil, fail(UnsupportedCapability, "required_capabilities", nil)
-		}
+	if err = validateBoundContinuationRequirements(context.Background(), d, b); err != nil {
+		return nil, err
 	}
 	ds, err := snapshot(d, limits.DescriptorBytes, limits.NestingDepth)
 	if err != nil {
@@ -115,6 +123,91 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	}
 	return &Compiled{identity: Identity{d.PlanID, d.PlanVersion, identityDigest}, descriptor: ds, binding: normalized, canonical: canonical, limits: limits, childConfigDigest: cfgDigest}, nil
 }
+
+func validateTrigger(trigger Trigger) error {
+	if trigger == TriggerResumed {
+		return &Error{Code: UnsupportedCapability, Field: "trigger", Limitation: LimitationPlanResumedTrigger}
+	}
+	if trigger != TriggerManual && trigger != TriggerScheduled && trigger != TriggerCallback {
+		return fail(UnsupportedCapability, "trigger", nil)
+	}
+	return nil
+}
+
+func validateRequiredCapabilities(d Descriptor, limits Limits) error {
+	if len(d.RequiredCapabilities) > limits.StructuralItems {
+		return fail(LimitExceeded, "required_capabilities", nil)
+	}
+	for _, capability := range d.RequiredCapabilities {
+		if capability == "source_timeline" {
+			continue
+		}
+		if (capability == "token_streaming" || capability == "dynamic_pause") && d.Shape == ShapeDirect && d.Delivery == DeliveryInline {
+			continue
+		}
+		if d.Shape == ShapeDirect && d.Delivery == DeliveryInline {
+			switch capability {
+			case "checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted":
+				continue
+			}
+		}
+		return fail(UnsupportedCapability, "required_capabilities", nil)
+	}
+	return nil
+}
+
+func validateBoundContinuationRequirements(ctx context.Context, d Descriptor, binding Binding) error {
+	var required []string
+	for _, capability := range d.RequiredCapabilities {
+		switch capability {
+		case "checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted":
+			required = append(required, capability)
+		}
+	}
+	if len(required) == 0 {
+		return nil
+	}
+	if d.Shape != ShapeDirect || d.Delivery != DeliveryInline || binding.Direct == nil {
+		return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationCompositeGraphRestore}
+	}
+	source, ok := binding.Direct.Runner.(types.ContinuationCapabilitySource)
+	if !ok {
+		return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationDurableSourceNotConfigured}
+	}
+	caps, err := source.ContinuationCapabilities(ctx)
+	if err != nil {
+		return err
+	}
+	if err = caps.Validate(); err != nil {
+		return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationSourceEvidenceMissing}
+	}
+	if caps.ContractVersion != CapabilityManifestContractVersion || caps.APIVersion != CapabilityManifestAPIVersion {
+		return fail(UnsupportedVersion, "required_capabilities.source", nil)
+	}
+	for _, capability := range required {
+		dimension := capability
+		if dimension == "dynamic_pause" {
+			dimension = "input_required"
+		}
+		if dimension == "checkpoint_creation" && !caps.CheckpointCreation || dimension == "cross_process_restore" && !caps.CrossProcessRestore {
+			return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationSourceEvidenceMissing}
+		}
+		if dimension == "input_required" || dimension == "approval_required" || dimension == "budget_exhausted" {
+			found := false
+			for _, reason := range caps.PauseReasons {
+				if reason == dimension {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationSourceEvidenceMissing}
+			}
+		}
+	}
+	return nil
+}
+
 func digest(raw []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) }
 
 // derivedMailboxPlanDigest deliberately excludes its own value. This permits

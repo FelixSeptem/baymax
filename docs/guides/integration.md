@@ -104,6 +104,14 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 ## 暂停后的恢复准入
 
+独立 `native_continuation.v1` durable profile 已实现 direct restore；旧 metadata-oriented `RunCheckpointStore` 不改变签名。以 `checkpoint.OpenFileStore` 建立本机单写 source，向每个 Engine 注入相同 `runner.WithNativeContinuation` 的 owner namespace、dependency profile/revision 与原始 binding。保留暂停结果的 `RunResult.NativeCheckpoint`，新 Engine 调用 `ResumeFromCheckpoint`；不要再次调用 public Run。存储缺失、损坏、过期、foreign、不可用或 interrupted attempt 均 fail closed，不降级。可运行离线入口见 [durable continuation](../../examples/durable-continuation-restore/README.md)。
+
+`Approval: true` 将 Action Gate 的 require-confirm 边界暂停在 tool dispatch 前；只有经当前宿主验证的 confirm 才可继续。`Budget: true` 在 iteration/tool-call safe point 暂停，恢复需要 source `BudgetOwner` 批准带新 revision 的 `NativeBudget`，consumed 与原 deadline 必须不变。此 profile 不宣称支持其它无可靠 source counter 的预算维度。`input_required` 保留已完成 outcomes 与原 opaque action。host verifier 在 source claim 前且不持有 store 锁，不能代替 source restore；开启 `WithHostResumeVerifier` 才要求宿主授权事实检查，digest 本身不授予权限。
+
+FileStore 范围为同一台机器的单写进程顺序重开，第二 writer 返回 `ErrCheckpointUnavailable`；不宣称跨机器 CAS。默认 checkpoint 24 小时且不晚于原绝对 deadline，completed duplicate result 从完成时保留 24 小时。公开 envelope 为 64 KiB、reference 256 UTF-8 bytes、digest 128 bytes、references 256 项；private continuation material 为 1 MiB、completed/pending entries 1024 项。constructor limits 只可收紧，容量必须为正，满时不驱逐活跃记录。文件含 normalized request、tool outcomes 和 pending arguments，应按执行数据保护，不写 credential。
+
+恢复仅支持匹配的 Run/Stream mode。exact duplicate 返回 source-retained projection，不重发 callback 或重执行；conflict 拒绝。claim/start 后无 source result 的 attempt 返回 in-progress/recovery-required，不自动接管。successor 与 predecessor result 同一 source commit 发布。`CancelNativeCheckpoint` 只持久化未 claim checkpoint 的取消 fence，accepted 不是 terminal；claim 先获胜后的取消通过 live source safe point 确认。terminal commit 失败不向调用方或 callback 宣告 durable terminal。child/team/workflow/mailbox 与 planbridge resumed 仍 unsupported，不能通过重新 Run parent 或 history replay 补恢复。Realtime、host-context projection/resolver、skill loader、lifecycle hooks、active runtime-input control、Plan Notebook、启用的 Context Assembler 等含未持久化私有状态的 dependency profile 在 admission 前拒绝。
+
 native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用 Authorizer 不自动证明暂停前的业务 revision、plan/write scope 和当前权限仍匹配。`runner.WithHostResumeVerifier` 显式安装 `host_resume_admission.v1`，由宿主 callback 读取可信暂停绑定与当前事实，在 decision commit 前重验证；direct API 与既有 run.action.resume 共享该入口，不增加 command kind。默认不安装；安装 nil verifier 会 fail-closed。
 
 完整 normalized identity 与 mode 必须保持一致才能读取 duplicate result，执行中返回 `runner.ErrDynamicActionInProgress`。接线/limits/错误/支持矩阵见 [恢复准入指南](host-resume-admission.md)，[离线示例](../../examples/host-resume-admission/README.md) 使用真实 runner 验证拒绝、恢复、duplicate 和 CAS。不要把 metadata/snapshot/replay 或同 run ID 当成新 Engine 的 durable continuation；planbridge resumed 仍 unsupported。宿主实际 effect 提交仍需 authority/revision/effect CAS，digest、resolved、command acceptance 与 runner completion 均不是业务 commit。

@@ -8,6 +8,8 @@
 
 ## 宿主恢复准入边界
 
+`RunCheckpointStore` 仍是 metadata-oriented SPI，不代表 continuation state。独立 durable extension 保存 bounded source continuation material 与原 run/session/parent/host/authority/effect correlation，并由同一 source owner 原子 claim/resume。Engine 重启仅在 dependency profile/revision 与 material digest 一致时恢复；host verifier 只做当前准入，不能拼装 source state。FileStore 限定为具备单写锁与原子持久化语义的本机顺序重开，不声称跨机 CAS。direct 三 pause reason 已有 source evidence；composite forms 与 planbridge resumed 仍不开放。
+
 `core/types/host_resume_admission.go` 定义 `host_resume_admission.v1` 有界 reference-only verifier 合同，`core/runner.WithHostResumeVerifier` 在原生 dynamic action checkpoint admission 提交前接入。runner 拥有 checkpoint/generation、decision 单次提交、continuation 和事件语义；宿主 callback 拥有可信 plan/revision/authority/tool/write-scope/confirmation/effect 绑定与当前业务授权。`host` 保留通用 command authorization 并委托同一 source guard，不另建 pending registry、执行器或终态 owner。
 
 callback 必须在 source 锁外运行，返回后 source 锁内重检 generation/state/mode/expiry/cancellation/context；拒绝不消费 checkpoint，不发 resolution/terminal。宿主仍在实际 effect 边界 CAS，Baymax 不维护业务账本或分布式 commit。metadata SPI/snapshot/replay 不能恢复新 Engine 内部 request/outcomes；首阶段不扩展 planbridge resumed/team/workflow/mailbox continuation。既有 composer recovery 所有权不因此改动。
@@ -263,7 +265,8 @@ terminal reducer. Mailbox owns message/delivery/lease/attempt lifecycle; the hos
 owns authority, write scope, effect namespace and business commit. Capability
 manifest evidence never substitutes for current admission. Spec 2 history/cursor
 replay is delegated to a concrete mailbox source reader; Spec 3 durable
-checkpoint restore remains unsupported.
+checkpoint restore is implemented only in the direct runner source. Mailbox and
+planbridge resumed execution remain unsupported.
 
 ### Native history source ownership
 

@@ -37,6 +37,9 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 	if err = ctx.Err(); err != nil {
 		return out, err
 	}
+	if err = validateBoundContinuationRequirements(ctx, p.descriptor, p.binding); err != nil {
+		return out, err
+	}
 	if p.descriptor.Delivery == DeliveryMailbox {
 		if p.binding.Mailbox == nil || p.binding.Mailbox.Owner == nil || p.binding.Mailbox.Manifest == nil {
 			return out, fail(SourceUnavailable, "activation.mailbox.owner", nil)

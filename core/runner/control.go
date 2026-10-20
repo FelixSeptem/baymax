@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 )
 
 // ActiveRunSnapshot is a bounded, source-owned view of one active Run.
@@ -356,6 +357,16 @@ func (e *Engine) CancelRun(runID, sessionID string) (types.HostAdmissionStatus, 
 		ctrl.mu.Unlock()
 		return types.HostAdmissionStatusDuplicate, nil
 	}
+	if e.nativeOptions != nil && ctrl.state == types.RunStateInputRequired {
+		ref, err := e.NativeCheckpoint(context.Background(), runID)
+		if err == nil {
+			err = e.CancelNativeCheckpoint(context.Background(), ref, nil)
+		}
+		if err != nil && !errors.Is(err, types.ErrCheckpointInProgress) {
+			ctrl.mu.Unlock()
+			return types.HostAdmissionStatusRejected, err
+		}
+	}
 	ctrl.cancelAdmitted = true
 	ctrl.mu.Unlock()
 	ctrl.settleRuntimeInputs()
@@ -523,4 +534,312 @@ func (c *ActiveRunControl) waitRealtimeResume(ctx context.Context, h types.Event
 			c.mu.Unlock()
 		}
 	}
+}
+
+type actionGateViolationError struct {
+	classified *types.ClassifiedError
+	err        error
+}
+
+func (e *actionGateViolationError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.err != nil {
+		return e.err.Error()
+	}
+	if e.classified != nil {
+		return e.classified.Message
+	}
+	return "action gate violation"
+}
+
+func (e *actionGateViolationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *actionGateViolationError) ClassifiedError() *types.ClassifiedError {
+	if e == nil {
+		return nil
+	}
+	return e.classified
+}
+
+func (e *Engine) enforceActionGateForToolCalls(
+	ctx context.Context,
+	h types.EventHandler,
+	req types.RunRequest,
+	runID string,
+	iteration int,
+	seq *int64,
+	calls []types.ToolCall,
+	stats *actionGateStats,
+) (*types.ClassifiedError, error) {
+	classifiedActionGate := func(
+		call types.ToolCall,
+		class types.ErrorClass,
+		msg string,
+		retryable bool,
+		reasonCode string,
+	) *types.ClassifiedError {
+		ce := classified(class, msg, retryable)
+		code := strings.ToLower(strings.TrimSpace(reasonCode))
+		if code == "" {
+			code = "action.gate.denied"
+		}
+		details := map[string]any{
+			"policy_kind": "action_gate",
+			"decision":    "deny",
+			"reason_code": code,
+		}
+		if namespaceTool, ok := namespaceToolKey(call.Name); ok {
+			details["namespace_tool"] = namespaceTool
+		}
+		if callID := strings.TrimSpace(call.CallID); callID != "" {
+			details["call_id"] = callID
+		}
+		if tool := strings.TrimSpace(call.Name); tool != "" {
+			details["tool"] = tool
+		}
+		if trace, ok := e.evaluateRuntimePolicyTrace([]runtimeconfig.RuntimePolicyCandidate{
+			{
+				Stage:    runtimeconfig.RuntimePolicyStageActionGate,
+				Code:     code,
+				Source:   runtimeconfig.RuntimePolicyStageActionGate,
+				Decision: runtimeconfig.RuntimePolicyDecisionDeny,
+			},
+		}); ok {
+			if strings.TrimSpace(trace.Version) != "" {
+				details["policy_precedence_version"] = strings.TrimSpace(trace.Version)
+			}
+			if strings.TrimSpace(trace.WinnerStage) != "" {
+				details["winner_stage"] = strings.TrimSpace(trace.WinnerStage)
+			}
+			if strings.TrimSpace(trace.DenySource) != "" {
+				details["deny_source"] = strings.TrimSpace(trace.DenySource)
+			}
+			if strings.TrimSpace(trace.TieBreakReason) != "" {
+				details["tie_break_reason"] = strings.TrimSpace(trace.TieBreakReason)
+			}
+			if len(trace.PolicyDecisionPath) > 0 {
+				details["policy_decision_path"] = append([]runtimeconfig.RuntimePolicyCandidate(nil), trace.PolicyDecisionPath...)
+			}
+		}
+		ce.Details = details
+		return ce
+	}
+
+	for _, call := range calls {
+		check := types.ActionGateCheck{
+			RunID:     runID,
+			SessionID: req.SessionID,
+			Iteration: iteration,
+			CallID:    call.CallID,
+			ToolName:  call.Name,
+			Input:     req.Input,
+			Args:      call.Args,
+		}
+		evaluation, err := e.evaluateActionGateDecision(ctx, check)
+		if err != nil {
+			ce := classifiedActionGate(
+				call,
+				types.ErrTool,
+				fmt.Sprintf("action gate evaluate failed: %v", err),
+				false,
+				"action.gate.evaluate_failed",
+			)
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			if stats != nil {
+				stats.Checks++
+				stats.DeniedCount++
+			}
+			return ce, err
+		}
+		if !evaluation.Checked {
+			continue
+		}
+		if stats != nil {
+			stats.Checks++
+			if evaluation.RuleHit {
+				stats.RuleHitCount++
+				stats.RuleLastID = evaluation.RuleID
+			}
+		}
+		if evaluation.RuleHit {
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.rule_match")
+		}
+		switch evaluation.Decision {
+		case types.ActionGateDecisionAllow:
+			continue
+		case types.ActionGateDecisionDeny:
+			if stats != nil {
+				stats.DeniedCount++
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			msg := fmt.Sprintf("action gate denied tool call: %s", strings.TrimSpace(call.Name))
+			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.denied"), errors.New(msg)
+		case types.ActionGateDecisionRequireConfirm:
+			if x := nativeExecutionFrom(ctx); x != nil && e.nativeOptions.Approval {
+				if x.approved {
+					continue
+				}
+				return classifiedActionGate(call, types.ErrTool, "native approval required", false, "native.approval_required"), nativeApprovalPause{}
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.require_confirm")
+			if e.actionGateResolver == nil {
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate requires confirmation but resolver is not configured: %s", strings.TrimSpace(call.Name))
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.resolver_missing"), errors.New(msg)
+			}
+			timeout := e.actionGateTimeout()
+			confirmCtx, cancel := context.WithTimeout(ctx, timeout)
+			approved, confirmErr := e.actionGateResolver.Confirm(confirmCtx, types.ActionGateConfirmRequest{
+				Check:   check,
+				Timeout: timeout,
+			})
+			cancel()
+			if confirmErr != nil || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
+				if errors.Is(confirmErr, context.DeadlineExceeded) || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
+					if stats != nil {
+						stats.TimeoutCount++
+						stats.DeniedCount++
+					}
+					e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "gate.timeout")
+					msg := fmt.Sprintf("action gate confirmation timed out for tool: %s", strings.TrimSpace(call.Name))
+					return classifiedActionGate(call, types.ErrPolicyTimeout, msg, true, "action.gate.timeout"), context.DeadlineExceeded
+				}
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate confirmation failed for tool %s: %v", strings.TrimSpace(call.Name), confirmErr)
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_failed"), confirmErr
+			}
+			if !approved {
+				if stats != nil {
+					stats.DeniedCount++
+				}
+				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+				msg := fmt.Sprintf("action gate confirmation denied tool call: %s", strings.TrimSpace(call.Name))
+				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_denied"), errors.New(msg)
+			}
+		default:
+			if stats != nil {
+				stats.DeniedCount++
+			}
+			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
+			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", evaluation.Decision, strings.TrimSpace(call.Name))
+			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.decision_unsupported"), errors.New(msg)
+		}
+	}
+	return nil, nil
+}
+
+type actionGateEvaluation struct {
+	Decision types.ActionGateDecision
+	Checked  bool
+	RuleHit  bool
+	RuleID   string
+}
+
+func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.ActionGateCheck) (actionGateEvaluation, error) {
+	if e.actionGateMatcher != nil {
+		decision, err := e.actionGateMatcher.Evaluate(ctx, check)
+		if err != nil {
+			return actionGateEvaluation{}, err
+		}
+		return actionGateEvaluation{
+			Decision: normalizeActionGateDecision(decision),
+			Checked:  true,
+		}, nil
+	}
+	cfg := e.actionGateConfig()
+	if !cfg.Enabled {
+		return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
+	}
+
+	toolName := normalizeToolName(check.ToolName)
+	content := strings.ToLower(strings.TrimSpace(check.Input) + " " + marshalToolArgs(check.Args))
+	defaultDecision := normalizeActionGateDecision(types.ActionGateDecision(cfg.Policy))
+	for _, rule := range cfg.ParameterRules {
+		if !ruleAppliesToTool(rule, toolName) {
+			continue
+		}
+		matched, err := evaluateRuleCondition(rule.Condition, check.Args)
+		if err != nil {
+			return actionGateEvaluation{}, err
+		}
+		if !matched {
+			continue
+		}
+		decision := defaultDecision
+		if strings.TrimSpace(string(rule.Action)) != "" {
+			decision = normalizeActionGateDecision(rule.Action)
+		}
+		return actionGateEvaluation{
+			Decision: decision,
+			Checked:  true,
+			RuleHit:  true,
+			RuleID:   strings.TrimSpace(rule.ID),
+		}, nil
+	}
+
+	if policy, ok := cfg.DecisionByTool[toolName]; ok {
+		return actionGateEvaluation{
+			Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+			Checked:  true,
+		}, nil
+	}
+	segments := strings.Split(toolName, ".")
+	if len(segments) > 1 {
+		shortName := strings.TrimSpace(segments[len(segments)-1])
+		if policy, ok := cfg.DecisionByTool[shortName]; ok {
+			return actionGateEvaluation{
+				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+				Checked:  true,
+			}, nil
+		}
+	}
+
+	for _, tool := range cfg.ToolNames {
+		normalized := normalizeToolName(tool)
+		if normalized == "" {
+			continue
+		}
+		if normalized == toolName {
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
+		}
+		if len(segments) > 1 && normalized == strings.TrimSpace(segments[len(segments)-1]) {
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
+		}
+	}
+
+	for keyword, policy := range cfg.DecisionByWord {
+		kw := strings.ToLower(strings.TrimSpace(keyword))
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(content, kw) {
+			return actionGateEvaluation{
+				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
+				Checked:  true,
+			}, nil
+		}
+	}
+	for _, keyword := range cfg.Keywords {
+		kw := strings.ToLower(strings.TrimSpace(keyword))
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(content, kw) {
+			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
+		}
+	}
+	return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
 }

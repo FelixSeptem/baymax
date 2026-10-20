@@ -14,6 +14,10 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
+- 进行中：无。
+
+已归档 169：`persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4）。direct 跨进程 checkpoint/claim/restore、三类 pause reason、离线示例与完整门禁已完成并同步主规格；child/team/workflow/mailbox 和 planbridge resumed 保持 unsupported，composite graph restore 留待后续逐 owner 增量提案。
+
 当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
 
 归档 158（`introduce-dynamic-action-gate-and-native-run-resume`）已完成实现、验证并归档；其动态 PendingAction opaque reference、`input_required` pause、同一 Run/Stream checkpoint resume 与 Host action-resume admission 已纳入主线基线。
@@ -429,6 +433,8 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 | Spec 3 | `persist-native-continuations-and-restore-composite-graphs` | BXM-3 + BXM-4 | 先为 direct 建立 persistent checkpoint/claim/restore；再逐 form 接入 child/team/workflow/mailbox 的组合状态；每开放一个 pause-reason × form 格子，先在 manifest 标记、再 admission、再 source restore 与证据。 | **入口**：Spec 1 的 capability/admission contract；Spec 2 的 source identity 与可用时的 source-position/replay-reference 语义。**退出**：新 Engine 恢复同一 source graph，重复 resume 幂等/冲突 fail-closed，支持矩阵与实际测试一致。**禁止**：新 parent Run、重跑已完成 member/step、host 伪恢复、metadata-only restore 或把 unsupported 格子当成 best effort。 |
 
 Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和合并。Spec 2 不要求所有 source 都立即有 retained history，但它必须把每一种 source 的支持与拒绝固定进 manifest；Spec 3 可以分阶段开放具体组合形态，却不得在同一个 OpenSpec 之外改变其已经声明的恢复/拒绝语义。若 Spec 3 的所有 form × pause-reason 格子无法在一个可审查变更内获得 source-state 证据，Spec 3 只能交付 direct 及已验证 form，并将剩余格子维持为 `unsupported_capability`；新增格子以该 change 的后续增量 OpenSpec 处理，而非宣称 Spec 3 已覆盖。
+
+归档 169 的 Spec 3 `persist-native-continuations-and-restore-composite-graphs` 已完成实施、验证与规格同步。direct 跨进程 checkpoint/claim/restore 已覆盖 `input_required`、`approval_required`、`budget_exhausted` 三类 source producer 与恢复证据；child/fanout、team、workflow、mailbox 和 planbridge resumed 本轮明确保持 unsupported。BXM-4 的 composite graph 恢复责任不取消，留待后续增量 OpenSpec 逐 source owner 验证，不能将本提案完成描述为全部 BXM-4 格子已交付。
 
 #### BXM-5：版本化 host runtime capability manifest（Spec 1 的第一阶段）
 

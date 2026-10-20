@@ -151,3 +151,36 @@ func TestHostExecutionPlanAdmissionAndDrift(t *testing.T) {
 		t.Fatal("drift activated")
 	}
 }
+
+func TestCompositeContinuationRequirementsRejectBeforeBindingPreflight(t *testing.T) {
+	for _, shape := range []Shape{ShapeSubagent, ShapeTeam, ShapeWorkflow, ShapeDirect} {
+		for _, capability := range []string{"dynamic_pause", "checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted"} {
+			t.Run(string(shape)+"/"+capability, func(t *testing.T) {
+				d, b, runner := directFixture(t)
+				d.Shape = shape
+				if shape == ShapeDirect {
+					d.Delivery = DeliveryMailbox
+				}
+				d.RequiredCapabilities = []string{capability}
+				admissions := 0
+				b.Admit = func(context.Context, Identity) (Admission, error) { admissions++; return Admission{}, nil }
+				for _, describe := range []bool{false, true} {
+					var err error
+					if describe {
+						_, err = Describe(d, b, Limits{})
+					} else {
+						_, err = Compile(d, b, Limits{})
+					}
+					codeOf(t, err, UnsupportedCapability)
+					var planErr *Error
+					if !errors.As(err, &planErr) || planErr.Field != "required_capabilities" {
+						t.Fatalf("describe=%v: continuation requirement reached binding preflight: %v", describe, err)
+					}
+				}
+				if admissions != 0 || runner.calls != 0 {
+					t.Fatal("unsupported requirement activated source")
+				}
+			})
+		}
+	}
+}

@@ -1,5 +1,9 @@
 # 最佳实践
 
+## Durable continuation boundary
+
+Enable durable continuation only with an explicitly configured source store and matching dependency profile/revision. The direct runner persists source-owned state and restores it in a new Engine after host revalidation and an atomic claim. Protect the store as execution data: bounded continuation material includes the normalized request and completed tool outcomes. Metadata, event-history cursor, callback replay, or re-running the parent are not substitutes. A claimed attempt without terminal/successor evidence is recovery-required, not permission to retry. Child/team/workflow/mailbox and planbridge resumed execution remain unsupported until their owners provide graph restore evidence.
+
 ## Host capability 与 mailbox plan bridge
 
 调用 `orchestration/planbridge` 前先读取 versioned capability manifest；不要

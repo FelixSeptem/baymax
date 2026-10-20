@@ -80,3 +80,56 @@ func TestDefaultCapabilityManifestDeclaresEveryExecutionForm(t *testing.T) {
 		}
 	}
 }
+
+func TestContinuationManifestDefaultCellsHaveStableSourceLimitations(t *testing.T) {
+	manifest := DefaultCapabilityManifest()
+	if manifest.SchemaVersion != "host_runtime_capability_manifest.v1" {
+		t.Fatal("additive continuation declarations changed manifest version")
+	}
+	for _, entry := range manifest.Forms {
+		want := "composite_graph_restore_unsupported"
+		if entry.Form == ExecutionFormDirect {
+			want = "durable_source_not_configured"
+		}
+		for dimension, state := range map[string]CapabilityState{
+			"checkpoint_creation": entry.CheckpointCreation, "cross_process_restore": entry.CrossProcessRestore,
+			"input_required": entry.InputRequired, "approval_required": entry.ApprovalRequired, "budget_exhausted": entry.BudgetExhausted,
+		} {
+			if state != CapabilityUnsupported || entry.UnsupportedReasons[dimension] != want {
+				t.Errorf("%s.%s = %q (%q), want unsupported (%q)", entry.Form, dimension, state, entry.UnsupportedReasons[dimension], want)
+			}
+		}
+	}
+}
+
+func TestContinuationManifestRejectsUnsupportedEvidencePromotion(t *testing.T) {
+	for _, form := range []ExecutionForm{ExecutionFormDirect, ExecutionFormSubagent, ExecutionFormTeam, ExecutionFormWorkflow, ExecutionFormMailboxAsync} {
+		for _, dimension := range []string{"checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted"} {
+			t.Run(string(form)+"/"+dimension, func(t *testing.T) {
+				manifest := DefaultCapabilityManifest()
+				for i := range manifest.Forms {
+					entry := &manifest.Forms[i]
+					if entry.Form != form {
+						continue
+					}
+					switch dimension {
+					case "checkpoint_creation":
+						entry.CheckpointCreation = CapabilitySupported
+					case "cross_process_restore":
+						entry.CrossProcessRestore = CapabilitySupported
+					case "input_required":
+						entry.InputRequired = CapabilitySupported
+					case "approval_required":
+						entry.ApprovalRequired = CapabilitySupported
+					case "budget_exhausted":
+						entry.BudgetExhausted = CapabilitySupported
+					}
+					entry.EvidenceReference = "package:core/runner"
+				}
+				if _, err := NewCapabilityManifestReader(manifest); err == nil {
+					t.Fatal("accepted supported continuation cell with only package-presence evidence")
+				}
+			})
+		}
+	}
+}

@@ -75,10 +75,18 @@ const (
 type Error struct {
 	Code  Code
 	Field string
-	cause error
+	// Limitation identifies a stable unsupported boundary independently of
+	// the human-readable error. Empty retains the original v1 error format.
+	Limitation string
+	cause      error
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("host execution plan: %s at %s", e.Code, e.Field) }
+func (e *Error) Error() string {
+	if e.Limitation != "" {
+		return fmt.Sprintf("host execution plan: %s at %s (%s)", e.Code, e.Field, e.Limitation)
+	}
+	return fmt.Sprintf("host execution plan: %s at %s", e.Code, e.Field)
+}
 func (e *Error) Unwrap() error { return e.cause }
 func fail(code Code, field string, cause error) error {
 	return &Error{Code: code, Field: field, cause: cause}

@@ -544,15 +544,16 @@ type RunRequest struct {
 }
 
 type RunResult struct {
-	RunID           string            `json:"run_id"`
-	FinalAnswer     string            `json:"final_answer,omitempty"`
-	Iterations      int               `json:"iterations"`
-	ToolCalls       []ToolCallSummary `json:"tool_calls,omitempty"`
-	TokenUsage      TokenUsage        `json:"token_usage"`
-	LatencyMs       int64             `json:"latency_ms"`
-	Warnings        []string          `json:"warnings,omitempty"`
-	Error           *ClassifiedError  `json:"error,omitempty"`
-	TerminalOutcome *TerminalOutcome  `json:"terminal_outcome,omitempty"`
+	NativeCheckpoint *NativeCheckpointRef `json:"native_checkpoint,omitempty"`
+	RunID            string               `json:"run_id"`
+	FinalAnswer      string               `json:"final_answer,omitempty"`
+	Iterations       int                  `json:"iterations"`
+	ToolCalls        []ToolCallSummary    `json:"tool_calls,omitempty"`
+	TokenUsage       TokenUsage           `json:"token_usage"`
+	LatencyMs        int64                `json:"latency_ms"`
+	Warnings         []string             `json:"warnings,omitempty"`
+	Error            *ClassifiedError     `json:"error,omitempty"`
+	TerminalOutcome  *TerminalOutcome     `json:"terminal_outcome,omitempty"`
 }
 
 type ModelRequest struct {

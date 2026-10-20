@@ -1,5 +1,9 @@
 # core/types 组件说明
 
+## Checkpoint contract compatibility（提案中）
+
+现有 metadata-oriented `RunCheckpointStore` API 保持兼容。独立 `native_continuation.v1` DTO/extension 提供 bounded identity/digest/expiry/causality reference；source owner 同时持久化有界 private continuation material，并以摘要、依赖 profile/revision 和原子 claim 校验后恢复。reference 不含 tool arguments/results；存储应按执行数据保护。direct 三类 pause reason 有跨进程证据；composite forms 与 planbridge resumed 仍不支持。
+
 ## 功能域
 
 `core/types` 定义跨模块共享契约，是 Baymax 的稳定接口层：

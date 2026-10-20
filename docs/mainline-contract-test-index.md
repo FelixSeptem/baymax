@@ -1,5 +1,9 @@
 # Mainline Contract Test Index
 
+## Durable native continuation restore
+
+Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. These tests verify source digest/binding, atomic claim, retained result, dependency profile, tool outcome preservation, and fail-closed errors. Child/team/workflow/mailbox/planbridge resumed remain unsupported and are rejected before activation. Offline lifecycle fixtures and shell/PowerShell gates are tracked with the active Spec 3 change; they are not a substitute for the source-process tests.
+
 ## Host resume admission revalidation
 
 `host_resume_admission.v1` opt-in guard 已在 source runner 接线；默认关闭，nil verifier fail-closed。公开 API、limits、错误与恢复范围见 [指南](guides/host-resume-admission.md)。以下文件是实际验收入口，完整代码门禁状态以 change verification.md 为准。

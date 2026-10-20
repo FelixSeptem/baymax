@@ -1,5 +1,9 @@
 # core/runner 组件说明
 
+## Durable continuation restore（提案中）
+
+既有 metadata checkpoint 与 Engine-local dynamic-action 状态仍不能在新 Engine 恢复。opt-in `WithNativeContinuation` 为 direct Run/Stream 写入 `native_continuation.v1` source checkpoint；`ResumeFromCheckpoint` 校验依赖 profile/revision、host admission 与原子 claim 后恢复同一 run/session。`input_required`、`approval_required`、`budget_exhausted` 均有跨进程证据；已完成 tool outcome 保留，不得通过 retry 或重新 Run parent 替代恢复。child/team/workflow/mailbox 与 planbridge resumed 仍在 activation 前 unsupported。
+
 ## 功能域
 
 `core/runner` 是 Baymax 主循环引擎，统一实现：

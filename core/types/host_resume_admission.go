@@ -45,12 +45,24 @@ func (r HostResumeReason) Valid() bool {
 
 // HostResumeRequest is a detached source snapshot, never an authority claim.
 type HostResumeRequest struct {
-	Version    string                `json:"version"`
-	Checkpoint RunCheckpoint         `json:"checkpoint"`
-	Decision   DynamicActionDecision `json:"decision"`
+	// NativeCheckpoint selects durable source restoration. The legacy
+	// Checkpoint projection is loaded from the source before host revalidation.
+	NativeCheckpoint *NativeCheckpointRef  `json:"native_checkpoint,omitempty"`
+	NativeBudget     *DurableBudget        `json:"native_budget,omitempty"`
+	Version          string                `json:"version"`
+	Checkpoint       RunCheckpoint         `json:"checkpoint"`
+	Decision         DynamicActionDecision `json:"decision"`
 }
 
 func (r HostResumeRequest) Detached() HostResumeRequest {
+	if r.NativeCheckpoint != nil {
+		v := *r.NativeCheckpoint
+		r.NativeCheckpoint = &v
+	}
+	if r.NativeBudget != nil {
+		v := *r.NativeBudget
+		r.NativeBudget = &v
+	}
 	r.Checkpoint.ToolResultRefs = append([]string(nil), r.Checkpoint.ToolResultRefs...)
 	if r.Checkpoint.PendingAction != nil {
 		a := *r.Checkpoint.PendingAction

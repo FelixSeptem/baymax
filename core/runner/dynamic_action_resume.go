@@ -88,7 +88,7 @@ func (e *Engine) dynamicActionFromOutcomes(outcomes []types.ToolCallOutcome, run
 	return types.DynamicActionReference{}, false, nil
 }
 
-func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest, h types.EventHandler, control *ActiveRunControl, ref types.DynamicActionReference, outcomes []types.ToolCallOutcome, iteration int, stream bool, seq *int64, gateStats *actionGateStats) types.RunResult {
+func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest, h types.EventHandler, control *ActiveRunControl, ref types.DynamicActionReference, outcomes []types.ToolCallOutcome, iteration int, stream bool, seq *int64, gateStats *actionGateStats) (types.RunResult, error) {
 	if control == nil {
 		// Plain Run/Stream deliberately do not expose host controls by default.
 		// Once a tool registers a dynamic action, retain a dedicated control for
@@ -109,7 +109,18 @@ func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest
 	}
 	checkpoint = (types.HostResumeRequest{Checkpoint: checkpoint}).Detached().Checkpoint
 	if err := checkpoint.Validate(); err != nil {
-		return types.RunResult{RunID: ref.RunID, Iterations: iteration, Error: classified(types.ErrTool, err.Error(), false)}
+		return types.RunResult{RunID: ref.RunID, Iterations: iteration, Error: classified(types.ErrTool, err.Error(), false)}, err
+	}
+	if x := nativeExecutionFrom(ctx); x != nil {
+		x.Request = req
+		x.Request.RunID = ref.RunID
+	}
+	nativeRef, err := e.persistNativePause(ctx, checkpoint, outcomes, nil, types.PauseReasonInputRequired, stream)
+	if err != nil {
+		return types.RunResult{RunID: ref.RunID}, err
+	}
+	if x := nativeExecutionFrom(ctx); nativeRef != nil && x.predecessor == nil {
+		e.emitNativeLifecycle(ctx, h, "run.checkpoint.persisted", *nativeRef, "")
 	}
 	e.dynamicActionMu.Lock()
 	e.dynamicCheckpoints[ref.RunID] = dynamicActionCheckpoint{checkpoint: checkpoint, request: req, outcomes: append([]types.ToolCallOutcome(nil), outcomes...), stream: stream, generation: generation}
@@ -126,16 +137,20 @@ func (e *Engine) pauseForDynamicAction(ctx context.Context, req types.RunRequest
 	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.input_required", RunID: ref.RunID, Iteration: iteration, Time: e.now(), Payload: map[string]any{
 		"reason": "dynamic_action", "action_kind": ref.Kind, "action_token": ref.Token, "checkpoint_id": checkpoint.CheckpointID, "checkpoint_version": checkpoint.Version, "checkpoint_digest": checkpoint.Digest,
 	}})
-	result := types.RunResult{RunID: ref.RunID, Iterations: iteration, ToolCalls: nil, TerminalOutcome: &types.TerminalOutcome{
+	result := types.RunResult{NativeCheckpoint: nativeRef, RunID: ref.RunID, Iterations: iteration, ToolCalls: nil, TerminalOutcome: &types.TerminalOutcome{
 		RunID: ref.RunID, SessionID: ref.SessionID, State: types.RunStateInputRequired, FailureFamily: types.FailureFamilyNone, Phase: types.ExecutionPhasePostStart, Resumable: true,
 		PendingAction: &ref, CheckpointID: checkpoint.CheckpointID, CheckpointVersion: checkpoint.Version, CheckpointDigest: checkpoint.Digest,
 	}}
+	if x := nativeExecutionFrom(ctx); x != nil {
+		result.ToolCalls = x.Calls
+		result.TokenUsage = x.Usage
+	}
 	e.emit(ctx, h, types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: ref.RunID, Iteration: iteration, Time: e.now(), Payload: runFinishedPayload(result, "input_required", "", runFinishMeta{
 		GateChecks: gateStatsValue(gateStats), DynamicActionCount: 1, DynamicActionReferenceDigest: ref.Digest,
 		DynamicActionCheckpointID: checkpoint.CheckpointID, DynamicActionCheckpointVersion: checkpoint.Version,
 		DynamicActionCheckpointDigest: checkpoint.Digest, DynamicActionPauseReason: "dynamic_action.input_required_same_run",
 	})})
-	return result
+	return result, nil
 }
 
 func gateStatsValue(stats *actionGateStats) int {
@@ -160,6 +175,30 @@ func (c *ActiveRunControl) dynamicActionPaused() bool {
 func (e *Engine) ResumeDynamicAction(ctx context.Context, decision types.DynamicActionDecision, h types.EventHandler, stream bool) (types.RunResult, error) {
 	if e == nil {
 		return types.RunResult{}, ErrDynamicActionUnknown
+	}
+	if e.nativeOptions != nil {
+		if err := decision.Validate(); err != nil {
+			return types.RunResult{}, err
+		}
+		decision = decision.Normalized()
+		e.nativeMu.Lock()
+		ref, ok := e.nativeLegacyRefs[decision.CheckpointID]
+		e.nativeMu.Unlock()
+		if !ok || e.nativeOptions.Store == nil {
+			return types.RunResult{}, types.ErrCheckpointConflict
+		}
+		p, err := e.nativeOptions.Store.Load(ctx, ref)
+		if err != nil {
+			return types.RunResult{}, err
+		}
+		// Legacy callers submit the compatibility projection. Validate it before
+		// translating to the source-owned native reference.
+		cp := p.Checkpoint
+		if decision.RunID != ref.RunID || decision.SessionID != ref.SessionID || decision.CheckpointID != cp.CheckpointID || decision.CheckpointVersion != cp.Version || decision.CheckpointDigest != cp.Digest {
+			return types.RunResult{}, types.ErrCheckpointConflict
+		}
+		decision.CheckpointID, decision.CheckpointVersion, decision.CheckpointDigest = ref.CheckpointID, ref.SchemaVersion, ref.Digest
+		return e.ResumeFromCheckpoint(ctx, types.HostResumeRequest{NativeCheckpoint: &ref, Decision: decision}, h, stream)
 	}
 	if err := decision.Validate(); err != nil {
 		return types.RunResult{}, err
@@ -307,6 +346,11 @@ func (e *Engine) revalidateHostResume(ctx context.Context, r types.HostResumeReq
 	if callbackErr != nil || ctx.Err() != nil {
 		return types.HostResumeRevalidationFailed
 	}
+	if ref := r.NativeCheckpoint; ref != nil {
+		if ref.AuthorityDigest != "" && ref.AuthorityDigest != x.Binding.AuthorityDigest || ref.PlanDigest != "" && ref.PlanDigest != x.Binding.Plan.Digest || ref.WriteScopeDigest != "" && ref.WriteScopeDigest != x.Binding.WriteScopeDigest {
+			return types.HostResumeBindingMismatch
+		}
+	}
 	return types.ValidateHostResumeResult(r, x)
 }
 
@@ -334,7 +378,7 @@ func (e *Engine) emitDynamicActionCanceled(ctx context.Context, h types.EventHan
 func (e *Engine) runWithPending(ctx context.Context, req types.RunRequest, outcomes []types.ToolCallOutcome, h types.EventHandler) (types.RunResult, error) {
 	// The normal Run loop consumes the stored checkpoint outcomes at its first
 	// model boundary. Keeping this helper separate makes the resume path explicit.
-	return e.Run(context.WithValue(ctx, dynamicPendingOutcomesKey{}, outcomes), req, h)
+	return e.run(context.WithValue(ctx, dynamicPendingOutcomesKey{}, outcomes), req, h)
 }
 
 func (e *Engine) streamReactWithPending(ctx context.Context, req types.RunRequest, outcomes []types.ToolCallOutcome, h types.EventHandler) (types.RunResult, error) {

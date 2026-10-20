@@ -75,6 +75,7 @@ type Engine struct {
 	handoffRestored     map[string]handoff.RestoreResult
 	activeRunState
 	dynamicActionState
+	nativeContinuationState
 }
 
 type cachedCapabilities struct {
@@ -315,6 +316,14 @@ func WithSecurityAlertCallback(callback types.SecurityAlertCallback) Option {
 
 // Run executes a non-streaming agent loop and returns a final run result.
 func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	ctx, req, err := e.prepareNativeContinuation(ctx, req)
+	if err != nil {
+		return types.RunResult{}, err
+	}
+	return e.run(ctx, req, h)
+}
+
+func (e *Engine) run(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
 	runtimeCfg := e.runtimeEffectiveConfigSnapshot()
 	policy := resolvePolicy(req.Policy)
 	policy = e.applyRuntimeDefaults(policy, req.Policy, runtimeCfg)
@@ -343,6 +352,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	state := StateInit
 	iteration, _ := ctx.Value(dynamicResumeIterationKey{}).(int)
 	lastResponse := types.ModelResponse{}
+	if x := nativeExecutionFrom(ctx); x != nil && x.restored && len(x.PendingCalls) > 0 {
+		state = StateDecideNext
+		lastResponse.ToolCalls = x.PendingCalls
+		x.PendingCalls = nil
+	}
 	warnings := make([]string, 0)
 	mergedCalls := make([]types.ToolCallSummary, 0)
 	pendingOutcomes := make([]types.ToolCallOutcome, 0)
@@ -365,6 +379,11 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
 	e.bindActiveRun(control, realtimeRuntime)
 	reactToolCallTotal := 0
+	if x := nativeExecutionFrom(ctx); x != nil && x.restored {
+		reactToolCallTotal = x.ToolCalls
+		mergedCalls = x.Calls
+		start = x.StartedAt
+	}
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
 	reactTerminationReason := ""
@@ -435,6 +454,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 		switch state {
 		case StateInit:
 			if iteration >= policy.MaxIterations {
+				if x := nativeExecutionFrom(ctx); x != nil && e.nativeOptions.Budget {
+					return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonBudgetExhausted, nil, pendingOutcomes, iteration, false, reactToolCallTotal, mergedCalls, lastResponse.Usage)
+				}
 				terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 				runErr = errors.New(terminal.Message)
 				reactIterationBudgetHitTotal++
@@ -443,6 +465,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			}
 			state = StateModelStep
 		case StateModelStep:
+			if x := nativeExecutionFrom(ctx); x != nil && iteration >= policy.MaxIterations && e.nativeOptions.Budget {
+				return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonBudgetExhausted, nil, pendingOutcomes, iteration, false, reactToolCallTotal, mergedCalls, lastResponse.Usage)
+			}
 			iteration++
 			if reactPlanNotebook != nil {
 				planAction := reactPlanActionCreate
@@ -576,6 +601,12 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				resp.FinalAnswer = filteredOutput
 			}
 			lastResponse = resp
+			if x := nativeExecutionFrom(ctx); x != nil {
+				x.Usage.InputTokens += resp.Usage.InputTokens
+				x.Usage.OutputTokens += resp.Usage.OutputTokens
+				x.Usage.TotalTokens += resp.Usage.TotalTokens
+				lastResponse.Usage = x.Usage
+			}
 			if realtimeRuntime != nil && strings.TrimSpace(resp.FinalAnswer) != "" {
 				realtimeRuntime.emitDelta(ctx, h, iteration, resp.FinalAnswer)
 			}
@@ -626,7 +657,7 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 			}
 			state = StateDecideNext
 		case StateDecideNext:
-			if iteration >= policy.MaxIterations {
+			if iteration >= policy.MaxIterations && (nativeExecutionFrom(ctx) == nil || !e.nativeOptions.Budget) {
 				terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 				runErr = errors.New(terminal.Message)
 				reactIterationBudgetHitTotal++
@@ -654,6 +685,9 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				continue
 			}
 			if policy.ToolCallLimit > 0 && reactToolCallTotal+len(lastResponse.ToolCalls) > policy.ToolCallLimit {
+				if x := nativeExecutionFrom(ctx); x != nil && e.nativeOptions.Budget {
+					return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonBudgetExhausted, lastResponse.ToolCalls, nil, iteration, false, reactToolCallTotal, mergedCalls, lastResponse.Usage)
+				}
 				terminal = classified(types.ErrIterationLimit, "tool call limit exceeded", false)
 				runErr = errors.New(terminal.Message)
 				reactToolCallBudgetHitTotal++
@@ -702,6 +736,10 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				reactToolDispatchOptions{FailOnToolRuntimeDisabled: false},
 			)
 			if dispatchTerminal != nil {
+				var approval nativeApprovalPause
+				if errors.As(dispatchErr, &approval) {
+					return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonApprovalRequired, lastResponse.ToolCalls, nil, iteration, false, reactToolCallTotal, mergedCalls, lastResponse.Usage)
+				}
 				terminal = dispatchTerminal
 				runErr = dispatchErr
 				state = StateAbort
@@ -711,14 +749,20 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 				state = StateModelStep
 				continue
 			}
+			if x := nativeExecutionFrom(ctx); x != nil {
+				x.approved = false
+			}
 			if ref, pause, actionErr := e.dynamicActionFromOutcomes(dispatchResult.Outcomes, runID, req.SessionID, iteration); actionErr != nil {
 				terminal = classified(types.ErrTool, actionErr.Error(), false)
 				runErr = actionErr
 				state = StateAbort
 				continue
 			} else if pause {
-				result := e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, false, &timelineSeq, &gateStats)
-				return result, nil
+				if x := nativeExecutionFrom(ctx); x != nil {
+					x.ToolCalls = reactToolCallTotal + len(lastResponse.ToolCalls)
+					x.Calls = mergedCalls
+				}
+				return e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, false, &timelineSeq, &gateStats)
 			}
 			hookTerminal, hookErr = e.runLifecycleHooks(
 				ctx,
@@ -1042,6 +1086,10 @@ func (e *Engine) Run(ctx context.Context, req types.RunRequest, h types.EventHan
 }
 
 func (e *Engine) Stream(ctx context.Context, req types.RunRequest, h types.EventHandler) (types.RunResult, error) {
+	ctx, req, err := e.prepareNativeContinuation(ctx, req)
+	if err != nil {
+		return types.RunResult{}, err
+	}
 	return e.streamReact(ctx, req, h)
 }
 
@@ -1563,6 +1611,12 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 	realtimeRuntime := e.newRealtimeSessionRuntime(runID, req)
 	e.bindActiveRun(control, realtimeRuntime)
 	reactToolCallTotal := 0
+	if x := nativeExecutionFrom(ctx); x != nil && x.restored {
+		reactToolCallTotal = x.ToolCalls
+		mergedCalls = x.Calls
+		usage = x.Usage
+		start = x.StartedAt
+	}
 	reactToolCallBudgetHitTotal := 0
 	reactIterationBudgetHitTotal := 0
 	reactTerminationReason := ""
@@ -1626,156 +1680,171 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			break
 		}
 		e.applyRuntimeInputSafePoint(ctx, h, &req, control)
-		if iteration >= policy.MaxIterations {
+		x := nativeExecutionFrom(ctx)
+		var pendingCalls []types.ToolCall
+		if x != nil && x.restored {
+			pendingCalls = x.PendingCalls
+			x.PendingCalls = nil
+		}
+		if len(pendingCalls) == 0 && iteration >= policy.MaxIterations {
+			if x != nil && e.nativeOptions.Budget {
+				return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonBudgetExhausted, nil, pendingOutcomes, iteration, true, reactToolCallTotal, mergedCalls, usage)
+			}
 			terminal = classified(types.ErrIterationLimit, "max iterations reached", false)
 			runErr = errors.New(terminal.Message)
 			reactIterationBudgetHitTotal++
 			break
 		}
 
-		iteration++
-		if reactPlanNotebook != nil {
-			planAction := reactPlanActionCreate
-			planReason := "initial_plan"
-			if reactPlanNotebook.Version > 0 {
-				planAction = reactPlanActionRevise
-				planReason = "react_iteration_boundary"
+		stepResult := streamModelStepResult{ToolCalls: pendingCalls}
+		var hookTerminal *types.ClassifiedError
+		var hookErr error
+		if len(pendingCalls) == 0 {
+			iteration++
+			if reactPlanNotebook != nil {
+				planAction := reactPlanActionCreate
+				planReason := "initial_plan"
+				if reactPlanNotebook.Version > 0 {
+					planAction = reactPlanActionRevise
+					planReason = "react_iteration_boundary"
+				}
+				planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+					ctx,
+					req,
+					runID,
+					iteration,
+					true,
+					reactPlanNotebook,
+					reactCfg.PlanNotebook,
+					reactCfg.PlanChangeHook,
+					planAction,
+					planReason,
+					h,
+					&warnings,
+				)
+				reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
+				if planTerminal != nil {
+					terminal = planTerminal
+					runErr = planErr
+					break
+				}
 			}
-			planTerminal, hookStatus, planErr := e.applyReactPlanNotebookAction(
+			hookTerminal, hookErr = e.runLifecycleHooks(
 				ctx,
 				req,
 				runID,
 				iteration,
 				true,
-				reactPlanNotebook,
-				reactCfg.PlanNotebook,
-				reactCfg.PlanChangeHook,
-				planAction,
-				planReason,
+				types.AgentLifecyclePhaseBeforeReasoning,
+				"",
+				nil,
 				h,
 				&warnings,
 			)
-			reactPlanHookStatus = mergeReactPlanHookStatus(reactPlanHookStatus, hookStatus)
-			if planTerminal != nil {
-				terminal = planTerminal
-				runErr = planErr
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
 				break
 			}
-		}
-		hookTerminal, hookErr := e.runLifecycleHooks(
-			ctx,
-			req,
-			runID,
-			iteration,
-			true,
-			types.AgentLifecyclePhaseBeforeReasoning,
-			"",
-			nil,
-			h,
-			&warnings,
-		)
-		if hookTerminal != nil {
-			terminal = hookTerminal
-			runErr = hookErr
-			break
-		}
-		prepared, prepTerminal, prepErr := e.prepareReactModelStep(
-			ctx,
-			req,
-			runID,
-			iteration,
-			&timelineSeq,
-			pendingOutcomes,
-			true,
-			h,
-			&memoryAggregate,
-			&lastSecurity,
-		)
-		selection := prepared.Selection
-		lastSelection = selection
-		if selection.Provider != "" {
-			selectionPath = append(selectionPath, selection.Provider)
-		}
-		fallbackUsed = fallbackUsed || selection.UsedFallback
-		if prepTerminal != nil {
-			terminal = prepTerminal
-			runErr = prepErr
-			break
-		}
-		selectedModel := prepared.SelectedModel
-		modelReq := prepared.ModelRequest
-		lastAssemble = prepared.AssembleResult
-
-		stepResult, stepErr := e.streamModelStep(
-			ctx,
-			policy,
-			selectedModel,
-			&req,
-			modelReq,
-			h,
-			runID,
-			iteration,
-			&timelineSeq,
-			selection.Provider,
-			selection.UsedFallback,
-			&hitlStats,
-			&lastSecurity,
-			realtimeRuntime,
-		)
-		if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
-			terminal, runErr = classifyRealtimeError(err), err
-			break
-		}
-		e.applyRuntimeInputSafePoint(ctx, h, &req, control)
-		if stepErr != nil && stepResult.Text != "" {
-			final = stepResult.Text
-		}
-		if stepErr != nil {
-			var classifiedErr classifiedModelError
-			var gateErr *actionGateViolationError
-			terminal = classified(types.ErrModel, stepErr.Error(), false)
-			runErr = stepErr
-			var timelineStatus types.ActionStatus
-			var reason string
-			switch {
-			case errors.As(stepErr, &gateErr) && gateErr.ClassifiedError() != nil:
-				terminal = gateErr.ClassifiedError()
-				if gateErr.err != nil {
-					runErr = gateErr.err
-				}
-				timelineStatus, reason = classifyClassifiedTimelineError(terminal)
-			case errors.As(stepErr, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
-				terminal = classifiedErr.ClassifiedError()
-				timelineStatus, reason = classifyClassifiedTimelineError(terminal)
-			case errors.Is(stepErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
-				terminal = classified(types.ErrPolicyTimeout, "model stream canceled", true)
-				timelineStatus, reason = types.ActionStatusCanceled, "cancel.propagated"
-				concurrencyStats.CancelPropagatedCount++
-			case errors.Is(stepErr, context.DeadlineExceeded):
-				terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
-				timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
-			default:
-				timelineStatus, reason = types.ActionStatusFailed, "model_error"
+			prepared, prepTerminal, prepErr := e.prepareReactModelStep(
+				ctx,
+				req,
+				runID,
+				iteration,
+				&timelineSeq,
+				pendingOutcomes,
+				true,
+				h,
+				&memoryAggregate,
+				&lastSecurity,
+			)
+			selection := prepared.Selection
+			lastSelection = selection
+			if selection.Provider != "" {
+				selectionPath = append(selectionPath, selection.Provider)
 			}
-			e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
-			break
-		}
-		hookTerminal, hookErr = e.runLifecycleHooks(
-			ctx,
-			req,
-			runID,
-			iteration,
-			true,
-			types.AgentLifecyclePhaseAfterReasoning,
-			stepResult.Text,
-			stepResult.ToolCalls,
-			h,
-			&warnings,
-		)
-		if hookTerminal != nil {
-			terminal = hookTerminal
-			runErr = hookErr
-			break
+			fallbackUsed = fallbackUsed || selection.UsedFallback
+			if prepTerminal != nil {
+				terminal = prepTerminal
+				runErr = prepErr
+				break
+			}
+			selectedModel := prepared.SelectedModel
+			modelReq := prepared.ModelRequest
+			lastAssemble = prepared.AssembleResult
+
+			var stepErr error
+			stepResult, stepErr = e.streamModelStep(
+				ctx,
+				policy,
+				selectedModel,
+				&req,
+				modelReq,
+				h,
+				runID,
+				iteration,
+				&timelineSeq,
+				selection.Provider,
+				selection.UsedFallback,
+				&hitlStats,
+				&lastSecurity,
+				realtimeRuntime,
+			)
+			if err := e.activeRunSafePoint(ctx, h, control, realtimeRuntime, iteration); err != nil {
+				terminal, runErr = classifyRealtimeError(err), err
+				break
+			}
+			e.applyRuntimeInputSafePoint(ctx, h, &req, control)
+			if stepErr != nil && stepResult.Text != "" {
+				final = stepResult.Text
+			}
+			if stepErr != nil {
+				var classifiedErr classifiedModelError
+				var gateErr *actionGateViolationError
+				terminal = classified(types.ErrModel, stepErr.Error(), false)
+				runErr = stepErr
+				var timelineStatus types.ActionStatus
+				var reason string
+				switch {
+				case errors.As(stepErr, &gateErr) && gateErr.ClassifiedError() != nil:
+					terminal = gateErr.ClassifiedError()
+					if gateErr.err != nil {
+						runErr = gateErr.err
+					}
+					timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+				case errors.As(stepErr, &classifiedErr) && classifiedErr.ClassifiedError() != nil:
+					terminal = classifiedErr.ClassifiedError()
+					timelineStatus, reason = classifyClassifiedTimelineError(terminal)
+				case errors.Is(stepErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+					terminal = classified(types.ErrPolicyTimeout, "model stream canceled", true)
+					timelineStatus, reason = types.ActionStatusCanceled, "cancel.propagated"
+					concurrencyStats.CancelPropagatedCount++
+				case errors.Is(stepErr, context.DeadlineExceeded):
+					terminal = classified(types.ErrPolicyTimeout, "model stream timed out", true)
+					timelineStatus, reason = types.ActionStatusCanceled, "policy_timeout"
+				default:
+					timelineStatus, reason = types.ActionStatusFailed, "model_error"
+				}
+				e.emitTimeline(ctx, h, runID, iteration, &timelineSeq, types.ActionPhaseModel, timelineStatus, reason)
+				break
+			}
+			hookTerminal, hookErr = e.runLifecycleHooks(
+				ctx,
+				req,
+				runID,
+				iteration,
+				true,
+				types.AgentLifecyclePhaseAfterReasoning,
+				stepResult.Text,
+				stepResult.ToolCalls,
+				h,
+				&warnings,
+			)
+			if hookTerminal != nil {
+				terminal = hookTerminal
+				runErr = hookErr
+				break
+			}
 		}
 		filteredCalls, whitelistTerminal, whitelistErr := e.enforceSkillWhitelistForToolCalls(
 			ctx,
@@ -1950,6 +2019,9 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 		}
 
 		if policy.ToolCallLimit > 0 && reactToolCallTotal+len(stepResult.ToolCalls) > policy.ToolCallLimit {
+			if x != nil && e.nativeOptions.Budget {
+				return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonBudgetExhausted, stepResult.ToolCalls, nil, iteration, true, reactToolCallTotal, mergedCalls, usage)
+			}
 			terminal = classified(types.ErrIterationLimit, "tool call limit exceeded", false)
 			runErr = errors.New(terminal.Message)
 			reactToolCallBudgetHitTotal++
@@ -1996,17 +2068,28 @@ func (e *Engine) streamReact(ctx context.Context, req types.RunRequest, h types.
 			reactToolDispatchOptions{FailOnToolRuntimeDisabled: true},
 		)
 		if dispatchTerminal != nil {
+			var approval nativeApprovalPause
+			if errors.As(dispatchErr, &approval) {
+				return e.pauseNativeBoundary(ctx, req, h, control, types.PauseReasonApprovalRequired, stepResult.ToolCalls, nil, iteration, true, reactToolCallTotal, mergedCalls, usage)
+			}
 			terminal = dispatchTerminal
 			runErr = dispatchErr
 			break
+		}
+		if x != nil {
+			x.approved = false
 		}
 		if ref, pause, actionErr := e.dynamicActionFromOutcomes(dispatchResult.Outcomes, runID, req.SessionID, iteration); actionErr != nil {
 			terminal = classified(types.ErrTool, actionErr.Error(), false)
 			runErr = actionErr
 			break
 		} else if pause {
-			result := e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, true, &timelineSeq, &gateStats)
-			return result, nil
+			if x := nativeExecutionFrom(ctx); x != nil {
+				x.ToolCalls = reactToolCallTotal + len(stepResult.ToolCalls)
+				x.Calls = mergedCalls
+				x.Usage = usage
+			}
+			return e.pauseForDynamicAction(ctx, req, h, control, ref, dispatchResult.Outcomes, iteration, true, &timelineSeq, &gateStats)
 		}
 		hookTerminal, hookErr = e.runLifecycleHooks(
 			ctx,
@@ -5308,308 +5391,6 @@ func (s *runtimeConcurrencyStats) AddBackpressureDropByPhase(in map[string]int) 
 		}
 		s.BackpressureDropByPhase[phase] += n
 	}
-}
-
-type actionGateViolationError struct {
-	classified *types.ClassifiedError
-	err        error
-}
-
-func (e *actionGateViolationError) Error() string {
-	if e == nil {
-		return ""
-	}
-	if e.err != nil {
-		return e.err.Error()
-	}
-	if e.classified != nil {
-		return e.classified.Message
-	}
-	return "action gate violation"
-}
-
-func (e *actionGateViolationError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-	return e.err
-}
-
-func (e *actionGateViolationError) ClassifiedError() *types.ClassifiedError {
-	if e == nil {
-		return nil
-	}
-	return e.classified
-}
-
-func (e *Engine) enforceActionGateForToolCalls(
-	ctx context.Context,
-	h types.EventHandler,
-	req types.RunRequest,
-	runID string,
-	iteration int,
-	seq *int64,
-	calls []types.ToolCall,
-	stats *actionGateStats,
-) (*types.ClassifiedError, error) {
-	classifiedActionGate := func(
-		call types.ToolCall,
-		class types.ErrorClass,
-		msg string,
-		retryable bool,
-		reasonCode string,
-	) *types.ClassifiedError {
-		ce := classified(class, msg, retryable)
-		code := strings.ToLower(strings.TrimSpace(reasonCode))
-		if code == "" {
-			code = "action.gate.denied"
-		}
-		details := map[string]any{
-			"policy_kind": "action_gate",
-			"decision":    "deny",
-			"reason_code": code,
-		}
-		if namespaceTool, ok := namespaceToolKey(call.Name); ok {
-			details["namespace_tool"] = namespaceTool
-		}
-		if callID := strings.TrimSpace(call.CallID); callID != "" {
-			details["call_id"] = callID
-		}
-		if tool := strings.TrimSpace(call.Name); tool != "" {
-			details["tool"] = tool
-		}
-		if trace, ok := e.evaluateRuntimePolicyTrace([]runtimeconfig.RuntimePolicyCandidate{
-			{
-				Stage:    runtimeconfig.RuntimePolicyStageActionGate,
-				Code:     code,
-				Source:   runtimeconfig.RuntimePolicyStageActionGate,
-				Decision: runtimeconfig.RuntimePolicyDecisionDeny,
-			},
-		}); ok {
-			if strings.TrimSpace(trace.Version) != "" {
-				details["policy_precedence_version"] = strings.TrimSpace(trace.Version)
-			}
-			if strings.TrimSpace(trace.WinnerStage) != "" {
-				details["winner_stage"] = strings.TrimSpace(trace.WinnerStage)
-			}
-			if strings.TrimSpace(trace.DenySource) != "" {
-				details["deny_source"] = strings.TrimSpace(trace.DenySource)
-			}
-			if strings.TrimSpace(trace.TieBreakReason) != "" {
-				details["tie_break_reason"] = strings.TrimSpace(trace.TieBreakReason)
-			}
-			if len(trace.PolicyDecisionPath) > 0 {
-				details["policy_decision_path"] = append([]runtimeconfig.RuntimePolicyCandidate(nil), trace.PolicyDecisionPath...)
-			}
-		}
-		ce.Details = details
-		return ce
-	}
-
-	for _, call := range calls {
-		check := types.ActionGateCheck{
-			RunID:     runID,
-			SessionID: req.SessionID,
-			Iteration: iteration,
-			CallID:    call.CallID,
-			ToolName:  call.Name,
-			Input:     req.Input,
-			Args:      call.Args,
-		}
-		evaluation, err := e.evaluateActionGateDecision(ctx, check)
-		if err != nil {
-			ce := classifiedActionGate(
-				call,
-				types.ErrTool,
-				fmt.Sprintf("action gate evaluate failed: %v", err),
-				false,
-				"action.gate.evaluate_failed",
-			)
-			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-			if stats != nil {
-				stats.Checks++
-				stats.DeniedCount++
-			}
-			return ce, err
-		}
-		if !evaluation.Checked {
-			continue
-		}
-		if stats != nil {
-			stats.Checks++
-			if evaluation.RuleHit {
-				stats.RuleHitCount++
-				stats.RuleLastID = evaluation.RuleID
-			}
-		}
-		if evaluation.RuleHit {
-			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.rule_match")
-		}
-		switch evaluation.Decision {
-		case types.ActionGateDecisionAllow:
-			continue
-		case types.ActionGateDecisionDeny:
-			if stats != nil {
-				stats.DeniedCount++
-			}
-			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-			msg := fmt.Sprintf("action gate denied tool call: %s", strings.TrimSpace(call.Name))
-			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.denied"), errors.New(msg)
-		case types.ActionGateDecisionRequireConfirm:
-			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusPending, "gate.require_confirm")
-			if e.actionGateResolver == nil {
-				if stats != nil {
-					stats.DeniedCount++
-				}
-				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-				msg := fmt.Sprintf("action gate requires confirmation but resolver is not configured: %s", strings.TrimSpace(call.Name))
-				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.resolver_missing"), errors.New(msg)
-			}
-			timeout := e.actionGateTimeout()
-			confirmCtx, cancel := context.WithTimeout(ctx, timeout)
-			approved, confirmErr := e.actionGateResolver.Confirm(confirmCtx, types.ActionGateConfirmRequest{
-				Check:   check,
-				Timeout: timeout,
-			})
-			cancel()
-			if confirmErr != nil || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
-				if errors.Is(confirmErr, context.DeadlineExceeded) || errors.Is(confirmCtx.Err(), context.DeadlineExceeded) {
-					if stats != nil {
-						stats.TimeoutCount++
-						stats.DeniedCount++
-					}
-					e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusCanceled, "gate.timeout")
-					msg := fmt.Sprintf("action gate confirmation timed out for tool: %s", strings.TrimSpace(call.Name))
-					return classifiedActionGate(call, types.ErrPolicyTimeout, msg, true, "action.gate.timeout"), context.DeadlineExceeded
-				}
-				if stats != nil {
-					stats.DeniedCount++
-				}
-				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-				msg := fmt.Sprintf("action gate confirmation failed for tool %s: %v", strings.TrimSpace(call.Name), confirmErr)
-				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_failed"), confirmErr
-			}
-			if !approved {
-				if stats != nil {
-					stats.DeniedCount++
-				}
-				e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-				msg := fmt.Sprintf("action gate confirmation denied tool call: %s", strings.TrimSpace(call.Name))
-				return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.confirmation_denied"), errors.New(msg)
-			}
-		default:
-			if stats != nil {
-				stats.DeniedCount++
-			}
-			e.emitTimeline(ctx, h, runID, iteration, seq, types.ActionPhaseTool, types.ActionStatusFailed, "gate.denied")
-			msg := fmt.Sprintf("action gate returned unsupported decision %q for tool %s", evaluation.Decision, strings.TrimSpace(call.Name))
-			return classifiedActionGate(call, types.ErrTool, msg, false, "action.gate.decision_unsupported"), errors.New(msg)
-		}
-	}
-	return nil, nil
-}
-
-type actionGateEvaluation struct {
-	Decision types.ActionGateDecision
-	Checked  bool
-	RuleHit  bool
-	RuleID   string
-}
-
-func (e *Engine) evaluateActionGateDecision(ctx context.Context, check types.ActionGateCheck) (actionGateEvaluation, error) {
-	if e.actionGateMatcher != nil {
-		decision, err := e.actionGateMatcher.Evaluate(ctx, check)
-		if err != nil {
-			return actionGateEvaluation{}, err
-		}
-		return actionGateEvaluation{
-			Decision: normalizeActionGateDecision(decision),
-			Checked:  true,
-		}, nil
-	}
-	cfg := e.actionGateConfig()
-	if !cfg.Enabled {
-		return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
-	}
-
-	toolName := normalizeToolName(check.ToolName)
-	content := strings.ToLower(strings.TrimSpace(check.Input) + " " + marshalToolArgs(check.Args))
-	defaultDecision := normalizeActionGateDecision(types.ActionGateDecision(cfg.Policy))
-	for _, rule := range cfg.ParameterRules {
-		if !ruleAppliesToTool(rule, toolName) {
-			continue
-		}
-		matched, err := evaluateRuleCondition(rule.Condition, check.Args)
-		if err != nil {
-			return actionGateEvaluation{}, err
-		}
-		if !matched {
-			continue
-		}
-		decision := defaultDecision
-		if strings.TrimSpace(string(rule.Action)) != "" {
-			decision = normalizeActionGateDecision(rule.Action)
-		}
-		return actionGateEvaluation{
-			Decision: decision,
-			Checked:  true,
-			RuleHit:  true,
-			RuleID:   strings.TrimSpace(rule.ID),
-		}, nil
-	}
-
-	if policy, ok := cfg.DecisionByTool[toolName]; ok {
-		return actionGateEvaluation{
-			Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
-			Checked:  true,
-		}, nil
-	}
-	segments := strings.Split(toolName, ".")
-	if len(segments) > 1 {
-		shortName := strings.TrimSpace(segments[len(segments)-1])
-		if policy, ok := cfg.DecisionByTool[shortName]; ok {
-			return actionGateEvaluation{
-				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
-				Checked:  true,
-			}, nil
-		}
-	}
-
-	for _, tool := range cfg.ToolNames {
-		normalized := normalizeToolName(tool)
-		if normalized == "" {
-			continue
-		}
-		if normalized == toolName {
-			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
-		}
-		if len(segments) > 1 && normalized == strings.TrimSpace(segments[len(segments)-1]) {
-			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
-		}
-	}
-
-	for keyword, policy := range cfg.DecisionByWord {
-		kw := strings.ToLower(strings.TrimSpace(keyword))
-		if kw == "" {
-			continue
-		}
-		if strings.Contains(content, kw) {
-			return actionGateEvaluation{
-				Decision: normalizeActionGateDecision(types.ActionGateDecision(policy)),
-				Checked:  true,
-			}, nil
-		}
-	}
-	for _, keyword := range cfg.Keywords {
-		kw := strings.ToLower(strings.TrimSpace(keyword))
-		if kw == "" {
-			continue
-		}
-		if strings.Contains(content, kw) {
-			return actionGateEvaluation{Decision: defaultDecision, Checked: true}, nil
-		}
-	}
-	return actionGateEvaluation{Decision: types.ActionGateDecisionAllow}, nil
 }
 
 func ruleAppliesToTool(rule types.ActionGateParameterRule, toolName string) bool {

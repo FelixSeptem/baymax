@@ -8,6 +8,10 @@ import (
 
 // Public pause and duplicate results must not expose source-owned state.
 func detachedDynamicActionResult(r types.RunResult) types.RunResult {
+	if r.NativeCheckpoint != nil {
+		ref := *r.NativeCheckpoint
+		r.NativeCheckpoint = &ref
+	}
 	r.Warnings = append([]string(nil), r.Warnings...)
 	r.ToolCalls = append([]types.ToolCallSummary(nil), r.ToolCalls...)
 	for i := range r.ToolCalls {

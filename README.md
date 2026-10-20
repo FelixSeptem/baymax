@@ -43,6 +43,7 @@ go run ./examples/01-chat-minimal
 - `remediate-strict-security-vulnerabilities`（归档 163；[安全维护提案](openspec/changes/archive/163-remediate-strict-security-vulnerabilities/proposal.md)）：已完成 Go patched toolchain 与严格漏洞扫描最小依赖图升级，保持 strict 扫描策略，并以双入口完整质量门禁验证收口。开发环境基线见 [贡献指南](CONTRIBUTING.md)。
 - `establish-application-outbox-mailbox-recovery-contract`（归档 166；[提案](openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/proposal.md)）：已交付 `application_outbox_dispatch.v1` 的显式 opt-in、reference-only `orchestration/outboxbridge`，复用 mailbox/scheduler 原生 owner，包含离线示例、replay fixture、Run/Stream conformance 与双平台 contract gate；不能把 dispatch acceptance 当作业务提交。
 - `retain-source-native-event-history-and-cursor-replay`（Spec 2；BXM-2，归档 168）：已交付既有 mailbox owner 的 source-owned retained history 与只读 cursor replay；runner/child/team/workflow 仍显式 unsupported。
+- `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
 
 最近归档：
 

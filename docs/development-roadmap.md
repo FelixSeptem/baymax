@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-19
+更新时间：2026-10-20
 
 ## 定位
 
@@ -15,6 +15,8 @@ Baymax 主线保持 `library-first + contract-first`：
 ## 当前状态
 
 - 进行中：无。
+
+已归档 170：`evaluate-bounded-harness-candidate-comparisons`（13/13 tasks；Harness² 候选对比评测契约），四组增量要求已同步到评测主规格。
 
 已归档 169：`persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4）。direct 跨进程 checkpoint/claim/restore、三类 pause reason、离线示例与完整门禁已完成并同步主规格；child/team/workflow/mailbox 和 planbridge resumed 保持 unsupported，composite graph restore 留待后续逐 owner 增量提案。
 
@@ -264,6 +266,24 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 - **可复现实验交付**：将环境与依赖锁定、外部依赖版本、成功/外部复现/未完成状态、fixture manifest、验证记录和 CI 影响范围明确分开；源码存在或安装成功不等于实验验收完成。复用现有 docs consistency、quality gate、contract/replay index 和 package-level test 纪律，不建设另一套实验平台或长期原始轨迹存储。
 
 2026-10-01 的本轮校准未新增其他候选；当时没有真实 confirmed drift，原 provider projection remediation 方向已撤回。OpenAI-compatible endpoint profile conformance 此后已归档为 157；2026-10-10 新增的宿主执行候选来自 Danny 集成需求，见上节，不属于本轮教学仓库研究结论。
+
+### Harness² 递归 Harness 调研校准（2026-10-20）
+
+研究基线固定为 `google-research/harness2@1cfe254e8d25b15f37048c3730134686abe60335`。Harness² 是 Python 实验框架，不是 Baymax runtime 或托管控制面；它把 prompt、Skill、脚本、子 agent 与 hooks 组成可校验的 Harness surface，通过 **Propose–Probe–Compose** 在同一任务上提出候选、实际执行候选、再基于行为差异组合方案，并把带证据的经验保存到按领域隔离的 library。该方法可以补充 Baymax 现有的 OTel/eval、corpus/Badcase/experiment、continuity comparison、能力资产 provenance 和 review-only feedback，但不能改变现有执行 owner 或公开运行时契约。
+
+- **可吸收：受约束的候选 surface**：借鉴 `SurfaceSpec` 的显式可修改路径、大小上限、命名规则和静态校验；候选必须绑定资产 stable identity/version/digest、authority、write scope、预算和回滚引用。候选生成器不拥有执行、发布、恢复或诊断写入。
+- **可吸收：执行差异而非自述作为证据**：为同一任务保留不可变 baseline，并在相同模型、权限、数据、预算和网络策略下执行 invariant/domain 候选；比较交付物、过程事实、首错、质量、可靠性、时延和单位成功任务成本。允许选择 baseline，候选未证明优于 baseline 时不得被自动采用。
+- **可吸收：选择、评分和经验分层**：选择阶段只读取匿名化、脱敏的候选产物和 bounded evidence；最终评分在选择提交后独立进行；评分失败保持 `unavailable/insufficient-evidence`，不折算为零。被采用的资产、选择理由、适用条件、证据引用、失败样本和撤回信息才能形成 review-only 经验条目。
+- **可吸收：实验身份与成本账本**：记录候选、组合、重试、缓存命中、模型调用、总费用和完成状态，并将每个结果绑定 Harness digest 与实验配置，避免跨配置复用。该账本只服务评测和准入证据，不替代 runtime budget、scheduler lease、mailbox delivery 或 source terminal owner。
+- **必须补齐的评测隔离**：Harness² 文档记录执行器可能从网络获取 benchmark rubric；文件名/内容过滤不足以证明无答案泄漏。Baymax 的候选实验必须固定 egress、评分数据可见性、fixture manifest 和评测器边界，并在报告中记录隔离策略。
+
+首阶段只建议做一个有界、离线优先的候选对比实验：选择已有可复现 Badcase，固定执行配置，限制修改到 prompt/Skill 等少数资产，比较 baseline、重复执行择优和 Propose–Probe–Compose 的质量/成本/契约回归。只有该实验暴露新的、可复现的 owner gap，才从既有 `evalcontract`、`tool/diagnosticsreplay`、能力资产 provenance 或 simulation owner 发起增量 OpenSpec；本轮不新增独立候选，不建设长期原始轨迹存储或另一套实验平台。
+
+已归档提案：`evaluate-bounded-harness-candidate-comparisons`，归档序号 170（13/13 tasks）；已落地 `candidate_experiment.v1` / `candidate_comparison.v1` 的离线 manifest、scope admission、固定身份 drift、baseline-preserving selection、评分隔离、逐 attempt 成本证据，以及七类版本化 fixture、legacy/idempotency replay 和双平台专项门禁。全量质量门禁 83 步通过，包含 tests、race、lint、语义稳定性、性能回归、full-chain smoke 和严格安全扫描；验证证据见 `openspec/changes/archive/170-evaluate-bounded-harness-candidate-comparisons/tasks.md`。公开语义见 `docs/evaluation-contract.md`。范围仍限定为既有 evaluation corpus/Badcase/experiment contract 的增量，不包含生产执行或候选自动发布；新发现的可复现 owner gap 必须另行提出增量 OpenSpec。
+
+**明确不吸收**：不把实验 resume/完成标记当作 BXM-3 native checkpoint restore；不把并行候选的稳定记录顺序当作跨 child/team 的 source event order；不允许模型自审批、自发布或自动修改 prompt、Skill、tool、policy、memory、配置、测试和 gate；不建设动态下载、registry/marketplace、远程控制面、第二 scheduler/mailbox owner、第二 event journal 或生产 executor。BXM-1 至 BXM-5 的 source-owned mailbox、history、checkpoint、continuation 和 capability manifest 仍以各自 owner 与已归档 OpenSpec 为准。
+
+Example Impact Assessment：`无需示例变更（附理由）`。本节只记录外部项目研究吸收与受控实验准入边界，不改变 `examples/agent-modes` 的配置、runtime path、expected markers 或公开运行时语义。
 
 ### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
 

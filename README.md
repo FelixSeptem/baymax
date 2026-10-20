@@ -44,6 +44,7 @@ go run ./examples/01-chat-minimal
 - `establish-application-outbox-mailbox-recovery-contract`（归档 166；[提案](openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/proposal.md)）：已交付 `application_outbox_dispatch.v1` 的显式 opt-in、reference-only `orchestration/outboxbridge`，复用 mailbox/scheduler 原生 owner，包含离线示例、replay fixture、Run/Stream conformance 与双平台 contract gate；不能把 dispatch acceptance 当作业务提交。
 - `retain-source-native-event-history-and-cursor-replay`（Spec 2；BXM-2，归档 168）：已交付既有 mailbox owner 的 source-owned retained history 与只读 cursor replay；runner/child/team/workflow 仍显式 unsupported。
 - `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
+- `evaluate-bounded-harness-candidate-comparisons`（已归档 170）：已落地离线、review-only 的候选实验身份、scope admission、baseline selection、评分隔离、逐 attempt 成本证据与只读 replay；七类 fixture、legacy/idempotency replay、双平台专项门禁及全量质量门禁已通过。契约与使用边界见 [评测契约](docs/evaluation-contract.md)。
 
 最近归档：
 

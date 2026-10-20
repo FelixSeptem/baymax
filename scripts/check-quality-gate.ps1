@@ -727,6 +727,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-mailbox-plan-bridge-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] candidate comparison contract suites"
+        Command   = { pwsh -File scripts/check-candidate-comparison-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] embedded host contract suites"
         Command   = { pwsh -File scripts/check-embedded-host-contract.ps1 }
     },

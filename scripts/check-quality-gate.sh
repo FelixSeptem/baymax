@@ -280,6 +280,11 @@ if ! bash scripts/check-mailbox-plan-bridge-contract.sh; then
   echo "[quality-gate][mailbox-plan-bridge-contract] mailbox plan bridge contract suites failed" >&2
   exit 1
 fi
+echo "[quality-gate] candidate comparison contract suites"
+if ! bash scripts/check-candidate-comparison-contract.sh; then
+  echo "[quality-gate][candidate-comparison-contract] candidate comparison contract suites failed" >&2
+  exit 1
+fi
 echo "[quality-gate] embedded host contract suites"
 echo "[quality-gate] host resume admission contract suites"
 bash scripts/check-host-resume-admission-contract.sh

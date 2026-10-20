@@ -1,0 +1,146 @@
+{
+  "version": "candidate_comparison.v1",
+  "input": {
+    "version": "candidate_comparison.v1",
+    "experiment": {
+      "version": "candidate_experiment.v1",
+      "id": "exp-1",
+      "corpus_version": "evaluation_corpus.v1",
+      "corpus_item_id": "item-1",
+      "rubric_version": "rubric-v1",
+      "rubric_digest": "rubric-digest",
+      "model": "model-v1",
+      "authority_digest": "authority-digest",
+      "data_digest": "data-digest",
+      "budget": {
+        "max_attempts": 3
+      },
+      "network_policy": "offline",
+      "scoring_data_policy": "selection_hidden",
+      "execution_mode": "offline",
+      "baseline": {
+        "identity": "baseline",
+        "path": "baseline/base.md",
+        "version": "1",
+        "digest": "base-digest",
+        "max_bytes": 10
+      },
+      "surface": {
+        "allowed_paths": [
+          "candidate"
+        ],
+        "max_asset_bytes": 10,
+        "static_checks": [
+          "schema"
+        ]
+      },
+      "candidates": [
+        {
+          "identity": "candidate",
+          "path": "candidate/main.md",
+          "version": "1",
+          "digest": "candidate-digest",
+          "max_bytes": 10
+        }
+      ]
+    },
+    "experiment_digest": "c59d62eb20212e3cb5e02dcade463f235baa6c8b83b5c7703df3c888cc8a0c0c",
+    "runs": [
+      {
+        "candidate_id": "baseline",
+        "identity": "baseline",
+        "digest": "base-digest",
+        "status": "completed",
+        "quality": 4,
+        "reliable": true,
+        "contract_ok": true,
+        "latency_ms": 10
+      },
+      {
+        "candidate_id": "candidate",
+        "identity": "candidate",
+        "digest": "candidate-digest",
+        "status": "completed",
+        "quality": 7,
+        "reliable": true,
+        "contract_ok": true,
+        "latency_ms": 12,
+        "static_validations": [
+          {
+            "check": "schema",
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "cost_ledger": [
+      {
+        "candidate_id": "baseline",
+        "attempt": 1,
+        "model_calls": 1,
+        "cost_milli": 3,
+        "status": "completed"
+      },
+      {
+        "candidate_id": "candidate",
+        "attempt": 1,
+        "model_calls": 1,
+        "cost_milli": 5,
+        "status": "completed"
+      }
+    ],
+    "selection": {
+      "candidate_id": "candidate",
+      "reason": "bounded probe quality",
+      "sequence": 10
+    },
+    "score": {
+      "status": "available",
+      "value": 8,
+      "scoring_digest": "score-evidence",
+      "sequence": 11
+    },
+    "network_verified": true,
+    "scoring_data_status": "isolated",
+    "review_only": true,
+    "network_evidence_ref": "evidence:egress",
+    "scoring_isolation_evidence_ref": "evidence:scoring-isolation"
+  },
+  "expected": {
+    "status": "success",
+    "selected_id": "candidate",
+    "score_status": "available",
+    "review_only": true,
+    "axes": {
+      "quality": {
+        "status": "available",
+        "value": 11
+      },
+      "reliability": {
+        "status": "available",
+        "value": 2
+      },
+      "contract": {
+        "status": "available",
+        "value": 2
+      },
+      "latency": {
+        "status": "available",
+        "value": 22
+      },
+      "cost": {
+        "status": "available",
+        "value": 8
+      }
+    },
+    "totals": {
+      "attempts": 2,
+      "retries": 0,
+      "cache_hits": 0,
+      "incomplete": 0,
+      "model_calls": 2,
+      "cost_milli": 8,
+      "runs": 2
+    }
+  }
+}

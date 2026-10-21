@@ -36,6 +36,32 @@ type LocalChildRunner interface {
 	RunChild(ctx context.Context, task scheduler.Task) (map[string]any, error)
 }
 
+type ChildContinuationRunner interface {
+	RunChildContinuation(context.Context, scheduler.ClaimedTask) (map[string]any, ChildPauseError, error)
+}
+
+type ChildContinuationRunnerFunc func(context.Context, scheduler.ClaimedTask) (map[string]any, ChildPauseError, error)
+
+func (f ChildContinuationRunnerFunc) RunChildContinuation(ctx context.Context, claimed scheduler.ClaimedTask) (map[string]any, ChildPauseError, error) {
+	return f(ctx, claimed)
+}
+
+// ChildContinuationExecutor resumes source-owned child material at its
+// persisted safe point. Implementations must not enqueue or spawn a task.
+type ChildContinuationExecutor interface {
+	ResumeChildContinuation(context.Context, ChildContinuation) (scheduler.TerminalCommit, error)
+}
+
+type ChildContinuationOwner interface {
+	ResumeChildContinuation(context.Context, ChildResumeRequest) (ChildDispatchResult, error)
+}
+
+type ChildContinuationExecutorFunc func(context.Context, ChildContinuation) (scheduler.TerminalCommit, error)
+
+func (f ChildContinuationExecutorFunc) ResumeChildContinuation(ctx context.Context, continuation ChildContinuation) (scheduler.TerminalCommit, error) {
+	return f(ctx, continuation)
+}
+
 type LocalChildRunnerFunc func(ctx context.Context, task scheduler.Task) (map[string]any, error)
 
 func (f LocalChildRunnerFunc) RunChild(ctx context.Context, task scheduler.Task) (map[string]any, error) {
@@ -55,6 +81,17 @@ type ChildDispatchRequest struct {
 	WorkerID              string
 	PollInterval          time.Duration
 	LocalRunner           LocalChildRunner
+	ContinuationRunner    ChildContinuationRunner
+	GraphID               string
+	GraphVersion          string
+	GraphDigest           string
+	SessionID             string
+	CausationID           string
+	AuthorityDigest       string
+	PlanDigest            string
+	WriteScopeDigest      string
+	EffectNamespace       string
+	OccurrenceID          string
 }
 
 type ChildDispatchResult struct {
@@ -65,6 +102,20 @@ type ChildDispatchResult struct {
 	Retryable     bool
 	AsyncAccepted bool
 	AsyncTaskID   string
+	Continuation  *ChildContinuationRef
+	PauseReason   ChildPauseReason
+}
+
+func (r ChildDispatchResult) Detached() ChildDispatchResult {
+	out := r
+	out.Record.Task.Payload = cloneMap(r.Record.Task.Payload)
+	out.Record.Result = cloneMap(r.Record.Result)
+	out.Claimed.Record.Task.Payload = cloneMap(r.Claimed.Record.Task.Payload)
+	out.Claimed.Record.Result = cloneMap(r.Claimed.Record.Result)
+	out.Commit.Result = cloneMap(r.Commit.Result)
+	out.CommitMeta.Record.Task.Payload = cloneMap(r.CommitMeta.Record.Task.Payload)
+	out.CommitMeta.Record.Result = cloneMap(r.CommitMeta.Record.Result)
+	return out
 }
 
 type Runner interface {
@@ -151,6 +202,23 @@ func WithRecoveryStore(store RecoveryStore) Option {
 	}
 }
 
+func WithChildContinuationStore(store ChildContinuationStore, namespace string) Option {
+	return func(c *Composer) {
+		if c != nil {
+			c.childContinuationStore = store
+			c.childContinuationNamespace = strings.TrimSpace(namespace)
+		}
+	}
+}
+
+func WithChildContinuationExecutor(executor ChildContinuationExecutor) Option {
+	return func(c *Composer) {
+		if c != nil {
+			c.childContinuationExecutor = executor
+		}
+	}
+}
+
 func WithA2AClient(client scheduler.A2AClient) Option {
 	return func(c *Composer) {
 		c.a2aClient = client
@@ -203,6 +271,16 @@ func (b *Builder) WithRecoveryStore(store RecoveryStore) *Builder {
 	return b
 }
 
+func (b *Builder) WithChildContinuationStore(store ChildContinuationStore, namespace string) *Builder {
+	b.opts = append(b.opts, WithChildContinuationStore(store, namespace))
+	return b
+}
+
+func (b *Builder) WithChildContinuationExecutor(executor ChildContinuationExecutor) *Builder {
+	b.opts = append(b.opts, WithChildContinuationExecutor(executor))
+	return b
+}
+
 func (b *Builder) WithSchedulerStore(store scheduler.QueueStore) *Builder {
 	b.opts = append(b.opts, WithSchedulerStore(store))
 	return b
@@ -223,16 +301,19 @@ func (b *Builder) Build() (*Composer, error) {
 }
 
 type Composer struct {
-	runtimeMgr     *runtimeconfig.Manager
-	handler        types.EventHandler
-	localRegistry  *local.Registry
-	runner         Runner
-	teams          TeamsEngine
-	workflow       WorkflowEngine
-	scheduler      *scheduler.Scheduler
-	schedulerStore scheduler.QueueStore
-	recoveryStore  RecoveryStore
-	a2aClient      scheduler.A2AClient
+	runtimeMgr                 *runtimeconfig.Manager
+	handler                    types.EventHandler
+	localRegistry              *local.Registry
+	runner                     Runner
+	teams                      TeamsEngine
+	workflow                   WorkflowEngine
+	scheduler                  *scheduler.Scheduler
+	schedulerStore             scheduler.QueueStore
+	recoveryStore              RecoveryStore
+	a2aClient                  scheduler.A2AClient
+	childContinuationStore     ChildContinuationStore
+	childContinuationNamespace string
+	childContinuationExecutor  ChildContinuationExecutor
 
 	schedulerMu                sync.RWMutex
 	managedScheduler           bool
@@ -586,6 +667,14 @@ func (c *Composer) DispatchChild(ctx context.Context, req ChildDispatchRequest) 
 		}
 		return out, execErr
 	}
+	if pause, ok := childPauseFromError(execErr); ok {
+		continuation, pauseErr := c.persistChildPause(ctx, req, claimed, pause)
+		out := ChildDispatchResult{Record: claimed.Record, Claimed: claimed, PauseReason: pause.Reason}
+		if pauseErr == nil {
+			out.Continuation = &continuation.Ref
+		}
+		return out, pauseErr
+	}
 	commitMeta, commitErr := c.CommitChildTerminal(ctx, execution.Commit)
 	out := ChildDispatchResult{
 		Record:     claimed.Record,
@@ -809,6 +898,16 @@ func (c *Composer) executeLocalChild(
 	req ChildDispatchRequest,
 	claimed scheduler.ClaimedTask,
 ) (scheduler.A2AExecution, error) {
+	if continuationRunner := req.ContinuationRunner; continuationRunner != nil {
+		result, pause, err := continuationRunner.RunChildContinuation(ctx, claimed)
+		if err != nil {
+			return scheduler.A2AExecution{Commit: scheduler.TerminalCommit{TaskID: claimed.Record.Task.TaskID, AttemptID: claimed.Attempt.AttemptID, Status: scheduler.TaskStateFailed, ErrorMessage: err.Error(), CommittedAt: c.now()}}, err
+		}
+		if validChildPauseReason(pause.Reason) {
+			return scheduler.A2AExecution{}, pause
+		}
+		return scheduler.A2AExecution{Commit: scheduler.TerminalCommit{TaskID: claimed.Record.Task.TaskID, AttemptID: claimed.Attempt.AttemptID, Status: scheduler.TaskStateSucceeded, Result: cloneMap(result), CommittedAt: c.now()}}, nil
+	}
 	if req.LocalRunner == nil {
 		err := errors.New("local child runner is required")
 		return scheduler.A2AExecution{

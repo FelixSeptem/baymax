@@ -128,3 +128,16 @@ Child/fanout, team parallel/vote, mailbox host-plan continuation, and planbridge
 #### Scenario: Non-workflow composite restore is rejected
 - **WHEN** a caller requests cross-process restore for child, team, mailbox, or planbridge resumed execution
 - **THEN** admission returns `unsupported_capability` before source activation
+
+### Requirement: Composite source owners SHALL extend durable continuation without weakening direct guarantees
+
+Composite continuation implementations MUST preserve the existing durable
+checkpoint envelope, atomic claim, fail-closed lifecycle, Run/Stream parity,
+same-host single-writer sequential-reopen boundary, and explicit unsupported
+matrix established by the direct and workflow profiles.
+
+#### Scenario: Composite restore preserves deployment scope
+- **WHEN** a child continuation is reopened by another Engine on the same
+  configured FileStore
+- **THEN** restore is allowed only within the declared single-writer sequential
+  scope and distributed/multi-writer requests remain unavailable

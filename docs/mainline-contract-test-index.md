@@ -563,3 +563,11 @@ define the retention and terminal-recovery limits.
 | reference-only replay and drift classification | `tool/diagnosticsreplay/application_outbox.go`, `tool/diagnosticsreplay/application_outbox_test.go`, `tool/diagnosticsreplay/testdata/application_outbox_dispatch.v1.json` |
 | offline example and documented markers | `examples/application-outbox-recovery/main.go`, `examples/application-outbox-recovery/README.md` |
 | equivalent contract gates and quality-path wiring | `scripts/check-application-outbox-mailbox-recovery-contract.ps1`, `scripts/check-application-outbox-mailbox-recovery-contract.sh`, `openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/verification.md` |
+## Child continuation
+
+`orchestration/composer/continuation_test.go` and
+`continuation_runtime_test.go` cover bounded material, FileStore reopen,
+atomic duplicate/conflict claims, existing scheduler identity and no-spawn
+resume. `tool/diagnosticsreplay/child_continuation_test.go` covers reference-
+only drift and unsupported form replay. Planbridge child-owner delegation is
+covered by `orchestration/planbridge/native_binding_test.go`.

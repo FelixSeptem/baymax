@@ -174,6 +174,12 @@ func CapabilityManifestWithWorkflowContinuation(ctx context.Context, source type
 	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormWorkflow, "workflow")
 }
 
+// CapabilityManifestWithChildContinuation promotes only the child source
+// owner. It does not imply team, mailbox, or resumed-plan support.
+func CapabilityManifestWithChildContinuation(ctx context.Context, source types.ContinuationCapabilitySource) (CapabilityManifest, error) {
+	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormSubagent, "child")
+}
+
 func capabilityManifestWithContinuationForForm(ctx context.Context, source types.ContinuationCapabilitySource, form ExecutionForm, namespace string) (CapabilityManifest, error) {
 	result := DefaultCapabilityManifest()
 	if source == nil {
@@ -369,10 +375,13 @@ func validateCapability(entry ExecutionFormCapability) error {
 	}
 	continuationDeclared := entry.CheckpointCreation == CapabilitySupported || entry.CrossProcessRestore == CapabilitySupported || entry.InputRequired == CapabilitySupported || entry.ApprovalRequired == CapabilitySupported || entry.BudgetExhausted == CapabilitySupported
 	if continuationDeclared || entry.SourceContinuation != nil {
-		if (entry.Form != ExecutionFormDirect && entry.Form != ExecutionFormWorkflow) || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
+		if (entry.Form != ExecutionFormDirect && entry.Form != ExecutionFormWorkflow && entry.Form != ExecutionFormSubagent) || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		if entry.Form == ExecutionFormWorkflow && entry.SourceContinuation.SourceNamespace != "workflow" {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		if entry.Form == ExecutionFormSubagent && entry.SourceContinuation.SourceNamespace != "child" {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		for _, dimension := range continuationDimensions() {

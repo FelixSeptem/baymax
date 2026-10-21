@@ -438,7 +438,37 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 			return Binding{}, nil, "", fail(LimitExceeded, "binding.child.task", nil)
 		}
 		req := child.Request
-		if !child.TerminalOnly || req.Async || req.Target != composer.ChildTargetLocal || req.LocalRunner == nil {
+		if !child.TerminalOnly {
+			if child.Resume == nil || child.ContinuationOwner == nil || child.Manifest == nil || req.Async {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.child.continuation", nil)
+			}
+			if e := child.Manifest.ValidateCompatibility(CapabilityManifestContractVersion, CapabilityManifestAPIVersion); e != nil {
+				return Binding{}, nil, "", e
+			}
+			capability, e := child.Manifest.Capability(ExecutionFormSubagent)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			if capability.CheckpointCreation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported || capability.SourceContinuation == nil {
+				return Binding{}, nil, "", &Error{Code: UnsupportedCapability, Field: "binding.child.continuation", Limitation: LimitationSourceEvidenceMissing}
+			}
+			if e := child.Resume.Validate(); e != nil {
+				return Binding{}, nil, "", e
+			}
+			resume, e := snapshot(*child.Resume, l.BindingBytes, l.NestingDepth)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			child.Resume = &resume
+			b.Child = &child
+			facts = asFacts(struct {
+				Resume *composer.ChildResumeRequest `json:"resume"`
+				Owner  string                       `json:"owner"`
+			}{&resume, "composer.child"})
+			cfgDigest = childConfigDigest(childConfig(child))
+			break
+		}
+		if req.Async || req.Target != composer.ChildTargetLocal || req.LocalRunner == nil {
 			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.child", nil)
 		}
 		if !req.Task.NotBefore.IsZero() {

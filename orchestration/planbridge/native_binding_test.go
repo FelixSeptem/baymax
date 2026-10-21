@@ -155,6 +155,47 @@ func TestHostExecutionPlanChildLiveBudgetIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestHostExecutionPlanChildContinuationDelegatesToSourceOwner(t *testing.T) {
+	d, b, _ := directFixture(t)
+	d.Shape = ShapeSubagent
+	b.Direct = nil
+	continuation := composer.ChildResumeRequest{Ref: composer.ChildContinuationRef{SchemaVersion: composer.ChildContinuationVersion, CheckpointID: "checkpoint", Digest: "digest", OwnerNamespace: "child", GraphID: "graph", GraphVersion: "v1", RunID: "run"}, GraphDigest: "graph-digest", Generation: 1, Target: composer.ChildTargetLocal, IdempotencyKey: "resume"}
+	owner := &testChildContinuationOwner{result: composer.ChildDispatchResult{AsyncAccepted: true, AsyncTaskID: "native"}}
+	source := evidencedContinuationSource()
+	source.caps.SourceNamespace = "child"
+	manifest, err := CapabilityManifestWithChildContinuation(context.Background(), source)
+	if err != nil {
+		t.Fatalf("child manifest error = %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatalf("child manifest reader error = %v", err)
+	}
+	b.Child = &ChildBinding{TerminalOnly: false, Resume: &continuation, ContinuationOwner: owner, Manifest: reader}
+	d, err = Describe(d, b, Limits{})
+	if err != nil {
+		t.Fatalf("Describe() error = %v", err)
+	}
+	p, err := Compile(d, b, Limits{})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	out, err := p.Run(context.Background(), Execution{})
+	if err != nil || out.Child == nil || out.Child.AsyncTaskID != "native" || owner.calls != 1 {
+		t.Fatalf("resume result = %#v, err=%v, calls=%d", out.Child, err, owner.calls)
+	}
+}
+
+type testChildContinuationOwner struct {
+	result composer.ChildDispatchResult
+	calls  int
+}
+
+func (o *testChildContinuationOwner) ResumeChildContinuation(context.Context, composer.ChildResumeRequest) (composer.ChildDispatchResult, error) {
+	o.calls++
+	return o.result, nil
+}
 func TestHostExecutionPlanExactLimits(t *testing.T) {
 	d, b, _ := directFixture(t)
 	p, e := Compile(d, b, Limits{})

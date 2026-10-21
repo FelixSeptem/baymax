@@ -22,6 +22,26 @@
 
 默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
 
+### Child/fanout continuation（child-owner phase）
+
+Composer exposes an explicit source-owned child continuation boundary for local
+and A2A child/fanout owners. Persist a bounded `ChildContinuation` at a real
+safe point, reopen the same `ChildContinuationStore`, and call
+`ResumeChildContinuation`. The owner validates the existing scheduler
+task/attempt/lease and atomically claims the original logical child; it never
+calls `SpawnChild`, re-enqueues, starts a new parent, or treats callback
+history as restore material. MemoryStore is process-local; FileStore is
+same-host, single-writer sequential reopen only. Duplicate terminal claims
+return the retained projection, while lease loss, stale/foreign/expired/
+corrupt records, store failure and in-progress claims fail closed.
+
+`input_required`, `approval_required`, and `budget_exhausted` are independent
+child capability cells. Each requires a source producer, persisted pending
+action/consumed budget/deadline, terminal evidence and Run/Stream parity. The
+plan bridge accepts a child resume binding only when a capability manifest and
+`ChildContinuationOwner` are supplied. Team parallel/vote, mailbox host-plan
+continuation and resumed planbridge remain `unsupported_capability`.
+
 ## 接入真实执行事件
 
 用 `host/eventadapter.New` 构造 opt-in `types.EventHandler`，将它传入 `Engine.Run`、`Engine.Stream` 和 `ResumeDynamicAction`。先授权 sink 对 source payload 的访问，再显式绑定 `Projection.Source`、`ExpectedRunID` 和可选 `SessionID`；业务关联只放入 `HostReferences`。同一个 observer 面向一个串行 source stream，并行 child/source 分别构造 observer，依靠已有 parent/causation references 关联。

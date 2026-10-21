@@ -291,3 +291,8 @@ ordering. `tool/diagnosticsreplay`
 validates reference-only fixtures without constructing a mailbox owner or any
 execution dependency. History replay does not restore execution or prove a
 business commit.
+## Child continuation ownership
+
+Composer may accept an injected child continuation store and source owner, but
+does not create a second scheduler, mailbox, or replay loop. Scheduler remains
+the task/attempt/lease/terminal owner; diagnostics replay remains read-only.

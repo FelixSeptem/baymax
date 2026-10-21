@@ -32,3 +32,10 @@ FileStore holds a single writer lock and retains bounded private normalized requ
 ## Rollback notes
 
 Disable durable capability advertisement and stop accepting new durable pauses. Preserve persisted checkpoints and in-flight attempt records for inspection; do not delete, reinterpret, retry, or promote them to fresh Runs. Existing same-Engine dynamic-action behavior remains a separate legacy profile.
+## Child/fanout boundary
+
+The durable continuation example remains direct/workflow-first. Child/fanout
+restore requires an explicit Composer `ChildContinuationStore`, source owner,
+and scheduler task/attempt evidence; planbridge refuses terminal-only or
+owner-less child continuation. Team, mailbox and resumed-plan cells remain
+unsupported until their source owners provide equivalent evidence.

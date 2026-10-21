@@ -79,6 +79,9 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 	case ShapeSubagent:
 		source = types.ProtocolSourceScheduler
 		runID = p.binding.Child.Request.Task.RunID
+		if !p.binding.Child.TerminalOnly {
+			break
+		}
 		cfg := childConfig(*p.binding.Child)
 		if childConfigDigest(cfg) != p.childConfigDigest {
 			return out, fail(BindingMismatch, "activation.recompile_required", nil)
@@ -159,6 +162,14 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 		out.Workflow = &r
 	case ShapeSubagent:
 		b := p.binding.Child
+		if !b.TerminalOnly {
+			if b.Resume == nil || b.ContinuationOwner == nil {
+				return out, fail(UnsupportedCapability, "activation.child.continuation", nil)
+			}
+			result, resumeErr := b.ContinuationOwner.ResumeChildContinuation(ctx, *b.Resume)
+			out.Child = &result
+			return out, resumeErr
+		}
 		cfg := childConfig(*b)
 		s, e := scheduler.New(scheduler.NewMemoryStore(), scheduler.WithGuardrails(guardrails(cfg)), scheduler.WithLeaseTimeout(cfg.Scheduler.LeaseTimeout), scheduler.WithTimelineEmitter(handler))
 		if e != nil {

@@ -14,7 +14,7 @@ a mandatory live `Admit` callback. Compilation never invokes callbacks.
 
 Axes are independent: direct/subagent/team/workflow, inline/mailbox, and
 manual/scheduled/resumed/callback. Only inline direct, terminal-only parallel/vote
-team, flat workflow, isolated local child, and manifest-approved `mailbox_async`
+team, flat workflow, isolated local child, source-owner child continuation, and manifest-approved `mailbox_async`
 are supported. Mailbox requires a compatible source-owned manifest and native
 binding; resumed, durable continuation, subgraphs and shared child scheduler
 bindings fail before activation. Scheduled/callback labels create no workers.
@@ -51,6 +51,11 @@ native direct/team/workflow/child results, never a cross-owner terminal enum.
 Observer failures do not rewrite outcomes. RuntimeRecorder remains the sole
 diagnostic writer. `TerminalOnly` guards runner adapters against unexpected
 input_required and retains the native result/checkpoint through `ContinuationError`.
+For child restore, `ChildBinding.TerminalOnly=false` is accepted only with a
+source-owned `ChildResumeRequest` and `ChildContinuationOwner`; activation calls
+that owner once and returns its native projection. Missing owner or incompatible
+identity is rejected before activation. Team, mailbox and resumed-plan
+continuation cells remain explicitly unsupported.
 Only direct preserves input_required as native pause. Resume uses native APIs
 separately; this compiled snapshot cannot restore a Run.
 

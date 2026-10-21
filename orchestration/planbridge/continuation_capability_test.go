@@ -73,6 +73,29 @@ func TestContinuationManifestQueriesSourceAndDetachesCompleteEvidence(t *testing
 	}
 }
 
+func TestChildContinuationManifestPromotesOnlyChildForm(t *testing.T) {
+	source := evidencedContinuationSource()
+	source.caps.SourceNamespace = "child"
+	manifest, err := CapabilityManifestWithChildContinuation(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := reader.Capability(ExecutionFormSubagent)
+	if err != nil || child.CrossProcessRestore != CapabilitySupported || child.SourceContinuation == nil {
+		t.Fatalf("child capability = %#v, err=%v", child, err)
+	}
+	for _, form := range []ExecutionForm{ExecutionFormTeam, ExecutionFormWorkflow, ExecutionFormMailboxAsync} {
+		entry, err := reader.Capability(form)
+		if err != nil || entry.CrossProcessRestore != CapabilityUnsupported {
+			t.Fatalf("unsupported form %s = %#v, err=%v", form, entry, err)
+		}
+	}
+}
+
 func TestContinuationManifestFailsClosedForIncompleteOrUnavailableSource(t *testing.T) {
 	for _, change := range []func(*continuationSource){
 		func(s *continuationSource) { s.caps.CrossProcessRestore = false },

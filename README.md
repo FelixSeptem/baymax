@@ -50,7 +50,7 @@ go run ./examples/01-chat-minimal
 - `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
 - `evaluate-bounded-harness-candidate-comparisons`（已归档 170）：已落地离线、review-only 的候选实验身份、scope admission、baseline selection、评分隔离、逐 attempt 成本证据与只读 replay；七类 fixture、legacy/idempotency replay、双平台专项门禁及全量质量门禁已通过。契约与使用边界见 [评测契约](docs/evaluation-contract.md)。
 
-当前 active OpenSpec：无。最近归档的 `restore-workflow-continuations` 只开放已由 workflow source owner 证实的 restore 格子；未配置 owner journal 的默认 history 路径继续保持 `unsupported`。
+当前 active OpenSpec：无。最近归档的 `restore-composite-continuations-and-graph-state` 已开放 child/fanout source-owner restore；team/mailbox/resumed-plan continuation 仍保持 `unsupported`，未配置 owner journal 的默认 history 路径继续保持 `unsupported`。
 
 最近归档：
 

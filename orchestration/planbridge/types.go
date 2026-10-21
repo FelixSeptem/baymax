@@ -134,9 +134,12 @@ type WorkflowBinding struct {
 // ChildBinding deliberately cannot accept an external scheduler/store/composer.
 // Every activation owns a fresh isolated scheduler for exactly one dispatch.
 type ChildBinding struct {
-	Request      composer.ChildDispatchRequest
-	Runtime      *runtimeconfig.Manager
-	TerminalOnly bool
+	Request           composer.ChildDispatchRequest
+	Runtime           *runtimeconfig.Manager
+	TerminalOnly      bool
+	Resume            *composer.ChildResumeRequest
+	ContinuationOwner composer.ChildContinuationOwner
+	Manifest          *CapabilityManifestReader
 }
 
 type MailboxBinding struct {

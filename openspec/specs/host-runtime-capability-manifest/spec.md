@@ -91,3 +91,25 @@ Planner and host admission MUST validate the required form, pause reason, contra
 #### Scenario: Required unsupported cell fails closed
 - **WHEN** a plan requires `approval_required` on a form whose manifest marks it unsupported
 - **THEN** admission returns typed `unsupported_capability` before source activation and does not substitute direct execution
+
+### Requirement: Manifest expansion SHALL keep history evidence source-specific
+
+The versioned host runtime capability manifest SHALL expose durable history and
+after-cursor replay independently for runner, isolated child, team, workflow,
+and mailbox forms. Each value SHALL include the source namespace, retention and
+cursor boundary, availability, unsupported reason when false, and a reference
+to fixture or contract evidence. Planner and admission MUST NOT infer support
+from a form type, import, DTO, callback adapter, or mailbox capability.
+
+#### Scenario: Unsupported composite history is rejected before read
+- **WHEN** a plan asks for history for a child, team, or workflow source whose
+  owner has not supplied retained evidence
+- **THEN** the manifest reports unsupported with a stable reason
+- **AND** admission does not create a cursor, subscribe to callbacks, or run
+  the source
+
+#### Scenario: Available source evidence is independently reported
+- **WHEN** one source form has a retained journal and another source form does
+  not
+- **THEN** the manifest reports their history cells independently
+- **AND** support is not borrowed across forms

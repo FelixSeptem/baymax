@@ -24,7 +24,7 @@ func TestNativeHistoryDiagnosticsReplayUsesReferenceOnlyFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := diagnosticsreplay.ReplayNativeHistoryFixtureJSON(raw)
-	if err != nil || len(first) != 10 || !reflect.DeepEqual(first, second) {
+	if err != nil || len(first) != 14 || !reflect.DeepEqual(first, second) {
 		t.Fatalf("replay first=%d second=%d err=%v", len(first), len(second), err)
 	}
 }

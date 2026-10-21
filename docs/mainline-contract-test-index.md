@@ -503,19 +503,21 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 ## Source-owned native event history and cursor replay
 
-`NativeEventHistoryReader` is a read-only source extension. Only the existing
-mailbox owner supplies a retained journal in this change; FileStore persists
-source-local identity/sequence/cursor/terminal facts, MemoryStore declares
-process-local history, and runner/child/team/workflow remain explicitly
-unsupported. Callback identity is not journal identity, and replay cannot
-retry/resume/restore execution or commit an effect.
+`NativeEventHistoryReader` is a read-only source extension. The existing
+mailbox owner and explicitly injected runner/child/team/workflow owner journals
+supply retained source facts; FileStore persists source-local
+identity/sequence/cursor/terminal facts, MemoryStore declares process-local
+history, and an unconfigured owner remains explicitly unsupported. Callback
+identity is not journal identity, and replay cannot retry/resume/restore
+execution or commit an effect.
 
 | Requirement | Evidence |
 | --- | --- |
-| bounded detached source/cursor/page DTOs and typed errors | `core/types/native_event_history_test.go` |
+| bounded detached source/cursor/page DTOs and typed errors | `core/types/native_event_history_test.go`, `core/history/journal_test.go` |
 | mailbox retention/floor, immutable pages, cursor malformed/foreign/expired/gap/unavailable, FileStore reopen and subprocess restart | `orchestration/mailbox/history_test.go` |
 | source-bound manifest facts; durable versus process-local floor; unsupported forms | `orchestration/planbridge/history_capability_test.go` |
 | adapter stays callback-only and cannot manufacture history identity | `host/eventadapter/history_boundary_test.go` |
+| explicit runner/child/team/workflow owner append and source-local terminal facts | `core/runner/history_test.go`, `orchestration/composer/history_test.go`, `orchestration/teams/history_test.go`, `orchestration/workflow/history_test.go` |
 | real-owner source history and Run/Stream correlation/admission parity | `integration/native_event_history_contract_test.go` |
 | reference-only capabilities/cursor/terminal/error/drift replay without owner construction | `tool/diagnosticsreplay/native_event_history_test.go`, `integration/native_event_history_replay_contract_test.go`, `integration/testdata/diagnostics-replay/native-event-history/v1/conformance.json` |
 | offline callback plus reopened-mailbox example | `examples/native-execution-events/README.md`, `examples/native-execution-events/history.go` |

@@ -6,7 +6,7 @@ Set-Location $repoRoot
 
 Write-Host "[native-event-history-contract] reference-only replay, cursor, retention and ownership"
 Invoke-NativeStrict -Label "native event history replay suites" -Command {
-    go test ./core/types ./orchestration/mailbox ./orchestration/planbridge ./host/eventadapter ./tool/diagnosticsreplay ./integration -run '^TestNativeHistory|^TestMailboxHistory|^TestFileMailboxHistory|^TestCallbackAdapterNeverOwnsHistory|^TestRetainedFactCanReachSink' -count=1
+    go test ./core/history ./core/types ./core/runner ./orchestration/composer ./orchestration/teams ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./host/eventadapter ./tool/diagnosticsreplay ./integration -run '^TestNativeHistory|^TestJournal|^TestRunnerNativeHistory|^TestTeamTimelineCanAppend|^TestWorkflowTimelineCanAppend|^TestMailboxHistory|^TestFileMailboxHistory|^TestCallbackAdapterNeverOwnsHistory|^TestRetainedFactCanReachSink' -count=1
 }
 
 $file = "tool/diagnosticsreplay/native_event_history.go"

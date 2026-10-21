@@ -14,6 +14,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/context/assembler"
 	"github.com/FelixSeptem/baymax/context/handoff"
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	obsTrace "github.com/FelixSeptem/baymax/observability/trace"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
@@ -73,6 +74,7 @@ type Engine struct {
 	handoffRestoreStore handoff.RestoreOperationStore
 	handoffRestoreMu    sync.Mutex
 	handoffRestored     map[string]handoff.RestoreResult
+	nativeHistory       *history.Journal
 	activeRunState
 	dynamicActionState
 	nativeContinuationState
@@ -168,6 +170,17 @@ func WithTraceManager(tracer *obsTrace.Manager) Option {
 	return func(e *Engine) {
 		if tracer != nil {
 			e.tracer = tracer
+		}
+	}
+}
+
+// WithNativeEventHistory binds an already-created runner-owned journal. The
+// runner never creates storage implicitly and history append failures do not
+// rewrite execution outcomes.
+func WithNativeEventHistory(journal *history.Journal) Option {
+	return func(e *Engine) {
+		if e != nil {
+			e.nativeHistory = journal
 		}
 	}
 }
@@ -2742,15 +2755,39 @@ func classified(class types.ErrorClass, msg string, retryable bool) *types.Class
 }
 
 func (e *Engine) emit(ctx context.Context, h types.EventHandler, ev types.Event) {
-	if h == nil {
-		return
-	}
 	if ev.Version == "" {
 		ev.Version = types.EventSchemaVersionV1
 	}
 	ev.TraceID = obsTrace.TraceIDFromContext(ctx)
 	ev.SpanID = obsTrace.SpanIDFromContext(ctx)
-	h.OnEvent(ctx, ev)
+	if e != nil && e.nativeHistory != nil {
+		e.appendNativeHistory(ctx, ev)
+	}
+	if h != nil {
+		h.OnEvent(ctx, ev)
+	}
+}
+
+func (e *Engine) appendNativeHistory(ctx context.Context, ev types.Event) {
+	if e == nil || e.nativeHistory == nil {
+		return
+	}
+	source := e.nativeHistory.Source()
+	if source.Kind != types.HistorySourceRunner || strings.TrimSpace(source.ID) == "" || strings.TrimSpace(ev.RunID) != strings.TrimSpace(source.ID) {
+		return
+	}
+	projector, err := types.NewNativeExecutionProjector(types.NativeExecutionOptions{
+		Source:        types.ProtocolSourceRunner,
+		ExpectedRunID: source.ID,
+	})
+	if err != nil {
+		return
+	}
+	fact, err := projector.ProjectEvent(ev)
+	if err != nil {
+		return
+	}
+	_, _ = e.nativeHistory.Append(ctx, fact)
 }
 
 func (e *Engine) emitTimeline(

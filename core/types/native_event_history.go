@@ -34,6 +34,7 @@ var (
 	ErrHistoryGap         = errors.New("native event history gap")
 	ErrSourceUnavailable  = errors.New("native event history source unavailable")
 	ErrHistoryInvalid     = errors.New("native event history input invalid")
+	ErrHistoryConflict    = errors.New("native event history identity conflict")
 )
 
 // SourceRef identifies a source instance; it is not a substitute for a run ID.
@@ -149,6 +150,52 @@ func (p NativeEventPage) Snapshot() (NativeEventPage, error) {
 		return NativeEventPage{}, ErrHistoryInvalid
 	}
 	return out, nil
+}
+
+// MergeNativeExecutionEvents performs projection-side overlap handling. It
+// never contacts a source owner and accepts an overlap only when the complete
+// source fact is identical; a reused identity with a changed fact fails closed.
+func MergeNativeExecutionEvents(existing, incoming []NativeExecutionEvent) ([]NativeExecutionEvent, error) {
+	merged := make([]NativeExecutionEvent, 0, len(existing)+len(incoming))
+	byID := make(map[string]int, len(existing)+len(incoming))
+	appendFact := func(event NativeExecutionEvent) error {
+		if event.History == nil || event.History.Source.Validate() != nil || event.History.Sequence == 0 || strings.TrimSpace(event.History.EventID) == "" {
+			return ErrHistoryInvalid
+		}
+		idx, ok := byID[event.History.EventID]
+		if !ok {
+			copy, err := (NativeEventPage{Events: []NativeExecutionEvent{event}}).Snapshot()
+			if err != nil {
+				return err
+			}
+			byID[event.History.EventID] = len(merged)
+			merged = append(merged, copy.Events[0])
+			return nil
+		}
+		candidate, err := (NativeEventPage{Events: []NativeExecutionEvent{event}}).Snapshot()
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(merged[idx], candidate.Events[0]) {
+			return ErrHistoryConflict
+		}
+		return nil
+	}
+	for _, event := range existing {
+		if err := appendFact(event); err != nil {
+			return nil, err
+		}
+	}
+	for _, event := range incoming {
+		if err := appendFact(event); err != nil {
+			return nil, err
+		}
+	}
+	page, err := (NativeEventPage{Events: merged}).Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	return page.Events, nil
 }
 
 type NativeEventHistoryReader interface {

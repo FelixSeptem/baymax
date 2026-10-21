@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/collab"
 	"gopkg.in/yaml.v3"
@@ -428,6 +429,7 @@ type Engine struct {
 	adapter                   StepAdapter
 	checkpoints               CheckpointStore
 	timelineEmitter           types.EventHandler
+	nativeHistory             *history.Journal
 	defaultStepTimeout        time.Duration
 	graphComposabilityEnabled bool
 	now                       func() time.Time
@@ -1237,7 +1239,7 @@ func (e *Engine) emitTimeline(
 	reason string,
 	seq *int64,
 ) {
-	if e == nil || e.timelineEmitter == nil || seq == nil {
+	if e == nil || seq == nil || (e.timelineEmitter == nil && e.nativeHistory == nil) {
 		return
 	}
 	*seq++
@@ -1261,6 +1263,10 @@ func (e *Engine) emitTimeline(
 	}
 	if step.peerID != "" {
 		payload["peer_id"] = step.peerID
+	}
+	e.emitNativeHistory(ctx, timelineCtx, status, payload)
+	if e.timelineEmitter == nil {
+		return
 	}
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,

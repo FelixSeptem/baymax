@@ -5,7 +5,7 @@
 本示例保留两条独立路径：
 
 - 实时路径：真实 `runner.Engine.Run/Stream` → `host/eventadapter.Observer` → 宿主内存 sink。fake model 使用 `adapter/modelcapability` 的显式适配，无网络、真实 tool effect 或业务数据库。`native_execution_event.v1` 保留 native type、source、Run、iteration、payload；callback `mapping_reference` 不能用于去重或 replay。
-- history 路径：既有 `orchestration/mailbox.FileStore` → `Mailbox.HistorySource/Capabilities/ReadAfter`。示例先由 source 写入 admission/lease/ack 事实，再关闭写入阶段；新建 FileStore/reader 后只读已确认 cursor 之后的 retained 事实。journal 与 source-local sequence 归 mailbox owner 所有，eventadapter 不保存 history。
+- history 路径：既有 `orchestration/mailbox.FileStore` → `Mailbox.HistorySource/Capabilities/ReadAfter`。示例先由 source 写入 admission/lease/ack 事实，再关闭写入阶段；新建 FileStore/reader 后只读已确认 cursor 之后的 retained 事实。runner/child/team/workflow 只有显式注入 owner journal 才启用相同 reader contract；journal 与 source-local sequence 归 owner 所有，eventadapter 不保存 history。
 
 history anchor 是 `NativeExecutionEvent.History` 中的 source/event identity 与 source-local sequence；它独立于实时 callback EventID/TraceID 和协议 Sequence。cursor 是 opaque `mailbox.history.v1` source-instance position，不能合并成并行 child/team 的全局顺序。
 
@@ -15,7 +15,7 @@ history anchor 是 `NativeExecutionEvent.History` 中的 source/event identity �
 
 - `mailbox-history durable=true`、`mailbox-history restart-events=2`、`mailbox-history terminal=acked`：新 reader 从已确认 admission cursor 读到 lease/ack，而非重新执行。
 - `mailbox-history malformed=true`、`mailbox-history foreign=true`、`mailbox-history expired=true`：typed cursor 错误不静默回退 latest。fixture/gate 另外覆盖 retained gap 与 source unavailable。
-- `native-history unsupported=runner,child,team,workflow`：其 callback API 存在不表示有 retained journal。
+- `native-history unsupported=unconfigured-runner,unconfigured-child,unconfigured-team,unconfigured-workflow`：其 callback API 存在不表示默认 owner 已启用 retained journal。
 
 `input_required` 是暂停；confirm resolution 不表示 canceled。observer.Status 独立于业务 terminal，sink error 是 unconfirmed，必须由业务 commit gate 决定提交。mailbox `acked` 只证明 source lifecycle，不能证明业务 effect committed。
 

@@ -28,7 +28,7 @@ func TestNativeHistoryReplayReferenceFixture(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(first, second) {
 		t.Fatalf("replay drift: %v", err)
 	}
-	if len(first) != 10 {
+	if len(first) != 14 {
 		t.Fatalf("cases=%d", len(first))
 	}
 	wantErrors := map[string]string{"malformed-cursor": "cursor_malformed", "foreign-cursor": "cursor_foreign", "expired-cursor": "cursor_expired", "history-gap": "history_gap", "unsupported-source": "history_unsupported", "source-unavailable": "source_unavailable", "no-latest-fallback": "cursor_expired"}
@@ -48,17 +48,17 @@ func TestNativeHistoryReplayRejectsSemanticDrift(t *testing.T) {
 		{"callback-identity", ReasonNativeHistoryIdentityDrift, func(f *NativeHistoryFixture) { f.Cases[2].Events[0].History = nil }},
 		{"order", ReasonNativeHistoryOrderDrift, func(f *NativeHistoryFixture) { f.Cases[2].Events[0].History.Sequence = 0 }},
 		{"cursor", ReasonNativeHistoryCursorDrift, func(f *NativeHistoryFixture) { f.Cases[1].ConfirmedCursor.Value = "different" }},
-		{"retention", ReasonNativeHistoryRetentionDrift, func(f *NativeHistoryFixture) { f.Cases[5].Floor = 10 }},
+		{"retention", ReasonNativeHistoryRetentionDrift, func(f *NativeHistoryFixture) { f.Cases[9].Floor = 10 }},
 		{"side-effect", ReasonNativeHistorySideEffect, func(f *NativeHistoryFixture) { f.Cases[0].SideEffects = 1 }},
 		{"latest-fallback", ReasonNativeHistoryUnsafeFallback, func(f *NativeHistoryFixture) { f.Cases[9].LatestFallback = true }},
-		{"capability", ReasonNativeHistoryCapabilityDrift, func(f *NativeHistoryFixture) { f.Capabilities[0].Supported = true }},
+		{"capability", ReasonNativeHistoryCapabilityDrift, func(f *NativeHistoryFixture) { f.Capabilities[0].Durable = true }},
 		{"terminal", ReasonNativeHistoryTerminalDrift, func(f *NativeHistoryFixture) { f.Cases[2].Events[0].History.TerminalOutcome = "" }},
 		{"invented-terminal", ReasonNativeHistoryTerminalDrift, func(f *NativeHistoryFixture) {
 			f.Cases[2].Events[0].History.TerminalOutcome = "business_committed"
 			f.Cases[2].ExpectedTerminal = "business_committed"
 		}},
 		{"terminal-type", ReasonNativeHistoryTerminalDrift, func(f *NativeHistoryFixture) { f.Cases[2].Events[0].NativeType = "mailbox.consume" }},
-		{"error-page", ReasonNativeHistoryUnsafeFallback, func(f *NativeHistoryFixture) { f.Cases[5].PageNext = f.Cases[2].PageNext }},
+		{"error-page", ReasonNativeHistoryUnsafeFallback, func(f *NativeHistoryFixture) { f.Cases[9].PageNext = f.Cases[2].PageNext }},
 		{"payload", ReasonNativeHistoryIdentityDrift, func(f *NativeHistoryFixture) {
 			f.Cases[2].Events[0].Event.Payload = map[string]any{"body": "forbidden"}
 		}},

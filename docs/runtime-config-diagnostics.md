@@ -2332,6 +2332,10 @@ Flush or repair a store, reclaim delivery, generate diagnostics or start
 execution. Journal facts are reference-only: payloads, credentials, callback
 errors and host business-commit assertions are excluded. Callback EventID and
 host observation sequence cannot become journal identity or replay cursor.
+Projection consumers may use the pure `core/types.MergeNativeExecutionEvents`
+helper for overlap deduplication; identical source identities are accepted once,
+while a changed fact returns typed `ErrHistoryConflict`. This helper has no
+source-owner, execution, diagnostics, or business-commit dependency.
 Offline replay classifications and evidence live in the
 [contract index](mainline-contract-test-index.md); any future diagnostics must
 still go through `observability/event.RuntimeRecorder` as the sole writer and

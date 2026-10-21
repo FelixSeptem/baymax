@@ -154,3 +154,21 @@ history read as part of Run or Stream.
 - **THEN** the request fails with the source history unsupported outcome
 - **AND** the adapter creates no in-memory history, subscription or latest
   fallback
+
+### Requirement: History expansion SHALL preserve adapter projection ownership
+
+The real-time native event adapter SHALL NOT own retained history, manufacture
+journal identities, interpret callback EventID or TraceID as a durable cursor,
+or create a source cursor from an application observation sequence. A caller
+that needs replay MUST use the source-owned history reader.
+
+#### Scenario: Callback identity cannot be used for replay
+- **WHEN** a caller supplies a callback EventID, TraceID, or host observation
+  sequence as a history cursor
+- **THEN** the source history contract rejects it as malformed or foreign
+- **AND** the adapter does not open a journal or activate execution
+
+#### Scenario: Live projection remains available
+- **WHEN** a source emits a supported real-time callback
+- **THEN** the adapter projects it using the existing callback contract
+- **AND** it does not claim durable replay or alter source history ownership

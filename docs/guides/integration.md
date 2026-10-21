@@ -52,14 +52,14 @@ Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和
 
 | Source | Event namespace / sequence | Retention / cursor | Terminal recovery / restart | Unsupported reason |
 | --- | --- | --- | --- | --- |
-| runner | `runner.event.unsupported`；未定义 history sequence | none；无 cursor | none | runner owner 尚无 retained journal |
-| isolated child | `child.event.unsupported`；未定义 history sequence | none；无 cursor | none | child owner 尚无 retained journal |
-| team | `team.event.unsupported`；未定义 history sequence | none；无 cursor | none | team owner 尚无 retained journal |
-| workflow | `workflow.event.unsupported`；未定义 history sequence | none；无 cursor | none | workflow owner 尚无 retained journal |
+| runner | `runner.event.history.v1`；source instance 内递增 | bounded source cursor；retention floor | source owner journal；同机单写 FileStore 可重开 | 只有显式注入 runner journal 的 source instance 才支持；默认 engine 不自动创建 |
+| isolated child | `child.event.history.v1`；source instance 内递增 | bounded source cursor；retention floor | source owner journal；同机单写 FileStore 可重开 | 只有显式注入 child journal 的 source instance 才支持；默认 composer 不自动创建 |
+| team | `team.event.history.v1`；source instance 内递增 | bounded source cursor；retention floor | source owner journal；同机单写 FileStore 可重开 | 只有显式注入 team journal 的 source instance 才支持；不声明跨 member 全局顺序 |
+| workflow | `workflow.event.history.v1`；source instance 内递增 | bounded source cursor；retention floor | source owner journal；同机单写 FileStore 可重开 | 只有显式注入 workflow journal 的 source instance 才支持；不等同 step checkpoint |
 | mailbox MemoryStore | `mailbox.history.v1/<source-id>`；仅 source instance 内递增 | 最后 1024 lifecycle events；无时间保证；opaque `mailbox.history.v1` source-instance cursor | retained mailbox lifecycle；仅同进程 | 不支持 durable history / 跨进程 replay |
 | mailbox FileStore | `mailbox.history.v1/<source-id>`；仅 source instance 内递增 | 最后 1024 lifecycle events；无时间保证；opaque `mailbox.history.v1` source-instance cursor | 同一 snapshot 的 source identity/journal 可重开读取；仅 mailbox lifecycle | checkpoint restore / business commit 不在此能力内 |
 
-runner/child/team/workflow 的 `UnsupportedNativeEventHistoryReader` 会提供明确 capability floor，并在 `ReadAfter` 返回 `ErrHistoryUnsupported`；不会订阅 callback 或激活执行。`planbridge.DefaultCapabilityManifest` 不推断具体 source；`CapabilityManifestWithHistory` 只基于匹配 mailbox source 的实际 facts 提升 mailbox history/replay 能力，并将 namespace、sequence、retention/floor、cursor、terminal recovery 作为 `SourceHistory` 保留。source 不可用时返回 typed unavailable，不能将静态 manifest 或 DTO 编译成功当作可重放证据。
+runner/child/team/workflow 的 source journal 通过各 owner 的 `NewNativeEventHistory` / `OpenNativeEventHistory` 显式构造；未注入 journal 的默认执行路径仍使用 `UnsupportedNativeEventHistoryReader`，不会订阅 callback 或激活执行。`planbridge.DefaultCapabilityManifest` 不推断具体 source；`CapabilityManifestWithHistory` 只基于匹配 source kind 的实际 facts 提升对应 form history/replay 能力，并将 namespace、sequence、retention/floor、cursor、terminal recovery 作为 `SourceHistory` 保留。source 不可用时返回 typed unavailable，不能将静态 manifest 或 DTO 编译成功当作可重放证据。
 
 ```go
 source, err := owner.HistorySource(ctx) // owner is an existing *mailbox.Mailbox

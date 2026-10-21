@@ -85,6 +85,8 @@ requires durable persistence. `ExecutionFormCapability.SourceHistory` preserves
 the declared source/event namespace, sequence scope, retention/floor,
 cursor scope/version and terminal-recovery limits. MemoryStore replay remains
 process-local; unavailable or incompatible source facts fail closed. Runner,
-child, team and workflow history stay unsupported, and no history capability
-enables checkpoint creation, cross-process execution restore or composite
-pause. The bridge neither owns nor reads a journal during plan dispatch.
+child, team and workflow history is enabled only by an explicit source-owned
+journal fact; the default manifest remains unsupported until that owner is
+configured. No history capability enables checkpoint creation, cross-process
+execution restore or composite pause. The bridge neither owns nor reads a
+journal during plan dispatch.

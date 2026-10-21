@@ -284,8 +284,10 @@ write `RuntimeRecorder`. `host/eventadapter` remains a realtime callback
 projector with no journal/cursor ownership. `orchestration/planbridge` may
 project a matching concrete source's capability into the manifest, including
 source identity and retention/cursor facts; its dispatch path does not read or
-maintain history. Runner/child/team/workflow return explicit unsupported rather
-than inventing callback or cross-source ordering. `tool/diagnosticsreplay`
+maintain history. `core/history` provides a source-neutral bounded primitive;
+runner/child/team/workflow owners may inject it explicitly, while their default
+paths still return unsupported and never invent callback or cross-source
+ordering. `tool/diagnosticsreplay`
 validates reference-only fixtures without constructing a mailbox owner or any
 execution dependency. History replay does not restore execution or prove a
 business commit.

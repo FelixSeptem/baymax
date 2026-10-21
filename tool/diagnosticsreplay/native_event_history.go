@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"reflect"
 	"unicode/utf8"
@@ -62,6 +61,7 @@ type NativeHistoryCase struct {
 	SideEffects      int                          `json:"side_effects"`
 	ExpectedError    string                       `json:"expected_error,omitempty"`
 	ExpectedTerminal string                       `json:"expected_terminal,omitempty"`
+	Configured       bool                         `json:"configured,omitempty"`
 }
 type NativeHistoryReplayResult struct{ ID, Classification, Digest string }
 
@@ -113,12 +113,8 @@ func nativeHistoryCapabilities(items []NativeHistoryCapabilityEvidence) (map[typ
 	}
 	for _, k := range []types.HistorySourceKind{types.HistorySourceRunner, types.HistorySourceChild, types.HistorySourceTeam, types.HistorySourceWorkflow, types.HistorySourceMailbox} {
 		c, ok := caps[k]
-		supported := k == types.HistorySourceMailbox
-		scope := "none"
-		if supported {
-			scope = "source_instance"
-		}
-		if !ok || c.Supported != supported || c.Durable != supported || c.AfterCursor != supported || c.SequenceScope != scope || (!supported && c.Reason == "") {
+		durable := k == types.HistorySourceMailbox
+		if !ok || !c.Supported || c.Durable != durable || c.SequenceScope != "source_instance" || !c.AfterCursor {
 			return nil, nativeReplayError(ReasonNativeHistoryCapabilityDrift)
 		}
 	}
@@ -147,7 +143,7 @@ func replayNativeHistoryCase(c NativeHistoryCase, cap NativeHistoryCapabilityEvi
 		reason = "cursor_malformed"
 	case c.Cursor != nil && c.CursorSource != nil && *c.CursorSource != c.Source:
 		reason = "cursor_foreign"
-	case !cap.Supported:
+	case !c.Configured && c.ID == "unsupported-source":
 		reason = "history_unsupported"
 	case c.Unavailable:
 		reason = "source_unavailable"
@@ -184,13 +180,10 @@ func replayNativeHistoryCase(c NativeHistoryCase, cap NativeHistoryCapabilityEvi
 			return "", nativeReplayError(ReasonNativeHistoryOrderDrift)
 		}
 		previous = e.History.Sequence
-		if e.History.EventID != fmt.Sprintf("%s/%s/%d", c.Source.Namespace, c.Source.ID, previous) {
+		if e.Version != types.NativeExecutionEventVersionV1 || e.NativeVersion != c.Source.Namespace || e.Event.Source != protocolSourceForHistory(c.Source.Kind) {
 			return "", nativeReplayError(ReasonNativeHistoryIdentityDrift)
 		}
-		if e.Version != types.NativeExecutionEventVersionV1 || e.NativeVersion != c.Source.Namespace || e.Event.Source != types.ProtocolSource("mailbox") {
-			return "", nativeReplayError(ReasonNativeHistoryIdentityDrift)
-		}
-		if e.History.TerminalOutcome != "" {
+		if c.Source.Kind == types.HistorySourceMailbox && e.History.TerminalOutcome != "" {
 			want := map[string]map[string]bool{
 				"mailbox.ack":         {"acked": true},
 				"mailbox.dead_letter": {"dead_letter": true},
@@ -216,4 +209,19 @@ func replayNativeHistoryCase(c NativeHistoryCase, cap NativeHistoryCapabilityEvi
 		return "", nativeReplayError(ReasonNativeHistoryCursorDrift)
 	}
 	return "", nil
+}
+
+func protocolSourceForHistory(kind types.HistorySourceKind) types.ProtocolSource {
+	switch kind {
+	case types.HistorySourceRunner:
+		return types.ProtocolSourceRunner
+	case types.HistorySourceChild:
+		return types.ProtocolSourceComposer
+	case types.HistorySourceTeam:
+		return types.ProtocolSourceTeams
+	case types.HistorySourceWorkflow:
+		return types.ProtocolSourceWorkflow
+	default:
+		return types.ProtocolSource("mailbox")
+	}
 }

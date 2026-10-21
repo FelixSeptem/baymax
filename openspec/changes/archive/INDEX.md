@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-20 18:01:08
+Updated: 2026-10-21 09:01:18
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -172,3 +172,4 @@ Updated: 2026-10-20 18:01:08
 - 168 -> retain-source-native-event-history-and-cursor-replay
 - 169 -> persist-native-continuations-and-restore-composite-graphs
 - 170 -> evaluate-bounded-harness-candidate-comparisons
+- 171 -> retain-run-and-composite-source-history

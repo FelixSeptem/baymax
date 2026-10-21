@@ -73,8 +73,9 @@ type ExecutionFormCapability struct {
 // a declaration after it has been validated.
 type CapabilityManifestReader struct{ manifest CapabilityManifest }
 
-// DefaultCapabilityManifest reports the conservative Spec 1 baseline. History,
-// checkpoint and composite pause continuation stay explicit until later Specs.
+// DefaultCapabilityManifest reports the conservative baseline. History,
+// checkpoint and composite pause continuation stay explicit until a source
+// owner is configured and its evidence is supplied.
 func DefaultCapabilityManifest() CapabilityManifest {
 	forms := []ExecutionForm{ExecutionFormDirect, ExecutionFormSubagent, ExecutionFormTeam, ExecutionFormWorkflow, ExecutionFormMailboxAsync}
 	result := CapabilityManifest{
@@ -93,8 +94,8 @@ func DefaultCapabilityManifest() CapabilityManifest {
 			Cancellation: CapabilitySupported, Timeout: CapabilitySupported, CausalRetry: CapabilitySupported,
 			MailboxContinuation: CapabilityUnsupported, RetentionPolicy: "source-owned", EvidenceReference: "fixture:host-runtime-capability-manifest.v1",
 			UnsupportedReasons: map[string]string{
-				"durable_history":       "source journal is Spec 2",
-				"after_cursor_replay":   "source journal is Spec 2",
+				"durable_history":       "source journal is not configured for this source",
+				"after_cursor_replay":   "source journal is not configured for this source",
 				"checkpoint_creation":   LimitationCompositeGraphRestore,
 				"cross_process_restore": LimitationCompositeGraphRestore,
 				"input_required":        LimitationCompositeGraphRestore,
@@ -176,12 +177,16 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 	if err != nil {
 		return result, err
 	}
-	if caps.Source != source || source.Kind != types.HistorySourceMailbox {
+	if caps.Source != source {
+		return result, types.ErrHistoryUnsupported
+	}
+	form, ok := historyForm(source.Kind)
+	if !ok {
 		return result, types.ErrHistoryUnsupported
 	}
 	for i := range result.Forms {
 		entry := &result.Forms[i]
-		if entry.Form != ExecutionFormMailboxAsync {
+		if entry.Form != form {
 			continue
 		}
 		entry.RetentionPolicy = caps.RetentionWindow
@@ -210,6 +215,23 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 		}
 	}
 	return result, validateCapabilityManifest(result)
+}
+
+func historyForm(kind types.HistorySourceKind) (ExecutionForm, bool) {
+	switch kind {
+	case types.HistorySourceRunner:
+		return ExecutionFormDirect, true
+	case types.HistorySourceChild:
+		return ExecutionFormSubagent, true
+	case types.HistorySourceTeam:
+		return ExecutionFormTeam, true
+	case types.HistorySourceWorkflow:
+		return ExecutionFormWorkflow, true
+	case types.HistorySourceMailbox:
+		return ExecutionFormMailboxAsync, true
+	default:
+		return "", false
+	}
 }
 
 func NewCapabilityManifestReader(manifest CapabilityManifest) (*CapabilityManifestReader, error) {
@@ -323,7 +345,8 @@ func validateCapability(entry ExecutionFormCapability) error {
 	}
 	if entry.SourceHistory != nil {
 		history := entry.SourceHistory
-		if entry.Form != ExecutionFormMailboxAsync || history.Source.Validate() != nil || history.Source.Kind != types.HistorySourceMailbox || !history.Supported || !history.SequenceDefined || history.RetentionFloor == nil || history.RetentionFloor.Validate() != nil {
+		expectedForm, supportedSource := historyForm(history.Source.Kind)
+		if !supportedSource || entry.Form != expectedForm || history.Source.Validate() != nil || !history.Supported || !history.SequenceDefined || history.RetentionFloor == nil || history.RetentionFloor.Validate() != nil {
 			return fail(InvalidPlan, "capability_manifest.source_history", nil)
 		}
 		for _, value := range []string{history.EventIdentityNamespace, history.SequenceScope, history.RetentionWindow, history.CursorScope, history.CursorVersion, history.TerminalRecovery} {

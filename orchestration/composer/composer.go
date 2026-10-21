@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
@@ -92,6 +93,17 @@ func WithRuntimeManager(mgr *runtimeconfig.Manager) Option {
 func WithEventHandler(handler types.EventHandler) Option {
 	return func(c *Composer) {
 		c.handler = handler
+	}
+}
+
+// WithNativeEventHistory binds an existing child-owned journal. Composer does
+// not create a journal, scheduler, or replay loop as a side effect of this
+// option.
+func WithNativeEventHistory(journal *history.Journal) Option {
+	return func(c *Composer) {
+		if c != nil {
+			c.nativeHistory = journal
+		}
 	}
 }
 
@@ -266,8 +278,9 @@ type Composer struct {
 	reconcileCancel context.CancelFunc
 	reconcileDone   chan struct{}
 
-	runMu   sync.Mutex
-	runStat map[string]*runStat
+	runMu         sync.Mutex
+	runStat       map[string]*runStat
+	nativeHistory *history.Journal
 }
 
 type runStat struct {
@@ -845,6 +858,7 @@ func (c *Composer) bridgeHandler(perCall types.EventHandler) types.EventHandler 
 		if out.Type == "run.finished" {
 			out = c.injectRunSummary(out)
 		}
+		c.appendNativeHistory(ctx, out)
 		if c.handler != nil {
 			c.handler.OnEvent(ctx, out)
 		}
@@ -852,6 +866,25 @@ func (c *Composer) bridgeHandler(perCall types.EventHandler) types.EventHandler 
 			perCall.OnEvent(ctx, out)
 		}
 	})
+}
+
+func (c *Composer) appendNativeHistory(ctx context.Context, ev types.Event) {
+	if c == nil || c.nativeHistory == nil {
+		return
+	}
+	source := c.nativeHistory.Source()
+	if source.Kind != types.HistorySourceChild || strings.TrimSpace(source.ID) == "" || strings.TrimSpace(ev.RunID) != strings.TrimSpace(source.ID) {
+		return
+	}
+	projector, err := types.NewNativeExecutionProjector(types.NativeExecutionOptions{Source: types.ProtocolSourceComposer, ExpectedRunID: source.ID})
+	if err != nil {
+		return
+	}
+	fact, err := projector.ProjectEvent(ev)
+	if err != nil {
+		return
+	}
+	_, _ = c.nativeHistory.Append(ctx, fact)
 }
 
 func (c *Composer) injectRunSummary(ev types.Event) types.Event {

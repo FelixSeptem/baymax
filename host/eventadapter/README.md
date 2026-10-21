@@ -18,7 +18,7 @@ source 必须显式选择，不能按事件名猜测。并行 child/source 使�
 
 ## Source journal 与实时投影边界
 
-`orchestration/mailbox` 的 `NativeEventHistoryReader` 是独立 source-owner extension；它返回的 `NativeExecutionEvent.History` 保留 journal identity、source-local sequence 与 lifecycle terminal evidence。adapter 不创建 journal、不解析 cursor、不调用 reader，也不把 callback EventID/TraceID 或 host observation sequence 转成 history identity。宿主可将 history page 交给自己的只读投影逻辑；这不赋予 callback observer durable history/cursor/dedup 能力。当前 runner、child、team、workflow 仍通过 source audit 明确报告 unsupported history；mailbox MemoryStore 也不能宣称跨进程 durable replay。replay 与 checkpoint restore、Run resume 和业务 commit 的语义各自独立。
+`NativeEventHistoryReader` 是独立 source-owner extension；mailbox 与显式注入的 runner/child/team/workflow owner journal 返回 `NativeExecutionEvent.History`，保留 journal identity、source-local sequence 与 lifecycle terminal evidence。adapter 不创建 journal、不解析 cursor、不调用 reader，也不把 callback EventID/TraceID 或 host observation sequence 转成 history identity。宿主可将 history page 交给自己的只读投影逻辑；这不赋予 callback observer durable history/cursor/dedup 能力。默认未配置的 runner、child、team、workflow 仍报告 unsupported history；Memory journal 不能宣称跨进程 durable replay，FileStore 也只保证同机单写顺序重开。replay 与 checkpoint restore、Run resume 和业务 commit 的语义各自独立。
 
 ## Sink 与失败反馈
 

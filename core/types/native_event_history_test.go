@@ -92,3 +92,43 @@ func TestNativeHistorySnapshotBoundsSerializedEventsAndIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeHistorySnapshotRejectsCrossSourceSequenceAndDetachedCursors(t *testing.T) {
+	source := SourceRef{Kind: HistorySourceRunner, Namespace: "runner.history.v1", ID: "run"}
+	page := NativeEventPage{
+		Events: []NativeExecutionEvent{{
+			Version:    NativeExecutionEventVersionV1,
+			NativeType: "runner.step",
+			History:    &NativeHistoryIdentity{Source: source, Sequence: 1, EventID: "event"},
+		}},
+		NextCursor: &OpaqueCursor{Value: "cursor"},
+	}
+	got, err := page.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	page.Events[0].History.Source.ID = "mutated"
+	page.NextCursor.Value = "mutated"
+	if got.Events[0].History.Source.ID != "run" || got.NextCursor.Value != "cursor" {
+		t.Fatalf("snapshot retained caller references: %+v", got)
+	}
+
+	page.Events[0].History.Sequence = 0
+	if _, err := page.Snapshot(); err == nil {
+		t.Fatal("expected sequence validation failure")
+	}
+}
+
+func TestMergeNativeExecutionEventsDeduplicatesOverlapAndRejectsConflict(t *testing.T) {
+	source := SourceRef{Kind: HistorySourceRunner, Namespace: "runner.history.v1", ID: "merge"}
+	event := NativeExecutionEvent{Version: NativeExecutionEventVersionV1, NativeType: "runner.step", History: &NativeHistoryIdentity{Source: source, Sequence: 1, EventID: "event-1"}}
+	merged, err := MergeNativeExecutionEvents([]NativeExecutionEvent{event}, []NativeExecutionEvent{event})
+	if err != nil || len(merged) != 1 {
+		t.Fatalf("overlap merge = %+v err=%v", merged, err)
+	}
+	conflict := event
+	conflict.NativeType = "runner.other"
+	if _, err := MergeNativeExecutionEvents([]NativeExecutionEvent{event}, []NativeExecutionEvent{conflict}); !errors.Is(err, ErrHistoryConflict) {
+		t.Fatalf("conflicting overlap error = %v", err)
+	}
+}

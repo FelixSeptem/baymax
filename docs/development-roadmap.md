@@ -16,6 +16,8 @@ Baymax 主线保持 `library-first + contract-first`：
 
 - 进行中：无。
 
+待归档：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界；归档需使用 OpenSpec 归档脚本。
+
 已归档 170：`evaluate-bounded-harness-candidate-comparisons`（13/13 tasks；Harness² 候选对比评测契约），四组增量要求已同步到评测主规格。
 
 已归档 169：`persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4）。direct 跨进程 checkpoint/claim/restore、三类 pause reason、离线示例与完整门禁已完成并同步主规格；child/team/workflow/mailbox 和 planbridge resumed 保持 unsupported，composite graph restore 留待后续逐 owner 增量提案。
@@ -32,7 +34,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165，application outbox 接缝已归档为 166。
 
-归档 168（`retain-source-native-event-history-and-cursor-replay`；Spec 2 / BXM-2）已完成实施、验证与规格同步。已固定 [source 支持矩阵](guides/integration.md)：既有 mailbox owner 提供最后 1024 条 lifecycle facts 的 retained journal 与只读 read-after-cursor；FileStore 声明原子持久化与重开 replay，MemoryStore 仅 process-local；runner/child/team/workflow 在各自 owner 提供证据前保持 `ErrHistoryUnsupported`。source-bound manifest 明确 namespace、sequence、retention/floor、cursor 与 terminal-recovery 范围；禁止 callback adapter history、host observation cursor、跨 source 全局排序、latest fallback、replay 副作用或将 cursor 解释为 execution restore。完整测试、race、lint 与 81 阶段 quality gate 已通过；最终审查修正后已重跑全量测试/race/lint 与 PowerShell contract gate，shell gate 最终重跑因授权取消未执行，先前执行已通过。验证边界见 [verification](../openspec/changes/archive/168-retain-source-native-event-history-and-cursor-replay/verification.md)。Spec 3 restore 仍需从该归档基线开始新的提案与功能分支。
+归档 168（`retain-source-native-event-history-and-cursor-replay`；Spec 2 / BXM-2）已完成实施、验证与规格同步。已固定 [source 支持矩阵](guides/integration.md)：既有 mailbox owner 提供最后 1024 条 lifecycle facts 的 retained journal 与只读 read-after-cursor；FileStore 声明原子持久化与重开 replay，MemoryStore 仅 process-local；runner/child/team/workflow 在各自 owner 提供证据前保持 `ErrHistoryUnsupported`。source-bound manifest 明确 namespace、sequence、retention/floor、cursor 与 terminal-recovery 范围；禁止 callback adapter history、host observation cursor、跨 source 全局排序、latest fallback、replay 副作用或将 cursor 解释为 execution restore。完整测试、race、lint 与 81 阶段 quality gate 已通过；最终审查修正后已重跑全量测试/race/lint 与 PowerShell contract gate，shell gate 最终重跑因授权取消未执行，先前执行已通过。验证边界见 [verification](../openspec/changes/archive/168-retain-source-native-event-history-and-cursor-replay/verification.md)。当前进行中的 `retain-run-and-composite-source-history` 是该基线的 source-owner 增量：在不扩大 checkpoint/restore 范围的前提下，逐 source 补齐 retained journal/replay evidence；未具备真实 owner 证据的 source 继续明确 unsupported。
 
 `publish-capabilities-and-bridge-mailbox-async-host-plans`（Spec 1；BXM-5 + BXM-1）已完成实现、规范同步与归档（167）。它交付 versioned host runtime capability manifest 与 `mailbox_async` host-plan bridge：先固定 form-level admission/evidence/unsupported boundary，再以既有 mailbox owner 承接 source-owned logical admission、delivery/lease/retry/DLQ/terminal evidence；不新建 queue、worker、scheduler 或 direct-run fallback。
 
@@ -229,15 +231,15 @@ A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门�
 
 备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
 
-### 活动提案：宿主执行接入与恢复边界（2026-10-14）
+### 历史候选快照：宿主执行接入与恢复边界（2026-10-14，已归档）
 
-需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；application outbox 接缝已完成实现与验证，以下保留其活动 change 的归档前边界。
+需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；application outbox 接缝已归档为 166。以下仅保留历史边界，不是活动候选。
 
 总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。本 change 已补齐 application outbox 接入 contract、conformance、replay、example 与双平台 gate，仍按既有 owner 边界运行。
 
 | 顺序 | 后续 slug | 优先级与依赖 | 首阶段目标 |
 | --- | --- | --- | --- |
-| 1 | `establish-application-outbox-mailbox-recovery-contract` | P2；复用归档 160/162 的 plan/event correlation，依赖恢复准入边界 | outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
+| 1（已归档） | `establish-application-outbox-mailbox-recovery-contract` | 已归档 166；复用 160/162 的 plan/event correlation | 已完成 outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
 
 上述顺序记录后续候选 change 的优先级与依赖。归档 166 已按 proposal/design/tasks 的 Example Impact Assessment 交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate，并按 AGENTS.md 执行完整代码门禁和归档前复核。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
 
@@ -538,6 +540,38 @@ Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和�
 | 7.1 | BXM-1、BXM-4、BXM-5 | 把未声明 form/pause reason 作为隐式支持。 |
 | 7.2 | BXM-2、BXM-3 | 把 replay 或 durable restore 实现为有副作用的 retry/resume。 |
 | 7.3 | BXM-1 | 将 ack/nack/retry/DLQ 映射为 host business commit 或无关联 terminal。 |
+
+### 后续增量候选：source-native history 与 composite recovery
+
+归档 168（Spec 2）和归档 169（Spec 3）已经把 mailbox history、direct checkpoint/restore 及 capability vocabulary 固定下来，但没有把 mailbox 的能力外推到其它 source，也没有把 direct continuation 外推到 composite。下面是本轮确认的后续候选；它们是同一条公开契约路线的增量，不重新打开已归档的三个基线 change，也不承诺一次性实现所有 execution form。
+
+| 语义候选 | 触发信号 | 首阶段 DoD | 非目标与回滚边界 | Danny 任务 |
+| --- | --- | --- | --- | --- |
+| `restore-composite-continuations-and-graph-state` | child/fanout、team parallel/vote、workflow、mailbox host plan 和 planbridge resumed 仍是 terminal-only/unsupported，host 只能重跑 parent 而不能恢复原 graph | 以 source-owned checkpoint/restore API 逐形态开放 capability cell；保存并校验 graph/version/digest、parent/child/member/step/native IDs、依赖完成状态、pending/completed action、fanout/vote aggregate、预算、causation、terminal arbitration、effect references、pause boundary 与 predecessor/successor；atomic claim、duplicate projection、foreign/stale/conflicting/expired/corrupt fail-closed；三类 pause reason 均须以真实 safe point、跨进程 restore、cancel/timeout/retry 竞争和 Run/Stream parity 证据开放 | 不新建 parent run、不重新 enqueue、不用 history replay 或 application checkpoint 模拟 restore；已完成 member/step/tool effect 不重跑。不能在本 change 内提供 source evidence 的 form/reason 格子明确为 `unsupported_capability` | `1.3, 4.3, 4.4, 4.5, 4.6, 4.7, 5.2, 5.4, 5.5, 7.1, 7.3` |
+| `bound-durable-store-deployment-scope` | 现有 FileStore 支持同机单写、持久化 snapshot 的顺序重开，但不保证多写者 CAS、跨机器 journal 或多实例 resume claim | 先把部署/并发能力写入 manifest、integration guide 和 contract fixture：明确 sequential local reopen 与 concurrent/distributed recovery 的分界；默认路线为同机单写、writer ownership、故障 fail-closed。若真实宿主需要路线 1，另行证明 source CAS、writer fencing、atomic claim/cursor transaction、crash recovery、stale-writer reject、reader/writer consistency 与 multi-instance duplicate tests | 不把“新进程可顺序重开”宣传为通用跨进程/跨机器恢复；未交付分布式 store 前，Danny 的多实例、跨机器、并发 claim 只能标为 blocked/unsupported；不把 mailbox history 与 runner checkpoint 强行合并为统一存储 | `3.2, 3.3, 3.4, 3.5, 5.4, 7.2` |
+| `extend-composite-context-assembly-handoff`（条件候选） | 仅当 Danny 要求 child/team/workflow/mailbox 共用同一个 native context assembly/handoff 入口；direct assembler、legal handoff cuts 和 fresh-resolver restore 已有基线 | 在对应 form 已有真实 graph restore material 后，再绑定 child capability subset、team member inheritance、workflow step correlation、mailbox host-plan correlation、graph/member/step references、restore 前 resolver reauthorization、Run/Stream parity 与 context projection/checkpoint binding | direct context assembly 不能推导 composite 支持；在 restore material、resolver 和 source evidence 未齐前，保持 dependency-profile unsupported，不以 projection snapshot、handoff callback 或重复 Run 代替 | `4.3, 4.4, 4.5, 4.6, 5.4, 6.4` |
+
+#### Source-native history 候选的完整验收面
+
+runner、isolated child、team、workflow 和 mailbox 必须分别声明实际能力；mailbox 的 MemoryStore 仍是 process-local，FileStore 的已持久化 snapshot 可在同机顺序重开，但这两者都不能替其它 source 背书。每个 source 必须拥有稳定的 event identity namespace、source-local monotonic sequence（并声明适用范围）、bounded retention 与 retention floor、opaque cursor scope/version，以及 malformed、foreign、expired、gap、unavailable 的 typed error。公开 reader 采用 bounded `ReadAfter(source, cursor, limit)` 语义，返回 events、next cursor、floor 和 complete；cursor 过期或出现 gap 时必须报错，禁止静默从 latest 开始。
+
+source journal 与 Danny application projection 必须可独立推进；进程在 consumer projection 前崩溃时，可用原 source identity/cursor 重新只读投影。重叠页按 source identity 幂等去重，payload 冲突 fail closed。replay 绝不能调用 Run、Stream、retry、resume、ack、nack、tool 或 model，也不能把 callback EventID 当作 journal identity；并行 child/team 只能声明各自 source 内顺序，不得伪造跨 source 全局自然顺序。每一个 source 的 manifest cell、fixture、restart/gap/expiry/unavailable 证据必须独立存在。
+
+#### Composite continuation 与 graph restore 的完整验收面
+
+对每个声称支持的 child、team、workflow、mailbox form，必须持久化真实 graph continuation，而不是 application-level pause 标志：graph identity/version/digest；parent/child/member/step native IDs；dependency completion；pending 与 completed member/step/action；fanout/vote aggregate；workflow dependency edges；per-member/per-step consumed budget 与原 deadline；native run/session/causation；terminal arbitration evidence；已完成 tool/effect outcome references；当前 pause boundary；successor checkpoint relationship。restore 前验证 graph version、parent/child capability subset、authority/plan/write-scope/effect namespace、occurrence/causation、current revision/budget 事实和 predecessor/successor 关系。
+
+`input_required` 必须在 source-owned safe point 保存 pending state；`approval_required` 必须在 tool dispatch 前保存并留下 deny/timeout 的 source terminal evidence；`budget_exhausted` 必须保存真实资源计数、已消耗资源和原 deadline。恢复后不得重新执行已完成 member/step/effect。checkpoint claim 必须 atomic；同一 resume 返回原 projection，冲突、stale、foreign、expired、corrupt checkpoint 均 fail closed。取消请求被接受不等于 terminal cancellation，terminal 必须由 source evidence 决定；每个已开放格子都要有跨进程重启、retry/timeout/cancel 竞争和 Run/Stream 对等测试。
+
+#### 存储支持范围与启动闸门
+
+当前路线默认选择“同机单写 + 可顺序重开”的支持范围：旧进程退出后，新进程可读取已经持久化的 source snapshot/checkpoint，但不提供多写者 CAS、跨机器协调、分布式 source journal、多个实例的 resume claim 或 mailbox/runner 统一事务。FileStore 写入失败、owner 不可用或 store contract 不兼容时必须 fail closed，不能退化为重新 `Run`、重新 enqueue 或 latest replay。只有在真实宿主提出并能提供上述路线 1 的 CAS/fencing/transaction/crash evidence 后，才可另立支持多实例/跨机器的 OpenSpec；在此之前 capability manifest 与 Danny 交付必须明确标记 blocked/unsupported。
+
+#### 条件性 context assembly/handoff 闸门
+
+`host_context_projection.v1` 当前只覆盖 assembler-enabled direct Run/Stream、合法 handoff cut 和显式 correlated restore validation。只有 composite graph restore material、source capability subset 和 fresh resolver reauthorization 都已交付，才能启动 composite context 候选；否则不得把 direct projection、mailbox lifecycle history、Danny snapshot 或 callback replay 描述为 composite context assembly。候选启动后仍需保持 context projection 与 checkpoint 的 identity/digest/causation 绑定，并验证 Run/Stream parity。
+
+每个后续 OpenSpec 必须在 proposal/design/tasks 中声明 Example Impact Assessment 与 Public Semantic Documentation Commitment；至少同步受影响的 integration guide、runtime module boundaries、diagnostics、contract-test index、相关 package README 和离线 example（若无示例变更，必须写明理由）。候选进入“进行中”前还必须提供最小复现、source owner 审计、回滚点和 dedicated shell/PowerShell gate；未满足这些闸门时只保留在本节，不得声称 capability 已交付。
 
 ### 需求触发观察项
 

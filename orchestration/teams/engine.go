@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/collab"
 )
@@ -205,9 +206,20 @@ func WithTimelineEmitter(handler types.EventHandler) Option {
 	}
 }
 
+// WithNativeEventHistory binds an existing team-owned journal. No journal is
+// created by the default engine and append failures never alter team results.
+func WithNativeEventHistory(journal *history.Journal) Option {
+	return func(e *Engine) {
+		if e != nil {
+			e.nativeHistory = journal
+		}
+	}
+}
+
 type Engine struct {
 	now             func() time.Time
 	timelineEmitter types.EventHandler
+	nativeHistory   *history.Journal
 }
 
 func New(opts ...Option) *Engine {
@@ -803,7 +815,7 @@ func (e *Engine) emitTimeline(
 	reason string,
 	task *TaskRecord,
 ) {
-	if e == nil || e.timelineEmitter == nil || seq == nil {
+	if e == nil || seq == nil || (e.timelineEmitter == nil && e.nativeHistory == nil) {
 		return
 	}
 	*seq++
@@ -826,6 +838,10 @@ func (e *Engine) emitTimeline(
 			payload["peer_id"] = task.PeerID
 		}
 	}
+	e.emitNativeHistory(ctx, timelineCtx, status, payload)
+	if e.timelineEmitter == nil {
+		return
+	}
 	e.timelineEmitter.OnEvent(ctx, types.Event{
 		Version: types.EventSchemaVersionV1,
 		Type:    types.EventTypeActionTimeline,
@@ -833,6 +849,42 @@ func (e *Engine) emitTimeline(
 		Time:    e.now(),
 		Payload: payload,
 	})
+}
+
+func (e *Engine) emitNativeHistory(ctx context.Context, timeline teamTimelineContext, status TaskStatus, payload map[string]any) {
+	if e == nil || e.nativeHistory == nil {
+		return
+	}
+	source := e.nativeHistory.Source()
+	if source.Kind != types.HistorySourceTeam || strings.TrimSpace(source.ID) != strings.TrimSpace(timeline.teamID) {
+		return
+	}
+	nativeType := "team." + string(status)
+	if status == TaskStatusSucceeded || status == TaskStatusFailed || status == TaskStatusCanceled {
+		nativeType = "run.finished"
+		payload = cloneTimelinePayload(payload)
+		payload["terminal_state"] = historyTerminalState(string(status))
+	}
+	_, _ = e.nativeHistory.Append(ctx, types.NativeExecutionEvent{
+		Version:    types.NativeExecutionEventVersionV1,
+		NativeType: nativeType,
+		Event:      types.EventEnvelope{RunID: timeline.runID, Source: types.ProtocolSourceTeams, Time: e.now(), Payload: payload},
+	})
+}
+
+func historyTerminalState(status string) string {
+	if status == string(TaskStatusSucceeded) {
+		return "completed"
+	}
+	return status
+}
+
+func cloneTimelinePayload(payload map[string]any) map[string]any {
+	result := make(map[string]any, len(payload))
+	for key, value := range payload {
+		result[key] = value
+	}
+	return result
 }
 
 func dispatchReasonForRecord(record TaskRecord) string {

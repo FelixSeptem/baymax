@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/history"
@@ -159,11 +156,6 @@ type Planner interface {
 	Plan(def Definition) ([]string, error)
 }
 
-type CheckpointStore interface {
-	Load(ctx context.Context, workflowID string) (Checkpoint, bool, error)
-	Save(ctx context.Context, cp Checkpoint) error
-}
-
 type StepAdapter interface {
 	Execute(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 }
@@ -209,113 +201,27 @@ func (a DispatchAdapter) Execute(ctx context.Context, workflowID string, step St
 }
 
 type StepOutput struct {
-	Payload map[string]any `json:"payload,omitempty"`
-}
-
-type CheckpointStep struct {
-	Status   StepStatus `json:"status"`
-	Attempts int        `json:"attempts"`
-}
-
-type Checkpoint struct {
-	WorkflowID  string                    `json:"workflow_id"`
-	RunID       string                    `json:"run_id,omitempty"`
-	Status      string                    `json:"workflow_status,omitempty"`
-	ResumeCount int                       `json:"workflow_resume_count,omitempty"`
-	Steps       map[string]CheckpointStep `json:"steps,omitempty"`
-	UpdatedAt   time.Time                 `json:"updated_at"`
-}
-
-type MemoryCheckpointStore struct {
-	mu   sync.Mutex
-	data map[string]Checkpoint
-}
-
-func NewMemoryCheckpointStore() *MemoryCheckpointStore {
-	return &MemoryCheckpointStore{data: map[string]Checkpoint{}}
-}
-
-func (s *MemoryCheckpointStore) Load(_ context.Context, workflowID string) (Checkpoint, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cp, ok := s.data[strings.TrimSpace(workflowID)]
-	if !ok {
-		return Checkpoint{}, false, nil
-	}
-	return cp, true, nil
-}
-
-func (s *MemoryCheckpointStore) Save(_ context.Context, cp Checkpoint) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key := strings.TrimSpace(cp.WorkflowID)
-	if key == "" {
-		return errors.New("workflow checkpoint requires workflow_id")
-	}
-	s.data[key] = cp
-	return nil
-}
-
-type FileCheckpointStore struct {
-	root string
-}
-
-func NewFileCheckpointStore(root string) (*FileCheckpointStore, error) {
-	path := strings.TrimSpace(root)
-	if path == "" {
-		return nil, errors.New("workflow checkpoint root is required")
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir workflow checkpoint root: %w", err)
-	}
-	return &FileCheckpointStore{root: path}, nil
-}
-
-func (s *FileCheckpointStore) Load(_ context.Context, workflowID string) (Checkpoint, bool, error) {
-	path := s.filePath(workflowID)
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return Checkpoint{}, false, nil
-	}
-	if err != nil {
-		return Checkpoint{}, false, fmt.Errorf("read workflow checkpoint: %w", err)
-	}
-	var cp Checkpoint
-	if err := json.Unmarshal(raw, &cp); err != nil {
-		return Checkpoint{}, false, fmt.Errorf("decode workflow checkpoint: %w", err)
-	}
-	return cp, true, nil
-}
-
-func (s *FileCheckpointStore) Save(_ context.Context, cp Checkpoint) error {
-	if strings.TrimSpace(cp.WorkflowID) == "" {
-		return errors.New("workflow checkpoint requires workflow_id")
-	}
-	if err := os.MkdirAll(s.root, 0o755); err != nil {
-		return fmt.Errorf("mkdir workflow checkpoint root: %w", err)
-	}
-	raw, err := json.Marshal(cp)
-	if err != nil {
-		return fmt.Errorf("encode workflow checkpoint: %w", err)
-	}
-	if err := os.WriteFile(s.filePath(cp.WorkflowID), raw, 0o600); err != nil {
-		return fmt.Errorf("write workflow checkpoint: %w", err)
-	}
-	return nil
-}
-
-func (s *FileCheckpointStore) filePath(workflowID string) string {
-	clean := strings.ToLower(strings.TrimSpace(workflowID))
-	clean = strings.ReplaceAll(clean, " ", "_")
-	clean = strings.ReplaceAll(clean, "/", "_")
-	clean = strings.ReplaceAll(clean, "\\", "_")
-	return filepath.Join(s.root, clean+".json")
+	Payload         map[string]any `json:"payload,omitempty"`
+	EffectReference string         `json:"effect_reference,omitempty"`
 }
 
 type RunRequest struct {
-	RunID  string     `json:"run_id,omitempty"`
-	Resume bool       `json:"resume,omitempty"`
-	DSL    Definition `json:"dsl"`
+	RunID            string     `json:"run_id,omitempty"`
+	SessionID        string     `json:"session_id,omitempty"`
+	ParentRunID      string     `json:"parent_run_id,omitempty"`
+	CausationID      string     `json:"causation_id,omitempty"`
+	AuthorityDigest  string     `json:"authority_digest,omitempty"`
+	PlanDigest       string     `json:"plan_digest,omitempty"`
+	WriteScopeDigest string     `json:"write_scope_digest,omitempty"`
+	EffectNamespace  string     `json:"effect_namespace,omitempty"`
+	OccurrenceID     string     `json:"occurrence_id,omitempty"`
+	Resume           bool       `json:"resume,omitempty"`
+	DSL              Definition `json:"dsl"`
+
+	continuationPredecessor string
+	continuationGeneration  uint64
+	continuationSteps       map[string]CheckpointStep
+	sourceContinuation      bool
 }
 
 type StepResult struct {
@@ -329,19 +235,22 @@ type StepResult struct {
 }
 
 type RunResult struct {
-	RunID                          string       `json:"run_id,omitempty"`
-	WorkflowID                     string       `json:"workflow_id"`
-	WorkflowStatus                 string       `json:"workflow_status"`
-	WorkflowStepTotal              int          `json:"workflow_step_total"`
-	WorkflowStepFailed             int          `json:"workflow_step_failed"`
-	WorkflowRemoteTotal            int          `json:"workflow_remote_step_total,omitempty"`
-	WorkflowRemoteFailed           int          `json:"workflow_remote_step_failed,omitempty"`
-	WorkflowSubgraphExpansionTotal int          `json:"workflow_subgraph_expansion_total,omitempty"`
-	WorkflowConditionTemplateTotal int          `json:"workflow_condition_template_total,omitempty"`
-	WorkflowGraphCompileFailed     bool         `json:"workflow_graph_compile_failed,omitempty"`
-	WorkflowResumeCount            int          `json:"workflow_resume_count"`
-	Steps                          []StepResult `json:"steps"`
-	ExecutionOrder                 []string     `json:"execution_order,omitempty"`
+	RunID                          string                   `json:"run_id,omitempty"`
+	WorkflowID                     string                   `json:"workflow_id"`
+	WorkflowStatus                 string                   `json:"workflow_status"`
+	WorkflowStepTotal              int                      `json:"workflow_step_total"`
+	WorkflowStepFailed             int                      `json:"workflow_step_failed"`
+	WorkflowRemoteTotal            int                      `json:"workflow_remote_step_total,omitempty"`
+	WorkflowRemoteFailed           int                      `json:"workflow_remote_step_failed,omitempty"`
+	WorkflowSubgraphExpansionTotal int                      `json:"workflow_subgraph_expansion_total,omitempty"`
+	WorkflowConditionTemplateTotal int                      `json:"workflow_condition_template_total,omitempty"`
+	WorkflowGraphCompileFailed     bool                     `json:"workflow_graph_compile_failed,omitempty"`
+	WorkflowResumeCount            int                      `json:"workflow_resume_count"`
+	Steps                          []StepResult             `json:"steps"`
+	ExecutionOrder                 []string                 `json:"execution_order,omitempty"`
+	WorkflowCheckpoint             *WorkflowContinuationRef `json:"workflow_checkpoint,omitempty"`
+	WorkflowCheckpointGeneration   uint64                   `json:"workflow_checkpoint_generation,omitempty"`
+	WorkflowGraphDigest            string                   `json:"workflow_graph_digest,omitempty"`
 }
 
 func (r RunResult) RunFinishedPayload() map[string]any {
@@ -428,6 +337,9 @@ func WithGraphComposabilityEnabled(enabled bool) Option {
 type Engine struct {
 	adapter                   StepAdapter
 	checkpoints               CheckpointStore
+	continuations             WorkflowContinuationStore
+	continuationNamespace     string
+	pauseController           WorkflowPauseController
 	timelineEmitter           types.EventHandler
 	nativeHistory             *history.Journal
 	defaultStepTimeout        time.Duration
@@ -918,7 +830,12 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 
 	seq := int64(0)
 	resumeCount := 0
-	if req.Resume && e.checkpoints != nil {
+	if req.sourceContinuation {
+		resumeCount = 1
+		if err := e.restoreContinuationSteps(ctx, req, results, stepTimeline, stepsByID, timelineCtx, &seq, onEvent); err != nil {
+			return RunResult{}, err
+		}
+	} else if req.Resume && e.checkpoints != nil {
 		cp, ok, err := e.checkpoints.Load(ctx, def.WorkflowID)
 		if err != nil {
 			return RunResult{}, err
@@ -982,8 +899,10 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 						return RunResult{}, err
 					}
 				}
-				if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, "running", resumeCount, results); err != nil {
-					return RunResult{}, err
+				if !req.sourceContinuation {
+					if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, "running", resumeCount, results); err != nil {
+						return RunResult{}, err
+					}
 				}
 				continue
 			}
@@ -996,6 +915,18 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 				record.Attempts = attempt
 				record.Status = StepStatusRunning
 				e.emitTimeline(ctx, timelineCtx, meta, StepStatusRunning, dispatchReason, &seq)
+				if e.pauseController != nil {
+					boundary := WorkflowPauseBoundary{WorkflowID: def.WorkflowID, RunID: req.RunID, SessionID: req.SessionID, ParentRunID: req.ParentRunID, CausationID: req.CausationID, Step: step, Attempt: attempt}
+					if pauseErr := e.pauseController.BeforeDispatch(ctx, boundary); pauseErr != nil {
+						var pause PauseError
+						if errors.As(pauseErr, &pause) {
+							record.Status = StepStatusPending
+							record.Attempts = attempt - 1
+							return e.persistPausedResult(ctx, req, def, results, step.StepID, pause, resumeCount, executionOrder, compileSummary, onEvent)
+						}
+						return RunResult{}, pauseErr
+					}
+				}
 
 				timeout := step.Timeout
 				if timeout <= 0 {
@@ -1014,6 +945,12 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					record.Output = output
 					e.emitTimeline(ctx, timelineCtx, meta, StepStatusSucceeded, dispatchReason, &seq)
 					break
+				}
+				var pause PauseError
+				if errors.As(err, &pause) {
+					record.Status = StepStatusPending
+					record.Attempts = attempt - 1
+					return e.persistPausedResult(ctx, req, def, results, step.StepID, pause, resumeCount, executionOrder, compileSummary, onEvent)
 				}
 
 				record.Output = StepOutput{}
@@ -1054,15 +991,19 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					return RunResult{}, err
 				}
 			}
-			if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, "running", resumeCount, results); err != nil {
-				return RunResult{}, err
+			if !req.sourceContinuation {
+				if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, "running", resumeCount, results); err != nil {
+					return RunResult{}, err
+				}
 			}
 		}
 	}
 
 	out := buildResult(req.RunID, def.WorkflowID, resumeCount, def.Steps, results, executionOrder, compileSummary)
-	if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, out.WorkflowStatus, resumeCount, results); err != nil {
-		return RunResult{}, err
+	if !req.sourceContinuation {
+		if err := e.saveCheckpoint(ctx, req.RunID, def.WorkflowID, out.WorkflowStatus, resumeCount, results); err != nil {
+			return RunResult{}, err
+		}
 	}
 	if onEvent != nil {
 		if err := onEvent(StreamEvent{
@@ -1180,9 +1121,12 @@ func buildResult(
 	}
 	out.WorkflowStatus = "succeeded"
 	for _, step := range out.Steps {
-		if step.Status == StepStatusFailed || step.Status == StepStatusCanceled {
+		if step.Status == StepStatusFailed {
 			out.WorkflowStatus = "failed"
 			break
+		}
+		if step.Status == StepStatusCanceled {
+			out.WorkflowStatus = "canceled"
 		}
 	}
 	return out

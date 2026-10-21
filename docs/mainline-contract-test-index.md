@@ -2,7 +2,7 @@
 
 ## Durable native continuation restore
 
-Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. These tests verify source digest/binding, atomic claim, retained result, dependency profile, tool outcome preservation, and fail-closed errors. Child/team/workflow/mailbox/planbridge resumed remain unsupported and are rejected before activation. Offline lifecycle fixtures and shell/PowerShell gates are tracked with the active Spec 3 change; they are not a substitute for the source-process tests.
+Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child/team/mailbox/planbridge resumed remain unsupported and are rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
 
 ## Host resume admission revalidation
 

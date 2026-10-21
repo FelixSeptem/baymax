@@ -115,7 +115,7 @@ func checkSnapshot(v reflect.Value, remaining *int, depth, maxDepth int, jsonLik
 		}
 		for i := 0; i < v.NumField(); i++ {
 			f := v.Type().Field(i)
-			if f.Tag.Get("json") == "-" {
+			if f.PkgPath != "" || f.Tag.Get("json") == "-" {
 				continue
 			}
 			if err := checkSnapshot(v.Field(i), remaining, depth, maxDepth, false); err != nil {
@@ -174,7 +174,11 @@ func cloneValue(v reflect.Value) reflect.Value {
 		}
 		out := reflect.New(v.Type()).Elem()
 		for i := 0; i < v.NumField(); i++ {
-			if v.Type().Field(i).Tag.Get("json") == "-" {
+			field := v.Type().Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			if field.Tag.Get("json") == "-" {
 				out.Field(i).Set(v.Field(i))
 			} else {
 				out.Field(i).Set(cloneValue(v.Field(i)))

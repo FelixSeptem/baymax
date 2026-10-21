@@ -50,7 +50,7 @@ callback 必须在 source 锁外运行，返回后 source 锁内重检 generatio
 - `orchestration/workflow`
   - Workflow DSL 基线（`step/depends_on/condition/retry/timeout`）解析与静态 DAG 校验
   - A2A remote step（`kind=a2a`）在现有 adapter 下执行，复用 workflow retry/timeout/checkpoint 语义
-  - 确定性调度、重试/超时、checkpoint/resume 执行语义
+  - 确定性调度、重试/超时、checkpoint/resume 执行语义；workflow-first source-owned graph continuation 仅在 manifest evidence 宣称的格子开放
   - 通过标准事件发射 Workflow timeline/摘要元数据（含 `workflow.dispatch_a2a`，不直接写 diagnostics store）
 - `a2a`
   - A2A 最小互联能力（`submit/status/result`）与任务生命周期语义

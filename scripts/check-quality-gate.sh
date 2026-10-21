@@ -270,6 +270,8 @@ echo "[quality-gate] native event history contract suites"
 bash scripts/check-native-event-history-contract.sh
 echo "[quality-gate] native continuation contract suites"
 bash scripts/check-native-continuation-contract.sh
+echo "[quality-gate] workflow continuation contract suites"
+bash scripts/check-workflow-continuation-contract.sh
 echo "[quality-gate] host execution plan bridge contract suites"
 if ! bash scripts/check-host-execution-plan-contract.sh; then
   echo "[quality-gate][host-execution-plan-contract] host execution plan bridge contract suites failed" >&2

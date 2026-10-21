@@ -35,7 +35,9 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
-- `retain-run-and-composite-source-history`（已完成，待归档）
+- `retain-run-and-composite-source-history`（归档 171；source-native history/cursor/replay 增量）
+
+- `restore-workflow-continuations`（归档 172；workflow-first composite continuation）：为 workflow owner 增加 source-owned graph checkpoint/restore、三类 pause safe point、原子 claim、new-Engine file-store reopen 与只读 replay evidence。child/team/mailbox/planbridge resumed 继续在准入前返回 `unsupported_capability`。
 
 - `enforce-openspec-public-semantics-documentation-contract`（归档 161；[公开语义文档同步治理](openspec/changes/archive/161-enforce-openspec-public-semantics-documentation-contract/proposal.md)）：要求每个 active OpenSpec 的三份工件声明对外语义文档同步承诺，并由双平台门禁检查。
 - `establish-native-execution-event-adapter-contract`（归档 160；[原生执行事件与宿主接入契约](openspec/changes/archive/160-establish-native-execution-event-adapter-contract/proposal.md)）：已完成版本化 native execution event、bounded host references、source capability 声明、观察失败反馈、真实 Run/Stream 集成、离线 replay、示例与维护文档同步。
@@ -48,7 +50,7 @@ go run ./examples/01-chat-minimal
 - `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
 - `evaluate-bounded-harness-candidate-comparisons`（已归档 170）：已落地离线、review-only 的候选实验身份、scope admission、baseline selection、评分隔离、逐 attempt 成本证据与只读 replay；七类 fixture、legacy/idempotency replay、双平台专项门禁及全量质量门禁已通过。契约与使用边界见 [评测契约](docs/evaluation-contract.md)。
 
-当前 active OpenSpec：无。已完成但尚未归档的 `retain-run-and-composite-source-history` 保留 source-history 代码、测试和文档；未配置 owner journal 的默认路径继续保持 `unsupported`。
+当前 active OpenSpec：无。最近归档的 `restore-workflow-continuations` 只开放已由 workflow source owner 证实的 restore 格子；未配置 owner journal 的默认 history 路径继续保持 `unsupported`。
 
 最近归档：
 

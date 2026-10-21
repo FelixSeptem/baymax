@@ -14,9 +14,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 ## 当前状态
 
-- 进行中：无。
+已归档 172：`restore-workflow-continuations` 已完成 workflow-first composite continuation 实施、验证与规格同步；child/team/mailbox/planbridge resumed 继续保持 `unsupported_capability`。范围与证据见 [归档提案](../openspec/changes/archive/172-restore-workflow-continuations/proposal.md) 和 [验证记录](../openspec/changes/archive/172-restore-workflow-continuations/verification.md)。
 
-待归档：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界；归档需使用 OpenSpec 归档脚本。
+已归档 171：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界。
 
 已归档 170：`evaluate-bounded-harness-candidate-comparisons`（13/13 tasks；Harness² 候选对比评测契约），四组增量要求已同步到评测主规格。
 

@@ -166,6 +166,48 @@ func CapabilityManifestWithContinuation(ctx context.Context, source types.Contin
 	return result, validateCapabilityManifest(result)
 }
 
+// CapabilityManifestWithWorkflowContinuation promotes continuation dimensions
+// only for an explicit workflow source owner. It is intentionally separate
+// from the direct profile so package presence, history, or another composite
+// source cannot accidentally advertise workflow restore.
+func CapabilityManifestWithWorkflowContinuation(ctx context.Context, source types.ContinuationCapabilitySource) (CapabilityManifest, error) {
+	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormWorkflow, "workflow")
+}
+
+func capabilityManifestWithContinuationForForm(ctx context.Context, source types.ContinuationCapabilitySource, form ExecutionForm, namespace string) (CapabilityManifest, error) {
+	result := DefaultCapabilityManifest()
+	if source == nil {
+		return result, fail(SourceUnavailable, "capability_manifest.source_continuation", nil)
+	}
+	caps, err := source.ContinuationCapabilities(ctx)
+	if err != nil {
+		return result, err
+	}
+	if err = caps.Validate(); err != nil {
+		return result, &Error{Code: UnsupportedCapability, Field: "capability_manifest.source_continuation", Limitation: LimitationSourceEvidenceMissing}
+	}
+	if caps.ContractVersion != result.ContractVersion || caps.APIVersion != result.APIVersion || caps.SourceNamespace != namespace {
+		return result, fail(UnsupportedVersion, "capability_manifest.source_continuation", nil)
+	}
+	for i := range result.Forms {
+		entry := &result.Forms[i]
+		if entry.Form != form {
+			continue
+		}
+		snapshot := caps.Clone()
+		entry.SourceContinuation = &snapshot
+		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
+		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
+		entry.RetentionPolicy = caps.RetentionPolicy
+		entry.EvidenceReference = caps.EvidenceReferences["cross_process_restore"]
+		for _, dimension := range continuationDimensions() {
+			delete(entry.UnsupportedReasons, dimension)
+		}
+	}
+	result.ModuleRevision = caps.ModuleRevision
+	return result, validateCapabilityManifest(result)
+}
+
 // CapabilityManifestWithHistory projects only a source owner's evidenced facts.
 // It does not open a mailbox, create a history store, or imply checkpoint/restore.
 func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEventHistoryReader, source types.SourceRef) (CapabilityManifest, error) {
@@ -327,7 +369,10 @@ func validateCapability(entry ExecutionFormCapability) error {
 	}
 	continuationDeclared := entry.CheckpointCreation == CapabilitySupported || entry.CrossProcessRestore == CapabilitySupported || entry.InputRequired == CapabilitySupported || entry.ApprovalRequired == CapabilitySupported || entry.BudgetExhausted == CapabilitySupported
 	if continuationDeclared || entry.SourceContinuation != nil {
-		if entry.Form != ExecutionFormDirect || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
+		if (entry.Form != ExecutionFormDirect && entry.Form != ExecutionFormWorkflow) || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		if entry.Form == ExecutionFormWorkflow && entry.SourceContinuation.SourceNamespace != "workflow" {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		for _, dimension := range continuationDimensions() {

@@ -1,6 +1,75 @@
 package planbridge
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/workflow"
+)
+
+type workflowContinuationEvidence struct{}
+
+func (workflowContinuationEvidence) ContinuationCapabilities(context.Context) (types.ContinuationCapabilities, error) {
+	return types.ContinuationCapabilities{
+		ProfileVersion: "native_continuation.v1", SourceNamespace: "workflow", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "workflow-v1", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "same-host-single-writer", ExpiryPolicy: "24h", CheckpointCreation: true, CrossProcessRestore: true,
+		PauseReasons:       []string{"input_required", "approval_required", "budget_exhausted"},
+		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:workflow-continuation.v1", "cross_process_restore": "fixture:workflow-continuation.v1", "input_required": "fixture:workflow-continuation.v1", "approval_required": "fixture:workflow-continuation.v1", "budget_exhausted": "fixture:workflow-continuation.v1"},
+	}, nil
+}
+
+func TestWorkflowContinuationManifestEnablesOnlyWorkflowCells(t *testing.T) {
+	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), workflowContinuationEvidence{})
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatalf("reader: %v", err)
+	}
+	workflow, err := reader.Capability(ExecutionFormWorkflow)
+	if err != nil {
+		t.Fatalf("workflow: %v", err)
+	}
+	for _, state := range []CapabilityState{workflow.CheckpointCreation, workflow.CrossProcessRestore, workflow.InputRequired, workflow.ApprovalRequired, workflow.BudgetExhausted} {
+		if state != CapabilitySupported {
+			t.Fatalf("workflow continuation state = %q", state)
+		}
+	}
+	for _, form := range []ExecutionForm{ExecutionFormDirect, ExecutionFormSubagent, ExecutionFormTeam, ExecutionFormMailboxAsync} {
+		entry, err := reader.Capability(form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.CrossProcessRestore != CapabilityUnsupported {
+			t.Fatalf("%s inherited workflow restore: %#v", form, entry)
+		}
+	}
+}
+
+func TestWorkflowContinuationManifestUsesConfiguredWorkflowOwner(t *testing.T) {
+	store, err := workflow.NewFileWorkflowContinuationStore(t.TempDir(), "workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := workflow.New(workflow.WithWorkflowContinuationStore(store, "workflow"))
+	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), engine)
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := reader.Capability(ExecutionFormWorkflow)
+	if err != nil || entry.SourceContinuation == nil || entry.SourceContinuation.SourceNamespace != "workflow" || entry.CrossProcessRestore != CapabilitySupported {
+		t.Fatalf("workflow owner capability = %#v err=%v", entry, err)
+	}
+	memory := workflow.New(workflow.WithWorkflowContinuationStore(workflow.NewMemoryWorkflowContinuationStore("workflow"), "workflow"))
+	if _, err := CapabilityManifestWithWorkflowContinuation(context.Background(), memory); err == nil {
+		t.Fatal("memory store advertised cross-process workflow restore")
+	}
+}
 
 func TestCapabilityManifestRequiresExplicitDimensionAndPreservesSnapshot(t *testing.T) {
 	manifest := CapabilityManifest{

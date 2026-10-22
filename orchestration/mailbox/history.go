@@ -197,7 +197,8 @@ func (m *Mailbox) Capabilities(ctx context.Context, source types.SourceRef) (typ
 	if source != h.source() {
 		return types.HistoryCapabilities{}, types.ErrCursorForeign
 	}
-	return types.HistoryCapabilities{Source: source, EventIdentityNamespace: HistoryVersion + "/" + source.ID, SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last 1024 lifecycle events; no time guarantee", RetentionFloor: encodeHistoryCursor(source, h.Floor), CursorScope: "source_instance", CursorVersion: HistoryVersion, Durable: durable, TerminalRecovery: "retained mailbox lifecycle only; no business commit", Supported: true}, nil
+	deployment := types.SameHostSingleWriterScope(source.ID, "fixture:deployment-scope.v1")
+	return types.HistoryCapabilities{Source: source, EventIdentityNamespace: HistoryVersion + "/" + source.ID, SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last 1024 lifecycle events; no time guarantee", RetentionFloor: encodeHistoryCursor(source, h.Floor), CursorScope: "source_instance", CursorVersion: HistoryVersion, Durable: durable, TerminalRecovery: "retained mailbox lifecycle only; no business commit", Supported: true, Deployment: deployment}, nil
 }
 
 func (m *Mailbox) ReadAfter(ctx context.Context, source types.SourceRef, cursor *types.OpaqueCursor, limit int) (types.NativeEventPage, error) {

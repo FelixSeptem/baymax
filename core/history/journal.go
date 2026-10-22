@@ -175,7 +175,8 @@ func (j *Journal) Capabilities(ctx context.Context, source types.SourceRef) (typ
 		return types.HistoryCapabilities{}, types.ErrCursorForeign
 	}
 	floor := encodeCursor(source, j.floor)
-	return types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: j.path != "", TerminalRecovery: "retained source facts only", Supported: true}, nil
+	deployment := types.SameHostSingleWriterScope(source.ID, "fixture:deployment-scope.v1")
+	return types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: j.path != "", TerminalRecovery: "retained source facts only", Supported: true, Deployment: deployment}, nil
 }
 
 func (j *Journal) ReadAfter(ctx context.Context, source types.SourceRef, cursor *types.OpaqueCursor, limit int) (types.NativeEventPage, error) {

@@ -18,6 +18,9 @@ Baymax 主线保持 `library-first + contract-first`：
 
 - 已归档 173：`restore-composite-continuations-and-graph-state` 已完成 child/fanout source-owner continuation phase，包含 bounded continuation store、atomic resume claim、新 Composer FileStore reopen、显式三类 child pause producer、child capability manifest、planbridge owner binding、只读 replay 和双平台 gate。team parallel/vote、mailbox host-plan continuation、resumed planbridge 仍保持 `unsupported_capability`。
 
+- 进行中：
+  - 当前没有 active OpenSpec change。
+
 已归档 171：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界。
 
 已归档 170：`evaluate-bounded-harness-candidate-comparisons`（13/13 tasks；Harness² 候选对比评测契约），四组增量要求已同步到评测主规格。
@@ -550,7 +553,6 @@ Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和�
 | 语义候选 | 触发信号 | 首阶段 DoD | 非目标与回滚边界 | Danny 任务 |
 | --- | --- | --- | --- | --- |
 | `restore-composite-continuations-and-graph-state` | child/fanout、team parallel/vote、workflow、mailbox host plan 和 planbridge resumed 仍是 terminal-only/unsupported，host 只能重跑 parent 而不能恢复原 graph | 以 source-owned checkpoint/restore API 逐形态开放 capability cell；保存并校验 graph/version/digest、parent/child/member/step/native IDs、依赖完成状态、pending/completed action、fanout/vote aggregate、预算、causation、terminal arbitration、effect references、pause boundary 与 predecessor/successor；atomic claim、duplicate projection、foreign/stale/conflicting/expired/corrupt fail-closed；三类 pause reason 均须以真实 safe point、跨进程 restore、cancel/timeout/retry 竞争和 Run/Stream parity 证据开放 | 不新建 parent run、不重新 enqueue、不用 history replay 或 application checkpoint 模拟 restore；已完成 member/step/tool effect 不重跑。不能在本 change 内提供 source evidence 的 form/reason 格子明确为 `unsupported_capability` | `1.3, 4.3, 4.4, 4.5, 4.6, 4.7, 5.2, 5.4, 5.5, 7.1, 7.3` |
-| `bound-durable-store-deployment-scope` | 现有 FileStore 支持同机单写、持久化 snapshot 的顺序重开，但不保证多写者 CAS、跨机器 journal 或多实例 resume claim | 先把部署/并发能力写入 manifest、integration guide 和 contract fixture：明确 sequential local reopen 与 concurrent/distributed recovery 的分界；默认路线为同机单写、writer ownership、故障 fail-closed。若真实宿主需要路线 1，另行证明 source CAS、writer fencing、atomic claim/cursor transaction、crash recovery、stale-writer reject、reader/writer consistency 与 multi-instance duplicate tests | 不把“新进程可顺序重开”宣传为通用跨进程/跨机器恢复；未交付分布式 store 前，Danny 的多实例、跨机器、并发 claim 只能标为 blocked/unsupported；不把 mailbox history 与 runner checkpoint 强行合并为统一存储 | `3.2, 3.3, 3.4, 3.5, 5.4, 7.2` |
 | `extend-composite-context-assembly-handoff`（条件候选） | 仅当 Danny 要求 child/team/workflow/mailbox 共用同一个 native context assembly/handoff 入口；direct assembler、legal handoff cuts 和 fresh-resolver restore 已有基线 | 在对应 form 已有真实 graph restore material 后，再绑定 child capability subset、team member inheritance、workflow step correlation、mailbox host-plan correlation、graph/member/step references、restore 前 resolver reauthorization、Run/Stream parity 与 context projection/checkpoint binding | direct context assembly 不能推导 composite 支持；在 restore material、resolver 和 source evidence 未齐前，保持 dependency-profile unsupported，不以 projection snapshot、handoff callback 或重复 Run 代替 | `4.3, 4.4, 4.5, 4.6, 5.4, 6.4` |
 
 #### Source-native history 候选的完整验收面

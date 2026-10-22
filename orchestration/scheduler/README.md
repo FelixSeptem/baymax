@@ -47,3 +47,7 @@ lease generation, retry, stale-attempt rejection, terminal state, and DLQ; the
 bridge and host must not create a parallel task or terminal lifecycle.
 
 The host retains application outbox state, schedule/occurrence policy, authorization, business effect idempotency/CAS, and outbox confirmation. Scheduler terminal state is not host business commit. Recovery remains at-least-once and keeps scheduler execution retry separate from mailbox delivery retry and host business-commit retry. Stopping bridge dispatch preserves existing task/attempt facts for host reconciliation.
+
+Scheduler persistence remains source-owned and bounded. A reopened local store
+does not provide multi-writer CAS, cross-machine fencing or multi-instance
+claim guarantees; unsupported scope must fail closed before task mutation.

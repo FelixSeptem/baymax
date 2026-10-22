@@ -22,6 +22,7 @@ type ContinuationCapabilities struct {
 	PauseReasons        []string          `json:"pause_reasons"`
 	EvidenceReferences  map[string]string `json:"evidence_references"`
 	UnsupportedReasons  map[string]string `json:"unsupported_reasons,omitempty"`
+	Deployment          DeploymentScope   `json:"deployment"`
 }
 
 // ContinuationCapabilitySource is implemented by the configured source owner.
@@ -72,6 +73,11 @@ func (c ContinuationCapabilities) Validate() error {
 	for dimension, reason := range c.UnsupportedReasons {
 		if _, known := c.EvidenceReferences[dimension]; !known || strings.TrimSpace(reason) == "" || len(reason) > 256 {
 			return fmt.Errorf("invalid continuation limitation")
+		}
+	}
+	if c.Deployment != (DeploymentScope{}) {
+		if err := c.Deployment.Validate(); err != nil {
+			return fmt.Errorf("continuation deployment scope: %w", err)
 		}
 	}
 	return nil

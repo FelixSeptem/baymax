@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -62,17 +63,18 @@ func validChildPauseReason(reason ChildPauseReason) bool {
 }
 
 type ChildContinuationRef struct {
-	SchemaVersion  string `json:"schema_version"`
-	CheckpointID   string `json:"checkpoint_id"`
-	Digest         string `json:"digest"`
-	OwnerNamespace string `json:"owner_namespace"`
-	GraphID        string `json:"graph_id"`
-	GraphVersion   string `json:"graph_version"`
-	RunID          string `json:"run_id"`
-	SessionID      string `json:"session_id"`
-	ParentRunID    string `json:"parent_run_id,omitempty"`
-	CausationID    string `json:"causation_id,omitempty"`
-	OccurrenceID   string `json:"occurrence_id,omitempty"`
+	SchemaVersion  string                `json:"schema_version"`
+	CheckpointID   string                `json:"checkpoint_id"`
+	Digest         string                `json:"digest"`
+	OwnerNamespace string                `json:"owner_namespace"`
+	GraphID        string                `json:"graph_id"`
+	GraphVersion   string                `json:"graph_version"`
+	RunID          string                `json:"run_id"`
+	SessionID      string                `json:"session_id"`
+	ParentRunID    string                `json:"parent_run_id,omitempty"`
+	CausationID    string                `json:"causation_id,omitempty"`
+	OccurrenceID   string                `json:"occurrence_id,omitempty"`
+	Deployment     types.DeploymentScope `json:"deployment,omitempty"`
 }
 
 func (r ChildContinuationRef) Validate() error {
@@ -221,17 +223,18 @@ func (c ChildContinuation) Detached() ChildContinuation {
 }
 
 type ChildResumeRequest struct {
-	Ref              ChildContinuationRef `json:"ref"`
-	GraphDigest      string               `json:"graph_digest"`
-	Generation       uint64               `json:"generation"`
-	Target           ChildTarget          `json:"target"`
-	IdempotencyKey   string               `json:"idempotency_key"`
-	AuthorityDigest  string               `json:"authority_digest,omitempty"`
-	PlanDigest       string               `json:"plan_digest,omitempty"`
-	WriteScopeDigest string               `json:"write_scope_digest,omitempty"`
-	EffectNamespace  string               `json:"effect_namespace,omitempty"`
-	OccurrenceID     string               `json:"occurrence_id,omitempty"`
-	CausationID      string               `json:"causation_id,omitempty"`
+	Ref              ChildContinuationRef    `json:"ref"`
+	GraphDigest      string                  `json:"graph_digest"`
+	Generation       uint64                  `json:"generation"`
+	Target           ChildTarget             `json:"target"`
+	IdempotencyKey   string                  `json:"idempotency_key"`
+	AuthorityDigest  string                  `json:"authority_digest,omitempty"`
+	PlanDigest       string                  `json:"plan_digest,omitempty"`
+	WriteScopeDigest string                  `json:"write_scope_digest,omitempty"`
+	EffectNamespace  string                  `json:"effect_namespace,omitempty"`
+	OccurrenceID     string                  `json:"occurrence_id,omitempty"`
+	CausationID      string                  `json:"causation_id,omitempty"`
+	Deployment       types.DeploymentRequest `json:"deployment,omitempty"`
 }
 
 func (r ChildResumeRequest) Validate() error {
@@ -293,6 +296,13 @@ type MemoryChildContinuationStore struct {
 	namespace string
 	records   map[string]childContinuationRecord
 	now       func() time.Time
+}
+
+func (s *MemoryChildContinuationStore) DeploymentScope() types.DeploymentScope {
+	if s == nil || strings.TrimSpace(s.namespace) == "" {
+		return types.DefaultDeploymentScope("child", "child continuation store is unavailable")
+	}
+	return types.SameHostSingleWriterScope(s.namespace, "fixture:deployment-scope.v1")
 }
 
 func NewMemoryChildContinuationStore(namespace string) *MemoryChildContinuationStore {
@@ -367,6 +377,9 @@ func (s *MemoryChildContinuationStore) ClaimResume(ctx context.Context, req Chil
 	}
 	if req.Ref.OwnerNamespace != s.namespace {
 		return ChildResumeClaim{}, ErrChildContinuationForeign
+	}
+	if err := s.DeploymentScope().Check(req.Deployment); err != nil {
+		return ChildResumeClaim{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

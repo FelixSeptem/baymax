@@ -17,3 +17,8 @@ The three pause reasons are independent capability cells. A host must provide
 source evidence for `input_required`, `approval_required`, or
 `budget_exhausted`; scheduler retry and recovery snapshots are not pause
 continuations. Team, mailbox and resumed-plan support remains unsupported.
+
+Child continuation stores expose the same-host single-writer sequential-reopen
+deployment boundary. The owner namespace and fence are source facts; a
+foreign/stale writer or distributed graph-claim request is rejected before
+member dispatch and is never converted into a fresh parent or replay.

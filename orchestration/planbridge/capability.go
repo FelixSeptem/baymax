@@ -67,6 +67,7 @@ type ExecutionFormCapability struct {
 	UnsupportedReasons  map[string]string               `json:"unsupported_reasons,omitempty"`
 	SourceHistory       *types.HistoryCapabilities      `json:"source_history,omitempty"`
 	SourceContinuation  *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
+	Deployment          types.DeploymentScope           `json:"deployment"`
 }
 
 // CapabilityManifestReader returns detached entries so callers cannot change
@@ -103,6 +104,7 @@ func DefaultCapabilityManifest() CapabilityManifest {
 				"budget_exhausted":      LimitationCompositeGraphRestore,
 				"mailbox_continuation":  "mailbox form is not enabled by default",
 			},
+			Deployment: types.DefaultDeploymentScope(string(form), "source owner deployment evidence is not configured"),
 		}
 		if form == ExecutionFormDirect {
 			for _, dimension := range continuationDimensions() {
@@ -154,6 +156,7 @@ func CapabilityManifestWithContinuation(ctx context.Context, source types.Contin
 		}
 		snapshot := caps.Clone()
 		entry.SourceContinuation = &snapshot
+		entry.Deployment = caps.Deployment
 		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
 		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
 		entry.RetentionPolicy = caps.RetentionPolicy
@@ -202,6 +205,7 @@ func capabilityManifestWithContinuationForForm(ctx context.Context, source types
 		}
 		snapshot := caps.Clone()
 		entry.SourceContinuation = &snapshot
+		entry.Deployment = caps.Deployment
 		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
 		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
 		entry.RetentionPolicy = caps.RetentionPolicy
@@ -245,6 +249,9 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 			entry.UnsupportedReasons["durable_history"] = caps.UnsupportedReason
 			entry.UnsupportedReasons["after_cursor_replay"] = caps.UnsupportedReason
 			continue
+		}
+		if caps.Deployment != (types.DeploymentScope{}) {
+			entry.Deployment = caps.Deployment
 		}
 		capabilitySnapshot := caps
 		if caps.RetentionFloor != nil {
@@ -362,6 +369,11 @@ func validateCapability(entry ExecutionFormCapability) error {
 	if strings.TrimSpace(entry.RetentionPolicy) == "" || len(entry.RetentionPolicy) > 1024 || strings.TrimSpace(entry.EvidenceReference) == "" || len(entry.EvidenceReference) > 1024 {
 		return fail(InvalidPlan, "capability_manifest.entry", nil)
 	}
+	if entry.Deployment != (types.DeploymentScope{}) {
+		if err := entry.Deployment.Validate(); err != nil {
+			return fail(InvalidPlan, "capability_manifest.deployment", err)
+		}
+	}
 	for dimension, state := range states {
 		switch state {
 		case CapabilitySupported:
@@ -442,5 +454,6 @@ func cloneCapability(entry ExecutionFormCapability) ExecutionFormCapability {
 		continuation := entry.SourceContinuation.Clone()
 		clone.SourceContinuation = &continuation
 	}
+	clone.Deployment = entry.Deployment
 	return clone
 }

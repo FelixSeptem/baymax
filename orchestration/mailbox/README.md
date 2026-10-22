@@ -71,3 +71,8 @@ evidence is `scripts/check-mailbox-plan-bridge-contract.sh/.ps1`: it runs the
 real-owner lifecycle/parity tests and reference-only replay fixture. Rollback
 stops new `AdmitHostPlan` calls; it does not delete or reinterpret retained
 mailbox records.
+
+The mailbox history capability also declares `deployment_scope.v1`. FileStore
+reopen is same-host single-writer sequential evidence only; MemoryStore is
+process-local. Mailbox does not claim multi-writer CAS, cross-machine
+coordination or multi-instance cursor/claim fencing.

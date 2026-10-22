@@ -59,3 +59,11 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - 扩展点：`runner.With...` Option 注入（registry/config/event handler/security hooks）。source history 通过 `runner.WithNativeEventHistory` 显式绑定既有 owner journal；runner 不自动创建 store，读取 retained facts 不会调用 Run/Stream、模型、工具、retry 或 restore。
 - 常见误用：在 runner 层引入 provider 特有字段，破坏 `core/types` 统一契约。
 - 常见误用：绕开事件链路直接写 diagnostics，导致统计口径漂移。
+
+## Deployment boundary
+
+Native runner continuation and history evidence includes its deployment
+profile, owner fence and transaction scope. The FileStore profile is limited
+to same-host single-writer sequential reopen; a second or stale writer and
+unsupported multi-instance request fail before restore and never become a new
+Run.

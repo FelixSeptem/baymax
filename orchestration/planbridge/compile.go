@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -30,6 +31,9 @@ func Describe(d Descriptor, b Binding, l Limits) (Descriptor, error) {
 		return Descriptor{}, err
 	}
 	if err = validateBoundContinuationRequirements(context.Background(), d, b); err != nil {
+		return Descriptor{}, err
+	}
+	if err = validateDeploymentRequest(d, b); err != nil {
 		return Descriptor{}, err
 	}
 	_, facts, _, err := prepare(d.Shape, d.Delivery, len(d.RequiredCapabilities), b, limits)
@@ -77,6 +81,9 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if err = validateBoundContinuationRequirements(context.Background(), d, b); err != nil {
 		return nil, err
 	}
+	if err = validateDeploymentRequest(d, b); err != nil {
+		return nil, err
+	}
 	ds, err := snapshot(d, limits.DescriptorBytes, limits.NestingDepth)
 	if err != nil {
 		return nil, err
@@ -122,6 +129,43 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 		identityDigest = digest(canonical)
 	}
 	return &Compiled{identity: Identity{d.PlanID, d.PlanVersion, identityDigest}, descriptor: ds, binding: normalized, canonical: canonical, limits: limits, childConfigDigest: cfgDigest}, nil
+}
+
+func validateDeploymentRequest(d Descriptor, b Binding) error {
+	if d.Deployment == nil {
+		return nil
+	}
+	request := *d.Deployment
+	var scope types.DeploymentScope
+	switch {
+	case b.Mailbox != nil:
+		if b.Mailbox.Manifest == nil {
+			return &Error{Code: UnsupportedCapability, Field: "deployment", Limitation: "source_deployment_evidence_missing"}
+		}
+		entry, err := b.Mailbox.Manifest.Capability(ExecutionFormMailboxAsync)
+		if err != nil {
+			return err
+		}
+		scope = entry.Deployment
+	case b.Direct != nil:
+		if source, ok := b.Direct.Runner.(types.ContinuationCapabilitySource); ok {
+			caps, err := source.ContinuationCapabilities(context.Background())
+			if err != nil {
+				return err
+			}
+			scope = caps.Deployment
+		}
+	}
+	if scope == (types.DeploymentScope{}) {
+		return &Error{Code: UnsupportedCapability, Field: "deployment", Limitation: "source_deployment_evidence_missing"}
+	}
+	if err := scope.Check(request); err != nil {
+		if errors.Is(err, types.ErrForeignWriter) || errors.Is(err, types.ErrStaleWriter) {
+			return &Error{Code: SourceUnavailable, Field: "deployment.writer", cause: err}
+		}
+		return &Error{Code: UnsupportedCapability, Field: "deployment", Limitation: "unsupported_deployment_scope", cause: err}
+	}
+	return nil
 }
 
 func validateTrigger(trigger Trigger) error {

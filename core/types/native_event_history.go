@@ -71,18 +71,19 @@ func (c OpaqueCursor) Validate() error {
 }
 
 type HistoryCapabilities struct {
-	Source                 SourceRef     `json:"source"`
-	EventIdentityNamespace string        `json:"event_identity_namespace"`
-	SequenceDefined        bool          `json:"sequence_defined"`
-	SequenceScope          string        `json:"sequence_scope"`
-	RetentionWindow        string        `json:"retention_window"`
-	RetentionFloor         *OpaqueCursor `json:"retention_floor,omitempty"`
-	CursorScope            string        `json:"cursor_scope"`
-	CursorVersion          string        `json:"cursor_version"`
-	Durable                bool          `json:"durable"`
-	TerminalRecovery       string        `json:"terminal_recovery"`
-	Supported              bool          `json:"supported"`
-	UnsupportedReason      string        `json:"unsupported_reason,omitempty"`
+	Source                 SourceRef       `json:"source"`
+	EventIdentityNamespace string          `json:"event_identity_namespace"`
+	SequenceDefined        bool            `json:"sequence_defined"`
+	SequenceScope          string          `json:"sequence_scope"`
+	RetentionWindow        string          `json:"retention_window"`
+	RetentionFloor         *OpaqueCursor   `json:"retention_floor,omitempty"`
+	CursorScope            string          `json:"cursor_scope"`
+	CursorVersion          string          `json:"cursor_version"`
+	Durable                bool            `json:"durable"`
+	TerminalRecovery       string          `json:"terminal_recovery"`
+	Supported              bool            `json:"supported"`
+	UnsupportedReason      string          `json:"unsupported_reason,omitempty"`
+	Deployment             DeploymentScope `json:"deployment,omitempty"`
 }
 
 // NativeHistoryIdentity is independent of callback EventID and protocol Sequence.
@@ -210,7 +211,7 @@ func (UnsupportedNativeEventHistoryReader) Capabilities(_ context.Context, sourc
 	if err := source.Validate(); err != nil {
 		return HistoryCapabilities{}, err
 	}
-	return HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.unsupported", SequenceDefined: false, SequenceScope: "none", RetentionWindow: "none", CursorScope: "none", CursorVersion: "none", Durable: false, TerminalRecovery: "none", Supported: false, UnsupportedReason: "source journal is not implemented for " + string(source.Kind)}, nil
+	return HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.unsupported", SequenceDefined: false, SequenceScope: "none", RetentionWindow: "none", CursorScope: "none", CursorVersion: "none", Durable: false, TerminalRecovery: "none", Supported: false, UnsupportedReason: "source journal is not implemented for " + string(source.Kind), Deployment: DefaultDeploymentScope(string(source.Kind), "source journal is not configured")}, nil
 }
 
 func (UnsupportedNativeEventHistoryReader) ReadAfter(ctx context.Context, source SourceRef, cursor *OpaqueCursor, limit int) (NativeEventPage, error) {

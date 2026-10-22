@@ -47,26 +47,27 @@ const (
 )
 
 type NativeCheckpointRef struct {
-	SchemaVersion           string      `json:"schema_version"`
-	CheckpointID            string      `json:"checkpoint_id"`
-	Digest                  string      `json:"digest"`
-	SourceComponent         string      `json:"source_component"`
-	OwnerNamespace          string      `json:"owner_namespace"`
-	RunID                   string      `json:"run_id"`
-	SessionID               string      `json:"session_id"`
-	ParentRunID             string      `json:"parent_run_id,omitempty"`
-	HostCorrelation         string      `json:"host_correlation,omitempty"`
-	PauseReason             PauseReason `json:"pause_reason"`
-	SourcePosition          string      `json:"source_position"`
-	PredecessorCheckpointID string      `json:"predecessor_checkpoint_id,omitempty"`
-	ResumeAttemptID         string      `json:"resume_attempt_id,omitempty"`
-	AuthorityDigest         string      `json:"authority_digest,omitempty"`
-	PlanDigest              string      `json:"plan_digest,omitempty"`
-	WriteScopeDigest        string      `json:"write_scope_digest,omitempty"`
-	OccurrenceID            string      `json:"occurrence_id,omitempty"`
-	EffectNamespace         string      `json:"effect_namespace,omitempty"`
-	CreatedAt               time.Time   `json:"created_at"`
-	ExpiresAt               time.Time   `json:"expires_at"`
+	SchemaVersion           string          `json:"schema_version"`
+	CheckpointID            string          `json:"checkpoint_id"`
+	Digest                  string          `json:"digest"`
+	SourceComponent         string          `json:"source_component"`
+	OwnerNamespace          string          `json:"owner_namespace"`
+	RunID                   string          `json:"run_id"`
+	SessionID               string          `json:"session_id"`
+	ParentRunID             string          `json:"parent_run_id,omitempty"`
+	HostCorrelation         string          `json:"host_correlation,omitempty"`
+	PauseReason             PauseReason     `json:"pause_reason"`
+	SourcePosition          string          `json:"source_position"`
+	PredecessorCheckpointID string          `json:"predecessor_checkpoint_id,omitempty"`
+	ResumeAttemptID         string          `json:"resume_attempt_id,omitempty"`
+	AuthorityDigest         string          `json:"authority_digest,omitempty"`
+	PlanDigest              string          `json:"plan_digest,omitempty"`
+	WriteScopeDigest        string          `json:"write_scope_digest,omitempty"`
+	OccurrenceID            string          `json:"occurrence_id,omitempty"`
+	EffectNamespace         string          `json:"effect_namespace,omitempty"`
+	CreatedAt               time.Time       `json:"created_at"`
+	ExpiresAt               time.Time       `json:"expires_at"`
+	Deployment              DeploymentScope `json:"deployment,omitempty"`
 }
 
 type DurableCheckpointRef = NativeCheckpointRef
@@ -99,6 +100,11 @@ func (r NativeCheckpointRef) Validate() error {
 	}
 	if r.Digest == "" {
 		return fmt.Errorf("digest required: %w", ErrCheckpointMalformed)
+	}
+	if r.Deployment != (DeploymentScope{}) {
+		if err := r.Deployment.Validate(); err != nil {
+			return fmt.Errorf("deployment: %w", err)
+		}
 	}
 	if r.PauseReason != PauseReasonInputRequired && r.PauseReason != PauseReasonApprovalRequired && r.PauseReason != PauseReasonBudgetExhausted {
 		return fmt.Errorf("pause_reason: %w", ErrCheckpointUnsupported)
@@ -241,6 +247,7 @@ type ResumeRequest struct {
 	IdempotencyKey     string                `json:"idempotency_key"`
 	Budget             DurableBudget         `json:"budget,omitempty"`
 	ProposedBudget     *DurableBudget        `json:"proposed_budget,omitempty"`
+	Deployment         DeploymentRequest     `json:"deployment,omitempty"`
 }
 
 func (r ResumeRequest) Validate() error {

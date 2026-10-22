@@ -296,3 +296,14 @@ business commit.
 Composer may accept an injected child continuation store and source owner, but
 does not create a second scheduler, mailbox, or replay loop. Scheduler remains
 the task/attempt/lease/terminal owner; diagnostics replay remains read-only.
+
+## Durable store deployment ownership
+
+`core/types` defines the detached deployment vocabulary; each source owner
+projects its own owner namespace, writer fence and transaction scope. Current
+FileStore and source journal implementations are limited to same-host,
+single-writer, sequential reopen. `core/checkpoint`, `core/history`,
+`orchestration/composer`, `orchestration/workflow` and `orchestration/mailbox`
+must reject foreign or stale writers and never infer distributed guarantees
+from a successful reopen. `planbridge` only validates and delegates these
+facts; it does not create a fence, coordinator, queue or unified store.

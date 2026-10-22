@@ -2354,3 +2354,11 @@ Child continuation admission reports source-owned checkpoint, graph, attempt,
 causation and terminal evidence. Store unavailable, foreign, stale, expired,
 conflicting and recovery-required outcomes remain typed fail-closed states; no
 fallback Run or retry is recorded as restore.
+
+## Durable store deployment diagnostics
+
+`deployment_scope.v1` is reference-only capability evidence, not a runtime
+configuration key or authorization field. It reports the source owner,
+single-writer fence and sequential transaction boundary. Unsupported,
+foreign, stale and unavailable classifications are returned before side
+effects; no new QueryRuns field or RuntimeRecorder writer is introduced.

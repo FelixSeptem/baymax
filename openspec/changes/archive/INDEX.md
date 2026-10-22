@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-21 14:31:13
+Updated: 2026-10-22 13:01:49
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -175,3 +175,4 @@ Updated: 2026-10-21 14:31:13
 - 171 -> retain-run-and-composite-source-history
 - 172 -> restore-workflow-continuations
 - 173 -> restore-composite-continuations-and-graph-state
+- 174 -> bound-durable-store-deployment-scope

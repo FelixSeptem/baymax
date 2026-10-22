@@ -102,3 +102,11 @@ Durable task/attempt workspace binding 与 completion safe-point 审计不改变
 `establish-application-outbox-mailbox-recovery-contract` 已新增独立、constructor-only 的 `orchestration/outboxbridge` 接入面；它将宿主提供的 bounded reference-only dispatch descriptor 委托给一个既有 target：mailbox 或 scheduler。它不是 outbox store、effect store、worker、queue、lease/retry/DLQ owner、terminal reducer 或 diagnostics writer。
 
 `mailbox` 继续拥有投递 lifecycle；`scheduler` 继续拥有 task/attempt/lease/retry/terminal lifecycle；宿主继续拥有 outbox、occurrence、cron/DST、authority、effect idempotency/CAS 和最终 confirmation。dispatch accepted、target lifecycle、effect evidence 与 confirmation 将保持独立，不能以 ack、terminal、digest 或 replay 推断业务 commit。此项提案的 rollback 是不再构造 bridge 并回到既有 owner API，同时保留事实供宿主幂等协调。
+
+## Durable store ownership boundary
+
+Scheduler, mailbox, composer, workflow and team state remain separate source
+owners. Their capability projections include the bounded deployment scope;
+the current supported boundary is same-host single-writer sequential reopen.
+Planbridge validates this evidence but never adds a distributed coordinator or
+turns one owner's local reopen into a composite multi-instance guarantee.

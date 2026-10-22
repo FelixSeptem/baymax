@@ -106,6 +106,26 @@ func TestMemoryStoreClaimCommitAndIsolation(t *testing.T) {
 	}
 }
 
+func TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation(t *testing.T) {
+	now := time.Now().UTC()
+	s, err := NewMemoryStore(Options{Namespace: "tests", Capacity: 1, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testCheckpoint(t, now)
+	if err := s.Save(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	req := testRequest(p)
+	req.Deployment = types.DeploymentRequest{Profile: types.DeploymentProfileCrossMachine, WriterMode: types.WriterScopeMultiWriter}
+	if _, err := s.ClaimResume(context.Background(), req); !errors.Is(err, types.ErrDeploymentUnsupported) {
+		t.Fatalf("claim error = %v", err)
+	}
+	if _, err := s.ReadResumeClaim(context.Background(), p.Ref); !errors.Is(err, types.ErrCheckpointNotFound) {
+		t.Fatalf("rejected claim left source mutation: %v", err)
+	}
+}
+
 func TestClaimGenerationAndCompletionRetention(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()

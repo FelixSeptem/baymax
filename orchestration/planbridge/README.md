@@ -95,3 +95,11 @@ journal fact; the default manifest remains unsupported until that owner is
 configured. No history capability enables checkpoint creation, cross-process
 execution restore or composite pause. The bridge neither owns nor reads a
 journal during plan dispatch.
+
+## Deployment scope admission
+
+`Descriptor.Deployment` is an additive request for an explicitly evidenced
+deployment boundary. Compilation and admission reject multi-writer,
+cross-machine or multi-instance requests when the bound source only exposes
+same-host single-writer sequential reopen. Rejection occurs before owner
+activation, publish, enqueue, claim, restore or fallback direct execution.

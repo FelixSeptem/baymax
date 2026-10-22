@@ -151,6 +151,17 @@ native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用
 `establish-application-outbox-mailbox-recovery-contract` 已交付 `application_outbox_dispatch.v1` constructor-only 接入面。宿主通过 `outboxbridge.New` 注入当前 admission callback 与一个或多个 native owner，构造 bounded reference-only descriptor 后显式选择一个 target：mailbox delivery 或 scheduler task dispatch。宿主仍拥有 outbox、cron/DST/misfire、业务授权、effect 与 outbox confirmation；不得把业务 body、credential、callback error 或 effect 写入 descriptor。可运行 offline example、replay fixture 和 contract gate 见 `examples/application-outbox-recovery`、`tool/diagnosticsreplay` 与 `scripts/check-application-outbox-mailbox-recovery-contract.ps1`。
 
 集成方必须分别判断 dispatch accepted、mailbox/scheduler lifecycle、host effect committed 和 host outbox confirmed。ack、任务 terminal、Run/Stream terminal、digest 和 replay 都不是业务 commit。恢复仅承诺 at-least-once：mailbox delivery retry、scheduler execution retry 与 host business-commit retry 不可叠加为 bridge retry。未来停用 bridge 时回到既有原生 owner 调用，并保留 pending outbox、message/task/attempt 及已提交 effect，交由宿主幂等对账。
+
+### Durable store deployment boundary
+
+Every source-owned history, checkpoint, child continuation and mailbox
+capability carries `deployment_scope.v1` evidence. The only currently
+supported profile is `same_host_single_writer_sequential_reopen`; FileStore
+reopen proves persistence after an orderly handoff, not multi-writer CAS,
+cross-machine coordination, distributed cursor advancement or multi-instance
+resume claims. A foreign/stale writer, missing fence, unavailable owner or
+unsupported request is rejected before publish, claim, restore or replay and
+must not fall back to a fresh Run, enqueue or latest cursor.
 # Host execution plan bridge
 
 For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox requires an explicit manifest-approved native binding, while resumed execution and shared child queues are rejected.

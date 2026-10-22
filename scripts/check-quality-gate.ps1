@@ -727,6 +727,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-child-continuation-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] durable store deployment scope contract suites"
+        Command   = { pwsh -File scripts/check-durable-store-deployment-scope-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] host execution plan bridge contract suites"
         Command   = { pwsh -File scripts/check-host-execution-plan-contract.ps1 }
     },
@@ -872,9 +876,13 @@ Invoke-RequiredStep -StepLabel "[quality-gate] go test ./..." -Command {
     go test ./...
 }
 
-$cgoEnabled = ((Invoke-NativeCaptureStrict -Label "go env CGO_ENABLED" -Command {
-            go env CGO_ENABLED
-        }) | Select-Object -First 1).Trim()
+$cgoOutput = Invoke-NativeCaptureStrict -Label "go env CGO_ENABLED" -Command {
+    go env CGO_ENABLED
+}
+$cgoEnabled = ($cgoOutput |
+    Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+    ForEach-Object { [string]$_ } |
+    Select-Object -First 1).Trim()
 if ($cgoEnabled -ne "1") {
     throw "[quality-gate] go test -race requires CGO_ENABLED=1"
 }

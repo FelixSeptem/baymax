@@ -5,3 +5,8 @@ Workflow owns deterministic graph planning, step dependencies, retry/timeout and
 `NewFileWorkflowContinuationStore` is the durable profile for same-host single-writer sequential reopen. `Engine.ContinuationCapabilities` advertises workflow checkpoint/restore only when this store and the `workflow` owner namespace are configured. Memory stores are test/local-only and return unavailable for cross-process capability advertisement. Child/fanout, team, mailbox and planbridge resumed execution must remain explicitly unsupported until their own source owner has equivalent restore material and evidence.
 
 The supported pause matrix is evidence-driven for `input_required`, `approval_required` and `budget_exhausted`, with Run/Stream parity and cancel/timeout/retry race semantics. Child/fanout, team parallel/vote, mailbox host-plan and planbridge resumed forms remain `unsupported_capability`. The default deployment scope is same-host single-writer sequential reopen; this README does not claim distributed CAS or multi-instance recovery.
+
+Workflow continuation capability evidence includes owner fence and transaction
+scope. Reopening a FileStore on the same host is supported only after the
+previous writer has released ownership; concurrent, cross-machine and
+multi-instance restore remains explicitly unsupported.

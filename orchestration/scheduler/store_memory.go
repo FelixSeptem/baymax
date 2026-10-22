@@ -5,11 +5,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 type MemoryStore struct {
 	mu    sync.Mutex
 	state schedulerState
+}
+
+func (s *MemoryStore) DeploymentScope() types.DeploymentScope {
+	return types.DefaultDeploymentScope("scheduler-memory", "scheduler memory store is process-local")
 }
 
 func NewMemoryStore() *MemoryStore {

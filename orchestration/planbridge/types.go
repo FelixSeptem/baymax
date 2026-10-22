@@ -44,21 +44,22 @@ const (
 )
 
 type Descriptor struct {
-	SchemaVersion        string         `json:"schema_version"`
-	PlanID               string         `json:"plan_id"`
-	PlanVersion          int            `json:"plan_version"`
-	Shape                Shape          `json:"shape"`
-	Delivery             Delivery       `json:"delivery"`
-	Trigger              Trigger        `json:"trigger"`
-	AuthorityDigest      string         `json:"authority_digest"`
-	ToolCapabilityDigest string         `json:"tool_capability_digest"`
-	InputRef             string         `json:"input_ref"`
-	InputDigest          string         `json:"input_digest"`
-	HandlerRef           string         `json:"handler_ref"`
-	HandlerDigest        string         `json:"handler_digest"`
-	CheckpointRef        string         `json:"checkpoint_ref,omitempty"`
-	RequiredCapabilities []string       `json:"required_capabilities,omitempty"`
-	SourceFacts          map[string]any `json:"source_facts"`
+	SchemaVersion        string                   `json:"schema_version"`
+	PlanID               string                   `json:"plan_id"`
+	PlanVersion          int                      `json:"plan_version"`
+	Shape                Shape                    `json:"shape"`
+	Delivery             Delivery                 `json:"delivery"`
+	Trigger              Trigger                  `json:"trigger"`
+	AuthorityDigest      string                   `json:"authority_digest"`
+	ToolCapabilityDigest string                   `json:"tool_capability_digest"`
+	InputRef             string                   `json:"input_ref"`
+	InputDigest          string                   `json:"input_digest"`
+	HandlerRef           string                   `json:"handler_ref"`
+	HandlerDigest        string                   `json:"handler_digest"`
+	CheckpointRef        string                   `json:"checkpoint_ref,omitempty"`
+	Deployment           *types.DeploymentRequest `json:"deployment,omitempty"`
+	RequiredCapabilities []string                 `json:"required_capabilities,omitempty"`
+	SourceFacts          map[string]any           `json:"source_facts"`
 }
 type Limits struct{ DescriptorBytes, StructuralItems, Dependencies, ReferenceBytes, NestingDepth, BindingBytes int }
 type Code string

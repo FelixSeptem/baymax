@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 type FileStoreOption func(*fileStoreOptions)
@@ -16,6 +18,13 @@ type FileStoreOption func(*fileStoreOptions)
 type fileStoreOptions struct {
 	PersistDebounce  time.Duration
 	PersistBatchSize int
+}
+
+func (s *FileStore) DeploymentScope() types.DeploymentScope {
+	if s == nil || strings.TrimSpace(s.path) == "" {
+		return types.DefaultDeploymentScope("scheduler-file", "scheduler file store is unavailable")
+	}
+	return types.SameHostSingleWriterScope("scheduler-file", "fixture:deployment-scope.v1")
 }
 
 func WithPersistDebounce(debounce time.Duration) FileStoreOption {

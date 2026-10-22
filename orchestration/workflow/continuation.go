@@ -753,6 +753,7 @@ func (e *Engine) ContinuationCapabilities(ctx context.Context) (types.Continuati
 			"approval_required":     "test:TestWorkflowPauseControllerStopsApprovalBeforeEffectDispatch",
 			"budget_exhausted":      "test:TestWorkflowBudgetPausePreservesConsumedBudgetAndOriginalDeadline",
 		},
+		Deployment: types.SameHostSingleWriterScope(e.continuationNamespace, "fixture:deployment-scope.v1"),
 	}
 	if err := capabilities.Validate(); err != nil {
 		return types.ContinuationCapabilities{}, ErrWorkflowContinuationUnsupported

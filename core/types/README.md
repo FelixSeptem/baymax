@@ -62,3 +62,12 @@ Native event history 是独立 source-owned contract：`NativeEventHistoryReader
 - 扩展点：新增 DTO 字段时优先 additive，并配套文档与契约测试。
 - 常见误用：在 types 包引入业务逻辑或 IO 依赖，破坏“纯契约层”边界。
 - 常见误用：在未同步测试与文档情况下调整共享字段，导致跨模块漂移。
+
+## Deployment scope contract
+
+`DeploymentScope` is the source-neutral, bounded vocabulary for deployment
+claims. Existing owners advertise only
+`same_host_single_writer_sequential_reopen` with source-owned fencing and
+sequential transactions. An absent or unsupported scope cannot be interpreted
+as distributed support; `ErrDeploymentUnsupported`, `ErrForeignWriter` and
+`ErrStaleWriter` remain fail-closed typed outcomes.

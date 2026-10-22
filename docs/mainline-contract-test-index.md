@@ -497,6 +497,20 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 3. 质量门禁脚本执行时应同时包含仓库卫生检查、lint 与安全扫描。
 4. 基准回归可执行：`integration/benchmark_test.go::BenchmarkContextStage2ExternalRetrieverTrendAggregation`、`integration/benchmark_test.go::BenchmarkContextPressureSemanticCompactionLatency`、`integration/benchmark_test.go::BenchmarkContextPressureSemanticCompactionLatencyEmbeddingEnabled`、`integration/benchmark_test.go::BenchmarkContextPressureSemanticCompactionLatencyRerankerGovernanceEnabled`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineSyncInvocation`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineAsyncReporting`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineDelayedDispatch`、`integration/benchmark_test.go::BenchmarkMultiAgentMainlineRecoveryReplay`。
 
+## Durable store deployment scope
+
+| Requirement | Implementation evidence |
+| --- | --- |
+| bounded deployment profile, writer/fence/transaction vocabulary and typed fail-closed errors | `core/types/deployment_scope.go`, `core/types/deployment_scope_test.go` |
+| checkpoint claim rejects unsupported scope before mutation | `core/checkpoint/store_test.go::TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation` |
+| planbridge rejects unsupported deployment before source activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation` |
+| reference-only local versus distributed replay and side-effect guard | `tool/diagnosticsreplay/deployment_scope.go`, `tool/diagnosticsreplay/deployment_scope_test.go` |
+| shell/PowerShell quality gates | `scripts/check-durable-store-deployment-scope-contract.sh`, `scripts/check-durable-store-deployment-scope-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
+
+The supported deployment profile is `same_host_single_writer_sequential_reopen`.
+Successful reopen does not evidence multi-writer CAS, cross-machine
+coordination, distributed cursor advancement or multi-instance resume claims.
+
 
 
 # Host execution plan bridge contract

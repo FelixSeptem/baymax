@@ -21,10 +21,11 @@ import (
 const storeFileName = "checkpoints.json"
 
 type Options struct {
-	Namespace string
-	Capacity  int
-	Now       func() time.Time
-	Limits    types.ContinuationLimits
+	Namespace  string
+	Capacity   int
+	Now        func() time.Time
+	Limits     types.ContinuationLimits
+	Deployment types.DeploymentScope
 }
 type record struct {
 	Checkpoint types.PersistedRunCheckpoint `json:"checkpoint"`
@@ -87,12 +88,26 @@ func normalizeOptions(opts *Options) error {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.Deployment == (types.DeploymentScope{}) {
+		opts.Deployment = types.SameHostSingleWriterScope(opts.Namespace, "fixture:deployment-scope.v1")
+	}
+	if err := opts.Deployment.Validate(); err != nil {
+		return err
+	}
 	l, err := opts.Limits.Normalized()
 	if err != nil {
 		return err
 	}
 	opts.Limits = l
 	return nil
+}
+func (s *Store) DeploymentScope() types.DeploymentScope {
+	if s == nil {
+		return types.DefaultDeploymentScope("checkpoint", "checkpoint store is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.opts.Deployment
 }
 func (s *Store) CrossProcessRestore() bool {
 	if s == nil || s.dir == "" || s.closed.Load() {
@@ -247,6 +262,9 @@ func (s *Store) ClaimResume(ctx context.Context, req types.ResumeRequest) (types
 		return types.ResumeClaim{}, err
 	}
 	if err := req.Validate(); err != nil {
+		return types.ResumeClaim{}, err
+	}
+	if err := s.opts.Deployment.Check(req.Deployment); err != nil {
 		return types.ResumeClaim{}, err
 	}
 	if req.Checkpoint.OwnerNamespace != s.opts.Namespace {

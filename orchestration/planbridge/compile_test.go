@@ -126,6 +126,16 @@ func TestHostExecutionPlanErrorsAndLimits(t *testing.T) {
 	_, e := Compile(d, b, Limits{})
 	codeOf(t, e, LimitExceeded)
 }
+
+func TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation(t *testing.T) {
+	d, b, r := directFixture(t)
+	d.Deployment = &types.DeploymentRequest{Profile: types.DeploymentProfileMultiInstance, WriterMode: types.WriterScopeMultiWriter}
+	_, err := Compile(d, b, Limits{})
+	codeOf(t, err, UnsupportedCapability)
+	if r.calls != 0 {
+		t.Fatal("unsupported deployment activated the source")
+	}
+}
 func TestHostExecutionPlanAdmissionAndDrift(t *testing.T) {
 	d, b, r := directFixture(t)
 	deny := errors.New("host denied")

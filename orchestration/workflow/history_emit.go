@@ -33,11 +33,21 @@ func (e *Engine) emitNativeHistory(ctx context.Context, timeline workflowTimelin
 		payload = cloneWorkflowTimelinePayload(payload)
 		payload["terminal_state"] = workflowHistoryTerminalState(string(status))
 	}
-	_, _ = e.nativeHistory.Append(ctx, types.NativeExecutionEvent{
+	_, err := e.nativeHistory.Append(ctx, types.NativeExecutionEvent{
 		Version:    types.NativeExecutionEventVersionV1,
 		NativeType: nativeType,
 		Event:      types.EventEnvelope{RunID: timeline.runID, Source: types.ProtocolSourceWorkflow, Time: e.now(), Payload: payload},
 	})
+	e.nativeHistoryHealth.Record(source, err)
+}
+
+// NativeEventHistoryError reports append failures from the explicitly bound
+// workflow source journal for the lifetime of this Engine.
+func (e *Engine) NativeEventHistoryError() error {
+	if e == nil {
+		return nil
+	}
+	return e.nativeHistoryHealth.Err()
 }
 
 func workflowHistoryTerminalState(status string) string {

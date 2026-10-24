@@ -217,9 +217,10 @@ func WithNativeEventHistory(journal *history.Journal) Option {
 }
 
 type Engine struct {
-	now             func() time.Time
-	timelineEmitter types.EventHandler
-	nativeHistory   *history.Journal
+	now                 func() time.Time
+	timelineEmitter     types.EventHandler
+	nativeHistory       *history.Journal
+	nativeHistoryHealth history.AppendHealth
 }
 
 func New(opts ...Option) *Engine {
@@ -865,11 +866,21 @@ func (e *Engine) emitNativeHistory(ctx context.Context, timeline teamTimelineCon
 		payload = cloneTimelinePayload(payload)
 		payload["terminal_state"] = historyTerminalState(string(status))
 	}
-	_, _ = e.nativeHistory.Append(ctx, types.NativeExecutionEvent{
+	_, err := e.nativeHistory.Append(ctx, types.NativeExecutionEvent{
 		Version:    types.NativeExecutionEventVersionV1,
 		NativeType: nativeType,
 		Event:      types.EventEnvelope{RunID: timeline.runID, Source: types.ProtocolSourceTeams, Time: e.now(), Payload: payload},
 	})
+	e.nativeHistoryHealth.Record(source, err)
+}
+
+// NativeEventHistoryError reports append failures from the explicitly bound
+// team source journal for the lifetime of this Engine.
+func (e *Engine) NativeEventHistoryError() error {
+	if e == nil {
+		return nil
+	}
+	return e.nativeHistoryHealth.Err()
 }
 
 func historyTerminalState(status string) string {

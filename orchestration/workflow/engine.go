@@ -342,6 +342,7 @@ type Engine struct {
 	pauseController           WorkflowPauseController
 	timelineEmitter           types.EventHandler
 	nativeHistory             *history.Journal
+	nativeHistoryHealth       history.AppendHealth
 	defaultStepTimeout        time.Duration
 	graphComposabilityEnabled bool
 	now                       func() time.Time

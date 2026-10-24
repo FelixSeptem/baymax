@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -143,6 +144,18 @@ func TestFileJournalAppendFailureDoesNotExposeUncommittedEvent(t *testing.T) {
 	page, err := j.ReadAfter(context.Background(), source, nil, 10)
 	if err != nil || len(page.Events) != 0 || !page.Complete {
 		t.Fatalf("uncommitted event exposed: %+v %v", page, err)
+	}
+}
+
+func TestAppendHealthRetainsSourceUnavailable(t *testing.T) {
+	var health AppendHealth
+	if err := health.Err(); err != nil {
+		t.Fatalf("initial history health = %v", err)
+	}
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.history.v1", ID: "run-health"}
+	health.Record(source, types.ErrSourceUnavailable)
+	if !errors.Is(health.Err(), types.ErrSourceUnavailable) || !strings.Contains(health.Err().Error(), source.ID) {
+		t.Fatalf("history health error = %v", health.Err())
 	}
 }
 

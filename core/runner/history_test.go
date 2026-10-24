@@ -2,6 +2,9 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,6 +21,23 @@ func TestNewNativeEventHistoryRequiresRunnerSource(t *testing.T) {
 	}
 	if _, ok := any(journal).(types.NativeEventHistoryReader); !ok {
 		t.Fatal("runner history does not expose source reader")
+	}
+}
+
+func TestRunnerExposesNativeHistoryAppendFailure(t *testing.T) {
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.history.v1", ID: "run-health"}
+	root := t.TempDir()
+	journal, err := OpenNativeEventHistory(filepath.Join(root, "history.json"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	e := New(&fakeModel{}, WithNativeEventHistory(journal))
+	e.appendNativeHistory(context.Background(), types.Event{Version: types.EventSchemaVersionV1, Type: "run.started", RunID: source.ID, Time: time.Now()})
+	if !errors.Is(e.NativeEventHistoryError(), types.ErrSourceUnavailable) {
+		t.Fatalf("history append error = %v", e.NativeEventHistoryError())
 	}
 }
 

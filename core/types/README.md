@@ -53,6 +53,10 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
 Native event history 是独立 source-owned contract：`NativeEventHistoryReader.Capabilities` 声明 source namespace、sequence scope、retention/floor、cursor scope/version、durability 与 terminal recovery；`ReadAfter` 返回 detached `NativeEventPage`。通用 `core/history` journal 只在 owner 显式注入时记录 runner、child、team、workflow 的 source facts；默认执行路径仍由 `UnsupportedNativeEventHistoryReader` 明确拒绝。mailbox 的 `History.TerminalOutcome` 仅将 `acked`、`dead_letter`、`expired` 分类为该 mailbox 生命周期的 terminal，`SourceState` 保留对应值；TTL 的 `mailbox.expired` transition 若 owner 已将记录送入 DLQ，terminal outcome 仍为 `dead_letter`。这些都不表示 runner 完成或 host business commit。`ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 和 `ErrSourceUnavailable` 可用 `errors.Is` 判定。Memory journal 只保证进程内 replay；FileStore 只保证同机单写、持久化后的顺序重开，不提供多写者 CAS 或跨机器协调。读 history 不等于 Run resume、checkpoint restore、retry 或业务 commit。source namespace/ID 各限 1024 UTF-8 bytes，cursor 限 4096 bytes，page limit 为 1–200；非法 source/limit 返回 `ErrHistoryInvalid`。详见 [mailbox](../../orchestration/mailbox/README.md)。
 
+显式绑定 history writer 后，runner、child、team、workflow owner 的 callback append failure 通过 `NativeEventHistoryError()` 暴露为可 `errors.Is(ErrSourceUnavailable)` 判定、且携带 source kind/namespace/ID 的 health error。该 callback history 是观察投影，不是 effect admission gate；append 失败不证明相关 effect 未执行，不能自动重跑 parent/child/step，也不能宣称与 consumer projection 原子提交。workflow continuation 的 claim/result persistence 则由 workflow source owner 返回 unavailable 或 `recovery_required`，重开时不自动 redispatch 不确定 effect。
+
+该契约不增加 runtime configuration key、默认值、诊断 schema 或 recorder 字段，也不新增成功路径示例；history 存储仍由 source owner 显式提供，failure/recovery 边界由离线 contract fixture 与故障注入测试验证。
+
 - 关键验证：`go test ./core/types -count=1`。
 - 契约变更后应同步更新主干契约索引与跨模块回归用例。
 - 错误分类、事件字段、接口签名是回归重点。

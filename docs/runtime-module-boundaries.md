@@ -299,6 +299,15 @@ the task/attempt/lease/terminal owner; diagnostics replay remains read-only.
 
 ## Durable store deployment ownership
 
+`core/history.ProjectionLedger` is an optional source-owner commit/evidence
+extension, not a second execution journal. It stores source event identity,
+digest, terminal evidence and opaque projection acknowledgements under the
+same local ownership boundary. A history replay can recover committed source
+facts after a consumer crash, but it cannot prove atomicity with Danny's
+business database or authorize a retry/resume. If the ledger commit is
+uncertain, the owner returns `ErrProjectionRecoveryRequired` and keeps the
+source effect fail-closed.
+
 `core/types` defines the detached deployment vocabulary; each source owner
 projects its own owner namespace, writer fence and transaction scope. Current
 FileStore and source journal implementations are limited to same-host,

@@ -55,6 +55,8 @@ Native event history 是独立 source-owned contract：`NativeEventHistoryReader
 
 显式绑定 history writer 后，runner、child、team、workflow owner 的 callback append failure 通过 `NativeEventHistoryError()` 暴露为可 `errors.Is(ErrSourceUnavailable)` 判定、且携带 source kind/namespace/ID 的 health error。该 callback history 是观察投影，不是 effect admission gate；append 失败不证明相关 effect 未执行，不能自动重跑 parent/child/step，也不能宣称与 consumer projection 原子提交。workflow continuation 的 claim/result persistence 则由 workflow source owner 返回 unavailable 或 `recovery_required`，重开时不自动 redispatch 不确定 effect。
 
+显式绑定 `core/history.ProjectionLedger` 后，source owner 还可以持久化 bounded source commit、digest、terminal evidence 与 projection acknowledgement。`ProjectionLedger.ReadCommittedAfter` 是只读 source evidence；重复 acknowledgement 按 source event identity 幂等，digest/reference/cursor 冲突返回 `ErrHistoryConflict`。`Journal` 与 ledger 的 source commit 窗口若无法共同确认，会返回 `ErrProjectionRecoveryRequired`，不得重跑 effect、parent/child/step 或把 callback health 当作外部业务投影的 exactly-once 证明。只有 file-backed journal 与 file-backed ledger 同时显式绑定时，history capability 才声明 `ProjectionRecovery`；该声明仍仅限同机单写、顺序重开，不提供 Danny 数据库的跨库原子事务、多写者 CAS 或跨机器协调。
+
 该契约不增加 runtime configuration key、默认值、诊断 schema 或 recorder 字段，也不新增成功路径示例；history 存储仍由 source owner 显式提供，failure/recovery 边界由离线 contract fixture 与故障注入测试验证。
 
 - 关键验证：`go test ./core/types -count=1`。

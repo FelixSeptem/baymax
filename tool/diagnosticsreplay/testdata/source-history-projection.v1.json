@@ -1,0 +1,15 @@
+{
+  "version": "source-history-projection.v1",
+  "source": {
+    "kind": "runner",
+    "namespace": "runner.commit.v1",
+    "id": "fixture-run"
+  },
+  "cases": [
+    { "name": "committed_terminal_replay", "outcome": "committed", "side_effects": false },
+    { "name": "duplicate_projection", "outcome": "duplicate", "side_effects": false },
+    { "name": "conflicting_projection", "outcome": "history_conflict", "side_effects": false },
+    { "name": "uncertain_ledger_commit", "outcome": "recovery_required", "side_effects": false },
+    { "name": "expired_cursor", "outcome": "cursor_expired", "side_effects": false }
+  ]
+}

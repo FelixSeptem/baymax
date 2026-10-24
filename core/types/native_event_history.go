@@ -71,19 +71,22 @@ func (c OpaqueCursor) Validate() error {
 }
 
 type HistoryCapabilities struct {
-	Source                 SourceRef       `json:"source"`
-	EventIdentityNamespace string          `json:"event_identity_namespace"`
-	SequenceDefined        bool            `json:"sequence_defined"`
-	SequenceScope          string          `json:"sequence_scope"`
-	RetentionWindow        string          `json:"retention_window"`
-	RetentionFloor         *OpaqueCursor   `json:"retention_floor,omitempty"`
-	CursorScope            string          `json:"cursor_scope"`
-	CursorVersion          string          `json:"cursor_version"`
-	Durable                bool            `json:"durable"`
-	TerminalRecovery       string          `json:"terminal_recovery"`
-	Supported              bool            `json:"supported"`
-	UnsupportedReason      string          `json:"unsupported_reason,omitempty"`
-	Deployment             DeploymentScope `json:"deployment,omitempty"`
+	Source                     SourceRef       `json:"source"`
+	EventIdentityNamespace     string          `json:"event_identity_namespace"`
+	SequenceDefined            bool            `json:"sequence_defined"`
+	SequenceScope              string          `json:"sequence_scope"`
+	RetentionWindow            string          `json:"retention_window"`
+	RetentionFloor             *OpaqueCursor   `json:"retention_floor,omitempty"`
+	CursorScope                string          `json:"cursor_scope"`
+	CursorVersion              string          `json:"cursor_version"`
+	Durable                    bool            `json:"durable"`
+	TerminalRecovery           string          `json:"terminal_recovery"`
+	ProjectionRecovery         bool            `json:"projection_recovery"`
+	ProjectionRecoveryReason   string          `json:"projection_recovery_reason,omitempty"`
+	ProjectionRecoveryEvidence string          `json:"projection_recovery_evidence,omitempty"`
+	Supported                  bool            `json:"supported"`
+	UnsupportedReason          string          `json:"unsupported_reason,omitempty"`
+	Deployment                 DeploymentScope `json:"deployment,omitempty"`
 }
 
 // NativeHistoryIdentity is independent of callback EventID and protocol Sequence.

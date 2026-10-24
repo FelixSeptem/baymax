@@ -9,6 +9,13 @@
 
 history anchor 是 `NativeExecutionEvent.History` 中的 source/event identity 与 source-local sequence；它独立于实时 callback EventID/TraceID 和协议 Sequence。cursor 是 opaque `mailbox.history.v1` source-instance position，不能合并成并行 child/team 的全局顺序。
 
+source projection recovery 也必须由 source owner 显式注入：`history.Journal` 与
+`history.ProjectionLedger` 同时提供时，owner 才能暴露 source commit、projection
+acknowledgement、terminal evidence 和 `recovery-required` 状态。示例不会把 callback
+EventID、host observation sequence 或 mailbox lifecycle history 当作投影事务；ledger
+写入不确定时只读 recovery 必须停在 source cursor，不能重新 Run、retry、resume 或提交
+业务 effect。
+
 ## Expected markers
 
 运行 `go run ./examples/native-execution-events`，保留原有 `native-events run=completed`、`native-events stream=completed`、`observer=healthy` 和 `pause-is-terminal=false`，并输出：
@@ -16,6 +23,7 @@ history anchor 是 `NativeExecutionEvent.History` 中的 source/event identity �
 - `mailbox-history durable=true`、`mailbox-history restart-events=2`、`mailbox-history terminal=acked`：新 reader 从已确认 admission cursor 读到 lease/ack，而非重新执行。
 - `mailbox-history malformed=true`、`mailbox-history foreign=true`、`mailbox-history expired=true`：typed cursor 错误不静默回退 latest。fixture/gate 另外覆盖 retained gap 与 source unavailable。
 - `native-history unsupported=unconfigured-runner,unconfigured-child,unconfigured-team,unconfigured-workflow`：其 callback API 存在不表示默认 owner 已启用 retained journal。
+- `source-projection owner-injected-only`：source commit/projection recovery 只有在显式 owner ledger 绑定时成立；未绑定或 ledger 不可用保持 `unsupported`/`recovery-required`，不静默降级为 latest replay。
 
 `input_required` 是暂停；confirm resolution 不表示 canceled。observer.Status 独立于业务 terminal，sink error 是 unconfirmed，必须由业务 commit gate 决定提交。mailbox `acked` 只证明 source lifecycle，不能证明业务 effect committed。
 

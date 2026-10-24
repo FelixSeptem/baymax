@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -48,5 +49,27 @@ func TestWorkflowTimelineCanAppendExplicitSourceFacts(t *testing.T) {
 	page, err := journal.ReadAfter(context.Background(), source, nil, 10)
 	if err != nil || len(page.Events) != 1 || !page.Events[0].IsTerminal() {
 		t.Fatalf("workflow source fact = %+v err=%v", page, err)
+	}
+}
+
+func TestWorkflowNativeHistoryBindsSourceProjectionLedger(t *testing.T) {
+	source := types.SourceRef{Kind: types.HistorySourceWorkflow, Namespace: "workflow.commit.v1", ID: "workflow-owner"}
+	root := t.TempDir()
+	ledger, err := history.OpenProjectionLedger(filepath.Join(root, "ledger.json"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := OpenNativeEventHistory(filepath.Join(root, "history.json"), source, history.WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(WithNativeEventHistory(journal))
+	e.emitNativeHistory(context.Background(), workflowTimelineContext{workflowID: source.ID, runID: "run-owner"}, StepStatusSucceeded, map[string]any{"status": "succeeded"})
+	if err := e.NativeEventHistoryError(); err != nil {
+		t.Fatalf("owner history error = %v", err)
+	}
+	page, err := ledger.ReadCommittedAfter(context.Background(), nil, 1)
+	if err != nil || len(page.Records) != 1 {
+		t.Fatalf("workflow projection records = %#v err=%v", page, err)
 	}
 }

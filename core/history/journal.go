@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +26,21 @@ func WithRetention(entries int) Option {
 		if entries > 0 && entries <= types.MaxHistoryPageSize {
 			j.retention = entries
 		}
+	}
+}
+
+// WithProjectionLedger explicitly binds source commit evidence to a journal.
+// It never creates a ledger implicitly.
+func WithProjectionLedger(ledger *ProjectionLedger) Option {
+	return func(j *Journal) {
+		if j == nil || ledger == nil {
+			return
+		}
+		if ledger.source != j.source {
+			j.ledgerErr = types.ErrCursorForeign
+			return
+		}
+		j.ledger = ledger
 	}
 }
 
@@ -45,6 +61,8 @@ type Journal struct {
 	floor     uint64
 	retention int
 	events    []types.NativeExecutionEvent
+	ledger    *ProjectionLedger
+	ledgerErr error
 }
 
 func New(source types.SourceRef, options ...Option) (*Journal, error) {
@@ -99,6 +117,9 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if j.ledgerErr != nil {
+		return types.NativeHistoryIdentity{}, j.ledgerErr
+	}
 	previousSequence, previousFloor := j.sequence, j.floor
 	previousEvents := append([]types.NativeExecutionEvent(nil), j.events...)
 	j.sequence++
@@ -133,6 +154,11 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	if err := j.persistLocked(); err != nil {
 		j.sequence, j.floor, j.events = previousSequence, previousFloor, previousEvents
 		return types.NativeHistoryIdentity{}, err
+	}
+	if j.ledger != nil {
+		if _, err := j.ledger.commitRetained(ctx, snapshot.Events[0]); err != nil {
+			return identity, fmt.Errorf("%w: %v", types.ErrProjectionRecoveryRequired, err)
+		}
 	}
 	return identity, nil
 }
@@ -176,7 +202,14 @@ func (j *Journal) Capabilities(ctx context.Context, source types.SourceRef) (typ
 	}
 	floor := encodeCursor(source, j.floor)
 	deployment := types.SameHostSingleWriterScope(source.ID, "fixture:deployment-scope.v1")
-	return types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: j.path != "", TerminalRecovery: "retained source facts only", Supported: true, Deployment: deployment}, nil
+	caps := types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: j.path != "", TerminalRecovery: "retained source facts only", Supported: true, Deployment: deployment}
+	if j.ledger != nil && j.path != "" && j.ledger.path != "" {
+		caps.ProjectionRecovery = true
+		caps.ProjectionRecoveryEvidence = "fixture:source-history-projection-transaction.v1"
+	} else {
+		caps.ProjectionRecoveryReason = "source commit/projection ledger is not durably configured"
+	}
+	return caps, nil
 }
 
 func (j *Journal) ReadAfter(ctx context.Context, source types.SourceRef, cursor *types.OpaqueCursor, limit int) (types.NativeEventPage, error) {

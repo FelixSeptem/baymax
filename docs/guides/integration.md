@@ -102,6 +102,8 @@ if err != nil { return err }
 
 用 `errors.Is` 区分 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 与 `ErrSourceUnavailable`；非法 source/page limit 为 `ErrHistoryInvalid`。expiry/gap 可携带安全 floor evidence，但不能静默改读 floor/latest。FileStore 未提交批量写入、持久化失败或 legacy snapshot 缺 history 时 unavailable；读取不隐式 Flush。跨进程 consumer 必须重开同一已持久化 FileStore，再提交原 source 与已确认 cursor。
 
+若 source owner 显式绑定 `core/history.ProjectionLedger`，可额外读取 source commit/projection evidence：commit record 保留 source identity、sequence、event digest、terminal evidence 与 bounded cursor；projection acknowledgement 只按 source event identity 幂等记录 opaque reference，不代替 Danny 业务库事务。`HistoryCapabilities.ProjectionRecovery` 仅在 file-backed journal 与 file-backed ledger 同时可用时为 true；Memory journal、history-only FileStore 或 ledger 不可用时必须保持 false 并提供 reason。journal append 已提交而 ledger commit 无法确认时返回 `ErrProjectionRecoveryRequired`，不得从 latest replay、重新 Run、retry、resume 或重放不确定 effect。
+
 crash-before-consumer-projection 的恢复是重新读取 source 已保留事实；host 自行以 source-owned history identity 幂等投影并确认 cursor。它不调用模型、工具、handler、Run/Stream、claim/ack/nack、retry、resume 或 restore，不分配新 parent Run，也不改变 delivery、业务 commit 或 checkpoint 状态。并行 source 的顺序仅在各 source 内成立。离线可运行 [示例](../../examples/native-execution-events/README.md) 展示重开 replay、malformed/foreign/expired 与四类 unsupported；[contract index](../mainline-contract-test-index.md) 列出 gap/unavailable 等证据。
 
 与 RuntimeRecorder 共用 source 时使用显式 fan-out，让 recorder 消费原始事件、observer 消费原始事件的独立快照；不要从 QueryRuns 或 RunResult 合成事件。关闭/停用 observer 即可回滚观察接入；保留业务记录，已经发生的外部写入需按业务规则处理。

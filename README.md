@@ -37,6 +37,8 @@ go run ./examples/01-chat-minimal
 
 - `source-history-failure-and-workflow-claim-recovery`（归档 175；显式 source history append health 与 workflow resume claim recovery/fencing）。
 
+- 最近归档：`make-source-history-projection-transactional`（2026-10-24）；为显式 source owner 增加 bounded source commit/projection recovery evidence。该 change 不新增执行 form、队列或业务数据库事务；未绑定 ledger 的 history 仍只提供 retained replay，事务不确定窗口返回 typed `recovery-required`。
+
 - `retain-run-and-composite-source-history`（归档 171；source-native history/cursor/replay 增量）
 
 - `restore-workflow-continuations`（归档 172；workflow-first composite continuation）：为 workflow owner 增加 source-owned graph checkpoint/restore、三类 pause safe point、原子 claim、new-Engine file-store reopen 与只读 replay evidence。child/team/mailbox/planbridge resumed 继续在准入前返回 `unsupported_capability`。
@@ -52,7 +54,7 @@ go run ./examples/01-chat-minimal
 - `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
 - `evaluate-bounded-harness-candidate-comparisons`（已归档 170）：已落地离线、review-only 的候选实验身份、scope admission、baseline selection、评分隔离、逐 attempt 成本证据与只读 replay；七类 fixture、legacy/idempotency replay、双平台专项门禁及全量质量门禁已通过。契约与使用边界见 [评测契约](docs/evaluation-contract.md)。
 
-当前没有 active OpenSpec。最近归档的 `bound-durable-store-deployment-scope` 只声明并强制 same-host single-writer sequential reopen；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 `unsupported`，不会降级为重新 Run 或 latest replay。最近归档的 `restore-composite-continuations-and-graph-state` 已开放 child/fanout source-owner restore；team/mailbox/resumed-plan continuation 仍保持 `unsupported`，未配置 owner journal 的默认 history 路径继续保持 `unsupported`。
+当前没有 active OpenSpec。下一候选为 `enable-team-and-mailbox-native-continuations`：在已归档的 source commit/projection recovery 边界上，逐 owner 验证 team/mailbox 的 native continuation；未具备 source-owned checkpoint/restore 证据的能力继续保持 `unsupported_capability`。`bound-durable-store-deployment-scope` 后续明确 same-host single-writer sequential reopen；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 `unsupported`，不会降级为重新 Run 或 latest replay。
 
 最近归档：
 

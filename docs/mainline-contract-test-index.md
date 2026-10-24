@@ -544,6 +544,23 @@ gates continue to cover callback projection independently. The
 [integration support matrix](guides/integration.md) and [mailbox contract](../orchestration/mailbox/README.md)
 define the retention and terminal-recovery limits.
 
+## Source History Failure Health and Workflow Resume Claim Recovery
+
+| Requirement | Evidence |
+| --- | --- |
+| source-identified typed append-health error with `errors.Is(ErrSourceUnavailable)` | `core/history/journal_test.go::TestAppendHealthRetainsSourceUnavailable` |
+| callback append failures surfaced at explicitly bound runner/child/team/workflow owners | `core/runner/history_test.go::TestRunnerExposesNativeHistoryAppendFailure`, `orchestration/composer/history_test.go::TestComposerExposesNativeHistoryAppendFailure`, `orchestration/teams/history_test.go::TestTeamEngineExposesNativeHistoryAppendFailure`, `orchestration/workflow/history_test.go::TestWorkflowEngineExposesNativeHistoryAppendFailure` |
+| committed-only replay after append failure; callback replay remains read-only | `core/history/journal_test.go::TestFileJournalAppendFailureDoesNotExposeUncommittedEvent`, `scripts/check-native-event-history-contract.ps1` |
+| reopened claimed/running resume becomes stable recovery-required; completed result remains duplicate-readable | `orchestration/workflow/continuation_test.go::TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringClaim`, `TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringRunningClaim`, `TestFileWorkflowContinuationStoreReopensClaimAndResult` |
+| same-process and cross-process writer fence, sequential reopen, capability disabled after close | `orchestration/workflow/continuation_test.go::TestFileWorkflowContinuationStoreRejectsConcurrentOwner`, `TestFileWorkflowContinuationStoreFencesAcrossProcesses`, `TestWorkflowContinuationCapabilitiesRequireActiveFileStoreFence` |
+| shell/PowerShell history and workflow continuation contract gates and quality wiring | `scripts/check-native-event-history-contract.ps1`, `scripts/check-workflow-continuation-contract.ps1`, `scripts/check-quality-gate.ps1` |
+
+Callback history is an observation projection, not an effect gate or atomic
+source transition log. Its append health identifies incomplete retained
+history; uncertain workflow continuation effects are resolved only through
+the workflow continuation store's recovery-required state, never by replay or
+automatic redispatch.
+
 ## Spec 1 capability manifest and mailbox_async extension
 
 | Requirement | Evidence |

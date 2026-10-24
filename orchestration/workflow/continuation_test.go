@@ -3,11 +3,23 @@ package workflow
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
+
+func openTestFileWorkflowStore(t *testing.T, root, namespace string) *FileWorkflowContinuationStore {
+	t.Helper()
+	store, err := NewFileWorkflowContinuationStore(root, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
 
 type rejectingCheckpointStore struct{}
 
@@ -70,10 +82,7 @@ func TestEngineResumeContinuationRestoresSameGraphWithoutRerunningTerminalStep(t
 }
 
 func TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine(t *testing.T) {
-	store, err := NewFileWorkflowContinuationStore(t.TempDir(), "workflow")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := openTestFileWorkflowStore(t, t.TempDir(), "workflow")
 	completed := 0
 	first := New(
 		WithWorkflowContinuationStore(store, "workflow"),
@@ -90,11 +99,11 @@ func TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine(t *testing.T) 
 	if !errors.Is(err, ErrWorkflowPaused) {
 		t.Fatalf("pause: %v", err)
 	}
-
-	freshStore, err := NewFileWorkflowContinuationStore(store.root, "workflow")
-	if err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
+
+	freshStore := openTestFileWorkflowStore(t, store.root, "workflow")
 	pending := 0
 	fresh := New(
 		WithWorkflowContinuationStore(freshStore, "workflow"),
@@ -380,10 +389,8 @@ func TestWorkflowContinuationRejectsOversizedEnvelope(t *testing.T) {
 
 func TestFileWorkflowContinuationStoreReopensSequentially(t *testing.T) {
 	root := t.TempDir()
-	first, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := openTestFileWorkflowStore(t, root, "workflow")
+	var err error
 	now := time.Now().UTC()
 	cp, err := SealWorkflowContinuation(WorkflowContinuation{Ref: WorkflowContinuationRef{OwnerNamespace: "workflow"}, GraphID: "wf-file", GraphVersion: "v1", GraphDigest: "graph", RunID: "run", SessionID: "session", PauseReason: PauseBudgetExhausted, OriginalDeadline: now.Add(time.Hour), Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
 	if err != nil {
@@ -392,10 +399,10 @@ func TestFileWorkflowContinuationStoreReopensSequentially(t *testing.T) {
 	if err = first.Save(context.Background(), cp); err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
+	if err = first.Close(); err != nil {
 		t.Fatal(err)
 	}
+	second := openTestFileWorkflowStore(t, root, "workflow")
 	loaded, err := second.Load(context.Background(), cp.Ref)
 	if err != nil {
 		t.Fatalf("reopen load: %v (checkpoint=%s)", err, cp.Ref.CheckpointID)
@@ -407,10 +414,8 @@ func TestFileWorkflowContinuationStoreReopensSequentially(t *testing.T) {
 
 func TestFileWorkflowContinuationStoreReopensClaimAndResult(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	var err error
 	now := time.Now().UTC()
 	continuation, err := SealWorkflowContinuation(WorkflowContinuation{
 		Ref:     WorkflowContinuationRef{OwnerNamespace: "workflow"},
@@ -432,11 +437,11 @@ func TestFileWorkflowContinuationStoreReopensClaimAndResult(t *testing.T) {
 	if _, err := store.CommitResumeResult(context.Background(), claim, RunResult{RunID: "run", WorkflowID: "wf-file-claim", WorkflowStatus: "succeeded"}); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-
-	reopened, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
+
+	reopened := openTestFileWorkflowStore(t, root, "workflow")
 	duplicate, err := reopened.ClaimResume(context.Background(), req)
 	if err != nil {
 		t.Fatalf("duplicate after reopen: %v", err)
@@ -448,10 +453,8 @@ func TestFileWorkflowContinuationStoreReopensClaimAndResult(t *testing.T) {
 
 func TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringClaim(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	var err error
 	now := time.Now().UTC()
 	continuation, err := SealWorkflowContinuation(WorkflowContinuation{
 		Ref:     WorkflowContinuationRef{OwnerNamespace: "workflow"},
@@ -469,11 +472,11 @@ func TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringClaim(t *
 	if _, err := store.ClaimResume(context.Background(), req); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-
-	reopened, err := NewFileWorkflowContinuationStore(root, "workflow")
-	if err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
+
+	reopened := openTestFileWorkflowStore(t, root, "workflow")
 	claim, err := reopened.ClaimResume(context.Background(), req)
 	if !errors.Is(err, ErrWorkflowContinuationRecoveryRequired) {
 		t.Fatalf("reopened claim error = %v", err)
@@ -483,11 +486,132 @@ func TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringClaim(t *
 	}
 }
 
-func TestFileWorkflowContinuationStoreFailsClosedWhenPersistenceCannotCommit(t *testing.T) {
-	store, err := NewFileWorkflowContinuationStore(t.TempDir(), "workflow")
+func TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringRunningClaim(t *testing.T) {
+	root := t.TempDir()
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	var err error
+	now := time.Now().UTC()
+	continuation, err := SealWorkflowContinuation(WorkflowContinuation{
+		Ref:     WorkflowContinuationRef{OwnerNamespace: "workflow"},
+		GraphID: "wf-file-running-recovery", GraphVersion: "v1", GraphDigest: "graph",
+		RunID: "run", SessionID: "session", PauseReason: PauseApprovalRequired,
+		Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Save(context.Background(), continuation); err != nil {
+		t.Fatal(err)
+	}
+	req := WorkflowResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, IdempotencyKey: "resume"}
+	claim, err := store.ClaimResume(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkResumeRunning(context.Background(), claim); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened := openTestFileWorkflowStore(t, root, "workflow")
+	duplicate, err := reopened.ClaimResume(context.Background(), req)
+	if !errors.Is(err, ErrWorkflowContinuationRecoveryRequired) || !duplicate.Duplicate || duplicate.State != WorkflowResumeClaimRecoveryRequired {
+		t.Fatalf("running claim after reopen = %#v, err=%v", duplicate, err)
+	}
+	secondDuplicate, secondErr := reopened.ClaimResume(context.Background(), req)
+	if !errors.Is(secondErr, ErrWorkflowContinuationRecoveryRequired) || !secondDuplicate.Duplicate || secondDuplicate.State != duplicate.State || secondDuplicate.AttemptID != duplicate.AttemptID {
+		t.Fatalf("repeated recovery claim = %#v, err=%v; first = %#v", secondDuplicate, secondErr, duplicate)
+	}
+	dispatches := 0
+	resumer := New(WithWorkflowContinuationStore(reopened, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+		dispatches++
+		return StepOutput{}, nil
+	}}))
+	if _, err := resumer.ResumeContinuation(context.Background(), req, nil); !errors.Is(err, ErrWorkflowContinuationRecoveryRequired) || dispatches != 0 {
+		t.Fatalf("uncertain resume err=%v dispatches=%d", err, dispatches)
+	}
+}
+
+func TestFileWorkflowContinuationStoreRejectsConcurrentOwner(t *testing.T) {
+	root := t.TempDir()
+	_ = openTestFileWorkflowStore(t, root, "workflow")
+	second, err := NewFileWorkflowContinuationStore(root, "workflow")
+	if !errors.Is(err, ErrWorkflowContinuationUnavailable) || second != nil {
+		t.Fatalf("concurrent owner = %#v, err=%v", second, err)
+	}
+}
+
+func TestWorkflowContinuationStoreProcessFenceHelper(t *testing.T) {
+	root := os.Getenv("BAYMAX_WORKFLOW_STORE_FENCE_ROOT")
+	if root == "" {
+		return
+	}
+	store, err := NewFileWorkflowContinuationStore(root, "workflow")
+	if err != nil {
+		t.Fatalf("open fenced store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	_, _ = io.WriteString(os.Stdout, "ready\n")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+}
+
+func TestFileWorkflowContinuationStoreFencesAcrossProcesses(t *testing.T) {
+	root := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestWorkflowContinuationStoreProcessFenceHelper$")
+	cmd.Env = append(os.Environ(), "BAYMAX_WORKFLOW_STORE_FENCE_ROOT="+root)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	line := make([]byte, len("ready\n"))
+	if _, err := io.ReadFull(stdout, line); err != nil || string(line) != "ready\n" {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("child fence readiness = %q, err=%v", line, err)
+	}
+	if second, err := NewFileWorkflowContinuationStore(root, "workflow"); !errors.Is(err, ErrWorkflowContinuationUnavailable) || second != nil {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+		t.Fatalf("cross-process concurrent owner = %#v, err=%v", second, err)
+	}
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("fence helper: %v", err)
+	}
+	if successor, err := NewFileWorkflowContinuationStore(root, "workflow"); err != nil {
+		t.Fatalf("sequential cross-process reopen: %v", err)
+	} else if err := successor.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkflowContinuationCapabilitiesRequireActiveFileStoreFence(t *testing.T) {
+	store := openTestFileWorkflowStore(t, t.TempDir(), "workflow")
+	engine := New(WithWorkflowContinuationStore(store, "workflow"))
+	if _, err := engine.ContinuationCapabilities(context.Background()); err != nil {
+		t.Fatalf("active fenced capability error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.ContinuationCapabilities(context.Background()); !errors.Is(err, ErrWorkflowContinuationUnavailable) {
+		t.Fatalf("closed store capability error = %v", err)
+	}
+}
+
+func TestFileWorkflowContinuationStoreFailsClosedWhenPersistenceCannotCommit(t *testing.T) {
+	store := openTestFileWorkflowStore(t, t.TempDir(), "workflow")
 	store.root = store.path("not-a-directory")
 	if err := os.WriteFile(store.root, []byte("blocked"), 0o600); err != nil {
 		t.Fatal(err)

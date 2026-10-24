@@ -18,8 +18,7 @@ Baymax 主线保持 `library-first + contract-first`：
 
 - 已归档 173：`restore-composite-continuations-and-graph-state` 已完成 child/fanout source-owner continuation phase，包含 bounded continuation store、atomic resume claim、新 Composer FileStore reopen、显式三类 child pause producer、child capability manifest、planbridge owner binding、只读 replay 和双平台 gate。team parallel/vote、mailbox host-plan continuation、resumed planbridge 仍保持 `unsupported_capability`。
 
-- 进行中：
-  - 当前没有 active OpenSpec change。
+- 已归档 175：`source-history-failure-and-workflow-claim-recovery` 已补齐显式注入 source history 的 append-failure 可见性，并修正 workflow FileStore abandoned claimed/running resume 的 recovery-required 语义与单写者 fence。该 change 不引入第二 journal、自动重跑或多写者/跨机器能力；Danny projection 事务仍由 Danny owner 验收。
 
 已归档 171：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界。
 

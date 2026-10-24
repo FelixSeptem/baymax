@@ -359,9 +359,10 @@ type Composer struct {
 	reconcileCancel context.CancelFunc
 	reconcileDone   chan struct{}
 
-	runMu         sync.Mutex
-	runStat       map[string]*runStat
-	nativeHistory *history.Journal
+	runMu               sync.Mutex
+	runStat             map[string]*runStat
+	nativeHistory       *history.Journal
+	nativeHistoryHealth history.AppendHealth
 }
 
 type runStat struct {
@@ -983,7 +984,17 @@ func (c *Composer) appendNativeHistory(ctx context.Context, ev types.Event) {
 	if err != nil {
 		return
 	}
-	_, _ = c.nativeHistory.Append(ctx, fact)
+	_, err = c.nativeHistory.Append(ctx, fact)
+	c.nativeHistoryHealth.Record(source, err)
+}
+
+// NativeEventHistoryError reports append failures from the explicitly bound
+// child source journal for the lifetime of this Composer.
+func (c *Composer) NativeEventHistoryError() error {
+	if c == nil {
+		return nil
+	}
+	return c.nativeHistoryHealth.Err()
 }
 
 func (c *Composer) injectRunSummary(ev types.Event) types.Event {

@@ -35,6 +35,8 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
+- `source-history-failure-and-workflow-claim-recovery`（归档 175；显式 source history append health 与 workflow resume claim recovery/fencing）。
+
 - `retain-run-and-composite-source-history`（归档 171；source-native history/cursor/replay 增量）
 
 - `restore-workflow-continuations`（归档 172；workflow-first composite continuation）：为 workflow owner 增加 source-owned graph checkpoint/restore、三类 pause safe point、原子 claim、new-Engine file-store reopen 与只读 replay evidence。child/team/mailbox/planbridge resumed 继续在准入前返回 `unsupported_capability`。

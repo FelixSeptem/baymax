@@ -10,3 +10,10 @@ Workflow continuation capability evidence includes owner fence and transaction
 scope. Reopening a FileStore on the same host is supported only after the
 previous writer has released ownership; concurrent, cross-machine and
 multi-instance restore remains explicitly unsupported.
+
+After reopening, any persisted `claimed` or `running` resume attempt without a
+committed result is `recovery_required`. The workflow owner never automatically
+redispatches a step whose effect may have occurred. Exact duplicates return a
+committed result when one exists; otherwise they return the retained recovery
+state. History append failures are separately surfaced as degraded/unavailable
+source evidence and do not authorize rerunning the workflow.

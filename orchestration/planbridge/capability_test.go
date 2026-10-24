@@ -52,6 +52,7 @@ func TestWorkflowContinuationManifestUsesConfiguredWorkflowOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	engine := workflow.New(workflow.WithWorkflowContinuationStore(store, "workflow"))
 	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), engine)
 	if err != nil {

@@ -728,6 +728,8 @@ type FileWorkflowContinuationStore struct {
 	root      string
 	namespace string
 	memory    *MemoryWorkflowContinuationStore
+	lockFile  *os.File
+	closed    bool
 }
 
 func (e *Engine) ContinuationCapabilities(ctx context.Context) (types.ContinuationCapabilities, error) {
@@ -737,7 +739,8 @@ func (e *Engine) ContinuationCapabilities(ctx context.Context) (types.Continuati
 	if e == nil || strings.TrimSpace(e.continuationNamespace) != "workflow" {
 		return types.ContinuationCapabilities{}, ErrWorkflowContinuationUnsupported
 	}
-	if _, ok := e.continuations.(*FileWorkflowContinuationStore); !ok {
+	store, ok := e.continuations.(*FileWorkflowContinuationStore)
+	if !ok || !store.Available() {
 		return types.ContinuationCapabilities{}, ErrWorkflowContinuationUnavailable
 	}
 	capabilities := types.ContinuationCapabilities{
@@ -765,10 +768,45 @@ func NewFileWorkflowContinuationStore(root, namespace string) (*FileWorkflowCont
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(namespace) == "" {
 		return nil, ErrWorkflowContinuationMalformed
 	}
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, ErrWorkflowContinuationUnavailable
+	}
+	root = absoluteRoot
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, ErrWorkflowContinuationUnavailable
 	}
-	return &FileWorkflowContinuationStore{root: root, namespace: namespace, memory: NewMemoryWorkflowContinuationStore(namespace)}, nil
+	lockFile, err := acquireWorkflowStoreLock(filepath.Join(root, ".workflow-continuation.writer.lock"))
+	if err != nil {
+		return nil, ErrWorkflowContinuationUnavailable
+	}
+	return &FileWorkflowContinuationStore{root: root, namespace: namespace, memory: NewMemoryWorkflowContinuationStore(namespace), lockFile: lockFile}, nil
+}
+
+func (s *FileWorkflowContinuationStore) Close() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if err := releaseWorkflowStoreLock(s.lockFile); err != nil {
+		return ErrWorkflowContinuationUnavailable
+	}
+	s.lockFile = nil
+	return nil
+}
+
+func (s *FileWorkflowContinuationStore) Available() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.closed && s.lockFile != nil
 }
 
 func (s *FileWorkflowContinuationStore) path(id string) string {
@@ -800,13 +838,16 @@ func (s *FileWorkflowContinuationStore) loadRecord(ref WorkflowContinuationRef) 
 	if record.Continuation.Ref.OwnerNamespace != s.namespace || record.Continuation.Ref.Digest != ref.Digest {
 		return workflowRecord{}, ErrWorkflowContinuationForeign
 	}
-	if record.Claim != nil && record.Claim.Result == nil && record.Claim.State == WorkflowResumeClaimClaimed {
+	if record.Claim != nil && record.Claim.Result == nil && (record.Claim.State == WorkflowResumeClaimClaimed || record.Claim.State == WorkflowResumeClaimRunning) {
 		record.Claim.State = WorkflowResumeClaimRecoveryRequired
 	}
 	return record, nil
 }
 
 func (s *FileWorkflowContinuationStore) persistRecord(id string, record workflowRecord) error {
+	if s == nil || s.closed || s.lockFile == nil {
+		return ErrWorkflowContinuationUnavailable
+	}
 	if err := os.MkdirAll(s.root, 0o700); err != nil {
 		return ErrWorkflowContinuationUnavailable
 	}
@@ -840,6 +881,9 @@ func (s *FileWorkflowContinuationStore) persistRecord(id string, record workflow
 func (s *FileWorkflowContinuationStore) Save(ctx context.Context, c WorkflowContinuation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.lockFile == nil {
+		return ErrWorkflowContinuationUnavailable
+	}
 	before, existed := s.memory.records[c.Ref.CheckpointID]
 	if err := s.memory.Save(ctx, c); err != nil {
 		return err
@@ -857,6 +901,9 @@ func (s *FileWorkflowContinuationStore) Save(ctx context.Context, c WorkflowCont
 func (s *FileWorkflowContinuationStore) Load(ctx context.Context, ref WorkflowContinuationRef) (WorkflowContinuation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.lockFile == nil {
+		return WorkflowContinuation{}, ErrWorkflowContinuationUnavailable
+	}
 	record, err := s.loadRecord(ref)
 	if err != nil {
 		return WorkflowContinuation{}, err
@@ -867,6 +914,9 @@ func (s *FileWorkflowContinuationStore) Load(ctx context.Context, ref WorkflowCo
 func (s *FileWorkflowContinuationStore) ClaimResume(ctx context.Context, req WorkflowResumeRequest) (WorkflowResumeClaim, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.lockFile == nil {
+		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
+	}
 	if _, ok := s.memory.records[req.Ref.CheckpointID]; !ok {
 		record, err := s.loadRecord(req.Ref)
 		if err != nil {
@@ -877,6 +927,11 @@ func (s *FileWorkflowContinuationStore) ClaimResume(ctx context.Context, req Wor
 	before := s.memory.records[req.Ref.CheckpointID]
 	claim, err := s.memory.ClaimResume(ctx, req)
 	if err != nil {
+		if errors.Is(err, ErrWorkflowContinuationRecoveryRequired) {
+			if persistErr := s.persistRecord(req.Ref.CheckpointID, s.memory.records[req.Ref.CheckpointID]); persistErr != nil {
+				return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
+			}
+		}
 		return claim, err
 	}
 	if err := s.persistRecord(req.Ref.CheckpointID, s.memory.records[req.Ref.CheckpointID]); err != nil {
@@ -889,6 +944,9 @@ func (s *FileWorkflowContinuationStore) ClaimResume(ctx context.Context, req Wor
 func (s *FileWorkflowContinuationStore) MarkResumeRunning(ctx context.Context, claim WorkflowResumeClaim) (WorkflowResumeClaim, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.lockFile == nil {
+		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
+	}
 	if _, ok := s.memory.records[claim.Request.Ref.CheckpointID]; !ok {
 		record, err := s.loadRecord(claim.Request.Ref)
 		if err != nil {
@@ -910,6 +968,9 @@ func (s *FileWorkflowContinuationStore) MarkResumeRunning(ctx context.Context, c
 func (s *FileWorkflowContinuationStore) CommitResumeResult(ctx context.Context, claim WorkflowResumeClaim, result RunResult) (WorkflowResumeClaim, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.lockFile == nil {
+		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
+	}
 	before := s.memory.records[claim.Request.Ref.CheckpointID]
 	committed, err := s.memory.CommitResumeResult(ctx, claim, result)
 	if err != nil {

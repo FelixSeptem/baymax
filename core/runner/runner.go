@@ -75,6 +75,7 @@ type Engine struct {
 	handoffRestoreMu    sync.Mutex
 	handoffRestored     map[string]handoff.RestoreResult
 	nativeHistory       *history.Journal
+	nativeHistoryHealth history.AppendHealth
 	activeRunState
 	dynamicActionState
 	nativeContinuationState
@@ -2787,7 +2788,17 @@ func (e *Engine) appendNativeHistory(ctx context.Context, ev types.Event) {
 	if err != nil {
 		return
 	}
-	_, _ = e.nativeHistory.Append(ctx, fact)
+	_, err = e.nativeHistory.Append(ctx, fact)
+	e.nativeHistoryHealth.Record(source, err)
+}
+
+// NativeEventHistoryError reports whether an append to the explicitly bound
+// native history writer has failed during this Engine lifetime.
+func (e *Engine) NativeEventHistoryError() error {
+	if e == nil {
+		return nil
+	}
+	return e.nativeHistoryHealth.Err()
 }
 
 func (e *Engine) emitTimeline(

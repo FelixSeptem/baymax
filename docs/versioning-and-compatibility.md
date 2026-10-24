@@ -37,8 +37,8 @@ When a change has migration impact, maintainers SHOULD document:
 
 ## Go Version Baseline
 
-- Go language version: `1.26.0`; the security validation toolchain baseline is `1.26.9` or a later compatible patched release.
-- `go.mod` declares `toolchain go1.26.9`. With `GOTOOLCHAIN=auto`, Go selects or downloads that toolchain when needed; CI reads the same declaration through `go-version-file: go.mod`. A newer installed compatible toolchain may be selected.
+- Go language version: `1.26.0`; the security validation toolchain baseline is `1.26.10` or a later compatible patched release.
+- `go.mod` declares `toolchain go1.26.10`. With `GOTOOLCHAIN=auto`, Go selects or downloads that toolchain when needed; CI reads the same declaration through `go-version-file: go.mod`. A newer installed compatible toolchain may be selected.
 - Offline environments and `GOTOOLCHAIN=local` users must install the patched toolchain explicitly and confirm it with `go version`. Download or vulnerability-database access failures are verification failures, not successful scans.
 - Dependency remediation follows fresh strict `govulncheck ./...` results and the minimum compatible module graph required by fixed versions. A new advisory must be resolved without disabling strict scanning or changing quality thresholds.
 

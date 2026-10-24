@@ -561,6 +561,17 @@ history; uncertain workflow continuation effects are resolved only through
 the workflow continuation store's recovery-required state, never by replay or
 automatic redispatch.
 
+## Source Commit and Projection Recovery
+
+| Requirement | Evidence |
+| --- | --- |
+| bounded source commit, digest, terminal evidence and idempotent projection acknowledgement | `core/history/projection_ledger_test.go::TestProjectionLedgerCommitsReopensAndAcknowledgesIdempotently`, `TestProjectionLedgerRejectsConflictingAcknowledgement` |
+| retention expiry, foreign source and invalid acknowledgement fail closed | `core/history/projection_ledger_test.go::TestProjectionLedgerExpiresTrimmedCommitAndRejectsInvalidAcknowledgement` |
+| journal/source commit match and uncertain ledger persistence returns recovery-required without hiding source facts | `core/history/projection_ledger_test.go::TestJournalAppendWithProjectionLedgerCreatesMatchingCommitEvidence`, `TestJournalAppendMarksProjectionRecoveryRequiredWhenLedgerPersistenceFails` |
+| manifest does not infer projection recovery from history-only replay | `orchestration/planbridge/history_capability_test.go::TestCapabilityManifestHistoryProjectionRecoveryRequiresDurableOwnerLedger` |
+| source commit/projection recovery remains read-only and bounded | `core/history/projection_ledger.go`, `core/types/source_history_projection.go`, `scripts/check-native-event-history-contract.ps1` |
+| dedicated source commit/projection fixture and equivalent gates | `tool/diagnosticsreplay/testdata/source-history-projection.v1.json`, `scripts/check-source-history-projection-contract.ps1`, `scripts/check-source-history-projection-contract.sh` |
+
 ## Spec 1 capability manifest and mailbox_async extension
 
 | Requirement | Evidence |

@@ -2317,6 +2317,13 @@ source-owned. No new env/file/hot-update key or QueryRuns field is introduced.
 
 ## Native event history limits and diagnostics boundary
 
+The optional source projection ledger adds no env/file/hot-update key and no
+QueryRuns or RuntimeRecorder field. Its public evidence is limited to bounded
+source commit IDs, digests, cursors, terminal classifications and opaque
+projection references. `ErrProjectionRecoveryRequired` means the source fact
+may be committed while projection evidence is not confirmed; it is not a
+terminal cancellation, retry permission, or business-commit result.
+
 Native history adds no env/file/hot-update key or default, and no QueryRuns,
 RunRecord or OTel field. Existing `env > file > default`, fail-fast validation
 and atomic rollback remain unchanged. Constructor/API bounds are source

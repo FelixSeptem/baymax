@@ -48,26 +48,27 @@ type CapabilityManifest struct {
 }
 
 type ExecutionFormCapability struct {
-	Form                ExecutionForm                   `json:"form"`
-	Admission           CapabilityState                 `json:"admission"`
-	NativeEvents        CapabilityState                 `json:"native_events"`
-	DurableHistory      CapabilityState                 `json:"durable_history"`
-	AfterCursorReplay   CapabilityState                 `json:"after_cursor_replay"`
-	CheckpointCreation  CapabilityState                 `json:"checkpoint_creation"`
-	CrossProcessRestore CapabilityState                 `json:"cross_process_restore"`
-	InputRequired       CapabilityState                 `json:"input_required"`
-	ApprovalRequired    CapabilityState                 `json:"approval_required"`
-	BudgetExhausted     CapabilityState                 `json:"budget_exhausted"`
-	Cancellation        CapabilityState                 `json:"cancellation"`
-	Timeout             CapabilityState                 `json:"timeout"`
-	CausalRetry         CapabilityState                 `json:"causal_retry"`
-	MailboxContinuation CapabilityState                 `json:"mailbox_continuation"`
-	RetentionPolicy     string                          `json:"retention_policy"`
-	EvidenceReference   string                          `json:"evidence_reference"`
-	UnsupportedReasons  map[string]string               `json:"unsupported_reasons,omitempty"`
-	SourceHistory       *types.HistoryCapabilities      `json:"source_history,omitempty"`
-	SourceContinuation  *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
-	Deployment          types.DeploymentScope           `json:"deployment"`
+	Form                     ExecutionForm                   `json:"form"`
+	Admission                CapabilityState                 `json:"admission"`
+	NativeEvents             CapabilityState                 `json:"native_events"`
+	DurableHistory           CapabilityState                 `json:"durable_history"`
+	AfterCursorReplay        CapabilityState                 `json:"after_cursor_replay"`
+	SourceProjectionRecovery CapabilityState                 `json:"source_projection_recovery"`
+	CheckpointCreation       CapabilityState                 `json:"checkpoint_creation"`
+	CrossProcessRestore      CapabilityState                 `json:"cross_process_restore"`
+	InputRequired            CapabilityState                 `json:"input_required"`
+	ApprovalRequired         CapabilityState                 `json:"approval_required"`
+	BudgetExhausted          CapabilityState                 `json:"budget_exhausted"`
+	Cancellation             CapabilityState                 `json:"cancellation"`
+	Timeout                  CapabilityState                 `json:"timeout"`
+	CausalRetry              CapabilityState                 `json:"causal_retry"`
+	MailboxContinuation      CapabilityState                 `json:"mailbox_continuation"`
+	RetentionPolicy          string                          `json:"retention_policy"`
+	EvidenceReference        string                          `json:"evidence_reference"`
+	UnsupportedReasons       map[string]string               `json:"unsupported_reasons,omitempty"`
+	SourceHistory            *types.HistoryCapabilities      `json:"source_history,omitempty"`
+	SourceContinuation       *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
+	Deployment               types.DeploymentScope           `json:"deployment"`
 }
 
 // CapabilityManifestReader returns detached entries so callers cannot change
@@ -90,19 +91,21 @@ func DefaultCapabilityManifest() CapabilityManifest {
 		entry := ExecutionFormCapability{
 			Form: form, Admission: CapabilitySupported, NativeEvents: CapabilitySupported,
 			DurableHistory: CapabilityUnsupported, AfterCursorReplay: CapabilityUnsupported,
-			CheckpointCreation: CapabilityUnsupported, CrossProcessRestore: CapabilityUnsupported,
+			SourceProjectionRecovery: CapabilityUnsupported,
+			CheckpointCreation:       CapabilityUnsupported, CrossProcessRestore: CapabilityUnsupported,
 			InputRequired: CapabilityUnsupported, ApprovalRequired: CapabilityUnsupported, BudgetExhausted: CapabilityUnsupported,
 			Cancellation: CapabilitySupported, Timeout: CapabilitySupported, CausalRetry: CapabilitySupported,
 			MailboxContinuation: CapabilityUnsupported, RetentionPolicy: "source-owned", EvidenceReference: "fixture:host-runtime-capability-manifest.v1",
 			UnsupportedReasons: map[string]string{
-				"durable_history":       "source journal is not configured for this source",
-				"after_cursor_replay":   "source journal is not configured for this source",
-				"checkpoint_creation":   LimitationCompositeGraphRestore,
-				"cross_process_restore": LimitationCompositeGraphRestore,
-				"input_required":        LimitationCompositeGraphRestore,
-				"approval_required":     LimitationCompositeGraphRestore,
-				"budget_exhausted":      LimitationCompositeGraphRestore,
-				"mailbox_continuation":  "mailbox form is not enabled by default",
+				"durable_history":            "source journal is not configured for this source",
+				"after_cursor_replay":        "source journal is not configured for this source",
+				"source_projection_recovery": "source commit/projection ledger is not configured for this source",
+				"checkpoint_creation":        LimitationCompositeGraphRestore,
+				"cross_process_restore":      LimitationCompositeGraphRestore,
+				"input_required":             LimitationCompositeGraphRestore,
+				"approval_required":          LimitationCompositeGraphRestore,
+				"budget_exhausted":           LimitationCompositeGraphRestore,
+				"mailbox_continuation":       "mailbox form is not enabled by default",
 			},
 			Deployment: types.DefaultDeploymentScope(string(form), "source owner deployment evidence is not configured"),
 		}
@@ -248,6 +251,8 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 			entry.AfterCursorReplay = CapabilityUnsupported
 			entry.UnsupportedReasons["durable_history"] = caps.UnsupportedReason
 			entry.UnsupportedReasons["after_cursor_replay"] = caps.UnsupportedReason
+			entry.SourceProjectionRecovery = CapabilityUnsupported
+			entry.UnsupportedReasons["source_projection_recovery"] = caps.UnsupportedReason
 			continue
 		}
 		if caps.Deployment != (types.DeploymentScope{}) {
@@ -267,6 +272,17 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 		} else {
 			entry.DurableHistory = CapabilityUnsupported
 			entry.UnsupportedReasons["durable_history"] = "source retention is process-local"
+		}
+		if caps.ProjectionRecovery {
+			entry.SourceProjectionRecovery = CapabilitySupported
+			delete(entry.UnsupportedReasons, "source_projection_recovery")
+		} else {
+			entry.SourceProjectionRecovery = CapabilityUnsupported
+			reason := caps.ProjectionRecoveryReason
+			if strings.TrimSpace(reason) == "" {
+				reason = "source commit/projection ledger is not configured for this source"
+			}
+			entry.UnsupportedReasons["source_projection_recovery"] = reason
 		}
 	}
 	return result, validateCapabilityManifest(result)
@@ -366,6 +382,9 @@ func validateCapability(entry ExecutionFormCapability) error {
 		"timeout": entry.Timeout, "causal_retry": entry.CausalRetry,
 		"mailbox_continuation": entry.MailboxContinuation,
 	}
+	if entry.SourceProjectionRecovery != CapabilityUnknown || entry.SourceHistory != nil {
+		states["source_projection_recovery"] = entry.SourceProjectionRecovery
+	}
 	if strings.TrimSpace(entry.RetentionPolicy) == "" || len(entry.RetentionPolicy) > 1024 || strings.TrimSpace(entry.EvidenceReference) == "" || len(entry.EvidenceReference) > 1024 {
 		return fail(InvalidPlan, "capability_manifest.entry", nil)
 	}
@@ -420,7 +439,7 @@ func validateCapability(entry ExecutionFormCapability) error {
 				return fail(InvalidPlan, "capability_manifest.source_history", nil)
 			}
 		}
-		if entry.AfterCursorReplay != CapabilitySupported || (history.Durable != (entry.DurableHistory == CapabilitySupported)) {
+		if entry.AfterCursorReplay != CapabilitySupported || (history.Durable != (entry.DurableHistory == CapabilitySupported)) || entry.SourceProjectionRecovery == CapabilityUnknown {
 			return fail(InvalidPlan, "capability_manifest.source_history", nil)
 		}
 	}

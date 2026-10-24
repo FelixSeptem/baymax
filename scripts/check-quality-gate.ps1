@@ -715,6 +715,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-native-event-history-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] source history projection contract suites"
+        Command   = { pwsh -File scripts/check-source-history-projection-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] native continuation contract suites"
         Command   = { pwsh -File scripts/check-native-continuation-contract.ps1 }
     },

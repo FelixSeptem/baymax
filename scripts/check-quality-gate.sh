@@ -268,6 +268,8 @@ echo "[quality-gate] native execution event contract suites"
 bash scripts/check-native-execution-event-contract.sh
 echo "[quality-gate] native event history contract suites"
 bash scripts/check-native-event-history-contract.sh
+echo "[quality-gate] source history projection contract suites"
+bash scripts/check-source-history-projection-contract.sh
 echo "[quality-gate] native continuation contract suites"
 bash scripts/check-native-continuation-contract.sh
 echo "[quality-gate] workflow continuation contract suites"

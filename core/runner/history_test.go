@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -56,5 +57,27 @@ func TestRunnerNativeHistoryAppendIsExplicitAndSourceOwned(t *testing.T) {
 	}
 	if page.Events[0].Event.Payload != nil || page.Events[0].History.Source != source {
 		t.Fatalf("history retained non-source fact: %+v", page.Events[0])
+	}
+}
+
+func TestRunnerNativeHistoryBindsSourceProjectionLedger(t *testing.T) {
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.commit.v1", ID: "run-owner"}
+	root := t.TempDir()
+	ledger, err := history.OpenProjectionLedger(filepath.Join(root, "ledger.json"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := OpenNativeEventHistory(filepath.Join(root, "history.json"), source, history.WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(&fakeModel{}, WithNativeEventHistory(journal))
+	e.appendNativeHistory(context.Background(), types.Event{Version: types.EventSchemaVersionV1, Type: "run.finished", RunID: source.ID, Time: time.Now()})
+	if err := e.NativeEventHistoryError(); err != nil {
+		t.Fatalf("owner history error = %v", err)
+	}
+	page, err := ledger.ReadCommittedAfter(context.Background(), nil, 1)
+	if err != nil || len(page.Records) != 1 {
+		t.Fatalf("runner projection records = %#v err=%v", page, err)
 	}
 }

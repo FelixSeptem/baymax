@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 )
@@ -88,5 +89,47 @@ func TestNativeHistoryManifestRejectsIncompleteSourceDeclaration(t *testing.T) {
 	entry.DurableHistory, entry.AfterCursorReplay = CapabilitySupported, CapabilitySupported
 	if _, err := NewCapabilityManifestReader(manifest); err == nil {
 		t.Fatal("accepted history support with no source sequence, cursor scope or retention declaration")
+	}
+}
+
+func TestCapabilityManifestHistoryProjectionRecoveryRequiresDurableOwnerLedger(t *testing.T) {
+	ctx := context.Background()
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.commit.v1", ID: "run-manifest"}
+	memory, err := history.New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := CapabilityManifestWithHistory(ctx, memory, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := reader.Capability(ExecutionFormDirect)
+	if err != nil || direct.SourceHistory == nil || direct.SourceHistory.ProjectionRecovery || direct.SourceHistory.ProjectionRecoveryReason == "" {
+		t.Fatalf("memory history capability = %#v err=%v", direct, err)
+	}
+	root := t.TempDir()
+	ledger, err := history.OpenProjectionLedger(filepath.Join(root, "ledger.json"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := history.OpenFile(filepath.Join(root, "history.json"), source, history.WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err = CapabilityManifestWithHistory(ctx, journal, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err = NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err = reader.Capability(ExecutionFormDirect)
+	if err != nil || direct.SourceHistory == nil || !direct.SourceHistory.ProjectionRecovery || direct.SourceHistory.ProjectionRecoveryEvidence == "" {
+		t.Fatalf("file history capability = %#v err=%v", direct, err)
 	}
 }

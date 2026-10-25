@@ -20,7 +20,7 @@ if ($invalidExit -eq 0) { throw "[host-execution-plan-contract] invalid replay f
 
 $smoke = @()
 Invoke-NativeStrict -Label "host execution plan example" -Command { $script:smoke = @(go run ./examples/host-execution-plan) }
-foreach ($marker in @("plan-compiled", "source-owner-preserved", "run-stream-parity", "mailbox-logical-admission", "mailbox-lifecycle-source-owned", "invalid-plan-rejected", "unsupported-capability-rejected", "no-side-effects-before-rejection", "host-commit-required")) {
+foreach ($marker in @("plan-compiled", "source-owner-preserved", "run-stream-parity", "mailbox-logical-admission", "mailbox-lifecycle-source-owned", "team-mailbox-continuation-owner-configured", "invalid-plan-rejected", "unsupported-capability-rejected", "no-side-effects-before-rejection", "host-commit-required")) {
     if ($smoke -notcontains $marker) { throw "[host-execution-plan-contract] missing marker $marker" }
 }
 Write-Host "[host-execution-plan-contract] passed"

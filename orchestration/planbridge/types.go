@@ -121,8 +121,11 @@ type DirectBinding struct {
 	Request types.RunRequest
 }
 type TeamBinding struct {
-	Plan         teams.Plan
-	TerminalOnly bool
+	Plan              teams.Plan
+	TerminalOnly      bool
+	ContinuationOwner *teams.Engine
+	Resume            *teams.TeamResumeRequest
+	Manifest          *CapabilityManifestReader
 }
 type WorkflowBinding struct {
 	Request            workflow.RunRequest
@@ -147,10 +150,15 @@ type MailboxBinding struct {
 	Owner    MailboxOwner
 	Binding  mailbox.HostPlanBinding
 	Manifest *CapabilityManifestReader
+	Resume   *mailbox.MailboxResumeRequest
 }
 
 type MailboxOwner interface {
 	AdmitHostPlan(context.Context, mailbox.HostPlanBinding) (mailbox.HostPlanOutcome, error)
+}
+
+type MailboxContinuationOwner interface {
+	ResumeHostPlanContinuation(context.Context, mailbox.MailboxResumeRequest) (mailbox.HostPlanOutcome, error)
 }
 type Execution struct {
 	Handler         types.EventHandler

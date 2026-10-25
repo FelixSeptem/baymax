@@ -16,6 +16,11 @@ EventID、host observation sequence 或 mailbox lifecycle history 当作投影�
 写入不确定时只读 recovery 必须停在 source cursor，不能重新 Run、retry、resume 或提交
 业务 effect。
 
+Team and mailbox continuation is separate from native history: a configured
+owner checkpoint binds team graph/member facts or mailbox message/delivery/lease
+facts. History replay remains read-only and cannot create that checkpoint,
+resume it, re-consume a message, or infer support for resumed planbridge.
+
 ## Expected markers
 
 运行 `go run ./examples/native-execution-events`，保留原有 `native-events run=completed`、`native-events stream=completed`、`observer=healthy` 和 `pause-is-terminal=false`，并输出：
@@ -24,6 +29,7 @@ EventID、host observation sequence 或 mailbox lifecycle history 当作投影�
 - `mailbox-history malformed=true`、`mailbox-history foreign=true`、`mailbox-history expired=true`：typed cursor 错误不静默回退 latest。fixture/gate 另外覆盖 retained gap 与 source unavailable。
 - `native-history unsupported=unconfigured-runner,unconfigured-child,unconfigured-team,unconfigured-workflow`：其 callback API 存在不表示默认 owner 已启用 retained journal。
 - `source-projection owner-injected-only`：source commit/projection recovery 只有在显式 owner ledger 绑定时成立；未绑定或 ledger 不可用保持 `unsupported`/`recovery-required`，不静默降级为 latest replay。
+- `continuation-owner-not-history-replay`：team/mailbox continuation requires an explicit checkpoint owner; cursor replay remains read-only and cannot recover a pending effect.
 
 `input_required` 是暂停；confirm resolution 不表示 canceled。observer.Status 独立于业务 terminal，sink error 是 unconfirmed，必须由业务 commit gate 决定提交。mailbox `acked` 只证明 source lifecycle，不能证明业务 effect committed。
 

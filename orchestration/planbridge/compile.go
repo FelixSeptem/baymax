@@ -336,6 +336,17 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 		if capability.Admission != CapabilitySupported || capability.MailboxContinuation != CapabilitySupported {
 			return Binding{}, nil, "", fail(UnsupportedCapability, "capability_manifest.mailbox_async", nil)
 		}
+		if b.Mailbox.Resume != nil {
+			if capability.CheckpointCreation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported || capability.SourceContinuation == nil {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.mailbox.continuation", nil)
+			}
+			if err := b.Mailbox.Resume.Validate(); err != nil {
+				return Binding{}, nil, "", fail(InvalidPlan, "binding.mailbox.resume", err)
+			}
+			if b.Mailbox.Resume.Binding != b.Mailbox.Binding || b.Mailbox.Resume.Ref.MessageID != b.Mailbox.Binding.MessageID {
+				return Binding{}, nil, "", fail(BindingMismatch, "binding.mailbox.resume", nil)
+			}
+		}
 		binding := b.Mailbox.Binding
 		if len(binding.MessageID) > l.ReferenceBytes || len(binding.IdempotencyKey) > l.ReferenceBytes || len(binding.PlanDigest) > l.ReferenceBytes {
 			return Binding{}, nil, "", fail(LimitExceeded, "binding.mailbox.reference", nil)
@@ -386,8 +397,21 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 		if b.Team == nil {
 			return Binding{}, nil, "", fail(BindingMismatch, "binding.team", nil)
 		}
-		if !b.Team.TerminalOnly {
-			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.team.continuation", nil)
+		teamBinding := *b.Team
+		if !teamBinding.TerminalOnly {
+			if teamBinding.ContinuationOwner == nil || teamBinding.Manifest == nil {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.team.continuation", nil)
+			}
+			if e := teamBinding.Manifest.ValidateCompatibility(CapabilityManifestContractVersion, CapabilityManifestAPIVersion); e != nil {
+				return Binding{}, nil, "", e
+			}
+			capability, e := teamBinding.Manifest.Capability(ExecutionFormTeam)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			if capability.CheckpointCreation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported || capability.SourceContinuation == nil {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.team.continuation", nil)
+			}
 		}
 		if requiredCapabilities+len(b.Team.Plan.Tasks) > l.StructuralItems {
 			return Binding{}, nil, "", fail(LimitExceeded, "binding.team.tasks", nil)
@@ -403,7 +427,8 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 		if plan.Strategy != teams.StrategyParallel && plan.Strategy != teams.StrategyVote {
 			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.team.strategy", nil)
 		}
-		b.Team = &TeamBinding{Plan: plan, TerminalOnly: true}
+		teamBinding.Plan = plan
+		b.Team = &teamBinding
 		projection := plan
 		projection.Tasks = append([]teams.Task(nil), plan.Tasks...)
 		for i := range projection.Tasks {

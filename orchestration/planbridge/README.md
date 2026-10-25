@@ -96,6 +96,23 @@ configured. No history capability enables checkpoint creation, cross-process
 execution restore or composite pause. The bridge neither owns nor reads a
 journal during plan dispatch.
 
+## Team and mailbox continuation
+
+Team parallel/vote and `mailbox_async` continuation are admitted only when the
+corresponding source owner contributes a valid continuation capability for the
+requested checkpoint, restore and pause-reason cells. A File-backed owner has
+the limited `same_host_single_writer_sequential_reopen` profile; a memory-only
+owner remains process-local and planbridge rejects cross-process continuation
+before member activation or mailbox mutation.
+
+The bridge delegates team restore to the configured team owner and mailbox
+claim/projection to the existing mailbox owner. It does not restore a plan on
+its own, publish or consume a message, make a second mailbox worker, re-run a
+parent or treat history replay as a checkpoint. Lease loss, retry, DLQ, timeout
+and terminal state remain source-owned evidence. Resumed planbridge execution is
+still a distinct unsupported capability until it has its own source graph
+material.
+
 ## Deployment scope admission
 
 `Descriptor.Deployment` is an additive request for an explicitly evidenced

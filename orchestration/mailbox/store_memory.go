@@ -104,6 +104,32 @@ func (s *MemoryStore) Restore(_ context.Context, snapshot Snapshot) error {
 	return s.state.restore(snapshot)
 }
 
+func (s *MemoryStore) continuationSnapshot(ctx context.Context, fn func(Snapshot) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return fn(s.state.snapshot())
+}
+
+func (s *MemoryStore) continuationMutate(ctx context.Context, fn func(*mailboxState) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	candidate, err := cloneMailboxState(s.state)
+	if err != nil {
+		return err
+	}
+	if err := fn(&candidate); err != nil {
+		return err
+	}
+	s.state = candidate
+	return nil
+}
+
 func (s *MemoryStore) DrainLifecycleEvents() []LifecycleEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -186,6 +186,19 @@ func CapabilityManifestWithChildContinuation(ctx context.Context, source types.C
 	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormSubagent, "child")
 }
 
+// CapabilityManifestWithTeamContinuation promotes only the explicitly
+// configured team owner. It does not imply child, workflow, mailbox, or
+// resumed-plan support.
+func CapabilityManifestWithTeamContinuation(ctx context.Context, source types.ContinuationCapabilitySource) (CapabilityManifest, error) {
+	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormTeam, "team")
+}
+
+// CapabilityManifestWithMailboxContinuation promotes only the existing
+// mailbox owner. It never creates a queue or execution loop.
+func CapabilityManifestWithMailboxContinuation(ctx context.Context, source types.ContinuationCapabilitySource) (CapabilityManifest, error) {
+	return capabilityManifestWithContinuationForForm(ctx, source, ExecutionFormMailboxAsync, "mailbox")
+}
+
 func capabilityManifestWithContinuationForForm(ctx context.Context, source types.ContinuationCapabilitySource, form ExecutionForm, namespace string) (CapabilityManifest, error) {
 	result := DefaultCapabilityManifest()
 	if source == nil {
@@ -211,6 +224,10 @@ func capabilityManifestWithContinuationForForm(ctx context.Context, source types
 		entry.Deployment = caps.Deployment
 		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
 		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
+		if form == ExecutionFormMailboxAsync {
+			entry.MailboxContinuation = CapabilitySupported
+			delete(entry.UnsupportedReasons, "mailbox_continuation")
+		}
 		entry.RetentionPolicy = caps.RetentionPolicy
 		entry.EvidenceReference = caps.EvidenceReferences["cross_process_restore"]
 		for _, dimension := range continuationDimensions() {
@@ -406,13 +423,19 @@ func validateCapability(entry ExecutionFormCapability) error {
 	}
 	continuationDeclared := entry.CheckpointCreation == CapabilitySupported || entry.CrossProcessRestore == CapabilitySupported || entry.InputRequired == CapabilitySupported || entry.ApprovalRequired == CapabilitySupported || entry.BudgetExhausted == CapabilitySupported
 	if continuationDeclared || entry.SourceContinuation != nil {
-		if (entry.Form != ExecutionFormDirect && entry.Form != ExecutionFormWorkflow && entry.Form != ExecutionFormSubagent) || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
+		if (entry.Form != ExecutionFormDirect && entry.Form != ExecutionFormWorkflow && entry.Form != ExecutionFormSubagent && entry.Form != ExecutionFormTeam && entry.Form != ExecutionFormMailboxAsync) || entry.SourceContinuation == nil || entry.SourceContinuation.Validate() != nil || !continuationDeclared {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		if entry.Form == ExecutionFormWorkflow && entry.SourceContinuation.SourceNamespace != "workflow" {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		if entry.Form == ExecutionFormSubagent && entry.SourceContinuation.SourceNamespace != "child" {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		if entry.Form == ExecutionFormTeam && entry.SourceContinuation.SourceNamespace != "team" {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		if entry.Form == ExecutionFormMailboxAsync && (entry.SourceContinuation.SourceNamespace != "mailbox" || entry.MailboxContinuation != CapabilitySupported) {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
 		for _, dimension := range continuationDimensions() {

@@ -2,9 +2,11 @@ package planbridge
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 )
 
@@ -16,6 +18,40 @@ func (workflowContinuationEvidence) ContinuationCapabilities(context.Context) (t
 		PauseReasons:       []string{"input_required", "approval_required", "budget_exhausted"},
 		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:workflow-continuation.v1", "cross_process_restore": "fixture:workflow-continuation.v1", "input_required": "fixture:workflow-continuation.v1", "approval_required": "fixture:workflow-continuation.v1", "budget_exhausted": "fixture:workflow-continuation.v1"},
 	}, nil
+}
+
+func TestMailboxContinuationManifestRequiresDurableOwnerEvidence(t *testing.T) {
+	memory, err := mailbox.New(mailbox.NewMemoryStore(mailbox.Policy{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CapabilityManifestWithMailboxContinuation(context.Background(), memory); err == nil {
+		t.Fatal("memory mailbox continuation was advertised as cross-process")
+	}
+	store, err := mailbox.NewFileStore(filepath.Join(t.TempDir(), "mailbox.json"), mailbox.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileOwner, err := mailbox.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := CapabilityManifestWithMailboxContinuation(context.Background(), fileOwner)
+	if err != nil {
+		t.Fatalf("file mailbox continuation manifest error = %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability, err := reader.Capability(ExecutionFormMailboxAsync)
+	if err != nil || capability.MailboxContinuation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported {
+		t.Fatalf("mailbox capability = %#v err=%v", capability, err)
+	}
+	team, _ := reader.Capability(ExecutionFormTeam)
+	if team.SourceContinuation != nil || team.CrossProcessRestore != CapabilityUnsupported {
+		t.Fatalf("mailbox capability leaked to team = %#v", team)
+	}
 }
 
 func TestWorkflowContinuationManifestEnablesOnlyWorkflowCells(t *testing.T) {
@@ -45,6 +81,34 @@ func TestWorkflowContinuationManifestEnablesOnlyWorkflowCells(t *testing.T) {
 			t.Fatalf("%s inherited workflow restore: %#v", form, entry)
 		}
 	}
+}
+
+func TestTeamContinuationManifestPromotesOnlyTeamCells(t *testing.T) {
+	source := teamContinuationEvidence{}
+	manifest, err := CapabilityManifestWithTeamContinuation(context.Background(), source)
+	if err != nil {
+		t.Fatalf("CapabilityManifestWithTeamContinuation() error = %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatalf("NewCapabilityManifestReader() error = %v", err)
+	}
+	team, err := reader.Capability(ExecutionFormTeam)
+	if err != nil || team.SourceContinuation == nil || team.CrossProcessRestore != CapabilitySupported {
+		t.Fatalf("team capability = %#v err=%v", team, err)
+	}
+	mailbox, _ := reader.Capability(ExecutionFormMailboxAsync)
+	if mailbox.CrossProcessRestore != CapabilityUnsupported || mailbox.SourceContinuation != nil {
+		t.Fatalf("mailbox borrowed team continuation = %#v", mailbox)
+	}
+}
+
+type teamContinuationEvidence struct{}
+
+func (teamContinuationEvidence) ContinuationCapabilities(context.Context) (types.ContinuationCapabilities, error) {
+	return types.ContinuationCapabilities{
+		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "baymax", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: true, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"}, EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:team-continuation.v1", "cross_process_restore": "fixture:team-continuation.v1", "input_required": "fixture:team-continuation.v1", "approval_required": "fixture:team-continuation.v1", "budget_exhausted": "fixture:team-continuation.v1"}, Deployment: types.SameHostSingleWriterScope("team-owner", "fixture:team-continuation.v1"),
+	}, nil
 }
 
 func TestWorkflowContinuationManifestUsesConfiguredWorkflowOwner(t *testing.T) {

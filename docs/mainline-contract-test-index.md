@@ -2,7 +2,18 @@
 
 ## Durable native continuation restore
 
-Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child/team/mailbox/planbridge resumed remain unsupported and are rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
+Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child and workflow retain their own owner-specific support boundaries; team/mailbox evidence is listed below; resumed planbridge remains unsupported and is rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
+
+Team parallel/vote and mailbox host-plan owner continuation are covered by
+`orchestration/teams/continuation_test.go`,
+`orchestration/mailbox/host_plan_binding_test.go`, and
+`orchestration/planbridge/*continuation*_test.go`. Evidence includes three
+pause reasons, FileStore sequential reopen, duplicate/concurrent claim
+convergence, source-bound capability promotion, lease-loss/retry/DLQ/timeout
+projections, Run/Stream parity and no replacement mailbox owner. The mailbox
+atomicity regression proves a continuation write cannot overwrite a concurrent
+ack. `scripts/check-team-mailbox-continuation-contract.sh/.ps1` are wired into
+the quality gate. Resumed planbridge execution remains independently unsupported.
 
 ## Host resume admission revalidation
 

@@ -2369,3 +2369,14 @@ configuration key or authorization field. It reports the source owner,
 single-writer fence and sequential transaction boundary. Unsupported,
 foreign, stale and unavailable classifications are returned before side
 effects; no new QueryRuns field or RuntimeRecorder writer is introduced.
+
+## Team and mailbox continuation diagnostics
+
+Continuation capability evidence is source-owned and bounded. Team graph/member
+checkpoint references and mailbox message/delivery/lease/attempt references may
+be exposed as nullable projection fields only after the owner has supplied the
+matching manifest evidence. MemoryStore/process-local owners report
+`unsupported_capability`; FileStore sequential reopen does not imply
+multi-writer or cross-machine restore. Lease loss, retry, DLQ, terminal and
+recovery-required outcomes remain distinct from host business commit and do
+not create a new diagnostic writer.

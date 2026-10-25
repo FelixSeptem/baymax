@@ -276,6 +276,8 @@ echo "[quality-gate] workflow continuation contract suites"
 bash scripts/check-workflow-continuation-contract.sh
 echo "[quality-gate] child continuation contract suites"
 bash scripts/check-child-continuation-contract.sh
+echo "[quality-gate] team mailbox continuation contract suites"
+bash scripts/check-team-mailbox-continuation-contract.sh
 echo "[quality-gate] durable store deployment scope contract suites"
 bash scripts/check-durable-store-deployment-scope-contract.sh
 echo "[quality-gate] host execution plan bridge contract suites"

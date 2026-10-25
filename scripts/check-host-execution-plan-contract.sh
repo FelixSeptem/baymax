@@ -18,7 +18,7 @@ if BAYMAX_HOST_EXECUTION_PLAN_FIXTURE=testdata/host_execution_plan.invalid.json 
 fi
 
 smoke="$(go run ./examples/host-execution-plan)"
-for marker in plan-compiled source-owner-preserved run-stream-parity mailbox-logical-admission mailbox-lifecycle-source-owned invalid-plan-rejected unsupported-capability-rejected no-side-effects-before-rejection host-commit-required; do
+for marker in plan-compiled source-owner-preserved run-stream-parity mailbox-logical-admission mailbox-lifecycle-source-owned team-mailbox-continuation-owner-configured invalid-plan-rejected unsupported-capability-rejected no-side-effects-before-rejection host-commit-required; do
   if ! grep -Fxq "$marker" <<< "${smoke//$'\r'/}"; then
     echo "[host-execution-plan-contract] missing marker $marker" >&2
     exit 1

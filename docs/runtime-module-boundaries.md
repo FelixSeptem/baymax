@@ -247,6 +247,13 @@ Session message history remains source-owned by the embedding host/session adapt
 `orchestration/snapshot` and `orchestration/composer` perform pre-mutation association/integrity reconciliation under existing `strict|compatible` and `compat_window` rules. Replay (`tool/diagnosticsreplay`) is offline and side-effect free. New references/classifications are bounded and privacy-preserving: workspace paths/content, Git metadata, completion bodies, reasoning, credentials, and unbounded payloads are excluded from snapshots, diagnostics, and OTel. Diagnostics continue through `observability/event.RuntimeRecorder` only.
 
 This boundary introduces no runtime configuration keys or hot-update semantics; existing scheduler/mailbox/recovery/snapshot/runtime-input settings keep `env > file > default`. Rollback removes additive references, fixtures, and gates without migration; legacy scheduler, mailbox, snapshot, and Run/Stream behavior remains valid. Git/worktree managers, workspace stores, hosted artifact services, runtime Git/shell execution, automatic merge/push, and parallel task/session state machines remain explicit non-goals.
+
+Team continuation state remains owned by `orchestration/teams`; mailbox host-plan
+continuation state remains owned by `orchestration/mailbox`. `planbridge` may
+validate capability evidence and delegate to those owners, but cannot create a
+second queue, scheduler, journal, worker, retry loop, or checkpoint store.
+Composite restore is only advertised when the matching owner namespace,
+deployment scope and evidence reference are present.
 # Host execution plan bridge boundary
 
 `orchestration/planbridge` may validate bounded descriptors and delegate exactly once to runner, teams, workflow or a private local composer/scheduler owner. It must not acquire a shared queue, create a worker, own retry/budget/terminal/recovery state, write `RuntimeRecorder`, or import MCP transports. `tool/diagnosticsreplay` consumes only bounded reference fixtures and never receives executable binding references.

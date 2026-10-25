@@ -54,7 +54,9 @@ go run ./examples/01-chat-minimal
 - `persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4，归档 169）：已建立 direct 的 file-backed checkpoint、跨进程 claim/restore 与 `input_required`、`approval_required`、`budget_exhausted` source evidence；child/team/workflow/mailbox 与 planbridge resumed 仍在 admission 前拒绝。checkpoint restore 不等于 history replay 或重新 Run parent。离线验证入口见 [durable continuation](examples/durable-continuation-restore/README.md)。
 - `evaluate-bounded-harness-candidate-comparisons`（已归档 170）：已落地离线、review-only 的候选实验身份、scope admission、baseline selection、评分隔离、逐 attempt 成本证据与只读 replay；七类 fixture、legacy/idempotency replay、双平台专项门禁及全量质量门禁已通过。契约与使用边界见 [评测契约](docs/evaluation-contract.md)。
 
-当前没有 active OpenSpec。下一候选为 `enable-team-and-mailbox-native-continuations`：在已归档的 source commit/projection recovery 边界上，逐 owner 验证 team/mailbox 的 native continuation；未具备 source-owned checkpoint/restore 证据的能力继续保持 `unsupported_capability`。`bound-durable-store-deployment-scope` 后续明确 same-host single-writer sequential reopen；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 `unsupported`，不会降级为重新 Run 或 latest replay。
+- `enable-team-and-mailbox-native-continuations`（已归档 177；team/mailbox source-owned continuation）：已完成 team parallel/vote 与 mailbox host-plan 的 native pause/checkpoint/restore、atomic claim、lease/retry/DLQ 与 Run/Stream parity；缺失 source evidence 的 form/pause-reason 继续保持 `unsupported_capability` 或 `recovery-required`，不得降级为重新 Run、重新 enqueue、latest replay 或 callback replay。
+
+- `bound-durable-store-deployment-scope`（已归档 174；same-host single-writer sequential reopen deployment scope）：已固化 source history、checkpoint、mailbox 与 composite owner store 的部署边界；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 typed `unsupported` 或 `recovery-required`。
 
 最近归档：
 
@@ -121,7 +123,7 @@ Windows 使用等价的 `pwsh -File scripts/check-docs-consistency.ps1`、`check
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[SECURITY.md](SECURITY.md)、[CHANGELOG.md](CHANGELOG.md) 和 [LICENSE](LICENSE)。
 # Host execution plan bridge
 
-Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, terminal-only parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Resumed/durable continuation, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
+Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Team/mailbox continuation is additionally available only through an explicitly configured File-backed owner with matching capability and pause-reason evidence; the bridge delegates claim/projection and never creates a second graph, queue or worker. Resumed planbridge execution, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
 
 ## Source-owned native event history
 

@@ -159,13 +159,14 @@ type Policy struct {
 }
 
 type Snapshot struct {
-	History     *HistoryJournal   `json:"history,omitempty"`
-	Backend     string            `json:"backend"`
-	Records     []Record          `json:"records"`
-	Queue       []string          `json:"queue"`
-	Idempotency map[string]string `json:"idempotency,omitempty"`
-	Stats       Stats             `json:"stats"`
-	Policy      Policy            `json:"policy"`
+	History       *HistoryJournal                      `json:"history,omitempty"`
+	Backend       string                               `json:"backend"`
+	Records       []Record                             `json:"records"`
+	Queue         []string                             `json:"queue"`
+	Idempotency   map[string]string                    `json:"idempotency,omitempty"`
+	Continuations map[string]MailboxContinuationRecord `json:"continuations,omitempty"`
+	Stats         Stats                                `json:"stats"`
+	Policy        Policy                               `json:"policy"`
 }
 
 type PublishResult struct {

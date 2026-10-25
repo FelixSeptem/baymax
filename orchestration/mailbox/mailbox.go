@@ -35,9 +35,10 @@ func NewStoreWithFallback(backend, path string, policy Policy, opts ...FileStore
 }
 
 type Mailbox struct {
-	store     Store
-	now       func() time.Time
-	observers []LifecycleObserver
+	store          Store
+	now            func() time.Time
+	observers      []LifecycleObserver
+	continuationMu sync.Mutex
 
 	queryCacheMu    sync.RWMutex
 	queryCacheEpoch uint64

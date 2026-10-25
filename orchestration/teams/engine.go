@@ -25,6 +25,8 @@ const (
 	ReasonAggregation    = "team.aggregation"
 )
 
+var ErrTeamPaused = errors.New("team paused")
+
 type Role string
 
 const (
@@ -119,6 +121,14 @@ type Task struct {
 
 type Plan struct {
 	RunID                 string                 `json:"run_id,omitempty"`
+	SessionID             string                 `json:"session_id,omitempty"`
+	ParentRunID           string                 `json:"parent_run_id,omitempty"`
+	CausationID           string                 `json:"causation_id,omitempty"`
+	AuthorityDigest       string                 `json:"authority_digest,omitempty"`
+	PlanDigest            string                 `json:"plan_digest,omitempty"`
+	WriteScopeDigest      string                 `json:"write_scope_digest,omitempty"`
+	EffectNamespace       string                 `json:"effect_namespace,omitempty"`
+	OccurrenceID          string                 `json:"occurrence_id,omitempty"`
 	TeamID                string                 `json:"team_id"`
 	WorkflowID            string                 `json:"workflow_id,omitempty"`
 	StepID                string                 `json:"step_id,omitempty"`
@@ -148,18 +158,20 @@ type TaskRecord struct {
 }
 
 type Result struct {
-	RunID            string       `json:"run_id,omitempty"`
-	TeamID           string       `json:"team_id"`
-	WorkflowID       string       `json:"workflow_id,omitempty"`
-	StepID           string       `json:"step_id,omitempty"`
-	Strategy         Strategy     `json:"team_strategy"`
-	WinnerVote       string       `json:"winner_vote,omitempty"`
-	Tasks            []TaskRecord `json:"tasks"`
-	TeamTaskTotal    int          `json:"team_task_total"`
-	TeamTaskFailed   int          `json:"team_task_failed"`
-	TeamTaskCanceled int          `json:"team_task_canceled"`
-	TeamRemoteTotal  int          `json:"team_remote_task_total,omitempty"`
-	TeamRemoteFailed int          `json:"team_remote_task_failed,omitempty"`
+	RunID            string               `json:"run_id,omitempty"`
+	TeamID           string               `json:"team_id"`
+	WorkflowID       string               `json:"workflow_id,omitempty"`
+	StepID           string               `json:"step_id,omitempty"`
+	Strategy         Strategy             `json:"team_strategy"`
+	WinnerVote       string               `json:"winner_vote,omitempty"`
+	Tasks            []TaskRecord         `json:"tasks"`
+	TeamTaskTotal    int                  `json:"team_task_total"`
+	TeamTaskFailed   int                  `json:"team_task_failed"`
+	TeamTaskCanceled int                  `json:"team_task_canceled"`
+	TeamRemoteTotal  int                  `json:"team_remote_task_total,omitempty"`
+	TeamRemoteFailed int                  `json:"team_remote_task_failed,omitempty"`
+	TeamCheckpoint   *TeamContinuationRef `json:"team_checkpoint,omitempty"`
+	PauseReason      TeamPauseReason      `json:"pause_reason,omitempty"`
 }
 
 func (r Result) RunFinishedPayload() map[string]any {
@@ -200,6 +212,37 @@ type StreamEvent struct {
 
 type Option func(*Engine)
 
+type TeamPauseBoundary struct {
+	Plan           Plan
+	Task           Task
+	PendingTaskIDs []string
+}
+
+type TeamPauseError struct {
+	Reason                 TeamPauseReason
+	PendingActionReference string
+	ConsumedBudget         int64
+	OriginalDeadline       time.Time
+}
+
+func (e TeamPauseError) Error() string { return string(e.Reason) + ": team paused" }
+
+type TeamPauseController interface {
+	BeforeDispatch(context.Context, TeamPauseBoundary) error
+}
+type TeamPauseControllerFunc func(context.Context, TeamPauseBoundary) error
+
+func (f TeamPauseControllerFunc) BeforeDispatch(ctx context.Context, b TeamPauseBoundary) error {
+	if f == nil {
+		return nil
+	}
+	return f(ctx, b)
+}
+
+func WithTeamPauseController(controller TeamPauseController) Option {
+	return func(e *Engine) { e.pauseController = controller }
+}
+
 func WithTimelineEmitter(handler types.EventHandler) Option {
 	return func(e *Engine) {
 		e.timelineEmitter = handler
@@ -216,11 +259,25 @@ func WithNativeEventHistory(journal *history.Journal) Option {
 	}
 }
 
+// WithTeamContinuationStore opts a team owner into source-owned continuation.
+// A nil store leaves the engine terminal-only.
+func WithTeamContinuationStore(store TeamContinuationStore, namespace string) Option {
+	return func(e *Engine) {
+		if e != nil {
+			e.continuations = store
+			e.continuationNamespace = strings.TrimSpace(namespace)
+		}
+	}
+}
+
 type Engine struct {
-	now                 func() time.Time
-	timelineEmitter     types.EventHandler
-	nativeHistory       *history.Journal
-	nativeHistoryHealth history.AppendHealth
+	now                   func() time.Time
+	timelineEmitter       types.EventHandler
+	nativeHistory         *history.Journal
+	nativeHistoryHealth   history.AppendHealth
+	continuations         TeamContinuationStore
+	continuationNamespace string
+	pauseController       TeamPauseController
 }
 
 func New(opts ...Option) *Engine {
@@ -241,12 +298,69 @@ func (e *Engine) Stream(ctx context.Context, plan Plan, onEvent func(StreamEvent
 	return e.execute(ctx, plan, onEvent)
 }
 
+func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request TeamResumeRequest, onEvent func(StreamEvent) error) (Result, error) {
+	if e == nil || e.continuations == nil {
+		return Result{}, ErrTeamContinuationUnavailable
+	}
+	continuation, err := e.continuations.Load(ctx, request.Ref)
+	if err != nil {
+		return Result{}, err
+	}
+	if request.GraphDigest != continuation.GraphDigest || request.Generation != continuation.Generation || request.Strategy != continuation.Strategy || request.Ref.TeamID != continuation.TeamID {
+		return Result{}, ErrTeamContinuationConflict
+	}
+	if request.AuthorityDigest != continuation.AuthorityDigest || request.PlanDigest != continuation.PlanDigest || request.WriteScopeDigest != continuation.WriteScopeDigest || request.EffectNamespace != continuation.EffectNamespace || request.OccurrenceID != continuation.OccurrenceID || request.CausationID != continuation.CausationID {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	if !continuation.OriginalDeadline.IsZero() && !e.now().UTC().Before(continuation.OriginalDeadline) {
+		return Result{}, ErrTeamContinuationRecoveryRequired
+	}
+	plan, err = normalizePlan(plan)
+	if err != nil {
+		return Result{}, err
+	}
+	if teamPlanDigest(plan) != continuation.GraphDigest {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	claim, err := e.continuations.ClaimResume(ctx, request)
+	if err != nil {
+		return Result{}, err
+	}
+	if claim.Duplicate && claim.Result != nil {
+		return *claim.Result, nil
+	}
+	claim, err = e.continuations.MarkResumeRunning(ctx, claim)
+	if err != nil {
+		return Result{}, err
+	}
+	records := make([]TaskRecord, len(plan.Tasks))
+	for i, task := range plan.Tasks {
+		records[i] = TaskRecord{TaskID: task.TaskID, AgentID: task.AgentID, Role: task.Role, Target: task.Target, CollabPrimitive: task.CollabPrimitive, PeerID: task.Remote.PeerID, Priority: task.Priority, Status: TaskStatusPending}
+	}
+	for _, saved := range continuation.Tasks {
+		for i := range records {
+			if records[i].TaskID == saved.TaskID {
+				records[i].Status = saved.Status
+				records[i].Vote = saved.Vote
+				records[i].Reason = "resume.settled"
+			}
+		}
+	}
+	result, runErr := e.executeWithRecords(ctx, plan, records, onEvent)
+	if runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, context.DeadlineExceeded) {
+		return result, runErr
+	}
+	if _, commitErr := e.continuations.CommitResumeResult(context.WithoutCancel(ctx), claim, result); commitErr != nil {
+		return Result{}, commitErr
+	}
+	return result, runErr
+}
+
 func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent) error) (Result, error) {
 	plan, err := normalizePlan(raw)
 	if err != nil {
 		return Result{}, err
 	}
-	timelineCtx := newTeamTimelineContext(plan)
 	records := make([]TaskRecord, len(plan.Tasks))
 	for i, task := range plan.Tasks {
 		records[i] = TaskRecord{
@@ -260,19 +374,47 @@ func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent
 			Status:          TaskStatusPending,
 		}
 	}
+	return e.executeWithRecords(ctx, plan, records, onEvent)
+}
 
+func (e *Engine) executeWithRecords(ctx context.Context, plan Plan, records []TaskRecord, onEvent func(StreamEvent) error) (Result, error) {
+	timelineCtx := newTeamTimelineContext(plan)
 	var seq int64
 	switch plan.Strategy {
 	case StrategySerial:
 		if err := e.runSerial(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
+			var pause TeamPauseError
+			if errors.As(err, &pause) {
+				paused, saveErr := e.persistPausedResult(ctx, plan, records, pause)
+				if saveErr != nil {
+					return Result{}, saveErr
+				}
+				return paused, ErrTeamPaused
+			}
 			return Result{}, err
 		}
 	case StrategyParallel:
 		if err := e.runParallel(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
+			var pause TeamPauseError
+			if errors.As(err, &pause) {
+				paused, saveErr := e.persistPausedResult(ctx, plan, records, pause)
+				if saveErr != nil {
+					return Result{}, saveErr
+				}
+				return paused, ErrTeamPaused
+			}
 			return Result{}, err
 		}
 	case StrategyVote:
 		if err := e.runParallel(ctx, plan, timelineCtx, &seq, records, onEvent); err != nil {
+			var pause TeamPauseError
+			if errors.As(err, &pause) {
+				paused, saveErr := e.persistPausedResult(ctx, plan, records, pause)
+				if saveErr != nil {
+					return Result{}, saveErr
+				}
+				return paused, ErrTeamPaused
+			}
 			return Result{}, err
 		}
 	default:
@@ -305,6 +447,9 @@ func (e *Engine) runSerial(
 ) error {
 	halt := false
 	for i := range plan.Tasks {
+		if records[i].Status != TaskStatusPending {
+			continue
+		}
 		if halt {
 			records[i].Status = TaskStatusSkipped
 			records[i].Reason = "policy.fail_fast"
@@ -321,6 +466,11 @@ func (e *Engine) runSerial(
 			continue
 		}
 
+		if e.pauseController != nil {
+			if err := e.pauseController.BeforeDispatch(ctx, TeamPauseBoundary{Plan: plan, Task: plan.Tasks[i], PendingTaskIDs: pendingTaskIDs(plan, records)}); err != nil {
+				return err
+			}
+		}
 		records[i].Status = TaskStatusRunning
 		e.emitTimeline(ctx, timelineCtx, seq, records[i].Status, dispatchReasonForRecord(records[i]), &records[i])
 		if onEvent != nil {
@@ -359,7 +509,32 @@ func (e *Engine) runParallel(
 	records []TaskRecord,
 	onEvent func(StreamEvent) error,
 ) error {
-	runIdx, skippedIdx, skipReason := selectParallelWork(plan)
+	pending := make([]int, 0, len(plan.Tasks))
+	for i := range records {
+		if records[i].Status == TaskStatusPending {
+			pending = append(pending, i)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	workPlan := plan
+	indexMap := pending
+	if len(pending) != len(plan.Tasks) {
+		workPlan.Tasks = make([]Task, len(pending))
+		for i, original := range pending {
+			workPlan.Tasks[i] = plan.Tasks[original]
+		}
+		indexMap = pending
+	}
+	runLocal, skippedLocal, skipReason := selectParallelWork(workPlan)
+	runIdx, skippedIdx := make([]int, len(runLocal)), make([]int, len(skippedLocal))
+	for i, idx := range runLocal {
+		runIdx[i] = indexMap[idx]
+	}
+	for i, idx := range skippedLocal {
+		skippedIdx[i] = indexMap[idx]
+	}
 	for _, idx := range skippedIdx {
 		records[idx].Status = TaskStatusSkipped
 		records[idx].Reason = skipReason
@@ -375,6 +550,18 @@ func (e *Engine) runParallel(
 		return nil
 	}
 
+	// A parallel batch has a single source-owned safe boundary: validate every
+	// unstarted member before any record is marked running. Otherwise a pause
+	// on a later member would persist an earlier, never-executed member as
+	// in-flight and fabricate recovery material.
+	if e.pauseController != nil {
+		pendingIDs := pendingTaskIDs(plan, records)
+		for _, idx := range runIdx {
+			if err := e.pauseController.BeforeDispatch(ctx, TeamPauseBoundary{Plan: plan, Task: plan.Tasks[idx], PendingTaskIDs: pendingIDs}); err != nil {
+				return err
+			}
+		}
+	}
 	for _, idx := range runIdx {
 		records[idx].Status = TaskStatusRunning
 		e.emitTimeline(ctx, timelineCtx, seq, records[idx].Status, dispatchReasonForRecord(records[idx]), &records[idx])

@@ -54,6 +54,21 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 		if capability.Admission != CapabilitySupported || capability.MailboxContinuation != CapabilitySupported {
 			return out, fail(UnsupportedCapability, "activation.capability_manifest.mailbox_async", nil)
 		}
+		if p.binding.Mailbox.Resume != nil {
+			owner, ok := p.binding.Mailbox.Owner.(MailboxContinuationOwner)
+			if !ok {
+				return out, fail(UnsupportedCapability, "activation.mailbox.continuation", nil)
+			}
+			if p.binding.Mailbox.Resume.Ref.Digest == "" || p.binding.Mailbox.Resume.Ref.MessageID != p.binding.Mailbox.Binding.MessageID {
+				return out, fail(BindingMismatch, "activation.mailbox.continuation", nil)
+			}
+			mailboxResult, e := owner.ResumeHostPlanContinuation(ctx, *p.binding.Mailbox.Resume)
+			if e != nil {
+				return out, e
+			}
+			out.Mailbox = &mailboxResult
+			return out, nil
+		}
 		binding := p.binding.Mailbox.Binding
 		if binding.PlanDigest != p.identity.Digest {
 			return out, fail(BindingMismatch, "activation.mailbox.plan_digest", nil)
@@ -135,10 +150,16 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 			return out, e
 		}
 		owner := teams.New(teams.WithTimelineEmitter(handler))
+		if p.binding.Team.ContinuationOwner != nil {
+			owner = p.binding.Team.ContinuationOwner
+		}
 		var r teams.Result
-		if stream {
+		switch {
+		case p.binding.Team.Resume != nil:
+			r, err = owner.ResumeContinuation(ctx, plan, *p.binding.Team.Resume, x.TeamEvent)
+		case stream:
 			r, err = owner.Stream(ctx, plan, x.TeamEvent)
-		} else {
+		default:
 			r, err = owner.Run(ctx, plan)
 		}
 		out.Team = &r

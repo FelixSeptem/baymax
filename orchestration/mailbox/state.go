@@ -9,23 +9,25 @@ import (
 )
 
 type mailboxState struct {
-	History     HistoryJournal
-	Records     map[string]*Record  `json:"records"`
-	Queue       []string            `json:"queue"`
-	Idempotency map[string]string   `json:"idempotency"`
-	Stats       Stats               `json:"stats"`
-	Policy      Policy              `json:"policy"`
-	sequence    map[string]struct{} `json:"-"`
-	events      []LifecycleEvent    `json:"-"`
-	traceEvents bool                `json:"-"`
+	History       HistoryJournal
+	Records       map[string]*Record                   `json:"records"`
+	Queue         []string                             `json:"queue"`
+	Idempotency   map[string]string                    `json:"idempotency"`
+	Continuations map[string]MailboxContinuationRecord `json:"continuations"`
+	Stats         Stats                                `json:"stats"`
+	Policy        Policy                               `json:"policy"`
+	sequence      map[string]struct{}                  `json:"-"`
+	events        []LifecycleEvent                     `json:"-"`
+	traceEvents   bool                                 `json:"-"`
 }
 
 func newMailboxState(backend string, policy Policy) mailboxState {
 	return mailboxState{
-		History:     newHistoryJournal(),
-		Records:     map[string]*Record{},
-		Queue:       []string{},
-		Idempotency: map[string]string{},
+		History:       newHistoryJournal(),
+		Records:       map[string]*Record{},
+		Queue:         []string{},
+		Idempotency:   map[string]string{},
+		Continuations: map[string]MailboxContinuationRecord{},
 		Stats: Stats{
 			Backend: strings.TrimSpace(backend),
 		},
@@ -404,13 +406,14 @@ func (s *mailboxState) snapshot() Snapshot {
 	}
 	queue := append([]string(nil), s.Queue...)
 	return Snapshot{
-		History:     s.History.clone(),
-		Backend:     s.Stats.Backend,
-		Records:     records,
-		Queue:       queue,
-		Idempotency: idempotency,
-		Stats:       s.Stats,
-		Policy:      s.Policy,
+		History:       s.History.clone(),
+		Backend:       s.Stats.Backend,
+		Records:       records,
+		Queue:         queue,
+		Idempotency:   idempotency,
+		Continuations: cloneMailboxContinuationRecords(s.Continuations),
+		Stats:         s.Stats,
+		Policy:        s.Policy,
 	}
 }
 
@@ -442,11 +445,23 @@ func (s *mailboxState) restore(snapshot Snapshot) error {
 	for k, v := range normalized.Idempotency {
 		s.Idempotency[k] = v
 	}
+	s.Continuations = cloneMailboxContinuationRecords(normalized.Continuations)
+	if s.Continuations == nil {
+		s.Continuations = map[string]MailboxContinuationRecord{}
+	}
 	s.Policy = normalizePolicy(normalized.Policy)
 	s.Stats = normalized.Stats
 	s.Stats.QueueTotal = len(s.Queue)
 	s.Stats.InFlightTotal = inFlightTotal
 	return nil
+}
+
+func cloneMailboxState(source mailboxState) (mailboxState, error) {
+	copy := newMailboxState(source.Stats.Backend, source.Policy)
+	if err := copy.restore(source.snapshot()); err != nil {
+		return mailboxState{}, err
+	}
+	return copy, nil
 }
 
 func stableJitterSeed(messageID string, attempt int) int64 {

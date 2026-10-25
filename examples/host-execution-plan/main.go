@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/FelixSeptem/baymax/adapter/modelcapability"
 	"github.com/FelixSeptem/baymax/core/runner"
@@ -129,6 +132,93 @@ func main() {
 	}
 	fmt.Println("mailbox-logical-admission")
 	fmt.Println("mailbox-lifecycle-source-owned")
+	continuationDir, err := os.MkdirTemp("", "baymax-host-plan-continuation-")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.RemoveAll(continuationDir) }()
+	continuationStore, err := mailbox.NewFileStore(filepath.Join(continuationDir, "mailbox.json"), mailbox.Policy{})
+	if err != nil {
+		panic(err)
+	}
+	continuationOwner, err := mailbox.New(continuationStore)
+	if err != nil {
+		panic(err)
+	}
+	continuationDescriptor := descriptor()
+	continuationDescriptor.Delivery = planbridge.DeliveryMailbox
+	continuationBinding := mailbox.HostPlanBinding{
+		ContractVersion: mailbox.HostPlanBindingContractVersion, MessageID: "offline-continuation-message", IdempotencyKey: "offline-continuation-logical",
+		RunID: "offline-continuation-run", ParentRunID: "offline-continuation-parent", CausationID: "offline-continuation-cause", AuthorityDigest: "offline-authority",
+		WriteScope: "offline-scope", EffectNamespace: "offline-effect", Occurrence: "offline-occurrence", HostCorrelation: "offline-continuation-host", ResourceLimit: 1,
+	}
+	continuationPlanBinding := planbridge.Binding{
+		SemanticDigest: "offline-semantics",
+		Admit: func(context.Context, planbridge.Identity) (planbridge.Admission, error) {
+			return planbridge.Admission{AuthorityDigest: "offline-authority", ToolCapabilityDigest: "offline-tools", SemanticDigest: "offline-semantics"}, nil
+		},
+		Mailbox: &planbridge.MailboxBinding{Owner: continuationOwner, Manifest: mustManifest(), Binding: continuationBinding},
+	}
+	continuationDescriptor, err = planbridge.Describe(continuationDescriptor, continuationPlanBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	initialContinuationPlan, err := planbridge.Compile(continuationDescriptor, continuationPlanBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	continuationBinding.PlanDigest = initialContinuationPlan.Identity().Digest
+	if _, err := continuationOwner.AdmitHostPlan(context.Background(), continuationBinding); err != nil {
+		panic(err)
+	}
+	leased, ok, err := continuationOwner.ConsumeWithLease(context.Background(), "offline-worker", time.Hour, false)
+	if err != nil || !ok {
+		panic(fmt.Sprintf("continuation lease: %v", err))
+	}
+	now := time.Now().UTC()
+	checkpoint, err := mailbox.SealMailboxContinuation(mailbox.MailboxContinuation{
+		Ref: mailbox.MailboxContinuationRef{OwnerNamespace: "mailbox"}, Binding: continuationBinding,
+		MessageID: continuationBinding.MessageID, DeliveryID: leased.DeliveryID, LeaseID: leased.LeaseID, AttemptCausation: leased.AttemptCausation, DeliveryAttempt: leased.DeliveryAttempt, LifecycleState: leased.State,
+		ParentRunID: continuationBinding.ParentRunID, RunID: continuationBinding.RunID, HostCorrelation: continuationBinding.HostCorrelation, AuthorityDigest: continuationBinding.AuthorityDigest, PlanDigest: continuationBinding.PlanDigest, WriteScope: continuationBinding.WriteScope, EffectNamespace: continuationBinding.EffectNamespace, Occurrence: continuationBinding.Occurrence,
+		PauseReason: mailbox.MailboxPauseInputRequired, PendingActionReference: "offline-input", Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		panic(err)
+	}
+	if err := continuationOwner.SaveHostPlanContinuation(context.Background(), checkpoint); err != nil {
+		panic(err)
+	}
+	continuationManifest, err := planbridge.CapabilityManifestWithMailboxContinuation(context.Background(), continuationOwner)
+	if err != nil {
+		panic(err)
+	}
+	continuationReader, err := planbridge.NewCapabilityManifestReader(continuationManifest)
+	if err != nil {
+		panic(err)
+	}
+	resume := mailbox.MailboxResumeRequest{Ref: checkpoint.Ref, Binding: continuationBinding, IdempotencyKey: "offline-continuation-resume", Generation: 1, PauseReason: mailbox.MailboxPauseInputRequired, Deployment: types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"}}
+	continuationPlanBinding.Mailbox = &planbridge.MailboxBinding{Owner: continuationOwner, Manifest: continuationReader, Binding: continuationBinding, Resume: &resume}
+	continuationDescriptor, err = planbridge.Describe(continuationDescriptor, continuationPlanBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	continuationPlan, err := planbridge.Compile(continuationDescriptor, continuationPlanBinding, planbridge.Limits{})
+	if err != nil {
+		panic(err)
+	}
+	continuationRun, err := continuationPlan.Run(context.Background(), planbridge.Execution{})
+	if err != nil || continuationRun.Mailbox == nil || continuationRun.Mailbox.MessageID != continuationBinding.MessageID || continuationRun.Mailbox.LifecycleResult != "leased" {
+		panic(fmt.Sprintf("continuation run: %v", err))
+	}
+	continuationStream, err := continuationPlan.Stream(context.Background(), planbridge.Execution{})
+	if err != nil || continuationStream.Mailbox == nil || *continuationStream.Mailbox != *continuationRun.Mailbox {
+		panic(fmt.Sprintf("continuation stream: %v", err))
+	}
+	continuationPage, err := continuationOwner.Query(context.Background(), mailbox.QueryRequest{MessageID: continuationBinding.MessageID})
+	if err != nil || len(continuationPage.Items) != 1 || continuationPage.Items[0].State != mailbox.StateInFlight || continuationPage.Items[0].DeliveryAttempt != 1 {
+		panic(fmt.Sprintf("continuation lifecycle: %v", err))
+	}
+	fmt.Println("team-mailbox-continuation-owner-configured")
 	bad := d
 	bad.PlanVersion++
 	bad.SourceFacts["run_id"] = "different"

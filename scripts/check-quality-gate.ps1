@@ -731,6 +731,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-child-continuation-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] team mailbox continuation contract suites"
+        Command   = { pwsh -File scripts/check-team-mailbox-continuation-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] durable store deployment scope contract suites"
         Command   = { pwsh -File scripts/check-durable-store-deployment-scope-contract.ps1 }
     },

@@ -18,7 +18,7 @@
 
 ### Workflow continuation（workflow-first）
 
-当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。child/team/mailbox/planbridge resumed 仍返回 `unsupported_capability`，不得借用 workflow capability 或 history replay 模拟恢复。
+当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。child、team 和 mailbox 只能在各自 owner、matching capability cell 与 FileStore 部署证据齐备时独立开放；resumed planbridge 仍返回 `unsupported_capability`。任何 form 都不得借用 workflow capability 或 history replay 模拟恢复。
 
 默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
 
@@ -39,8 +39,9 @@ corrupt records, store failure and in-progress claims fail closed.
 child capability cells. Each requires a source producer, persisted pending
 action/consumed budget/deadline, terminal evidence and Run/Stream parity. The
 plan bridge accepts a child resume binding only when a capability manifest and
-`ChildContinuationOwner` are supplied. Team parallel/vote, mailbox host-plan
-continuation and resumed planbridge remain `unsupported_capability`.
+`ChildContinuationOwner` are supplied. Team parallel/vote and mailbox host-plan
+continuation have separate owner capability cells and never inherit child
+support; resumed planbridge remains `unsupported_capability`.
 
 ## 接入真实执行事件
 
@@ -112,11 +113,11 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 `orchestration/planbridge` 提供 opt-in 的 `host_execution_plan.v1` API：先以 `Describe` 生成 reference-only source facts，再以独立、受信的 native binding 和 live `Admit` callback 调用 `Compile`，最后使用 `Compiled.Run` 或 `Compiled.Stream` 委托一个既有 owner。Compile 无副作用地校验整份计划和 binding；它不把 composer.Run/Stream 解释为自动执行通用 graph。
 
-执行形态 direct/subagent/team/workflow、投递 inline/mailbox 和触发 manual/scheduled/resumed/callback 独立。首版目标：inline direct、teams parallel/vote、flat workflow、隔离独占 scheduler 的 local child；manifest 明确允许且 mailbox owner 可用时，`mailbox_async` 通过 source-owned `Mailbox.AdmitHostPlan` 接入，保留 message/delivery/lease/retry/DLQ/causation facts。shared-queue child、resumed/native checkpoint resume 和组合动态 action continuation 在 dispatch 前拒绝。Stream 只承接实际 source streaming/callback 能力；同步 child handler 不自动获得 token streaming。
+执行形态 direct/subagent/team/workflow、投递 inline/mailbox 和触发 manual/scheduled/resumed/callback 独立。首版目标：inline direct、teams parallel/vote、flat workflow、隔离独占 scheduler 的 local child；manifest 明确允许且 mailbox owner 可用时，`mailbox_async` 通过 source-owned `Mailbox.AdmitHostPlan` 接入，保留 message/delivery/lease/retry/DLQ/causation facts。显式 team/mailbox File owner、matching continuation cell 与 pause-reason evidence 齐备时，bridge 委托原 owner 的 checkpoint claim/projection；它不自建 graph、queue、worker 或 resume loop。shared-queue child、resumed/native checkpoint resume 和组合动态 action continuation 在 dispatch 前拒绝。Stream 只承接实际 source streaming/callback 能力；同步 child handler 不自动获得 token streaming。
 
 宿主先授权实际 input/handler/tool 与业务写范围，再提交 plan identity/version、authority/tool digests、真实 parent references 和完整预算事实；digest 仅证明规范化描述一致，不认证 callback 或权限。编译快照不能替代实际 activation 的权限/readiness/lease/parent budget 重检。replan 使用新版本；恢复继续使用明确的 source-native API，不以相同 run ID 或 replay 伪装恢复。
 
-真实 source 事件通过上文 observer 投影，PlanVersion/PlanDigest 使用独立 HostReferences；plan ID 由 application execution record 关联。direct input_required 保留 pause；team/workflow/child 首版要求 terminal-only binding。mailbox ack/nack/retry/DLQ、source terminal 和 host business commit 仍是独立事实；planbridge 不通过重新 Run parent 恢复 lease loss。聚合终态、scheduler commit 与 observer status 均不替代业务 commit gate。limits、manifest、错误、opaque binding 责任及拒绝反例见 [package README](../../orchestration/planbridge/README.md)，可运行的离线 fake model/tool 示例见 [host-execution-plan](../../examples/host-execution-plan/README.md)。
+真实 source 事件通过上文 observer 投影，PlanVersion/PlanDigest 使用独立 HostReferences；plan ID 由 application execution record 关联。没有 matching owner continuation evidence 时，team/workflow/child 仍是 terminal-only binding；已配置 team/mailbox continuation 时 pause/resume 仍由原 owner 处理。mailbox ack/nack/retry/DLQ、source terminal 和 host business commit 仍是独立事实；planbridge 不通过重新 Run parent 恢复 lease loss。聚合终态、scheduler commit 与 observer status 均不替代业务 commit gate。limits、manifest、错误、opaque binding 责任及拒绝反例见 [package README](../../orchestration/planbridge/README.md)，可运行的离线 fake model/tool 示例见 [host-execution-plan](../../examples/host-execution-plan/README.md)。
 
 停用新增 bridge 回到既有 owner 显式调用；保留 task/attempt/checkpoint/outbox 和业务记录，不能因此撤销已发生 effects。公开 API/默认值/限制/错误/支持矩阵发生变化时，必须在同一 OpenSpec 同步维护文档并通过治理门禁。
 
@@ -138,7 +139,7 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 FileStore 范围为同一台机器的单写进程顺序重开，第二 writer 返回 `ErrCheckpointUnavailable`；不宣称跨机器 CAS。默认 checkpoint 24 小时且不晚于原绝对 deadline，completed duplicate result 从完成时保留 24 小时。公开 envelope 为 64 KiB、reference 256 UTF-8 bytes、digest 128 bytes、references 256 项；private continuation material 为 1 MiB、completed/pending entries 1024 项。constructor limits 只可收紧，容量必须为正，满时不驱逐活跃记录。文件含 normalized request、tool outcomes 和 pending arguments，应按执行数据保护，不写 credential。
 
-恢复仅支持匹配的 Run/Stream mode。exact duplicate 返回 source-retained projection，不重发 callback 或重执行；conflict 拒绝。claim/start 后无 source result 的 attempt 返回 in-progress/recovery-required，不自动接管。successor 与 predecessor result 同一 source commit 发布。`CancelNativeCheckpoint` 只持久化未 claim checkpoint 的取消 fence，accepted 不是 terminal；claim 先获胜后的取消通过 live source safe point 确认。terminal commit 失败不向调用方或 callback 宣告 durable terminal。child/team/workflow/mailbox 与 planbridge resumed 仍 unsupported，不能通过重新 Run parent 或 history replay 补恢复。Realtime、host-context projection/resolver、skill loader、lifecycle hooks、active runtime-input control、Plan Notebook、启用的 Context Assembler 等含未持久化私有状态的 dependency profile 在 admission 前拒绝。
+恢复仅支持匹配的 Run/Stream mode。exact duplicate 返回 source-retained projection，不重发 callback 或重执行；conflict 拒绝。claim/start 后无 source result 的 attempt 返回 in-progress/recovery-required，不自动接管。successor 与 predecessor result 同一 source commit 发布。`CancelNativeCheckpoint` 只持久化未 claim checkpoint 的取消 fence，accepted 不是 terminal；claim 先获胜后的取消通过 live source safe point 确认。terminal commit 失败不向调用方或 callback 宣告 durable terminal。只有各自 owner 已公开 matching source material 的 child/workflow/team/mailbox form 才可恢复；默认或证据不完整的 form，以及 resumed planbridge，仍 unsupported，不能通过重新 Run parent 或 history replay 补恢复。Realtime、host-context projection/resolver、skill loader、lifecycle hooks、active runtime-input control、Plan Notebook、启用的 Context Assembler 等含未持久化私有状态的 dependency profile 在 admission 前拒绝。
 
 native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用 Authorizer 不自动证明暂停前的业务 revision、plan/write scope 和当前权限仍匹配。`runner.WithHostResumeVerifier` 显式安装 `host_resume_admission.v1`，由宿主 callback 读取可信暂停绑定与当前事实，在 decision commit 前重验证；direct API 与既有 run.action.resume 共享该入口，不增加 command kind。默认不安装；安装 nil verifier 会 fail-closed。
 
@@ -147,6 +148,19 @@ native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用
 ## 边界与回滚方式
 
 宿主拥有 credential、网络、持久化和全局路由。接入失败时禁用新增 adapter/profile，恢复上一个显式配置；不要通过降级隐藏 contract 不匹配。
+
+## Composite continuation owner boundary
+
+`team` and `mailbox_async` continuation are source-owner opt-in paths. A team
+owner must inject `teams.WithTeamContinuationStore`; a mailbox owner must use
+the existing `Mailbox` with its FileStore-backed snapshot. The FileStore
+profile is `same_host_single_writer_sequential_reopen`; MemoryStore remains
+process-local and cannot advertise cross-process restore. Checkpoint material
+keeps graph/member or message/delivery/lease/attempt identity and excludes
+payloads, callbacks and business commits. Missing owner evidence, stale lease,
+foreign identity, expiry or store failure is typed rejection/recovery-required;
+it never retries, re-enqueues, or starts a replacement parent run. Run and
+Stream use the same source claim and terminal projection.
 
 ## Application outbox dispatch（归档 166）
 

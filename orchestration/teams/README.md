@@ -27,10 +27,29 @@ incompatible deployment remains `unsupported_capability`/`recovery-required`.
 Team continuation does not make child, workflow, mailbox or resumed planbridge
 continuation supported.
 
+## Host context binding
+
+An explicitly paused team may persist a reference-only
+`hostprojection.SourceBinding` for a pending **local** member. On resume, the
+team owner validates the exact member/graph/generation binding before invoking
+the current host resolver, rechecks the original deadline after resolution,
+then routes transient material only through that member's
+`HostContextTaskRunner`. Settled members never reactivate and unbound parallel
+siblings continue through their normal runner without inherited material. Remote
+member context injection is unsupported until a source-owned remote execution
+seam provides equivalent evidence.
+
+This owner API evidence does not promote the default planbridge capability
+manifest. A foreign/missing binding or an unsupported member runner rejects
+before resolver, resume claim, or member activation; it never falls back to a
+replacement parent Run.
+
 ## Verification
 
 `continuation_test.go` covers fresh-process reopen, duplicate claim, all three
-pause reasons and Run/Stream parity.
+pause reasons, Run/Stream parity, pending-member binding, sibling isolation,
+vote aggregate continuity, foreign-binding rejection before claim, and the
+post-resolver deadline fence.
 `scripts/check-team-mailbox-continuation-contract.sh/.ps1` runs team, mailbox
 and planbridge suites and rejects a continuation implementation that constructs
 a second mailbox execution owner.

@@ -22,6 +22,8 @@ callback 必须在 source 锁外运行，返回后 source 锁内重检 generatio
 
 该边界禁止 `context/*` 引入 Provider SDK、source-body store、预算写回、全局 projection registry、直接 RuntimeRecorder 写入或新的 execution/terminal/recovery state machine。descriptor/handoff digest 只能证明规范化事实一致；finite `host_context.*` 分类 fail-closed 且不包含 body/callback error。restore 必须保留既有 source validation，并由宿主用 fresh resolver 重新确认当前 source access；resolver-independent restore 必须拒绝。该 contract 不新增 env/file/hot-update 配置、RuntimeRecorder 或 QueryRuns 字段、host wire command、outbox/mailbox 或动态 action continuation。dedicated replay、shell/PowerShell gate、标准 quality-path wiring、验证记录与离线示例已经交付。范围和回滚见归档 [proposal](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
 
+active change `extend-composite-context-assembly-handoff` 仅在 source-owner 边界为 child、team pending local member 与 workflow 增加 opaque projection-to-native-node/checkpoint binding。context package 继续保持 provider-neutral 且不持有 source body；这些 owner 在调用宿主 resolver、claim continuation 或激活 source 前校验 node identity、generation、capability subset 与 owner evidence。Mailbox continuation 只投影 lifecycle outcome、没有 handler execution safe point，故 mailbox context injection 保持 typed unsupported/unavailable；planbridge 不得自建 handler、executor、worker 或恢复状态机。
+
 ## 模块职责
 
 - `runtime/config`

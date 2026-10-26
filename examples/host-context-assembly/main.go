@@ -14,6 +14,7 @@ import (
 	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/FelixSeptem/baymax/orchestration/workflow"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 )
@@ -175,6 +176,11 @@ func execute() ([]string, error) {
 		return nil, fmt.Errorf("revoked restore result=%#v resolver_calls=%d err=%v, want current-authorization rejection", restored, revokedResolver.calls, err)
 	}
 	markers = append(markers, "host_context.restore_revalidation_failed")
+	workflowMarkers, err := runWorkflowContextExample()
+	if err != nil {
+		return nil, err
+	}
+	markers = append(markers, workflowMarkers...)
 
 	legacyModel, _, legacyTool, legacyEngine, err := offlineEngine(manager, nil)
 	if err != nil {
@@ -188,6 +194,123 @@ func execute() ([]string, error) {
 		return nil, fmt.Errorf("legacy rollback result=%#v tool_calls=%d messages=%#v err=%w", legacyResult, legacyTool.calls, legacyModel.messages, err)
 	}
 	return append(markers, "host_context.legacy_rollback"), nil
+}
+
+func runWorkflowContextExample() ([]string, error) {
+	store := workflow.NewMemoryWorkflowContinuationStore("workflow")
+	step := workflow.Step{StepID: "pending", Kind: workflow.StepKindRunner}
+	definition := workflow.Definition{WorkflowID: "offline-context-workflow", Steps: []workflow.Step{step}}
+	first := workflow.New(
+		workflow.WithWorkflowContinuationStore(store, "workflow"),
+		workflow.WithStepAdapter(workflow.DispatchAdapter{Runner: func(context.Context, string, workflow.Step, int) (workflow.StepOutput, error) {
+			return workflow.StepOutput{}, workflow.PauseError{Reason: workflow.PauseInputRequired, PendingActionReference: "opaque://offline/pending-action"}
+		}}),
+	)
+	paused, err := first.Run(context.Background(), workflow.RunRequest{
+		RunID: "offline-context-workflow-run", SessionID: "offline-context-workflow-session",
+		HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow}, DSL: definition,
+	})
+	if !errors.Is(err, workflow.ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+		return nil, fmt.Errorf("workflow context example pause result=%#v err=%v", paused, err)
+	}
+	continuation, err := store.Load(context.Background(), *paused.WorkflowCheckpoint)
+	if err != nil || continuation.HostContextBinding == nil {
+		return nil, fmt.Errorf("workflow context continuation binding=%#v err=%v", continuation.HostContextBinding, err)
+	}
+
+	makeProjection := func(binding hostprojection.SourceBinding, id string) (hostprojection.Descriptor, error) {
+		descriptor := hostprojection.Descriptor{
+			SchemaVersion: hostprojection.SchemaVersionV1, ProjectionID: id, ProjectionVersion: 1,
+			CapabilityDigest: "offline-workflow-capabilities", Capabilities: []hostprojection.Capability{hostprojection.CapabilityRead},
+			SourceReferences: []hostprojection.SourceReference{{Reference: "opaque://offline/workflow-context", Digest: "offline-workflow-source"}},
+			Binding:          &binding,
+		}
+		digest, digestErr := hostprojection.CanonicalDigest(descriptor)
+		if digestErr != nil {
+			return hostprojection.Descriptor{}, digestErr
+		}
+		descriptor.Digest = digest
+		return descriptor, nil
+	}
+
+	var resolveCalls, contextCalls int
+	resolver := workflowExampleResolver{resolve: func() { resolveCalls++ }}
+	adapter := workflowExampleAdapter{execute: func(resolution hostprojection.Resolution) {
+		contextCalls++
+		if len(resolution.Materials()) != 1 || resolution.Materials()[0].Content != "current workflow context" {
+			contextCalls = -100
+		}
+	}}
+	projection, err := makeProjection(*continuation.HostContextBinding, "offline-workflow-projection")
+	if err != nil {
+		return nil, err
+	}
+	resume := workflow.WorkflowResumeRequest{
+		Ref: *paused.WorkflowCheckpoint, GraphDigest: paused.WorkflowGraphDigest,
+		Generation: paused.WorkflowCheckpointGeneration, IdempotencyKey: "offline-workflow-resume",
+		HostContextProjection: &projection, HostContextResolver: resolver,
+	}
+	resumed, err := workflow.New(workflow.WithWorkflowContinuationStore(store, "workflow"), workflow.WithStepAdapter(adapter)).ResumeContinuation(context.Background(), resume, nil)
+	if err != nil || resumed.WorkflowStatus != "succeeded" || resolveCalls != 1 || contextCalls != 1 {
+		return nil, fmt.Errorf("workflow context resume result=%#v resolver_calls=%d context_calls=%d err=%v", resumed, resolveCalls, contextCalls, err)
+	}
+
+	secondStore := workflow.NewMemoryWorkflowContinuationStore("workflow")
+	secondPause := workflow.New(workflow.WithWorkflowContinuationStore(secondStore, "workflow"), workflow.WithStepAdapter(workflow.DispatchAdapter{Runner: func(context.Context, string, workflow.Step, int) (workflow.StepOutput, error) {
+		return workflow.StepOutput{}, workflow.PauseError{Reason: workflow.PauseInputRequired}
+	}}))
+	secondPaused, err := secondPause.Run(context.Background(), workflow.RunRequest{
+		RunID: "offline-context-workflow-foreign-run", SessionID: "offline-context-workflow-session",
+		HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow}, DSL: workflow.Definition{WorkflowID: "offline-context-workflow-foreign", Steps: []workflow.Step{step}},
+	})
+	if !errors.Is(err, workflow.ErrWorkflowPaused) || secondPaused.WorkflowCheckpoint == nil {
+		return nil, fmt.Errorf("foreign workflow pause result=%#v err=%v", secondPaused, err)
+	}
+	foreignContinuation, err := secondStore.Load(context.Background(), *secondPaused.WorkflowCheckpoint)
+	if err != nil || foreignContinuation.HostContextBinding == nil {
+		return nil, fmt.Errorf("foreign workflow binding=%#v err=%v", foreignContinuation.HostContextBinding, err)
+	}
+	foreignBinding := *foreignContinuation.HostContextBinding
+	foreignBinding.NodeID = "another-step"
+	foreignProjection, err := makeProjection(foreignBinding, "offline-workflow-foreign-projection")
+	if err != nil {
+		return nil, err
+	}
+	var foreignResolverCalls, foreignStepCalls int
+	foreignResolver := workflowExampleResolver{resolve: func() { foreignResolverCalls++ }}
+	foreignRequest := workflow.WorkflowResumeRequest{
+		Ref: *secondPaused.WorkflowCheckpoint, GraphDigest: secondPaused.WorkflowGraphDigest,
+		Generation: secondPaused.WorkflowCheckpointGeneration, IdempotencyKey: "offline-workflow-foreign-resume",
+		HostContextProjection: &foreignProjection, HostContextResolver: foreignResolver,
+	}
+	_, err = workflow.New(workflow.WithWorkflowContinuationStore(secondStore, "workflow"), workflow.WithStepAdapter(workflowExampleAdapter{execute: func(hostprojection.Resolution) { foreignStepCalls++ }})).ResumeContinuation(context.Background(), foreignRequest, nil)
+	if !errors.Is(err, workflow.ErrWorkflowContinuationConflict) || foreignResolverCalls != 0 || foreignStepCalls != 0 {
+		return nil, fmt.Errorf("foreign workflow projection err=%v resolver_calls=%d step_calls=%d", err, foreignResolverCalls, foreignStepCalls)
+	}
+	if _, err := secondStore.ClaimResume(context.Background(), foreignRequest); err != nil {
+		return nil, fmt.Errorf("foreign workflow projection consumed resume claim: %w", err)
+	}
+	return []string{"host_context.workflow_context_resolved", "host_context.workflow_cross_step_rejected"}, nil
+}
+
+type workflowExampleResolver struct{ resolve func() }
+
+func (r workflowExampleResolver) ResolveHostContext(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
+	r.resolve()
+	return hostprojection.Material{Role: "private", Content: "current workflow context"}, nil
+}
+
+type workflowExampleAdapter struct {
+	execute func(hostprojection.Resolution)
+}
+
+func (a workflowExampleAdapter) Execute(context.Context, string, workflow.Step, int) (workflow.StepOutput, error) {
+	return workflow.StepOutput{}, nil
+}
+
+func (a workflowExampleAdapter) ExecuteWithHostContext(_ context.Context, _ string, _ workflow.Step, _ int, resolution hostprojection.Resolution) (workflow.StepOutput, error) {
+	a.execute(resolution)
+	return workflow.StepOutput{EffectReference: "opaque://offline/workflow-effect"}, nil
 }
 
 func offlineDescriptor() (hostprojection.Descriptor, error) {

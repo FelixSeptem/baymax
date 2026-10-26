@@ -28,6 +28,14 @@ Invoke-NativeStrict -Label "host context offline example" -Command {
     go test ./examples/host-context-assembly -count=1 -run 'TestOfflineExampleEmitsContractMarkers'
 }
 
+Write-Host "[host-context-assembly-handoff] composite owner binding and capability evidence"
+# The offline marker is asserted by the example test; keep the source-owned
+# cross-step rejection visible in this blocking gate's contract vocabulary.
+Write-Host "[host-context-assembly-handoff] host_context.workflow_cross_step_rejected"
+Invoke-NativeStrict -Label "host context composite owners" -Command {
+    go test ./orchestration/composer ./orchestration/teams ./orchestration/workflow ./orchestration/planbridge -count=1 -run 'TestComposerResumeChildContinuationResolvesBoundContextBeforeExecution|TestComposerResumeChildContinuationRechecksSchedulerFenceAfterResolver|TestTeamContinuationResolvesContextOnlyForBoundPendingMember|TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim|TestTeamContextResumeRechecksDeadlineAfterResolver|TestTeamContextResumeRunStreamParity|TestTeamContextResumeReopensFileOwnerWithBoundMember|TestTeamPauseRejectsRemoteMemberContextBinding|TestTeamVoteContinuationResolvesBoundPendingMemberWithoutRerunningSettledVote|TestWorkflowContinuationRejectsForeignStepProjectionBeforeResolverOrClaim|TestWorkflowContinuationResolvesBoundContextOnlyForPendingStep|TestWorkflowContextResumeRunStreamParity|TestWorkflowContextResumeRechecksExpiryAfterResolver|TestCapabilityManifestDeclaresContextDimensionsIndependently'
+}
+
 Write-Host "[host-context-assembly-handoff] contribution boundary"
 Invoke-NativeStrict -Label "host context contribution gate" -Command {
     go test ./tool/contributioncheck -count=1 -run 'TestHostContextProjectionGateScriptsAreEquivalentAndBlocking|TestHostContextProjectionOwnershipBoundary'

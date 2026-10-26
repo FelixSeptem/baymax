@@ -15,6 +15,8 @@ func TestOfflineExampleEmitsContractMarkers(t *testing.T) {
 		"host_context.run_stream_equivalent",
 		"host_context.capability_expansion",
 		"host_context.restore_revalidation_failed",
+		"host_context.workflow_context_resolved",
+		"host_context.workflow_cross_step_rejected",
 		"host_context.legacy_rollback",
 	}
 	if !reflect.DeepEqual(got, want) {

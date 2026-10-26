@@ -16,6 +16,7 @@ const (
 	LimitationCompositeGraphRestore      = "composite_graph_restore_unsupported"
 	LimitationSourceEvidenceMissing      = "source_evidence_missing"
 	LimitationPlanResumedTrigger         = "plan_resumed_trigger_unsupported"
+	LimitationMailboxContextSafePoint    = "mailbox_handler_context_safe_point_unsupported"
 )
 
 type ExecutionForm string
@@ -48,27 +49,53 @@ type CapabilityManifest struct {
 }
 
 type ExecutionFormCapability struct {
-	Form                     ExecutionForm                   `json:"form"`
-	Admission                CapabilityState                 `json:"admission"`
-	NativeEvents             CapabilityState                 `json:"native_events"`
-	DurableHistory           CapabilityState                 `json:"durable_history"`
-	AfterCursorReplay        CapabilityState                 `json:"after_cursor_replay"`
-	SourceProjectionRecovery CapabilityState                 `json:"source_projection_recovery"`
-	CheckpointCreation       CapabilityState                 `json:"checkpoint_creation"`
-	CrossProcessRestore      CapabilityState                 `json:"cross_process_restore"`
-	InputRequired            CapabilityState                 `json:"input_required"`
-	ApprovalRequired         CapabilityState                 `json:"approval_required"`
-	BudgetExhausted          CapabilityState                 `json:"budget_exhausted"`
-	Cancellation             CapabilityState                 `json:"cancellation"`
-	Timeout                  CapabilityState                 `json:"timeout"`
-	CausalRetry              CapabilityState                 `json:"causal_retry"`
-	MailboxContinuation      CapabilityState                 `json:"mailbox_continuation"`
-	RetentionPolicy          string                          `json:"retention_policy"`
-	EvidenceReference        string                          `json:"evidence_reference"`
-	UnsupportedReasons       map[string]string               `json:"unsupported_reasons,omitempty"`
-	SourceHistory            *types.HistoryCapabilities      `json:"source_history,omitempty"`
-	SourceContinuation       *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
-	Deployment               types.DeploymentScope           `json:"deployment"`
+	Form                      ExecutionForm                   `json:"form"`
+	Admission                 CapabilityState                 `json:"admission"`
+	NativeEvents              CapabilityState                 `json:"native_events"`
+	DurableHistory            CapabilityState                 `json:"durable_history"`
+	AfterCursorReplay         CapabilityState                 `json:"after_cursor_replay"`
+	SourceProjectionRecovery  CapabilityState                 `json:"source_projection_recovery"`
+	CheckpointCreation        CapabilityState                 `json:"checkpoint_creation"`
+	CrossProcessRestore       CapabilityState                 `json:"cross_process_restore"`
+	InputRequired             CapabilityState                 `json:"input_required"`
+	ApprovalRequired          CapabilityState                 `json:"approval_required"`
+	BudgetExhausted           CapabilityState                 `json:"budget_exhausted"`
+	Cancellation              CapabilityState                 `json:"cancellation"`
+	Timeout                   CapabilityState                 `json:"timeout"`
+	CausalRetry               CapabilityState                 `json:"causal_retry"`
+	MailboxContinuation       CapabilityState                 `json:"mailbox_continuation"`
+	HostContextAssembly       CapabilityState                 `json:"host_context_assembly"`
+	HostContextHandoffRestore CapabilityState                 `json:"host_context_handoff_restore"`
+	HostContext               *HostContextCapabilityEvidence  `json:"host_context,omitempty"`
+	RetentionPolicy           string                          `json:"retention_policy"`
+	EvidenceReference         string                          `json:"evidence_reference"`
+	UnsupportedReasons        map[string]string               `json:"unsupported_reasons,omitempty"`
+	SourceHistory             *types.HistoryCapabilities      `json:"source_history,omitempty"`
+	SourceContinuation        *types.ContinuationCapabilities `json:"source_continuation,omitempty"`
+	Deployment                types.DeploymentScope           `json:"deployment"`
+}
+
+// HostContextCapabilityEvidence describes one source owner's reference-only
+// projection integration. Each supported cell requires its own evidence key.
+type HostContextCapabilityEvidence struct {
+	OwnerNamespace          string                `json:"owner_namespace"`
+	SupportedNodeScopes     []string              `json:"supported_node_scopes"`
+	ProjectionAPIVersion    string                `json:"projection_api_version"`
+	ContinuationAPIVersion  string                `json:"continuation_api_version"`
+	ModuleRevision          string                `json:"module_revision"`
+	ResolverReauthorization bool                  `json:"resolver_reauthorization"`
+	RetentionPolicy         string                `json:"retention_policy"`
+	ExpiryPolicy            string                `json:"expiry_policy"`
+	EvidenceReferences      map[string]string     `json:"evidence_references"`
+	Deployment              types.DeploymentScope `json:"deployment"`
+}
+
+// HostContextCapabilityEvidenceSource lets an existing source owner publish
+// the complete, detached evidence required to promote its context cells. The
+// source does not create an owner, execute a graph, or resolve host context.
+// Callers must explicitly bind this source to the owner they operate.
+type HostContextCapabilityEvidenceSource interface {
+	HostContextCapabilityEvidence(context.Context) (ExecutionForm, HostContextCapabilityEvidence, error)
 }
 
 // CapabilityManifestReader returns detached entries so callers cannot change
@@ -94,18 +121,21 @@ func DefaultCapabilityManifest() CapabilityManifest {
 			SourceProjectionRecovery: CapabilityUnsupported,
 			CheckpointCreation:       CapabilityUnsupported, CrossProcessRestore: CapabilityUnsupported,
 			InputRequired: CapabilityUnsupported, ApprovalRequired: CapabilityUnsupported, BudgetExhausted: CapabilityUnsupported,
+			HostContextAssembly: CapabilityUnsupported, HostContextHandoffRestore: CapabilityUnsupported,
 			Cancellation: CapabilitySupported, Timeout: CapabilitySupported, CausalRetry: CapabilitySupported,
 			MailboxContinuation: CapabilityUnsupported, RetentionPolicy: "source-owned", EvidenceReference: "fixture:host-runtime-capability-manifest.v1",
 			UnsupportedReasons: map[string]string{
-				"durable_history":            "source journal is not configured for this source",
-				"after_cursor_replay":        "source journal is not configured for this source",
-				"source_projection_recovery": "source commit/projection ledger is not configured for this source",
-				"checkpoint_creation":        LimitationCompositeGraphRestore,
-				"cross_process_restore":      LimitationCompositeGraphRestore,
-				"input_required":             LimitationCompositeGraphRestore,
-				"approval_required":          LimitationCompositeGraphRestore,
-				"budget_exhausted":           LimitationCompositeGraphRestore,
-				"mailbox_continuation":       "mailbox form is not enabled by default",
+				"durable_history":              "source journal is not configured for this source",
+				"after_cursor_replay":          "source journal is not configured for this source",
+				"source_projection_recovery":   "source commit/projection ledger is not configured for this source",
+				"checkpoint_creation":          LimitationCompositeGraphRestore,
+				"cross_process_restore":        LimitationCompositeGraphRestore,
+				"input_required":               LimitationCompositeGraphRestore,
+				"approval_required":            LimitationCompositeGraphRestore,
+				"budget_exhausted":             LimitationCompositeGraphRestore,
+				"mailbox_continuation":         "mailbox form is not enabled by default",
+				"host_context_assembly":        "source owner context binding evidence is not configured",
+				"host_context_handoff_restore": "source owner context restore evidence is not configured",
 			},
 			Deployment: types.DefaultDeploymentScope(string(form), "source owner deployment evidence is not configured"),
 		}
@@ -117,6 +147,8 @@ func DefaultCapabilityManifest() CapabilityManifest {
 		if form == ExecutionFormMailboxAsync {
 			entry.MailboxContinuation = CapabilitySupported
 			delete(entry.UnsupportedReasons, "mailbox_continuation")
+			entry.UnsupportedReasons["host_context_assembly"] = LimitationMailboxContextSafePoint
+			entry.UnsupportedReasons["host_context_handoff_restore"] = LimitationMailboxContextSafePoint
 		}
 		result.Forms = append(result.Forms, entry)
 	}
@@ -305,6 +337,57 @@ func CapabilityManifestWithHistory(ctx context.Context, reader types.NativeEvent
 	return result, validateCapabilityManifest(result)
 }
 
+// CapabilityManifestWithHostContextEvidence promotes both context cells only
+// for an explicit owner source with complete, form-local evidence. It never
+// infers context support from a continuation, history reader, package, or DTO.
+// Mailbox lifecycle evidence remains insufficient until the mailbox owner
+// exposes a message/delivery/lease-bound handler safe point.
+func CapabilityManifestWithHostContextEvidence(ctx context.Context, source HostContextCapabilityEvidenceSource) (CapabilityManifest, error) {
+	result := DefaultCapabilityManifest()
+	if source == nil {
+		return result, fail(SourceUnavailable, "capability_manifest.host_context", nil)
+	}
+	form, evidence, err := source.HostContextCapabilityEvidence(ctx)
+	if err != nil {
+		return result, err
+	}
+	if form == ExecutionFormMailboxAsync {
+		return result, &Error{Code: UnsupportedCapability, Field: "capability_manifest.host_context", Limitation: LimitationMailboxContextSafePoint}
+	}
+	found := false
+	for i := range result.Forms {
+		entry := &result.Forms[i]
+		if entry.Form != form {
+			continue
+		}
+		found = true
+		evidenceSnapshot := evidence
+		evidenceSnapshot.SupportedNodeScopes = append([]string(nil), evidence.SupportedNodeScopes...)
+		evidenceSnapshot.EvidenceReferences = make(map[string]string, len(evidence.EvidenceReferences))
+		for key, value := range evidence.EvidenceReferences {
+			evidenceSnapshot.EvidenceReferences[key] = value
+		}
+		entry.HostContextAssembly = CapabilitySupported
+		entry.HostContextHandoffRestore = CapabilitySupported
+		entry.HostContext = &evidenceSnapshot
+		entry.RetentionPolicy = evidence.RetentionPolicy
+		entry.EvidenceReference = evidence.EvidenceReferences["host_context_handoff_restore"]
+		entry.Deployment = evidence.Deployment
+		delete(entry.UnsupportedReasons, "host_context_assembly")
+		delete(entry.UnsupportedReasons, "host_context_handoff_restore")
+	}
+	if !found {
+		return result, fail(UnsupportedCapability, "capability_manifest.host_context.form", nil)
+	}
+	if strings.TrimSpace(evidence.ModuleRevision) != result.ModuleRevision {
+		return result, fail(UnsupportedVersion, "capability_manifest.host_context.module_revision", nil)
+	}
+	if err := validateCapabilityManifest(result); err != nil {
+		return DefaultCapabilityManifest(), err
+	}
+	return result, nil
+}
+
 func historyForm(kind types.HistorySourceKind) (ExecutionForm, bool) {
 	switch kind {
 	case types.HistorySourceRunner:
@@ -379,7 +462,7 @@ func validateCapabilityManifest(manifest CapabilityManifest) error {
 			return fail(InvalidPlan, "capability_manifest.form", nil)
 		}
 		seen[entry.Form] = struct{}{}
-		if err := validateCapability(entry); err != nil {
+		if err := validateCapability(entry, manifest.ModuleRevision); err != nil {
 			return err
 		}
 		if c := entry.SourceContinuation; c != nil && (c.ContractVersion != manifest.ContractVersion || c.APIVersion != manifest.APIVersion || c.ModuleRevision != manifest.ModuleRevision) {
@@ -389,7 +472,7 @@ func validateCapabilityManifest(manifest CapabilityManifest) error {
 	return nil
 }
 
-func validateCapability(entry ExecutionFormCapability) error {
+func validateCapability(entry ExecutionFormCapability, manifestModuleRevision string) error {
 	states := map[string]CapabilityState{
 		"admission": entry.Admission, "native_events": entry.NativeEvents,
 		"durable_history": entry.DurableHistory, "after_cursor_replay": entry.AfterCursorReplay,
@@ -397,7 +480,9 @@ func validateCapability(entry ExecutionFormCapability) error {
 		"input_required": entry.InputRequired, "approval_required": entry.ApprovalRequired,
 		"budget_exhausted": entry.BudgetExhausted, "cancellation": entry.Cancellation,
 		"timeout": entry.Timeout, "causal_retry": entry.CausalRetry,
-		"mailbox_continuation": entry.MailboxContinuation,
+		"mailbox_continuation":         entry.MailboxContinuation,
+		"host_context_assembly":        entry.HostContextAssembly,
+		"host_context_handoff_restore": entry.HostContextHandoffRestore,
 	}
 	if entry.SourceProjectionRecovery != CapabilityUnknown || entry.SourceHistory != nil {
 		states["source_projection_recovery"] = entry.SourceProjectionRecovery
@@ -466,7 +551,77 @@ func validateCapability(entry ExecutionFormCapability) error {
 			return fail(InvalidPlan, "capability_manifest.source_history", nil)
 		}
 	}
+	contextDeclared := entry.HostContextAssembly == CapabilitySupported || entry.HostContextHandoffRestore == CapabilitySupported
+	if contextDeclared && entry.HostContext == nil {
+		return fail(InvalidPlan, "capability_manifest.host_context", nil)
+	}
+	if entry.HostContext != nil {
+		evidence := entry.HostContext
+		ownerNamespace, continuationVersion, allowedScopes := hostContextOwnerContract(entry.Form)
+		if strings.TrimSpace(evidence.OwnerNamespace) == "" || len(evidence.OwnerNamespace) > 256 || len(evidence.SupportedNodeScopes) == 0 ||
+			evidence.ProjectionAPIVersion != "host_context_projection.v1" || strings.TrimSpace(evidence.ContinuationAPIVersion) == "" ||
+			strings.TrimSpace(evidence.ModuleRevision) == "" || !evidence.ResolverReauthorization ||
+			strings.TrimSpace(evidence.RetentionPolicy) == "" || strings.TrimSpace(evidence.ExpiryPolicy) == "" || evidence.Deployment.Validate() != nil || !evidence.Deployment.Supported || evidence.Deployment.OwnerNamespace != evidence.OwnerNamespace {
+			return fail(InvalidPlan, "capability_manifest.host_context", nil)
+		}
+		if ownerNamespace == "" || evidence.OwnerNamespace != ownerNamespace || evidence.ContinuationAPIVersion != continuationVersion {
+			return fail(UnsupportedVersion, "capability_manifest.host_context.owner", nil)
+		}
+		if evidence.Deployment != entry.Deployment {
+			return fail(InvalidPlan, "capability_manifest.host_context.deployment", nil)
+		}
+		seenScopes := map[string]struct{}{}
+		for _, scope := range evidence.SupportedNodeScopes {
+			if strings.TrimSpace(scope) == "" || len(scope) > 256 {
+				return fail(InvalidPlan, "capability_manifest.host_context.node_scope", nil)
+			}
+			if _, allowed := allowedScopes[scope]; !allowed {
+				return fail(InvalidPlan, "capability_manifest.host_context.node_scope", nil)
+			}
+			if _, exists := seenScopes[scope]; exists {
+				return fail(InvalidPlan, "capability_manifest.host_context.node_scope", nil)
+			}
+			seenScopes[scope] = struct{}{}
+		}
+		for dimension, state := range map[string]CapabilityState{
+			"host_context_assembly":        entry.HostContextAssembly,
+			"host_context_handoff_restore": entry.HostContextHandoffRestore,
+		} {
+			if state == CapabilitySupported && strings.TrimSpace(evidence.EvidenceReferences[dimension]) == "" {
+				return fail(InvalidPlan, "capability_manifest.host_context.evidence", nil)
+			}
+		}
+		if contextDeclared {
+			if evidence.ModuleRevision != manifestModuleRevision {
+				return fail(UnsupportedVersion, "capability_manifest.host_context.module_revision", nil)
+			}
+		}
+	}
 	return nil
+}
+
+func hostContextOwnerContract(form ExecutionForm) (string, string, map[string]struct{}) {
+	var namespace, apiVersion string
+	var scopes []string
+	switch form {
+	case ExecutionFormDirect:
+		namespace, apiVersion, scopes = "runner", "direct_context.v1", []string{"run"}
+	case ExecutionFormSubagent:
+		namespace, apiVersion, scopes = "child", "child_continuation.v1", []string{"task", "attempt"}
+	case ExecutionFormTeam:
+		namespace, apiVersion, scopes = "team", "team_continuation.v1", []string{"member"}
+	case ExecutionFormWorkflow:
+		namespace, apiVersion, scopes = "workflow", "workflow_continuation.v1", []string{"step"}
+	case ExecutionFormMailboxAsync:
+		namespace, apiVersion, scopes = "mailbox", "mailbox_continuation.v1", []string{"message", "delivery", "lease"}
+	default:
+		return "", "", nil
+	}
+	allowed := make(map[string]struct{}, len(scopes))
+	for _, scope := range scopes {
+		allowed[scope] = struct{}{}
+	}
+	return namespace, apiVersion, allowed
 }
 
 func cloneManifest(manifest CapabilityManifest) CapabilityManifest {
@@ -495,6 +650,15 @@ func cloneCapability(entry ExecutionFormCapability) ExecutionFormCapability {
 	if entry.SourceContinuation != nil {
 		continuation := entry.SourceContinuation.Clone()
 		clone.SourceContinuation = &continuation
+	}
+	if entry.HostContext != nil {
+		evidence := *entry.HostContext
+		evidence.SupportedNodeScopes = append([]string(nil), entry.HostContext.SupportedNodeScopes...)
+		evidence.EvidenceReferences = make(map[string]string, len(entry.HostContext.EvidenceReferences))
+		for key, value := range entry.HostContext.EvidenceReferences {
+			evidence.EvidenceReferences[key] = value
+		}
+		clone.HostContext = &evidence
 	}
 	clone.Deployment = entry.Deployment
 	return clone

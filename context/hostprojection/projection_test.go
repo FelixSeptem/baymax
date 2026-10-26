@@ -136,6 +136,79 @@ func TestAdmitAcceptsExactContractBounds(t *testing.T) {
 	}
 }
 
+func TestAdmissionBindsProjectionToExactNativeContinuation(t *testing.T) {
+	descriptor := validDescriptor(t)
+	descriptor.Binding = &SourceBinding{
+		Form: SourceFormWorkflow, OwnerNamespace: "workflow-owner", SourceID: "workflow-run",
+		NodeID: "step:review", ContinuationID: "checkpoint-7", ContinuationDigest: "sha256:checkpoint",
+		Generation: 7,
+	}
+	descriptor.Digest = descriptorDigest(t, descriptor)
+
+	snapshot, err := Admit(descriptor)
+	if err != nil {
+		t.Fatalf("Admit() bound descriptor error = %v", err)
+	}
+
+	descriptor.Binding.NodeID = "step:mutated"
+	got := snapshot.Descriptor()
+	if got.Binding == nil || got.Binding.NodeID != "step:review" {
+		t.Fatalf("admitted binding = %#v, want detached native node binding", got.Binding)
+	}
+	if got.Digest != descriptorDigest(t, got) {
+		t.Fatalf("binding was not included in canonical projection digest: %q", got.Digest)
+	}
+
+	want := *got.Binding
+	if err := RequireBinding(snapshot, want); err != nil {
+		t.Fatalf("RequireBinding() matching owner identity error = %v", err)
+	}
+	want.NodeID = "step:other"
+	if err := RequireBinding(snapshot, want); !errorHasCode(err, CodeSourceBindingMismatch) {
+		t.Fatalf("RequireBinding() mismatch error = %v, want %q", err, CodeSourceBindingMismatch)
+	}
+}
+
+func TestAdmitRejectsMalformedNativeContinuationBinding(t *testing.T) {
+	descriptor := validDescriptor(t)
+	descriptor.Binding = &SourceBinding{
+		Form: SourceFormWorkflow, OwnerNamespace: "workflow-owner", SourceID: "workflow-run",
+		NodeID: "step:review", ContinuationID: "checkpoint-7", ContinuationDigest: "sha256:checkpoint",
+		Generation: 0,
+	}
+	descriptor.Digest = descriptorDigest(t, descriptor)
+
+	if _, err := Admit(descriptor); !errorHasCode(err, CodeSourceBindingMalformed) {
+		t.Fatalf("Admit() malformed binding error = %v, want %q", err, CodeSourceBindingMalformed)
+	}
+}
+
+func TestResolveBoundRejectsForeignNodeBeforeResolver(t *testing.T) {
+	descriptor := validDescriptor(t)
+	descriptor.Binding = &SourceBinding{
+		Form: SourceFormWorkflow, OwnerNamespace: "workflow-owner", SourceID: "workflow-run",
+		NodeID: "step:review", ContinuationID: "checkpoint-7", ContinuationDigest: "sha256:checkpoint",
+		Generation: 7,
+	}
+	descriptor.Digest = descriptorDigest(t, descriptor)
+	resolver := &countingResolver{material: Material{Role: "system", Content: "must not resolve"}}
+	want := *descriptor.Binding
+	want.NodeID = "step:other"
+
+	_, _, err := ResolveBound(t.Context(), descriptor, want, resolver)
+	if !errorHasCode(err, CodeSourceBindingMismatch) {
+		t.Fatalf("ResolveBound() error = %v, want %q", err, CodeSourceBindingMismatch)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("resolver calls = %d, want 0 for foreign node binding", resolver.calls)
+	}
+}
+
+func errorHasCode(err error, want Code) bool {
+	classified, ok := err.(*Error)
+	return ok && classified.Code == want
+}
+
 func validDescriptor(t *testing.T) Descriptor {
 	t.Helper()
 	descriptor := Descriptor{

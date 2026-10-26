@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/collab"
@@ -160,6 +161,10 @@ type StepAdapter interface {
 	Execute(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 }
 
+type ContextStepAdapter interface {
+	ExecuteWithHostContext(context.Context, string, Step, int, hostprojection.Resolution) (StepOutput, error)
+}
+
 type DispatchAdapter struct {
 	Runner func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
 	Tool   func(ctx context.Context, workflowID string, step Step, attempt int) (StepOutput, error)
@@ -206,22 +211,25 @@ type StepOutput struct {
 }
 
 type RunRequest struct {
-	RunID            string     `json:"run_id,omitempty"`
-	SessionID        string     `json:"session_id,omitempty"`
-	ParentRunID      string     `json:"parent_run_id,omitempty"`
-	CausationID      string     `json:"causation_id,omitempty"`
-	AuthorityDigest  string     `json:"authority_digest,omitempty"`
-	PlanDigest       string     `json:"plan_digest,omitempty"`
-	WriteScopeDigest string     `json:"write_scope_digest,omitempty"`
-	EffectNamespace  string     `json:"effect_namespace,omitempty"`
-	OccurrenceID     string     `json:"occurrence_id,omitempty"`
-	Resume           bool       `json:"resume,omitempty"`
-	DSL              Definition `json:"dsl"`
+	RunID              string                        `json:"run_id,omitempty"`
+	SessionID          string                        `json:"session_id,omitempty"`
+	ParentRunID        string                        `json:"parent_run_id,omitempty"`
+	CausationID        string                        `json:"causation_id,omitempty"`
+	AuthorityDigest    string                        `json:"authority_digest,omitempty"`
+	PlanDigest         string                        `json:"plan_digest,omitempty"`
+	WriteScopeDigest   string                        `json:"write_scope_digest,omitempty"`
+	EffectNamespace    string                        `json:"effect_namespace,omitempty"`
+	OccurrenceID       string                        `json:"occurrence_id,omitempty"`
+	Resume             bool                          `json:"resume,omitempty"`
+	DSL                Definition                    `json:"dsl"`
+	HostContextBinding *hostprojection.SourceBinding `json:"-"`
 
 	continuationPredecessor string
 	continuationGeneration  uint64
 	continuationSteps       map[string]CheckpointStep
 	sourceContinuation      bool
+	continuationContext     *hostprojection.Resolution
+	continuationContextStep string
 }
 
 type StepResult struct {
@@ -937,7 +945,18 @@ func (e *Engine) execute(ctx context.Context, req RunRequest, onEvent func(Strea
 					timeout = 3 * time.Second
 				}
 				stepCtx, cancel := context.WithTimeout(ctx, timeout)
-				output, err := e.adapter.Execute(stepCtx, def.WorkflowID, step, attempt)
+				var output StepOutput
+				var err error
+				if req.continuationContext != nil && step.StepID == req.continuationContextStep {
+					adapter, ok := e.adapter.(ContextStepAdapter)
+					if !ok {
+						err = ErrWorkflowContinuationUnsupported
+					} else {
+						output, err = adapter.ExecuteWithHostContext(stepCtx, def.WorkflowID, step, attempt, *req.continuationContext)
+					}
+				} else {
+					output, err = e.adapter.Execute(stepCtx, def.WorkflowID, step, attempt)
+				}
 				cancel()
 				if err == nil {
 					record.Status = StepStatusSucceeded

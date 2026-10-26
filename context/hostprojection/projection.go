@@ -50,6 +50,29 @@ type PlanCorrelation struct {
 	Digest      string `json:"digest"`
 }
 
+// SourceForm names the native owner whose continuation may carry a projection.
+type SourceForm string
+
+const (
+	SourceFormDirect   SourceForm = "direct"
+	SourceFormChild    SourceForm = "child"
+	SourceFormTeam     SourceForm = "team"
+	SourceFormWorkflow SourceForm = "workflow"
+	SourceFormMailbox  SourceForm = "mailbox"
+)
+
+// SourceBinding ties a projection to one native source node and continuation.
+// It contains identity evidence only, never source bodies or authorization.
+type SourceBinding struct {
+	Form               SourceForm `json:"form"`
+	OwnerNamespace     string     `json:"owner_namespace"`
+	SourceID           string     `json:"source_id"`
+	NodeID             string     `json:"node_id"`
+	ContinuationID     string     `json:"continuation_id"`
+	ContinuationDigest string     `json:"continuation_digest"`
+	Generation         uint64     `json:"generation"`
+}
+
 // Descriptor is the explicit opt-in input for a host-filtered context
 // projection. Its digest covers the canonical form excluding Digest itself.
 type Descriptor struct {
@@ -62,6 +85,7 @@ type Descriptor struct {
 	SourceReferences  []SourceReference         `json:"source_references"`
 	Parent            *ParentCapabilityEvidence `json:"parent,omitempty"`
 	Plan              *PlanCorrelation          `json:"plan,omitempty"`
+	Binding           *SourceBinding            `json:"binding,omitempty"`
 }
 
 // Limits are constructor-only contract limits. They are not configuration
@@ -97,6 +121,9 @@ const (
 	CodeCapabilityExpansion    Code = "host_context.capability_expansion"
 	CodeParentEvidenceMissing  Code = "host_context.parent_evidence_missing"
 	CodeInvalidPlanCorrelation Code = "host_context.invalid_plan_correlation"
+	CodeSourceBindingRequired  Code = "host_context.source_binding_required"
+	CodeSourceBindingMalformed Code = "host_context.source_binding_malformed"
+	CodeSourceBindingMismatch  Code = "host_context.source_binding_mismatch"
 )
 
 // Error intentionally exposes only classification and field, never source
@@ -150,7 +177,27 @@ func Admit(descriptor Descriptor) (Snapshot, error) {
 	if err := validatePlanCorrelation(normalized.Plan, DefaultLimits()); err != nil {
 		return Snapshot{}, err
 	}
+	if err := validateSourceBinding(normalized.Binding, DefaultLimits()); err != nil {
+		return Snapshot{}, err
+	}
 	return Snapshot{descriptor: cloneDescriptor(normalized), canonical: append([]byte(nil), canonical...)}, nil
+}
+
+// RequireBinding verifies that an admitted projection is bound to the exact
+// source owner, native node, continuation reference, digest, and generation.
+func RequireBinding(snapshot Snapshot, expected SourceBinding) error {
+	actual := snapshot.descriptor.Binding
+	if actual == nil {
+		return fail(CodeSourceBindingRequired, "binding")
+	}
+	want := normalizeSourceBinding(expected)
+	if err := validateSourceBinding(&want, DefaultLimits()); err != nil {
+		return err
+	}
+	if *actual != want {
+		return fail(CodeSourceBindingMismatch, "binding")
+	}
+	return nil
 }
 
 // CanonicalDigest returns the SHA-256 digest hosts put in Descriptor.Digest.
@@ -234,6 +281,7 @@ func canonicalize(descriptor Descriptor, limits Limits) (Descriptor, []byte, err
 		SourceReferences  []SourceReference         `json:"source_references"`
 		Parent            *ParentCapabilityEvidence `json:"parent,omitempty"`
 		Plan              *PlanCorrelation          `json:"plan,omitempty"`
+		Binding           *SourceBinding            `json:"binding,omitempty"`
 	}{
 		SchemaVersion:     normalized.SchemaVersion,
 		ProjectionID:      normalized.ProjectionID,
@@ -243,6 +291,7 @@ func canonicalize(descriptor Descriptor, limits Limits) (Descriptor, []byte, err
 		SourceReferences:  normalized.SourceReferences,
 		Parent:            normalized.Parent,
 		Plan:              normalized.Plan,
+		Binding:           normalized.Binding,
 	})
 	if err != nil {
 		return Descriptor{}, nil, fail(CodeInvalidDescriptor, "descriptor")
@@ -280,6 +329,10 @@ func cloneDescriptor(descriptor Descriptor) Descriptor {
 		plan := *descriptor.Plan
 		out.Plan = &plan
 	}
+	if descriptor.Binding != nil {
+		binding := *descriptor.Binding
+		out.Binding = &binding
+	}
 	return out
 }
 
@@ -301,6 +354,41 @@ func normalizeOptionalEvidence(descriptor *Descriptor) {
 		descriptor.Plan.PlanID = strings.TrimSpace(descriptor.Plan.PlanID)
 		descriptor.Plan.Digest = strings.TrimSpace(descriptor.Plan.Digest)
 	}
+	if descriptor.Binding != nil {
+		*descriptor.Binding = normalizeSourceBinding(*descriptor.Binding)
+	}
+}
+
+func normalizeSourceBinding(binding SourceBinding) SourceBinding {
+	binding.Form = SourceForm(strings.TrimSpace(string(binding.Form)))
+	binding.OwnerNamespace = strings.TrimSpace(binding.OwnerNamespace)
+	binding.SourceID = strings.TrimSpace(binding.SourceID)
+	binding.NodeID = strings.TrimSpace(binding.NodeID)
+	binding.ContinuationID = strings.TrimSpace(binding.ContinuationID)
+	binding.ContinuationDigest = strings.TrimSpace(binding.ContinuationDigest)
+	return binding
+}
+
+func validateSourceBinding(binding *SourceBinding, limits Limits) error {
+	if binding == nil {
+		return nil
+	}
+	*binding = normalizeSourceBinding(*binding)
+	switch binding.Form {
+	case SourceFormDirect, SourceFormChild, SourceFormTeam, SourceFormWorkflow, SourceFormMailbox:
+	default:
+		return fail(CodeSourceBindingMalformed, "binding.form")
+	}
+	values := []string{binding.OwnerNamespace, binding.SourceID, binding.NodeID, binding.ContinuationID, binding.ContinuationDigest}
+	for _, value := range values {
+		if value == "" || len(value) > limits.MaxReferenceBytes {
+			return fail(CodeSourceBindingMalformed, "binding.identity")
+		}
+	}
+	if len(binding.ContinuationDigest) > limits.MaxDigestBytes || binding.Generation == 0 {
+		return fail(CodeSourceBindingMalformed, "binding.continuation")
+	}
+	return nil
 }
 
 func validateParentEvidence(descriptor Descriptor) error {
@@ -372,6 +460,23 @@ func Resolve(ctx context.Context, descriptor Descriptor, resolver Resolver) (Sna
 	if err != nil {
 		return Snapshot{}, Resolution{}, err
 	}
+	return resolveAdmitted(ctx, snapshot, resolver)
+}
+
+// ResolveBound admits a projection, verifies exact native continuation
+// correlation, and only then invokes the host-owned resolver.
+func ResolveBound(ctx context.Context, descriptor Descriptor, expected SourceBinding, resolver Resolver) (Snapshot, Resolution, error) {
+	snapshot, err := Admit(descriptor)
+	if err != nil {
+		return Snapshot{}, Resolution{}, err
+	}
+	if err := RequireBinding(snapshot, expected); err != nil {
+		return Snapshot{}, Resolution{}, err
+	}
+	return resolveAdmitted(ctx, snapshot, resolver)
+}
+
+func resolveAdmitted(ctx context.Context, snapshot Snapshot, resolver Resolver) (Snapshot, Resolution, error) {
 	if resolver == nil {
 		return Snapshot{}, Resolution{}, fail(CodeResolverDenied, "resolver")
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/a2a"
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/runner"
 	"github.com/FelixSeptem/baymax/core/types"
@@ -52,6 +53,13 @@ type ChildContinuationExecutor interface {
 	ResumeChildContinuation(context.Context, ChildContinuation) (scheduler.TerminalCommit, error)
 }
 
+// ChildContinuationContextExecutor resumes a child safe point with transient,
+// current host-authorized context. The resolution is never persisted by the
+// source owner.
+type ChildContinuationContextExecutor interface {
+	ResumeChildContinuationWithContext(context.Context, ChildContinuation, hostprojection.Resolution) (scheduler.TerminalCommit, error)
+}
+
 type ChildContinuationOwner interface {
 	ResumeChildContinuation(context.Context, ChildResumeRequest) (ChildDispatchResult, error)
 }
@@ -92,6 +100,7 @@ type ChildDispatchRequest struct {
 	WriteScopeDigest      string
 	EffectNamespace       string
 	OccurrenceID          string
+	HostContextBinding    *hostprojection.SourceBinding
 }
 
 type ChildDispatchResult struct {
@@ -219,6 +228,14 @@ func WithChildContinuationExecutor(executor ChildContinuationExecutor) Option {
 	}
 }
 
+func WithChildContinuationContextExecutor(executor ChildContinuationContextExecutor) Option {
+	return func(c *Composer) {
+		if c != nil {
+			c.childContextContinuationExecutor = executor
+		}
+	}
+}
+
 func WithA2AClient(client scheduler.A2AClient) Option {
 	return func(c *Composer) {
 		c.a2aClient = client
@@ -281,6 +298,11 @@ func (b *Builder) WithChildContinuationExecutor(executor ChildContinuationExecut
 	return b
 }
 
+func (b *Builder) WithChildContinuationContextExecutor(executor ChildContinuationContextExecutor) *Builder {
+	b.opts = append(b.opts, WithChildContinuationContextExecutor(executor))
+	return b
+}
+
 func (b *Builder) WithSchedulerStore(store scheduler.QueueStore) *Builder {
 	b.opts = append(b.opts, WithSchedulerStore(store))
 	return b
@@ -301,19 +323,20 @@ func (b *Builder) Build() (*Composer, error) {
 }
 
 type Composer struct {
-	runtimeMgr                 *runtimeconfig.Manager
-	handler                    types.EventHandler
-	localRegistry              *local.Registry
-	runner                     Runner
-	teams                      TeamsEngine
-	workflow                   WorkflowEngine
-	scheduler                  *scheduler.Scheduler
-	schedulerStore             scheduler.QueueStore
-	recoveryStore              RecoveryStore
-	a2aClient                  scheduler.A2AClient
-	childContinuationStore     ChildContinuationStore
-	childContinuationNamespace string
-	childContinuationExecutor  ChildContinuationExecutor
+	runtimeMgr                       *runtimeconfig.Manager
+	handler                          types.EventHandler
+	localRegistry                    *local.Registry
+	runner                           Runner
+	teams                            TeamsEngine
+	workflow                         WorkflowEngine
+	scheduler                        *scheduler.Scheduler
+	schedulerStore                   scheduler.QueueStore
+	recoveryStore                    RecoveryStore
+	a2aClient                        scheduler.A2AClient
+	childContinuationStore           ChildContinuationStore
+	childContinuationNamespace       string
+	childContinuationExecutor        ChildContinuationExecutor
+	childContextContinuationExecutor ChildContinuationContextExecutor
 
 	schedulerMu                sync.RWMutex
 	managedScheduler           bool

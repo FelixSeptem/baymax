@@ -77,6 +77,15 @@ DLQ and timeout stay source lifecycle facts, not host business commits.
 checkpoint reason evidence; unavailable, corrupt, foreign, expired and
 conflicting states remain typed failures.
 
+Mailbox continuation is a lifecycle projection, not a host handler execution
+safe point. `ResumeHostPlanContinuation` claims and returns the current source
+outcome but does not invoke a plan handler or business effect. Consequently
+`host_context_projection.v1` cannot be injected through mailbox continuation:
+the manifest/context admission must remain `unsupported` until the mailbox
+owner exposes a message/delivery/lease/attempt-bound handler safe point with
+its own lease, retry, DLQ and duplicate-delivery evidence. Planbridge must not
+fill this gap with a wrapper executor or a second consume loop.
+
 ## Application outbox dispatch proposal
 
 `establish-application-outbox-mailbox-recovery-contract` is an active proposal, not a delivered mailbox API. It plans a separate constructor-only, reference-only bridge that may delegate a bounded descriptor to this existing owner or to scheduler. It must not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Before implementation, no bridge type, example, replay fixture or dedicated gate exists.

@@ -29,6 +29,12 @@ go test ./tool/diagnosticsreplay -count=2 -run 'TestReplayHostContextProjection'
 echo "[host-context-assembly-handoff] offline example"
 go test ./examples/host-context-assembly -count=1 -run 'TestOfflineExampleEmitsContractMarkers'
 
+echo "[host-context-assembly-handoff] composite owner binding and capability evidence"
+# The offline marker is asserted by the example test; keep the source-owned
+# cross-step rejection visible in this blocking gate's contract vocabulary.
+echo "[host-context-assembly-handoff] host_context.workflow_cross_step_rejected"
+go test ./orchestration/composer ./orchestration/teams ./orchestration/workflow ./orchestration/planbridge -count=1 -run 'TestComposerResumeChildContinuationResolvesBoundContextBeforeExecution|TestComposerResumeChildContinuationRechecksSchedulerFenceAfterResolver|TestTeamContinuationResolvesContextOnlyForBoundPendingMember|TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim|TestTeamContextResumeRechecksDeadlineAfterResolver|TestTeamContextResumeRunStreamParity|TestTeamContextResumeReopensFileOwnerWithBoundMember|TestTeamPauseRejectsRemoteMemberContextBinding|TestTeamVoteContinuationResolvesBoundPendingMemberWithoutRerunningSettledVote|TestWorkflowContinuationRejectsForeignStepProjectionBeforeResolverOrClaim|TestWorkflowContinuationResolvesBoundContextOnlyForPendingStep|TestWorkflowContextResumeRunStreamParity|TestWorkflowContextResumeRechecksExpiryAfterResolver|TestCapabilityManifestDeclaresContextDimensionsIndependently'
+
 echo "[host-context-assembly-handoff] contribution boundary"
 go test ./tool/contributioncheck -count=1 -run 'TestHostContextProjectionGateScriptsAreEquivalentAndBlocking|TestHostContextProjectionOwnershipBoundary'
 

@@ -18,6 +18,17 @@ source evidence for `input_required`, `approval_required`, or
 `budget_exhausted`; scheduler retry and recovery snapshots are not pause
 continuations. Team, mailbox and resumed-plan support remains unsupported.
 
+An owner-enabled child context continuation is opt-in. Supplying an identity-only
+`hostprojection.SourceBinding` on dispatch causes Composer to fill the actual
+run/task/attempt and graph generation into the persisted continuation. A
+context-aware executor can accept a resume request with the matching detached
+projection and current host resolver. Composer validates the native continuation
+and exact binding before resolving, then performs the existing atomic claim; a
+foreign binding cannot call the resolver or claim. Resolved material is passed
+only to the executor and is never persisted. Without the binding, resolver, or
+context executor, the context path remains typed unsupported while the ordinary
+child resume API remains available.
+
 Child continuation stores expose the same-host single-writer sequential-reopen
 deployment boundary. The owner namespace and fence are source facts; a
 foreign/stale writer or distributed graph-claim request is rejected before

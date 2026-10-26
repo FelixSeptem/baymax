@@ -43,6 +43,31 @@ plan bridge accepts a child resume binding only when a capability manifest and
 continuation have separate owner capability cells and never inherit child
 support; resumed planbridge remains `unsupported_capability`.
 
+For an owner-enabled child context path, pass an identity-only
+`hostprojection.SourceBinding{Form: SourceFormChild}` in `ChildDispatchRequest`.
+Composer fills the source run, task, claimed attempt, graph digest and generation
+from the actual child safe point before sealing `ChildContinuation`; callers
+cannot select another task or attempt. A context-aware owner may then provide
+`ChildResumeRequest.HostContextProjection` and `HostContextResolver` together
+with `WithChildContinuationContextExecutor`. Resume performs native load and
+exact binding validation, current resolver authorization, and only then the
+existing atomic resume claim and owner executor. Missing binding, resolver, or
+context executor is typed unsupported; foreign/stale binding is rejected before
+resolver/claim, and resolved source bodies remain transient. The ordinary
+`ResumeChildContinuation` path remains unchanged when no projection is supplied.
+
+Workflow context binding follows the same source-owner boundary at the pending
+step. An optional `RunRequest.HostContextBinding` is normalized by the workflow
+owner to the actual workflow/run/step, graph digest and continuation generation;
+the persisted envelope contains only those opaque identity facts. A resume
+request with the matching projection and resolver validates the graph and exact
+step before resolving current authorization, then invokes the existing pending
+step adapter through its optional `ContextStepAdapter` extension. Completed
+steps remain restored from source state and are not re-run. Missing context
+adapter/evidence is typed unsupported, and a foreign step binding fails before
+resolver or continuation claim. Workflow context does not imply team, child or
+mailbox support.
+
 ## 接入真实执行事件
 
 用 `host/eventadapter.New` 构造 opt-in `types.EventHandler`，将它传入 `Engine.Run`、`Engine.Stream` 和 `ResumeDynamicAction`。先授权 sink 对 source payload 的访问，再显式绑定 `Projection.Source`、`ExpectedRunID` 和可选 `SessionID`；业务关联只放入 `HostReferences`。同一个 observer 面向一个串行 source stream，并行 child/source 分别构造 observer，依靠已有 parent/causation references 关联。
@@ -127,9 +152,9 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 接入要求宿主提供版本化、bounded、reference-only descriptor 和当前授权的 source resolver。固定 constructor/API 限制是：serialized descriptor 最多 32 KiB、最多 64 个 opaque references、每个 reference 最多 256 UTF-8 bytes、每个 digest 最多 128 UTF-8 bytes。Baymax 按 structure/limits → canonical digest → optional plan correlation + parent/child capability subset → resolver → existing assembler 的顺序处理；仅在前述验证通过且 assembler enabled 时复用既有 assembler、compaction 和 handoff owner。digest 只证明投影一致性，不证明 source access、业务权限或 commit；handoff/replay 也不是恢复授权。child 必须收窄 capability；关联 restore 先走既有 source validation，再通过 `runner.RestoreHandoffWithHostProjection` 由宿主用 fresh resolver 重新授权，并只返回供 caller-owned injection 使用的 transient resolution；该 API 不自行注入 context、resume 或 run。不会增加 host wire command、outbox/mailbox worker、Provider SDK、业务 store、RuntimeRecorder/QueryRuns 字段、平行 terminal 或 recovery coordinator。
 
-应用可以将 `*hostprojection.Error` 作为有限的拒绝面处理；稳定 `Code` 包括 `host_context.unsupported_version`、`host_context.invalid_descriptor`、`host_context.limit_exceeded`、`host_context.duplicate_reference`、`host_context.invalid_capability`、`host_context.digest_mismatch`、`host_context.capability_expansion`、`host_context.parent_evidence_missing`、`host_context.invalid_plan_correlation`、`host_context.resolver_denied` 与 `host_context.source_not_found`。这些错误均 fail-closed，且不携带 raw callback error 或 source body；不得按字符串重试或把 historical digest 当作授权。
+应用可以将 `*hostprojection.Error` 作为有限的拒绝面处理；稳定 `Code` 包括 `host_context.unsupported_version`、`host_context.invalid_descriptor`、`host_context.limit_exceeded`、`host_context.duplicate_reference`、`host_context.invalid_capability`、`host_context.digest_mismatch`、`host_context.capability_expansion`、`host_context.parent_evidence_missing`、`host_context.invalid_plan_correlation`、`host_context.source_binding_required`、`host_context.source_binding_malformed`、`host_context.source_binding_mismatch`、`host_context.resolver_denied` 与 `host_context.source_not_found`。这些错误均 fail-closed，且不携带 raw callback error 或 source body；不得按字符串重试或把 historical digest 当作授权。
 
-当前只支持 assembler enabled 时的 direct Run/Stream assembly、legal existing `handoff.v1` cuts 与 explicit correlated restore validation/material resolution；cross-process continuation、resolver-independent restore、mailbox/workflow/team recovery 和 dynamic-action continuation 均不支持。可运行的离线示例以 fake model/tool、synthetic opaque reference 和 current-authority resolver 展示 admitted assembly、capability widening rejection、revoked restore 与 legacy rollback；reference-only replay、shell/PowerShell dedicated gates、标准 quality-path 接线与验证记录已交付。可追踪范围、拒绝矩阵和回滚在归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)，运行方式见 [host-context-assembly](../../examples/host-context-assembly/README.md)。
+当前已交付的 manifest 支持只覆盖 assembler enabled 时的 direct Run/Stream assembly、legal existing `handoff.v1` cuts 与 explicit correlated restore validation/material resolution。`host_context_projection.v1` 的可选 source binding 只保存 form、owner namespace、source/node、continuation id/digest 和 generation；这些 identity facts 参与 canonical digest，并可在 owner claim 前精确比对，不保存 source body 或当前授权。active change `extend-composite-context-assembly-handoff` 验证了 child attempt、team pending local member 和 workflow pending-step 的 owner API：foreign binding 在 resolver/claim 前拒绝；team 不向 parallel sibling 继承 material、不会重跑 settled member，并在 resolver 返回后重检原 deadline；workflow 的 Run/Stream continuation resume 使用相同 binding，并在 resolver 返回后重新检查 source fence/expiry。这些都是 owner-level API evidence，不是 manifest promotion，也不提供 planbridge context dispatch。每个 form 的 `host_context_assembly`、`host_context_handoff_restore` 都必须有独立 owner namespace/node scope/version/deployment/retention/expiry/current-resolver/evidence；默认 manifest 仍全部 typed unsupported。mailbox continuation 只投影 lifecycle outcome，未执行 handler/effect，故没有 context-aware safe point，必须保持 unsupported/unavailable，不能借用 direct/workflow restore、其它 owner checkpoint、history replay、重跑 parent 或重新 enqueue。projection 不默认继承给 sibling/node 或 replacement delivery。离线示例以 fake model/tool、真实 workflow continuation owner、synthetic opaque reference 和 current-authority resolver 展示 direct baseline、workflow source-bound success 与 cross-step rejection。direct 合同基线见归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)，运行方式见 [host-context-assembly](../../examples/host-context-assembly/README.md)。
 
 ## 暂停后的恢复准入
 

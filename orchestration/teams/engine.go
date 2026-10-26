@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/collab"
@@ -72,6 +73,10 @@ type TaskRunner interface {
 	Run(ctx context.Context, task Task) (TaskResult, error)
 }
 
+type HostContextTaskRunner interface {
+	RunWithHostContext(context.Context, Plan, Task, hostprojection.Resolution) (TaskResult, error)
+}
+
 type TaskRunnerFunc func(ctx context.Context, task Task) (TaskResult, error)
 
 func (f TaskRunnerFunc) Run(ctx context.Context, task Task) (TaskResult, error) {
@@ -120,26 +125,28 @@ type Task struct {
 }
 
 type Plan struct {
-	RunID                 string                 `json:"run_id,omitempty"`
-	SessionID             string                 `json:"session_id,omitempty"`
-	ParentRunID           string                 `json:"parent_run_id,omitempty"`
-	CausationID           string                 `json:"causation_id,omitempty"`
-	AuthorityDigest       string                 `json:"authority_digest,omitempty"`
-	PlanDigest            string                 `json:"plan_digest,omitempty"`
-	WriteScopeDigest      string                 `json:"write_scope_digest,omitempty"`
-	EffectNamespace       string                 `json:"effect_namespace,omitempty"`
-	OccurrenceID          string                 `json:"occurrence_id,omitempty"`
-	TeamID                string                 `json:"team_id"`
-	WorkflowID            string                 `json:"workflow_id,omitempty"`
-	StepID                string                 `json:"step_id,omitempty"`
-	Strategy              Strategy               `json:"strategy,omitempty"`
-	Tasks                 []Task                 `json:"tasks"`
-	TaskTimeout           time.Duration          `json:"task_timeout,omitempty"`
-	ParallelMaxWorkers    int                    `json:"parallel_max_workers,omitempty"`
-	Backpressure          types.BackpressureMode `json:"backpressure,omitempty"`
-	FailurePolicy         FailurePolicy          `json:"failure_policy,omitempty"`
-	VoteTieBreak          VoteTieBreak           `json:"vote_tie_break,omitempty"`
-	TimeoutTerminalStatus TaskStatus             `json:"timeout_terminal_status,omitempty"`
+	RunID                 string                                  `json:"run_id,omitempty"`
+	SessionID             string                                  `json:"session_id,omitempty"`
+	ParentRunID           string                                  `json:"parent_run_id,omitempty"`
+	CausationID           string                                  `json:"causation_id,omitempty"`
+	AuthorityDigest       string                                  `json:"authority_digest,omitempty"`
+	PlanDigest            string                                  `json:"plan_digest,omitempty"`
+	WriteScopeDigest      string                                  `json:"write_scope_digest,omitempty"`
+	EffectNamespace       string                                  `json:"effect_namespace,omitempty"`
+	OccurrenceID          string                                  `json:"occurrence_id,omitempty"`
+	TeamID                string                                  `json:"team_id"`
+	WorkflowID            string                                  `json:"workflow_id,omitempty"`
+	StepID                string                                  `json:"step_id,omitempty"`
+	Strategy              Strategy                                `json:"strategy,omitempty"`
+	Tasks                 []Task                                  `json:"tasks"`
+	TaskTimeout           time.Duration                           `json:"task_timeout,omitempty"`
+	ParallelMaxWorkers    int                                     `json:"parallel_max_workers,omitempty"`
+	Backpressure          types.BackpressureMode                  `json:"backpressure,omitempty"`
+	FailurePolicy         FailurePolicy                           `json:"failure_policy,omitempty"`
+	VoteTieBreak          VoteTieBreak                            `json:"vote_tie_break,omitempty"`
+	TimeoutTerminalStatus TaskStatus                              `json:"timeout_terminal_status,omitempty"`
+	HostContextBindings   map[string]hostprojection.SourceBinding `json:"-"`
+	continuationContext   map[string]hostprojection.Resolution
 }
 
 type TaskRecord struct {
@@ -322,6 +329,15 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 	if teamPlanDigest(plan) != continuation.GraphDigest {
 		return Result{}, ErrTeamContinuationForeign
 	}
+	resolutions, err := validateAndResolveTeamHostContext(ctx, plan, continuation, request)
+	if err != nil {
+		return Result{}, err
+	}
+	// Host authorization is outside the owner store. Do not consume a resume
+	// claim when resolving material crosses the original source deadline.
+	if !continuation.OriginalDeadline.IsZero() && !e.now().UTC().Before(continuation.OriginalDeadline) {
+		return Result{}, ErrTeamContinuationRecoveryRequired
+	}
 	claim, err := e.continuations.ClaimResume(ctx, request)
 	if err != nil {
 		return Result{}, err
@@ -333,6 +349,7 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 	if err != nil {
 		return Result{}, err
 	}
+	plan.continuationContext = resolutions
 	records := make([]TaskRecord, len(plan.Tasks))
 	for i, task := range plan.Tasks {
 		records[i] = TaskRecord{TaskID: task.TaskID, AgentID: task.AgentID, Role: task.Role, Target: task.Target, CollabPrimitive: task.CollabPrimitive, PeerID: task.Remote.PeerID, Priority: task.Priority, Status: TaskStatusPending}
@@ -354,6 +371,62 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 		return Result{}, commitErr
 	}
 	return result, runErr
+}
+
+// validateAndResolveTeamHostContext verifies every requested member before
+// invoking the host resolver. Resolved material is transient and reaches only
+// the matching pending member through the existing TaskRunner seam.
+func validateAndResolveTeamHostContext(ctx context.Context, plan Plan, continuation TeamContinuation, request TeamResumeRequest) (map[string]hostprojection.Resolution, error) {
+	if len(request.HostContextProjections) == 0 {
+		return nil, nil
+	}
+	if request.HostContextResolver == nil {
+		return nil, ErrTeamContinuationUnsupported
+	}
+	pending := make(map[string]struct{}, len(continuation.PendingTaskIDs))
+	for _, id := range continuation.PendingTaskIDs {
+		pending[id] = struct{}{}
+	}
+	tasks := make(map[string]Task, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		tasks[task.TaskID] = task
+	}
+	ids := make([]string, 0, len(request.HostContextProjections))
+	for id, descriptor := range request.HostContextProjections {
+		binding, ok := continuation.HostContextBindings[id]
+		if !ok || descriptor == nil {
+			return nil, ErrTeamContinuationConflict
+		}
+		if _, ok := pending[id]; !ok {
+			return nil, ErrTeamContinuationConflict
+		}
+		task, ok := tasks[id]
+		if !ok || task.Target != TaskTargetLocal {
+			return nil, ErrTeamContinuationUnsupported
+		}
+		if _, ok := task.Runner.(HostContextTaskRunner); !ok {
+			return nil, ErrTeamContinuationUnsupported
+		}
+		snapshot, admitErr := hostprojection.Admit(*descriptor)
+		if admitErr != nil {
+			return nil, admitErr
+		}
+		if err := hostprojection.RequireBinding(snapshot, binding); err != nil {
+			return nil, ErrTeamContinuationConflict
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	resolved := make(map[string]hostprojection.Resolution, len(ids))
+	for _, id := range ids {
+		binding := continuation.HostContextBindings[id]
+		_, resolution, err := hostprojection.ResolveBound(ctx, *request.HostContextProjections[id], binding, request.HostContextResolver)
+		if err != nil {
+			return nil, err
+		}
+		resolved[id] = resolution
+	}
+	return resolved, nil
 }
 
 func (e *Engine) execute(ctx context.Context, raw Plan, onEvent func(StreamEvent) error) (Result, error) {
@@ -709,17 +782,25 @@ func executeTask(ctx context.Context, plan Plan, task Task) taskExecution {
 		result TaskResult
 		err    error
 	)
-	switch task.Target {
-	case TaskTargetRemote:
-		if task.RemoteRunner == nil {
-			return taskExecution{Status: TaskStatusFailed, Reason: "task.remote_runner_missing"}
+	if resolution, hasContext := plan.continuationContext[task.TaskID]; hasContext {
+		runner, ok := task.Runner.(HostContextTaskRunner)
+		if !ok {
+			return taskExecution{Status: TaskStatusFailed, Reason: "host_context.unsupported_capability"}
 		}
-		result, err = task.RemoteRunner.RunRemote(runCtx, plan, task)
-	default:
-		if task.Runner == nil {
-			return taskExecution{Status: TaskStatusFailed, Reason: "task.runner_missing"}
+		result, err = runner.RunWithHostContext(runCtx, plan, task, resolution)
+	} else {
+		switch task.Target {
+		case TaskTargetRemote:
+			if task.RemoteRunner == nil {
+				return taskExecution{Status: TaskStatusFailed, Reason: "task.remote_runner_missing"}
+			}
+			result, err = task.RemoteRunner.RunRemote(runCtx, plan, task)
+		default:
+			if task.Runner == nil {
+				return taskExecution{Status: TaskStatusFailed, Reason: "task.runner_missing"}
+			}
+			result, err = task.Runner.Run(runCtx, task)
 		}
-		result, err = task.Runner.Run(runCtx, task)
 	}
 	if err == nil {
 		return taskExecution{

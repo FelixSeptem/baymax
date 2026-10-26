@@ -1,6 +1,6 @@
 # Host context assembly and handoff
 
-状态：进行中 OpenSpec `establish-host-context-assembly-handoff-contract` 的已交付离线示例。它使用真实 runner、fake model/tool、fake current-authority resolver 和 synthetic opaque reference；不使用 live provider、business database、network 或持久的 source body。dedicated replay 和双平台 contract gates 已交付；标准全量最终验证仍待该 active change 完成。运行：
+状态：归档 165 `establish-host-context-assembly-handoff-contract` 的 direct-path 离线示例基线；active OpenSpec `extend-composite-context-assembly-handoff` 另以现有 workflow continuation owner 验证 workflow step binding 成功与 cross-step 拒绝。示例使用真实 runner、真实 workflow continuation API、fake model/tool/resolver 和 synthetic opaque reference；不使用 live provider、business database、network 或持久的 source body。workflow 的代码级 owner evidence 不会自动提升 capability manifest；team/mailbox 仍 unsupported。运行：
 
 ```powershell
 go run ./examples/host-context-assembly
@@ -35,7 +35,8 @@ host pre-filter + current authorization
 | Legal existing `handoff.v1` cuts | supported | Existing handoff logic retains only additive, nullable, reference-only correlation; no resolved body is persisted. |
 | Correlated restore validation and material resolution | supported with explicit resolver | Existing reference-first validation remains authoritative and `runner.RestoreHandoffWithHostProjection` requires fresh current authorization. It returns transient resolution for caller-owned injection only; the runtime neither injects, resumes, nor runs itself. |
 | Cross-process continuation | unsupported | A descriptor or digest is not a durable continuation or current authorization. |
-| Mailbox/workflow/team recovery | unsupported | No composed recovery owner, mailbox worker, workflow/team bridge, or shared state is added. |
+| Workflow step continuation context injection | owner API evidence only; not manifest-promoted | The offline example drives the existing workflow checkpoint and `ContextStepAdapter` through one explicit source/step binding, then demonstrates cross-step rejection before resolver/claim. It does not advertise a planbridge capability, extend to a sibling step, or establish multi-writer recovery. |
+| Mailbox/team recovery | unsupported | These owners have no context-aware native safe point in this change. They return typed unsupported/unavailable rather than borrowing workflow evidence or using a replacement execution loop. |
 | Dynamic-action continuation | unsupported | Existing dynamic-action/checkpoint owners retain their own admission and restore semantics. |
 
 This matrix is intentionally narrower than `orchestration/planbridge`: optional plan correlation is evidence only; it cannot compile, dispatch, resume, or authorize a plan.
@@ -47,13 +48,15 @@ This matrix is intentionally narrower than `orchestration/planbridge`: optional 
 - `host_context.projection_admitted`：已验证、已授权的预过滤 projection 进入现有 assembly path。
 - `host_context.capability_expansion`：child 扩大 parent capability 时在 resolver 前拒绝。
 - `host_context.restore_revalidation_failed`：handoff restore 的 source reference/digest/current authorization 漂移时，在 context injection 前拒绝。
+- `host_context.workflow_context_resolved`：workflow checkpoint 只在 exact workflow/run/pending-step binding 通过后，将 fresh resolver 的瞬态 material 交给已有 `ContextStepAdapter`。
+- `host_context.workflow_cross_step_rejected`：binding 指向另一 workflow step 时，在 resolver、resume claim 和 step activation 前拒绝。
 - `host_context.run_stream_equivalent`：等价 Run/Stream 的规范化 assembly、budget、handoff/restore evidence 相同。
 - `host_context.legacy_rollback`：停止提交 descriptor/resolver 后，既有 assembler 路径仍只接收原始 caller messages。
 
-这些是离线示例 markers，不是 runtime event、诊断 schema 或承诺的 wire vocabulary。对应 smoke 测试为 `go test ./examples/host-context-assembly -run TestOfflineExampleEmitsContractMarkers -count=1`。
+这些是离线示例 markers，不是 runtime event、诊断 schema 或承诺的 wire vocabulary。workflow 成功与跨 step 拒绝复用真实 continuation store/claim API，resolver/step adapter 用于离线断言；它不证明 fresh-process restore、manifest support 或跨 writer 部署能力。对应 smoke 测试为 `go test ./examples/host-context-assembly -run TestOfflineExampleEmitsContractMarkers -count=1`。
 
 ## Boundaries and rollback
 
-本 change 不创建 context database、global projection registry、budget ledger、Provider SDK dependency、Host command、outbox/mailbox worker、business store 或新的 execution/terminal/recovery state machine。预算、业务授权、effect/revision CAS 和 commit 继续由既有 owner 或宿主负责；诊断仍只能经 `observability/event.RuntimeRecorder`。
+本 change 不创建 context database、global projection registry、budget ledger、Provider SDK dependency、Host command、outbox/mailbox worker、business store 或新的 execution/terminal/recovery state machine。workflow composite evidence 仅复用现有 continuation store、claim 和 step adapter；预算、业务授权、effect/revision CAS 和 commit 继续由既有 owner 或宿主负责；诊断仍只能经 `observability/event.RuntimeRecorder`。
 
 回滚方式是停止提交未来的 opt-in projection bridge 并使用现有宿主预过滤 + assembler 路径。不得删除 checkpoint/journal/application record，也不能把回滚表述为撤销已经发生的业务 effect。完整计划见归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md) 和 [design](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/design.md)。

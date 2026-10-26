@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -105,6 +106,30 @@ func (e *Engine) ResumeContinuation(ctx context.Context, request WorkflowResumeR
 	if continuation.PauseReason == PauseBudgetExhausted && !continuation.OriginalDeadline.IsZero() && !e.now().Before(continuation.OriginalDeadline) {
 		return RunResult{}, ErrWorkflowContinuationExpired
 	}
+	var resolved *hostprojection.Resolution
+	if request.HostContextProjection != nil {
+		if continuation.HostContextBinding == nil || request.HostContextResolver == nil {
+			return RunResult{}, ErrWorkflowContinuationUnsupported
+		}
+		snapshot, admitErr := hostprojection.Admit(*request.HostContextProjection)
+		if admitErr != nil || hostprojection.RequireBinding(snapshot, *continuation.HostContextBinding) != nil {
+			return RunResult{}, ErrWorkflowContinuationConflict
+		}
+		if _, ok := e.adapter.(ContextStepAdapter); !ok {
+			return RunResult{}, ErrWorkflowContinuationUnsupported
+		}
+		_, resolution, resolveErr := hostprojection.ResolveBound(ctx, *request.HostContextProjection, *continuation.HostContextBinding, request.HostContextResolver)
+		if resolveErr != nil {
+			return RunResult{}, resolveErr
+		}
+		// Re-check owner expiry after host authorization. The resolver is
+		// outside the continuation store lock and may cross the source's
+		// expiry boundary; do not consume a resume claim with stale material.
+		if continuation.PauseReason == PauseBudgetExhausted && !continuation.OriginalDeadline.IsZero() && !e.now().Before(continuation.OriginalDeadline) {
+			return RunResult{}, ErrWorkflowContinuationExpired
+		}
+		resolved = &resolution
+	}
 	claim, err := e.continuations.ClaimResume(ctx, request)
 	if err != nil {
 		return RunResult{}, err
@@ -116,7 +141,7 @@ func (e *Engine) ResumeContinuation(ctx context.Context, request WorkflowResumeR
 	if err != nil {
 		return RunResult{}, err
 	}
-	result, err := e.executeFromContinuation(ctx, continuation, onEvent)
+	result, err := e.executeFromContinuation(ctx, continuation, onEvent, resolved)
 	if err != nil && !errors.Is(err, ErrWorkflowPaused) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return result, err
 	}
@@ -219,6 +244,7 @@ func (e *Engine) persistContinuation(ctx context.Context, req RunRequest, def De
 	sort.Slice(steps, func(i, j int) bool { return steps[i].StepID < steps[j].StepID })
 	continuation, err := SealWorkflowContinuation(WorkflowContinuation{
 		Ref: WorkflowContinuationRef{OwnerNamespace: e.continuationNamespace}, GraphID: def.WorkflowID, GraphVersion: "v1", GraphDigest: workflowDefinitionDigest(def), ParentRunID: strings.TrimSpace(req.ParentRunID), RunID: strings.TrimSpace(req.RunID), SessionID: strings.TrimSpace(req.SessionID), CausationID: strings.TrimSpace(req.CausationID), AuthorityDigest: strings.TrimSpace(req.AuthorityDigest), PlanDigest: strings.TrimSpace(req.PlanDigest), WriteScopeDigest: strings.TrimSpace(req.WriteScopeDigest), EffectNamespace: strings.TrimSpace(req.EffectNamespace), OccurrenceID: strings.TrimSpace(req.OccurrenceID), PauseReason: pause.Reason, Definition: def, Steps: steps, PendingStep: pendingStep, PendingActionReference: strings.TrimSpace(pause.PendingActionReference), ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, PredecessorCheckpointID: req.continuationPredecessor, Generation: req.continuationGeneration + 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
+		HostContextBinding: workflowHostContextBinding(req.HostContextBinding, e.continuationNamespace, req.RunID, pendingStep, workflowDefinitionDigest(def), req.continuationGeneration+1, def.WorkflowID),
 	})
 	if err != nil {
 		return WorkflowContinuation{}, err
@@ -229,7 +255,22 @@ func (e *Engine) persistContinuation(ctx context.Context, req RunRequest, def De
 	return continuation, nil
 }
 
-func (e *Engine) executeFromContinuation(ctx context.Context, c WorkflowContinuation, onEvent func(StreamEvent) error) (RunResult, error) {
+func workflowHostContextBinding(input *hostprojection.SourceBinding, namespace, runID, stepID, graphDigest string, generation uint64, workflowID string) *hostprojection.SourceBinding {
+	if input == nil {
+		return nil
+	}
+	binding := *input
+	binding.Form = hostprojection.SourceFormWorkflow
+	binding.OwnerNamespace = namespace
+	binding.SourceID = runID
+	binding.NodeID = stepID
+	binding.ContinuationID = workflowID
+	binding.ContinuationDigest = graphDigest
+	binding.Generation = generation
+	return &binding
+}
+
+func (e *Engine) executeFromContinuation(ctx context.Context, c WorkflowContinuation, onEvent func(StreamEvent) error, resolved ...*hostprojection.Resolution) (RunResult, error) {
 	if c.Definition.WorkflowID != c.GraphID || workflowDefinitionDigest(c.Definition) != c.GraphDigest {
 		return RunResult{}, ErrWorkflowContinuationCorrupt
 	}
@@ -237,7 +278,12 @@ func (e *Engine) executeFromContinuation(ctx context.Context, c WorkflowContinua
 	for _, step := range c.Steps {
 		steps[step.StepID] = CheckpointStep{Status: step.Status, Attempts: step.Attempts}
 	}
-	return e.execute(ctx, RunRequest{RunID: c.RunID, SessionID: c.SessionID, ParentRunID: c.ParentRunID, CausationID: c.CausationID, AuthorityDigest: c.AuthorityDigest, PlanDigest: c.PlanDigest, WriteScopeDigest: c.WriteScopeDigest, EffectNamespace: c.EffectNamespace, OccurrenceID: c.OccurrenceID, Resume: true, DSL: c.Definition, continuationPredecessor: c.Ref.CheckpointID, continuationGeneration: c.Generation, continuationSteps: steps, sourceContinuation: true}, onEvent)
+	req := RunRequest{RunID: c.RunID, SessionID: c.SessionID, ParentRunID: c.ParentRunID, CausationID: c.CausationID, AuthorityDigest: c.AuthorityDigest, PlanDigest: c.PlanDigest, WriteScopeDigest: c.WriteScopeDigest, EffectNamespace: c.EffectNamespace, OccurrenceID: c.OccurrenceID, Resume: true, DSL: c.Definition, HostContextBinding: c.HostContextBinding, continuationPredecessor: c.Ref.CheckpointID, continuationGeneration: c.Generation, continuationSteps: steps, sourceContinuation: true}
+	if len(resolved) > 0 {
+		req.continuationContext = resolved[0]
+		req.continuationContextStep = c.PendingStep
+	}
+	return e.execute(ctx, req, onEvent)
 }
 
 func workflowDefinitionDigest(def Definition) string {
@@ -295,32 +341,33 @@ type WorkflowStepContinuation struct {
 }
 
 type WorkflowContinuation struct {
-	Ref                          WorkflowContinuationRef    `json:"ref"`
-	GraphID                      string                     `json:"graph_id"`
-	GraphVersion                 string                     `json:"graph_version"`
-	GraphDigest                  string                     `json:"graph_digest"`
-	ParentRunID                  string                     `json:"parent_run_id,omitempty"`
-	RunID                        string                     `json:"run_id"`
-	SessionID                    string                     `json:"session_id"`
-	CausationID                  string                     `json:"causation_id,omitempty"`
-	AuthorityDigest              string                     `json:"authority_digest,omitempty"`
-	PlanDigest                   string                     `json:"plan_digest,omitempty"`
-	WriteScopeDigest             string                     `json:"write_scope_digest,omitempty"`
-	EffectNamespace              string                     `json:"effect_namespace,omitempty"`
-	OccurrenceID                 string                     `json:"occurrence_id,omitempty"`
-	PauseReason                  WorkflowPauseReason        `json:"pause_reason"`
-	Definition                   Definition                 `json:"definition"`
-	Steps                        []WorkflowStepContinuation `json:"steps,omitempty"`
-	PendingStep                  string                     `json:"pending_step,omitempty"`
-	PendingActionReference       string                     `json:"pending_action_reference,omitempty"`
-	ConsumedBudget               int64                      `json:"consumed_budget,omitempty"`
-	OriginalDeadline             time.Time                  `json:"original_deadline,omitempty"`
-	TerminalArbitrationReference string                     `json:"terminal_arbitration_reference,omitempty"`
-	PredecessorCheckpointID      string                     `json:"predecessor_checkpoint_id,omitempty"`
-	SuccessorCheckpointID        string                     `json:"successor_checkpoint_id,omitempty"`
-	Generation                   uint64                     `json:"generation"`
-	CreatedAt                    time.Time                  `json:"created_at"`
-	ExpiresAt                    time.Time                  `json:"expires_at"`
+	Ref                          WorkflowContinuationRef       `json:"ref"`
+	GraphID                      string                        `json:"graph_id"`
+	GraphVersion                 string                        `json:"graph_version"`
+	GraphDigest                  string                        `json:"graph_digest"`
+	ParentRunID                  string                        `json:"parent_run_id,omitempty"`
+	RunID                        string                        `json:"run_id"`
+	SessionID                    string                        `json:"session_id"`
+	CausationID                  string                        `json:"causation_id,omitempty"`
+	AuthorityDigest              string                        `json:"authority_digest,omitempty"`
+	PlanDigest                   string                        `json:"plan_digest,omitempty"`
+	WriteScopeDigest             string                        `json:"write_scope_digest,omitempty"`
+	EffectNamespace              string                        `json:"effect_namespace,omitempty"`
+	OccurrenceID                 string                        `json:"occurrence_id,omitempty"`
+	PauseReason                  WorkflowPauseReason           `json:"pause_reason"`
+	Definition                   Definition                    `json:"definition"`
+	Steps                        []WorkflowStepContinuation    `json:"steps,omitempty"`
+	PendingStep                  string                        `json:"pending_step,omitempty"`
+	PendingActionReference       string                        `json:"pending_action_reference,omitempty"`
+	ConsumedBudget               int64                         `json:"consumed_budget,omitempty"`
+	OriginalDeadline             time.Time                     `json:"original_deadline,omitempty"`
+	TerminalArbitrationReference string                        `json:"terminal_arbitration_reference,omitempty"`
+	PredecessorCheckpointID      string                        `json:"predecessor_checkpoint_id,omitempty"`
+	SuccessorCheckpointID        string                        `json:"successor_checkpoint_id,omitempty"`
+	Generation                   uint64                        `json:"generation"`
+	CreatedAt                    time.Time                     `json:"created_at"`
+	ExpiresAt                    time.Time                     `json:"expires_at"`
+	HostContextBinding           *hostprojection.SourceBinding `json:"host_context_binding,omitempty"`
 }
 
 func SealWorkflowContinuation(c WorkflowContinuation) (WorkflowContinuation, error) {
@@ -387,6 +434,10 @@ func (c WorkflowContinuation) DigestMaterial() { c.Ref.Digest = "" }
 
 func (c WorkflowContinuation) Detached() WorkflowContinuation {
 	c.Steps = append([]WorkflowStepContinuation(nil), c.Steps...)
+	if c.HostContextBinding != nil {
+		binding := *c.HostContextBinding
+		c.HostContextBinding = &binding
+	}
 	return c
 }
 
@@ -424,6 +475,12 @@ func (c WorkflowContinuation) validateShape() error {
 	for _, step := range c.Steps {
 		if step.StepID == "" || step.Attempts < 0 || step.ConsumedBudget < 0 {
 			return ErrWorkflowContinuationMalformed
+		}
+	}
+	if c.HostContextBinding != nil {
+		binding := c.HostContextBinding
+		if binding.Form != hostprojection.SourceFormWorkflow || binding.OwnerNamespace != c.Ref.OwnerNamespace || binding.SourceID != c.RunID || binding.NodeID != c.PendingStep || binding.ContinuationID != c.GraphID || binding.ContinuationDigest != c.GraphDigest || binding.Generation != c.Generation {
+			return ErrWorkflowContinuationForeign
 		}
 	}
 	ref := c.Ref
@@ -472,15 +529,17 @@ func workflowDigestBytes(b []byte) string {
 }
 
 type WorkflowResumeRequest struct {
-	Ref              WorkflowContinuationRef `json:"ref"`
-	GraphDigest      string                  `json:"graph_digest"`
-	Generation       uint64                  `json:"generation"`
-	IdempotencyKey   string                  `json:"idempotency_key"`
-	AuthorityDigest  string                  `json:"authority_digest,omitempty"`
-	PlanDigest       string                  `json:"plan_digest,omitempty"`
-	WriteScopeDigest string                  `json:"write_scope_digest,omitempty"`
-	EffectNamespace  string                  `json:"effect_namespace,omitempty"`
-	OccurrenceID     string                  `json:"occurrence_id,omitempty"`
+	Ref                   WorkflowContinuationRef    `json:"ref"`
+	GraphDigest           string                     `json:"graph_digest"`
+	Generation            uint64                     `json:"generation"`
+	IdempotencyKey        string                     `json:"idempotency_key"`
+	AuthorityDigest       string                     `json:"authority_digest,omitempty"`
+	PlanDigest            string                     `json:"plan_digest,omitempty"`
+	WriteScopeDigest      string                     `json:"write_scope_digest,omitempty"`
+	EffectNamespace       string                     `json:"effect_namespace,omitempty"`
+	OccurrenceID          string                     `json:"occurrence_id,omitempty"`
+	HostContextProjection *hostprojection.Descriptor `json:"-"`
+	HostContextResolver   hostprojection.Resolver    `json:"-"`
 }
 
 func (r WorkflowResumeRequest) Validate() error {
@@ -499,7 +558,21 @@ func (r WorkflowResumeRequest) Validate() error {
 }
 
 func (r WorkflowResumeRequest) identity() string {
-	b, _ := json.Marshal(r)
+	type identityRequest struct {
+		Request           WorkflowResumeRequest         `json:"request"`
+		ProjectionDigest  string                        `json:"projection_digest,omitempty"`
+		ProjectionBinding *hostprojection.SourceBinding `json:"projection_binding,omitempty"`
+	}
+	projectionDigest := ""
+	var projectionBinding *hostprojection.SourceBinding
+	if r.HostContextProjection != nil {
+		projectionDigest = strings.TrimSpace(r.HostContextProjection.Digest)
+		if r.HostContextProjection.Binding != nil {
+			binding := *r.HostContextProjection.Binding
+			projectionBinding = &binding
+		}
+	}
+	b, _ := json.Marshal(identityRequest{Request: r, ProjectionDigest: projectionDigest, ProjectionBinding: projectionBinding})
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }

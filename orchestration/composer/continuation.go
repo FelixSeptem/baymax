@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
@@ -93,31 +94,32 @@ func (r ChildContinuationRef) Validate() error {
 }
 
 type ChildContinuation struct {
-	Ref                    ChildContinuationRef  `json:"ref"`
-	Target                 ChildTarget           `json:"target"`
-	Claimed                scheduler.ClaimedTask `json:"claimed"`
-	GraphID                string                `json:"graph_id"`
-	GraphVersion           string                `json:"graph_version"`
-	GraphDigest            string                `json:"graph_digest"`
-	ParentRunID            string                `json:"parent_run_id,omitempty"`
-	RunID                  string                `json:"run_id"`
-	SessionID              string                `json:"session_id,omitempty"`
-	CausationID            string                `json:"causation_id,omitempty"`
-	AuthorityDigest        string                `json:"authority_digest,omitempty"`
-	PlanDigest             string                `json:"plan_digest,omitempty"`
-	WriteScopeDigest       string                `json:"write_scope_digest,omitempty"`
-	EffectNamespace        string                `json:"effect_namespace,omitempty"`
-	OccurrenceID           string                `json:"occurrence_id,omitempty"`
-	PauseReason            ChildPauseReason      `json:"pause_reason"`
-	PendingActionReference string                `json:"pending_action_reference,omitempty"`
-	ConsumedBudget         int64                 `json:"consumed_budget,omitempty"`
-	OriginalDeadline       time.Time             `json:"original_deadline,omitempty"`
-	CompletedEffectRefs    []string              `json:"completed_effect_refs,omitempty"`
-	PredecessorID          string                `json:"predecessor_id,omitempty"`
-	SuccessorID            string                `json:"successor_id,omitempty"`
-	Generation             uint64                `json:"generation"`
-	CreatedAt              time.Time             `json:"created_at"`
-	ExpiresAt              time.Time             `json:"expires_at"`
+	Ref                    ChildContinuationRef          `json:"ref"`
+	Target                 ChildTarget                   `json:"target"`
+	Claimed                scheduler.ClaimedTask         `json:"claimed"`
+	GraphID                string                        `json:"graph_id"`
+	GraphVersion           string                        `json:"graph_version"`
+	GraphDigest            string                        `json:"graph_digest"`
+	ParentRunID            string                        `json:"parent_run_id,omitempty"`
+	RunID                  string                        `json:"run_id"`
+	SessionID              string                        `json:"session_id,omitempty"`
+	CausationID            string                        `json:"causation_id,omitempty"`
+	AuthorityDigest        string                        `json:"authority_digest,omitempty"`
+	PlanDigest             string                        `json:"plan_digest,omitempty"`
+	WriteScopeDigest       string                        `json:"write_scope_digest,omitempty"`
+	EffectNamespace        string                        `json:"effect_namespace,omitempty"`
+	OccurrenceID           string                        `json:"occurrence_id,omitempty"`
+	PauseReason            ChildPauseReason              `json:"pause_reason"`
+	PendingActionReference string                        `json:"pending_action_reference,omitempty"`
+	ConsumedBudget         int64                         `json:"consumed_budget,omitempty"`
+	OriginalDeadline       time.Time                     `json:"original_deadline,omitempty"`
+	CompletedEffectRefs    []string                      `json:"completed_effect_refs,omitempty"`
+	PredecessorID          string                        `json:"predecessor_id,omitempty"`
+	SuccessorID            string                        `json:"successor_id,omitempty"`
+	Generation             uint64                        `json:"generation"`
+	CreatedAt              time.Time                     `json:"created_at"`
+	ExpiresAt              time.Time                     `json:"expires_at"`
+	HostContextBinding     *hostprojection.SourceBinding `json:"host_context_binding,omitempty"`
 }
 
 func (c ChildContinuation) Validate() error {
@@ -149,6 +151,9 @@ func (c ChildContinuation) Validate() error {
 	}
 	if c.CreatedAt.IsZero() || c.ExpiresAt.IsZero() || !c.ExpiresAt.After(c.CreatedAt) {
 		return ErrChildContinuationMalformed
+	}
+	if err := validateChildHostContextBinding(c); err != nil {
+		return err
 	}
 	payload, err := json.Marshal(c)
 	if err != nil || len(payload) > ChildContinuationMaxBytes {
@@ -217,24 +222,44 @@ func SealChildContinuation(in ChildContinuation) (ChildContinuation, error) {
 func (c ChildContinuation) Detached() ChildContinuation {
 	out := c
 	out.CompletedEffectRefs = append([]string(nil), c.CompletedEffectRefs...)
+	if c.HostContextBinding != nil {
+		binding := *c.HostContextBinding
+		out.HostContextBinding = &binding
+	}
 	out.Claimed.Record.Task.Payload = cloneMap(c.Claimed.Record.Task.Payload)
 	out.Claimed.Record.Result = cloneMap(c.Claimed.Record.Result)
 	return out
 }
 
 type ChildResumeRequest struct {
-	Ref              ChildContinuationRef    `json:"ref"`
-	GraphDigest      string                  `json:"graph_digest"`
-	Generation       uint64                  `json:"generation"`
-	Target           ChildTarget             `json:"target"`
-	IdempotencyKey   string                  `json:"idempotency_key"`
-	AuthorityDigest  string                  `json:"authority_digest,omitempty"`
-	PlanDigest       string                  `json:"plan_digest,omitempty"`
-	WriteScopeDigest string                  `json:"write_scope_digest,omitempty"`
-	EffectNamespace  string                  `json:"effect_namespace,omitempty"`
-	OccurrenceID     string                  `json:"occurrence_id,omitempty"`
-	CausationID      string                  `json:"causation_id,omitempty"`
-	Deployment       types.DeploymentRequest `json:"deployment,omitempty"`
+	Ref                   ChildContinuationRef       `json:"ref"`
+	GraphDigest           string                     `json:"graph_digest"`
+	Generation            uint64                     `json:"generation"`
+	Target                ChildTarget                `json:"target"`
+	IdempotencyKey        string                     `json:"idempotency_key"`
+	AuthorityDigest       string                     `json:"authority_digest,omitempty"`
+	PlanDigest            string                     `json:"plan_digest,omitempty"`
+	WriteScopeDigest      string                     `json:"write_scope_digest,omitempty"`
+	EffectNamespace       string                     `json:"effect_namespace,omitempty"`
+	OccurrenceID          string                     `json:"occurrence_id,omitempty"`
+	CausationID           string                     `json:"causation_id,omitempty"`
+	Deployment            types.DeploymentRequest    `json:"deployment,omitempty"`
+	HostContextProjection *hostprojection.Descriptor `json:"-"`
+	HostContextResolver   hostprojection.Resolver    `json:"-"`
+}
+
+func validateChildHostContextBinding(c ChildContinuation) error {
+	binding := c.HostContextBinding
+	if binding == nil {
+		return nil
+	}
+	if binding.Form != hostprojection.SourceFormChild || binding.OwnerNamespace == "" || binding.SourceID == "" || binding.NodeID == "" || binding.ContinuationID == "" || binding.ContinuationDigest == "" || binding.Generation == 0 {
+		return ErrChildContinuationMalformed
+	}
+	if binding.OwnerNamespace != c.Ref.OwnerNamespace || binding.SourceID != c.RunID || binding.NodeID != c.Claimed.Record.Task.TaskID || binding.ContinuationID != c.Claimed.Attempt.AttemptID || binding.ContinuationDigest != c.GraphDigest || binding.Generation != c.Generation {
+		return ErrChildContinuationForeign
+	}
+	return nil
 }
 
 func (r ChildResumeRequest) Validate() error {
@@ -256,7 +281,21 @@ func (r ChildResumeRequest) Validate() error {
 }
 
 func (r ChildResumeRequest) identity() string {
-	b, _ := json.Marshal(r)
+	type identityRequest struct {
+		Request           ChildResumeRequest            `json:"request"`
+		ProjectionDigest  string                        `json:"projection_digest,omitempty"`
+		ProjectionBinding *hostprojection.SourceBinding `json:"projection_binding,omitempty"`
+	}
+	projectionDigest := ""
+	var projectionBinding *hostprojection.SourceBinding
+	if r.HostContextProjection != nil {
+		projectionDigest = strings.TrimSpace(r.HostContextProjection.Digest)
+		if r.HostContextProjection.Binding != nil {
+			binding := *r.HostContextProjection.Binding
+			projectionBinding = &binding
+		}
+	}
+	b, _ := json.Marshal(identityRequest{Request: r, ProjectionDigest: projectionDigest, ProjectionBinding: projectionBinding})
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }

@@ -127,6 +127,18 @@ type HostContextPlanCorrelation struct {
 	Digest      string `json:"digest"`
 }
 
+// HostContextSourceBinding retains identity-only owner correlation across a
+// handoff. It is not authorization and contains no resolved source material.
+type HostContextSourceBinding struct {
+	Form               string `json:"form"`
+	OwnerNamespace     string `json:"owner_namespace"`
+	SourceID           string `json:"source_id"`
+	NodeID             string `json:"node_id"`
+	ContinuationID     string `json:"continuation_id"`
+	ContinuationDigest string `json:"continuation_digest"`
+	Generation         uint64 `json:"generation"`
+}
+
 // HostContextProjectionCorrelation is additive and nullable so legacy
 // handoff consumers retain their existing behavior. It deliberately excludes
 // source bodies, credentials, business authorization, and effect payloads.
@@ -140,6 +152,7 @@ type HostContextProjectionCorrelation struct {
 	SourceReferences  []HostContextSourceReference  `json:"source_references"`
 	Parent            *HostContextParentCorrelation `json:"parent,omitempty"`
 	Plan              *HostContextPlanCorrelation   `json:"plan,omitempty"`
+	Binding           *HostContextSourceBinding     `json:"binding,omitempty"`
 }
 
 type Handoff struct {
@@ -262,6 +275,21 @@ func validateHostContextProjectionCorrelation(correlation *HostContextProjection
 	}
 	if correlation.Plan != nil && (strings.TrimSpace(correlation.Plan.PlanID) == "" || correlation.Plan.PlanVersion <= 0 || strings.TrimSpace(correlation.Plan.Digest) == "") {
 		return errors.New("invalid host context projection plan correlation")
+	}
+	if binding := correlation.Binding; binding != nil {
+		switch binding.Form {
+		case "direct", "child", "team", "workflow", "mailbox":
+		default:
+			return errors.New("invalid host context projection source form")
+		}
+		for _, value := range []string{binding.OwnerNamespace, binding.SourceID, binding.NodeID, binding.ContinuationID, binding.ContinuationDigest} {
+			if strings.TrimSpace(value) == "" || len(value) > 256 {
+				return errors.New("invalid host context projection source binding")
+			}
+		}
+		if len(binding.ContinuationDigest) > 128 || binding.Generation == 0 {
+			return errors.New("invalid host context projection continuation binding")
+		}
 	}
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -72,32 +73,33 @@ type TeamTaskContinuation struct {
 }
 
 type TeamContinuation struct {
-	Ref                          TeamContinuationRef    `json:"ref"`
-	TeamID                       string                 `json:"team_id"`
-	GraphVersion                 string                 `json:"graph_version"`
-	GraphDigest                  string                 `json:"graph_digest"`
-	RunID                        string                 `json:"run_id"`
-	SessionID                    string                 `json:"session_id"`
-	ParentRunID                  string                 `json:"parent_run_id,omitempty"`
-	CausationID                  string                 `json:"causation_id,omitempty"`
-	AuthorityDigest              string                 `json:"authority_digest"`
-	PlanDigest                   string                 `json:"plan_digest"`
-	WriteScopeDigest             string                 `json:"write_scope_digest"`
-	EffectNamespace              string                 `json:"effect_namespace"`
-	OccurrenceID                 string                 `json:"occurrence_id"`
-	Strategy                     Strategy               `json:"strategy"`
-	PauseReason                  TeamPauseReason        `json:"pause_reason"`
-	Tasks                        []TeamTaskContinuation `json:"tasks"`
-	PendingTaskIDs               []string               `json:"pending_task_ids"`
-	PendingActionReference       string                 `json:"pending_action_reference,omitempty"`
-	ConsumedBudget               int64                  `json:"consumed_budget,omitempty"`
-	OriginalDeadline             time.Time              `json:"original_deadline,omitempty"`
-	TerminalArbitrationReference string                 `json:"terminal_arbitration_reference,omitempty"`
-	PredecessorCheckpointID      string                 `json:"predecessor_checkpoint_id,omitempty"`
-	SuccessorCheckpointID        string                 `json:"successor_checkpoint_id,omitempty"`
-	Generation                   uint64                 `json:"generation"`
-	CreatedAt                    time.Time              `json:"created_at"`
-	ExpiresAt                    time.Time              `json:"expires_at"`
+	Ref                          TeamContinuationRef                     `json:"ref"`
+	TeamID                       string                                  `json:"team_id"`
+	GraphVersion                 string                                  `json:"graph_version"`
+	GraphDigest                  string                                  `json:"graph_digest"`
+	RunID                        string                                  `json:"run_id"`
+	SessionID                    string                                  `json:"session_id"`
+	ParentRunID                  string                                  `json:"parent_run_id,omitempty"`
+	CausationID                  string                                  `json:"causation_id,omitempty"`
+	AuthorityDigest              string                                  `json:"authority_digest"`
+	PlanDigest                   string                                  `json:"plan_digest"`
+	WriteScopeDigest             string                                  `json:"write_scope_digest"`
+	EffectNamespace              string                                  `json:"effect_namespace"`
+	OccurrenceID                 string                                  `json:"occurrence_id"`
+	Strategy                     Strategy                                `json:"strategy"`
+	PauseReason                  TeamPauseReason                         `json:"pause_reason"`
+	Tasks                        []TeamTaskContinuation                  `json:"tasks"`
+	PendingTaskIDs               []string                                `json:"pending_task_ids"`
+	PendingActionReference       string                                  `json:"pending_action_reference,omitempty"`
+	ConsumedBudget               int64                                   `json:"consumed_budget,omitempty"`
+	OriginalDeadline             time.Time                               `json:"original_deadline,omitempty"`
+	TerminalArbitrationReference string                                  `json:"terminal_arbitration_reference,omitempty"`
+	PredecessorCheckpointID      string                                  `json:"predecessor_checkpoint_id,omitempty"`
+	SuccessorCheckpointID        string                                  `json:"successor_checkpoint_id,omitempty"`
+	Generation                   uint64                                  `json:"generation"`
+	CreatedAt                    time.Time                               `json:"created_at"`
+	ExpiresAt                    time.Time                               `json:"expires_at"`
+	HostContextBindings          map[string]hostprojection.SourceBinding `json:"host_context_bindings,omitempty"`
 }
 
 func (r TeamContinuationRef) Validate() error {
@@ -116,6 +118,12 @@ func (c TeamContinuation) Detached() TeamContinuation {
 	out := c
 	out.Tasks = append([]TeamTaskContinuation(nil), c.Tasks...)
 	out.PendingTaskIDs = append([]string(nil), c.PendingTaskIDs...)
+	if c.HostContextBindings != nil {
+		out.HostContextBindings = make(map[string]hostprojection.SourceBinding, len(c.HostContextBindings))
+		for id, binding := range c.HostContextBindings {
+			out.HostContextBindings[id] = binding
+		}
+	}
 	return out
 }
 
@@ -171,7 +179,11 @@ func (c TeamContinuation) validateShape() error {
 	if c.Ref.TeamID != c.TeamID || c.Ref.GraphVersion != c.GraphVersion || c.Ref.RunID != c.RunID || c.Ref.SessionID != c.SessionID || c.Ref.ParentRunID != c.ParentRunID || c.Ref.CausationID != c.CausationID {
 		return ErrTeamContinuationForeign
 	}
+	if len(c.HostContextBindings) > teamContinuationMaxEntries {
+		return ErrTeamContinuationMalformed
+	}
 	seen := make(map[string]struct{}, len(c.Tasks))
+	statuses := make(map[string]TaskStatus, len(c.Tasks))
 	for _, task := range c.Tasks {
 		if task.TaskID == "" || task.Attempts < 0 {
 			return ErrTeamContinuationMalformed
@@ -180,10 +192,24 @@ func (c TeamContinuation) validateShape() error {
 			return ErrTeamContinuationMalformed
 		}
 		seen[task.TaskID] = struct{}{}
+		statuses[task.TaskID] = task.Status
 	}
+	pending := make(map[string]struct{}, len(c.PendingTaskIDs))
 	for _, id := range c.PendingTaskIDs {
-		if _, ok := seen[id]; !ok {
+		if _, ok := seen[id]; !ok || statuses[id] != TaskStatusPending {
 			return ErrTeamContinuationMalformed
+		}
+		if _, duplicate := pending[id]; duplicate {
+			return ErrTeamContinuationMalformed
+		}
+		pending[id] = struct{}{}
+	}
+	for id, binding := range c.HostContextBindings {
+		if _, ok := pending[id]; !ok {
+			return ErrTeamContinuationForeign
+		}
+		if id == "" || binding.Form != hostprojection.SourceFormTeam || binding.OwnerNamespace != c.Ref.OwnerNamespace || binding.SourceID != c.RunID || binding.NodeID != id || binding.ContinuationID != c.TeamID || binding.ContinuationDigest != c.GraphDigest || binding.Generation != c.Generation {
+			return ErrTeamContinuationForeign
 		}
 	}
 	b, err := json.Marshal(c)
@@ -194,18 +220,20 @@ func (c TeamContinuation) validateShape() error {
 }
 
 type TeamResumeRequest struct {
-	Ref              TeamContinuationRef     `json:"ref"`
-	GraphDigest      string                  `json:"graph_digest"`
-	Generation       uint64                  `json:"generation"`
-	Strategy         Strategy                `json:"strategy"`
-	IdempotencyKey   string                  `json:"idempotency_key"`
-	AuthorityDigest  string                  `json:"authority_digest"`
-	PlanDigest       string                  `json:"plan_digest"`
-	WriteScopeDigest string                  `json:"write_scope_digest"`
-	EffectNamespace  string                  `json:"effect_namespace"`
-	OccurrenceID     string                  `json:"occurrence_id"`
-	CausationID      string                  `json:"causation_id"`
-	Deployment       types.DeploymentRequest `json:"deployment,omitempty"`
+	Ref                    TeamContinuationRef                   `json:"ref"`
+	GraphDigest            string                                `json:"graph_digest"`
+	Generation             uint64                                `json:"generation"`
+	Strategy               Strategy                              `json:"strategy"`
+	IdempotencyKey         string                                `json:"idempotency_key"`
+	AuthorityDigest        string                                `json:"authority_digest"`
+	PlanDigest             string                                `json:"plan_digest"`
+	WriteScopeDigest       string                                `json:"write_scope_digest"`
+	EffectNamespace        string                                `json:"effect_namespace"`
+	OccurrenceID           string                                `json:"occurrence_id"`
+	CausationID            string                                `json:"causation_id"`
+	Deployment             types.DeploymentRequest               `json:"deployment,omitempty"`
+	HostContextProjections map[string]*hostprojection.Descriptor `json:"-"`
+	HostContextResolver    hostprojection.Resolver               `json:"-"`
 }
 
 func (r TeamResumeRequest) Validate() error {
@@ -218,7 +246,16 @@ func (r TeamResumeRequest) Validate() error {
 	return nil
 }
 func (r TeamResumeRequest) identity() string {
-	b, _ := json.Marshal(r)
+	digests := make(map[string]string, len(r.HostContextProjections))
+	for id, descriptor := range r.HostContextProjections {
+		if descriptor != nil {
+			digests[id] = descriptor.Digest
+		}
+	}
+	b, _ := json.Marshal(struct {
+		Request           TeamResumeRequest `json:"request"`
+		ProjectionDigests map[string]string `json:"projection_digests,omitempty"`
+	}{Request: r, ProjectionDigests: digests})
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
@@ -728,7 +765,12 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 		}
 		tasks = append(tasks, TeamTaskContinuation{TaskID: id, Status: record.Status, Vote: record.Vote, OutputDigest: outputDigest})
 	}
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pendingTaskIDs(plan, records), PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour)})
+	pending := pendingTaskIDs(plan, records)
+	bindings, err := teamHostContextBindings(plan.HostContextBindings, pending, e.continuationNamespace, plan, teamPlanDigest(plan), 1)
+	if err != nil {
+		return Result{}, err
+	}
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pending, PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), HostContextBindings: bindings})
 	if err != nil {
 		return Result{}, err
 	}
@@ -739,4 +781,57 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 	result.TeamCheckpoint = &continuation.Ref
 	result.PauseReason = pause.Reason
 	return result, nil
+}
+
+func teamHostContextBindings(input map[string]hostprojection.SourceBinding, pendingIDs []string, ownerNamespace string, plan Plan, graphDigest string, generation uint64) (map[string]hostprojection.SourceBinding, error) {
+	if len(input) == 0 || len(pendingIDs) == 0 {
+		if len(input) > 0 {
+			return nil, ErrTeamContinuationForeign
+		}
+		return nil, nil
+	}
+	if len(input) > teamContinuationMaxEntries {
+		return nil, ErrTeamContinuationMalformed
+	}
+	pending := make(map[string]struct{}, len(pendingIDs))
+	for _, id := range pendingIDs {
+		pending[id] = struct{}{}
+	}
+	out := make(map[string]hostprojection.SourceBinding, len(input))
+	for id, requested := range input {
+		if requested.Form != hostprojection.SourceFormTeam {
+			return nil, ErrTeamContinuationForeign
+		}
+		found := false
+		local := false
+		for _, task := range plan.Tasks {
+			if task.TaskID == id {
+				found = true
+				local = task.Target == "" || task.Target == TaskTargetLocal
+				break
+			}
+		}
+		if !found {
+			return nil, ErrTeamContinuationForeign
+		}
+		if !local {
+			return nil, ErrTeamContinuationUnsupported
+		}
+		if _, ok := pending[id]; !ok || requested.Form != hostprojection.SourceFormTeam {
+			continue
+		}
+		out[id] = hostprojection.SourceBinding{
+			Form:               hostprojection.SourceFormTeam,
+			OwnerNamespace:     ownerNamespace,
+			SourceID:           plan.RunID,
+			NodeID:             id,
+			ContinuationID:     plan.TeamID,
+			ContinuationDigest: graphDigest,
+			Generation:         generation,
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }

@@ -18,16 +18,19 @@ type HostContextProjectionFixture struct {
 }
 
 type HostContextProjectionReplayFixture struct {
-	CaseID                    string                    `json:"case_id"`
-	Descriptor                hostprojection.Descriptor `json:"descriptor"`
-	CanonicalizeFixtureDigest bool                      `json:"canonicalize_fixture_digest,omitempty"`
-	Authorization             string                    `json:"authorization,omitempty"`
-	SourceAvailability        string                    `json:"source_availability,omitempty"`
-	Restore                   string                    `json:"restore,omitempty"`
-	SideEffectBeforeRejection bool                      `json:"side_effect_before_rejection,omitempty"`
-	ExpectedReason            string                    `json:"expected_reason,omitempty"`
-	Run                       string                    `json:"run"`
-	Stream                    string                    `json:"stream"`
+	CaseID                    string                        `json:"case_id"`
+	Descriptor                hostprojection.Descriptor     `json:"descriptor"`
+	ExpectedBinding           *hostprojection.SourceBinding `json:"expected_binding,omitempty"`
+	OwnerSupport              string                        `json:"owner_support,omitempty"`
+	ContinuationState         string                        `json:"continuation_state,omitempty"`
+	CanonicalizeFixtureDigest bool                          `json:"canonicalize_fixture_digest,omitempty"`
+	Authorization             string                        `json:"authorization,omitempty"`
+	SourceAvailability        string                        `json:"source_availability,omitempty"`
+	Restore                   string                        `json:"restore,omitempty"`
+	SideEffectBeforeRejection bool                          `json:"side_effect_before_rejection,omitempty"`
+	ExpectedReason            string                        `json:"expected_reason,omitempty"`
+	Run                       string                        `json:"run"`
+	Stream                    string                        `json:"stream"`
 }
 
 type HostContextProjectionReplayCase struct {
@@ -102,9 +105,20 @@ func ReplayHostContextProjectionFixtureJSON(raw []byte) (HostContextProjectionRe
 			}
 		} else {
 			caseResult.Digest = admitted.Descriptor().Digest
-			caseResult.Reason, err = declaredReplayReason(item)
-			if err != nil {
-				return HostContextProjectionReplayResult{}, err
+			if item.ExpectedBinding != nil {
+				if bindingErr := hostprojection.RequireBinding(admitted, *item.ExpectedBinding); bindingErr != nil {
+					classified, ok := bindingErr.(*hostprojection.Error)
+					if !ok {
+						return HostContextProjectionReplayResult{}, fmt.Errorf("host_context.replay_schema_drift")
+					}
+					caseResult.Reason = string(classified.Code)
+				}
+			}
+			if caseResult.Reason == "" {
+				caseResult.Reason, err = declaredReplayReason(item)
+				if err != nil {
+					return HostContextProjectionReplayResult{}, err
+				}
 			}
 		}
 		if item.ExpectedReason != "" && item.ExpectedReason != caseResult.Reason {
@@ -124,7 +138,7 @@ func validateReplayReferenceOnly(item HostContextProjectionReplayFixture, descri
 			return fmt.Errorf("host_context.privacy_leakage")
 		}
 	}
-	for _, value := range []string{item.Authorization, item.SourceAvailability, item.Restore, item.ExpectedReason} {
+	for _, value := range []string{item.Authorization, item.SourceAvailability, item.Restore, item.ExpectedReason, item.OwnerSupport, item.ContinuationState} {
 		if strings.Contains(strings.ToLower(value), "body") {
 			return fmt.Errorf("host_context.privacy_leakage")
 		}
@@ -135,6 +149,24 @@ func validateReplayReferenceOnly(item HostContextProjectionReplayFixture, descri
 func declaredReplayReason(item HostContextProjectionReplayFixture) (string, error) {
 	if item.SideEffectBeforeRejection {
 		return "host_context.side_effect_before_rejection", nil
+	}
+	switch item.OwnerSupport {
+	case "", "supported":
+	case "unsupported":
+		return "host_context.unsupported_capability", nil
+	default:
+		return "", fmt.Errorf("host_context.replay_schema_drift")
+	}
+	switch item.ContinuationState {
+	case "", "current":
+	case "stale", "foreign":
+		return string(hostprojection.CodeSourceBindingMismatch), nil
+	case "expired":
+		return "host_context.source_binding_expired", nil
+	case "duplicate_restore":
+		return "host_context.duplicate_restore", nil
+	default:
+		return "", fmt.Errorf("host_context.replay_schema_drift")
 	}
 	switch item.Authorization {
 	case "", "current":

@@ -83,6 +83,19 @@ of already executed effects is provided. See the offline
 [example](../../examples/host-execution-plan/README.md).
 
 `DefaultCapabilityManifest` remains a conservative source-unbound declaration.
+`CapabilityManifestWithHostContextEvidence(ctx, source)` may promote
+`host_context_assembly` and `host_context_handoff_restore` only when that
+explicit source owner supplies complete detached evidence: its exact form and
+owner namespace, allowed native node scope, projection/continuation versions,
+module revision, same-host deployment fence, retention/expiry, mandatory
+resolver reauthorization and one contract reference per promoted cell. This is
+an owner-local declaration: it cannot promote a sibling form, imply execution
+restore, or be inferred from an owner package, continuation DTO or history
+reader. `mailbox_async` remains rejected with
+`mailbox_handler_context_safe_point_unsupported`; lifecycle
+message/delivery/lease/attempt evidence does not establish a handler/effect
+safe point.
+
 Use `CapabilityManifestWithHistory(ctx, reader, source)` to obtain concrete
 mailbox source facts from the existing owner: only a matching source-bound
 capability can enable after-cursor replay, and durable history additionally

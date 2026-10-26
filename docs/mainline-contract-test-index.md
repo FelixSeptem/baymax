@@ -88,6 +88,10 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 
 归档 165（`establish-host-context-assembly-handoff-contract`）已交付 dedicated contract evidence：`context/hostprojection` 的 descriptor bounds/digest/capability/resolver tests，`context/assembler` 的 validation-before-journal、handoff correlation、privacy 和 current-authorization restore tests，`core/runner` 的真实 Run/Stream + fake tool 在两轮 assembly 下的 normalized projection/handoff lifecycle/bounded rejection parity、等价 legal handoff 的 explicit restore parity 和 revoked-source fail-closed evidence，以及 incomplete/saturated `budget_projection.v1` 在 existing context-pressure/compaction 下不发生写回或终态改变的 tests。`tool/diagnosticsreplay` 的十例 reference-only fixture 覆盖 malformed/bounds/privacy/authorization/reference/digest/capability/plan/restore/Run-Stream/side-effect drift；离线 example smoke 为 `go test ./examples/host-context-assembly -run TestOfflineExampleEmitsContractMarkers -count=1`。已交付的双平台 blocking gate 为 `scripts/check-host-context-assembly-handoff-contract.ps1` 与 `.sh`：均调用 projection/privacy、Run/Stream/budget/handoff/restore、replay、example 和 ownership suites；Go 不可用时显式报 `unavailable` 并失败。两个 gate 已静态接入标准 quality path，且 contribution test 断言此接线；完整的质量验证与平台限制说明见归档 [verification record](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/verification.md)。
 
+active `extend-composite-context-assembly-handoff` 的 evidence 入口包括 `orchestration/composer/continuation_runtime_test.go::TestComposerResumeChildContinuationResolvesBoundContextBeforeExecution`、`orchestration/teams/continuation_test.go::TestTeamContinuationResolvesContextOnlyForBoundPendingMember` / `TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim` / `TestTeamContextResumeRunStreamParity`、`orchestration/workflow/continuation_test.go::TestWorkflowContinuationRejectsForeignStepProjectionBeforeResolverOrClaim` / `TestWorkflowContinuationResolvesBoundContextOnlyForPendingStep`、`orchestration/planbridge/capability_test.go::TestCapabilityManifestDeclaresContextDimensionsIndependently`、`tool/diagnosticsreplay/testdata/host_context_projection.v1.json::workflow-cross-step-binding` / `team-foreign-member-binding` / `mailbox-unsupported-owner` 与 `examples/host-context-assembly` 的 `host_context.workflow_context_resolved` / `host_context.workflow_cross_step_rejected` markers。双平台 gate `scripts/check-host-context-assembly-handoff-contract.sh/.ps1` 执行这些 owner suites。child/team/workflow 现有 owner API 已有 binding evidence，但 capability manifest 默认仍将所有 context cells 标为 unsupported；mailbox continuation 只投影 lifecycle outcome、没有 context-aware handler safe point，不能把示例、DTO 或 lifecycle replay 当作 capability promotion。完整差异和未完成任务见 active change 的 `tasks.md` 与后续 `verification.md`。
+
+当前已验证的增量基线：`context/hostprojection` 覆盖 source binding 的 canonical digest、detached snapshot、malformed/foreign rejection 和 foreign-node resolver-before-claim rejection；`context/assembler`/`context/handoff` 覆盖 binding correlation round-trip；`orchestration/planbridge` 覆盖五种 execution form 的独立 context cells、owner namespace/node-scope/API evidence 校验以及 assembly-only 不推导 handoff/restore。上述测试只证明 contract boundary，不提升任何 composite form 的 runtime capability。
+
 ## 索引
 
 ### Dynamic action pause/resume（当前 change）
@@ -594,6 +598,21 @@ automatic redispatch.
 | rejection before publish/Run on missing manifest or incompatible binding | `orchestration/planbridge/mailbox_binding_test.go` |
 | reference-only mailbox manifest/binding/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
 | dedicated shell/PowerShell contract gate | `scripts/check-mailbox-plan-bridge-contract.sh`, `scripts/check-mailbox-plan-bridge-contract.ps1` |
+
+## Composite host-context capability evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| form-local owner namespace/node/version/deployment/retention/expiry/current-resolver evidence is required for each promoted context cell | `orchestration/planbridge/capability.go::CapabilityManifestWithHostContextEvidence`, `orchestration/planbridge/capability_test.go::TestCapabilityManifestWithHostContextEvidencePromotesOnlyExplicitOwner` |
+| missing per-cell evidence, foreign owner namespace and lifecycle-only mailbox evidence fail closed without borrowing a sibling form's facts | `orchestration/planbridge/capability_test.go::TestCapabilityManifestWithHostContextEvidenceRejectsIncompleteOrForeignProjection`, `TestDefaultMailboxContextCellsNameLifecycleOnlyLimitation` |
+| owner integration, restart, resolver ordering, parity and reference-only replay remain separately evidenced; default planbridge cells are not promoted | `orchestration/{composer,teams,workflow}/*continuation*_test.go`, `tool/diagnosticsreplay/host_context_projection_test.go`, `scripts/check-host-context-assembly-handoff-contract.sh/.ps1` |
+
+`CapabilityManifestWithHostContextEvidence` does not execute a graph, invoke a
+resolver or create a store. It projects only a source owner's complete detached
+facts. Mailbox lifecycle continuation stays context unsupported until the
+mailbox owner exposes a message/delivery/lease/attempt-bound handler safe
+point; planbridge must not add a second consume loop, re-enqueue, or re-run a
+parent to emulate it.
 
 
 | Requirement | Evidence |

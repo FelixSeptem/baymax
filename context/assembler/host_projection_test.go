@@ -75,6 +75,11 @@ func TestAssemblerInjectsOnlyCurrentAuthorizedHostProjectionMaterial(t *testing.
 func TestAssemblerBuildHandoffRetainsOnlyHostProjectionCorrelation(t *testing.T) {
 	assembler := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
 	descriptor := validHostProjection(t)
+	descriptor.Binding = &hostprojection.SourceBinding{
+		Form: hostprojection.SourceFormWorkflow, OwnerNamespace: "workflow-owner", SourceID: "workflow-run",
+		NodeID: "step:review", ContinuationID: "checkpoint-7", ContinuationDigest: "sha256:checkpoint", Generation: 7,
+	}
+	descriptor.Digest, _ = hostprojection.CanonicalDigest(descriptor)
 	h, err := assembler.BuildHandoff(types.ContextAssembleRequest{
 		RunID:                 "run-host-projection-handoff",
 		Input:                 "handoff objective",
@@ -92,6 +97,17 @@ func TestAssemblerBuildHandoffRetainsOnlyHostProjectionCorrelation(t *testing.T)
 	}
 	if len(correlation.SourceReferences) != 1 || correlation.SourceReferences[0].Reference != "opaque://source/assembler" {
 		t.Fatalf("handoff source evidence = %#v, want opaque reference", correlation.SourceReferences)
+	}
+	if correlation.Binding == nil || correlation.Binding.NodeID != descriptor.Binding.NodeID || correlation.Binding.ContinuationID != descriptor.Binding.ContinuationID || correlation.Binding.Generation != descriptor.Binding.Generation {
+		t.Fatalf("handoff source binding = %#v, want exact native continuation binding", correlation.Binding)
+	}
+
+	restored, err := descriptorFromHandoffCorrelation(correlation)
+	if err != nil {
+		t.Fatalf("descriptorFromHandoffCorrelation() error = %v", err)
+	}
+	if _, err := hostprojection.Admit(restored); err != nil {
+		t.Fatalf("restored descriptor lost canonical source binding: %v", err)
 	}
 }
 

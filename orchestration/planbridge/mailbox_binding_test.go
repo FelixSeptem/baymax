@@ -243,11 +243,13 @@ func testMailboxManifest(t *testing.T) *CapabilityManifestReader {
 			DurableHistory: CapabilityUnsupported, AfterCursorReplay: CapabilityUnsupported,
 			CheckpointCreation: CapabilityUnsupported, CrossProcessRestore: CapabilityUnsupported,
 			InputRequired: CapabilityUnsupported, ApprovalRequired: CapabilityUnsupported, BudgetExhausted: CapabilityUnsupported,
+			HostContextAssembly: CapabilityUnsupported, HostContextHandoffRestore: CapabilityUnsupported,
 			Cancellation: CapabilitySupported, Timeout: CapabilitySupported, CausalRetry: CapabilitySupported,
 			MailboxContinuation: CapabilitySupported, RetentionPolicy: "source-owned", EvidenceReference: "fixture:mailbox-planbridge.v1",
 			UnsupportedReasons: map[string]string{
 				"durable_history": "Spec 2", "after_cursor_replay": "Spec 2", "checkpoint_creation": "Spec 3",
 				"cross_process_restore": "Spec 3", "input_required": "Spec 3", "approval_required": "Spec 3", "budget_exhausted": "Spec 3",
+				"host_context_assembly": "owner-bound context assembly is not configured", "host_context_handoff_restore": "owner-bound context restore is not configured",
 			},
 		}},
 	}

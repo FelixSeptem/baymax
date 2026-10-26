@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/FelixSeptem/baymax/context/hostprojection"
 )
 
 func openTestFileWorkflowStore(t *testing.T, root, namespace string) *FileWorkflowContinuationStore {
@@ -229,6 +231,240 @@ func TestWorkflowContinuationRejectsResumeBindingDriftBeforeDispatch(t *testing.
 	if !errors.Is(err, ErrWorkflowContinuationForeign) || dispatches != 0 {
 		t.Fatalf("binding drift err=%v dispatches=%d", err, dispatches)
 	}
+}
+
+func TestWorkflowContinuationRejectsForeignStepProjectionBeforeResolverOrClaim(t *testing.T) {
+	store := NewMemoryWorkflowContinuationStore("workflow")
+	first := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+		return StepOutput{}, PauseError{Reason: PauseInputRequired}
+	}}))
+	paused, err := first.Run(context.Background(), RunRequest{RunID: "run-context", SessionID: "session-context", HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow}, DSL: Definition{WorkflowID: "wf-context", Steps: []Step{{StepID: "pending", Kind: StepKindRunner}}}})
+	if !errors.Is(err, ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+		t.Fatalf("pause result=%#v err=%v", paused, err)
+	}
+	continuation, err := store.Load(context.Background(), *paused.WorkflowCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignBinding := hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow, OwnerNamespace: "workflow", SourceID: "run-context", NodeID: "other-step", ContinuationID: continuation.Ref.CheckpointID, ContinuationDigest: continuation.GraphDigest, Generation: continuation.Generation}
+	projection := hostprojection.Descriptor{SchemaVersion: hostprojection.SchemaVersionV1, ProjectionID: "wf-foreign", ProjectionVersion: 1, CapabilityDigest: "capability", Capabilities: []hostprojection.Capability{hostprojection.CapabilityRead}, SourceReferences: []hostprojection.SourceReference{{Reference: "source", Digest: "digest"}}, Binding: &foreignBinding}
+	projection.Digest, err = hostprojection.CanonicalDigest(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolverCalls := 0
+	resolver := workflowContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
+		resolverCalls++
+		return hostprojection.Material{Role: "private", Content: "must-not-resolve"}, nil
+	})
+	request := WorkflowResumeRequest{Ref: *paused.WorkflowCheckpoint, GraphDigest: paused.WorkflowGraphDigest, Generation: paused.WorkflowCheckpointGeneration, IdempotencyKey: "resume-foreign", HostContextProjection: &projection, HostContextResolver: resolver}
+	_, err = New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(contextTestAdapter{})).ResumeContinuation(context.Background(), request, nil)
+	if !errors.Is(err, ErrWorkflowContinuationConflict) || resolverCalls != 0 {
+		t.Fatalf("resume error=%v resolver calls=%d", err, resolverCalls)
+	}
+	if _, err := store.ClaimResume(context.Background(), request); err != nil {
+		t.Fatalf("foreign step projection consumed claim: %v", err)
+	}
+}
+
+func TestWorkflowContinuationResolvesBoundContextOnlyForPendingStep(t *testing.T) {
+	store := NewMemoryWorkflowContinuationStore("workflow")
+	completedCalls, pauseCalls := 0, 0
+	first := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(_ context.Context, _ string, step Step, _ int) (StepOutput, error) {
+		if step.StepID == "completed" {
+			completedCalls++
+			return StepOutput{EffectReference: "effect-completed"}, nil
+		}
+		pauseCalls++
+		return StepOutput{}, PauseError{Reason: PauseInputRequired}
+	}}))
+	def := Definition{WorkflowID: "wf-context-resume", Steps: []Step{{StepID: "completed", Kind: StepKindRunner}, {StepID: "pending", Kind: StepKindRunner, DependsOn: []string{"completed"}}}}
+	paused, err := first.Run(context.Background(), RunRequest{RunID: "run-context-resume", SessionID: "session-context-resume", HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow}, DSL: def})
+	if !errors.Is(err, ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+		t.Fatalf("pause result=%#v err=%v", paused, err)
+	}
+	continuation, err := store.Load(context.Background(), *paused.WorkflowCheckpoint)
+	if err != nil || continuation.HostContextBinding == nil {
+		t.Fatalf("continuation binding=%#v err=%v", continuation.HostContextBinding, err)
+	}
+	projection := hostprojection.Descriptor{SchemaVersion: hostprojection.SchemaVersionV1, ProjectionID: "wf-pending-context", ProjectionVersion: 1, CapabilityDigest: "capability", Capabilities: []hostprojection.Capability{hostprojection.CapabilityRead}, SourceReferences: []hostprojection.SourceReference{{Reference: "source", Digest: "digest"}}, Binding: continuation.HostContextBinding}
+	projection.Digest, err = hostprojection.CanonicalDigest(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolverCalls, contextCalls := 0, 0
+	resolver := workflowContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
+		resolverCalls++
+		return hostprojection.Material{Role: "private", Content: "authorized-context"}, nil
+	})
+	adapter := contextTestAdapter{execute: func(_ context.Context, _ string, step Step, _ int, resolution hostprojection.Resolution) (StepOutput, error) {
+		contextCalls++
+		if step.StepID != "pending" || resolution.Materials()[0].Content != "authorized-context" {
+			t.Fatalf("step=%q resolution=%#v", step.StepID, resolution.Materials())
+		}
+		return StepOutput{}, nil
+	}}
+	request := WorkflowResumeRequest{Ref: *paused.WorkflowCheckpoint, GraphDigest: paused.WorkflowGraphDigest, Generation: paused.WorkflowCheckpointGeneration, IdempotencyKey: "resume-context", HostContextProjection: &projection, HostContextResolver: resolver}
+	result, err := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(adapter)).ResumeContinuation(context.Background(), request, nil)
+	if err != nil || result.WorkflowStatus != "succeeded" || resolverCalls != 1 || contextCalls != 1 || completedCalls != 1 || pauseCalls != 1 {
+		t.Fatalf("result=%#v err=%v resolver=%d context=%d completed=%d paused=%d", result, err, resolverCalls, contextCalls, completedCalls, pauseCalls)
+	}
+}
+
+func TestWorkflowContextResumeRunStreamParity(t *testing.T) {
+	newPaused := func(t *testing.T) (WorkflowContinuationStore, RunResult) {
+		t.Helper()
+		store := NewMemoryWorkflowContinuationStore("workflow")
+		engine := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+			return StepOutput{}, PauseError{Reason: PauseInputRequired}
+		}}))
+		paused, err := engine.Run(context.Background(), RunRequest{
+			RunID: "run-context-parity", SessionID: "session-context-parity",
+			HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow},
+			DSL:                Definition{WorkflowID: "wf-context-parity", Steps: []Step{{StepID: "pending", Kind: StepKindRunner}}},
+		})
+		if !errors.Is(err, ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+			t.Fatalf("pause=%#v err=%v", paused, err)
+		}
+		return store, paused
+	}
+	projectionFor := func(t *testing.T, store WorkflowContinuationStore, paused RunResult) hostprojection.Descriptor {
+		t.Helper()
+		continuation, err := store.Load(context.Background(), *paused.WorkflowCheckpoint)
+		if err != nil || continuation.HostContextBinding == nil {
+			t.Fatalf("continuation=%#v err=%v", continuation, err)
+		}
+		projection := hostprojection.Descriptor{
+			SchemaVersion: hostprojection.SchemaVersionV1, ProjectionID: "workflow-context-parity", ProjectionVersion: 1,
+			CapabilityDigest: "workflow-context-capability", Capabilities: []hostprojection.Capability{hostprojection.CapabilityRead},
+			SourceReferences: []hostprojection.SourceReference{{Reference: "opaque://workflow/parity", Digest: "workflow-parity-source"}},
+			Binding:          continuation.HostContextBinding,
+		}
+		projection.Digest, err = hostprojection.CanonicalDigest(projection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return projection
+	}
+	newResolver := func(calls *int) workflowContextResolverFunc {
+		return func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
+			*calls++
+			return hostprojection.Material{Role: "private", Content: "parity-context"}, nil
+		}
+	}
+	newAdapter := func(calls *int) contextTestAdapter {
+		return contextTestAdapter{execute: func(_ context.Context, _ string, step Step, _ int, resolution hostprojection.Resolution) (StepOutput, error) {
+			*calls++
+			if step.StepID != "pending" || len(resolution.Materials()) != 1 || resolution.Materials()[0].Content != "parity-context" {
+				return StepOutput{}, errors.New("workflow context parity mismatch")
+			}
+			return StepOutput{EffectReference: "effect:parity"}, nil
+		}}
+	}
+
+	runStore, runPaused := newPaused(t)
+	runProjection := projectionFor(t, runStore, runPaused)
+	runResolverCalls, runContextCalls := 0, 0
+	runResult, runErr := New(WithWorkflowContinuationStore(runStore, "workflow"), WithStepAdapter(newAdapter(&runContextCalls))).ResumeContinuation(context.Background(), WorkflowResumeRequest{
+		Ref: *runPaused.WorkflowCheckpoint, GraphDigest: runPaused.WorkflowGraphDigest, Generation: runPaused.WorkflowCheckpointGeneration,
+		IdempotencyKey: "workflow-context-parity", HostContextProjection: &runProjection, HostContextResolver: newResolver(&runResolverCalls),
+	}, nil)
+
+	streamStore, streamPaused := newPaused(t)
+	streamProjection := projectionFor(t, streamStore, streamPaused)
+	streamResolverCalls, streamContextCalls, completedEvents := 0, 0, 0
+	streamResult, streamErr := New(WithWorkflowContinuationStore(streamStore, "workflow"), WithStepAdapter(newAdapter(&streamContextCalls))).ResumeContinuation(context.Background(), WorkflowResumeRequest{
+		Ref: *streamPaused.WorkflowCheckpoint, GraphDigest: streamPaused.WorkflowGraphDigest, Generation: streamPaused.WorkflowCheckpointGeneration,
+		IdempotencyKey: "workflow-context-parity", HostContextProjection: &streamProjection, HostContextResolver: newResolver(&streamResolverCalls),
+	}, func(event StreamEvent) error {
+		if event.Kind == "workflow.completed" {
+			completedEvents++
+		}
+		return nil
+	})
+	if runErr != nil || streamErr != nil || runResult.WorkflowStatus != streamResult.WorkflowStatus || runResult.RunID != streamResult.RunID || runResolverCalls != 1 || streamResolverCalls != 1 || runContextCalls != 1 || streamContextCalls != 1 || completedEvents != 1 {
+		t.Fatalf("Run/Stream context parity run=%#v err=%v stream=%#v err=%v resolver=%d/%d context=%d/%d completed=%d", runResult, runErr, streamResult, streamErr, runResolverCalls, streamResolverCalls, runContextCalls, streamContextCalls, completedEvents)
+	}
+}
+
+func TestWorkflowContextResumeRechecksExpiryAfterResolver(t *testing.T) {
+	store := NewMemoryWorkflowContinuationStore("workflow")
+	deadline := time.Now().Add(time.Minute)
+	first := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+		return StepOutput{}, PauseError{Reason: PauseBudgetExhausted, OriginalDeadline: deadline}
+	}}))
+	paused, err := first.Run(context.Background(), RunRequest{
+		RunID: "run-context-expiry-fence", SessionID: "session-context-expiry-fence",
+		HostContextBinding: &hostprojection.SourceBinding{Form: hostprojection.SourceFormWorkflow},
+		DSL:                Definition{WorkflowID: "wf-context-expiry-fence", Steps: []Step{{StepID: "pending", Kind: StepKindRunner}}},
+	})
+	if !errors.Is(err, ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+		t.Fatalf("pause=%#v err=%v", paused, err)
+	}
+	continuation, err := store.Load(context.Background(), *paused.WorkflowCheckpoint)
+	if err != nil || continuation.HostContextBinding == nil {
+		t.Fatalf("continuation=%#v err=%v", continuation, err)
+	}
+	projection := hostprojection.Descriptor{
+		SchemaVersion: hostprojection.SchemaVersionV1, ProjectionID: "workflow-context-expiry-fence", ProjectionVersion: 1,
+		CapabilityDigest: "workflow-context-capability", Capabilities: []hostprojection.Capability{hostprojection.CapabilityRead},
+		SourceReferences: []hostprojection.SourceReference{{Reference: "opaque://workflow/expiry-fence", Digest: "workflow-expiry-fence"}},
+		Binding:          continuation.HostContextBinding,
+	}
+	projection.Digest, err = hostprojection.CanonicalDigest(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := workflowContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
+		return hostprojection.Material{Role: "private", Content: "authorized-before-expiry"}, nil
+	})
+	stepCalls := 0
+	engine := New(WithWorkflowContinuationStore(store, "workflow"), WithStepAdapter(contextTestAdapter{execute: func(context.Context, string, Step, int, hostprojection.Resolution) (StepOutput, error) {
+		stepCalls++
+		return StepOutput{}, nil
+	}}))
+	nowCalls := 0
+	engine.now = func() time.Time {
+		nowCalls++
+		if nowCalls == 1 {
+			return deadline.Add(-time.Second)
+		}
+		return deadline
+	}
+	request := WorkflowResumeRequest{
+		Ref: *paused.WorkflowCheckpoint, GraphDigest: paused.WorkflowGraphDigest, Generation: paused.WorkflowCheckpointGeneration,
+		IdempotencyKey: "workflow-context-expiry-fence", HostContextProjection: &projection, HostContextResolver: resolver,
+	}
+	if _, err := engine.ResumeContinuation(context.Background(), request, nil); !errors.Is(err, ErrWorkflowContinuationExpired) {
+		t.Fatalf("expiry after resolver error=%v, want expired", err)
+	}
+	if stepCalls != 0 {
+		t.Fatalf("step calls=%d, want 0", stepCalls)
+	}
+	if record := store.records[paused.WorkflowCheckpoint.CheckpointID]; record.Claim != nil {
+		t.Fatalf("expiry after resolver consumed resume claim=%#v", record.Claim)
+	}
+}
+
+type workflowContextResolverFunc func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error)
+
+type contextTestAdapter struct {
+	execute func(context.Context, string, Step, int, hostprojection.Resolution) (StepOutput, error)
+}
+
+func (contextTestAdapter) Execute(context.Context, string, Step, int) (StepOutput, error) {
+	return StepOutput{}, nil
+}
+
+func (a contextTestAdapter) ExecuteWithHostContext(ctx context.Context, workflowID string, step Step, attempt int, resolution hostprojection.Resolution) (StepOutput, error) {
+	if a.execute == nil {
+		return StepOutput{}, nil
+	}
+	return a.execute(ctx, workflowID, step, attempt, resolution)
+}
+
+func (f workflowContextResolverFunc) ResolveHostContext(ctx context.Context, ref hostprojection.SourceReference) (hostprojection.Material, error) {
+	return f(ctx, ref)
 }
 
 func TestWorkflowContinuationCommitsCancellationTerminalEvidence(t *testing.T) {

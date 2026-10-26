@@ -20,8 +20,8 @@ func TestReplayHostContextProjectionFixtureIsDeterministicAndOffline(t *testing.
 	if err != nil {
 		t.Fatalf("second replay error = %v", err)
 	}
-	if len(first.Cases) != 10 || !first.Equal(second) {
-		t.Fatalf("replay results = %#v / %#v, want deterministic ten-case matrix", first, second)
+	if len(first.Cases) != 16 || !first.Equal(second) {
+		t.Fatalf("replay results = %#v / %#v, want deterministic sixteen-case matrix", first, second)
 	}
 	want := map[string]string{
 		"valid":                        "",
@@ -34,6 +34,12 @@ func TestReplayHostContextProjectionFixtureIsDeterministicAndOffline(t *testing.
 		"source-reference-loss":        "host_context.source_not_found",
 		"restore-rejected":             "host_context.source_not_found",
 		"side-effect-before-rejection": "host_context.side_effect_before_rejection",
+		"workflow-cross-step-binding":  "host_context.source_binding_mismatch",
+		"team-foreign-member-binding":  "host_context.source_binding_mismatch",
+		"workflow-stale-binding":       "host_context.source_binding_mismatch",
+		"workflow-expired-binding":     "host_context.source_binding_expired",
+		"mailbox-unsupported-owner":    "host_context.unsupported_capability",
+		"duplicate-restore":            "host_context.duplicate_restore",
 	}
 	got := make(map[string]string, len(first.Cases))
 	for _, item := range first.Cases {

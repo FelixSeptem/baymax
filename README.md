@@ -58,6 +58,8 @@ go run ./examples/01-chat-minimal
 
 - `bound-durable-store-deployment-scope`（已归档 174；same-host single-writer sequential reopen deployment scope）：已固化 source history、checkpoint、mailbox 与 composite owner store 的部署边界；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 typed `unsupported` 或 `recovery-required`。
 
+- `extend-composite-context-assembly-handoff`（进行中；owner-bound composite context projection）：已在 child attempt、team pending local member 与 workflow step 的既有 continuation owner 上绑定 `host_context_projection.v1`；mailbox continuation 只投影 lifecycle outcome、没有 handler execution safe point，因此本 change 保持 mailbox context unsupported，并将 message/delivery/lease context injection 留给后续 mailbox-owner 提案。未具备 owner-specific binding/evidence 的 form 仍拒绝，不把 direct assembly 能力外推。
+
 最近归档：
 
 - `establish-host-resume-admission-revalidation-contract`（归档 164）：宿主恢复准入重验证、完整 duplicate identity、Run/Stream/Host conformance、离线 replay、双平台 gate 与严格联合质量门禁。

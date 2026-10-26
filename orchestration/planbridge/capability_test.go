@@ -12,6 +12,15 @@ import (
 
 type workflowContinuationEvidence struct{}
 
+type hostContextEvidenceSource struct {
+	form     ExecutionForm
+	evidence HostContextCapabilityEvidence
+}
+
+func (s hostContextEvidenceSource) HostContextCapabilityEvidence(context.Context) (ExecutionForm, HostContextCapabilityEvidence, error) {
+	return s.form, s.evidence, nil
+}
+
 func (workflowContinuationEvidence) ContinuationCapabilities(context.Context) (types.ContinuationCapabilities, error) {
 	return types.ContinuationCapabilities{
 		ProfileVersion: "native_continuation.v1", SourceNamespace: "workflow", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "workflow-v1", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "same-host-single-writer", ExpiryPolicy: "24h", CheckpointCreation: true, CrossProcessRestore: true,
@@ -143,30 +152,34 @@ func TestCapabilityManifestRequiresExplicitDimensionAndPreservesSnapshot(t *test
 		ModuleRevision:  "revision",
 		APIVersion:      CapabilityManifestAPIVersion,
 		Forms: []ExecutionFormCapability{{
-			Form:                ExecutionFormMailboxAsync,
-			Admission:           CapabilitySupported,
-			NativeEvents:        CapabilitySupported,
-			DurableHistory:      CapabilityUnsupported,
-			AfterCursorReplay:   CapabilityUnsupported,
-			CheckpointCreation:  CapabilityUnsupported,
-			CrossProcessRestore: CapabilityUnsupported,
-			InputRequired:       CapabilityUnsupported,
-			ApprovalRequired:    CapabilityUnsupported,
-			BudgetExhausted:     CapabilityUnsupported,
-			Cancellation:        CapabilitySupported,
-			Timeout:             CapabilitySupported,
-			CausalRetry:         CapabilitySupported,
-			MailboxContinuation: CapabilitySupported,
-			RetentionPolicy:     "source-owned",
-			EvidenceReference:   "fixture:mailbox-planbridge.v1",
+			Form:                      ExecutionFormMailboxAsync,
+			Admission:                 CapabilitySupported,
+			NativeEvents:              CapabilitySupported,
+			DurableHistory:            CapabilityUnsupported,
+			AfterCursorReplay:         CapabilityUnsupported,
+			CheckpointCreation:        CapabilityUnsupported,
+			CrossProcessRestore:       CapabilityUnsupported,
+			InputRequired:             CapabilityUnsupported,
+			ApprovalRequired:          CapabilityUnsupported,
+			BudgetExhausted:           CapabilityUnsupported,
+			Cancellation:              CapabilitySupported,
+			Timeout:                   CapabilitySupported,
+			CausalRetry:               CapabilitySupported,
+			MailboxContinuation:       CapabilitySupported,
+			HostContextAssembly:       CapabilityUnsupported,
+			HostContextHandoffRestore: CapabilityUnsupported,
+			RetentionPolicy:           "source-owned",
+			EvidenceReference:         "fixture:mailbox-planbridge.v1",
 			UnsupportedReasons: map[string]string{
-				"durable_history":       "source journal is not part of Spec 1",
-				"after_cursor_replay":   "source journal is not part of Spec 1",
-				"checkpoint_creation":   "durable checkpoint is part of Spec 3",
-				"cross_process_restore": "durable checkpoint is part of Spec 3",
-				"input_required":        "mailbox pause continuation is part of Spec 3",
-				"approval_required":     "mailbox pause continuation is part of Spec 3",
-				"budget_exhausted":      "mailbox pause continuation is part of Spec 3",
+				"durable_history":              "source journal is not part of Spec 1",
+				"after_cursor_replay":          "source journal is not part of Spec 1",
+				"checkpoint_creation":          "durable checkpoint is part of Spec 3",
+				"cross_process_restore":        "durable checkpoint is part of Spec 3",
+				"input_required":               "mailbox pause continuation is part of Spec 3",
+				"approval_required":            "mailbox pause continuation is part of Spec 3",
+				"budget_exhausted":             "mailbox pause continuation is part of Spec 3",
+				"host_context_assembly":        "owner-bound context assembly is not configured",
+				"host_context_handoff_restore": "owner-bound context restore is not configured",
 			},
 		}},
 	}
@@ -211,6 +224,140 @@ func TestDefaultCapabilityManifestDeclaresEveryExecutionForm(t *testing.T) {
 		}
 		if entry.Admission == CapabilityUnknown || entry.NativeEvents == CapabilityUnknown || entry.Cancellation == CapabilityUnknown || entry.Timeout == CapabilityUnknown || entry.CausalRetry == CapabilityUnknown {
 			t.Fatalf("Capability(%q) has implicit dimension: %#v", form, entry)
+		}
+	}
+}
+
+func TestCapabilityManifestDeclaresContextDimensionsIndependently(t *testing.T) {
+	manifest := DefaultCapabilityManifest()
+	for _, entry := range manifest.Forms {
+		if entry.HostContextAssembly != CapabilityUnsupported || entry.HostContextHandoffRestore != CapabilityUnsupported {
+			t.Fatalf("%s context cells = (%q, %q), want independent unsupported defaults", entry.Form, entry.HostContextAssembly, entry.HostContextHandoffRestore)
+		}
+		if entry.UnsupportedReasons["host_context_assembly"] == "" || entry.UnsupportedReasons["host_context_handoff_restore"] == "" {
+			t.Fatalf("%s context unsupported reasons = %#v, want explicit reasons", entry.Form, entry.UnsupportedReasons)
+		}
+	}
+
+	team := &manifest.Forms[2]
+	team.HostContextAssembly = CapabilitySupported
+	team.Deployment = types.SameHostSingleWriterScope("team", "test:team-host-context-evidence")
+	team.HostContext = &HostContextCapabilityEvidence{
+		OwnerNamespace: "team", SupportedNodeScopes: []string{"member"}, ProjectionAPIVersion: "host_context_projection.v1",
+		ContinuationAPIVersion: "team_continuation.v1", ModuleRevision: manifest.ModuleRevision,
+		ResolverReauthorization: true, RetentionPolicy: "same-host-single-writer-sequential-reopen", ExpiryPolicy: "checkpoint-expiry",
+		EvidenceReferences: map[string]string{"host_context_assembly": "test:team-host-context-assembly"},
+		Deployment:         team.Deployment,
+	}
+	team.RetentionPolicy = team.HostContext.RetentionPolicy
+	team.EvidenceReference = "test:team-host-context-assembly"
+	if _, err := NewCapabilityManifestReader(manifest); err != nil {
+		t.Fatalf("assembly-only evidence should not require handoff/restore support: %v", err)
+	}
+
+	team.HostContext.OwnerNamespace = "mailbox"
+	if _, err := NewCapabilityManifestReader(manifest); err == nil {
+		t.Fatal("foreign owner evidence was accepted for team context assembly")
+	}
+	team.HostContext.OwnerNamespace = "team"
+	team.HostContextHandoffRestore = CapabilitySupported
+	delete(team.HostContext.EvidenceReferences, "host_context_handoff_restore")
+	if _, err := NewCapabilityManifestReader(manifest); err == nil {
+		t.Fatal("context handoff/restore promotion without its own evidence was accepted")
+	}
+}
+
+func TestCapabilityManifestWithHostContextEvidencePromotesOnlyExplicitOwner(t *testing.T) {
+	base := DefaultCapabilityManifest()
+	source := hostContextEvidenceSource{
+		form: ExecutionFormTeam,
+		evidence: HostContextCapabilityEvidence{
+			OwnerNamespace: "team", SupportedNodeScopes: []string{"member"},
+			ProjectionAPIVersion: "host_context_projection.v1", ContinuationAPIVersion: "team_continuation.v1",
+			ModuleRevision: base.ModuleRevision, ResolverReauthorization: true,
+			RetentionPolicy: "same-host-single-writer-sequential-reopen", ExpiryPolicy: "checkpoint-expiry",
+			EvidenceReferences: map[string]string{
+				"host_context_assembly":        "test:team-host-context-assembly",
+				"host_context_handoff_restore": "test:team-host-context-handoff-restore",
+			},
+			Deployment: types.SameHostSingleWriterScope("team", "test:team-host-context-evidence"),
+		},
+	}
+
+	manifest, err := CapabilityManifestWithHostContextEvidence(context.Background(), source)
+	if err != nil {
+		t.Fatalf("CapabilityManifestWithHostContextEvidence() error = %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reader.Capability(ExecutionFormTeam)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HostContextAssembly != CapabilitySupported || got.HostContextHandoffRestore != CapabilitySupported || got.HostContext == nil {
+		t.Fatalf("team context capability = %#v", got)
+	}
+	for _, form := range []ExecutionForm{ExecutionFormDirect, ExecutionFormSubagent, ExecutionFormWorkflow, ExecutionFormMailboxAsync} {
+		entry, err := reader.Capability(form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.HostContextAssembly != CapabilityUnsupported || entry.HostContextHandoffRestore != CapabilityUnsupported || entry.HostContext != nil {
+			t.Fatalf("%s borrowed owner context evidence: %#v", form, entry)
+		}
+	}
+}
+
+func TestCapabilityManifestWithHostContextEvidenceRejectsIncompleteOrForeignProjection(t *testing.T) {
+	base := DefaultCapabilityManifest()
+	valid := HostContextCapabilityEvidence{
+		OwnerNamespace: "team", SupportedNodeScopes: []string{"member"}, ProjectionAPIVersion: "host_context_projection.v1",
+		ContinuationAPIVersion: "team_continuation.v1", ModuleRevision: base.ModuleRevision, ResolverReauthorization: true,
+		RetentionPolicy: "same-host-single-writer-sequential-reopen", ExpiryPolicy: "checkpoint-expiry",
+		EvidenceReferences: map[string]string{"host_context_assembly": "test:team-host-context-assembly", "host_context_handoff_restore": "test:team-host-context-handoff-restore"},
+		Deployment:         types.SameHostSingleWriterScope("team", "test:team-host-context-evidence"),
+	}
+	cases := []struct {
+		name   string
+		form   ExecutionForm
+		mutate func(*HostContextCapabilityEvidence)
+	}{
+		{name: "missing restore evidence", form: ExecutionFormTeam, mutate: func(e *HostContextCapabilityEvidence) { delete(e.EvidenceReferences, "host_context_handoff_restore") }},
+		{name: "foreign namespace", form: ExecutionFormTeam, mutate: func(e *HostContextCapabilityEvidence) { e.OwnerNamespace = "workflow" }},
+		{name: "mailbox lifecycle only", form: ExecutionFormMailboxAsync, mutate: func(e *HostContextCapabilityEvidence) {
+			e.OwnerNamespace, e.ContinuationAPIVersion, e.SupportedNodeScopes = "mailbox", "mailbox_continuation.v1", []string{"message"}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			evidence := valid
+			evidence.SupportedNodeScopes = append([]string(nil), valid.SupportedNodeScopes...)
+			evidence.EvidenceReferences = map[string]string{}
+			for key, value := range valid.EvidenceReferences {
+				evidence.EvidenceReferences[key] = value
+			}
+			tc.mutate(&evidence)
+			if _, err := CapabilityManifestWithHostContextEvidence(context.Background(), hostContextEvidenceSource{form: tc.form, evidence: evidence}); err == nil {
+				t.Fatal("accepted incomplete or lifecycle-only context evidence")
+			}
+		})
+	}
+}
+
+func TestDefaultMailboxContextCellsNameLifecycleOnlyLimitation(t *testing.T) {
+	reader, err := NewCapabilityManifestReader(DefaultCapabilityManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := reader.Capability(ExecutionFormMailboxAsync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dimension := range []string{"host_context_assembly", "host_context_handoff_restore"} {
+		if mailbox.UnsupportedReasons[dimension] != LimitationMailboxContextSafePoint {
+			t.Fatalf("mailbox.%s limitation=%q, want %q", dimension, mailbox.UnsupportedReasons[dimension], LimitationMailboxContextSafePoint)
 		}
 	}
 }

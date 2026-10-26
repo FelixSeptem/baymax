@@ -98,6 +98,14 @@ func handoffHostProjectionCorrelation(descriptor hostprojection.Descriptor) *han
 		Capabilities:      make([]string, len(descriptor.Capabilities)),
 		SourceReferences:  make([]handoff.HostContextSourceReference, len(descriptor.SourceReferences)),
 	}
+	if descriptor.Binding != nil {
+		binding := descriptor.Binding
+		correlation.Binding = &handoff.HostContextSourceBinding{
+			Form: string(binding.Form), OwnerNamespace: binding.OwnerNamespace, SourceID: binding.SourceID,
+			NodeID: binding.NodeID, ContinuationID: binding.ContinuationID,
+			ContinuationDigest: binding.ContinuationDigest, Generation: binding.Generation,
+		}
+	}
 	for index, capability := range descriptor.Capabilities {
 		correlation.Capabilities[index] = string(capability)
 	}
@@ -303,6 +311,14 @@ func descriptorFromHandoffCorrelation(correlation *handoff.HostContextProjection
 		CapabilityDigest:  correlation.CapabilityDigest,
 		Capabilities:      make([]hostprojection.Capability, len(correlation.Capabilities)),
 		SourceReferences:  make([]hostprojection.SourceReference, len(correlation.SourceReferences)),
+	}
+	if correlation.Binding != nil {
+		binding := correlation.Binding
+		descriptor.Binding = &hostprojection.SourceBinding{
+			Form: hostprojection.SourceForm(binding.Form), OwnerNamespace: binding.OwnerNamespace, SourceID: binding.SourceID,
+			NodeID: binding.NodeID, ContinuationID: binding.ContinuationID,
+			ContinuationDigest: binding.ContinuationDigest, Generation: binding.Generation,
+		}
 	}
 	for index, capability := range correlation.Capabilities {
 		descriptor.Capabilities[index] = hostprojection.Capability(capability)

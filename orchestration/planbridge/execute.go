@@ -173,11 +173,21 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 		if b.Checkpoints != nil {
 			opts = append(opts, workflow.WithCheckpointStore(b.Checkpoints))
 		}
+		if b.Resume != nil {
+			opts = append(opts, workflow.WithWorkflowContinuationStore(b.Continuations, b.Resume.Ref.OwnerNamespace))
+		}
 		owner := workflow.New(opts...)
 		var r workflow.RunResult
-		if stream {
+		switch {
+		case b.Resume != nil:
+			var onEvent func(workflow.StreamEvent) error
+			if stream {
+				onEvent = x.WorkflowEvent
+			}
+			r, err = owner.ResumeContinuation(ctx, *b.Resume, onEvent)
+		case stream:
 			r, err = owner.Stream(ctx, req, x.WorkflowEvent)
-		} else {
+		default:
 			r, err = owner.Run(ctx, req)
 		}
 		out.Workflow = &r

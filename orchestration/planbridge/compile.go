@@ -95,6 +95,13 @@ func Compile(d Descriptor, b Binding, l Limits) (*Compiled, error) {
 	if err != nil {
 		return nil, err
 	}
+	if normalized.Workflow != nil && normalized.Workflow.Resume != nil {
+		resume := normalized.Workflow.Resume
+		request := normalized.Workflow.Request
+		if resume.Ref.RunID != request.RunID || resume.Ref.SessionID != request.SessionID || resume.Ref.GraphID != request.DSL.WorkflowID || resume.AuthorityDigest != d.AuthorityDigest {
+			return nil, fail(BindingMismatch, "binding.workflow.resume", nil)
+		}
+	}
 	identityDigest := ""
 	if d.Delivery == DeliveryMailbox {
 		identityDigest, err = derivedMailboxPlanDigest(ds, facts)
@@ -440,7 +447,59 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 			return Binding{}, nil, "", fail(BindingMismatch, "binding.workflow", nil)
 		}
 		w := *b.Workflow
-		if !w.TerminalOnly || w.Request.Resume {
+		if w.Request.Resume {
+			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.workflow.continuation", nil)
+		}
+		if w.Resume != nil {
+			if w.TerminalOnly || w.Continuations == nil || w.Manifest == nil {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.workflow.continuation", nil)
+			}
+			if e := w.Manifest.ValidateCompatibility(CapabilityManifestContractVersion, CapabilityManifestAPIVersion); e != nil {
+				return Binding{}, nil, "", e
+			}
+			capability, e := w.Manifest.Capability(ExecutionFormWorkflow)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			if capability.CheckpointCreation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported || capability.SourceContinuation == nil {
+				return Binding{}, nil, "", &Error{Code: UnsupportedCapability, Field: "binding.workflow.continuation", Limitation: LimitationSourceEvidenceMissing}
+			}
+			owner := workflow.New(workflow.WithWorkflowContinuationStore(w.Continuations, w.Resume.Ref.OwnerNamespace), workflow.WithStepAdapter(w.Adapter))
+			ownerCapabilities, ownerErr := owner.ContinuationCapabilities(context.Background())
+			if ownerErr != nil {
+				return Binding{}, nil, "", &Error{Code: SourceUnavailable, Field: "binding.workflow.continuation.owner", cause: ownerErr}
+			}
+			declaredContinuation := capability.SourceContinuation.Clone()
+			if ownerCapabilities.UnsupportedReasons == nil {
+				ownerCapabilities.UnsupportedReasons = map[string]string{}
+			}
+			if declaredContinuation.UnsupportedReasons == nil {
+				declaredContinuation.UnsupportedReasons = map[string]string{}
+			}
+			if !reflect.DeepEqual(&declaredContinuation, &ownerCapabilities) || capability.Deployment != ownerCapabilities.Deployment {
+				return Binding{}, nil, "", fail(BindingMismatch, "binding.workflow.continuation.manifest", nil)
+			}
+			if e := w.Resume.Validate(); e != nil {
+				return Binding{}, nil, "", fail(InvalidPlan, "binding.workflow.resume", e)
+			}
+			pauseSupported := false
+			switch w.Resume.Ref.PauseReason {
+			case workflow.PauseInputRequired:
+				pauseSupported = capability.InputRequired == CapabilitySupported
+			case workflow.PauseApprovalRequired:
+				pauseSupported = capability.ApprovalRequired == CapabilitySupported
+			case workflow.PauseBudgetExhausted:
+				pauseSupported = capability.BudgetExhausted == CapabilitySupported
+			}
+			if !pauseSupported {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.workflow.resume.pause_reason", nil)
+			}
+			resume, e := snapshot(*w.Resume, l.BindingBytes, l.NestingDepth)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			w.Resume = &resume
+		} else if !w.TerminalOnly {
 			return Binding{}, nil, "", fail(UnsupportedCapability, "binding.workflow.continuation", nil)
 		}
 		def := w.Request.DSL
@@ -492,6 +551,13 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 		}
 		w.Request = req
 		b.Workflow = &w
+		if w.Resume != nil {
+			facts = asFacts(struct {
+				RunID  string                          `json:"run_id"`
+				Resume *workflow.WorkflowResumeRequest `json:"resume"`
+			}{req.RunID, w.Resume})
+			break
+		}
 		projection := req
 		projection.DSL.Steps = append([]workflow.Step(nil), req.DSL.Steps...)
 		for i := range projection.DSL.Steps {

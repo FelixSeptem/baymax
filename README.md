@@ -35,6 +35,8 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
+- 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。
+
 - `source-history-failure-and-workflow-claim-recovery`（归档 175；显式 source history append health 与 workflow resume claim recovery/fencing）。
 
 - 最近归档：`make-source-history-projection-transactional`（2026-10-24）；为显式 source owner 增加 bounded source commit/projection recovery evidence。该 change 不新增执行 form、队列或业务数据库事务；未绑定 ledger 的 history 仍只提供 retained replay，事务不确定窗口返回 typed `recovery-required`。

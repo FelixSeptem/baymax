@@ -131,6 +131,9 @@ type WorkflowBinding struct {
 	Request            workflow.RunRequest
 	Adapter            workflow.DispatchAdapter
 	Checkpoints        workflow.CheckpointStore
+	Continuations      workflow.WorkflowContinuationStore
+	Resume             *workflow.WorkflowResumeRequest
+	Manifest           *CapabilityManifestReader
 	DefaultStepTimeout time.Duration
 	TerminalOnly       bool
 }

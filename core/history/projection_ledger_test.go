@@ -3,6 +3,7 @@ package history
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -153,6 +154,161 @@ func TestJournalAppendMarksProjectionRecoveryRequiredWhenLedgerPersistenceFails(
 	}
 	if _, readErr = ledger.ReadCommittedAfter(ctx, nil, 1); readErr != nil {
 		t.Fatalf("ledger read should expose an empty recovery boundary without execution: %v", readErr)
+	}
+}
+
+func TestJournalProjectionRecoveryReopensSourceFactAndAcknowledgesIdempotently(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	source := types.SourceRef{Kind: types.HistorySourceWorkflow, Namespace: "workflow.commit.v1", ID: "workflow-reopen"}
+	ledgerPath := filepath.Join(root, "ledger", "projection.json")
+	ledger, err := OpenProjectionLedger(ledgerPath, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalPath := filepath.Join(root, "history.json")
+	journal, err := OpenFile(journalPath, source, WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "workflow.completed"})
+	if !errors.Is(err, types.ErrProjectionRecoveryRequired) || identity.EventID == "" {
+		t.Fatalf("append outcome = %#v err=%v", identity, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(ledgerPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reopenedLedger, err := OpenProjectionLedger(ledgerPath, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedJournal, err := OpenFile(journalPath, source, WithProjectionLedger(reopenedLedger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := reopenedJournal.ReadAfter(ctx, source, nil, 1)
+	if err != nil || len(page.Events) != 1 {
+		t.Fatalf("reopened source facts = %#v err=%v", page, err)
+	}
+	recovered, err := reopenedJournal.ReconcileProjection(ctx, page.Events[0])
+	if err != nil || recovered.Duplicate || recovered.Record.Event.History == nil || recovered.Record.Event.History.EventID != identity.EventID {
+		t.Fatalf("recovery = %#v err=%v", recovered, err)
+	}
+	duplicate, err := reopenedJournal.ReconcileProjection(ctx, page.Events[0])
+	if err != nil || !duplicate.Duplicate || duplicate.Record.Digest != recovered.Record.Digest {
+		t.Fatalf("duplicate recovery = %#v err=%v", duplicate, err)
+	}
+	ack, err := reopenedLedger.AcknowledgeProjection(ctx, types.ProjectionAcknowledgement{
+		Source: source, EventID: recovered.Record.Event.History.EventID, Digest: recovered.Record.Digest,
+		Reference: "projection/recovered", NextCursor: recovered.Record.Cursor,
+	})
+	if err != nil || ack.Duplicate {
+		t.Fatalf("acknowledgement = %#v err=%v", ack, err)
+	}
+	ackDuplicate, err := reopenedLedger.AcknowledgeProjection(ctx, types.ProjectionAcknowledgement{
+		Source: source, EventID: recovered.Record.Event.History.EventID, Digest: recovered.Record.Digest,
+		Reference: "projection/recovered", NextCursor: recovered.Record.Cursor,
+	})
+	if err != nil || !ackDuplicate.Duplicate {
+		t.Fatalf("duplicate acknowledgement = %#v err=%v", ackDuplicate, err)
+	}
+	finalPage, err := reopenedLedger.ReadCommittedAfter(ctx, nil, 1)
+	if err != nil || len(finalPage.Records) != 1 || finalPage.Records[0].Event.History.EventID != identity.EventID {
+		t.Fatalf("recovered ledger = %#v err=%v", finalPage, err)
+	}
+}
+
+func TestJournalProjectionRecoveryRejectsConflictBeforeLedgerMutation(t *testing.T) {
+	ctx := context.Background()
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.commit.v1", ID: "runner-conflict"}
+	ledger, err := NewProjectionLedger(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := New(source, WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "run.finished"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := journal.ReadAfter(ctx, source, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := journal.ReconcileProjection(ctx, page.Events[0])
+	if err != nil || !duplicate.Duplicate {
+		t.Fatalf("identical source fact should be duplicate = %#v err=%v", duplicate, err)
+	}
+	conflict := page.Events[0]
+	conflict.NativeType = "run.changed"
+	if _, err = journal.ReconcileProjection(ctx, conflict); !errors.Is(err, types.ErrHistoryConflict) {
+		t.Fatalf("conflicting source fact error = %v", err)
+	}
+	committed, err := ledger.ReadCommittedAfter(ctx, nil, 1)
+	if err != nil || len(committed.Records) != 1 {
+		t.Fatalf("ledger after conflict = %#v err=%v", committed, err)
+	}
+}
+
+func TestJournalProjectionRecoveryRequiresExplicitLedgerBinding(t *testing.T) {
+	ctx := context.Background()
+	source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.commit.v1", ID: "child-unbound"}
+	j, err := New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "child.completed"}
+	if _, err = j.Append(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	page, err := j.ReadAfter(ctx, source, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = j.ReconcileProjection(ctx, page.Events[0]); !errors.Is(err, types.ErrHistoryUnsupported) {
+		t.Fatalf("unbound recovery error = %v", err)
+	}
+}
+
+func TestJournalProjectionRecoveryRejectsForeignMalformedAndGappedFacts(t *testing.T) {
+	ctx := context.Background()
+	source := types.SourceRef{Kind: types.HistorySourceTeam, Namespace: "team.commit.v1", ID: "team-validation"}
+	ledger, err := NewProjectionLedger(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := New(source, WithProjectionLedger(ledger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "team.completed"}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := journal.ReadAfter(ctx, source, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := page.Events[0]
+	foreign.History = &types.NativeHistoryIdentity{Source: types.SourceRef{Kind: source.Kind, Namespace: source.Namespace, ID: "other-team"}, Sequence: 1, EventID: foreign.History.EventID}
+	if _, err = journal.ReconcileProjection(ctx, foreign); !errors.Is(err, types.ErrCursorForeign) {
+		t.Fatalf("foreign recovery error = %v", err)
+	}
+	malformed := page.Events[0]
+	malformed.Event.Payload = map[string]any{"secret": "must not be accepted"}
+	if _, err = journal.ReconcileProjection(ctx, malformed); !errors.Is(err, types.ErrHistoryConflict) {
+		t.Fatalf("malformed source fact error = %v", err)
+	}
+	gapped := page.Events[0]
+	gapped.History = &types.NativeHistoryIdentity{Source: source, Sequence: 2, EventID: eventID(source, 2)}
+	gapped.Event.EventID = gapped.History.EventID
+	if _, err = journal.ReconcileProjection(ctx, gapped); !errors.Is(err, types.ErrHistoryGap) {
+		t.Fatalf("gapped journal fact error = %v", err)
+	}
+	committed, err := ledger.ReadCommittedAfter(ctx, nil, 1)
+	if err != nil || len(committed.Records) != 1 {
+		t.Fatalf("ledger mutated by rejected recovery = %#v err=%v", committed, err)
 	}
 }
 

@@ -94,15 +94,19 @@ Baymax 主线保持 `library-first + contract-first`：
 2. 已归档变更：`openspec/changes/archive/INDEX.md`。
 3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
 
-截至 2026-10-16：
+截至 2026-10-26：
 
 归档 160/161/162/163/164 已纳入 `master`。安全维护与 host-resume 准入重验证均已完成联合完整门禁并归档；后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
 
 ### OpenSpec 活跃状态快照
 
+- 当前无未归档 active change；下一候选为 `composite-checkpoint-restore-by-owner`。
+
 ## 已归档快照
 
 - 已归档 178：`extend-composite-context-assembly-handoff` 已完成 child attempt、team pending local member、workflow step 的 owner-bound context integration、source-owned capability evidence projection、Run/Stream parity、只读 replay 与完整门禁；mailbox continuation 仍只有 lifecycle projection，没有 handler safe point，因此 mailbox context 保持 unsupported，并拆为后续 mailbox-owner 候选。
+
+- 已归档 179：`source-owner-history-injection-and-projection-recovery` 已补齐显式 owner journal 与 projection ledger 分离提交窗口的 source-bound reconciliation、fresh-process recovery、幂等 duplicate、冲突/foreign/gap/expiry/unavailable typed fail-closed 语义；不创建第二套 journal、执行循环或业务事务，也不扩大到多写者/跨机器 exactly-once。
 
 - 已归档：
   - `establish-host-context-assembly-handoff-contract`（归档 165；显式 opt-in、reference-only `host_context_projection.v1`，current-authority resolver、assembler/handoff correlation、离线 replay/example 与双平台 gate）
@@ -596,12 +600,11 @@ Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和�
 
 这些候选不能并行宣称完成，必须按 source ownership 和恢复安全性依次推进：
 
-1. `source-owner-history-injection-and-projection-recovery`（待后续按 source owner 拆分）：先补 runner、child、team、workflow、mailbox 的 owner 注入、retained source facts 与 crash-before-projection 只读恢复证据；具体未支持的 source 保持 `unsupported` / `recovery-required`。
-2. `composite-checkpoint-restore-by-owner`（待后续按 form 拆分）：基于已验证的 owner facts，为 child/team/workflow/mailbox 分别证明 checkpoint binding、fresh-process atomic claim 和同一 native graph/message restore。归档 177 已提供 team/mailbox continuation 基线，但不代表所有 form/pause reason 均已支持。
-3. `composite-pause-reason-matrix`（依赖第 2 项逐格验收）：逐 form 验证 `input_required`、`approval_required`、`budget_exhausted`；无完整 source evidence 的格子继续在 admission 前 typed reject。
-4. `composite-graph-restore-material`（依赖第 2、3 项）：仅在真实 owner state 缺口无法由已交付 checkpoint 表达时增量立项，补 graph/node/dependency/effect/aggregate/terminal lineage；不得以 application checkpoint 替代。
-5. `bound-durable-store-deployment-scope`（已归档 174）：已固化“同机单写、顺序重开”的 supported scope；多实例/跨机器增量仍须等待真实 CAS、fencing、atomic claim/cursor transaction 和 crash evidence，不重复起草已完成部分。
-6. `extend-composite-context-assembly-handoff`（已归档 178；实施准入受第 1 至 4 项的相关 owner evidence 约束）：代码审计确认 direct projection 与 composite native node/checkpoint 间缺少 exact binding；仅在有真实 execution safe point 的 owner 上逐格开放，未验证格子保持 unsupported/unavailable。mailbox lifecycle-only continuation 不能作为 context assembly safe point；若依赖的 restore material 尚未由 source evidence 证明，先完成相应前置项，不以当前 proposal 或 DTO 存在视为能力已支持。
+1. `composite-checkpoint-restore-by-owner`（待后续按 form 拆分）：基于已归档 179 验证的 owner facts，为 child/team/workflow/mailbox 分别证明 checkpoint binding、fresh-process atomic claim 和同一 native graph/message restore。归档 177 已提供 team/mailbox continuation 基线，但不代表所有 form/pause reason 均已支持。
+2. `composite-pause-reason-matrix`（依赖第 1 项逐格验收）：逐 form 验证 `input_required`、`approval_required`、`budget_exhausted`；无完整 source evidence 的格子继续在 admission 前 typed reject。
+3. `composite-graph-restore-material`（依赖第 1、2 项）：仅在真实 owner state 缺口无法由已交付 checkpoint 表达时增量立项，补 graph/node/dependency/effect/aggregate/terminal lineage；不得以 application checkpoint 替代。
+4. `bound-durable-store-deployment-scope`（已归档 174）：已固化“同机单写、顺序重开”的 supported scope；多实例/跨机器增量仍须等待真实 CAS、fencing、atomic claim/cursor transaction 和 crash evidence，不重复起草已完成部分。
+5. `extend-composite-context-assembly-handoff`（已归档 178；实施准入受第 1 至 3 项的相关 owner evidence 约束）：代码审计确认 direct projection 与 composite native node/checkpoint 间缺少 exact binding；仅在有真实 execution safe point 的 owner 上逐格开放，未验证格子保持 unsupported/unavailable。mailbox lifecycle-only continuation 不能作为 context assembly safe point；若依赖的 restore material 尚未由 source evidence 证明，先完成相应前置项，不以当前 proposal 或 DTO 存在视为能力已支持。
 
 归档 175 的 `AppendHealth` 和 workflow fence 只作为第 1 项的现状基线，不满足第 1 项的事务性 DoD。所有候选均必须从最新 `master` 切出语义化分支，维护 proposal/design/tasks/spec delta，并通过 source owner 测试、Run/Stream parity、replay fixture、dedicated gate、质量门禁和文档一致性检查后才能归档。
 
@@ -611,8 +614,8 @@ Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和�
 
 | 顺序 | 后续工作包 | 当前状态 | 必须交付的代码事实 | 依赖与禁止事项 |
 | --- | --- | --- | --- | --- |
-| 1 | `source-owner-history-injection-and-projection-recovery` | 边界已固化，证据按 source 增量补齐 | runner、child、team、workflow、mailbox 分别由 owner 注入 journal/store；稳定 source identity/sequence、retention floor、opaque cursor、gap/expiry/unavailable；source append 后 projection 崩溃可只读 replay、重叠幂等、payload 冲突 fail closed | 继承归档 168、171、175；不得由 callback adapter、host observation sequence 或默认 package 构造伪造 history，也不得重跑不确定 effect |
-| 2 | `composite-checkpoint-restore-by-owner` | team/mailbox 基线已归档 177；child/workflow 及未证 pause reason 仍须逐 owner 审计/补证据 | child/team/workflow/mailbox 各自持久化 source-owned checkpoint；校验 schema/digest、authority、run/session/parent、causation、expiry、ownership；新进程 atomic claim 并恢复同一 native graph/message | 依赖第 1 项对应 owner facts；不得重新 Run parent、重新 enqueue、重放 callback 或创建第二 mailbox owner |
+| 1 | `source-owner-history-injection-and-projection-recovery` | **已归档 179**；显式 owner journal/store 与 projection ledger 分离提交窗口已提供 source-bound reconciliation 和 fail-closed recovery evidence | runner、child、team、workflow、mailbox 复用显式 owner journal/store；journal fact 已提交但 ledger 未提交时支持 recovery read/reconcile、稳定 source identity/sequence、retention floor、opaque cursor、gap/expiry/unavailable、重叠幂等、payload/digest 冲突 fail closed | 不重复创建 journal；不得由 callback adapter、host observation sequence 或默认 package 构造伪造 history；不得重跑不确定 effect、Run parent/child/step、retry 或把 recovery 当 execution resume；不扩大到多写者 CAS、跨机器或跨库 exactly-once |
+| 2 | `composite-checkpoint-restore-by-owner` | **下一候选**；team/mailbox 基线已归档 177，child/workflow 及未证 pause reason 仍须逐 owner 审计/补证据 | child/team/workflow/mailbox 各自持久化 source-owned checkpoint；校验 schema/digest、authority、run/session/parent、causation、expiry、ownership；新进程 atomic claim 并恢复同一 native graph/message | 依赖归档 179 的对应 owner facts；不得重新 Run parent、重新 enqueue、重放 callback 或创建第二 mailbox owner |
 | 3 | `composite-pause-reason-matrix` | 与第 2 项逐格验收，未证格子保持 unsupported | 对每个声明支持的 form 分别证明 `input_required`、`approval_required`、`budget_exhausted` 的 source safe point、pending state、资源计数、deny/timeout terminal evidence、cancel/timeout/retry 竞争和 Run/Stream parity | direct 能力不能背书 composite；缺任一 pause-reason 证据就必须在 admission 前 typed reject |
 | 4 | `composite-graph-restore-material` | 第 2、3 项的核心依赖，必要时拆为后续增量 | graph identity/version/digest、parent/child/member/step native IDs、依赖完成度、pending/completed state、fanout/vote aggregate、预算、effect outcome reference、terminal arbitration、successor lineage | 只能恢复同一 native graph，已完成成员/步骤/effect 不得再次执行；restore 前校验 graph/capability/authority/scope/occurrence/causation/revision/budget |
 | 5 | `bound-durable-store-deployment-scope` | 已归档 174；扩大到多写者/跨机器仍是条件性观察项 | 明确 FileStore 的 same-host single-writer sequential reopen；若要扩大范围，补 source CAS、writer fencing、atomic claim/cursor transaction、crash recovery、stale writer reject、并发 reader/writer 和多实例 duplicate evidence | 未交付分布式 store 前，多写者、跨机器、并发 claim 只标记 blocked/unsupported；不得宣传“新进程可重开”为通用分布式恢复 |

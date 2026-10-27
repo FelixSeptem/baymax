@@ -9,9 +9,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -157,10 +159,91 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	}
 	if j.ledger != nil {
 		if _, err := j.ledger.commitRetained(ctx, snapshot.Events[0]); err != nil {
-			return identity, fmt.Errorf("%w: %v", types.ErrProjectionRecoveryRequired, err)
+			j.ledgerErr = fmt.Errorf("%w: %v", types.ErrProjectionRecoveryRequired, err)
+			return identity, j.ledgerErr
 		}
 	}
 	return identity, nil
+}
+
+// ReconcileProjection repairs the explicitly bound projection ledger from a
+// retained source fact. It never creates a store or invokes execution.
+func (j *Journal) ReconcileProjection(ctx context.Context, event types.NativeExecutionEvent) (types.ProjectionRecoveryResult, error) {
+	if err := ctx.Err(); err != nil {
+		return types.ProjectionRecoveryResult{}, err
+	}
+	if j == nil {
+		return types.ProjectionRecoveryResult{}, types.ErrSourceUnavailable
+	}
+	j.mu.RLock()
+	ledger := j.ledger
+	ledgerErr := j.ledgerErr
+	if ledger == nil {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryUnsupported
+	}
+	if ledgerErr != nil && !errors.Is(ledgerErr, types.ErrProjectionRecoveryRequired) {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, ledgerErr
+	}
+	if event.History == nil {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if event.History.Source != j.source {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrCursorForeign
+	}
+	if event.History.Source.Validate() != nil || event.History.Sequence == 0 {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if event.History.EventID != eventID(j.source, event.History.Sequence) || event.Event.EventID != event.History.EventID {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryConflict
+	}
+	var sourceFact *types.NativeExecutionEvent
+	for i := range j.events {
+		candidate := &j.events[i]
+		if candidate.History != nil && candidate.History.EventID == event.History.EventID {
+			sourceFact = candidate
+			break
+		}
+	}
+	if sourceFact == nil {
+		sequence := event.History.Sequence
+		switch {
+		case sequence <= j.floor:
+			j.mu.RUnlock()
+			return types.ProjectionRecoveryResult{}, types.ErrCursorExpired
+		case sequence > j.sequence:
+			j.mu.RUnlock()
+			return types.ProjectionRecoveryResult{}, types.ErrHistoryGap
+		default:
+			j.mu.RUnlock()
+			return types.ProjectionRecoveryResult{}, types.ErrHistoryConflict
+		}
+	}
+	left, leftErr := (types.NativeEventPage{Events: []types.NativeExecutionEvent{*sourceFact}}).Snapshot()
+	right, rightErr := (types.NativeEventPage{Events: []types.NativeExecutionEvent{event}}).Snapshot()
+	if leftErr != nil || rightErr != nil {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if !reflect.DeepEqual(left.Events[0], right.Events[0]) {
+		j.mu.RUnlock()
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryConflict
+	}
+	j.mu.RUnlock()
+	result, err := ledger.reconcileSourceEvent(ctx, event)
+	if err == nil {
+		j.mu.Lock()
+		if errors.Is(j.ledgerErr, types.ErrProjectionRecoveryRequired) {
+			j.ledgerErr = nil
+		}
+		j.mu.Unlock()
+	}
+	return result, err
 }
 
 func protocolSource(kind types.HistorySourceKind) types.ProtocolSource {

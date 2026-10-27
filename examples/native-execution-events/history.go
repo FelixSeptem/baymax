@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/FelixSeptem/baymax/core/history"
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 )
@@ -72,9 +73,77 @@ func demonstrateHistory() (resultErr error) {
 		}
 		unsupported = append(unsupported, string(kind))
 	}
+	reconciled, duplicate, conflict, projectionUnsupported, err := demonstrateProjectionRecovery(ctx, dir)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("mailbox-history durable=%t\nmailbox-history restart-events=%d\nmailbox-history terminal=%s\n", caps.Durable, len(page.Events), page.Events[1].History.TerminalOutcome)
 	fmt.Printf("mailbox-history malformed=%t\nmailbox-history foreign=%t\nmailbox-history expired=%t\nnative-history unsupported=%s\n", errors.Is(malformed, types.ErrCursorMalformed), errors.Is(foreign, types.ErrCursorForeign), expired, strings.Join(unsupported, ","))
+	fmt.Printf("source-projection reconciled=%t\nsource-projection duplicate=%t\nsource-projection conflict=%t\nsource-projection unsupported=%t\n", reconciled, duplicate, conflict, projectionUnsupported)
 	return nil
+}
+
+func demonstrateProjectionRecovery(ctx context.Context, dir string) (bool, bool, bool, bool, error) {
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "example.runner.commit.v1", ID: "projection-recovery"}
+	ledgerPath := filepath.Join(dir, "projection", "ledger.json")
+	historyPath := filepath.Join(dir, "projection-history.json")
+	ledger, err := history.OpenProjectionLedger(ledgerPath, source)
+	if err != nil {
+		return false, false, false, false, err
+	}
+	journal, err := history.OpenFile(historyPath, source, history.WithProjectionLedger(ledger))
+	if err != nil {
+		return false, false, false, false, err
+	}
+	_, appendErr := journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "run.finished"})
+	if !errors.Is(appendErr, types.ErrProjectionRecoveryRequired) {
+		return false, false, false, false, fmt.Errorf("expected recovery-required append, got %v", appendErr)
+	}
+	if err := os.MkdirAll(filepath.Dir(ledgerPath), 0o700); err != nil {
+		return false, false, false, false, err
+	}
+	reopenedLedger, err := history.OpenProjectionLedger(ledgerPath, source)
+	if err != nil {
+		return false, false, false, false, err
+	}
+	reopenedJournal, err := history.OpenFile(historyPath, source, history.WithProjectionLedger(reopenedLedger))
+	if err != nil {
+		return false, false, false, false, err
+	}
+	page, err := reopenedJournal.ReadAfter(ctx, source, nil, 1)
+	if err != nil || len(page.Events) != 1 {
+		return false, false, false, false, fmt.Errorf("read source recovery fact: %v", err)
+	}
+	recovered, err := reopenedJournal.ReconcileProjection(ctx, page.Events[0])
+	if err != nil {
+		return false, false, false, false, err
+	}
+	repeated, err := reopenedJournal.ReconcileProjection(ctx, page.Events[0])
+	if err != nil {
+		return false, false, false, false, err
+	}
+	conflictEvent := page.Events[0]
+	conflictEvent.NativeType = "run.changed"
+	_, conflictErr := reopenedJournal.ReconcileProjection(ctx, conflictEvent)
+	if !errors.Is(conflictErr, types.ErrHistoryConflict) {
+		return false, false, false, false, fmt.Errorf("expected conflict, got %v", conflictErr)
+	}
+	unbound, err := history.New(source)
+	if err != nil {
+		return false, false, false, false, err
+	}
+	if _, err := unbound.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "run.finished"}); err != nil {
+		return false, false, false, false, err
+	}
+	unboundPage, err := unbound.ReadAfter(ctx, source, nil, 1)
+	if err != nil {
+		return false, false, false, false, err
+	}
+	_, unsupportedErr := unbound.ReconcileProjection(ctx, unboundPage.Events[0])
+	if !errors.Is(unsupportedErr, types.ErrHistoryUnsupported) {
+		return false, false, false, false, fmt.Errorf("expected unsupported, got %v", unsupportedErr)
+	}
+	return !recovered.Duplicate, repeated.Duplicate, true, true, nil
 }
 
 func writeMailboxHistory(ctx context.Context, path string) (types.SourceRef, *types.OpaqueCursor, error) {

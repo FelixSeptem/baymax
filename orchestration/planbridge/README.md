@@ -53,9 +53,23 @@ diagnostic writer. `TerminalOnly` guards runner adapters against unexpected
 input_required and retains the native result/checkpoint through `ContinuationError`.
 For child restore, `ChildBinding.TerminalOnly=false` is accepted only with a
 source-owned `ChildResumeRequest` and `ChildContinuationOwner`; activation calls
-that owner once and returns its native projection. Missing owner or incompatible
-identity is rejected before activation. Team, mailbox and resumed-plan
-continuation cells remain explicitly unsupported.
+that owner once and returns its native projection. Team restore likewise uses
+the configured team continuation owner and request. Workflow continuation
+restore must be explicitly bound to the workflow owner and its checkpoint
+store; planbridge does not reconstruct workflow state from a normal Run/Stream
+request. Each path is admitted only for the source/store deployment scope and
+pause-reason evidence reported by its capability manifest. Mailbox handler
+continuation and resumed-plan execution remain unsupported without their own
+source execution safe point and restore evidence.
+
+For workflow restore, set `WorkflowBinding.TerminalOnly=false` and provide the
+original `WorkflowResumeRequest`, the matching `WorkflowContinuationStore`, and
+a workflow-only manifest generated from an owner configured with that store.
+The compiled binding checks checkpoint run/session/workflow and authority
+identity before activation, then delegates to `Engine.ResumeContinuation`.
+Missing or mismatched evidence fails closed; normal Run/Stream is never used as
+a restore fallback. The configured adapter executes only the source-owned
+pending boundary, while already-completed steps come from the checkpoint.
 Only direct preserves input_required as native pause. Resume uses native APIs
 separately; this compiled snapshot cannot restore a Run.
 

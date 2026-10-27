@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-26 23:54:32
+Updated: 2026-10-28 02:27:52
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -181,3 +181,4 @@ Updated: 2026-10-26 23:54:32
 - 177 -> enable-team-and-mailbox-native-continuations
 - 178 -> extend-composite-context-assembly-handoff
 - 179 -> source-owner-history-injection-and-projection-recovery
+- 180 -> composite-checkpoint-restore-by-owner

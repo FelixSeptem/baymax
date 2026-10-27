@@ -2,6 +2,12 @@
 
 这是 `host_execution_plan.v1` 的离线 opt-in 示例。运行 `go run ./examples/host-execution-plan`；它使用 fake model/tool 和真实 runner，不访问 Provider、业务数据库或网络。示例证明 compile 无副作用、source owner 保留、Run/Stream 等价及预检拒绝；Spec 1 还规定 manifest-approved `mailbox_async` 只能委托既有 mailbox owner，不能构成业务 commit、durable resume 或 mailbox worker。
 
+Workflow continuation restore is owner-bound: callers must provide the matching
+workflow continuation store, `WorkflowResumeRequest`, and workflow-only
+capability manifest. The bridge delegates claim and restore to the reopened
+workflow owner, so completed steps are not rerun. A lifecycle-only mailbox
+binding or a resumed-trigger plan remains rejected before source activation.
+
 ## Semantic anchors
 
 - `host_execution_plan.v1`：版本化身份、bounded descriptor/native binding、一致性 digest 和全计划预检。

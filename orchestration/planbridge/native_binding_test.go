@@ -187,6 +187,113 @@ func TestHostExecutionPlanChildContinuationDelegatesToSourceOwner(t *testing.T) 
 	}
 }
 
+func TestHostExecutionPlanWorkflowContinuationBindingRequiresOwnerManifestAndStore(t *testing.T) {
+	d, b, _ := directFixture(t)
+	d.Shape = ShapeWorkflow
+	b.Direct = nil
+	b.Workflow = &WorkflowBinding{
+		TerminalOnly: false,
+		Request:      workflow.RunRequest{RunID: "run", DSL: workflow.Definition{WorkflowID: "wf", Steps: []workflow.Step{{StepID: "step", Kind: workflow.StepKindRunner}}}},
+		Adapter: workflow.DispatchAdapter{Runner: func(context.Context, string, workflow.Step, int) (workflow.StepOutput, error) {
+			t.Fatal("resume binding must not dispatch as a fresh Run")
+			return workflow.StepOutput{}, nil
+		}},
+		Resume: &workflow.WorkflowResumeRequest{Ref: workflow.WorkflowContinuationRef{SchemaVersion: workflow.WorkflowContinuationVersion, CheckpointID: "checkpoint", Digest: "digest", OwnerNamespace: "workflow"}, GraphDigest: "graph", Generation: 1, IdempotencyKey: "resume"},
+	}
+	_, err := Describe(d, b, Limits{})
+	codeOf(t, err, UnsupportedCapability)
+}
+
+func TestHostExecutionPlanWorkflowContinuationRestoreDelegatesToReopenedOwnerForRunAndStream(t *testing.T) {
+	root := t.TempDir()
+	store, err := workflow.NewFileWorkflowContinuationStore(root, "workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstStepCalls := 0
+	definition := workflow.Definition{WorkflowID: "workflow-bridge-restore", Steps: []workflow.Step{
+		{StepID: "completed", Kind: workflow.StepKindRunner},
+		{StepID: "pending", Kind: workflow.StepKindRunner, DependsOn: []string{"completed"}},
+	}}
+	first := workflow.New(
+		workflow.WithWorkflowContinuationStore(store, "workflow"),
+		workflow.WithStepAdapter(workflow.DispatchAdapter{Runner: func(_ context.Context, _ string, step workflow.Step, _ int) (workflow.StepOutput, error) {
+			if step.StepID == "completed" {
+				firstStepCalls++
+				return workflow.StepOutput{}, nil
+			}
+			return workflow.StepOutput{}, workflow.PauseError{Reason: workflow.PauseInputRequired, PendingActionReference: "pending-input"}
+		}}),
+	)
+	paused, err := first.Run(context.Background(), workflow.RunRequest{RunID: "workflow-run", SessionID: "session", AuthorityDigest: "authority", DSL: definition})
+	if !errors.Is(err, workflow.ErrWorkflowPaused) || paused.WorkflowCheckpoint == nil {
+		t.Fatalf("workflow did not pause with native checkpoint: result=%#v err=%v", paused, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := workflow.NewFileWorkflowContinuationStore(root, "workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	resume := workflow.WorkflowResumeRequest{Ref: *paused.WorkflowCheckpoint, GraphDigest: paused.WorkflowGraphDigest, Generation: paused.WorkflowCheckpointGeneration, IdempotencyKey: "bridge-resume", AuthorityDigest: "authority"}
+	newEngine := workflow.New(
+		workflow.WithWorkflowContinuationStore(reopened, "workflow"),
+		workflow.WithStepAdapter(workflow.DispatchAdapter{Runner: func(_ context.Context, _ string, step workflow.Step, _ int) (workflow.StepOutput, error) {
+			if step.StepID == "completed" {
+				t.Fatal("completed step was rerun during restore")
+			}
+			return workflow.StepOutput{}, nil
+		}}),
+	)
+	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), newEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, b, _ := directFixture(t)
+	d.Shape = ShapeWorkflow
+	b.Direct = nil
+	b.Workflow = &WorkflowBinding{TerminalOnly: false, Request: workflow.RunRequest{RunID: "workflow-run", SessionID: "session", AuthorityDigest: "authority", DSL: definition}, Adapter: workflow.DispatchAdapter{Runner: func(_ context.Context, _ string, step workflow.Step, _ int) (workflow.StepOutput, error) {
+		if step.StepID == "completed" {
+			t.Fatal("completed step was rerun through the bridge")
+		}
+		return workflow.StepOutput{}, nil
+	}}, Continuations: reopened, Resume: &resume, Manifest: reader}
+	foreignBinding := b
+	foreignWorkflow := *b.Workflow
+	foreignResume := resume
+	foreignResume.AuthorityDigest = "foreign-authority"
+	foreignWorkflow.Resume = &foreignResume
+	foreignBinding.Workflow = &foreignWorkflow
+	if _, err := Describe(d, foreignBinding, Limits{}); err == nil {
+		t.Fatal("foreign authority restore binding was accepted")
+	} else {
+		codeOf(t, err, BindingMismatch)
+	}
+	d, err = Describe(d, b, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Compile(d, b, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamEvents := 0
+	out, err := plan.Stream(context.Background(), Execution{WorkflowEvent: func(workflow.StreamEvent) error { streamEvents++; return nil }})
+	if err != nil || out.Workflow == nil || out.Workflow.WorkflowStatus != "succeeded" || firstStepCalls != 1 || streamEvents == 0 {
+		t.Fatalf("bridged restore result=%#v err=%v first-calls=%d stream-events=%d", out.Workflow, err, firstStepCalls, streamEvents)
+	}
+	duplicate, err := plan.Run(context.Background(), Execution{})
+	if err != nil || duplicate.Workflow == nil || duplicate.Workflow.WorkflowStatus != out.Workflow.WorkflowStatus || firstStepCalls != 1 {
+		t.Fatalf("duplicate did not return owner projection: result=%#v err=%v first-calls=%d", duplicate.Workflow, err, firstStepCalls)
+	}
+}
+
 type testChildContinuationOwner struct {
 	result composer.ChildDispatchResult
 	calls  int

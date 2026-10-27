@@ -27,6 +27,14 @@ type SourceCommitRecord struct {
 	TerminalEvidence string               `json:"terminal_evidence,omitempty"`
 }
 
+// ProjectionRecoveryResult reports source-evidence reconciliation. Duplicate
+// is explicit so callers can distinguish an idempotent replay from a newly
+// persisted ledger record without treating either outcome as execution.
+type ProjectionRecoveryResult struct {
+	Record    SourceCommitRecord `json:"record"`
+	Duplicate bool               `json:"duplicate"`
+}
+
 // ProjectionAcknowledgement records only that a consumer has durably accepted
 // an opaque source fact. Consumers remain responsible for business-write
 // idempotency in their own storage boundary.

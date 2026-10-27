@@ -9,6 +9,10 @@
     { "name": "committed_terminal_replay", "outcome": "committed", "side_effects": false },
     { "name": "duplicate_projection", "outcome": "duplicate", "side_effects": false },
     { "name": "conflicting_projection", "outcome": "history_conflict", "side_effects": false },
+    { "name": "malformed_source_fact", "outcome": "history_invalid", "side_effects": false },
+    { "name": "foreign_source_fact", "outcome": "cursor_foreign", "side_effects": false },
+    { "name": "gapped_source_fact", "outcome": "history_gap", "side_effects": false },
+    { "name": "unavailable_projection_store", "outcome": "source_unavailable", "side_effects": false },
     { "name": "uncertain_ledger_commit", "outcome": "recovery_required", "side_effects": false },
     { "name": "expired_cursor", "outcome": "cursor_expired", "side_effects": false }
   ]

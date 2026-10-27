@@ -57,7 +57,9 @@ Native event history 是独立 source-owned contract：`NativeEventHistoryReader
 
 显式绑定 `core/history.ProjectionLedger` 后，source owner 还可以持久化 bounded source commit、digest、terminal evidence 与 projection acknowledgement。`ProjectionLedger.ReadCommittedAfter` 是只读 source evidence；重复 acknowledgement 按 source event identity 幂等，digest/reference/cursor 冲突返回 `ErrHistoryConflict`。`Journal` 与 ledger 的 source commit 窗口若无法共同确认，会返回 `ErrProjectionRecoveryRequired`，不得重跑 effect、parent/child/step 或把 callback health 当作外部业务投影的 exactly-once 证明。只有 file-backed journal 与 file-backed ledger 同时显式绑定时，history capability 才声明 `ProjectionRecovery`；该声明仍仅限同机单写、顺序重开，不提供 Danny 数据库的跨库原子事务、多写者 CAS 或跨机器协调。
 
-该契约不增加 runtime configuration key、默认值、诊断 schema 或 recorder 字段，也不新增成功路径示例；history 存储仍由 source owner 显式提供，failure/recovery 边界由离线 contract fixture 与故障注入测试验证。
+fresh process 只能通过同一 source journal 的 retained event 调用 `Journal.ReconcileProjection` 补回 ledger；该调用返回 `ProjectionRecoveryResult`，以 `Duplicate` 明确幂等重放，并在 source identity、sequence、event identity、detached digest、terminal evidence 或 cursor 不一致时 fail closed。它只修复 source projection evidence，不恢复执行、不重试 effect、不改变 mailbox lifecycle，也不写 RuntimeRecorder 或业务数据库。
+
+该契约不增加 runtime configuration key、默认值、诊断 schema 或 recorder 字段；离线 `examples/native-execution-events` 现展示 fresh-process reconciliation、duplicate 与 conflict/unsupported 拒绝。history 存储仍由 source owner 显式提供，failure/recovery 边界由离线 contract fixture 与故障注入测试验证。
 
 - 关键验证：`go test ./core/types -count=1`。
 - 契约变更后应同步更新主干契约索引与跨模块回归用例。

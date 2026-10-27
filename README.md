@@ -39,6 +39,8 @@ go run ./examples/01-chat-minimal
 
 - 最近归档：`make-source-history-projection-transactional`（2026-10-24）；为显式 source owner 增加 bounded source commit/projection recovery evidence。该 change 不新增执行 form、队列或业务数据库事务；未绑定 ledger 的 history 仍只提供 retained replay，事务不确定窗口返回 typed `recovery-required`。
 
+- 当前 source-history recovery 增量只允许通过同一显式绑定的 `Journal` 与 `ProjectionLedger` 调用 `ReconcileProjection`。它可在 journal 已落盘、ledger 写入失败后的 fresh process 中补回 source evidence，重复补回返回 `Duplicate`，冲突/过期/断档/foreign 保持 typed fail-closed；它不重跑 Run/Stream、effect、retry、resume，也不提供跨库 exactly-once。
+
 - `retain-run-and-composite-source-history`（归档 171；source-native history/cursor/replay 增量）
 
 - `restore-workflow-continuations`（归档 172；workflow-first composite continuation）：为 workflow owner 增加 source-owned graph checkpoint/restore、三类 pause safe point、原子 claim、new-Engine file-store reopen 与只读 replay evidence。child/team/mailbox/planbridge resumed 继续在准入前返回 `unsupported_capability`。
@@ -58,7 +60,7 @@ go run ./examples/01-chat-minimal
 
 - `bound-durable-store-deployment-scope`（已归档 174；same-host single-writer sequential reopen deployment scope）：已固化 source history、checkpoint、mailbox 与 composite owner store 的部署边界；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在 source evidence 不足时保持 typed `unsupported` 或 `recovery-required`。
 
-- `extend-composite-context-assembly-handoff`（进行中；owner-bound composite context projection）：已在 child attempt、team pending local member 与 workflow step 的既有 continuation owner 上绑定 `host_context_projection.v1`；mailbox continuation 只投影 lifecycle outcome、没有 handler execution safe point，因此本 change 保持 mailbox context unsupported，并将 message/delivery/lease context injection 留给后续 mailbox-owner 提案。未具备 owner-specific binding/evidence 的 form 仍拒绝，不把 direct assembly 能力外推。
+- `source-owner-history-injection-and-projection-recovery`（归档 179；source-owned journal-to-ledger reconciliation）：复用已显式注入的 runner/child/team/workflow journal 与 projection ledger，补齐 fresh-process source fact reconciliation、duplicate/conflict fail-closed 和 recovery-required 边界；不创建第二套 journal、执行循环或业务事务。
 
 最近归档：
 

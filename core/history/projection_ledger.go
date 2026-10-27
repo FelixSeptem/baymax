@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -179,6 +180,68 @@ func (l *ProjectionLedger) commitRetained(ctx context.Context, event types.Nativ
 		return types.SourceCommitRecord{}, err
 	}
 	return record, nil
+}
+
+func (l *ProjectionLedger) reconcileSourceEvent(ctx context.Context, event types.NativeExecutionEvent) (types.ProjectionRecoveryResult, error) {
+	if err := ctx.Err(); err != nil {
+		return types.ProjectionRecoveryResult{}, err
+	}
+	if l == nil {
+		return types.ProjectionRecoveryResult{}, types.ErrSourceUnavailable
+	}
+	if event.History == nil {
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if len(event.Event.Payload) != 0 {
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if event.History.Source.Validate() != nil || event.History.Sequence == 0 || event.History.Source != l.source {
+		if event.History.Source != l.source {
+			return types.ProjectionRecoveryResult{}, types.ErrCursorForeign
+		}
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryInvalid
+	}
+	if event.History.EventID != eventID(l.source, event.History.Sequence) || event.Event.EventID != event.History.EventID {
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryConflict
+	}
+	page, err := (types.NativeEventPage{Events: []types.NativeExecutionEvent{event}}).Snapshot()
+	if err != nil {
+		return types.ProjectionRecoveryResult{}, err
+	}
+	event = page.Events[0]
+	record := types.SourceCommitRecord{Event: event, Cursor: encodeCursor(l.source, event.History.Sequence), TerminalEvidence: event.History.TerminalOutcome}
+	record.Digest, err = commitDigest(record)
+	if err != nil {
+		return types.ProjectionRecoveryResult{}, types.ErrSourceUnavailable
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if existing, ok := l.recordByEventIDLocked(event.History.EventID); ok {
+		if existing.Digest != record.Digest || existing.Cursor != record.Cursor || existing.TerminalEvidence != record.TerminalEvidence || !reflect.DeepEqual(existing.Event, record.Event) {
+			return types.ProjectionRecoveryResult{}, types.ErrHistoryConflict
+		}
+		return types.ProjectionRecoveryResult{Record: existing, Duplicate: true}, nil
+	}
+	sequence := event.History.Sequence
+	if sequence < l.floor {
+		return types.ProjectionRecoveryResult{}, types.ErrCursorExpired
+	}
+	if sequence != l.sequence+1 {
+		return types.ProjectionRecoveryResult{}, types.ErrHistoryGap
+	}
+	previous := l.snapshotLocked()
+	l.sequence = sequence
+	l.records = append(l.records, record)
+	if len(l.records) > l.retention {
+		l.floor = l.records[0].Event.History.Sequence
+		l.records = append([]types.SourceCommitRecord(nil), l.records[1:]...)
+	}
+	if err := l.persistLocked(); err != nil {
+		l.restoreLocked(previous)
+		return types.ProjectionRecoveryResult{}, err
+	}
+	return types.ProjectionRecoveryResult{Record: record}, nil
 }
 
 func (l *ProjectionLedger) AcknowledgeProjection(ctx context.Context, acknowledgement types.ProjectionAcknowledgement) (types.ProjectionAcknowledgementResult, error) {

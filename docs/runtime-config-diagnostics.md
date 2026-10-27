@@ -2352,6 +2352,12 @@ Offline replay classifications and evidence live in the
 still go through `observability/event.RuntimeRecorder` as the sole writer and
 preserve additive + nullable + default compatibility.
 
+Source projection reconciliation is not a runtime configuration or diagnostic
+writer. `Journal.ReconcileProjection` returns bounded source evidence and an
+explicit duplicate flag; it does not emit QueryRuns/RuntimeRecorder fields,
+change terminal state, or authorize business commit. Foreign, conflict, gap,
+expiry and unavailable results remain typed recovery outcomes.
+
 # Application outbox dispatch bridge（进行中 change；无配置或诊断字段）
 
 `establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only、reference-only `application_outbox_dispatch.v1` 接入；它不提供 env/file/hot-update 配置键、默认值、QueryRuns 字段、RuntimeRecorder payload 或诊断查询 API。既有 `env > file > default` 优先级、非法配置 fail-fast 与原子回滚语义不变。

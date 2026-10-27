@@ -74,4 +74,12 @@ func TestComposerNativeHistoryBindsSourceProjectionLedger(t *testing.T) {
 	if err != nil || len(page.Records) != 1 {
 		t.Fatalf("child projection records = %#v err=%v", page, err)
 	}
+	sourcePage, err := journal.ReadAfter(context.Background(), source, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := journal.ReconcileProjection(context.Background(), sourcePage.Events[0])
+	if err != nil || !recovered.Duplicate || recovered.Record.Event.History.Source != source {
+		t.Fatalf("child recovery seam = %#v err=%v", recovered, err)
+	}
 }

@@ -325,3 +325,10 @@ single-writer, sequential reopen. `core/checkpoint`, `core/history`,
 must reject foreign or stale writers and never infer distributed guarantees
 from a successful reopen. `planbridge` only validates and delegates these
 facts; it does not create a fence, coordinator, queue or unified store.
+
+`Journal.ReconcileProjection` is the only source-history recovery seam in this
+boundary. It accepts a detached fact already retained by that journal and
+writes only to its explicitly bound matching `ProjectionLedger`; it returns an
+explicit duplicate result and rejects foreign, conflicting, expired or gapped
+facts before mutation. It is projection-evidence repair, not execution restore
+or a substitute for the host's business transaction.

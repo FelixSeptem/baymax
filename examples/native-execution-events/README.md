@@ -29,6 +29,7 @@ resume it, re-consume a message, or infer support for resumed planbridge.
 - `mailbox-history malformed=true`、`mailbox-history foreign=true`、`mailbox-history expired=true`：typed cursor 错误不静默回退 latest。fixture/gate 另外覆盖 retained gap 与 source unavailable。
 - `native-history unsupported=unconfigured-runner,unconfigured-child,unconfigured-team,unconfigured-workflow`：其 callback API 存在不表示默认 owner 已启用 retained journal。
 - `source-projection owner-injected-only`：source commit/projection recovery 只有在显式 owner ledger 绑定时成立；未绑定或 ledger 不可用保持 `unsupported`/`recovery-required`，不静默降级为 latest replay。
+- `source-projection reconciled=true`、`duplicate=true`、`conflict=true`、`unsupported=true`：示例先模拟 journal 已提交而 ledger 持久化失败，再由 fresh owner reopen 后显式 `Journal.ReconcileProjection` 修复 source evidence；重复恢复只返回 duplicate，修改 fact 和未绑定 ledger 都 fail closed。
 - `continuation-owner-not-history-replay`：team/mailbox continuation requires an explicit checkpoint owner; cursor replay remains read-only and cannot recover a pending effect.
 
 `input_required` 是暂停；confirm resolution 不表示 canceled。observer.Status 独立于业务 terminal，sink error 是 unconfirmed，必须由业务 commit gate 决定提交。mailbox `acked` 只证明 source lifecycle，不能证明业务 effect committed。

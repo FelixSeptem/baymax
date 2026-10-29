@@ -2388,3 +2388,11 @@ matching manifest evidence. MemoryStore/process-local owners report
 multi-writer or cross-machine restore. Lease loss, retry, DLQ, terminal and
 recovery-required outcomes remain distinct from host business commit and do
 not create a new diagnostic writer.
+
+Pause capability is an independent matrix: `input_required`,
+`approval_required`, and `budget_exhausted` each require their own source
+evidence reference or bounded unsupported reason. A mailbox lifecycle
+continuation may expose delivery facts while all host-handler pause cells stay
+unsupported until a handler execution safe point is source-owned. Missing or
+stale cells are rejected before effects; diagnostics must not imply fallback
+Run, retry, enqueue, or history replay.

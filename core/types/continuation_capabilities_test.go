@@ -53,3 +53,54 @@ func TestContinuationCapabilitiesRequireCompleteSourceEvidence(t *testing.T) {
 		t.Fatalf("exact boundary rejected: %v", err)
 	}
 }
+
+func TestContinuationCapabilitiesAllowExplicitPartialPauseMatrix(t *testing.T) {
+	caps := ContinuationCapabilities{
+		ProfileVersion: "native_continuation.v1", SourceNamespace: "workflow", ContractVersion: "baymax.runtime.contract.v1",
+		ModuleRevision: "revision", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "24h", ExpiryPolicy: "deadline",
+		CheckpointCreation: true, CrossProcessRestore: true,
+		EvidenceReferences: map[string]string{"checkpoint_creation": "contract:checkpoint", "cross_process_restore": "contract:restore"},
+		PauseReasonEvidence: map[string]PauseReasonCapability{
+			"input_required":    {Supported: true, EvidenceReference: "contract:input"},
+			"approval_required": {UnsupportedReason: "approval safe point is not implemented"},
+			"budget_exhausted":  {UnsupportedReason: "budget owner evidence is unavailable"},
+		},
+	}
+	if err := caps.Validate(); err != nil {
+		t.Fatalf("partial matrix rejected: %v", err)
+	}
+	input, ok := caps.PauseReason("input_required")
+	if !ok || !input.Supported || input.EvidenceReference != "contract:input" {
+		t.Fatalf("input evidence = %#v, ok=%v", input, ok)
+	}
+	approval, ok := caps.PauseReason("approval_required")
+	if !ok || approval.Supported || approval.UnsupportedReason == "" {
+		t.Fatalf("approval evidence = %#v, ok=%v", approval, ok)
+	}
+}
+
+func TestContinuationCapabilitiesRejectAmbiguousLegacyAndMatrixEvidence(t *testing.T) {
+	base := ContinuationCapabilities{
+		ProfileVersion: "native_continuation.v1", SourceNamespace: "workflow", ContractVersion: "baymax.runtime.contract.v1",
+		ModuleRevision: "revision", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "24h", ExpiryPolicy: "deadline",
+		CheckpointCreation: true, CrossProcessRestore: true,
+		EvidenceReferences: map[string]string{"checkpoint_creation": "contract:checkpoint", "cross_process_restore": "contract:restore"},
+		PauseReasonEvidence: map[string]PauseReasonCapability{
+			"input_required":    {Supported: true, EvidenceReference: "contract:input"},
+			"approval_required": {UnsupportedReason: "approval safe point unavailable"},
+			"budget_exhausted":  {UnsupportedReason: "budget safe point unavailable"},
+		},
+	}
+	for _, mutate := range []func(*ContinuationCapabilities){
+		func(c *ContinuationCapabilities) {
+			c.PauseReasons = []string{"input_required", "approval_required", "budget_exhausted"}
+		},
+		func(c *ContinuationCapabilities) { c.EvidenceReferences["input_required"] = "contract:legacy-input" },
+	} {
+		caps := base.Clone()
+		mutate(&caps)
+		if err := caps.Validate(); err == nil {
+			t.Fatal("accepted overlapping legacy and per-reason evidence")
+		}
+	}
+}

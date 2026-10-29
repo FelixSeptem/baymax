@@ -171,7 +171,10 @@ func parseRoadmapInProgressChanges(roadmap string) map[string]struct{} {
 			inProgress = true
 			continue
 		}
-		if inProgress && strings.HasPrefix(line, "## ") {
+		// The current-status projection ends at the next Markdown heading.
+		// This keeps navigation tables and archived-history sections from being
+		// interpreted as active OpenSpec changes.
+		if inProgress && strings.HasPrefix(line, "#") {
 			break
 		}
 		if !inProgress {
@@ -187,8 +190,15 @@ func parseRoadmapInProgressChanges(roadmap string) map[string]struct{} {
 			continue
 		}
 		start := strings.Index(line, "`")
-		end := strings.LastIndex(line, "`")
-		if start < 0 || end <= start {
+		if start < 0 {
+			continue
+		}
+		relativeEnd := strings.Index(line[start+1:], "`")
+		if relativeEnd < 0 {
+			continue
+		}
+		end := start + 1 + relativeEnd
+		if end <= start {
 			continue
 		}
 		name := strings.TrimSpace(line[start+1 : end])

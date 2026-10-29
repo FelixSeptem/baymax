@@ -86,6 +86,13 @@ owner exposes a message/delivery/lease/attempt-bound handler safe point with
 its own lease, retry, DLQ and duplicate-delivery evidence. Planbridge must not
 fill this gap with a wrapper executor or a second consume loop.
 
+The continuation capability manifest therefore publishes
+`handler_execution_safe_point` explicitly. A lifecycle-only mailbox owner keeps
+the `input_required`, `approval_required`, and `budget_exhausted` host-handler
+cells unsupported with a bounded reason; those cells cannot be inherited from
+direct, workflow, or sibling-owner evidence. The stable pause-cell limitation
+is `mailbox_handler_safe_point_unsupported`.
+
 ## Application outbox dispatch proposal
 
 `establish-application-outbox-mailbox-recovery-contract` is an active proposal, not a delivered mailbox API. It plans a separate constructor-only, reference-only bridge that may delegate a bounded descriptor to this existing owner or to scheduler. It must not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Before implementation, no bridge type, example, replay fixture or dedicated gate exists.

@@ -698,7 +698,11 @@ func (e *Engine) ContinuationCapabilities(context.Context) (types.ContinuationCa
 		return types.ContinuationCapabilities{}, ErrTeamContinuationUnsupported
 	}
 	scope := e.continuations.DeploymentScope()
-	caps := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: "host_runtime_capability_manifest.v1", ModuleRevision: "baymax", APIVersion: "v1", RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"}, EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:team-continuation.v1", "cross_process_restore": "fixture:team-continuation.v1", "input_required": "fixture:team-continuation.v1", "approval_required": "fixture:team-continuation.v1", "budget_exhausted": "fixture:team-continuation.v1"}, Deployment: scope}
+	caps := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", EvidenceReferences: map[string]string{"checkpoint_creation": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph", "cross_process_restore": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph"}, PauseReasonEvidence: map[string]types.PauseReasonCapability{
+		"input_required":    {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/input_required"},
+		"approval_required": {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/approval_required"},
+		"budget_exhausted":  {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/budget_exhausted"},
+	}, Deployment: scope}
 	caps.CheckpointCreation = true
 	caps.CrossProcessRestore = e.continuations.CrossProcessRestore() && scope.Supported
 	if !caps.CrossProcessRestore {

@@ -48,7 +48,11 @@ func (e *Engine) ContinuationCapabilities(ctx context.Context) (types.Continuati
 	if err := e.validateNativeDependencies(types.RunRequest{}); err != nil {
 		return types.ContinuationCapabilities{}, err
 	}
-	c := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: o.OwnerNamespace, ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "runner-native-continuation", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "24h or original deadline", ExpiryPolicy: "earliest source deadline or 24h", CheckpointCreation: true, CrossProcessRestore: true, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"}, EvidenceReferences: map[string]string{"checkpoint_creation": "test:TestNativeContinuationCrossProcess", "cross_process_restore": "test:TestNativeContinuationCrossProcess", "input_required": "test:TestNativeContinuationCrossProcess/input_required", "approval_required": "test:TestNativeContinuationCrossProcess/approval_required", "budget_exhausted": "test:TestNativeContinuationCrossProcess/budget_exhausted"}, Deployment: types.SameHostSingleWriterScope(o.OwnerNamespace, "fixture:deployment-scope.v1")}
+	c := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: o.OwnerNamespace, ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "runner-native-continuation", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "24h or original deadline", ExpiryPolicy: "earliest source deadline or 24h", CheckpointCreation: true, CrossProcessRestore: true, EvidenceReferences: map[string]string{"checkpoint_creation": "test:TestNativeContinuationCrossProcess", "cross_process_restore": "test:TestNativeContinuationCrossProcess"}, PauseReasonEvidence: map[string]types.PauseReasonCapability{
+		"input_required":    {Supported: true, EvidenceReference: "test:TestNativeContinuationCrossProcess/input_required"},
+		"approval_required": {Supported: true, EvidenceReference: "test:TestNativeContinuationCrossProcess/approval_required"},
+		"budget_exhausted":  {Supported: true, EvidenceReference: "test:TestNativeContinuationCrossProcess/budget_exhausted"},
+	}, Deployment: types.SameHostSingleWriterScope(o.OwnerNamespace, "fixture:deployment-scope.v1")}
 	c.ModuleRevision = nativeBuildRevision()
 	if err := c.Validate(); err != nil {
 		return types.ContinuationCapabilities{}, types.ErrCheckpointUnsupported

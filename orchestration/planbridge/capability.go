@@ -193,10 +193,10 @@ func CapabilityManifestWithContinuation(ctx context.Context, source types.Contin
 		entry.SourceContinuation = &snapshot
 		entry.Deployment = caps.Deployment
 		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
-		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
+		promotePauseReasonCells(entry, caps, false)
 		entry.RetentionPolicy = caps.RetentionPolicy
 		entry.EvidenceReference = caps.EvidenceReferences["cross_process_restore"]
-		for _, dimension := range continuationDimensions() {
+		for _, dimension := range continuationDimensions()[:2] {
 			delete(entry.UnsupportedReasons, dimension)
 		}
 	}
@@ -255,19 +255,53 @@ func capabilityManifestWithContinuationForForm(ctx context.Context, source types
 		entry.SourceContinuation = &snapshot
 		entry.Deployment = caps.Deployment
 		entry.CheckpointCreation, entry.CrossProcessRestore = CapabilitySupported, CapabilitySupported
-		entry.InputRequired, entry.ApprovalRequired, entry.BudgetExhausted = CapabilitySupported, CapabilitySupported, CapabilitySupported
+		promotePauseReasonCells(entry, caps, form == ExecutionFormMailboxAsync)
 		if form == ExecutionFormMailboxAsync {
 			entry.MailboxContinuation = CapabilitySupported
 			delete(entry.UnsupportedReasons, "mailbox_continuation")
 		}
 		entry.RetentionPolicy = caps.RetentionPolicy
 		entry.EvidenceReference = caps.EvidenceReferences["cross_process_restore"]
-		for _, dimension := range continuationDimensions() {
+		for _, dimension := range continuationDimensions()[:2] {
 			delete(entry.UnsupportedReasons, dimension)
 		}
 	}
 	result.ModuleRevision = caps.ModuleRevision
 	return result, validateCapabilityManifest(result)
+}
+
+func promotePauseReasonCells(entry *ExecutionFormCapability, caps types.ContinuationCapabilities, mailboxLifecycleOnly bool) {
+	for _, dimension := range continuationDimensions()[2:] {
+		evidence, declared := caps.PauseReason(dimension)
+		state := CapabilityUnsupported
+		reason := LimitationSourceEvidenceMissing
+		switch {
+		case declared && evidence.Supported && (!mailboxLifecycleOnly || mailboxHandlerSafePoint(caps)):
+			state = CapabilitySupported
+			reason = ""
+		case declared && strings.TrimSpace(evidence.UnsupportedReason) != "":
+			reason = evidence.UnsupportedReason
+		case mailboxLifecycleOnly && !mailboxHandlerSafePoint(caps):
+			reason = LimitationMailboxContextSafePoint
+		}
+		switch dimension {
+		case "input_required":
+			entry.InputRequired = state
+		case "approval_required":
+			entry.ApprovalRequired = state
+		case "budget_exhausted":
+			entry.BudgetExhausted = state
+		}
+		if state == CapabilitySupported {
+			delete(entry.UnsupportedReasons, dimension)
+		} else {
+			entry.UnsupportedReasons[dimension] = reason
+		}
+	}
+}
+
+func mailboxHandlerSafePoint(caps types.ContinuationCapabilities) bool {
+	return caps.SourceNamespace != "mailbox" || caps.HandlerExecutionSafePoint
 }
 
 // CapabilityManifestWithHistory projects only a source owner's evidenced facts.
@@ -523,9 +557,19 @@ func validateCapability(entry ExecutionFormCapability, manifestModuleRevision st
 		if entry.Form == ExecutionFormMailboxAsync && (entry.SourceContinuation.SourceNamespace != "mailbox" || entry.MailboxContinuation != CapabilitySupported) {
 			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
 		}
-		for _, dimension := range continuationDimensions() {
-			if states[dimension] != CapabilitySupported {
-				return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		deployment := entry.SourceContinuation.Deployment
+		if deployment != (types.DeploymentScope{}) && deployment.Validate() != nil {
+			return fail(InvalidPlan, "capability_manifest.source_continuation.deployment", nil)
+		}
+		if states["checkpoint_creation"] != CapabilitySupported || states["cross_process_restore"] != CapabilitySupported {
+			return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+		}
+		for _, dimension := range continuationDimensions()[2:] {
+			if states[dimension] == CapabilitySupported {
+				evidence, ok := entry.SourceContinuation.PauseReason(dimension)
+				if !ok || !evidence.Supported {
+					return fail(InvalidPlan, "capability_manifest.source_continuation", nil)
+				}
 			}
 		}
 		if entry.RetentionPolicy != entry.SourceContinuation.RetentionPolicy || entry.EvidenceReference != entry.SourceContinuation.EvidenceReferences["cross_process_restore"] {

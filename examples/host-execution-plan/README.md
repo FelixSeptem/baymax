@@ -34,7 +34,8 @@ direct 使用真实 runner/composer（composer.Run/Stream 目前只委托 runner
 | shared-queue child dispatch | 编译拒绝 | 不 enqueue/claim，无关 task 不变 |
 | mailbox_async + compatible manifest/binding | 委托既有 mailbox owner | source-owned message/delivery/lease/retry/DLQ；不创建 worker 或 parent Run |
 | mailbox/resumed/native resume/durable continuation without declared capability | 编译/准入拒绝 | accepted 不等于 completed；相同 run ID 不证明恢复 |
-| team/mailbox continuation with configured File owner | owner claim/projection only | same-host single-writer sequential reopen；three pause reasons need matching source evidence |
+| team continuation with configured File owner | owner claim/projection only | same-host single-writer sequential reopen；each pause reason needs matching source evidence |
+| mailbox lifecycle continuation with configured File owner | lifecycle projection only | message/delivery/lease facts may be restored, but host-handler pause cells and context safe points remain unsupported |
 
 limits 默认是 descriptor 64 KiB、合计 structural items 128、dependencies 1024、单 reference 1024 UTF-8 bytes、depth 8；copied binding 独立 64 KiB。零 override 选默认，正值只能收紧，负值/放宽拒绝。
 

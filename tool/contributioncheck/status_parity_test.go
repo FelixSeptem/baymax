@@ -77,3 +77,25 @@ func TestValidateStatusParitySupportsSlugSnapshotFormat(t *testing.T) {
 		t.Fatalf("expected no parity issues for slug snapshot format, got %#v", issues)
 	}
 }
+
+func TestValidateStatusParityStopsAtNavigationHeading(t *testing.T) {
+	active := []string{"change-foo"}
+	archived := []string{"change-bar"}
+	roadmap := strings.Join([]string{
+		"## 当前状态",
+		"- 进行中：",
+		"  - `change-foo`",
+		"",
+		"## 实施导航",
+		"| 1 | `change-bar` | 已归档 |",
+	}, "\n")
+	readme := strings.Join([]string{
+		"- `change-foo`（foo）进行中。",
+		"- `change-bar`（bar）已归档并稳定。",
+	}, "\n")
+
+	issues := ValidateStatusParity(active, archived, roadmap, readme)
+	if len(issues) > 0 {
+		t.Fatalf("expected navigation content to be ignored, got %#v", issues)
+	}
+}

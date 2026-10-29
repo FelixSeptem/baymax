@@ -211,7 +211,7 @@ func validateBoundContinuationRequirements(ctx context.Context, d Descriptor, bi
 	var required []string
 	for _, capability := range d.RequiredCapabilities {
 		switch capability {
-		case "checkpoint_creation", "cross_process_restore", "input_required", "approval_required", "budget_exhausted":
+		case "checkpoint_creation", "cross_process_restore", "dynamic_pause", "input_required", "approval_required", "budget_exhausted":
 			required = append(required, capability)
 		}
 	}
@@ -235,6 +235,20 @@ func validateBoundContinuationRequirements(ctx context.Context, d Descriptor, bi
 	if caps.ContractVersion != CapabilityManifestContractVersion || caps.APIVersion != CapabilityManifestAPIVersion {
 		return fail(UnsupportedVersion, "required_capabilities.source", nil)
 	}
+	if caps.Deployment == (types.DeploymentScope{}) || caps.Deployment.Validate() != nil || !caps.Deployment.Supported {
+		return &Error{Code: UnsupportedCapability, Field: "required_capabilities.deployment", Limitation: "source_deployment_evidence_missing"}
+	}
+	if caps.Deployment.OwnerNamespace != caps.SourceNamespace {
+		return &Error{Code: UnsupportedCapability, Field: "required_capabilities.deployment", Limitation: "source_deployment_owner_mismatch"}
+	}
+	if d.Deployment != nil {
+		if err := caps.Deployment.Check(*d.Deployment); err != nil {
+			if errors.Is(err, types.ErrForeignWriter) || errors.Is(err, types.ErrStaleWriter) {
+				return &Error{Code: SourceUnavailable, Field: "required_capabilities.deployment.writer", cause: err}
+			}
+			return &Error{Code: UnsupportedCapability, Field: "required_capabilities.deployment", Limitation: "unsupported_deployment_scope", cause: err}
+		}
+	}
 	for _, capability := range required {
 		dimension := capability
 		if dimension == "dynamic_pause" {
@@ -244,14 +258,8 @@ func validateBoundContinuationRequirements(ctx context.Context, d Descriptor, bi
 			return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationSourceEvidenceMissing}
 		}
 		if dimension == "input_required" || dimension == "approval_required" || dimension == "budget_exhausted" {
-			found := false
-			for _, reason := range caps.PauseReasons {
-				if reason == dimension {
-					found = true
-					break
-				}
-			}
-			if !found {
+			evidence, found := caps.PauseReason(dimension)
+			if !found || !evidence.Supported || strings.TrimSpace(evidence.EvidenceReference) == "" {
 				return &Error{Code: UnsupportedCapability, Field: "required_capabilities", Limitation: LimitationSourceEvidenceMissing}
 			}
 		}

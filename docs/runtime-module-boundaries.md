@@ -8,7 +8,7 @@
 
 ## 宿主恢复准入边界
 
-`RunCheckpointStore` 仍是 metadata-oriented SPI，不代表 continuation state。独立 durable extension 保存 bounded source continuation material 与原 run/session/parent/host/authority/effect correlation，并由同一 source owner 原子 claim/resume。Engine 重启仅在 dependency profile/revision 与 material digest 一致时恢复；host verifier 只做当前准入，不能拼装 source state。FileStore 限定为具备单写锁与原子持久化语义的本机顺序重开，不声称跨机 CAS。direct 三 pause reason 已有 source evidence；composite forms 与 planbridge resumed 仍不开放。
+`RunCheckpointStore` 仍是 metadata-oriented SPI，不代表 continuation state。独立 durable extension 保存 bounded source continuation material 与原 run/session/parent/host/authority/effect correlation，并由同一 source owner 原子 claim/resume。Engine 重启仅在 dependency profile/revision 与 material digest 一致时恢复；host verifier 只做当前准入，不能拼装 source state。FileStore 限定为具备单写锁与原子持久化语义的本机顺序重开，不声称跨机 CAS。direct 三 pause reason 已有 source evidence；composite forms 与 planbridge resumed 仍不开放。continuation capability 的三类 pause reason 按 form 独立投影；source-level pause list、package presence 或 sibling owner 不得提升 cell。mailbox lifecycle continuation 仍不等于 handler execution safe point，因此不得由 planbridge 代建 executor、worker 或 context restore。
 
 `core/types/host_resume_admission.go` 定义 `host_resume_admission.v1` 有界 reference-only verifier 合同，`core/runner.WithHostResumeVerifier` 在原生 dynamic action checkpoint admission 提交前接入。runner 拥有 checkpoint/generation、decision 单次提交、continuation 和事件语义；宿主 callback 拥有可信 plan/revision/authority/tool/write-scope/confirmation/effect 绑定与当前业务授权。`host` 保留通用 command authorization 并委托同一 source guard，不另建 pending registry、执行器或终态 owner。
 

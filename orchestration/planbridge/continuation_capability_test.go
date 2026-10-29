@@ -2,7 +2,9 @@ package planbridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -26,11 +28,14 @@ func evidencedContinuationSource() *continuationSource {
 		ModuleRevision: "verified-build", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "24h", ExpiryPolicy: "earliest deadline or 24h",
 		CheckpointCreation: true, CrossProcessRestore: true, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"},
 		EvidenceReferences: map[string]string{"checkpoint_creation": "contract:save", "cross_process_restore": "contract:subprocess-restore", "input_required": "contract:input-restore", "approval_required": "contract:approval-restore", "budget_exhausted": "contract:budget-restore"},
+		Deployment:         types.SameHostSingleWriterScope("runner/local", "contract:deployment"),
 	}}
 }
 
 func TestContinuationManifestQueriesSourceAndDetachesCompleteEvidence(t *testing.T) {
 	source := evidencedContinuationSource()
+	source.caps.SourceNamespace = "workflow"
+	source.caps.Deployment = types.SameHostSingleWriterScope("workflow", "contract:deployment")
 	manifest, err := CapabilityManifestWithContinuation(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)
@@ -73,9 +78,222 @@ func TestContinuationManifestQueriesSourceAndDetachesCompleteEvidence(t *testing
 	}
 }
 
+func TestContinuationManifestPromotesOnlyEvidencedPauseCells(t *testing.T) {
+	source := evidencedContinuationSource()
+	source.caps.SourceNamespace = "workflow"
+	source.caps.Deployment = types.SameHostSingleWriterScope("workflow", "contract:deployment")
+	source.caps.PauseReasons = nil
+	source.caps.EvidenceReferences = map[string]string{"checkpoint_creation": "contract:save", "cross_process_restore": "contract:subprocess-restore"}
+	source.caps.PauseReasonEvidence = map[string]types.PauseReasonCapability{
+		"input_required":    {Supported: true, EvidenceReference: "contract:input-restore"},
+		"approval_required": {UnsupportedReason: "approval safe point unavailable"},
+		"budget_exhausted":  {UnsupportedReason: "budget evidence unavailable"},
+	}
+	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), source)
+	if err != nil {
+		t.Fatalf("%v manifest=%#v", err, manifest)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow, err := reader.Capability(ExecutionFormWorkflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workflow.InputRequired != CapabilitySupported || workflow.ApprovalRequired != CapabilityUnsupported || workflow.BudgetExhausted != CapabilityUnsupported {
+		t.Fatalf("partial workflow matrix promoted incorrectly: %#v", workflow)
+	}
+	if workflow.UnsupportedReasons["approval_required"] == "" || workflow.UnsupportedReasons["budget_exhausted"] == "" {
+		t.Fatalf("partial workflow matrix lost stable reasons: %#v", workflow.UnsupportedReasons)
+	}
+}
+
+func TestVersionedPauseReasonMatrixFixtures(t *testing.T) {
+	var fixtures struct {
+		SchemaVersion string `json:"schema_version"`
+		Fixtures      []struct {
+			Name       string                         `json:"name"`
+			Expected   ExecutionForm                  `json:"expected_form"`
+			Capability types.ContinuationCapabilities `json:"capabilities"`
+		} `json:"fixtures"`
+	}
+	raw, err := os.ReadFile("testdata/pause_reason_matrix.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	if fixtures.SchemaVersion != "continuation_pause_reason_fixtures.v1" || len(fixtures.Fixtures) != 3 {
+		t.Fatalf("fixture version/count = %q/%d", fixtures.SchemaVersion, len(fixtures.Fixtures))
+	}
+	for _, fixture := range fixtures.Fixtures {
+		t.Run(fixture.Name, func(t *testing.T) {
+			source := &continuationSource{caps: fixture.Capability}
+			var manifest CapabilityManifest
+			var err error
+			switch fixture.Expected {
+			case ExecutionFormWorkflow:
+				manifest, err = CapabilityManifestWithWorkflowContinuation(context.Background(), source)
+			case ExecutionFormMailboxAsync:
+				manifest, err = CapabilityManifestWithMailboxContinuation(context.Background(), source)
+			default:
+				t.Fatalf("unsupported fixture form %q", fixture.Expected)
+			}
+			if fixture.Name == "sibling_owner_mismatch" {
+				codeOf(t, err, UnsupportedVersion)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := NewCapabilityManifestReader(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, err := reader.Capability(fixture.Expected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fixture.Expected == ExecutionFormWorkflow {
+				if entry.InputRequired != CapabilitySupported || entry.ApprovalRequired != CapabilityUnsupported || entry.BudgetExhausted != CapabilityUnsupported {
+					t.Fatalf("partial matrix projection = %#v", entry)
+				}
+				if entry.SourceContinuation.PauseReasonEvidence["input_required"].EvidenceReference != "fixture:pause-matrix.v1/workflow-input" {
+					t.Fatal("manifest did not retain exact source evidence")
+				}
+				if entry.SourceContinuation.Deployment.OwnerNamespace != "workflow" {
+					t.Fatalf("workflow deployment owner = %q", entry.SourceContinuation.Deployment.OwnerNamespace)
+				}
+				return
+			}
+			if entry.InputRequired != CapabilityUnsupported || entry.ApprovalRequired != CapabilityUnsupported || entry.BudgetExhausted != CapabilityUnsupported {
+				t.Fatalf("mailbox lifecycle fixture promoted handler cells: %#v", entry)
+			}
+			if entry.HostContextAssembly != CapabilityUnsupported {
+				t.Fatal("mailbox lifecycle fixture promoted handler context assembly")
+			}
+			for _, reason := range []string{"input_required", "approval_required", "budget_exhausted"} {
+				if entry.UnsupportedReasons[reason] != types.UnsupportedReasonMailboxHandlerSafePoint {
+					t.Fatalf("mailbox.%s limitation = %q", reason, entry.UnsupportedReasons[reason])
+				}
+			}
+		})
+	}
+}
+
+func TestBoundPauseRequirementsUseExactOwnerEvidenceAtCompileAndActivation(t *testing.T) {
+	runner := &countedRunner{}
+	source := &evidencedRunner{countedRunner: runner, caps: evidencedContinuationSource().caps}
+	source.caps.PauseReasons = nil
+	source.caps.EvidenceReferences = map[string]string{
+		"checkpoint_creation":   "contract:save",
+		"cross_process_restore": "contract:restore",
+	}
+	source.caps.PauseReasonEvidence = map[string]types.PauseReasonCapability{
+		"input_required":    {Supported: true, EvidenceReference: "contract:input"},
+		"approval_required": {UnsupportedReason: "approval safe point unavailable"},
+		"budget_exhausted":  {UnsupportedReason: "budget safe point unavailable"},
+	}
+	d, binding, _ := directFixture(t)
+	binding.Direct.Runner = source
+	d.Deployment = &types.DeploymentRequest{OwnerNamespace: "runner/local", WriterFence: "fence:runner/local"}
+	d.RequiredCapabilities = []string{"approval_required"}
+	if _, err := Describe(d, binding, Limits{}); err == nil {
+		t.Fatal("Describe accepted a pause reason explicitly unsupported by its owner")
+	} else {
+		codeOf(t, err, UnsupportedCapability)
+	}
+	if runner.calls != 0 {
+		t.Fatal("unsupported reason activated source during Describe")
+	}
+
+	d.RequiredCapabilities = []string{"input_required"}
+	d, err := Describe(d, binding, Limits{})
+	if err != nil {
+		t.Fatalf("Describe rejected supported owner reason: %v", err)
+	}
+	plan, err := Compile(d, binding, Limits{})
+	if err != nil {
+		t.Fatalf("Compile rejected supported owner reason: %v", err)
+	}
+	source.caps.PauseReasonEvidence["input_required"] = types.PauseReasonCapability{UnsupportedReason: "safe point evidence became stale"}
+	for _, stream := range []bool{false, true} {
+		var runErr error
+		if stream {
+			_, runErr = plan.Stream(context.Background(), Execution{})
+		} else {
+			_, runErr = plan.Run(context.Background(), Execution{})
+		}
+		codeOf(t, runErr, UnsupportedCapability)
+	}
+	if runner.calls != 0 {
+		t.Fatal("stale owner reason activated source")
+	}
+}
+
+func TestBoundPauseRequirementsRequireMatchingDeploymentOwnerAndVersion(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*types.ContinuationCapabilities, *types.DeploymentRequest)
+		want   Code
+	}{
+		{
+			name: "foreign deployment request owner",
+			mutate: func(_ *types.ContinuationCapabilities, request *types.DeploymentRequest) {
+				request.OwnerNamespace = "runner/other"
+				request.WriterFence = "fence:runner/other"
+			},
+			want: SourceUnavailable,
+		},
+		{
+			name: "missing deployment evidence",
+			mutate: func(caps *types.ContinuationCapabilities, _ *types.DeploymentRequest) {
+				caps.Deployment = types.DeploymentScope{}
+			},
+			want: UnsupportedCapability,
+		},
+		{
+			name: "foreign API version",
+			mutate: func(caps *types.ContinuationCapabilities, _ *types.DeploymentRequest) {
+				caps.APIVersion = "host_runtime_capability_manifest.v2"
+			},
+			want: UnsupportedVersion,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &countedRunner{}
+			source := &evidencedRunner{countedRunner: runner, caps: evidencedContinuationSource().caps}
+			source.caps.PauseReasons = nil
+			source.caps.EvidenceReferences = map[string]string{
+				"checkpoint_creation": "contract:save", "cross_process_restore": "contract:restore",
+			}
+			source.caps.PauseReasonEvidence = map[string]types.PauseReasonCapability{
+				"input_required":    {Supported: true, EvidenceReference: "contract:input"},
+				"approval_required": {UnsupportedReason: "approval safe point unavailable"},
+				"budget_exhausted":  {UnsupportedReason: "budget safe point unavailable"},
+			}
+			d, binding, _ := directFixture(t)
+			binding.Direct.Runner = source
+			d.RequiredCapabilities = []string{"input_required"}
+			request := types.DeploymentRequest{OwnerNamespace: "runner/local", WriterFence: "fence:runner/local"}
+			test.mutate(&source.caps, &request)
+			d.Deployment = &request
+			_, err := Describe(d, binding, Limits{})
+			codeOf(t, err, test.want)
+			if runner.calls != 0 {
+				t.Fatal("invalid source binding activated runner")
+			}
+		})
+	}
+}
+
 func TestChildContinuationManifestPromotesOnlyChildForm(t *testing.T) {
 	source := evidencedContinuationSource()
 	source.caps.SourceNamespace = "child"
+	source.caps.Deployment = types.SameHostSingleWriterScope("child", "contract:deployment")
 	manifest, err := CapabilityManifestWithChildContinuation(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)

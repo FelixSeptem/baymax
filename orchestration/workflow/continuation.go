@@ -821,13 +821,14 @@ func (e *Engine) ContinuationCapabilities(ctx context.Context) (types.Continuati
 		ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "workflow-continuation-v1",
 		APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "same-host single-writer sequential reopen; 24h",
 		ExpiryPolicy: "24h or original budget deadline", CheckpointCreation: true, CrossProcessRestore: true,
-		PauseReasons: []string{string(PauseInputRequired), string(PauseApprovalRequired), string(PauseBudgetExhausted)},
 		EvidenceReferences: map[string]string{
 			"checkpoint_creation":   "test:TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine",
 			"cross_process_restore": "test:TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine",
-			"input_required":        "test:TestWorkflowContinuationRunStreamParity",
-			"approval_required":     "test:TestWorkflowPauseControllerStopsApprovalBeforeEffectDispatch",
-			"budget_exhausted":      "test:TestWorkflowBudgetPausePreservesConsumedBudgetAndOriginalDeadline",
+		},
+		PauseReasonEvidence: map[string]types.PauseReasonCapability{
+			string(PauseInputRequired):    {Supported: true, EvidenceReference: "test:TestWorkflowContinuationRunStreamParity"},
+			string(PauseApprovalRequired): {Supported: true, EvidenceReference: "test:TestWorkflowPauseControllerStopsApprovalBeforeEffectDispatch"},
+			string(PauseBudgetExhausted):  {Supported: true, EvidenceReference: "test:TestWorkflowBudgetPausePreservesConsumedBudgetAndOriginalDeadline"},
 		},
 		Deployment: types.SameHostSingleWriterScope(e.continuationNamespace, "fixture:deployment-scope.v1"),
 	}

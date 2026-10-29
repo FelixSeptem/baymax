@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-28
+更新时间：2026-10-29
 
 ## 定位
 
@@ -12,25 +12,42 @@ Baymax 主线保持 `library-first + contract-first`：
 
 本文件是运行态决策入口，不重复归档提案的设计和任务细节。历史范围、设计理由和完整任务以 `openspec/changes/archive/` 为准。
 
+## 提案快速导航
+
+先从这张表选择工作，不要按文档出现顺序翻阅归档记录。每一行都给出可实施方向和启动证据；“审计中”与“需求触发观察”不是已获批准的 OpenSpec，不能因为 API、DTO 或相邻 form 已支持而直接立项。
+
+| 优先级 | 候选方向 | 状态 | 何时可起草 | 首阶段实施方向 | 不能替代 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `composite-graph-restore-material` | **审计中** | 最小复现证明某个 owner checkpoint 无法保存或消费 graph/node/dependency/completed effect/aggregate/terminal lineage，并会导致同一 graph 重跑或错误终态 | 只在缺失 owner 上补 source-owned material、seal/validate/restore 消费、atomic claim、successor lineage、fixture 和 gate | application checkpoint、history replay、相同 run ID 再 `Run`、重新 enqueue |
+| 2 | 多写者/跨机器 durable source store | **需求触发观察** | 真实部署提出并发 writer、跨机器 resume 或 cursor transaction，且能给出 stale writer/崩溃复现 | 在现有 owner store 上增加 CAS、writer fencing、atomic claim/cursor transaction 与 multi-instance evidence | FileStore 的同机单写顺序重开 |
+| 3 | mailbox handler context safe point | **需求触发观察** | 宿主需要跨 handler pause/restore context，且 mailbox owner 有可持久化的 handler continuation material | 在 mailbox owner 增加真实 handler safe point、checkpoint/projection binding 与 fresh resolver reauthorization | lifecycle history 或 host-side resume loop |
+| 4 | Provider structured context / Prompt Cache | **需求触发观察** | SDK fixture 重现 role、tool-result correlation、ordering 丢失，或 cache 成本/P95 已成为稳定瓶颈 | 在 `model/<provider>` 的既有 projection/evidence owner 内增加最小 conformance 或成本证据 | gateway、credential store、cache control plane |
+| 5 | 通用 ExecutionGraph | **需求触发观察** | 多个独立宿主经 workflow/team/composer/planbridge 仍无法表达同一执行结构，且有 fixture | 先写表达缺口与既有 validator 对比，再决定是否存在足够共享 seam | 因模式名称新建统一 executor 或状态机 |
+
+**四步启动法：**
+
+1. 运行 `openspec list --json`，确认没有与候选重叠的 active change。
+2. 在表中列出的 source owner 写最小 failing reproduction；它必须证明运行时事实缺失，而非只证明文档、DTO 或测试覆盖不足。
+3. 记录 capability manifest、store deployment scope、回滚点、受影响文档和 dedicated gate；没有这些事实，候选继续观察。
+4. 只有复现成立，才从最新 `master` 创建语义化分支并起草 OpenSpec；否则记录审计结论后查看下一行。
+
+候选的共用硬边界：source history 由 owner 显式注入，Memory owner 不 durable，FileStore 只支持同机单写顺序重开；continuation 是 form x pause reason x owner store 的路径能力。所有未证明格子保持 `unsupported_capability` 或 `recovery-required`。禁止用 callback history、latest cursor、application pause 标记、第二 journal/mailbox owner、重跑 parent 或 host-side resume loop 伪造 source capability。
+
 ## 当前状态
 
-已归档 172：`restore-workflow-continuations` 已完成 workflow-first composite continuation 实施、验证与规格同步；child/team/mailbox/planbridge resumed 继续保持 `unsupported_capability`。范围与证据见 [归档提案](../openspec/changes/archive/172-restore-workflow-continuations/proposal.md) 和 [验证记录](../openspec/changes/archive/172-restore-workflow-continuations/verification.md)。
+- 进行中：
+  - 无。
+- 已归档：
+  - `persist-native-continuations-and-restore-composite-graphs`（169）：direct durable continuation 基线。
+  - `retain-run-and-composite-source-history`（171）、`restore-workflow-continuations`（172）、`restore-composite-continuations-and-graph-state`（173）：owner history 与 workflow-first restore 基线。
+  - `bound-durable-store-deployment-scope`（174）、`source-history-failure-and-workflow-claim-recovery`（175）、`make-source-history-projection-transactional`（176）：同机单写和 source/projection recovery 边界。
+  - `enable-team-and-mailbox-native-continuations`（177）、`extend-composite-context-assembly-handoff`（178）、`source-owner-history-injection-and-projection-recovery`（179）、`composite-checkpoint-restore-by-owner`（180）、`composite-pause-reason-matrix`（181）：composite owner restore、context binding 与 form x pause-reason evidence。
+- 候选：
+  - `composite-graph-restore-material`：下一项待审计候选；仅在 source owner checkpoint 缺少真实 graph material 的可复现证据成立时立项。
 
-已归档 175：`source-history-failure-and-workflow-claim-recovery` 已补齐显式注入 source history 的 append-failure 可见性，并修正 workflow FileStore abandoned claimed/running resume 的 recovery-required 语义与单写者 fence。该 change 不引入第二 journal、自动重跑或多写者/跨机器能力；Danny projection 事务仍由 Danny owner 验收。
+完整归档设计、任务与验证记录见 [Archive Index](../openspec/changes/archive/INDEX.md)。当前已归档能力不能背书相邻 form 或未来候选。
 
-代码复核结论：归档 175 不是 BXM-1 至 BXM-5 的总收口。它只覆盖显式 owner history 的 append-failure health、workflow continuation claim 的 `recovery_required` 分类和同机单写者 fence；不改变 mailbox continuation、team continuation、composite pause matrix、默认 source owner journal 或跨库投影事务。当前能力仍必须以实际 source evidence 和 capability manifest 为准；未具备 source-owned restore/history 的 form 继续返回 `unsupported_capability` 或 `recovery-required`，不得通过重新 `Run`、重新 enqueue、latest cursor 或 callback replay 伪造恢复。
-
-已归档 171：`retain-run-and-composite-source-history`（Spec 2；source-native history/cursor/replay 增量提案）已完成实施与全量门禁，保留现有 same-host single-writer/sequential-reopen 边界。
-
-已归档 170：`evaluate-bounded-harness-candidate-comparisons`（13/13 tasks；Harness² 候选对比评测契约），四组增量要求已同步到评测主规格。
-
-已归档 169：`persist-native-continuations-and-restore-composite-graphs`（Spec 3；BXM-3 + BXM-4）。direct 跨进程 checkpoint/claim/restore、三类 pause reason、离线示例与完整门禁已完成并同步主规格；child/team/workflow/mailbox 和 planbridge resumed 保持 unsupported，composite graph restore 留待后续逐 owner 增量提案。
-
-已归档（2026-10-24）：`make-source-history-projection-transactional` 已交付 source-owned commit/projection recovery contract、显式 ProjectionLedger、只读 recovery read 和 capability manifest 证据；未绑定 ledger 的 retained history、team/mailbox continuation 和跨库业务投影事务仍保持既有 unsupported/recovery-required 边界。完整范围与验证见 [归档提案](../openspec/changes/archive/2026-10-24-make-source-history-projection-transactional/proposal.md)。
-
-已归档 177：`enable-team-and-mailbox-native-continuations` 已按 owner 完成 team parallel/vote 与 mailbox host-plan 的 source-owned pause/checkpoint/restore、atomic claim、lease/retry/DLQ 与 Run/Stream parity；未具备证据的 form/pause-reason 格子继续在 admission 前返回 `unsupported_capability` 或 `recovery-required`。路线图中的“source history 必须由 owner 显式注入”和“continuation 支持是 path-specific”两条代码审计冻结记录仍然有效，不得以 package、DTO、callback history 或 direct capability 推断 composite 支持。范围与验证见 [归档提案](../openspec/changes/archive/177-enable-team-and-mailbox-native-continuations/proposal.md) 和 [验证记录](../openspec/changes/archive/177-enable-team-and-mailbox-native-continuations/verification.md)。
-
-已归档 174：`bound-durable-store-deployment-scope` 已固定 source history、checkpoint、mailbox 与 composite owner store 的部署/并发边界：默认仅支持 same-host single-writer sequential reopen；多写者、跨机器、分布式 cursor transaction 和多实例 resume claim 在没有 CAS/fencing/crash evidence 前保持 typed `unsupported` 或 `recovery-required`。该候选已由先前主线完成，不应重复起草。
+活跃 change 的唯一事实源是 `openspec list --json`。
 
 ### 代码审计冻结记录（2026-10-24）
 
@@ -58,56 +75,20 @@ Baymax 主线保持 `library-first + contract-first`：
 - **Continuation pin 与复现**：公开边界包括 `core/types.ContinuationCapabilities`、runner checkpoint/control、workflow continuation，以及 `orchestration/composer/README.md` 对 child/fanout、team、mailbox、planbridge 的逐路径边界。上游 `TestNativeContinuationCrossProcess` 与 `TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine` 只在显式 checkpoint store、owner namespace 和支持的 workflow/runner path 下报告 `CrossProcessRestore=true`；缺少 restore material 的 child/fanout、team、mailbox、resumed planbridge 必须返回 unsupported/unavailable。三类 pause reason 的跨 form 证据尚未建立，不能从 direct 能力外推。
 - **Continuation 证据入口与解阻**：证据入口为 `core/types/continuation_capabilities_test.go`、`core/checkpoint/store_test.go`、workflow continuation tests、composer README 和 `docs/baymax-contract-evidence.md`。后续每个 form/pause reason 都必须补 source-owned checkpoint、graph/member/step 或 delivery/lease material、authority binding、atomic claim、fresh-process restore、cancel/timeout/retry 竞争、terminal evidence 及 Run/Stream parity；缺失时只记录 typed `unsupported_capability`/`recovery-required`，不使用 application pause、mailbox lifecycle history、callback replay 或重新 Run parent 伪造恢复。
 
-当前状态：`layered-technical-documentation-and-drift-governance` 已完成实施、验证并归档为 156；范围是中文为主的分层技术文档、README 导航重构，以及每个新 OpenSpec 提案的 Documentation Impact Assessment 与文档漂移门禁。本 change 不改变运行时行为、API contract、配置语义或 agent-mode 示例语义。
+归档 155–168 建立了文档治理、direct pause/resume、provider conformance、native event adapter、host plan、revalidation、context handoff、outbox、capability manifest 与 source-history 基线。逐项设计和验证不在 roadmap 重复，统一由 [Archive Index](../openspec/changes/archive/INDEX.md) 维护。
 
-归档 158（`introduce-dynamic-action-gate-and-native-run-resume`）已完成实现、验证并归档；其动态 PendingAction opaque reference、`input_required` pause、同一 Run/Stream checkpoint resume 与 Host action-resume admission 已纳入主线基线。
+归档 160–181 已建立原生事件、host plan、mailbox async、context handoff、source history、owner restore、pause matrix 和质量门禁基线。当前支持范围以 capability manifest 与各 owner 的 source evidence 为准；完整范围、DoD、Example Impact Assessment 和验证记录均由 [Archive Index](../openspec/changes/archive/INDEX.md) 指向的归档工件维护。
 
-归档 159（`fix-dynamic-action-resolution-terminal-event-semantics`）已完成实现、验证并归档；其动态 action resolution 与 canceled terminal 事件已拆分，confirm/deny/timeout 的 resolution 事件、deny/timeout canceled terminal、duplicate resume 幂等和 Run/Stream 语义对等已纳入主线基线。
+## 第一候选审计入口
 
-归档 157（`openai-compatible-endpoint-profile-conformance`）已完成实现、归档并合并到主线；其官方 Responses API 兼容 endpoint profile、离线 conformance contract、capability 边界与回滚说明已纳入主线基线。
+`composite-graph-restore-material` 是下一项待审计工作，而不是预先承诺的实现。先检查 `orchestration/workflow/continuation.go`、`orchestration/teams/continuation.go`、`orchestration/composer/continuation.go` 和各自的 continuation tests，按下列顺序找实际缺口：
 
-归档 155（`add-explicit-model-capability-adapter`）已完成实现、验证并合并到主线；其显式 model capability adapter、Stream preflight 诊断与最小模板澄清已纳入主线基线。
+1. checkpoint 是否同时保存且 restore 消费 graph definition/digest、native node ID、dependency completion、pending/completed state、effect outcome、aggregate、budget/deadline、terminal arbitration 与 predecessor/successor lineage；
+2. 重启恢复时已完成 member/step/effect 是否可能再次执行，或 pending node 是否丢失；
+3. authority/plan/write-scope/effect namespace/occurrence/causation 和 owner deployment scope 是否在 claim 前被验证；
+4. 最小失败用例是否能证明上述任一事实确实缺失，而不是 API 尚未被某个调用方使用。
 
-宿主执行接入与恢复边界的原生事件项已归档为 160，plan bridge 已归档为 162，恢复准入重验证已归档为 164，context assembly/handoff 已归档为 165，application outbox 接缝已归档为 166。
-
-归档 168（`retain-source-native-event-history-and-cursor-replay`；Spec 2 / BXM-2）已完成实施、验证与规格同步。已固定 [source 支持矩阵](guides/integration.md)：既有 mailbox owner 提供最后 1024 条 lifecycle facts 的 retained journal 与只读 read-after-cursor；FileStore 声明原子持久化与重开 replay，MemoryStore 仅 process-local；runner/child/team/workflow 在各自 owner 提供证据前保持 `ErrHistoryUnsupported`。source-bound manifest 明确 namespace、sequence、retention/floor、cursor 与 terminal-recovery 范围；禁止 callback adapter history、host observation cursor、跨 source 全局排序、latest fallback、replay 副作用或将 cursor 解释为 execution restore。完整测试、race、lint 与 81 阶段 quality gate 已通过；最终审查修正后已重跑全量测试/race/lint 与 PowerShell contract gate，shell gate 最终重跑因授权取消未执行，先前执行已通过。验证边界见 [verification](../openspec/changes/archive/168-retain-source-native-event-history-and-cursor-replay/verification.md)。归档 171 的 `retain-run-and-composite-source-history` 是该基线的 source-owner 增量：在不扩大 checkpoint/restore 范围的前提下，逐 source 补齐 retained journal/replay evidence；未具备真实 owner 证据的 source 继续明确 unsupported。
-
-`publish-capabilities-and-bridge-mailbox-async-host-plans`（Spec 1；BXM-5 + BXM-1）已完成实现、规范同步与归档（167）。它交付 versioned host runtime capability manifest 与 `mailbox_async` host-plan bridge：先固定 form-level admission/evidence/unsupported boundary，再以既有 mailbox owner 承接 source-owned logical admission、delivery/lease/retry/DLQ/terminal evidence；不新建 queue、worker、scheduler 或 direct-run fallback。
-
-归档 165（`establish-host-context-assembly-handoff-contract`）已完成实现、验证和规格同步：它交付 host context projection 的显式 opt-in、reference-only 宿主接入合同。宿主先完成角色、来源与业务引用过滤；Baymax 在既有 Context Assembler 与 handoff/restore owner 内验证 `host_context_projection.v1` 的 identity/digest、capability 收窄和 opaque source reference。constructor/API 固定限制为 32 KiB descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest；有限 `host_context.*` 失败分类 fail-closed，且不包含 body 或 callback error。direct Run/Stream 仅在既有 Context Assembler 启用时支持该 opt-in path；禁用时保留 assembler bypass 语义，projection 不会被 admit 或 resolve。legal `handoff.v1` correlation、fresh-resolver correlated restore、read-only `budget_projection.v1` 语义、reference-only replay、双平台 dedicated gate、标准 quality path 的静态接线与离线 example 都已交付。不新增 context store、业务授权/commit、预算账本、Provider SDK、RuntimeRecorder/QueryRuns 字段或平行执行/终态/恢复状态机。Example Impact Assessment：新增示例；`examples/host-context-assembly/README.md` 是已交付的文档与离线示例基线。完整工件见 [归档提案](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
-
-归档 164（`establish-host-resume-admission-revalidation-contract`）已完成并合并交付：reference-only 宿主绑定、当前授权/revision 重验证、source 锁外 callback 与锁内再次校验、完整 duplicate identity、Run/Stream/Host conformance、离线 replay、双平台 gate 与严格联合质量门禁均已验证。其恢复范围仍只支持原 Engine 内 direct Run/Stream continuation，不扩展 planbridge resumed/team/workflow/mailbox 或 metadata-only 跨进程恢复；宿主继续负责 effect 边界的 authority/revision/effect CAS。Example Impact Assessment：`新增示例`；离线真实 runner 示例与 API 接入指南已同步。
-
-归档 163（`remediate-strict-security-vulnerabilities`）已完成独立安全维护：Go 工具链升至 1.26.9，strict 可达漏洞要求的最小依赖图已升级，严格扫描策略与性能门禁阈值保持不变。Example Impact Assessment：`无需示例变更（附理由）`，工具链与依赖补丁不改变示例 runtime path、semantic anchor 或 expected marker；完整 Go 测试和质量门禁仍覆盖现有示例。验证记录区分实际 advisory、缓存/权限失败和修复后扫描结果。完整工件见归档 [proposal](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/proposal.md)、[design](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/design.md) 与 [tasks](../openspec/changes/archive/163-remediate-strict-security-vulnerabilities/tasks.md)。
-
-归档 162（`establish-host-execution-plan-bridge-contract`）已完成并合并到主线；交付 opt-in host_execution_plan.v1、bounded 编译、全计划预检、既有 native owner 委托、离线 replay/example 与双平台 contract gate。范围、支持矩阵与交付证据见 [归档提案](../openspec/changes/archive/162-establish-host-execution-plan-bridge-contract/proposal.md) 和 [示例](../examples/host-execution-plan/README.md)。其 resumed/mailbox/shared-queue 拒绝边界继续有效。
-
-归档 161（`enforce-openspec-public-semantics-documentation-contract`）已完成实施、验证并归档；其强制每个 active OpenSpec 的 proposal/design/tasks 接受对外语义文档同步承诺，并以双平台门禁检查文档路径、owner、证据及声明一致性；不改变 runtime。
-
-已归档 160 的原生执行事件 adapter 提案响应集成方自行构造 parent/terminal ExecutionEvent、尚未消费真实 runner 事件的需求；Baymax 审计确认 direct Event 无通用 event ID/sequence，协议映射可能共享 TraceID，durable binding 当前仅覆盖 Realtime。因此已复用原生 EventHandler/Protocol 与 source owner，明确 direct callback 不按 mapped ID 去重、不提供持久游标、input_required 是暂停，RuntimeRecorder 保持独立诊断消费者。宿主保留业务授权、记录存储和 commit gate。
-
-详细范围、DoD、风险、回滚和影响评估见归档的 [proposal](../openspec/changes/archive/160-establish-native-execution-event-adapter-contract/proposal.md)、[design](../openspec/changes/archive/160-establish-native-execution-event-adapter-contract/design.md) 与 [tasks](../openspec/changes/archive/160-establish-native-execution-event-adapter-contract/tasks.md)。Example Impact Assessment：`新增示例`，已提供 [宿主中立离线示例](../examples/native-execution-events/README.md)；source 接线与失败合同见 [integration guide](guides/integration.md)。归档状态以 `openspec/changes/archive/INDEX.md` 为准。
-
-状态权威来源：
-
-1. 活跃变更：`openspec list --json`。
-2. 已归档变更：`openspec/changes/archive/INDEX.md`。
-3. 示例交付状态：`examples/agent-modes/MATRIX.md`。
-
-截至 2026-10-29：
-
-归档 160/161/162/163/164 已纳入 `master`。安全维护与 host-resume 准入重验证均已完成联合完整门禁并归档；后续候选仍须从最新基准分支重新切出语义化功能分支并核对真实 gap。
-
-已归档 180：`composite-checkpoint-restore-by-owner` 已把显式 workflow source-owner continuation restore 接入 planbridge，验证 fresh-owner/file-store restore、completed step 不重跑、duplicate resume source projection、foreign authority rejection 与 Run/Stream parity。child/team 不重复建设；mailbox handler continuation 与 resumed-trigger planbridge 仍明确 unsupported。
-
-已归档 181：`composite-pause-reason-matrix` 已把 continuation capability 收窄为 form × pause reason 的 owner evidence；compile/admission 现在校验 source/API/deployment scope 与 stale evidence，runner/workflow/team 仅按真实 safe-point/restore 证据开放，child 无证据与 mailbox lifecycle-only handler pause 保持 typed unsupported，并完成 Run/Stream、重启、重复 claim、terminal/lease/retry/DLQ 和版本化 fixture/gate 验证。详情见 [归档提案](../openspec/changes/archive/181-composite-pause-reason-matrix/proposal.md)。
-
-## 实施导航（只看这里即可定位下一项）
-
-| 顺序 | OpenSpec | 当前状态 | 实施入口 | 首阶段 DoD | 明确不做 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `composite-graph-restore-material` | **候选，待代码复现** | [roadmap scope](#后续增量候选source-native-history-与-composite-recovery) | 只有真实 owner checkpoint 无法表达 graph/node/dependency/effect/aggregate 状态时，补 source-owned graph material、atomic claim 和 successor lineage | 不用 application checkpoint、history replay 或重跑 parent 模拟 graph restore |
-**提案筛选规则：**先看“当前状态”中的进行中和候选，再看本表的实施入口；已归档内容只作为证据链接。启动候选前必须补代码级复现、owner/store 边界、回滚点、spec delta、文档影响、Example Impact Assessment 和 dedicated gate。候选完成后从“候选”移入“已归档”，下一候选只保留一个明确入口。
+四项都由现有 owner 实现和测试证明时，不起草重复 proposal，改审计快速导航中的下一条。发现缺口时，proposal 必须只覆盖受影响 owner/form/reason，并同步 manifest、Run/Stream parity、fresh-process restore、竞争窗口、公开文档和 dedicated gate。
 
 ## 已归档快照
 

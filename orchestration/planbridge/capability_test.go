@@ -7,6 +7,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/mailbox"
+	"github.com/FelixSeptem/baymax/orchestration/teams"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
 )
 
@@ -26,6 +27,7 @@ func (workflowContinuationEvidence) ContinuationCapabilities(context.Context) (t
 		ProfileVersion: "native_continuation.v1", SourceNamespace: "workflow", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "workflow-v1", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "same-host-single-writer", ExpiryPolicy: "24h", CheckpointCreation: true, CrossProcessRestore: true,
 		PauseReasons:       []string{"input_required", "approval_required", "budget_exhausted"},
 		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:workflow-continuation.v1", "cross_process_restore": "fixture:workflow-continuation.v1", "input_required": "fixture:workflow-continuation.v1", "approval_required": "fixture:workflow-continuation.v1", "budget_exhausted": "fixture:workflow-continuation.v1"},
+		Deployment:         types.SameHostSingleWriterScope("workflow", "fixture:workflow-continuation.v1"),
 	}, nil
 }
 
@@ -56,6 +58,14 @@ func TestMailboxContinuationManifestRequiresDurableOwnerEvidence(t *testing.T) {
 	capability, err := reader.Capability(ExecutionFormMailboxAsync)
 	if err != nil || capability.MailboxContinuation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported {
 		t.Fatalf("mailbox capability = %#v err=%v", capability, err)
+	}
+	if capability.InputRequired != CapabilityUnsupported || capability.ApprovalRequired != CapabilityUnsupported || capability.BudgetExhausted != CapabilityUnsupported {
+		t.Fatalf("lifecycle-only mailbox promoted handler pause cells: %#v", capability)
+	}
+	for _, reason := range []string{"input_required", "approval_required", "budget_exhausted"} {
+		if capability.UnsupportedReasons[reason] != types.UnsupportedReasonMailboxHandlerSafePoint {
+			t.Fatalf("mailbox.%s limitation = %q", reason, capability.UnsupportedReasons[reason])
+		}
 	}
 	team, _ := reader.Capability(ExecutionFormTeam)
 	if team.SourceContinuation != nil || team.CrossProcessRestore != CapabilityUnsupported {
@@ -112,11 +122,31 @@ func TestTeamContinuationManifestPromotesOnlyTeamCells(t *testing.T) {
 	}
 }
 
+func TestTeamOwnerContinuationManifestUsesPublicContractVersions(t *testing.T) {
+	store, err := teams.NewFileTeamContinuationStore(filepath.Join(t.TempDir(), "team.json"), "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := teams.New(teams.WithTeamContinuationStore(store, "team-owner"))
+	manifest, err := CapabilityManifestWithTeamContinuation(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("manifest from configured team owner: %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := reader.Capability(ExecutionFormTeam)
+	if err != nil || entry.CrossProcessRestore != CapabilitySupported {
+		t.Fatalf("team continuation = %#v, err=%v", entry, err)
+	}
+}
+
 type teamContinuationEvidence struct{}
 
 func (teamContinuationEvidence) ContinuationCapabilities(context.Context) (types.ContinuationCapabilities, error) {
 	return types.ContinuationCapabilities{
-		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "baymax", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: true, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"}, EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:team-continuation.v1", "cross_process_restore": "fixture:team-continuation.v1", "input_required": "fixture:team-continuation.v1", "approval_required": "fixture:team-continuation.v1", "budget_exhausted": "fixture:team-continuation.v1"}, Deployment: types.SameHostSingleWriterScope("team-owner", "fixture:team-continuation.v1"),
+		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: CapabilityManifestContractVersion, ModuleRevision: "baymax", APIVersion: CapabilityManifestAPIVersion, RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: true, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"}, EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:team-continuation.v1", "cross_process_restore": "fixture:team-continuation.v1", "input_required": "fixture:team-continuation.v1", "approval_required": "fixture:team-continuation.v1", "budget_exhausted": "fixture:team-continuation.v1"}, Deployment: types.SameHostSingleWriterScope("team", "fixture:team-continuation.v1"),
 	}, nil
 }
 

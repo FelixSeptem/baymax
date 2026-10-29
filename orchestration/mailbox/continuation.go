@@ -249,8 +249,14 @@ func (m *Mailbox) ContinuationCapabilities(context.Context) (types.ContinuationC
 		scope = types.SameHostSingleWriterScope("mailbox", "fixture:mailbox-continuation.v1")
 	}
 	caps := types.ContinuationCapabilities{
-		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "mailbox", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-mailbox-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: durable, PauseReasons: []string{"input_required", "approval_required", "budget_exhausted"},
-		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:mailbox-continuation.v1", "cross_process_restore": "fixture:mailbox-continuation.v1", "input_required": "fixture:mailbox-continuation.v1", "approval_required": "fixture:mailbox-continuation.v1", "budget_exhausted": "fixture:mailbox-continuation.v1"}, Deployment: scope,
+		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "mailbox", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-mailbox-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: durable,
+		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:mailbox-continuation.v1", "cross_process_restore": "fixture:mailbox-continuation.v1"},
+		PauseReasonEvidence: map[string]types.PauseReasonCapability{
+			"input_required":    {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+			"approval_required": {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+			"budget_exhausted":  {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+		},
+		Deployment: scope,
 	}
 	if !durable {
 		caps.UnsupportedReasons = map[string]string{"cross_process_restore": "mailbox continuation store is process-local"}

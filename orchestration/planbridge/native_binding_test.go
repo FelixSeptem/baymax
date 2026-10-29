@@ -164,6 +164,7 @@ func TestHostExecutionPlanChildContinuationDelegatesToSourceOwner(t *testing.T) 
 	owner := &testChildContinuationOwner{result: composer.ChildDispatchResult{AsyncAccepted: true, AsyncTaskID: "native"}}
 	source := evidencedContinuationSource()
 	source.caps.SourceNamespace = "child"
+	source.caps.Deployment = types.SameHostSingleWriterScope("child", "contract:deployment")
 	manifest, err := CapabilityManifestWithChildContinuation(context.Background(), source)
 	if err != nil {
 		t.Fatalf("child manifest error = %v", err)

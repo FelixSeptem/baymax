@@ -70,8 +70,16 @@ identity before activation, then delegates to `Engine.ResumeContinuation`.
 Missing or mismatched evidence fails closed; normal Run/Stream is never used as
 a restore fallback. The configured adapter executes only the source-owned
 pending boundary, while already-completed steps come from the checkpoint.
-Only direct preserves input_required as native pause. Resume uses native APIs
-separately; this compiled snapshot cannot restore a Run.
+Continuation cells are promoted independently for `input_required`,
+`approval_required`, and `budget_exhausted`. A source must publish matching
+safe-point, checkpoint/restore, race, terminal, and Run/Stream evidence for
+each cell; a legacy pause-reason list or another form's owner cannot promote
+it. Resume uses native APIs separately; this compiled snapshot cannot restore
+a Run. Mailbox lifecycle continuation remains distinct from host-handler
+execution: without an owner-provided handler safe point, all mailbox handler
+pause cells and context restore remain unsupported before publish or dispatch.
+The pause-cell limitation is source-owned and stable as
+`mailbox_handler_safe_point_unsupported`.
 
 Errors expose `Code`, a safe field path and optional native `Unwrap`, never
 payloads: unsupported_version, invalid_plan, limit_exceeded, binding_mismatch,

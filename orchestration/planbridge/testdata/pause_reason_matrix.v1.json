@@ -1,0 +1,110 @@
+{
+  "schema_version": "continuation_pause_reason_fixtures.v1",
+  "fixtures": [
+    {
+      "name": "workflow_partial_matrix",
+      "expected_form": "workflow",
+      "capabilities": {
+        "profile_version": "native_continuation.v1",
+        "source_namespace": "workflow",
+        "contract_version": "baymax.runtime.contract.v1",
+        "module_revision": "fixture-revision",
+        "api_version": "host_runtime_capability_manifest.v1",
+        "retention_policy": "same-host single-writer sequential reopen",
+        "expiry_policy": "24h or original deadline",
+        "checkpoint_creation": true,
+        "cross_process_restore": true,
+        "evidence_references": {
+          "checkpoint_creation": "fixture:pause-matrix.v1/workflow-checkpoint",
+          "cross_process_restore": "fixture:pause-matrix.v1/workflow-restore"
+        },
+        "pause_reason_evidence": {
+          "input_required": { "supported": true, "evidence_reference": "fixture:pause-matrix.v1/workflow-input" },
+          "approval_required": { "supported": false, "unsupported_reason": "approval safe point not implemented" },
+          "budget_exhausted": { "supported": false, "unsupported_reason": "budget safe point not implemented" }
+        },
+        "deployment": {
+          "version": "deployment_scope.v1",
+          "deployment_profile": "same_host_single_writer_sequential_reopen",
+          "writer_scope": "single_writer",
+          "fencing_scope": "source_owner",
+          "transaction_scope": "sequential_reopen",
+          "owner_namespace": "workflow",
+          "writer_fence": "fence:workflow",
+          "evidence_reference": "fixture:pause-matrix.v1/workflow-deployment",
+          "supported": true
+        }
+      }
+    },
+    {
+      "name": "mailbox_lifecycle_only",
+      "expected_form": "mailbox_async",
+      "capabilities": {
+        "profile_version": "native_continuation.v1",
+        "source_namespace": "mailbox",
+        "contract_version": "baymax.runtime.contract.v1",
+        "module_revision": "fixture-revision",
+        "api_version": "host_runtime_capability_manifest.v1",
+        "retention_policy": "source-owned mailbox checkpoint",
+        "expiry_policy": "source checkpoint expiry",
+        "checkpoint_creation": true,
+        "cross_process_restore": true,
+        "evidence_references": {
+          "checkpoint_creation": "fixture:pause-matrix.v1/mailbox-lifecycle",
+          "cross_process_restore": "fixture:pause-matrix.v1/mailbox-reopen"
+        },
+        "pause_reason_evidence": {
+          "input_required": { "supported": false, "unsupported_reason": "mailbox_handler_safe_point_unsupported" },
+          "approval_required": { "supported": false, "unsupported_reason": "mailbox_handler_safe_point_unsupported" },
+          "budget_exhausted": { "supported": false, "unsupported_reason": "mailbox_handler_safe_point_unsupported" }
+        },
+        "deployment": {
+          "version": "deployment_scope.v1",
+          "deployment_profile": "same_host_single_writer_sequential_reopen",
+          "writer_scope": "single_writer",
+          "fencing_scope": "source_owner",
+          "transaction_scope": "sequential_reopen",
+          "owner_namespace": "mailbox",
+          "writer_fence": "fence:mailbox",
+          "evidence_reference": "fixture:pause-matrix.v1/mailbox-deployment",
+          "supported": true
+        }
+      }
+    },
+    {
+      "name": "sibling_owner_mismatch",
+      "expected_form": "workflow",
+      "capabilities": {
+        "profile_version": "native_continuation.v1",
+        "source_namespace": "team",
+        "contract_version": "baymax.runtime.contract.v1",
+        "module_revision": "fixture-revision",
+        "api_version": "host_runtime_capability_manifest.v1",
+        "retention_policy": "same-host single-writer sequential reopen",
+        "expiry_policy": "24h or original deadline",
+        "checkpoint_creation": true,
+        "cross_process_restore": true,
+        "evidence_references": {
+          "checkpoint_creation": "fixture:pause-matrix.v1/team-checkpoint",
+          "cross_process_restore": "fixture:pause-matrix.v1/team-restore"
+        },
+        "pause_reason_evidence": {
+          "input_required": { "supported": true, "evidence_reference": "fixture:pause-matrix.v1/team-input" },
+          "approval_required": { "supported": true, "evidence_reference": "fixture:pause-matrix.v1/team-approval" },
+          "budget_exhausted": { "supported": true, "evidence_reference": "fixture:pause-matrix.v1/team-budget" }
+        },
+        "deployment": {
+          "version": "deployment_scope.v1",
+          "deployment_profile": "same_host_single_writer_sequential_reopen",
+          "writer_scope": "single_writer",
+          "fencing_scope": "source_owner",
+          "transaction_scope": "sequential_reopen",
+          "owner_namespace": "team-owner",
+          "writer_fence": "fence:team-owner",
+          "evidence_reference": "fixture:pause-matrix.v1/team-deployment",
+          "supported": true
+        }
+      }
+    }
+  ]
+}

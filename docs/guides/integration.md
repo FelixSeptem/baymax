@@ -94,7 +94,7 @@ status := observer.Status() // 独立评估 runErr/source outcome 与观察结�
 
 默认交付 deadline 为 1 秒；`DeliveryTimeout=0` 选择默认，负值拒绝，正值为 override。`Context=nil` 使用独立 Background context；不要复用可能被取消的 Run context，否则 source canceled 事实可能无法交付。`Sink.Consume` 同步执行，无队列、自动 retry 或 detached goroutine；任意不合作的 Go sink 无法被强制中断。source 不得在同步快照期间并发修改 payload。
 
-每次 Run/Stream/resume 返回后检查 `Status`：首错停止后续交付；sink error/timeout 是 unconfirmed，可能已经写入，不能自动重试。`Incomplete` 表示观察失败或尚未确认收到 source terminal，不能据此改写 source outcome。`input_required` 是 pause，`run.dynamic_action.resolved` 是 decision 被接收；completed/failed/canceled 由 source terminal 决定，业务提交另走宿主 commit gate。
+每次 Run/Stream/resume 返回后检查 `Status`：首错停止后续交付；sink error/timeout 是 unconfirmed，可能已经写入，不能自动重试。`Incomplete` 表示观察失败或尚未确认收到 source terminal，不能据此改写 source outcome。`input_required` 是 pause，`run.dynamic_action.resolved` 是 decision 被接收；completed/failed/canceled 由 source terminal 决定，业务提交另走宿主 commit gate。continuation capability 按 execution form × pause reason 独立声明；只有具备对应 source safe point、checkpoint/restore、竞争窗口和 terminal evidence 的格子才可恢复。
 
 Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和串行 callback order，不能按 EventID/TraceID 去重，也没有 durable history/cursor 或全局顺序。必需的 unsupported 能力在构造时拒绝。Realtime 只经 `ProjectRealtimeBinding` 保留既有 source binding 的 identity/sequence/overlap/gap/expired outcome；该入口不订阅事件，也不恢复执行。各 owner 的接线矩阵、默认 limits 和失败分类见 [adapter 合同](../../host/eventadapter/README.md)。
 

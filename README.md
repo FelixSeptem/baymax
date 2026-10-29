@@ -37,6 +37,8 @@ go run ./examples/01-chat-minimal
 
 - 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。
 
+- 已归档 181：`composite-pause-reason-matrix` 已将 continuation capability 收敛为逐 execution form × pause reason 的 source evidence；缺少 safe point、restore、竞争和 terminal evidence 的格子在 admission 前保持 typed `unsupported_capability`/`unavailable`，mailbox lifecycle continuation 不代表 handler execution continuation。下一候选及实施入口见[开发路线图](docs/development-roadmap.md)。
+
 - `source-history-failure-and-workflow-claim-recovery`（归档 175；显式 source history append health 与 workflow resume claim recovery/fencing）。
 
 - 最近归档：`make-source-history-projection-transactional`（2026-10-24）；为显式 source owner 增加 bounded source commit/projection recovery evidence。该 change 不新增执行 form、队列或业务数据库事务；未绑定 ledger 的 history 仍只提供 retained replay，事务不确定窗口返回 typed `recovery-required`。

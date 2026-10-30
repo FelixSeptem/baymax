@@ -125,28 +125,32 @@ type Task struct {
 }
 
 type Plan struct {
-	RunID                 string                                  `json:"run_id,omitempty"`
-	SessionID             string                                  `json:"session_id,omitempty"`
-	ParentRunID           string                                  `json:"parent_run_id,omitempty"`
-	CausationID           string                                  `json:"causation_id,omitempty"`
-	AuthorityDigest       string                                  `json:"authority_digest,omitempty"`
-	PlanDigest            string                                  `json:"plan_digest,omitempty"`
-	WriteScopeDigest      string                                  `json:"write_scope_digest,omitempty"`
-	EffectNamespace       string                                  `json:"effect_namespace,omitempty"`
-	OccurrenceID          string                                  `json:"occurrence_id,omitempty"`
-	TeamID                string                                  `json:"team_id"`
-	WorkflowID            string                                  `json:"workflow_id,omitempty"`
-	StepID                string                                  `json:"step_id,omitempty"`
-	Strategy              Strategy                                `json:"strategy,omitempty"`
-	Tasks                 []Task                                  `json:"tasks"`
-	TaskTimeout           time.Duration                           `json:"task_timeout,omitempty"`
-	ParallelMaxWorkers    int                                     `json:"parallel_max_workers,omitempty"`
-	Backpressure          types.BackpressureMode                  `json:"backpressure,omitempty"`
-	FailurePolicy         FailurePolicy                           `json:"failure_policy,omitempty"`
-	VoteTieBreak          VoteTieBreak                            `json:"vote_tie_break,omitempty"`
-	TimeoutTerminalStatus TaskStatus                              `json:"timeout_terminal_status,omitempty"`
-	HostContextBindings   map[string]hostprojection.SourceBinding `json:"-"`
-	continuationContext   map[string]hostprojection.Resolution
+	RunID                   string                                  `json:"run_id,omitempty"`
+	SessionID               string                                  `json:"session_id,omitempty"`
+	ParentRunID             string                                  `json:"parent_run_id,omitempty"`
+	CausationID             string                                  `json:"causation_id,omitempty"`
+	AuthorityDigest         string                                  `json:"authority_digest,omitempty"`
+	PlanDigest              string                                  `json:"plan_digest,omitempty"`
+	WriteScopeDigest        string                                  `json:"write_scope_digest,omitempty"`
+	EffectNamespace         string                                  `json:"effect_namespace,omitempty"`
+	OccurrenceID            string                                  `json:"occurrence_id,omitempty"`
+	TeamID                  string                                  `json:"team_id"`
+	WorkflowID              string                                  `json:"workflow_id,omitempty"`
+	StepID                  string                                  `json:"step_id,omitempty"`
+	Strategy                Strategy                                `json:"strategy,omitempty"`
+	Tasks                   []Task                                  `json:"tasks"`
+	TaskTimeout             time.Duration                           `json:"task_timeout,omitempty"`
+	ParallelMaxWorkers      int                                     `json:"parallel_max_workers,omitempty"`
+	Backpressure            types.BackpressureMode                  `json:"backpressure,omitempty"`
+	FailurePolicy           FailurePolicy                           `json:"failure_policy,omitempty"`
+	VoteTieBreak            VoteTieBreak                            `json:"vote_tie_break,omitempty"`
+	TimeoutTerminalStatus   TaskStatus                              `json:"timeout_terminal_status,omitempty"`
+	HostContextBindings     map[string]hostprojection.SourceBinding `json:"-"`
+	continuationContext     map[string]hostprojection.Resolution
+	continuationPredecessor string
+	continuationGeneration  uint64
+	continuationDeadline    time.Time
+	continuationBudget      int64
 }
 
 type TaskRecord struct {
@@ -179,6 +183,7 @@ type Result struct {
 	TeamRemoteFailed int                  `json:"team_remote_task_failed,omitempty"`
 	TeamCheckpoint   *TeamContinuationRef `json:"team_checkpoint,omitempty"`
 	PauseReason      TeamPauseReason      `json:"pause_reason,omitempty"`
+	teamSuccessor    *TeamContinuation
 }
 
 func (r Result) RunFinishedPayload() map[string]any {
@@ -329,6 +334,10 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 	if teamPlanDigest(plan) != continuation.GraphDigest {
 		return Result{}, ErrTeamContinuationForeign
 	}
+	plan.continuationPredecessor = continuation.Ref.CheckpointID
+	plan.continuationGeneration = continuation.Generation
+	plan.continuationDeadline = continuation.OriginalDeadline
+	plan.continuationBudget = continuation.ConsumedBudget
 	resolutions, err := validateAndResolveTeamHostContext(ctx, plan, continuation, request)
 	if err != nil {
 		return Result{}, err
@@ -364,11 +373,23 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 		}
 	}
 	result, runErr := e.executeWithRecords(ctx, plan, records, onEvent)
-	if runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, context.DeadlineExceeded) {
+	if runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, context.DeadlineExceeded) && !errors.Is(runErr, ErrTeamPaused) {
 		return result, runErr
 	}
-	if _, commitErr := e.continuations.CommitResumeResult(context.WithoutCancel(ctx), claim, result); commitErr != nil {
+	var committed TeamResumeClaim
+	var commitErr error
+	if successorStore, ok := e.continuations.(teamSuccessorContinuationStore); ok {
+		committed, commitErr = successorStore.CommitResumeResultWithSuccessor(context.WithoutCancel(ctx), claim, result, result.teamSuccessor)
+	} else if result.teamSuccessor != nil {
+		commitErr = ErrTeamContinuationUnsupported
+	} else {
+		committed, commitErr = e.continuations.CommitResumeResult(context.WithoutCancel(ctx), claim, result)
+	}
+	if commitErr != nil {
 		return Result{}, commitErr
+	}
+	if committed.Result != nil {
+		return *committed.Result, runErr
 	}
 	return result, runErr
 }

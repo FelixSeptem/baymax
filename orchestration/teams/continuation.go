@@ -261,12 +261,13 @@ func (r TeamResumeRequest) identity() string {
 }
 
 type TeamResumeClaim struct {
-	Request    TeamResumeRequest `json:"request"`
-	AttemptID  string            `json:"attempt_id"`
-	Generation uint64            `json:"generation"`
-	State      string            `json:"state"`
-	Duplicate  bool              `json:"duplicate,omitempty"`
-	Result     *Result           `json:"result,omitempty"`
+	Request             TeamResumeRequest    `json:"request"`
+	AttemptID           string               `json:"attempt_id"`
+	Generation          uint64               `json:"generation"`
+	State               string               `json:"state"`
+	Duplicate           bool                 `json:"duplicate,omitempty"`
+	Result              *Result              `json:"result,omitempty"`
+	SuccessorCheckpoint *TeamContinuationRef `json:"successor_checkpoint,omitempty"`
 }
 
 type TeamContinuationStore interface {
@@ -277,6 +278,10 @@ type TeamContinuationStore interface {
 	CommitResumeResult(context.Context, TeamResumeClaim, Result) (TeamResumeClaim, error)
 	DeploymentScope() types.DeploymentScope
 	CrossProcessRestore() bool
+}
+
+type teamSuccessorContinuationStore interface {
+	CommitResumeResultWithSuccessor(context.Context, TeamResumeClaim, Result, *TeamContinuation) (TeamResumeClaim, error)
 }
 type teamContinuationRecord struct {
 	Continuation TeamContinuation `json:"continuation"`
@@ -351,6 +356,9 @@ func (s *MemoryTeamContinuationStore) Load(ctx context.Context, ref TeamContinua
 	if err := record.Continuation.Validate(); err != nil {
 		return TeamContinuation{}, err
 	}
+	if err := validateTeamStoredLineage(s.records, record.Continuation); err != nil {
+		return TeamContinuation{}, err
+	}
 	return record.Continuation.Detached(), nil
 }
 func (s *MemoryTeamContinuationStore) ClaimResume(ctx context.Context, req TeamResumeRequest) (TeamResumeClaim, error) {
@@ -382,6 +390,9 @@ func (s *MemoryTeamContinuationStore) claimResume(ctx context.Context, req TeamR
 	c := rec.Continuation
 	if c.Ref.Digest != req.Ref.Digest || c.GraphDigest != req.GraphDigest || c.Generation != req.Generation || c.Strategy != req.Strategy {
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
+	}
+	if err := validateTeamStoredLineage(s.records, c); err != nil {
+		return TeamResumeClaim{}, err
 	}
 	if !s.now().UTC().Before(c.ExpiresAt) {
 		return TeamResumeClaim{}, ErrTeamContinuationExpired
@@ -431,6 +442,10 @@ func (s *MemoryTeamContinuationStore) MarkResumeRunning(ctx context.Context, cla
 	return *rec.Claim, nil
 }
 func (s *MemoryTeamContinuationStore) CommitResumeResult(ctx context.Context, claim TeamResumeClaim, result Result) (TeamResumeClaim, error) {
+	return s.CommitResumeResultWithSuccessor(ctx, claim, result, nil)
+}
+
+func (s *MemoryTeamContinuationStore) CommitResumeResultWithSuccessor(ctx context.Context, claim TeamResumeClaim, result Result, successor *TeamContinuation) (TeamResumeClaim, error) {
 	if err := ctx.Err(); err != nil {
 		return TeamResumeClaim{}, err
 	}
@@ -444,6 +459,12 @@ func (s *MemoryTeamContinuationStore) CommitResumeResult(ctx context.Context, cl
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
 	}
 	if rec.Claim.Result != nil {
+		if successor != nil && (rec.Claim.SuccessorCheckpoint == nil || rec.Claim.SuccessorCheckpoint.Digest != successor.Ref.Digest) {
+			return TeamResumeClaim{}, ErrTeamContinuationConflict
+		}
+		if !sameTeamResult(*rec.Claim.Result, result) {
+			return TeamResumeClaim{}, ErrTeamContinuationConflict
+		}
 		return *rec.Claim, nil
 	}
 	if rec.Recovered {
@@ -452,8 +473,25 @@ func (s *MemoryTeamContinuationStore) CommitResumeResult(ctx context.Context, cl
 	if rec.Claim.State != "claimed" && rec.Claim.State != "running" {
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
 	}
+	if successor != nil {
+		if err := validateTeamSuccessor(rec.Continuation, *successor); err != nil {
+			return TeamResumeClaim{}, err
+		}
+		if existing, ok := s.records[successor.Ref.CheckpointID]; ok {
+			if existing.Continuation.Ref.Digest != successor.Ref.Digest {
+				return TeamResumeClaim{}, ErrTeamContinuationConflict
+			}
+		} else {
+			s.records[successor.Ref.CheckpointID] = teamContinuationRecord{Continuation: successor.Detached()}
+		}
+	}
 	saved := result
 	saved.Tasks = append([]TaskRecord(nil), result.Tasks...)
+	saved.teamSuccessor = nil
+	if successor != nil {
+		saved.TeamCheckpoint = &successor.Ref
+		rec.Claim.SuccessorCheckpoint = &successor.Ref
+	}
 	rec.Claim.Result = &saved
 	rec.Claim.State = "completed"
 	s.records[claim.Request.Ref.CheckpointID] = rec
@@ -542,6 +580,9 @@ func (s *FileTeamContinuationStore) ClaimResume(ctx context.Context, r TeamResum
 	if c.Ref.Digest != r.Ref.Digest || c.GraphDigest != r.GraphDigest || c.Generation != r.Generation || c.Strategy != r.Strategy {
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
 	}
+	if err := validateTeamStoredLineage(s.records, c); err != nil {
+		return TeamResumeClaim{}, err
+	}
 	if !s.now().UTC().Before(c.ExpiresAt) {
 		return TeamResumeClaim{}, ErrTeamContinuationExpired
 	}
@@ -600,6 +641,10 @@ func (s *FileTeamContinuationStore) MarkResumeRunning(ctx context.Context, c Tea
 	return *rec.Claim, nil
 }
 func (s *FileTeamContinuationStore) CommitResumeResult(ctx context.Context, c TeamResumeClaim, r Result) (TeamResumeClaim, error) {
+	return s.CommitResumeResultWithSuccessor(ctx, c, r, nil)
+}
+
+func (s *FileTeamContinuationStore) CommitResumeResultWithSuccessor(ctx context.Context, c TeamResumeClaim, r Result, successor *TeamContinuation) (TeamResumeClaim, error) {
 	if err := ctx.Err(); err != nil {
 		return TeamResumeClaim{}, err
 	}
@@ -613,6 +658,12 @@ func (s *FileTeamContinuationStore) CommitResumeResult(ctx context.Context, c Te
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
 	}
 	if rec.Claim.Result != nil {
+		if successor != nil && (rec.Claim.SuccessorCheckpoint == nil || rec.Claim.SuccessorCheckpoint.Digest != successor.Ref.Digest) {
+			return TeamResumeClaim{}, ErrTeamContinuationConflict
+		}
+		if !sameTeamResult(*rec.Claim.Result, r) {
+			return TeamResumeClaim{}, ErrTeamContinuationConflict
+		}
 		return *rec.Claim, nil
 	}
 	if rec.Recovered {
@@ -621,14 +672,31 @@ func (s *FileTeamContinuationStore) CommitResumeResult(ctx context.Context, c Te
 	if rec.Claim.State != "claimed" && rec.Claim.State != "running" {
 		return TeamResumeClaim{}, ErrTeamContinuationConflict
 	}
-	old := cloneTeamContinuationRecord(rec)
+	old := cloneTeamContinuationRecords(s.records)
+	if successor != nil {
+		if err := validateTeamSuccessor(rec.Continuation, *successor); err != nil {
+			return TeamResumeClaim{}, err
+		}
+		if existing, ok := s.records[successor.Ref.CheckpointID]; ok {
+			if existing.Continuation.Ref.Digest != successor.Ref.Digest {
+				return TeamResumeClaim{}, ErrTeamContinuationConflict
+			}
+		} else {
+			s.records[successor.Ref.CheckpointID] = teamContinuationRecord{Continuation: successor.Detached()}
+		}
+	}
 	saved := r
 	saved.Tasks = append([]TaskRecord(nil), r.Tasks...)
+	saved.teamSuccessor = nil
+	if successor != nil {
+		saved.TeamCheckpoint = &successor.Ref
+		rec.Claim.SuccessorCheckpoint = &successor.Ref
+	}
 	rec.Claim.Result = &saved
 	rec.Claim.State = "completed"
 	s.records[c.Request.Ref.CheckpointID] = rec
 	if err := s.persistLocked(); err != nil {
-		s.records[c.Request.Ref.CheckpointID] = old
+		s.records = old
 		return TeamResumeClaim{}, err
 	}
 	return *rec.Claim, nil
@@ -686,11 +754,63 @@ func cloneTeamContinuationRecord(in teamContinuationRecord) teamContinuationReco
 		if in.Claim.Result != nil {
 			result := *in.Claim.Result
 			result.Tasks = append([]TaskRecord(nil), in.Claim.Result.Tasks...)
+			result.teamSuccessor = nil
 			claim.Result = &result
+		}
+		if in.Claim.SuccessorCheckpoint != nil {
+			ref := *in.Claim.SuccessorCheckpoint
+			claim.SuccessorCheckpoint = &ref
 		}
 		out.Claim = &claim
 	}
 	return out
+}
+
+func cloneTeamContinuationRecords(in map[string]teamContinuationRecord) map[string]teamContinuationRecord {
+	out := make(map[string]teamContinuationRecord, len(in))
+	for id, record := range in {
+		out[id] = cloneTeamContinuationRecord(record)
+	}
+	return out
+}
+
+func sameTeamResult(a, b Result) bool {
+	left, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(b)
+	return err == nil && string(left) == string(right)
+}
+
+func validateTeamSuccessor(predecessor TeamContinuation, successor TeamContinuation) error {
+	if err := successor.Validate(); err != nil {
+		return err
+	}
+	if successor.Ref.OwnerNamespace != predecessor.Ref.OwnerNamespace || successor.TeamID != predecessor.TeamID || successor.GraphVersion != predecessor.GraphVersion || successor.GraphDigest != predecessor.GraphDigest || successor.RunID != predecessor.RunID || successor.SessionID != predecessor.SessionID || successor.ParentRunID != predecessor.ParentRunID || successor.CausationID != predecessor.CausationID || successor.AuthorityDigest != predecessor.AuthorityDigest || successor.PlanDigest != predecessor.PlanDigest || successor.WriteScopeDigest != predecessor.WriteScopeDigest || successor.EffectNamespace != predecessor.EffectNamespace || successor.OccurrenceID != predecessor.OccurrenceID || successor.Strategy != predecessor.Strategy {
+		return ErrTeamContinuationForeign
+	}
+	if successor.Generation != predecessor.Generation+1 || successor.PredecessorCheckpointID != predecessor.Ref.CheckpointID {
+		return ErrTeamContinuationConflict
+	}
+	return nil
+}
+
+func validateTeamStoredLineage(records map[string]teamContinuationRecord, continuation TeamContinuation) error {
+	if continuation.PredecessorCheckpointID == "" {
+		if continuation.Generation != 1 {
+			return ErrTeamContinuationConflict
+		}
+		return nil
+	}
+	predecessor, ok := records[continuation.PredecessorCheckpointID]
+	if !ok || predecessor.Claim == nil || predecessor.Claim.SuccessorCheckpoint == nil {
+		return ErrTeamContinuationRecoveryRequired
+	}
+	if predecessor.Claim.SuccessorCheckpoint.Digest != continuation.Ref.Digest {
+		return ErrTeamContinuationConflict
+	}
+	return validateTeamSuccessor(predecessor.Continuation, continuation)
 }
 
 func (e *Engine) ContinuationCapabilities(context.Context) (types.ContinuationCapabilities, error) {
@@ -750,7 +870,13 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 	}
 	now := e.now().UTC()
 	if pause.OriginalDeadline.IsZero() {
-		pause.OriginalDeadline = now.Add(24 * time.Hour)
+		pause.OriginalDeadline = plan.continuationDeadline
+		if pause.OriginalDeadline.IsZero() {
+			pause.OriginalDeadline = now.Add(24 * time.Hour)
+		}
+	}
+	if pause.ConsumedBudget < plan.continuationBudget {
+		pause.ConsumedBudget = plan.continuationBudget
 	}
 	tasks := make([]TeamTaskContinuation, 0, len(records))
 	for i, record := range records {
@@ -770,20 +896,30 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 		tasks = append(tasks, TeamTaskContinuation{TaskID: id, Status: record.Status, Vote: record.Vote, OutputDigest: outputDigest})
 	}
 	pending := pendingTaskIDs(plan, records)
-	bindings, err := teamHostContextBindings(plan.HostContextBindings, pending, e.continuationNamespace, plan, teamPlanDigest(plan), 1)
+	generation := plan.continuationGeneration + 1
+	predecessor := plan.continuationPredecessor
+	if predecessor == "" {
+		generation = 1
+	}
+	bindings, err := teamHostContextBindings(plan.HostContextBindings, pending, e.continuationNamespace, plan, teamPlanDigest(plan), generation)
 	if err != nil {
 		return Result{}, err
 	}
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pending, PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), HostContextBindings: bindings})
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pending, PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, PredecessorCheckpointID: predecessor, Generation: generation, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), HostContextBindings: bindings})
 	if err != nil {
 		return Result{}, err
 	}
-	if err := e.continuations.Save(ctx, continuation); err != nil {
-		return Result{}, err
+	if predecessor == "" {
+		if err := e.continuations.Save(ctx, continuation); err != nil {
+			return Result{}, err
+		}
 	}
 	result := buildResult(plan, records)
 	result.TeamCheckpoint = &continuation.Ref
 	result.PauseReason = pause.Reason
+	if predecessor != "" {
+		result.teamSuccessor = &continuation
+	}
 	return result, nil
 }
 

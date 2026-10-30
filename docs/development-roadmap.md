@@ -2,711 +2,112 @@
 
 更新时间：2026-10-29
 
-## 定位
+## 用法
 
-Baymax 主线保持 `library-first + contract-first`：
+本文件是 Baymax 的实施决策索引，不是设计文档。目标是快速回答三个问题：
 
-- 交付可嵌入的 Go runtime，不建设平台化控制面。
-- 以 OpenSpec、契约测试、回放和质量门禁驱动行为变更。
-- 代码、测试、文档与 spec delta 在同一变更中收敛。
+1. 当前哪个缺口已经有代码级证据，可以起草 OpenSpec？
+2. 第一阶段应该改哪个 source owner，交付什么可验证事实？
+3. 哪些能力明确不能从相邻 form、DTO、callback 或应用层快照推断？
 
-本文件是运行态决策入口，不重复归档提案的设计和任务细节。历史范围、设计理由和完整任务以 `openspec/changes/archive/` 为准。
-
-## 提案快速导航
-
-先从这张表选择工作，不要按文档出现顺序翻阅归档记录。每一行都给出可实施方向和启动证据；“审计中”与“需求触发观察”不是已获批准的 OpenSpec，不能因为 API、DTO 或相邻 form 已支持而直接立项。
-
-| 优先级 | 候选方向 | 状态 | 何时可起草 | 首阶段实施方向 | 不能替代 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `composite-graph-restore-material` | **审计中** | 最小复现证明某个 owner checkpoint 无法保存或消费 graph/node/dependency/completed effect/aggregate/terminal lineage，并会导致同一 graph 重跑或错误终态 | 只在缺失 owner 上补 source-owned material、seal/validate/restore 消费、atomic claim、successor lineage、fixture 和 gate | application checkpoint、history replay、相同 run ID 再 `Run`、重新 enqueue |
-| 2 | 多写者/跨机器 durable source store | **需求触发观察** | 真实部署提出并发 writer、跨机器 resume 或 cursor transaction，且能给出 stale writer/崩溃复现 | 在现有 owner store 上增加 CAS、writer fencing、atomic claim/cursor transaction 与 multi-instance evidence | FileStore 的同机单写顺序重开 |
-| 3 | mailbox handler context safe point | **需求触发观察** | 宿主需要跨 handler pause/restore context，且 mailbox owner 有可持久化的 handler continuation material | 在 mailbox owner 增加真实 handler safe point、checkpoint/projection binding 与 fresh resolver reauthorization | lifecycle history 或 host-side resume loop |
-| 4 | Provider structured context / Prompt Cache | **需求触发观察** | SDK fixture 重现 role、tool-result correlation、ordering 丢失，或 cache 成本/P95 已成为稳定瓶颈 | 在 `model/<provider>` 的既有 projection/evidence owner 内增加最小 conformance 或成本证据 | gateway、credential store、cache control plane |
-| 5 | 通用 ExecutionGraph | **需求触发观察** | 多个独立宿主经 workflow/team/composer/planbridge 仍无法表达同一执行结构，且有 fixture | 先写表达缺口与既有 validator 对比，再决定是否存在足够共享 seam | 因模式名称新建统一 executor 或状态机 |
-
-**四步启动法：**
-
-1. 运行 `openspec list --json`，确认没有与候选重叠的 active change。
-2. 在表中列出的 source owner 写最小 failing reproduction；它必须证明运行时事实缺失，而非只证明文档、DTO 或测试覆盖不足。
-3. 记录 capability manifest、store deployment scope、回滚点、受影响文档和 dedicated gate；没有这些事实，候选继续观察。
-4. 只有复现成立，才从最新 `master` 创建语义化分支并起草 OpenSpec；否则记录审计结论后查看下一行。
-
-候选的共用硬边界：source history 由 owner 显式注入，Memory owner 不 durable，FileStore 只支持同机单写顺序重开；continuation 是 form x pause reason x owner store 的路径能力。所有未证明格子保持 `unsupported_capability` 或 `recovery-required`。禁止用 callback history、latest cursor、application pause 标记、第二 journal/mailbox owner、重跑 parent 或 host-side resume loop 伪造 source capability。
-
-## 当前状态
-
-- 进行中：
-  - 无。
-- 已归档：
-  - `persist-native-continuations-and-restore-composite-graphs`（169）：direct durable continuation 基线。
-  - `retain-run-and-composite-source-history`（171）、`restore-workflow-continuations`（172）、`restore-composite-continuations-and-graph-state`（173）：owner history 与 workflow-first restore 基线。
-  - `bound-durable-store-deployment-scope`（174）、`source-history-failure-and-workflow-claim-recovery`（175）、`make-source-history-projection-transactional`（176）：同机单写和 source/projection recovery 边界。
-  - `enable-team-and-mailbox-native-continuations`（177）、`extend-composite-context-assembly-handoff`（178）、`source-owner-history-injection-and-projection-recovery`（179）、`composite-checkpoint-restore-by-owner`（180）、`composite-pause-reason-matrix`（181）：composite owner restore、context binding 与 form x pause-reason evidence。
-- 候选：
-  - `composite-graph-restore-material`：下一项待审计候选；仅在 source owner checkpoint 缺少真实 graph material 的可复现证据成立时立项。
-
-完整归档设计、任务与验证记录见 [Archive Index](../openspec/changes/archive/INDEX.md)。当前已归档能力不能背书相邻 form 或未来候选。
-
-活跃 change 的唯一事实源是 `openspec list --json`。
-
-### 代码审计冻结记录（2026-10-24）
-
-- **source history 必须由 owner 显式注入**：`NativeEventHistoryReader`、`history.Journal` 和 runner/composer/teams/workflow 的注入 API 只在调用方提供对应 owner journal/store 时成立。Memory owner 仅是 process-local；FileStore 只证明同机单写、已提交 source facts 的顺序重开与 bounded replay。未注入 owner history 的默认路径必须返回 `ErrHistoryUnsupported`，不能因为 package、DTO 或 callback adapter 存在而推断 durable history。source append 与 Danny projection 不是天然原子事务；projection 提交前崩溃必须从同一 owner source replay 并在产品边界幂等去重，source facts 不可用时进入 `recovery-required`，不得重跑不确定的 parent/child effect。受影响任务：`1.2`、`1.3`、`3.2`、`3.3`、`4.1`、`4.3`、`4.4`、`4.6`、`4.7`、`5.2`、`5.4`、`7.2`、`7.3`。
-- **continuation 支持是 path-specific**：`ContinuationCapabilities`、checkpoint/control 与 workflow continuation 的支持范围必须按 execution form、pause reason 和 owner store 分别证明。direct 的 `input_required`、`approval_required`、`budget_exhausted` 不能为 child/fanout、team parallel/vote、workflow、mailbox 或 resumed planbridge 背书；没有 source-owned graph/checkpoint material、atomic claim、authority binding 和 fresh-process restore 证据的格子必须在 manifest 标为 `unsupported_capability` 或 `recovery-required`。不能用 application pause 标记、mailbox lifecycle history、callback replay、metadata snapshot 或重新 Run parent 模拟恢复。受影响任务：`1.3`、`3.4`、`4.3`–`4.7`、`5.2`、`5.4`–`5.5`、`7.2`–`7.3`。
-- **解阻条件**：后续提案必须为每个声称支持的 source/form/reason 提供 owner 注入、retention/gap/expiry、crash-before-projection、checkpoint restore、cancel/timeout/retry 竞争、terminal evidence 和 Run/Stream parity 的原始 reproduction；证据完成前保持相关 capability 未勾选，不在 Danny 增加替代 runtime journal、第二 mailbox owner 或 host-side replay/resume 状态机。
-
-#### 代码审计证据索引
-
-以下记录是候选提案的证据入口，不是新的 runtime contract；后续提案必须重新运行并引用实际通过的 reproduction，不能只引用 DTO 或 package 存在。
-
-##### 后续提案排期账本（owner history 与 continuation）
-
-以下两项是已从具体实现、而非文档或 DTO 得出的排期前提。每次起草候选提案时必须把对应条目逐项带入 proposal、design、tasks、capability manifest 和验证记录；未满足前不得把相邻 form 的能力外推为已支持。
-
-| 审计事实 | 代码级复现入口 | 后续提案必须交付 | 明确禁止 | 排期位置 |
-| --- | --- | --- | --- | --- |
-| source history 只有在 owner 显式注入 `history.Journal` / source store 后才成立；Memory owner 非 durable，FileStore 仅同机单写和顺序重开 | `TestPinnedSourceHistoryOwnersPreserveIdentityOrderAndFileReplay`；`TestFileMailboxHistoryReplaysAfterRestartWithoutPayload`；`TestMailboxHistoryTerminalRestartProcess`；`core/history/journal_test.go`；`orchestration/mailbox/history_test.go` | 每个声称支持的 runner、child、team、workflow、mailbox 分别证明 source identity/sequence、retention floor、opaque cursor、gap/expiry/unavailable、fresh-process readonly replay 及 crash-before-projection recovery | 默认自动创建 journal；以 callback EventID/host observation sequence 冒充 source cursor；latest fallback；以重跑 effect 代替 projection recovery | `source-owner-history-injection-and-projection-recovery` 为审计前置；每个 owner 增量在其自身 change 内闭环 |
-| continuation 只在有 owner checkpoint store、source continuation material 和对应 restore path 的 form × pause reason 上成立 | `TestNativeContinuationCrossProcess`；`TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine`；`core/types/continuation_capabilities_test.go`；`core/checkpoint/store_test.go`；各 owner continuation tests | 对每个 form × `input_required` / `approval_required` / `budget_exhausted` 证明 checkpoint digest、authority/run/session/causation binding、atomic claim、fresh-process restore、cancel/timeout/retry race、terminal evidence 与 Run/Stream parity | 从 direct/workflow 推断 child、team、mailbox 或 resumed planbridge；用 application pause、mailbox lifecycle history、callback replay、相同 run ID 再 Run 或重新 enqueue 伪造 restore | 归档 180、181 已完成 owner restore 与 pause matrix 核验；只有发现现有 checkpoint 缺少真实 graph material 时才启动 `composite-graph-restore-material` |
-
-排期执行规则：先核验 owner source 的可持久化事实，再开放单一 form 的单一 pause reason；接着补同一 form 的 graph/delivery material、竞争窗口和 Run/Stream parity；最后才允许在 manifest 把该格从 `unsupported_capability` 或 `recovery-required` 提升为 supported。任何 form 的 history replay 只用于只读事实恢复，不能成为 execution resume 的替代路径。
-
-- **Source history pin 与复现**：审计 pin 为 `v0.0.0-20261022053159-3d0ab5949790`。公开边界包括 `core/types.NativeEventHistoryReader`、`core/history.Journal`、`core/runner.WithNativeEventHistory` 以及 composer/teams/workflow 的同名 owner 注入 API。`TestPinnedSourceHistoryOwnersPreserveIdentityOrderAndFileReplay` 分别对 runner、child、team、workflow 使用 file-backed source journal，验证 source identity/sequence、payload omission、retention floor、过期 cursor 和同一路径重开 replay；mailbox 的 `TestFileMailboxHistoryReplaysAfterRestartWithoutPayload`、`TestMailboxHistoryTerminalRestartProcess` 验证 file reopen 与 fresh-process replay。Memory owner 的 `Capabilities.Durable` 必须为 false；未注入 owner history 时必须返回 `ErrHistoryUnsupported`。
-- **Source history 的实际边界**：file reopen 只能找回已经提交的 source facts，不能证明 source append 与 Danny projection 原子提交。projection 提交前崩溃必须从同一 owner source replay，并在产品边界按 source identity 幂等去重；payload/cursor 冲突 fail closed；source facts 不可用时进入 `recovery-required`，不能重新执行不确定的 parent/child effect。证据入口为 `internal/agent/baymax/adapter_test.go`、`docs/baymax-contract-evidence.md`、`core/history/journal_test.go`、`orchestration/mailbox/history_test.go`；Danny 的跨库投影/游标事务仍由任务 `3.2`–`3.3` 验收。
-- **Continuation pin 与复现**：公开边界包括 `core/types.ContinuationCapabilities`、runner checkpoint/control、workflow continuation，以及 `orchestration/composer/README.md` 对 child/fanout、team、mailbox、planbridge 的逐路径边界。上游 `TestNativeContinuationCrossProcess` 与 `TestEngineResumeContinuationRestoresFromFileStoreOnNewEngine` 只在显式 checkpoint store、owner namespace 和支持的 workflow/runner path 下报告 `CrossProcessRestore=true`；缺少 restore material 的 child/fanout、team、mailbox、resumed planbridge 必须返回 unsupported/unavailable。三类 pause reason 的跨 form 证据尚未建立，不能从 direct 能力外推。
-- **Continuation 证据入口与解阻**：证据入口为 `core/types/continuation_capabilities_test.go`、`core/checkpoint/store_test.go`、workflow continuation tests、composer README 和 `docs/baymax-contract-evidence.md`。后续每个 form/pause reason 都必须补 source-owned checkpoint、graph/member/step 或 delivery/lease material、authority binding、atomic claim、fresh-process restore、cancel/timeout/retry 竞争、terminal evidence 及 Run/Stream parity；缺失时只记录 typed `unsupported_capability`/`recovery-required`，不使用 application pause、mailbox lifecycle history、callback replay 或重新 Run parent 伪造恢复。
-
-归档 155–168 建立了文档治理、direct pause/resume、provider conformance、native event adapter、host plan、revalidation、context handoff、outbox、capability manifest 与 source-history 基线。逐项设计和验证不在 roadmap 重复，统一由 [Archive Index](../openspec/changes/archive/INDEX.md) 维护。
-
-归档 160–181 已建立原生事件、host plan、mailbox async、context handoff、source history、owner restore、pause matrix 和质量门禁基线。当前支持范围以 capability manifest 与各 owner 的 source evidence 为准；完整范围、DoD、Example Impact Assessment 和验证记录均由 [Archive Index](../openspec/changes/archive/INDEX.md) 指向的归档工件维护。
-
-## 第一候选审计入口
-
-`composite-graph-restore-material` 是下一项待审计工作，而不是预先承诺的实现。先检查 `orchestration/workflow/continuation.go`、`orchestration/teams/continuation.go`、`orchestration/composer/continuation.go` 和各自的 continuation tests，按下列顺序找实际缺口：
-
-1. checkpoint 是否同时保存且 restore 消费 graph definition/digest、native node ID、dependency completion、pending/completed state、effect outcome、aggregate、budget/deadline、terminal arbitration 与 predecessor/successor lineage；
-2. 重启恢复时已完成 member/step/effect 是否可能再次执行，或 pending node 是否丢失；
-3. authority/plan/write-scope/effect namespace/occurrence/causation 和 owner deployment scope 是否在 claim 前被验证；
-4. 最小失败用例是否能证明上述任一事实确实缺失，而不是 API 尚未被某个调用方使用。
-
-四项都由现有 owner 实现和测试证明时，不起草重复 proposal，改审计快速导航中的下一条。发现缺口时，proposal 必须只覆盖受影响 owner/form/reason，并同步 manifest、Run/Stream parity、fresh-process restore、竞争窗口、公开文档和 dedicated gate。
-
-## 已归档快照
-
-- 已归档 178：`extend-composite-context-assembly-handoff` 已完成 child attempt、team pending local member、workflow step 的 owner-bound context integration、source-owned capability evidence projection、Run/Stream parity、只读 replay 与完整门禁；mailbox continuation 仍只有 lifecycle projection，没有 handler safe point，因此 mailbox context 保持 unsupported，并拆为后续 mailbox-owner 候选。
-
-- 已归档 179：`source-owner-history-injection-and-projection-recovery` 已补齐显式 owner journal 与 projection ledger 分离提交窗口的 source-bound reconciliation、fresh-process recovery、幂等 duplicate、冲突/foreign/gap/expiry/unavailable typed fail-closed 语义；不创建第二套 journal、执行循环或业务事务，也不扩大到多写者/跨机器 exactly-once。
-
-- 已归档：
-  - `establish-host-context-assembly-handoff-contract`（归档 165；显式 opt-in、reference-only `host_context_projection.v1`，current-authority resolver、assembler/handoff correlation、离线 replay/example 与双平台 gate）
-  - `establish-host-resume-admission-revalidation-contract`（归档 164；宿主恢复准入重验证、完整 duplicate identity、Run/Stream/Host conformance、离线 replay、双平台 gate 与严格联合质量门禁）
-  - `remediate-strict-security-vulnerabilities`（归档 163；Go 1.26.9 patched toolchain、最小 strict 漏洞依赖图、受控 recorder baseline 校准、双入口质量门禁与严格可达漏洞扫描）
-  - `establish-host-execution-plan-bridge-contract`（归档 162；版本化计划/原生 binding、bounded 全计划预检、既有 owner 委托、离线 replay、示例与双平台门禁已纳入主线）
-  - `establish-native-execution-event-adapter-contract`（归档 160；已完成版本化原生执行事件、bounded host references、observer failure 反馈、Run/Stream parity、离线 replay、示例与维护文档同步）
-  - `establish-model-route-intent-admission-evidence`（归档 153；已完成显式宿主路由意图与既有 catalog/admission facts 的 reference-only evidence、三态 verdict、replay、Run/Stream parity 与双平台 gate；不改变 runtime model selection）
-  - `establish-provider-context-cache-drift-admission-evidence`（归档 152；已完成 Provider 结构化上下文与 Prompt Cache 的 reference-only evidence、三态 drift verdict、离线 replay、隐私/边界校验、review-only owner route 与双平台 gate；不改变 adapter、runtime 配置、价格模型或 cache 策略）
-  - `establish-admitted-tool-schema-projection-readiness-contract`（归档 151；已完成 admitted Tool Schema projection 的离线 readiness 证据、replay 与 gate，不接入 runtime selector 或动态下载）
-  - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；已完成 offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate，不提供生产 executor）
-  - `establish-capability-asset-provenance-and-release-rollback-audit`（归档 149；已完成 bounded、reference-only 的能力资产溯源、漂移/撤回影响与替代版本兼容性离线审计，不新增 runtime registry、动态下载或自动回滚）
-  - `establish-action-capability-risk-idempotency-evidence-audit`（归档 147；已完成离线 `action_capability_audit.v1` 的 bounded descriptor/evidence replay、fixture、Run/Stream parity 与双平台 gate；不改变 Action Gate、Tool/MCP/Provider/Policy/Sandbox 执行语义，不新增 runtime 配置、诊断写入或 hosted state）
-  - `establish-admitted-tool-schema-pressure-selection-audit`（归档 146；已准入工具 schema pressure、synthetic selection quality、多策略离线评分、optional corpus advisory、replay、Run/Stream parity 与双平台 gate 已收口；不接入 runtime selector、`ModelRequest` 或 provider projection）
-- 已归档：
-  - `introduce-runtime-steering-and-follow-up-input-contract`
-  - `standardize-runtime-failure-taxonomy-and-terminal-outcome-contract`
-  - `harden-runtime-event-stream-terminal-recovery-contract`
-  - `harden-tool-lifecycle-and-failure-isolation-contract`
-  - `establish-session-history-checkpoint-replay-contract`
-  - `context-compression-runtime-handoff-contract`
-  - `extension-lifecycle-governance-resource-resolution-contract`
-  - `introduce-provider-model-capability-and-credential-preflight-contract`
-  - `establish-embedded-host-command-response-and-event-correlation-contract`
-  - `harden-cross-provider-handoff-and-stream-edge-conformance`（跨 Provider handoff、stream edge、fallback fence、Run/Stream parity 与 replay/gate conformance）
-  - `harden-durable-attempt-workspace-binding-and-completion-safepoint`（task/attempt/workspace binding、lease/retry/recovery reconciliation 与 completion safe-point ownership；fixture、replay、contract、gate 和文档已收口）
-  - `establish-eval-continuity-comparison-and-replay-contract`（bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较，以及 fixture/replay/contract/gate 已收口）
-  - `external-extension-authoring-conformance`（离线 authoring conformance、版本化 fixture、replay 与双平台 gate 已收口；不新增运行时配置或 agent-mode 示例语义）
-  - `establish-eval-first-error-attribution-and-trajectory-boundary-contract`（归档 141；bounded 首错归因/比较、轨迹前缀决策边界、Badcase/experiment/feedback additive 关联、memory application corpus fixture、replay 与 gate 已收口；不修改 runtime loop 或示例语义）
-  - `establish-budget-aware-derived-context-projection-contract`（归档 143；有界只读预算投影契约、离线 benchmark、fixture、replay 与 gate 已收口；未改变运行时行为）
-  - `establish-model-catalog-routing-admission-audit-contract`（归档 145；host-supplied model catalog/routing admission 的有界审计、版本化 fixture/replay、Run/Stream parity 及由可复现 exact-identity gap 触发的纯函数 deterministic resolver 已收口；不引入远程 catalog、credential store 或全局 router）
-  - `establish-provider-cache-usage-observability-contract`（归档 148；三家 provider 的 cache usage 已通过独立 `ModelResponse.CacheUsage` carrier、终态 Stream 快照、离线 fixture/replay 与双平台 contract gate 收口；不改变 `TokenUsage`、RuntimeRecorder schema 或缓存策略）
-  - `establish-scenario-agent-simulation-and-completion-verification`（归档 150；offline bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate；不提供生产 executor）
-  已归档提案的后续修复必须以新的 OpenSpec change 从最新 `master` 切出。
-- 候选：
-  未启动候选统一见下文“待实现提案：宿主执行接入与恢复边界”；已撤回的 confirmed-drift 修复方向不计入候选，OpenAI-compatible endpoint profile conformance 已归档为 157。
-- 已归档：
-  - `layered-technical-documentation-and-drift-governance`（归档 156；中文为主的分层技术文档、README 导航、canonical source map、组件/指南页面，以及新提案 Documentation Impact Assessment 与双平台文档漂移门禁；不改变运行时行为、API contract、配置语义或 agent-mode 示例语义）。
-  - `preserve-provider-native-request-projection-parity`（归档 144；以归档 142 已固定的 role/tool-result-native/ordering drift 为证据，修复三家 adapter 的 provider-native SDK 请求投影及 Run/Stream/CountTokens 对等；不增加 cache schema、共享 wire protocol 或 runtime 配置）。
-
-`harden-cross-provider-handoff-and-stream-edge-conformance`、`establish-eval-continuity-comparison-and-replay-contract` 与 `external-extension-authoring-conformance` 已归档并纳入主线基线；其既有 fixture、replay 与 gate 不再作为新候选重复排期。后续只能在新的可复现 drift、真实宿主需求或稳定成本/质量瓶颈下，以既有 owner 的增量 change 处理。
-
-最近归档的变更完成了运行终态、事件恢复、工具失败隔离、会话/回放、上下文交接、扩展治理、provider/model 准入以及嵌入式宿主命令/事件关联的主线收口。较早的已完成能力请直接查阅 [Archive Index](../openspec/changes/archive/INDEX.md)。
-
-归档 142（`establish-provider-request-projection-and-cache-observability-contract`）范围限定为「Runtime → Provider」方向：建立版本化 `provider_request_projection.v1`、`source`/`observed` 双投影与 canonical digest、把已确认的 role / tool-result-native / 能力投影语义丢失写成被钉住的 `declared_gap`、给出 cache 用量 `additive + nullable + default` 兼容口径，并交付离线 replay、版本化 fixture 与双平台 gate。归档 142 本身**未修改适配器运行时投影行为**；归档 144 已在其证据基线上显式修复已验证的 role、ordering 与 native tool-result gap，不新增 provider、配置键、credential store、远程 catalog 或诊断落盘字段。
-
-该提案留下的后续增量触发证据已由归档 144 处理：三个适配器的 Generate/Stream 现在复用 SDK-neutral canonical facts 构造原生 role/tool-result request，Anthropic/Gemini CountTokens 复用相同可表达事实，OpenAI 继续保留官方 SDK 无 token-count API 的明确 capability exception。Prompt-cache usage schema 仍不在归档 144 内，只有稳定成本/P95 与 provider usage 证据成立时才另行立项。
+完整设计、任务、spec delta 和归档验证记录分别由 [OpenSpec changes](../openspec/changes/)、[Archive Index](../openspec/changes/archive/INDEX.md)、受影响 package README 和 contract tests 承载。本文件只保留导航、边界和启动闸门。
 
 ## 版本阶段口径（延续 0.x）
 
-当前仓库不做 `1.0.0` / prod-ready 承诺，继续沿用 `0.x` 治理口径（见 `docs/versioning-and-compatibility.md`）。在 `0.x` 阶段，版本号用于表达变更范围，不构成稳定兼容承诺；主线目标是持续收敛、可回归迭代。
+Baymax 仍处于 pre-`1.0.0` 阶段：不做 `1.0.0` / prod-ready 承诺，允许新增能力型提案，但每项能力都必须有 owner、contract、replay 和 gate 证据。新增提案准入规则（0.x 阶段）要求在 proposal、design、tasks 中写明 `Why now`、风险、回滚、文档影响和验证命令，并归入契约一致性、可靠性与安全、质量门禁回归治理或外部接入 DX 之一。
 
-`0.x` 阶段允许新增能力型提案，但新增能力必须有明确的宿主价值、可验证的 contract 边界和回滚路径。
+## 快速导航
 
-## 已交付基线
+状态含义：
 
-以下能力已稳定并由归档提案、主干测试和门禁覆盖。后续需求必须作为增量扩展，复用既有术语和 source-of-truth，不得重新定义平行语义。
+- **进行中**：已有 active OpenSpec，代码、测试、文档和门禁必须在同一 change 内收敛。
+- **可审计**：有明确的代码入口，但必须先提交最小 failing reproduction；复现成立后才起草。
+- **需求触发**：没有当前排期承诺，只有真实部署或 fixture 触发后才进入审计。
+- **已归档**：能力已进入主线，但只覆盖归档工件声明的 form、pause reason 和 deployment scope。
 
-| 域 | 已交付基线 | 后续约束 |
-| --- | --- | --- |
-| Runtime 与 Protocol | Run/Stream、Agent Runtime Protocol、capability/context/admission、ReAct plan notebook、checkpoint/workspace provenance、权威终态 | Run/Stream 保持语义等价；执行、计划、恢复和排队仍由各自 source runtime owner 拥有。 |
-| Realtime、Host 与 HITL | interrupt/resume、durable stream binding、cursor、catch-up/live-tail、terminal recovery、embedded host command/event correlation、HITL reverse request、steering/follow-up | 不创建第二套 event ordering、cursor、pending、输入队列或终态状态机。 |
-| Tool、MCP 与 Security | 本地工具生命周期、MCP profiles、sandbox isolation/egress、allowlist、policy precedence | 工具和扩展不得绕过 policy、sandbox 或 `RuntimeRecorder`。 |
-| Context 与 Memory | Context Assembler、reference-first、task-aware tail recap、压缩生产治理、压缩 handoff、memory SPI、scope/search/lifecycle | `context/*` 不直连 provider SDK；recap/status 只能是 source-owned facts 的有界派生投影，snapshot 保持唯一事实源。 |
-| Orchestration | Workflow、Teams、A2A、Scheduler、Mailbox、task board、recovery | 不以新 change 建立平台化调度或统一多代理拓扑。 |
-| Config、Readiness 与 Diagnostics | `env > file > default`、fail-fast、热更新原子回滚、readiness/admission、diagnostics replay | QueryRuns 和诊断 schema 仅 additive + nullable + default。 |
-| Extension 与 Provider | extension lifecycle/resource resolution、adapter manifest/capability、静态 provider/model catalog、credential preflight | Provider 细节在 `model/<provider>`；不引入远程目录、credential store 或扩展市场。 |
-| Evaluation 与 Gates | OTel/eval、corpus/Badcase/experiment、review-only feedback、continuity comparison、semantic/performance/docs/contract gates | 评测和观测不演化为托管控制面；反馈不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置或 gate。 |
+| 顺序 | 候选 / change | 状态 | 启动证据 | 第一实施方向 | 明确不做 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `composite-graph-restore-material` | **可审计** | 只有在 owner checkpoint 无法保存或消费 graph/node/dependency/completed-effect/aggregate/terminal lineage 时立项 | 只补缺失 owner 的 source-owned graph material、restore validation、atomic claim 和 successor lineage | application checkpoint、history replay、相同 run ID 再 `Run`、重新 enqueue |
+| 2 | 多写者 / 跨机器 durable source store | **需求触发** | 真实部署提出并发 writer、跨机器 resume 或 cursor transaction，并有 stale-writer/崩溃复现 | source-owned CAS、writer fencing、atomic claim/cursor transaction、crash recovery、multi-instance evidence | 不把 FileStore 的同机单写顺序重开宣传为分布式恢复 |
+| 3 | mailbox handler context safe point | **需求触发** | 宿主需要跨 handler pause/restore，且 mailbox owner 有可持久化 handler continuation material | mailbox owner safe point、checkpoint/projection binding、fresh resolver reauthorization；逐格更新 manifest | lifecycle history、host-side resume loop、planbridge 自建 queue/worker |
+| 4 | Provider structured context / Prompt Cache | **需求触发** | SDK fixture 证明 role、tool-result correlation、ordering 丢失，或 cache 成本/P95 成为稳定瓶颈 | 在 `model/<provider>` 现有 projection/evidence owner 内补最小 conformance 或成本证据 | gateway、credential store、cache control plane、runtime selector |
+| 5 | 通用 ExecutionGraph | **需求触发** | 多个独立宿主仍无法表达同一执行结构，且 fixture 证明既有 workflow/team/composer 不足 | 先审计既有定义和 validator，确认真实共享边界后再拆小 change | 因 Danny 模式名称新建统一 executor、拓扑或状态机 |
 
-State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。
+## 当前状态
 
-### Harnessability scorecard 与门禁耗时预算治理
+- 进行中：无。
+- 已归档：完整列表见 [Archive Index](../openspec/changes/archive/INDEX.md)。归档能力不能为相邻 form、pause reason 或 deployment scope 背书。
 
-A64 的 harnessability scorecard 用于衡量契约覆盖、回放漂移、门禁接线、文档一致性和验证开销；它是门禁可审计性的计算型指标，不改变运行时语义。评估遵循 **harness ROI/depth** 分层，并坚持 **computational-first, inferential-second**：客观测试与结构化证据先于主观评估结论。门禁执行同时受门禁耗时预算治理约束，超出预算时记录并按既有回滚/降级路径处理，不自动放宽质量阈值。
+## 固定边界
 
-完整的 proposal、design、spec、fixture 和 gate 映射见：
+以下规则适用于每个候选，除非新的 OpenSpec 明确改变并同步文档：
 
-- `openspec/changes/archive/INDEX.md`
-- `docs/mainline-contract-test-index.md`
-- `docs/runtime-config-diagnostics.md`
-- `docs/runtime-module-boundaries.md`
-- `docs/pi-agent-comparison-and-adoption-study.md`（外部项目对照方法与后续提案筛选依据）
+- source history 必须由 runner、child、team、workflow、mailbox 的 owner 显式注入。Memory owner 是 process-local；FileStore 目前只支持同机单写、已提交事实的顺序重开。
+- native history 只负责只读事实恢复；它不能调用 Run、Stream、retry、resume、ack、nack、tool 或 model，也不能成为 execution resume 的替代。
+- continuation 是 `execution form x pause reason x owner store` 的路径能力。direct 的 evidence 不能背书 child、team、workflow、mailbox 或 resumed planbridge。
+- source append 与应用 projection 不天然原子。projection 提交前崩溃必须从同一 owner source replay 并幂等去重；source facts 不可用时返回 `recovery-required`，不得重跑不确定 effect。
+- 未证明的能力必须在 capability manifest 中返回 typed `unsupported_capability` 或 `recovery-required`；不得用 DTO、package 存在、callback EventID、application pause 标记或相同 run ID 再运行伪造支持。
+- 当前 deployment scope 默认是同机单写。多实例、跨机器、分布式 cursor 或统一 mailbox/runner 事务必须另有 CAS、fencing、atomic claim 和 crash evidence。
 
-## 可启动候选
+## 启动闸门
 
-候选不是承诺排期。启动前必须先完成现状审计，并在 OpenSpec proposal 中记录 `Why now`、风险、回滚点、文档影响、Example Impact Assessment 和验证命令。
+每个候选按以下顺序推进，缺一项就停在“可审计”或“需求触发”：
 
-涉及对外语义变化，必须在同一变更与 PR 中同步修改并维护对应文档。公开 API/contract、运行时行为、事件顺序/identity/终态、错误反馈、配置默认值/校验和诊断字段的新增或变化（含 additive/opt-in）均适用；proposal/design/tasks 须明确声明，维护文档须说明最终语义、默认值与限制、兼容性、迁移及回滚，影响范围变化时重新评估。文档未同步或 docs consistency、相关 contract/replay 与示例验证未通过，不得勾选对应任务或宣称可交付、可归档。
+1. **代码审计**：定位 source owner、store、claim/restore seam 和现有 negative path。
+2. **最小复现**：测试必须证明运行时事实缺失，而不是文档、DTO 或调用方尚未接入。
+3. **OpenSpec**：从最新 `master` 创建语义化分支；维护 `proposal.md`、`design.md`、`tasks.md`、spec delta；三份工件都声明 Example Impact Assessment 和 Public Semantic Documentation Commitment。
+4. **实现证据**：正负单测、fresh-process/reopen、crash window、duplicate/conflict、Run/Stream parity、replay fixture 和 dedicated gate 同步完成。
+5. **文档与门禁**：更新受影响 README、integration guide、roadmap 和 contract-test index；通过质量、文档和 OpenSpec 校验后才归档。
 
-### 已归档基线：Durable task-attempt/workspace binding 与 completion safe-point 所有权审计
+## 第一候选审计清单
 
-**交付状态**：已于 2026-09-13 归档为 `138-harden-durable-attempt-workspace-binding-and-completion-safepoint`，并纳入主线基线。
+审计 `composite-graph-restore-material` 时只看真实 owner 实现和测试：
 
-**触发信号**：checkpoint/snapshot 已具备 workspace provenance 和完整性漂移检测，但 scheduler 的 `Task`/`Attempt`/lease rollover 没有结构化 workspace binding；后台 completion 已分别存在于 mailbox/scheduler 与 runtime-input safe point，却缺少一条被证明的统一 promotion ownership 接缝。该方向已通过 gap fixture、replay、contract 和 gate 收口。
+- `orchestration/workflow/continuation.go`
+- `orchestration/teams/continuation.go`
+- `orchestration/composer/continuation.go`
+- 各 owner 的 continuation tests、capability manifest 和 restore gate
 
-**目标**：审计并验证 task/attempt 与 workspace provenance 的关联、retry/lease rollover 隔离、snapshot/recovery integrity reconciliation，以及后台 completion 进入下一模型决策安全点时的 correlation、dedupe、late、disconnect、recovery 和 Run/Stream parity 语义。
+依次确认：
 
-**必须复用**：scheduler `Task`/`Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder`、现有 terminal outcome 与 A2A correlation。
+1. checkpoint 是否保存并 restore 消费 graph definition/digest、native node ID、dependency completion、pending/completed state、effect outcome、aggregate、budget/deadline、terminal arbitration、predecessor/successor lineage；
+2. fresh-process restore 是否只 dispatch pending node，且 settled member/step/effect 不重跑；
+3. claim 前是否校验 graph、capability subset、authority、plan、write scope、effect namespace、occurrence、causation、revision 和 budget；
+4. 最小失败用例是否能证明缺口会造成错误终态、断链或重复 effect。
 
-**第一阶段交付**：只新增 bounded gap fixture、replay 分类、必要的 contract/gate 测试和审计文档；只有 fixture 证明 lease rollover、retry 或 recovery 会误用 workspace，或 completion 会丢失/重复 promotion，才进入最小运行时字段/API 变更。
+若四项均有 owner evidence，则不重复起草该候选，转到下一项。
 
-**Ownership / compatibility / privacy**：scheduler 继续拥有 task/attempt/lease/retry/terminal commit；checkpoint/snapshot 只拥有 reference-only provenance 与恢复前校验；mailbox 拥有 durable completion delivery；`core/runner` 拥有 runtime-input safe-point admission/application；`tool/diagnosticsreplay` 只做离线、无副作用归一化。新增引用必须 additive + nullable + default，历史记录缺失时按 binding absent 处理，未知字段安全忽略；workspace 内容、路径、Git 元数据、completion body、reasoning、credentials 和无界 payload 不进入快照、诊断或 replay。
+## 已归档能力边界
 
-**No-new-config / rollback**：本审计不新增 runtime 配置键或 hot-update 分支，继续复用现有 `env > file > default` 配置域。回滚只移除新增 reference projection、fixture/replay/gate 与恢复适配，不需要持久化迁移，也不改变既有 scheduler、mailbox、snapshot、Run/Stream 或 terminal outcome 语义。
+近期归档已建立 direct continuation、source history injection/recovery、workflow owner restore、composite pause matrix、mailbox async、host plan、context handoff 和 capability manifest 基线。具体支持矩阵、证据引用、失败分类和 rollback 只以 archive index、对应 spec delta、package README 与 tests 为准；roadmap 不复制这些长文。
 
-**明确不做**：Git/worktree manager、runtime 直接执行 Git/shell、hosted workspace/artifact service、自动 merge/push、第二套 task/session/coordination 状态机，或复制外部项目的 daemon thread、`shell=True`、固定轮询和非事务 worktree index。
+当前仍明确受限：
 
-**Example Impact Assessment（立项时）**：`无需示例变更（附理由）`。首阶段只验证 scheduler、recovery、mailbox、runtime-input 接缝，不修改 `examples/agent-modes`；若后续确需示例变化，必须先完成 `MATRIX.md` 与对应模式 README 的文档基线。
+- mailbox continuation 只有 owner 声明的 lifecycle/history 能力时才能使用；没有 handler safe point 就必须保持 unsupported；
+- child/team/workflow 只有拥有 source-owned checkpoint material、atomic claim 和 fresh-process restore evidence 的格子才可提升为 supported；
+- context assembly/handoff 不能把 direct projection 推广到 composite；必须绑定实际 native node/checkpoint 并重新授权；
+- FileStore 的“可重开”不等于多写者、跨机器或 exactly-once。
 
-### 已归档基线：跨 Provider handoff 与 stream edge conformance
+### 历史治理锚点
 
-**触发信号**：多 Provider、fallback、context handoff 与 tool-result feedback 已成为主线能力，但 OpenAI、Anthropic、Gemini 的 tool-call/thinking/usage/abort/Unicode/空内容边界仍缺少一份统一、可回放、可阻断的 conformance matrix。随着 embedded host 与运行中输入合同落地，这些边界漂移会直接暴露给宿主，具备现在收口的风险信号。
+以下是既有 contract tests 的压缩闭包锚点，完整范围和归档编号见 [Archive Index](../openspec/changes/archive/INDEX.md)。`establish-embedded-host-command-response-and-event-correlation-contract` 保留为 embedded-host 治理引用，不代表新的 active change。
 
-**目标**：基于现有 provider adapter、capability/preflight、context handoff、tool-result feedback、failure taxonomy 与 Run/Stream parity，建立跨 Provider 的确定性 handoff 和 stream edge conformance 合同。优先补齐测试、版本化 fixture、replay 与 gate；只有 fixture 证明漂移时才最小化修正 `model/<provider>`。
-
-**必须复用**：`model/<provider>` owner、Provider capability/preflight、`model/toolcontract`、context handoff、failure taxonomy、authoritative terminal outcome、Run/Stream parity、diagnostics replay 与 `RuntimeRecorder`。
-
-**验证方向**：tool-call/tool-result round-trip、thinking/reasoning 投影、stream start/partial/abort、usage 保留、overflow、Unicode、空内容、fallback/handoff causation、错误分层、终态唯一性、Run/Stream parity、replay idempotency 与 shell/PowerShell gate parity。
-
-**明确不做**：新增 Provider、重写 Provider SDK、远程 model catalog、credential store、通用 provider-agnostic wire protocol、全局路由器、托管 gateway，或在 `context/*` 引入 Provider 官方 SDK。
-
-**Example Impact Assessment（立项时）**：`修改示例`。若修改 `examples/agent-modes`，必须先更新 `MATRIX.md` 与对应模式 README 的 semantic anchor、runtime path、expected markers 和 rollback notes；示例不得依赖 live provider。
-
-已归档的嵌入式宿主接缝、HITL reverse request 与 steering/follow-up 合同作为本候选的宿主侧前置基线，不再以新提案重复定义。完整对照、证据基线和不吸收项见 `docs/pi-agent-comparison-and-adoption-study.md`。
-
-### 已归档基线：Eval 首错归因、轨迹前缀决策边界与证据化改进建议
-
-**交付状态**：归档 141 已在既有 eval/corpus/Badcase/experiment/feedback owner 内交付 `first error step/kind`、root-cause owner、primary/secondary cause、bounded evidence refs、recoverability/confidence、轨迹前缀 acceptable/forbidden actions 与 review-only recommendation，并覆盖 memory retrieval/application 的同一 corpus 场景；未新建 transcript、artifact 或 memory 事实源，未改 runtime loop。
-
-**后续触发**：只有新的 Badcase 无法由既有首错归因、evidence 或 action-boundary taxonomy 稳定解释时，才以新的增量 change 扩展既有 owner；建议继续保持 review-only，不得自动修改 prompt、Skill、tool、policy、memory、runtime 配置、测试、gate 或代码。
-
-### 已归档：Provider 原生请求投影与 Run/Stream 对等
-
-**交付状态**：归档 144（`preserve-provider-native-request-projection-parity`）以归档 142 的真实 SDK fixture/gap 为依据，修复 `ModelRequest.Input`、`Messages`、`ToolResult` 到 SDK request 的原生 role、顺序、tool-result correlation 与 Run/Stream/CountTokens parity。跨 Provider handoff 与 stream edge conformance 继续复用既有 owner，不建设共享协议。
-
-**范围与后续触发**：归档 144 只最小修改 `model/<provider>` 与 SDK-neutral canonical request facts；prompt-cache usage 仍不纳入。只有 cache 成本/P95 成为稳定瓶颈且有 provider usage 证据时，才另行以 `additive + nullable + default` 和 `RuntimeRecorder` 单写入口设计 cache schema。
-
-**必须复用**：`model/<provider>`、`model/toolcontract`、context handoff、既有 provider conformance、Run/Stream parity 与 `RuntimeRecorder`。不得新建通用 provider wire protocol、gateway、credential store 或全局路由状态机，不得在 `context/*` 引入 Provider 官方 SDK。
-
-**Example Impact Assessment**：`无需示例变更（附理由）`。归档 144 使用 fixture/replay/gate 验证 SDK 请求构造，不改变示例 runtime path；若后续实现改变示例的 expected markers 或 usage 输出，必须先更新 `MATRIX.md` 与对应 README，并将评估改为“修改示例”。
-
-### 已归档：预算感知派生上下文投影
-
-**交付状态**：归档 143（`establish-budget-aware-derived-context-projection-contract`）已完成有界只读投影契约、离线预算利用 benchmark、版本化 fixture、replay 与双平台 gate；未修改运行时行为。
-
-**校准事实**：Baymax 已有 ReAct iteration/tool-call limit、`runtime.react.on_budget_exhausted`、runtime budget admission、scheduler `ParentRemainingBudget`、ReAct Plan Notebook 与 task-aware tail recap。缺口不是预算 source-of-truth 或新的任务状态机，而是模型决策上下文尚缺少由这些 owner 计算出的、有界只读 remaining-budget 投影，也缺少"预算增加是否改善完成质量、还是只增加重复循环"的稳定评测。
-
-**目标**：在既有 owner 之上增量交付版本化、有界、只读的派生预算投影契约 `budget_projection.v1`，以及离线、确定性、计算型的预算利用 benchmark；比较 completion rate、iteration/tool-call usage、token/latency、repeated-loop rate、Run/Stream parity，以及 snapshot/recovery 后预算投影的确定性重算。只有数据证明模型可见预算事实能稳定改善决策质量，才讨论策略提示或 tail projection 的最小 contract；不得先引入 adaptive budget 策略。
-
-**必须复用**：LoopPolicy/ReAct counters（`RuntimeReactConfig`）、budget admission（`budget_admission.v1`）、scheduler `ParentRemainingBudget`、Plan Notebook、`context/assembler` 既有的 "source-owned facts → bounded 派生投影" 模式（`buildTaskAwareTailRecap`）与 `tool/diagnosticsreplay`。
-
-**所有权边界**：预算事实继续由 LoopPolicy/ReAct counters、budget admission 和 scheduler parent budget 各自拥有；Plan Notebook 继续只拥有 plan lifecycle；`context/budgetprojection` 只接收 `source-owned facts -> bounded/read-only/nullable derived projection`。不得建立第二预算账本、第二 task/plan/terminal 状态机，也不得把模型生成的剩余预算写回事实源。
-
-**Example Impact Assessment（首阶段）**：`无需示例变更（附理由）`。首阶段仅增加 benchmark/fixture/replay/gate，不改变 agent-mode 配置、runtime path 或 expected markers；若后续投影进入示例上下文，必须重新评估并遵循文档先行规则。
-
-## 后续提案备选池（外部项目对照增量）
-
-### 候选列表维护规则
-
-- 本节是未启动提案候选的唯一维护列表；每个候选必须包含语义化 slug、触发信号、复用 owner、首阶段 DoD、非目标和回滚边界。
-- 候选只有在真实宿主需求、可复现风险或稳定成本/质量瓶颈出现后才能进入列表；外部项目经验只能作为吸收点，不能单独制造候选。
-- 起草 OpenSpec 后，候选必须从本节移到“当前状态”的“进行中”列表；`openspec list --json` 是活跃状态权威，roadmap 必须同步同名 slug。
-- 归档后，候选从“进行中”移入“已归档快照”，并从本节删除；放弃的候选必须记录放弃原因后删除，不得保留悬空条目。
-- 同一能力域只能保留一个候选；已有归档能力的后续需求必须引用原 owner 和新的触发证据，不得以近义名称重复排期。
-- 每次候选状态变化必须同步 `docs/development-roadmap.md`、`openspec list --json` 和归档索引（归档时），并执行 roadmap/doc consistency gate。
-
-备选池用于记录可验证方向，不代表承诺排期。候选必须由真实宿主需求、可复现风险或稳定成本/质量瓶颈触发；没有触发证据时保持观察。提案启动后，其状态只进入“当前状态”，不在本表维护第二份进度。本轮外部研究参考 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`；`bojieli/ai-agent-book` 已在 `dbc046eb896ac4e39aa19c7774c8bf49583b89a6`（2026-09-30）重新校准，旧基线 `c8963443736004412692b1af7706c89096d46e4e` 与 Pi 对照结论保留为历史背景。只吸收能够路由到 Baymax 既有 owner、可由 fixture/replay/gate 验证且符合 library-first 边界的最小子集。
-
-### 历史候选快照：宿主执行接入与恢复边界（2026-10-14，已归档）
-
-需求来源是 Danny 集成方提供的 Task Harness、ExecutionPlan、Context Assembler 与 Scheduler/Mailbox 接入观察。Danny 文件和行为描述作为用户报告的需求线索，本轮未独立审计 Danny 仓库；每项正式立项前须补齐最小复现与 Baymax 现状审计。原生执行事件、plan bridge、恢复准入重验证与 context assembly/handoff 已分别归档为 160/162/164/165；application outbox 接缝已归档为 166。以下仅保留历史边界，不是活动候选。
-
-总体边界：Danny 继续拥有 TaskProfile、执行模式选择理由、业务授权、write scope、task/schedule revision、effect key 与业务 commit gate；Baymax 在既有 owner 内提供执行、预算、safe point、checkpoint/resume、retry/cancel/timeout、终态和事件关联机制。本 change 已补齐 application outbox 接入 contract、conformance、replay、example 与双平台 gate，仍按既有 owner 边界运行。
-
-| 顺序 | 后续 slug | 优先级与依赖 | 首阶段目标 |
-| --- | --- | --- | --- |
-| 1（已归档） | `establish-application-outbox-mailbox-recovery-contract` | 已归档 166；复用 160/162 的 plan/event correlation | 已完成 outbox 投递、lease/retry、业务提交和 ack 的崩溃窗口验证 |
-
-上述顺序记录后续候选 change 的优先级与依赖。归档 166 已按 proposal/design/tasks 的 Example Impact Assessment 交付正向、负向和边界单测、必要 integration、版本化 fixture/replay、Run/Stream 对等证据及 shell/PowerShell gate，并按 AGENTS.md 执行完整代码门禁和归档前复核。新增 QueryRuns/诊断字段遵守 `additive + nullable + default`，诊断仅经 `RuntimeRecorder` 写入。
-
-#### Application outbox 与 mailbox 投递恢复接缝
-
-**change slug / 状态**：`establish-application-outbox-mailbox-recovery-contract`；归档 166。
-
-**触发信号**：集成方报告 scheduler 同时处理 occurrence、next_run、DST、misfire/backfill、application outbox、mailbox dispatch、effect key、execution record 与 webhook delivery，需要拆开业务调度责任和底层可靠投递。
-
-**复用 owner 与范围**：mailbox publish/lease/ack/nack/requeue/delay/QoS/DLQ、scheduler task/attempt/lease/retry、composer/snapshot recovery 与 completion safe point。宿主继续拥有 cron 用户归属、IANA timezone/DST、schedule revision、misfire/backfill 策略、occurrence key、outbox、effect key 和幂等业务提交；Baymax 负责消息投递和执行 attempt 的既有机制。
-
-**已交付 DoD**：定义 occurrence/outbox/message/task/attempt/run correlation 与 admission/ack 接缝；已验证“publish 后未标记 outbox”和“业务 commit 后未 ack”两个崩溃窗口、重复投递、stale attempt、lease rollover、delayed delivery、取消、恢复与 DLQ。delivery retry、execution retry、business commit retry 保持各自 owner，未由 bridge 叠加；按 at-least-once 加宿主 effect 幂等证明恢复，不把 ack 或 scheduler terminal 推断为业务提交成功，必要执行路径保持 Run/Stream parity。证据见本 change 的 `verification.md` 与 contract-test index。
-
-**非目标、风险与回滚**：不迁移整个 scheduler、cron/DST 业务语义或 webhook 产品流程，不承诺 exactly-once 或跨 application/Baymax 的原子 commit。主要风险是崩溃窗口重复 effect 或旧 occurrence 越权提交；回滚停止新增 dispatch bridge 并保留未确认 outbox，由宿主按幂等键协调重投，不能删除待处理事实。
-
-**文档与示例影响**：更新 scheduler/mailbox/recovery 文档、`docs/runtime-module-boundaries.md` 与 `docs/mainline-contract-test-index.md`；新增诊断字段时同步 `docs/runtime-config-diagnostics.md`。Example Impact Assessment：`新增示例`，用 fake outbox/effect store 演示崩溃恢复和重复投递，不引入业务数据库依赖。
-
-### AI Agent Book 实验方法校准（2026-10-01）
-
-`bojieli/ai-agent-book@dbc046e` 是教学与实验仓库，不是可直接嵌入的 runtime。其 109 个实验、共享 provider 适配层、锁定依赖和验证材料可作为证据组织参考，但不能单独构成 Baymax 的运行时需求或候选提案。以下原则只在出现独立、可复现的宿主 gap 时，路由到既有 owner 的 fixture/replay/gate 增量：
-
-- **工具规模与披露证据**：同时比较 schema token 成本、候选召回率与实际调用正确性；工具数量造成稳定错选、漏选或 cache 成本退化时，复用 `tool/schemaaudit`、Skill loader、MCP、manifest/capability、allowlist 与 sandbox owner 审计。不得因此引入 runtime selector、动态下载、marketplace、全局语义路由或 credential store。
-- **工具 contract 与副作用恢复**：工具描述应明确适用范围、边界、参数示例、分页/截断、幂等、取消后副作用状态及失败重规划证据；provider 接管或流式恢复用已执行工具作为重复副作用探针。复用 `tool/local` lifecycle、policy/sandbox、`model/<provider>`、handoff 和 replay owner；不得新建第二执行、终态或诊断状态机，provider 切换仍受首个语义 stream event 后不可切换的围栏约束。
-- **分层 verifier**：将环境终态、关键过程和开放式质量分别判定，前两层保持确定性规则，质量层即使使用模型也不得覆盖确定性 verdict；输出逐维 verdict、证据位置与 `insufficient-evidence`。复用归档 141、150 的 Scenario/Run Result、首错归因、reference-only verifier 与 test-support builder。
-- **受控候选改进**：候选补丁与可信根分离，必须经静态检查、隔离回放、反例回归、人工选择和回滚证据；模型不得批准自身生成的变更。复用 OpenSpec、review-only feedback、quality gate、sandbox 和 capability asset provenance/rollback owner，不实现自动自修改、自发布或模型自审批。
-- **可复现实验交付**：将环境与依赖锁定、外部依赖版本、成功/外部复现/未完成状态、fixture manifest、验证记录和 CI 影响范围明确分开；源码存在或安装成功不等于实验验收完成。复用现有 docs consistency、quality gate、contract/replay index 和 package-level test 纪律，不建设另一套实验平台或长期原始轨迹存储。
-
-2026-10-01 的本轮校准未新增其他候选；当时没有真实 confirmed drift，原 provider projection remediation 方向已撤回。OpenAI-compatible endpoint profile conformance 此后已归档为 157；2026-10-10 新增的宿主执行候选来自 Danny 集成需求，见上节，不属于本轮教学仓库研究结论。
-
-### Harness² 递归 Harness 调研校准（2026-10-20）
-
-研究基线固定为 `google-research/harness2@1cfe254e8d25b15f37048c3730134686abe60335`。Harness² 是 Python 实验框架，不是 Baymax runtime 或托管控制面；它把 prompt、Skill、脚本、子 agent 与 hooks 组成可校验的 Harness surface，通过 **Propose–Probe–Compose** 在同一任务上提出候选、实际执行候选、再基于行为差异组合方案，并把带证据的经验保存到按领域隔离的 library。该方法可以补充 Baymax 现有的 OTel/eval、corpus/Badcase/experiment、continuity comparison、能力资产 provenance 和 review-only feedback，但不能改变现有执行 owner 或公开运行时契约。
-
-- **可吸收：受约束的候选 surface**：借鉴 `SurfaceSpec` 的显式可修改路径、大小上限、命名规则和静态校验；候选必须绑定资产 stable identity/version/digest、authority、write scope、预算和回滚引用。候选生成器不拥有执行、发布、恢复或诊断写入。
-- **可吸收：执行差异而非自述作为证据**：为同一任务保留不可变 baseline，并在相同模型、权限、数据、预算和网络策略下执行 invariant/domain 候选；比较交付物、过程事实、首错、质量、可靠性、时延和单位成功任务成本。允许选择 baseline，候选未证明优于 baseline 时不得被自动采用。
-- **可吸收：选择、评分和经验分层**：选择阶段只读取匿名化、脱敏的候选产物和 bounded evidence；最终评分在选择提交后独立进行；评分失败保持 `unavailable/insufficient-evidence`，不折算为零。被采用的资产、选择理由、适用条件、证据引用、失败样本和撤回信息才能形成 review-only 经验条目。
-- **可吸收：实验身份与成本账本**：记录候选、组合、重试、缓存命中、模型调用、总费用和完成状态，并将每个结果绑定 Harness digest 与实验配置，避免跨配置复用。该账本只服务评测和准入证据，不替代 runtime budget、scheduler lease、mailbox delivery 或 source terminal owner。
-- **必须补齐的评测隔离**：Harness² 文档记录执行器可能从网络获取 benchmark rubric；文件名/内容过滤不足以证明无答案泄漏。Baymax 的候选实验必须固定 egress、评分数据可见性、fixture manifest 和评测器边界，并在报告中记录隔离策略。
-
-首阶段只建议做一个有界、离线优先的候选对比实验：选择已有可复现 Badcase，固定执行配置，限制修改到 prompt/Skill 等少数资产，比较 baseline、重复执行择优和 Propose–Probe–Compose 的质量/成本/契约回归。只有该实验暴露新的、可复现的 owner gap，才从既有 `evalcontract`、`tool/diagnosticsreplay`、能力资产 provenance 或 simulation owner 发起增量 OpenSpec；本轮不新增独立候选，不建设长期原始轨迹存储或另一套实验平台。
-
-已归档提案：`evaluate-bounded-harness-candidate-comparisons`，归档序号 170（13/13 tasks）；已落地 `candidate_experiment.v1` / `candidate_comparison.v1` 的离线 manifest、scope admission、固定身份 drift、baseline-preserving selection、评分隔离、逐 attempt 成本证据，以及七类版本化 fixture、legacy/idempotency replay 和双平台专项门禁。全量质量门禁 83 步通过，包含 tests、race、lint、语义稳定性、性能回归、full-chain smoke 和严格安全扫描；验证证据见 `openspec/changes/archive/170-evaluate-bounded-harness-candidate-comparisons/tasks.md`。公开语义见 `docs/evaluation-contract.md`。范围仍限定为既有 evaluation corpus/Badcase/experiment contract 的增量，不包含生产执行或候选自动发布；新发现的可复现 owner gap 必须另行提出增量 OpenSpec。
-
-**明确不吸收**：不把实验 resume/完成标记当作 BXM-3 native checkpoint restore；不把并行候选的稳定记录顺序当作跨 child/team 的 source event order；不允许模型自审批、自发布或自动修改 prompt、Skill、tool、policy、memory、配置、测试和 gate；不建设动态下载、registry/marketplace、远程控制面、第二 scheduler/mailbox owner、第二 event journal 或生产 executor。BXM-1 至 BXM-5 的 source-owned mailbox、history、checkpoint、continuation 和 capability manifest 仍以各自 owner 与已归档 OpenSpec 为准。
-
-Example Impact Assessment：`无需示例变更（附理由）`。本节只记录外部项目研究吸收与受控实验准入边界，不改变 `examples/agent-modes` 的配置、runtime path、expected markers 或公开运行时语义。
-
-### 阿里云 AI Agent Handbook 逐章吸收校准（2026-09-24）
-
-研究基线固定为 `aliyun/ai-agent-handbook@467e708889ea3a69b555e34d0a272764dddb87e9`。本轮重新读取 README、前言、第 1–30 章正文及第 25–29 章实践案例；案例中的产品数字和平台能力只作为背景，不直接视为 Baymax 的需求证据。下表逐章记录研究结论。`已吸收/复用` 表示现有代码、spec 或 roadmap 已覆盖，不再开平行提案；`新增候选` 表示只记录方向，启动仍须满足触发条件；`条件观察` 表示需要真实成本、风险或宿主证据；`不吸收` 表示超出 library-first 或与仓库硬约束冲突。
-
-| 章节 | 可吸收点 | Baymax 路由与当前状态 | 处理边界 |
-| --- | --- | --- | --- |
-| 1 | Model + Harness、最低充分自治、风险与成熟度匹配 | 已吸收为架构与提案准入原则 | 不因“Agentic OS”概念扩大近期范围 |
-| 2 | 组件/平台/生命周期三视图；Model、Harness、Runtime、治理和调优解耦 | 已吸收至模块边界、OpenSpec 和 roadmap 基线 | 不创建平台控制面或第二 Runtime |
-| 3 | 多种 Harness 构建入口、Task/Session/Event/Trace/Artifact/Outcome 分离、版本化 Agent Release 与交付物边界；Codex 多入口复用同一 session/turn 内核 | 已吸收为“最低充分架构”和责任分层原则；版本化能力资产溯源与发布回滚已由归档 149 收口；多入口共用 core 仅作边界核对 | 不建设托管 Agent 平台、资源市场或云产品适配层；不因新增 transport 复制执行循环 |
-| 4 | Prepare–Model–Act–Observe–Verify、探索/计划/执行分离、阶段门禁、Continuation、委派契约、失败传播、完成证据；Codex 的全流程测试 harness 将模型事件、工具、审批、取消和恢复组合回放 | 阶段推进/恢复/完成 safe-point 已有基线；完成验证证据、阶段性验收和测试专用可组合 harness 已由归档 150 收口 | Verifier 不能替代业务 Outcome owner，不以模型自述判定完成；harness 只服务确定性测试，不形成生产 executor |
-| 5 | Context Policy/Manifest、Context/State 分离、Commit–Compact–Rebuild–Validate、Memory/Knowledge/Skill 分类、渐进式披露、作用域/版本/删除/反退化；Codex 将 Skill catalog 摘要预算与按需全文读取、截断/省略报告分开 | `context/*`、memory scope/lifecycle、skill loader 已覆盖部分；能力资产溯源与发布回滚、按需 Tool Schema 投影 readiness 已分别由归档 149、151 收口；turn 内稳定前缀与动态 world state 归入 Context/Provider 路由 | 不把 raw transcript、reasoning 或跨租户内容写入新事实源；不复制固定 token 比例或字符阈值 |
-| 6 | Action Plane、身份绑定、Policy/ASK/Preview/Commit/Verify、副作用/幂等/可逆性/风险元数据、Observation、Tool/MCP/A2A 与 Environment Contract 边界；Codex 区分工具审批需求、网络授权与 sandbox enforcement，并用精确操作范围关联审批复用 | Action capability 风险/幂等/evidence 已由归档 147 完成；后续增量只回到 Tool lifecycle、Action Gate、Policy、Sandbox 与 RuntimeRecorder 既有 owner | 不新增重复的 action audit 提案或第二执行状态机；自动模型审查不能替代确定性授权/HITL/sandbox，不宽泛复用审批 |
-| 7 | 沙箱工作区、Session/Workspace 亲和、休眠/恢复、模板/快照/Fork/Reset、执行代次围栏、环境故障与业务副作用区分；Codex 将高层权限策略映射到平台 sandbox driver，并区分 deny、launch failure 与允许升级后重试 | sandbox conformance、workspace provenance、recovery 已有基线；平台映射 drift、失败分类与恢复/成本纳入现有 sandbox 条件观察 | 不引入托管 workspace、Git manager 或全球执行平台；升级必须受既有 policy/approval 约束，不能将执行失败默认为放行 |
-| 8 | Event Log/Checkpoint/Workspace/Memory/Knowledge/Ontology 分层、RPO/RTO、冷热分层、COW 快照、Artifact 可寻址交付、删除与派生索引清理、租户一致性；Codex rollout 以追加事实日志和派生查询索引分层，显式 flush/shutdown 并按 checkpoint 重建 | checkpoint/snapshot/memory lifecycle 已有 owner；生命周期、派生清理与语义资产血缘纳入资产候选审计；flush/恢复一致性归既有 RuntimeRecorder、snapshot/recovery 与 replay owner | 不重写存储事实源，不新增 hosted Agent database 或业务知识平台；SQLite/query index 等实现不直接移植 |
-| 9 | LLM/MCP/Agent 流量治理、预算预留/结算、身份/权限/审批/审计分层 | budget admission、policy precedence、readiness 和 diagnostics 已覆盖核心；预算归因仅条件观察 | 不建设 AI Gateway、租户控制面或远程路由服务 |
-| 10 | 异步/定时/工作流边界、Task 与 Session 分离、幂等/对账/补偿、状态信号非事实源 | scheduler、mailbox、task board、checkpoint/recovery 和 completion safe-point 已吸收 | 不创建第二任务状态机；业务 Outcome 仍由宿主定义 |
-| 11 | 多 Agent 入站/出站权限分离、委派链、结果接受、跨 Trace 关联；Codex 将 agent registry、并发/预算上限限定在 session root，角色配置只能对父配置做有界覆盖 | A2A、scheduler、teams/workflow 和 diagnostics 已有基础；root-scoped 限额、委派身份与预算租约统一纳入长期观察候选 | 仅在真实跨主体委派或预算越界信号出现后审计，不引入全局身份/租户平台或第二 agent manager |
-| 12 | 人机/能力/协作/内构四类通信面；请求-响应、流式、任务句柄、持久通道的语义分层；顺序/投递/去重/续传/背压/生命周期/权限六要素 | realtime、host、A2A、mailbox、durable stream binding 已覆盖；“任务句柄不等于事件续传、协议无状态不等于应用无状态”作为审计检查项 | 不复制 event ordering、pending map、cursor 或远程 Session Server |
-| 13 | Intent 与实际执行分离；ENTRY→AGENT→STEP→LLM/RETRIEVAL/TOOL 观测层级；多入口采集、去重、采样、脱敏、成本与审计证据链；区分确定性 policy 决策与辅助模型 review | RuntimeRecorder、sandbox、diagnostics 和 tracing 已有基础；动作事实/approval scope 由归档 147 与既有 action owner 覆盖，采集覆盖差异只在真实 drift 时增量处理 | 不采集 raw payload、凭证、完整命令输出或无界系统调用日志；模型 review 仅作辅助证据 |
-| 14 | Prompt injection、身份安全、会话级隔离、出站 deny-first、供应链签名/漂移 | policy、sandbox egress、redaction、adapter allowlist、extension governance 已覆盖主线 | 仅在出现越权/污染/漂移 fixture 时增量审计；不接入云防火墙或镜像平台 |
-| 15 | Prompt/Skill/MCP/Agent 的稳定标识、精确版本、Lock/Context Manifest、影响分析、撤回和可替代版本 | extension/manifest/skill loader 已有局部能力；能力资产溯源与发布回滚已由归档 149 收口 | 不建设 Nacos/registry/marketplace/动态下载；宿主继续提供资源 |
-| 16 | Spec–Manifest–Run–Result 证据链；Scenario/Asset 分别版本化；用户/环境/工具/故障模拟；计划与事实事件分离；records→observations→evidence 分层；执行/证据完整性/业务结果/发布准入四态独立；证据不足输出“不可判定”；Codex 测试 harness 可脚本化 SSE 分片、失败、取消、审批和恢复 | 场景化 Agent Simulation 与完成验证已由归档 150 交付版本化 bounded schema、reference-only verifier、offline replay 和 test-support builder；复用 eval/corpus/sandbox/replay | 仿真只交付证据材料，不直接发布或改写 Outcome；不依赖 live provider；新增 harness 仅为 test support，不形成生产运行时 API |
-| 17 | 模型/Harness/环境归因、非劣效与安全硬门禁、影子/灰度/扩量/回滚；全流程 harness 需能复现 stream 未完成、服务错误、重试后下一 turn 可继续等恢复边界 | evaluation、quality gate、provider conformance 和版本化 fixture 已覆盖大部分；故障注入与生命周期断言只在新的可复现 gap 下由既有 Simulation/Eval owner 增量处理 | 发布治理只作为资产/评测候选的子范围，不单独建设模型训练或灰度控制面 |
-| 18 | Trace→Pipeline→Dataset→Evaluator→Experiment→候选变更的数据飞轮 | corpus/Badcase/experiment/feedback 已有 owner；作为现有 eval 增量校准 | 不将反馈自动写回 Prompt、Skill、Tool、Policy、Memory 或 gate |
-| 19 | Trace 与 Trajectory 区分、按目标/结果/关键步骤定位、失败后行为与业务事实核对 | 归档 141 已提供首错归因、轨迹边界和 bounded evidence refs | 不新增 transcript/artifact 事实源，不把观测材料当 Outcome |
-| 20 | 运行数据清洗、采样、字段加工和可复用 Pipeline；先解决一个业务问题 | 可作为 eval/corpus 的条件增量；当前不建立通用数据管线 | 只允许 bounded、脱敏、引用式材料，禁止 raw 轨迹长期落盘 |
-| 21 | 黄金数据集、题目级 rubric、版本冻结、正负样本和独立回归 | evaluation corpus/metric-rubric drift 已有 spec 与 gate | 不复制 Dataset 服务；只在现有 corpus 缺少可复现实例时增量扩展 |
-| 22 | Badcase 发现、同题 baseline/candidate、逐题差异、非劣效和发布前回归 | 归档 141 与 eval corpus/experiment 已覆盖 | 继续 review-only；不把评估分数直接变成运行时策略 |
-| 23 | 经验→Skill/Script/Workflow 的分层、候选补丁、人工选择、回滚和受控采用 | skill loader、extension authoring、feedback approval 和 gates 已覆盖治理原则 | 不允许自修改、自发布或无审批的自动进化 |
-| 24 | 边缘评估、区域数据驻留、缓存/回源、边缘安全和灰度 | 记录为长期方向，不进入近期 library-first 主线 | 不建设全球边缘 Runtime、WebMCP 或托管分发控制面 |
-| 25 | 契约链不衰减、独立交叉评审、稳定复现作为修复门禁、定向测试、失败分流、端到端交付、人工最终放行、阶段性 Loop；Codex builder/harness 将 mock 服务、临时环境和事件断言组合为隔离场景 | 可作为 Simulation/Verifier、归档 147 Action evidence 和 release gate 的场景来源；复用现有 integration/contract harness，重复 setup 有证据时再做测试工具增量 | 不把案例流程硬编码成通用 runtime loop，不另造生产 runner |
-| 26 | 声明式 UI/交互 Spec、客户端能力白名单、schema 校验、Server→Client 数据与 Client→Server Action Event、结果可追踪可校验 | 仅吸收“结构化事件 + 客户端能力白名单 + schema/回传校验”的协议检查方法 | 不新增 UI renderer、组件 registry 或 GenUI runtime |
-| 27 | 统一事件入口、观测→诊断→授权动作→反馈闭环、告警降噪、技术指标映射业务连续性、变更前风险预判、经验三元组沉淀 | 业务 Outcome/evidence 可作为 verifier fixture；业务影响映射保持观察 | 不建设 AIOps 控制面或自动生产修复链 |
-| 28 | 长周期记忆底座、冷热与生命周期、匿名化分析、业务语义层/本体、多模型与小模型分工、统一 AI 资产入口 | memory scope/lifecycle、context assembler、eval corpus 可复用部分方法；业务语义层仅作长期观察 | 不引入专用数据库、企业数据平台或业务语义模型 |
-| 29 | 多 Agent 研发小队、独立评审、定向测试、授权与回滚、先证明流程再证明规模收益；session-root 并发/预算限制和角色边界需跟踪父子委派因果 | 委派身份/预算租约与 Simulation、Verifier 和证据链候选的案例来源 | 不复制特定竞赛拓扑、角色 DSL 或托管协作平台 |
-| 30 | 复用性/强制性/可验证性三条下沉判据；Run/Session/Workspace/Skill/Budget Lease/Policy/Evidence 等核心对象；六类可标准化接口；强制边界与观测边界分类；计划/已发出/已确认操作、幂等、补偿与撤销 | 作为所有新提案的架构筛选规则；委派租约、动作证据和沙箱成本列长期/条件观察 | 不实现 Agentic OS、统一控制面、跨组织身份或 hosted persistence |
-
-### 完整可吸收点清单（按能力域归并）
-
-逐章阅读后，真正能落到 Baymax 的内容可以归并为以下十类。该清单是“吸收点”而不是十个新提案；每一项都必须路由到已有 owner，并先以 fixture/replay/gate 证明缺口。
-
-本轮 Codex harness 调研（`openai/codex`，索引提交 `94174e44`，2026-09-22）拆出的独立借鉴点如下；它们均已并入下方既有能力域，不新增 Codex 专属提案：
-
-- **turn context 隔离**：每轮固定有效的模型、环境、权限和覆盖项；稳定 prompt prefix 与动态 world state 分离。路由到 Context/Provider 现有投影与预算 owner。
-- **统一工具编排**：在执行前独立计算 approval `skip / needs approval / forbidden`，再处理 network approval 与 sandbox enforcement；路由到 Tool lifecycle、Action Gate、Policy/Sandbox，不复制执行状态机。
-- **审批范围幂等**：审批缓存必须绑定规范化主体、目标、操作和环境范围；模型 Guardian 只能产生辅助 review，不能成为授权事实源。路由到归档 147 后续增量边界。
-- **平台 sandbox 映射**：高层 policy 与 macOS/Linux/Windows driver 分层，区分 deny、launch failure、escalation/retry。路由到 sandbox conformance 与成本候选。
-- **rollout/replay 分层**：追加事实日志、flush/shutdown 生命周期、checkpoint 重建和查询索引分离。路由到 RuntimeRecorder、snapshot/recovery 与 replay owner。
-- **session-root 协作边界**：子 Agent registry、并发/预算上限和角色覆盖限定在 root session；路由到委派身份/预算租约长期观察，不建设全局 agent manager。
-- **测试 harness 可组合性**：fake model/SSE、工具输出、审批、取消、截断、恢复、临时目录与跨平台 helper 可编排；路由到场景化 Simulation/Eval 的 test-support 增量。
-- **Skill 渐进披露**：catalog 摘要优先、正文按需读取、预算截断和 omission report；路由到 Context/Skill 资产溯源与 Tool discovery 候选。
-
-1. **最低充分架构与责任分层（第 1–3、30 章）**
-   - 用业务目标、风险、可逆性、执行跨度和结果可验证性选择 Workflow、Hybrid、Single-Agent、Long-Horizon 或 Multi-Agent，不把更高自治当作默认升级。
-   - 固定 Model、Harness、Runtime、Sandbox、Governance、Evaluation 的责任边界；把 Run/Session/Event/Trace/Artifact/Outcome 分开，Agent Release 以版本组合和可复现证据为最小交付单元。
-   - 吸收状态：已进入架构硬约束、OpenSpec 准入和 roadmap，不新增平行能力。
-
-2. **任务、状态与长程恢复（第 4、7、8、10、12、30 章）**
-   - 区分 Run、Task、Session、Workspace、Checkpoint、Artifact 和业务 Outcome；状态事实独立于连接、进程和当前模型上下文。
-   - 计划/阶段门禁/Continuation、异步任务、定时触发、工作流 AND/OR Join、重试对账与补偿必须由权威 owner 驱动；任务句柄不等于事件续传，协议无状态不等于应用无状态。
-   - 快照只恢复其覆盖的文件和状态；跨系统副作用必须依赖查询、幂等键、补偿或人工核对。执行代次围栏用于防止旧实例在接管后继续写入。
-   - Codex 借鉴点：追加式 rollout 事实记录与查询元数据索引分层，后台 writer 明确 add/persist/flush/shutdown，恢复从 checkpoint 重建后前向 replay；这为关闭、压缩、恢复和查询分歧提供独立测试边界。
-   - 吸收状态：大部分已由 scheduler、checkpoint/snapshot、mailbox、recovery、durable stream 和 completion safe-point 覆盖；flush、关闭和 replay 重建一致性回到 RuntimeRecorder/snapshot/recovery 既有 owner，围栏与外部副作用核对仅在真实宿主缺口出现时增量审计。
-
-3. **Context、Memory、Knowledge、Skill 与资产生命周期（第 5、8、15、23、28、30 章）**
-   - 用 Context Policy/Manifest 管理输入，用 Commit–Compact–Rebuild–Validate 管理压缩与重建；Context 不是 State，Memory 不是 Knowledge，Skill 不是 Tool。
-   - 能力资产需要 stable identity、版本/digest、owner、scope、依赖、消费者引用、来源与验证时间；支持 lock、漂移检测、撤回、替代版本、删除和派生索引清理。
-   - 采用渐进式披露和最小充分共享；用户/租户/任务作用域必须先于检索和注入，失效记忆不得继续作为事实使用。
-   - Codex 借鉴点：Skill catalog 先注入有限摘要，正文按需读取；稳定 prompt prefix 与动态 world state 分离；超预算时逐项截断并输出省略原因。
-   - 吸收状态：`context/*`、`skill/loader`、extension manifest、memory lifecycle 已覆盖局部；能力资产溯源与发布回滚审计已由归档 149 收口。Skill/context 预算与省略审计仅在新的可复现 drift 下回到既有 owner 增量处理，不建设 registry、marketplace、动态下载或新事实存储。
-
-4. **Action capability、权限与安全边界（第 6、9、13、14、29、30 章）**
-   - 将模型意图与实际执行事实分开；Action 至少表达副作用、风险、可逆性、幂等、前置条件、超时、环境需求、错误分类和验收证据。
-   - 对高影响动作采用 Preview→Approve→Commit→Verify，结果未知时先查询再重试；Tool/MCP/A2A/Skill/Subagent/Remote Agent 按是否拥有独立任务循环、状态和 Artifact 选择，不用通用 Shell 代替窄业务 Action。
-   - 权限按主体、租户、任务目的、目标资源、阶段、数据敏感度、预算与历史审批判定；Policy/Sandbox/出站控制/Prompt Injection 防护形成纵深边界，且必须区分“强制边界”和“仅观测边界”。
-   - Codex 借鉴点：统一编排层计算 `skip / needs approval / forbidden`，网络授权与 sandbox enforcement 分层；审批复用必须绑定规范化操作范围，Guardian/第二模型只能是辅助 review。
-   - 吸收状态：Policy、HITL、sandbox、RuntimeRecorder、tool lifecycle 和归档 147 已有 owner；后续仅在真实 approval scope、网络授权、sandbox escalation 或执行事实漂移下，以既有 owner 的增量 change 处理，不再创建同名审计提案。
-
-5. **Sandbox、Workspace 与单位成功任务成本（第 7、8、17、24、30 章）**
-   - 把模板、快照、Fork、Reset、休眠/唤醒、冷启动、资源占用、失败重试、清理和恢复完整性作为环境生命周期；环境事实与业务结果分别验收。
-   - 用相同任务、权限和服务目标测量创建吞吐、空载占用、恢复时延、尾延迟、隔离强度、失败样本和“单位成功任务成本”，不把平均成本或零违规直接等同于质量结论。
-   - 吸收状态：记录为条件观察；只有真实宿主出现稳定 P95/P99、恢复、并发密度或成本瓶颈时才立项，不建设 hosted workspace、全球 Edge Runtime 或新资源调度器。
-
-6. **通信、协作与委派租约（第 11、12、30 章）**
-   - 能力面、协作面、内构面、人机面分别描述；同步、流式、任务句柄、持久通道分别声明状态位置和恢复责任。
-   - 通信合同至少覆盖版本/能力协商、顺序、投递确认、去重、续传点、生命周期、背压、权限和故障收口；任务状态、消息重播和业务恢复不能混成一个语义。
-   - 委派链应绑定入站主体、Agent 主体、出站主体、资源范围、预算、有效期和级联撤销；共享上下文遵循最小必要原则。
-   - 吸收状态：A2A、scheduler、mailbox、Realtime/Host 已有 owner；委派身份与预算/权限租约列长期观察，需真实跨主体委派证据才启动。
-
-7. **可观测性、审计与证据层级（第 6、13、16、19、27、30 章）**
-   - 观测层级采用 `ENTRY→AGENT/WORKFLOW→STEP→LLM/RETRIEVAL/TOOL`，并把模型、工具、状态变化、审批、沙箱和资源通过因果标识关联。
-   - 允许应用埋点、SDK/框架插桩、Hook/Daemon、基础设施探针等多入口，但必须去重、采样、脱敏、限字段和区分实际值/估算值；Metrics、Logs、Trace、Events 不强行写成一个事实模型。
-   - 证据按 records→observations→evidence→verdict 分层；Intent、已发出操作、已确认结果分别记录。观测材料不能自动成为业务 Outcome，证据不足应返回“不可判定”。
-   - 吸收状态：`RuntimeRecorder` 单写入口、diagnostics replay、OTel/eval 已覆盖主体；Codex 的多入口事件关联、审批/网络/sandbox 因果链作为既有 owner 的审计检查项，只有真实采集漂移或动作事实无法核对时才做增量修复。
-
-8. **场景化 Simulation 与完成验证（第 4、16、17、21、22、25、29 章）**
-   - 用 Scenario Spec、版本化 Asset、不可变 Manifest、Run、Run Result 组织受控执行；用户、环境、工具、故障和模型输出都可替身化或回放。
-   - 仿真必须区分计划触发与已发生 Event，故障记录计划生效/目标命中/恢复验证四步；运行状态、证据完整性、业务结果、发布准入四态独立表达。
-   - Run Result 只交付记录、事实观测和证据引用；评估器再进行断言、重评分、baseline/candidate 对比、置信边界和“不可判定”处理。模拟器质量和 Agent 成功率分开治理。
-   - Codex 借鉴点：建立测试专用的可组合 builder/harness，能注入 fake model/SSE、tool output、审批决定、取消、stream 截断和恢复，并对完整 Run/Stream 语义做断言；采用临时目录、跨平台 path helper、snapshot 与 mock server 保证确定性。
-   - 吸收状态：场景化 Agent Simulation 与完成验证已由归档 150 收口，提供离线、确定性、无 provider/network 副作用的 test-support 基线；只有新的可复现 harness gap 或稳定 ROI 才以增量 change 扩展，不直接发布或改写业务 Outcome。
-
-9. **评估、Badcase 与受控改进（第 17–23、25、27 章）**
-   - 先做模型/Harness/执行环境归因，再决定是否需要模型训练；固定任务分布、权限、预算和环境，报告质量、可靠性、安全、时延以及单位成功任务成本。
-   - Trace 与 Trajectory 分开；从目标/结果/关键步骤定位，形成首错、责任 owner、可恢复性和 bounded evidence。黄金数据集包含题目、Rubric、正负样本、版本冻结和人工复核；Badcase 用同题 baseline/candidate 比较。
-   - 经验→Skill/Script/Workflow 的改进必须经过候选补丁、独立评测、人工选择、发布门禁和回滚；反馈保持 review-only，不自动修改 Prompt、Skill、Tool、Policy、Memory、配置、测试或 gate。
-   - 吸收状态：已有 OTel/eval/corpus/Badcase/experiment/feedback owner；模型 SFT、Agentic RL、蒸馏和自动自进化不进入近期主线。
-
-10. **案例提炼与业务影响映射（第 25–29 章）**
-    - 研发案例共同强调契约链、独立交叉评审、可复现修复、定向测试、失败分流、端到端交付和人类最终放行；运维案例强调统一事件入口、技术指标→业务连续性映射、授权动作和反馈三元组；设计案例强调声明式 Spec、白名单和 Action Event 校验；数据案例强调业务语义层、长期记忆治理与大小模型分工。
-    - 这些内容只作为 Simulation/Verifier、Action evidence、release gate 和业务 Outcome fixture 的场景来源，不把垂直流程硬编码为通用 runtime loop，也不建设 AIOps、GenUI、企业数据平台或专用语义数据库。
-
-11. **明确不吸收的系统级方向（第 2、3、9、17、24、30 章）**
-    - AI Gateway/统一租户控制面、Registry/Marketplace/动态下载执行链、Hosted Agent database、全球 Edge Runtime/WebMCP、模型训练平台、SFT/Agentic RL/蒸馏、无审批自进化、Agentic OS、跨组织统一身份和远程 Session Server 均不进入近期 roadmap。
-    - 只有出现真实宿主需求、可复现安全/质量 drift 或稳定成本瓶颈，才从对应既有 owner 发起最小增量 change；任何新增 contract/配置/诊断字段仍需 additive + nullable + default、Example Impact Assessment 和双平台 gate。
-
-### 同域演进路由
-
-- **Eval**：continuity comparison 与首错归因/轨迹前缀决策边界已分别由归档 139、141 收口；后续质量方向只在新的 Badcase 无法由既有 taxonomy 稳定解释时，进入既有 corpus/Badcase/experiment/feedback owner。Memory application 作为 corpus 场景并入，不单独立项。
-- **Provider**：结构化上下文与 prompt cache 复用归档 142 的投影审计与归档 144 的 native request projection owner，先验证真实 SDK fixture；只有 drift 成立才最小修改 `model/<provider>`，不抽象新的共享 wire protocol。
-- **Context/Budget**：预算可见性复用 ReAct counters、budget admission、scheduler parent budget、Plan Notebook 与 task-aware tail recap，只允许 source-owned facts 的有界只读派生投影，不创建平行账本或状态机。
-- **Tool discovery**：按需 Tool Schema 投影 readiness 已由归档 151 收口；后续仅在新的 runtime design gap 获得独立证据时，以既有 Skill loader、MCP、manifest/capability、allowlist 与 sandbox owner 发起增量 change，不建设市场、动态下载或 credential store。
-- **Realtime/Host**：事件、中断恢复、HITL、steering/follow-up、completion promotion 与 request correlation 继续由既有 owner 演进，不抽取第二套 event ordering、pending、输入队列、协调或终态控制面。
-
-历史门禁继续保留下列同域收口锚点；后续结构调整不得改变其 owner 语义：
-
-- Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。
 - Tracing+eval 同域增量需求（语义映射、指标汇总、执行治理、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
-- Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
 - Context organization 语义能力同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在 Context JIT Organization 增量吸收；生产可用治理同域需求（压缩质量门控、冷存检索/清理、一致性回放、强门禁）统一在 a69 吸收，不再新增平行 context 压缩提案。
+- Context organization 同域需求（reference-first、isolate handoff、edit gate、relevance swap-back、lifecycle tiering、task-aware recap）优先在本提案内增量吸收，不再新增平行 context 组织提案。
 - Hooks/middleware 同域增量需求（lifecycle、middleware、discovery、preprocess、mapping、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
+- Realtime 同域增量需求（事件类型扩展、中断恢复语义、顺序/幂等、回放/门禁）仅允许在本提案内以增量任务吸收，不再新增平行 realtime 提案。
 - Runtime 预算 admission 同域增量需求（阈值、维度、降级动作、回放、门禁）仅允许在本提案内以增量任务吸收，不再新开平行提案。
-
-| 成熟度 | 候选方向 | 可吸收点 | 必须复用的 Baymax owner | 触发信号与首要边界 |
-| --- | --- | --- | --- | --- |
-| 已归档基线（137） | 跨 Provider handoff 与 stream edge conformance | 跨 provider tool-call/thinking 转换、abort usage、overflow、Unicode/空内容 fixture | `model/<provider>`、provider admission、context handoff、failure taxonomy、terminal outcome | 已完成并归档；后续仅在新的可复现 drift 下以增量 change 处理，不重新排期为 P2。 |
-| 已归档基线（138） | Durable task-attempt/workspace binding 与 completion safe-point 所有权审计 | 已完成 task/attempt 与 workspace provenance 关联、attempt/lease rollover 隔离、missing/dirty/conflict/drift 分类、恢复 reconciliation，以及后台 completion 的 correlation、dedupe、late/disconnect/recovery 与 Run/Stream parity 验证 | scheduler `Task/Attempt` 与 lease、checkpoint/workspace provenance、snapshot/recovery、mailbox、source-owned runtime input、`RuntimeRecorder` | 已通过 gap fixture、contract/replay、shell/PowerShell gate 和文档一致性校验；后续仅在新的可复现 drift 下以增量 change 处理。实际 workspace/Git 生命周期仍由 host/tool adapter 拥有，不新增 worktree manager、通知队列或任务状态机。 |
-| 已归档基线（139） | Eval continuity comparison 与 replay contract | bounded reference-only continuity projection、跨 compaction/handoff/snapshot/recovery 的确定性比较 | OTel/eval/corpus、context handoff、checkpoint/snapshot refs、diagnostics replay | 已完成并归档；首错归因与轨迹边界已由归档 141 继续收口，后续仅在新的可复现 quality gap 下增量处理，不重复建设 transcript/artifact service。 |
-| 已归档基线（140） | External extension authoring conformance | 离线 authoring conformance、版本化 fixture、replay 与双平台 gate | extension lifecycle/resource resolution、manifest/capability、allowlist、sandbox | 已完成并归档；未来仅在新的真实扩展来源暴露新增 drift 时，以既有 owner 的增量 change 处理。 |
-| 已归档基线（148） | Provider cache usage 可观测性 | 三家 SDK cache usage adapter projection、终态 Stream 快照选择、fixture/replay 与 Run/Stream parity | `model/<provider>`、`model/conformance`、`tool/diagnosticsreplay`；不接入 `RuntimeRecorder` | `establish-provider-cache-usage-observability-contract` 已归档；独立于 `TokenUsage`，cache 字段仅 additive + nullable + default。 |
-| 已归档基线（151） | 本地/宿主准入后的按需 Tool Schema 投影 readiness | 已通过 `tool_schema_projection_readiness.v1` 的稳定窗口、admitted-subset opportunity 与质量证据验证，具备进入后续 runtime design 讨论的证据 | `tool/schemaaudit`、`tool/diagnosticsreplay`、`tool/contributioncheck`，事实仍来自 Skill loader、MCP、manifest/capability、allowlist、sandbox | 仅交付离线 readiness 证据；不接入 runtime selector、动态下载、marketplace 或 credential store。 |
-| 已归档基线（152） | Provider 结构化上下文投影与 Prompt Cache 漂移准入证据 | 将 SDK 边界捕获或宿主成本摘要以 reference-only evidence 关联既有 projection digest，并输出 no-drift / drift-confirmed / insufficient-evidence verdict | `model/conformance`、`tool/diagnosticsreplay`、`tool/contributioncheck`、既有 `model/<provider>` SDK 边界测试 | 已完成并归档；仅交付离线 evidence、replay、三态 verdict、隐私/边界 gate 与 review-only owner route，不改变 adapter、`ModelResponse.CacheUsage`、runtime 配置、价格模型或 cache 策略。 |
-| 已归档基线（147） | Action capability 风险、幂等与验收证据审计 | 已完成已准入 Tool/MCP/Action 的副作用、风险、可逆性、幂等、前置条件和 evidence reference 离线一致性审计；Codex 的审批范围、网络授权与 sandbox 分层作为后续增量检查项 | `model/toolcontract`、policy precedence、HITL/action gate、sandbox、RuntimeRecorder、diagnostics replay | 归档 147 已收口；只有新的 approval scope、网络授权、sandbox escalation 或声明/事实 drift 才从既有 owner 发起增量 change，不再重复排期。 |
-| 已归档基线（149） | Context/Skill/Memory/Knowledge 能力资产溯源与发布回滚审计 | 已完成 stable identity、version/digest、owner、scope、依赖、消费者引用、漂移、撤回和替代版本的 bounded reference-only audit | `skill/loader`、extension governance、adapter manifest、memory scope/lifecycle、context assembler、eval corpus | 归档 149 已收口；只有新的可复现 provenance、scope 或 rollback gap 才从既有 owner 发起增量 change，不建设 registry、marketplace、动态下载或新事实存储。 |
-| 已归档基线（150） | 场景化 Agent Simulation 与完成验证 | 已完成 bounded Scenario/Run Result、reference-only evidence verifier、test-support builder、replay 与双平台 gate | OTel/eval/corpus、sandbox conformance、diagnostics replay、completion safe-point、RuntimeRecorder、integration test support | 归档 150 已收口；只有新的可复现 harness gap 或稳定维护成本才以增量 change 扩展，保持离线/确定性，不替代业务 Outcome。 |
-| 已归档基线（154） | Sandbox 生命周期与单位成功任务成本基线 | 已完成离线、bounded、privacy-safe evidence 对 acquire/launch/execute/retry/release/recover、cold launch/reuse/recovery 与单位成功任务成本的比较；参考 Anthropic `sandbox-runtime@5d196e0` 的边界经验 | sandbox profiles、workspace provenance、scheduler、`tool/diagnosticsreplay`、quality/performance gates | 归档 154 已收口；不引入 executor、平台 driver、proxy、账号/凭证、配置、诊断持久化或 session owner。只有 confirmed gap 才能以独立 change 讨论运行时或平台实现。 |
-
-备选池合并与排序规则：
-
-1. **Provider 结构化上下文与 Prompt Cache 漂移准入证据**：归档 142/144/152 已建立投影、修复与三态 evidence 基线；只有新的 confirmed drift 才以独立 change 最小修复既有 adapter。
-2. **Sandbox 生命周期与单位成功任务成本**：归档基线 154 已建立 evidence-first 比较；任何确认 gap 的运行时或平台后续仍须独立立项，不建设 hosted workspace、边缘 Runtime 或资源调度器。
-3. **归档基线不重复排期**：Eval 首错归因（141）、能力资产溯源与发布回滚（149）、场景化 Simulation/完成验证（150）、按需 Tool Schema 投影 readiness（151）及 Sandbox 生命周期成功成本证据（154）均已收口；后续仅以新的可复现 gap 发起既有 owner 的增量 change。
-4. **既有 Realtime/Host/Durable/Pi 边界继续有效**：Run control、HITL、steering/follow-up、completion promotion、workspace binding 已由既有 owner 收口；Pi lane/register/ledger、experimental CBOR、remote Session Server、attachment/lease、SQLite hosted backend 保持长期延后，不复制平行协调或托管状态机。
-5. **宿主执行接入候选**：原生事件/plan bridge/恢复准入已归档为 160/162/164；下列“公开运行时契约”路线图以 source owner 为中心补齐这些基线的已确认缺口。它们不是通用执行平台提案：每一项都必须复用既有 runner、workflow、teams、mailbox 或其 store，禁止另建 scheduler、mailbox owner、event journal、恢复状态机或 host 控制面。实施前仍须以独立 OpenSpec 记录真实 gap、文档影响、Example Impact Assessment、回滚点及可执行证据。
-
-### 公开运行时契约路线图（BXM-1 至 BXM-5）
-
-#### 三个 OpenSpec 的拆分规则、顺序与依赖
-
-五个 BXM 是不能拆散的**公开 contract 验收面**，但执行时固定收敛为下面三个顺序 OpenSpec。不得按 package、DTO 或“可编译”任意另拆平行 change；如出现新的 source form，必须回到下表所列 source-owner change 的增量范围内。
-
-| 执行顺序 | OpenSpec change（语义化名称） | 收敛的 BXM | change 内强制顺序 | 入口/退出条件与不可扩张边界 |
-| --- | --- | --- | --- | --- |
-| Spec 1 | `publish-capabilities-and-bridge-mailbox-async-host-plans` | BXM-5 + BXM-1 | 先固化 capability document、版本、evidence reference 与 admission 查询；再扩展 `host_execution_plan.v1`、mailbox binding/outcome 和 native delegation。 | **入口**：归档 160/162/164 的拒绝边界与既有 `orchestration/mailbox` binding/delivery 事实。**退出**：只有 manifest 明示 `mailbox_async` 已支持后才能 admission；完成一个 source-owned logical admission、lease/retry/DLQ evidence 与 Run/Stream parity。**禁止**：新 queue、worker loop、scheduler、mailbox owner、direct-run fallback。 |
-| Spec 2 | `retain-source-native-event-history-and-cursor-replay` | BXM-2 | 先做 runner/child/team/workflow/mailbox 的 source audit 与 capability floor；再定义 journal/cursor/error contract；最后逐 source 接入只读 retained history 与 replay evidence。 | **入口**：Spec 1 的 manifest version/unsupported vocabulary 可声明 history 状态。**退出**：每个声称支持的 source 都具备 identity、sequence scope、retention floor、cursor scope、typed error 与 restart replay 证据；未支持 source 保持 `ErrHistoryUnsupported`。**禁止**：callback adapter history、host observation cursor、跨 source 全局序或 replay 副作用。 |
-| Spec 3 | `persist-native-continuations-and-restore-composite-graphs` | BXM-3 + BXM-4 | 先为 direct 建立 persistent checkpoint/claim/restore；再逐 form 接入 child/team/workflow/mailbox 的组合状态；每开放一个 pause-reason × form 格子，先在 manifest 标记、再 admission、再 source restore 与证据。 | **入口**：Spec 1 的 capability/admission contract；Spec 2 的 source identity 与可用时的 source-position/replay-reference 语义。**退出**：新 Engine 恢复同一 source graph，重复 resume 幂等/冲突 fail-closed，支持矩阵与实际测试一致。**禁止**：新 parent Run、重跑已完成 member/step、host 伪恢复、metadata-only restore 或把 unsupported 格子当成 best effort。 |
-
-Spec 1、Spec 2、Spec 3 必须按顺序建分支、提案、实施、归档和合并。Spec 2 不要求所有 source 都立即有 retained history，但它必须把每一种 source 的支持与拒绝固定进 manifest；Spec 3 可以分阶段开放具体组合形态，却不得在同一个 OpenSpec 之外改变其已经声明的恢复/拒绝语义。若 Spec 3 的所有 form × pause-reason 格子无法在一个可审查变更内获得 source-state 证据，Spec 3 只能交付 direct 及已验证 form，并将剩余格子维持为 `unsupported_capability`；新增格子以该 change 的后续增量 OpenSpec 处理，而非宣称 Spec 3 已覆盖。
-
-归档 169 的 Spec 3 `persist-native-continuations-and-restore-composite-graphs` 已完成实施、验证与规格同步。direct 跨进程 checkpoint/claim/restore 已覆盖 `input_required`、`approval_required`、`budget_exhausted` 三类 source producer 与恢复证据；child/fanout、team、workflow、mailbox 和 planbridge resumed 本轮明确保持 unsupported。BXM-4 的 composite graph 恢复责任不取消，留待后续增量 OpenSpec 逐 source owner 验证，不能将本提案完成描述为全部 BXM-4 格子已交付。
-
-#### BXM-5：版本化 host runtime capability manifest（Spec 1 的第一阶段）
-
-**目的**：让 planner、host admission 与 Danny 在 dispatch 前得到可签名、可追溯的能力事实，取代通过 package、DTO 或历史文档猜测支持范围。
-
-**公开 contract**：新增 versioned Baymax capability document/API。每个 execution form 至少声明下列维度：
-
-- `execution form`、`admission`、`native events`、`durable history`、`after-cursor replay`；
-- `checkpoint creation`、`cross-process restore`、`input_required`、`approval_required`、`budget_exhausted`；
-- `cancellation`、`timeout`、`causal retry`、`mailbox continuation`、`retention policy`。
-
-每项声明必须关联 Baymax contract version、build/module revision、public API version、fixture/contract-test evidence reference，并且对 `false`/不支持的能力给出稳定的原因或限制。manifest 是 planner/admission 的唯一协商输入；它不能授权业务 effect，也不能把未来路线图、源码存在或可编译的 DTO 表示成可用能力。
-
-**验收与非目标**：manifest 与实际 admission、source owner、Run/Stream 语义和 contract fixture 必须一致；任何 capability version 不兼容、source 不可用或未声明的 form 都必须在 admission 前返回 typed unavailable/unsupported，不得静默降级为 direct run。它不引入远程 registry、托管控制面或新的全局 scheduler。关联 Danny：1.5、2.3、7.1。
-
-#### BXM-1：`mailbox_async` host execution plan bridge（Spec 1 的第二阶段）
-
-**目标与 owner**：扩展 `host_execution_plan.v1`，定义 mailbox delivery/binding，并由 `orchestration/planbridge` 在编译/准入后桥接到现有 Baymax mailbox owner。planbridge 仍只是 bounded compiler/delegator：不得自行建立队列、worker/execution loop、第二个 mailbox owner 或 scheduler。
-
-**编译与 admission 必检项**：mailbox 配置及 contract version、source-owned message identity、parent run、causation、authority digest、plan digest、write scope、effect namespace 和 resource limits。mailbox 不可用或 binding/contract version 不兼容时，必须在 admission 前以 typed unavailable/unsupported 失败；不得将 mailbox 计划改走 inline/direct run。
-
-**source-owned binding/outcome DTO**：公开的 mailbox binding 与 outcome 至少保留 message ID、delivery/lease ID、attempt/retry causation、ack/nack/retry/DLQ 结果、原始 run/parent run/host correlation 与 terminal outcome。对同一逻辑消息的重复 dispatch 必须幂等：只允许一个 logical admission，并保留原 authority、occurrence 和 effect namespace。lease loss、timeout、retry 与 DLQ 必须由 mailbox source 原生记录并可关联到 attempt/terminal evidence；Danny 不得通过重新 `Run` 一个 parent 来“恢复”。
-
-**验收证据**：成功编译不会创建新 scheduler 或第二套 mailbox owner；同一 mailbox continuation 的 `Run`/`Stream` source terminal 语义等价；重复投递只留一个 logical admission；lease-loss、retry、DLQ 具备原生 event 与可关联 terminal/attempt evidence。关联 Danny：1.3、4.7、5.4、7.1、7.3。
-
-#### BXM-2：source-owned native event history 与 cursor replay（Spec 2）
-
-**能力审计先行**：runner、child、team、workflow、mailbox 必须各自声明实际 event-history capability，而不是沿用 event adapter 的实时 callback 投影。每个 source 的声明必须定义 source/event identity namespace、source sequence 是否定义及其范围、retention window/floor、cursor 格式与 scope、cursor expiry/gap/foreign-cursor 错误、durable terminal recovery，以及 crash-before-consumer-projection 后如何从 source replay。
-
-**公开 API 与分页语义**：提供 bounded、read-after-cursor 的 source journal/source store extension，例如 `NativeEventHistoryReader.Capabilities(ctx, source)` 和 `ReadAfter(ctx, source, cursor, limit)`。返回页至少包含 `Events`、`NextCursor`、`RetentionFloor`、`Complete`。cursor 是 opaque 且仅能解释所属 source 声明的顺序；并行 child/team 仅保证各自 source 内顺序，绝不伪造全局自然排序。
-
-**错误与副作用边界**：必须显式提供 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap`、`ErrSourceUnavailable`。replay 永远只读，不能调用模型、工具、retry、resume、recovery 或其它有副作用操作。callback EventID 不能被误用为可去重、可回放的 journal identity；eventadapter 不得私自维护应用级 history。
-
-**验收证据**：重启后 retained source 可从已确认 cursor 继续读取；source journal 写入、terminal event、replay cursor 语义可复现；过期 cursor 明确返回 gap/expiry，不得悄悄从 latest 读取。关联 Danny：1.3、3.2、3.3、4.1、5.4、7.2。
-
-#### BXM-3：durable checkpoint 与跨进程 restore（Spec 3 的第一阶段）
-
-**目标与存储边界**：将 runner checkpoint 从 Engine 进程内状态升级为可注入、可持久化的 `RunCheckpointStore` 实际路径。公开 checkpoint ref 至少包含 checkpoint ID、schema/version、digest、source/run/session identity、source position 或 replay reference、pause reason、creation/expiry、causal predecessor 与 resume attempt identity。建议 store surface 包含 `Save`、`Load`、`ClaimResume`；新 Engine 的 `ResumeFromCheckpoint` 是恢复同一逻辑 continuation 的唯一入口。
-
-**fail-closed 恢复协议**：restore 前必须校验 checkpoint digest、schema、source/run/session binding、expiry、ownership 以及已消费/恢复状态。相同 resume request 返回同一 admissible result 或明确 idempotent projection；冲突 resume 必须 fail closed。cancellation、timeout、retry 与 resume 的优先级和竞争状态需由 source 明确定义并可在 terminal evidence 中解释。durable store 故障、缺 checkpoint、损坏、过期或 foreign checkpoint 都不得降级为重新 `Run`；host revalidation callback 只能决定是否准入恢复，不能代替 source state restore。
-
-**验收证据**：新 Engine/新进程可恢复同一 checkpoint，且不分配新的逻辑 parent run；checkpoint 创建、持久化、host admission、恢复开始和 terminal 写入之间的每个 crash window 均有可解释状态。取消请求被接受不等于 terminal cancellation，terminal 必须来自 source evidence。关联 Danny：1.3、5.2、5.3、5.4、5.5、7.2。
-
-#### BXM-4：child/team/workflow/mailbox 的 pause 与 continuation（Spec 3 的第二阶段）
-
-**manifest-first 支持矩阵**：对每个 execution form，capability manifest 必须分别声明 `input_required`、`approval_required`、`budget_exhausted` 与重启后恢复。direct 是必须验证的基线；child/fanout、team parallel/vote、workflow、mailbox 仅在声明支持时才可被 admission。首轮若只实现 `direct + workflow`，其它 form 的对应格子必须是明确 `unsupported_capability`，不能因类型存在、terminal-only 行为或 best-effort retry 而被视作可恢复。
-
-| 执行形态 | `input_required` | `approval_required` | `budget_exhausted` | 重启后恢复 |
-| --- | --- | --- | --- | --- |
-| direct | 必须验证 | 必须验证 | 必须验证 | 必须验证 |
-| child/fanout | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
-| team parallel/vote | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
-| workflow | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
-| mailbox | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 | 仅 manifest 声明后验证 |
-
-**支持某格时的持久化责任**：source owner 必须保存组合状态、成员状态、step dependency、预算消耗、未决 action 和 native run IDs；恢复同一 native graph，不得重跑已经完成的成员或步骤；parent/child/member/step/attempt 因果链必须连续。失败、取消、超预算成员与 aggregate outcome 的语义在 pause/retry/restore 前后保持稳定。
-
-**验收与非目标**：每一个标为支持的格子都要有 pause、跨进程 restore、cancel/timeout/retry 竞争、terminal evidence 以及 Run/Stream 对等测试；未实现格子一律 admission reject。该路线图不允许用 host 再跑 parent、重新执行完成成员/步骤或创建平行 graph 来伪造 continuation。关联 Danny：1.3、4.3–4.6、5.2、5.4、7.1。
-
-#### 跨项不变量、文档和验证要求
-
-- **source ownership**：mailbox、runner、workflow、team、child 各自继续拥有自身 message/delivery/lease、run、graph、event、checkpoint 和 terminal 事实；host 只提供业务 authorization/revision/effect 决策及可选 revalidation，不能转写 source history 或恢复状态。
-- **identity 与因果**：任何 bridge、checkpoint、history 或 manifest 投影必须保持原始 authority、occurrence、effect namespace、run/parent run、message/delivery/lease、attempt/retry causation 与 host correlation；不得生成第二逻辑执行或伪造跨 source 全局事件顺序。
-- **错误与降级**：unavailable、unsupported、version mismatch、foreign/expired/gap/corrupt/conflicting identity 均需 typed、可测试并在副作用前失败；禁止改走 direct run、latest cursor、new parent run 或 best-effort replay。
-- **公开文档**：每个后续 OpenSpec 的 proposal/design/tasks 必须声明 Example Impact Assessment 与 Public Semantic Documentation Commitment；至少同步 `README.md`、`docs/runtime-config-diagnostics.md`、`docs/runtime-module-boundaries.md`、`docs/mainline-contract-test-index.md`、相关 package README、integration guide 与对应离线 example 的实际受影响路径。
-- **证据链**：每项必须同时更新 source 单测（正向/负向/边界）、integration Run/Stream parity、版本化 fixture/replay、shell/PowerShell dedicated contract gate、质量门禁和公开示例；manifest 中的 evidence reference 只可指向已存在且在本 change 验证过的证据。
-
-#### Danny 任务覆盖映射
-
-| Danny 任务 | 本路线图承接项 | 不允许的替代做法 |
-| --- | --- | --- |
-| 1.3 | BXM-1、BXM-2、BXM-3、BXM-4 | 以 host 观测序列、重跑 parent 或 metadata-only reference 充当 native continuation。 |
-| 1.5 | BXM-5 | 通过 import、package 存在或 DTO 编译推断 capability。 |
-| 2.3 | BXM-5 | 让 planner 在 admission 后才发现能力不支持。 |
-| 3.2、3.3 | BXM-2 | callback EventID、host observation sequence 或 latest fallback 当作 durable replay cursor。 |
-| 4.1 | BXM-2 | 让 event adapter 保存应用级 history，或声称跨并行 child 有全局自然顺序。 |
-| 4.3–4.6 | BXM-4 | terminal-only team/workflow/local child 被错误当作可 pause/restore。 |
-| 4.7 | BXM-1 | planbridge 自建 queue/worker，或将 mailbox delivery 降级为 direct run。 |
-| 5.2、5.3、5.5 | BXM-3、BXM-4 | 新 Engine 重跑、复用 run ID 但没有 source restore，或忽略 resume claim 冲突。 |
-| 5.4 | BXM-1、BXM-2、BXM-3、BXM-4 | 在 lease/retry/DLQ、cursor replay、checkpoint 或 terminal 间丢失因果身份。 |
-| 7.1 | BXM-1、BXM-4、BXM-5 | 把未声明 form/pause reason 作为隐式支持。 |
-| 7.2 | BXM-2、BXM-3 | 把 replay 或 durable restore 实现为有副作用的 retry/resume。 |
-| 7.3 | BXM-1 | 将 ack/nack/retry/DLQ 映射为 host business commit 或无关联 terminal。 |
-
-### 后续增量候选：source-native history 与 composite recovery
-
-归档 168（Spec 2）和归档 169（Spec 3）已经把 mailbox history、direct checkpoint/restore 及 capability vocabulary 固定下来，但没有把 mailbox 的能力外推到其它 source，也没有把 direct continuation 外推到 composite。下面是本轮确认的后续候选；它们是同一条公开契约路线的增量，不重新打开已归档的三个基线 change，也不承诺一次性实现所有 execution form。
-
-| 语义候选 | 触发信号 | 首阶段 DoD | 非目标与回滚边界 | Danny 任务 |
-| --- | --- | --- | --- | --- |
-| `make-source-history-projection-transactional` | `core/history.AppendHealth`（见 `core/history/health.go`）只保留当前 Engine 生命周期内最近一次 append error；source journal append 与 Danny/application projection 仍可在两个提交之间崩溃，不能证明 effect、terminal event 和 projection 的原子关系 | 由 source owner 定义 append/projection 的事务边界或可重放提交协议；持久化 source commit ID、projection cursor、terminal evidence 和 recovery-required 状态；进程在 source append、projection commit、cursor advancement 任一窗口崩溃后可从 owner facts 只读重投影；重复页按 source identity 幂等，冲突 fail-closed；manifest 明确 durable terminal recovery 与不可恢复窗口 | 不把 `NativeEventHistoryError()` 当事务成功证明；不在 planbridge、eventadapter 或 Danny 侧新建第二 journal/队列；不自动重跑不确定的 parent/child/step effect；在 owner 无法提供提交证据时必须返回 typed `ErrSourceUnavailable`/`recovery-required` | `1.3, 3.2, 3.3, 5.4, 5.5, 7.2, 7.3` |
-| `enable-team-and-mailbox-native-continuations` | 当前 workflow/direct 已有 source-owned continuation，但 team parallel/vote、mailbox host-plan 和 resumed planbridge 仍无等价 graph/checkpoint restore；planbridge 对缺失 capability 继续在 dispatch 前拒绝 | 先分别审计 team 与 mailbox owner 的 native pause safe point，再逐格开放 `input_required`、`approval_required`、`budget_exhausted`；持久化 member/step/delivery/lease/action 状态、已完成 effect references、aggregate/terminal arbitration、原始 causation 与 successor checkpoint；新 Engine/owner restore 同一 graph/message，atomic claim、duplicate projection、lease-loss/retry/DLQ/cancel/timeout 证据和 Run/Stream parity 齐全后才更新 manifest | 不把 mailbox lifecycle history 当 execution checkpoint；不重新 enqueue、重新 Run parent、重放 callback 或创建第二 mailbox owner；没有完整 source evidence 的格子继续 `unsupported_capability`，不得以 workflow 能力背书 team/mailbox | `1.3, 4.3, 4.4, 4.5, 4.6, 4.7, 5.2, 5.4, 5.5, 7.1, 7.3`（已归档 177） |
-| `bound-durable-store-deployment-scope` | 现有 FileStore 支持同机单写、持久化 snapshot 的顺序重开，但不保证多写者 CAS、跨机器 journal 或多实例 resume claim | 已将部署/并发能力写入 manifest、integration guide 和 contract fixture：明确 sequential local reopen 与 concurrent/distributed recovery 的分界；默认路线为同机单写、writer ownership、故障 fail-closed。需要扩大到多实例时，另行证明 source CAS、writer fencing、atomic claim/cursor transaction、crash recovery、stale-writer reject、reader/writer consistency 与 multi-instance duplicate tests | 不把“新进程可顺序重开”宣传为通用跨进程/跨机器恢复；未交付分布式 store 前，多写者、跨机器、并发 claim 只能标为 blocked/unsupported；不把 mailbox history 与 runner checkpoint 强行合并为统一存储 | `3.2, 3.3, 3.4, 3.5, 5.4, 7.2`（已归档 174） |
-| `extend-composite-context-assembly-handoff` | 代码审计已确认 direct projection/handoff/restore 与 composite owner continuation 间缺少 projection-to-native-node/checkpoint binding；child/team/workflow 有可接入 owner execution safe point，mailbox continuation 仅投影 lifecycle outcome | 复用 `host_context_projection.v1`，按 child attempt、team pending local member、workflow step 绑定 identity/digest/capability/continuation lineage；source restore 校验后通过 fresh host resolver 重授权，再走既有 owner execution seam；mailbox context 保持 unsupported 并另立 owner-handler safe-point 提案；每 form 独立 manifest、适用的 Run/Stream parity、read-only replay、离线示例与双平台 gate | 不创建 context store、journal、queue、worker、executor 或 host resume loop；不默认向 sibling/node/delivery 继承 projection；direct 能力不得背书 composite；不得将 mailbox lifecycle projection 伪装成 context execution restore；FileStore 仍限同机单写顺序重开 | `4.3, 4.4, 4.5, 4.6, 5.4, 6.4`（已归档 178） |
-
-#### 候选执行顺序与依赖
-
-这些候选不能并行宣称完成，必须按 source ownership 和恢复安全性依次推进：
-
-1. `composite-pause-reason-matrix` 已归档 181：按 form × pause reason 独立校准 owner evidence、deployment binding、admission 和 mailbox lifecycle-only 边界；缺证据的格子继续 typed reject。
-2. `composite-graph-restore-material`（下一候选）：仅在真实 owner state 缺口无法由已交付 checkpoint 表达时增量立项，补 graph/node/dependency/effect/aggregate/terminal lineage；不得以 application checkpoint 替代。
-3. `composite-checkpoint-restore-by-owner` 已归档 180：仅接通 workflow source-owner restore 到 planbridge；child/team 已有 owner restore 不重复建设，mailbox handler continuation 与 resumed-trigger planbridge 仍 unsupported。
-4. `bound-durable-store-deployment-scope`（已归档 174）：已固化“同机单写、顺序重开”的 supported scope；多实例/跨机器增量仍须等待真实 CAS、fencing、atomic claim/cursor transaction 和 crash evidence，不重复起草已完成部分。
-5. `extend-composite-context-assembly-handoff`（已归档 178；实施准入受第 1 至 3 项的相关 owner evidence 约束）：代码审计确认 direct projection 与 composite native node/checkpoint 间缺少 exact binding；仅在有真实 execution safe point 的 owner 上逐格开放，未验证格子保持 unsupported/unavailable。mailbox lifecycle-only continuation 不能作为 context assembly safe point；若依赖的 restore material 尚未由 source evidence 证明，先完成相应前置项，不以当前 proposal 或 DTO 存在视为能力已支持。
-
-归档 175 的 `AppendHealth` 和 workflow fence 只作为第 1 项的现状基线，不满足第 1 项的事务性 DoD。所有候选均必须从最新 `master` 切出语义化分支，维护 proposal/design/tasks/spec delta，并通过 source owner 测试、Run/Stream parity、replay fixture、dedicated gate、质量门禁和文档一致性检查后才能归档。
-
-#### 代码审计缺口到后续提案的拆分矩阵
-
-以下矩阵把本轮代码审计确认的六类缺口拆成可独立立项的工作包。矩阵中的“已固化”只表示边界和拒绝语义已经进入主线，不表示默认 owner 自动获得 durable 能力；只有“已验证”的 source evidence 才能把对应 capability manifest cell 从 `unsupported_capability` 或 `recovery-required` 提升为 supported。
-
-| 顺序 | 后续工作包 | 当前状态 | 必须交付的代码事实 | 依赖与禁止事项 |
-| --- | --- | --- | --- | --- |
-| 1 | `source-owner-history-injection-and-projection-recovery` | **已归档 179**；显式 owner journal/store 与 projection ledger 分离提交窗口已提供 source-bound reconciliation 和 fail-closed recovery evidence | runner、child、team、workflow、mailbox 复用显式 owner journal/store；journal fact 已提交但 ledger 未提交时支持 recovery read/reconcile、稳定 source identity/sequence、retention floor、opaque cursor、gap/expiry/unavailable、重叠幂等、payload/digest 冲突 fail closed | 不重复创建 journal；不得由 callback adapter、host observation sequence 或默认 package 构造伪造 history；不得重跑不确定 effect、Run parent/child/step、retry 或把 recovery 当 execution resume；不扩大到多写者 CAS、跨机器或跨库 exactly-once |
-| 2 | `composite-checkpoint-restore-by-owner` | **已归档 180**；workflow owner restore 已接入 planbridge；child/team 不重复建设；mailbox handler continuation 与 resumed-trigger planbridge 仍 unsupported | 显式 owner/store/manifest binding、checkpoint/run/session/workflow/authority 校验、fresh-owner restore、completed step 不重跑、duplicate source projection、Run/Stream parity | 不从 package/DTO/API 推导 capability；不得以 mailbox lifecycle projection 冒充 handler safe point；不得重跑 workflow graph |
-| 3 | `composite-pause-reason-matrix` | **已归档 181**；依赖第 2 项 owner restore path 已核验 | 已按 form × pause reason 证明 source safe point、pending state、资源计数、deny/timeout terminal evidence、cancel/timeout/retry 竞争和 Run/Stream parity；无证据格子在 admission 前 typed reject | direct 能力不能背书 composite；不得将 mailbox lifecycle promotion 当 handler restore |
-| 4 | `composite-graph-restore-material` | 第 2、3 项的核心依赖，必要时拆为后续增量 | graph identity/version/digest、parent/child/member/step native IDs、依赖完成度、pending/completed state、fanout/vote aggregate、预算、effect outcome reference、terminal arbitration、successor lineage | 只能恢复同一 native graph，已完成成员/步骤/effect 不得再次执行；restore 前校验 graph/capability/authority/scope/occurrence/causation/revision/budget |
-| 5 | `bound-durable-store-deployment-scope` | 已归档 174；扩大到多写者/跨机器仍是条件性观察项 | 明确 FileStore 的 same-host single-writer sequential reopen；若要扩大范围，补 source CAS、writer fencing、atomic claim/cursor transaction、crash recovery、stale writer reject、并发 reader/writer 和多实例 duplicate evidence | 未交付分布式 store 前，多写者、跨机器、并发 claim 只标记 blocked/unsupported；不得宣传“新进程可重开”为通用分布式恢复 |
-| 6 | `extend-composite-context-assembly-handoff` | 已归档 178；其依赖 owner restore material 已按第 1 至 4 项核验，缺失项继续保持 typed unsupported/unavailable | 在已证明可 restore 且有真实 execution safe point 的 owner 上逐 form 增加 child attempt/team pending member/workflow step projection binding、fresh resolver reauthorization、manifest cell、Run/Stream parity 与 source evidence；mailbox lifecycle-only continuation 保持 unsupported | direct assembler、projection snapshot、handoff callback 或 mailbox lifecycle history 不能推导 composite restore；不得因 proposal 已完成而跳过 owner evidence gate；不得在 planbridge 自建 mailbox handler/executor |
-
-立项规则：第 1 项作为所有 source-owned 能力的审计前置；第 2 至 4 项可以在同一主线按 owner 拆成多个 OpenSpec，但每个 form × pause-reason 必须独立更新 manifest 和证据；第 5 项只有在真实部署提出多写者/跨机器需求后才扩大；第 6 项只有在 composite restore material 已存在且 Danny 明确要求统一 context assembly/handoff 入口时才启动。任何提案都必须保留当前的 fail-closed、typed unsupported/recovery-required 和“不重跑/不伪造恢复”语义。
-
-#### Source-native history 候选的完整验收面
-
-runner、isolated child、team、workflow 和 mailbox 必须分别声明实际能力；mailbox 的 MemoryStore 仍是 process-local，FileStore 的已持久化 snapshot 可在同机顺序重开，但这两者都不能替其它 source 背书。每个 source 必须拥有稳定的 event identity namespace、source-local monotonic sequence（并声明适用范围）、bounded retention 与 retention floor、opaque cursor scope/version，以及 malformed、foreign、expired、gap、unavailable 的 typed error。公开 reader 采用 bounded `ReadAfter(source, cursor, limit)` 语义，返回 events、next cursor、floor 和 complete；cursor 过期或出现 gap 时必须报错，禁止静默从 latest 开始。
-
-source journal 与 Danny application projection 必须可独立推进；进程在 consumer projection 前崩溃时，可用原 source identity/cursor 重新只读投影。重叠页按 source identity 幂等去重，payload 冲突 fail closed。replay 绝不能调用 Run、Stream、retry、resume、ack、nack、tool 或 model，也不能把 callback EventID 当作 journal identity；并行 child/team 只能声明各自 source 内顺序，不得伪造跨 source 全局自然顺序。每一个 source 的 manifest cell、fixture、restart/gap/expiry/unavailable 证据必须独立存在。
-
-#### Composite continuation 与 graph restore 的完整验收面
-
-对每个声称支持的 child、team、workflow、mailbox form，必须持久化真实 graph continuation，而不是 application-level pause 标志：graph identity/version/digest；parent/child/member/step native IDs；dependency completion；pending 与 completed member/step/action；fanout/vote aggregate；workflow dependency edges；per-member/per-step consumed budget 与原 deadline；native run/session/causation；terminal arbitration evidence；已完成 tool/effect outcome references；当前 pause boundary；successor checkpoint relationship。restore 前验证 graph version、parent/child capability subset、authority/plan/write-scope/effect namespace、occurrence/causation、current revision/budget 事实和 predecessor/successor 关系。
-
-`input_required` 必须在 source-owned safe point 保存 pending state；`approval_required` 必须在 tool dispatch 前保存并留下 deny/timeout 的 source terminal evidence；`budget_exhausted` 必须保存真实资源计数、已消耗资源和原 deadline。恢复后不得重新执行已完成 member/step/effect。checkpoint claim 必须 atomic；同一 resume 返回原 projection，冲突、stale、foreign、expired、corrupt checkpoint 均 fail closed。取消请求被接受不等于 terminal cancellation，terminal 必须由 source evidence 决定；每个已开放格子都要有跨进程重启、retry/timeout/cancel 竞争和 Run/Stream 对等测试。
-
-#### 存储支持范围与启动闸门
-
-当前路线默认选择“同机单写 + 可顺序重开”的支持范围：旧进程退出后，新进程可读取已经持久化的 source snapshot/checkpoint，但不提供多写者 CAS、跨机器协调、分布式 source journal、多个实例的 resume claim 或 mailbox/runner 统一事务。FileStore 写入失败、owner 不可用或 store contract 不兼容时必须 fail closed，不能退化为重新 `Run`、重新 enqueue 或 latest replay。只有在真实宿主提出并能提供上述路线 1 的 CAS/fencing/transaction/crash evidence 后，才可另立支持多实例/跨机器的 OpenSpec；在此之前 capability manifest 与 Danny 交付必须明确标记 blocked/unsupported。
-
-#### 条件性 context assembly/handoff 闸门
-
-`host_context_projection.v1` 当前只覆盖 assembler-enabled direct Run/Stream、合法 handoff cut 和显式 correlated restore validation。只有 composite graph restore material、source capability subset 和 fresh resolver reauthorization 都已交付，才能启动 composite context 候选；否则不得把 direct projection、mailbox lifecycle history、Danny snapshot 或 callback replay 描述为 composite context assembly。候选启动后仍需保持 context projection 与 checkpoint 的 identity/digest/causation 绑定，并验证 Run/Stream parity。
-
-每个后续 OpenSpec 必须在 proposal/design/tasks 中声明 Example Impact Assessment 与 Public Semantic Documentation Commitment；至少同步受影响的 integration guide、runtime module boundaries、diagnostics、contract-test index、相关 package README 和离线 example（若无示例变更，必须写明理由）。候选进入“进行中”前还必须提供最小复现、source owner 审计、回滚点和 dedicated shell/PowerShell gate；未满足这些闸门时只保留在本节，不得声称 capability 已交付。
-
-### 需求触发观察项
-
-以下方向不预设提案顺序，只有出现相应信号才进入候选审计：
-
-| 方向 | 触发信号 | 首要边界 |
-| --- | --- | --- |
-| Provider 结构化上下文与 Prompt Cache | 真实 SDK fixture 证明 message role、Skill/tail fragment、tool-result correlation 或 stable ordering 丢失；或 cache 成本/P95 成为稳定瓶颈 | 复用 `model/<provider>`、`model/toolcontract`、归档 142 与归档 144；不建共享 wire/gateway/credential store，诊断字段仅 additive + nullable + default。 |
-| 通用 ExecutionGraph | 多个独立宿主经 plan bridge 仍无法表达同一种执行结构，且 fixture 证明既有 workflow/teams/composer 组合不足 | 先审计既有定义和验证器；不得仅因 Danny 模式名称而新建统一 executor、拓扑或状态机。 |
-| 完整 runner durable event replay | 已纳入 BXM-2（Spec 2）；启动时仍须以 source audit 固定每种 source 的 identity、cursor、retention 与恢复 SLA | 与实时事件 adapter 分开审计，复用 source owner 与存储 SPI；不默认扩展 Realtime-only binding，不建设远程 event store 或 hosted 控制面。 |
-
-## 示例状态
-
-`examples/agent-modes/MATRIX.md` 是 agent-mode 示例范围、文档基线、实现状态、gate 和 replay 映射的唯一来源。旧的 numbered examples backlog 已完成迁移，不在本文件重复维护。
-
-示例变更必须遵循：
-
-- `examples/agent-modes` 先完成 `MATRIX.md` 与对应模式 README 的文档基线，再进入代码实现。
-- 每项模式必须列出 semantic anchor、runtime path、expected markers、rollback notes、contracts、gates 和 replay。
-- 示例只演示既有主线 contract，不得在 examples 中定义平行的配置、终态或观测语义。
-
-## 新增提案准入规则（0.x 阶段）
-
-从本文件生效起，`0.x` 阶段新增提案必须满足以下要求：
-
-1. 直接服务于至少一类目标：
-   - 契约一致性（Run/Stream、reason taxonomy、错误分层、兼容语义）。
-   - 可靠性与安全（fail-fast、回滚、幂等、恢复边界、安全治理）。
-   - 质量门禁回归治理（contract/perf/docs gate regression）。
-   - 外部接入 DX（模板、迁移、脚手架、conformance）且可被 gate 验证。
-2. 保持 library-first 边界，不引入平台化控制面能力。
-3. 在 proposal、design 与 tasks 中显式说明：
-   - `Why now`
-   - 风险与非目标
-   - 回滚点
-   - 文档影响
-   - Public Semantic Documentation Commitment：对外语义变化须同 change 同步维护文档、owner 与验证证据；无变化须写理由，三份工件一致
-   - Example Impact Assessment：`新增示例`、`修改示例`，或 `无需示例变更（附理由）`
-   - 验证命令
-4. 对行为、配置、诊断 schema 或 contract 的变更，必须同步 OpenSpec spec delta、正负边界测试、必要 integration、replay fixture 与 shell/PowerShell parity gate。
-5. 非法配置和非法热更新必须 fail-fast，并原子回滚；新增诊断字段必须遵守 additive + nullable + default。
+- A64 的 harnessability scorecard 只衡量契约、回放、门禁和文档证据；按 harness ROI/depth 分层，坚持 computational-first, inferential-second，并受门禁耗时预算治理约束，不能借此放宽运行时或质量语义。
+- State/session snapshot 必须复用现有 checkpoint/snapshot 语义与既有 memory lifecycle，不得重写存储层事实源。
 
 ## 长期方向（不进入近期主线）
 
-以下方向明确延后，除非有独立产品决策和拆分后的 OpenSpec：
+平台化控制面、跨租户全局调度与控制平面、市场化/托管化 adapter registry 能力，以及 hosted gateway、远程 event store 等方向不进入近期候选；若未来启动，必须分别拆成独立 OpenSpec。
 
-- 平台化控制面（多租户、RBAC、审计和运营面板）。
-- 跨租户全局调度与控制平面。
-- 市场化/托管化 adapter registry 能力。
-- Remote Runtime Gateway、托管 Session/Artifact/Workspace persistence、独立 session server、远程 event store 与 hosted worktree manager。
-- Pi experimental protocol 的 CBOR wire、session attachment/lease 与 SQLite hosted backend。
+## 验证命令
 
-这些方向不能以单个大提案混合交付；未来若启动，必须分别定义 gateway、persistence profile、artifact resolver 与 authorization/governance profile。
-
-## 通用架构约束
-
-- `runtime/*` 禁止依赖 `mcp/http` 或 `mcp/stdio`。
-- 非 `mcp/*` 包禁止依赖 `mcp/internal/*`。
-- `context/*` 禁止直接引入 provider 官方 SDK。
-- Provider 协议和模型适配细节必须落在 `model/<provider>`。
-- 诊断写入必须走 `observability/event.RuntimeRecorder` 单写入口。
-- 配置优先级固定为 `env > file > default`。
-- QueryRuns/诊断字段变更保持 additive + nullable + default。
-- Run/Stream 对等场景不得引入平行终止或决策语义。
-
-## 执行与归档
-
-单变更优先；并行变更必须在 proposal 中声明依赖和不重叠边界。
-
-标准顺序：
-
-1. `openspec list --json` 与现状审计。
-2. `proposal.md`、`design.md`、`tasks.md`、spec delta，包含 Example Impact Assessment 和三份一致的 Public Semantic Documentation Commitment。
-3. 代码、测试、回放、独立 gate 与文档同步实施。
-4. 执行门禁：
+局部实施至少运行受影响包和对应 gate；归档前运行：
 
 ```bash
 go test ./...
@@ -717,22 +118,18 @@ golangci-lint run --config .golangci.yml
 ```powershell
 pwsh -File scripts/check-quality-gate.ps1
 pwsh -File scripts/check-docs-consistency.ps1
+openspec validate --all
 ```
 
-5. 使用归档脚本完成重命名和归档，禁止手工移动目录：
+切换 active change 或归档后，额外运行：
 
 ```powershell
-pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "<change-name>"
+pwsh -File scripts/check-openspec-roadmap-status-consistency.ps1
 ```
 
-6. 归档后同步更新本文件的“当前状态”、README 里程碑快照、`docs/mainline-contract-test-index.md`（如 gate 映射变化）与 `openspec/changes/archive/INDEX.md`。
+### 文档维护规则
 
-## 维护检查表
-
-每次归档或切换 active change 后：
-
-1. 运行 `openspec list --json`，以输出更新“进行中”条目。
-2. 以 archive index 更新“已归档”条目；本文件只列最近一组，完整列表不复制。
-3. 检查候选是否仍有未满足的触发信号；无触发信号的候选保持观察状态。
-4. 涉及示例时只更新 `examples/agent-modes/MATRIX.md` 及对应 README，不恢复 numbered backlog。
-5. 执行 `pwsh -File scripts/check-docs-consistency.ps1`，确保不存在 `roadmap-status-drift`。
+- roadmap 只维护候选导航、当前状态和启动闸门；详细设计不要复制到这里。
+- active change 必须在“当前状态/进行中”列出；归档 change 只从 archive index 获取完整列表。
+- 示例相关变更先更新 `examples/agent-modes/MATRIX.md` 和对应 README；无示例变更必须在三份 OpenSpec 工件中说明理由。
+- 公开语义变化必须在同一 change 中维护文档 owner、路径和验证命令；否则不得进入实施或归档。

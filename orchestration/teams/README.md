@@ -21,6 +21,18 @@ duplicates. Corrupt, foreign, stale, expired, conflicting or interrupted claims
 fail closed; completed members/effects are not replayed and a replacement parent
 Run is not created.
 
+When a resumed team reaches another pause boundary, the owner persists a
+successor checkpoint with the original logical run/session/authority identity,
+the next generation, and the immediate predecessor checkpoint reference. The
+predecessor resume projection and sealed successor reference are committed as
+one owner-store transition. A fresh FileStore reopen can therefore validate the
+chain and resume only the successor pending members; duplicate requests return
+the retained projection, while foreign, stale, malformed, or conflicting
+successor lineage fails closed. This does not expand FileStore beyond same-host
+single-writer sequential reopen or provide distributed recovery.
+This lineage change adds no configuration keys or defaults, diagnostic schema
+fields, or example runtime paths and markers.
+
 The public capability cell is evidence-gated. A configured owner may promote
 team checkpoint/restore and pause cells; an unconfigured, memory-only or
 incompatible deployment remains `unsupported_capability`/`recovery-required`.

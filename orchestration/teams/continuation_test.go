@@ -602,6 +602,237 @@ func TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph(t *testing.T) {
 	}
 }
 
+func TestTeamResumeContinuationCreatesSuccessorCheckpointOnSecondPause(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "team-lineage.json")
+	store, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundaries := 0
+	memberRuns := 0
+	originalDeadline := time.Now().UTC().Add(2 * time.Hour)
+	plan := Plan{
+		RunID: "run-team-lineage", SessionID: "session-team-lineage", ParentRunID: "parent-team-lineage", CausationID: "cause-team-lineage",
+		AuthorityDigest: "authority", PlanDigest: "plan", WriteScopeDigest: "scope", EffectNamespace: "effects", OccurrenceID: "occurrence",
+		TeamID: "team-lineage", Strategy: StrategyParallel,
+		Tasks: []Task{{TaskID: "member", AgentID: "agent", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) {
+			memberRuns++
+			return TaskResult{Output: "completed"}, nil
+		})}},
+	}
+	engine := New(
+		WithTeamContinuationStore(store, "team-owner"),
+		WithTeamPauseController(TeamPauseControllerFunc(func(context.Context, TeamPauseBoundary) error {
+			boundaries++
+			switch boundaries {
+			case 1:
+				return TeamPauseError{Reason: TeamPauseInputRequired, PendingActionReference: "input-1", ConsumedBudget: 5, OriginalDeadline: originalDeadline}
+			case 2:
+				return TeamPauseError{Reason: TeamPauseApprovalRequired, PendingActionReference: "approval-1", ConsumedBudget: 3}
+			default:
+				return nil
+			}
+		})),
+	)
+	first, err := engine.Run(context.Background(), plan)
+	if !errors.Is(err, ErrTeamPaused) || first.TeamCheckpoint == nil {
+		t.Fatalf("first pause result=%#v err=%v", first, err)
+	}
+	firstContinuation, err := store.Load(context.Background(), *first.TeamCheckpoint)
+	if err != nil {
+		t.Fatalf("load first continuation: %v", err)
+	}
+	request := TeamResumeRequest{
+		Ref: firstContinuation.Ref, GraphDigest: firstContinuation.GraphDigest, Generation: firstContinuation.Generation,
+		Strategy: firstContinuation.Strategy, IdempotencyKey: "resume-first", AuthorityDigest: firstContinuation.AuthorityDigest,
+		PlanDigest: firstContinuation.PlanDigest, WriteScopeDigest: firstContinuation.WriteScopeDigest,
+		EffectNamespace: firstContinuation.EffectNamespace, OccurrenceID: firstContinuation.OccurrenceID,
+		CausationID: firstContinuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"},
+	}
+	second, err := engine.ResumeContinuation(context.Background(), plan, request, nil)
+	if !errors.Is(err, ErrTeamPaused) || second.TeamCheckpoint == nil {
+		t.Fatalf("second pause result=%#v err=%v", second, err)
+	}
+	secondContinuation, err := store.Load(context.Background(), *second.TeamCheckpoint)
+	if err != nil {
+		t.Fatalf("load successor continuation: %v", err)
+	}
+	if secondContinuation.Generation != firstContinuation.Generation+1 || secondContinuation.PredecessorCheckpointID != firstContinuation.Ref.CheckpointID {
+		t.Fatalf("successor=%#v first=%#v", secondContinuation, firstContinuation)
+	}
+	if secondContinuation.OriginalDeadline != originalDeadline || secondContinuation.ConsumedBudget != firstContinuation.ConsumedBudget {
+		t.Fatalf("successor deadline/budget reset: successor=(%s,%d) predecessor=(%s,%d)", secondContinuation.OriginalDeadline, secondContinuation.ConsumedBudget, firstContinuation.OriginalDeadline, firstContinuation.ConsumedBudget)
+	}
+	if memberRuns != 0 {
+		t.Fatalf("member runs=%d, want no execution before either pause", memberRuns)
+	}
+	reopened, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatalf("reopen continuation store: %v", err)
+	}
+	reopenedSuccessor, err := reopened.Load(context.Background(), *second.TeamCheckpoint)
+	if err != nil || reopenedSuccessor.Ref.Digest != secondContinuation.Ref.Digest {
+		t.Fatalf("reopened successor=%#v err=%v", reopenedSuccessor, err)
+	}
+	successorRequest := TeamResumeRequest{
+		Ref: reopenedSuccessor.Ref, GraphDigest: reopenedSuccessor.GraphDigest, Generation: reopenedSuccessor.Generation,
+		Strategy: reopenedSuccessor.Strategy, IdempotencyKey: "resume-successor", AuthorityDigest: reopenedSuccessor.AuthorityDigest,
+		PlanDigest: reopenedSuccessor.PlanDigest, WriteScopeDigest: reopenedSuccessor.WriteScopeDigest,
+		EffectNamespace: reopenedSuccessor.EffectNamespace, OccurrenceID: reopenedSuccessor.OccurrenceID,
+		CausationID: reopenedSuccessor.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"},
+	}
+	resumedSuccessor, err := New(WithTeamContinuationStore(reopened, "team-owner")).ResumeContinuation(context.Background(), plan, successorRequest, nil)
+	if err != nil || resumedSuccessor.TeamCheckpoint != nil || memberRuns != 1 || boundaries != 2 {
+		t.Fatalf("successor resume=%#v err=%v memberRuns=%d boundaries=%d", resumedSuccessor, err, memberRuns, boundaries)
+	}
+	duplicate, err := New(WithTeamContinuationStore(reopened, "team-owner")).ResumeContinuation(context.Background(), plan, request, nil)
+	if err != nil || duplicate.TeamCheckpoint == nil || duplicate.TeamCheckpoint.CheckpointID != second.TeamCheckpoint.CheckpointID || boundaries != 2 {
+		t.Fatalf("duplicate predecessor resume=%#v err=%v boundaries=%d", duplicate, err, boundaries)
+	}
+}
+
+func TestTeamContinuationStoreValidatesAndAtomicallyPublishesSuccessor(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "team-successor-store.json")
+	store, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	predecessor, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: "team-store-lineage", GraphVersion: "v1", GraphDigest: "graph",
+		RunID: "run-store-lineage", SessionID: "session-store-lineage", ParentRunID: "parent", CausationID: "cause", AuthorityDigest: "authority", PlanDigest: "plan", WriteScopeDigest: "scope", EffectNamespace: "effects", OccurrenceID: "occurrence",
+		Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, predecessor); err != nil {
+		t.Fatal(err)
+	}
+	request := TeamResumeRequest{Ref: predecessor.Ref, GraphDigest: predecessor.GraphDigest, Generation: predecessor.Generation, Strategy: predecessor.Strategy, IdempotencyKey: "store-lineage", AuthorityDigest: predecessor.AuthorityDigest, PlanDigest: predecessor.PlanDigest, WriteScopeDigest: predecessor.WriteScopeDigest, EffectNamespace: predecessor.EffectNamespace, OccurrenceID: predecessor.OccurrenceID, CausationID: predecessor.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}}
+	claim, err := store.ClaimResume(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err = store.MarkResumeRunning(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	successor, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: predecessor.TeamID, GraphVersion: predecessor.GraphVersion, GraphDigest: predecessor.GraphDigest,
+		RunID: predecessor.RunID, SessionID: predecessor.SessionID, ParentRunID: predecessor.ParentRunID, CausationID: predecessor.CausationID, AuthorityDigest: predecessor.AuthorityDigest, PlanDigest: predecessor.PlanDigest, WriteScopeDigest: predecessor.WriteScopeDigest, EffectNamespace: predecessor.EffectNamespace, OccurrenceID: predecessor.OccurrenceID,
+		Strategy: predecessor.Strategy, PauseReason: TeamPauseApprovalRequired, Tasks: predecessor.Tasks, PendingTaskIDs: predecessor.PendingTaskIDs, Generation: 2, PredecessorCheckpointID: predecessor.Ref.CheckpointID, CreatedAt: now.Add(time.Minute), ExpiresAt: now.Add(2 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := Result{RunID: predecessor.RunID, TeamID: predecessor.TeamID, Strategy: predecessor.Strategy, Tasks: []TaskRecord{{TaskID: "pending", Status: TaskStatusPending}}, TeamCheckpoint: &successor.Ref, PauseReason: TeamPauseApprovalRequired}
+	committed, err := store.CommitResumeResultWithSuccessor(ctx, claim, result, &successor)
+	if err != nil || committed.SuccessorCheckpoint == nil || committed.SuccessorCheckpoint.Digest != successor.Ref.Digest {
+		t.Fatalf("commit=%#v err=%v", committed, err)
+	}
+	reopened, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadedSuccessor, err := reopened.Load(ctx, successor.Ref)
+	if err != nil || loadedSuccessor.PredecessorCheckpointID != predecessor.Ref.CheckpointID {
+		t.Fatalf("loaded successor=%#v err=%v", loadedSuccessor, err)
+	}
+	duplicate, err := reopened.ClaimResume(ctx, request)
+	if err != nil || !duplicate.Duplicate || duplicate.SuccessorCheckpoint == nil || duplicate.SuccessorCheckpoint.Digest != successor.Ref.Digest {
+		t.Fatalf("duplicate claim=%#v err=%v", duplicate, err)
+	}
+
+	for name, mutate := range map[string]func(*TeamContinuation){
+		"foreign-owner":     func(c *TeamContinuation) { c.Ref.OwnerNamespace = "other-owner" },
+		"foreign-run":       func(c *TeamContinuation) { c.RunID = "other-run" },
+		"foreign-session":   func(c *TeamContinuation) { c.SessionID = "other-session" },
+		"foreign-authority": func(c *TeamContinuation) { c.AuthorityDigest = "other-authority" },
+		"foreign-graph":     func(c *TeamContinuation) { c.GraphDigest = "other-graph" },
+		"wrong-generation":  func(c *TeamContinuation) { c.Generation = 3 },
+		"wrong-predecessor": func(c *TeamContinuation) { c.PredecessorCheckpointID = "other-checkpoint" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := successor
+			mutate(&candidate)
+			candidate, err = SealTeamContinuation(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := NewFileTeamContinuationStore(filepath.Join(t.TempDir(), "conflict.json"), "team-owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fresh.Save(ctx, predecessor); err != nil {
+				t.Fatal(err)
+			}
+			candidateClaim, err := fresh.ClaimResume(ctx, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidateClaim, err = fresh.MarkResumeRunning(ctx, candidateClaim)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fresh.CommitResumeResultWithSuccessor(ctx, candidateClaim, result, &candidate); err == nil {
+				t.Fatal("conflicting successor commit unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestTeamContinuationSuccessorCommitRollsBackOnFileFailure(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "team-rollback.json")
+	store, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	predecessor, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: "team-rollback", GraphVersion: "v1", GraphDigest: "graph", RunID: "run-rollback", SessionID: "session-rollback", AuthorityDigest: "authority", PlanDigest: "plan", WriteScopeDigest: "scope", EffectNamespace: "effects", OccurrenceID: "occurrence", Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired,
+		Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, predecessor); err != nil {
+		t.Fatal(err)
+	}
+	request := TeamResumeRequest{Ref: predecessor.Ref, GraphDigest: predecessor.GraphDigest, Generation: predecessor.Generation, Strategy: predecessor.Strategy, IdempotencyKey: "rollback", AuthorityDigest: predecessor.AuthorityDigest, PlanDigest: predecessor.PlanDigest, WriteScopeDigest: predecessor.WriteScopeDigest, EffectNamespace: predecessor.EffectNamespace, OccurrenceID: predecessor.OccurrenceID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}}
+	claim, err := store.ClaimResume(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err = store.MarkResumeRunning(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	successor, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: predecessor.TeamID, GraphVersion: predecessor.GraphVersion, GraphDigest: predecessor.GraphDigest, RunID: predecessor.RunID, SessionID: predecessor.SessionID, AuthorityDigest: predecessor.AuthorityDigest, PlanDigest: predecessor.PlanDigest, WriteScopeDigest: predecessor.WriteScopeDigest, EffectNamespace: predecessor.EffectNamespace, OccurrenceID: predecessor.OccurrenceID, Strategy: predecessor.Strategy, PauseReason: TeamPauseApprovalRequired, Tasks: predecessor.Tasks, PendingTaskIDs: predecessor.PendingTaskIDs, Generation: 2, PredecessorCheckpointID: predecessor.Ref.CheckpointID, CreatedAt: now.Add(time.Minute), ExpiresAt: now.Add(2 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.path = t.TempDir()
+	if _, err := store.CommitResumeResultWithSuccessor(ctx, claim, Result{RunID: predecessor.RunID, TeamID: predecessor.TeamID, Strategy: predecessor.Strategy}, &successor); !errors.Is(err, ErrTeamContinuationUnavailable) {
+		t.Fatalf("failed commit error=%v, want unavailable", err)
+	}
+	store.path = path
+	if _, err := store.Load(ctx, successor.Ref); !errors.Is(err, ErrTeamContinuationUnavailable) {
+		t.Fatalf("in-memory successor load error=%v, want unavailable", err)
+	}
+	reopened, err := NewFileTeamContinuationStore(path, "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.Load(ctx, successor.Ref); !errors.Is(err, ErrTeamContinuationUnavailable) {
+		t.Fatalf("persisted successor load error=%v, want unavailable", err)
+	}
+}
+
 func TestTeamPauseReasonsPersistAcrossRunAndStream(t *testing.T) {
 	for _, reason := range []TeamPauseReason{TeamPauseApprovalRequired, TeamPauseBudgetExhausted} {
 		t.Run(string(reason), func(t *testing.T) {

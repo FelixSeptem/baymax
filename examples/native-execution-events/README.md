@@ -21,6 +21,11 @@ owner checkpoint binds team graph/member facts or mailbox message/delivery/lease
 facts. History replay remains read-only and cannot create that checkpoint,
 resume it, re-consume a message, or infer support for resumed planbridge.
 
+Workflow successor publication is likewise outside this example's event/history
+path: a repeated workflow pause is committed by the workflow checkpoint owner,
+not by callback delivery, cursor replay or an example-level retry. It adds no
+new markers, configuration, diagnostics payloads or sample execution flow.
+
 ## Expected markers
 
 运行 `go run ./examples/native-execution-events`，保留原有 `native-events run=completed`、`native-events stream=completed`、`observer=healthy` 和 `pause-is-terminal=false`，并输出：

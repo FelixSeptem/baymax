@@ -65,11 +65,21 @@ A durable continuation for a composable workflow SHALL retain the normalized exp
 
 ### Requirement: Composite graph restore SHALL preserve causal lineage
 
-Workflow checkpoint and restore projections SHALL retain original parent/run/session/causation identities and predecessor/successor checkpoint relationship for each paused graph. A resumed graph SHALL associate later pauses and terminal evidence with that lineage and SHALL NOT create a parallel graph or reinterpret a history cursor as graph state.
+Workflow checkpoint and restore projections SHALL retain original parent/run/session/causation identities and predecessor/successor checkpoint relationship for each paused graph. A resumed graph SHALL associate later pauses and terminal evidence with that lineage and SHALL NOT create a parallel graph or reinterpret a history cursor as graph state. When a resumed graph pauses again, the workflow owner MUST atomically persist the successor checkpoint and the predecessor's retained resume result/reference. The successor MUST be reachable only through that committed predecessor projection. A failed or interrupted publication MUST leave the prior committed state intact or return a typed recovery-required outcome; it MUST NOT expose an orphan as a resumable checkpoint or restart the graph.
 
 #### Scenario: Successor pause preserves predecessor identity
 - **WHEN** a restored workflow reaches another durable pause
 - **THEN** the successor checkpoint refers to its consumed predecessor and preserves the original graph lineage
+
+#### Scenario: Repeated pause publishes one atomic successor transition
+- **WHEN** a resumed workflow reaches a later pause and the source owner commits the result
+- **THEN** one owner-store transition retains both the successor checkpoint and the predecessor's result/reference
+- **AND** a fresh owner can follow that reference and resume the original graph generation without rerunning completed steps
+
+#### Scenario: Interrupted successor publication fails closed
+- **WHEN** a process exits or persistence fails while publishing a resumed workflow's successor
+- **THEN** reopening observes either the last committed predecessor state or the complete predecessor/successor transition
+- **AND** it never treats an unreferenced successor as admissible and never reruns the workflow to reconstruct it
 
 ### Requirement: Workflow graph capability SHALL not imply other composite restore
 

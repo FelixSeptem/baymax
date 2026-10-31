@@ -2,10 +2,12 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -927,6 +929,185 @@ func TestEngineResumeContinuationCreatesSuccessorCheckpointOnSecondPause(t *test
 	duplicate, err := engine.ResumeContinuation(context.Background(), resume, nil)
 	if err != nil || duplicate.WorkflowCheckpoint == nil || duplicate.WorkflowCheckpoint.CheckpointID != second.WorkflowCheckpoint.CheckpointID || calls != 2 {
 		t.Fatalf("duplicate predecessor resume = %#v err=%v calls=%d", duplicate, err, calls)
+	}
+}
+
+func TestWorkflowSuccessorPublicationIsAtomic(t *testing.T) {
+	root := t.TempDir()
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	calls := 0
+	firstEngine := New(
+		WithWorkflowContinuationStore(store, "workflow"),
+		WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+			return StepOutput{}, PauseError{Reason: PauseInputRequired, PendingActionReference: "first"}
+		}}),
+	)
+	first, err := firstEngine.Run(context.Background(), RunRequest{RunID: "run-atomic-successor", SessionID: "session", DSL: Definition{WorkflowID: "wf-atomic-successor", Steps: []Step{{StepID: "step", Kind: StepKindRunner}}}})
+	if !errors.Is(err, ErrWorkflowPaused) || first.WorkflowCheckpoint == nil {
+		t.Fatalf("first pause = %#v, err=%v", first, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store = openTestFileWorkflowStore(t, root, "workflow")
+	predecessorPath := store.path(first.WorkflowCheckpoint.CheckpointID)
+	backupPath := predecessorPath + ".backup"
+	resumer := New(
+		WithWorkflowContinuationStore(store, "workflow"),
+		WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+			calls++
+			if calls == 1 {
+				if err := os.Rename(predecessorPath, backupPath); err != nil {
+					t.Fatalf("move predecessor record: %v", err)
+				}
+				if err := os.Mkdir(predecessorPath, 0o700); err != nil {
+					t.Fatalf("block predecessor replacement: %v", err)
+				}
+			}
+			return StepOutput{}, PauseError{Reason: PauseApprovalRequired, PendingActionReference: "second"}
+		}}),
+	)
+	request := WorkflowResumeRequest{Ref: *first.WorkflowCheckpoint, GraphDigest: first.WorkflowGraphDigest, Generation: first.WorkflowCheckpointGeneration, IdempotencyKey: "resume"}
+	_, resumeErr := resumer.ResumeContinuation(context.Background(), request, nil)
+	if !errors.Is(resumeErr, ErrWorkflowContinuationUnavailable) {
+		t.Fatalf("resume error = %v, want unavailable commit", resumeErr)
+	}
+	if err := os.Remove(predecessorPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backupPath, predecessorPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		if entry.Name() != filepath.Base(predecessorPath) {
+			t.Fatalf("failed successor commit left a separately persisted checkpoint: %q", entry.Name())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("resumed dispatches = %d, want one uncertain attempt", calls)
+	}
+}
+
+func TestFileWorkflowSuccessorReopensThroughCommittedPredecessor(t *testing.T) {
+	root := t.TempDir()
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	calls := 0
+	engine := New(
+		WithWorkflowContinuationStore(store, "workflow"),
+		WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+			calls++
+			switch calls {
+			case 1:
+				return StepOutput{}, PauseError{Reason: PauseInputRequired, PendingActionReference: "first"}
+			case 2:
+				return StepOutput{}, PauseError{Reason: PauseApprovalRequired, PendingActionReference: "second"}
+			default:
+				return StepOutput{}, nil
+			}
+		}}),
+	)
+	first, err := engine.Run(context.Background(), RunRequest{RunID: "run-successor-reopen", SessionID: "session", DSL: Definition{WorkflowID: "wf-successor-reopen", Steps: []Step{{StepID: "step", Kind: StepKindRunner}}}})
+	if !errors.Is(err, ErrWorkflowPaused) {
+		t.Fatalf("first pause: %v", err)
+	}
+	firstRequest := WorkflowResumeRequest{Ref: *first.WorkflowCheckpoint, GraphDigest: first.WorkflowGraphDigest, Generation: first.WorkflowCheckpointGeneration, IdempotencyKey: "resume-first"}
+	second, err := engine.ResumeContinuation(context.Background(), firstRequest, nil)
+	if !errors.Is(err, ErrWorkflowPaused) || second.WorkflowCheckpoint == nil {
+		t.Fatalf("second pause=%#v err=%v", second, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened := openTestFileWorkflowStore(t, root, "workflow")
+	if _, err := os.Stat(reopened.path(second.WorkflowCheckpoint.CheckpointID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successor must be retained only inside predecessor transition; stat err=%v", err)
+	}
+	successor, err := reopened.Load(context.Background(), *second.WorkflowCheckpoint)
+	if err != nil || successor.PredecessorCheckpointID != first.WorkflowCheckpoint.CheckpointID {
+		t.Fatalf("reopened successor=%#v err=%v", successor, err)
+	}
+	fresh := New(WithWorkflowContinuationStore(reopened, "workflow"), WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+		calls++
+		return StepOutput{}, nil
+	}}))
+	final, err := fresh.ResumeContinuation(context.Background(), WorkflowResumeRequest{Ref: successor.Ref, GraphDigest: successor.GraphDigest, Generation: successor.Generation, IdempotencyKey: "resume-successor"}, nil)
+	if err != nil || final.WorkflowCheckpoint != nil || calls != 3 {
+		t.Fatalf("final=%#v err=%v calls=%d", final, err, calls)
+	}
+}
+
+func TestFileWorkflowSuccessorLoadRejectsMismatchedCommittedLineage(t *testing.T) {
+	root := t.TempDir()
+	store := openTestFileWorkflowStore(t, root, "workflow")
+	paused := false
+	engine := New(
+		WithWorkflowContinuationStore(store, "workflow"),
+		WithStepAdapter(DispatchAdapter{Runner: func(context.Context, string, Step, int) (StepOutput, error) {
+			if !paused {
+				paused = true
+				return StepOutput{}, PauseError{Reason: PauseInputRequired, PendingActionReference: "first"}
+			}
+			return StepOutput{}, PauseError{Reason: PauseApprovalRequired, PendingActionReference: "second"}
+		}}),
+	)
+	first, err := engine.Run(context.Background(), RunRequest{RunID: "run-lineage-corrupt", SessionID: "session", DSL: Definition{WorkflowID: "wf-lineage-corrupt", Steps: []Step{{StepID: "step", Kind: StepKindRunner}}}})
+	if !errors.Is(err, ErrWorkflowPaused) {
+		t.Fatalf("first pause: %v", err)
+	}
+	second, err := engine.ResumeContinuation(context.Background(), WorkflowResumeRequest{Ref: *first.WorkflowCheckpoint, GraphDigest: first.WorkflowGraphDigest, Generation: first.WorkflowCheckpointGeneration, IdempotencyKey: "resume"}, nil)
+	if !errors.Is(err, ErrWorkflowPaused) || second.WorkflowCheckpoint == nil {
+		t.Fatalf("second pause=%#v err=%v", second, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	predecessorPath := filepath.Join(root, strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(first.WorkflowCheckpoint.CheckpointID)+".json")
+	raw, err := os.ReadFile(predecessorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record workflowRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.SuccessorContinuation == nil || record.Claim == nil || record.Claim.Result == nil {
+		t.Fatalf("committed record missing successor/result: %#v", record)
+	}
+	forged := record.SuccessorContinuation.Detached()
+	forged.PredecessorCheckpointID = "foreign-predecessor"
+	forged, err = SealWorkflowContinuation(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.SuccessorContinuation = &forged
+	record.Claim.Result.WorkflowCheckpoint = &forged.Ref
+	record.Claim.Result.WorkflowCheckpointGeneration = forged.Generation
+	record.Claim.Result.WorkflowGraphDigest = forged.GraphDigest
+	mutated, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(predecessorPath, mutated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened := openTestFileWorkflowStore(t, root, "workflow")
+	if _, err := reopened.Load(context.Background(), forged.Ref); !errors.Is(err, ErrWorkflowContinuationConflict) {
+		t.Fatalf("mismatched successor load error = %v, want conflict", err)
 	}
 }
 

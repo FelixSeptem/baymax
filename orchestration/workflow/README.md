@@ -17,3 +17,12 @@ redispatches a step whose effect may have occurred. Exact duplicates return a
 committed result when one exists; otherwise they return the retained recovery
 state. History append failures are separately surfaced as degraded/unavailable
 source evidence and do not authorize rerunning the workflow.
+
+When a resumed workflow pauses again, the owner commits the predecessor's
+terminal pause projection and its successor checkpoint as one source-store
+transition. A FileStore writes the successor material inside the committed
+predecessor record; a fresh Engine resolves the successor only through that
+retained lineage. A failed transition leaves the previous predecessor state
+intact and returns typed unavailable/recovery-required rather than leaving an
+admissible orphan checkpoint or re-running the graph. This remains scoped to
+same-host single-writer sequential reopen.

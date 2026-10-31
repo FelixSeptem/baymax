@@ -1497,7 +1497,10 @@ reload:
   enabled: true
   debounce: 20ms
 `)
-	time.Sleep(250 * time.Millisecond)
+	waitFor(t, 2*time.Second, func() bool {
+		reloads := mgr.RecentReloads(1)
+		return len(reloads) > 0 && !reloads[0].Success
+	})
 	after := mgr.EffectiveConfig().Security.Sandbox.Egress.DefaultAction
 	if after != before {
 		t.Fatalf("invalid sandbox egress reload should rollback, default_action = %q, want %q", after, before)

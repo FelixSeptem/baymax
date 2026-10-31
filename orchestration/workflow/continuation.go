@@ -145,7 +145,25 @@ func (e *Engine) ResumeContinuation(ctx context.Context, request WorkflowResumeR
 	if err != nil && !errors.Is(err, ErrWorkflowPaused) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return result, err
 	}
-	if _, commitErr := e.continuations.CommitResumeResult(context.WithoutCancel(ctx), claim, result); commitErr != nil {
+	var successor *WorkflowContinuation
+	if result.WorkflowCheckpoint != nil {
+		if result.workflowSuccessor == nil {
+			return result, ErrWorkflowContinuationUnsupported
+		}
+		copy := result.workflowSuccessor.Detached()
+		successor = &copy
+	}
+	committer, ok := e.continuations.(workflowSuccessorContinuationStore)
+	if !ok && successor != nil {
+		return RunResult{}, ErrWorkflowContinuationUnsupported
+	}
+	var commitErr error
+	if ok {
+		_, commitErr = committer.CommitResumeResultWithSuccessor(context.WithoutCancel(ctx), claim, result, successor)
+	} else {
+		_, commitErr = e.continuations.CommitResumeResult(context.WithoutCancel(ctx), claim, result)
+	}
+	if commitErr != nil {
 		return RunResult{}, commitErr
 	}
 	return result, err
@@ -210,6 +228,9 @@ func (e *Engine) persistPausedResult(
 	out.WorkflowCheckpoint = &paused.Ref
 	out.WorkflowCheckpointGeneration = paused.Generation
 	out.WorkflowGraphDigest = paused.GraphDigest
+	if req.sourceContinuation {
+		out.workflowSuccessor = &paused
+	}
 	if onEvent != nil {
 		if eventErr := onEvent(StreamEvent{Kind: "workflow.paused", Result: &out}); eventErr != nil {
 			return RunResult{}, eventErr
@@ -249,8 +270,10 @@ func (e *Engine) persistContinuation(ctx context.Context, req RunRequest, def De
 	if err != nil {
 		return WorkflowContinuation{}, err
 	}
-	if err = e.continuations.Save(ctx, continuation); err != nil {
-		return WorkflowContinuation{}, err
+	if !req.sourceContinuation {
+		if err = e.continuations.Save(ctx, continuation); err != nil {
+			return WorkflowContinuation{}, err
+		}
 	}
 	return continuation, nil
 }
@@ -604,9 +627,14 @@ type WorkflowContinuationStore interface {
 }
 
 type workflowRecord struct {
-	Continuation WorkflowContinuation `json:"continuation"`
-	Claim        *WorkflowResumeClaim `json:"claim,omitempty"`
-	Identity     string               `json:"identity,omitempty"`
+	Continuation          WorkflowContinuation  `json:"continuation"`
+	Claim                 *WorkflowResumeClaim  `json:"claim,omitempty"`
+	Identity              string                `json:"identity,omitempty"`
+	SuccessorContinuation *WorkflowContinuation `json:"successor_continuation,omitempty"`
+}
+
+type workflowSuccessorContinuationStore interface {
+	CommitResumeResultWithSuccessor(context.Context, WorkflowResumeClaim, RunResult, *WorkflowContinuation) (WorkflowResumeClaim, error)
 }
 
 type MemoryWorkflowContinuationStore struct {
@@ -754,6 +782,10 @@ func (s *MemoryWorkflowContinuationStore) MarkResumeRunning(ctx context.Context,
 }
 
 func (s *MemoryWorkflowContinuationStore) CommitResumeResult(ctx context.Context, claim WorkflowResumeClaim, result RunResult) (WorkflowResumeClaim, error) {
+	return s.CommitResumeResultWithSuccessor(ctx, claim, result, nil)
+}
+
+func (s *MemoryWorkflowContinuationStore) CommitResumeResultWithSuccessor(ctx context.Context, claim WorkflowResumeClaim, result RunResult, successor *WorkflowContinuation) (WorkflowResumeClaim, error) {
 	if err := ctx.Err(); err != nil {
 		return WorkflowResumeClaim{}, err
 	}
@@ -775,6 +807,19 @@ func (s *MemoryWorkflowContinuationStore) CommitResumeResult(ctx context.Context
 	if claim.State != WorkflowResumeClaimClaimed && claim.State != WorkflowResumeClaimRunning {
 		return WorkflowResumeClaim{}, ErrWorkflowContinuationRecoveryRequired
 	}
+	if successor != nil {
+		if err := validateWorkflowSuccessor(r.Continuation, *successor, result); err != nil {
+			return WorkflowResumeClaim{}, err
+		}
+		if existing, exists := s.records[successor.Ref.CheckpointID]; exists && existing.Continuation.Ref.Digest != successor.Ref.Digest {
+			return WorkflowResumeClaim{}, ErrWorkflowContinuationConflict
+		}
+		detached := successor.Detached()
+		r.SuccessorContinuation = &detached
+		s.records[successor.Ref.CheckpointID] = workflowRecord{Continuation: detached}
+	} else if result.WorkflowCheckpoint != nil {
+		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnsupported
+	}
 	copy := result
 	copy.Steps = append([]StepResult(nil), result.Steps...)
 	copy.ExecutionOrder = append([]string(nil), result.ExecutionOrder...)
@@ -782,6 +827,16 @@ func (s *MemoryWorkflowContinuationStore) CommitResumeResult(ctx context.Context
 	r.Claim.State = WorkflowResumeClaimCompleted
 	s.records[claim.Request.Ref.CheckpointID] = r
 	return *r.Claim, nil
+}
+
+func validateWorkflowSuccessor(predecessor, successor WorkflowContinuation, result RunResult) error {
+	if err := successor.Validate(); err != nil {
+		return err
+	}
+	if result.WorkflowCheckpoint == nil || result.WorkflowCheckpoint.CheckpointID != successor.Ref.CheckpointID || result.WorkflowCheckpoint.Digest != successor.Ref.Digest || successor.Ref.OwnerNamespace != predecessor.Ref.OwnerNamespace || successor.PredecessorCheckpointID != predecessor.Ref.CheckpointID || successor.Generation != predecessor.Generation+1 || successor.GraphID != predecessor.GraphID || successor.GraphVersion != predecessor.GraphVersion || successor.GraphDigest != predecessor.GraphDigest || successor.ParentRunID != predecessor.ParentRunID || successor.RunID != predecessor.RunID || successor.SessionID != predecessor.SessionID || successor.CausationID != predecessor.CausationID || successor.AuthorityDigest != predecessor.AuthorityDigest || successor.PlanDigest != predecessor.PlanDigest || successor.WriteScopeDigest != predecessor.WriteScopeDigest || successor.EffectNamespace != predecessor.EffectNamespace || successor.OccurrenceID != predecessor.OccurrenceID {
+		return ErrWorkflowContinuationConflict
+	}
+	return nil
 }
 
 func sameWorkflowRunResult(a, b RunResult) bool {
@@ -899,6 +954,29 @@ func (s *FileWorkflowContinuationStore) loadRecord(ref WorkflowContinuationRef) 
 		return workflowRecord{}, ErrWorkflowContinuationForeign
 	}
 	raw, err := os.ReadFile(s.path(ref.CheckpointID))
+	if errors.Is(err, os.ErrNotExist) {
+		entries, readErr := os.ReadDir(s.root)
+		if readErr != nil {
+			return workflowRecord{}, ErrWorkflowContinuationUnavailable
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			candidate, candidateErr := os.ReadFile(filepath.Join(s.root, entry.Name()))
+			if candidateErr != nil {
+				continue
+			}
+			var parent workflowRecord
+			if json.Unmarshal(candidate, &parent) == nil && parent.SuccessorContinuation != nil && parent.SuccessorContinuation.Ref.CheckpointID == ref.CheckpointID {
+				if parent.Claim == nil || parent.Claim.Result == nil || validateWorkflowSuccessor(parent.Continuation, *parent.SuccessorContinuation, *parent.Claim.Result) != nil {
+					return workflowRecord{}, ErrWorkflowContinuationConflict
+				}
+				raw, err = json.Marshal(workflowRecord{Continuation: parent.SuccessorContinuation.Detached()})
+				break
+			}
+		}
+	}
 	if err != nil {
 		return workflowRecord{}, ErrWorkflowContinuationUnavailable
 	}
@@ -1040,18 +1118,25 @@ func (s *FileWorkflowContinuationStore) MarkResumeRunning(ctx context.Context, c
 	return running, nil
 }
 func (s *FileWorkflowContinuationStore) CommitResumeResult(ctx context.Context, claim WorkflowResumeClaim, result RunResult) (WorkflowResumeClaim, error) {
+	return s.CommitResumeResultWithSuccessor(ctx, claim, result, nil)
+}
+
+func (s *FileWorkflowContinuationStore) CommitResumeResultWithSuccessor(ctx context.Context, claim WorkflowResumeClaim, result RunResult, successor *WorkflowContinuation) (WorkflowResumeClaim, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.lockFile == nil {
 		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
 	}
 	before := s.memory.records[claim.Request.Ref.CheckpointID]
-	committed, err := s.memory.CommitResumeResult(ctx, claim, result)
+	committed, err := s.memory.CommitResumeResultWithSuccessor(ctx, claim, result, successor)
 	if err != nil {
 		return WorkflowResumeClaim{}, err
 	}
 	if err := s.persistRecord(claim.Request.Ref.CheckpointID, s.memory.records[claim.Request.Ref.CheckpointID]); err != nil {
 		s.memory.records[claim.Request.Ref.CheckpointID] = before
+		if successor != nil {
+			delete(s.memory.records, successor.Ref.CheckpointID)
+		}
 		return WorkflowResumeClaim{}, ErrWorkflowContinuationUnavailable
 	}
 	return committed, nil

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-30 08:36:58
+Updated: 2026-10-31 17:19:16
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -184,3 +184,4 @@ Updated: 2026-10-30 08:36:58
 - 180 -> composite-checkpoint-restore-by-owner
 - 181 -> composite-pause-reason-matrix
 - 182 -> preserve-team-continuation-successor-lineage
+- 183 -> publish-workflow-successor-checkpoints-atomically

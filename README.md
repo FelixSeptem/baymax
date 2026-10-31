@@ -35,6 +35,8 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
+- `publish-workflow-successor-checkpoints-atomically`（已归档）：workflow repeated pause 的 successor checkpoint 原子发布；实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
+
 - 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。
 
 - 已归档 181：`composite-pause-reason-matrix` 已将 continuation capability 收敛为逐 execution form × pause reason 的 source evidence；缺少 safe point、restore、竞争和 terminal evidence 的格子在 admission 前保持 typed `unsupported_capability`/`unavailable`，mailbox lifecycle continuation 不代表 handler execution continuation。下一候选及实施入口见[开发路线图](docs/development-roadmap.md)。

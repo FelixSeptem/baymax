@@ -259,6 +259,7 @@ type RunResult struct {
 	WorkflowCheckpoint             *WorkflowContinuationRef `json:"workflow_checkpoint,omitempty"`
 	WorkflowCheckpointGeneration   uint64                   `json:"workflow_checkpoint_generation,omitempty"`
 	WorkflowGraphDigest            string                   `json:"workflow_graph_digest,omitempty"`
+	workflowSuccessor              *WorkflowContinuation
 }
 
 func (r RunResult) RunFinishedPayload() map[string]any {

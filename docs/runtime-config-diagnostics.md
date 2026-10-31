@@ -8,6 +8,12 @@ Durable continuation 通过 constructor-injected store opt-in，不新增 env/fi
 
 Workflow-first continuation 复用 source-owned checkpoint/store 边界，不新增 workflow 配置键或第二本 graph/checkpoint 账本。只有 capability manifest 有 source evidence 时，`input_required`、`approval_required`、`budget_exhausted` 才可被宣称为 workflow restore 格子；child/team/mailbox/planbridge resumed 继续是 `unsupported_capability`。同机单写 FileStore 的顺序重开不等于多写者或跨机器恢复。
 
+Workflow repeated-pause successor publication 同样不新增 env/file/hot-update
+配置键、QueryRuns 字段或 RuntimeRecorder payload。它只要求 workflow owner
+在既有 FileStore 同机单写事务范围内，将 predecessor resume projection 与
+successor checkpoint 一次持久化；持久化失败保留 typed unavailable/recovery-required，
+不记录 successor 内容、不自动重跑，也不扩大为分布式事务承诺。
+
 为运行时提供统一配置入口（YAML + Env + Default）、热更新能力，以及仅库接口的诊断查询能力。
 
 跨 Provider handoff/stream-edge conformance 不新增配置键：继续使用现有 provider 与 capability admission 配置。Durable task/attempt workspace binding 与 completion safe-point ownership 同样不新增 runtime 配置键或 hot-update 分支，继续复用 scheduler/mailbox/recovery/runtime-input/snapshot 的既有 `env > file > default` 配置域。回滚只需移除对应 replay/gate 与 additive reference projection，不涉及配置或持久化迁移。诊断仅允许有界分类、digest、provider/mode/correlation 标识；不得记录 raw provider payload、reasoning body、credential、workspace content、completion body 或无界 stream content。

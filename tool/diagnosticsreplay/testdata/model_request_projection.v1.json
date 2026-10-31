@@ -26,7 +26,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
+        }
       },
       "observed": {
         "roles": [
@@ -54,6 +58,10 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "expected": {
@@ -82,13 +90,17 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
-      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
+      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
+      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
     },
     {
       "name": "openai_stream_native_request_projection",
@@ -115,7 +127,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
+        }
       },
       "observed": {
         "roles": [
@@ -143,6 +159,10 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "expected": {
@@ -171,13 +191,17 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
-      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
+      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
+      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
     },
     {
       "name": "openai_run_stream_parity",
@@ -204,7 +228,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
+        }
       },
       "observed": {
         "roles": [
@@ -232,6 +260,10 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "run": {
@@ -260,6 +292,10 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "stream": {
@@ -288,13 +324,17 @@
           "total_tokens": 12,
           "source_kind": "openai_responses",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600",
-      "replay_digest": "ec53587635884f9f73b49ff53e10b46422466c83d2a601ee1b48620ce1fdd600"
+      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
+      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
     },
     {
       "name": "openai_run_without_tool_results",
@@ -310,7 +350,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
+        }
       },
       "observed": {
         "roles": [
@@ -330,13 +374,17 @@
         "total_bytes": 24,
         "cache_usage": {
           "available": false
+        },
+        "prompt_cache": {
+          "provider": "openai",
+          "kind": "openai_prompt_cache_key"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5",
-      "replay_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5"
+      "first_digest": "731033ac537c7688f14fc0e628ed9fd29e293bb8d5f9c2b3fd061ee799983033",
+      "replay_digest": "731033ac537c7688f14fc0e628ed9fd29e293bb8d5f9c2b3fd061ee799983033"
     },
     {
       "name": "anthropic_run_native_request_projection",
@@ -363,7 +411,13 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
+        }
       },
       "observed": {
         "roles": [
@@ -392,6 +446,12 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "expected": {
@@ -421,13 +481,19 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
-      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
+      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
+      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
     },
     {
       "name": "anthropic_stream_native_request_projection",
@@ -454,7 +520,13 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
+        }
       },
       "observed": {
         "roles": [
@@ -483,6 +555,12 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "expected": {
@@ -512,13 +590,19 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
-      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
+      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
+      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
     },
     {
       "name": "anthropic_run_stream_parity",
@@ -545,7 +629,13 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
+        }
       },
       "observed": {
         "roles": [
@@ -574,6 +664,12 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "run": {
@@ -603,6 +699,12 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "stream": {
@@ -632,13 +734,19 @@
           "total_tokens": 15,
           "source_kind": "anthropic_messages",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2",
-      "replay_digest": "56c1ba913f480c9130d8649cf5c4894c7349f48d2d17735d5983d7fcef84fca2"
+      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
+      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
     },
     {
       "name": "anthropic_run_without_tool_results",
@@ -654,7 +762,13 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
+        }
       },
       "observed": {
         "roles": [
@@ -674,13 +788,19 @@
         "total_bytes": 24,
         "cache_usage": {
           "available": false
+        },
+        "prompt_cache": {
+          "provider": "anthropic",
+          "kind": "anthropic_cache_breakpoint",
+          "boundary_message_index": 1,
+          "ttl": "5m"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5",
-      "replay_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5"
+      "first_digest": "24f7c4bb194c1535236be6d5c91a28622162ee4391ca22fff5affca796313de1",
+      "replay_digest": "24f7c4bb194c1535236be6d5c91a28622162ee4391ca22fff5affca796313de1"
     },
     {
       "name": "gemini_run_native_request_projection",
@@ -707,7 +827,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
+        }
       },
       "observed": {
         "roles": [
@@ -735,6 +859,10 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "expected": {
@@ -763,13 +891,17 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
-      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
+      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
+      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
     },
     {
       "name": "gemini_stream_native_request_projection",
@@ -796,7 +928,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
+        }
       },
       "observed": {
         "roles": [
@@ -824,6 +960,10 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "expected": {
@@ -852,13 +992,17 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
-      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
+      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
+      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
     },
     {
       "name": "gemini_run_stream_parity",
@@ -885,7 +1029,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
+        }
       },
       "observed": {
         "roles": [
@@ -913,6 +1061,10 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "run": {
@@ -941,6 +1093,10 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "stream": {
@@ -969,13 +1125,17 @@
           "total_tokens": 12,
           "source_kind": "gemini_generate_content",
           "source_version": "v1"
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d",
-      "replay_digest": "6706da67eb47c3bb91f7a662d81c192a1462527252b820b2a6f09f4792a1cc9d"
+      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
+      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
     },
     {
       "name": "gemini_run_without_tool_results",
@@ -991,7 +1151,11 @@
           "tool_call",
           "streaming"
         ],
-        "input_bytes": 24
+        "input_bytes": 24,
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
+        }
       },
       "observed": {
         "roles": [
@@ -1011,13 +1175,17 @@
         "total_bytes": 24,
         "cache_usage": {
           "available": false
+        },
+        "prompt_cache": {
+          "provider": "gemini",
+          "kind": "gemini_cached_content_reference"
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5",
-      "replay_digest": "439c50074c3b4971bbb778cedf20e76c7b548615117206b733164afe9cb88ba5"
+      "first_digest": "85c12447aa4031129032ce298e8444aca7c814a1e71819edda6f9d434a5fa80b",
+      "replay_digest": "85c12447aa4031129032ce298e8444aca7c814a1e71819edda6f9d434a5fa80b"
     }
   ]
 }

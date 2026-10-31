@@ -40,6 +40,7 @@ request_projection_codes=(
   provider_request_stable_prefix_drift
   provider_request_tool_order_drift
   provider_request_capability_projection_drift
+  provider_prompt_cache_projection_drift
   provider_request_run_stream_parity_drift
   provider_cache_usage_projection_drift
   provider_request_overflow_drift
@@ -56,7 +57,12 @@ echo "[provider-request-projection] adapter ownership, provider neutrality, no r
 go test ./tool/contributioncheck -run 'TestProviderRequestProjectionContractBoundary' -count=1
 
 echo "[provider-request-projection] adapter SDK request projection shape"
-go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|CacheUsage|ProjectionAudit|NativeMessageParams|NativeGenerateRequest|CountTokens' -count=1
+go test ./model/conformance ./model/openai ./model/anthropic ./model/gemini -run 'RequestProjection|PromptCache|CacheUsage|ProjectionAudit|NativeMessageParams|NativeGenerateRequest|CountTokens' -count=1
+
+echo "[provider-request-projection] prompt-cache fixture privacy"
+if rg -n 'sentinel-openai-cache-key|sentinel-gemini-resource-name|cachedContents/secret' "${fixture}" >/dev/null; then
+  fail "provider_prompt_cache_projection_drift: fixture contains opaque cache input"
+fi
 
 echo "[provider-request-projection] offline replay idempotency"
 go test ./tool/diagnosticsreplay -run 'ProviderRequestProjection' -count=2

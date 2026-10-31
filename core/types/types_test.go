@@ -29,6 +29,65 @@ func TestModelResponseCacheUsageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelRequestPromptCacheDirectiveRoundTripAndLegacyDefault(t *testing.T) {
+	legacy, err := json.Marshal(ModelRequest{Input: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacy), "prompt_cache") {
+		t.Fatalf("legacy request unexpectedly contains cache directive: %s", legacy)
+	}
+
+	want := ModelRequest{
+		Input: "hello",
+		PromptCache: &PromptCacheDirective{
+			Provider: "openai",
+			OpenAI:   &OpenAIPromptCacheDirective{Key: "opaque-key"},
+		},
+	}
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got ModelRequest
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.PromptCache == nil || got.PromptCache.Provider != "openai" || got.PromptCache.OpenAI == nil || got.PromptCache.OpenAI.Key != "opaque-key" {
+		t.Fatalf("prompt cache directive round trip = %+v", got.PromptCache)
+	}
+}
+
+func TestPromptCacheDirectiveValidatesProviderVariantAndBounds(t *testing.T) {
+	cases := []struct {
+		name      string
+		provider  string
+		count     int
+		directive PromptCacheDirective
+		wantErr   bool
+	}{
+		{name: "openai valid", provider: "openai", directive: PromptCacheDirective{Provider: "openai", OpenAI: &OpenAIPromptCacheDirective{Key: "key"}}},
+		{name: "anthropic valid", provider: "anthropic", count: 2, directive: PromptCacheDirective{Provider: "anthropic", Anthropic: &AnthropicPromptCacheDirective{BoundaryMessageIndex: 1, TTL: "5m"}}},
+		{name: "gemini valid", provider: "gemini", directive: PromptCacheDirective{Provider: "gemini", Gemini: &GeminiPromptCacheDirective{CachedContentRef: "cachedContents/abc"}}},
+		{name: "adapter mismatch", provider: "gemini", directive: PromptCacheDirective{Provider: "openai", OpenAI: &OpenAIPromptCacheDirective{Key: "key"}}, wantErr: true},
+		{name: "conflicting variants", provider: "openai", directive: PromptCacheDirective{Provider: "openai", OpenAI: &OpenAIPromptCacheDirective{Key: "key"}, Gemini: &GeminiPromptCacheDirective{CachedContentRef: "ref"}}, wantErr: true},
+		{name: "empty key", provider: "openai", directive: PromptCacheDirective{Provider: "openai", OpenAI: &OpenAIPromptCacheDirective{}}, wantErr: true},
+		{name: "oversized key", provider: "openai", directive: PromptCacheDirective{Provider: "openai", OpenAI: &OpenAIPromptCacheDirective{Key: strings.Repeat("k", 65)}}, wantErr: true},
+		{name: "invalid ttl", provider: "anthropic", count: 2, directive: PromptCacheDirective{Provider: "anthropic", Anthropic: &AnthropicPromptCacheDirective{BoundaryMessageIndex: 0, TTL: "2h"}}, wantErr: true},
+		{name: "boundary out of range", provider: "anthropic", count: 1, directive: PromptCacheDirective{Provider: "anthropic", Anthropic: &AnthropicPromptCacheDirective{BoundaryMessageIndex: 1, TTL: "1h"}}, wantErr: true},
+		{name: "empty gemini ref", provider: "gemini", directive: PromptCacheDirective{Provider: "gemini", Gemini: &GeminiPromptCacheDirective{}}, wantErr: true},
+		{name: "oversized gemini ref", provider: "gemini", directive: PromptCacheDirective{Provider: "gemini", Gemini: &GeminiPromptCacheDirective{CachedContentRef: strings.Repeat("r", 513)}}, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.directive.ValidateForProvider(tc.provider, tc.count)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ValidateForProvider() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestDefaultLoopPolicy(t *testing.T) {
 	p := DefaultLoopPolicy()
 	if p.MaxIterations != 12 {

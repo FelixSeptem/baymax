@@ -224,6 +224,11 @@ func nativeGenerateRequest(req types.ModelRequest) ([]*genai.Content, *genai.Gen
 	if err != nil {
 		return nil, nil, err
 	}
+	if req.PromptCache != nil {
+		if err := req.PromptCache.ValidateForProvider("gemini", len(interpreted.Messages)); err != nil {
+			return nil, nil, nativeRequestShapeError("invalid prompt-cache directive: %v", err)
+		}
+	}
 	systemParts := make([]*genai.Part, 0, len(interpreted.Messages))
 	contents := make([]*genai.Content, 0, len(interpreted.Messages)+1)
 	for _, message := range interpreted.Messages {
@@ -262,6 +267,9 @@ func nativeGenerateRequest(req types.ModelRequest) ([]*genai.Content, *genai.Gen
 		return nil, nil, errors.New("model input is empty")
 	}
 	config := &genai.GenerateContentConfig{}
+	if req.PromptCache != nil {
+		config.CachedContent = req.PromptCache.Gemini.CachedContentRef
+	}
 	if len(systemParts) > 0 {
 		config.SystemInstruction = &genai.Content{Parts: systemParts}
 	}
@@ -289,6 +297,14 @@ func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, 
 	contents, config, err := nativeGenerateRequest(req)
 	if err != nil {
 		return 0, err
+	}
+	if req.PromptCache != nil {
+		return 0, &providererror.Classified{
+			Class:     types.ErrModel,
+			Reason:    types.PromptCacheDirectiveUnsupported,
+			Retryable: false,
+			Cause:     errors.New("gemini CountTokens does not accept cached-content references"),
+		}
 	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {

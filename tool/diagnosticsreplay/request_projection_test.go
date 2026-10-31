@@ -55,6 +55,22 @@ func fixtureObserved(source conformance.RequestFacts) conformance.RequestProject
 	return conformance.ProjectRequestNative(source)
 }
 
+func fixturePromptCache(provider string) *conformance.PromptCacheProjection {
+	switch provider {
+	case "openai":
+		return &conformance.PromptCacheProjection{Provider: provider, Kind: conformance.PromptCacheKindOpenAIKey}
+	case "anthropic":
+		boundary := 1
+		return &conformance.PromptCacheProjection{Provider: provider, Kind: conformance.PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: &boundary, TTL: "5m"}
+	case "gemini":
+		return &conformance.PromptCacheProjection{Provider: provider, Kind: conformance.PromptCacheKindGeminiCachedContent}
+	default:
+		return nil
+	}
+}
+
+func replayIntPointer(value int) *int { return &value }
+
 func fixtureCacheUsage(provider string) conformance.CacheUsageProjection {
 	projection := conformance.CacheUsageProjection{Available: true, SourceVersion: "v1"}
 	switch provider {
@@ -105,6 +121,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 	for _, provider := range []string{"openai", "anthropic", "gemini"} {
 		for _, mode := range []string{"run", "stream"} {
 			source := fixtureSource(true, true)
+			source.PromptCache = fixturePromptCache(provider)
 			observed := fixtureObserved(source)
 			observed.CacheUsage = fixtureCacheUsage(provider)
 			expected := observed
@@ -122,6 +139,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 		// Run/Stream parity: the same admitted request must normalize
 		// identically on both lanes.
 		paritySource := fixtureSource(true, true)
+		paritySource.PromptCache = fixturePromptCache(provider)
 		parityObserved := fixtureObserved(paritySource)
 		parityObserved.CacheUsage = fixtureCacheUsage(provider)
 		runProjection := parityObserved
@@ -140,6 +158,7 @@ func requestProjectionFixture(t *testing.T) conformance.RequestProjectionFixture
 		// No tool results admitted: native role projection remains gap-free and
 		// only the unresolved capability baseline remains.
 		plainSource := fixtureSource(false, true)
+		plainSource.PromptCache = fixturePromptCache(provider)
 		cases = append(cases, finalizeRequestProjectionCase(t, conformance.RequestProjectionCase{
 			Name:         provider + "_run_without_tool_results",
 			Provider:     provider,
@@ -426,6 +445,15 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 			},
 		},
 		{
+			name:     "prompt-cache projection drift",
+			wantCode: ReasonCodePromptCacheProjectionDrift,
+			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
+				expected := c.Observed
+				expected.PromptCache = &conformance.PromptCacheProjection{Provider: "anthropic", Kind: conformance.PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: replayIntPointer(3), TTL: "5m"}
+				c.Expected = &expected
+			},
+		},
+		{
 			name:     "undeclared role gap",
 			wantCode: ReasonCodeRequestRoleProjectionDrift,
 			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
@@ -478,6 +506,18 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 				run := c.Observed
 				stream := c.Observed
 				stream.ContentDigest = conformance.RequestContentDigest("different payload")
+				c.Run = &run
+				c.Stream = &stream
+			},
+		},
+		{
+			name:     "run/stream prompt-cache parity drift",
+			wantCode: ReasonCodeRequestRunStreamParityDrift,
+			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
+				run := c.Observed
+				stream := c.Observed
+				index := 2
+				stream.PromptCache = &conformance.PromptCacheProjection{Provider: "anthropic", Kind: conformance.PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: &index, TTL: "5m"}
 				c.Run = &run
 				c.Stream = &stream
 			},

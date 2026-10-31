@@ -224,20 +224,40 @@ func nativeMessageParams(req types.ModelRequest, model string, maxTokens int64) 
 	if err != nil {
 		return anthropic.MessageNewParams{}, err
 	}
+	if req.PromptCache != nil {
+		if err := req.PromptCache.ValidateForProvider("anthropic", len(interpreted.Messages)); err != nil {
+			return anthropic.MessageNewParams{}, nativeRequestShapeError("invalid prompt-cache directive: %v", err)
+		}
+	}
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(strings.TrimSpace(model)),
 		MaxTokens: maxTokens,
 		System:    make([]anthropic.TextBlockParam, 0, len(interpreted.Messages)),
 		Messages:  make([]anthropic.MessageParam, 0, len(interpreted.Messages)+1),
 	}
-	for _, message := range interpreted.Messages {
+	for messageIndex, message := range interpreted.Messages {
 		content := anthropic.NewTextBlock(message.Content)
+		cacheControl := anthropic.CacheControlEphemeralParam{}
+		if req.PromptCache != nil && req.PromptCache.Anthropic.BoundaryMessageIndex == messageIndex {
+			cacheControl = anthropic.NewCacheControlEphemeralParam()
+			if req.PromptCache.Anthropic.TTL == "1h" {
+				cacheControl.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+			} else {
+				cacheControl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+			}
+		}
 		switch strings.ToLower(strings.TrimSpace(message.Role)) {
 		case "system":
-			params.System = append(params.System, anthropic.TextBlockParam{Text: message.Content})
+			params.System = append(params.System, anthropic.TextBlockParam{Text: message.Content, CacheControl: cacheControl})
 		case "user":
+			if cacheControl.Type != "" {
+				content.OfText.CacheControl = cacheControl
+			}
 			params.Messages = append(params.Messages, anthropic.NewUserMessage(content))
 		case "assistant":
+			if cacheControl.Type != "" {
+				content.OfText.CacheControl = cacheControl
+			}
 			params.Messages = append(params.Messages, anthropic.NewAssistantMessage(content))
 		default:
 			return anthropic.MessageNewParams{}, nativeRequestShapeError("Anthropic Messages cannot represent message role %q", message.Role)

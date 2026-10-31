@@ -37,6 +37,55 @@ func TestNativeMessageParamsPreserveRolesInputAndToolResult(t *testing.T) {
 	}
 }
 
+func TestAnthropicPromptCacheBreakpointMapsToCanonicalMessageAndTTL(t *testing.T) {
+	request := auditModelRequest()
+	request.PromptCache = &types.PromptCacheDirective{Provider: "anthropic", Anthropic: &types.AnthropicPromptCacheDirective{BoundaryMessageIndex: 1, TTL: "1h"}}
+	params, err := nativeMessageParams(request, "claude-3-5-sonnet-latest", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(params.System) != 1 || params.System[0].CacheControl.TTL != "" {
+		t.Fatalf("system cache control = %+v, want no marker before boundary", params.System[0].CacheControl)
+	}
+	if len(params.Messages) == 0 || len(params.Messages[0].Content) != 1 || params.Messages[0].Content[0].OfText == nil {
+		t.Fatalf("first canonical message content = %#v", params.Messages)
+	}
+	if params.Messages[0].Content[0].OfText.CacheControl.TTL != anthropic.CacheControlEphemeralTTLTTL1h {
+		t.Fatalf("selected message cache control = %+v", params.Messages[0].Content[0].OfText.CacheControl)
+	}
+	request.PromptCache.Anthropic.BoundaryMessageIndex = 0
+	params, err = nativeMessageParams(request, "claude-3-5-sonnet-latest", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params.System[0].CacheControl.TTL != anthropic.CacheControlEphemeralTTLTTL1h || params.Messages[0].Content[0].OfText.CacheControl.TTL != "" {
+		t.Fatalf("system boundary placement mismatch: system=%+v user=%+v", params.System[0].CacheControl, params.Messages[0].Content[0].OfText.CacheControl)
+	}
+}
+
+func TestInvalidAnthropicPromptCacheDirectiveDoesNotInvokeProvider(t *testing.T) {
+	request := auditModelRequest()
+	request.PromptCache = &types.PromptCacheDirective{Provider: "anthropic", Anthropic: &types.AnthropicPromptCacheDirective{BoundaryMessageIndex: 99, TTL: "5m"}}
+	invocations := 0
+	client := NewClient(Config{GenerateFn: func(context.Context, string) (types.ModelResponse, error) {
+		invocations++
+		return types.ModelResponse{}, nil
+	}})
+	if _, err := client.Generate(context.Background(), request); err == nil {
+		t.Fatal("Generate accepted an out-of-range cache boundary")
+	}
+	streamClient := NewClient(Config{StreamFn: func(context.Context, string) Stream {
+		invocations++
+		return &fakeAnthropicStream{}
+	}})
+	if err := streamClient.Stream(context.Background(), request, nil); err == nil {
+		t.Fatal("Stream accepted an out-of-range cache boundary")
+	}
+	if invocations != 0 {
+		t.Fatalf("provider invocations = %d, want 0", invocations)
+	}
+}
+
 // auditModelRequest mirrors the provider-neutral request shape the runtime
 // admits once Skill bundle mapping has appended system-role prompt fragments
 // and the ReAct loop has produced canonical tool-result feedback.

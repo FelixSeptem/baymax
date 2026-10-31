@@ -14,6 +14,8 @@ go run ./examples/01-chat-minimal
 
 - 统一 Run/Stream 主循环与终态语义。
 - OpenAI、Anthropic、Gemini 等 Provider adapter（协议细节位于 `model/<provider>`）。
+- Provider adapters 保留原生结构化请求；调用方可在支持的 adapter 上显式提供有界 prompt-cache directive。cache intent 不保证命中，也不替宿主管理 provider cache resource。
+- 请求级 cache-control 示例见 [Provider Prompt Cache](examples/provider-prompt-cache/README.md)。
 - local tool、MCP HTTP/STDIO、workflow、teams、A2A、scheduler、composer。
 - Context budget/projection、结构化 timeline/diagnostics、RuntimeRecorder 单写入口。
 - contract/replay/gate 作为离线、bounded、可重复的证据。
@@ -35,6 +37,7 @@ go run ./examples/01-chat-minimal
 
 项目处于 **`0.x` pre-1 阶段**：不做 `1.0.0/prod-ready` 承诺；`0.x` 阶段允许新增能力型提案，但必须遵守 OpenSpec、测试、文档影响评估和回滚要求。
 
+- `establish-provider-structured-context-cache-runtime`（已归档并稳定）：为 OpenAI、Anthropic、Gemini 增加显式 provider-native prompt-cache controls，并保持 request projection 不泄露 key/resource reference；实施边界和验收证据见[开发路线图](docs/development-roadmap.md) 与 [归档索引](openspec/changes/archive/INDEX.md)。
 - `publish-workflow-successor-checkpoints-atomically`（已归档）：workflow repeated pause 的 successor checkpoint 原子发布；实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
 
 - 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。

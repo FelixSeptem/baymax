@@ -24,6 +24,7 @@ const (
 	ReasonCodeRequestStablePrefixDrift         = conformance.ReasonRequestStablePrefixDrift
 	ReasonCodeRequestToolOrderDrift            = conformance.ReasonRequestToolOrderDrift
 	ReasonCodeRequestCapabilityProjectionDrift = conformance.ReasonRequestCapabilityProjectionDrift
+	ReasonCodePromptCacheProjectionDrift       = conformance.ReasonPromptCacheProjectionDrift
 	ReasonCodeRequestRunStreamParityDrift      = conformance.ReasonRequestRunStreamParityDrift
 	ReasonCodeCacheUsageProjectionDrift        = conformance.ReasonCacheUsageProjectionDrift
 	ReasonCodeRequestOverflowDrift             = conformance.ReasonRequestOverflowDrift

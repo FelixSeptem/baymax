@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/FelixSeptem/baymax/context/hostprojection"
 )
@@ -563,6 +564,84 @@ type ModelRequest struct {
 	Messages     []Message              `json:"messages,omitempty"`
 	ToolResult   []ToolCallOutcome      `json:"tool_results,omitempty"`
 	Capabilities CapabilityRequirements `json:"capabilities,omitempty"`
+	PromptCache  *PromptCacheDirective  `json:"prompt_cache,omitempty"`
+}
+
+const PromptCacheDirectiveInvalid = "prompt_cache_directive_invalid"
+const PromptCacheDirectiveUnsupported = "prompt_cache_unsupported"
+
+// PromptCacheDirective selects one provider-native request cache control.
+// The opaque key/reference fields are never safe for diagnostics or logs.
+type PromptCacheDirective struct {
+	Provider  string                         `json:"provider"`
+	OpenAI    *OpenAIPromptCacheDirective    `json:"openai,omitempty"`
+	Anthropic *AnthropicPromptCacheDirective `json:"anthropic,omitempty"`
+	Gemini    *GeminiPromptCacheDirective    `json:"gemini,omitempty"`
+}
+
+type OpenAIPromptCacheDirective struct {
+	Key string `json:"key"`
+}
+
+type AnthropicPromptCacheDirective struct {
+	BoundaryMessageIndex int    `json:"boundary_message_index"`
+	TTL                  string `json:"ttl"`
+}
+
+type GeminiPromptCacheDirective struct {
+	CachedContentRef string `json:"cached_content_ref"`
+}
+
+// ValidateForProvider checks the provider-tagged union and all public bounds.
+// messageCount is the number of canonical messages after request interpretation.
+func (d PromptCacheDirective) ValidateForProvider(provider string, messageCount int) error {
+	invalid := func(reason string) error {
+		return fmt.Errorf("%s: %s", PromptCacheDirectiveInvalid, reason)
+	}
+	if messageCount < 0 {
+		return invalid("message count must not be negative")
+	}
+	if d.Provider != "openai" && d.Provider != "anthropic" && d.Provider != "gemini" {
+		return invalid("unsupported provider")
+	}
+	if d.Provider != provider {
+		return invalid("provider does not match selected adapter")
+	}
+	variants := 0
+	if d.OpenAI != nil {
+		variants++
+	}
+	if d.Anthropic != nil {
+		variants++
+	}
+	if d.Gemini != nil {
+		variants++
+	}
+	if variants != 1 {
+		return invalid("exactly one provider variant is required")
+	}
+	switch d.Provider {
+	case "openai":
+		if d.OpenAI == nil || !validPromptCacheValue(d.OpenAI.Key, 64) {
+			return invalid("OpenAI prompt cache key is empty, invalid, or exceeds 64 UTF-8 bytes")
+		}
+	case "anthropic":
+		if d.Anthropic == nil || d.Anthropic.BoundaryMessageIndex < 0 || d.Anthropic.BoundaryMessageIndex >= messageCount {
+			return invalid("Anthropic cache boundary is outside the interpreted message sequence")
+		}
+		if d.Anthropic.TTL != "5m" && d.Anthropic.TTL != "1h" {
+			return invalid("Anthropic cache TTL is unsupported")
+		}
+	case "gemini":
+		if d.Gemini == nil || !validPromptCacheValue(d.Gemini.CachedContentRef, 512) {
+			return invalid("Gemini cached-content reference is empty, invalid, or exceeds 512 UTF-8 bytes")
+		}
+	}
+	return nil
+}
+
+func validPromptCacheValue(value string, maxBytes int) bool {
+	return utf8.ValidString(value) && strings.TrimSpace(value) != "" && len(value) <= maxBytes
 }
 
 type ContextAssembleRequest struct {

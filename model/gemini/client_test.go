@@ -26,6 +26,22 @@ func TestProjectGenerateContentCacheUsageMapsExplicitPositiveCount(t *testing.T)
 	}
 }
 
+func TestCountTokensRejectsCachedContentDirectiveAsUnsupported(t *testing.T) {
+	client := &Client{model: "gemini-2.5-flash"}
+	request := types.ModelRequest{
+		Input: "hello",
+		PromptCache: &types.PromptCacheDirective{
+			Provider: "gemini",
+			Gemini:   &types.GeminiPromptCacheDirective{CachedContentRef: "cachedContents/existing"},
+		},
+	}
+	_, err := client.CountTokens(context.Background(), request)
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) || classified.Reason != types.PromptCacheDirectiveUnsupported {
+		t.Fatalf("CountTokens error = %v, want typed %s", err, types.PromptCacheDirectiveUnsupported)
+	}
+}
+
 func TestProjectGenerateContentCacheUsageKeepsMissingOrZeroUnavailable(t *testing.T) {
 	for _, resp := range []*genai.GenerateContentResponse{
 		{},

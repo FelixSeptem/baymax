@@ -17,6 +17,9 @@ func RequestFactsFromModelRequest(req types.ModelRequest) RequestFacts {
 	facts := RequestFacts{
 		InputBytes: len(req.Input),
 	}
+	if req.PromptCache != nil {
+		facts.PromptCache = promptCacheProjectionFromDirective(req.PromptCache)
+	}
 	seenRole := map[string]struct{}{}
 	for _, msg := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
@@ -56,4 +59,25 @@ func RequestFactsFromModelRequest(req types.ModelRequest) RequestFacts {
 		}
 	}
 	return facts
+}
+
+func promptCacheProjectionFromDirective(in *types.PromptCacheDirective) *PromptCacheProjection {
+	if in == nil {
+		return nil
+	}
+	out := &PromptCacheProjection{Provider: in.Provider}
+	switch in.Provider {
+	case "openai":
+		out.Kind = PromptCacheKindOpenAIKey
+	case "anthropic":
+		out.Kind = PromptCacheKindAnthropicBreakpoint
+		if in.Anthropic != nil {
+			index := in.Anthropic.BoundaryMessageIndex
+			out.BoundaryMessageIndex = &index
+			out.TTL = in.Anthropic.TTL
+		}
+	case "gemini":
+		out.Kind = PromptCacheKindGeminiCachedContent
+	}
+	return out
 }

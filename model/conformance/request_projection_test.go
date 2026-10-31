@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 func mustDigest(t *testing.T, projection RequestProjection) string {
@@ -57,6 +59,59 @@ func TestRequestProjectionDigestIsDeterministic(t *testing.T) {
 		t.Fatalf("canonical projection is not valid json: %s", canonical)
 	}
 }
+
+func TestPromptCacheFactsAndProjectionOmitOpaqueValues(t *testing.T) {
+	key := "sentinel-openai-cache-key"
+	request := types.ModelRequest{PromptCache: &types.PromptCacheDirective{
+		Provider: "openai",
+		OpenAI:   &types.OpenAIPromptCacheDirective{Key: key},
+	}}
+	source := RequestFactsFromModelRequest(request)
+	if source.PromptCache == nil || source.PromptCache.Provider != "openai" || source.PromptCache.Kind != PromptCacheKindOpenAIKey {
+		t.Fatalf("prompt cache source facts = %+v", source.PromptCache)
+	}
+	projection := ProjectRequestNative(source)
+	canonical, err := CanonicalRequestProjection(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(canonical), key) {
+		t.Fatalf("canonical projection leaked opaque key: %s", canonical)
+	}
+	if projection.PromptCache == nil || projection.PromptCache.Provider != "openai" || projection.PromptCache.Kind != PromptCacheKindOpenAIKey {
+		t.Fatalf("prompt cache projection = %+v", projection.PromptCache)
+	}
+
+	ref := "sentinel-gemini-resource-name"
+	request.PromptCache = &types.PromptCacheDirective{Provider: "gemini", Gemini: &types.GeminiPromptCacheDirective{CachedContentRef: ref}}
+	source = RequestFactsFromModelRequest(request)
+	projection = ProjectRequestNative(source)
+	canonical, err = CanonicalRequestProjection(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(canonical), ref) {
+		t.Fatalf("canonical projection leaked resource reference: %s", canonical)
+	}
+}
+
+func TestPromptCacheProjectionDriftAndHistoricalDefault(t *testing.T) {
+	legacy := RequestProjection{Roles: []string{"user"}, Parts: []string{RequestPartUserText}}
+	if legacy.PromptCache != nil {
+		t.Fatal("historical projection must default to no prompt-cache control")
+	}
+	if err := ValidateRequestProjection(legacy); err != nil {
+		t.Fatalf("historical projection must validate: %v", err)
+	}
+
+	requested := PromptCacheProjection{Provider: "anthropic", Kind: PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: intPointer(1), TTL: "5m"}
+	observed := PromptCacheProjection{Provider: "anthropic", Kind: PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: intPointer(0), TTL: "5m"}
+	if code := ClassifyPromptCacheProjectionDrift(&requested, &observed); code != ReasonPromptCacheProjectionDrift {
+		t.Fatalf("drift code = %q, want %q", code, ReasonPromptCacheProjectionDrift)
+	}
+}
+
+func intPointer(value int) *int { return &value }
 
 func TestRequestProjectionIgnoresUnknownFields(t *testing.T) {
 	base := `{"roles":["user"],"parts":["user_text"],"cache_usage":{"available":true,"read_tokens":7,"total_tokens":7,"source_kind":"openai_responses","source_version":"v1"}}`

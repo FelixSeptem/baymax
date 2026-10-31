@@ -389,3 +389,19 @@ func TestCountTokensReturnsUnsupportedError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestCountTokensReturnsTypedUnsupportedForPromptCacheDirective(t *testing.T) {
+	client := NewClient(Config{Model: "gpt-4.1-mini"})
+	request := types.ModelRequest{
+		Input: "hello",
+		PromptCache: &types.PromptCacheDirective{
+			Provider: "openai",
+			OpenAI:   &types.OpenAIPromptCacheDirective{Key: "opaque-key"},
+		},
+	}
+	_, err := client.CountTokens(context.Background(), request)
+	var classified *providererror.Classified
+	if !errors.As(err, &classified) || classified.Reason != types.PromptCacheDirectiveUnsupported {
+		t.Fatalf("CountTokens error = %v, want typed %s", err, types.PromptCacheDirectiveUnsupported)
+	}
+}

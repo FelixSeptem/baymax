@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -97,6 +98,77 @@ func TestRequestProjectionAuditRunStreamParity(t *testing.T) {
 	streamProjection := conformance.ProjectRequestTextEnvelope(streamParams.Input.OfString.Value, source.ToolResults)
 	if code := conformance.ClassifyRunStreamParity(runProjection, streamProjection); code != "" {
 		t.Fatalf("run/stream request projection parity violated: %s", code)
+	}
+}
+
+func TestPromptCacheKeyMapsToRunAndStreamWithoutChangingDefault(t *testing.T) {
+	req := auditModelRequest()
+	req.PromptCache = &types.PromptCacheDirective{Provider: "openai", OpenAI: &types.OpenAIPromptCacheDirective{Key: "opaque-key"}}
+	var runParams, streamParams responses.ResponseNewParams
+	runClient := NewClient(Config{Model: "gpt-4.1-mini"})
+	runClient.newResponse = func(_ context.Context, params responses.ResponseNewParams) (*responses.Response, error) {
+		runParams = params
+		return &responses.Response{}, nil
+	}
+	if _, err := runClient.Generate(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	streamClient := NewClient(Config{Model: "gpt-4.1-mini"})
+	streamClient.newStream = func(_ context.Context, params responses.ResponseNewParams) responseStream {
+		streamParams = params
+		return &fakeResponseStream{}
+	}
+	if err := streamClient.Stream(context.Background(), req, nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, params := range map[string]responses.ResponseNewParams{"run": runParams, "stream": streamParams} {
+		raw, err := json.Marshal(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["prompt_cache_key"] != "opaque-key" {
+			t.Fatalf("%s prompt_cache_key = %#v, request = %s", name, body["prompt_cache_key"], raw)
+		}
+	}
+
+	defaultParams, err := runClient.nativeRequestParams(auditModelRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultJSON, err := json.Marshal(defaultParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(defaultJSON), "prompt_cache_key") {
+		t.Fatalf("default request unexpectedly contains prompt cache key: %s", defaultJSON)
+	}
+}
+
+func TestInvalidPromptCacheDirectiveDoesNotInvokeOpenAI(t *testing.T) {
+	request := auditModelRequest()
+	request.PromptCache = &types.PromptCacheDirective{Provider: "gemini", Gemini: &types.GeminiPromptCacheDirective{CachedContentRef: "ref"}}
+	invocations := 0
+	client := NewClient(Config{Model: "gpt-4.1-mini"})
+	client.newResponse = func(context.Context, responses.ResponseNewParams) (*responses.Response, error) {
+		invocations++
+		return &responses.Response{}, nil
+	}
+	if _, err := client.Generate(context.Background(), request); err == nil {
+		t.Fatal("Generate accepted a foreign provider cache directive")
+	}
+	client.newStream = func(context.Context, responses.ResponseNewParams) responseStream {
+		invocations++
+		return &fakeResponseStream{}
+	}
+	if err := client.Stream(context.Background(), request, nil); err == nil {
+		t.Fatal("Stream accepted a foreign provider cache directive")
+	}
+	if invocations != 0 {
+		t.Fatalf("SDK invocations = %d, want 0", invocations)
 	}
 }
 

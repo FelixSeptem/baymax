@@ -28,6 +28,7 @@ const (
 	ReasonRequestStablePrefixDrift         = "provider_request_stable_prefix_drift"
 	ReasonRequestToolOrderDrift            = "provider_request_tool_order_drift"
 	ReasonRequestCapabilityProjectionDrift = "provider_request_capability_projection_drift"
+	ReasonPromptCacheProjectionDrift       = "provider_prompt_cache_projection_drift"
 	ReasonRequestRunStreamParityDrift      = "provider_request_run_stream_parity_drift"
 	ReasonCacheUsageProjectionDrift        = "provider_cache_usage_projection_drift"
 	ReasonRequestOverflowDrift             = "provider_request_overflow_drift"
@@ -63,6 +64,7 @@ var requestGapVocabulary = []string{
 	ReasonRequestStablePrefixDrift,
 	ReasonRequestToolOrderDrift,
 	ReasonRequestCapabilityProjectionDrift,
+	ReasonPromptCacheProjectionDrift,
 }
 
 // Bounds. Request-side bounds are tighter than the stream-edge fixture bounds
@@ -76,6 +78,21 @@ const (
 	MaxRequestBytes      = 2 << 20
 	MaxCacheTokens       = 1 << 60
 )
+
+const (
+	PromptCacheKindOpenAIKey           = "openai_prompt_cache_key"
+	PromptCacheKindAnthropicBreakpoint = "anthropic_cache_breakpoint"
+	PromptCacheKindGeminiCachedContent = "gemini_cached_content_reference"
+)
+
+// PromptCacheProjection records only bounded structural intent. Opaque cache
+// keys and resource names are deliberately not representable here.
+type PromptCacheProjection struct {
+	Provider             string `json:"provider"`
+	Kind                 string `json:"kind"`
+	BoundaryMessageIndex *int   `json:"boundary_message_index,omitempty"`
+	TTL                  string `json:"ttl,omitempty"`
+}
 
 const (
 	CacheUsageSourceOpenAIResponses = "openai_responses"
@@ -108,13 +125,14 @@ func requestErrorf(code, format string, args ...any) *RequestProjectionError {
 // is provider-neutral: no provider SDK type may appear here. Only digests and
 // counters are recorded; no raw prompt, reasoning, or tool output body.
 type RequestFacts struct {
-	Roles          []string          `json:"roles,omitempty"`
-	ToolOrder      []string          `json:"tool_order,omitempty"`
-	ToolResults    []RequestToolFact `json:"tool_results,omitempty"`
-	Capabilities   []string          `json:"capabilities,omitempty"`
-	SkillFragments int               `json:"skill_fragments,omitempty"`
-	PrefixVersion  string            `json:"prefix_version,omitempty"`
-	InputBytes     int               `json:"input_bytes,omitempty"`
+	Roles          []string               `json:"roles,omitempty"`
+	ToolOrder      []string               `json:"tool_order,omitempty"`
+	ToolResults    []RequestToolFact      `json:"tool_results,omitempty"`
+	Capabilities   []string               `json:"capabilities,omitempty"`
+	SkillFragments int                    `json:"skill_fragments,omitempty"`
+	PrefixVersion  string                 `json:"prefix_version,omitempty"`
+	InputBytes     int                    `json:"input_bytes,omitempty"`
+	PromptCache    *PromptCacheProjection `json:"prompt_cache,omitempty"`
 }
 
 // RequestToolFact is a bounded reference to one canonical tool-result feedback
@@ -130,17 +148,18 @@ type RequestToolFact struct {
 // reached the provider SDK boundary. Overflow is intentionally absent: an
 // over-bound projection fails fast and is never truncated into a valid state.
 type RequestProjection struct {
-	Roles                []string             `json:"roles,omitempty"`
-	Parts                []string             `json:"parts,omitempty"`
-	ToolResultNative     bool                 `json:"tool_result_native"`
-	ToolResultCorrelated bool                 `json:"tool_result_correlated"`
-	ToolOrder            []string             `json:"tool_order,omitempty"`
-	Capabilities         []string             `json:"capabilities,omitempty"`
-	StablePrefixDigest   string               `json:"stable_prefix_digest,omitempty"`
-	StablePrefixFirst    bool                 `json:"stable_prefix_first"`
-	ContentDigest        string               `json:"content_digest,omitempty"`
-	TotalBytes           int                  `json:"total_bytes,omitempty"`
-	CacheUsage           CacheUsageProjection `json:"cache_usage"`
+	Roles                []string               `json:"roles,omitempty"`
+	Parts                []string               `json:"parts,omitempty"`
+	ToolResultNative     bool                   `json:"tool_result_native"`
+	ToolResultCorrelated bool                   `json:"tool_result_correlated"`
+	ToolOrder            []string               `json:"tool_order,omitempty"`
+	Capabilities         []string               `json:"capabilities,omitempty"`
+	StablePrefixDigest   string                 `json:"stable_prefix_digest,omitempty"`
+	StablePrefixFirst    bool                   `json:"stable_prefix_first"`
+	ContentDigest        string                 `json:"content_digest,omitempty"`
+	TotalBytes           int                    `json:"total_bytes,omitempty"`
+	CacheUsage           CacheUsageProjection   `json:"cache_usage"`
+	PromptCache          *PromptCacheProjection `json:"prompt_cache,omitempty"`
 }
 
 // CacheUsageProjection carries bounded, provider-neutral cache accounting.
@@ -224,7 +243,40 @@ func ValidateRequestProjection(in RequestProjection) error {
 			return requestErrorf(ReasonRequestOverflowDrift, "digest exceeds %d bytes", MaxRequestIdentifier)
 		}
 	}
+	if err := validatePromptCacheProjection(in.PromptCache); err != nil {
+		return err
+	}
 	return ValidateCacheUsageProjection(in.CacheUsage)
+}
+
+func validatePromptCacheProjection(in *PromptCacheProjection) error {
+	if in == nil {
+		return nil
+	}
+	switch in.Provider {
+	case "openai":
+		if in.Kind != PromptCacheKindOpenAIKey || in.BoundaryMessageIndex != nil || in.TTL != "" {
+			return requestErrorf(ReasonPromptCacheProjectionDrift, "OpenAI prompt-cache projection has invalid shape")
+		}
+	case "anthropic":
+		if in.Kind != PromptCacheKindAnthropicBreakpoint || in.BoundaryMessageIndex == nil || *in.BoundaryMessageIndex < 0 || (in.TTL != "5m" && in.TTL != "1h") {
+			return requestErrorf(ReasonPromptCacheProjectionDrift, "Anthropic prompt-cache projection has invalid shape")
+		}
+	case "gemini":
+		if in.Kind != PromptCacheKindGeminiCachedContent || in.BoundaryMessageIndex != nil || in.TTL != "" {
+			return requestErrorf(ReasonPromptCacheProjectionDrift, "Gemini prompt-cache projection has invalid shape")
+		}
+	default:
+		return requestErrorf(ReasonPromptCacheProjectionDrift, "prompt-cache provider is unsupported")
+	}
+	return nil
+}
+
+func ClassifyPromptCacheProjectionDrift(expected, observed *PromptCacheProjection) string {
+	if reflect.DeepEqual(expected, observed) {
+		return ""
+	}
+	return ReasonPromptCacheProjectionDrift
 }
 
 // ValidateCacheUsageProjection enforces explicit source, non-negative bounded
@@ -302,6 +354,9 @@ func ValidateRequestFacts(in RequestFacts) error {
 	if in.InputBytes < 0 {
 		return requestErrorf(ReasonRequestSchemaDrift, "source input_bytes must not be negative")
 	}
+	if err := validatePromptCacheProjection(in.PromptCache); err != nil {
+		return err
+	}
 	for i := range in.ToolResults {
 		item := in.ToolResults[i]
 		for _, value := range []string{item.CallID, item.Name, item.Status, item.ResultDigest} {
@@ -333,6 +388,9 @@ func ClassifyRequestGaps(source RequestFacts, observed RequestProjection) []stri
 	if !sameStringSet(source.Capabilities, observed.Capabilities) {
 		gaps = append(gaps, ReasonRequestCapabilityProjectionDrift)
 	}
+	if code := ClassifyPromptCacheProjectionDrift(source.PromptCache, observed.PromptCache); code != "" {
+		gaps = append(gaps, code)
+	}
 	slices.Sort(gaps)
 	return slices.Compact(gaps)
 }
@@ -360,6 +418,9 @@ func ClassifyRequestProjectionDrift(expected, observed RequestProjection) string
 	}
 	if !reflect.DeepEqual(expected.CacheUsage, observed.CacheUsage) {
 		return ReasonCacheUsageProjectionDrift
+	}
+	if code := ClassifyPromptCacheProjectionDrift(expected.PromptCache, observed.PromptCache); code != "" {
+		return code
 	}
 	if expected.ContentDigest != observed.ContentDigest || expected.TotalBytes != observed.TotalBytes {
 		return ReasonRequestPartOrderingDrift
@@ -409,10 +470,11 @@ func ProjectRequestTextEnvelope(payload string, toolResults []RequestToolFact) R
 // outside the conformance package.
 func ProjectRequestNative(source RequestFacts) RequestProjection {
 	projection := RequestProjection{
-		Roles:      append([]string(nil), source.Roles...),
-		Parts:      make([]string, 0, len(source.Roles)+1+len(source.ToolResults)),
-		ToolOrder:  append([]string(nil), source.ToolOrder...),
-		TotalBytes: source.InputBytes,
+		Roles:       append([]string(nil), source.Roles...),
+		Parts:       make([]string, 0, len(source.Roles)+1+len(source.ToolResults)),
+		ToolOrder:   append([]string(nil), source.ToolOrder...),
+		TotalBytes:  source.InputBytes,
+		PromptCache: source.PromptCache,
 	}
 	for _, role := range source.Roles {
 		switch strings.ToLower(strings.TrimSpace(role)) {

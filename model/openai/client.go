@@ -226,6 +226,14 @@ func (c *Client) CountTokens(ctx context.Context, req types.ModelRequest) (int, 
 	if _, err := c.nativeRequestParams(req); err != nil {
 		return 0, err
 	}
+	if req.PromptCache != nil {
+		return 0, &providererror.Classified{
+			Class:     types.ErrModel,
+			Reason:    types.PromptCacheDirectiveUnsupported,
+			Retryable: false,
+			Cause:     errors.New("OpenAI adapter does not provide a token-count API"),
+		}
+	}
 	return 0, errors.New("openai official sdk does not provide token count api in this adapter")
 }
 
@@ -239,6 +247,11 @@ func (c *Client) nativeRequestParams(req types.ModelRequest) (responses.Response
 	interpreted, err := toolcontract.InterpretRequest(req)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
+	}
+	if req.PromptCache != nil {
+		if err := req.PromptCache.ValidateForProvider(c.ProviderName(), len(interpreted.Messages)); err != nil {
+			return responses.ResponseNewParams{}, nativeRequestShapeError("invalid prompt-cache directive: %v", err)
+		}
 	}
 	items := make(responses.ResponseInputParam, 0, len(interpreted.Messages)+len(interpreted.ToolResults))
 	for _, message := range interpreted.Messages {
@@ -266,10 +279,14 @@ func (c *Client) nativeRequestParams(req types.ModelRequest) (responses.Response
 			return responses.ResponseNewParams{}, profileError(ReasonProfileCapabilityUnsupported, "native tool results are not declared supported")
 		}
 	}
-	return responses.ResponseNewParams{
+	params := responses.ResponseNewParams{
 		Model: c.model,
 		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: items},
-	}, nil
+	}
+	if req.PromptCache != nil {
+		params.PromptCacheKey = openai.String(req.PromptCache.OpenAI.Key)
+	}
+	return params, nil
 }
 
 func (c *Client) validateProfile(req types.ModelRequest, streaming bool) error {

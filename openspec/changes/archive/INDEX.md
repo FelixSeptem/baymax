@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-10-31 17:19:16
+Updated: 2026-10-31 21:02:55
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -185,3 +185,4 @@ Updated: 2026-10-31 17:19:16
 - 181 -> composite-pause-reason-matrix
 - 182 -> preserve-team-continuation-successor-lineage
 - 183 -> publish-workflow-successor-checkpoints-atomically
+- 184 -> establish-provider-structured-context-cache-runtime

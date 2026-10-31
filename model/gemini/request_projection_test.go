@@ -39,6 +39,51 @@ func TestNativeGenerateRequestPreservesRolesInputAndFunctionResponse(t *testing.
 	}
 }
 
+func TestGeminiPromptCacheDirectiveMapsOnlyExistingCachedContent(t *testing.T) {
+	request := auditModelRequest()
+	request.PromptCache = &types.PromptCacheDirective{Provider: "gemini", Gemini: &types.GeminiPromptCacheDirective{CachedContentRef: "cachedContents/existing"}}
+	_, config, err := nativeGenerateRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config == nil || config.CachedContent != "cachedContents/existing" {
+		t.Fatalf("cached content reference = %#v", config)
+	}
+	defaultRequest := auditModelRequest()
+	_, defaultConfig, err := nativeGenerateRequest(defaultRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultConfig.CachedContent != "" {
+		t.Fatalf("default cached content = %q, want empty", defaultConfig.CachedContent)
+	}
+}
+
+func TestInvalidGeminiPromptCacheDirectiveDoesNotInvokeProvider(t *testing.T) {
+	request := auditModelRequest()
+	request.PromptCache = &types.PromptCacheDirective{Provider: "openai", OpenAI: &types.OpenAIPromptCacheDirective{Key: "key"}}
+	invocations := 0
+	client, err := NewClient(context.Background(), Config{GenerateFn: func(context.Context, string) (types.ModelResponse, error) {
+		invocations++
+		return types.ModelResponse{}, nil
+	}, StreamFn: func(context.Context, string) iter.Seq2[*genai.GenerateContentResponse, error] {
+		invocations++
+		return emptyGeminiStream()
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Generate(context.Background(), request); err == nil {
+		t.Fatal("Generate accepted a foreign provider cache directive")
+	}
+	if err := client.Stream(context.Background(), request, nil); err == nil {
+		t.Fatal("Stream accepted a foreign provider cache directive")
+	}
+	if invocations != 0 {
+		t.Fatalf("provider invocations = %d, want 0", invocations)
+	}
+}
+
 // auditModelRequest mirrors the provider-neutral request shape the runtime
 // admits once Skill bundle mapping has appended system-role prompt fragments
 // and the ReAct loop has produced canonical tool-result feedback.

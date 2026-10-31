@@ -16,6 +16,12 @@
 4. 将事件写入 `RuntimeRecorder`，按 [配置与诊断](configuration-and-diagnostics.md) 查询和脱敏。
 5. 运行对应 package test、replay 和 conformance gate。
 
+### Provider prompt-cache directive
+
+`types.ModelRequest` 可选携带 provider-tagged prompt-cache directive。OpenAI 使用 Responses prompt-cache key，Anthropic 使用结构化消息的 cache breakpoint 与受支持 TTL，Gemini 只接受调用方已创建的 cached-content reference。directive 必须与选中的 adapter 匹配；缺省时请求行为不变，错误或超界 directive 在 provider SDK 调用前失败。Baymax 不创建、查询、更新或删除缓存资源，不把 directive 当作 cache hit 证据，也不将原始 key/resource name 写入诊断或 replay。按 [provider request projection contract](../mainline-contract-test-index.md) 运行 conformance 与 privacy gate。
+
+`CountTokens` 对 Anthropic 保留可表达的 breakpoint；OpenAI 没有本 adapter token-count API，Gemini token-count API 不接受 cached-content reference，因此这两种带 cache directive 的 CountTokens 请求以 typed `prompt_cache_unsupported` 返回，不会静默丢弃 directive。可复制的 provider-tagged 请求结构见[示例](../../examples/provider-prompt-cache/README.md)。
+
 ### Workflow continuation（workflow-first）
 
 当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。child、team 和 mailbox 只能在各自 owner、matching capability cell 与 FileStore 部署证据齐备时独立开放；resumed planbridge 仍返回 `unsupported_capability`。任何 form 都不得借用 workflow capability 或 history replay 模拟恢复。

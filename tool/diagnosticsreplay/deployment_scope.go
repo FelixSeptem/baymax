@@ -47,16 +47,24 @@ func ReplayDeploymentScopeFixtureJSON(raw []byte) ([]DeploymentScopeReplayResult
 		if strings.TrimSpace(item.CaseID) == "" || item.SideEffects != 0 {
 			return nil, fmt.Errorf("deployment_scope.side_effect_before_rejection")
 		}
-		scope := types.SameHostSingleWriterScope("fixture-owner", "fixture:deployment-scope.v1")
 		request := types.DeploymentRequest{}
 		if item.RequestedProfile != "" {
 			request.Profile = types.DeploymentProfile(item.RequestedProfile)
 		}
-		err := scope.Check(request)
 		outcome, reason := "admitted", ""
-		if err != nil {
-			outcome = "unsupported_capability"
-			reason = "unsupported_deployment_scope"
+		switch item.AdvertisedProfile {
+		case string(types.DeploymentProfileSameHostSingleWriterSequentialReopen):
+			if err := types.SameHostSingleWriterScope("fixture-owner", "fixture:deployment-scope.v1").Check(request); err != nil {
+				outcome, reason = "unsupported_capability", "unsupported_deployment_scope"
+			}
+		case string(types.DeploymentProfileMultiInstance):
+			if err := types.CoordinatedMultiWriterScope("fixture-owner", "fixture:durable-source-store-coordination.v1").Check(request); err != nil {
+				outcome, reason = "unsupported_capability", "unsupported_deployment_scope"
+			}
+		case "source_unavailable":
+			outcome, reason = "source_unavailable", "coordinator_unavailable"
+		default:
+			return nil, fmt.Errorf("deployment_scope.replay_schema_drift:%s", item.CaseID)
 		}
 		if outcome != item.ExpectedOutcome || (item.ExpectedReason != "" && reason != item.ExpectedReason) {
 			return nil, fmt.Errorf("deployment_scope.replay_drift:%s", item.CaseID)

@@ -3,14 +3,46 @@ package runner
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/FelixSeptem/baymax/core/checkpoint"
+	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
 	runtimeconfig "github.com/FelixSeptem/baymax/runtime/config"
 	"github.com/FelixSeptem/baymax/tool/local"
 )
+
+func TestContinuationCapabilitiesProjectCoordinatedCheckpointDeployment(t *testing.T) {
+	coordinator, err := sourcecoordination.OpenFile(filepath.Join(t.TempDir(), "coord"), sourcecoordination.Options{OwnerNamespace: "runner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = coordinator.Close() })
+	store, err := checkpoint.OpenFileStore(t.TempDir(), checkpoint.Options{
+		Namespace: "runner", Capacity: 1, Coordinator: coordinator, WriterID: "runner-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	engine := New(nil, WithNativeContinuation(NativeContinuationOptions{
+		Store: store, OwnerNamespace: "runner", DependencyProfile: "offline", DependencyRevision: "v1",
+		Approval: true, Budget: true,
+		BudgetOwner: func(_ context.Context, _ types.NativeCheckpointRef, _ types.DurableBudget, proposal types.DurableBudget) (types.DurableBudget, error) {
+			return proposal, nil
+		},
+	}))
+	caps, err := engine.ContinuationCapabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := coordinator.DeploymentScope()
+	if caps.Deployment != want {
+		t.Fatalf("deployment = %#v, want %#v", caps.Deployment, want)
+	}
+}
 
 func TestNativeContinuationNewEngineRestoresCompletedToolBoundary(t *testing.T) {
 	for _, stream := range []bool{false, true} {

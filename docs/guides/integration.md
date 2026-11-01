@@ -204,13 +204,15 @@ Stream use the same source claim and terminal projection.
 ### Durable store deployment boundary
 
 Every source-owned history, checkpoint, child continuation and mailbox
-capability carries `deployment_scope.v1` evidence. The only currently
-supported profile is `same_host_single_writer_sequential_reopen`; FileStore
-reopen proves persistence after an orderly handoff, not multi-writer CAS,
-cross-machine coordination, distributed cursor advancement or multi-instance
-resume claims. A foreign/stale writer, missing fence, unavailable owner or
-unsupported request is rejected before publish, claim, restore or replay and
-must not fall back to a fresh Run, enqueue or latest cursor.
+capability carries `deployment_scope.v1` evidence. The default FileStore
+profile remains `same_host_single_writer_sequential_reopen`. An explicitly
+configured `core/sourcecoordination.File` owner can advertise
+`multi_instance`/`multi_writer_cas` for same-host multi-instance CAS and fence
+handoff; it never advertises `cross_machine`. A foreign/stale writer, missing
+fence, unavailable coordinator or unsupported request is rejected before
+publish, claim, restore or replay and must not fall back to a fresh Run,
+enqueue or latest cursor. The coordinator owns detached source facts only;
+runner, checkpoint and history owners retain execution and terminal state.
 # Host execution plan bridge
 
 For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox requires an explicit manifest-approved native binding, workflow continuation restore requires an explicit matching owner/store binding, while resumed-trigger execution and shared child queues are rejected.

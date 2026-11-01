@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -24,6 +25,167 @@ func testCheckpoint(t *testing.T, now time.Time) types.PersistedRunCheckpoint {
 	}
 	return p
 }
+
+func TestCoordinatedFileStoresShareCheckpointStateWithoutDuplicateClaim(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	coordDir := filepath.Join(t.TempDir(), "coord")
+	coordA, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordA.Close() }()
+	coordB, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordB.Close() }()
+	a, err := OpenFileStore(dir, Options{Namespace: "tests", Capacity: 2, Coordinator: coordA, WriterID: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	p := testCheckpoint(t, time.Now().UTC())
+	if err := a.Save(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenFileStore(dir, Options{Namespace: "tests", Capacity: 2, Coordinator: coordB, WriterID: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	loaded, err := b.Load(ctx, p.Ref)
+	if err != nil || loaded.Ref != p.Ref {
+		t.Fatalf("coordinated load = %+v %v", loaded.Ref, err)
+	}
+	claim, err := b.ClaimResume(ctx, testRequest(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := a.ClaimResume(ctx, testRequest(p))
+	if !errors.Is(err, types.ErrStaleWriter) && !errors.Is(err, types.ErrCheckpointRecoveryRequired) {
+		t.Fatalf("duplicate claim error = %v", err)
+	}
+	if duplicate.AttemptID != claim.AttemptID {
+		t.Fatalf("duplicate attempt = %q want %q", duplicate.AttemptID, claim.AttemptID)
+	}
+	if claim.AttemptID == "" {
+		t.Fatal("claim did not produce attempt")
+	}
+}
+
+func TestCoordinatedFileStoreDoesNotImportLocalSnapshotBeforeCoordinatorPublication(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	dir := t.TempDir()
+	checkpoint := testCheckpoint(t, now)
+	local, err := OpenFileStore(dir, Options{Namespace: "tests", Capacity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = local.Save(ctx, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err = local.Close(); err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := sourcecoordination.OpenFile(filepath.Join(t.TempDir(), "coord"), sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordinator.Close() }()
+	coordinated, err := OpenFileStore(dir, Options{Namespace: "tests", Capacity: 2, Coordinator: coordinator, WriterID: "writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordinated.Close() }()
+	if _, err = coordinated.Load(ctx, checkpoint.Ref); !errors.Is(err, types.ErrCheckpointNotFound) {
+		t.Fatalf("local snapshot leaked into coordinated state: %v", err)
+	}
+}
+
+func TestCoordinatedFileStoreDoesNotAdvertiseRestoreAfterCoordinatorLoss(t *testing.T) {
+	coordinator, err := sourcecoordination.OpenFile(filepath.Join(t.TempDir(), "coord"), sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenFileStore(t.TempDir(), Options{Namespace: "tests", Capacity: 1, Coordinator: coordinator, WriterID: "writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	if !store.CrossProcessRestore() {
+		t.Fatal("coordinated source did not advertise restore while its lease was live")
+	}
+	if err = coordinator.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if store.CrossProcessRestore() {
+		t.Fatal("coordinator loss still advertised cross-process restore")
+	}
+}
+
+func TestCoordinatedCheckpointMapsCoordinatorOutageToCheckpointUnavailable(t *testing.T) {
+	coordinator, err := sourcecoordination.OpenFile(filepath.Join(t.TempDir(), "coord"), sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenFileStore(t.TempDir(), Options{Namespace: "tests", Capacity: 1, Coordinator: coordinator, WriterID: "writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err = coordinator.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Save(context.Background(), testCheckpoint(t, time.Now().UTC())); !errors.Is(err, types.ErrCheckpointUnavailable) {
+		t.Fatalf("coordinator outage error = %v, want checkpoint unavailable", err)
+	}
+}
+
+func TestCoordinatedControlRefreshesClaimBeforeMutatingStaleSnapshot(t *testing.T) {
+	ctx := context.Background()
+	coordDir := filepath.Join(t.TempDir(), "coord")
+	coordA, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = coordA.Close() })
+	coordB, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = coordB.Close() })
+	storeDir := t.TempDir()
+	a, err := OpenFileStore(storeDir, Options{Namespace: "tests", Capacity: 2, Coordinator: coordA, WriterID: "writer-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	checkpoint := testCheckpoint(t, time.Now().UTC())
+	if err = a.Save(ctx, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenFileStore(storeDir, Options{Namespace: "tests", Capacity: 2, Coordinator: coordB, WriterID: "writer-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	if _, err = b.ClaimResume(ctx, testRequest(checkpoint)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Control(ctx, types.CheckpointControl{Checkpoint: checkpoint.Ref, Generation: checkpoint.Generation, Action: types.CheckpointControlCancel}); !errors.Is(err, types.ErrCheckpointInProgress) {
+		t.Fatalf("stale control error = %v, want checkpoint in progress", err)
+	}
+	if a.records[checkpoint.Ref.CheckpointID].Canceled {
+		t.Fatal("stale control mutated its local snapshot")
+	}
+	claim, err := b.ReadResumeClaim(ctx, checkpoint.Ref)
+	if err != nil || claim.AttemptID == "" || claim.State != types.ResumeClaimClaimed {
+		t.Fatalf("source claim after stale control = %#v, err=%v", claim, err)
+	}
+}
+
 func testRequest(p types.PersistedRunCheckpoint) types.ResumeRequest {
 	return types.ResumeRequest{Checkpoint: p.Ref, Mode: p.Mode, DependencyProfile: p.DependencyProfile, DependencyRevision: p.DependencyRevision, Generation: p.Generation, IdempotencyKey: "key"}
 }

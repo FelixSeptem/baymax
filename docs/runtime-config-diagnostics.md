@@ -2384,6 +2384,13 @@ single-writer fence and sequential transaction boundary. Unsupported,
 foreign, stale and unavailable classifications are returned before side
 effects; no new QueryRuns field or RuntimeRecorder writer is introduced.
 
+The opt-in `core/sourcecoordination.File` path is constructor-injected rather
+than an env/file/hot-update setting. It reports same-host multi-instance CAS
+only while its writer lease can be validated. Coordinator loss, stale fence or
+CAS conflict is fail-closed and is never projected as a local fallback or a
+new Run. `Memory` coordination remains process-local and cannot advertise
+durable multi-writer capability.
+
 ## Team and mailbox continuation diagnostics
 
 Continuation capability evidence is source-owned and bounded. Team graph/member

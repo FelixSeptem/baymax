@@ -62,6 +62,11 @@ Durable task/attempt workspace binding 与 completion safe-point 审计不改变
 - mailbox publish/lifecycle 诊断通过 `runtime/config.Manager.RecordMailboxDiagnostic` 写入，保持配置域边界与可查询性。
 - `snapshot` 只定义合同层语义，不重写既有 checkpoint/snapshot 存储事实源。
 - reason namespace（如 `team.*`、`workflow.*`、`scheduler.*`、`subagent.*`）需保持稳定以支持契约测试。
+- source owners may explicitly inject `core/sourcecoordination.File` for
+  same-host multi-instance CAS/fencing of detached checkpoint/history facts.
+  Default FileStore behavior remains single-writer sequential reopen;
+  cross-machine support is unsupported and coordinator loss is unavailable, not
+  a reason to re-run or re-enqueue execution.
 
 ## 配置与默认值
 

@@ -136,6 +136,47 @@ func TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation(t *testin
 		t.Fatal("unsupported deployment activated the source")
 	}
 }
+
+func TestHostExecutionPlanAdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation(t *testing.T) {
+	runner := &countedRunner{}
+	source := &evidencedRunner{countedRunner: runner, caps: evidencedContinuationSource().caps}
+	source.caps.Deployment = types.CoordinatedMultiWriterScope("runner/coordinated", "test:coordinator")
+	d, binding, _ := directFixture(t)
+	binding.Direct.Runner = source
+	d.Deployment = &types.DeploymentRequest{
+		Profile:        types.DeploymentProfileMultiInstance,
+		WriterMode:     types.WriterScopeMultiWriter,
+		Fencing:        types.FencingScopeDistributed,
+		Transaction:    types.TransactionScopeMultiWriterCAS,
+		OwnerNamespace: "runner/coordinated",
+		WriterFence:    "coordinator:runner/coordinated",
+	}
+	if _, err := Compile(d, binding, Limits{}); err != nil {
+		t.Fatalf("matching coordinator deployment rejected: %v", err)
+	}
+	if runner.calls != 0 {
+		t.Fatal("compile activated coordinated source")
+	}
+	d.Deployment.Profile = types.DeploymentProfileCrossMachine
+	if _, err := Compile(d, binding, Limits{}); err == nil {
+		t.Fatal("cross-machine request was admitted")
+	} else {
+		codeOf(t, err, UnsupportedCapability)
+	}
+	if runner.calls != 0 {
+		t.Fatal("cross-machine rejection activated source")
+	}
+	d.Deployment.Profile = types.DeploymentProfileMultiInstance
+	d.Deployment.WriterFence = "coordinator:stale"
+	if _, err := Compile(d, binding, Limits{}); err == nil {
+		t.Fatal("stale writer fence was admitted")
+	} else {
+		codeOf(t, err, SourceUnavailable)
+	}
+	if runner.calls != 0 {
+		t.Fatal("stale-writer rejection activated source")
+	}
+}
 func TestHostExecutionPlanAdmissionAndDrift(t *testing.T) {
 	d, b, r := directFixture(t)
 	deny := errors.New("host denied")

@@ -8,7 +8,7 @@ $env:GOCACHE = Join-Path $repoRoot ".gocache-deployment-scope"
 
 Write-Host "[durable-store-deployment-scope] local ownership, fail-closed admission and read-only replay"
 Invoke-NativeStrict -Label "deployment scope contract suites" -Command {
-    go test ./core/types ./core/checkpoint ./core/history ./core/runner ./orchestration/composer ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./tool/diagnosticsreplay -run 'TestDeploymentScope|TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation|TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation|TestReplayDeploymentScopeFixture' -count=1
+    go test ./core/types ./core/sourcecoordination ./core/checkpoint ./core/history ./core/runner ./orchestration/composer ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./tool/diagnosticsreplay -run 'Test(DeploymentScope|MemoryCoordinator|FileCoordinator|CoordinatedFileStore|CoordinatedJournal|HostExecutionPlan(RejectsUnsupportedDeploymentBeforeActivation|AdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation)|ReplayDeploymentScopeFixture)' -count=1
 }
 
 $files = @("core/types/deployment_scope.go", "tool/diagnosticsreplay/deployment_scope.go")

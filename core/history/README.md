@@ -23,3 +23,9 @@ sequence, detached payload, terminal evidence and source presence before any
 ledger write. It returns typed foreign/conflict/expired/gap/unavailable errors
 and never runs, retries, resumes, acknowledges delivery, or writes a business
 projection. Mailbox lifecycle history is not a substitute for this binding.
+
+An owner may additionally pass `history.WithCoordinator` with an explicit
+`core/sourcecoordination.Coordinator`. This publishes journal snapshots through
+same-host multi-instance CAS and writer fencing; `ReadAfter` remains read-only.
+Without that injection, FileStore retains its same-host single-writer
+sequential-reopen contract and no history API infers distributed capability.

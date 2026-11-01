@@ -535,11 +535,15 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | checkpoint claim rejects unsupported scope before mutation | `core/checkpoint/store_test.go::TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation` |
 | planbridge rejects unsupported deployment before source activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation` |
 | reference-only local versus distributed replay and side-effect guard | `tool/diagnosticsreplay/deployment_scope.go`, `tool/diagnosticsreplay/deployment_scope_test.go` |
+| same-host coordinator lease/fence/CAS, restart isolation and live-evidence loss | `core/sourcecoordination/*_test.go`, `core/checkpoint/store_test.go`, `core/history/journal_test.go` |
+| matching coordinated admission and cross-machine/stale-fence rejection before activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanAdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation` |
 | shell/PowerShell quality gates | `scripts/check-durable-store-deployment-scope-contract.sh`, `scripts/check-durable-store-deployment-scope-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
 
-The supported deployment profile is `same_host_single_writer_sequential_reopen`.
-Successful reopen does not evidence multi-writer CAS, cross-machine
-coordination, distributed cursor advancement or multi-instance resume claims.
+The default deployment profile is `same_host_single_writer_sequential_reopen`.
+An explicitly configured source coordinator may advertise same-host
+`multi_instance`/`multi_writer_cas`; successful reopen alone does not evidence
+that profile, cross-machine coordination, distributed cursor advancement or
+multi-instance resume claims.
 
 
 

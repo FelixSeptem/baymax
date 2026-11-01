@@ -38,3 +38,16 @@ func TestDeploymentScopeRejectsUnsupportedDistributedRequest(t *testing.T) {
 		t.Fatalf("unsupported request error = %v", err)
 	}
 }
+
+func TestCoordinatedScopeSupportsMultiInstanceButNotCrossMachine(t *testing.T) {
+	scope := CoordinatedMultiWriterScope("runner", "fixture:durable-source-store-coordination.v1")
+	if err := scope.Validate(); err != nil {
+		t.Fatalf("coordinated scope = %v", err)
+	}
+	if !scope.Supports(DeploymentRequest{Profile: DeploymentProfileMultiInstance, WriterMode: WriterScopeMultiWriter, Fencing: FencingScopeDistributed, Transaction: TransactionScopeMultiWriterCAS}) {
+		t.Fatal("coordinated scope did not support multi-instance CAS")
+	}
+	if scope.Supports(DeploymentRequest{Profile: DeploymentProfileCrossMachine}) {
+		t.Fatal("coordinated file scope advertised cross-machine support")
+	}
+}

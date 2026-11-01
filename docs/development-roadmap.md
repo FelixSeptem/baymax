@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-10-31
+更新时间：2026-11-01
 
 这是 Baymax 的实施决策索引，不是设计文档。先用下方候选表定位状态、触发证据、代码入口和实施方向，再进入对应的 OpenSpec；详细契约、任务和证据以 [OpenSpec changes](../openspec/changes/)、[归档索引](../openspec/changes/archive/INDEX.md) 和 [mainline contract test index](mainline-contract-test-index.md) 为准。
 
@@ -18,6 +18,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 - 已归档：
   - `establish-provider-structured-context-cache-runtime`（provider-native prompt-cache controls 与安全 projection）。
   - `publish-workflow-successor-checkpoints-atomically`（workflow successor checkpoint 原子发布）。
+  - `coordinate-durable-source-stores-across-writers`（same-host multi-instance source-owner CAS/fencing；默认 FileStore 仍为单写，cross-machine unsupported）。
 - 候选：
   - 需求触发：多写者/跨机器 source store、mailbox handler context safe point、通用 ExecutionGraph；当前只有边界或需求信号，没有足够的原始运行时失败证据。
 
@@ -25,7 +26,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 | 优先级 / 状态 | 候选 | 触发证据 | 第一入口 / owner | 实施方向 | 停止线 |
 | --- | --- | --- | --- | --- | --- |
-| B / 需求触发 | 多写者 / 跨机器 durable source store | 真实 concurrent writer、跨机器 resume/cursor、stale writer 或 crash 触发；当前 FileStore 只证明同机单写、顺序重开 | source history/checkpoint owner；FileStore、CAS、claim seam | source-owned CAS、writer fencing、atomic checkpoint claim/cursor advancement、crash recovery、多实例 duplicate-resume 测试；或明确限制部署范围 | 无真实部署触发不立项；不得把单写 FileStore 宣称为分布式恢复 |
+| B / 已归档（185） | 多写者 / 多实例 durable source store | 已覆盖 concurrent claim/cursor、stale writer 和 crash 窗口 | source history/checkpoint owner；explicit coordinator、CAS、claim seam | same-host multi-instance CAS、writer fencing、atomic checkpoint claim/history publication；默认 FileStore 保持本地范围 | cross-machine 仍 unsupported；不得把单写 FileStore 宣称为分布式恢复 |
 | C / 需求触发 | mailbox handler context safe point | 需要宿主 handler pause/restore；当前只有 mailbox lifecycle/host-plan continuation | mailbox owner；handler safe point、checkpoint/projection binding | 持久化 handler continuation；恢复前重新授权 resolver；保留 message、delivery、lease、attempt、causation、authority、terminal identity | lifecycle history 不等于 handler continuation；无 owner evidence 的 pause cell 返回 typed unsupported/recovery-required |
 | D / 需求触发 | 通用 ExecutionGraph | 多个宿主 fixture 证明 workflow/team/composer 无法表达共享 topology、dependency 或 terminal 语义 | graph definition/validator owner；definition、validator、restore seam | 只抽取已验证的共享 definition/validation/restore 边界；按能力拆 change，不建平行 executor/state machine | 无共享 owner 边界则停止；不得由统一 DTO 推断统一恢复能力 |
 

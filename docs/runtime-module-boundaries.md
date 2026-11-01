@@ -318,9 +318,11 @@ uncertain, the owner returns `ErrProjectionRecoveryRequired` and keeps the
 source effect fail-closed.
 
 `core/types` defines the detached deployment vocabulary; each source owner
-projects its own owner namespace, writer fence and transaction scope. Current
-FileStore and source journal implementations are limited to same-host,
-single-writer, sequential reopen. `core/checkpoint`, `core/history`,
+projects its own owner namespace, writer fence and transaction scope. FileStore
+and source journals remain same-host, single-writer, sequential-reopen by
+default. An owner may explicitly inject `core/sourcecoordination.File` for
+same-host multi-instance CAS and fencing; it does not add cross-machine
+guarantees. `core/checkpoint`, `core/history`,
 `orchestration/composer`, `orchestration/workflow` and `orchestration/mailbox`
 must reject foreign or stale writers and never infer distributed guarantees
 from a successful reopen. `planbridge` only validates and delegates these

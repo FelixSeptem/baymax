@@ -15,17 +15,21 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
 const storeFileName = "checkpoints.json"
 
 type Options struct {
-	Namespace  string
-	Capacity   int
-	Now        func() time.Time
-	Limits     types.ContinuationLimits
-	Deployment types.DeploymentScope
+	Namespace   string
+	Capacity    int
+	Now         func() time.Time
+	Limits      types.ContinuationLimits
+	Deployment  types.DeploymentScope
+	Coordinator sourcecoordination.Coordinator
+	WriterID    string
+	LeaseTTL    time.Duration
 }
 type record struct {
 	Checkpoint types.PersistedRunCheckpoint `json:"checkpoint"`
@@ -43,13 +47,16 @@ type snapshot struct {
 	Checksum  string            `json:"checksum"`
 }
 type Store struct {
-	mu       sync.Mutex
-	opts     Options
-	records  map[string]record
-	dir      string
-	lockFile *os.File
-	closed   atomic.Bool
-	poisoned bool
+	mu            sync.Mutex
+	opts          Options
+	records       map[string]record
+	dir           string
+	lockFile      *os.File
+	closed        atomic.Bool
+	poisoned      bool
+	coordinator   sourcecoordination.Coordinator
+	coordLease    sourcecoordination.Lease
+	coordRevision uint64
 }
 type MemoryStore = Store
 type FileStore = Store
@@ -70,13 +77,37 @@ func OpenFileStore(dir string, opts Options) (*FileStore, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, wrapUnavailable(err)
 	}
-	lock, err := acquireLock(filepath.Join(dir, ".writer.lock"))
-	if err != nil {
-		return nil, wrapUnavailable(err)
+	var lock *os.File
+	var err error
+	if opts.Coordinator == nil {
+		lock, err = acquireLock(filepath.Join(dir, ".writer.lock"))
+		if err != nil {
+			return nil, wrapUnavailable(err)
+		}
 	}
-	s := &Store{opts: opts, dir: dir, lockFile: lock, records: map[string]record{}}
-	if err = s.readSnapshot(); err != nil {
-		_ = releaseLock(lock)
+	s := &Store{opts: opts, dir: dir, lockFile: lock, records: map[string]record{}, coordinator: opts.Coordinator}
+	if s.coordinator != nil {
+		writerID := opts.WriterID
+		if writerID == "" {
+			writerID = newID()
+		}
+		ttl := opts.LeaseTTL
+		if ttl <= 0 {
+			ttl = 24 * time.Hour
+		}
+		lease, leaseErr := s.coordinator.Acquire(context.Background(), writerID, ttl)
+		if leaseErr != nil {
+			return nil, normalizeCoordinatorError(leaseErr)
+		}
+		s.coordLease = lease
+	}
+	if s.coordinator != nil {
+		if err = s.syncCoordinatorLocked(context.Background()); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+	} else if err = s.readSnapshot(); err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
@@ -89,7 +120,11 @@ func normalizeOptions(opts *Options) error {
 		opts.Now = time.Now
 	}
 	if opts.Deployment == (types.DeploymentScope{}) {
-		opts.Deployment = types.SameHostSingleWriterScope(opts.Namespace, "fixture:deployment-scope.v1")
+		if opts.Coordinator != nil {
+			opts.Deployment = opts.Coordinator.DeploymentScope()
+		} else {
+			opts.Deployment = types.SameHostSingleWriterScope(opts.Namespace, "fixture:deployment-scope.v1")
+		}
 	}
 	if err := opts.Deployment.Validate(); err != nil {
 		return err
@@ -115,7 +150,14 @@ func (s *Store) CrossProcessRestore() bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return !s.poisoned && !s.closed.Load()
+	if s.poisoned || s.closed.Load() {
+		return false
+	}
+	if s.coordinator == nil {
+		return true
+	}
+	validator, ok := s.coordinator.(sourcecoordination.LeaseValidator)
+	return ok && validator.ValidateLease(context.Background(), s.coordLease) == nil
 }
 func (s *Store) Close() error {
 	if s == nil {
@@ -160,6 +202,9 @@ func (s *Store) Save(ctx context.Context, p types.PersistedRunCheckpoint) error 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return err
+	}
 	if err := s.check(ctx); err != nil {
 		return err
 	}
@@ -195,6 +240,9 @@ func (s *Store) Load(ctx context.Context, ref types.NativeCheckpointRef) (types.
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return types.PersistedRunCheckpoint{}, err
+	}
 	if s.poisoned {
 		return types.PersistedRunCheckpoint{}, types.ErrCheckpointUnavailable
 	}
@@ -229,6 +277,9 @@ func (s *Store) ReadResumeClaim(ctx context.Context, ref types.NativeCheckpointR
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return types.ResumeClaim{}, err
+	}
 	if err := s.check(ctx); err != nil {
 		return types.ResumeClaim{}, err
 	}
@@ -275,6 +326,9 @@ func (s *Store) ClaimResume(ctx context.Context, req types.ResumeRequest) (types
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return types.ResumeClaim{}, err
+	}
 	if s.poisoned {
 		return types.ResumeClaim{}, types.ErrCheckpointUnavailable
 	}
@@ -419,6 +473,9 @@ func (s *Store) Control(ctx context.Context, c types.CheckpointControl) (types.R
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return types.ResumeClaim{}, err
+	}
 	if s.poisoned {
 		return types.ResumeClaim{}, types.ErrCheckpointUnavailable
 	}
@@ -455,6 +512,9 @@ func (s *Store) mutateClaim(ctx context.Context, claim types.ResumeClaim, fn fun
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.syncCoordinatorLocked(ctx); err != nil {
+		return types.ResumeClaim{}, err
+	}
 	if s.poisoned {
 		return types.ResumeClaim{}, types.ErrCheckpointUnavailable
 	}
@@ -578,6 +638,14 @@ func (s *Store) publish() (publishErr error) {
 	if int64(len(b)) > s.maxSnapshotBytes() {
 		return types.ErrCheckpointUnavailable
 	}
+	if s.coordinator != nil {
+		committed, err := s.coordinator.CompareAndSwap(context.Background(), s.coordLease, s.coordRevision, b)
+		if err != nil {
+			return normalizeCoordinatorError(err)
+		}
+		s.coordRevision = committed.Revision
+		return nil
+	}
 	tmp, err := os.CreateTemp(s.dir, ".checkpoint-*.tmp")
 	if err != nil {
 		return wrapUnavailable(err)
@@ -601,6 +669,45 @@ func (s *Store) publish() (publishErr error) {
 	}
 	if err = syncDirectory(s.dir); err != nil {
 		return wrapUnavailable(err)
+	}
+	return nil
+}
+
+func (s *Store) syncCoordinatorLocked(ctx context.Context) error {
+	if s.coordinator == nil {
+		return nil
+	}
+	current, err := s.coordinator.Read(ctx)
+	if err != nil {
+		return normalizeCoordinatorError(err)
+	}
+	if current.Revision == s.coordRevision {
+		return nil
+	}
+	if len(current.Payload) == 0 {
+		s.coordRevision = current.Revision
+		return nil
+	}
+	var snap snapshot
+	if json.Unmarshal(current.Payload, &snap) != nil || snap.Version != types.NativeContinuationVersion || snap.Namespace != s.opts.Namespace || snap.Records == nil {
+		return types.ErrCheckpointCorrupt
+	}
+	checksum := snap.Checksum
+	snap.Checksum = ""
+	canonical, _ := json.Marshal(snap)
+	if checksum != digest(canonical) {
+		return types.ErrCheckpointCorrupt
+	}
+	if len(snap.Records) > s.opts.Capacity {
+		return types.ErrCheckpointCorrupt
+	}
+	s.records = snap.Records
+	s.coordRevision = current.Revision
+	for id, r := range s.records {
+		if r.Claim != nil && r.Claim.Result == nil {
+			r.Recovered = true
+			s.records[id] = r
+		}
 	}
 	return nil
 }
@@ -636,6 +743,13 @@ func newID() string {
 func wrapUnavailable(err error) error {
 	_ = err
 	return types.ErrCheckpointUnavailable
+}
+
+func normalizeCoordinatorError(err error) error {
+	if errors.Is(err, types.ErrOwnerUnavailable) {
+		return types.ErrCheckpointUnavailable
+	}
+	return err
 }
 
 func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }

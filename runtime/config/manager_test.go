@@ -975,10 +975,10 @@ skill:
     keyword_weights:
       db: 1.5
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: false})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1008,10 +1008,10 @@ skill:
     keyword_weights:
       db: 1.5
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
-	time.Sleep(250 * time.Millisecond)
+	mgr.reload()
 	after := mgr.EffectiveConfig().Skill.TriggerScoring.MaxSemanticCandidates
 	if after != before {
 		t.Fatalf("invalid lexical budget reload should rollback, max_semantic_candidates = %d, want %d", after, before)
@@ -1109,10 +1109,10 @@ security:
       limit: 10
       exceed_action: deny
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
-	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: true})
+	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX", EnableHotReload: false})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
@@ -1140,10 +1140,10 @@ security:
       limit: 10
       exceed_action: deny
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
-	time.Sleep(250 * time.Millisecond)
+	mgr.reload()
 	after := mgr.EffectiveConfig().Security.ToolGovernance.Permission.ByTool["local+echo"]
 	if after != before {
 		t.Fatalf("invalid security reload should rollback, policy = %q, want %q", after, before)
@@ -1558,7 +1558,7 @@ security:
       cooldown: 100ms
       manual_unfreeze_token: token-1
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
 	mgr, err := NewManager(ManagerOptions{FilePath: file, EnvPrefix: "BAYMAX_A52_TEST"})
@@ -1580,7 +1580,7 @@ security:
       cooldown: 100ms
       manual_unfreeze_token: token-1
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
 	mgr.reload()
@@ -1601,7 +1601,7 @@ security:
       cooldown: 100ms
       manual_unfreeze_token: token-1
 reload:
-  enabled: true
+  enabled: false
   debounce: 20ms
 `)
 	mgr.reload()

@@ -26,4 +26,4 @@ discover → read full instructions → resolve references → apply bounded act
 
 ## Verification / source links
 
-`go test ./skill/... -count=1`；[skill loader README](../../skill/loader/README.md)。
+`go test ./skill/... -count=1`；[skill loader README](../../skill/loader/README.md)；跨模块原则见[设计原则](../architecture/design-principles.md)。

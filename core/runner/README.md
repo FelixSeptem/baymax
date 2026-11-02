@@ -1,8 +1,8 @@
 # core/runner 组件说明
 
-## Durable continuation restore（提案中）
+## Durable continuation restore（当前 direct 能力）
 
-既有 metadata checkpoint 与 Engine-local dynamic-action 状态仍不能在新 Engine 恢复。opt-in `WithNativeContinuation` 为 direct Run/Stream 写入 `native_continuation.v1` source checkpoint；`ResumeFromCheckpoint` 校验依赖 profile/revision、host admission 与原子 claim 后恢复同一 run/session。`input_required`、`approval_required`、`budget_exhausted` 均有跨进程证据；已完成 tool outcome 保留，不得通过 retry 或重新 Run parent 替代恢复。child/team/workflow/mailbox 与 planbridge resumed 仍在 activation 前 unsupported。
+opt-in `WithNativeContinuation` 为 direct Run/Stream 写入 `native_continuation.v1` source checkpoint；`ResumeFromCheckpoint` 校验依赖 profile/revision、host admission 与原子 claim 后恢复同一 run/session。`input_required`、`approval_required`、`budget_exhausted` 均有跨进程证据；已完成 tool outcome 保留，不得通过 retry 或重新 Run parent 替代恢复。这个 direct runner profile 不覆盖组合 owner 的恢复：workflow 与 child/fanout 必须分别使用各自 source-owned continuation API；team、mailbox 与 planbridge resumed 仍在 activation 前 unsupported。完整限制见[运行生命周期](../../docs/architecture/runtime-lifecycle.md)和[集成指南](../../docs/guides/integration.md)。
 
 ## 功能域
 

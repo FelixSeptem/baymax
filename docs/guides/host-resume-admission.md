@@ -1,12 +1,19 @@
 # 宿主恢复准入与重验证
 
-状态：功能分支已实施，交付门禁进行中。`host_resume_admission.v1` 的公开合同位于 `core/types/host_resume_admission.go`，source 接线位于 `core/runner/dynamic_action_resume.go`。本文说明实际 API、默认值、边界和迁移要求；完整验证与交付状态以 OpenSpec tasks/verification 为准。
+状态：已交付（归档 164）。`host_resume_admission.v1` 的公开合同位于 `core/types/host_resume_admission.go`，source 接线位于 `core/runner/dynamic_action_resume.go`。本文说明当前 API、默认值、边界和迁移要求；历史实现与完整验证见[归档 164](../../openspec/changes/archive/164-establish-host-resume-admission-revalidation-contract/verification.md)。
 
 ## Source ownership
 
 `Engine.ResumeDynamicAction` 已拥有 native checkpoint admission 与 Run/Stream continuation，Host 的 `run.action.resume` 经 readiness/通用 Authorizer 后委托该入口。已接收 confirm/deny/timeout 各产生一次 `run.dynamic_action.resolved`；deny/timeout 产生 canceled terminal，confirm 继续执行。通用 Host authorization 不定义暂停时的业务 plan/revision/write-scope 与当前事实的匹配合同。
 
-runner 在原 Engine 中保留 request/outcomes/continuation；`RunCheckpointStore` 定义 metadata SPI，但尚未接线为 durable runner continuation。metadata、snapshot、replay 或相同 run ID 均不能恢复新 Engine 的内部执行。每次 PendingAction 使用独立 source generation 与 opaque checkpoint ID；不要解析该 ID。恢复保留原 iteration 与 pending tool results，下一模型步骤从 checkpoint iteration + 1 开始。
+runner 在原 Engine 中保留 request/outcomes/continuation；旧的
+`RunCheckpointStore` metadata SPI 本身不等于 continuation state，但当前
+`native_continuation.v1` 通过显式 `runner.WithNativeContinuation` owner
+接线提供同机单写、跨进程顺序重开的 source-owned continuation。metadata、
+snapshot、replay 或相同 run ID 仍不能替代该 native store。每次
+PendingAction 使用独立 source generation 与 opaque checkpoint ID；不要解析
+该 ID。恢复保留原 iteration 与 pending tool results，下一模型步骤从
+checkpoint iteration + 1 开始。
 
 ## 接线与可信绑定
 
@@ -65,7 +72,7 @@ source 仍保留该 admission 的最终结果时，exact duplicate 返回结果�
 | Host run.action.resume | 通用授权后委托 source，response/event barrier | 委托同一 guard，不新增 command kind |
 | 新 Engine + checkpoint metadata/same run ID | 无 retained runner continuation | 明确 unavailable/unknown，不能执行模型/工具 |
 | snapshot/event replay/metadata SPI | 引用、审计或各 owner 的既有能力 | 不等于恢复 runner 内部状态 |
-| planbridge resumed、组合 team/workflow/mailbox dynamic continuation | plan bridge 首版 unsupported | 保持原边界，不开放组合恢复 |
+| planbridge resumed、组合 team/mailbox dynamic continuation | plan bridge 首版 unsupported；workflow/child 有各自 source owner | direct host-resume guard 不跨 owner 恢复，保持各自 API 和拒绝边界 |
 | retry/follow-up/new Run | 各自既有入口 | 与消费暂停 checkpoint 的 resume 分开 |
 
 ## 业务提交、诊断与回滚

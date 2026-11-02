@@ -15,7 +15,7 @@
 
 Canonical 架构入口：`docs/runtime-harness-architecture.md`
 
-[`orchestration/planbridge`](planbridge/README.md) 是 opt-in 的 `host_execution_plan.v1` 编译/薄委托层：它先对独立 descriptor 与 native binding 做 bounded 全计划预检，再只选择一个既有 owner 执行。支持 inline direct、terminal-only teams parallel/vote、flat workflow 以及每次 activation 都新建独占内存 scheduler 的 local child。mailbox、resumed/native resume、durable continuation、subgraph、shared queue child 均在 source activation 前以 `unsupported_capability` 拒绝。原生执行、budget、retry、checkpoint、terminal 和事件仍属 source owner；业务授权、revision、effect 与 commit 属宿主。composer.Run/Stream 仍只委托 runner，不因此成为通用 plan graph executor。
+[`orchestration/planbridge`](planbridge/README.md) 是 opt-in 的 `host_execution_plan.v1` 编译/薄委托层：它先对独立 descriptor 与 native binding 做 bounded 全计划预检，再只选择一个既有 owner 执行。支持 inline direct、terminal-only teams parallel/vote、flat workflow、每次 activation 都新建独占内存 scheduler 的 local child、source-owned child continuation，以及经过 capability manifest 和 native binding 准入的 `mailbox_async` delegation。mailbox continuation、resumed-plan continuation、composite durable continuation、subgraph 和 shared queue child 仍在 source activation 前以 `unsupported_capability` 拒绝；未被 manifest 明确批准的 composite pause/restore 也必须 fail closed。原生执行、budget、retry、checkpoint、terminal 和事件仍属 source owner；mailbox owner 继续拥有 message、delivery、lease、attempt、retry、DLQ 和 terminal lifecycle，planbridge 不创建 queue、worker 或第二套 mailbox owner。业务授权、revision、effect 与 commit 属宿主。composer.Run/Stream 仍只委托 runner，不因此成为通用 plan graph executor。
 
 ## 架构设计
 
@@ -102,11 +102,11 @@ Durable task/attempt workspace binding 与 completion safe-point 审计不改变
 - 常见误用：在编排层直接依赖模型或传输 SDK，导致跨域耦合。
 - 常见误用：修改 reason namespace 而不更新契约索引与回归测试。
 
-## Application outbox dispatch bridge（进行中 change，实施完成待归档）
+## Application outbox dispatch bridge（归档 166）
 
-`establish-application-outbox-mailbox-recovery-contract` 已新增独立、constructor-only 的 `orchestration/outboxbridge` 接入面；它将宿主提供的 bounded reference-only dispatch descriptor 委托给一个既有 target：mailbox 或 scheduler。它不是 outbox store、effect store、worker、queue、lease/retry/DLQ owner、terminal reducer 或 diagnostics writer。
+`establish-application-outbox-mailbox-recovery-contract` 已交付独立、constructor-only 的 `orchestration/outboxbridge` 接入面；它将宿主提供的 bounded reference-only dispatch descriptor 委托给一个既有 target：mailbox 或 scheduler。它不是 outbox store、effect store、worker、queue、lease/retry/DLQ owner、terminal reducer 或 diagnostics writer。
 
-`mailbox` 继续拥有投递 lifecycle；`scheduler` 继续拥有 task/attempt/lease/retry/terminal lifecycle；宿主继续拥有 outbox、occurrence、cron/DST、authority、effect idempotency/CAS 和最终 confirmation。dispatch accepted、target lifecycle、effect evidence 与 confirmation 将保持独立，不能以 ack、terminal、digest 或 replay 推断业务 commit。此项提案的 rollback 是不再构造 bridge 并回到既有 owner API，同时保留事实供宿主幂等协调。
+`mailbox` 继续拥有投递 lifecycle；`scheduler` 继续拥有 task/attempt/lease/retry/terminal lifecycle；宿主继续拥有 outbox、occurrence、cron/DST、authority、effect idempotency/CAS 和最终 confirmation。dispatch accepted、target lifecycle、effect evidence 与 confirmation 将保持独立，不能以 ack、terminal、digest 或 replay 推断业务 commit。回滚方式是不再构造 bridge 并回到既有 owner API，同时保留事实供宿主幂等协调；完整设计和验证记录见 [archive 166](../openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/verification.md)。
 
 ## Durable store ownership boundary
 

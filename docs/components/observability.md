@@ -26,4 +26,4 @@ observability 提供 event recorder、timeline、diagnostics、export 和 replay
 
 ## Verification / source links
 
-`go test ./observability/... ./runtime/diagnostics/... -count=1`；[diagnostics replay](../diagnostics-replay.md)。
+`go test ./observability/... ./runtime/diagnostics/... -count=1`；[diagnostics replay](../diagnostics-replay.md)、[data and event flow](../architecture/data-event-flow.md)。

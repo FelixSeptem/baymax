@@ -36,7 +36,7 @@ Runtime → Provider 方向与响应侧是同族合同：`model/toolcontract.Int
 
 - 版本化 fixture：`tool/diagnosticsreplay/testdata/model_request_projection.v1.json`，覆盖 OpenAI / Anthropic / Gemini × run / stream，以及「无 tool result」分支。
 - 生成入口：`BAYMAX_REGEN_REQUEST_PROJECTION_FIXTURE=1 go test ./tool/diagnosticsreplay -run TestGenerateProviderRequestProjectionFixture`。正常测试会校验提交物与契约构建器逐字节一致，提交物不得被静默改写。
-- `declared_gap` 是**待修复项的证据锚点**，不是容忍语义：本 active change 已将 role、ordering 与 native tool-result 缺口迁移为 no-gap native expectation；缺口未申报、或已申报缺口不再复现，都会以稳定码失败并要求显式更新契约。
+- `declared_gap` is a repair-evidence anchor, not a tolerance semantic. Archive 144 established the no-gap native expectation for role, ordering and native tool-result projection; an undeclared gap or a declared gap that no longer reproduces fails with a stable code and requires an explicit contract update.
 - cache 用量按 `additive + nullable + default` 演进：历史 fixture 缺字段时保持 `available=false`，不得从普通 input token 推导。规范字段为 `read_tokens`、`write_tokens`、`total_tokens`（后者仅为 cache read + write/create 合计）、`source_kind` 与 `source_version`；adapter 将其放入独立的 `ModelResponse.CacheUsage`，Stream 仅在终态事件的 `Meta["cache_usage"]` 暴露权威快照。该载体不改变 `TokenUsage` 语义，也不写入 RuntimeRecorder。
 - 锁定 SDK source audit：OpenAI Responses `ResponseUsage.InputTokensDetails.CachedTokens` → cache read；Anthropic Messages `Usage.CacheReadInputTokens` / `CacheCreationInputTokens` → cache read / write；Gemini `GenerateContentResponse.UsageMetadata.CachedContentTokenCount` → cache read。来源缺失或不可信时使用 unavailable/default。`source_kind` 分别为 `openai_responses`、`anthropic_messages`、`gemini_generate_content`，`source_version` 为当前归一化映射版本 `v1`。Provider TTL、region、billing tier 与价格留在 adapter 外，不进入该 contract。
 - 分类词表（与 `model/conformance`、`tool/diagnosticsreplay` 与门禁保持一致）：

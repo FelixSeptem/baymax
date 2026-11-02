@@ -2,21 +2,11 @@
 
 更新时间：2026-10-14
 
-## Execution graph topology projection（无配置/诊断字段变化）
-
-`orchestration/graph` 的 topology compile/projection API 不新增 env/file/default 或 hot-update 配置键，不改变 `env > file > default`、fail-fast 或原子回滚语义；也不新增 QueryRuns 字段、`RuntimeRecorder` payload 或 diagnostic event。编译错误由 graph API 作为 typed error 返回调用方，现有 owner 仍拥有诊断写入。`TopologyDigest` 是拓扑比较事实，不得写成 authority、plan、checkpoint 或 effect binding。
-
 ## 目标
 
 Durable continuation 通过 constructor-injected store opt-in，不新增 env/file/hot-update 配置键；旧 metadata `RunCheckpointStore` 不隐式升级。RuntimeRecorder 诊断仅投影 bounded checkpoint/attempt/error code、digest 与 correlation，不含 continuation material、业务 payload、credential 或 callback 原始错误。store unavailable、corrupt、foreign、expired、conflict、in-progress 和 recovery-required 可区分；诊断或 replay 不触发 retry/restore。
 
-Workflow-first continuation 复用 source-owned checkpoint/store 边界，不新增 workflow 配置键或第二本 graph/checkpoint 账本。只有 capability manifest 有 source evidence 时，`input_required`、`approval_required`、`budget_exhausted` 才可被宣称为 workflow restore 格子；child/team/mailbox/planbridge resumed 继续是 `unsupported_capability`。同机单写 FileStore 的顺序重开不等于多写者或跨机器恢复。
-
-Workflow repeated-pause successor publication 同样不新增 env/file/hot-update
-配置键、QueryRuns 字段或 RuntimeRecorder payload。它只要求 workflow owner
-在既有 FileStore 同机单写事务范围内，将 predecessor resume projection 与
-successor checkpoint 一次持久化；持久化失败保留 typed unavailable/recovery-required，
-不记录 successor 内容、不自动重跑，也不扩大为分布式事务承诺。
+Workflow-first continuation 复用 source-owned checkpoint/store 边界，不新增 workflow 配置键或第二本 graph/checkpoint 账本。只有 capability manifest 有 source evidence 时，`input_required`、`approval_required`、`budget_exhausted` 才可被宣称为 workflow restore 格子；child 使用独立 Composer continuation owner，team/mailbox/planbridge resumed 继续是 `unsupported_capability`。同机单写 FileStore 的顺序重开不等于多写者或跨机器恢复。
 
 为运行时提供统一配置入口（YAML + Env + Default）、热更新能力，以及仅库接口的诊断查询能力。
 
@@ -40,13 +30,11 @@ Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`d
 
 拒绝及 duplicate 不新增 resolved/terminal，accepted decision 保持现有事件顺序；可在既有 admission/source fact event 中携带 bounded reason/opaque references，新增 payload 遵守 additive/nullable/default，经 RuntimeRecorder 单写。无新 QueryRuns 字段，不记录业务正文、凭证、原始 effect key 或 raw callback errors。准入后执行失败返回 `*types.DynamicActionContinuationError`，支持 errors.As 区分与 errors.Is 解包；Host 对首次和 exact duplicate 仍返回 accepted / dynamic_action.resume_admitted，由 source terminal 事件表达执行失败或取消，禁止将 provider/tool 原始错误放入 admission ReasonCode。业务 effect store、授权和 CAS 仍由宿主管理。支持矩阵与回滚见 [恢复准入指南](guides/host-resume-admission.md)。
 
-## 宿主 context projection（进行中提案；当前无配置或诊断字段）
+## 宿主 context projection（归档 165；当前无配置或诊断字段）
 
 `establish-host-context-assembly-handoff-contract` 已交付 `host_context_projection.v1` 的 direct Go contract：`context/hostprojection` 的 `Admit`/`Resolve` 与 `types.RunRequest` 的非序列化 opt-in fields。它不新增配置键、RuntimeRecorder payload 或 QueryRuns 字段；resolver 是每次 assembly/restore 由宿主按当前授权调用的 callback，runtime 不保存 resolver 或已解析 body。bridge 继续采用 constructor/API 明确 opt-in；固定限制为 32 KiB serialized descriptor、64 references、256 UTF-8 bytes/reference、128 UTF-8 bytes/digest，不增加 env/file/hot-update 域，并保持 `env > file > default`、非法配置 fail-fast 与原子回滚的既有规则。
 
-active `extend-composite-context-assembly-handoff` proposal 不新增配置或诊断字段。composite binding 只允许 bounded opaque source/node/continuation identity；这些字段参与 descriptor digest，resolver 和 material 不持久化。child、team pending local member 与 workflow owner API 有独立 binding evidence，但默认 manifest 仍不 promotion；mailbox continuation 仅 lifecycle projection、没有 handler execution safe point，mailbox context cell 保持 unsupported。capability manifest 的每个 promoted cell 都要求 owner namespace、native node scope、API/module revision、部署/retention/expiry、current resolver reauthorization 和该 cell 的 evidence；缺失时 admission 前 typed unsupported/unavailable。若实施期间需要新增诊断字段，仍必须 additive + nullable + default 且只经 `RuntimeRecorder` 单写入口。
-
-该合同的 descriptor 与 handoff correlation 只允许 bounded schema/identity/version/digest/capability/opaque-reference 事实；它们不是 RuntimeRecorder 或 QueryRuns schema。若未来既有诊断 owner 需要投影相关事实，字段必须 additive + nullable + default 并经 `RuntimeRecorder` 单写。raw source body、private memory/knowledge、credentials、business authorization/effect 和 raw resolver error 均不得记录；digest 不代表当前 source access 或业务授权。公开失败面是有限的 `host_context.*` 分类（包括 descriptor/bounds/digest/capability、resolver denial 与 missing source），均 fail-closed。dedicated replay/gate/example 已交付，但 active change 的最终标准完整验证仍待执行。
+该合同的 descriptor 与 handoff correlation 只允许 bounded schema/identity/version/digest/capability/opaque-reference 事实；它们不是 RuntimeRecorder 或 QueryRuns schema。若未来既有诊断 owner 需要投影相关事实，字段必须 additive + nullable + default 并经 `RuntimeRecorder` 单写。raw source body、private memory/knowledge、credentials、business authorization/effect 和 raw resolver error 均不得记录；digest 不代表当前 source access 或业务授权。公开失败面是有限的 `host_context.*` 分类（包括 descriptor/bounds/digest/capability、resolver denial 与 missing source），均 fail-closed。dedicated replay/gate/example 已交付；完整设计和验证记录见 archive 165。
 
 ## 配置优先级
 
@@ -1648,7 +1636,7 @@ Composed reason contract markers（必须保持字面稳定）：
 
 ## 安全基线（S1）
 
-- 安全验证工具链基线为 Go `1.26.10` 或更新的兼容补丁版本；`go.mod` 保留 `go 1.26.0` 语言版本，并通过 `toolchain go1.26.10` 声明补丁基线。默认 `GOTOOLCHAIN=auto` 和 CI 的 `go-version-file: go.mod` 读取该声明；离线或 local 模式须预装相应工具链，并以 `go version` 核实。
+- 安全验证工具链基线为 Go `1.26.9` 或更新的兼容补丁版本；`go.mod` 保留 `go 1.26.0` 语言版本，并通过 `toolchain go1.26.9` 声明补丁基线。默认 `GOTOOLCHAIN=auto` 和 CI 的 `go-version-file: go.mod` 读取该声明；离线或 local 模式须预装相应工具链，并以 `go version` 核实。
 - 工具链、模块缓存或漏洞数据库访问失败均不构成扫描通过。安全维护必须在实际 patched toolchain 下获得 strict `govulncheck ./...` 和完整质量门禁 exit=0；不得以 warn、关闭扫描或阈值调整代替漏洞修复。依赖升级限定为新扫描要求的修复版本及其最小一致依赖图。
 - 质量门禁脚本（Linux/PowerShell）与 CI 默认执行 `govulncheck` 且使用 strict 语义。
 - 可通过环境变量降级为 warn：`BAYMAX_SECURITY_SCAN_MODE=warn`。
@@ -2329,13 +2317,6 @@ source-owned. No new env/file/hot-update key or QueryRuns field is introduced.
 
 ## Native event history limits and diagnostics boundary
 
-The optional source projection ledger adds no env/file/hot-update key and no
-QueryRuns or RuntimeRecorder field. Its public evidence is limited to bounded
-source commit IDs, digests, cursors, terminal classifications and opaque
-projection references. `ErrProjectionRecoveryRequired` means the source fact
-may be committed while projection evidence is not confirmed; it is not a
-terminal cancellation, retry permission, or business-commit result.
-
 Native history adds no env/file/hot-update key or default, and no QueryRuns,
 RunRecord or OTel field. Existing `env > file > default`, fail-fast validation
 and atomic rollback remain unchanged. Constructor/API bounds are source
@@ -2362,13 +2343,7 @@ Offline replay classifications and evidence live in the
 still go through `observability/event.RuntimeRecorder` as the sole writer and
 preserve additive + nullable + default compatibility.
 
-Source projection reconciliation is not a runtime configuration or diagnostic
-writer. `Journal.ReconcileProjection` returns bounded source evidence and an
-explicit duplicate flag; it does not emit QueryRuns/RuntimeRecorder fields,
-change terminal state, or authorize business commit. Foreign, conflict, gap,
-expiry and unavailable results remain typed recovery outcomes.
-
-# Application outbox dispatch bridge（进行中 change；无配置或诊断字段）
+# Application outbox dispatch bridge（归档 166；无配置或诊断字段）
 
 `establish-application-outbox-mailbox-recovery-contract` 已交付 constructor-only、reference-only `application_outbox_dispatch.v1` 接入；它不提供 env/file/hot-update 配置键、默认值、QueryRuns 字段、RuntimeRecorder payload 或诊断查询 API。既有 `env > file > default` 优先级、非法配置 fail-fast 与原子回滚语义不变。
 
@@ -2387,39 +2362,3 @@ configuration key or authorization field. It reports the source owner,
 single-writer fence and sequential transaction boundary. Unsupported,
 foreign, stale and unavailable classifications are returned before side
 effects; no new QueryRuns field or RuntimeRecorder writer is introduced.
-
-The opt-in `core/sourcecoordination.File` path is constructor-injected rather
-than an env/file/hot-update setting. It reports same-host multi-instance CAS
-only while its writer lease can be validated. Coordinator loss, stale fence or
-CAS conflict is fail-closed and is never projected as a local fallback or a
-new Run. `Memory` coordination remains process-local and cannot advertise
-durable multi-writer capability.
-
-## Team and mailbox continuation diagnostics
-
-Continuation capability evidence is source-owned and bounded. Team graph/member
-checkpoint references and mailbox message/delivery/lease/attempt references may
-be exposed as nullable projection fields only after the owner has supplied the
-matching manifest evidence. MemoryStore/process-local owners report
-`unsupported_capability`; FileStore sequential reopen does not imply
-multi-writer or cross-machine restore. Lease loss, retry, DLQ, terminal and
-recovery-required outcomes remain distinct from host business commit and do
-not create a new diagnostic writer.
-
-Pause capability is an independent matrix: `input_required`,
-`approval_required`, and `budget_exhausted` each require their own source
-evidence reference or bounded unsupported reason. A mailbox lifecycle
-continuation may expose delivery facts while all host-handler pause cells stay
-unsupported until a handler execution safe point is source-owned. Missing or
-stale cells are rejected before effects; diagnostics must not imply fallback
-Run, retry, enqueue, or history replay.
-
-Mailbox handler continuation adds no env/file/hot-update key and does not add a
-RuntimeRecorder writer. It is constructor configured through the existing owner:
-a durable FileStore mailbox plus `NewContinuationWorker`, resumer, and
-revalidation callback. Diagnostics may expose only bounded checkpoint/reference,
-message/delivery/lease/attempt, pause-reason, claim, and lifecycle classifications;
-they MUST NOT include handler checkpoint bodies, payloads, credentials, callback
-errors, effect contents, or a business-commit assertion. Removing that
-constructor configuration is the rollback path; persisted uncertain claims stay
-`recovery-required` rather than falling back to a fresh Run.

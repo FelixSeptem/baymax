@@ -26,4 +26,4 @@ Admission → context → model → tool loop → terminal。非法 admission �
 
 ## Verification / source links
 
-`go test ./core/runner -count=1`；源代码：[core/runner](../../core/runner/)、[runtime lifecycle](../architecture/runtime-lifecycle.md)。
+`go test ./core/runner -count=1`；源代码：[core/runner](../../core/runner/)、[runtime lifecycle](../architecture/runtime-lifecycle.md)、[module ownership](../architecture/module-ownership.md)。

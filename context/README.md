@@ -45,7 +45,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - 该域只生成标准结果与事件，不直接写 `runtime/diagnostics` 存储。
 - handoff 仅保存 `handoff.v1` 结构化事实、推断、待确认事项与 source references；恢复通过既有 owner 和 reference-first 接缝完成。
 - `context/budgetprojection` 只依赖标准库，不 import 任何 Baymax 包；预算事实仍由 `runtime/config`（ReAct iteration/tool-call limit、`budget_admission.v1`）、`orchestration/scheduler`（`ParentRemainingBudget`）与 `core/runner`（React Plan Notebook）各自拥有。投影是纯派生函数，不写回事实源、不参与终态判定。
-- active host-context bridge 采用 constructor/API 明确 opt-in，不新增 env/file/hot-update 键、RuntimeRecorder payload 或 QueryRuns 字段；descriptor/handoff digest 是一致性证据而非当前 source access 或业务授权。resolver 每次仅在验证后由宿主按当前授权解析，解析的 body 是当次 assembly/restore 的 transient material，不会持久化，也不得直接写 diagnostics。bridge 不写回 `budget_projection.v1` 的 source facts、不建立预算状态或 admission cache；incomplete/saturated 的既有派生语义和 terminal owner 保持不变。
+- 已归档的 host-context bridge 采用 constructor/API 明确 opt-in，不新增 env/file/hot-update 键、RuntimeRecorder payload 或 QueryRuns 字段；descriptor/handoff digest 是一致性证据而非当前 source access 或业务授权。resolver 每次仅在验证后由宿主按当前授权解析，解析的 body 是当次 assembly/restore 的 transient material，不会持久化，也不得直接写 diagnostics。bridge 不写回 `budget_projection.v1` 的 source facts、不建立预算状态或 admission cache；incomplete/saturated 的既有派生语义和 terminal owner 保持不变。
 
 ## 派生预算投影契约（`budget_projection.v1`）
 

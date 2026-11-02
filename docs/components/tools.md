@@ -26,4 +26,4 @@ schema admission → execute → normalize → record。单工具失败默认隔
 
 ## Verification / source links
 
-`go test ./tool/... -count=1`；[tool schema audit](../../tool/schemaaudit/README.md)、[local tool](../../tool/local/README.md)。
+`go test ./tool/... -count=1`；[tool schema audit](../../tool/schemaaudit/README.md)、[local tool](../../tool/local/README.md)。架构边界见[设计原则](../architecture/design-principles.md)和[数据与事件流](../architecture/data-event-flow.md)。

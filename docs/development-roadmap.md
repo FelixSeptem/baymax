@@ -10,6 +10,8 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 ## 当前状态
 
+已归档 187：`extract-common-execution-graph-boundaries` 提供有界、source-neutral 的拓扑投影，同时保留 workflow、team 和 composer child 各自的执行、恢复与摘要 owner。范围见 [执行图指南](guides/execution-graph.md) 和 [归档索引](../openspec/changes/archive/INDEX.md)。
+
 - 进行中：
   - 暂无进行中的 OpenSpec change。
 - 候选：

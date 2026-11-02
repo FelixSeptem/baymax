@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-02 11:51:36
+Updated: 2026-11-02 13:50:49
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -189,3 +189,4 @@ Updated: 2026-11-02 11:51:36
 - 185 -> coordinate-durable-source-stores-across-writers
 - 186 -> restore-mailbox-handler-continuations
 - 187 -> extract-common-execution-graph-boundaries
+- 188 -> clarify-public-architecture-documentation

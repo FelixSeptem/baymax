@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-11-01
+更新时间：2026-11-02
 
 Baymax 提案发现与实施入口。按状态区确认当前工作，再按候选表判断是否有证据可启动；详细契约、任务和历史证据见 [OpenSpec changes](../openspec/changes/)、[归档索引](../openspec/changes/archive/INDEX.md) 与 [mainline contract test index](mainline-contract-test-index.md)。
 
@@ -11,9 +11,9 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 ## 当前状态
 
 - 进行中：
-  - 暂无。
+  - 暂无进行中的 OpenSpec change。
 - 候选：
-  - D：通用 ExecutionGraph；仅当至少两个 source form 的同一 topology/dependency/terminal fixture 无法表达时启动。
+  - 暂无其他候选。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 
@@ -21,7 +21,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 | 候选 / 触发信号 | Owner / 第一检查 | 最小复现与首批实施方向 | 停止线 / 未成立时 | OpenSpec |
 | --- | --- | --- | --- | --- |
-| **D：common ExecutionGraph**。workflow、team、composer 中至少两个 source form 无法表达同一 topology、dependency 或 terminal requirement。 | graph definition/validator owner；检查 definition、validator、restore seam。 | 固定同一跨 form 失败 fixture；只抽取已证明共享的 definition/validation/restore boundary，执行和 state owner 仍按 form 保持。 | 未证明共同失败或共享 owner 边界时不立项；维持 form-specific model，不建通用 executor/state machine。 | `extract-common-execution-graph-boundaries` |
+| 暂无候选。新的 trigger 只有在具备 owner、最小失败复现和停止线时才进入本表。 | — | — | 不以 DTO/API 存在或 README 描述作为单独立项依据。 | — |
 
 后续候选按同一行动卡格式加入本表：触发信号、owner/入口、最小失败复现、首批实施方向、停止线和 OpenSpec slug 缺一不可。新信号先判断能否作为已有 contract 的增量，不为 DTO/API 已存在或 README 描述单独立项。
 
@@ -40,7 +40,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 ## 既有范围
 
-已归档能力（包括 `coordinate-durable-source-stores-across-writers` 的 same-host multi-instance CAS/fencing）支持矩阵、失败分类、rollback 和证据以 [archive index](../openspec/changes/archive/INDEX.md) 与 package tests 为准。Tracing/eval、context organization、hooks/middleware、realtime、runtime budget、A64 harnessability、diagnostics、state/session snapshot 优先增量回收到现有 contract；不得借此改变 source ownership、恢复边界或质量门禁语义。
+已归档能力（包括 `extract-common-execution-graph-boundaries` 的 source-neutral topology projection，以及 `coordinate-durable-source-stores-across-writers` 的 same-host multi-instance CAS/fencing）支持矩阵、失败分类、rollback 和证据以 [archive index](../openspec/changes/archive/INDEX.md) 与 package tests 为准。Tracing/eval、context organization、hooks/middleware、realtime、runtime budget、A64 harnessability、diagnostics、state/session snapshot 优先增量回收到现有 contract；不得借此改变 source ownership、恢复边界或质量门禁语义。
 
 以下历史治理锚点由既有 contract gate 校验；完整范围见 [archive index](../openspec/changes/archive/INDEX.md)。
 

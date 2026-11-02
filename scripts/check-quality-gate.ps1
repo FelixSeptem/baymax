@@ -727,6 +727,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-workflow-continuation-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] execution graph contract suites"
+        Command   = { pwsh -File scripts/check-execution-graph-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] child continuation contract suites"
         Command   = { pwsh -File scripts/check-child-continuation-contract.ps1 }
     },

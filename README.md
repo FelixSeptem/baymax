@@ -19,6 +19,7 @@ go run ./examples/01-chat-minimal
 - local tool、MCP HTTP/STDIO、workflow、teams、A2A、scheduler、composer。
 - Context budget/projection、结构化 timeline/diagnostics、RuntimeRecorder 单写入口。
 - contract/replay/gate 作为离线、bounded、可重复的证据。
+- bounded source-neutral execution topology projection across workflow, team and individual child dispatch; owner execution and restore digests remain separate. See [execution graph guide](docs/guides/execution-graph.md).
 - opt-in 原生执行事件 adapter：真实回调、独立宿主 references、保守 source capabilities 和有界观察失败反馈，见 [接入示例](examples/native-execution-events/README.md)。
 - source-owned durable history/checkpoint owners can opt into same-host multi-instance CAS/fencing through an explicit coordinator; default FileStore remains single-writer and cross-machine coordination is unsupported. See [coordinated source-store example](examples/coordinated-source-store/README.md).
 
@@ -44,6 +45,8 @@ go run ./examples/01-chat-minimal
 - `coordinate-durable-source-stores-across-writers`（已归档，185）：为显式 source owner 增加 same-host multi-instance CAS、writer fencing 与 atomic checkpoint/history publication；默认 FileStore 仍为单写，cross-machine 保持 unsupported。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
 
 - `restore-mailbox-handler-continuations`（已归档，186）：为显式 FileStore + continuation worker/resumer/revalidation 配置提供 mailbox handler pause/resume；默认 lifecycle-only owner 保持 typed unsupported/recovery-required。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
+
+- `extract-common-execution-graph-boundaries`（已归档，187）：提供 bounded source-neutral topology projection，保留 workflow/team/composer child 各自执行、plan digest 与 restore owner。范围和验证入口见[开发路线图](docs/development-roadmap.md)。
 
 - 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；resumed-trigger plan 仍 unsupported。mailbox handler safe point 仅在显式 FileStore + continuation worker/resumer/revalidation 配置时按 pause reason 开放，详见[开发路线图](docs/development-roadmap.md)。
 

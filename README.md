@@ -45,6 +45,7 @@ go run ./examples/01-chat-minimal
 OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap.md) 和 [归档索引](openspec/changes/archive/INDEX.md) 为准。能力边界和仍不支持的组合也见 [集成能力矩阵](docs/guides/integration.md)，不要从 package 名称或旧的 release snapshot 推断。
 
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。
+- `source-adapter-lifecycle-contract`（已归档 190）：source-bound 外部投递、有限 disposition、pending evidence 和 cursor-after-commit；参见 [source adapter 指南](docs/guides/source-adapter-lifecycle.md)。
 
 要了解某个历史决策，请从归档索引进入对应 proposal/design/verification；不要把归档记录当作当前进行中的工作。
 

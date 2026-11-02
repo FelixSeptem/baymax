@@ -576,6 +576,15 @@ define the retention and terminal-recovery limits.
 
 # Application outbox mailbox/scheduler recovery
 
+Source adapter lifecycle evidence is independent of source history/outbox
+recovery: `host/sourceadapter/*_test.go` covers immutable source binding,
+cursor-after-commit, pending evidence, cooperative abort and file reopen;
+`integration/source_adapter_lifecycle_test.go` covers host effect CAS and
+callback Observer separation; `tool/diagnosticsreplay/source_adapter_lifecycle_test.go`
+covers reference-only drift fixtures; `scripts/check-source-adapter-lifecycle-contract.sh/.ps1`
+provide equivalent contract gates. See [guide](guides/source-adapter-lifecycle.md)
+and [offline example](../examples/source-adapter-lifecycle/README.md).
+
 `establish-application-outbox-mailbox-recovery-contract` is archived as 166. The following index maps each contract area to executable evidence; the bridge retains distinct dispatch accepted, target lifecycle, host effect evidence and outbox confirmation facts, and no ack, terminal, digest or replay result stands in for a business commit.
 
 | Requirement | Implementation evidence |

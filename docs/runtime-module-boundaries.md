@@ -8,6 +8,14 @@
 
 ## 目标
 
+`host/sourceadapter` is an independent host-injected external delivery boundary.
+It depends only on the standard library, owns bounded delivery checkpoint and
+pending identity evidence, and does not extend callback Observer or native
+history ownership. Hosts retain effect CAS, source trust and scheduling. No
+worker, global store, execution control, diagnostics writer or runtime config
+is introduced. File state is same-host single-writer sequential reopen only.
+See [source adapter lifecycle](guides/source-adapter-lifecycle.md).
+
 明确全局 runtime 平台能力与 MCP 子域能力边界，避免配置与诊断入口继续耦合在单个 MCP runtime 包。
 
 ## 宿主恢复准入边界

@@ -1,0 +1,14 @@
+{
+  "version": "source_adapter_lifecycle.v1",
+  "metadata": {"source":{"kind":"fixture","namespace":"test","id":"inbox"},"identity_namespace":"message","cursor_version":"v1"},
+  "steps": [
+    {"id":"sent","external_id":"one","reference":"message/one","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"1","outcome":"sent","expected_cursor":"1","expected_pending":"","expected_reason":""},
+    {"id":"gone","external_id":"two","reference":"message/two","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"2","outcome":"gone","expected_cursor":"2","expected_pending":"","expected_reason":""},
+    {"id":"retryable","external_id":"three","reference":"message/three","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"3","outcome":"retryable","expected_cursor":"2","expected_pending":"three","expected_reason":"source_adapter.retryable"},
+    {"id":"unconfirmed-effect","external_id":"three","reference":"message/three","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"3","outcome":"confirm_failed","expected_cursor":"2","expected_pending":"three","expected_reason":"source_adapter.dependency_failed"},
+    {"id":"interrupt","external_id":"three","reference":"message/three","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"3","outcome":"interrupted","expected_cursor":"2","expected_pending":"three","expected_reason":"source_adapter.interrupted"},
+    {"id":"confirm","external_id":"three","reference":"message/three","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"3","outcome":"sent","expected_cursor":"3","expected_pending":"","expected_reason":""},
+    {"id":"duplicate","external_id":"one","reference":"message/one","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"1","outcome":"sent","expected_cursor":"3","expected_pending":"","expected_reason":""},
+    {"id":"conflict","external_id":"one","reference":"changed","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"1","outcome":"sent","expected_cursor":"3","expected_pending":"","expected_reason":"source_adapter.conflict"}
+  ]
+}

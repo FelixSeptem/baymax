@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 $env:GOTOOLCHAIN = "local"
-$env:GOCACHE = Join-Path $repoRoot ".gocache-deployment-scope"
+if (-not $env:GOCACHE) { $env:GOCACHE = Join-Path $repoRoot ".gocache-deployment-scope" }
 
 Write-Host "[durable-store-deployment-scope] local ownership, fail-closed admission and read-only replay"
 Invoke-NativeStrict -Label "deployment scope contract suites" -Command {

@@ -13,7 +13,7 @@ if [[ $invalid_exit -eq 0 || "$invalid_output" != *host_resume.replay_drift* ]];
 fi
 echo "[host-resume-admission-contract] expected drift exit=$invalid_exit classification=host_resume.replay_drift"
 smoke="$(go run ./examples/host-resume-admission)"
-for marker in authority_denied resume_accepted completed revision_drift duplicate_no_effect resume_in_progress effect_cas_rejected run_stream_parity; do
+for marker in authority_denied resume_accepted completed revision_drift source_scope_drift duplicate_no_effect resume_in_progress effect_cas_rejected run_stream_parity; do
   if ! grep -Fxq "$marker" <<<"$smoke"; then
     echo "[host-resume-admission-contract] missing marker $marker" >&2
     exit 1

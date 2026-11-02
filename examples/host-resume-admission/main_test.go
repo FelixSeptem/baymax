@@ -8,7 +8,7 @@ func TestHostResumeOfflineExample(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"authority_denied", "resume_accepted", "completed", "revision_drift", "duplicate_no_effect", "resume_in_progress", "effect_cas_rejected"} {
+		for _, want := range []string{"authority_denied", "resume_accepted", "completed", "revision_drift", "source_scope_drift", "duplicate_no_effect", "resume_in_progress", "effect_cas_rejected"} {
 			found := false
 			for _, got := range markers {
 				if got == want {

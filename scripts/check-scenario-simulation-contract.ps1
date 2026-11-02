@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$env:GOCACHE = Join-Path (Get-Location).Path ".gocache-scenario-contract"
+if (-not $env:GOCACHE) { $env:GOCACHE = Join-Path (Get-Location).Path ".gocache" }
 
 Write-Host "[scenario-simulation] offline contract tests"
 go test ./integration/scenariosimulation -count=1

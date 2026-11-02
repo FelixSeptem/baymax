@@ -2,6 +2,10 @@
 
 更新时间：2026-10-14
 
+## Execution graph topology projection（无配置/诊断字段变化）
+
+`orchestration/graph` 的 topology compile/projection API 不新增 env/file/default 或 hot-update 配置键，不改变 `env > file > default`、fail-fast 或原子回滚语义；也不新增 QueryRuns 字段、`RuntimeRecorder` payload 或 diagnostic event。编译错误由 graph API 作为 typed error 返回调用方，现有 owner 仍拥有诊断写入。`TopologyDigest` 是拓扑比较事实，不得写成 authority、plan、checkpoint 或 effect binding。
+
 ## 目标
 
 Durable continuation 通过 constructor-injected store opt-in，不新增 env/file/hot-update 配置键；旧 metadata `RunCheckpointStore` 不隐式升级。RuntimeRecorder 诊断仅投影 bounded checkpoint/attempt/error code、digest 与 correlation，不含 continuation material、业务 payload、credential 或 callback 原始错误。store unavailable、corrupt、foreign、expired、conflict、in-progress 和 recovery-required 可区分；诊断或 replay 不触发 retry/restore。

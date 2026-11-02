@@ -28,6 +28,7 @@
 - `architecture/`：系统概览、生命周期、数据/事件流、模块 ownership 和设计原则。
 - `components/`：runner、context、provider、tool、orchestration、runtime、observability、adapter、MCP、extension、skills。
 - `guides/`：集成、配置/诊断、测试/replay/gate、故障排查、最佳实践、贡献和 OpenSpec。
+- [执行图拓扑投影](guides/execution-graph.md)：workflow、team 与 child dispatch 的 source-neutral topology projection。
 - [事实源与迁移矩阵](documentation-ownership.md)：canonical source、owner、迁移和验证命令。
 - [写作与页面模板](documentation-style-guide.md)：术语、链接、弃用和 Documentation Impact Assessment 模板。
 

@@ -1,0 +1,17 @@
+{
+  "schema": "execution_graph.v1",
+  "definition": {
+    "graph_id": "shared",
+    "version": "v1",
+    "nodes": [
+      {"id": "first"},
+      {"id": "second"}
+    ]
+  },
+  "identity": {
+    "graph_id": "shared",
+    "version": "v1",
+    "topology_digest": "sha256:4cbe68e4793c4fac3d8908cce56d2473e6464df196646d7428b5b09b623b8f3a"
+  },
+  "order": ["first", "second"]
+}

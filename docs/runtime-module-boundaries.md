@@ -2,6 +2,10 @@
 
 更新时间：2026-10-14
 
+## Execution graph topology owner boundary
+
+`orchestration/graph` owns only bounded topology normalization, structural validation, deterministic topological projection and topology digest. It imports no workflow/team/composer/scheduler/checkpoint executor and owns no dispatch, execution state, persistence, claim, restore or terminal arbitration. `orchestration/workflow`, `orchestration/teams` and `orchestration/composer` each translate only their native request into this source-neutral form; workflow retains arbitrary DAG execution, teams retains strategy/aggregation, and composer child projection remains single-dispatch scoped. Owner plan/checkpoint digests and recovery bindings remain authoritative and distinct from topology digest.
+
 ## 目标
 
 明确全局 runtime 平台能力与 MCP 子域能力边界，避免配置与诊断入口继续耦合在单个 MCP runtime 包。

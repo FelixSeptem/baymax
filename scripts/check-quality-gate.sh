@@ -274,6 +274,11 @@ echo "[quality-gate] native continuation contract suites"
 bash scripts/check-native-continuation-contract.sh
 echo "[quality-gate] workflow continuation contract suites"
 bash scripts/check-workflow-continuation-contract.sh
+echo "[quality-gate] execution graph contract suites"
+if ! bash scripts/check-execution-graph-contract.sh; then
+  echo "[quality-gate][execution-graph-contract] execution graph contract suites failed" >&2
+  exit 1
+fi
 echo "[quality-gate] child continuation contract suites"
 bash scripts/check-child-continuation-contract.sh
 echo "[quality-gate] team mailbox continuation contract suites"

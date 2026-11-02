@@ -4,7 +4,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 export GOCACHE="${GOCACHE:-$repo_root/.gocache-deployment-scope}"
 echo '[durable-store-deployment-scope] local ownership, fail-closed admission and read-only replay'
-go test ./core/types ./core/checkpoint ./core/history ./core/runner ./orchestration/composer ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./tool/diagnosticsreplay -run 'TestDeploymentScope|TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation|TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation|TestReplayDeploymentScopeFixture' -count=1
+go test ./core/types ./core/sourcecoordination ./core/checkpoint ./core/history ./core/runner ./orchestration/composer ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./tool/diagnosticsreplay -run 'Test(DeploymentScope|MemoryCoordinator|FileCoordinator|CoordinatedFileStore|CoordinatedJournal|HostExecutionPlan(RejectsUnsupportedDeploymentBeforeActivation|AdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation)|ReplayDeploymentScopeFixture)' -count=1
 for file in core/types/deployment_scope.go tool/diagnosticsreplay/deployment_scope.go; do
   pattern='(Run|Stream|Resume|Retry|Append|ClaimResume)\('
   if rg -n -- "$pattern" "$file"; then

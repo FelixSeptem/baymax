@@ -20,6 +20,7 @@ go run ./examples/01-chat-minimal
 - Context budget/projection、结构化 timeline/diagnostics、RuntimeRecorder 单写入口。
 - contract/replay/gate 作为离线、bounded、可重复的证据。
 - opt-in 原生执行事件 adapter：真实回调、独立宿主 references、保守 source capabilities 和有界观察失败反馈，见 [接入示例](examples/native-execution-events/README.md)。
+- source-owned durable history/checkpoint owners can opt into same-host multi-instance CAS/fencing through an explicit coordinator; default FileStore remains single-writer and cross-machine coordination is unsupported. See [coordinated source-store example](examples/coordinated-source-store/README.md).
 
 不提供自动 Provider 探测、隐式全局 registry、远程控制面或跨租户状态。架构与依赖边界见 [架构总览](docs/architecture/overview.md) 和 [模块边界](docs/runtime-module-boundaries.md)。
 
@@ -40,7 +41,11 @@ go run ./examples/01-chat-minimal
 - `establish-provider-structured-context-cache-runtime`（已归档并稳定）：为 OpenAI、Anthropic、Gemini 增加显式 provider-native prompt-cache controls，并保持 request projection 不泄露 key/resource reference；实施边界和验收证据见[开发路线图](docs/development-roadmap.md) 与 [归档索引](openspec/changes/archive/INDEX.md)。
 - `publish-workflow-successor-checkpoints-atomically`（已归档）：workflow repeated pause 的 successor checkpoint 原子发布；实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
 
-- 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。
+- `coordinate-durable-source-stores-across-writers`（已归档，185）：为显式 source owner 增加 same-host multi-instance CAS、writer fencing 与 atomic checkpoint/history publication；默认 FileStore 仍为单写，cross-machine 保持 unsupported。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
+
+- `restore-mailbox-handler-continuations`（已归档，186）：为显式 FileStore + continuation worker/resumer/revalidation 配置提供 mailbox handler pause/resume；默认 lifecycle-only owner 保持 typed unsupported/recovery-required。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
+
+- 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；resumed-trigger plan 仍 unsupported。mailbox handler safe point 仅在显式 FileStore + continuation worker/resumer/revalidation 配置时按 pause reason 开放，详见[开发路线图](docs/development-roadmap.md)。
 
 - 已归档 181：`composite-pause-reason-matrix` 已将 continuation capability 收敛为逐 execution form × pause reason 的 source evidence；缺少 safe point、restore、竞争和 terminal evidence 的格子在 admission 前保持 typed `unsupported_capability`/`unavailable`，mailbox lifecycle continuation 不代表 handler execution continuation。下一候选及实施入口见[开发路线图](docs/development-roadmap.md)。
 
@@ -136,7 +141,7 @@ Windows 使用等价的 `pwsh -File scripts/check-docs-consistency.ps1`、`check
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[SECURITY.md](SECURITY.md)、[CHANGELOG.md](CHANGELOG.md) 和 [LICENSE](LICENSE)。
 # Host execution plan bridge
 
-Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Team/mailbox continuation is additionally available only through an explicitly configured File-backed owner with matching capability and pause-reason evidence; the bridge delegates claim/projection and never creates a second graph, queue or worker. Resumed planbridge execution, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
+Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Mailbox host-handler continuation is additionally available only through an explicitly configured File-backed continuation worker with a registered resumer and revalidation callback; it retains the original message/delivery/lease/attempt lineage and the bridge never creates a second queue or worker. Lifecycle-only mailbox continuation remains unsupported for handler restore. Resumed planbridge execution, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
 
 ## Source-owned native event history
 

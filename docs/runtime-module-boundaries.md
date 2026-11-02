@@ -274,8 +274,14 @@ terminal reducer. Mailbox owns message/delivery/lease/attempt lifecycle; the hos
 owns authority, write scope, effect namespace and business commit. Capability
 manifest evidence never substitutes for current admission. Spec 2 history/cursor
 replay is delegated to a concrete mailbox source reader; Spec 3 durable
-checkpoint restore is implemented only in the direct runner source. Mailbox and
-planbridge resumed execution remain unsupported.
+checkpoint restore is implemented only in the direct runner source. A separate
+configured `mailbox.NewContinuationWorker` is the sole mailbox handler restore
+owner: it seals pre-effect pause references and a registered resumer later
+continues the same message/delivery/lease/attempt after reauthorization. The
+bridge can only delegate that owner-bound path after exact manifest evidence;
+it never creates a handler, worker, lease, retry, or context-injection path.
+Lifecycle-only mailbox continuation and planbridge resumed execution remain
+unsupported for handler execution.
 
 ### Native history source ownership
 
@@ -318,9 +324,11 @@ uncertain, the owner returns `ErrProjectionRecoveryRequired` and keeps the
 source effect fail-closed.
 
 `core/types` defines the detached deployment vocabulary; each source owner
-projects its own owner namespace, writer fence and transaction scope. Current
-FileStore and source journal implementations are limited to same-host,
-single-writer, sequential reopen. `core/checkpoint`, `core/history`,
+projects its own owner namespace, writer fence and transaction scope. FileStore
+and source journals remain same-host, single-writer, sequential-reopen by
+default. An owner may explicitly inject `core/sourcecoordination.File` for
+same-host multi-instance CAS and fencing; it does not add cross-machine
+guarantees. `core/checkpoint`, `core/history`,
 `orchestration/composer`, `orchestration/workflow` and `orchestration/mailbox`
 must reject foreign or stale writers and never infer distributed guarantees
 from a successful reopen. `planbridge` only validates and delegates these

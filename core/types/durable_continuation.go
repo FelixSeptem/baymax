@@ -362,6 +362,13 @@ type DurableRunCheckpointStore interface {
 	CrossProcessRestore() bool
 }
 
+// DurableRunCheckpointDeploymentScopeSource exposes the configured source
+// deployment evidence without widening the durable checkpoint store contract.
+// Callers MUST treat a missing implementation as local-only evidence.
+type DurableRunCheckpointDeploymentScopeSource interface {
+	DeploymentScope() DeploymentScope
+}
+
 type ContinuationLimits struct {
 	EnvelopeBytes int
 	MaterialBytes int

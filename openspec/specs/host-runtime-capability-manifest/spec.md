@@ -317,3 +317,44 @@ capability MUST NOT promote composite forms.
 - **THEN** capability construction returns a typed foreign or unsupported
   outcome before admission
 - **AND** no journal, ledger, execution, or retry is created
+
+### Requirement: Manifest SHALL distinguish coordinated durable scope from local reopen
+
+For each history or continuation owner, the manifest SHALL expose deployment
+profile, writer/fencing/transaction scope, current coordinator availability and
+evidence reference. The built-in file coordinator MUST report same-host
+multi-instance scope and MUST NOT report cross-machine support. It MUST NOT infer multi-writer or cross-machine support
+from a FileStore path, successful reopen, DTO presence or a sibling owner.
+
+#### Scenario: Local owner remains local in manifest
+- **WHEN** an owner uses its default file or memory store
+- **THEN** the manifest reports its existing local scope and does not set
+  coordinated/multi-writer capability
+
+#### Scenario: Lost coordination evidence marks owner unavailable
+- **WHEN** a coordinated owner cannot validate its live fence or coordinator
+- **THEN** the manifest records an unavailable/unsupported capability cell with
+  the source-owned evidence reason
+
+### Requirement: Mailbox handler continuation capability SHALL be owner- and reason-evidenced
+
+The `mailbox_async` capability entry SHALL distinguish lifecycle continuation
+from host-handler execution continuation. It SHALL mark
+`input_required`, `approval_required`, and `budget_exhausted` supported only
+when the exact mailbox owner publishes a compatible handler safe point, durable
+checkpoint/restore evidence, deployment scope, resumer/revalidation evidence,
+and terminal/Run-Stream evidence for that reason. The entry SHALL retain a
+stable unsupported or unavailable reason for every missing dimension.
+
+#### Scenario: Configured owner promotes only proven pause cells
+- **WHEN** a mailbox owner is configured with durable handler continuation and
+  evidence for input and approval but not budget pause
+- **THEN** the manifest marks only input and approval supported
+- **AND** the budget cell remains unsupported with its owner-local reason
+
+#### Scenario: Lifecycle evidence cannot promote handler support
+- **WHEN** the source exposes retained lifecycle history or a lifecycle-only
+  continuation projection but no configured handler resumer
+- **THEN** all mailbox host-handler pause cells remain unsupported
+- **AND** planners cannot infer support from package presence, DTOs, or another
+  form's evidence

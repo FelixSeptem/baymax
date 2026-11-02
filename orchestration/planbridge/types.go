@@ -150,10 +150,12 @@ type ChildBinding struct {
 }
 
 type MailboxBinding struct {
-	Owner    MailboxOwner
-	Binding  mailbox.HostPlanBinding
-	Manifest *CapabilityManifestReader
-	Resume   *mailbox.MailboxResumeRequest
+	Owner         MailboxOwner
+	Binding       mailbox.HostPlanBinding
+	Manifest      *CapabilityManifestReader
+	Resume        *mailbox.MailboxResumeRequest
+	HandlerResume *mailbox.MailboxResumeRequest
+	HandlerOwner  MailboxHandlerContinuationOwner
 }
 
 type MailboxOwner interface {
@@ -162,6 +164,13 @@ type MailboxOwner interface {
 
 type MailboxContinuationOwner interface {
 	ResumeHostPlanContinuation(context.Context, mailbox.MailboxResumeRequest) (mailbox.HostPlanOutcome, error)
+}
+
+// MailboxHandlerContinuationOwner is the existing mailbox worker owner
+// configured with a source-native handler resolver and reauthorization path.
+// Planbridge only delegates; it never executes a handler itself.
+type MailboxHandlerContinuationOwner interface {
+	ResumeHandlerContinuation(context.Context, mailbox.MailboxResumeRequest) (mailbox.HostPlanOutcome, error)
 }
 type Execution struct {
 	Handler         types.EventHandler

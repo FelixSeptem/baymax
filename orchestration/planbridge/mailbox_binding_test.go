@@ -234,6 +234,97 @@ func TestMailboxContinuationPlanbridgeRunAndStreamProjectSameLeaseWithoutLifecyc
 	}
 }
 
+func TestMailboxHandlerContinuationPlanbridgeRunStreamDelegateToOwner(t *testing.T) {
+	ctx := context.Background()
+	store, err := mailbox.NewFileStore(filepath.Join(t.TempDir(), "mailbox.json"), mailbox.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := mailbox.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialManifest, err := CapabilityManifestWithMailboxContinuation(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialReader, err := NewCapabilityManifestReader(initialManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := Descriptor{SchemaVersion: SchemaVersion, PlanID: "mailbox-handler-resume", PlanVersion: 1, Shape: ShapeDirect, Delivery: DeliveryMailbox, Trigger: TriggerManual, AuthorityDigest: "authority", ToolCapabilityDigest: "tools", InputRef: "input", InputDigest: "input-digest", HandlerRef: "handler", HandlerDigest: "handler-digest"}
+	binding := mailbox.HostPlanBinding{ContractVersion: mailbox.HostPlanBindingContractVersion, MessageID: "handler-resume-message", IdempotencyKey: "handler-resume-logical", RunID: "run", ParentRunID: "parent", CausationID: "cause", AuthorityDigest: "authority", WriteScope: "scope", EffectNamespace: "effects", Occurrence: "occurrence", HostCorrelation: "host", ResourceLimit: 1}
+	base := Binding{SemanticDigest: "semantics", Admit: func(context.Context, Identity) (Admission, error) {
+		return Admission{AuthorityDigest: "authority", ToolCapabilityDigest: "tools", SemanticDigest: "semantics"}, nil
+	}, Mailbox: &MailboxBinding{Owner: owner, Binding: binding, Manifest: initialReader}}
+	prepared, err := Describe(descriptor, base, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := Compile(prepared, base, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.PlanDigest = initial.Identity().Digest
+	if _, err := owner.AdmitHostPlan(ctx, binding); err != nil {
+		t.Fatal(err)
+	}
+	resumerCalls := 0
+	worker, err := mailbox.NewContinuationWorker(owner, mailbox.WorkerConfig{Enabled: true, InflightTimeout: time.Hour, HeartbeatInterval: time.Minute}, func(context.Context, mailbox.Record) (mailbox.HandlerResult, error) {
+		return mailbox.HandlerResult{Pause: &mailbox.HandlerPause{Reason: mailbox.MailboxPauseApprovalRequired, PendingActionReference: "effect:approval", CheckpointReference: "handler-checkpoint:approval", OriginalDeadline: time.Now().UTC().Add(time.Hour), ExpiresAt: time.Now().UTC().Add(time.Hour)}}, nil
+	}, func(context.Context, mailbox.MailboxContinuation, mailbox.Record) (mailbox.HandlerResult, error) {
+		resumerCalls++
+		return mailbox.HandlerResult{}, nil
+	}, func(context.Context, mailbox.MailboxContinuation) error { return nil }, "handler-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := worker.RunOnce(ctx); err != nil || !processed {
+		t.Fatalf("RunOnce() processed=%v err=%v", processed, err)
+	}
+	snapshot, err := owner.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var continuation mailbox.MailboxContinuation
+	for _, saved := range snapshot.Continuations {
+		continuation = saved.Continuation
+	}
+	manifest, err := CapabilityManifestWithMailboxContinuation(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resume := mailbox.MailboxResumeRequest{Ref: continuation.Ref, Binding: binding, IdempotencyKey: "handler-resume-request", Generation: continuation.Generation, PauseReason: continuation.PauseReason, Deployment: types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"}}
+	base.Mailbox = &MailboxBinding{Owner: owner, Binding: binding, Manifest: reader, HandlerResume: &resume, HandlerOwner: worker}
+	prepared, err = Describe(descriptor, base, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := Compile(prepared, base, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := compiled.Run(ctx, Execution{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	second, err := compiled.Stream(ctx, Execution{})
+	if err != nil {
+		t.Fatalf("Stream(duplicate) error = %v", err)
+	}
+	if first.Mailbox == nil || second.Mailbox == nil || *first.Mailbox != *second.Mailbox || resumerCalls != 1 || first.Mailbox.TerminalOutcome != "acked" {
+		t.Fatalf("Run/Stream owner projection mismatch: run=%#v stream=%#v resumerCalls=%d", first.Mailbox, second.Mailbox, resumerCalls)
+	}
+	page, err := owner.Query(ctx, mailbox.QueryRequest{MessageID: binding.MessageID})
+	if err != nil || len(page.Items) != 1 || page.Items[0].State != mailbox.StateAcked || page.Items[0].DeliveryAttempt != 1 {
+		t.Fatalf("planbridge handler restore lifecycle = %#v err=%v", page.Items, err)
+	}
+}
+
 func testMailboxManifest(t *testing.T) *CapabilityManifestReader {
 	t.Helper()
 	manifest := CapabilityManifest{

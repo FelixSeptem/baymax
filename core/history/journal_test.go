@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -34,6 +36,65 @@ func TestJournalReplaysWithSourceLocalCursorAndRetention(t *testing.T) {
 	}
 	if _, err := j.ReadAfter(context.Background(), types.SourceRef{Kind: types.HistorySourceRunner, Namespace: source.Namespace, ID: "other"}, page.NextCursor, 1); !errors.Is(err, types.ErrCursorForeign) {
 		t.Fatalf("foreign source: %v", err)
+	}
+}
+
+func TestCoordinatedJournalRetainsOneSourceOrderAndReadDoesNotAcquireLease(t *testing.T) {
+	ctx := context.Background()
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.history.v1", ID: "coordinated"}
+	coordDir := filepath.Join(t.TempDir(), "coord")
+	coordA, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: source.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordA.Close() }()
+	coordB, err := sourcecoordination.OpenFile(coordDir, sourcecoordination.Options{OwnerNamespace: source.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = coordB.Close() }()
+	a, err := New(source, WithCoordinator(coordA, "writer-a", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "runner.one"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(source, WithCoordinator(coordB, "writer-b", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "runner.two"}); err != nil {
+		t.Fatalf("new owner append: %v", err)
+	}
+	if _, err = a.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "runner.stale"}); err == nil {
+		t.Fatal("stale writer appended")
+	}
+	page, err := b.ReadAfter(ctx, source, nil, 10)
+	if err != nil || len(page.Events) != 2 || page.Events[0].History.Sequence != 1 || page.Events[1].History.Sequence != 2 {
+		t.Fatalf("coordinated page: %+v %v", page, err)
+	}
+	page, err = a.ReadAfter(ctx, source, nil, 10)
+	if err != nil || len(page.Events) != 2 || page.Events[0].History.Sequence != 1 || page.Events[1].History.Sequence != 2 {
+		t.Fatalf("stale reader did not retain committed facts: %+v %v", page, err)
+	}
+}
+
+func TestCoordinatedJournalCapabilitiesFailClosedWhenCoordinatorIsUnavailable(t *testing.T) {
+	source := types.SourceRef{Kind: types.HistorySourceRunner, Namespace: "runner.history.v1", ID: "coordinator-outage"}
+	coordinator, err := sourcecoordination.OpenFile(filepath.Join(t.TempDir(), "coord"), sourcecoordination.Options{OwnerNamespace: source.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := New(source, WithCoordinator(coordinator, "writer", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = coordinator.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = journal.Capabilities(context.Background(), source); !errors.Is(err, types.ErrSourceUnavailable) {
+		t.Fatalf("unavailable coordinator advertised history capability: %v", err)
 	}
 }
 

@@ -15,7 +15,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"time"
 
+	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
 )
 
@@ -56,15 +58,34 @@ type persisted struct {
 }
 
 type Journal struct {
-	mu        sync.RWMutex
-	path      string
-	source    types.SourceRef
-	sequence  uint64
-	floor     uint64
-	retention int
-	events    []types.NativeExecutionEvent
-	ledger    *ProjectionLedger
-	ledgerErr error
+	mu            sync.RWMutex
+	path          string
+	source        types.SourceRef
+	sequence      uint64
+	floor         uint64
+	retention     int
+	events        []types.NativeExecutionEvent
+	ledger        *ProjectionLedger
+	ledgerErr     error
+	coordinator   sourcecoordination.Coordinator
+	coordLease    sourcecoordination.Lease
+	coordRevision uint64
+}
+
+func WithCoordinator(coordinator sourcecoordination.Coordinator, writerID string, leaseTTL time.Duration) Option {
+	return func(j *Journal) {
+		if j == nil || coordinator == nil {
+			return
+		}
+		j.coordinator = coordinator
+		if writerID == "" {
+			writerID = j.source.ID
+		}
+		if leaseTTL <= 0 {
+			leaseTTL = 24 * time.Hour
+		}
+		j.coordLease, j.ledgerErr = coordinator.Acquire(context.Background(), writerID, leaseTTL)
+	}
 }
 
 func New(source types.SourceRef, options ...Option) (*Journal, error) {
@@ -107,6 +128,11 @@ func OpenFile(path string, source types.SourceRef, options ...Option) (*Journal,
 	if err := j.validateLocked(); err != nil {
 		return nil, types.ErrSourceUnavailable
 	}
+	if j.coordinator != nil {
+		if err := j.syncCoordinatorLocked(context.Background()); err != nil {
+			return nil, err
+		}
+	}
 	return j, nil
 }
 
@@ -119,6 +145,11 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if j.coordinator != nil {
+		if err := j.syncCoordinatorLocked(ctx); err != nil {
+			return types.NativeHistoryIdentity{}, err
+		}
+	}
 	if j.ledgerErr != nil {
 		return types.NativeHistoryIdentity{}, j.ledgerErr
 	}
@@ -140,7 +171,7 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	event.Capabilities.Identity = "source_owned"
 	event.Capabilities.Ordering = "source_sequence"
 	event.Capabilities.Cursor = true
-	event.Capabilities.DurableHistory = j.path != ""
+	event.Capabilities.DurableHistory = j.path != "" || j.coordinator != nil
 	event.Capabilities.Deduplication = true
 	event.Capabilities.GapVerification = true
 	snapshot, err := (types.NativeEventPage{Events: []types.NativeExecutionEvent{event}}).Snapshot()
@@ -283,9 +314,18 @@ func (j *Journal) Capabilities(ctx context.Context, source types.SourceRef) (typ
 	if source != j.source {
 		return types.HistoryCapabilities{}, types.ErrCursorForeign
 	}
+	if validator, ok := j.coordinator.(sourcecoordination.LeaseValidator); ok {
+		if err := validator.ValidateLease(ctx, j.coordLease); err != nil {
+			return types.HistoryCapabilities{}, types.ErrSourceUnavailable
+		}
+	}
 	floor := encodeCursor(source, j.floor)
 	deployment := types.SameHostSingleWriterScope(source.ID, "fixture:deployment-scope.v1")
-	caps := types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: j.path != "", TerminalRecovery: "retained source facts only", Supported: true, Deployment: deployment}
+	if j.coordinator != nil {
+		deployment = j.coordinator.DeploymentScope()
+	}
+	durable := j.path != "" || j.coordinator != nil
+	caps := types.HistoryCapabilities{Source: source, EventIdentityNamespace: string(source.Kind) + ".event.history.v1", SequenceDefined: true, SequenceScope: "source_instance", RetentionWindow: "last bounded source events", RetentionFloor: &floor, CursorScope: "source_instance", CursorVersion: cursorVersion, Durable: durable, TerminalRecovery: "retained source facts only", Supported: true, Deployment: deployment}
 	if j.ledger != nil && j.path != "" && j.ledger.path != "" {
 		caps.ProjectionRecovery = true
 		caps.ProjectionRecoveryEvidence = "fixture:source-history-projection-transaction.v1"
@@ -356,6 +396,19 @@ func (j *Journal) Snapshot(ctx context.Context) (persisted, error) {
 }
 
 func (j *Journal) persistLocked() error {
+	if j.coordinator != nil {
+		stored := persisted{Version: cursorVersion, Source: j.source, Sequence: j.sequence, Floor: j.floor, Retention: j.retention, Events: j.events}
+		raw, err := json.Marshal(stored)
+		if err != nil {
+			return types.ErrSourceUnavailable
+		}
+		committed, err := j.coordinator.CompareAndSwap(context.Background(), j.coordLease, j.coordRevision, raw)
+		if err != nil {
+			return err
+		}
+		j.coordRevision = committed.Revision
+		return nil
+	}
 	if j.path == "" {
 		return nil
 	}
@@ -372,6 +425,38 @@ func (j *Journal) persistLocked() error {
 		_ = os.Remove(tmp)
 		return types.ErrSourceUnavailable
 	}
+	return nil
+}
+
+func (j *Journal) syncCoordinatorLocked(ctx context.Context) error {
+	if j.coordinator == nil {
+		return nil
+	}
+	if j.ledgerErr != nil {
+		return j.ledgerErr
+	}
+	current, err := j.coordinator.Read(ctx)
+	if err != nil {
+		return err
+	}
+	if current.Revision == j.coordRevision {
+		return nil
+	}
+	if len(current.Payload) == 0 {
+		j.coordRevision = current.Revision
+		return nil
+	}
+	var stored persisted
+	if json.Unmarshal(current.Payload, &stored) != nil || stored.Version != cursorVersion || stored.Source != j.source || stored.Retention <= 0 || len(stored.Events) > types.MaxHistoryPageSize || stored.Floor > stored.Sequence {
+		return types.ErrSourceUnavailable
+	}
+	oldSequence, oldFloor, oldEvents := j.sequence, j.floor, j.events
+	j.sequence, j.floor, j.retention, j.events = stored.Sequence, stored.Floor, stored.Retention, stored.Events
+	if err := j.validateLocked(); err != nil {
+		j.sequence, j.floor, j.events = oldSequence, oldFloor, oldEvents
+		return types.ErrSourceUnavailable
+	}
+	j.coordRevision = current.Revision
 	return nil
 }
 

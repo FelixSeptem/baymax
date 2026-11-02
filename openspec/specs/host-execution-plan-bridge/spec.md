@@ -357,3 +357,52 @@ The host execution plan bridge MUST validate the requested execution form, pause
 
 - **WHEN** a mailbox owner exposes lifecycle admission/projection but not a handler execution safe point
 - **THEN** the bridge returns `unsupported_capability` before publish, claim, or handler dispatch
+
+### Requirement: Plan admission SHALL require live coordinated owner evidence
+
+When a host plan requests multi-writer, multi-instance, or cross-machine source
+history/continuation behavior, compilation and admission SHALL validate the
+bound owner coordinator profile, current fence, transaction scope and evidence
+reference before publish, enqueue, claim, restore, Run or Stream. The bridge
+MUST delegate all source mutation to the native owner and MUST NOT acquire a
+lease, substitute a local store or fall back to direct execution.
+
+#### Scenario: Coordinated request reaches a matching owner
+- **WHEN** a plan requests a profile evidenced by its bound active owner
+- **THEN** the bridge preserves that request for native owner admission without
+  creating a second coordinator or source owner
+
+#### Scenario: Coordinator profile mismatches before source activation
+- **WHEN** the plan requests distributed behavior but the owner is local-only,
+  unavailable, stale or evidence-mismatched
+- **THEN** the bridge returns typed unsupported/unavailable before any source
+  side effect or fallback execution
+
+### Requirement: Mailbox handler continuation admission SHALL delegate to matching owner evidence
+
+For a `mailbox_async` plan that requires host-handler continuation, the bridge
+SHALL validate compatible manifest version, form, pause reason, owner namespace,
+deployment scope, and current mailbox handler continuation availability before
+publish, consume, handler dispatch, checkpoint claim, Run, or Stream. It SHALL
+delegate admission and restore only to the configured mailbox owner and preserve
+the owner's original message/delivery/lease/attempt, causal, and terminal
+semantics.
+
+The bridge MUST NOT create a worker, queue, scheduler, handler executor,
+continuation store, replacement parent Run, or lifecycle fallback. Missing,
+foreign, stale, unavailable, unsupported, or version-incompatible evidence
+MUST fail closed before source side effects.
+
+#### Scenario: Run and Stream share one mailbox continuation decision
+- **WHEN** equivalent Run and Stream requests require a configured mailbox
+  handler continuation cell
+- **THEN** both validate and delegate the same owner admission/restore decision
+- **AND** their normalized terminal/correlation projection is equivalent while
+  Stream only changes source event delivery
+
+#### Scenario: Unsupported handler continuation rejects before mailbox mutation
+- **WHEN** a mailbox plan requires a pause reason without matching handler
+  safe-point evidence
+- **THEN** the bridge returns typed `unsupported_capability` or unavailable
+  before publishing, consuming, invoking a handler, or claiming a checkpoint
+- **AND** it does not degrade to direct execution or lifecycle replay

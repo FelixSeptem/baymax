@@ -93,6 +93,26 @@ cells unsupported with a bounded reason; those cells cannot be inherited from
 direct, workflow, or sibling-owner evidence. The stable pause-cell limitation
 is `mailbox_handler_safe_point_unsupported`.
 
+## Opt-in handler continuation
+
+`NewContinuationWorker` is the separate, owner-native handler path. It requires
+a durable FileStore-backed mailbox, a result-capable handler, a registered
+resumer, and a current revalidation callback. Its handler may return a bounded
+`HandlerPause` for `input_required`, `approval_required`, or
+`budget_exhausted` before an irreversible effect. Mailbox seals the original
+message/delivery/lease/attempt and host-plan identity in the same owner state,
+retains the current in-flight delivery through checkpoint expiry, and performs
+no Ack/Nack/Requeue/retry, publish, replacement consume, or parent Run.
+
+`ResumeHandlerContinuation` revalidates current host authority, atomically
+claims the original source boundary, and invokes the registered resumer once.
+A completed resumer routes through the existing Ack path; a recoverable error
+uses the configured Nack/Requeue policy and preserves retry or DLQ evidence.
+Duplicate requests receive the retained source projection. Lease loss, expiry,
+a foreign/stale deployment fence, persistence uncertainty, or a missing
+new-process resumer fail closed and never restart the handler. This is handler
+execution restore, not context injection and not a host business-commit claim.
+
 ## Application outbox dispatch proposal
 
 `establish-application-outbox-mailbox-recovery-contract` is an active proposal, not a delivered mailbox API. It plans a separate constructor-only, reference-only bridge that may delegate a bounded descriptor to this existing owner or to scheduler. It must not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Before implementation, no bridge type, example, replay fixture or dedicated gate exists.

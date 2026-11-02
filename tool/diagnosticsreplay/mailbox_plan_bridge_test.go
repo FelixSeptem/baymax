@@ -19,7 +19,7 @@ func TestMailboxPlanBridgeReplayGoldenAndDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 4 || got[0].Reason != "" || got[1].Reason != "" || got[2].Reason != ReasonMailboxPlanManifestDrift || got[3].Reason != ReasonMailboxPlanDuplicateConflict {
+	if len(got) != 5 || got[0].Reason != "" || got[1].Reason != "" || got[2].Reason != ReasonMailboxPlanManifestDrift || got[3].Reason != "" || got[4].Reason != ReasonMailboxPlanDuplicateConflict {
 		t.Fatalf("unexpected replay: %#v", got)
 	}
 	if _, err = ReplayMailboxPlanBridgeFixtureJSON([]byte(`{"version":"mailbox_plan_bridge.v1","cases":[{"case_id":"x","manifest_contract_version":"baymax.runtime.contract.v1","manifest_api_version":"host_runtime_capability_manifest.v1","evidence_reference":"fixture","source_available":true,"binding_equivalent":true,"logical_admissions":1,"observation":{},"run":{},"stream":{},"expected_reason":""}]}`)); err == nil {

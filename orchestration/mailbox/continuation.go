@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/FelixSeptem/baymax/core/types"
@@ -50,32 +51,37 @@ type MailboxContinuationRef struct {
 }
 
 type MailboxContinuation struct {
-	Ref                     MailboxContinuationRef `json:"ref"`
-	Binding                 HostPlanBinding        `json:"binding"`
-	MessageID               string                 `json:"message_id"`
-	DeliveryID              string                 `json:"delivery_id"`
-	LeaseID                 string                 `json:"lease_id"`
-	AttemptCausation        string                 `json:"attempt_causation"`
-	DeliveryAttempt         int                    `json:"delivery_attempt"`
-	LifecycleState          MessageState           `json:"lifecycle_state"`
-	ParentRunID             string                 `json:"parent_run_id"`
-	RunID                   string                 `json:"run_id"`
-	HostCorrelation         string                 `json:"host_correlation"`
-	AuthorityDigest         string                 `json:"authority_digest"`
-	PlanDigest              string                 `json:"plan_digest"`
-	WriteScope              string                 `json:"write_scope"`
-	EffectNamespace         string                 `json:"effect_namespace"`
-	Occurrence              string                 `json:"occurrence"`
-	PauseReason             MailboxPauseReason     `json:"pause_reason"`
-	PendingActionReference  string                 `json:"pending_action_reference,omitempty"`
-	CompletedEffectRefs     []string               `json:"completed_effect_refs,omitempty"`
-	ConsumedBudget          int64                  `json:"consumed_budget,omitempty"`
-	OriginalDeadline        time.Time              `json:"original_deadline,omitempty"`
-	PredecessorCheckpointID string                 `json:"predecessor_checkpoint_id,omitempty"`
-	SuccessorCheckpointID   string                 `json:"successor_checkpoint_id,omitempty"`
-	Generation              uint64                 `json:"generation"`
-	CreatedAt               time.Time              `json:"created_at"`
-	ExpiresAt               time.Time              `json:"expires_at"`
+	Ref                    MailboxContinuationRef `json:"ref"`
+	Binding                HostPlanBinding        `json:"binding"`
+	MessageID              string                 `json:"message_id"`
+	DeliveryID             string                 `json:"delivery_id"`
+	LeaseID                string                 `json:"lease_id"`
+	ConsumerID             string                 `json:"consumer_id,omitempty"`
+	AttemptCausation       string                 `json:"attempt_causation"`
+	DeliveryAttempt        int                    `json:"delivery_attempt"`
+	LifecycleState         MessageState           `json:"lifecycle_state"`
+	ParentRunID            string                 `json:"parent_run_id"`
+	RunID                  string                 `json:"run_id"`
+	HostCorrelation        string                 `json:"host_correlation"`
+	AuthorityDigest        string                 `json:"authority_digest"`
+	PlanDigest             string                 `json:"plan_digest"`
+	WriteScope             string                 `json:"write_scope"`
+	EffectNamespace        string                 `json:"effect_namespace"`
+	Occurrence             string                 `json:"occurrence"`
+	PauseReason            MailboxPauseReason     `json:"pause_reason"`
+	PendingActionReference string                 `json:"pending_action_reference,omitempty"`
+	CompletedEffectRefs    []string               `json:"completed_effect_refs,omitempty"`
+	// HandlerCheckpointReference resolves opaque handler-owned checkpoint state.
+	// It is empty for lifecycle-only projections and never embeds handler state,
+	// payload, credential, callback error, or effect result body.
+	HandlerCheckpointReference string    `json:"handler_checkpoint_reference,omitempty"`
+	ConsumedBudget             int64     `json:"consumed_budget,omitempty"`
+	OriginalDeadline           time.Time `json:"original_deadline,omitempty"`
+	PredecessorCheckpointID    string    `json:"predecessor_checkpoint_id,omitempty"`
+	SuccessorCheckpointID      string    `json:"successor_checkpoint_id,omitempty"`
+	Generation                 uint64    `json:"generation"`
+	CreatedAt                  time.Time `json:"created_at"`
+	ExpiresAt                  time.Time `json:"expires_at"`
 }
 
 type MailboxResumeRequest struct {
@@ -170,6 +176,12 @@ func (c MailboxContinuation) validateShape() error {
 	if c.Ref.MessageID != c.MessageID || c.Ref.DeliveryID != c.DeliveryID || c.Ref.LeaseID != c.LeaseID || c.Ref.AttemptCausation != c.AttemptCausation || c.Ref.RunID != c.RunID || c.Ref.ParentRunID != c.ParentRunID {
 		return ErrMailboxContinuationForeign
 	}
+	if c.HandlerCheckpointReference != "" && strings.TrimSpace(c.ConsumerID) == "" {
+		return ErrMailboxContinuationMalformed
+	}
+	if len(c.HandlerCheckpointReference) > 1024 {
+		return ErrMailboxContinuationMalformed
+	}
 	b, err := json.Marshal(c)
 	if err != nil || len(b) > 64*1024 {
 		return ErrMailboxContinuationMalformed
@@ -248,15 +260,25 @@ func (m *Mailbox) ContinuationCapabilities(context.Context) (types.ContinuationC
 	if durable {
 		scope = types.SameHostSingleWriterScope("mailbox", "fixture:mailbox-continuation.v1")
 	}
+	handlerSafePoint := m.handlerContinuationEnabled()
+	pauseEvidence := map[string]types.PauseReasonCapability{
+		"input_required":    {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+		"approval_required": {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+		"budget_exhausted":  {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
+	}
+	if handlerSafePoint && durable {
+		pauseEvidence = map[string]types.PauseReasonCapability{
+			"input_required":    {Supported: true, EvidenceReference: "fixture:mailbox-handler-continuation.v1"},
+			"approval_required": {Supported: true, EvidenceReference: "fixture:mailbox-handler-continuation.v1"},
+			"budget_exhausted":  {Supported: true, EvidenceReference: "fixture:mailbox-handler-continuation.v1"},
+		}
+	}
 	caps := types.ContinuationCapabilities{
 		ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "mailbox", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-mailbox-checkpoint", ExpiryPolicy: "checkpoint-expiry", CheckpointCreation: true, CrossProcessRestore: durable,
-		EvidenceReferences: map[string]string{"checkpoint_creation": "fixture:mailbox-continuation.v1", "cross_process_restore": "fixture:mailbox-continuation.v1"},
-		PauseReasonEvidence: map[string]types.PauseReasonCapability{
-			"input_required":    {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
-			"approval_required": {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
-			"budget_exhausted":  {UnsupportedReason: types.UnsupportedReasonMailboxHandlerSafePoint},
-		},
-		Deployment: scope,
+		HandlerExecutionSafePoint: handlerSafePoint && durable,
+		EvidenceReferences:        map[string]string{"checkpoint_creation": "fixture:mailbox-continuation.v1", "cross_process_restore": "fixture:mailbox-continuation.v1"},
+		PauseReasonEvidence:       pauseEvidence,
+		Deployment:                scope,
 	}
 	if !durable {
 		caps.UnsupportedReasons = map[string]string{"cross_process_restore": "mailbox continuation store is process-local"}
@@ -290,8 +312,23 @@ func (m *Mailbox) SaveHostPlanContinuation(ctx context.Context, continuation Mai
 		if !ok {
 			return ErrMailboxContinuationUnavailable
 		}
-		if current.DeliveryID != continuation.DeliveryID || current.LeaseID != continuation.LeaseID || current.AttemptCausation != continuation.AttemptCausation || current.State != StateInFlight {
+		if current.DeliveryID != continuation.DeliveryID || current.LeaseID != continuation.LeaseID || current.AttemptCausation != continuation.AttemptCausation || current.State != StateInFlight || (continuation.HandlerCheckpointReference != "" && current.ConsumerID != continuation.ConsumerID) {
 			return ErrMailboxContinuationLeaseLost
+		}
+		if isRecordExpired(current, m.nowTime()) {
+			return ErrMailboxContinuationExpired
+		}
+		if current.LeaseExpiresAt.IsZero() || !current.LeaseExpiresAt.After(m.nowTime()) {
+			return ErrMailboxContinuationLeaseLost
+		}
+		if continuation.HandlerCheckpointReference != "" {
+			// A persisted safe point keeps the original lease valid only through
+			// its bounded checkpoint expiry. Resume must claim before this source
+			// deadline; normal stale-lease reclaim remains authoritative after it.
+			record := state.Records[continuation.MessageID]
+			record.LeaseExpiresAt = continuation.ExpiresAt.UTC()
+			record.LastHeartbeatAt = m.nowTime()
+			record.UpdatedAt = m.nowTime()
 		}
 		state.Continuations[continuation.Ref.CheckpointID] = MailboxContinuationRecord{Continuation: continuation.Detached()}
 		return nil
@@ -351,6 +388,9 @@ func (m *Mailbox) ClaimHostPlanResume(ctx context.Context, req MailboxResumeRequ
 	if err := req.Validate(); err != nil {
 		return MailboxResumeClaim{}, err
 	}
+	if req.Ref.Deployment != (types.DeploymentScope{}) && req.Ref.Deployment.Check(req.Deployment) != nil {
+		return MailboxResumeClaim{}, ErrMailboxContinuationUnavailable
+	}
 	m.continuationMu.Lock()
 	defer m.continuationMu.Unlock()
 	var claim MailboxResumeClaim
@@ -362,6 +402,22 @@ func (m *Mailbox) ClaimHostPlanResume(ctx context.Context, req MailboxResumeRequ
 		continuation := record.Continuation
 		if continuation.Ref.Digest != req.Ref.Digest || continuation.Binding != req.Binding || continuation.Generation != req.Generation || continuation.PauseReason != req.PauseReason {
 			return ErrMailboxContinuationConflict
+		}
+		if continuation.Ref.Deployment != (types.DeploymentScope{}) && continuation.Ref.Deployment.Check(req.Deployment) != nil {
+			return ErrMailboxContinuationUnavailable
+		}
+		identity := req.identity()
+		// A terminal projection is immutable evidence for an equivalent resume
+		// request. It remains available even though the owner has subsequently
+		// acked/nacked the original delivery, so duplicate callers never restart
+		// a handler merely because lifecycle state advanced.
+		if record.Claim != nil && record.Claim.Result != nil {
+			if record.Identity != identity {
+				return ErrMailboxContinuationConflict
+			}
+			claim = *record.Claim
+			claim.Duplicate = true
+			return nil
 		}
 		if !m.nowTime().Before(continuation.ExpiresAt) {
 			return ErrMailboxContinuationExpired
@@ -376,16 +432,12 @@ func (m *Mailbox) ClaimHostPlanResume(ctx context.Context, req MailboxResumeRequ
 		if current.DeliveryID != continuation.DeliveryID || current.LeaseID != continuation.LeaseID || current.AttemptCausation != continuation.AttemptCausation || current.State != StateInFlight {
 			return ErrMailboxContinuationLeaseLost
 		}
-		identity := req.identity()
 		if record.Claim != nil {
 			if record.Identity != identity {
 				return ErrMailboxContinuationConflict
 			}
 			claim = *record.Claim
 			claim.Duplicate = true
-			if claim.Result != nil {
-				return nil
-			}
 			if record.Recovered {
 				return ErrMailboxContinuationRecoveryRequired
 			}

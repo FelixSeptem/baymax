@@ -535,11 +535,15 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | checkpoint claim rejects unsupported scope before mutation | `core/checkpoint/store_test.go::TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation` |
 | planbridge rejects unsupported deployment before source activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation` |
 | reference-only local versus distributed replay and side-effect guard | `tool/diagnosticsreplay/deployment_scope.go`, `tool/diagnosticsreplay/deployment_scope_test.go` |
+| same-host coordinator lease/fence/CAS, restart isolation and live-evidence loss | `core/sourcecoordination/*_test.go`, `core/checkpoint/store_test.go`, `core/history/journal_test.go` |
+| matching coordinated admission and cross-machine/stale-fence rejection before activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanAdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation` |
 | shell/PowerShell quality gates | `scripts/check-durable-store-deployment-scope-contract.sh`, `scripts/check-durable-store-deployment-scope-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
 
-The supported deployment profile is `same_host_single_writer_sequential_reopen`.
-Successful reopen does not evidence multi-writer CAS, cross-machine
-coordination, distributed cursor advancement or multi-instance resume claims.
+The default deployment profile is `same_host_single_writer_sequential_reopen`.
+An explicitly configured source coordinator may advertise same-host
+`multi_instance`/`multi_writer_cas`; successful reopen alone does not evidence
+that profile, cross-machine coordination, distributed cursor advancement or
+multi-instance resume claims.
 
 
 
@@ -613,8 +617,9 @@ automatic redispatch.
 | manifest-gated mailbox delegation, compile-time plan digest and activation availability rejection | `orchestration/planbridge/mailbox_binding_test.go` |
 | real-owner Run/Stream source correlation/terminal parity without a second logical admission | `integration/host_execution_plan_bridge_test.go` |
 | rejection before publish/Run on missing manifest or incompatible binding | `orchestration/planbridge/mailbox_binding_test.go` |
-| reference-only mailbox manifest/binding/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
+| reference-only mailbox manifest/binding/handler-safe-point/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
 | dedicated shell/PowerShell contract gate | `scripts/check-mailbox-plan-bridge-contract.sh`, `scripts/check-mailbox-plan-bridge-contract.ps1` |
+| explicit FileStore handler safe point, pause without lifecycle mutation, fresh-owner exactly-once resume, duplicate projection, lease-loss rejection and reason-specific manifest promotion | `orchestration/mailbox/worker_continuation_test.go`, `orchestration/planbridge/capability_test.go::TestMailboxHandlerPauseManifestRequiresConfiguredHandlerSafePoint` |
 
 ## Composite host-context capability evidence
 

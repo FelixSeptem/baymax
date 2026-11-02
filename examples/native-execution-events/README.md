@@ -21,6 +21,10 @@ owner checkpoint binds team graph/member facts or mailbox message/delivery/lease
 facts. History replay remains read-only and cannot create that checkpoint,
 resume it, re-consume a message, or infer support for resumed planbridge.
 
+For mailbox handler continuation, only `NewContinuationWorker` with a durable
+owner, registered resumer and revalidation callback creates the handler safe
+point; retained history stays read-only and cannot invoke that resumer.
+
 Workflow successor publication is likewise outside this example's event/history
 path: a repeated workflow pause is committed by the workflow checkpoint owner,
 not by callback delivery, cursor replay or an example-level retry. It adds no

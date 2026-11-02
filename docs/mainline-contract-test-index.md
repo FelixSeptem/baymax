@@ -617,8 +617,9 @@ automatic redispatch.
 | manifest-gated mailbox delegation, compile-time plan digest and activation availability rejection | `orchestration/planbridge/mailbox_binding_test.go` |
 | real-owner Run/Stream source correlation/terminal parity without a second logical admission | `integration/host_execution_plan_bridge_test.go` |
 | rejection before publish/Run on missing manifest or incompatible binding | `orchestration/planbridge/mailbox_binding_test.go` |
-| reference-only mailbox manifest/binding/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
+| reference-only mailbox manifest/binding/handler-safe-point/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
 | dedicated shell/PowerShell contract gate | `scripts/check-mailbox-plan-bridge-contract.sh`, `scripts/check-mailbox-plan-bridge-contract.ps1` |
+| explicit FileStore handler safe point, pause without lifecycle mutation, fresh-owner exactly-once resume, duplicate projection, lease-loss rejection and reason-specific manifest promotion | `orchestration/mailbox/worker_continuation_test.go`, `orchestration/planbridge/capability_test.go::TestMailboxHandlerPauseManifestRequiresConfiguredHandlerSafePoint` |
 
 ## Composite host-context capability evidence
 

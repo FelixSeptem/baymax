@@ -54,6 +54,20 @@ func (p *Compiled) execute(ctx context.Context, x Execution, stream bool) (out R
 		if capability.Admission != CapabilitySupported || capability.MailboxContinuation != CapabilitySupported {
 			return out, fail(UnsupportedCapability, "activation.capability_manifest.mailbox_async", nil)
 		}
+		if p.binding.Mailbox.HandlerResume != nil {
+			if capability.SourceContinuation == nil || !capability.SourceContinuation.HandlerExecutionSafePoint {
+				return out, fail(UnsupportedCapability, "activation.mailbox.handler_continuation", nil)
+			}
+			if p.binding.Mailbox.HandlerOwner == nil {
+				return out, fail(SourceUnavailable, "activation.mailbox.handler_owner", nil)
+			}
+			mailboxResult, e := p.binding.Mailbox.HandlerOwner.ResumeHandlerContinuation(ctx, *p.binding.Mailbox.HandlerResume)
+			if e != nil {
+				return out, e
+			}
+			out.Mailbox = &mailboxResult
+			return out, nil
+		}
 		if p.binding.Mailbox.Resume != nil {
 			owner, ok := p.binding.Mailbox.Owner.(MailboxContinuationOwner)
 			if !ok {

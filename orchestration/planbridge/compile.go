@@ -11,6 +11,7 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/composer"
+	"github.com/FelixSeptem/baymax/orchestration/mailbox"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 	"github.com/FelixSeptem/baymax/orchestration/teams"
 	"github.com/FelixSeptem/baymax/orchestration/workflow"
@@ -362,6 +363,32 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 				return Binding{}, nil, "", fail(BindingMismatch, "binding.mailbox.resume", nil)
 			}
 		}
+		if b.Mailbox.HandlerResume != nil {
+			if b.Mailbox.Resume != nil {
+				return Binding{}, nil, "", fail(InvalidPlan, "binding.mailbox.resume", nil)
+			}
+			if b.Mailbox.HandlerOwner == nil || capability.SourceContinuation == nil || !capability.SourceContinuation.HandlerExecutionSafePoint || capability.CheckpointCreation != CapabilitySupported || capability.CrossProcessRestore != CapabilitySupported {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.mailbox.handler_continuation", nil)
+			}
+			if err := b.Mailbox.HandlerResume.Validate(); err != nil {
+				return Binding{}, nil, "", fail(InvalidPlan, "binding.mailbox.handler_resume", err)
+			}
+			if b.Mailbox.HandlerResume.Binding != b.Mailbox.Binding || b.Mailbox.HandlerResume.Ref.MessageID != b.Mailbox.Binding.MessageID {
+				return Binding{}, nil, "", fail(BindingMismatch, "binding.mailbox.handler_resume", nil)
+			}
+			var supported bool
+			switch b.Mailbox.HandlerResume.PauseReason {
+			case mailbox.MailboxPauseInputRequired:
+				supported = capability.InputRequired == CapabilitySupported
+			case mailbox.MailboxPauseApprovalRequired:
+				supported = capability.ApprovalRequired == CapabilitySupported
+			case mailbox.MailboxPauseBudgetExhausted:
+				supported = capability.BudgetExhausted == CapabilitySupported
+			}
+			if !supported {
+				return Binding{}, nil, "", fail(UnsupportedCapability, "binding.mailbox.handler_resume.pause_reason", nil)
+			}
+		}
 		binding := b.Mailbox.Binding
 		if len(binding.MessageID) > l.ReferenceBytes || len(binding.IdempotencyKey) > l.ReferenceBytes || len(binding.PlanDigest) > l.ReferenceBytes {
 			return Binding{}, nil, "", fail(LimitExceeded, "binding.mailbox.reference", nil)
@@ -374,6 +401,13 @@ func prepare(shape Shape, delivery Delivery, requiredCapabilities int, b Binding
 		// construction binding immutable across compilation attempts.
 		mailboxBinding := *b.Mailbox
 		mailboxBinding.Binding = binding
+		if mailboxBinding.HandlerResume != nil {
+			resume, e := snapshot(*mailboxBinding.HandlerResume, l.BindingBytes, l.NestingDepth)
+			if e != nil {
+				return Binding{}, nil, "", e
+			}
+			mailboxBinding.HandlerResume = &resume
+		}
 		b.Mailbox = &mailboxBinding
 		return b, facts, "", nil
 	}

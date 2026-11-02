@@ -43,7 +43,9 @@ go run ./examples/01-chat-minimal
 
 - `coordinate-durable-source-stores-across-writers`（已归档，185）：为显式 source owner 增加 same-host multi-instance CAS、writer fencing 与 atomic checkpoint/history publication；默认 FileStore 仍为单写，cross-machine 保持 unsupported。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
 
-- 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；mailbox handler safe point 与 resumed-trigger plan 仍 unsupported。后续按 form/pause reason 逐格补证据，详见[开发路线图](docs/development-roadmap.md)。
+- `restore-mailbox-handler-continuations`（已归档，186）：为显式 FileStore + continuation worker/resumer/revalidation 配置提供 mailbox handler pause/resume；默认 lifecycle-only owner 保持 typed unsupported/recovery-required。实施入口与验收证据见[开发路线图](docs/development-roadmap.md)。
+
+- 已归档 180：`composite-checkpoint-restore-by-owner` 已将显式 workflow source-owner continuation restore 接入 planbridge，并按 owner/store evidence 校准 capability；resumed-trigger plan 仍 unsupported。mailbox handler safe point 仅在显式 FileStore + continuation worker/resumer/revalidation 配置时按 pause reason 开放，详见[开发路线图](docs/development-roadmap.md)。
 
 - 已归档 181：`composite-pause-reason-matrix` 已将 continuation capability 收敛为逐 execution form × pause reason 的 source evidence；缺少 safe point、restore、竞争和 terminal evidence 的格子在 admission 前保持 typed `unsupported_capability`/`unavailable`，mailbox lifecycle continuation 不代表 handler execution continuation。下一候选及实施入口见[开发路线图](docs/development-roadmap.md)。
 
@@ -139,7 +141,7 @@ Windows 使用等价的 `pwsh -File scripts/check-docs-consistency.ps1`、`check
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[SECURITY.md](SECURITY.md)、[CHANGELOG.md](CHANGELOG.md) 和 [LICENSE](LICENSE)。
 # Host execution plan bridge
 
-Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Team/mailbox continuation is additionally available only through an explicitly configured File-backed owner with matching capability and pause-reason evidence; the bridge delegates claim/projection and never creates a second graph, queue or worker. Resumed planbridge execution, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
+Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/README.md) bridge for hosts that need a bounded descriptor compiled against exactly one native execution owner. It supports inline direct, parallel/vote teams, flat workflows, isolated local child dispatch and manifest-approved `mailbox_async` delegation to the existing mailbox owner. Mailbox host-handler continuation is additionally available only through an explicitly configured File-backed continuation worker with a registered resumer and revalidation callback; it retains the original message/delivery/lease/attempt lineage and the bridge never creates a second queue or worker. Lifecycle-only mailbox continuation remains unsupported for handler restore. Resumed planbridge execution, subgraphs and shared child queues remain rejected before activation; descriptor digests and capability evidence are consistency facts, not authorization or business commit. See the [offline example](examples/host-execution-plan/README.md).
 
 ## Source-owned native event history
 

@@ -41,6 +41,19 @@
       "expected_reason": "mailbox_plan_bridge.manifest_drift"
     },
     {
+      "case_id": "handler-safe-point-parity",
+      "manifest_contract_version": "baymax.runtime.contract.v1",
+      "manifest_api_version": "host_runtime_capability_manifest.v1",
+      "evidence_reference": "fixture:mailbox-handler-continuation.v1",
+      "source_available": true,
+      "binding_equivalent": true,
+      "logical_admissions": 1,
+      "observation": { "message_id": "message-handler-1", "delivery_id": "message-handler-1:delivery:1", "lease_id": "message-handler-1:lease:1", "attempt_causation": "cause-handler-1:attempt:1", "parent_run_id": "parent-handler-1", "causation_id": "cause-handler-1", "authority_digest": "authority", "plan_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "write_scope": "scope", "effect_namespace": "effects-handler", "occurrence": "occurrence-handler", "host_correlation": "host-handler", "lifecycle_result": "leased" },
+      "run": { "message_id": "message-handler-1", "delivery_id": "message-handler-1:delivery:1", "lease_id": "message-handler-1:lease:1", "attempt_causation": "cause-handler-1:attempt:1", "parent_run_id": "parent-handler-1", "causation_id": "cause-handler-1", "authority_digest": "authority", "plan_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "write_scope": "scope", "effect_namespace": "effects-handler", "occurrence": "occurrence-handler", "host_correlation": "host-handler", "lifecycle_result": "leased" },
+      "stream": { "message_id": "message-handler-1", "delivery_id": "message-handler-1:delivery:1", "lease_id": "message-handler-1:lease:1", "attempt_causation": "cause-handler-1:attempt:1", "parent_run_id": "parent-handler-1", "causation_id": "cause-handler-1", "authority_digest": "authority", "plan_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "write_scope": "scope", "effect_namespace": "effects-handler", "occurrence": "occurrence-handler", "host_correlation": "host-handler", "lifecycle_result": "leased" },
+      "expected_reason": ""
+    },
+    {
       "case_id": "duplicate-conflict",
       "manifest_contract_version": "baymax.runtime.contract.v1",
       "manifest_api_version": "host_runtime_capability_manifest.v1",

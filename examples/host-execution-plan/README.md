@@ -6,7 +6,10 @@ Workflow continuation restore is owner-bound: callers must provide the matching
 workflow continuation store, `WorkflowResumeRequest`, and workflow-only
 capability manifest. The bridge delegates claim and restore to the reopened
 workflow owner, so completed steps are not rerun. A lifecycle-only mailbox
-binding or a resumed-trigger plan remains rejected before source activation.
+binding or a resumed-trigger plan remains rejected before source activation. A
+mailbox handler continuation is distinct: only a configured durable
+continuation worker/resumer/revalidator can expose a pause cell; lifecycle-only
+mailbox projection remains rejected for handler restore.
 
 ## Semantic anchors
 
@@ -36,6 +39,7 @@ direct 使用真实 runner/composer（composer.Run/Stream 目前只委托 runner
 | mailbox/resumed/native resume/durable continuation without declared capability | 编译/准入拒绝 | accepted 不等于 completed；相同 run ID 不证明恢复 |
 | team continuation with configured File owner | owner claim/projection only | same-host single-writer sequential reopen；each pause reason needs matching source evidence |
 | mailbox lifecycle continuation with configured File owner | lifecycle projection only | message/delivery/lease facts may be restored, but host-handler pause cells and context safe points remain unsupported |
+| mailbox handler continuation with configured File worker/resumer/revalidator | owner-native handler safe point | matching pause cell retains original delivery lineage; bridge delegates and never creates worker/queue/parent Run |
 
 limits 默认是 descriptor 64 KiB、合计 structural items 128、dependencies 1024、单 reference 1024 UTF-8 bytes、depth 8；copied binding 独立 64 KiB。零 override 选默认，正值只能收紧，负值/放宽拒绝。
 
@@ -53,6 +57,7 @@ markers 为示例本地验证输出，不是新 runtime 事件或 terminal state
 - `mailbox-logical-admission`：同一 full logical binding 的 Run/Stream dispatch 只保留一个 mailbox message admission。
 - `mailbox-lifecycle-source-owned`：delivery/lease/retry/DLQ 与 terminal evidence 来自 mailbox owner，不是 bridge synthetic state。
 - `team-mailbox-continuation-owner-configured`：只有明确 File owner、matching capability 和 pause-reason evidence 才可恢复；bridge 不创建 replacement parent、queue 或 worker。
+- `mailbox-handler-safe-point-owner-configured`：handler pause 仅由显式 continuation worker/resumer/revalidation owner 产生；lease loss、missing owner 或 lifecycle-only binding fail closed。
 
 全部 marker 都来自前置断言后的真实离线验证；`scripts/check-host-execution-plan-contract.sh/.ps1` 同时校验它们与故意 drift fixture。mailbox 的 owner lifecycle、Run/Stream parity 与 reference-only fixture 由 `scripts/check-mailbox-plan-bridge-contract.sh/.ps1` 单独覆盖；两者都不会访问 Provider、业务数据库或网络。
 

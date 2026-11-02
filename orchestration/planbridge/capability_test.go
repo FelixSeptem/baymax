@@ -73,6 +73,58 @@ func TestMailboxContinuationManifestRequiresDurableOwnerEvidence(t *testing.T) {
 	}
 }
 
+func TestMailboxHandlerPauseManifestRequiresConfiguredHandlerSafePoint(t *testing.T) {
+	ctx := context.Background()
+	store, err := mailbox.NewFileStore(filepath.Join(t.TempDir(), "mailbox.json"), mailbox.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := mailbox.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := CapabilityManifestWithMailboxContinuation(ctx, owner)
+	if err != nil {
+		t.Fatalf("lifecycle-only mailbox capability: %v", err)
+	}
+	reader, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability, err := reader.Capability(ExecutionFormMailboxAsync)
+	if err != nil || capability.InputRequired != CapabilityUnsupported || capability.ApprovalRequired != CapabilityUnsupported || capability.BudgetExhausted != CapabilityUnsupported {
+		t.Fatalf("lifecycle-only mailbox handler cells = %#v err=%v", capability, err)
+	}
+	if _, err := mailbox.NewContinuationWorker(owner, mailbox.WorkerConfig{Enabled: true}, func(context.Context, mailbox.Record) (mailbox.HandlerResult, error) {
+		return mailbox.HandlerResult{}, nil
+	}, func(context.Context, mailbox.MailboxContinuation, mailbox.Record) (mailbox.HandlerResult, error) {
+		return mailbox.HandlerResult{}, nil
+	}, func(context.Context, mailbox.MailboxContinuation) error { return nil }, "handler-worker"); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err = CapabilityManifestWithMailboxContinuation(ctx, owner)
+	if err != nil {
+		t.Fatalf("configured mailbox capability: %v", err)
+	}
+	entry, err := NewCapabilityManifestReader(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability, err = entry.Capability(ExecutionFormMailboxAsync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for reason, state := range map[string]CapabilityState{
+		"input_required":    capability.InputRequired,
+		"approval_required": capability.ApprovalRequired,
+		"budget_exhausted":  capability.BudgetExhausted,
+	} {
+		if state != CapabilitySupported {
+			t.Fatalf("mailbox pause %q state=%q", reason, state)
+		}
+	}
+}
+
 func TestWorkflowContinuationManifestEnablesOnlyWorkflowCells(t *testing.T) {
 	manifest, err := CapabilityManifestWithWorkflowContinuation(context.Background(), workflowContinuationEvidence{})
 	if err != nil {

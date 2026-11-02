@@ -274,8 +274,14 @@ terminal reducer. Mailbox owns message/delivery/lease/attempt lifecycle; the hos
 owns authority, write scope, effect namespace and business commit. Capability
 manifest evidence never substitutes for current admission. Spec 2 history/cursor
 replay is delegated to a concrete mailbox source reader; Spec 3 durable
-checkpoint restore is implemented only in the direct runner source. Mailbox and
-planbridge resumed execution remain unsupported.
+checkpoint restore is implemented only in the direct runner source. A separate
+configured `mailbox.NewContinuationWorker` is the sole mailbox handler restore
+owner: it seals pre-effect pause references and a registered resumer later
+continues the same message/delivery/lease/attempt after reauthorization. The
+bridge can only delegate that owner-bound path after exact manifest evidence;
+it never creates a handler, worker, lease, retry, or context-injection path.
+Lifecycle-only mailbox continuation and planbridge resumed execution remain
+unsupported for handler execution.
 
 ### Native history source ownership
 

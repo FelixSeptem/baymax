@@ -2409,3 +2409,13 @@ continuation may expose delivery facts while all host-handler pause cells stay
 unsupported until a handler execution safe point is source-owned. Missing or
 stale cells are rejected before effects; diagnostics must not imply fallback
 Run, retry, enqueue, or history replay.
+
+Mailbox handler continuation adds no env/file/hot-update key and does not add a
+RuntimeRecorder writer. It is constructor configured through the existing owner:
+a durable FileStore mailbox plus `NewContinuationWorker`, resumer, and
+revalidation callback. Diagnostics may expose only bounded checkpoint/reference,
+message/delivery/lease/attempt, pause-reason, claim, and lifecycle classifications;
+they MUST NOT include handler checkpoint bodies, payloads, credentials, callback
+errors, effect contents, or a business-commit assertion. Removing that
+constructor configuration is the rollback path; persisted uncertain claims stay
+`recovery-required` rather than falling back to a fresh Run.

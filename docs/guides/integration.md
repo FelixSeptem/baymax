@@ -28,6 +28,22 @@
 
 默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
 
+### Mailbox handler continuation
+
+`mailbox_async` 的 lifecycle continuation 不执行 handler。需要 handler 在
+`input_required`、`approval_required` 或 `budget_exhausted` 后继续时，宿主必须
+使用同一 mailbox owner 的 FileStore、`NewContinuationWorker`、注册的 resumer
+和当前 revalidation callback。Handler 只能在不可逆 effect 前返回有界
+`HandlerPause`；owner 原子保留原 message/delivery/lease/attempt/causation 和
+host authority/plan/write-scope/effect/occurrence identity。恢复只能经
+`ResumeHandlerContinuation`：同一请求收敛为一个 claim/projection，已完成 effect
+不会重新执行，完成/失败仍由 owner 的 Ack/Nack/Requeue/retry/DLQ 规则裁决。
+
+MemoryStore、缺少 resumer/revalidation、失效 lease、过期/foreign/corrupt/fence
+不匹配或未知 terminal 窗口均在 effect 前 typed fail closed；不得 re-enqueue、
+re-consume、重新 Run parent 或把 source history replay 当 restore。Mailbox ack
+和 terminal projection 始终不表示 host business commit。
+
 ### Child/fanout continuation（child-owner phase）
 
 Composer exposes an explicit source-owned child continuation boundary for local

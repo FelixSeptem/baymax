@@ -4,9 +4,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
-Write-Host "[mailbox-plan-bridge-contract] owner delegation, lifecycle, parity and reference-only replay"
+Write-Host "[mailbox-plan-bridge-contract] owner delegation, handler continuation, lifecycle, parity and reference-only replay"
 Invoke-NativeStrict -Label "mailbox plan bridge suites" -Command {
-    go test ./orchestration/planbridge ./orchestration/mailbox ./integration ./tool/diagnosticsreplay -run 'Test(MailboxPlan|HostPlanOutcome|HostExecutionPlanMailboxAsync)' -count=1
+    go test ./orchestration/planbridge ./orchestration/mailbox ./integration ./tool/diagnosticsreplay -run 'Test(MailboxPlan|MailboxHandlerContinuation|ContinuationWorker|HostPlanOutcome|HostExecutionPlanMailboxAsync)' -count=1
 }
 $pattern = 'github.com/FelixSeptem/baymax/(observability|mcp/)|^[\t ]*go[\t ]+|\.(Run|Stream|Resume|Retry|Cancel|Record|AppendEvent)\('
 $matches = @(rg -n -- $pattern tool/diagnosticsreplay/mailbox_plan_bridge.go)

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-01 18:54:36
+Updated: 2026-11-02 09:51:10
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -187,3 +187,4 @@ Updated: 2026-11-01 18:54:36
 - 183 -> publish-workflow-successor-checkpoints-atomically
 - 184 -> establish-provider-structured-context-cache-runtime
 - 185 -> coordinate-durable-source-stores-across-writers
+- 186 -> restore-mailbox-handler-continuations

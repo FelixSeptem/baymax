@@ -39,10 +39,32 @@ type Mailbox struct {
 	now            func() time.Time
 	observers      []LifecycleObserver
 	continuationMu sync.Mutex
+	// handlerContinuationConfigured is process configuration, not persisted
+	// source state. A reopened durable owner must register its own resumer
+	// before it can advertise or perform handler execution restore.
+	handlerContinuationConfigured bool
 
 	queryCacheMu    sync.RWMutex
 	queryCacheEpoch uint64
 	queryCache      map[string][]Record
+}
+
+func (m *Mailbox) enableHandlerContinuation() {
+	if m == nil {
+		return
+	}
+	m.continuationMu.Lock()
+	defer m.continuationMu.Unlock()
+	m.handlerContinuationConfigured = true
+}
+
+func (m *Mailbox) handlerContinuationEnabled() bool {
+	if m == nil {
+		return false
+	}
+	m.continuationMu.Lock()
+	defer m.continuationMu.Unlock()
+	return m.handlerContinuationConfigured
 }
 
 type Option func(*Mailbox)

@@ -59,8 +59,8 @@ restore must be explicitly bound to the workflow owner and its checkpoint
 store; planbridge does not reconstruct workflow state from a normal Run/Stream
 request. Each path is admitted only for the source/store deployment scope and
 pause-reason evidence reported by its capability manifest. Mailbox handler
-continuation and resumed-plan execution remain unsupported without their own
-source execution safe point and restore evidence.
+continuation requires its own source execution safe point and restore evidence;
+resumed-plan execution remains a separate unsupported capability.
 
 For workflow restore, set `WorkflowBinding.TerminalOnly=false` and provide the
 original `WorkflowResumeRequest`, the matching `WorkflowContinuationStore`, and
@@ -80,6 +80,15 @@ execution: without an owner-provided handler safe point, all mailbox handler
 pause cells and context restore remain unsupported before publish or dispatch.
 The pause-cell limitation is source-owned and stable as
 `mailbox_handler_safe_point_unsupported`.
+
+A configured mailbox handler continuation binds `MailboxBinding.HandlerResume`
+and `HandlerOwner` to the existing mailbox worker owner. The manifest must
+declare a compatible durable mailbox source, handler safe point, and the exact
+requested pause-reason cell. Compile/activation validate these facts before any
+publish, consume, handler call, or claim; then delegate once to the owner.
+Run and Stream share that decision and return its source projection. The bridge
+does not construct a worker/resumer, invoke a handler, renew a lease, or turn a
+lifecycle-only continuation into handler restore.
 
 Errors expose `Code`, a safe field path and optional native `Unwrap`, never
 payloads: unsupported_version, invalid_plan, limit_exceeded, binding_mismatch,

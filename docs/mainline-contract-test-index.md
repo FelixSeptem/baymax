@@ -1,5 +1,7 @@
 # Mainline Contract Test Index
 
+> Host admission provenance：`core/types/host_resume_admission_test.go`、`core/runner/host_resume_provenance_test.go` 覆盖原始 admission/policy/source-scope 漂移及跨进程重开恢复；`tool/diagnosticsreplay/host_resume_admission*` 保留只读 conformance，统一门禁为 `scripts/check-host-resume-admission-contract.ps1/.sh`。
+
 ## Execution graph topology projection
 
 `orchestration/graph` validates bounded source-neutral topology and deterministic projection without owning execution, persistence, restore or terminal state. Workflow, team and composer child adapters retain their owner-specific execution and digest semantics. Positive, negative and projection parity cases live in `orchestration/graph/*_test.go` and the three owner projection test files; `scripts/check-execution-graph-contract.sh/.ps1` runs the focused contract gate and is wired into the standard quality gate.

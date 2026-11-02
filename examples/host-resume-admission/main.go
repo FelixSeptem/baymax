@@ -23,6 +23,7 @@ type fixture struct {
 func newFixture() *fixture {
 	f := &fixture{revision: "revision", authority: "authority", effect: "effect"}
 	f.current = types.HostResumeFacts{Plan: types.HostResumePlan{ID: "offline-plan", Version: 1, Digest: "plan-digest"}, BusinessRevision: f.revision, AuthorityDigest: f.authority, ToolCapabilityDigest: "tools", WriteScopeDigest: "scope", ConfirmationReference: "confirmation", EffectReference: f.effect, DecisionAuthorized: true, ExecutionAuthorized: true, CancellationAuthorized: true, ConfirmationValid: true, EffectEligible: true}
+	f.current.Provenance = &types.HostAdmissionProvenance{AdmissionReference: "offline-admission", PolicyRevision: "policy-v1", SourceScopeDigest: "listen-scope"}
 	return f
 }
 
@@ -105,6 +106,9 @@ func pause(f *fixture, stream bool) (*runner.Engine, types.DynamicActionDecision
 	cp := r.TerminalOutcome
 	c := f.current
 	f.binding = types.HostResumeBinding{Version: types.HostResumeAdmissionVersion, Checkpoint: types.RunCheckpoint{Version: cp.CheckpointVersion, CheckpointID: cp.CheckpointID, RunID: req.RunID, SessionID: req.SessionID, State: types.RunStateInputRequired, Mode: map[bool]string{true: "stream", false: "run"}[stream], Iteration: r.Iterations, PendingAction: cp.PendingAction, Digest: cp.CheckpointDigest}, Plan: c.Plan, BusinessRevision: c.BusinessRevision, AuthorityDigest: c.AuthorityDigest, ToolCapabilityDigest: c.ToolCapabilityDigest, WriteScopeDigest: c.WriteScopeDigest, ConfirmationReference: c.ConfirmationReference, EffectReference: c.EffectReference}
+	// Preserve the original record separately from fresh current facts.
+	provenance := *c.Provenance
+	f.binding.Provenance = &provenance
 	d := types.DynamicActionDecision{Decision: types.DynamicActionDecisionConfirm, Token: cp.PendingAction.Token, RunID: req.RunID, SessionID: req.SessionID, CheckpointID: cp.CheckpointID, CheckpointVersion: cp.CheckpointVersion, CheckpointDigest: cp.CheckpointDigest, IdempotencyKey: "resume-key", Reference: "confirmation"}
 	return e, d, nil
 }
@@ -152,6 +156,12 @@ func exercise(stream bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	g.current.Provenance.SourceScopeDigest = "changed-listen-scope"
+	if _, err = other.ResumeDynamicAction(ctx, decision, g, stream); !errors.Is(err, types.HostResumeScopeDrift) || g.modelCalls != 1 || g.effects != 0 || g.resolved != 0 {
+		return nil, errors.New("source scope drift activated source")
+	}
+	markers = append(markers, "source_scope_drift")
+	g.current.Provenance.SourceScopeDigest = "listen-scope"
 	g.current.BusinessRevision = "new-revision"
 	if _, err = other.ResumeDynamicAction(ctx, decision, g, stream); !errors.Is(err, types.HostResumeRevisionDrift) || g.modelCalls != 1 || g.effects != 0 || g.resolved != 0 {
 		return nil, errors.New("revision drift activated source")

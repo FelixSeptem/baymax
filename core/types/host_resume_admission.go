@@ -96,35 +96,53 @@ type HostResumePlan struct {
 	Digest  string `json:"digest"`
 }
 
+// HostAdmissionProvenance references the host-owned original admission record,
+// policy and source listen scope. It is evidence, never an authorization grant.
+// Hosts must load paused records and obtain fresh facts independently.
+type HostAdmissionProvenance struct {
+	AdmissionReference string `json:"admission_reference"`
+	PolicyRevision     string `json:"policy_revision"`
+	SourceScopeDigest  string `json:"source_scope_digest"`
+}
+
+func (p *HostAdmissionProvenance) valid() bool {
+	return p != nil &&
+		hostResumeString(p.AdmissionReference, HostResumeMaxReferenceBytes) &&
+		hostResumeString(p.PolicyRevision, HostResumeMaxReferenceBytes) &&
+		hostResumeString(p.SourceScopeDigest, HostResumeMaxDigestBytes)
+}
+
 // HostResumeBinding is loaded from trusted paused application records by the
 // verifier. A client-supplied digest does not establish this binding.
 type HostResumeBinding struct {
-	Version               string         `json:"version"`
-	Checkpoint            RunCheckpoint  `json:"checkpoint"`
-	Plan                  HostResumePlan `json:"plan"`
-	BusinessRevision      string         `json:"business_revision"`
-	AuthorityDigest       string         `json:"authority_digest"`
-	ToolCapabilityDigest  string         `json:"tool_capability_digest"`
-	WriteScopeDigest      string         `json:"write_scope_digest"`
-	ConfirmationReference string         `json:"confirmation_reference"`
-	EffectReference       string         `json:"effect_reference"`
+	Provenance            *HostAdmissionProvenance `json:"provenance,omitempty"`
+	Version               string                   `json:"version"`
+	Checkpoint            RunCheckpoint            `json:"checkpoint"`
+	Plan                  HostResumePlan           `json:"plan"`
+	BusinessRevision      string                   `json:"business_revision"`
+	AuthorityDigest       string                   `json:"authority_digest"`
+	ToolCapabilityDigest  string                   `json:"tool_capability_digest"`
+	WriteScopeDigest      string                   `json:"write_scope_digest"`
+	ConfirmationReference string                   `json:"confirmation_reference"`
+	EffectReference       string                   `json:"effect_reference"`
 }
 
 // HostResumeFacts contains current host facts and actual authorization checks.
 // It describes eligibility at admission; the business executor still needs CAS.
 type HostResumeFacts struct {
-	Plan                   HostResumePlan `json:"plan"`
-	BusinessRevision       string         `json:"business_revision"`
-	AuthorityDigest        string         `json:"authority_digest"`
-	ToolCapabilityDigest   string         `json:"tool_capability_digest"`
-	WriteScopeDigest       string         `json:"write_scope_digest"`
-	ConfirmationReference  string         `json:"confirmation_reference"`
-	EffectReference        string         `json:"effect_reference"`
-	DecisionAuthorized     bool           `json:"decision_authorized"`
-	ExecutionAuthorized    bool           `json:"execution_authorized"`
-	CancellationAuthorized bool           `json:"cancellation_authorized"`
-	ConfirmationValid      bool           `json:"confirmation_valid"`
-	EffectEligible         bool           `json:"effect_eligible"`
+	Provenance             *HostAdmissionProvenance `json:"provenance,omitempty"`
+	Plan                   HostResumePlan           `json:"plan"`
+	BusinessRevision       string                   `json:"business_revision"`
+	AuthorityDigest        string                   `json:"authority_digest"`
+	ToolCapabilityDigest   string                   `json:"tool_capability_digest"`
+	WriteScopeDigest       string                   `json:"write_scope_digest"`
+	ConfirmationReference  string                   `json:"confirmation_reference"`
+	EffectReference        string                   `json:"effect_reference"`
+	DecisionAuthorized     bool                     `json:"decision_authorized"`
+	ExecutionAuthorized    bool                     `json:"execution_authorized"`
+	CancellationAuthorized bool                     `json:"cancellation_authorized"`
+	ConfirmationValid      bool                     `json:"confirmation_valid"`
+	EffectEligible         bool                     `json:"effect_eligible"`
 }
 
 type HostResumeResult struct {
@@ -158,6 +176,11 @@ func ValidateHostResumeResult(r HostResumeRequest, x HostResumeResult) error {
 		return err
 	}
 	b, c := x.Binding, x.Current
+	if b.Provenance != nil || c.Provenance != nil {
+		if !b.Provenance.valid() || !c.Provenance.valid() {
+			return HostResumeInvalidBinding
+		}
+	}
 	if x.Version != HostResumeAdmissionVersion || b.Version != HostResumeAdmissionVersion || !hostResumeEnvelope(x) || !hostResumeCheckpointValid(b.Checkpoint) ||
 		!hostResumeFieldsValid(b.Plan, b.BusinessRevision, b.AuthorityDigest, b.ToolCapabilityDigest, b.WriteScopeDigest, b.ConfirmationReference, b.EffectReference) ||
 		!hostResumeFieldsValid(c.Plan, c.BusinessRevision, c.AuthorityDigest, c.ToolCapabilityDigest, c.WriteScopeDigest, c.ConfirmationReference, c.EffectReference) {
@@ -176,6 +199,9 @@ func ValidateHostResumeResult(r HostResumeRequest, x HostResumeResult) error {
 	if x.Status == RunResumeAdmissionRejected {
 		return x.ReasonCode
 	}
+	if b.Provenance != nil && b.Provenance.AdmissionReference != c.Provenance.AdmissionReference {
+		return HostResumeBindingMismatch
+	}
 	if !c.DecisionAuthorized {
 		return HostResumeAuthorityDenied
 	}
@@ -193,6 +219,14 @@ func ValidateHostResumeResult(r HostResumeRequest, x HostResumeResult) error {
 	}
 	if !c.ExecutionAuthorized || c.AuthorityDigest != b.AuthorityDigest {
 		return HostResumeAuthorityDenied
+	}
+	if b.Provenance != nil {
+		if b.Provenance.PolicyRevision != c.Provenance.PolicyRevision {
+			return HostResumeAuthorityDenied
+		}
+		if b.Provenance.SourceScopeDigest != c.Provenance.SourceScopeDigest {
+			return HostResumeScopeDrift
+		}
 	}
 	if c.BusinessRevision != b.BusinessRevision {
 		return HostResumeRevisionDrift

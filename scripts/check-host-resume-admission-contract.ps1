@@ -20,7 +20,7 @@ try {
 }
 $smoke = @()
 Invoke-NativeStrict -Label "host resume example" -Command { $script:smoke = @(go run ./examples/host-resume-admission) }
-foreach ($marker in @("authority_denied", "resume_accepted", "completed", "revision_drift", "duplicate_no_effect", "resume_in_progress", "effect_cas_rejected", "run_stream_parity")) {
+foreach ($marker in @("authority_denied", "resume_accepted", "completed", "revision_drift", "source_scope_drift", "duplicate_no_effect", "resume_in_progress", "effect_cas_rejected", "run_stream_parity")) {
     if ($smoke -notcontains $marker) { throw "[host-resume-admission-contract] missing marker $marker" }
 }
 Write-Host "[host-resume-admission-contract] passed"

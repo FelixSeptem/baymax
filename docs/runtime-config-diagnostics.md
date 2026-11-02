@@ -1,5 +1,7 @@
 # Runtime Config & Diagnostics API
 
+> Host resume admission provenance：可选的原始 admission 引用、policy revision 与 source scope digest 由宿主可信记录提供，默认省略；不新增 env/file/hot-update 键或 QueryRuns 字段。漂移复用既有 host_resume 有限拒绝分类，拒绝不写入业务正文；RuntimeRecorder 保持唯一诊断写入口。详见 [恢复准入指南](guides/host-resume-admission.md)。
+
 更新时间：2026-10-14
 
 ## 目标

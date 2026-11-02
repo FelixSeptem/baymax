@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
-$env:GOCACHE = Join-Path $repoRoot ".gocache-team-mailbox-continuation-gate"
+if (-not $env:GOCACHE) { $env:GOCACHE = Join-Path $repoRoot ".gocache-team-mailbox-continuation-gate" }
 
 Write-Host "[team-mailbox-continuation-contract] owner restore, lifecycle races, and owner boundaries"
 Invoke-NativeStrict -Label "team/mailbox continuation suites" -Command {

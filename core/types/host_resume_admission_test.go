@@ -15,6 +15,98 @@ func hostResumeFixture() (HostResumeRequest, HostResumeResult) {
 	return r, HostResumeResult{Version: HostResumeAdmissionVersion, Status: RunResumeAdmissionAccepted, Binding: HostResumeBinding{Version: HostResumeAdmissionVersion, Checkpoint: cp, Plan: f.Plan, BusinessRevision: f.BusinessRevision, AuthorityDigest: f.AuthorityDigest, ToolCapabilityDigest: f.ToolCapabilityDigest, WriteScopeDigest: f.WriteScopeDigest, ConfirmationReference: f.ConfirmationReference, EffectReference: f.EffectReference}, Current: f}
 }
 
+// JSON keeps this reproduction runnable against the v1 implementation that
+// silently ignores provenance and would accept the stale current facts.
+func TestHostResumeProvenanceJSONDrift(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		want  HostResumeReason
+	}{
+		{"admission_reference", HostResumeBindingMismatch},
+		{"policy_revision", HostResumeAuthorityDenied},
+		{"source_scope_digest", HostResumeScopeDrift},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			r, x := hostResumeFixture()
+			raw, err := json.Marshal(x)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wire map[string]any
+			if err = json.Unmarshal(raw, &wire); err != nil {
+				t.Fatal(err)
+			}
+			b := map[string]any{"admission_reference": "admission", "policy_revision": "policy-v1", "source_scope_digest": "source"}
+			c := map[string]any{"admission_reference": "admission", "policy_revision": "policy-v1", "source_scope_digest": "source"}
+			c[tc.field] = "changed"
+			wire["binding"].(map[string]any)["provenance"] = b
+			wire["current"].(map[string]any)["provenance"] = c
+			raw, err = json.Marshal(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = json.Unmarshal(raw, &x); err != nil {
+				t.Fatal(err)
+			}
+			if err = ValidateHostResumeResult(r, x); err != tc.want {
+				t.Fatalf("stale %s accepted: err=%v want=%v", tc.field, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestHostResumeProvenanceBoundsAndCancellation(t *testing.T) {
+	good := HostAdmissionProvenance{AdmissionReference: "admission", PolicyRevision: "v1", SourceScopeDigest: "source"}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*HostResumeResult)
+		want   HostResumeReason
+	}{
+		{"matching", func(*HostResumeResult) {}, ""},
+		{"missing binding", func(x *HostResumeResult) { x.Binding.Provenance = nil }, HostResumeInvalidBinding},
+		{"missing current", func(x *HostResumeResult) { x.Current.Provenance = nil }, HostResumeInvalidBinding},
+		{"empty admission", func(x *HostResumeResult) { x.Binding.Provenance.AdmissionReference = "" }, HostResumeInvalidBinding},
+		{"empty policy", func(x *HostResumeResult) { x.Current.Provenance.PolicyRevision = "" }, HostResumeInvalidBinding},
+		{"empty scope", func(x *HostResumeResult) { x.Current.Provenance.SourceScopeDigest = "" }, HostResumeInvalidBinding},
+		{"reference over", func(x *HostResumeResult) { x.Binding.Provenance.AdmissionReference = strings.Repeat("x", 257) }, HostResumeInvalidBinding},
+		{"revision over", func(x *HostResumeResult) { x.Binding.Provenance.PolicyRevision = strings.Repeat("x", 257) }, HostResumeInvalidBinding},
+		{"scope over", func(x *HostResumeResult) { x.Current.Provenance.SourceScopeDigest = strings.Repeat("x", 129) }, HostResumeInvalidBinding},
+		{"utf8", func(x *HostResumeResult) { x.Current.Provenance.PolicyRevision = string([]byte{255}) }, HostResumeInvalidBinding},
+		{"space", func(x *HostResumeResult) { x.Current.Provenance.AdmissionReference = "has space" }, HostResumeInvalidBinding},
+		{"control", func(x *HostResumeResult) { x.Binding.Provenance.SourceScopeDigest = "source\x00" }, HostResumeInvalidBinding},
+		{"boundary", func(x *HostResumeResult) {
+			p := HostAdmissionProvenance{AdmissionReference: strings.Repeat("界", 85) + "x", PolicyRevision: strings.Repeat("x", 256), SourceScopeDigest: strings.Repeat("x", 128)}
+			x.Binding.Provenance, x.Current.Provenance = &p, &p
+		}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, x := hostResumeFixture()
+			b, c := good, good
+			x.Binding.Provenance, x.Current.Provenance = &b, &c
+			tc.mutate(&x)
+			err := ValidateHostResumeResult(r, x)
+			if tc.want == "" && err != nil || tc.want != "" && err != tc.want {
+				t.Fatalf("err=%v want=%v", err, tc.want)
+			}
+		})
+	}
+	for _, kind := range []DynamicActionDecisionKind{DynamicActionDecisionDeny, DynamicActionDecisionTimeout} {
+		r, x := hostResumeFixture()
+		r.Decision.Decision = kind
+		b, c := good, good
+		c.PolicyRevision, c.SourceScopeDigest = "changed", "changed"
+		x.Binding.Provenance, x.Current.Provenance = &b, &c
+		x.Current.ExecutionAuthorized = false
+		if err := ValidateHostResumeResult(r, x); err != nil {
+			t.Fatal(err)
+		}
+		c.AdmissionReference = "other"
+		if err := ValidateHostResumeResult(r, x); err != HostResumeBindingMismatch {
+			t.Fatalf("cancel identity err=%v", err)
+		}
+	}
+}
+
 func TestHostResumeAdmissionBounds(t *testing.T) {
 	r, result := hostResumeFixture()
 	if err := r.Validate(); err != nil {

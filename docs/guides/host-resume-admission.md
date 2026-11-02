@@ -1,5 +1,19 @@
 # 宿主恢复准入与重验证
 
+## Admission provenance
+
+`HostResumeBinding.Provenance` 与 `HostResumeFacts.Provenance` 是可选的 `*HostAdmissionProvenance`，默认省略。宿主从可信暂停 execution record 加载原值，再从当前授权策略和 source 订阅事实取得新值；不得从 resume 请求、callback EventID 或 RunID 推导。
+
+| 字段 | 上限 | 含义与漂移分类 |
+| --- | --- | --- |
+| `admission_reference` | 256 UTF-8 bytes | 原始准入记录的 opaque 引用；不同返回 binding_mismatch |
+| `policy_revision` | 256 UTF-8 bytes | 授权策略版本；confirm 不同返回 authority_denied |
+| `source_scope_digest` | 128 UTF-8 bytes | 原始 source 监听范围；confirm 不同返回 scope_drift |
+
+两端同时省略保留 v1 行为，但没有 provenance 证据。仅一端存在、字段为空、超限、非法 UTF-8、空白或控制字符均返回 invalid_binding；仍受既有 32 KiB envelope 限制。无订阅的 source 也使用明确的宿主 scope digest。deny/timeout 仍按当前取消权限处理，可忽略 execution policy/source scope 漂移，但 admission 引用必须一致。
+
+同一 guard 覆盖 live Run/Stream 和已支持的 durable restore，并在 source claim 前拒绝；拒绝不消费 checkpoint/key。宿主负责保存审计引用并实际授权，provenance 不提供全局授权、跨 source 身份或 exactly-once。准入后到 effect 之间仍需业务 CAS。部署先升级 validator 再写 provenance；回滚暂停无法重验证的恢复并保留原记录，不通过删除字段绕过重验证。
+
 状态：已交付（归档 164）。`host_resume_admission.v1` 的公开合同位于 `core/types/host_resume_admission.go`，source 接线位于 `core/runner/dynamic_action_resume.go`。本文说明当前 API、默认值、边界和迁移要求；历史实现与完整验证见[归档 164](../../openspec/changes/archive/164-establish-host-resume-admission-revalidation-contract/verification.md)。
 
 ## Source ownership

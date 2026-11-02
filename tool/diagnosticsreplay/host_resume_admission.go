@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"reflect"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/FelixSeptem/baymax/core/types"
 )
 
 const HostResumeAdmissionReplayVersion = "host_resume_admission.v1"
@@ -19,27 +22,29 @@ type HostResumeAdmissionFixture struct {
 }
 
 type HostResumeAdmissionReplayCase struct {
-	CaseID          string `json:"case_id"`
-	ParityGroup     string `json:"parity_group,omitempty"`
-	Mode            string `json:"mode"`
-	RunID           string `json:"run_id"`
-	SessionID       string `json:"session_id"`
-	CheckpointID    string `json:"checkpoint_id"`
-	Decision        string `json:"decision"`
-	Status          string `json:"status"`
-	SourceReason    string `json:"source_reason,omitempty"`
-	BindingMatches  bool   `json:"binding_matches"`
-	AuthorityValid  bool   `json:"authority_valid"`
-	RevisionMatches bool   `json:"revision_matches"`
-	Resolutions     int    `json:"resolutions"`
-	TerminalEvents  int    `json:"terminal_events"`
-	TerminalState   string `json:"terminal_state,omitempty"`
-	ProviderCalls   int    `json:"provider_calls"`
-	ToolCalls       int    `json:"tool_calls"`
-	Effects         int    `json:"effects"`
-	IterationBefore int    `json:"iteration_before"`
-	IterationAfter  int    `json:"iteration_after"`
-	ExpectedReason  string `json:"expected_reason,omitempty"`
+	OriginalProvenance *types.HostAdmissionProvenance `json:"original_provenance,omitempty"`
+	CurrentProvenance  *types.HostAdmissionProvenance `json:"current_provenance,omitempty"`
+	CaseID             string                         `json:"case_id"`
+	ParityGroup        string                         `json:"parity_group,omitempty"`
+	Mode               string                         `json:"mode"`
+	RunID              string                         `json:"run_id"`
+	SessionID          string                         `json:"session_id"`
+	CheckpointID       string                         `json:"checkpoint_id"`
+	Decision           string                         `json:"decision"`
+	Status             string                         `json:"status"`
+	SourceReason       string                         `json:"source_reason,omitempty"`
+	BindingMatches     bool                           `json:"binding_matches"`
+	AuthorityValid     bool                           `json:"authority_valid"`
+	RevisionMatches    bool                           `json:"revision_matches"`
+	Resolutions        int                            `json:"resolutions"`
+	TerminalEvents     int                            `json:"terminal_events"`
+	TerminalState      string                         `json:"terminal_state,omitempty"`
+	ProviderCalls      int                            `json:"provider_calls"`
+	ToolCalls          int                            `json:"tool_calls"`
+	Effects            int                            `json:"effects"`
+	IterationBefore    int                            `json:"iteration_before"`
+	IterationAfter     int                            `json:"iteration_after"`
+	ExpectedReason     string                         `json:"expected_reason,omitempty"`
 }
 
 type HostResumeAdmissionReplayResult struct {
@@ -96,7 +101,7 @@ func ReplayHostResumeAdmissionFixtureJSON(raw []byte) ([]HostResumeAdmissionRepl
 			normal.RunID = ""
 			normal.SessionID = ""
 			normal.CheckpointID = ""
-			if prior, ok := parity[x.ParityGroup]; ok && prior != normal {
+			if prior, ok := parity[x.ParityGroup]; ok && !reflect.DeepEqual(prior, normal) {
 				return nil, hostResumeReplayError()
 			}
 			parity[x.ParityGroup] = normal
@@ -139,12 +144,8 @@ func hostResumeReplayReason(x HostResumeAdmissionReplayCase) (string, bool) {
 		default:
 			return "", false
 		}
-	case !x.BindingMatches:
-		reason = "host_resume.binding_mismatch"
-	case !x.AuthorityValid:
-		reason = "host_resume.authority_denied"
-	case x.Decision == "confirm" && !x.RevisionMatches:
-		reason = "host_resume.revision_drift"
+	default:
+		reason = hostResumeReplayAdmissionReason(x)
 	}
 	switch x.Status {
 	case "accepted":
@@ -181,4 +182,33 @@ func hostResumeReplayReason(x HostResumeAdmissionReplayCase) (string, bool) {
 		return "", false
 	}
 	return reason, true
+}
+
+// Reconstruct synthetic admission facts and let the live pure validator decide
+// precedence, including combined failures. These references never establish
+// real host authorization.
+func hostResumeReplayAdmissionReason(x HostResumeAdmissionReplayCase) string {
+	a := types.DynamicActionReference{Token: "token", Kind: "prepare", Resumable: true, RunID: x.RunID, SessionID: x.SessionID, Iteration: 1, CallID: "call", Source: "fixture", Digest: "digest"}
+	cp := types.RunCheckpoint{Version: types.DynamicActionResumeProtocolVersion, CheckpointID: x.CheckpointID, RunID: x.RunID, SessionID: x.SessionID, State: types.RunStateInputRequired, Mode: x.Mode, Iteration: 1, PendingAction: &a, Digest: "digest"}
+	d := types.DynamicActionDecision{Decision: types.DynamicActionDecisionKind(x.Decision), Token: "token", RunID: x.RunID, SessionID: x.SessionID, CheckpointID: x.CheckpointID, CheckpointVersion: cp.Version, CheckpointDigest: cp.Digest, IdempotencyKey: "key", Reference: "confirmation"}
+	f := types.HostResumeFacts{Provenance: x.CurrentProvenance, Plan: types.HostResumePlan{ID: "plan", Version: 1, Digest: "plan"}, BusinessRevision: "revision", AuthorityDigest: "authority", ToolCapabilityDigest: "tools", WriteScopeDigest: "scope", ConfirmationReference: "confirmation", EffectReference: "effect", DecisionAuthorized: true, ExecutionAuthorized: true, CancellationAuthorized: true, ConfirmationValid: true, EffectEligible: true}
+	b := types.HostResumeBinding{Provenance: x.OriginalProvenance, Version: types.HostResumeAdmissionVersion, Checkpoint: cp, Plan: f.Plan, BusinessRevision: f.BusinessRevision, AuthorityDigest: f.AuthorityDigest, ToolCapabilityDigest: f.ToolCapabilityDigest, WriteScopeDigest: f.WriteScopeDigest, ConfirmationReference: f.ConfirmationReference, EffectReference: f.EffectReference}
+	if !x.BindingMatches {
+		b.Checkpoint.CheckpointID = hostResumeReplayDifferentRef(x.CheckpointID)
+	}
+	f.DecisionAuthorized, f.ExecutionAuthorized, f.CancellationAuthorized = x.AuthorityValid, x.AuthorityValid, x.AuthorityValid
+	if !x.RevisionMatches {
+		f.BusinessRevision = "changed"
+	}
+	if err := types.ValidateHostResumeResult(types.HostResumeRequest{Version: types.HostResumeAdmissionVersion, Checkpoint: cp, Decision: d}, types.HostResumeResult{Version: types.HostResumeAdmissionVersion, Status: types.RunResumeAdmissionAccepted, Binding: b, Current: f}); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func hostResumeReplayDifferentRef(value string) string {
+	if value == "changed" {
+		return "other"
+	}
+	return "changed"
 }

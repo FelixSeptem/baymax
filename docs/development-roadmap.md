@@ -10,12 +10,12 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 ## 当前状态
 
-已归档 187：`extract-common-execution-graph-boundaries` 提供有界、source-neutral 的拓扑投影，同时保留 workflow、team 和 composer child 各自的执行、恢复与摘要 owner。范围见 [执行图指南](guides/execution-graph.md) 和 [归档索引](../openspec/changes/archive/INDEX.md)。
+已归档 189：`host-authorization-provenance-and-resume-revalidation` 为可信暂停记录增加可选、bounded 的 admission/policy/source-scope provenance，并在 source claim 前重验证；legacy omission 与取消语义保持不变。范围和验证证据见 [归档索引](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
   - 暂无进行中的 OpenSpec change。
 - 候选：
-  - 暂无其他候选。
+  - 下方候选提案表记录五项需求触发或条件候选；A 项已归档，B→E 按顺序推进。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 
@@ -23,9 +23,13 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 | 候选 / 触发信号 | Owner / 第一检查 | 最小复现与首批实施方向 | 停止线 / 未成立时 | OpenSpec |
 | --- | --- | --- | --- | --- |
-| 暂无候选。新的 trigger 只有在具备 owner、最小失败复现和停止线时才进入本表。 | — | — | 不以 DTO/API 存在或 README 描述作为单独立项依据。 | — |
+| **A / 需求触发**<br>恢复授权 provenance 与 revalidation | 宿主需要在 continuation restore 前说明原授权依据、当前 authority/scope/revision/effect binding 是否仍有效，且现有 source checkpoint 证据不能完整回答该问题。 | `core/types`、`core/runner`、host resume admission owner；构造已归档 checkpoint，在 authority、write scope、plan revision 或 source listen scope 变化后请求恢复，断言副作用前拒绝、checkpoint 未消费且返回稳定分类。首批仅补齐 admission provenance、fresh revalidation 与 replay/gate。 | 不新建全局授权服务、业务账本或跨 source 身份映射；不能由 callback、DTO、复用 RunID 或 observer event 推断授权。 | `host-authorization-provenance-and-resume-revalidation` |
+| **B / 需求触发**<br>source adapter 生命周期契约 | 新 source/integration adapter 需要保留外部事实的稳定 identity、cursor、source metadata、投递幂等和故障归属；现有 adapter 接入若无法证明这些事实则不得扩展。 | `core/history`、`host/eventadapter`、integration adapter owner；以可中断轮询/回调 fixture 复现：持久化前中断不推进 cursor，重读稳定 identity 不重复 effect，目标永久消失与暂态失败产生不同结果。首批定义 source adapter contract、cursor-after-commit、`sent/gone/retryable` 分类、health claim 与 dispose/abort 测试矩阵。 | 不把 callback EventID、host observation sequence 或 adapter cache 当 durable cursor；不引入全局 source store、平行 terminal owner 或 replay 侧 effect。 | `source-adapter-lifecycle-contract` |
+| **C / 需求触发**<br>attention-oriented runtime diagnostics projection | 宿主需要从现有 RuntimeRecorder/diagnostics 中直接找到需要人工决定的恢复、授权、source、effect 或 gate 问题，而不是自行拼接大量原始字段。 | `observability/event`、`runtime/diagnostics` owner；用 fixture 同时产生 healthy、retrying、unsupported、recovery-required、effect-pending 与 gate-failed 记录，断言有界投影只输出可行动项、稳定 next action 与对应 owner/reference。首批增加 read-only projection 与 replay/contract test。 | 不建设 Baymax panel、远程控制面、全局 notification service 或新的诊断写入口；RuntimeRecorder 继续是唯一诊断写入路径。 | `attention-oriented-runtime-diagnostics-projection` |
+| **D / 需求触发**<br>model surface revision 与 bounded context | provider request projection、tool schema、context budget、capability evidence 或 runtime config 变化后，集成方需要确定某次模型请求实际看到了什么版本和有界内容。 | `context`、`runtime/config`、`model/*`、`tool/*` owner；以同一 run 的配置/prompt/tool schema revision 变更和上下文超限 fixture，断言请求快照、截断/拒绝分类、Run/Stream parity 与 replay 证据一致。首批仅建立 revision/reference contract、bounded resource read model 与 drift gate。 | 不把 prompt 或外部文本提升为 authorization、terminal 或 effect owner；不引入隐式全局 prompt registry 或 provider SDK 到 `context/*`。 | `model-surface-revision-and-bounded-context-contract` |
+| **E / 条件候选**<br>role-scoped runtime ports 与 owner index | 新 integration 或 orchestration 能力需要调用过宽接口，或文档无法从 owner 追溯到 contract、replay、gate、测试和公开语义维护路径。 | `core/*`、`orchestration/*` 与 architecture/documentation owner；选择至少两个不同 caller（如 source adapter 与 host integration），证明它们可通过同一宽接口越过各自职责边界，或 evidence index 无法定位唯一 writer。首批按角色定义窄 port，并扩展 owner → contract → replay → gate → docs 索引。 | 不以接口重命名或 package 数量为立项依据；不建立平行 runtime、全局 service locator 或由 topology digest 推断执行/恢复能力。 | `role-scoped-runtime-ports-and-owner-index` |
 
-后续候选按同一行动卡格式加入本表：触发信号、owner/入口、最小失败复现、首批实施方向、停止线和 OpenSpec slug 缺一不可。新信号先判断能否作为已有 contract 的增量，不为 DTO/API 已存在或 README 描述单独立项。
+这些候选来自对 `deepseek-ai/dsh-superagent-prototype` 九章设计文档的架构审阅；它们是 Baymax 可借鉴的 owner、恢复、adapter、诊断和模型可见面治理方向，不表示采用其 DeepSeek Harness 控制面、SQLite application runtime、`danger-full-access` worker 或跨 source 身份 prompt 映射。后续候选按同一行动卡格式加入本表：触发信号、owner/入口、最小失败复现、首批实施方向、停止线和 OpenSpec slug 缺一不可。新信号先判断能否作为已有 contract 的增量，不为 DTO/API 已存在或 README 描述单独立项。
 
 ## 实施准入与固定边界
 

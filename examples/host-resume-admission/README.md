@@ -1,5 +1,7 @@
 # Host resume admission：离线原生恢复示例
 
+> 本示例同时保存可信 admission provenance（admission reference、policy revision、source scope digest），展示 source scope 漂移在继续执行前被拒绝，再修复当前事实恢复。字段默认省略的旧宿主保持原行为；真实接入仍需可信存储、fresh authorization 和 effect CAS。
+
 状态：已实施；README 基线先于代码交付。运行 `go run ./examples/host-resume-admission`，每个 marker 都在真实 runner/fake model/tool 与内存宿主 fixture 的行为断言之后产生。公开 API 与恢复范围见 [接入指南](../../docs/guides/host-resume-admission.md)。
 
 ## Semantic anchor
@@ -19,6 +21,7 @@
 | authority 暂时拒绝 | `authority_denied`；checkpoint 仍 input_required，provider/tool/effect 与 resolved 计数无增量 |
 | 恢复匹配权限后合法 confirm | `resume_accepted`、`completed`；同 correlation 与保留的工具结果，resolved 为 1 |
 | revision 在 pause 后改变 | `revision_drift`；保持暂停，不能靠修改请求 digest 继续执行 |
+| source listen scope 在 pause 后改变 | `source_scope_drift`；拒绝且不消费 checkpoint，恢复可信当前 scope 后可重试 |
 | 完成后 exact duplicate | `duplicate_no_effect`；verifier/resolution/effect 计数不增加 |
 | 执行中 exact duplicate | `resume_in_progress`；不返回空 completed，也不继续第二次 |
 | admission 后业务 revision 漂移 | `effect_cas_rejected`；runtime 准入不能代替宿主业务提交验证 |

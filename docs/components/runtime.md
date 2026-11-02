@@ -26,4 +26,4 @@ runtime 产生的事件统一进入 RuntimeRecorder，查询字段遵循 additiv
 
 ## Verification / source links
 
-`go test ./runtime/... -count=1`；[配置诊断](../runtime-config-diagnostics.md)、[模块边界](../runtime-module-boundaries.md)。
+`go test ./runtime/... -count=1`；[配置诊断](../runtime-config-diagnostics.md)、[模块边界](../runtime-module-boundaries.md)、[设计原则](../architecture/design-principles.md)。

@@ -1,6 +1,6 @@
 # Runtime Harness Architecture
 
-更新时间：2026-04-05
+更新时间：2026-10-22
 
 > 本文档是运行时 Harness 的 canonical 总览入口。模块级 README 与主题文档应引用本页，不重复维护平行架构叙述。
 
@@ -16,6 +16,8 @@ Runtime Harness 负责把 `Run/Stream` 主循环、工具调度、配置治理�
 - 运行态诊断写入走 `observability/event.RuntimeRecorder` 单写入口。
 
 ## 2. 架构主链
+
+读者先从[架构总览](architecture/overview.md)建立模块关系，再用[运行生命周期](architecture/runtime-lifecycle.md)理解一次执行；本页补充 Harness 的状态表面、治理和验证面，不重新定义 source owner 的 contract。
 
 ### 2.1 State Surfaces（状态表面）
 
@@ -50,6 +52,15 @@ Runtime Harness 负责把 `Run/Stream` 主循环、工具调度、配置治理�
 - `integration/scenariosimulation.Builder` 仅把受控输入映射到 `integration/fakes`；运行顺序、policy、取消传播、completion safe-point 和 terminal 仍由现有 owner 决定。
 - 此能力不提供生产 executor，不访问 live provider、network、Git、workspace 或 hosted state，不保存 transcript/body/credentials，不拥有 RuntimeRecorder 写入口。
 - Execution、evidence、business outcome、release admission 分轴表达；缺失事实使用 `indeterminate`，仿真不得推断宿主业务 Outcome。
+
+## 2.6 Host boundary and source ownership
+
+- Host/integration owns credentials, network, persistence, business authorization, effect idempotency/CAS, and final business commit.
+- Runner, workflow, scheduler, mailbox, tool, and provider owners produce their own lifecycle facts and terminal evidence.
+- Adapters and diagnostics project or correlate facts; they do not create a second queue, journal, recovery state machine, or terminal reducer.
+- Read-only history replay cannot call `Run`, `Stream`, retry, resume, restore, model, tool, ack, nack, or business commit.
+
+These rules explain why a package can expose a DTO or callback without claiming durable history or continuation restore. The support matrix and current limitations live in the [integration guide](guides/integration.md).
 
 ## 3. Contract 与 Gate 映射
 

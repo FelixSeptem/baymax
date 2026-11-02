@@ -1,5 +1,7 @@
 # 测试、Replay 与 Gate
 
+测试层次对应不同证据责任，而不是同一行为的重复包装。先确认[数据与事件流](../architecture/data-event-flow.md)中的 source owner，再选择测试层级；replay 只能验证已保留事实，不能替代 continuation restore 或业务 commit。
+
 ## 测试层次
 
 1. package unit：覆盖正向、负向和边界。
@@ -20,6 +22,10 @@ pwsh -File scripts/check-quality-gate.ps1
 ```
 
 完整 contract 索引见 [mainline-contract-test-index.md](../mainline-contract-test-index.md)。Windows 文件占用时，按贡献指南使用隔离 `GOCACHE`/`GOTMPDIR` 的逐包验证，并记录未执行项。
+
+## 文档与导航门禁
+
+文档变更还必须验证 canonical source map、README → architecture → integration → example 主路径、active/archive 状态和链接目标。`check-docs-consistency` 的失败分类包括 `roadmap-status-drift`、缺失 canonical path 和 stale status wording；修复应回到事实源，不应删除 fixture 或放宽断言。
 
 ## 回滚
 

@@ -1,8 +1,10 @@
 # 最佳实践
 
+先读[设计原则](../architecture/design-principles.md)和[运行生命周期](../architecture/runtime-lifecycle.md)。本页给出接入时的操作建议；能力是否真的 supported 仍以 source owner、manifest 和[集成能力矩阵](integration.md)为准。
+
 ## Durable continuation boundary
 
-Enable durable continuation only with an explicitly configured source store and matching dependency profile/revision. The direct runner persists source-owned state and restores it in a new Engine after host revalidation and an atomic claim. Protect the store as execution data: bounded continuation material includes the normalized request and completed tool outcomes. Metadata, event-history cursor, callback replay, or re-running the parent are not substitutes. A claimed attempt without terminal/successor evidence is recovery-required, not permission to retry. Child/team/workflow/mailbox and planbridge resumed execution remain unsupported until their owners provide graph restore evidence.
+Enable durable continuation only with an explicitly configured source store and matching dependency profile/revision. The direct runner persists source-owned state and restores it in a new Engine after host revalidation and an atomic claim. Protect the store as execution data: bounded continuation material includes the normalized request and completed tool outcomes. Metadata, event-history cursor, callback replay, or re-running the parent are not substitutes. A claimed attempt without terminal/successor evidence is recovery-required, not permission to retry. Workflow and child/fanout continuation use their own source-owned stores and evidence; team, mailbox and planbridge resumed execution remain unsupported until their owners provide equivalent graph restore material.
 
 ## Host capability 与 mailbox plan bridge
 

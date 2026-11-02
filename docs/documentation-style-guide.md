@@ -38,6 +38,17 @@ Baymax 文档中文为主，代码标识、API、协议名、配置键和错误�
 - 文档变更必须运行 `scripts/check-docs-consistency.*` 和 `scripts/check-openspec-documentation-impact.*`。
 - 页面不能用提案编号命名；OpenSpec 目录是唯一允许保留提案标号的例外。
 
+## 导航与状态维护
+
+- 维护顺序是：代码/测试/OpenSpec spec → `docs/documentation-ownership.md` → canonical 页面 → 入口和别名页面。
+- README、package README 和 guide 不得把归档或不存在的 change 标记为“进行中”；当前状态只能来自 `openspec list --json`，历史状态来自 archive index。
+- 每次新增或迁移页面都必须补齐 `README.md → docs/README.md → architecture → integration → example` 主路径中的链接，并运行 `TestDocumentationNavigation`。
+- `scripts/check-docs-consistency.ps1` 与 `.sh` 必须保持同一组导航、canonical path 和 stale-status 检查；新增稳定 reason code 时两端一起更新。
+
+### 文档变更回滚
+
+如果 canonical path、状态 authority 或链接门禁失败，先回滚本次文档/检查改动到上一个通过的提交，再修正事实源；不要删除 fixture、跳过 gate 或把旧页面继续标为 active。文档回滚不涉及运行时配置、持久化数据或业务 effect。
+
 ## 文档影响评估模板
 
 新提案的 `proposal.md`、`design.md`、`tasks.md` 都必须包含以下公开语义文档同步承诺。它不是对文档影响表的替代，而是每个 OpenSpec 对“对外能力变化必须同步维护文档”的明确接受：

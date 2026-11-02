@@ -8,6 +8,29 @@
 - 多 agent：参考 `examples/07-multi-agent-async-channel`、`08`、`09`。
 - 外部 adapter：先读 [template index](../external-adapter-template-index.md) 和 [migration mapping](../adapter-migration-mapping.md)。
 
+## 能力与 owner 矩阵
+
+先确认能力属于哪个 source owner，再选择 API；不能从 package 名称、DTO 存在或 callback ID 推断 durable、replay 或 restore 能力。
+
+| 需求 | 首选入口 | 事实 owner | 默认边界 |
+| --- | --- | --- | --- |
+| direct Run/Stream | `core/runner` | runner | Run/Stream 决策和 terminal 语义一致；宿主拥有授权和 effect |
+| local tool | `tool/local` | tool owner | schema/attempt/completion 由 tool owner 产生，失败是否重试由 policy 决定 |
+| MCP | `mcp/http` / `mcp/stdio` | MCP adapter + tool owner | transport 细节不进入 runner/context；敏感 header 必须脱敏 |
+| Provider | `model/<provider>` | provider adapter | 协议投影和能力探测在 provider 包；不自动探测或全局路由 |
+| workflow/team/child | `orchestration/*` | workflow/team/scheduler owner | 只有 manifest 明示且 source evidence 存在时才可称为 durable/restore |
+| mailbox async | `orchestration/mailbox` / plan bridge | mailbox owner | message/delivery/lease/retry/DLQ/terminal 由 mailbox 拥有；不创建第二个 queue |
+| native event observation | `host/eventadapter` | source owner + observer projection | callback 是实时投影，不是 durable history/cursor |
+| source history replay | `NativeEventHistoryReader` | source journal owner | 只读、bounded、cursor scoped；不调用 Run/Stream/retry/resume |
+| continuation restore | checkpoint/continuation owner | original execution owner | 恢复同一 logical run/graph；不重新 Run parent 或用 history replay 模拟 |
+
+### 不能混淆的四个结果
+
+- **Admission** 只表示输入和 capability 被准入，不表示 source 已执行或业务已提交。
+- **History replay** 只重新读取 source 已保留事实，不调用模型、工具、重试、恢复或 ack/nack。
+- **Continuation restore** 重新进入 source-owned graph/checkpoint，不分配新的 logical parent，不重跑已完成 effect。
+- **Business commit** 始终由宿主 authorization/effect/CAS/commit owner 决定，不能由 ack、terminal、digest 或 observer status 推断。
+
 ## 最小集成步骤
 
 1. 创建宿主配置并显式选择 Provider、model、tool 和 recorder。
@@ -16,33 +39,11 @@
 4. 将事件写入 `RuntimeRecorder`，按 [配置与诊断](configuration-and-diagnostics.md) 查询和脱敏。
 5. 运行对应 package test、replay 和 conformance gate。
 
-### Provider prompt-cache directive
-
-`types.ModelRequest` 可选携带 provider-tagged prompt-cache directive。OpenAI 使用 Responses prompt-cache key，Anthropic 使用结构化消息的 cache breakpoint 与受支持 TTL，Gemini 只接受调用方已创建的 cached-content reference。directive 必须与选中的 adapter 匹配；缺省时请求行为不变，错误或超界 directive 在 provider SDK 调用前失败。Baymax 不创建、查询、更新或删除缓存资源，不把 directive 当作 cache hit 证据，也不将原始 key/resource name 写入诊断或 replay。按 [provider request projection contract](../mainline-contract-test-index.md) 运行 conformance 与 privacy gate。
-
-`CountTokens` 对 Anthropic 保留可表达的 breakpoint；OpenAI 没有本 adapter token-count API，Gemini token-count API 不接受 cached-content reference，因此这两种带 cache directive 的 CountTokens 请求以 typed `prompt_cache_unsupported` 返回，不会静默丢弃 directive。可复制的 provider-tagged 请求结构见[示例](../../examples/provider-prompt-cache/README.md)。
-
 ### Workflow continuation（workflow-first）
 
-当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。child、team 和 mailbox 只能在各自 owner、matching capability cell 与 FileStore 部署证据齐备时独立开放；resumed planbridge 仍返回 `unsupported_capability`。任何 form 都不得借用 workflow capability 或 history replay 模拟恢复。
+当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。team、mailbox 与 planbridge resumed 仍返回 `unsupported_capability`；child/fanout 使用独立的 Composer child-continuation owner，不得借用另一种 owner 的 capability 或 history replay 模拟恢复。
 
 默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
-
-### Mailbox handler continuation
-
-`mailbox_async` 的 lifecycle continuation 不执行 handler。需要 handler 在
-`input_required`、`approval_required` 或 `budget_exhausted` 后继续时，宿主必须
-使用同一 mailbox owner 的 FileStore、`NewContinuationWorker`、注册的 resumer
-和当前 revalidation callback。Handler 只能在不可逆 effect 前返回有界
-`HandlerPause`；owner 原子保留原 message/delivery/lease/attempt/causation 和
-host authority/plan/write-scope/effect/occurrence identity。恢复只能经
-`ResumeHandlerContinuation`：同一请求收敛为一个 claim/projection，已完成 effect
-不会重新执行，完成/失败仍由 owner 的 Ack/Nack/Requeue/retry/DLQ 规则裁决。
-
-MemoryStore、缺少 resumer/revalidation、失效 lease、过期/foreign/corrupt/fence
-不匹配或未知 terminal 窗口均在 effect 前 typed fail closed；不得 re-enqueue、
-re-consume、重新 Run parent 或把 source history replay 当 restore。Mailbox ack
-和 terminal projection 始终不表示 host business commit。
 
 ### Child/fanout continuation（child-owner phase）
 
@@ -61,34 +62,8 @@ corrupt records, store failure and in-progress claims fail closed.
 child capability cells. Each requires a source producer, persisted pending
 action/consumed budget/deadline, terminal evidence and Run/Stream parity. The
 plan bridge accepts a child resume binding only when a capability manifest and
-`ChildContinuationOwner` are supplied. Team parallel/vote and mailbox host-plan
-continuation have separate owner capability cells and never inherit child
-support; resumed planbridge remains `unsupported_capability`.
-
-For an owner-enabled child context path, pass an identity-only
-`hostprojection.SourceBinding{Form: SourceFormChild}` in `ChildDispatchRequest`.
-Composer fills the source run, task, claimed attempt, graph digest and generation
-from the actual child safe point before sealing `ChildContinuation`; callers
-cannot select another task or attempt. A context-aware owner may then provide
-`ChildResumeRequest.HostContextProjection` and `HostContextResolver` together
-with `WithChildContinuationContextExecutor`. Resume performs native load and
-exact binding validation, current resolver authorization, and only then the
-existing atomic resume claim and owner executor. Missing binding, resolver, or
-context executor is typed unsupported; foreign/stale binding is rejected before
-resolver/claim, and resolved source bodies remain transient. The ordinary
-`ResumeChildContinuation` path remains unchanged when no projection is supplied.
-
-Workflow context binding follows the same source-owner boundary at the pending
-step. An optional `RunRequest.HostContextBinding` is normalized by the workflow
-owner to the actual workflow/run/step, graph digest and continuation generation;
-the persisted envelope contains only those opaque identity facts. A resume
-request with the matching projection and resolver validates the graph and exact
-step before resolving current authorization, then invokes the existing pending
-step adapter through its optional `ContextStepAdapter` extension. Completed
-steps remain restored from source state and are not re-run. Missing context
-adapter/evidence is typed unsupported, and a foreign step binding fails before
-resolver or continuation claim. Workflow context does not imply team, child or
-mailbox support.
+`ChildContinuationOwner` are supplied. Team parallel/vote, mailbox host-plan
+continuation and resumed planbridge remain `unsupported_capability`.
 
 ## 接入真实执行事件
 
@@ -116,7 +91,7 @@ status := observer.Status() // 独立评估 runErr/source outcome 与观察结�
 
 默认交付 deadline 为 1 秒；`DeliveryTimeout=0` 选择默认，负值拒绝，正值为 override。`Context=nil` 使用独立 Background context；不要复用可能被取消的 Run context，否则 source canceled 事实可能无法交付。`Sink.Consume` 同步执行，无队列、自动 retry 或 detached goroutine；任意不合作的 Go sink 无法被强制中断。source 不得在同步快照期间并发修改 payload。
 
-每次 Run/Stream/resume 返回后检查 `Status`：首错停止后续交付；sink error/timeout 是 unconfirmed，可能已经写入，不能自动重试。`Incomplete` 表示观察失败或尚未确认收到 source terminal，不能据此改写 source outcome。`input_required` 是 pause，`run.dynamic_action.resolved` 是 decision 被接收；completed/failed/canceled 由 source terminal 决定，业务提交另走宿主 commit gate。continuation capability 按 execution form × pause reason 独立声明；只有具备对应 source safe point、checkpoint/restore、竞争窗口和 terminal evidence 的格子才可恢复。
+每次 Run/Stream/resume 返回后检查 `Status`：首错停止后续交付；sink error/timeout 是 unconfirmed，可能已经写入，不能自动重试。`Incomplete` 表示观察失败或尚未确认收到 source terminal，不能据此改写 source outcome。`input_required` 是 pause，`run.dynamic_action.resolved` 是 decision 被接收；completed/failed/canceled 由 source terminal 决定，业务提交另走宿主 commit gate。
 
 Direct callbacks 使用既有 mapper 的 mapping-reference ID、`sequence=0` 和串行 callback order，不能按 EventID/TraceID 去重，也没有 durable history/cursor 或全局顺序。必需的 unsupported 能力在构造时拒绝。Realtime 只经 `ProjectRealtimeBinding` 保留既有 source binding 的 identity/sequence/overlap/gap/expired outcome；该入口不订阅事件，也不恢复执行。各 owner 的接线矩阵、默认 limits 和失败分类见 [adapter 合同](../../host/eventadapter/README.md)。
 
@@ -150,10 +125,6 @@ if err != nil { return err }
 
 用 `errors.Is` 区分 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 与 `ErrSourceUnavailable`；非法 source/page limit 为 `ErrHistoryInvalid`。expiry/gap 可携带安全 floor evidence，但不能静默改读 floor/latest。FileStore 未提交批量写入、持久化失败或 legacy snapshot 缺 history 时 unavailable；读取不隐式 Flush。跨进程 consumer 必须重开同一已持久化 FileStore，再提交原 source 与已确认 cursor。
 
-若 source owner 显式绑定 `core/history.ProjectionLedger`，可额外读取 source commit/projection evidence：commit record 保留 source identity、sequence、event digest、terminal evidence 与 bounded cursor；projection acknowledgement 只按 source event identity 幂等记录 opaque reference，不代替 Danny 业务库事务。`HistoryCapabilities.ProjectionRecovery` 仅在 file-backed journal 与 file-backed ledger 同时可用时为 true；Memory journal、history-only FileStore 或 ledger 不可用时必须保持 false 并提供 reason。journal append 已提交而 ledger commit 无法确认时返回 `ErrProjectionRecoveryRequired`，不得从 latest replay、重新 Run、retry、resume 或重放不确定 effect。
-
-恢复调用必须从同一 source journal 的 retained page 取得 detached event，并在 fresh owner process 重新显式绑定同 source 的 file-backed ledger 后调用 `Journal.ReconcileProjection(ctx, event)`。该操作只写 projection ledger：首次恢复返回 `ProjectionRecoveryResult{Duplicate:false}`，完全相同的再次恢复返回 `Duplicate:true`；event identity、digest、terminal evidence、sequence 或 cursor 不一致返回 `ErrHistoryConflict`，foreign/expired/gap/unavailable 不会回退到 latest，也不会创建默认 store。恢复成功后才能按返回的 record 调用 `AcknowledgeProjection`；ack 仍是 source evidence，不是 Danny 业务提交。
-
 crash-before-consumer-projection 的恢复是重新读取 source 已保留事实；host 自行以 source-owned history identity 幂等投影并确认 cursor。它不调用模型、工具、handler、Run/Stream、claim/ack/nack、retry、resume 或 restore，不分配新 parent Run，也不改变 delivery、业务 commit 或 checkpoint 状态。并行 source 的顺序仅在各 source 内成立。离线可运行 [示例](../../examples/native-execution-events/README.md) 展示重开 replay、malformed/foreign/expired 与四类 unsupported；[contract index](../mainline-contract-test-index.md) 列出 gap/unavailable 等证据。
 
 与 RuntimeRecorder 共用 source 时使用显式 fan-out，让 recorder 消费原始事件、observer 消费原始事件的独立快照；不要从 QueryRuns 或 RunResult 合成事件。关闭/停用 observer 即可回滚观察接入；保留业务记录，已经发生的外部写入需按业务规则处理。
@@ -162,23 +133,23 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 `orchestration/planbridge` 提供 opt-in 的 `host_execution_plan.v1` API：先以 `Describe` 生成 reference-only source facts，再以独立、受信的 native binding 和 live `Admit` callback 调用 `Compile`，最后使用 `Compiled.Run` 或 `Compiled.Stream` 委托一个既有 owner。Compile 无副作用地校验整份计划和 binding；它不把 composer.Run/Stream 解释为自动执行通用 graph。
 
-执行形态 direct/subagent/team/workflow、投递 inline/mailbox 和触发 manual/scheduled/resumed/callback 独立。bridge 支持 inline direct、teams parallel/vote、flat workflow、隔离独占 scheduler 的 local child；manifest 明确允许且 mailbox owner 可用时，`mailbox_async` 通过 source-owned `Mailbox.AdmitHostPlan` 接入，保留 message/delivery/lease/retry/DLQ/causation facts。显式 child/team owner continuation binding 和 workflow continuation binding，只有 matching source/store、manifest 与 pause-reason evidence 齐备时才委托原 owner restore；它不自建 graph、queue、worker 或 resume loop。shared-queue child、resumed-trigger plan 和无 owner continuation binding 的 composite pause 在 dispatch 前拒绝。Stream 只承接实际 source streaming/callback 能力；同步 child handler不自动获得 token streaming。
+执行形态 direct/subagent/team/workflow、投递 inline/mailbox 和触发 manual/scheduled/resumed/callback 独立。当前支持 inline direct、teams parallel/vote、flat workflow、隔离独占 scheduler 的 local child，以及显式 source-owned child continuation；manifest 明确允许且 mailbox owner 可用时，`mailbox_async` 通过 source-owned `Mailbox.AdmitHostPlan` 接入，保留 message/delivery/lease/retry/DLQ/causation facts。shared-queue child、planbridge resumed/native checkpoint resume 和组合动态 action continuation 在 dispatch 前拒绝。Stream 只承接实际 source streaming/callback 能力；同步 child handler 不自动获得 token streaming。
 
 宿主先授权实际 input/handler/tool 与业务写范围，再提交 plan identity/version、authority/tool digests、真实 parent references 和完整预算事实；digest 仅证明规范化描述一致，不认证 callback 或权限。编译快照不能替代实际 activation 的权限/readiness/lease/parent budget 重检。replan 使用新版本；恢复继续使用明确的 source-native API，不以相同 run ID 或 replay 伪装恢复。
 
-真实 source 事件通过上文 observer 投影，PlanVersion/PlanDigest 使用独立 HostReferences；plan ID 由 application execution record 关联。没有 matching owner continuation evidence 时，team/workflow/child 仍是 terminal-only binding；显式 child/team/workflow continuation binding 由各自 owner 处理 claim 与 resume，mailbox continuation 仅限已声明的 lifecycle owner contract，不代表 handler safe point。mailbox ack/nack/retry/DLQ、source terminal 和 host business commit 仍是独立事实；planbridge 不通过重新 Run parent 恢复 lease loss。聚合终态、scheduler commit 与 observer status 均不替代业务 commit gate。limits、manifest、错误、opaque binding 责任及拒绝反例见 [package README](../../orchestration/planbridge/README.md)，可运行的离线 fake model/tool 示例见 [host-execution-plan](../../examples/host-execution-plan/README.md)。
+真实 source 事件通过上文 observer 投影，PlanVersion/PlanDigest 使用独立 HostReferences；plan ID 由 application execution record 关联。direct input_required 保留 pause；team parallel/vote 仍要求 terminal-only binding，workflow 与 child 必须使用各自 source-owned continuation binding，不能从 terminal-only team 能力推导恢复。mailbox ack/nack/retry/DLQ、source terminal 和 host business commit 仍是独立事实；planbridge 不通过重新 Run parent 恢复 lease loss。聚合终态、scheduler commit 与 observer status 均不替代业务 commit gate。limits、manifest、错误、opaque binding 责任及拒绝反例见 [package README](../../orchestration/planbridge/README.md)，可运行的离线 fake model/tool 示例见 [host-execution-plan](../../examples/host-execution-plan/README.md)。
 
 停用新增 bridge 回到既有 owner 显式调用；保留 task/attempt/checkpoint/outbox 和业务记录，不能因此撤销已发生 effects。公开 API/默认值/限制/错误/支持矩阵发生变化时，必须在同一 OpenSpec 同步维护文档并通过治理门禁。
 
-## 宿主 context assembly/handoff（进行中提案；direct contract 已提供）
+## 宿主 context assembly/handoff（归档 165；direct contract）
 
 `establish-host-context-assembly-handoff-contract` 已提供显式 opt-in 的 `host_context_projection.v1` direct assembly contract。宿主仍先完成 role/source-trust/business-reference/tool allowlist 过滤，然后把 detached descriptor 和 current-authority resolver 放入非序列化的 `types.RunRequest.HostContextProjection` / `HostContextResolver`；direct Run 和 Stream 仅在现有 Context Assembler 启用时复用该 owner。若 assembler 禁用，既有 bypass 语义保持不变，projection 不会被 admit 或 resolve。Baymax 不保存私有 memory/knowledge、业务 revision、授权、application execution record 或 resolver 返回的 source body。
 
 接入要求宿主提供版本化、bounded、reference-only descriptor 和当前授权的 source resolver。固定 constructor/API 限制是：serialized descriptor 最多 32 KiB、最多 64 个 opaque references、每个 reference 最多 256 UTF-8 bytes、每个 digest 最多 128 UTF-8 bytes。Baymax 按 structure/limits → canonical digest → optional plan correlation + parent/child capability subset → resolver → existing assembler 的顺序处理；仅在前述验证通过且 assembler enabled 时复用既有 assembler、compaction 和 handoff owner。digest 只证明投影一致性，不证明 source access、业务权限或 commit；handoff/replay 也不是恢复授权。child 必须收窄 capability；关联 restore 先走既有 source validation，再通过 `runner.RestoreHandoffWithHostProjection` 由宿主用 fresh resolver 重新授权，并只返回供 caller-owned injection 使用的 transient resolution；该 API 不自行注入 context、resume 或 run。不会增加 host wire command、outbox/mailbox worker、Provider SDK、业务 store、RuntimeRecorder/QueryRuns 字段、平行 terminal 或 recovery coordinator。
 
-应用可以将 `*hostprojection.Error` 作为有限的拒绝面处理；稳定 `Code` 包括 `host_context.unsupported_version`、`host_context.invalid_descriptor`、`host_context.limit_exceeded`、`host_context.duplicate_reference`、`host_context.invalid_capability`、`host_context.digest_mismatch`、`host_context.capability_expansion`、`host_context.parent_evidence_missing`、`host_context.invalid_plan_correlation`、`host_context.source_binding_required`、`host_context.source_binding_malformed`、`host_context.source_binding_mismatch`、`host_context.resolver_denied` 与 `host_context.source_not_found`。这些错误均 fail-closed，且不携带 raw callback error 或 source body；不得按字符串重试或把 historical digest 当作授权。
+应用可以将 `*hostprojection.Error` 作为有限的拒绝面处理；稳定 `Code` 包括 `host_context.unsupported_version`、`host_context.invalid_descriptor`、`host_context.limit_exceeded`、`host_context.duplicate_reference`、`host_context.invalid_capability`、`host_context.digest_mismatch`、`host_context.capability_expansion`、`host_context.parent_evidence_missing`、`host_context.invalid_plan_correlation`、`host_context.resolver_denied` 与 `host_context.source_not_found`。这些错误均 fail-closed，且不携带 raw callback error 或 source body；不得按字符串重试或把 historical digest 当作授权。
 
-当前已交付的 manifest 支持只覆盖 assembler enabled 时的 direct Run/Stream assembly、legal existing `handoff.v1` cuts 与 explicit correlated restore validation/material resolution。`host_context_projection.v1` 的可选 source binding 只保存 form、owner namespace、source/node、continuation id/digest 和 generation；这些 identity facts 参与 canonical digest，并可在 owner claim 前精确比对，不保存 source body 或当前授权。active change `extend-composite-context-assembly-handoff` 验证了 child attempt、team pending local member 和 workflow pending-step 的 owner API：foreign binding 在 resolver/claim 前拒绝；team 不向 parallel sibling 继承 material、不会重跑 settled member，并在 resolver 返回后重检原 deadline；workflow 的 Run/Stream continuation resume 使用相同 binding，并在 resolver 返回后重新检查 source fence/expiry。这些都是 owner-level API evidence，不是 manifest promotion，也不提供 planbridge context dispatch。每个 form 的 `host_context_assembly`、`host_context_handoff_restore` 都必须有独立 owner namespace/node scope/version/deployment/retention/expiry/current-resolver/evidence；默认 manifest 仍全部 typed unsupported。mailbox continuation 只投影 lifecycle outcome，未执行 handler/effect，故没有 context-aware safe point，必须保持 unsupported/unavailable，不能借用 direct/workflow restore、其它 owner checkpoint、history replay、重跑 parent 或重新 enqueue。projection 不默认继承给 sibling/node 或 replacement delivery。离线示例以 fake model/tool、真实 workflow continuation owner、synthetic opaque reference 和 current-authority resolver 展示 direct baseline、workflow source-bound success 与 cross-step rejection。direct 合同基线见归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)，运行方式见 [host-context-assembly](../../examples/host-context-assembly/README.md)。
+当前只支持 assembler enabled 时的 direct Run/Stream assembly、legal existing `handoff.v1` cuts 与 explicit correlated restore validation/material resolution；cross-process continuation、resolver-independent restore、mailbox/workflow/team recovery 和 dynamic-action continuation 均不支持。可运行的离线示例以 fake model/tool、synthetic opaque reference 和 current-authority resolver 展示 admitted assembly、capability widening rejection、revoked restore 与 legacy rollback；reference-only replay、shell/PowerShell dedicated gates、标准 quality-path 接线与验证记录已交付。可追踪范围、拒绝矩阵和回滚在归档 [proposal](../../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)，运行方式见 [host-context-assembly](../../examples/host-context-assembly/README.md)。
 
 ## 暂停后的恢复准入
 
@@ -188,7 +159,7 @@ crash-before-consumer-projection 的恢复是重新读取 source 已保留事实
 
 FileStore 范围为同一台机器的单写进程顺序重开，第二 writer 返回 `ErrCheckpointUnavailable`；不宣称跨机器 CAS。默认 checkpoint 24 小时且不晚于原绝对 deadline，completed duplicate result 从完成时保留 24 小时。公开 envelope 为 64 KiB、reference 256 UTF-8 bytes、digest 128 bytes、references 256 项；private continuation material 为 1 MiB、completed/pending entries 1024 项。constructor limits 只可收紧，容量必须为正，满时不驱逐活跃记录。文件含 normalized request、tool outcomes 和 pending arguments，应按执行数据保护，不写 credential。
 
-恢复仅支持匹配的 Run/Stream mode。exact duplicate 返回 source-retained projection，不重发 callback 或重执行；conflict 拒绝。claim/start 后无 source result 的 attempt 返回 in-progress/recovery-required，不自动接管。successor 与 predecessor result 同一 source commit 发布。`CancelNativeCheckpoint` 只持久化未 claim checkpoint 的取消 fence，accepted 不是 terminal；claim 先获胜后的取消通过 live source safe point 确认。terminal commit 失败不向调用方或 callback 宣告 durable terminal。只有各自 owner 已公开 matching source material 的 child/workflow/team/mailbox form 才可恢复；默认或证据不完整的 form，以及 resumed planbridge，仍 unsupported，不能通过重新 Run parent 或 history replay 补恢复。Realtime、host-context projection/resolver、skill loader、lifecycle hooks、active runtime-input control、Plan Notebook、启用的 Context Assembler 等含未持久化私有状态的 dependency profile 在 admission 前拒绝。
+恢复仅支持匹配的 Run/Stream mode。exact duplicate 返回 source-retained projection，不重发 callback 或重执行；conflict 拒绝。claim/start 后无 source result 的 attempt 返回 in-progress/recovery-required，不自动接管。successor 与 predecessor result 同一 source commit 发布。`CancelNativeCheckpoint` 只持久化未 claim checkpoint 的取消 fence，accepted 不是 terminal；claim 先获胜后的取消通过 live source safe point 确认。terminal commit 失败不向调用方或 callback 宣告 durable terminal。这个 direct runner checkpoint API 不覆盖组合 owner；child/workflow 必须分别调用各自 source-owned continuation，team/mailbox 与 planbridge resumed 仍 unsupported，不能通过重新 Run parent 或 history replay 补恢复。Realtime、host-context projection/resolver、skill loader、lifecycle hooks、active runtime-input control、Plan Notebook、启用的 Context Assembler 等含未持久化私有状态的 dependency profile 在 admission 前拒绝。
 
 native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用 Authorizer 不自动证明暂停前的业务 revision、plan/write scope 和当前权限仍匹配。`runner.WithHostResumeVerifier` 显式安装 `host_resume_admission.v1`，由宿主 callback 读取可信暂停绑定与当前事实，在 decision commit 前重验证；direct API 与既有 run.action.resume 共享该入口，不增加 command kind。默认不安装；安装 nil verifier 会 fail-closed。
 
@@ -197,19 +168,6 @@ native dynamic action resume 由原 Engine checkpoint owner 处理；Host 通用
 ## 边界与回滚方式
 
 宿主拥有 credential、网络、持久化和全局路由。接入失败时禁用新增 adapter/profile，恢复上一个显式配置；不要通过降级隐藏 contract 不匹配。
-
-## Composite continuation owner boundary
-
-`team` and `mailbox_async` continuation are source-owner opt-in paths. A team
-owner must inject `teams.WithTeamContinuationStore`; a mailbox owner must use
-the existing `Mailbox` with its FileStore-backed snapshot. The FileStore
-profile is `same_host_single_writer_sequential_reopen`; MemoryStore remains
-process-local and cannot advertise cross-process restore. Checkpoint material
-keeps graph/member or message/delivery/lease/attempt identity and excludes
-payloads, callbacks and business commits. Missing owner evidence, stale lease,
-foreign identity, expiry or store failure is typed rejection/recovery-required;
-it never retries, re-enqueues, or starts a replacement parent run. Run and
-Stream use the same source claim and terminal projection.
 
 ## Application outbox dispatch（归档 166）
 
@@ -220,15 +178,13 @@ Stream use the same source claim and terminal projection.
 ### Durable store deployment boundary
 
 Every source-owned history, checkpoint, child continuation and mailbox
-capability carries `deployment_scope.v1` evidence. The default FileStore
-profile remains `same_host_single_writer_sequential_reopen`. An explicitly
-configured `core/sourcecoordination.File` owner can advertise
-`multi_instance`/`multi_writer_cas` for same-host multi-instance CAS and fence
-handoff; it never advertises `cross_machine`. A foreign/stale writer, missing
-fence, unavailable coordinator or unsupported request is rejected before
-publish, claim, restore or replay and must not fall back to a fresh Run,
-enqueue or latest cursor. The coordinator owns detached source facts only;
-runner, checkpoint and history owners retain execution and terminal state.
+capability carries `deployment_scope.v1` evidence. The only currently
+supported profile is `same_host_single_writer_sequential_reopen`; FileStore
+reopen proves persistence after an orderly handoff, not multi-writer CAS,
+cross-machine coordination, distributed cursor advancement or multi-instance
+resume claims. A foreign/stale writer, missing fence, unavailable owner or
+unsupported request is rejected before publish, claim, restore or replay and
+must not fall back to a fresh Run, enqueue or latest cursor.
 # Host execution plan bridge
 
-For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox requires an explicit manifest-approved native binding, workflow continuation restore requires an explicit matching owner/store binding, while resumed-trigger execution and shared child queues are rejected.
+For an opt-in bounded host plan, call `planbridge.Describe`, persist or review only its reference-only `SourceFacts`, then call `Compile` with the explicitly trusted native binding and a live `Admit` callback. Invoke `Compiled.Run` or `Stream`; verify source outcome independently before any business commit. A plan digest proves descriptor/binding consistency, never business authority. See `orchestration/planbridge` and `examples/host-execution-plan`; mailbox requires an explicit manifest-approved native binding, while resumed execution and shared child queues are rejected.

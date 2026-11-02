@@ -26,4 +26,4 @@ transport 可以依赖 `mcp/internal`；runtime、context 和非 MCP 包不得�
 
 ## Verification / source links
 
-`go test ./mcp/... -count=1`；[MCP README](../../mcp/README.md)、[runtime profiles](../mcp-runtime-profiles.md)。
+`go test ./mcp/... -count=1`；[MCP README](../../mcp/README.md)、[runtime profiles](../mcp-runtime-profiles.md)、[module ownership](../architecture/module-ownership.md)。

@@ -113,11 +113,11 @@ a foreign/stale deployment fence, persistence uncertainty, or a missing
 new-process resumer fail closed and never restart the handler. This is handler
 execution restore, not context injection and not a host business-commit claim.
 
-## Application outbox dispatch proposal
+## Application outbox dispatch (archived 166)
 
-`establish-application-outbox-mailbox-recovery-contract` is an active proposal, not a delivered mailbox API. It plans a separate constructor-only, reference-only bridge that may delegate a bounded descriptor to this existing owner or to scheduler. It must not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Before implementation, no bridge type, example, replay fixture or dedicated gate exists.
+`establish-application-outbox-mailbox-recovery-contract` delivered the constructor-only, reference-only `orchestration/outboxbridge` that delegates a bounded descriptor to this existing mailbox owner or to scheduler. The bridge does not introduce a parallel mailbox store, worker, lease/retry/DLQ state, acknowledgement rule or terminal state. Dispatch acceptance, mailbox lifecycle, host effect evidence and host outbox confirmation remain separate facts.
 
-Any future bridge must retain distinct facts for dispatch accepted, mailbox lifecycle, host effect evidence and host outbox confirmation. It must reject invalid/unknown/stale/non-equivalent duplicate requests before mailbox mutation; exact duplicates must converge through source-owned identity. Rollback stops new bridge calls and preserves pending message/outbox/effect facts for host reconciliation.
+The bridge rejects invalid, unknown, stale and non-equivalent duplicate requests before mailbox mutation; exact duplicates converge through source-owned identity. Rollback stops new bridge calls and preserves pending message/outbox/effect facts for host reconciliation. See the archived [proposal](../../openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/proposal.md) and [verification](../../openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/verification.md).
 
 ## Verification
 

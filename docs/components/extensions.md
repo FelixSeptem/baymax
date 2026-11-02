@@ -26,4 +26,4 @@ discover → validate → initialize → run → close。初始化失败不污�
 
 ## Verification / source links
 
-`bash scripts/check-extension-lifecycle-contract-replay.sh`；[external extension guide](../external-adapter-template-index.md)。
+`bash scripts/check-extension-lifecycle-contract-replay.sh`；[external extension guide](../external-adapter-template-index.md)、[设计原则](../architecture/design-principles.md)。

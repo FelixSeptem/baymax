@@ -26,4 +26,4 @@
 
 ## Verification / source links
 
-`go test ./context/... -count=1`；[context README](../../context/README.md)、[context design](../context-assembler-phased-plan.md)。
+`go test ./context/... -count=1`；[context README](../../context/README.md)、[context design](../context-assembler-phased-plan.md)、[runtime lifecycle](../architecture/runtime-lifecycle.md)。

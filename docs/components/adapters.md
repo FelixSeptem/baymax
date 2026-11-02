@@ -26,4 +26,4 @@ manifest 校验 → capability negotiation → conformance/replay。失败时拒
 
 ## Verification / source links
 
-`bash scripts/check-adapter-conformance.sh`；[template index](../external-adapter-template-index.md)、[migration mapping](../adapter-migration-mapping.md)。
+`bash scripts/check-adapter-conformance.sh`；[template index](../external-adapter-template-index.md)、[migration mapping](../adapter-migration-mapping.md)、[data and event flow](../architecture/data-event-flow.md)。

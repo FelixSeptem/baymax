@@ -2,35 +2,15 @@
 
 ## Execution graph topology projection
 
-`orchestration/graph/graph_test.go` covers bounds, deterministic canonicalization/order/digest, typed invalid topology, zero partial output, edge drift and `testdata/execution_graph.v1.json`. `orchestration/graph/projection_contract_test.go` compares equivalent workflow/team serial and independent topology and a workflow/single-child projection. Owner-specific tests are `orchestration/workflow/graph_projection_test.go`, `orchestration/teams/graph_projection_test.go`, and `orchestration/composer/graph_projection_test.go`; they preserve workflow expansion/validation, team strategy mapping, child-only scope and owner digest separation. `examples/execution-graph` is read-only marker coverage. `scripts/check-execution-graph-contract.sh/.ps1` run focused projection suites and enforce that the shared package and projection adapters do not own execution or restore. The dedicated gate is wired into both standard quality-gate entrypoints.
+`orchestration/graph` validates bounded source-neutral topology and deterministic projection without owning execution, persistence, restore or terminal state. Workflow, team and composer child adapters retain their owner-specific execution and digest semantics. Positive, negative and projection parity cases live in `orchestration/graph/*_test.go` and the three owner projection test files; `scripts/check-execution-graph-contract.sh/.ps1` runs the focused contract gate and is wired into the standard quality gate.
+
+## Execution graph topology projection
+
+`orchestration/graph` validates bounded source-neutral topology and deterministic projection without owning execution, persistence, restore or terminal state. Workflow, team and composer child adapters retain their owner-specific execution and digest semantics. Positive, negative and projection parity cases live in `orchestration/graph/*_test.go` and the three owner projection test files; `scripts/check-execution-graph-contract.sh/.ps1` runs the focused contract gate and is wired into the standard quality gate.
 
 ## Durable native continuation restore
 
-Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child and workflow retain their own owner-specific support boundaries; team/mailbox evidence is listed below; resumed planbridge remains unsupported and is rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
-
-Team parallel/vote and mailbox host-plan owner continuation are covered by
-`orchestration/teams/continuation_test.go`,
-`orchestration/mailbox/host_plan_binding_test.go`, and
-`orchestration/planbridge/*continuation*_test.go`. Evidence includes three
-pause reasons, FileStore sequential reopen, duplicate/concurrent claim
-convergence, source-bound capability promotion, lease-loss/retry/DLQ/timeout
-projections, Run/Stream parity and no replacement mailbox owner. The mailbox
-atomicity regression proves a continuation write cannot overwrite a concurrent
-ack. `scripts/check-team-mailbox-continuation-contract.sh/.ps1` are wired into
-the quality gate. Resumed planbridge execution remains independently unsupported.
-
-## Composite pause-reason matrix
-
-Archived change 181, `composite-pause-reason-matrix`, is verified by
-`core/types/continuation_capabilities_test.go` and
-`orchestration/planbridge/continuation_capability_test.go` and
-`scripts/check-composite-pause-reason-matrix-contract.sh/.ps1`. The matrix tests
-prove that `input_required`, `approval_required`, and `budget_exhausted` are
-promoted independently, unsupported reasons retain stable explanations, and a
-sibling owner or legacy pause list cannot promote a form. Mailbox lifecycle
-continuation must keep all host-handler pause cells unsupported until an
-owner-provided handler safe point exists. Run/Stream admission uses the same
-cell decision; no fallback Run, enqueue, retry, or callback replay is allowed.
+Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child/fanout has separate Composer continuation evidence and owner binding; team/mailbox/planbridge resumed remain unsupported and are rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
 
 ## Host resume admission revalidation
 
@@ -63,7 +43,7 @@ cell decision; no fallback Run, enqueue, retry, or callback replay is allowed.
 
 Dedicated gates: `scripts/check-native-execution-event-contract.sh/.ps1`, wired into both quality gates. Both run the same focused positive/negative suites, source-ownership scan and offline example markers. `tool/contributioncheck/native_execution_event_boundary_test.go` parses implementation AST and verifies forbidden dependency, global state, worker/channel and execution/diagnostic ownership mutations are rejected. Replay uses no live model/tool/network/application sink/business writes. Parity verifies mapped direct IDs before normalization; only known fragment-only model callbacks attached to an observed model step with matching correlation, capabilities and host references are removed. Error, clarification, metadata, unknown delta and nested business values remain comparison facts. Generated references are normalized only at schema-owned envelope/payload/terminal-outcome/checkpoint locations; no arbitrary host-reference normalization.
 
-## Scenario agent simulation and completion verification (in progress)
+## Scenario agent simulation and completion verification (archived 150)
 
 - Owner: `integration/scenariosimulation` is offline test support only; existing runner, completion safe-point, business host, and `observability/event.RuntimeRecorder` remain authoritative.
 - Contract: versioned `scenario.v1` profiles and bounded `run_result.v1` projections; execution, evidence, business outcome, and admission are independent verdicts with `indeterminate` for missing facts.
@@ -104,10 +84,6 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 - 在研提案仅在对应 suite 和 dedicated gate 已交付后进入本索引；其余状态以 `docs/development-roadmap.md` 与 `openspec list --json` 为准。
 
 归档 165（`establish-host-context-assembly-handoff-contract`）已交付 dedicated contract evidence：`context/hostprojection` 的 descriptor bounds/digest/capability/resolver tests，`context/assembler` 的 validation-before-journal、handoff correlation、privacy 和 current-authorization restore tests，`core/runner` 的真实 Run/Stream + fake tool 在两轮 assembly 下的 normalized projection/handoff lifecycle/bounded rejection parity、等价 legal handoff 的 explicit restore parity 和 revoked-source fail-closed evidence，以及 incomplete/saturated `budget_projection.v1` 在 existing context-pressure/compaction 下不发生写回或终态改变的 tests。`tool/diagnosticsreplay` 的十例 reference-only fixture 覆盖 malformed/bounds/privacy/authorization/reference/digest/capability/plan/restore/Run-Stream/side-effect drift；离线 example smoke 为 `go test ./examples/host-context-assembly -run TestOfflineExampleEmitsContractMarkers -count=1`。已交付的双平台 blocking gate 为 `scripts/check-host-context-assembly-handoff-contract.ps1` 与 `.sh`：均调用 projection/privacy、Run/Stream/budget/handoff/restore、replay、example 和 ownership suites；Go 不可用时显式报 `unavailable` 并失败。两个 gate 已静态接入标准 quality path，且 contribution test 断言此接线；完整的质量验证与平台限制说明见归档 [verification record](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/verification.md)。
-
-已归档 178 `extend-composite-context-assembly-handoff` 的 evidence 入口包括 `orchestration/composer/continuation_runtime_test.go::TestComposerResumeChildContinuationResolvesBoundContextBeforeExecution`、`orchestration/teams/continuation_test.go::TestTeamContinuationResolvesContextOnlyForBoundPendingMember` / `TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim` / `TestTeamContextResumeRunStreamParity`、`orchestration/workflow/continuation_test.go::TestWorkflowContinuationRejectsForeignStepProjectionBeforeResolverOrClaim` / `TestWorkflowContinuationResolvesBoundContextOnlyForPendingStep`、`orchestration/planbridge/capability_test.go::TestCapabilityManifestDeclaresContextDimensionsIndependently`、`tool/diagnosticsreplay/testdata/host_context_projection.v1.json::workflow-cross-step-binding` / `team-foreign-member-binding` / `mailbox-unsupported-owner` 与 `examples/host-context-assembly` 的 `host_context.workflow_context_resolved` / `host_context.workflow_cross_step_rejected` markers。双平台 gate `scripts/check-host-context-assembly-handoff-contract.sh/.ps1` 执行这些 owner suites。child/team/workflow 现有 owner API 已有 binding evidence，但 capability manifest 默认仍将所有 context cells 标为 unsupported；mailbox continuation 只投影 lifecycle outcome、没有 context-aware handler safe point，不能把示例、DTO 或 lifecycle replay 当作 capability promotion。完整差异和已归档任务见 `openspec/changes/archive/178-extend-composite-context-assembly-handoff/tasks.md`。
-
-当前已验证的增量基线：`context/hostprojection` 覆盖 source binding 的 canonical digest、detached snapshot、malformed/foreign rejection 和 foreign-node resolver-before-claim rejection；`context/assembler`/`context/handoff` 覆盖 binding correlation round-trip；`orchestration/planbridge` 覆盖五种 execution form 的独立 context cells、owner namespace/node-scope/API evidence 校验以及 assembly-only 不推导 handoff/restore。上述测试只证明 contract boundary，不提升任何 composite form 的 runtime capability。
 
 ## 索引
 
@@ -332,8 +308,6 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | Provider Request Projection Replay Fixture (`provider_request_projection.v1`) | `tool/diagnosticsreplay/request_projection_test.go::TestProviderRequestProjectionFixtureReplays` | `tool/diagnosticsreplay/request_projection_test.go::TestProviderRequestProjectionReplayClassifiesDrift`、`tool/diagnosticsreplay/request_projection_test.go::TestProviderRequestProjectionReplayRejectsBounds` |
 | Provider Request Projection Cache Usage Compatibility | `core/types/token_usage_semantics_test.go::TestTokenUsageJSONShapeIsFrozen`、`core/types/types_test.go::TestModelResponseCacheUsageRoundTrip`、`model/conformance/request_projection_test.go::TestCacheUsageProjectionAcceptsNormalizedReadWriteTotalAndSource`、provider `TestGenerateProjectsCacheUsageOnModelResponse` suites | `model/conformance/request_projection_test.go::TestCacheUsageProjectionRejectsInconsistentTotal`、`TestCacheUsageProjectionRejectsMissingSourceWhenAvailable`、`TestCacheUsageProjectionRejectsOverflow`、provider terminal Stream cache snapshot tests、`tool/diagnosticsreplay/request_projection_test.go::TestProviderRequestProjectionReplayAcceptsHistoricalFixtureWithoutCacheUsage` |
 | Provider Request Projection Gate Path | `scripts/check-provider-request-projection-contract.sh` | `scripts/check-provider-request-projection-contract.ps1` |
-| Provider-Native Prompt-Cache Request Mapping | `core/types` prompt-cache directive validation; `model/openai` Responses key, `model/anthropic` breakpoint/TTL, and `model/gemini` cached-content reference request-shape tests | provider adapter pre-invocation rejection, omitted-default, Run/Stream parity, CountTokens support boundary, and raw key/resource privacy tests |
-| Provider-Native Prompt-Cache Projection and Gate | `tool/diagnosticsreplay/request_projection_test.go::TestProviderRequestProjectionFixtureReplays`、`TestProviderRequestProjectionReplayIsIdempotent`、`TestPromptCacheFactsAndProjectionOmitOpaqueValues` | `TestPromptCacheProjectionDriftAndHistoricalDefault`; paired `scripts/check-provider-request-projection-contract.sh/.ps1`; historical fixture compatibility and secret omission |
 | Provider Context/Cache Drift Admission Evidence Model | `model/conformance/provider_context_cache_evidence_test.go::TestProviderContextCacheEvidenceCanonicalDigestIsDeterministic`、`model/conformance/provider_context_cache_evidence_test.go::TestProviderContextCacheEvidenceVerdictPrioritizesDriftThenInsufficient` | `model/conformance/provider_context_cache_evidence_test.go::TestProviderContextCacheEvidenceRejectsUnknownVersionDuplicateAndPrivacy`、`model/conformance/provider_context_cache_evidence_test.go::TestProviderContextCacheEvidencePerformanceBoundaries` |
 | Provider Context/Cache Drift Admission Evidence Replay (`provider_context_cache_evidence.v1`) | `tool/diagnosticsreplay/provider_context_cache_evidence_fixture_test.go::TestProviderContextCacheEvidenceFixtureCoversThreeProvidersAndIsBounded`、`tool/diagnosticsreplay/provider_context_cache_evidence_test.go::TestReplayProviderContextCacheEvidenceIsDeterministicAndThreeState` | `tool/diagnosticsreplay/provider_context_cache_evidence_fixture_test.go::TestProviderContextCacheEvidencePrivacyFixtureFailsFast`、`tool/diagnosticsreplay/provider_context_cache_evidence_test.go::TestReplayProviderContextCacheEvidenceRejectsReferenceMismatchAndRecordedDrift` |
 | Provider Context/Cache Drift Admission Boundary | `tool/contributioncheck/provider_context_cache_admission_test.go::TestAdmitProviderContextCacheEvidenceRoutesOnlyConfirmedDriftReviewOnly` | `tool/contributioncheck/provider_context_cache_evidence_gate_test.go::TestProviderContextCacheEvidenceGateScriptsStayPairedAndOffline` |
@@ -539,15 +513,11 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | checkpoint claim rejects unsupported scope before mutation | `core/checkpoint/store_test.go::TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation` |
 | planbridge rejects unsupported deployment before source activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation` |
 | reference-only local versus distributed replay and side-effect guard | `tool/diagnosticsreplay/deployment_scope.go`, `tool/diagnosticsreplay/deployment_scope_test.go` |
-| same-host coordinator lease/fence/CAS, restart isolation and live-evidence loss | `core/sourcecoordination/*_test.go`, `core/checkpoint/store_test.go`, `core/history/journal_test.go` |
-| matching coordinated admission and cross-machine/stale-fence rejection before activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanAdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation` |
 | shell/PowerShell quality gates | `scripts/check-durable-store-deployment-scope-contract.sh`, `scripts/check-durable-store-deployment-scope-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
 
-The default deployment profile is `same_host_single_writer_sequential_reopen`.
-An explicitly configured source coordinator may advertise same-host
-`multi_instance`/`multi_writer_cas`; successful reopen alone does not evidence
-that profile, cross-machine coordination, distributed cursor advancement or
-multi-instance resume claims.
+The supported deployment profile is `same_host_single_writer_sequential_reopen`.
+Successful reopen does not evidence multi-writer CAS, cross-machine
+coordination, distributed cursor advancement or multi-instance resume claims.
 
 
 
@@ -582,36 +552,6 @@ gates continue to cover callback projection independently. The
 [integration support matrix](guides/integration.md) and [mailbox contract](../orchestration/mailbox/README.md)
 define the retention and terminal-recovery limits.
 
-## Source History Failure Health and Workflow Resume Claim Recovery
-
-| Requirement | Evidence |
-| --- | --- |
-| source-identified typed append-health error with `errors.Is(ErrSourceUnavailable)` | `core/history/journal_test.go::TestAppendHealthRetainsSourceUnavailable` |
-| callback append failures surfaced at explicitly bound runner/child/team/workflow owners | `core/runner/history_test.go::TestRunnerExposesNativeHistoryAppendFailure`, `orchestration/composer/history_test.go::TestComposerExposesNativeHistoryAppendFailure`, `orchestration/teams/history_test.go::TestTeamEngineExposesNativeHistoryAppendFailure`, `orchestration/workflow/history_test.go::TestWorkflowEngineExposesNativeHistoryAppendFailure` |
-| committed-only replay after append failure; callback replay remains read-only | `core/history/journal_test.go::TestFileJournalAppendFailureDoesNotExposeUncommittedEvent`, `scripts/check-native-event-history-contract.ps1` |
-| reopened claimed/running resume becomes stable recovery-required; completed result remains duplicate-readable; repeated pause atomically commits predecessor projection with successor lineage and cannot leave an admissible orphan | `orchestration/workflow/continuation_test.go::TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringClaim`, `TestFileWorkflowContinuationStoreRequiresRecoveryAfterReopenDuringRunningClaim`, `TestFileWorkflowContinuationStoreReopensClaimAndResult`, `TestEngineResumeContinuationCreatesSuccessorCheckpointOnSecondPause`, `TestWorkflowSuccessorPublicationIsAtomic` |
-| same-process and cross-process writer fence, sequential reopen, capability disabled after close | `orchestration/workflow/continuation_test.go::TestFileWorkflowContinuationStoreRejectsConcurrentOwner`, `TestFileWorkflowContinuationStoreFencesAcrossProcesses`, `TestWorkflowContinuationCapabilitiesRequireActiveFileStoreFence` |
-| shell/PowerShell history and workflow continuation contract gates and quality wiring | `scripts/check-native-event-history-contract.ps1`, `scripts/check-workflow-continuation-contract.ps1`, `scripts/check-quality-gate.ps1` |
-
-Callback history is an observation projection, not an effect gate or atomic
-source transition log. Its append health identifies incomplete retained
-history; uncertain workflow continuation effects are resolved only through
-the workflow continuation store's recovery-required state, never by replay or
-automatic redispatch.
-
-## Source Commit and Projection Recovery
-
-| Requirement | Evidence |
-| --- | --- |
-| bounded source commit, digest, terminal evidence and idempotent projection acknowledgement | `core/history/projection_ledger_test.go::TestProjectionLedgerCommitsReopensAndAcknowledgesIdempotently`, `TestProjectionLedgerRejectsConflictingAcknowledgement` |
-| retention expiry, foreign source and invalid acknowledgement fail closed | `core/history/projection_ledger_test.go::TestProjectionLedgerExpiresTrimmedCommitAndRejectsInvalidAcknowledgement` |
-| journal/source commit match and uncertain ledger persistence returns recovery-required without hiding source facts | `core/history/projection_ledger_test.go::TestJournalAppendWithProjectionLedgerCreatesMatchingCommitEvidence`, `TestJournalAppendMarksProjectionRecoveryRequiredWhenLedgerPersistenceFails` |
-| fresh-process journal-to-ledger reconciliation, explicit duplicate result and idempotent acknowledgement | `core/history/projection_ledger_test.go::TestJournalProjectionRecoveryReopensSourceFactAndAcknowledgesIdempotently` |
-| malformed, foreign, conflicting and gapped recovery facts fail closed before ledger mutation; unbound history remains unsupported | `core/history/projection_ledger_test.go::TestJournalProjectionRecoveryRejectsConflictBeforeLedgerMutation`, `TestJournalProjectionRecoveryRejectsForeignMalformedAndGappedFacts`, `TestJournalProjectionRecoveryRequiresExplicitLedgerBinding` |
-| manifest does not infer projection recovery from history-only replay | `orchestration/planbridge/history_capability_test.go::TestCapabilityManifestHistoryProjectionRecoveryRequiresDurableOwnerLedger` |
-| source commit/projection recovery remains read-only and bounded | `core/history/projection_ledger.go`, `core/types/source_history_projection.go`, `scripts/check-native-event-history-contract.ps1` |
-| dedicated source commit/projection fixture and equivalent gates | `tool/diagnosticsreplay/testdata/source-history-projection.v1.json`, `scripts/check-source-history-projection-contract.ps1`, `scripts/check-source-history-projection-contract.sh` |
-
 ## Spec 1 capability manifest and mailbox_async extension
 
 | Requirement | Evidence |
@@ -621,24 +561,8 @@ automatic redispatch.
 | manifest-gated mailbox delegation, compile-time plan digest and activation availability rejection | `orchestration/planbridge/mailbox_binding_test.go` |
 | real-owner Run/Stream source correlation/terminal parity without a second logical admission | `integration/host_execution_plan_bridge_test.go` |
 | rejection before publish/Run on missing manifest or incompatible binding | `orchestration/planbridge/mailbox_binding_test.go` |
-| reference-only mailbox manifest/binding/handler-safe-point/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
+| reference-only mailbox manifest/binding/duplicate/lifecycle parity drift | `tool/diagnosticsreplay/mailbox_plan_bridge_test.go`, `tool/diagnosticsreplay/testdata/mailbox_plan_bridge.v1.json` |
 | dedicated shell/PowerShell contract gate | `scripts/check-mailbox-plan-bridge-contract.sh`, `scripts/check-mailbox-plan-bridge-contract.ps1` |
-| explicit FileStore handler safe point, pause without lifecycle mutation, fresh-owner exactly-once resume, duplicate projection, lease-loss rejection and reason-specific manifest promotion | `orchestration/mailbox/worker_continuation_test.go`, `orchestration/planbridge/capability_test.go::TestMailboxHandlerPauseManifestRequiresConfiguredHandlerSafePoint` |
-
-## Composite host-context capability evidence
-
-| Requirement | Evidence |
-| --- | --- |
-| form-local owner namespace/node/version/deployment/retention/expiry/current-resolver evidence is required for each promoted context cell | `orchestration/planbridge/capability.go::CapabilityManifestWithHostContextEvidence`, `orchestration/planbridge/capability_test.go::TestCapabilityManifestWithHostContextEvidencePromotesOnlyExplicitOwner` |
-| missing per-cell evidence, foreign owner namespace and lifecycle-only mailbox evidence fail closed without borrowing a sibling form's facts | `orchestration/planbridge/capability_test.go::TestCapabilityManifestWithHostContextEvidenceRejectsIncompleteOrForeignProjection`, `TestDefaultMailboxContextCellsNameLifecycleOnlyLimitation` |
-| owner integration, restart, resolver ordering, parity and reference-only replay remain separately evidenced; default planbridge cells are not promoted | `orchestration/{composer,teams,workflow}/*continuation*_test.go`, `tool/diagnosticsreplay/host_context_projection_test.go`, `scripts/check-host-context-assembly-handoff-contract.sh/.ps1` |
-
-`CapabilityManifestWithHostContextEvidence` does not execute a graph, invoke a
-resolver or create a store. It projects only a source owner's complete detached
-facts. Mailbox lifecycle continuation stays context unsupported until the
-mailbox owner exposes a message/delivery/lease/attempt-bound handler safe
-point; planbridge must not add a second consume loop, re-enqueue, or re-run a
-parent to emulate it.
 
 
 | Requirement | Evidence |

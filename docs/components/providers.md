@@ -26,4 +26,4 @@
 
 ## Verification / source links
 
-`go test ./model/... -count=1`；[model README](../../model/)、[API reference](../api-reference-d1.md)。
+`go test ./model/... -count=1`；[model README](../../model/)、[API reference](../api-reference-d1.md)、[设计原则](../architecture/design-principles.md)。

@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-02 17:53:20
+Updated: 2026-11-02 21:09:36
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -191,3 +191,4 @@ Updated: 2026-11-02 17:53:20
 - 187 -> extract-common-execution-graph-boundaries
 - 188 -> clarify-public-architecture-documentation
 - 189 -> host-authorization-provenance-and-resume-revalidation
+- 190 -> source-adapter-lifecycle-contract

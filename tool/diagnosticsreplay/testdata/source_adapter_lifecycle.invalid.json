@@ -1,0 +1,5 @@
+{
+  "version":"source_adapter_lifecycle.v1",
+  "metadata":{"source":{"kind":"fixture","namespace":"test","id":"inbox"},"identity_namespace":"message","cursor_version":"v1"},
+  "steps":[{"id":"retryable-cursor-drift","external_id":"one","reference":"message/one","payload_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cursor":"1","outcome":"retryable","expected_cursor":"1","expected_pending":"one","expected_reason":"source_adapter.retryable"}]
+}

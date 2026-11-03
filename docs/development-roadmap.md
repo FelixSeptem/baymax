@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-11-02
+更新时间：2026-11-03
 
 Baymax 提案发现与实施入口。按状态区确认当前工作，再按候选表判断是否有证据可启动；详细契约、任务和历史证据见 [OpenSpec changes](../openspec/changes/)、[归档索引](../openspec/changes/archive/INDEX.md) 与 [mainline contract test index](mainline-contract-test-index.md)。
 
@@ -10,12 +10,12 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 
 ## 当前状态
 
-已归档 190：`source-adapter-lifecycle-contract` 提供 source-bound 外部事实投递、pending evidence、cursor-after-commit、有限 disposition 与同机单写文件重开；Observer/history/effect CAS 所有权保持独立。189 的恢复授权 provenance/revalidation 为既有基线。范围和验证证据见 [归档索引](../openspec/changes/archive/INDEX.md)。
+已归档 191：`attention-oriented-runtime-diagnostics-projection` 提供只读、有界且确定性的待处理事项投影、稳定 next action/owner/reference 与只读 replay。189 的恢复授权和 190 的 source adapter 生命周期为既有基线；RuntimeRecorder 和各 source/effect owner 保持独立。范围和验证证据见 [归档索引](../openspec/changes/archive/INDEX.md)。
 
 - 进行中：
   - 暂无进行中的 OpenSpec change。
 - 候选：
-  - 下方实施方向表记录五项方向；A、B 已归档，后续按 C→D→E 评估准入并推进，E 保留条件候选状态。
+  - 下方实施方向表记录五项方向；A、B、C 已归档，后续按 D→E 评估准入并推进，E 保留条件候选状态。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 
@@ -25,7 +25,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 | --- | --- | --- | --- | --- |
 | **A / 已归档 189**<br>恢复授权 provenance 与 revalidation | 宿主需要在 continuation restore 前说明原授权依据、当前 authority/scope/revision/effect binding 是否仍有效，且现有 source checkpoint 证据不能完整回答该问题。 | `core/types`、`core/runner`、host resume admission owner；构造已归档 checkpoint，在 authority、write scope、plan revision 或 source listen scope 变化后请求恢复，断言副作用前拒绝、checkpoint 未消费且返回稳定分类。已交付可选 admission provenance、fresh revalidation 与 replay/gate，作为后续方向的恢复授权基线。 | 不新建全局授权服务、业务账本或跨 source 身份映射；不能由 callback、DTO、复用 RunID 或 observer event 推断授权。 | [host-authorization-provenance-and-resume-revalidation](../openspec/changes/archive/189-host-authorization-provenance-and-resume-revalidation/) |
 | **B / 已归档 190**<br>source adapter 生命周期契约 | 新 source/integration adapter 需要保留外部事实的稳定 identity、cursor、source metadata、投递幂等和故障归属；现有 adapter 接入若无法证明这些事实则不得扩展。 | `host/sourceadapter`、integration adapter owner；已交付 source-bound metadata/identity、pending receipt CAS、cursor-after-commit、`sent/gone/retryable`、health、dispose/abort、同机单写文件重开、只读 replay 与离线示例；集成证据证明 Observer 不推进 cursor、确认失败重投经 host CAS 不重复 effect。 | 不把 callback EventID、host observation sequence 或 adapter cache 当 durable cursor；不引入全局 source store、平行 terminal owner 或 replay 侧 effect。 | [source-adapter-lifecycle-contract](../openspec/changes/archive/190-source-adapter-lifecycle-contract/) |
-| **C / 需求触发**<br>attention-oriented runtime diagnostics projection | 宿主需要从现有 RuntimeRecorder/diagnostics 中直接找到需要人工决定的恢复、授权、source、effect 或 gate 问题，而不是自行拼接大量原始字段。 | `observability/event`、`runtime/diagnostics` owner；用 fixture 同时产生 healthy、retrying、unsupported、recovery-required、effect-pending 与 gate-failed 记录，断言有界投影只输出可行动项、稳定 next action 与对应 owner/reference。首批增加 read-only projection 与 replay/contract test。 | 不建设 Baymax panel、远程控制面、全局 notification service 或新的诊断写入口；RuntimeRecorder 继续是唯一诊断写入路径。 | `attention-oriented-runtime-diagnostics-projection` |
+| **C / 已归档 191**<br>attention-oriented runtime diagnostics projection | 宿主需要从现有 RuntimeRecorder/diagnostics 中直接找到需要人工决定的恢复、授权、source、effect 或 gate 问题，而不是自行拼接大量原始字段。 | `runtime/diagnostics` owner；已交付只读快照投影、有限 next action/owner/reference、原子校验、稳定排序/去重/限量、严格 replay 与真实 Composer Run/Stream admission 证据；healthy 和自动 retry 不生成待处理项。 | 不建设 Baymax panel、远程控制面、全局 notification service 或新的诊断写入口；RuntimeRecorder 继续是唯一诊断写入路径。 | [attention-oriented-runtime-diagnostics-projection](../openspec/changes/archive/191-attention-oriented-runtime-diagnostics-projection/) |
 | **D / 需求触发**<br>model surface revision 与 bounded context | provider request projection、tool schema、context budget、capability evidence 或 runtime config 变化后，集成方需要确定某次模型请求实际看到了什么版本和有界内容。 | `context`、`runtime/config`、`model/*`、`tool/*` owner；以同一 run 的配置/prompt/tool schema revision 变更和上下文超限 fixture，断言请求快照、截断/拒绝分类、Run/Stream parity 与 replay 证据一致。首批仅建立 revision/reference contract、bounded resource read model 与 drift gate。 | 不把 prompt 或外部文本提升为 authorization、terminal 或 effect owner；不引入隐式全局 prompt registry 或 provider SDK 到 `context/*`。 | `model-surface-revision-and-bounded-context-contract` |
 | **E / 条件候选**<br>role-scoped runtime ports 与 owner index | 新 integration 或 orchestration 能力需要调用过宽接口，或文档无法从 owner 追溯到 contract、replay、gate、测试和公开语义维护路径。 | `core/*`、`orchestration/*` 与 architecture/documentation owner；选择至少两个不同 caller（如 source adapter 与 host integration），证明它们可通过同一宽接口越过各自职责边界，或 evidence index 无法定位唯一 writer。首批按角色定义窄 port，并扩展 owner → contract → replay → gate → docs 索引。 | 不以接口重命名或 package 数量为立项依据；不建立平行 runtime、全局 service locator 或由 topology digest 推断执行/恢复能力。 | `role-scoped-runtime-ports-and-owner-index` |
 
@@ -38,7 +38,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 | 顺序 | 待实施方向 | 首批可评审交付 | 最小验收重点 |
 | --- | --- | --- | --- |
 | 已交付 / B | Source adapter 生命周期（归档 190） | source-bound metadata、external identity、cursor 与 `sent/gone/retryable` 契约；health、dispose/abort 边界及离线示例。 | `sent/gone` 确认后才推进 cursor；retryable、取消和持久化前中断保留原 cursor；重复 identity 经 host effect CAS 保持幂等，冲突 identity 拒绝；重开后从已确认位置继续。 |
-| 2 / C | 面向需处理事项的诊断投影 | 从既有 diagnostics 生成只读、有界的 actionable items，包含稳定分类、next action、owner/reference。 | healthy 记录不产生待处理项；unsupported、recovery-required、effect-pending、gate-failed 各有确定归属与行动；不增加诊断 writer 或触发执行。 |
+| 已交付 / C | 面向需处理事项的诊断投影（归档 191） | 从既有 diagnostics 生成只读、有界的 actionable items，包含稳定分类、next action、owner/reference。 | healthy 记录不产生待处理项；unsupported、recovery-required、effect-pending、gate-failed 各有确定归属与行动；不增加诊断 writer 或触发执行。 |
 | 3 / D | 模型可见面版本与有界上下文 | 请求可见面的 revision/reference、资源读取边界、超限分类和 drift fixture。 | 配置、prompt、tool schema 改变可追溯；截断或拒绝行为有界且可回放；Run/Stream 一致；外部内容不成为授权依据。 |
 | 4 / E | 按角色收窄 runtime port 与 owner 索引 | 在越权调用或 owner 无法追踪的复现成立后，定义窄 port 并维护 owner → contract → replay → gate → docs 索引。 | 至少两个 caller 证明现有边界问题；收窄后调用无法越过各自职责；每项公开语义可定位唯一 owner 和验证证据。无失败证据则继续保留为条件候选。 |
 

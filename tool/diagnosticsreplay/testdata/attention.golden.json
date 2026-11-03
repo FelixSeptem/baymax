@@ -1,0 +1,24 @@
+{
+ "version":"attention.v1",
+ "request":{
+  "runs":[
+   {"run_id":"healthy","status":"completed"},
+   {"run_id":"retrying","terminal_retryable":true},
+   {"run_id":"unsupported","protocol_capability_reason":"protocol.capability.missing_required"},
+   {"run_id":"recovery","recovery_conflict":true},
+   {"run_id":"gate","gate_denied_count":1},
+   {"run_id":"effect","status":"completed"}
+  ],
+  "evidence":[{"run_id":"effect","code":"effect-pending","reference":"effect/ref"}],
+  "limit":50
+ },
+ "expected":{
+  "items":[
+   {"run_id":"effect","code":"effect-pending","next_action":"reconcile_effect","owner":"host/effect","reference":"effect/ref"},
+   {"run_id":"gate","code":"gate-failed","next_action":"inspect_gate","owner":"runtime/gate","reference":"gate"},
+   {"run_id":"recovery","code":"recovery-required","next_action":"inspect_recovery","owner":"runtime/recovery","reference":"recovery"},
+   {"run_id":"unsupported","code":"unsupported","next_action":"inspect_capability","owner":"runtime/capability","reference":"unsupported"}
+  ],
+  "total":4,"truncated":false
+ }
+}

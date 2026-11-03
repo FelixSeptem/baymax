@@ -350,3 +350,12 @@ writes only to its explicitly bound matching `ProjectionLedger`; it returns an
 explicit duplicate result and rejects foreign, conflicting, expired or gapped
 facts before mutation. It is projection-evidence repair, not execution restore
 or a substitute for the host's business transaction.
+
+## Attention projection boundary
+
+`runtime/diagnostics.ProjectAttention` is a pure read model over caller-supplied
+RunRecords and reference-only owner evidence. It has no store/writer/execution
+dependency, and cannot decide authorization, confirm an effect or advance source
+progress. RuntimeRecorder remains the diagnostic single writer; source/effect
+facts remain with their respective host owners. See
+[attention diagnostics](guides/attention-diagnostics.md).

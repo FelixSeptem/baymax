@@ -21,6 +21,7 @@ Canonical 架构入口：`docs/runtime-harness-architecture.md`
 - `MailboxAggregates`
 - `QueryRuns`
 - `RecentSkills`
+- `ProjectAttention`：对调用方快照做有界只读投影，稳定分类、行动和 owner；[契约说明](../../docs/guides/attention-diagnostics.md)。
 - `TimelineTrends`
 - `ContextStage2ExternalTrends`
 

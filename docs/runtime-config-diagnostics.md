@@ -2370,3 +2370,13 @@ configuration key or authorization field. It reports the source owner,
 single-writer fence and sequential transaction boundary. Unsupported,
 foreign, stale and unavailable classifications are returned before side
 effects; no new QueryRuns field or RuntimeRecorder writer is introduced.
+
+## Attention projection
+
+`diagnostics.ProjectAttention` consumes an injected page without changing
+RuntimeRecorder or QueryRuns. No env/file/default/hot-update key is added;
+constructor-free Limit defaults to 50 (maximum 200), each input list has at most
+200 entries. References are bounded to 256 safe ASCII bytes. Invalid input is
+atomic `ErrAttentionInput`; unknown/missing evidence implies no action, never
+effect completion. See [attention diagnostics](guides/attention-diagnostics.md)
+for exact field mappings, supplemental evidence, ordering and truncation.

@@ -46,6 +46,7 @@ OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap
 
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `source-adapter-lifecycle-contract`（已归档 190）：source-bound 外部投递、有限 disposition、pending evidence 和 cursor-after-commit；参见 [source adapter 指南](docs/guides/source-adapter-lifecycle.md)。
+- `attention-oriented-runtime-diagnostics-projection`（进行中）：只读、有界待处理事项投影；分类和行动基于既有诊断及显式 owner 证据。
 
 要了解某个历史决策，请从归档索引进入对应 proposal/design/verification；不要把归档记录当作当前进行中的工作。
 
@@ -114,3 +115,8 @@ Baymax includes the opt-in [`host_execution_plan.v1`](orchestration/planbridge/R
 ## Source-owned native event history
 
 The source-history contract is source-owned and read-only. Mailbox retains lifecycle facts through its existing MemoryStore/FileStore owner; runner, child, team and workflow can expose a retained journal only when the caller explicitly injects the matching owner journal. Memory journals are process-local; FileStore supports same-host single-writer sequential reopen only. The native event adapter remains a real-time callback projection: no callback ID or host observation sequence is a durable cursor, and replay cannot run, retry, resume, restore or commit a business effect. See the [support matrix and integration guide](docs/guides/integration.md) and [offline example](examples/native-execution-events/README.md).
+
+## Attention diagnostics
+
+面向宿主的只读待处理事项投影见 [attention diagnostics](docs/guides/attention-diagnostics.md)；
+不会触发 retry/resume 或推断业务 effect 已提交。

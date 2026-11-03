@@ -604,3 +604,13 @@ atomic duplicate/conflict claims, existing scheduler identity and no-spawn
 resume. `tool/diagnosticsreplay/child_continuation_test.go` covers reference-
 only drift and unsupported form replay. Planbridge child-owner delegation is
 covered by `orchestration/planbridge/native_binding_test.go`.
+
+## Attention diagnostics projection
+
+Owner: `runtime/diagnostics`; contract: `attention-diagnostics-projection`.
+Unit bounds/classification/snapshot tests: `runtime/diagnostics/attention_test.go`;
+recorder integration: `integration/attention_diagnostics_test.go`;
+pure replay/drift: `tool/diagnosticsreplay/attention_test.go`;
+dedicated gate: `scripts/check-attention-diagnostics-contract.ps1/.sh`;
+example: `examples/attention-diagnostics`;
+public semantics: [guide](guides/attention-diagnostics.md).

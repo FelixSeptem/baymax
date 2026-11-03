@@ -771,6 +771,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-source-adapter-lifecycle-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] attention diagnostics contract suites"
+        Command   = { pwsh -File scripts/check-attention-diagnostics-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] runtime steering/follow-up contract suites"
         Command   = { pwsh -File scripts/check-runtime-steering-follow-up-contract.ps1 }
     },

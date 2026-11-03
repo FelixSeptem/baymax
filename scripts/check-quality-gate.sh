@@ -305,6 +305,8 @@ echo "[quality-gate] host resume admission contract suites"
 bash scripts/check-host-resume-admission-contract.sh
 echo "[quality-gate] source adapter lifecycle contract suites"
 bash scripts/check-source-adapter-lifecycle-contract.sh
+echo "[quality-gate] attention diagnostics contract suites"
+bash scripts/check-attention-diagnostics-contract.sh
 if ! bash scripts/check-embedded-host-contract.sh; then
   echo "[quality-gate][embedded-host-contract] embedded host contract suites failed"
   exit 1

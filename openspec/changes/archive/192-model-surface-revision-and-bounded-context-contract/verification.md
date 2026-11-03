@@ -37,6 +37,11 @@ Change: `model-surface-revision-and-bounded-context-contract`
 
 ## Delivery state
 
-Main capability spec synchronization and archive are intentionally performed by
-`scripts/openspec-archive-seq.ps1` in the final delivery step, after this
-verification record and all implementation tasks are complete.
+`scripts/openspec-archive-seq.ps1 -ChangeName
+"model-surface-revision-and-bounded-context-contract"` synchronized both main
+capability specs and archived this change as `192-model-surface-revision-and-bounded-context-contract`.
+The scoped delivery committed as `71ea3cb` (`feat: bound host material and
+model surface evidence`), fast-forwarded into `master`, and pushed. Both
+`master` and `origin/master` were verified at `71ea3cb278460fef67ecae6f60a5f874d75942c7`.
+The merged dedicated worktree and local feature branch were then removed; no
+runtime artifact required backup.

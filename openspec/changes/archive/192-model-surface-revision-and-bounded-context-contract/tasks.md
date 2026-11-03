@@ -15,7 +15,7 @@
 - [x] 3.1 Synchronize `README.md`, `context/hostprojection/README.md`, `model/README.md`, `docs/runtime-module-boundaries.md`, `docs/runtime-config-diagnostics.md`, `docs/mainline-contract-test-index.md`, and `docs/development-roadmap.md` with exact bounds, opt-in/default behavior, privacy, owner boundaries, replay/gate evidence, rollback, and active status; verify documentation-impact, example-impact, and roadmap-status checks pass.
 - [x] 3.2 Apply the two delta specs to their main capability specs using the repository OpenSpec sync workflow; verify `openspec validate --all` and the checked-in main specs carry the delivered requirements.
 - [x] 3.3 Run focused suites, all required repository gates, and independent implementation review; record fresh commands and results in `verification.md`, then verify every task has concrete evidence before archival.
-- [ ] 3.4 Archive the completed change only with `pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "model-surface-revision-and-bounded-context-contract"`; verify archive index/roadmap synchronization, commit the scoped change, merge into latest `master`, push, verify `origin/master`, back up only runtime artifacts if produced, and remove the merged worktree and branch.
+- [x] 3.4 Archive the completed change only with `pwsh -File scripts/openspec-archive-seq.ps1 -ChangeName "model-surface-revision-and-bounded-context-contract"`; verify archive index/roadmap synchronization, commit the scoped change, merge into latest `master`, push, verify `origin/master`, back up only runtime artifacts if produced, and remove the merged worktree and branch.
 
 ## Example Impact Assessment
 

@@ -38,6 +38,8 @@ Dynamic action resume 的诊断字段为 additive、nullable、default-safe：`d
 
 该合同的 descriptor 与 handoff correlation 只允许 bounded schema/identity/version/digest/capability/opaque-reference 事实；它们不是 RuntimeRecorder 或 QueryRuns schema。若未来既有诊断 owner 需要投影相关事实，字段必须 additive + nullable + default 并经 `RuntimeRecorder` 单写。raw source body、private memory/knowledge、credentials、business authorization/effect 和 raw resolver error 均不得记录；digest 不代表当前 source access 或业务授权。公开失败面是有限的 `host_context.*` 分类（包括 descriptor/bounds/digest/capability、resolver denial 与 missing source），均 fail-closed。dedicated replay/gate/example 已交付；完整设计和验证记录见 archive 165。
 
+后续 bounded admission 增加 resolver material 固定限制：输入 role 1..64 有效 UTF-8 bytes（再保留既有规范化表示）、content 1..65536 有效 UTF-8 bytes，单次规范化 role+content 合计不超过 262144 bytes；越界或非法 UTF-8 时返回 `host_context.limit_exceeded` 并丢弃整组 transient materials。限制没有 env/file/hot-update 配置，不改变配置优先级，不写 RuntimeRecorder 或 QueryRuns。`provider_request_projection.v1` 的 opt-in `model_surface` 仅在 host 明确提供时保存 configuration/prompt/tool-schema 的 availability、有效 UTF-8 revision、canonical SHA-256 与 byte length（各 revision/digest 最大 256 bytes、length 最大 256 KiB、总 summary 最大 4 KiB）；缺省为 unavailable，不从 roles/tool order/capability 推断。raw 输入不持久化，replay-only drift 不授权或触发 effect。
+
 ## 外部 source adapter：constructor-only
 
 `host/sourceadapter` 通过 constructor 注入 metadata、source、consumer、store 和 options；不新增 env/file/hot-update 键。operation timeout 默认 5 秒，负值拒绝；单页和最近确认 receipt 窗口最多 200 条，payload 最多 64 KiB，reference 最多 256 UTF-8 bytes（kind 为 64），cursor token 最多 4096 bytes。cursor 与 source identity、identity namespace、cursor version 绑定，不能以 native callback ID 替代。

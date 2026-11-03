@@ -3,8 +3,14 @@ package hostprojection
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+)
+
+const (
+	testMaterialRoleLimit    = 64
+	testMaterialContentLimit = 64 * 1024
 )
 
 func TestResolveRejectsInvalidDescriptorBeforeInvokingHostResolver(t *testing.T) {
@@ -75,10 +81,151 @@ func TestResolveReturnsCurrentAuthorizedMaterialAfterAdmission(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsInvalidOrOverLimitMaterialAsWholeResolution(t *testing.T) {
+	tests := []struct {
+		name       string
+		descriptor Descriptor
+		materials  []Material
+		wantCode   Code
+	}{
+		{
+			name:       "empty role",
+			descriptor: validDescriptor(t),
+			materials:  []Material{{Content: "authorized"}},
+			wantCode:   CodeLimitExceeded,
+		},
+		{
+			name:       "role contains invalid UTF-8",
+			descriptor: validDescriptor(t),
+			materials:  []Material{{Role: string([]byte{0xff}), Content: "authorized"}},
+			wantCode:   CodeLimitExceeded,
+		},
+		{
+			name:       "content contains invalid UTF-8",
+			descriptor: validDescriptor(t),
+			materials:  []Material{{Role: "system", Content: string([]byte{0xff})}},
+			wantCode:   CodeLimitExceeded,
+		},
+		{
+			name:       "role exceeds fixed bound",
+			descriptor: validDescriptor(t),
+			materials: []Material{{
+				Role:    strings.Repeat("r", testMaterialRoleLimit+1),
+				Content: "authorized",
+			}},
+			wantCode: CodeLimitExceeded,
+		},
+		{
+			name:       "role exceeds fixed bound before trimming",
+			descriptor: validDescriptor(t),
+			materials:  []Material{{Role: strings.Repeat(" ", testMaterialRoleLimit) + "system", Content: "authorized"}},
+			wantCode:   CodeLimitExceeded,
+		},
+		{
+			name:       "content exceeds fixed bound",
+			descriptor: validDescriptor(t),
+			materials: []Material{{
+				Role:    "system",
+				Content: strings.Repeat("c", testMaterialContentLimit+1),
+			}},
+			wantCode: CodeLimitExceeded,
+		},
+		{
+			name:       "aggregate exceeds fixed bound",
+			descriptor: descriptorWithReferences(t, 4),
+			materials: []Material{
+				{Role: "s", Content: strings.Repeat("a", testMaterialContentLimit)},
+				{Role: "s", Content: strings.Repeat("b", testMaterialContentLimit)},
+				{Role: "s", Content: strings.Repeat("c", testMaterialContentLimit)},
+				{Role: "s", Content: strings.Repeat("d", testMaterialContentLimit)},
+			},
+			wantCode: CodeLimitExceeded,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := &sequenceResolver{materials: tc.materials}
+
+			_, resolution, err := Resolve(t.Context(), tc.descriptor, resolver)
+			if err == nil {
+				t.Fatal("Resolve() error = nil, want material-bound rejection")
+			}
+			if got := errorCode(t, err); got != tc.wantCode {
+				t.Fatalf("Resolve() code = %q, want %q", got, tc.wantCode)
+			}
+			if got := resolution.Materials(); len(got) != 0 {
+				t.Fatalf("Resolve() returned partial materials = %#v", got)
+			}
+		})
+	}
+}
+
+func TestResolveAcceptsExactAggregateMaterialBound(t *testing.T) {
+	contents := []string{
+		strings.Repeat("a", testMaterialContentLimit-4),
+		strings.Repeat("b", testMaterialContentLimit),
+		strings.Repeat("c", testMaterialContentLimit),
+		strings.Repeat("d", testMaterialContentLimit),
+	}
+	materials := make([]Material, len(contents))
+	for i, content := range contents {
+		materials[i] = Material{Role: "s", Content: content}
+	}
+
+	_, resolution, err := Resolve(t.Context(), descriptorWithReferences(t, len(materials)), &sequenceResolver{materials: materials})
+	if err != nil {
+		t.Fatalf("Resolve() exact aggregate bound error = %v", err)
+	}
+	if got := resolution.Materials(); len(got) != len(materials) {
+		t.Fatalf("materials = %d, want %d", len(got), len(materials))
+	}
+}
+
+func TestResolveAcceptsExactPerMaterialBoundsMeasuredInUTF8Bytes(t *testing.T) {
+	role := strings.Repeat("r", testMaterialRoleLimit-3) + "你"
+	content := strings.Repeat("c", testMaterialContentLimit)
+	_, resolution, err := Resolve(t.Context(), validDescriptor(t), &sequenceResolver{materials: []Material{{Role: role, Content: content}}})
+	if err != nil {
+		t.Fatalf("Resolve() exact per-material bounds error = %v", err)
+	}
+	if got := resolution.Materials(); len(got) != 1 || len(got[0].Role) != testMaterialRoleLimit || len(got[0].Content) != testMaterialContentLimit {
+		t.Fatalf("materials = %#v, want exact byte bounds", got)
+	}
+}
+
 type countingResolver struct {
 	calls    int
 	material Material
 	err      error
+}
+
+type sequenceResolver struct {
+	materials []Material
+	calls     int
+}
+
+func (r *sequenceResolver) ResolveHostContext(_ context.Context, _ SourceReference) (Material, error) {
+	if r.calls >= len(r.materials) {
+		return Material{}, ErrSourceNotFound
+	}
+	material := r.materials[r.calls]
+	r.calls++
+	return material, nil
+}
+
+func descriptorWithReferences(t *testing.T, count int) Descriptor {
+	t.Helper()
+	descriptor := validDescriptor(t)
+	descriptor.SourceReferences = make([]SourceReference, count)
+	for i := range descriptor.SourceReferences {
+		descriptor.SourceReferences[i] = SourceReference{
+			Reference: fmt.Sprintf("opaque://source/%d", i),
+			Digest:    fmt.Sprintf("source-digest-%d", i),
+		}
+	}
+	descriptor.Digest = descriptorDigest(t, descriptor)
+	return descriptor
 }
 
 func (r *countingResolver) ResolveHostContext(_ context.Context, _ SourceReference) (Material, error) {

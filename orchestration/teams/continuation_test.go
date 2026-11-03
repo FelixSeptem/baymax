@@ -172,7 +172,7 @@ func TestTeamContextResumeRechecksDeadlineAfterResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-expiring", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}, HostContextProjections: map[string]*hostprojection.Descriptor{"pending": &projection}, HostContextResolver: teamContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
-		return hostprojection.Material{Content: "authorized"}, nil
+		return hostprojection.Material{Role: "system", Content: "authorized"}, nil
 	})}
 	engine := New(WithTeamContinuationStore(store, "team-owner"))
 	nowCalls := 0
@@ -231,7 +231,7 @@ func TestTeamContextResumeKeepsParallelSiblingUnbound(t *testing.T) {
 	}
 	request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-sibling", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}, HostContextProjections: map[string]*hostprojection.Descriptor{"bound": &projection}, HostContextResolver: teamContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
 		resolverCalls++
-		return hostprojection.Material{Content: "bound-only"}, nil
+		return hostprojection.Material{Role: "system", Content: "bound-only"}, nil
 	})}
 	result, err := New(WithTeamContinuationStore(store, "team-owner")).ResumeContinuation(context.Background(), plan, request, nil)
 	if err != nil || boundCalls != 1 || siblingCalls != 1 || resolverCalls != 1 || result.TeamTaskFailed != 0 {
@@ -308,7 +308,7 @@ func TestTeamVoteContinuationResolvesBoundPendingMemberWithoutRerunningSettledVo
 		t.Fatal(err)
 	}
 	request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-vote-context", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}, HostContextProjections: map[string]*hostprojection.Descriptor{"pending": &projection}, HostContextResolver: teamContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
-		return hostprojection.Material{Content: "vote-context"}, nil
+		return hostprojection.Material{Role: "system", Content: "vote-context"}, nil
 	})}
 	result, err := New(WithTeamContinuationStore(store, "team-owner")).ResumeContinuation(context.Background(), plan, request, nil)
 	if err != nil || settledCalls != 0 || contextCalls != 1 || result.WinnerVote != "yes" || result.Tasks[0].Vote != "yes" || result.Tasks[1].Vote != "yes" {
@@ -355,7 +355,7 @@ func TestTeamContextResumeRunStreamParity(t *testing.T) {
 			t.Fatal(err)
 		}
 		request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-context-parity", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}, HostContextProjections: map[string]*hostprojection.Descriptor{"pending": &projection}, HostContextResolver: teamContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
-			return hostprojection.Material{Content: "parity-context"}, nil
+			return hostprojection.Material{Role: "system", Content: "parity-context"}, nil
 		})}
 		return setup{engine: New(WithTeamContinuationStore(store, "team-owner")), plan: plan, request: request, calls: &calls}
 	}
@@ -413,7 +413,7 @@ func TestTeamContextResumeReopensFileOwnerWithBoundMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-context-reopen", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}, HostContextProjections: map[string]*hostprojection.Descriptor{"pending": &projection}, HostContextResolver: teamContextResolverFunc(func(context.Context, hostprojection.SourceReference) (hostprojection.Material, error) {
-		return hostprojection.Material{Content: "reopened-context"}, nil
+		return hostprojection.Material{Role: "system", Content: "reopened-context"}, nil
 	})}
 	result, err := New(WithTeamContinuationStore(reopenedStore, "team-owner")).ResumeContinuation(context.Background(), plan, request, nil)
 	if err != nil || contextCalls != 1 || result.TeamTaskFailed != 0 {

@@ -12,9 +12,16 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const SchemaVersionV1 = "host_context_projection.v1"
+
+const (
+	maxMaterialRoleBytes     = 64
+	maxMaterialContentBytes  = 64 * 1024
+	maxResolvedMaterialBytes = 256 * 1024
+)
 
 // Capability is a finite declaration of the access the host already filtered
 // before requesting context assembly. It is never an authorization grant.
@@ -485,6 +492,7 @@ func resolveAdmitted(ctx context.Context, snapshot Snapshot, resolver Resolver) 
 	}
 	refs := snapshot.Descriptor().SourceReferences
 	materials := make([]Material, 0, len(refs))
+	totalBytes := 0
 	for _, reference := range refs {
 		material, resolveErr := resolver.ResolveHostContext(ctx, reference)
 		if resolveErr != nil {
@@ -493,10 +501,13 @@ func resolveAdmitted(ctx context.Context, snapshot Snapshot, resolver Resolver) 
 			}
 			return Snapshot{}, Resolution{}, fail(CodeResolverDenied, "source_references")
 		}
-		if strings.TrimSpace(material.Content) == "" {
-			return Snapshot{}, Resolution{}, fail(CodeResolverDenied, "source_references")
+		role := strings.TrimSpace(material.Role)
+		materialBytes := len(role) + len(material.Content)
+		if !utf8.ValidString(material.Role) || !utf8.ValidString(material.Content) || role == "" || strings.TrimSpace(material.Content) == "" || len(material.Role) > maxMaterialRoleBytes || len(material.Content) > maxMaterialContentBytes || materialBytes > maxResolvedMaterialBytes-totalBytes {
+			return Snapshot{}, Resolution{}, fail(CodeLimitExceeded, "materials.bytes")
 		}
-		materials = append(materials, Material{Role: strings.TrimSpace(material.Role), Content: material.Content})
+		totalBytes += materialBytes
+		materials = append(materials, Material{Role: role, Content: material.Content})
 	}
 	return snapshot, Resolution{materials: materials}, nil
 }

@@ -34,6 +34,8 @@ callback 必须在 source 锁外运行，返回后 source 锁内重检 generatio
 
 该边界禁止 `context/*` 引入 Provider SDK、source-body store、预算写回、全局 projection registry、直接 RuntimeRecorder 写入或新的 execution/terminal/recovery state machine。descriptor/handoff digest 只能证明规范化事实一致；finite `host_context.*` 分类 fail-closed 且不包含 body/callback error。restore 必须保留既有 source validation，并由宿主用 fresh resolver 重新确认当前 source access；resolver-independent restore 必须拒绝。该 contract 不新增 env/file/hot-update 配置、RuntimeRecorder 或 QueryRuns 字段、host wire command、outbox/mailbox 或动态 action continuation。dedicated replay、shell/PowerShell gate、标准 quality-path wiring、验证记录与离线示例已经交付。范围和回滚见归档 [proposal](../openspec/changes/archive/165-establish-host-context-assembly-handoff-contract/proposal.md)。
 
+当前增量为 resolver material admission：每项非空、有效 UTF-8 的 role/content 分别最多 64 bytes/64 KiB，单次 role+content 合计最多 256 KiB；越界或非法 UTF-8 整组返回 `host_context.limit_exceeded`，不得截断或部分注入。`model/conformance` 的可选 model-surface summary 只承载显式安全且 revision 有效 UTF-8 的 revision/digest/length facts，不跨入 `context/*`，也不新增配置、诊断 writer 或恢复 owner。
+
 ## 模块职责
 
 - `runtime/config`

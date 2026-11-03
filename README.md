@@ -2,6 +2,8 @@
 
 Baymax 是一个 library-first、contract-first 的 Go Agent runtime，面向可嵌入的单 agent、多 agent、工具和 MCP 编排。它提供 Run/Stream 主循环、Provider 适配、Context projection、结构化诊断、replay 和离线治理门禁；宿主仍拥有 credential、网络、持久化和全局路由。
 
+Host context resolver material 采用固定且有效 UTF-8 的 byte bounds（role 64 bytes、content 64 KiB、单次合计 256 KiB）并整组准入；request projection 可 opt-in 携带 configuration、prompt、tool-schema 的安全 revision/digest/length facts，不保留原文或推断缺失值。详见 [host context contract](context/hostprojection/README.md) 与 [model projection contract](model/README.md)。
+
 ## 5 分钟开始
 
 要求 Go 1.26（仓库通过 `go.mod` 的 `toolchain` 声明验证工具链；建议使用当前
@@ -46,7 +48,8 @@ OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap
 
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `source-adapter-lifecycle-contract`（已归档 190）：source-bound 外部投递、有限 disposition、pending evidence 和 cursor-after-commit；参见 [source adapter 指南](docs/guides/source-adapter-lifecycle.md)。
-- `attention-oriented-runtime-diagnostics-projection`（进行中）：只读、有界待处理事项投影；分类和行动基于既有诊断及显式 owner 证据。
+- `attention-oriented-runtime-diagnostics-projection`（已归档 191）：只读、有界待处理事项投影；分类和行动基于既有诊断及显式 owner 证据。详见 [归档索引](openspec/changes/archive/INDEX.md)。
+- `model-surface-revision-and-bounded-context-contract`（已归档 192）：resolver material 的固定有效 UTF-8 有界准入，以及显式、provider-neutral 的模型可见面 revision/digest/length replay 证据；参见 [归档索引](openspec/changes/archive/INDEX.md)。
 
 要了解某个历史决策，请从归档索引进入对应 proposal/design/verification；不要把归档记录当作当前进行中的工作。
 

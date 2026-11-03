@@ -30,6 +30,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -62,6 +82,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -94,13 +134,33 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
-      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
+      "first_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945",
+      "replay_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945"
     },
     {
       "name": "openai_stream_native_request_projection",
@@ -131,6 +191,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -163,6 +243,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -195,13 +295,33 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
-      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
+      "first_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945",
+      "replay_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945"
     },
     {
       "name": "openai_run_stream_parity",
@@ -232,6 +352,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -264,6 +404,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "run": {
@@ -296,6 +456,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "stream": {
@@ -328,13 +508,33 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c",
-      "replay_digest": "72f8b43eff68698eca11369efb705a4d68398e7c7da5e8fe9e6c65202390402c"
+      "first_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945",
+      "replay_digest": "779b5eaa46c5cde319e366c05b61a5a0b6a87318188b34f7260bb933354b9945"
     },
     {
       "name": "openai_run_without_tool_results",
@@ -354,6 +554,26 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -378,13 +598,33 @@
         "prompt_cache": {
           "provider": "openai",
           "kind": "openai_prompt_cache_key"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "731033ac537c7688f14fc0e628ed9fd29e293bb8d5f9c2b3fd061ee799983033",
-      "replay_digest": "731033ac537c7688f14fc0e628ed9fd29e293bb8d5f9c2b3fd061ee799983033"
+      "first_digest": "1b1629621930e23ee420164384490b31e4a34fdec60cf861cc8088d32d000290",
+      "replay_digest": "1b1629621930e23ee420164384490b31e4a34fdec60cf861cc8088d32d000290"
     },
     {
       "name": "anthropic_run_native_request_projection",
@@ -417,6 +657,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -452,6 +712,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -487,13 +767,33 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
-      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
+      "first_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622",
+      "replay_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622"
     },
     {
       "name": "anthropic_stream_native_request_projection",
@@ -526,6 +826,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -561,6 +881,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -596,13 +936,33 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
-      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
+      "first_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622",
+      "replay_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622"
     },
     {
       "name": "anthropic_run_stream_parity",
@@ -635,6 +995,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -670,6 +1050,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "run": {
@@ -705,6 +1105,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "stream": {
@@ -740,13 +1160,33 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300",
-      "replay_digest": "425a6bd252ab64d88c56b34b1d2df0099ce0d9d28ebb50a64d33013425a13300"
+      "first_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622",
+      "replay_digest": "0107978ddb8a422b524c23903d5048c0fe54063769e307df616bb3b012d25622"
     },
     {
       "name": "anthropic_run_without_tool_results",
@@ -768,6 +1208,26 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -794,13 +1254,33 @@
           "kind": "anthropic_cache_breakpoint",
           "boundary_message_index": 1,
           "ttl": "5m"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "24f7c4bb194c1535236be6d5c91a28622162ee4391ca22fff5affca796313de1",
-      "replay_digest": "24f7c4bb194c1535236be6d5c91a28622162ee4391ca22fff5affca796313de1"
+      "first_digest": "b18066a08fdb9742a02242ba6438dfc8aa1d6b0ca27e841cdb6cdf20c25a4555",
+      "replay_digest": "b18066a08fdb9742a02242ba6438dfc8aa1d6b0ca27e841cdb6cdf20c25a4555"
     },
     {
       "name": "gemini_run_native_request_projection",
@@ -831,6 +1311,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -863,6 +1363,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -895,13 +1415,33 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
-      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
+      "first_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202",
+      "replay_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202"
     },
     {
       "name": "gemini_stream_native_request_projection",
@@ -932,6 +1472,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -964,6 +1524,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "expected": {
@@ -996,13 +1576,33 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
-      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
+      "first_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202",
+      "replay_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202"
     },
     {
       "name": "gemini_run_stream_parity",
@@ -1033,6 +1633,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -1065,6 +1685,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "run": {
@@ -1097,6 +1737,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "stream": {
@@ -1129,13 +1789,33 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe",
-      "replay_digest": "17a3a7868bb4652ff82686719088d18ea4b916d4c0812eaba5edfffe073b0dbe"
+      "first_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202",
+      "replay_digest": "3d59e60c185f97010b42eabea8a75adaee7e33e79dd51bb289d06a5a35b15202"
     },
     {
       "name": "gemini_run_without_tool_results",
@@ -1155,6 +1835,26 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "observed": {
@@ -1179,13 +1879,33 @@
         "prompt_cache": {
           "provider": "gemini",
           "kind": "gemini_cached_content_reference"
+        },
+        "model_surface": {
+          "configuration": {
+            "available": true,
+            "revision": "config-v1",
+            "digest": "8a3c462d2df6cb5edec3b211753b5cb831eff8b87b37aacd6decddaa1554f838",
+            "length": 12
+          },
+          "prompt": {
+            "available": true,
+            "revision": "prompt-v1",
+            "digest": "737db0c4948de59f7569aaae429d59213603e2fdd37c659095cfce0bbf501377",
+            "length": 12
+          },
+          "tool_schema": {
+            "available": true,
+            "revision": "schema-v1",
+            "digest": "2f76c5ab494720a4661d95d248b0effcebf07afb7410d87393de248db7666be5",
+            "length": 12
+          }
         }
       },
       "declared_gaps": [
         "provider_request_capability_projection_drift"
       ],
-      "first_digest": "85c12447aa4031129032ce298e8444aca7c814a1e71819edda6f9d434a5fa80b",
-      "replay_digest": "85c12447aa4031129032ce298e8444aca7c814a1e71819edda6f9d434a5fa80b"
+      "first_digest": "b423a3633a691e9b4d24eb14bd5d854909d8f52c1542653529a39ff5680d81ad",
+      "replay_digest": "b423a3633a691e9b4d24eb14bd5d854909d8f52c1542653529a39ff5680d81ad"
     }
   ]
 }

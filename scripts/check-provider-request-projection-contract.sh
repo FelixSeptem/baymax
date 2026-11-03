@@ -41,6 +41,7 @@ request_projection_codes=(
   provider_request_tool_order_drift
   provider_request_capability_projection_drift
   provider_prompt_cache_projection_drift
+  provider_model_surface_projection_drift
   provider_request_run_stream_parity_drift
   provider_cache_usage_projection_drift
   provider_request_overflow_drift

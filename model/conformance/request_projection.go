@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/FelixSeptem/baymax/core/types"
 )
@@ -31,6 +32,7 @@ const (
 	ReasonPromptCacheProjectionDrift       = "provider_prompt_cache_projection_drift"
 	ReasonRequestRunStreamParityDrift      = "provider_request_run_stream_parity_drift"
 	ReasonCacheUsageProjectionDrift        = "provider_cache_usage_projection_drift"
+	ReasonModelSurfaceProjectionDrift      = "provider_model_surface_projection_drift"
 	ReasonRequestOverflowDrift             = "provider_request_overflow_drift"
 	ReasonRequestContractDrift             = "provider_request_contract_drift"
 )
@@ -65,18 +67,22 @@ var requestGapVocabulary = []string{
 	ReasonRequestToolOrderDrift,
 	ReasonRequestCapabilityProjectionDrift,
 	ReasonPromptCacheProjectionDrift,
+	ReasonModelSurfaceProjectionDrift,
 }
 
 // Bounds. Request-side bounds are tighter than the stream-edge fixture bounds
 // because a request projection carries structural facts rather than content.
 const (
-	MaxRequestCases      = 64
-	MaxRequestParts      = 128
-	MaxRequestRoles      = 8
-	MaxRequestTools      = 64
-	MaxRequestIdentifier = 256
-	MaxRequestBytes      = 2 << 20
-	MaxCacheTokens       = 1 << 60
+	MaxRequestCases                = 64
+	MaxRequestParts                = 128
+	MaxRequestRoles                = 8
+	MaxRequestTools                = 64
+	MaxRequestIdentifier           = 256
+	MaxRequestBytes                = 2 << 20
+	MaxCacheTokens                 = 1 << 60
+	MaxModelSurfaceFieldBytes      = 256
+	MaxModelSurfaceBytes           = 256 << 10
+	MaxModelSurfaceProjectionBytes = 4 << 10
 )
 
 const (
@@ -125,14 +131,32 @@ func requestErrorf(code, format string, args ...any) *RequestProjectionError {
 // is provider-neutral: no provider SDK type may appear here. Only digests and
 // counters are recorded; no raw prompt, reasoning, or tool output body.
 type RequestFacts struct {
-	Roles          []string               `json:"roles,omitempty"`
-	ToolOrder      []string               `json:"tool_order,omitempty"`
-	ToolResults    []RequestToolFact      `json:"tool_results,omitempty"`
-	Capabilities   []string               `json:"capabilities,omitempty"`
-	SkillFragments int                    `json:"skill_fragments,omitempty"`
-	PrefixVersion  string                 `json:"prefix_version,omitempty"`
-	InputBytes     int                    `json:"input_bytes,omitempty"`
-	PromptCache    *PromptCacheProjection `json:"prompt_cache,omitempty"`
+	Roles          []string                `json:"roles,omitempty"`
+	ToolOrder      []string                `json:"tool_order,omitempty"`
+	ToolResults    []RequestToolFact       `json:"tool_results,omitempty"`
+	Capabilities   []string                `json:"capabilities,omitempty"`
+	SkillFragments int                     `json:"skill_fragments,omitempty"`
+	PrefixVersion  string                  `json:"prefix_version,omitempty"`
+	InputBytes     int                     `json:"input_bytes,omitempty"`
+	PromptCache    *PromptCacheProjection  `json:"prompt_cache,omitempty"`
+	ModelSurface   *ModelSurfaceProjection `json:"model_surface,omitempty"`
+}
+
+// ModelSurfaceFact is explicitly supplied revision evidence for one model-
+// visible input. It carries no body or provider-native payload.
+type ModelSurfaceFact struct {
+	Available bool   `json:"available"`
+	Revision  string `json:"revision"`
+	Digest    string `json:"digest"`
+	Length    int    `json:"length"`
+}
+
+// ModelSurfaceProjection contains only bounded safe facts for the three
+// model-visible input classes. A nil value means every surface is unavailable.
+type ModelSurfaceProjection struct {
+	Configuration ModelSurfaceFact `json:"configuration"`
+	Prompt        ModelSurfaceFact `json:"prompt"`
+	ToolSchema    ModelSurfaceFact `json:"tool_schema"`
 }
 
 // RequestToolFact is a bounded reference to one canonical tool-result feedback
@@ -148,18 +172,19 @@ type RequestToolFact struct {
 // reached the provider SDK boundary. Overflow is intentionally absent: an
 // over-bound projection fails fast and is never truncated into a valid state.
 type RequestProjection struct {
-	Roles                []string               `json:"roles,omitempty"`
-	Parts                []string               `json:"parts,omitempty"`
-	ToolResultNative     bool                   `json:"tool_result_native"`
-	ToolResultCorrelated bool                   `json:"tool_result_correlated"`
-	ToolOrder            []string               `json:"tool_order,omitempty"`
-	Capabilities         []string               `json:"capabilities,omitempty"`
-	StablePrefixDigest   string                 `json:"stable_prefix_digest,omitempty"`
-	StablePrefixFirst    bool                   `json:"stable_prefix_first"`
-	ContentDigest        string                 `json:"content_digest,omitempty"`
-	TotalBytes           int                    `json:"total_bytes,omitempty"`
-	CacheUsage           CacheUsageProjection   `json:"cache_usage"`
-	PromptCache          *PromptCacheProjection `json:"prompt_cache,omitempty"`
+	Roles                []string                `json:"roles,omitempty"`
+	Parts                []string                `json:"parts,omitempty"`
+	ToolResultNative     bool                    `json:"tool_result_native"`
+	ToolResultCorrelated bool                    `json:"tool_result_correlated"`
+	ToolOrder            []string                `json:"tool_order,omitempty"`
+	Capabilities         []string                `json:"capabilities,omitempty"`
+	StablePrefixDigest   string                  `json:"stable_prefix_digest,omitempty"`
+	StablePrefixFirst    bool                    `json:"stable_prefix_first"`
+	ContentDigest        string                  `json:"content_digest,omitempty"`
+	TotalBytes           int                     `json:"total_bytes,omitempty"`
+	CacheUsage           CacheUsageProjection    `json:"cache_usage"`
+	PromptCache          *PromptCacheProjection  `json:"prompt_cache,omitempty"`
+	ModelSurface         *ModelSurfaceProjection `json:"model_surface,omitempty"`
 }
 
 // CacheUsageProjection carries bounded, provider-neutral cache accounting.
@@ -246,6 +271,9 @@ func ValidateRequestProjection(in RequestProjection) error {
 	if err := validatePromptCacheProjection(in.PromptCache); err != nil {
 		return err
 	}
+	if err := validateModelSurfaceProjection(in.ModelSurface); err != nil {
+		return err
+	}
 	return ValidateCacheUsageProjection(in.CacheUsage)
 }
 
@@ -277,6 +305,37 @@ func ClassifyPromptCacheProjectionDrift(expected, observed *PromptCacheProjectio
 		return ""
 	}
 	return ReasonPromptCacheProjectionDrift
+}
+
+func validateModelSurfaceProjection(in *ModelSurfaceProjection) error {
+	if in == nil {
+		return nil
+	}
+	for _, fact := range []ModelSurfaceFact{in.Configuration, in.Prompt, in.ToolSchema} {
+		if !fact.Available {
+			if fact.Revision != "" || fact.Digest != "" || fact.Length != 0 {
+				return requestErrorf(ReasonModelSurfaceProjectionDrift, "unavailable model surface contains evidence")
+			}
+			continue
+		}
+		if len(fact.Revision) > MaxModelSurfaceFieldBytes || len(fact.Digest) > MaxModelSurfaceFieldBytes {
+			return requestErrorf(ReasonRequestOverflowDrift, "model surface identifier exceeds %d bytes", MaxModelSurfaceFieldBytes)
+		}
+		if fact.Revision == "" || !utf8.ValidString(fact.Revision) || len(fact.Digest) != sha256.Size*2 || fact.Digest != strings.ToLower(fact.Digest) {
+			return requestErrorf(ReasonModelSurfaceProjectionDrift, "available model surface requires revision and canonical SHA-256 digest")
+		}
+		if _, err := hex.DecodeString(fact.Digest); err != nil {
+			return requestErrorf(ReasonModelSurfaceProjectionDrift, "model surface digest is not canonical hex")
+		}
+		if fact.Length < 0 || fact.Length > MaxModelSurfaceBytes {
+			return requestErrorf(ReasonRequestOverflowDrift, "model surface length exceeds %d bytes", MaxModelSurfaceBytes)
+		}
+	}
+	raw, err := json.Marshal(in)
+	if err != nil || len(raw) > MaxModelSurfaceProjectionBytes {
+		return requestErrorf(ReasonRequestOverflowDrift, "model surface projection exceeds %d bytes", MaxModelSurfaceProjectionBytes)
+	}
+	return nil
 }
 
 // ValidateCacheUsageProjection enforces explicit source, non-negative bounded
@@ -357,6 +416,9 @@ func ValidateRequestFacts(in RequestFacts) error {
 	if err := validatePromptCacheProjection(in.PromptCache); err != nil {
 		return err
 	}
+	if err := validateModelSurfaceProjection(in.ModelSurface); err != nil {
+		return err
+	}
 	for i := range in.ToolResults {
 		item := in.ToolResults[i]
 		for _, value := range []string{item.CallID, item.Name, item.Status, item.ResultDigest} {
@@ -391,6 +453,9 @@ func ClassifyRequestGaps(source RequestFacts, observed RequestProjection) []stri
 	if code := ClassifyPromptCacheProjectionDrift(source.PromptCache, observed.PromptCache); code != "" {
 		gaps = append(gaps, code)
 	}
+	if !equalModelSurface(source.ModelSurface, observed.ModelSurface) {
+		gaps = append(gaps, ReasonModelSurfaceProjectionDrift)
+	}
 	slices.Sort(gaps)
 	return slices.Compact(gaps)
 }
@@ -421,6 +486,9 @@ func ClassifyRequestProjectionDrift(expected, observed RequestProjection) string
 	}
 	if code := ClassifyPromptCacheProjectionDrift(expected.PromptCache, observed.PromptCache); code != "" {
 		return code
+	}
+	if !equalModelSurface(expected.ModelSurface, observed.ModelSurface) {
+		return ReasonModelSurfaceProjectionDrift
 	}
 	if expected.ContentDigest != observed.ContentDigest || expected.TotalBytes != observed.TotalBytes {
 		return ReasonRequestPartOrderingDrift
@@ -470,11 +538,12 @@ func ProjectRequestTextEnvelope(payload string, toolResults []RequestToolFact) R
 // outside the conformance package.
 func ProjectRequestNative(source RequestFacts) RequestProjection {
 	projection := RequestProjection{
-		Roles:       append([]string(nil), source.Roles...),
-		Parts:       make([]string, 0, len(source.Roles)+1+len(source.ToolResults)),
-		ToolOrder:   append([]string(nil), source.ToolOrder...),
-		TotalBytes:  source.InputBytes,
-		PromptCache: source.PromptCache,
+		Roles:        append([]string(nil), source.Roles...),
+		Parts:        make([]string, 0, len(source.Roles)+1+len(source.ToolResults)),
+		ToolOrder:    append([]string(nil), source.ToolOrder...),
+		TotalBytes:   source.InputBytes,
+		PromptCache:  source.PromptCache,
+		ModelSurface: cloneModelSurface(source.ModelSurface),
 	}
 	for _, role := range source.Roles {
 		switch strings.ToLower(strings.TrimSpace(role)) {
@@ -501,6 +570,24 @@ func ProjectRequestNative(source RequestFacts) RequestProjection {
 		}
 	}
 	return projection
+}
+
+func cloneModelSurface(in *ModelSurfaceProjection) *ModelSurfaceProjection {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
+func equalModelSurface(left, right *ModelSurfaceProjection) bool {
+	if left == nil {
+		left = &ModelSurfaceProjection{}
+	}
+	if right == nil {
+		right = &ModelSurfaceProjection{}
+	}
+	return reflect.DeepEqual(*left, *right)
 }
 
 // RequestContentDigest returns the bounded content digest used by request

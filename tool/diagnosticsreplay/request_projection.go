@@ -27,6 +27,7 @@ const (
 	ReasonCodePromptCacheProjectionDrift       = conformance.ReasonPromptCacheProjectionDrift
 	ReasonCodeRequestRunStreamParityDrift      = conformance.ReasonRequestRunStreamParityDrift
 	ReasonCodeCacheUsageProjectionDrift        = conformance.ReasonCacheUsageProjectionDrift
+	ReasonCodeModelSurfaceProjectionDrift      = conformance.ReasonModelSurfaceProjectionDrift
 	ReasonCodeRequestOverflowDrift             = conformance.ReasonRequestOverflowDrift
 	ReasonCodeRequestContractDrift             = conformance.ReasonRequestContractDrift
 )

@@ -72,6 +72,34 @@ func TestAssemblerInjectsOnlyCurrentAuthorizedHostProjectionMaterial(t *testing.
 	}
 }
 
+func TestAssemblerRejectsOversizedHostMaterialBeforeInjection(t *testing.T) {
+	cfg := runtimeconfig.DefaultConfig().ContextAssembler
+	cfg.JournalPath = filepath.Join(t.TempDir(), "journal.jsonl")
+	assembler := New(func() runtimeconfig.ContextAssemblerConfig { return cfg })
+	descriptor := validHostProjection(t)
+	resolver := &hostProjectionResolver{material: hostprojection.Material{Role: "system", Content: strings.Repeat("x", 64*1024+1)}}
+	baseMessages := []types.Message{{Role: "user", Content: "original request"}}
+
+	assembled, _, err := assembler.Assemble(context.Background(), types.ContextAssembleRequest{
+		RunID: "run-host-projection-oversized", SessionID: "session-host-projection-oversized", PrefixVersion: semanticPrefixVersion, Messages: baseMessages,
+		HostContextProjection: &descriptor, HostContextResolver: resolver,
+	}, types.ModelRequest{RunID: "run-host-projection-oversized", Messages: baseMessages})
+	if err == nil {
+		t.Fatal("Assemble() error = nil, want oversized material rejection")
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("resolver calls = %d, want 1", resolver.calls)
+	}
+	if code := hostProjectionCode(t, err); code != hostprojection.CodeLimitExceeded {
+		t.Fatalf("error code = %q, want %q", code, hostprojection.CodeLimitExceeded)
+	}
+	for _, message := range assembled.Messages {
+		if strings.Contains(message.Content, strings.Repeat("x", 64*1024+1)) {
+			t.Fatal("oversized resolver material was partially injected")
+		}
+	}
+}
+
 func TestAssemblerBuildHandoffRetainsOnlyHostProjectionCorrelation(t *testing.T) {
 	assembler := New(func() runtimeconfig.ContextAssemblerConfig { return runtimeconfig.DefaultConfig().ContextAssembler })
 	descriptor := validHostProjection(t)

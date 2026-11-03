@@ -35,6 +35,11 @@ func fixtureSource(withToolResult, withCapabilities bool) conformance.RequestFac
 	source := conformance.RequestFacts{
 		Roles:      []string{"system", "user", "assistant"},
 		InputBytes: len("summarize the repository"),
+		ModelSurface: &conformance.ModelSurfaceProjection{
+			Configuration: conformance.ModelSurfaceFact{Available: true, Revision: "config-v1", Digest: conformance.RequestContentDigest("config-facts"), Length: len("config-facts")},
+			Prompt:        conformance.ModelSurfaceFact{Available: true, Revision: "prompt-v1", Digest: conformance.RequestContentDigest("prompt-facts"), Length: len("prompt-facts")},
+			ToolSchema:    conformance.ModelSurfaceFact{Available: true, Revision: "schema-v1", Digest: conformance.RequestContentDigest("schema-facts"), Length: len("schema-facts")},
+		},
 	}
 	if withToolResult {
 		source.ToolResults = []conformance.RequestToolFact{{
@@ -450,6 +455,26 @@ func TestProviderRequestProjectionReplayClassifiesDrift(t *testing.T) {
 			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
 				expected := c.Observed
 				expected.PromptCache = &conformance.PromptCacheProjection{Provider: "anthropic", Kind: conformance.PromptCacheKindAnthropicBreakpoint, BoundaryMessageIndex: replayIntPointer(3), TTL: "5m"}
+				c.Expected = &expected
+			},
+		},
+		{
+			name:     "model-surface projection drift",
+			wantCode: ReasonCodeModelSurfaceProjectionDrift,
+			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
+				expected := c.Observed
+				expected.ModelSurface = nil
+				c.Expected = &expected
+			},
+		},
+		{
+			name:     "model-surface digest drift",
+			wantCode: ReasonCodeModelSurfaceProjectionDrift,
+			mutate: func(t *testing.T, c *conformance.RequestProjectionCase) {
+				expected := c.Observed
+				changed := *expected.ModelSurface
+				changed.Prompt.Digest = conformance.RequestContentDigest("different prompt facts")
+				c.Observed.ModelSurface = &changed
 				c.Expected = &expected
 			},
 		},

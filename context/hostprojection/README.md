@@ -13,6 +13,13 @@ There is no environment, file, or hot-update control. `Snapshot` and
 `Resolution` return defensive copies; source materials are transient and are
 never an authorization decision, a body store, or a handoff payload.
 
+Each resolver material must have a non-empty, valid UTF-8 role and content. The supplied role
+is limited to 64 UTF-8 bytes before its normalized representation is retained,
+content to 64 KiB, and all normalized role-plus-content bytes in one resolution
+to 256 KiB. Any invalid or over-limit item rejects the
+whole resolution with a finite `host_context.*` classification; no prefix is
+returned, no content is truncated or persisted, and limits are not configurable.
+
 Stable rejection classifications are finite: `host_context.unsupported_version`,
 `host_context.invalid_descriptor`, `host_context.limit_exceeded`,
 `host_context.duplicate_reference`, `host_context.invalid_capability`,

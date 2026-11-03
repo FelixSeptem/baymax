@@ -60,6 +60,88 @@ func TestRequestProjectionDigestIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestModelSurfaceFactsAreExplicitPrivateAndParticipateInDriftAndParity(t *testing.T) {
+	source := RequestFacts{Roles: []string{"user"}, ToolOrder: []string{"read_file"}, ModelSurface: &ModelSurfaceProjection{
+		Configuration: ModelSurfaceFact{Available: true, Revision: "cfg-v3", Digest: strings.Repeat("a", 64), Length: 12},
+		Prompt:        ModelSurfaceFact{Available: true, Revision: "prompt-v2", Digest: strings.Repeat("b", 64), Length: 34},
+		ToolSchema:    ModelSurfaceFact{Available: true, Revision: "schema-v1", Digest: strings.Repeat("c", 64), Length: 56},
+	}}
+	projected := ProjectRequestNative(source)
+	if !reflect.DeepEqual(projected.ModelSurface, source.ModelSurface) {
+		t.Fatalf("model surface = %#v, want explicit source facts %#v", projected.ModelSurface, source.ModelSurface)
+	}
+	canonical, err := CanonicalRequestProjection(projected)
+	if err != nil {
+		t.Fatalf("canonical projection: %v", err)
+	}
+	for _, private := range []string{"private-config", "private-prompt", "private-schema"} {
+		if strings.Contains(string(canonical), private) {
+			t.Fatalf("canonical projection leaked %q: %s", private, canonical)
+		}
+	}
+	withoutSurface := projected
+	withoutSurface.ModelSurface = nil
+	if code := ClassifyRequestProjectionDrift(projected, withoutSurface); code != ReasonModelSurfaceProjectionDrift {
+		t.Fatalf("model surface drift code = %q, want %q", code, ReasonModelSurfaceProjectionDrift)
+	}
+	if code := ClassifyRunStreamParity(projected, withoutSurface); code != ReasonRequestRunStreamParityDrift {
+		t.Fatalf("Run/Stream parity code = %q, want %q", code, ReasonRequestRunStreamParityDrift)
+	}
+}
+
+func TestModelSurfaceDefaultsUnavailableAndRejectsInvalidEvidence(t *testing.T) {
+	legacy := RequestProjection{Roles: []string{"user"}, ToolOrder: []string{"read_file"}}
+	if err := ValidateRequestProjection(legacy); err != nil {
+		t.Fatalf("legacy projection should remain valid: %v", err)
+	}
+	if legacy.ModelSurface != nil {
+		t.Fatal("omitted model surface must remain unavailable without inference")
+	}
+	if code := ClassifyRequestProjectionDrift(legacy, RequestProjection{Roles: []string{"user"}, ToolOrder: []string{"read_file"}, ModelSurface: &ModelSurfaceProjection{}}); code != "" {
+		t.Fatalf("omitted and explicit unavailable summaries must be equivalent, got drift %q", code)
+	}
+
+	invalid := []struct {
+		name     string
+		fact     ModelSurfaceFact
+		wantCode string
+	}{
+		{name: "digest is not canonical hex", fact: ModelSurfaceFact{Available: true, Revision: "rev", Digest: strings.Repeat("z", 64), Length: 1}, wantCode: ReasonModelSurfaceProjectionDrift},
+		{name: "revision exceeds bound", fact: ModelSurfaceFact{Available: true, Revision: strings.Repeat("r", MaxModelSurfaceFieldBytes+1), Digest: strings.Repeat("a", 64), Length: 1}, wantCode: ReasonRequestOverflowDrift},
+		{name: "revision contains invalid UTF-8", fact: ModelSurfaceFact{Available: true, Revision: string([]byte{0xff}), Digest: strings.Repeat("a", 64), Length: 1}, wantCode: ReasonModelSurfaceProjectionDrift},
+		{name: "length exceeds bound", fact: ModelSurfaceFact{Available: true, Revision: "rev", Digest: strings.Repeat("a", 64), Length: MaxModelSurfaceBytes + 1}, wantCode: ReasonRequestOverflowDrift},
+		{name: "unavailable evidence is populated", fact: ModelSurfaceFact{Available: false, Revision: "invented", Digest: strings.Repeat("a", 64), Length: 1}, wantCode: ReasonModelSurfaceProjectionDrift},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			projection := RequestProjection{ModelSurface: &ModelSurfaceProjection{Prompt: tc.fact}}
+			err := ValidateRequestProjection(projection)
+			var classified *RequestProjectionError
+			if !errors.As(err, &classified) || classified.Code != tc.wantCode {
+				t.Fatalf("ValidateRequestProjection() error = %v, want code %q", err, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestHistoricalRequestProjectionWithoutModelSurfaceKeepsCanonicalDigest(t *testing.T) {
+	raw := `{"roles":["user"],"parts":["user_text"],"tool_result_native":false}`
+	var projection RequestProjection
+	if err := json.Unmarshal([]byte(raw), &projection); err != nil {
+		t.Fatalf("decode historical projection: %v", err)
+	}
+	if projection.ModelSurface != nil {
+		t.Fatalf("historical model surface = %#v, want absent/unavailable", projection.ModelSurface)
+	}
+	canonical, err := CanonicalRequestProjection(projection)
+	if err != nil {
+		t.Fatalf("canonical historical projection: %v", err)
+	}
+	if strings.Contains(string(canonical), "model_surface") {
+		t.Fatalf("historical canonical projection changed by implicit surface: %s", canonical)
+	}
+}
+
 func TestPromptCacheFactsAndProjectionOmitOpaqueValues(t *testing.T) {
 	key := "sentinel-openai-cache-key"
 	request := types.ModelRequest{PromptCache: &types.PromptCacheDirective{

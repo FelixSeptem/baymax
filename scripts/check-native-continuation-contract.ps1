@@ -6,7 +6,19 @@ Set-Location $repoRoot
 
 Write-Host "[native-continuation-contract] source evidence, unsupported boundaries and read-only crash-window replay"
 Invoke-NativeStrict -Label "native continuation contract suites" -Command {
-    go test ./core/types ./core/checkpoint ./core/runner ./orchestration/planbridge ./tool/diagnosticsreplay -count=1
+    go test ./core/types ./core/checkpoint ./core/runner ./orchestration/composer ./orchestration/planbridge ./tool/diagnosticsreplay -count=1
+}
+
+$childTest = "orchestration/composer/continuation_runtime_test.go"
+$childMarkers = @(
+    "TestComposerRestoresChildContinuationWithFreshOwnersForEachPauseReason",
+    "TestComposerResumeChildContinuationRejectsExpiredSourcePositionBeforeClaim",
+    "TestComposerResumeChildContinuationRejectsSourceGapBeforeClaim"
+)
+foreach ($marker in $childMarkers) {
+    if (-not (Select-String -LiteralPath $childTest -SimpleMatch $marker -Quiet)) {
+        throw "[native-continuation-contract][child] missing fresh-owner/cursor evidence: $marker"
+    }
 }
 
 $file = "tool/diagnosticsreplay/native_continuation.go"

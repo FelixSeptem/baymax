@@ -3,7 +3,17 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 echo '[native-continuation-contract] source evidence, unsupported boundaries and read-only crash-window replay'
-go test ./core/types ./core/checkpoint ./core/runner ./orchestration/planbridge ./tool/diagnosticsreplay -count=1
+go test ./core/types ./core/checkpoint ./core/runner ./orchestration/composer ./orchestration/planbridge ./tool/diagnosticsreplay -count=1
+child_test=orchestration/composer/continuation_runtime_test.go
+for marker in \
+  TestComposerRestoresChildContinuationWithFreshOwnersForEachPauseReason \
+  TestComposerResumeChildContinuationRejectsExpiredSourcePositionBeforeClaim \
+  TestComposerResumeChildContinuationRejectsSourceGapBeforeClaim; do
+  if ! rg -Fq "$marker" "$child_test"; then
+    echo "[native-continuation-contract][child] missing fresh-owner/cursor evidence: $marker" >&2
+    exit 1
+  fi
+done
 file=tool/diagnosticsreplay/native_continuation.go
 pattern='"(net/|database/|os"|github.com/FelixSeptem/baymax/(core/runner|core/checkpoint|runtime/|observability/|orchestration/|model/|mcp/))|^[[:space:]]*go[[:space:]]+|\.(Run|Stream|Resume|ResumeFromCheckpoint|Cancel|Retry|Record|AppendEvent|Save|Load|ClaimResume|CommitResumeResult)\('
 status=0

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -107,5 +108,32 @@ func TestChildContinuationRejectsForeignAndOversizedMaterial(t *testing.T) {
 	continuation.PendingActionReference = string(make([]byte, ChildContinuationMaxReferenceBytes+1))
 	if _, err := SealChildContinuation(continuation); !errors.Is(err, ErrChildContinuationMalformed) {
 		t.Fatalf("oversized seal error = %v", err)
+	}
+}
+
+func TestChildContinuationBindsChildHistorySourceAndCursor(t *testing.T) {
+	continuation := testChildContinuation(t)
+	continuation.SourcePosition = &ChildSourcePosition{
+		Source: types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: "parent-run"},
+		Cursor: types.OpaqueCursor{Value: "opaque-cursor"},
+	}
+	sealed, err := SealChildContinuation(continuation)
+	if err != nil {
+		t.Fatalf("SealChildContinuation() error = %v", err)
+	}
+	if err := sealed.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	foreign := sealed.Detached()
+	foreign.SourcePosition.Source.ID = "another-child"
+	if err := foreign.Validate(); !errors.Is(err, ErrChildContinuationForeign) {
+		t.Fatalf("foreign source error = %v, want foreign", err)
+	}
+
+	malformed := sealed.Detached()
+	malformed.SourcePosition.Cursor = types.OpaqueCursor{Value: " "}
+	if err := malformed.Validate(); !errors.Is(err, ErrChildContinuationMalformed) {
+		t.Fatalf("malformed cursor error = %v, want malformed", err)
 	}
 }

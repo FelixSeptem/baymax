@@ -18,6 +18,13 @@ source evidence for `input_required`, `approval_required`, or
 `budget_exhausted`; scheduler retry and recovery snapshots are not pause
 continuations. Team, mailbox and resumed-plan support remains unsupported.
 
+`Composer.ContinuationCapabilities` is the explicit child source-owner
+evidence provider. It returns a complete child profile only when a file-backed
+child continuation store, a durable child native-history journal, and a
+continuation executor are all injected. Memory-only or owner-less Composer
+instances return typed unsupported evidence, so dispatch wiring cannot promote
+the manifest by itself.
+
 An owner-enabled child context continuation is opt-in. Supplying an identity-only
 `hostprojection.SourceBinding` on dispatch causes Composer to fill the actual
 run/task/attempt and graph generation into the persisted continuation. A
@@ -33,3 +40,12 @@ Child continuation stores expose the same-host single-writer sequential-reopen
 deployment boundary. The owner namespace and fence are source facts; a
 foreign/stale writer or distributed graph-claim request is rejected before
 member dispatch and is never converted into a fresh parent or replay.
+
+When a child has an explicitly bound native history journal, its pause
+checkpoint binds the journal source and opaque cursor into the checkpoint
+digest. Restore validates that cursor against the same reopened child journal
+before claiming the continuation. Expired or gapped positions fail closed;
+history replay never drives child execution. This source-position evidence is
+necessary but not sufficient by itself to advertise child pause support: each
+pause reason still requires complete owner evidence and a fresh-process restore
+test under the declared deployment scope.

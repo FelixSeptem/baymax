@@ -164,3 +164,10 @@ deployment boundary. Compilation and admission reject multi-writer,
 cross-machine or multi-instance requests when the bound source only exposes
 same-host single-writer sequential reopen. Rejection occurs before owner
 activation, publish, enqueue, claim, restore or fallback direct execution.
+Child continuation promotion is form-local and requires an explicitly
+configured child owner. A source cursor or successful dispatch alone does not
+promote `input_required`, `approval_required`, or `budget_exhausted`; each cell
+must carry complete safe-point, fresh-process restore, terminal, and
+completed-effect non-replay evidence. Missing cells remain unsupported and
+must not be converted to direct execution. The manifest preserves the owner's
+deployment scope.

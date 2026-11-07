@@ -3,10 +3,13 @@ package composer
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/FelixSeptem/baymax/context/hostprojection"
+	"github.com/FelixSeptem/baymax/core/history"
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -68,6 +71,198 @@ func TestComposerResumeChildContinuationFailsClosedWithoutExecutor(t *testing.T)
 	_, err := comp.ResumeChildContinuation(context.Background(), ChildResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Target: continuation.Target, IdempotencyKey: "resume-1"})
 	if !errors.Is(err, ErrChildContinuationUnsupported) {
 		t.Fatalf("resume error = %v", err)
+	}
+}
+
+func TestComposerResumeChildContinuationRejectsExpiredSourcePositionBeforeClaim(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryChildContinuationStore("child")
+	continuation := testChildContinuation(t)
+	source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: continuation.RunID}
+	journal, err := NewNativeEventHistory(source, history.WithRetention(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCursor, err := journal.CurrentCursor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "child.fact"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	continuation.SourcePosition = &ChildSourcePosition{Source: source, Cursor: oldCursor}
+	continuation, err = SealChildContinuation(continuation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, continuation); err != nil {
+		t.Fatal(err)
+	}
+	comp := &Composer{childContinuationStore: store, childContinuationNamespace: "child", nativeHistory: journal}
+	request := ChildResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Target: continuation.Target, IdempotencyKey: "expired-position"}
+	if _, err := comp.ResumeChildContinuation(ctx, request); !errors.Is(err, types.ErrCursorExpired) {
+		t.Fatalf("resume error = %v, want expired cursor", err)
+	}
+	if claim, err := store.ClaimResume(ctx, request); err != nil || claim.Duplicate {
+		t.Fatalf("resume claim after rejected cursor = %#v, %v; want a fresh unconsumed claim", claim, err)
+	}
+}
+
+func TestComposerResumeChildContinuationRejectsSourceGapBeforeClaim(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryChildContinuationStore("child")
+	continuation := testChildContinuation(t)
+	source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: continuation.RunID}
+	positionJournal, err := NewNativeEventHistory(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := positionJournal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "child.fact"}); err != nil {
+		t.Fatal(err)
+	}
+	futureCursor, err := positionJournal.CurrentCursor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	continuation.SourcePosition = &ChildSourcePosition{Source: source, Cursor: futureCursor}
+	continuation, err = SealChildContinuation(continuation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, continuation); err != nil {
+		t.Fatal(err)
+	}
+	currentJournal, err := NewNativeEventHistory(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	comp := &Composer{childContinuationStore: store, childContinuationNamespace: "child", nativeHistory: currentJournal}
+	request := ChildResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Target: continuation.Target, IdempotencyKey: "gapped-position"}
+	if _, err := comp.ResumeChildContinuation(ctx, request); !errors.Is(err, types.ErrHistoryGap) {
+		t.Fatalf("resume error = %v, want source gap", err)
+	}
+	if claim, err := store.ClaimResume(ctx, request); err != nil || claim.Duplicate {
+		t.Fatalf("resume claim after rejected gap = %#v, %v; want a fresh unconsumed claim", claim, err)
+	}
+}
+
+func TestComposerRestoresChildContinuationWithFreshOwnersForEachPauseReason(t *testing.T) {
+	for _, reason := range []ChildPauseReason{ChildPauseInputRequired, ChildPauseApprovalRequired, ChildPauseBudgetExhausted} {
+		t.Run(string(reason), func(t *testing.T) {
+			ctx := context.Background()
+			root := t.TempDir()
+			queuePath := filepath.Join(root, "scheduler.json")
+			continuationPath := filepath.Join(root, "continuation")
+			historyPath := filepath.Join(root, "history.json")
+			queue, err := scheduler.NewFileStore(queuePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sched, err := scheduler.New(queue)
+			if err != nil {
+				t.Fatal(err)
+			}
+			continuation := testChildContinuation(t)
+			continuation.PauseReason = reason
+			continuation.CompletedEffectRefs = []string{"effect-complete"}
+			if _, err := sched.Enqueue(ctx, continuation.Claimed.Record.Task); err != nil {
+				t.Fatal(err)
+			}
+			claimed, ok, err := sched.Claim(ctx, "worker")
+			if err != nil || !ok {
+				t.Fatalf("Claim() = %#v, %v", claimed, err)
+			}
+			continuation.Claimed = claimed
+			source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: continuation.RunID}
+			journal, err := OpenNativeEventHistory(historyPath, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "child.paused"}); err != nil {
+				t.Fatal(err)
+			}
+			cursor, err := journal.CurrentCursor()
+			if err != nil {
+				t.Fatal(err)
+			}
+			continuation.SourcePosition = &ChildSourcePosition{Source: source, Cursor: cursor}
+			continuation, err = SealChildContinuation(continuation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner, err := NewFileChildContinuationStore(continuationPath, "child")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := owner.Save(ctx, continuation); err != nil {
+				t.Fatal(err)
+			}
+
+			freshQueue, err := scheduler.NewFileStore(queuePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			freshScheduler, err := scheduler.New(freshQueue)
+			if err != nil {
+				t.Fatal(err)
+			}
+			freshOwner, err := NewFileChildContinuationStore(continuationPath, "child")
+			if err != nil {
+				t.Fatal(err)
+			}
+			freshHistory, err := OpenNativeEventHistory(historyPath, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			fresh := &Composer{
+				scheduler: freshScheduler, childContinuationStore: freshOwner,
+				childContinuationNamespace: "child", nativeHistory: freshHistory,
+				childContinuationExecutor: ChildContinuationExecutorFunc(func(_ context.Context, got ChildContinuation) (scheduler.TerminalCommit, error) {
+					calls++
+					if got.PauseReason != reason || len(got.CompletedEffectRefs) != 1 || got.CompletedEffectRefs[0] != "effect-complete" {
+						t.Fatalf("restored checkpoint = %#v", got)
+					}
+					return scheduler.TerminalCommit{TaskID: got.Claimed.Record.Task.TaskID, AttemptID: got.Claimed.Attempt.AttemptID, Status: scheduler.TaskStateSucceeded}, nil
+				}),
+				now: time.Now, runStat: map[string]*runStat{},
+			}
+			request := ChildResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Target: continuation.Target, IdempotencyKey: "fresh-process-" + string(reason)}
+			result, err := fresh.ResumeChildContinuation(ctx, request)
+			if err != nil || result.Commit.Status != scheduler.TaskStateSucceeded || calls != 1 {
+				t.Fatalf("fresh restore = %#v, calls=%d, err=%v", result, calls, err)
+			}
+		})
+	}
+}
+
+func TestComposerContinuationCapabilitiesRequireFileOwnerAndHistory(t *testing.T) {
+	ctx := context.Background()
+	base := &Composer{childContinuationNamespace: "child", childContinuationStore: NewMemoryChildContinuationStore("child")}
+	if _, err := base.ContinuationCapabilities(ctx); !errors.Is(err, types.ErrCheckpointUnsupported) {
+		t.Fatalf("memory/owner-less capability error = %v", err)
+	}
+	root := t.TempDir()
+	owner, err := NewFileChildContinuationStore(filepath.Join(root, "continuation"), "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: "run"}
+	journal, err := OpenNativeEventHistory(filepath.Join(root, "history.json"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capable := &Composer{
+		childContinuationNamespace: "child", childContinuationStore: owner, nativeHistory: journal,
+		childContinuationExecutor: ChildContinuationExecutorFunc(func(context.Context, ChildContinuation) (scheduler.TerminalCommit, error) {
+			return scheduler.TerminalCommit{}, nil
+		}),
+	}
+	caps, err := capable.ContinuationCapabilities(ctx)
+	if err != nil || !caps.CheckpointCreation || !caps.CrossProcessRestore || len(caps.PauseReasonEvidence) != 3 {
+		t.Fatalf("capabilities = %#v, err=%v", caps, err)
 	}
 }
 
@@ -350,5 +545,27 @@ func TestDispatchChildPersistsOwnerBoundHostContextWithPause(t *testing.T) {
 	}
 	if loaded.HostContextBinding == nil || *loaded.HostContextBinding != want {
 		t.Fatalf("host context binding = %#v, want %#v", loaded.HostContextBinding, want)
+	}
+}
+
+func TestPersistChildPauseBindsCurrentNativeHistoryCursor(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryChildContinuationStore("child")
+	source := types.SourceRef{Kind: types.HistorySourceChild, Namespace: "child.history.v1", ID: "parent-run"}
+	journal, err := NewNativeEventHistory(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Append(ctx, types.NativeExecutionEvent{Version: types.NativeExecutionEventVersionV1, NativeType: "child.pause"}); err != nil {
+		t.Fatal(err)
+	}
+	comp := &Composer{childContinuationStore: store, childContinuationNamespace: "child", nativeHistory: journal}
+	continuation := testChildContinuation(t)
+	paused, err := comp.PersistChildPause(ctx, continuation, ChildPauseError{Reason: ChildPauseInputRequired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paused.SourcePosition == nil || paused.SourcePosition.Source != source || paused.SourcePosition.Cursor.Value == "" {
+		t.Fatalf("source position = %#v", paused.SourcePosition)
 	}
 }

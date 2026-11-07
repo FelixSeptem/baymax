@@ -120,6 +120,14 @@ type ChildContinuation struct {
 	CreatedAt              time.Time                     `json:"created_at"`
 	ExpiresAt              time.Time                     `json:"expires_at"`
 	HostContextBinding     *hostprojection.SourceBinding `json:"host_context_binding,omitempty"`
+	SourcePosition         *ChildSourcePosition          `json:"source_position,omitempty"`
+}
+
+// ChildSourcePosition binds a child checkpoint to its source-owned native
+// event history. The opaque cursor is interpreted only by that source.
+type ChildSourcePosition struct {
+	Source types.SourceRef    `json:"source"`
+	Cursor types.OpaqueCursor `json:"cursor"`
 }
 
 func (c ChildContinuation) Validate() error {
@@ -155,6 +163,9 @@ func (c ChildContinuation) Validate() error {
 	if err := validateChildHostContextBinding(c); err != nil {
 		return err
 	}
+	if err := validateChildSourcePosition(c); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(c)
 	if err != nil || len(payload) > ChildContinuationMaxBytes {
 		return ErrChildContinuationMalformed
@@ -166,6 +177,20 @@ func (c ChildContinuation) Validate() error {
 	sum := sha256.Sum256(canonical)
 	if c.Ref.Digest != "sha256:"+hex.EncodeToString(sum[:]) || c.Ref.CheckpointID != "child-"+hex.EncodeToString(sum[:16]) {
 		return ErrChildContinuationCorrupt
+	}
+	return nil
+}
+
+func validateChildSourcePosition(c ChildContinuation) error {
+	if c.SourcePosition == nil {
+		return nil
+	}
+	position := c.SourcePosition
+	if err := position.Source.Validate(); err != nil || position.Source.Kind != types.HistorySourceChild || position.Source.ID != c.RunID {
+		return ErrChildContinuationForeign
+	}
+	if err := position.Cursor.Validate(); err != nil {
+		return ErrChildContinuationMalformed
 	}
 	return nil
 }
@@ -225,6 +250,10 @@ func (c ChildContinuation) Detached() ChildContinuation {
 	if c.HostContextBinding != nil {
 		binding := *c.HostContextBinding
 		out.HostContextBinding = &binding
+	}
+	if c.SourcePosition != nil {
+		position := *c.SourcePosition
+		out.SourcePosition = &position
 	}
 	out.Claimed.Record.Task.Payload = cloneMap(c.Claimed.Record.Task.Payload)
 	out.Claimed.Record.Result = cloneMap(c.Claimed.Record.Result)
@@ -521,6 +550,14 @@ type FileChildContinuationStore struct {
 	root      string
 	namespace string
 	memory    *MemoryChildContinuationStore
+}
+
+// DeploymentScope exposes the file owner's verified same-host profile.
+func (s *FileChildContinuationStore) DeploymentScope() types.DeploymentScope {
+	if s == nil || s.memory == nil {
+		return types.DefaultDeploymentScope("child", "child continuation store is unavailable")
+	}
+	return s.memory.DeploymentScope()
 }
 
 func NewFileChildContinuationStore(root, namespace string) (*FileChildContinuationStore, error) {

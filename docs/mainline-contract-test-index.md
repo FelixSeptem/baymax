@@ -607,7 +607,14 @@ and [offline example](../examples/source-adapter-lifecycle/README.md).
 atomic duplicate/conflict claims, existing scheduler identity and no-spawn
 resume. `tool/diagnosticsreplay/child_continuation_test.go` covers reference-
 only drift and unsupported form replay. Planbridge child-owner delegation is
-covered by `orchestration/planbridge/native_binding_test.go`.
+covered by `orchestration/planbridge/native_binding_test.go`. The child source
+position binding and fresh-owner pause/cursor evidence are covered by
+`TestComposerRestoresChildContinuationWithFreshOwnersForEachPauseReason`,
+`TestComposerResumeChildContinuationRejectsExpiredSourcePositionBeforeClaim`,
+and `TestComposerResumeChildContinuationRejectsSourceGapBeforeClaim` in
+`orchestration/composer/continuation_runtime_test.go`. The native continuation
+gate runs these with the affected owner packages; child capability promotion
+remains unsupported until its complete per-reason owner evidence is available.
 
 ## Attention diagnostics projection
 

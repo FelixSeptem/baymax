@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/FelixSeptem/baymax/context/hostprojection"
+	"github.com/FelixSeptem/baymax/core/types"
 	"github.com/FelixSeptem/baymax/orchestration/scheduler"
 )
 
@@ -74,6 +75,17 @@ func (c *Composer) PersistChildPause(ctx context.Context, continuation ChildCont
 	continuation.PendingActionReference = strings.TrimSpace(pause.PendingActionReference)
 	continuation.ConsumedBudget = pause.ConsumedBudget
 	continuation.OriginalDeadline = pause.OriginalDeadline
+	if c.nativeHistory != nil {
+		source := c.nativeHistory.Source()
+		if source.Kind != types.HistorySourceChild || source.ID != continuation.RunID {
+			return ChildContinuation{}, ErrChildContinuationForeign
+		}
+		cursor, err := c.nativeHistory.CurrentCursor()
+		if err != nil {
+			return ChildContinuation{}, err
+		}
+		continuation.SourcePosition = &ChildSourcePosition{Source: source, Cursor: cursor}
+	}
 	sealed, err := SealChildContinuation(continuation)
 	if err != nil {
 		return ChildContinuation{}, err
@@ -103,6 +115,14 @@ func (c *Composer) ResumeChildContinuation(ctx context.Context, request ChildRes
 	}
 	if err := validateChildResumeBinding(continuation, request); err != nil {
 		return ChildDispatchResult{}, err
+	}
+	if continuation.SourcePosition != nil {
+		if c.nativeHistory == nil || c.nativeHistory.Source() != continuation.SourcePosition.Source {
+			return ChildDispatchResult{}, ErrChildContinuationUnavailable
+		}
+		if _, err := c.nativeHistory.ReadAfter(ctx, continuation.SourcePosition.Source, &continuation.SourcePosition.Cursor, 1); err != nil {
+			return ChildDispatchResult{}, err
+		}
 	}
 	var resolved hostprojection.Resolution
 	if request.HostContextProjection != nil {

@@ -302,6 +302,17 @@ func (j *Journal) Source() types.SourceRef {
 	return j.source
 }
 
+// CurrentCursor returns the source-local position after the latest retained
+// event. The cursor is opaque and is valid only for this journal source.
+func (j *Journal) CurrentCursor() (types.OpaqueCursor, error) {
+	if j == nil {
+		return types.OpaqueCursor{}, types.ErrSourceUnavailable
+	}
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return encodeCursor(j.source, j.sequence), nil
+}
+
 func (j *Journal) Capabilities(ctx context.Context, source types.SourceRef) (types.HistoryCapabilities, error) {
 	if err := ctx.Err(); err != nil {
 		return types.HistoryCapabilities{}, err

@@ -27,6 +27,13 @@ History replay is read-only and not restore. A claim or accepted cancellation re
 
 The executable prints `<reason>_<run|stream>_restored` for all six cases, followed by `duplicate_projection`, `conflict_rejected`, `foreign_rejected`, `store_unavailable`, `composite_unsupported`, and `run_stream_parity`. Each marker is printed only after its corresponding invariant is checked. Read-only replay is exercised by the dedicated lifecycle gate, independently of the example.
 
+The Composer child owner has separate tests for `input_required`,
+`approval_required`, and `budget_exhausted` using fresh continuation, scheduler,
+and history handles. Expired and gapped cursor rejection occurs before the
+resume claim. These child markers do not promote the manifest by themselves;
+the child pause cells remain unsupported until complete owner evidence is
+available.
+
 FileStore holds a single writer lock and retains bounded private normalized requests/tool outcomes. Treat its directory as execution data. Do not use it as a shared distributed queue or copy its material into host telemetry.
 
 ## Rollback notes
@@ -39,3 +46,10 @@ restore requires an explicit Composer `ChildContinuationStore`, source owner,
 and scheduler task/attempt evidence; planbridge refuses terminal-only or
 owner-less child continuation. Team, mailbox and resumed-plan cells remain
 unsupported until their source owners provide equivalent evidence.
+Child continuation is a separate source owner from workflow. When a child
+checkpoint binds native history, the checkpoint also binds the opaque child
+source cursor; a fresh Composer must reopen the same child owner and validate
+the retained cursor before claiming resume. Expired/gapped cursors fail before
+claim and do not replay tools or restart the parent. Cursor evidence alone does
+not promote child pause capabilities; all three pause reasons require their own
+fresh-process evidence and the manifest stays unsupported otherwise.

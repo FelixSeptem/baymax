@@ -2382,3 +2382,9 @@ constructor-free Limit defaults to 50 (maximum 200), each input list has at most
 atomic `ErrAttentionInput`; unknown/missing evidence implies no action, never
 effect completion. See [attention diagnostics](guides/attention-diagnostics.md)
 for exact field mappings, supplemental evidence, ordering and truncation.
+# Child continuation does not add runtime configuration
+
+Composer child continuation source position is bound through the explicitly
+injected child history owner and continuation store. This contract adds no
+runtime configuration keys, defaults, or diagnostic fields; the selected
+owner's deployment scope remains the authority for supported restore claims.

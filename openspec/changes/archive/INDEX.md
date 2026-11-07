@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-03 16:43:41
+Updated: 2026-11-05 23:26:35
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -194,3 +194,4 @@ Updated: 2026-11-03 16:43:41
 - 190 -> source-adapter-lifecycle-contract
 - 191 -> attention-oriented-runtime-diagnostics-projection
 - 192 -> model-surface-revision-and-bounded-context-contract
+- 193 -> role-scoped-runtime-ports-and-owner-index

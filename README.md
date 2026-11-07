@@ -46,6 +46,7 @@ go run ./examples/01-chat-minimal
 
 OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap.md) 和 [归档索引](openspec/changes/archive/INDEX.md) 为准。能力边界和仍不支持的组合也见 [集成能力矩阵](docs/guides/integration.md)，不要从 package 名称或旧的 release snapshot 推断。
 
+- `role-scoped-runtime-ports-and-owner-index`（已归档 193）：为 resolver material、model surface 与 source adapter 三类既有语义建立可校验的唯一 owner 和证据索引；不收窄 runtime port 或改变运行时行为。详见[归档记录](openspec/changes/archive/193-role-scoped-runtime-ports-and-owner-index/)与[路线图](docs/development-roadmap.md)。
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `source-adapter-lifecycle-contract`（已归档 190）：source-bound 外部投递、有限 disposition、pending evidence 和 cursor-after-commit；参见 [source adapter 指南](docs/guides/source-adapter-lifecycle.md)。
 - `attention-oriented-runtime-diagnostics-projection`（已归档 191）：只读、有界待处理事项投影；分类和行动基于既有诊断及显式 owner 证据。详见 [归档索引](openspec/changes/archive/INDEX.md)。
@@ -63,6 +64,7 @@ OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap
 - [数据与事件流](docs/architecture/data-event-flow.md)
 - [模块 ownership](docs/architecture/module-ownership.md)
 - [事实源与迁移矩阵](docs/documentation-ownership.md)
+- [Owner 证据索引](docs/owner-evidence-index.md)：已登记语义的 owner、规范、测试和门禁。
 - [文档写作与页面模板](docs/documentation-style-guide.md)
 - [开发路线图](docs/development-roadmap.md)
 - [运行时模块边界](docs/runtime-module-boundaries.md)

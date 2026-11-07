@@ -55,7 +55,13 @@ foreach ($change in $active) {
         foreach ($name in @('design.md','tasks.md')) { if (($commitments[$name] -join "`n") -ne $baseline) { Add-Issue 'public-semantic-documentation-drift' "$($change.Name):$name" } }
     }
 }
-if (@($changed | Where-Object { ($_ -match '(^|/).*\.go$' -and $_ -notmatch '_test\.go$') -or $_ -match '^examples/' }).Count -gt 0) {
+$runtimeGoChanged = @($changed | Where-Object {
+        $_ -match '(^|/).*\.go$' -and
+        $_ -notmatch '_test\.go$' -and
+        $_ -notmatch '^tool/contributioncheck/'
+    }).Count -gt 0
+$exampleChanged = @($changed | Where-Object { $_ -match '^examples/' }).Count -gt 0
+if ($runtimeGoChanged -or $exampleChanged) {
     foreach ($change in $active) {
         $proposal = Get-Content -Raw (Join-Path $change.FullName 'proposal.md')
         foreach ($area in @('configuration','contract/API','diagnostics','examples')) {

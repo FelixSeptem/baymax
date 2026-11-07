@@ -19,6 +19,10 @@
 | 编排 | `orchestration/*`, `a2a/*` | `docs/components/orchestration.md` | orchestration owners | `go test ./orchestration/... ./a2a/...` |
 | Native event observation | `host/eventadapter/README.md`, `host/eventadapter/*` | `docs/components/README.md`, `docs/guides/integration.md` | host/event owners | native execution event gate |
 | Context handoff/projection | `context/handoff/README.md`, `context/hostprojection/README.md` | `docs/components/README.md`, `docs/guides/integration.md` | context/runner owners | host-context assembly gate |
+| resolver-material-bounded-admission | `context/hostprojection/README.md` | `docs/owner-evidence-index.md` | `context/hostprojection` | `scripts/check-host-context-assembly-handoff-contract.ps1` |
+| provider-neutral-model-surface-evidence | `model/README.md` | `docs/owner-evidence-index.md` | `model/conformance` | `scripts/check-provider-request-projection-contract.ps1` |
+| source-adapter-lifecycle | `docs/guides/source-adapter-lifecycle.md` | `docs/owner-evidence-index.md` | `host/sourceadapter` | `scripts/check-source-adapter-lifecycle-contract.ps1` |
+| Owner evidence index | `docs/owner-evidence-index.md`, `docs/owner-evidence-index.v1.json` | `docs/mainline-contract-test-index.md` | `tool/contributioncheck` | `scripts/check-owner-evidence-index-contract.ps1` |
 | Integration verification | `integration/README.md`, `integration/*` | `docs/components/README.md`, `docs/guides/testing-replay-gates.md` | integration maintainers | `go test ./integration/...` |
 | 可观测性 | `observability/*`, `runtime/diagnostics/*` | `docs/components/observability.md` | observability owners | diagnostics replay gate |
 | 适配器 | `adapter/*`, `integration/*`, `docs/adapter-migration-mapping.md` | `docs/components/adapters.md` | adapter owners | adapter conformance gates |

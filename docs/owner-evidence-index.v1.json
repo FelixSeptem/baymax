@@ -1,0 +1,38 @@
+{
+  "version": "owner-evidence-index.v1",
+  "semantics": [
+    {
+      "id": "resolver-material-bounded-admission",
+      "owner": "context/hostprojection",
+      "main_spec": "openspec/specs/host-context-assembly-handoff/spec.md",
+      "tests": ["context/hostprojection/resolver_test.go", "context/assembler/host_projection_test.go"],
+      "replay": {"mode": "not_applicable", "reason": "Resolver material is transient host input; bounds and all-or-nothing admission are verified by source and assembler tests without persisting material in replay fixtures."},
+      "gate": "scripts/check-host-context-assembly-handoff-contract",
+      "documentation": ["context/hostprojection/README.md", "docs/runtime-module-boundaries.md"],
+      "rollback_boundary": "Remove bounded resolver admission without mutating host-owned sources.",
+      "non_goals": "No truncation, source ownership, authorization, or provider SDK dependency."
+    },
+    {
+      "id": "provider-neutral-model-surface-evidence",
+      "owner": "model/conformance",
+      "main_spec": "openspec/specs/provider-request-projection-and-cache-observability/spec.md",
+      "tests": ["model/conformance/request_projection_test.go", "tool/diagnosticsreplay/request_projection_test.go"],
+      "replay": {"mode": "fixture", "fixture": "tool/diagnosticsreplay/testdata/model_request_projection.v1.json"},
+      "gate": "scripts/check-provider-request-projection-contract",
+      "documentation": ["model/README.md", "docs/runtime-module-boundaries.md"],
+      "rollback_boundary": "Remove the opt-in evidence carrier and fixture updates without changing provider execution.",
+      "non_goals": "No prompt registry, raw prompt persistence, authorization, or effect evidence."
+    },
+    {
+      "id": "source-adapter-lifecycle",
+      "owner": "host/sourceadapter",
+      "main_spec": "openspec/specs/source-adapter-lifecycle/spec.md",
+      "tests": ["host/sourceadapter/lifecycle_test.go", "integration/source_adapter_lifecycle_test.go", "tool/diagnosticsreplay/source_adapter_lifecycle_test.go"],
+      "replay": {"mode": "fixture", "fixture": "tool/diagnosticsreplay/testdata/source_adapter_lifecycle.golden.json"},
+      "gate": "scripts/check-source-adapter-lifecycle-contract",
+      "documentation": ["docs/guides/source-adapter-lifecycle.md", "docs/runtime-module-boundaries.md"],
+      "rollback_boundary": "Stop the adapter and retain the last confirmed source-bound cursor for inspection.",
+      "non_goals": "No global source store, parallel terminal owner, or business-effect ledger."
+    }
+  ]
+}

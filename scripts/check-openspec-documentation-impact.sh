@@ -56,8 +56,12 @@ for dir in "${active[@]}"; do
   [[ "${commitments[proposal.md]:-}" == "${commitments[design.md]:-}" ]] || add_issue public-semantic-documentation-drift "$name:design.md"
   [[ "${commitments[proposal.md]:-}" == "${commitments[tasks.md]:-}" ]] || add_issue public-semantic-documentation-drift "$name:tasks.md"
 done
-behavior=0; for path in "${changed[@]}"; do [[ ( "$path" =~ (^|/).*\.go$ && ! "$path" =~ _test\.go$ ) || "$path" =~ ^examples/ ]] && behavior=1; done
-if (( behavior )); then
+runtimeGoChanged=0; exampleChanged=0
+for path in "${changed[@]}"; do
+  if [[ "$path" =~ (^|/).*\.go$ && ! "$path" =~ _test\.go$ && ! "$path" =~ ^tool/contributioncheck/ ]]; then runtimeGoChanged=1; fi
+  if [[ "$path" =~ ^examples/ ]]; then exampleChanged=1; fi
+done
+if (( runtimeGoChanged || exampleChanged )); then
   for dir in "${active[@]}"; do
     name="$(basename "$dir")"; proposal="$dir/proposal.md"
     for area in configuration 'contract/API' diagnostics examples; do grep -qF "| $area |" "$proposal" || add_issue surface-without-doc-task "$name:$area"; done

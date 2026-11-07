@@ -116,6 +116,14 @@ func TestPublicSemanticDocumentationCommitmentGateScriptParity(t *testing.T) {
 			t.Fatalf("powershell documentation impact script missing token %q", token)
 		}
 	}
+	for _, token := range []string{"tool/contributioncheck", "runtimeGoChanged"} {
+		if !strings.Contains(shell, token) {
+			t.Fatalf("shell documentation impact script missing governance-only scope guard %q", token)
+		}
+		if !strings.Contains(ps, token) {
+			t.Fatalf("powershell documentation impact script missing governance-only scope guard %q", token)
+		}
+	}
 }
 
 func TestPublicSemanticDocumentationCommitmentGateFixtures(t *testing.T) {

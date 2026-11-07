@@ -84,6 +84,7 @@
 ## 架构与事实源
 
 - [事实源与迁移矩阵](documentation-ownership.md)：canonical source、入口、owner 和验证命令。
+- [Owner 证据索引](owner-evidence-index.md)：已登记语义的唯一 owner 与验证链。
 - [文档写作与页面模板](documentation-style-guide.md)：术语、页面结构、链接和弃用规则。
 - [主线契约测试索引](mainline-contract-test-index.md)：公开契约到测试/gate 的映射。
 - [运行时配置与诊断](runtime-config-diagnostics.md)

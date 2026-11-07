@@ -194,6 +194,11 @@ R4 多代理共享契约前置门禁（阻断级）：
 
 ## Owner 建议
 
+The [owner evidence index](owner-evidence-index.md) records only enrolled
+semantic owners and their offline evidence. It is not a runtime registry, an
+authorization decision, a recovery capability, or proof of a business effect.
+Existing source, execution, and diagnostics owners retain their boundaries.
+
 - `runtime/config`：平台基础设施 owner
 - `runtime/diagnostics`：可观测性 owner
 - `mcp/profile`、`mcp/retry`、`mcp/diag`：MCP owner

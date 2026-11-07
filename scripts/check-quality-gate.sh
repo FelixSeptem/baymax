@@ -432,6 +432,12 @@ if ! bash scripts/check-provider-request-projection-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] owner evidence index contract"
+if ! bash scripts/check-owner-evidence-index-contract.sh; then
+  echo "[quality-gate][owner-evidence-index-contract] owner evidence index check failed"
+  exit 1
+fi
+
 echo "[quality-gate] derived budget projection contract"
 if ! bash scripts/check-budget-aware-context-projection-contract.sh; then
   echo "[quality-gate][budget-aware-context-projection-contract] derived budget projection conformance failed"

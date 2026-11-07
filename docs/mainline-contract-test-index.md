@@ -1,14 +1,14 @@
 # Mainline Contract Test Index
 
+The [owner evidence index](owner-evidence-index.md) is the canonical structured
+owner-to-specification, test, replay, gate and public-documentation map for its
+explicitly enrolled semantics; this page remains the broader contract index.
+
 > Host admission provenance：`core/types/host_resume_admission_test.go`、`core/runner/host_resume_provenance_test.go` 覆盖原始 admission/policy/source-scope 漂移及跨进程重开恢复；`tool/diagnosticsreplay/host_resume_admission*` 保留只读 conformance，统一门禁为 `scripts/check-host-resume-admission-contract.ps1/.sh`。
 
 ## Model surface and bounded host context
 
 `context/hostprojection/resolver_test.go` pins exact role/content/aggregate byte limits and all-or-nothing rejection; `context/assembler/host_projection_test.go` verifies oversize material cannot be injected, while `orchestration/teams/continuation_test.go` retains Run/Stream, deadline and owner-resume coverage with valid material. `model/conformance/request_projection_test.go` validates explicit three-slot model-surface facts, defaults, overflow/privacy and stable drift/parity; `tool/diagnosticsreplay/request_projection_test.go` pins deterministic fixture replay and expected/observed drift. The provider audit fixture is `tool/diagnosticsreplay/testdata/model_request_projection.v1.json`; gates are `scripts/check-host-context-assembly-handoff-contract.ps1/.sh` and `scripts/check-provider-request-projection-contract.ps1/.sh`.
-
-## Execution graph topology projection
-
-`orchestration/graph` validates bounded source-neutral topology and deterministic projection without owning execution, persistence, restore or terminal state. Workflow, team and composer child adapters retain their owner-specific execution and digest semantics. Positive, negative and projection parity cases live in `orchestration/graph/*_test.go` and the three owner projection test files; `scripts/check-execution-graph-contract.sh/.ps1` runs the focused contract gate and is wired into the standard quality gate.
 
 ## Execution graph topology projection
 
